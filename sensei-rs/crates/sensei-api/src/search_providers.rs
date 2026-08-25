@@ -85,7 +85,7 @@ impl<T: Serialize + DeserializeOwned + Clone + PartialEq + Send + Sync + 'static
     SearchableEntityProvider for EntityStoreProvider<T>
 {
     async fn search_entities(&self, tenant_id: EntityId, query: &str) -> Result<Vec<SearchResult>> {
-        let store = self.store.read().await;
+        let store = self.store.read(tenant_id).await;
         let mut results = Vec::new();
 
         for (entity_id, entity) in store.iter() {
@@ -427,7 +427,7 @@ mod tests {
             body: body.to_string(),
         };
         {
-            let mut guard = store.write().await;
+            let mut guard = store.write(tenant_a).await;
             guard.insert(
                 match_id,
                 make(match_id, tenant_a, "Alpha", "Widget quality issue"),
@@ -474,7 +474,7 @@ mod tests {
         let store: EntityStore<TestEntity> = EntityStore::new("test_entity");
         let tenant = Uuid::new_v4();
         {
-            let mut guard = store.write().await;
+            let mut guard = store.write(tenant).await;
             guard.insert(
                 Uuid::new_v4(),
                 TestEntity {

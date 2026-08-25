@@ -10,11 +10,19 @@
 //!
 //! `secure_headers → cors → request_id → logging → trace → metrics →
 //! inject_rate_limiter → rate_limit_middleware → request_guard →
-//! request_body_limit → compression → timeout → router`
+//! request_body_limit → compression → router`
 //!
 //! Note that `inject_rate_limiter` is **outer** to `rate_limit_middleware`
 //! so the `RateLimiter` is in the request extensions before the limiter
 //! runs.
+//!
+//! # Streaming routes and the request timeout
+//!
+//! The global `TimeoutLayer` would kill long-lived streaming connections,
+//! so it is applied to a **nested** router that contains only non-streaming
+//! routes. The real-time routes (`/api/v1/ws`, `/api/v1/sse`) and the
+//! protected streaming route (`/api/v1/chat/stream`) are merged *outside*
+//! the timeout: they still pass through every other middleware layer.
 //!
 //! Protected-route stack (via `route_layer`), outermost → innermost:
 //!
@@ -749,7 +757,10 @@ pub fn build_router(state: AppState) -> Router {
     let cors_layer = build_cors_layer(&state.config);
 
     // ── Shared instances for middleware infrastructure ──────────────
-    let idempotency_store = Arc::new(IdempotencyStore::new(3600)); // 1 hour TTL
+    let idempotency_store = Arc::new(IdempotencyStore::with_pool(
+        3600, // 1 hour TTL
+        state.db_pool.clone(),
+    ));
     let request_guard_config = Arc::new(RequestGuardConfig {
         max_body_size: state.config.api.body_limit,
         request_timeout_secs: state.config.api.request_timeout_secs,
@@ -758,6 +769,8 @@ pub fn build_router(state: AppState) -> Router {
 
     // ── Public routes (no auth required) ────────────────────────────
     let public_routes = Router::new()
+        .route("/livez", get(routes::health::liveness))
+        .route("/readyz", get(routes::health::readiness))
         .route("/health/live", get(routes::health::liveness))
         .route("/health/ready", get(routes::health::readiness))
         .route("/health/detailed", get(routes::health::detailed))
@@ -780,8 +793,12 @@ pub fn build_router(state: AppState) -> Router {
             "/api/v1/auth/verify-email/confirm",
             post(routes::auth::confirm_email_verification),
         )
-        .route("/metrics", get(routes::metrics::metrics_handler))
-        // ── Real-time routes (auth via ?token= query param) ────────────
+        .route("/metrics", get(routes::metrics::metrics_handler));
+
+    // ── Real-time streaming routes (NO request timeout) ─────────────
+    // Long-lived WS/SSE connections must never be killed by the timeout
+    // layer, so they live in a dedicated router merged outside it.
+    let realtime_routes = Router::new()
         .route("/api/v1/ws", get(routes::ws::ws_handler))
         .route("/api/v1/sse", get(routes::ws::sse_handler));
 
@@ -871,7 +888,12 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/v1/ai/models/retrain", post(routes::ai::retrain_model))
         // ── Chatbot Routes ─────────────────────────────────────────
         .route("/api/v1/chat", post(routes::chatbot::chat))
-        .route("/api/v1/chat/stream", post(routes::chatbot::chat_stream))
+        // ── Realtime Routes (protected) ─────────────────────────────
+        // Mints one-time WS/SSE connection tickets (authenticated).
+        .route(
+            "/api/v1/realtime/ticket",
+            post(routes::ws::realtime_ticket_handler),
+        )
         // ── Production Routes ─────────────────────────────────────
         .route(
             "/api/v1/production/work-orders",
@@ -2076,29 +2098,62 @@ pub fn build_router(state: AppState) -> Router {
     let static_dir =
         std::env::var("SENSEI_STATIC_DIR").unwrap_or_else(|_| "../frontend/public".to_string());
 
-    // ── Merge public + protected and apply global layers ───────────
+    // ── Protected streaming routes (auth required, NO timeout) ──────
+    // `chat_stream` is a long-lived SSE stream: like the real-time routes
+    // it must not be wrapped in the request timeout, but it is still
+    // authenticated with the same protected-route stack.
+    let protected_streaming_routes = Router::new()
+        .route("/api/v1/chat/stream", post(routes::chatbot::chat_stream))
+        // Audit logging – record state-changing requests (innermost).
+        .route_layer(middleware::from_fn_with_state(
+            state.clone(),
+            audit_middleware,
+        ))
+        // Idempotency – handle Idempotency-Key for POST/PUT/PATCH.
+        .route_layer(middleware::from_fn({
+            let store = Arc::clone(&idempotency_store);
+            move |mut req: Request, next: Next| {
+                req.extensions_mut().insert((*store).clone());
+                async move { idempotency_middleware(req, next).await }
+            }
+        }))
+        // Session binding – enforce fingerprint checks for authenticated users.
+        .route_layer(middleware::from_fn_with_state(
+            state.clone(),
+            session_binding_middleware,
+        ))
+        // Authentication (outermost – runs first for the route handler).
+        .route_layer(middleware::from_fn_with_state(state.clone(), auth_layer));
+
+    // ── Timeout-scoped routes (everything non-streaming) ───────────
+    // The single global request timeout (Timeout is 408 via
+    // TimeoutLayer::with_status_code) wraps ONLY this nested router so
+    // long-lived WS/SSE connections are never killed by it.
+    let timed_routes = Router::new()
+        .route("/", get(root_handler))
+        .merge(public_routes)
+        .merge(protected_streaming_routes)
+        .merge(protected_routes)
+        // ── Unmatched /api/* paths → structured JSON 404 ────────────
+        // Registered before the ServeDir fallback so API 404s never fall
+        // through to the static frontend.
+        .route("/api/{*rest}", get(api_not_found))
+        .layer(TimeoutLayer::with_status_code(
+            axum::http::StatusCode::REQUEST_TIMEOUT,
+            Duration::from_secs(state.config.api.request_timeout_secs),
+        ));
+
+    // ── Merge and apply global layers ───────────────────────────────
     // Layers are applied bottom-to-top; the LAST layer added runs FIRST
     // (outermost). The execution order is documented at the top of this
     // file. The critical invariant for rate limiting is that
     // `inject_rate_limiter` is OUTER to `rate_limit_middleware` (added
     // after it) so the limiter always finds its instance.
     Router::new()
-        .route("/", get(root_handler))
-        .merge(public_routes)
-        .merge(protected_routes)
-        // ── Unmatched /api/* paths → structured JSON 404 ────────────
-        // Registered before the ServeDir fallback so API 404s never fall
-        // through to the static frontend.
-        .route("/api/{*rest}", get(api_not_found))
+        .merge(realtime_routes)
+        .merge(timed_routes)
         // ── Serve WASM frontend static files as fallback ────────────
         .fallback_service(ServeDir::new(static_dir))
-        // ── Innermost layers (added first, run last) ─────────────────
-        // Single global request timeout (Timeout is 408 via
-        // TimeoutLayer::with_status_code).
-        .layer(TimeoutLayer::with_status_code(
-            axum::http::StatusCode::REQUEST_TIMEOUT,
-            Duration::from_secs(state.config.api.request_timeout_secs),
-        ))
         .layer(CompressionLayer::new())
         // ── Request body limit (streams, so chunked bodies are covered) ──
         .layer(RequestBodyLimitLayer::new(

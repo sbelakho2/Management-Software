@@ -88,10 +88,12 @@ function headers(token) {
 }
 
 // ─── setup (auth once) ──────────────────────────────────────────
+// Credentials come from the environment (TEST_USER/TEST_PASS) — there is no
+// hardcoded default password. See .env.example for the env contract.
 export function setup() {
   const loginPayload = JSON.stringify({
     username: __ENV.TEST_USER || 'admin@sensei.local',
-    password: __ENV.TEST_PASS || 'admin',
+    password: __ENV.TEST_PASS || '',
   });
   const res = http.post(`${BASE}/api/v1/auth/login`, loginPayload, {
     headers: { 'Content-Type': 'application/json' },
@@ -99,7 +101,7 @@ export function setup() {
   if (res.status === 200) {
     return { token: res.json('access_token') };
   }
-  console.warn(`Login failed (${res.status}), running unauthenticated tests only`);
+  console.warn(`Login failed (${res.status}) — set TEST_USER/TEST_PASS; running unauthenticated tests only`);
   return { token: null };
 }
 

@@ -1,3 +1,12 @@
+# =============================================================================
+# Sensei-RS CI — build, test, lint, integration, and security checks.
+#
+# Toolchain contract:
+#   - Rust channel is pinned exactly in sensei-rs/rust-toolchain.toml (1.96.0)
+#     and enforced with --locked everywhere.
+#   - Zig version is read from .github/.tool-versions (single source).
+#   - All third-party actions are pinned to commit SHAs (see comments).
+# =============================================================================
 name: Sensei-RS CI
 
 on:
@@ -5,53 +14,67 @@ on:
     branches: [main, develop]
     paths:
       - 'sensei-rs/**'
-      - '.github/workflows/sensei-rs-ci.yml'
+      - '.github/**'
+      - 'k8s/**'
+      - 'caddy/**'
+      - 'docker-compose.yml'
+      - '.env.example'
   pull_request:
     branches: [main, develop]
     paths:
       - 'sensei-rs/**'
+      - '.github/**'
+      - 'k8s/**'
+      - 'caddy/**'
+      - 'docker-compose.yml'
+      - '.env.example'
 
 env:
   CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
 
 jobs:
-  lint:
-    name: Lint (clippy + fmt)
+  clippy:
+    name: Lint (fmt + clippy, --locked)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      # actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
 
-      - name: Set up Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+      # dtolnay/rust-toolchain@v1 — reads sensei-rs/rust-toolchain.toml (pinned 1.96.0)
+      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
         with:
           components: clippy, rustfmt
 
-      - name: Install Zig (for cross-compilation builds)
+      - name: Install Zig (version from .github/.tool-versions)
         run: |
-          wget -q https://ziglang.org/download/0.15.2/zig-linux-x86_64-0.15.2.tar.xz
-          tar xf zig-linux-x86_64-0.15.2.tar.xz
-          echo "$PWD/zig-linux-x86_64-0.15.2" >> $GITHUB_PATH
+          set -euo pipefail
+          ZIG_VERSION="$(awk '$1=="zig"{print $2}' .github/.tool-versions)"
+          wget -q "https://ziglang.org/download/${ZIG_VERSION}/zig-linux-x86_64-${ZIG_VERSION}.tar.xz"
+          tar xf "zig-linux-x86_64-${ZIG_VERSION}.tar.xz"
+          echo "$PWD/zig-linux-x86_64-${ZIG_VERSION}" >> "$GITHUB_PATH"
 
-      - uses: Swatinem/rust-cache@v2
+      # Swatinem/rust-cache@v2.9.2
+      - uses: Swatinem/rust-cache@63fed3e2fecf6f7b51dc6f043341b79ef82a9ae7
         with:
           workspaces: sensei-rs
 
       - name: Check formatting
-        run: cargo fmt --all --check
+        run: cargo fmt --all -- --check
         working-directory: sensei-rs
 
       - name: Run clippy
-        run: cargo clippy --all-targets -- -D warnings
+        run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
         working-directory: sensei-rs
 
   test:
-    name: Test
+    name: Test (unit, --locked)
     runs-on: ubuntu-latest
-    needs: lint
+    needs: clippy
 
     services:
       postgres:
-        image: postgres:16-alpine
+        image: pgvector/pgvector:pg16
         env:
           POSTGRES_USER: sensei
           POSTGRES_PASSWORD: sensei
@@ -65,23 +88,28 @@ jobs:
           --health-retries 5
 
     steps:
-      - uses: actions/checkout@v4
+      # actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
 
-      - name: Set up Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+      # dtolnay/rust-toolchain@v1
+      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
 
-      - name: Install Zig (for cross-compilation builds)
+      - name: Install Zig (version from .github/.tool-versions)
         run: |
-          wget -q https://ziglang.org/download/0.15.2/zig-linux-x86_64-0.15.2.tar.xz
-          tar xf zig-linux-x86_64-0.15.2.tar.xz
-          echo "$PWD/zig-linux-x86_64-0.15.2" >> $GITHUB_PATH
+          set -euo pipefail
+          ZIG_VERSION="$(awk '$1=="zig"{print $2}' .github/.tool-versions)"
+          wget -q "https://ziglang.org/download/${ZIG_VERSION}/zig-linux-x86_64-${ZIG_VERSION}.tar.xz"
+          tar xf "zig-linux-x86_64-${ZIG_VERSION}.tar.xz"
+          echo "$PWD/zig-linux-x86_64-${ZIG_VERSION}" >> "$GITHUB_PATH"
 
-      - uses: Swatinem/rust-cache@v2
+      # Swatinem/rust-cache@v2.9.2
+      - uses: Swatinem/rust-cache@63fed3e2fecf6f7b51dc6f043341b79ef82a9ae7
         with:
           workspaces: sensei-rs
 
       - name: Run tests
         env:
+          SENSEI_ENV: development
           DATABASE_URL: postgres://sensei:sensei@localhost:5432/sensei
           JWT_SECRET: test-secret-key-that-is-long-enough-for-testing
           S3_ENDPOINT: http://localhost:9000
@@ -89,25 +117,321 @@ jobs:
           S3_SECRET_KEY: test
           S3_BUCKET: test-bucket
           NATS_URL: nats://localhost:4222
-        run: cargo test --workspace
+        run: cargo test --workspace --locked
         working-directory: sensei-rs
 
   build:
-    name: Build Docker Image
+    name: Build (--locked)
     runs-on: ubuntu-latest
-    needs: test
+    needs: clippy
 
     steps:
-      - uses: actions/checkout@v4
+      # actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+      # dtolnay/rust-toolchain@v1
+      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
 
-      - name: Build Docker image
-        uses: docker/build-push-action@v5
+      - name: Install Zig (version from .github/.tool-versions)
+        run: |
+          set -euo pipefail
+          ZIG_VERSION="$(awk '$1=="zig"{print $2}' .github/.tool-versions)"
+          wget -q "https://ziglang.org/download/${ZIG_VERSION}/zig-linux-x86_64-${ZIG_VERSION}.tar.xz"
+          tar xf "zig-linux-x86_64-${ZIG_VERSION}.tar.xz"
+          echo "$PWD/zig-linux-x86_64-${ZIG_VERSION}" >> "$GITHUB_PATH"
+
+      # Swatinem/rust-cache@v2.9.2
+      - uses: Swatinem/rust-cache@63fed3e2fecf6f7b51dc6f043341b79ef82a9ae7
+        with:
+          workspaces: sensei-rs
+
+      - name: Build workspace
+        run: cargo build --workspace --locked
+        working-directory: sensei-rs
+
+      - name: Build release binaries (API + workers)
+        run: cargo build --release --locked -p sensei-api -p sensei-workers
+        working-directory: sensei-rs
+
+  integration:
+    name: Integration (API × 2 + worker vs real stack)
+    runs-on: ubuntu-latest
+    needs: [clippy, test, build]
+
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: sensei
+          POSTGRES_PASSWORD: sensei
+          POSTGRES_DB: sensei
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      nats:
+        image: nats:2.10-alpine
+        command: ["-js", "-m", "8222"]
+        ports:
+          - 4222:4222
+          - 8222:8222
+        options: >-
+          --health-cmd "wget -q --spider http://localhost:8222/healthz || exit 1"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      minio:
+        image: minio/minio:RELEASE.2024-06-13T22-53-53Z
+        command: ["server", "/data"]
+        env:
+          MINIO_ROOT_USER: minioadmin
+          MINIO_ROOT_PASSWORD: minioadmin
+        ports:
+          - 9000:9000
+        options: >-
+          --health-cmd "curl -f http://localhost:9000/minio/health/ready || exit 1"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      # actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+
+      # dtolnay/rust-toolchain@v1
+      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
+
+      - name: Install Zig (version from .github/.tool-versions)
+        run: |
+          set -euo pipefail
+          ZIG_VERSION="$(awk '$1=="zig"{print $2}' .github/.tool-versions)"
+          wget -q "https://ziglang.org/download/${ZIG_VERSION}/zig-linux-x86_64-${ZIG_VERSION}.tar.xz"
+          tar xf "zig-linux-x86_64-${ZIG_VERSION}.tar.xz"
+          echo "$PWD/zig-linux-x86_64-${ZIG_VERSION}" >> "$GITHUB_PATH"
+
+      # Swatinem/rust-cache@v2.9.2
+      - uses: Swatinem/rust-cache@63fed3e2fecf6f7b51dc6f043341b79ef82a9ae7
+        with:
+          workspaces: sensei-rs
+
+      - name: Build workspace binaries
+        run: cargo build --workspace --locked
+        working-directory: sensei-rs
+
+      - name: Run cross-process smoke test (two API instances, read-after-write)
+        env:
+          DATABASE_URL: postgres://sensei:sensei@localhost:5432/sensei
+          NATS_URL: nats://localhost:4222
+          JWT_SECRET: ci-integration-jwt-secret-0123456789abcdef0123456789
+          S3_ENDPOINT: http://localhost:9000
+          S3_ACCESS_KEY: minioadmin
+          S3_SECRET_KEY: minioadmin
+          S3_BUCKET: sensei-uploads
+          BIN_DIR: sensei-rs/target/debug
+        run: bash scripts/smoke-integration.sh
+
+  security:
+    name: Security & Release Validation
+    runs-on: ubuntu-latest
+    needs: [clippy, test, build, integration]
+
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: sensei
+          POSTGRES_PASSWORD: sensei
+          POSTGRES_DB: sensei
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      nats:
+        image: nats:2.10-alpine
+        command: ["-js", "-m", "8222"]
+        ports:
+          - 4222:4222
+          - 8222:8222
+        options: >-
+          --health-cmd "wget -q --spider http://localhost:8222/healthz || exit 1"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      # actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+
+      # dtolnay/rust-toolchain@v1
+      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
+
+      - name: Install Zig (version from .github/.tool-versions)
+        run: |
+          set -euo pipefail
+          ZIG_VERSION="$(awk '$1=="zig"{print $2}' .github/.tool-versions)"
+          wget -q "https://ziglang.org/download/${ZIG_VERSION}/zig-linux-x86_64-${ZIG_VERSION}.tar.xz"
+          tar xf "zig-linux-x86_64-${ZIG_VERSION}.tar.xz"
+          echo "$PWD/zig-linux-x86_64-${ZIG_VERSION}" >> "$GITHUB_PATH"
+
+      # Swatinem/rust-cache@v2.9.2
+      - uses: Swatinem/rust-cache@63fed3e2fecf6f7b51dc6f043341b79ef82a9ae7
+        with:
+          workspaces: sensei-rs
+
+      # ── Supply-chain: cargo audit ───────────────────────────────────────
+      # NOTE: `cargo install --locked cargo-audit` compiles from source on
+      # first run (~2-5 min); the rust-cache above makes subsequent runs fast.
+      - name: Install cargo-audit
+        run: cargo install --locked cargo-audit
+
+      - name: cargo audit
+        working-directory: sensei-rs
+        run: cargo audit
+
+      # ── Secret scanning: gitleaks v8.30.1 ───────────────────────────────
+      - name: Install gitleaks
+        run: |
+          set -euo pipefail
+          curl -fsSL -o gitleaks.tar.gz \
+            https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz
+          tar xzf gitleaks.tar.gz gitleaks
+          sudo mv gitleaks /usr/local/bin/
+
+      - name: gitleaks secret scan
+        run: gitleaks detect --source . --no-banner --redact
+
+      # ── Container build + SBOM + vulnerability scan ─────────────────────
+      # docker/setup-buildx-action@v4.3.0
+      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e
+
+      # docker/build-push-action@v7.3.0
+      - uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a
+        id: image-build
         with:
           context: ./sensei-rs
           push: false
-          tags: sensei-api:${{ github.sha }}
+          load: true
+          tags: sensei-api:ci
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      # anchore/sbom-action@v0.24.0 (syft) — SBOM of the built image
+      - uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610
+        with:
+          image: sensei-api:ci
+          format: cyclonedx-json
+          output-file: sensei-api.sbom.json
+
+      - name: Upload SBOM artifact
+        # actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: sensei-api-sbom
+          path: sensei-api.sbom.json
+
+      # aquasecurity/trivy-action@v0.36.0 — container vulnerability scan
+      - uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8
+        with:
+          image-ref: sensei-api:ci
+          format: table
+          exit-code: '1'
+          ignore-unfixed: true
+          severity: CRITICAL,HIGH
+
+      # ── Boot + readiness of the built image ─────────────────────────────
+      - name: Boot container and probe liveness/readiness
+        run: |
+          set -euo pipefail
+          docker run -d --name sensei-boot-test \
+            -p 18080:8080 \
+            -e SENSEI_ENV=development \
+            -e DATABASE_URL=postgres://sensei:sensei@localhost:5432/sensei \
+            -e NATS_URL=nats://localhost:4222 \
+            -e JWT_SECRET=boot-test-jwt-secret-0123456789abcdef0123456789abcdef \
+            -e SENSEI_CEO_PASSWORD='BootTestCEO!2026' \
+            sensei-api:ci
+          for i in $(seq 1 60); do
+            if curl -sf -o /dev/null http://localhost:18080/health/live; then
+              curl -sf http://localhost:18080/health/ready
+              echo
+              echo "container boot OK"
+              exit 0
+            fi
+            sleep 2
+          done
+          docker logs sensei-boot-test
+          exit 1
+
+      # ── Migration-from-previous-release: idempotent re-run ──────────────
+      - name: Migrations run twice idempotently (fresh DB → second boot)
+        run: |
+          set -euo pipefail
+          # Boot 1: applies all migrations to the empty PG service database.
+          docker run -d --name sensei-migrate-1 \
+            -p 18081:8080 \
+            -e SENSEI_ENV=development \
+            -e DATABASE_URL=postgres://sensei:sensei@localhost:5432/sensei \
+            -e NATS_URL=nats://localhost:4222 \
+            -e JWT_SECRET=boot-test-jwt-secret-0123456789abcdef0123456789abcdef \
+            -e SENSEI_CEO_PASSWORD='BootTestCEO!2026' \
+            sensei-api:ci
+          for i in $(seq 1 60); do
+            curl -sf -o /dev/null http://localhost:18081/health/ready && break
+            sleep 2
+          done
+          curl -sf http://localhost:18081/health/ready || { docker logs sensei-migrate-1; exit 1; }
+          docker rm -f sensei-migrate-1 >/dev/null
+          # Boot 2: migrations must be idempotent against the same database.
+          docker run -d --name sensei-migrate-2 \
+            -p 18082:8080 \
+            -e SENSEI_ENV=development \
+            -e DATABASE_URL=postgres://sensei:sensei@localhost:5432/sensei \
+            -e NATS_URL=nats://localhost:4222 \
+            -e JWT_SECRET=boot-test-jwt-secret-0123456789abcdef0123456789abcdef \
+            -e SENSEI_CEO_PASSWORD='BootTestCEO!2026' \
+            sensei-api:ci
+          for i in $(seq 1 60); do
+            curl -sf -o /dev/null http://localhost:18082/health/ready && break
+            sleep 2
+          done
+          curl -sf http://localhost:18082/health/ready || { docker logs sensei-migrate-2; exit 1; }
+          echo "migrations idempotent across restarts"
+
+      # ── Helm chart validation ───────────────────────────────────────────
+      # azure/setup-helm@v5.0.1
+      - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310
+        with:
+          version: 'v3.12.0'
+
+      - name: Helm lint
+        run: helm lint k8s/helm/sensei
+
+      - name: Helm template + kubeconform validation
+        run: |
+          set -euo pipefail
+          helm template sensei k8s/helm/sensei \
+            -f k8s/helm/sensei/values.yaml > /tmp/sensei-rendered.yaml
+          curl -fsSL -o kubeconform.tar.gz \
+            https://github.com/yannh/kubeconform/releases/download/v0.8.0/kubeconform-linux-amd64.tar.gz
+          tar xzf kubeconform.tar.gz kubeconform
+          sudo mv kubeconform /usr/local/bin/
+          kubeconform -strict -summary /tmp/sensei-rendered.yaml
+
+      # ── Compose + Caddy validation ──────────────────────────────────────
+      - name: Validate docker-compose config
+        run: docker compose config -q
+
+      - name: Validate Caddyfiles
+        run: |
+          set -euo pipefail
+          for f in caddy/Caddyfile caddy/Caddyfile.production; do
+            docker run --rm -v "$PWD/caddy:/etc/caddy:ro" caddy:2-alpine \
+              caddy validate --config "/etc/caddy/$(basename "$f")" \
+              --adapter caddyfile
+          done

@@ -1,3 +1,12 @@
+# =============================================================================
+# CONFIGMAP — non-secret configuration only.
+#
+# Credential-bearing values (DATABASE_URL, JWT_SECRET, S3_ACCESS_KEY,
+# S3_SECRET_KEY, SMTP_PASSWORD, REDIS_URL, NATS credentials, CEO password)
+# live exclusively in the Secret (secret.yaml). Deployment env vars must
+# reference the right source: Secret for secrets, ConfigMap for config.
+# See .env.example (the canonical env contract) for the authoritative list.
+# =============================================================================
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -6,7 +15,7 @@ metadata:
     {{- include "sensei.labels" . | nindent 4 }}
 data:
   # === Core Application ===
-  ENVIRONMENT: {{ .Values.config.environment | quote }}
+  SENSEI_ENV: {{ .Values.config.environment | quote }}
   DEBUG: {{ .Values.config.debug | quote }}
   LOG_LEVEL: {{ .Values.config.logLevel | quote }}
 
@@ -14,13 +23,31 @@ data:
   RUST_API_URL: http://{{ include "sensei.fullname" . }}-sensei-api:8080
   RUST_LOG: {{ .Values.senseiApi.logLevel | default "info" | quote }}
   SENSEI_API_ENABLED: {{ .Values.senseiApi.enabled | quote }}
-  DATABASE_URL: {{ include "sensei.postgresql.url" . | quote }}
+  API_HOST: {{ .Values.config.rust.apiHost | default "0.0.0.0" | quote }}
+  API_PORT: {{ .Values.config.rust.apiPort | default "8080" | quote }}
+  CORS_ALLOWED_ORIGINS: {{ .Values.config.corsOrigins | join "," | quote }}
+  DB_MAX_CONNECTIONS: {{ .Values.config.rust.dbMaxConnections | default 20 | quote }}
+  DB_CONNECTION_TIMEOUT: {{ .Values.config.rust.dbConnectionTimeout | default 30 | quote }}
+  DB_AUTO_MIGRATE: {{ .Values.config.rust.dbAutoMigrate | default true | quote }}
+  JWT_ACCESS_TTL_MINUTES: {{ .Values.config.rust.accessTokenTtlMinutes | default 15 | quote }}
+  JWT_REFRESH_EXPIRY_DAYS: {{ .Values.config.rust.refreshTokenExpiryDays | default 7 | quote }}
+  JWT_ISSUER: {{ .Values.config.rust.jwtIssuer | default "sensei" | quote }}
+  JWT_AUDIENCE: {{ .Values.config.rust.jwtAudience | default "sensei-api" | quote }}
+  METRICS_PORT: {{ .Values.config.rust.metricsPort | default 9090 | quote }}
+  SECURITY_HSTS: {{ .Values.config.rust.securityHsts | default true | quote }}
+  TRUSTED_PROXIES: {{ .Values.config.rust.trustedProxies | default "" | quote }}
+  REALTIME_TICKET_TTL_SECONDS: {{ .Values.config.rust.realtimeTicketTtlSeconds | default 300 | quote }}
+  IDEMPOTENCY_TTL_SECONDS: {{ .Values.config.rust.idempotencyTtlSeconds | default 300 | quote }}
+
+  # === Object storage (S3/MinIO) — endpoint/bucket are public, keys are in the Secret ===
   S3_ENDPOINT: {{ include "sensei.minio.endpoint" . | quote }}
   S3_BUCKET: {{ .Values.config.storage.bucket | quote }}
-  CORS_ORIGINS: {{ .Values.config.corsOrigins | join "," | quote }}
+  S3_REGION: {{ .Values.config.storage.region | default "us-east-1" | quote }}
+  STORAGE_BACKEND: {{ .Values.config.storage.backend | default "s3" | quote }}
 
-  # === NATS / Event Bus ===
+  # === NATS / Event Bus (no credentials embedded) ===
   NATS_URL: nats://{{ .Release.Name }}-nats:4222
+  NATS_CLUSTER: {{ .Values.config.natsCluster | default "sensei" | quote }}
 
   # === Feature Flags ===
   FEATURE_PHASE_2_NPI: {{ .Values.config.features.phase2Npi | quote }}
@@ -36,16 +63,16 @@ data:
   SENTRY_DSN: {{ .Values.config.sentryDsn | quote }}
   {{- end }}
 
-  # === SMTP / Email ===
+  # === SMTP / Email (password is in the Secret) ===
   {{- if .Values.config.smtp }}
   SMTP_HOST: {{ .Values.config.smtp.host | quote }}
   SMTP_PORT: {{ .Values.config.smtp.port | default "587" | quote }}
-  SMTP_USER: {{ .Values.config.smtp.user | quote }}
-  SMTP_FROM_EMAIL: {{ .Values.config.smtp.fromEmail | default "noreply@sensei.local" | quote }}
+  SMTP_USERNAME: {{ .Values.config.smtp.user | quote }}
+  SMTP_FROM_ADDRESS: {{ .Values.config.smtp.fromEmail | default "noreply@sensei.local" | quote }}
   SMTP_FROM_NAME: {{ .Values.config.smtp.fromName | default "Sensei OS" | quote }}
   {{- end }}
 
-  # === Tri-System Integration: erpStarz ===
+  # === Tri-System Integration: erpStarz (API keys are in the Secret) ===
   {{- if .Values.config.erpStarz.apiUrl }}
   STARZ_ERP_API_URL: {{ .Values.config.erpStarz.apiUrl | quote }}
   {{- end }}
@@ -53,7 +80,7 @@ data:
   STARZ_ERP_DATABASE_URL: {{ .Values.config.erpStarz.databaseUrl | quote }}
   {{- end }}
 
-  # === Tri-System Integration: CRM-v2 ===
+  # === Tri-System Integration: CRM-v2 (API keys are in the Secret) ===
   {{- if .Values.config.crmV2.apiUrl }}
   CRM_V2_API_URL: {{ .Values.config.crmV2.apiUrl | quote }}
   {{- end }}

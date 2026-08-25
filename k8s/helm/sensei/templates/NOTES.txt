@@ -19,17 +19,17 @@ To learn more about the release, try:
   http{{ if $.Values.ingress.tls }}s{{ end }}://{{ $host.host }}{{ .path }}
   {{- end }}
 {{- end }}
-{{- else if contains "NodePort" .Values.service.frontend.type }}
-  export NODE_PORT=$(kubectl get --namespace {{ .Release.Namespace }} -o jsonpath="{.spec.ports[0].nodePort}" services {{ include "sensei.fullname" . }}-frontend)
+{{- else if contains "NodePort" .Values.service.senseiApi.type }}
+  export NODE_PORT=$(kubectl get --namespace {{ .Release.Namespace }} -o jsonpath="{.spec.ports[0].nodePort}" services {{ include "sensei.fullname" . }}-sensei-api)
   export NODE_IP=$(kubectl get nodes --namespace {{ .Release.Namespace }} -o jsonpath="{.items[0].status.addresses[0].address}")
   echo http://$NODE_IP:$NODE_PORT
-{{- else if contains "LoadBalancer" .Values.service.frontend.type }}
+{{- else if contains "LoadBalancer" .Values.service.senseiApi.type }}
      NOTE: It may take a few minutes for the LoadBalancer IP to be available.
-           You can watch the status of by running 'kubectl get --namespace {{ .Release.Namespace }} svc -w {{ include "sensei.fullname" . }}-frontend'
-  export SERVICE_IP=$(kubectl get svc --namespace {{ .Release.Namespace }} {{ include "sensei.fullname" . }}-frontend --template "{{"{{ range (index .status.loadBalancer.ingress 0) }}{{.}}{{ end }}"}}")
-  echo http://$SERVICE_IP:{{ .Values.service.frontend.port }}
-{{- else if contains "ClusterIP" .Values.service.frontend.type }}
-  export POD_NAME=$(kubectl get pods --namespace {{ .Release.Namespace }} -l "app.kubernetes.io/name={{ include "sensei.name" . }},app.kubernetes.io/instance={{ .Release.Name }},app.kubernetes.io/component=frontend" -o jsonpath="{.items[0].metadata.name}")
+           You can watch the status of by running 'kubectl get --namespace {{ .Release.Namespace }} svc -w {{ include "sensei.fullname" . }}-sensei-api'
+  export SERVICE_IP=$(kubectl get svc --namespace {{ .Release.Namespace }} {{ include "sensei.fullname" . }}-sensei-api --template "{{"{{ range (index .status.loadBalancer.ingress 0) }}{{.}}{{ end }}"}}")
+  echo http://$SERVICE_IP:{{ .Values.service.senseiApi.port }}
+{{- else if contains "ClusterIP" .Values.service.senseiApi.type }}
+  export POD_NAME=$(kubectl get pods --namespace {{ .Release.Namespace }} -l "app.kubernetes.io/name={{ include "sensei.name" . }},app.kubernetes.io/instance={{ .Release.Name }},app.kubernetes.io/component=sensei-api" -o jsonpath="{.items[0].metadata.name}")
   export CONTAINER_PORT=$(kubectl get pod --namespace {{ .Release.Namespace }} $POD_NAME -o jsonpath="{.spec.containers[0].ports[0].containerPort}")
   echo "Visit http://127.0.0.1:8080 to use your application"
   kubectl --namespace {{ .Release.Namespace }} port-forward $POD_NAME 8080:$CONTAINER_PORT
@@ -41,18 +41,33 @@ To learn more about the release, try:
 3. View logs:
   kubectl logs --namespace {{ .Release.Namespace }} -l "app.kubernetes.io/instance={{ .Release.Name }}" --tail=100
 
-4. Run database migrations (first time only):
-  kubectl exec --namespace {{ .Release.Namespace }} -it deployment/{{ include "sensei.fullname" . }}-backend -- alembic upgrade head
+4. Database migrations:
+  Migrations run automatically at API startup when DB_AUTO_MIGRATE=true
+  (the default). No manual migration step is required.
 
-5. Create admin user:
-  kubectl exec --namespace {{ .Release.Namespace }} -it deployment/{{ include "sensei.fullname" . }}-backend -- python -m sensei.cli.admin create-user --email admin@example.com --role admin
+5. Seed the CEO account:
+  The CEO seed account is created at first startup when SENSEI_CEO_PASSWORD is
+  set (via the {{ include "sensei.fullname" . }}-secret Secret). Set it before
+  the first deploy:
+    helm upgrade --install ... --set config.ceoPassword="<strong-password>"
+
+6. Health endpoints (probes):
+  Liveness:  GET /health/live
+  Readiness: GET /health/ready
+  Detailed:  GET /health/detailed
 
 ** Important Security Notes **
-- Default passwords should be changed immediately in production
-- Configure TLS certificates for secure communication
-- Review and adjust resource limits based on your workload
-- Enable monitoring and logging for production environments
-- Configure backup schedules and verify restore procedures
+- All credential-bearing environment variables (DATABASE_URL, JWT_SECRET,
+  S3_ACCESS_KEY, S3_SECRET_KEY, SMTP_PASSWORD, REDIS_URL, NATS credentials,
+  SENSEI_CEO_PASSWORD) live in the {{ include "sensei.fullname" . }}-secret
+  Secret. The ConfigMap holds non-secret configuration only. See
+  .env.example for the canonical environment contract.
+- SENSEI_ENV is parsed strictly: an invalid value (e.g. a typo) aborts startup.
+- JWT secrets are preserved across upgrades; rotate them deliberately.
+- Configure TLS certificates for secure communication.
+- Review and adjust resource limits based on your workload.
+- Enable monitoring and logging for production environments.
+- Configure backup schedules and verify restore procedures.
 
 For more information:
 - Documentation: https://docs.sensei-os.com

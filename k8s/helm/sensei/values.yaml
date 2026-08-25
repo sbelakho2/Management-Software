@@ -47,9 +47,35 @@ config:
   environment: production
   debug: false
   logLevel: info
-  # Secret key - should be set via secrets
-  secretKey: ""
-  # Database URL - constructed from postgresql values
+  # JWT signing secret — leave empty to auto-generate on first install
+  # (or set it explicitly; it is stored in the Secret, not the ConfigMap)
+  jwtSecret: ""
+  # Previous JWT signing key, only used during key-rotation windows.
+  # Leave empty when no rotation is in progress.
+  jwtPreviousSigningKey: ""
+  # Password for the seeded CEO account — NO default; set explicitly for
+  # production (stored in the Secret). A placeholder/weak value is rejected
+  # by the API at startup in production.
+  ceoPassword: ""
+  # Rust runtime tunables (non-secret; surfaced via the ConfigMap)
+  rust:
+    accessTokenTtlMinutes: 15
+    refreshTokenExpiryDays: 7
+    jwtIssuer: sensei
+    jwtAudience: sensei-api
+    dbMaxConnections: 20
+    dbConnectionTimeout: 30
+    dbAutoMigrate: true
+    apiHost: 0.0.0.0
+    apiPort: 8080
+    metricsPort: 9090
+    securityHsts: true
+    trustedProxies: ""
+    realtimeTicketTtlSeconds: 300
+    idempotencyTtlSeconds: 300
+  natsCluster: sensei
+  # Database URL — constructed from postgresql values; override only for an
+  # external database
   databaseUrl: ""
   # Sentry DSN for error tracking
   sentryDsn: ""
@@ -58,10 +84,10 @@ config:
     host: ""
     port: 587
     user: ""
-    password: ""  # Secret — set via externalSecrets or --set
+    password: ""  # Secret — stored in the Secret, not the ConfigMap
     fromEmail: "noreply@sensei.local"
     fromName: "Sensei OS"
-  # CORS origins — includes cross-system origins for tri-system integration
+  # CORS allowed origins — consumed by the Rust API as CORS_ALLOWED_ORIGINS
   corsOrigins:
     - https://sensei.example.com
     - https://erp.starz.example.com
@@ -79,6 +105,8 @@ config:
   storage:
     endpoint: http://minio:9000
     bucket: sensei-attachments
+    region: us-east-1
+    backend: s3
     accessKey: ""
     secretKey: ""
   # ==================================================================
@@ -108,7 +136,9 @@ nats:
     fileStorage:
       enabled: false
   auth:
-    enabled: false  # Will use NATS token auth later
+    enabled: false  # Set to true + provide user/password for token auth
+    user: ""
+    password: ""    # Secret — stored in the Secret, not the ConfigMap
 
 # Rust Axum API (sensei-rs) configuration
 senseiApi:
@@ -145,24 +175,47 @@ senseiApi:
       failureThreshold: 3
 
 # External Secrets Operator integration
+# Maps remote vault properties onto the app Secret. The keys below mirror the
+# full credential contract defined in templates/secret.yaml.
 externalSecrets:
   enabled: false
   refreshInterval: "1h"
   secretStoreName: "vault-backend"
   secretStoreKind: "ClusterSecretStore"
   data:
-    SECRET_KEY:
-      remoteKey: "sensei/prod/secrets"
-      remoteProperty: "SECRET_KEY"
     POSTGRES_PASSWORD:
       remoteKey: "sensei/prod/db"
       remoteProperty: "password"
+    DATABASE_URL:
+      remoteKey: "sensei/prod/db"
+      remoteProperty: "url"
+    JWT_SECRET:
+      remoteKey: "sensei/prod/auth"
+      remoteProperty: "jwt_secret"
+    JWT_PREVIOUS_SIGNING_KEY:
+      remoteKey: "sensei/prod/auth"
+      remoteProperty: "jwt_previous_signing_key"
+    SENSEI_CEO_PASSWORD:
+      remoteKey: "sensei/prod/auth"
+      remoteProperty: "ceo_password"
     S3_ACCESS_KEY:
       remoteKey: "sensei/prod/storage"
       remoteProperty: "access_key"
     S3_SECRET_KEY:
       remoteKey: "sensei/prod/storage"
       remoteProperty: "secret_key"
+    SMTP_PASSWORD:
+      remoteKey: "sensei/prod/smtp"
+      remoteProperty: "password"
+    REDIS_URL:
+      remoteKey: "sensei/prod/redis"
+      remoteProperty: "url"
+    NATS_USER:
+      remoteKey: "sensei/prod/nats"
+      remoteProperty: "user"
+    NATS_PASSWORD:
+      remoteKey: "sensei/prod/nats"
+      remoteProperty: "password"
 
 # Resource limits
 resources:
@@ -229,6 +282,15 @@ healthChecks:
       periodSeconds: 15
       timeoutSeconds: 10
       failureThreshold: 3
+
+# Redis configuration (Bitnami chart)
+# The credential-bearing REDIS_URL for the app is assembled in the Secret
+# (templates/secret.yaml) from redis.auth when enabled.
+redis:
+  enabled: false
+  auth:
+    enabled: false
+    password: ""  # Secret — stored in the app Secret (REDIS_URL), not the ConfigMap
 
 # PostgreSQL configuration (Bitnami chart)
 postgresql:

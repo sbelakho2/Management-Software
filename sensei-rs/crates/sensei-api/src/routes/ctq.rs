@@ -153,7 +153,7 @@ pub async fn list_characteristics(
 ) -> Result<Json<PaginatedResponse<CtqCharacteristic>>> {
     let tenant_id = user.tenant_id;
     let store = get_char_store(&state);
-    let map = store.read().await;
+    let map = store.read(user.tenant_id).await;
 
     let mut items: Vec<CtqCharacteristic> = map
         .values()
@@ -193,7 +193,7 @@ pub async fn get_characteristic(
 ) -> Result<Json<CtqCharacteristic>> {
     let tenant_id = user.tenant_id;
     let store = get_char_store(&state);
-    let map = store.read().await;
+    let map = store.read(user.tenant_id).await;
 
     let char = map
         .get(&id)
@@ -230,7 +230,7 @@ pub async fn create_characteristic(
     };
 
     get_char_store(&state)
-        .write()
+        .write(user.tenant_id)
         .await
         .insert(char.id, char.clone());
     Ok(Json(char))
@@ -245,7 +245,7 @@ pub async fn update_characteristic(
 ) -> Result<Json<CtqCharacteristic>> {
     let tenant_id = user.tenant_id;
     let store = get_char_store(&state);
-    let mut map = store.write().await;
+    let mut map = store.write(user.tenant_id).await;
 
     let char = map
         .get_mut(&id)
@@ -295,7 +295,7 @@ pub async fn list_records(
 ) -> Result<Json<PaginatedResponse<CtqRecord>>> {
     let tenant_id = user.tenant_id;
     let store = get_record_store(&state);
-    let map = store.read().await;
+    let map = store.read(user.tenant_id).await;
 
     // Invalid date parameters are a client error, not a silent no-filter.
     let date_from = parse_date_filter("date_from", params.date_from.as_deref())?;
@@ -344,7 +344,7 @@ pub async fn create_record(
 
     // Verify the characteristic exists
     let char_store = get_char_store(&state);
-    let char_map = char_store.read().await;
+    let char_map = char_store.read(user.tenant_id).await;
     let characteristic = char_map
         .get(&characteristic_id)
         .filter(|c| c.tenant_id == tenant_id)
@@ -379,7 +379,7 @@ pub async fn create_record(
     };
 
     get_record_store(&state)
-        .write()
+        .write(user.tenant_id)
         .await
         .insert(record.id, record.clone());
 
@@ -396,7 +396,7 @@ pub async fn get_conformance_analysis(
 
     // Get the characteristic
     let char_store = get_char_store(&state);
-    let char_map = char_store.read().await;
+    let char_map = char_store.read(user.tenant_id).await;
     let characteristic = char_map
         .get(&characteristic_id)
         .filter(|c| c.tenant_id == tenant_id)
@@ -406,7 +406,7 @@ pub async fn get_conformance_analysis(
 
     // Get all records for this characteristic
     let record_store = get_record_store(&state);
-    let rec_map = record_store.read().await;
+    let rec_map = record_store.read(user.tenant_id).await;
     let records: Vec<&CtqRecord> = rec_map
         .values()
         .filter(|r| r.characteristic_id == characteristic_id && r.tenant_id == tenant_id)

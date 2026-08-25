@@ -1,5 +1,8 @@
 # Maintenance Team AI Insights Access Guide
 
+> **Status:** The maintenance mobile app features described in this guide are
+> **planned — not implemented**. The web UI is the current interface.
+
 ## Equipment Intelligence for Proactive Maintenance
 
 As a Maintenance team member, you have full access to equipment health, predictive maintenance, and reliability insights. Your access is optimized to help prevent breakdowns and maintain equipment at peak performance.

@@ -1,5 +1,11 @@
 # Project Architecture
 
+> **Status:** This document describes the legacy Python/FastAPI + Next.js
+> architecture. The platform is migrating to the Rust workspace
+> (`sensei-rs/crates/*`: Axum API, NATS JetStream workers, Leptos frontend) —
+> the sections below reflect the previous stack unless marked otherwise. PWA
+> support is **planned — not implemented**.
+
 ## Overview
 
 Starz Morocco is a modern manufacturing management system built with a microservices-inspired architecture, featuring:
@@ -63,7 +69,7 @@ See [technology-stack.md](./1.1-technology-stack.md) for detailed breakdown.
 - **State**: Zustand, React Query
 - **Forms**: React Hook Form, Zod
 - **Testing**: Jest, React Testing Library, Playwright
-- **PWA**: next-pwa
+- **PWA**: next-pwa *(planned — not implemented)*
 - **Charts**: Recharts
 
 ### Infrastructure Stack

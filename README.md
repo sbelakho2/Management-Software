@@ -2,6 +2,10 @@
 
 Enterprise manufacturing management platform grounded in Lean/TPS principles. Sensei OS unifies sales, RFQ, quoting, production, quality, and continuous improvement with advanced analytics and AI assistance.
 
+> **Status note:** Mobile app, PWA/offline, push notifications, and barcode/camera
+> capture are **planned — not yet implemented**. Do not rely on them in production
+> deployments (see [docs](./docs/) for details).
+
 ## Key Capabilities
 
 - **Sales Pipeline**: Opportunities, RFQs, quotes, and approvals
@@ -10,7 +14,7 @@ Enterprise manufacturing management platform grounded in Lean/TPS principles. Se
 - **Project Management**: Obeya room, A3 problem solving, milestones, backlog
 - **Today Screen**: Operations command center (priorities, risks, commitments, real-time pulse)
 - **AI/ML**: Multilingual on-device training, document intelligence, edge inference, coaching
-- **PWA**: Offline-ready experience for shop-floor teams
+- **PWA**: Offline-ready experience for shop-floor teams *(planned — not implemented)*
 
 **Key Technologies**:
 - Rust (Axum) for high-performance backend API and workers
@@ -32,37 +36,43 @@ Enterprise manufacturing management platform grounded in Lean/TPS principles. Se
 
 ### Prerequisites
 
-- Rust 1.80+ (via rustup)
-- Zig 0.13+ (for cross-compilation)
+- Rust (exact channel pinned in `sensei-rs/rust-toolchain.toml` — currently 1.96.0)
+- Zig (version pinned in `.github/.tool-versions` — currently 0.15.2)
 - PostgreSQL 16+ with pgvector
 - NATS server (or use Docker Compose)
 
 ### Using Docker Compose (Recommended)
 
 ```bash
-# Copy environment template
+# Copy environment template (the canonical env contract)
 cp .env.example .env
 # Edit .env with your settings
 
-# Start the full stack
-docker-compose up -d
+# Start the dev stack (db, nats, minio, api, workers, caddy)
+docker compose --profile dev up -d
 ```
+
+Profiles: `dev` (development stack), `production` (production stack, see
+[docs/deployment/DEPLOYMENT.md](docs/deployment/DEPLOYMENT.md)), `integration`
+(tri-system services). See the header of `docker-compose.yml` for details.
 
 ### Manual Setup
 
 ```bash
 # Build the Rust workspace
 cd sensei-rs
-cargo build
+cargo build --workspace --locked
 
 # Run the API server
 cargo run -p sensei-api
 
 # Run the NATS workers
-cargo run -p sensei-workers
+# NOTE: the sensei-workers binary is part of the ongoing worker overhaul —
+# once the binary target lands, run: cargo run -p sensei-workers
 ```
 
-Health endpoint: http://localhost:8080/api/v1/health
+Health endpoints (liveness/readiness): http://localhost:8080/health/live and
+http://localhost:8080/health/ready
 
 ### Frontend Development
 
@@ -94,7 +104,7 @@ sensei-rs/
 ## Docker Compose (Development)
 
 ```bash
-docker-compose up -d
+docker compose --profile dev up -d
 ```
 
 Services started:
@@ -113,13 +123,14 @@ Services started:
 - [Deployment](docs/deployment/DEPLOYMENT.md)
 - [Testing](docs/testing/e2e-testing.md)
 - [Chatbot Integration](docs/CHATBOT_INTEGRATION.md)
+- [Configuration Reference](docs/guides/configuration-reference.md)
 
 ## Testing
 
 ```bash
 # Run all Rust tests
 cd sensei-rs
-cargo test --workspace
+cargo test --workspace --locked
 
 # Run with specific crate
 cargo test -p sensei-api

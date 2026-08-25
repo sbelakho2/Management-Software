@@ -1,0 +1,4 @@
+# Tool versions — single source of truth for pinned tooling.
+# CI (`.github/workflows/*.yml`) reads these versions; keep in sync with the
+# Dockerfile (sensei-rs/Dockerfile) base images and rust-toolchain.toml.
+zig 0.15.2

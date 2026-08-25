@@ -201,7 +201,7 @@ pub async fn list_state_machines(
     Query(params): Query<ListStateMachinesParams>,
 ) -> Result<Json<PaginatedResponse<StateMachineDefinition>>> {
     let tenant_id = user.tenant_id;
-    let store = state.state_machine_definitions.read().await;
+    let store = state.state_machine_definitions.read(user.tenant_id).await;
     let mut defs: Vec<StateMachineDefinition> = store
         .values()
         .filter(|d| d.tenant_id == tenant_id)
@@ -249,7 +249,7 @@ pub async fn create_state_machine(
         updated_at: now,
     };
     validate_definition(&def)?;
-    let mut store = state.state_machine_definitions.write().await;
+    let mut store = state.state_machine_definitions.write(user.tenant_id).await;
     store.insert(def.id, def.clone());
     Ok(Json(def))
 }
@@ -261,7 +261,7 @@ pub async fn get_state_machine(
     Path(sm_id): Path<Uuid>,
 ) -> Result<Json<StateMachineDefinition>> {
     let tenant_id = user.tenant_id;
-    let store = state.state_machine_definitions.read().await;
+    let store = state.state_machine_definitions.read(user.tenant_id).await;
     let def = store
         .values()
         .find(|d| d.id == sm_id && d.tenant_id == tenant_id)
@@ -278,7 +278,7 @@ pub async fn update_state_machine(
     Json(req): Json<UpdateStateMachineRequest>,
 ) -> Result<Json<StateMachineDefinition>> {
     let tenant_id = user.tenant_id;
-    let mut store = state.state_machine_definitions.write().await;
+    let mut store = state.state_machine_definitions.write(user.tenant_id).await;
     let def = store
         .get_mut(&sm_id)
         .filter(|d| d.tenant_id == tenant_id)
@@ -316,7 +316,7 @@ pub async fn delete_state_machine(
     Path(sm_id): Path<Uuid>,
 ) -> Result<Json<()>> {
     let tenant_id = user.tenant_id;
-    let mut store = state.state_machine_definitions.write().await;
+    let mut store = state.state_machine_definitions.write(user.tenant_id).await;
     let exists = store
         .get(&sm_id)
         .filter(|d| d.tenant_id == tenant_id)
@@ -343,7 +343,7 @@ pub async fn create_instance(
 
     // Verify the definition exists
     let definition = {
-        let store = state.state_machine_definitions.read().await;
+        let store = state.state_machine_definitions.read(user.tenant_id).await;
         store
             .values()
             .find(|d| d.id == sm_id && d.tenant_id == tenant_id)
@@ -355,7 +355,7 @@ pub async fn create_instance(
 
     // An entity may only have one instance per definition.
     {
-        let store = state.state_machine_instances.read().await;
+        let store = state.state_machine_instances.read(user.tenant_id).await;
         if store.values().any(|i| {
             i.definition_id == sm_id && i.entity_id == req.entity_id && i.tenant_id == tenant_id
         }) {
@@ -389,7 +389,7 @@ pub async fn create_instance(
         updated_at: now,
     };
 
-    let mut store = state.state_machine_instances.write().await;
+    let mut store = state.state_machine_instances.write(user.tenant_id).await;
     store.insert(instance.id, instance.clone());
     Ok(Json(instance))
 }
@@ -402,7 +402,7 @@ pub async fn list_instances(
     Query(params): Query<ListInstancesParams>,
 ) -> Result<Json<PaginatedResponse<StateMachineInstance>>> {
     let tenant_id = user.tenant_id;
-    let store = state.state_machine_instances.read().await;
+    let store = state.state_machine_instances.read(user.tenant_id).await;
     let mut instances: Vec<StateMachineInstance> = store
         .values()
         .filter(|i| i.definition_id == sm_id && i.tenant_id == tenant_id)
@@ -434,7 +434,7 @@ pub async fn get_instance(
     Path(instance_id): Path<Uuid>,
 ) -> Result<Json<StateMachineInstance>> {
     let tenant_id = user.tenant_id;
-    let store = state.state_machine_instances.read().await;
+    let store = state.state_machine_instances.read(user.tenant_id).await;
     let instance = store
         .values()
         .find(|i| i.id == instance_id && i.tenant_id == tenant_id)
@@ -464,7 +464,7 @@ pub async fn transition_instance(
 ) -> Result<Json<TransitionResult>> {
     let tenant_id = user.tenant_id;
 
-    let mut store = state.state_machine_instances.write().await;
+    let mut store = state.state_machine_instances.write(user.tenant_id).await;
     let instance = store
         .get_mut(&instance_id)
         .filter(|i| i.tenant_id == tenant_id)
@@ -473,7 +473,7 @@ pub async fn transition_instance(
         })?;
 
     // Look up the definition
-    let def_store = state.state_machine_definitions.read().await;
+    let def_store = state.state_machine_definitions.read(user.tenant_id).await;
     let definition = def_store
         .values()
         .find(|d| d.id == instance.definition_id)
@@ -777,7 +777,7 @@ async fn update_linked_entity(
 
     match definition.entity_type.as_str() {
         "task" => {
-            let mut store = state.tasks.write().await;
+            let mut store = state.tasks.write(tenant_id).await;
             if let Some(t) = store.get_mut(&entity_id) {
                 if t.tenant_id == tenant_id && field == "status" {
                     if let Some(s) = value.as_str() {
@@ -790,7 +790,7 @@ async fn update_linked_entity(
             }
         }
         "obeya_board" => {
-            let mut store = state.obeya_boards.write().await;
+            let mut store = state.obeya_boards.write(tenant_id).await;
             if let Some(b) = store.get_mut(&entity_id) {
                 if b.tenant_id == tenant_id && field == "status" {
                     if let Some(s) = value.as_str() {
@@ -801,7 +801,7 @@ async fn update_linked_entity(
             }
         }
         "work_center" => {
-            let mut store = state.work_centers.write().await;
+            let mut store = state.work_centers.write(tenant_id).await;
             if let Some(wc) = store.get_mut(&entity_id) {
                 if wc.tenant_id == tenant_id && field == "status" {
                     if let Some(s) = value.as_str() {
@@ -812,7 +812,7 @@ async fn update_linked_entity(
             }
         }
         "production_cell" => {
-            let mut store = state.production_cells.write().await;
+            let mut store = state.production_cells.write(tenant_id).await;
             if let Some(c) = store.get_mut(&entity_id) {
                 if c.tenant_id == tenant_id && field == "status" {
                     if let Some(s) = value.as_str() {

@@ -129,7 +129,7 @@ pub async fn list_work_centers(
 ) -> Result<Json<PaginatedResponse<WorkCenter>>> {
     let tenant_id = user.tenant_id;
     let store = get_store(&state);
-    let map = store.read().await;
+    let map = store.read(user.tenant_id).await;
 
     let mut items: Vec<WorkCenter> = map
         .values()
@@ -174,7 +174,7 @@ pub async fn get_work_center(
 ) -> Result<Json<WorkCenter>> {
     let tenant_id = user.tenant_id;
     let store = get_store(&state);
-    let map = store.read().await;
+    let map = store.read(user.tenant_id).await;
 
     let wc = map
         .get(&id)
@@ -195,7 +195,7 @@ pub async fn create_work_center(
     let tenant_id = user.tenant_id;
     let now = Utc::now();
     let store = get_store(&state);
-    let mut map = store.write().await;
+    let mut map = store.write(user.tenant_id).await;
     let wc = WorkCenter {
         id: Uuid::new_v4(),
         tenant_id,
@@ -230,7 +230,7 @@ pub async fn update_work_center(
 ) -> Result<Json<WorkCenter>> {
     let tenant_id = user.tenant_id;
     let store = get_store(&state);
-    let mut map = store.write().await;
+    let mut map = store.write(user.tenant_id).await;
 
     let wc = map
         .get_mut(&id)
@@ -288,7 +288,7 @@ pub async fn deactivate_work_center(
 ) -> Result<Json<WorkCenter>> {
     let tenant_id = user.tenant_id;
     let store = get_store(&state);
-    let mut map = store.write().await;
+    let mut map = store.write(user.tenant_id).await;
 
     let wc = map
         .get_mut(&id)
@@ -308,7 +308,7 @@ pub async fn get_work_center_capacity(
 ) -> Result<Json<WorkCenterCapacity>> {
     let tenant_id = user.tenant_id;
     let store = get_store(&state);
-    let map = store.read().await;
+    let map = store.read(user.tenant_id).await;
 
     let wc = map
         .get(&id)
@@ -342,7 +342,7 @@ pub async fn get_efficiency_report(
 ) -> Result<Json<Vec<EfficiencyReport>>> {
     let tenant_id = user.tenant_id;
     let store = get_store(&state);
-    let map = store.read().await;
+    let map = store.read(user.tenant_id).await;
 
     let report: Vec<EfficiencyReport> = map
         .values()

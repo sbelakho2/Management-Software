@@ -1,12 +1,33 @@
 //! Core task types, the [`TaskConsumer`] trait, and the [`TaskDispatcher`]
 //! that manages pull-based JetStream consumers.
+//!
+//! # Delivery reliability model
+//!
+//! * **Transport retries are JetStream's job.** Each pull consumer is
+//!   configured with `max_deliver` + `backoff`, so a message that is not
+//!   acked is redelivered by the server with escalating delays. There is no
+//!   application-level retry counter; [`TaskMetadata::attempts`] is derived
+//!   from the server's delivery count and kept for observability only.
+//! * **Application-level classification.** Workers return a
+//!   [`TaskOutcome`]: `Completed` → ack; `RetryLater(delay)` → NAK with
+//!   delay (JetStream redelivers within `max_deliver`); `FailedPermanent`
+//!   → DLQ.
+//! * **DLQ-before-ack.** The original message is **never** acked until the
+//!   DLQ replacement has received its JetStream publish acknowledgement. If
+//!   the DLQ publish fails the original is NAKed (or left unacked) so it is
+//!   redelivered.
+//! * **Malformed payloads are not silently discarded.** They are published
+//!   to the DLQ subject first (ack only on success), so operators can see
+//!   why a task died.
 
 use crate::error::{Result, WorkerError};
+use crate::nats::{run_supervised, Readiness, SubscriptionSpec};
 use async_nats::jetstream::consumer::pull;
 use async_nats::jetstream::Context;
+use async_nats::jetstream::{AckKind, Message};
 use async_trait::async_trait;
-use futures::StreamExt;
 use serde::{Deserialize, Serialize};
+use sqlx::PgPool;
 use std::sync::Arc;
 use std::time::Duration;
 use tracing::{error, info, warn};
@@ -23,10 +44,10 @@ pub struct TaskMetadata {
     pub correlation_id: Option<Uuid>,
     /// Timestamp when the task was created.
     pub created_at: chrono::DateTime<chrono::Utc>,
-    /// Maximum number of retries before the task is considered failed.
-    pub max_retries: u32,
-    /// Current retry count (0 on first attempt).
-    pub retry_count: u32,
+    /// Number of delivery attempts so far (observability only — the retry
+    /// policy lives in the JetStream consumer's `max_deliver`/`backoff`).
+    #[serde(default, alias = "retry_count")]
+    pub attempts: u32,
 }
 
 impl TaskMetadata {
@@ -37,14 +58,14 @@ impl TaskMetadata {
             task_type,
             correlation_id: None,
             created_at: chrono::Utc::now(),
-            max_retries: 3,
-            retry_count: 0,
+            attempts: 0,
         }
     }
 
-    /// Increment the retry count and return true if retries remain.
-    pub fn can_retry(&self) -> bool {
-        self.retry_count < self.max_retries
+    /// Overwrite the attempts counter from the server-reported delivery
+    /// count (first delivery = 1, so attempts = delivered − 1).
+    pub fn record_delivery(&mut self, delivered: i64) {
+        self.attempts = delivered.saturating_sub(1).max(0) as u32;
     }
 }
 
@@ -121,6 +142,64 @@ impl TaskEnvelope {
 /// permanently. A worker consuming this subject can surface the failures.
 pub const DLQ_SUBJECT: &str = "sensei.tasks.dead";
 
+// ── Application-level outcome classification ────────────────────────────────
+
+/// Outcome of processing one task, classified by the worker. The dispatcher
+/// maps each variant onto a JetStream acknowledgement:
+///
+/// | Outcome                    | Dispatcher action                              |
+/// |----------------------------|------------------------------------------------|
+/// | [`Completed`]              | ack                                            |
+/// | [`RetryLater`]             | NAK with delay (JetStream redelivers, bounded  |
+/// |                            | by the consumer's `max_deliver`)               |
+/// | [`FailedPermanent`]        | publish to [`DLQ_SUBJECT`], then ack the       |
+/// |                            | original **only after** the DLQ publish is     |
+/// |                            | acknowledged by the server                     |
+///
+/// [`Completed`]: TaskOutcome::Completed
+/// [`RetryLater`]: TaskOutcome::RetryLater
+/// [`FailedPermanent`]: TaskOutcome::FailedPermanent
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TaskOutcome {
+    /// The task finished successfully; ack the message.
+    Completed,
+    /// Transient failure: retry later. The optional [`Duration`] is the
+    /// requested delay before the next delivery (JetStream NAK-with-delay);
+    /// `None` falls back to the consumer's backoff schedule.
+    RetryLater(Option<Duration>),
+    /// Permanent failure: dead-letter the message.
+    FailedPermanent,
+}
+
+impl TaskOutcome {
+    /// Shorthand for a permanent failure.
+    pub fn failed() -> Self {
+        Self::FailedPermanent
+    }
+
+    /// Shorthand for a retry with a specific delay.
+    pub fn retry_in(delay: Duration) -> Self {
+        Self::RetryLater(Some(delay))
+    }
+}
+
+/// Adapter from the legacy `Result<()>` worker convention to [`TaskOutcome`]:
+///
+/// * `Ok(())` → [`Completed`](TaskOutcome::Completed)
+/// * [`WorkerError::RetryLater`] → [`RetryLater`](TaskOutcome::RetryLater)
+///   with `None` (dispatcher falls back to the consumer backoff schedule)
+/// * any other error → returned unchanged (dispatcher dead-letters)
+pub fn outcome_from_result(result: Result<()>) -> Result<TaskOutcome> {
+    match result {
+        Ok(()) => Ok(TaskOutcome::Completed),
+        Err(WorkerError::RetryLater(msg)) => {
+            warn!(error = %msg, "Task failed transiently — scheduling retry");
+            Ok(TaskOutcome::RetryLater(None))
+        }
+        Err(e) => Err(e),
+    }
+}
+
 /// A consumer that processes tasks of a specific type.
 ///
 /// Implementations must be [`Send`] + [`Sync`] so they can be shared across
@@ -135,17 +214,94 @@ pub trait TaskConsumer: Send + Sync {
 
     /// Process a single task.
     ///
-    /// Return `Ok(())` on success. Return [`WorkerError::RetryLater`] to signal
-    /// a transient failure that should be retried. All other errors are treated
-    /// as permanent failures.
-    async fn process(&self, payload: &[u8], metadata: &TaskMetadata) -> Result<()>;
+    /// Return `Ok(TaskOutcome::Completed)` on success,
+    /// `Ok(TaskOutcome::RetryLater(Some(delay)))` for a transient failure
+    /// that should be retried, and `Ok(TaskOutcome::FailedPermanent)` or
+    /// `Err(...)` for permanent failures that must be dead-lettered.
+    async fn process(&self, payload: &[u8], metadata: &TaskMetadata) -> Result<TaskOutcome>;
 }
+
+// ── Idempotency (migration 053) ──────────────────────────────────────────────
+
+/// Claims `task_id` in the `processed_tasks` table before a worker executes
+/// a side effect, so a redelivered message can never run the side effect
+/// twice.
+///
+/// Without a database pool (single-process dev mode) every claim succeeds —
+/// there is no cross-process duplication to guard against.
+pub struct IdempotencyGuard {
+    pool: Option<Arc<PgPool>>,
+    worker: &'static str,
+}
+
+impl IdempotencyGuard {
+    /// Create a guard for the given worker type.
+    pub fn new(pool: Option<Arc<PgPool>>, worker: &'static str) -> Self {
+        Self { pool, worker }
+    }
+
+    /// Try to claim `task_id` for this worker.
+    ///
+    /// * `Ok(true)` — the claim was recorded; the caller should proceed.
+    /// * `Ok(false)` — the task was already processed; the caller must skip
+    ///   the side effect and report the task as completed (ack).
+    /// * `Err(_)` — the claim could not be verified (database unavailable);
+    ///   the caller must **not** execute the side effect and should retry
+    ///   the task later.
+    pub async fn try_claim(&self, task_id: &str) -> Result<bool> {
+        let Some(pool) = &self.pool else {
+            // Dev mode (no DB): single-process assumption documented in
+            // lib.rs — no deduplication needed.
+            return Ok(true);
+        };
+
+        let result = sqlx::query(
+            "INSERT INTO processed_tasks (task_id, worker) \
+             VALUES ($1, $2) ON CONFLICT (task_id) DO NOTHING",
+        )
+        .bind(task_id)
+        .bind(self.worker)
+        .execute(pool.as_ref())
+        .await
+        .map_err(|e| {
+            WorkerError::Processing(format!(
+                "idempotency claim for task '{task_id}' failed: {e}"
+            ))
+        })?;
+
+        Ok(result.rows_affected() == 1)
+    }
+}
+
+// ── Dispatcher ───────────────────────────────────────────────────────────────
+
+/// Default maximum deliveries per message (transport retry budget).
+pub const DEFAULT_MAX_DELIVER: i64 = 8;
+/// Default ack-wait for the pull consumer.
+pub const DEFAULT_ACK_WAIT: Duration = Duration::from_secs(60);
+/// Default max pending unacked messages per consumer.
+pub const DEFAULT_MAX_ACK_PENDING: i64 = 1024;
+/// JetStream redelivery backoff schedule applied after failed deliveries
+/// (must have `DEFAULT_MAX_DELIVER - 1` entries).
+pub const DEFAULT_TRANSPORT_BACKOFF: [Duration; 7] = [
+    Duration::from_secs(5),
+    Duration::from_secs(10),
+    Duration::from_secs(30),
+    Duration::from_secs(60),
+    Duration::from_secs(120),
+    Duration::from_secs(300),
+    Duration::from_secs(600),
+];
+/// Fallback delay for `RetryLater(None)`.
+pub const DEFAULT_RETRY_DELAY: Duration = Duration::from_secs(30);
 
 /// Manages a collection of [`TaskConsumer`] instances and their NATS JetStream
 /// pull consumers.
 ///
 /// Consumers are stored as [`Arc`] so they can be shared across multiple
-/// tokio tasks spawned by [`start`](Self::start).
+/// tokio tasks spawned by [`start`](Self::start). Each consumer runs inside
+/// the supervised re-subscribe loop from [`nats::run_supervised`], so a
+/// stream failure no longer terminates the consumer.
 pub struct TaskDispatcher {
     /// The NATS JetStream context used to create consumers.
     js: Context,
@@ -153,6 +309,8 @@ pub struct TaskDispatcher {
     consumers: Vec<Arc<dyn TaskConsumer>>,
     /// Namespace for the stream (defaults to `"sensei"`).
     stream_name: String,
+    /// Per-consumer readiness signals for health surfaces.
+    readiness: std::sync::Mutex<Vec<(String, Readiness)>>,
 }
 
 impl TaskDispatcher {
@@ -162,6 +320,7 @@ impl TaskDispatcher {
             js,
             consumers: Vec::new(),
             stream_name: "sensei".to_string(),
+            readiness: std::sync::Mutex::new(Vec::new()),
         }
     }
 
@@ -205,162 +364,56 @@ impl TaskDispatcher {
     ///
     /// For each consumer this will:
     /// 1. Ensure the JetStream stream exists.
-    /// 2. Create (or reuse) a pull consumer with the consumer's group name.
-    /// 3. Spawn a tokio task that continuously polls for messages and dispatches
-    ///    them to [`TaskConsumer::process`].
+    /// 2. Create (or reuse) a pull consumer with the consumer's group name,
+    ///    configured with `max_deliver` + `backoff` (JetStream transport
+    ///    retry) and an `ack_wait`.
+    /// 3. Spawn a tokio task running the supervised receive loop from
+    ///    [`nats::run_supervised`] — the consumer re-subscribes with
+    ///    exponential backoff (1s → 60s cap) if the stream fails, instead of
+    ///    terminating.
+    ///
+    /// Readiness per consumer can be polled via [`consumer_readiness`]
+    /// (Self::consumer_readiness).
     pub async fn start(&self) -> Result<Vec<tokio::task::JoinHandle<()>>> {
-        let stream = self.ensure_stream().await?;
+        // Fail fast if JetStream is unreachable at startup.
+        self.ensure_stream().await?;
         let mut handles = Vec::new();
 
         for consumer in &self.consumers {
             let subject = consumer.subject();
             let group = consumer.consumer_group();
-            let pull_consumer = stream
-                .get_or_create_consumer(
-                    group,
-                    pull::Config {
-                        filter_subject: subject.to_string(),
-                        max_deliver: 5,
-                        ack_wait: std::time::Duration::from_secs(60),
-                        ..Default::default()
-                    },
-                )
-                .await
-                .map_err(|e| WorkerError::JetStream(e.to_string()))?;
+            let label = format!("{}/{}", group, subject);
 
-            let mut messages = pull_consumer
-                .messages()
-                .await
-                .map_err(|e| WorkerError::JetStream(e.to_string()))?;
+            let (readiness, _receiver) = Readiness::new();
+            self.readiness
+                .lock()
+                .expect("dispatcher readiness mutex poisoned")
+                .push((label.clone(), readiness.clone()));
 
-            let consumer_name = format!("{}/{}", group, subject);
-            info!(consumer = %consumer_name, "Starting pull consumer");
+            let spec = SubscriptionSpec {
+                stream_name: self.stream_name.clone(),
+                subject: subject.to_string(),
+                consumer_name: group.to_string(),
+                config: pull::Config {
+                    filter_subject: subject.to_string(),
+                    max_deliver: DEFAULT_MAX_DELIVER,
+                    ack_wait: DEFAULT_ACK_WAIT,
+                    max_ack_pending: DEFAULT_MAX_ACK_PENDING,
+                    backoff: DEFAULT_TRANSPORT_BACKOFF.to_vec(),
+                    ..Default::default()
+                },
+            };
 
-            // Clone the Arc so the spawned task gets an owned reference.
             let consumer_arc = Arc::clone(consumer);
             let js = self.js.clone();
-
             let handle = tokio::spawn(async move {
-                loop {
-                    tokio::select! {
-                        msg = messages.next() => {
-                            match msg {
-                                Some(Ok(msg)) => {
-                                    // Attempt deserialisation
-                                    let envelope = match TaskEnvelope::from_bytes(&msg.payload) {
-                                        Ok(e) => e,
-                                        Err(e) => {
-                                            error!(consumer = %consumer_name, error = %e,
-                                                "Failed to deserialize task envelope — acking and skipping");
-                                            let _ = msg.ack().await;
-                                            continue;
-                                        }
-                                    };
-
-                                    // Re-serialise the payload for the consumer.
-                                    let payload_bytes = match serde_json::to_vec(&envelope.payload) {
-                                        Ok(bytes) => bytes,
-                                        Err(e) => {
-                                            error!(consumer = %consumer_name, error = %e,
-                                                task_id = %envelope.metadata.task_id,
-                                                "Failed to serialize task payload — acking and skipping");
-                                            let _ = msg.ack().await;
-                                            continue;
-                                        }
-                                    };
-
-                                    // Dispatch to consumer
-                                    match consumer_arc.process(&payload_bytes, &envelope.metadata).await {
-                                        Ok(()) => {
-                                            info!(
-                                                consumer = %consumer_name,
-                                                task_id = %envelope.metadata.task_id,
-                                                "Task completed successfully"
-                                            );
-                                            if let Err(e) = msg.ack().await {
-                                                warn!(error = %e, "Failed to ack message");
-                                            }
-                                        }
-                                        Err(WorkerError::RetryLater(ref err_msg)) if envelope.metadata.can_retry() => {
-                                            // Explicit retry with a real retry counter: publish a
-                                            // fresh envelope with retry_count + 1, then ack the
-                                            // original so it is not redelivered.
-                                            let mut retried = envelope.clone();
-                                            retried.metadata.retry_count += 1;
-                                            match retried.to_bytes() {
-                                                Ok(body) => {
-                                                    if let Err(e) = js.publish(subject, body.into()).await {
-                                                        error!(consumer = %consumer_name, error = %e,
-                                                            task_id = %envelope.metadata.task_id,
-                                                            "Failed to republish task for retry — acking original");
-                                                        let _ = msg.ack().await;
-                                                    } else {
-                                                        warn!(
-                                                            consumer = %consumer_name,
-                                                            task_id = %envelope.metadata.task_id,
-                                                            retry = retried.metadata.retry_count,
-                                                            error = %err_msg,
-                                                            "Task failed transiently — scheduled retry"
-                                                        );
-                                                        let _ = msg.ack().await;
-                                                    }
-                                                }
-                                                Err(e) => {
-                                                    error!(consumer = %consumer_name, error = %e,
-                                                        task_id = %envelope.metadata.task_id,
-                                                        "Failed to serialize retry envelope — acking original");
-                                                    let _ = msg.ack().await;
-                                                }
-                                            }
-                                        }
-                                        Err(WorkerError::RetryLater(ref err_msg)) => {
-                                            // Retry budget exhausted → dead-letter.
-                                            error!(
-                                                consumer = %consumer_name,
-                                                task_id = %envelope.metadata.task_id,
-                                                retries = envelope.metadata.retry_count,
-                                                error = %err_msg,
-                                                "Task exceeded max retries — dead-lettering"
-                                            );
-                                            let _ = js.publish(DLQ_SUBJECT, msg.payload.clone()).await;
-                                            if let Err(ack_err) = msg.ack().await {
-                                                warn!(error = %ack_err, "Failed to ack message after retry exhaustion");
-                                            }
-                                        }
-                                        Err(e) => {
-                                            error!(
-                                                consumer = %consumer_name,
-                                                task_id = %envelope.metadata.task_id,
-                                                error = %e,
-                                                "Task failed permanently — dead-lettering"
-                                            );
-                                            let _ = js.publish(DLQ_SUBJECT, msg.payload.clone()).await;
-                                            // Ack so it doesn't stay in the stream
-                                            if let Err(ack_err) = msg.ack().await {
-                                                warn!(error = %ack_err, "Failed to ack message after permanent failure");
-                                            }
-                                        }
-                                    }
-                                }
-                                Some(Err(e)) => {
-                                    warn!(consumer = %consumer_name, error = %e,
-                                        "Error receiving message from JetStream");
-                                    tokio::time::sleep(Duration::from_secs(1)).await;
-                                }
-                                None => {
-                                    info!(consumer = %consumer_name, "Message stream ended");
-                                    break;
-                                }
-                            }
-                        }
-                        // Allow graceful shutdown via cancellation
-                        _ = tokio::signal::ctrl_c() => {
-                            info!(consumer = %consumer_name, "Received shutdown signal");
-                            break;
-                        }
-                    }
-                }
-                info!(consumer = %consumer_name, "Consumer stopped");
+                run_supervised(js.clone(), spec, readiness, move |msg| {
+                    let consumer_arc = Arc::clone(&consumer_arc);
+                    let js = js.clone();
+                    let label = label.clone();
+                    async move { dispatch_message(&js, &consumer_arc, &label, msg).await }
+                })
+                .await;
             });
 
             handles.push(handle);
@@ -369,8 +422,171 @@ impl TaskDispatcher {
         Ok(handles)
     }
 
+    /// Snapshot of consumer readiness: `(consumer label, subscribed)`.
+    ///
+    /// The binary can surface this in its health endpoint; see also
+    /// [`nats::report_worker_status`] for DB-backed reporting.
+    pub fn consumer_readiness(&self) -> Vec<(String, bool)> {
+        self.readiness
+            .lock()
+            .expect("dispatcher readiness mutex poisoned")
+            .iter()
+            .map(|(name, r)| (name.clone(), r.is_subscribed()))
+            .collect()
+    }
+
     /// Return the number of registered consumers.
     pub fn consumer_count(&self) -> usize {
         self.consumers.len()
+    }
+}
+
+// ── Message dispatch ─────────────────────────────────────────────────────────
+
+/// Process one JetStream message and apply the ack/NAK/DLQ policy.
+///
+/// Guarantees:
+/// * The original message is acked **only after** the DLQ replacement has
+///   been acknowledged by the server.
+/// * On DLQ publish failure the original is NAKed (or left unacked) so it is
+///   redelivered.
+async fn dispatch_message(
+    js: &Context,
+    consumer: &Arc<dyn TaskConsumer>,
+    consumer_name: &str,
+    msg: Message,
+) {
+    let envelope = match TaskEnvelope::from_bytes(&msg.payload) {
+        Ok(envelope) => envelope,
+        Err(e) => {
+            error!(consumer = %consumer_name, error = %e,
+                "Failed to deserialize task envelope — dead-lettering instead of silently discarding");
+            dead_letter(
+                js,
+                &msg,
+                None,
+                Some(format!("malformed task envelope: {e}")),
+            )
+            .await;
+            return;
+        }
+    };
+
+    let payload_bytes = match serde_json::to_vec(&envelope.payload) {
+        Ok(bytes) => bytes,
+        Err(e) => {
+            error!(consumer = %consumer_name, error = %e,
+                task_id = %envelope.metadata.task_id,
+                "Failed to serialize task payload — dead-lettering");
+            dead_letter(
+                js,
+                &msg,
+                Some(&envelope.metadata),
+                Some(format!("payload re-serialization failed: {e}")),
+            )
+            .await;
+            return;
+        }
+    };
+
+    let mut metadata = envelope.metadata;
+    if let Ok(info) = msg.info() {
+        metadata.record_delivery(info.delivered);
+    }
+
+    match consumer.process(&payload_bytes, &metadata).await {
+        Ok(TaskOutcome::Completed) => {
+            info!(
+                consumer = %consumer_name,
+                task_id = %metadata.task_id,
+                attempts = metadata.attempts,
+                "Task completed successfully"
+            );
+            if let Err(e) = msg.ack().await {
+                warn!(error = %e, "Failed to ack message after completion");
+            }
+        }
+        Ok(TaskOutcome::RetryLater(delay)) => {
+            let delay = delay.unwrap_or(DEFAULT_RETRY_DELAY);
+            warn!(
+                consumer = %consumer_name,
+                task_id = %metadata.task_id,
+                attempts = metadata.attempts,
+                delay_ms = delay.as_millis(),
+                "Task failed transiently — NAK with delay (JetStream will redeliver)"
+            );
+            // JetStream NAK-with-delay: the server redelivers after `delay`
+            // (bounded by the consumer's max_deliver budget).
+            if let Err(e) = msg.ack_with(AckKind::Nak(Some(delay))).await {
+                warn!(error = %e, "Failed to NAK message with delay — leaving unacked");
+            }
+        }
+        Ok(TaskOutcome::FailedPermanent) => {
+            error!(
+                consumer = %consumer_name,
+                task_id = %metadata.task_id,
+                attempts = metadata.attempts,
+                "Task failed permanently — dead-lettering"
+            );
+            dead_letter(js, &msg, Some(&metadata), None).await;
+        }
+        Err(e) => {
+            error!(
+                consumer = %consumer_name,
+                task_id = %metadata.task_id,
+                attempts = metadata.attempts,
+                error = %e,
+                "Task failed permanently — dead-lettering"
+            );
+            dead_letter(js, &msg, Some(&metadata), Some(e.to_string())).await;
+        }
+    }
+}
+
+/// Publish the raw message to the DLQ subject and only then ack the original.
+///
+/// The DLQ message carries the original payload plus headers with the task
+/// id, task type and (when known) the failure reason. If the DLQ publish is
+/// not acknowledged by the server the original is NAKed so JetStream
+/// redelivers it later — it is never dropped.
+async fn dead_letter(
+    js: &Context,
+    msg: &Message,
+    metadata: Option<&TaskMetadata>,
+    error: Option<String>,
+) {
+    let mut headers = async_nats::HeaderMap::new();
+    if let Some(md) = metadata {
+        headers.insert("sensei-task-id", md.task_id.to_string());
+        headers.insert("sensei-task-type", format!("{:?}", md.task_type));
+    }
+    if let Some(err) = error {
+        headers.insert("sensei-task-error", err);
+    }
+
+    match js
+        .publish_with_headers(DLQ_SUBJECT, headers, msg.payload.clone())
+        .await
+    {
+        Ok(_ack) => {
+            info!(
+                dlq_subject = DLQ_SUBJECT,
+                task_id = metadata.map(|m| m.task_id.to_string()).unwrap_or_default(),
+                "DLQ publish acknowledged — acking original message"
+            );
+            if let Err(e) = msg.ack().await {
+                warn!(error = %e, "Failed to ack original after DLQ publish");
+            }
+        }
+        Err(e) => {
+            error!(
+                dlq_subject = DLQ_SUBJECT,
+                error = %e,
+                "DLQ publish failed — NAKing original so it is redelivered"
+            );
+            if let Err(ack_err) = msg.ack_with(AckKind::Nak(None)).await {
+                warn!(error = %ack_err, "Failed to NAK original after DLQ publish failure");
+            }
+        }
     }
 }

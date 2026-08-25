@@ -55,6 +55,15 @@ pub fn App() -> impl IntoView {
     let app_state = AppState::new();
     provide_context(app_state.clone());
 
+    // Resolve the initial auth state (Loading -> Anonymous, or a refresh
+    // attempt when tokens survived an SSR handoff).
+    leptos::task::spawn_local({
+        let state = app_state.clone();
+        async move {
+            state.resolve_initial_auth().await;
+        }
+    });
+
     // Provide reactive UI store.
     let _ui_store = provide_ui_store();
 

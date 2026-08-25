@@ -83,7 +83,7 @@ pub async fn list_production_cells(
     Query(params): Query<ListProductionCellsParams>,
 ) -> Result<Json<PaginatedResponse<ProductionCell>>> {
     let tenant_id = user.tenant_id;
-    let store = state.production_cells.read().await;
+    let store = state.production_cells.read(user.tenant_id).await;
     let mut cells: Vec<ProductionCell> = store
         .values()
         .filter(|c| c.tenant_id == tenant_id)
@@ -133,7 +133,7 @@ pub async fn create_production_cell(
         created_at: now,
         updated_at: now,
     };
-    let mut store = state.production_cells.write().await;
+    let mut store = state.production_cells.write(user.tenant_id).await;
     store.insert(cell.id, cell.clone());
     Ok(Json(cell))
 }
@@ -145,7 +145,7 @@ pub async fn get_production_cell(
     Path(id): Path<Uuid>,
 ) -> Result<Json<ProductionCell>> {
     let tenant_id = user.tenant_id;
-    let store = state.production_cells.read().await;
+    let store = state.production_cells.read(user.tenant_id).await;
     let cell = store
         .values()
         .find(|c| c.id == id && c.tenant_id == tenant_id)
@@ -162,7 +162,7 @@ pub async fn update_production_cell(
     Json(req): Json<UpdateProductionCellRequest>,
 ) -> Result<Json<ProductionCell>> {
     let tenant_id = user.tenant_id;
-    let mut store = state.production_cells.write().await;
+    let mut store = state.production_cells.write(user.tenant_id).await;
     let cell = store
         .get_mut(&id)
         .filter(|c| c.tenant_id == tenant_id)
@@ -206,7 +206,7 @@ pub async fn get_cell_utilization(
     Path(id): Path<Uuid>,
 ) -> Result<Json<CellUtilizationMetrics>> {
     let tenant_id = user.tenant_id;
-    let store = state.production_cells.read().await;
+    let store = state.production_cells.read(user.tenant_id).await;
     let cell = store
         .values()
         .find(|c| c.id == id && c.tenant_id == tenant_id)

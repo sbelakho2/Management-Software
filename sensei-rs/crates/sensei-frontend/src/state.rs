@@ -4,41 +4,75 @@
 //! API client configuration, and auth methods shared across all pages.
 //!
 //! # Security
-//! Auth tokens are stored **only in reactive memory** (RwSignal) and are
-//! never persisted to localStorage. This eliminates the XSS vector that
-//! would otherwise expose credentials to malicious scripts. On page reload,
-//! the user must re-authenticate. httpOnly cookie support should be added
-//! on the backend for a fully seamless experience.
+//! Auth tokens are stored **only in memory** (inside the shared
+//! [`ApiClient`], plus the `tokens` signal) and are never persisted to
+//! `localStorage`/`sessionStorage`. This eliminates the XSS vector that
+//! would otherwise expose credentials to malicious scripts. On page reload
+//! the user must re-authenticate (or rely on the backend's HttpOnly refresh
+//! cookie once the API agent lands the cookie contract).
+
+use std::sync::Arc;
 
 use crate::api::auth;
-use crate::api::client::{ApiClient, ApiError};
+use crate::api::client::{ApiClient, ApiError, AuthTokens};
 use leptos::prelude::*;
 use serde::{Deserialize, Serialize};
 
-/// Authentication token bundle held in reactive memory only.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AuthTokens {
-    pub access_token: String,
-    pub refresh_token: String,
-    pub token_type: String,
-    pub expires_in: u64,
+/// Lifecycle state of the application's authentication.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum AuthState {
+    /// Authentication status is being resolved (initial load / refresh).
+    Loading,
+    /// An authenticated session is active, with the user profile loaded.
+    Authenticated(UserProfile),
+    /// No session — the user must log in.
+    Anonymous,
 }
 
-/// Minimal user profile derived from JWT claims or a `/me` endpoint.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// User profile as returned by `GET /api/v1/auth/me`.
+///
+/// Matches the backend `UserProfileResponse` exactly; optional fields carry
+/// `#[serde(default)]` so a minimal profile (id/email) still deserialises.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct UserProfile {
     pub id: String,
     pub email: String,
+    #[serde(default)]
     pub name: String,
-    pub tenant_id: String,
+    #[serde(default)]
     pub roles: Vec<String>,
+    #[serde(default)]
+    pub is_active: bool,
+}
+
+impl UserProfile {
+    /// Name shown in the status bar. Never falls back to a hard-coded
+    /// "Operator": when the profile is incomplete, the email (or an explicit
+    /// "UNKNOWN OPERATOR" marker) is shown instead.
+    pub fn display_name(&self) -> String {
+        if !self.name.is_empty() {
+            self.name.clone()
+        } else if !self.email.is_empty() {
+            self.email.clone()
+        } else {
+            "UNKNOWN OPERATOR".to_string()
+        }
+    }
+}
+
+/// Outcome of a successful login.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LoginOutcome {
+    /// `true` when the session was established but the `/auth/me` profile
+    /// fetch failed. The caller should surface a warning and offer a retry.
+    pub profile_fetch_failed: bool,
 }
 
 /// Top-level app state held in a reactive context.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct AppState {
-    /// Whether the user is authenticated.
-    pub is_authenticated: RwSignal<bool>,
+    /// Current authentication state (drives the route guards).
+    pub auth_state: RwSignal<AuthState>,
     /// Stored auth tokens (in-memory only — never persisted).
     pub tokens: RwSignal<Option<AuthTokens>>,
     /// Cached user profile.
@@ -47,6 +81,12 @@ pub struct AppState {
     pub api_base: RwSignal<String>,
     /// Derived memo of user roles from profile.
     pub user_roles: Memo<Vec<String>>,
+    /// `true` when the last `/auth/me` fetch after login failed (warning +
+    /// retry UI).
+    pub profile_fetch_failed: RwSignal<bool>,
+    /// The single shared API client. All clones share connection pool,
+    /// tokens, and the single-flight refresh gate.
+    client: ApiClient,
 }
 
 impl AppState {
@@ -55,7 +95,10 @@ impl AppState {
         let api_base = std::option_env!("SENSEI_API_BASE")
             .unwrap_or("http://localhost:3000")
             .to_string();
+        let api_base_signal = RwSignal::new(api_base.clone());
 
+        let auth_state = RwSignal::new(AuthState::Loading);
+        let tokens = RwSignal::new(None);
         let user = RwSignal::new(None);
         let user_roles = Memo::new(move |_| {
             user.get()
@@ -63,81 +106,154 @@ impl AppState {
                 .unwrap_or_default()
         });
 
+        // One shared client for the whole application.
+        let client = ApiClient::new(&api_base);
+
+        // Wire the client's refresh/session-expiry hooks back into reactive
+        // state. The hooks capture only signals (Arc-backed), never
+        // `AppState` itself, so no reference cycles are created.
+        let tokens_hook = tokens;
+        let auth_hook = auth_state;
+        let user_hook = user;
+        client.set_auth_hooks(
+            Some(Arc::new(move |updated: AuthTokens| {
+                tokens_hook.set(Some(updated));
+            })),
+            Some(Arc::new(move || {
+                user_hook.set(None);
+                auth_hook.set(AuthState::Anonymous);
+            })),
+        );
+
         Self {
-            is_authenticated: RwSignal::new(false),
-            tokens: RwSignal::new(None),
+            auth_state,
+            tokens,
             user,
-            api_base: RwSignal::new(api_base),
+            api_base: api_base_signal,
             user_roles,
+            profile_fetch_failed: RwSignal::new(false),
+            client,
         }
     }
 
-    /// Clear all auth state (logout).
-    pub fn clear_tokens(&self) {
-        self.tokens.set(None);
-        self.user.set(None);
-        self.is_authenticated.set(false);
-    }
-
-    /// Build an `ApiClient` configured with the current auth token.
+    /// The shared API client. Clones share the same connection pool, bearer
+    /// token, refresh token, and single-flight refresh gate, so any clone is
+    /// effectively the same instance.
     pub fn api_client(&self) -> ApiClient {
-        let base = self.api_base.get();
-        let mut client = ApiClient::new(&base);
-        if let Some(ref tokens) = self.tokens.get() {
-            client.set_token(&tokens.access_token);
+        self.client.clone()
+    }
+
+    /// Resolve the initial authentication state.
+    ///
+    /// Tokens are in-memory only and cannot survive a reload, so on a fresh
+    /// page load the state transitions `Loading -> Anonymous`. If tokens are
+    /// somehow present (e.g. SSR handoff), a single-flight refresh is
+    /// attempted first.
+    pub async fn resolve_initial_auth(&self) {
+        if !matches!(self.auth_state.get(), AuthState::Loading) {
+            return;
         }
-        client
+        if self.tokens.get().is_some() {
+            if self.refresh_token().await.is_err() {
+                self.clear_tokens();
+            }
+        } else {
+            self.auth_state.set(AuthState::Anonymous);
+        }
     }
 
     /// Authenticate with email/password via the API.
     ///
-    /// On success, stores tokens and marks the user as authenticated.
-    /// The caller is responsible for fetching the user profile separately
-    /// via [`AppState::set_user_profile`] or [`AppState::fetch_profile`].
-    pub async fn login(
-        &self,
-        email: &str,
-        password: &str,
-    ) -> Result<auth::LoginResponse, ApiError> {
-        let client = self.api_client();
-        let resp = auth::login(&client, email, password).await?;
-        let tokens = AuthTokens {
+    /// On success the tokens are stored in memory **and the user profile is
+    /// fetched from `/api/v1/auth/me` before returning** so the UI never has
+    /// to fall back to a hard-coded name. If the profile fetch fails the
+    /// session is still established (a server-provided provisional identity
+    /// from the login response is used) and [`LoginOutcome::profile_fetch_failed`]
+    /// is set for the caller to surface a warning + retry.
+    pub async fn login(&self, email: &str, password: &str) -> Result<LoginOutcome, ApiError> {
+        let resp = auth::login(&self.client, email, password).await?;
+        self.apply_tokens(AuthTokens {
             access_token: resp.access_token.clone(),
             refresh_token: resp.refresh_token.clone(),
             token_type: resp.token_type.clone(),
             expires_in: resp.expires_in,
+        });
+
+        // Provisional identity derived from the server's login response —
+        // only used if /auth/me is unavailable.
+        let provisional = UserProfile {
+            id: resp.user_id.clone(),
+            email: email.to_string(),
+            name: String::new(),
+            roles: resp.roles.clone(),
+            is_active: true,
         };
-        self.tokens.set(Some(tokens));
-        self.is_authenticated.set(true);
-        Ok(resp)
+
+        self.profile_fetch_failed.set(false);
+        match self.fetch_profile_inner().await {
+            Ok(profile) => {
+                self.user.set(Some(profile.clone()));
+                self.auth_state.set(AuthState::Authenticated(profile));
+                Ok(LoginOutcome {
+                    profile_fetch_failed: false,
+                })
+            }
+            Err(_) => {
+                // The session is valid; keep the user authenticated with the
+                // provisional identity and flag the failed profile load so
+                // the login page can offer a retry.
+                self.user.set(Some(provisional.clone()));
+                self.auth_state.set(AuthState::Authenticated(provisional));
+                self.profile_fetch_failed.set(true);
+                Ok(LoginOutcome {
+                    profile_fetch_failed: true,
+                })
+            }
+        }
     }
 
-    /// Refresh the access token using the stored refresh token.
-    pub async fn refresh_token(&self) -> Result<auth::RefreshResponse, ApiError> {
-        let refresh_tok = self
-            .tokens
-            .get()
-            .map(|t| t.refresh_token.clone())
-            .ok_or_else(|| ApiError::Auth("No refresh token available".into()))?;
-        let client = self.api_client();
-        let resp = auth::refresh_token(&client, &refresh_tok).await?;
-        let tokens = AuthTokens {
-            access_token: resp.access_token.clone(),
-            refresh_token: resp.refresh_token.clone(),
-            token_type: resp.token_type.clone(),
-            expires_in: resp.expires_in,
-        };
+    /// Refresh the access token using the stored refresh token
+    /// (single-flight — safe to call concurrently).
+    pub async fn refresh_token(&self) -> Result<AuthTokens, ApiError> {
+        self.client.refresh_once().await
+    }
+
+    /// Fetch the current user's profile from the API and publish it.
+    pub async fn fetch_profile(&self) -> Result<UserProfile, ApiError> {
+        let profile = self.fetch_profile_inner().await?;
+        self.user.set(Some(profile.clone()));
+        self.auth_state
+            .set(AuthState::Authenticated(profile.clone()));
+        self.profile_fetch_failed.set(false);
+        Ok(profile)
+    }
+
+    async fn fetch_profile_inner(&self) -> Result<UserProfile, ApiError> {
+        self.client.get("/api/v1/auth/me").await
+    }
+
+    /// Store tokens in the shared client and the reactive signal.
+    fn apply_tokens(&self, tokens: AuthTokens) {
+        self.client.set_token(&tokens.access_token);
+        self.client.set_refresh_token(&tokens.refresh_token);
         self.tokens.set(Some(tokens));
-        Ok(resp)
     }
 
     /// Logout — calls the API to invalidate the session and clears local state.
     pub async fn logout(&self) -> Result<(), ApiError> {
-        let client = self.api_client();
         // Best-effort API call; clear local state regardless of result.
-        let _ = auth::logout(&client).await;
+        let _ = auth::logout(&self.client).await;
         self.clear_tokens();
         Ok(())
+    }
+
+    /// Clear all auth state (logout / session expiry).
+    pub fn clear_tokens(&self) {
+        self.client.clear_token();
+        self.client.clear_refresh_token();
+        self.tokens.set(None);
+        self.user.set(None);
+        self.auth_state.set(AuthState::Anonymous);
     }
 
     /// Check whether the current user has a specific role.
@@ -151,14 +267,6 @@ impl AppState {
     /// Set the user profile (e.g. after fetching from `/me`).
     pub fn set_user_profile(&self, profile: UserProfile) {
         self.user.set(Some(profile));
-    }
-
-    /// Fetch the current user's profile from the API.
-    pub async fn fetch_profile(&self) -> Result<UserProfile, ApiError> {
-        let client = self.api_client();
-        let profile: UserProfile = client.get("/api/v1/auth/me").await?;
-        self.user.set(Some(profile.clone()));
-        Ok(profile)
     }
 }
 

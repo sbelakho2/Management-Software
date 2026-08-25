@@ -1,8 +1,15 @@
 //! WebSocket and Server-Sent Events (SSE) route handlers.
 //!
 //! Provides real-time communication endpoints:
-//! - `GET /api/v1/ws` — WebSocket upgrade with JWT auth via `?token=` query param
-//! - `GET /api/v1/sse` — SSE stream with JWT auth via `?token=` query param
+//! - `POST /api/v1/realtime/ticket` — mint a one-time connection ticket
+//!   (authenticated; scope `"ws"` or `"sse"`).
+//! - `GET /api/v1/ws?ticket=...` — WebSocket upgrade, authenticated by a
+//!   one-time realtime ticket (replaces the legacy `?token=` JWT).
+//! - `GET /api/v1/sse?ticket=...` — SSE stream, authenticated the same way.
+//!
+//! Tickets are short-lived (30s) and consumed atomically on first use, so
+//! a stolen ticket cannot be replayed and never authenticates a different
+//! transport than the one it was minted for.
 
 use std::convert::Infallible;
 use std::time::Duration;
@@ -12,25 +19,44 @@ use axum::{
         ws::{Message, WebSocket, WebSocketUpgrade},
         Query, State,
     },
+    http::StatusCode,
     response::{
         sse::{Event, Sse},
-        IntoResponse,
+        IntoResponse, Json, Response,
     },
 };
 use futures::stream::{select, StreamExt};
 use futures::SinkExt;
-use serde::Deserialize;
+use sensei_auth::middleware::AuthenticatedUser;
+use serde::{Deserialize, Serialize};
 use tokio_stream::wrappers::{errors::BroadcastStreamRecvError, BroadcastStream, IntervalStream};
 use tracing::{info, warn};
 use uuid::Uuid;
 
-use crate::state::AppState;
+use crate::state::{AppState, REALTIME_TICKET_TTL_SECS};
 
-/// Query-string parameters for WebSocket and SSE endpoints.
+/// Request body for `POST /api/v1/realtime/ticket`.
 #[derive(Debug, Deserialize)]
-pub struct TokenQuery {
-    /// JWT access token for authentication.
-    pub token: String,
+pub struct TicketRequest {
+    /// Transport scope: `"ws"` or `"sse"`.
+    pub scope: String,
+}
+
+/// Response body for `POST /api/v1/realtime/ticket`.
+#[derive(Debug, Serialize)]
+pub struct TicketResponse {
+    /// The one-time ticket value (pass it as `?ticket=` on the WS/SSE
+    /// endpoints).
+    pub ticket: String,
+    /// Seconds until the ticket expires (see [`REALTIME_TICKET_TTL_SECS`]).
+    pub expires_in: u64,
+}
+
+/// Query-string parameters for the WebSocket and SSE endpoints.
+#[derive(Debug, Deserialize)]
+pub struct TicketQuery {
+    /// One-time realtime ticket (replaces the legacy `?token=` JWT).
+    pub ticket: Uuid,
 }
 
 /// Incoming WebSocket message for dynamic room joins.
@@ -43,32 +69,101 @@ struct RoomJoinMessage {
     room: String,
 }
 
+/// Mint a one-time realtime connection ticket for the authenticated user.
+///
+/// Contract (consumed by the frontend and other clients):
+///
+/// ```http
+/// POST /api/v1/realtime/ticket
+/// Authorization: Bearer <access_token>
+/// Content-Type: application/json
+///
+/// { "scope": "ws" }   // or "sse"
+/// ```
+///
+/// ```http
+/// 200 OK
+/// { "ticket": "<uuid>", "expires_in": 30 }
+/// ```
+pub async fn realtime_ticket_handler(
+    State(state): State<AppState>,
+    user: AuthenticatedUser,
+    Json(body): Json<TicketRequest>,
+) -> Response {
+    if body.scope != "ws" && body.scope != "sse" {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({
+                "error": "invalid_scope",
+                "message": "scope must be \"ws\" or \"sse\"",
+            })),
+        )
+            .into_response();
+    }
+
+    match state
+        .realtime_tickets
+        .create(user.user_id, user.tenant_id, &body.scope)
+        .await
+    {
+        Ok(ticket) => (
+            StatusCode::OK,
+            Json(TicketResponse {
+                ticket: ticket.ticket.to_string(),
+                expires_in: REALTIME_TICKET_TTL_SECS,
+            }),
+        )
+            .into_response(),
+        Err(e) => {
+            warn!(error = %e, "Failed to create realtime ticket");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({
+                    "error": "internal_error",
+                    "message": "Failed to create realtime ticket",
+                })),
+            )
+                .into_response()
+        }
+    }
+}
+
 /// Handle WebSocket upgrade requests.
 ///
-/// Authentication is performed by extracting the JWT from the `?token=` query
-/// parameter (since the WebSocket API does not support custom headers in
-/// browsers). On successful validation, the connection is upgraded and a
-/// dedicated handler manages the lifecycle.
+/// Authentication is performed by consuming a one-time realtime ticket from
+/// the `?ticket=` query parameter (the WebSocket API does not support
+/// custom headers in browsers). The ticket identifies the user, is scoped
+/// to the `ws` transport, and is revoked on first use.
 pub async fn ws_handler(
     ws: WebSocketUpgrade,
     State(state): State<AppState>,
-    Query(params): Query<TokenQuery>,
-) -> impl IntoResponse {
-    // Validate JWT token from query param
-    let claims = match state.jwt_service.validate_access_token(&params.token) {
-        Ok(c) => c,
-        Err(e) => {
-            warn!(error = %e, "WebSocket authentication failed");
+    Query(params): Query<TicketQuery>,
+) -> Response {
+    let (user_id, tenant_id) = match state.realtime_tickets.consume(params.ticket, "ws").await {
+        Ok(Some(ids)) => ids,
+        Ok(None) => {
+            warn!(ticket = %params.ticket, "WebSocket ticket invalid, expired, or reused");
             return (
-                axum::http::StatusCode::UNAUTHORIZED,
-                "Unauthorized: invalid token",
+                StatusCode::UNAUTHORIZED,
+                Json(serde_json::json!({
+                    "error": "realtime_ticket_invalid",
+                    "message": "Invalid, expired, or already-used realtime ticket",
+                })),
+            )
+                .into_response();
+        }
+        Err(e) => {
+            warn!(error = %e, "Failed to consume WebSocket ticket");
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({
+                    "error": "internal_error",
+                    "message": "Failed to validate realtime ticket",
+                })),
             )
                 .into_response();
         }
     };
-
-    let user_id = claims.sub;
-    let tenant_id = claims.tenant_id;
 
     info!(
         user_id = %user_id,
@@ -82,28 +177,34 @@ pub async fn ws_handler(
 
 /// Handle an established WebSocket connection.
 ///
-/// 1. Registers the user connection for direct messaging.
-/// 2. Joins the tenant-wide room automatically and KEEPS the receiver so
-///    tenant broadcasts actually reach the client.
-/// 3. Loops reading incoming messages; handles `{"type":"join","room":"..."}`
-///    to dynamically join additional rooms (validated).
-/// 4. Forwards user-directed and tenant messages from the broadcast channels
-///    to the client, plus periodic heartbeat pings.
-/// 5. On disconnect or error, cleans up all state.
+/// 1. Registers the connection (multi-tab aware) and joins the tenant-wide
+///    room, KEEPING the receiver so tenant broadcasts actually reach the
+///    client.
+/// 2. Loops reading incoming messages; handles `{"type":"join","room":"..."}`
+///    to dynamically join additional rooms (validated, fail-closed).
+/// 3. Forwards user-directed, tenant, and dynamically-joined room messages
+///    from the broadcast channels to the client, plus periodic heartbeat
+///    pings.
+/// 4. On disconnect or error, removes exactly this connection (other tabs
+///    of the same user stay alive) and drops the room subscriptions.
 async fn handle_socket(socket: WebSocket, state: AppState, user_id: Uuid, tenant_id: Uuid) {
     let ws_manager = &state.ws_manager;
     let tenant_room = format!("tenant:{tenant_id}");
 
-    // Register the user connection for direct messages.
-    let mut user_rx = ws_manager.register_connection(user_id).await;
+    // Register this connection. The handle carries a connection id so
+    // cleanup removes exactly this socket, never a sibling tab's.
+    let handle = ws_manager.connect(user_id, tenant_id).await;
+    let connection_id = handle.connection_id;
+    let user_rx = handle.rx;
 
     // Join the tenant room and KEEP the receiver — dropping it would
     // silently unsubscribe this client from tenant broadcasts.
-    let mut tenant_rx = ws_manager.join_room(&tenant_room).await;
+    let tenant_rx = ws_manager.join_room(&tenant_room).await;
 
     info!(
         user_id = %user_id,
         tenant_id = %tenant_id,
+        connection_id,
         "WebSocket client connected"
     );
 
@@ -115,10 +216,17 @@ async fn handle_socket(socket: WebSocket, state: AppState, user_id: Uuid, tenant
     // (it's owned by the spawned task below).
     let (outgoing_tx, mut outgoing_rx) = tokio::sync::mpsc::channel::<Message>(256);
 
-    // Spawn a task that drains the outgoing queue, the user-directed
-    // broadcast channel, and the tenant broadcast channel, sending
+    // Dynamically-joined room streams are handed to the send task over this
+    // channel and added to its poll set.
+    let (stream_tx, mut stream_rx) = tokio::sync::mpsc::channel::<BroadcastStream<String>>(16);
+
+    // Spawn a task that drains the outgoing queue and every subscribed
+    // broadcast channel (user-directed, tenant, and joined rooms), sending
     // everything through the WebSocket sender.
     let send_task = tokio::spawn(async move {
+        let mut all_streams = futures::stream::SelectAll::new();
+        all_streams.push(BroadcastStream::new(user_rx));
+        all_streams.push(BroadcastStream::new(tenant_rx));
         loop {
             tokio::select! {
                 // Outgoing messages from the main loop (e.g. pong responses).
@@ -127,28 +235,24 @@ async fn handle_socket(socket: WebSocket, state: AppState, user_id: Uuid, tenant
                         break;
                     }
                 }
-                // User-directed messages from the broadcast channel.
-                result = user_rx.recv() => {
+                // Newly joined room streams to add to the poll set.
+                Some(stream) = stream_rx.recv() => {
+                    all_streams.push(stream);
+                }
+                // Messages from any subscribed channel (user, tenant, rooms).
+                Some(result) = all_streams.next() => {
                     match result {
                         Ok(text) => {
                             if ws_sender.send(Message::Text(text.into())).await.is_err() {
                                 break;
                             }
                         }
-                        Err(_) => break,
+                        // Lagged receivers are skipped; the connection stays
+                        // alive so a slow burst does not kill the socket.
+                        Err(BroadcastStreamRecvError::Lagged(_)) => {}
                     }
                 }
-                // Tenant-wide messages from the broadcast channel.
-                result = tenant_rx.recv() => {
-                    match result {
-                        Ok(text) => {
-                            if ws_sender.send(Message::Text(text.into())).await.is_err() {
-                                break;
-                            }
-                        }
-                        Err(_) => break,
-                    }
-                }
+                else => break,
             }
         }
     });
@@ -176,8 +280,8 @@ async fn handle_socket(socket: WebSocket, state: AppState, user_id: Uuid, tenant
     /// - `tenant:{own_tenant_id}` — only your own tenant room;
     /// - `user:{own_user_id}` — only your own direct-message room;
     /// - `entity:{type}:{id}` — the entity must belong to the client's
-    ///   tenant when it exists in an entity store (unknown entities are
-    ///   allowed through — they may live in a service-owned store).
+    ///   tenant. Validation **fails closed**: entities that are unknown to
+    ///   every entity store are denied, as are entities of another tenant.
     async fn validate_room(
         state: &AppState,
         room: &str,
@@ -211,8 +315,12 @@ async fn handle_socket(socket: WebSocket, state: AppState, user_id: Uuid, tenant
                     .parse::<Uuid>()
                     .map_err(|_| format!("Invalid entity room '{room}'"))?;
                 match entity_belongs_to_tenant(state, entity_id, tenant_id).await {
-                    Some(true) | None => Ok(()),
-                    Some(false) => Err(format!("Cannot join a foreign entity's room '{room}'")),
+                    // Fail closed: only entities positively confirmed to
+                    // belong to this tenant are joinable.
+                    Some(true) => Ok(()),
+                    None | Some(false) => {
+                        Err(format!("Cannot join a foreign entity's room '{room}'"))
+                    }
                 }
             }
             _ => Err(format!("Room '{room}' is not a valid joinable room")),
@@ -230,7 +338,7 @@ async fn handle_socket(socket: WebSocket, state: AppState, user_id: Uuid, tenant
         // Each store is checked only for membership + tenant ownership.
         macro_rules! check_store {
             ($store:expr) => {{
-                let map = $store.read().await;
+                let map = $store.read(tenant_id).await;
                 if let Some(entity) = map.get(&entity_id) {
                     return Some(entity.tenant_id == tenant_id);
                 }
@@ -274,7 +382,14 @@ async fn handle_socket(socket: WebSocket, state: AppState, user_id: Uuid, tenant
                         if !joined_rooms.contains(&room) {
                             match validate_room(&state, &room, user_id, tenant_id).await {
                                 Ok(()) => {
-                                    ws_manager.join_room(&room).await;
+                                    // Subscribe and keep the receiver in the
+                                    // send task's poll set — discarding it
+                                    // (as before) silently dropped every
+                                    // message for this room.
+                                    let rx = ws_manager.join_room(&room).await;
+                                    if stream_tx.send(BroadcastStream::new(rx)).await.is_err() {
+                                        break;
+                                    }
                                     joined_rooms.push(room.clone());
                                     info!(
                                         user_id = %user_id,
@@ -330,41 +445,60 @@ async fn handle_socket(socket: WebSocket, state: AppState, user_id: Uuid, tenant
     send_task.abort();
     heartbeat_task.abort();
 
-    // Unregister the user connection.
-    ws_manager.unregister_connection(user_id).await;
+    // Unregister exactly this connection; sibling tabs of the same user
+    // remain connected.
+    ws_manager.disconnect(connection_id).await;
+
+    // Drop our room subscriptions (empty rooms are also swept lazily).
+    for room in joined_rooms {
+        ws_manager.leave_room(&room).await;
+    }
 
     info!(
         user_id = %user_id,
+        tenant_id = %tenant_id,
+        connection_id,
         "WebSocket client fully disconnected, resources cleaned up"
     );
 }
 
 /// Handle Server-Sent Events (SSE) connections.
 ///
-/// Authentication is performed via JWT in the `?token=` query parameter.
-/// On success, the client receives an infinite SSE stream that merges:
+/// Authentication is performed by consuming a one-time realtime ticket from
+/// the `?ticket=` query parameter, scoped to the `sse` transport. On
+/// success, the client receives an infinite SSE stream that merges:
 /// - Events from the user-specific channel (`user:{user_id}`)
 /// - Events from the tenant-wide channel (`tenant:{tenant_id}`)
 /// - Heartbeat pings every 30 seconds to keep the connection alive
 pub async fn sse_handler(
     State(state): State<AppState>,
-    Query(params): Query<TokenQuery>,
-) -> impl IntoResponse {
-    // Validate JWT token from query param.
-    let claims = match state.jwt_service.validate_access_token(&params.token) {
-        Ok(c) => c,
-        Err(e) => {
-            warn!(error = %e, "SSE authentication failed");
+    Query(params): Query<TicketQuery>,
+) -> Response {
+    let (user_id, tenant_id) = match state.realtime_tickets.consume(params.ticket, "sse").await {
+        Ok(Some(ids)) => ids,
+        Ok(None) => {
+            warn!(ticket = %params.ticket, "SSE ticket invalid, expired, or reused");
             return (
-                axum::http::StatusCode::UNAUTHORIZED,
-                "Unauthorized: invalid token",
+                StatusCode::UNAUTHORIZED,
+                Json(serde_json::json!({
+                    "error": "realtime_ticket_invalid",
+                    "message": "Invalid, expired, or already-used realtime ticket",
+                })),
+            )
+                .into_response();
+        }
+        Err(e) => {
+            warn!(error = %e, "Failed to consume SSE ticket");
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({
+                    "error": "internal_error",
+                    "message": "Failed to validate realtime ticket",
+                })),
             )
                 .into_response();
         }
     };
-
-    let user_id = claims.sub;
-    let tenant_id = claims.tenant_id;
 
     info!(
         user_id = %user_id,

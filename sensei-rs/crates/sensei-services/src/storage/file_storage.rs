@@ -13,9 +13,21 @@ use sensei_core::types::EntityId;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
+use tokio::io::AsyncRead;
 use tokio::sync::RwLock;
+use uuid::Uuid;
 
 // ── Trait ──────────────────────────────────────────────────────────────────────
+
+/// Result of storing bytes under a server-generated opaque key.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StoredObject {
+    /// The opaque storage key (a random UUID) that resolves the blob in
+    /// [`retrieve`](FileStorageService::retrieve) / [`delete`](FileStorageService::delete).
+    pub key: String,
+    /// The content type associated with the blob by the caller.
+    pub content_type: String,
+}
 
 /// Unified file storage interface backed by local disk, S3, or in-memory storage.
 ///
@@ -50,6 +62,35 @@ pub trait FileStorageService: Send + Sync {
         expires_in_secs: u64,
     ) -> Result<Option<String>>;
 
+    /// Store bytes under an opaque, server-generated key (a random UUID).
+    ///
+    /// The caller never controls the key, so attacker-supplied paths cannot
+    /// escape the tenant namespace. Returns the generated [`StoredObject`]
+    /// whose `key` can be passed to [`retrieve`] / [`delete`].
+    ///
+    /// The default implementation buffers through [`store_opaque_stream`].
+    async fn store_opaque(
+        &self,
+        tenant_id: EntityId,
+        data: &[u8],
+        content_type_hint: &str,
+    ) -> Result<StoredObject> {
+        let reader: Box<dyn AsyncRead + Unpin + Send> =
+            Box::new(std::io::Cursor::new(data.to_vec()));
+        self.store_opaque_stream(tenant_id, reader, content_type_hint)
+            .await
+    }
+
+    /// Stream bytes to an opaque key (see [`store_opaque`]) without buffering
+    /// the whole blob in memory. This is the single storage primitive every
+    /// backend implements; [`store_opaque`] buffers and delegates here.
+    async fn store_opaque_stream(
+        &self,
+        tenant_id: EntityId,
+        data: Box<dyn AsyncRead + Unpin + Send>,
+        content_type_hint: &str,
+    ) -> Result<StoredObject>;
+
     /// Clone the trait object into a new `Box`.
     fn clone_box(&self) -> Box<dyn FileStorageService>;
 }
@@ -59,6 +100,59 @@ impl Clone for Box<dyn FileStorageService> {
     fn clone(&self) -> Self {
         self.clone_box()
     }
+}
+
+// ── Storage-path validation ────────────────────────────────────────────────────
+
+/// Validate a caller-supplied storage path before it is joined to the base
+/// directory. Rejects:
+///
+/// * empty paths;
+/// * absolute paths (leading `/` or `\`);
+/// * [`ParentDir`](std::path::Component::ParentDir) components (`..` — any
+///   component *containing* `..` is rejected, fail-closed);
+/// * [`RootDir`](std::path::Component::RootDir) components;
+/// * Windows drive prefixes (e.g. `C:`).
+///
+/// Returns [`SenseiError::Validation`] with a clear message on rejection,
+/// before any path joining happens.
+pub fn validate_storage_path(path: &str) -> Result<()> {
+    if path.is_empty() {
+        return Err(SenseiError::Validation(
+            "storage path must not be empty".to_string(),
+        ));
+    }
+    if path.starts_with('/') || path.starts_with('\\') {
+        return Err(SenseiError::Validation(format!(
+            "storage path must be relative, got absolute path: {path:?}"
+        )));
+    }
+
+    for component in path.split(['/', '\\']) {
+        if component.is_empty() {
+            continue;
+        }
+        // ParentDir / any component containing `..` (fail closed).
+        if component.contains("..") {
+            return Err(SenseiError::Validation(format!(
+                "storage path contains an invalid '..' component: {path:?}"
+            )));
+        }
+        // Windows drive prefix, e.g. `C:` or `c:\...`.
+        let bytes = component.as_bytes();
+        if bytes.len() >= 2 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':' {
+            return Err(SenseiError::Validation(format!(
+                "storage path contains a Windows drive prefix: {path:?}"
+            )));
+        }
+    }
+
+    Ok(())
+}
+
+/// Generate an opaque object key (random UUID) for [`store_opaque`] flows.
+fn opaque_key() -> String {
+    Uuid::new_v4().to_string()
 }
 
 // ── Local filesystem backend ───────────────────────────────────────────────────
@@ -90,10 +184,12 @@ impl LocalStorageService {
     }
 
     /// Resolve the absolute filesystem path for a tenant+relative storage path.
-    fn resolve_path(&self, tenant_id: EntityId, storage_path: &str) -> PathBuf {
-        self.base_path
+    fn resolve_path(&self, tenant_id: EntityId, storage_path: &str) -> Result<PathBuf> {
+        validate_storage_path(storage_path)?;
+        Ok(self
+            .base_path
             .join(tenant_id.to_string())
-            .join(storage_path)
+            .join(storage_path))
     }
 }
 
@@ -106,7 +202,9 @@ impl FileStorageService for LocalStorageService {
         data: &[u8],
         _content_type: &str,
     ) -> Result<String> {
-        let full_path = self.resolve_path(tenant_id, path);
+        // Enforce the invariant regardless of caller.
+        validate_storage_path(path)?;
+        let full_path = self.resolve_path(tenant_id, path)?;
 
         // Create parent directories atomically (safe under concurrent calls).
         if let Some(parent) = full_path.parent() {
@@ -123,8 +221,51 @@ impl FileStorageService for LocalStorageService {
         Ok(path.to_string())
     }
 
+    /// Stream the blob to a `.tmp` file in the destination directory and
+    /// atomically rename it into place, so an interrupted upload never
+    /// leaves a partial object under the final key.
+    async fn store_opaque_stream(
+        &self,
+        tenant_id: EntityId,
+        mut data: Box<dyn AsyncRead + Unpin + Send>,
+        content_type_hint: &str,
+    ) -> Result<StoredObject> {
+        let key = opaque_key();
+        let full_path = self.resolve_path(tenant_id, &key)?;
+        let tmp_path = full_path.with_extension(format!("tmp-{}", Uuid::new_v4()));
+
+        if let Some(parent) = full_path.parent() {
+            tokio::fs::create_dir_all(parent)
+                .await
+                .map_err(SenseiError::Io)?;
+        }
+
+        let write_result = async {
+            let mut file = tokio::fs::File::create(&tmp_path).await?;
+            tokio::io::copy(&mut data, &mut file).await?;
+            file.sync_all().await?;
+            tokio::fs::rename(&tmp_path, &full_path).await?;
+            Ok::<_, std::io::Error>(())
+        }
+        .await;
+
+        if let Err(e) = write_result {
+            // Best-effort cleanup of the partial temp file.
+            let _ = tokio::fs::remove_file(&tmp_path).await;
+            return Err(SenseiError::Io(e));
+        }
+
+        let content_type = if content_type_hint.is_empty() {
+            "application/octet-stream".to_string()
+        } else {
+            content_type_hint.to_string()
+        };
+
+        Ok(StoredObject { key, content_type })
+    }
+
     async fn retrieve(&self, tenant_id: EntityId, storage_path: &str) -> Result<Vec<u8>> {
-        let full_path = self.resolve_path(tenant_id, storage_path);
+        let full_path = self.resolve_path(tenant_id, storage_path)?;
         tokio::fs::read(&full_path).await.map_err(|e| {
             if e.kind() == std::io::ErrorKind::NotFound {
                 SenseiError::NotFound(format!("File not found at storage path: {storage_path}"))
@@ -135,7 +276,7 @@ impl FileStorageService for LocalStorageService {
     }
 
     async fn delete(&self, tenant_id: EntityId, storage_path: &str) -> Result<()> {
-        let full_path = self.resolve_path(tenant_id, storage_path);
+        let full_path = self.resolve_path(tenant_id, storage_path)?;
         tokio::fs::remove_file(&full_path).await.map_err(|e| {
             if e.kind() == std::io::ErrorKind::NotFound {
                 SenseiError::NotFound(format!("File not found at storage path: {storage_path}"))
@@ -205,6 +346,25 @@ impl FileStorageService for InMemoryStorageService {
         let mut map = self.data.write().await;
         map.insert(key, data.to_vec());
         Ok(path.to_string())
+    }
+
+    async fn store_opaque_stream(
+        &self,
+        tenant_id: EntityId,
+        mut data: Box<dyn AsyncRead + Unpin + Send>,
+        _content_type_hint: &str,
+    ) -> Result<StoredObject> {
+        let key = opaque_key();
+        let mut bytes = Vec::new();
+        tokio::io::copy(&mut data, &mut bytes)
+            .await
+            .map_err(SenseiError::Io)?;
+        let mut map = self.data.write().await;
+        map.insert(Self::key(tenant_id, &key), bytes);
+        Ok(StoredObject {
+            key,
+            content_type: "application/octet-stream".to_string(),
+        })
     }
 
     async fn retrieve(&self, tenant_id: EntityId, storage_path: &str) -> Result<Vec<u8>> {
@@ -349,6 +509,33 @@ impl FileStorageService for S3StorageService {
             .map_err(|e| SenseiError::ExternalService(format!("S3 upload failed: {e}")))?;
 
         Ok(path.to_string())
+    }
+
+    async fn store_opaque_stream(
+        &self,
+        tenant_id: EntityId,
+        mut data: Box<dyn AsyncRead + Unpin + Send>,
+        content_type_hint: &str,
+    ) -> Result<StoredObject> {
+        let key = opaque_key();
+        let s3_path = Self::tenant_path(tenant_id, &key);
+        let content_type = if content_type_hint.is_empty() {
+            "application/octet-stream"
+        } else {
+            content_type_hint
+        };
+        let mut bytes = Vec::new();
+        tokio::io::copy(&mut data, &mut bytes)
+            .await
+            .map_err(SenseiError::Io)?;
+        self.bucket
+            .put_object_with_content_type(&s3_path, &bytes, content_type)
+            .await
+            .map_err(|e| SenseiError::ExternalService(format!("S3 upload failed: {e}")))?;
+        Ok(StoredObject {
+            key,
+            content_type: content_type.to_string(),
+        })
     }
 
     async fn retrieve(&self, tenant_id: EntityId, storage_path: &str) -> Result<Vec<u8>> {
@@ -548,6 +735,176 @@ mod tests {
             .await
             .expect_err("retrieve of nonexistent should fail");
         assert!(matches!(err, SenseiError::NotFound(_)));
+    }
+
+    // ── Path security tests ────────────────────────────────────────────────
+
+    #[test]
+    fn test_validate_storage_path_accepts_safe_paths() {
+        for safe in [
+            "a/b/c.pdf",
+            "a.b-c_d/e.pdf",
+            "file.txt",
+            "dir/sub/name.md",
+            "x/y.txt/",
+            "a b/c d.txt",
+        ] {
+            assert!(
+                validate_storage_path(safe).is_ok(),
+                "safe path should be accepted: {safe}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_validate_storage_path_rejects_unsafe_paths() {
+        for bad in [
+            "../escape.txt",
+            "a/../../b.txt",
+            "/absolute.txt",
+            "\\absolute.txt",
+            "C:windows.txt",
+            "c:\\windows\\evil",
+            "..",
+            "a/..",
+            "a/../b",
+            "a/.../b",
+            "a..b/c.txt",
+            "sub/..hidden/../x",
+        ] {
+            let err = validate_storage_path(bad).unwrap_err();
+            assert!(
+                matches!(err, SenseiError::Validation(_)),
+                "unsafe path must be a Validation error: {bad} ({err})"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_local_storage_rejects_path_traversal() {
+        let dir = tempfile::tempdir().expect("create temp dir");
+        let service = LocalStorageService::new(dir.path().join("uploads"));
+        let tenant = test_tenant();
+
+        for bad in [
+            "../escape.txt",
+            "a/../../b.txt",
+            "/absolute.txt",
+            "C:evil",
+            "c:\\evil",
+            "..",
+            "a/..",
+            "a/../b",
+        ] {
+            let err = service
+                .store(tenant, bad, b"data", "text/plain")
+                .await
+                .expect_err("store must reject unsafe paths");
+            assert!(
+                matches!(err, SenseiError::Validation(_)),
+                "expected Validation error for {bad:?}, got: {err}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_local_storage_retrieve_rejects_path_traversal() {
+        let dir = tempfile::tempdir().expect("create temp dir");
+        let service = LocalStorageService::new(dir.path().join("uploads"));
+        let tenant = test_tenant();
+
+        let err = service
+            .retrieve(tenant, "../../etc/passwd")
+            .await
+            .expect_err("retrieve must reject unsafe paths");
+        assert!(matches!(err, SenseiError::Validation(_)));
+    }
+
+    // ── Opaque-key tests ────────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn test_local_storage_opaque_roundtrip() {
+        let dir = tempfile::tempdir().expect("create temp dir");
+        let service = LocalStorageService::new(dir.path().join("uploads"));
+        let tenant = test_tenant();
+
+        let obj = service
+            .store_opaque(tenant, b"blob data", "application/pdf")
+            .await
+            .expect("store_opaque should succeed");
+        assert_eq!(obj.content_type, "application/pdf");
+        assert!(
+            obj.key.parse::<uuid::Uuid>().is_ok(),
+            "opaque key must be a random UUID, got {:?}",
+            obj.key
+        );
+
+        let retrieved = service
+            .retrieve(tenant, &obj.key)
+            .await
+            .expect("retrieve by opaque key should succeed");
+        assert_eq!(retrieved, b"blob data");
+
+        service
+            .delete(tenant, &obj.key)
+            .await
+            .expect("delete by opaque key should succeed");
+    }
+
+    #[tokio::test]
+    async fn test_opaque_keys_are_unique() {
+        let dir = tempfile::tempdir().expect("create temp dir");
+        let service = LocalStorageService::new(dir.path().join("uploads"));
+        let tenant = test_tenant();
+
+        let a = service
+            .store_opaque(tenant, b"one", "text/plain")
+            .await
+            .unwrap();
+        let b = service
+            .store_opaque(tenant, b"two", "text/plain")
+            .await
+            .unwrap();
+        assert_ne!(a.key, b.key, "each opaque store must generate a fresh key");
+    }
+
+    #[tokio::test]
+    async fn test_local_storage_opaque_stream_roundtrip() {
+        let dir = tempfile::tempdir().expect("create temp dir");
+        let service = LocalStorageService::new(dir.path().join("uploads"));
+        let tenant = test_tenant();
+
+        let data = vec![7u8; 65_536];
+        let reader: Box<dyn tokio::io::AsyncRead + Unpin + Send> =
+            Box::new(std::io::Cursor::new(data.clone()));
+        let obj = service
+            .store_opaque_stream(tenant, reader, "application/octet-stream")
+            .await
+            .expect("store_opaque_stream should succeed");
+
+        let retrieved = service
+            .retrieve(tenant, &obj.key)
+            .await
+            .expect("retrieve by opaque key should succeed");
+        assert_eq!(retrieved, data);
+    }
+
+    #[tokio::test]
+    async fn test_in_memory_opaque_roundtrip() {
+        let service = InMemoryStorageService::new();
+        let tenant = test_tenant();
+
+        let obj = service
+            .store_opaque(tenant, b"mem blob", "image/png")
+            .await
+            .expect("in-memory store_opaque should succeed");
+        assert!(obj.key.parse::<uuid::Uuid>().is_ok());
+
+        let retrieved = service
+            .retrieve(tenant, &obj.key)
+            .await
+            .expect("retrieve by opaque key should succeed");
+        assert_eq!(retrieved, b"mem blob");
     }
 
     // ── S3StorageService tests ──────────────────────────────────────────────────

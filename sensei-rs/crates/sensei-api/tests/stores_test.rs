@@ -6,7 +6,7 @@
 //! - `list_by_field` JSONB-field filtering
 //! - Pagination clamping (page ≥ 1)
 
-use sensei_api::db_stores::{EntityStore, StoreError};
+use sensei_api::db_stores::EntityStore;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -35,29 +35,32 @@ fn entity_at(created_at: &str, name: &str) -> TestEntity {
 }
 
 #[tokio::test]
-async fn persist_requires_a_pool_and_fails_cleanly_in_memory_mode() {
+async fn persist_commits_in_memory_mode_without_a_pool() {
     let store: EntityStore<TestEntity> = EntityStore::new("test_entity");
+    let tenant = Uuid::new_v4();
     let id = Uuid::new_v4();
 
-    let mut guard = store.write().await;
+    let mut guard = store.write(tenant).await;
     guard.insert(id, entity("a", "active"));
 
-    assert!(
-        matches!(guard.persist().await, Err(StoreError::NotConnected)),
-        "persist without a DB pool must report NotConnected"
-    );
+    // In-memory mode: persist commits the guard's write-back to the shared
+    // map and succeeds (there is no database to reach).
+    assert!(guard.persist().await.is_ok());
+    let snapshot = store.read(tenant).await;
+    assert!(snapshot.contains_key(&id));
 }
 
 #[tokio::test]
 async fn write_guard_persists_only_changed_keys() {
     let store: EntityStore<TestEntity> = EntityStore::new("test_entity");
+    let tenant = Uuid::new_v4();
     let id_unchanged = Uuid::new_v4();
     let id_updated = Uuid::new_v4();
     let id_removed = Uuid::new_v4();
 
     // Seed: all three keys exist.
     {
-        let mut guard = store.write().await;
+        let mut guard = store.write(tenant).await;
         guard.insert(id_unchanged, entity("stable", "active"));
         guard.insert(id_updated, entity("before", "active"));
         guard.insert(id_removed, entity("doomed", "active"));
@@ -66,24 +69,21 @@ async fn write_guard_persists_only_changed_keys() {
     // Second guard: update one key, remove one key, insert one key.
     let id_inserted = Uuid::new_v4();
     {
-        let mut guard = store.write().await;
+        let mut guard = store.write(tenant).await;
         guard.get_mut(&id_updated).unwrap().name = "after".to_string();
         guard.remove(&id_removed);
         guard.insert(id_inserted, entity("fresh", "active"));
 
         // Without a pool we cannot observe the SQL, but the diff must be
         // exactly {updated, inserted} + {removed} — the untouched key must
-        // not be part of the change set. Verify through persist's error
-        // behavior plus an in-memory snapshot check: after the guard drops,
-        // the in-memory map reflects the mutations and nothing else.
-        assert!(matches!(
-            guard.persist().await,
-            Err(StoreError::NotConnected)
-        ));
+        // not be part of the change set. Persist succeeds (in-memory
+        // write-back) and the snapshot below proves only the mutations
+        // landed.
+        assert!(guard.persist().await.is_ok());
     }
 
     // The in-memory data is exactly what was mutated.
-    let guard = store.read().await;
+    let guard = store.read(tenant).await;
     assert_eq!(guard.len(), 3);
     assert!(guard.contains_key(&id_unchanged));
     assert_eq!(guard.get(&id_updated).unwrap().name, "after");
@@ -94,6 +94,7 @@ async fn write_guard_persists_only_changed_keys() {
 #[tokio::test]
 async fn list_paginated_orders_by_created_at_desc_then_id() {
     let store: EntityStore<TestEntity> = EntityStore::new("test_entity");
+    let tenant = Uuid::new_v4();
     let now = chrono::Utc::now();
 
     let id_old = Uuid::new_v4();
@@ -101,7 +102,7 @@ async fn list_paginated_orders_by_created_at_desc_then_id() {
     let id_new = Uuid::new_v4();
     let id_no_ts = Uuid::new_v4();
     {
-        let mut guard = store.write().await;
+        let mut guard = store.write(tenant).await;
         guard.insert(
             id_old,
             entity_at(&(now - chrono::Duration::days(3)).to_rfc3339(), "old"),
@@ -114,7 +115,7 @@ async fn list_paginated_orders_by_created_at_desc_then_id() {
         guard.insert(id_no_ts, entity("no-timestamp", "active"));
     }
 
-    let (items, total) = store.list_paginated(1, 10).await.unwrap();
+    let (items, total) = store.list_paginated(tenant, 1, 10).await.unwrap();
     assert_eq!(total, 4);
     let ids: Vec<Uuid> = items.iter().map(|(id, _)| *id).collect();
     assert_eq!(ids, vec![id_new, id_mid, id_old, id_no_ts]);
@@ -123,34 +124,36 @@ async fn list_paginated_orders_by_created_at_desc_then_id() {
 #[tokio::test]
 async fn list_paginated_clamps_page_to_one() {
     let store: EntityStore<TestEntity> = EntityStore::new("test_entity");
+    let tenant = Uuid::new_v4();
     for i in 0..5 {
-        let mut guard = store.write().await;
+        let mut guard = store.write(tenant).await;
         guard.insert(Uuid::new_v4(), entity(&format!("e{i}"), "active"));
     }
 
     // page=0 is treated as page=1.
-    let (items, total) = store.list_paginated(0, 2).await.unwrap();
+    let (items, total) = store.list_paginated(tenant, 0, 2).await.unwrap();
     assert_eq!(total, 5);
     assert_eq!(items.len(), 2);
 
     // A huge page number must not overflow; it just yields an empty page.
-    let (items, _) = store.list_paginated(usize::MAX, 50).await.unwrap();
+    let (items, _) = store.list_paginated(tenant, usize::MAX, 50).await.unwrap();
     assert!(items.is_empty());
 }
 
 #[tokio::test]
 async fn list_by_field_filters_on_json_field() {
     let store: EntityStore<TestEntity> = EntityStore::new("test_entity");
+    let tenant = Uuid::new_v4();
     let id_done = Uuid::new_v4();
     let id_open = Uuid::new_v4();
     {
-        let mut guard = store.write().await;
+        let mut guard = store.write(tenant).await;
         guard.insert(id_done, entity("finished", "done"));
         guard.insert(id_open, entity("pending", "open"));
     }
 
     let found = store
-        .list_by_field("status", &serde_json::json!("done"))
+        .list_by_field(tenant, "status", &serde_json::json!("done"))
         .await
         .unwrap();
     assert_eq!(found.len(), 1);
@@ -161,13 +164,14 @@ async fn list_by_field_filters_on_json_field() {
 #[tokio::test]
 async fn reads_and_writes_roundtrip_through_guards() {
     let store: EntityStore<TestEntity> = EntityStore::new("test_entity");
+    let tenant = Uuid::new_v4();
     let id = Uuid::new_v4();
     {
-        let mut guard = store.write().await;
+        let mut guard = store.write(tenant).await;
         guard.insert(id, entity("roundtrip", "active"));
     }
 
-    let guard = store.read().await;
+    let guard = store.read(tenant).await;
     let stored = guard.get(&id).expect("entity must be readable after write");
     assert_eq!(stored.name, "roundtrip");
 }

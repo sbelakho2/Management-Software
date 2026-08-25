@@ -115,23 +115,17 @@ impl QuotesStore {
     }
 
     /// Export a quote as PDF or Excel.
+    ///
+    /// Uses the shared client (same connection pool, bearer token, and 401
+    /// refresh pipeline) instead of constructing a fresh `reqwest::Client`.
     pub async fn export_quote(
         client: &ApiClient,
         id: &str,
         format: &str,
     ) -> Result<Vec<u8>, ApiError> {
-        let req_client = reqwest::Client::new();
-        let url = client.url(&format!("/api/v1/quotes/{}/export?format={}", id, format));
-        let resp = req_client
-            .get(&url)
-            .send()
+        client
+            .get_bytes(&format!("/api/v1/quotes/{}/export?format={}", id, format))
             .await
-            .map_err(|e| ApiError::Http(e.to_string()))?;
-        let bytes = resp
-            .bytes()
-            .await
-            .map_err(|e| ApiError::Http(e.to_string()))?;
-        Ok(bytes.to_vec())
     }
 
     /// Send a quote to a customer.

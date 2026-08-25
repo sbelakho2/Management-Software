@@ -2,6 +2,40 @@
 
 Complete reference for configuring Starz Morocco Manufacturing Management System.
 
+> **Legacy sections:** The Python/FastAPI (`backend/`), Next.js (`frontend/`) and
+> Redis sections below describe the previous stack. The platform has migrated
+> to Rust (Axum) + Leptos — the **canonical environment contract is
+> `.env.example`** (single source of truth for Compose, Helm and Rust) and the
+> authoritative configuration code is `sensei-rs/crates/sensei-core/src/config.rs`.
+> The legacy sections are kept for historical reference only; do not use them
+> as the basis for new configuration.
+
+## 🔐 Security Headers Policy (Single Source of Truth)
+
+The security header policy is defined **once** and emitted by the **backend**
+(`sensei-rs/crates/sensei-api/src/middleware/secure_headers.rs`). Caddy
+(`caddy/Caddyfile`, `caddy/Caddyfile.production`) must **not** duplicate or
+contradict these headers:
+
+| Header | Value | Owner |
+|--------|-------|-------|
+| `X-XSS-Protection` | `0` | backend + Caddy (identical) |
+| `X-Content-Type-Options` | `nosniff` | backend + Caddy (identical) |
+| `X-Frame-Options` | `DENY` | backend + Caddy (identical) |
+| `Referrer-Policy` | `strict-origin-when-cross-origin` | backend + Caddy (identical) |
+| `Permissions-Policy` | `camera=(), microphone=(), geolocation=()` | backend + Caddy (identical) |
+| `Strict-Transport-Security` | `max-age=31536000; includeSubDomains` | **backend only** (TLS-aware; Caddy must not set it) |
+| `Content-Security-Policy` | `default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self' ws: wss:; frame-ancestors 'none'` | backend (configurable via `SECURITY_CSP`); Caddy mirrors the backend value |
+| CORS headers | `CORS_ALLOWED_ORIGINS` | **backend only** (Caddy adds no `Access-Control-*` headers) |
+
+Rules:
+1. `X-XSS-Protection` must stay `0` everywhere — the legacy `1; mode=block`
+   was removed because it is ineffective and can create vulnerabilities.
+2. HSTS is emitted by the backend only, and only over HTTPS.
+3. When the frontend is consolidated (removing `unsafe-inline`/`unsafe-eval`),
+   both the backend default CSP **and** the Caddy CSP must drop them together —
+   this is tracked as part of the frontend hardening work.
+
 ## 📋 Table of Contents
 
 - [Backend Configuration](#backend-configuration)
@@ -27,7 +61,7 @@ Backend configuration is managed through environment variables or a `.env` file 
 # Application
 APP_NAME="Starz Morocco Manufacturing"
 APP_VERSION="1.0.0"
-ENVIRONMENT="production"  # development, staging, production
+SENSEI_ENV="production"  # development/dev, staging/test, production/prod (parsed strictly)
 DEBUG=false  # Enable debug mode (development only)
 LOG_LEVEL="INFO"  # DEBUG, INFO, WARNING, ERROR, CRITICAL
 
@@ -39,7 +73,7 @@ RELOAD=false  # Auto-reload on code changes (development only)
 
 # API
 API_V1_PREFIX="/api/v1"
-CORS_ORIGINS='["https://app.flopsen.tech", "https://flopsen.tech"]'
+CORS_ALLOWED_ORIGINS='["https://app.flopsen.tech", "https://flopsen.tech"]'
 ALLOWED_HOSTS='["app.flopsen.tech", "flopsen.tech"]'
 ```
 
@@ -488,7 +522,7 @@ backend:
     targetMemoryUtilizationPercentage: 80
   
   env:
-    - name: ENVIRONMENT
+    - name: SENSEI_ENV
       value: "production"
     - name: LOG_LEVEL
       value: "INFO"
@@ -568,7 +602,7 @@ ingress:
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
 | `APP_NAME` | No | "Starz Morocco" | Application name |
-| `ENVIRONMENT` | No | "production" | Environment (development/staging/production) |
+| `SENSEI_ENV` | No | "production" | Environment (development/dev, staging/test, production/prod — parsed strictly) |
 | `DEBUG` | No | false | Debug mode |
 | `LOG_LEVEL` | No | "INFO" | Logging level |
 | `HOST` | No | "0.0.0.0" | Server host |

@@ -2,14 +2,16 @@
 //!
 //! Provides the top-level application chrome:
 //! - [`RootLayout`] — the outer industrial bezel with status bar, sidebar, and main content area.
-//! - [`ProtectedRoute`] — wraps a page in [`RootLayout`] with auth state from [`AppState`].
+//! - [`ProtectedRoute`] — guards a page with the [`AuthState`] machine.
 //! - [`ProtectedShell`] — route-group guard using [`Outlet`] for [`ParentRoute`] nesting.
 
 use leptos::prelude::*;
+use leptos::task::spawn_local;
 use leptos_router::components::Outlet;
+use leptos_router::hooks::use_navigate;
 
 use crate::components::rack_sidebar::RackSidebar;
-use crate::state::AppState;
+use crate::state::{AppState, AuthState};
 
 /// Root industrial bezel layout.
 ///
@@ -68,48 +70,84 @@ pub fn RootLayout(
 
 /// Route-level guard that wraps a page in the industrial [`RootLayout`].
 ///
-/// Reads [`AppState`] from the Leptos context to derive the current username
-/// and logout handler automatically. Use this as the `view` for protected
-/// routes in [`crate::app::App`].
+/// Guards against unauthenticated access:
+/// - [`AuthState::Loading`] — renders a loading shell while auth resolves.
+/// - [`AuthState::Anonymous`] — redirects to `/login`.
+/// - [`AuthState::Authenticated`] — renders the page inside [`RootLayout`]
+///   with the profile-derived username (never a hard-coded "Operator").
 ///
-/// # Example
-///
-/// ```ignore
-/// <Route path=path!("/dashboard") view=|| view! {
-///     <ProtectedRoute><DashboardPage/></ProtectedRoute>
-/// } />
-/// ```
+/// Use this as the `view` for individual protected routes.
 #[component]
-pub fn ProtectedRoute(
-    /// Child page content to render inside the layout.
-    children: Children,
-) -> impl IntoView {
+pub fn ProtectedRoute() -> impl IntoView {
     let app_state =
         use_context::<AppState>().expect("AppState not provided — did you forget provide_context?");
+    let navigate = use_navigate();
 
-    let username = app_state
-        .user
-        .get()
-        .map(|u| u.name)
-        .unwrap_or_else(|| "Operator".into());
+    // Redirect to /login whenever the session becomes anonymous.
+    Effect::new(move |_| {
+        if matches!(app_state.auth_state.get(), AuthState::Anonymous) {
+            navigate("/login", Default::default());
+        }
+    });
+
+    let username = move || match app_state.auth_state.get() {
+        AuthState::Authenticated(profile) => profile.display_name(),
+        _ => String::new(),
+    };
 
     let on_logout = {
         let state = app_state.clone();
-        Some(Box::new(move || state.clear_tokens()) as Box<dyn Fn() + 'static>)
+        move || {
+            let state = state.clone();
+            spawn_local(async move {
+                let _ = state.logout().await;
+            });
+        }
     };
 
+    // The router renders the matched child route through the Outlet.
     view! {
-        <RootLayout username=username on_logout=on_logout>
-            {children()}
-        </RootLayout>
+        {move || {
+            // Re-evaluated per render: fresh values keep the outer closure
+            // re-callable (leptos requires Fn for reactive re-renders).
+            let uname = username();
+            let logout = Some(Box::new(on_logout.clone()) as Box<dyn Fn() + 'static>);
+            match app_state.auth_state.get() {
+                AuthState::Loading => view! {
+                    <div
+                        role="status"
+                        aria-live="polite"
+                        style="display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; gap: 12px; background: #1A1A1A;"
+                    >
+                        <span
+                            aria-hidden="true"
+                            style="width: 24px; height: 24px; border: 2px solid transparent; border-top-color: #FFBE00; border-radius: 50%; animation: spin 0.6s linear infinite;"
+                        ></span>
+                        <p style="font-family: 'JetBrains Mono', monospace; font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: #666666;">
+                            "AUTHENTICATING..."
+                        </p>
+                    </div>
+                }.into_any(),
+                AuthState::Anonymous => view! { <div style="min-height: 100vh; background: #1A1A1A;"></div> }.into_any(),
+                AuthState::Authenticated(_) => view! {
+                    <RootLayout
+                        username=uname
+                        on_logout=logout
+                    >
+                        <Outlet/>
+                    </RootLayout>
+                }.into_any(),
+            }
+        }}
     }
 }
 
 /// Route-group guard that nests all child routes inside the industrial [`RootLayout`].
 ///
-/// Uses [`Outlet`] so it can be used as the `view` of a [`ParentRoute`] that
-/// groups multiple authenticated routes under a single layout shell. This is
-/// the recommended approach for keeping the route tree concise.
+/// Guards every nested route with the [`AuthState`] machine:
+/// - [`AuthState::Loading`] — renders a loading shell while auth resolves.
+/// - [`AuthState::Anonymous`] — redirects to `/login`.
+/// - [`AuthState::Authenticated`] — renders [`RootLayout`] with `<Outlet/>`.
 ///
 /// # Example
 ///
@@ -125,21 +163,56 @@ pub fn ProtectedRoute(
 pub fn ProtectedShell() -> impl IntoView {
     let app_state =
         use_context::<AppState>().expect("AppState not provided — did you forget provide_context?");
+    let navigate = use_navigate();
 
-    let username = app_state
-        .user
-        .get()
-        .map(|u| u.name)
-        .unwrap_or_else(|| "Operator".into());
+    // Redirect to /login whenever the session becomes anonymous.
+    Effect::new(move |_| {
+        if matches!(app_state.auth_state.get(), AuthState::Anonymous) {
+            navigate("/login", Default::default());
+        }
+    });
+
+    let username = move || match app_state.auth_state.get() {
+        AuthState::Authenticated(profile) => profile.display_name(),
+        _ => String::new(),
+    };
 
     let on_logout = {
         let state = app_state.clone();
-        Some(Box::new(move || state.clear_tokens()) as Box<dyn Fn() + 'static>)
+        move || {
+            let state = state.clone();
+            spawn_local(async move {
+                let _ = state.logout().await;
+            });
+        }
     };
 
     view! {
-        <RootLayout username=username on_logout=on_logout>
-            <Outlet/>
-        </RootLayout>
+        {move || match app_state.auth_state.get() {
+            AuthState::Loading => view! {
+                <div
+                    role="status"
+                    aria-live="polite"
+                    style="display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; gap: 12px; background: #1A1A1A;"
+                >
+                    <span
+                        aria-hidden="true"
+                        style="width: 24px; height: 24px; border: 2px solid transparent; border-top-color: #FFBE00; border-radius: 50%; animation: spin 0.6s linear infinite;"
+                    ></span>
+                    <p style="font-family: 'JetBrains Mono', monospace; font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: #666666;">
+                        "AUTHENTICATING..."
+                    </p>
+                </div>
+            }.into_any(),
+            AuthState::Anonymous => view! { <div style="min-height: 100vh; background: #1A1A1A;"></div> }.into_any(),
+            AuthState::Authenticated(_) => view! {
+                <RootLayout
+                    username=username()
+                    on_logout=Some(Box::new(on_logout.clone()) as Box<dyn Fn() + 'static>)
+                >
+                    <Outlet/>
+                </RootLayout>
+            }.into_any(),
+        }}
     }
 }

@@ -1,3 +1,16 @@
+# =============================================================================
+# CD — deploy to production Kubernetes.
+#
+# The deploy job gates on the full CI job matrix: [test, clippy, build,
+# integration, security] (all defined in this file so `needs` resolves) and
+# runs under the `production` environment, which requires explicit approval
+# (Settings > Environments > production > Required reviewers) before the
+# deployment steps execute.
+#
+# Toolchain contract mirrors sensei-rs-ci.yml: pinned rust-toolchain.toml
+# (1.96.0), Zig version from .github/.tool-versions, --locked everywhere, and
+# all third-party actions pinned to commit SHAs.
+# =============================================================================
 name: CD - Deploy to Kubernetes
 
 on:
@@ -7,52 +20,289 @@ on:
       - 'sensei-rs/**'
       - 'k8s/**'
       - '.github/workflows/cd.yml'
+      - 'caddy/**'
+      - 'docker-compose.yml'
+
+permissions:
+  contents: read
 
 env:
   # Use git SHA for reproducible image tags
   IMAGE_TAG: ${{ github.sha }}
 
 jobs:
-  deploy:
-    name: Deploy
+  clippy:
+    name: Lint (fmt + clippy, --locked)
     runs-on: ubuntu-latest
-    # Environment protection requires approval before deployment
-    # Configure this in GitHub repo settings: Settings > Environments > production
-    environment: production
-    
     steps:
-      - uses: actions/checkout@v4
-      
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-      
+      # actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      # dtolnay/rust-toolchain@v1 — reads sensei-rs/rust-toolchain.toml (pinned 1.96.0)
+      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
+        with:
+          components: clippy, rustfmt
+      - name: Install Zig (version from .github/.tool-versions)
+        run: |
+          set -euo pipefail
+          ZIG_VERSION="$(awk '$1=="zig"{print $2}' .github/.tool-versions)"
+          wget -q "https://ziglang.org/download/${ZIG_VERSION}/zig-linux-x86_64-${ZIG_VERSION}.tar.xz"
+          tar xf "zig-linux-x86_64-${ZIG_VERSION}.tar.xz"
+          echo "$PWD/zig-linux-x86_64-${ZIG_VERSION}" >> "$GITHUB_PATH"
+      # Swatinem/rust-cache@v2.9.2
+      - uses: Swatinem/rust-cache@63fed3e2fecf6f7b51dc6f043341b79ef82a9ae7
+        with:
+          workspaces: sensei-rs
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+        working-directory: sensei-rs
+      - name: Run clippy
+        run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
+        working-directory: sensei-rs
+
+  test:
+    name: Test (unit, --locked)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: sensei
+          POSTGRES_PASSWORD: sensei
+          POSTGRES_DB: sensei
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      # actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      # dtolnay/rust-toolchain@v1
+      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
+      - name: Install Zig (version from .github/.tool-versions)
+        run: |
+          set -euo pipefail
+          ZIG_VERSION="$(awk '$1=="zig"{print $2}' .github/.tool-versions)"
+          wget -q "https://ziglang.org/download/${ZIG_VERSION}/zig-linux-x86_64-${ZIG_VERSION}.tar.xz"
+          tar xf "zig-linux-x86_64-${ZIG_VERSION}.tar.xz"
+          echo "$PWD/zig-linux-x86_64-${ZIG_VERSION}" >> "$GITHUB_PATH"
+      # Swatinem/rust-cache@v2.9.2
+      - uses: Swatinem/rust-cache@63fed3e2fecf6f7b51dc6f043341b79ef82a9ae7
+        with:
+          workspaces: sensei-rs
+      - name: Run tests
+        env:
+          SENSEI_ENV: development
+          DATABASE_URL: postgres://sensei:sensei@localhost:5432/sensei
+          JWT_SECRET: test-secret-key-that-is-long-enough-for-testing
+        run: cargo test --workspace --locked
+        working-directory: sensei-rs
+
+  build:
+    name: Build (--locked)
+    runs-on: ubuntu-latest
+    steps:
+      # actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      # dtolnay/rust-toolchain@v1
+      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
+      - name: Install Zig (version from .github/.tool-versions)
+        run: |
+          set -euo pipefail
+          ZIG_VERSION="$(awk '$1=="zig"{print $2}' .github/.tool-versions)"
+          wget -q "https://ziglang.org/download/${ZIG_VERSION}/zig-linux-x86_64-${ZIG_VERSION}.tar.xz"
+          tar xf "zig-linux-x86_64-${ZIG_VERSION}.tar.xz"
+          echo "$PWD/zig-linux-x86_64-${ZIG_VERSION}" >> "$GITHUB_PATH"
+      # Swatinem/rust-cache@v2.9.2
+      - uses: Swatinem/rust-cache@63fed3e2fecf6f7b51dc6f043341b79ef82a9ae7
+        with:
+          workspaces: sensei-rs
+      - name: Build workspace
+        run: cargo build --workspace --locked
+        working-directory: sensei-rs
+      - name: Build release binaries (API + workers)
+        run: cargo build --release --locked -p sensei-api -p sensei-workers
+        working-directory: sensei-rs
+
+  integration:
+    name: Integration (API × 2 + worker vs real stack)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: sensei
+          POSTGRES_PASSWORD: sensei
+          POSTGRES_DB: sensei
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      nats:
+        image: nats:2.10-alpine
+        command: ["-js", "-m", "8222"]
+        ports:
+          - 4222:4222
+          - 8222:8222
+        options: >-
+          --health-cmd "wget -q --spider http://localhost:8222/healthz || exit 1"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      minio:
+        image: minio/minio:RELEASE.2024-06-13T22-53-53Z
+        command: ["server", "/data"]
+        env:
+          MINIO_ROOT_USER: minioadmin
+          MINIO_ROOT_PASSWORD: minioadmin
+        ports:
+          - 9000:9000
+        options: >-
+          --health-cmd "curl -f http://localhost:9000/minio/health/ready || exit 1"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      # actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      # dtolnay/rust-toolchain@v1
+      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
+      - name: Install Zig (version from .github/.tool-versions)
+        run: |
+          set -euo pipefail
+          ZIG_VERSION="$(awk '$1=="zig"{print $2}' .github/.tool-versions)"
+          wget -q "https://ziglang.org/download/${ZIG_VERSION}/zig-linux-x86_64-${ZIG_VERSION}.tar.xz"
+          tar xf "zig-linux-x86_64-${ZIG_VERSION}.tar.xz"
+          echo "$PWD/zig-linux-x86_64-${ZIG_VERSION}" >> "$GITHUB_PATH"
+      # Swatinem/rust-cache@v2.9.2
+      - uses: Swatinem/rust-cache@63fed3e2fecf6f7b51dc6f043341b79ef82a9ae7
+        with:
+          workspaces: sensei-rs
+      - name: Build workspace binaries
+        run: cargo build --workspace --locked
+        working-directory: sensei-rs
+      - name: Run cross-process smoke test (two API instances, read-after-write)
+        env:
+          DATABASE_URL: postgres://sensei:sensei@localhost:5432/sensei
+          NATS_URL: nats://localhost:4222
+          JWT_SECRET: ci-integration-jwt-secret-0123456789abcdef0123456789
+          S3_ENDPOINT: http://localhost:9000
+          S3_ACCESS_KEY: minioadmin
+          S3_SECRET_KEY: minioadmin
+          S3_BUCKET: sensei-uploads
+          BIN_DIR: sensei-rs/target/debug
+        run: bash scripts/smoke-integration.sh
+
+  security:
+    name: Security & Release Validation
+    runs-on: ubuntu-latest
+    steps:
+      # actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      # dtolnay/rust-toolchain@v1
+      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
+      - name: Install Zig (version from .github/.tool-versions)
+        run: |
+          set -euo pipefail
+          ZIG_VERSION="$(awk '$1=="zig"{print $2}' .github/.tool-versions)"
+          wget -q "https://ziglang.org/download/${ZIG_VERSION}/zig-linux-x86_64-${ZIG_VERSION}.tar.xz"
+          tar xf "zig-linux-x86_64-${ZIG_VERSION}.tar.xz"
+          echo "$PWD/zig-linux-x86_64-${ZIG_VERSION}" >> "$GITHUB_PATH"
+      # Swatinem/rust-cache@v2.9.2
+      - uses: Swatinem/rust-cache@63fed3e2fecf6f7b51dc6f043341b79ef82a9ae7
+        with:
+          workspaces: sensei-rs
+      - name: Install cargo-audit
+        run: cargo install --locked cargo-audit
+      - name: cargo audit
+        working-directory: sensei-rs
+        run: cargo audit
+      - name: Install gitleaks
+        run: |
+          set -euo pipefail
+          curl -fsSL -o gitleaks.tar.gz \
+            https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz
+          tar xzf gitleaks.tar.gz gitleaks
+          sudo mv gitleaks /usr/local/bin/
+      - name: gitleaks secret scan
+        run: gitleaks detect --source . --no-banner --redact
+      # azure/setup-helm@v5.0.1
+      - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310
+        with:
+          version: 'v3.12.0'
+      - name: Helm lint + template validation
+        run: |
+          set -euo pipefail
+          helm lint k8s/helm/sensei
+          helm template sensei k8s/helm/sensei \
+            -f k8s/helm/sensei/values.yaml > /tmp/sensei-rendered.yaml
+          curl -fsSL -o kubeconform.tar.gz \
+            https://github.com/yannh/kubeconform/releases/download/v0.8.0/kubeconform-linux-amd64.tar.gz
+          tar xzf kubeconform.tar.gz kubeconform
+          sudo mv kubeconform /usr/local/bin/
+          kubeconform -strict -summary /tmp/sensei-rendered.yaml
+      - name: Validate docker-compose config
+        run: docker compose config -q
+      - name: Validate Caddyfiles
+        run: |
+          set -euo pipefail
+          for f in caddy/Caddyfile caddy/Caddyfile.production; do
+            docker run --rm -v "$PWD/caddy:/etc/caddy:ro" caddy:2-alpine \
+              caddy validate --config "/etc/caddy/$(basename "$f")" \
+              --adapter caddyfile
+          done
+
+  deploy:
+    name: Deploy to production (requires approval)
+    runs-on: ubuntu-latest
+    needs: [test, clippy, build, integration, security]
+    # Production environment: requires explicit approval before these steps
+    # run. Configure required reviewers in GitHub repo settings:
+    # Settings > Environments > production > Required reviewers.
+    environment:
+      name: production
+
+    steps:
+      # actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+
+      # docker/setup-buildx-action@v4.3.0
+      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e
+
+      # docker/login-action@v4.6.0
       - name: Log in to Container Registry
-        if: github.event_name != 'pull_request'
-        uses: docker/login-action@v3
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f
         with:
           registry: ${{ secrets.REGISTRY_URL }}
           username: ${{ secrets.REGISTRY_USERNAME }}
           password: ${{ secrets.REGISTRY_PASSWORD }}
-      
-      - name: Build & Push Sensei-RS (Rust API)
-        uses: docker/build-push-action@v5
+
+      # docker/build-push-action@v7.3.0 — API + worker binaries share one image
+      - name: Build & Push Sensei-RS (Rust API + workers)
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a
         with:
           context: ./sensei-rs
-          push: ${{ github.event_name != 'pull_request' }}
+          push: true
           tags: |
             ${{ secrets.REGISTRY_URL }}/sensei-rs-api:${{ env.IMAGE_TAG }}
             ${{ secrets.REGISTRY_URL }}/sensei-rs-api:${{ github.ref_name }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-      
+
+      # azure/setup-helm@v5.0.1
       - name: Install Helm
-        uses: azure/setup-helm@v3
+        uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310
         with:
           version: 'v3.12.0'
-      
+
       - name: Lint Helm Chart
         run: helm lint k8s/helm/sensei
-      
+
       - name: Dry-run Helm Install
         run: |
           helm install sensei-os k8s/helm/sensei \
@@ -62,16 +312,15 @@ jobs:
             --set senseiApi.image.tag=${{ env.IMAGE_TAG }} \
             --set senseiApi.image.repository=${{ secrets.REGISTRY_URL }}/sensei-rs-api \
             --dry-run --debug
-      
+
+      # azure/k8s-set-context@v5.0.1
       - name: Set up Kubeconfig
-        if: github.event_name != 'pull_request'
-        uses: azure/k8s-set-context@v3
+        uses: azure/k8s-set-context@8698eba2499e9012f0d5085f8798077cce4bc526
         with:
           method: kubeconfig
           kubeconfig: ${{ secrets.KUBE_CONFIG }}
-      
+
       - name: Deploy to K8s
-        if: github.event_name != 'pull_request'
         run: |
           helm upgrade --install sensei-os k8s/helm/sensei \
             --namespace sensei-production \
@@ -80,8 +329,8 @@ jobs:
             --set senseiApi.image.tag=${{ env.IMAGE_TAG }} \
             --set senseiApi.image.repository=${{ secrets.REGISTRY_URL }}/sensei-rs-api \
             --wait --timeout 10m0s
-      
+
       - name: Verify Deployment
-        if: github.event_name != 'pull_request'
         run: |
           kubectl rollout status deployment/sensei-os-sensei-api -n sensei-production --timeout=5m
+          kubectl rollout status deployment/sensei-os-worker -n sensei-production --timeout=5m

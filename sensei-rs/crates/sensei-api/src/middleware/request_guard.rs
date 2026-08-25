@@ -52,6 +52,34 @@ impl Default for RequestGuardConfig {
     }
 }
 
+/// Check whether a request path matches a restriction prefix using
+/// segment-aware matching.
+///
+/// A restriction for `/api/admin` matches `/api/admin`, `/api/admin/users`,
+/// `/api/admin/users/42` — but **not** `/api/administrator` (the segments
+/// differ). A `/` restriction matches every path.
+fn path_matches_prefix(path: &str, prefix: &str) -> bool {
+    let path_segments: Vec<&str> = path
+        .trim_matches('/')
+        .split('/')
+        .filter(|s| !s.is_empty())
+        .collect();
+    let prefix_segments: Vec<&str> = prefix
+        .trim_matches('/')
+        .split('/')
+        .filter(|s| !s.is_empty())
+        .collect();
+
+    if prefix_segments.is_empty() {
+        // Restriction on "/" (or empty) matches everything.
+        return true;
+    }
+    if path_segments.len() < prefix_segments.len() {
+        return false;
+    }
+    path_segments[..prefix_segments.len()] == prefix_segments[..]
+}
+
 /// Check whether the request method is allowed for the given path.
 ///
 /// Returns `Err(Response)` with `405 Method Not Allowed` if the method is
@@ -63,7 +91,7 @@ fn check_method_restriction(
     restrictions: &HashMap<String, Vec<String>>,
 ) -> Result<(), Response> {
     for (prefix, allowed_methods) in restrictions.iter() {
-        if path.starts_with(prefix) {
+        if path_matches_prefix(path, prefix) {
             let method_str = method.to_string().to_uppercase();
             let allowed = allowed_methods
                 .iter()
@@ -153,6 +181,42 @@ mod tests {
 
         // Path doesn't match any restricted prefix → allowed.
         assert!(check_method_restriction(&Method::DELETE, "/api/public", &restrictions).is_ok());
+    }
+
+    #[test]
+    fn test_segment_aware_prefix_does_not_match_partial_segment() {
+        let mut restrictions = HashMap::new();
+        restrictions.insert("/api/admin".to_string(), vec!["GET".into()]);
+
+        // `/api/administrator` shares the string prefix but not the
+        // `/api/admin` segment — it must NOT be restricted.
+        assert!(
+            check_method_restriction(&Method::DELETE, "/api/administrator", &restrictions).is_ok()
+        );
+        // Same string prefix on a different level must not match either.
+        assert!(
+            check_method_restriction(&Method::DELETE, "/api/admintools", &restrictions).is_ok()
+        );
+    }
+
+    #[test]
+    fn test_segment_aware_prefix_matches_exact_and_deeper() {
+        let mut restrictions = HashMap::new();
+        restrictions.insert("/api/admin".to_string(), vec!["GET".into()]);
+
+        assert!(check_method_restriction(&Method::GET, "/api/admin", &restrictions).is_ok());
+        assert!(check_method_restriction(&Method::DELETE, "/api/admin", &restrictions).is_err());
+        assert!(
+            check_method_restriction(&Method::DELETE, "/api/admin/users", &restrictions).is_err()
+        );
+        // Trailing slashes do not break matching.
+        assert!(check_method_restriction(&Method::DELETE, "/api/admin/", &restrictions).is_err());
+    }
+
+    #[test]
+    fn test_path_matches_prefix_root_restriction() {
+        assert!(path_matches_prefix("/api/v1/tasks", "/"));
+        assert!(path_matches_prefix("/", "/"));
     }
 
     #[test]

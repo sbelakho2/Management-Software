@@ -6,14 +6,10 @@ use crate::api::accounts::{AccountsApi, CustomerDto, UpdateAccountData};
 use crate::api::client::{ApiClient, ApiError};
 use leptos::prelude::*;
 
-/// Helper to extract a user-friendly error message.
+/// Helper to extract a user-friendly error message (includes the backend
+/// `request_id` when the server supplied one).
 fn get_error_message(error: &ApiError) -> String {
-    match error {
-        ApiError::Http(msg) => format!("Network error: {}", msg),
-        ApiError::Status(code) => format!("Server error (status {})", code),
-        ApiError::Json(msg) => format!("Parse error: {}", msg),
-        ApiError::Auth(msg) => format!("Auth error: {}", msg),
-    }
+    error.user_message()
 }
 
 /// Reactive store for customers.

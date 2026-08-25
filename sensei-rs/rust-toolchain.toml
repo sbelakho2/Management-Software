@@ -1,5 +1,8 @@
 [toolchain]
-channel = "stable"
+# Pinned exact channel for reproducible builds in CI (GitHub Actions,
+# docker builds) and locally. CI runs `cargo build/test/clippy --locked`,
+# so Cargo.lock and this channel must move together.
+channel = "1.96.0"
 targets = [
     "x86_64-apple-darwin",
     "aarch64-apple-darwin",

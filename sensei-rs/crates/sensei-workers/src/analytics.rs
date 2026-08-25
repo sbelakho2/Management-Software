@@ -8,7 +8,7 @@
 //! Queries real aggregate data from the database when a pool is available.
 /// Falls back to empty results with a warning when no pool is configured.
 use crate::error::{Result, WorkerError};
-use crate::task::{TaskConsumer, TaskMetadata};
+use crate::task::{IdempotencyGuard, TaskConsumer, TaskMetadata, TaskOutcome};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
@@ -128,6 +128,9 @@ pub struct AnalyticsWorker {
     pool: Option<Arc<PgPool>>,
     /// Recorded query failures: query label → error message.
     failures: Arc<RwLock<HashMap<String, String>>>,
+    /// Idempotency guard (migration 053): claims the task_id before
+    /// computing/storing a snapshot or KPI set.
+    idempotency: IdempotencyGuard,
 }
 
 impl AnalyticsWorker {
@@ -137,6 +140,7 @@ impl AnalyticsWorker {
             cache: Arc::new(AnalyticsCache::new(Duration::from_secs(300))),
             pool: None,
             failures: Arc::new(RwLock::new(HashMap::new())),
+            idempotency: IdempotencyGuard::new(None, "analytics"),
         }
     }
 
@@ -146,15 +150,17 @@ impl AnalyticsWorker {
             cache,
             pool: None,
             failures: Arc::new(RwLock::new(HashMap::new())),
+            idempotency: IdempotencyGuard::new(None, "analytics"),
         }
     }
 
     /// Create an [`AnalyticsWorker`] with a database pool.
-    pub fn with_pool(pool: Arc<PgPool>) -> Self {
+    pub fn with_pool(pool: Option<Arc<PgPool>>) -> Self {
         Self {
             cache: Arc::new(AnalyticsCache::new(Duration::from_secs(300))),
-            pool: Some(pool),
+            pool: pool.clone(),
             failures: Arc::new(RwLock::new(HashMap::new())),
+            idempotency: IdempotencyGuard::new(pool, "analytics"),
         }
     }
 
@@ -672,7 +678,7 @@ impl TaskConsumer for AnalyticsWorker {
         "sensei-workers-analytics"
     }
 
-    async fn process(&self, payload: &[u8], metadata: &TaskMetadata) -> Result<()> {
+    async fn process(&self, payload: &[u8], metadata: &TaskMetadata) -> Result<TaskOutcome> {
         let analytics_payload: AnalyticsTaskPayload =
             serde_json::from_slice(payload).map_err(|e| {
                 error!(
@@ -683,6 +689,25 @@ impl TaskConsumer for AnalyticsWorker {
                 WorkerError::Serialization(e)
             })?;
 
+        // Idempotency: claim the task_id BEFORE computing/storing anything.
+        // A redelivered message is skipped.
+        let task_id_str = metadata.task_id.to_string();
+        match self.idempotency.try_claim(&task_id_str).await {
+            Ok(true) => {}
+            Ok(false) => {
+                info!(
+                    task_id = %metadata.task_id,
+                    "Analytics task already processed — skipping (idempotent)"
+                );
+                return Ok(TaskOutcome::Completed);
+            }
+            Err(e) => {
+                return Err(WorkerError::RetryLater(format!(
+                    "idempotency claim failed for analytics task: {e}"
+                )));
+            }
+        }
+
         match metadata.task_type {
             crate::task::TaskType::DailyAnalyticsSnapshot => {
                 let snapshot = self.compute_snapshot(&analytics_payload).await?;
@@ -692,7 +717,7 @@ impl TaskConsumer for AnalyticsWorker {
                     domain_count = snapshot.domains.len(),
                     "Daily analytics snapshot completed"
                 );
-                Ok(())
+                Ok(TaskOutcome::Completed)
             }
             crate::task::TaskType::ComputeWarehouseKpis => {
                 let kpis = self.compute_warehouse_kpis(&analytics_payload).await?;
@@ -701,7 +726,7 @@ impl TaskConsumer for AnalyticsWorker {
                     kpi_count = kpis.len(),
                     "Warehouse KPI computation completed"
                 );
-                Ok(())
+                Ok(TaskOutcome::Completed)
             }
             _ => Err(WorkerError::Processing(format!(
                 "Unsupported task type for AnalyticsWorker: {:?}",
@@ -722,6 +747,12 @@ impl SnapshotWorker {
             inner: AnalyticsWorker::new(),
         }
     }
+
+    pub fn with_pool(pool: Option<Arc<PgPool>>) -> Self {
+        Self {
+            inner: AnalyticsWorker::with_pool(pool),
+        }
+    }
 }
 
 impl Default for SnapshotWorker {
@@ -740,7 +771,7 @@ impl TaskConsumer for SnapshotWorker {
         "sensei-workers-analytics-snapshot"
     }
 
-    async fn process(&self, payload: &[u8], metadata: &TaskMetadata) -> Result<()> {
+    async fn process(&self, payload: &[u8], metadata: &TaskMetadata) -> Result<TaskOutcome> {
         self.inner.process(payload, metadata).await
     }
 }
@@ -754,6 +785,12 @@ impl KpiWorker {
     pub fn new() -> Self {
         Self {
             inner: AnalyticsWorker::new(),
+        }
+    }
+
+    pub fn with_pool(pool: Option<Arc<PgPool>>) -> Self {
+        Self {
+            inner: AnalyticsWorker::with_pool(pool),
         }
     }
 }
@@ -774,7 +811,7 @@ impl TaskConsumer for KpiWorker {
         "sensei-workers-analytics-kpi"
     }
 
-    async fn process(&self, payload: &[u8], metadata: &TaskMetadata) -> Result<()> {
+    async fn process(&self, payload: &[u8], metadata: &TaskMetadata) -> Result<TaskOutcome> {
         self.inner.process(payload, metadata).await
     }
 }

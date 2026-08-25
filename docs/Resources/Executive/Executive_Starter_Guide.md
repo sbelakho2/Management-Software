@@ -1,5 +1,9 @@
 # Executive Starter Guide
 
+> **Status:** The mobile app, PWA/offline mode, push notifications, barcode/camera
+> capture, and battery/connectivity monitoring described in this guide are
+> **planned — not implemented**. The web UI is the current interface.
+
 ## Sensei OS - Executive Leadership Complete Reference
 
 ---

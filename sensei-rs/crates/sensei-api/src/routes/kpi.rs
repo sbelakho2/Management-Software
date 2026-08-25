@@ -127,7 +127,7 @@ pub async fn list_kpis(
     Query(params): Query<ListKpisParams>,
 ) -> Result<Json<PaginatedResponse<KpiDefinition>>> {
     let tenant_id = user.tenant_id;
-    let store = state.kpi_definitions.read().await;
+    let store = state.kpi_definitions.read(user.tenant_id).await;
     let mut kpis: Vec<KpiDefinition> = store
         .values()
         .filter(|k| k.tenant_id == tenant_id)
@@ -178,7 +178,7 @@ pub async fn create_kpi(
         created_at: now,
         updated_at: now,
     };
-    let mut store = state.kpi_definitions.write().await;
+    let mut store = state.kpi_definitions.write(user.tenant_id).await;
     store.insert(kpi.id, kpi.clone());
     Ok(Json(kpi))
 }
@@ -190,7 +190,7 @@ pub async fn get_kpi(
     Path(id): Path<Uuid>,
 ) -> Result<Json<KpiDefinition>> {
     let tenant_id = user.tenant_id;
-    let store = state.kpi_definitions.read().await;
+    let store = state.kpi_definitions.read(user.tenant_id).await;
     let kpi = store
         .values()
         .find(|k| k.id == id && k.tenant_id == tenant_id)
@@ -207,7 +207,7 @@ pub async fn update_kpi(
     Json(req): Json<UpdateKpiRequest>,
 ) -> Result<Json<KpiDefinition>> {
     let tenant_id = user.tenant_id;
-    let mut store = state.kpi_definitions.write().await;
+    let mut store = state.kpi_definitions.write(user.tenant_id).await;
     let kpi = store
         .get_mut(&id)
         .filter(|k| k.tenant_id == tenant_id)
@@ -256,7 +256,7 @@ pub async fn delete_kpi(
     Path(id): Path<Uuid>,
 ) -> Result<Json<()>> {
     let tenant_id = user.tenant_id;
-    let mut store = state.kpi_definitions.write().await;
+    let mut store = state.kpi_definitions.write(user.tenant_id).await;
     let exists = store
         .get(&id)
         .filter(|k| k.tenant_id == tenant_id)
@@ -278,7 +278,7 @@ pub async fn record_kpi_value(
     let tenant_id = user.tenant_id;
     // Verify KPI exists
     {
-        let store = state.kpi_definitions.read().await;
+        let store = state.kpi_definitions.read(user.tenant_id).await;
         if !store
             .values()
             .any(|k| k.id == kpi_id && k.tenant_id == tenant_id)
@@ -296,7 +296,7 @@ pub async fn record_kpi_value(
         note: req.note,
         recorded_by: user.user_id,
     };
-    let mut store = state.kpi_values.write().await;
+    let mut store = state.kpi_values.write(user.tenant_id).await;
     store.insert(value.id, value.clone());
     Ok(Json(value))
 }
@@ -309,7 +309,7 @@ pub async fn list_kpi_values(
     Query(params): Query<ListKpiValuesParams>,
 ) -> Result<Json<PaginatedResponse<KpiValue>>> {
     let tenant_id = user.tenant_id;
-    let store = state.kpi_values.read().await;
+    let store = state.kpi_values.read(user.tenant_id).await;
     let mut values: Vec<KpiValue> = store
         .values()
         .filter(|v| v.kpi_id == kpi_id && v.tenant_id == tenant_id)
@@ -342,7 +342,7 @@ pub async fn get_kpi_dashboard(
 ) -> Result<Json<KpiDashboard>> {
     let tenant_id = user.tenant_id;
     let kpi = {
-        let store = state.kpi_definitions.read().await;
+        let store = state.kpi_definitions.read(user.tenant_id).await;
         store
             .values()
             .find(|k| k.id == kpi_id && k.tenant_id == tenant_id)
@@ -350,7 +350,7 @@ pub async fn get_kpi_dashboard(
             .ok_or_else(|| SenseiError::NotFound(format!("KPI {kpi_id} not found")))?
     };
 
-    let values_store = state.kpi_values.read().await;
+    let values_store = state.kpi_values.read(user.tenant_id).await;
     let values: Vec<&KpiValue> = values_store
         .values()
         .filter(|v| v.kpi_id == kpi_id && v.tenant_id == tenant_id)

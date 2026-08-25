@@ -11,20 +11,33 @@ pub struct LoginRequest {
 }
 
 /// Response body from a successful login.
+///
+/// Mirrors the backend `LoginResponse` (`user_id`, `roles` are present in
+/// the login and refresh responses; `expires_in` is tolerated with a default
+/// for forward compatibility).
 #[derive(Debug, Deserialize)]
 pub struct LoginResponse {
     pub access_token: String,
     pub refresh_token: String,
     pub token_type: String,
+    pub user_id: String,
+    #[serde(default)]
+    pub roles: Vec<String>,
+    #[serde(default)]
     pub expires_in: u64,
 }
 
-/// Response body from a successful token refresh.
+/// Response body from a successful token refresh (same shape as login).
 #[derive(Debug, Deserialize)]
 pub struct RefreshResponse {
     pub access_token: String,
     pub refresh_token: String,
     pub token_type: String,
+    #[serde(default)]
+    pub user_id: String,
+    #[serde(default)]
+    pub roles: Vec<String>,
+    #[serde(default)]
     pub expires_in: u64,
 }
 

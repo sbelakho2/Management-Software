@@ -6,14 +6,16 @@
 //! worker logs a warning and gracefully degrades (skips sending).
 
 use crate::error::{Result, WorkerError};
-use crate::task::{TaskConsumer, TaskMetadata};
+use crate::task::{IdempotencyGuard, TaskConsumer, TaskMetadata, TaskOutcome};
 use async_trait::async_trait;
 use lettre::message::header::ContentType;
 use lettre::message::Mailbox;
 use lettre::transport::smtp::authentication::Credentials;
 use lettre::{AsyncSmtpTransport, AsyncTransport, Message, Tokio1Executor};
 use serde::{Deserialize, Serialize};
+use sqlx::PgPool;
 use std::str::FromStr;
+use std::sync::Arc;
 use tracing::{error, info, warn};
 
 /// Payload for the email send task.
@@ -117,6 +119,9 @@ pub struct EmailWorker {
     pub config: SmtpConfig,
     /// Whether SMTP is fully configured and ready to send.
     smtp_available: bool,
+    /// Idempotency guard (migration 053): claims the task_id before sending
+    /// so a redelivered message never sends the same email twice.
+    idempotency: IdempotencyGuard,
 }
 
 impl EmailWorker {
@@ -125,11 +130,17 @@ impl EmailWorker {
     /// If SMTP env vars are not set, the worker logs a prominent startup
     /// error; email tasks then fail permanently and are dead-lettered.
     pub fn new() -> Self {
+        Self::with_pool(None)
+    }
+
+    /// Create an [`EmailWorker`] with a database pool for task idempotency.
+    pub fn with_pool(pool: Option<Arc<PgPool>>) -> Self {
         let config = SmtpConfig::from_env();
         match config {
             Some(cfg) => Self {
                 smtp_available: true,
                 config: cfg,
+                idempotency: IdempotencyGuard::new(pool, "email"),
             },
             None => {
                 error!(
@@ -140,6 +151,7 @@ impl EmailWorker {
                 Self {
                     smtp_available: false,
                     config: SmtpConfig::default(),
+                    idempotency: IdempotencyGuard::new(pool, "email"),
                 }
             }
         }
@@ -157,6 +169,7 @@ impl EmailWorker {
         Self {
             smtp_available,
             config,
+            idempotency: IdempotencyGuard::new(None, "email"),
         }
     }
 
@@ -321,7 +334,7 @@ impl TaskConsumer for EmailWorker {
         "sensei-workers-email"
     }
 
-    async fn process(&self, payload: &[u8], metadata: &TaskMetadata) -> Result<()> {
+    async fn process(&self, payload: &[u8], metadata: &TaskMetadata) -> Result<TaskOutcome> {
         let email_payload: EmailTaskPayload = serde_json::from_slice(payload).map_err(|e| {
             error!(
                 task_id = %metadata.task_id,
@@ -331,25 +344,42 @@ impl TaskConsumer for EmailWorker {
             WorkerError::Serialization(e)
         })?;
 
-        match self.send_email(&email_payload).await {
-            Ok(()) => {
+        // Idempotency: claim the task_id BEFORE the side effect (SMTP send).
+        // A redelivered message is skipped, never re-sent.
+        let task_id_str = metadata.task_id.to_string();
+        match self.idempotency.try_claim(&task_id_str).await {
+            Ok(true) => {}
+            Ok(false) => {
+                info!(
+                    task_id = %metadata.task_id,
+                    "Email task already processed — skipping (idempotent)"
+                );
+                return Ok(TaskOutcome::Completed);
+            }
+            Err(e) => {
+                return Err(WorkerError::RetryLater(format!(
+                    "idempotency claim failed for email task: {e}"
+                )));
+            }
+        }
+
+        crate::task::outcome_from_result(self.send_email(&email_payload).await).inspect(|outcome| {
+            if *outcome == TaskOutcome::Completed {
                 info!(
                     task_id = %metadata.task_id,
                     to = ?email_payload.to,
                     subject = %email_payload.subject,
                     "Email task completed"
                 );
-                Ok(())
-            }
-            Err(e) => {
+            } else {
                 error!(
                     task_id = %metadata.task_id,
-                    error = %e,
+                    to = ?email_payload.to,
+                    subject = %email_payload.subject,
                     "Email task failed"
                 );
-                Err(e)
             }
-        }
+        })
     }
 }
 

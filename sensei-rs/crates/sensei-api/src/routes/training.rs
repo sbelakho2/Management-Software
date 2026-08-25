@@ -133,7 +133,7 @@ pub async fn list_courses(
     Query(params): Query<ListCoursesParams>,
 ) -> Result<Json<PaginatedResponse<TrainingCourse>>> {
     let tenant_id = user.tenant_id;
-    let store = state.training_courses.read().await;
+    let store = state.training_courses.read(user.tenant_id).await;
     let mut courses: Vec<TrainingCourse> = store
         .values()
         .filter(|c| c.tenant_id == tenant_id)
@@ -190,7 +190,7 @@ pub async fn create_course(
         created_at: now,
         updated_at: now,
     };
-    let mut store = state.training_courses.write().await;
+    let mut store = state.training_courses.write(user.tenant_id).await;
     store.insert(course.id, course.clone());
     Ok(Json(course))
 }
@@ -202,7 +202,7 @@ pub async fn get_course(
     Path(course_id): Path<Uuid>,
 ) -> Result<Json<TrainingCourse>> {
     let tenant_id = user.tenant_id;
-    let store = state.training_courses.read().await;
+    let store = state.training_courses.read(user.tenant_id).await;
     let course = store
         .values()
         .find(|c| c.id == course_id && c.tenant_id == tenant_id)
@@ -219,7 +219,7 @@ pub async fn update_course(
     Json(req): Json<UpdateCourseRequest>,
 ) -> Result<Json<TrainingCourse>> {
     let tenant_id = user.tenant_id;
-    let mut store = state.training_courses.write().await;
+    let mut store = state.training_courses.write(user.tenant_id).await;
     let course = store
         .get_mut(&course_id)
         .filter(|c| c.tenant_id == tenant_id)
@@ -265,7 +265,7 @@ pub async fn delete_course(
     Path(course_id): Path<Uuid>,
 ) -> Result<Json<()>> {
     let tenant_id = user.tenant_id;
-    let mut store = state.training_courses.write().await;
+    let mut store = state.training_courses.write(user.tenant_id).await;
     let exists = store
         .get(&course_id)
         .filter(|c| c.tenant_id == tenant_id)
@@ -294,7 +294,7 @@ pub async fn enroll_users(
     let tenant_id = user.tenant_id;
     // Verify course exists
     {
-        let store = state.training_courses.read().await;
+        let store = state.training_courses.read(user.tenant_id).await;
         if !store
             .values()
             .any(|c| c.id == course_id && c.tenant_id == tenant_id)
@@ -307,7 +307,7 @@ pub async fn enroll_users(
 
     // Collect user ids that are already enrolled in this course.
     let already_enrolled: std::collections::HashSet<Uuid> = {
-        let store = state.training_enrollments.read().await;
+        let store = state.training_enrollments.read(user.tenant_id).await;
         store
             .values()
             .filter(|e| e.course_id == course_id && e.tenant_id == tenant_id)
@@ -317,7 +317,7 @@ pub async fn enroll_users(
 
     let now = Utc::now();
     let mut enrollments = Vec::new();
-    let mut enrollment_store = state.training_enrollments.write().await;
+    let mut enrollment_store = state.training_enrollments.write(user.tenant_id).await;
 
     for uid in req.user_ids {
         if already_enrolled.contains(&uid) {
@@ -350,7 +350,7 @@ pub async fn list_enrollments(
     Query(params): Query<ListEnrollmentsParams>,
 ) -> Result<Json<PaginatedResponse<TrainingEnrollment>>> {
     let tenant_id = user.tenant_id;
-    let store = state.training_enrollments.read().await;
+    let store = state.training_enrollments.read(user.tenant_id).await;
     let mut enrollments: Vec<TrainingEnrollment> = store
         .values()
         .filter(|e| e.course_id == course_id && e.tenant_id == tenant_id)
@@ -383,7 +383,7 @@ pub async fn update_enrollment_status(
     Json(req): Json<UpdateEnrollmentStatusRequest>,
 ) -> Result<Json<TrainingEnrollment>> {
     let tenant_id = user.tenant_id;
-    let mut store = state.training_enrollments.write().await;
+    let mut store = state.training_enrollments.write(user.tenant_id).await;
     let enrollment = store
         .get_mut(&enrollment_id)
         .filter(|e| e.tenant_id == tenant_id)
@@ -413,7 +413,7 @@ pub async fn my_courses(
     Query(params): Query<MyCoursesParams>,
 ) -> Result<Json<PaginatedResponse<TrainingEnrollment>>> {
     let tenant_id = user.tenant_id;
-    let store = state.training_enrollments.read().await;
+    let store = state.training_enrollments.read(user.tenant_id).await;
     let mut enrollments: Vec<TrainingEnrollment> = store
         .values()
         .filter(|e| e.user_id == user.user_id && e.tenant_id == tenant_id)
@@ -438,8 +438,8 @@ pub async fn get_training_dashboard(
 ) -> Result<Json<TrainingDashboard>> {
     let tenant_id = user.tenant_id;
 
-    let courses_store = state.training_courses.read().await;
-    let enrollments_store = state.training_enrollments.read().await;
+    let courses_store = state.training_courses.read(user.tenant_id).await;
+    let enrollments_store = state.training_enrollments.read(user.tenant_id).await;
 
     let courses: Vec<&TrainingCourse> = courses_store
         .values()

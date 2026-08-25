@@ -94,7 +94,7 @@ pub async fn list_saved_views(
 ) -> Result<Json<PaginatedResponse<SavedView>>> {
     let tenant_id = user.tenant_id;
     let user_id = user.user_id;
-    let store = state.saved_views.read().await;
+    let store = state.saved_views.read(user.tenant_id).await;
 
     let mut views: Vec<SavedView> = store
         .values()
@@ -136,7 +136,7 @@ pub async fn create_saved_view(
 
     // If this is marked as default, unmark other defaults
     if is_default {
-        let mut store = state.saved_views.write().await;
+        let mut store = state.saved_views.write(user.tenant_id).await;
         for view in store.values_mut() {
             if view.tenant_id == tenant_id
                 && view.user_id == user_id
@@ -178,7 +178,7 @@ pub async fn create_saved_view(
         tracing::warn!(error = %e, "Failed to publish SavedViewCreatedEvent");
     }
 
-    let mut store = state.saved_views.write().await;
+    let mut store = state.saved_views.write(user.tenant_id).await;
     store.insert(view.id, view.clone());
     Ok(Json(view))
 }
@@ -193,7 +193,7 @@ pub async fn get_saved_view(
 ) -> Result<Json<SavedView>> {
     let tenant_id = user.tenant_id;
     let user_id = user.user_id;
-    let mut store = state.saved_views.write().await;
+    let mut store = state.saved_views.write(user.tenant_id).await;
     let view = store
         .values_mut()
         .find(|v| {
@@ -240,7 +240,7 @@ pub async fn update_saved_view(
     let now = Utc::now();
     let is_default = req.is_default.unwrap_or(false);
 
-    let mut store = state.saved_views.write().await;
+    let mut store = state.saved_views.write(user.tenant_id).await;
 
     // If marking as default, unmark other defaults for the same entity type first
     if is_default {
@@ -324,7 +324,7 @@ pub async fn delete_saved_view(
 ) -> Result<Json<()>> {
     let tenant_id = user.tenant_id;
     let user_id = user.user_id;
-    let mut store = state.saved_views.write().await;
+    let mut store = state.saved_views.write(user.tenant_id).await;
 
     let view_name = store
         .get(&id)
@@ -360,7 +360,7 @@ pub async fn share_saved_view(
     let user_id = user.user_id;
     validate_shared_users(&state, tenant_id, &req.user_ids).await?;
 
-    let mut store = state.saved_views.write().await;
+    let mut store = state.saved_views.write(user.tenant_id).await;
     let view = store
         .get_mut(&view_id)
         .filter(|v| v.tenant_id == tenant_id && v.user_id == user_id)

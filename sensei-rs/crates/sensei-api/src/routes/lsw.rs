@@ -120,7 +120,7 @@ pub async fn list_lsw_standards(
     Query(params): Query<ListLswStandardsParams>,
 ) -> Result<Json<PaginatedResponse<LswStandard>>> {
     let tenant_id = user.tenant_id;
-    let store = state.lsw_standards.read().await;
+    let store = state.lsw_standards.read(user.tenant_id).await;
     let mut standards: Vec<LswStandard> = store
         .values()
         .filter(|s| s.tenant_id == tenant_id)
@@ -173,7 +173,7 @@ pub async fn create_lsw_standard(
         created_at: now,
         updated_at: now,
     };
-    let mut store = state.lsw_standards.write().await;
+    let mut store = state.lsw_standards.write(user.tenant_id).await;
     store.insert(standard.id, standard.clone());
     Ok(Json(standard))
 }
@@ -185,7 +185,7 @@ pub async fn get_lsw_standard(
     Path(standard_id): Path<Uuid>,
 ) -> Result<Json<LswStandard>> {
     let tenant_id = user.tenant_id;
-    let store = state.lsw_standards.read().await;
+    let store = state.lsw_standards.read(user.tenant_id).await;
     let standard = store
         .values()
         .find(|s| s.id == standard_id && s.tenant_id == tenant_id)
@@ -202,7 +202,7 @@ pub async fn update_lsw_standard(
     Json(req): Json<UpdateLswStandardRequest>,
 ) -> Result<Json<LswStandard>> {
     let tenant_id = user.tenant_id;
-    let mut store = state.lsw_standards.write().await;
+    let mut store = state.lsw_standards.write(user.tenant_id).await;
     let standard = store
         .get_mut(&standard_id)
         .filter(|s| s.tenant_id == tenant_id)
@@ -236,7 +236,7 @@ pub async fn delete_lsw_standard(
     Path(standard_id): Path<Uuid>,
 ) -> Result<Json<()>> {
     let tenant_id = user.tenant_id;
-    let mut store = state.lsw_standards.write().await;
+    let mut store = state.lsw_standards.write(user.tenant_id).await;
     let exists = store
         .get(&standard_id)
         .filter(|s| s.tenant_id == tenant_id)
@@ -262,7 +262,7 @@ pub async fn perform_audit(
     let tenant_id = user.tenant_id;
     // Verify standard exists
     let standard = {
-        let store = state.lsw_standards.read().await;
+        let store = state.lsw_standards.read(user.tenant_id).await;
         store
             .values()
             .find(|s| s.id == standard_id && s.tenant_id == tenant_id)
@@ -293,7 +293,7 @@ pub async fn perform_audit(
         notes: req.notes,
         audited_at: req.audited_at.unwrap_or(now),
     };
-    let mut store = state.lsw_audits.write().await;
+    let mut store = state.lsw_audits.write(user.tenant_id).await;
     store.insert(audit.id, audit.clone());
     Ok(Json(audit))
 }
@@ -306,7 +306,7 @@ pub async fn list_audits(
     Query(params): Query<ListAuditsParams>,
 ) -> Result<Json<PaginatedResponse<LswAudit>>> {
     let tenant_id = user.tenant_id;
-    let store = state.lsw_audits.read().await;
+    let store = state.lsw_audits.read(user.tenant_id).await;
     let mut audits: Vec<LswAudit> = store
         .values()
         .filter(|a| a.standard_id == standard_id && a.tenant_id == tenant_id)
@@ -324,7 +324,7 @@ pub async fn get_audit(
     Path(audit_id): Path<Uuid>,
 ) -> Result<Json<LswAudit>> {
     let tenant_id = user.tenant_id;
-    let store = state.lsw_audits.read().await;
+    let store = state.lsw_audits.read(user.tenant_id).await;
     let audit = store
         .values()
         .find(|a| a.id == audit_id && a.tenant_id == tenant_id)
@@ -342,8 +342,8 @@ pub async fn get_lsw_dashboard(
     Query(params): Query<LswDashboardParams>,
 ) -> Result<Json<LswDashboard>> {
     let tenant_id = user.tenant_id;
-    let standards_store = state.lsw_standards.read().await;
-    let audits_store = state.lsw_audits.read().await;
+    let standards_store = state.lsw_standards.read(user.tenant_id).await;
+    let audits_store = state.lsw_audits.read(user.tenant_id).await;
 
     let total_standards = standards_store
         .values()

@@ -65,7 +65,9 @@ async fn test_ws_missing_token_returns_422_or_400() {
 async fn test_sse_invalid_token_returns_401() {
     let app = common::TestApp::new().await;
 
-    let req = app.get("/api/v1/sse?token=invalid-token");
+    // Realtime auth is ticket-based: a well-formed but unknown ticket is
+    // rejected with 401 (a non-UUID value would be a 400 query rejection).
+    let req = app.get(&format!("/api/v1/sse?ticket={}", uuid::Uuid::new_v4()));
     let resp = app.send_request(req).await;
     assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
 }

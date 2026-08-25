@@ -7,36 +7,58 @@
 //!
 //! # Cache-key scoping
 //!
-//! The cache key is `sha256("{user_id}|{path}|{idempotency_key}")`, so the
-//! same key used by different users (or on different paths) never collides.
-//! This middleware runs after authentication and reads the
-//! [`AuthenticatedUser`] from the request extensions.
+//! The cache key is
+//! `sha256(tenant_id|user_id|method|normalized_path|Idempotency-Key)`, so
+//! the same key used by different users (or on different paths, or with
+//! different methods) never collides. This middleware runs after
+//! authentication and reads the [`AuthenticatedUser`] from the request
+//! extensions.
 //!
-//! # Safety properties
+//! # Claim semantics
 //!
-//! * 5xx responses are never cached, so a transient server failure does not
-//!   poison the retry.
-//! * Responses larger than 1 MiB are not cached.
-//! * A per-key mutex serializes concurrent requests carrying the same key,
-//!   so a duplicate is not double-executed: the second request waits for the
-//!   first and then replays its cached response.
+//! * The claim is **atomic**: in PostgreSQL mode it is an
+//!   `INSERT ... ON CONFLICT DO NOTHING` in state `in_progress`, so two
+//!   replicas can never execute the same key concurrently.
+//! * On conflict, an existing record is inspected:
+//!   * `completed` + matching request hash → the cached response is replayed;
+//!   * `completed` + different request hash → `422` `idempotency_key_reuse`;
+//!   * `in_progress` → `409` with `Retry-After` (another replica is
+//!     executing).
+//! * On handler success the record is flipped to `completed` with the
+//!   status and response body; **5xx responses are never cached** (the
+//!   claim is aborted so a retry can re-execute).
+//! * A per-key in-process mutex additionally serializes concurrent
+//!   duplicates within one replica: the second request waits for the first
+//!   and then replays its cached response.
+//!
+//! # Storage
+//!
+//! PostgreSQL (`idempotency_records`, migration 051) when a pool is
+//! configured; a [`DashMap`] with identical semantics in development mode.
+//! In both modes the request body is buffered once (bounded by
+//! [`MAX_CACHED_BODY_BYTES`]; oversized bodies bypass idempotency) so the
+//! request hash can be computed, and responses larger than 1 MiB are never
+//! cached.
 
 use axum::{
     extract::Request,
     http::StatusCode,
     middleware::Next,
     response::{IntoResponse, Response},
+    Json,
 };
 use dashmap::DashMap;
 use sensei_auth::middleware::AuthenticatedUser;
+use serde::Serialize;
 use sha2::{Digest, Sha256};
+use sqlx::PgPool;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::Mutex;
 use tracing::{debug, trace, warn};
 
-/// Upper bound for cached response bodies (1 MiB). Larger responses are
-/// passed through without being cached.
+/// Upper bound for cached request/response bodies (1 MiB). Larger
+/// requests/responses bypass idempotency caching.
 const MAX_CACHED_BODY_BYTES: usize = 1024 * 1024;
 
 /// A cached response for a given idempotency key.
@@ -50,6 +72,30 @@ pub struct StoredResponse {
     pub body: Vec<u8>,
     /// When this entry was created (for TTL-based eviction).
     pub created_at: Instant,
+    /// SHA-256 of the request body this response answers.
+    pub request_hash: String,
+    /// Whether the handler is still executing for this key.
+    pub in_progress: bool,
+}
+
+/// Outcome of claiming an idempotency key.
+#[derive(Debug)]
+enum Claim {
+    /// The claim was acquired; the handler must run.
+    New,
+    /// A completed record with a matching request hash exists; replay it.
+    Replay(StoredResponse),
+    /// A completed record with a different request hash exists (422).
+    ReuseConflict,
+    /// Another worker is executing this key right now (409).
+    InProgress,
+}
+
+/// Error body for idempotency conflicts.
+#[derive(Serialize)]
+struct IdempotencyError {
+    error: String,
+    message: String,
 }
 
 /// Thread-safe store for idempotent request responses.
@@ -65,24 +111,35 @@ pub struct IdempotencyStore {
     locks: Arc<DashMap<String, Arc<Mutex<()>>>>,
     /// Time-to-live for each cached response.
     ttl: Duration,
+    /// PostgreSQL pool when the store is DB-backed.
+    pool: Option<Arc<PgPool>>,
 }
 
 impl IdempotencyStore {
-    /// Create a new [`IdempotencyStore`].
+    /// Create a new in-memory [`IdempotencyStore`].
     ///
     /// # Arguments
     /// * `ttl_secs` – number of seconds before a cached response expires.
     pub fn new(ttl_secs: u64) -> Self {
+        Self::with_pool(ttl_secs, None)
+    }
+
+    /// Create an [`IdempotencyStore`], optionally backed by a PostgreSQL
+    /// pool (dev fallback is in-memory).
+    pub fn with_pool(ttl_secs: u64, pool: Option<Arc<PgPool>>) -> Self {
         let store = Self {
             responses: Arc::new(DashMap::new()),
             locks: Arc::new(DashMap::new()),
             ttl: Duration::from_secs(ttl_secs),
+            pool,
         };
 
-        // Spawn a background eviction task.
+        // Spawn a background eviction task (in-memory entries) and, when a
+        // pool is present, sweep expired DB records.
         let inner = Arc::clone(&store.responses);
         let locks = Arc::clone(&store.locks);
         let ttl = store.ttl;
+        let db_pool = store.pool.clone();
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(Duration::from_secs(300));
             interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
@@ -103,18 +160,27 @@ impl IdempotencyStore {
                         "Idempotency-store cleanup"
                     );
                 }
+                if let Some(pool) = &db_pool {
+                    if let Err(e) =
+                        sqlx::query("DELETE FROM idempotency_records WHERE expires_at < NOW()")
+                            .execute(&**pool)
+                            .await
+                    {
+                        debug!(error = %e, "Idempotency DB cleanup failed");
+                    }
+                }
             }
         });
 
         store
     }
 
-    /// Retrieve a cached response by key.
+    /// Retrieve a completed cached response by key (in-memory mode).
     pub fn get(&self, key: &str) -> Option<StoredResponse> {
         self.responses.get(key).and_then(|r| {
             let stored = r.value();
-            // Don't return expired entries.
-            if stored.created_at.elapsed() >= self.ttl {
+            // Don't return expired or in-flight entries.
+            if stored.in_progress || stored.created_at.elapsed() >= self.ttl {
                 None
             } else {
                 Some(stored.clone())
@@ -122,7 +188,7 @@ impl IdempotencyStore {
         })
     }
 
-    /// Store a response for the given key.
+    /// Store a response for the given key (in-memory mode).
     pub fn store(&self, key: String, response: StoredResponse) {
         self.responses.insert(key, response);
     }
@@ -145,7 +211,153 @@ impl IdempotencyStore {
         lock.lock_owned().await
     }
 
-    /// Return the number of cached responses.
+    /// Atomically claim a key for execution.
+    ///
+    /// See the module docs for the state machine.
+    async fn claim(&self, key: &str, request_hash: &str) -> Result<Claim, String> {
+        match &self.pool {
+            None => {
+                if let Some(existing) = self.responses.get(key) {
+                    let existing = existing.value().clone();
+                    if existing.in_progress {
+                        return Ok(Claim::InProgress);
+                    }
+                    if existing.request_hash != request_hash {
+                        return Ok(Claim::ReuseConflict);
+                    }
+                    return Ok(Claim::Replay(existing));
+                }
+                self.responses.insert(
+                    key.to_string(),
+                    StoredResponse {
+                        status_code: 0,
+                        headers: Vec::new(),
+                        body: Vec::new(),
+                        created_at: Instant::now(),
+                        request_hash: request_hash.to_string(),
+                        in_progress: true,
+                    },
+                );
+                Ok(Claim::New)
+            }
+            Some(pool) => {
+                let expires_at =
+                    chrono::Utc::now() + chrono::Duration::from_std(self.ttl).unwrap_or_default();
+                let inserted = sqlx::query(
+                    "INSERT INTO idempotency_records \
+                     (key, request_hash, state, status, response_body, expires_at) \
+                     VALUES ($1, $2, 'in_progress', NULL, NULL, $3) \
+                     ON CONFLICT (key) DO NOTHING",
+                )
+                .bind(key)
+                .bind(request_hash)
+                .bind(expires_at)
+                .execute(&**pool)
+                .await
+                .map_err(|e| format!("Idempotency claim failed: {e}"))?;
+
+                if inserted.rows_affected() == 1 {
+                    return Ok(Claim::New);
+                }
+
+                // The key already exists: inspect the current record.
+                let row = sqlx::query_as::<_, (String, String, Option<i32>, Option<Vec<u8>>)>(
+                    "SELECT request_hash, state, status, response_body \
+                     FROM idempotency_records WHERE key = $1 AND expires_at > NOW()",
+                )
+                .bind(key)
+                .fetch_optional(&**pool)
+                .await
+                .map_err(|e| format!("Idempotency lookup failed: {e}"))?;
+
+                match row {
+                    Some((stored_hash, state, status, body)) => match state.as_str() {
+                        "completed" => {
+                            if stored_hash != request_hash {
+                                Ok(Claim::ReuseConflict)
+                            } else {
+                                Ok(Claim::Replay(StoredResponse {
+                                    status_code: status.unwrap_or(200) as u16,
+                                    headers: Vec::new(),
+                                    body: body.unwrap_or_default(),
+                                    created_at: Instant::now(),
+                                    request_hash: stored_hash,
+                                    in_progress: false,
+                                }))
+                            }
+                        }
+                        _ => Ok(Claim::InProgress),
+                    },
+                    // The existing row is expired: reclaim it atomically.
+                    None => {
+                        let reclaimed = sqlx::query(
+                            "UPDATE idempotency_records \
+                             SET request_hash = $2, state = 'in_progress', status = NULL, \
+                                 response_body = NULL, expires_at = $3 \
+                             WHERE key = $1 AND expires_at <= NOW()",
+                        )
+                        .bind(key)
+                        .bind(request_hash)
+                        .bind(expires_at)
+                        .execute(&**pool)
+                        .await
+                        .map_err(|e| format!("Idempotency reclaim failed: {e}"))?;
+
+                        if reclaimed.rows_affected() == 1 {
+                            Ok(Claim::New)
+                        } else {
+                            // Lost the race to another worker.
+                            Ok(Claim::InProgress)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// Flip a claimed key to `completed` with the cached response.
+    async fn complete(&self, key: &str, response: StoredResponse) {
+        match &self.pool {
+            Some(pool) => {
+                if let Err(e) = sqlx::query(
+                    "UPDATE idempotency_records \
+                     SET state = 'completed', status = $2, response_body = $3 \
+                     WHERE key = $1",
+                )
+                .bind(key)
+                .bind(response.status_code as i32)
+                .bind(response.body)
+                .execute(&**pool)
+                .await
+                {
+                    warn!(error = %e, key, "Failed to store idempotency response");
+                }
+            }
+            None => {
+                self.responses.insert(key.to_string(), response);
+            }
+        }
+    }
+
+    /// Abort a claim (used for 5xx responses so a retry can re-execute).
+    async fn abort(&self, key: &str) {
+        match &self.pool {
+            Some(pool) => {
+                if let Err(e) = sqlx::query("DELETE FROM idempotency_records WHERE key = $1")
+                    .bind(key)
+                    .execute(&**pool)
+                    .await
+                {
+                    warn!(error = %e, key, "Failed to abort idempotency claim");
+                }
+            }
+            None => {
+                self.responses.remove(key);
+            }
+        }
+    }
+
+    /// Return the number of cached responses (in-memory mode).
     pub fn len(&self) -> usize {
         self.responses.len()
     }
@@ -156,10 +368,21 @@ impl IdempotencyStore {
     }
 }
 
-/// Compute the scoped cache key: `sha256("{user_id}|{path}|{key}")`.
-fn compute_cache_key(user_id: &str, path: &str, idempotency_key: &str) -> String {
+/// Compute the scoped cache key:
+/// `sha256(tenant_id|user_id|method|normalized_path|idempotency_key)`.
+fn compute_cache_key(
+    tenant_id: &str,
+    user_id: &str,
+    method: &str,
+    path: &str,
+    idempotency_key: &str,
+) -> String {
     let mut hasher = Sha256::new();
+    hasher.update(tenant_id.as_bytes());
+    hasher.update(b"|");
     hasher.update(user_id.as_bytes());
+    hasher.update(b"|");
+    hasher.update(method.as_bytes());
     hasher.update(b"|");
     hasher.update(path.as_bytes());
     hasher.update(b"|");
@@ -167,11 +390,29 @@ fn compute_cache_key(user_id: &str, path: &str, idempotency_key: &str) -> String
     hex::encode(hasher.finalize())
 }
 
+/// Normalize a request path for cache-key scoping: strip trailing slashes.
+fn normalize_path(path: &str) -> String {
+    let trimmed = path.trim_end_matches('/');
+    if trimmed.is_empty() {
+        "/".to_string()
+    } else {
+        trimmed.to_string()
+    }
+}
+
+/// SHA-256 hex digest of a byte slice (the request body).
+fn hash_hex(bytes: &[u8]) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(bytes);
+    hex::encode(hasher.finalize())
+}
+
 /// Axum middleware that handles idempotency keys.
 ///
 /// Reads the `Idempotency-Key` header from POST, PUT, and PATCH requests.
-/// If a cached response exists for the key (scoped to the authenticated
-/// user and path) it is returned immediately. Otherwise the request passes
+/// If a completed record exists for the key (scoped to the authenticated
+/// user, tenant, method and normalized path) it is returned immediately —
+/// provided the request body hash matches; otherwise the request passes
 /// through under a per-key mutex and the response is cached for future
 /// retries.
 ///
@@ -205,39 +446,107 @@ pub async fn idempotency_middleware(req: Request, next: Next) -> Response {
         (None, _) => return next.run(req).await,
     };
 
-    // Runs after authentication: the cache key is scoped to the user.
-    let user_id = req
+    // Runs after authentication: the cache key is scoped to user + tenant.
+    let (user_id, tenant_id) = req
         .extensions()
         .get::<AuthenticatedUser>()
-        .map(|u| u.user_id.to_string())
-        .unwrap_or_else(|| "anonymous".to_string());
-    let path = req.uri().path().to_string();
-    let cache_key = compute_cache_key(&user_id, &path, &key);
+        .map(|u| (u.user_id.to_string(), u.tenant_id.to_string()))
+        .unwrap_or_else(|| ("anonymous".to_string(), "anonymous".to_string()));
+    let path = normalize_path(req.uri().path());
+    let cache_key = compute_cache_key(&tenant_id, &user_id, method.as_str(), &path, &key);
 
-    // Check for a cached response.
-    if let Some(cached) = store.get(&cache_key) {
-        trace!(key = %key, "Returning cached idempotent response");
-        return stored_response_into_response(cached);
+    // Capture the request body once so its hash can be compared on retries,
+    // then reconstruct the request from the buffered bytes.
+    let (parts, body) = req.into_parts();
+    let body_bytes = match collect_body(body).await {
+        Ok(bytes) => bytes,
+        Err(e) => {
+            warn!(
+                error = %e,
+                "Failed to capture request body for idempotency; skipping idempotency"
+            );
+            return next
+                .run(Request::from_parts(parts, axum::body::Body::empty()))
+                .await;
+        }
+    };
+    let req = Request::from_parts(parts, axum::body::Body::from(body_bytes.clone()));
+
+    if body_bytes.len() > MAX_CACHED_BODY_BYTES {
+        debug!(
+            bytes = body_bytes.len(),
+            "Request body exceeds idempotency limit; skipping idempotency for this request"
+        );
+        return next.run(req).await;
+    }
+    let request_hash = hash_hex(&body_bytes);
+
+    // Fast path (in-memory store only): a completed response may already be
+    // cached for this key.
+    if store.pool.is_none() {
+        if let Some(cached) = store.get(&cache_key) {
+            if cached.request_hash == request_hash {
+                trace!(key = %key, "Returning cached idempotent response");
+                return stored_response_into_response(cached);
+            }
+        }
     }
 
     // Serialize concurrent duplicates of the same key: the first request
     // executes; later ones wait and then replay the cached response.
     let _guard = store.lock_for(&cache_key).await;
 
-    // Double-check under the lock – another request may have executed and
-    // cached the response while we were waiting.
-    if let Some(cached) = store.get(&cache_key) {
-        trace!(key = %key, "Returning cached idempotent response (after waiting for duplicate)");
-        return stored_response_into_response(cached);
+    // Claim the key (double-check under the lock — another request may have
+    // executed and cached the response while we were waiting).
+    match store.claim(&cache_key, &request_hash).await {
+        Ok(Claim::Replay(cached)) => {
+            trace!(key = %key, "Returning cached idempotent response (after waiting for duplicate)");
+            return stored_response_into_response(cached);
+        }
+        Ok(Claim::ReuseConflict) => {
+            return (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                Json(IdempotencyError {
+                    error: "idempotency_key_reuse".to_string(),
+                    message: "Idempotency-Key was already used with a different request"
+                        .to_string(),
+                }),
+            )
+                .into_response();
+        }
+        Ok(Claim::InProgress) => {
+            let mut response = (
+                StatusCode::CONFLICT,
+                Json(IdempotencyError {
+                    error: "idempotency_key_in_progress".to_string(),
+                    message: "A request with this Idempotency-Key is already being processed"
+                        .to_string(),
+                }),
+            )
+                .into_response();
+            response.headers_mut().insert(
+                axum::http::header::RETRY_AFTER,
+                axum::http::HeaderValue::from_static("1"),
+            );
+            return response;
+        }
+        Err(e) => {
+            warn!(
+                error = %e,
+                "Idempotency store unavailable; executing request without idempotency"
+            );
+            return next.run(req).await;
+        }
+        Ok(Claim::New) => {}
     }
 
-    // No cached response – run the handler and cache the result.
+    // Claimed – run the handler and cache the result.
     let response = next.run(req).await;
 
     // Never cache 5xx responses: a transient failure must be retryable.
     let status = response.status();
     if status.is_server_error() {
-        store.remove(&cache_key);
+        store.abort(&cache_key).await;
         return response;
     }
 
@@ -277,8 +586,10 @@ pub async fn idempotency_middleware(req: Request, next: Next) -> Response {
         headers,
         body: body_bytes.clone(),
         created_at: Instant::now(),
+        request_hash,
+        in_progress: false,
     };
-    store.store(cache_key, stored);
+    store.complete(&cache_key, stored).await;
 
     // Reconstruct the response.
     (
@@ -306,6 +617,9 @@ fn stored_response_into_response(cached: StoredResponse) -> Response {
 
 /// Collect all body bytes from an [`axum::body::Body`] using the
 /// stream-based API (no external trait dependency needed).
+///
+/// On stream errors the bytes collected so far are returned (callers log
+/// and proceed); the request path must never fail because of body capture.
 async fn collect_body(body: axum::body::Body) -> Result<Vec<u8>, String> {
     use futures::StreamExt;
     let mut stream = body.into_data_stream();
@@ -338,6 +652,8 @@ mod tests {
             headers: vec![("content-type".into(), "application/json".into())],
             body: b"{\"id\":\"abc\"}".to_vec(),
             created_at: Instant::now(),
+            request_hash: "hash-1".into(),
+            in_progress: false,
         };
 
         store.store("key-1".into(), response.clone());
@@ -363,36 +679,14 @@ mod tests {
             headers: vec![],
             body: vec![],
             created_at: Instant::now(),
+            request_hash: "hash".into(),
+            in_progress: false,
         };
         store.store("key-1".into(), response);
         assert_eq!(store.len(), 1);
 
         store.remove("key-1");
         assert!(store.is_empty());
-    }
-
-    #[tokio::test]
-    async fn test_idempotency_store_overwrite() {
-        let store = IdempotencyStore::new(3600);
-
-        let r1 = StoredResponse {
-            status_code: 200,
-            headers: vec![],
-            body: b"first".to_vec(),
-            created_at: Instant::now(),
-        };
-        let r2 = StoredResponse {
-            status_code: 200,
-            headers: vec![],
-            body: b"second".to_vec(),
-            created_at: Instant::now(),
-        };
-
-        store.store("key-1".into(), r1);
-        store.store("key-1".into(), r2);
-
-        let cached = store.get("key-1").unwrap();
-        assert_eq!(cached.body, b"second".to_vec());
     }
 
     #[tokio::test]
@@ -404,6 +698,8 @@ mod tests {
             headers: vec![],
             body: vec![],
             created_at: Instant::now(),
+            request_hash: "hash".into(),
+            in_progress: false,
         };
         store.store("key-1".into(), response);
 
@@ -415,38 +711,48 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_idempotency_store_multiple_keys() {
+    async fn test_in_memory_claim_new_then_replay() {
         let store = IdempotencyStore::new(3600);
-        for i in 0..10 {
-            let response = StoredResponse {
-                status_code: 200,
-                headers: vec![],
-                body: format!("body-{}", i).into_bytes(),
-                created_at: Instant::now(),
-            };
-            store.store(format!("key-{}", i), response);
+        let key = "k1";
+        let hash = "body-hash";
+
+        // First claim is New (nothing stored).
+        assert!(matches!(store.claim(key, hash).await.unwrap(), Claim::New));
+
+        // In-flight claim → InProgress.
+        assert!(matches!(
+            store.claim(key, hash).await.unwrap(),
+            Claim::InProgress
+        ));
+
+        // Complete with a matching hash → Replay.
+        store
+            .complete(
+                key,
+                StoredResponse {
+                    status_code: 200,
+                    headers: vec![],
+                    body: b"cached".to_vec(),
+                    created_at: Instant::now(),
+                    request_hash: hash.into(),
+                    in_progress: false,
+                },
+            )
+            .await;
+        match store.claim(key, hash).await.unwrap() {
+            Claim::Replay(cached) => assert_eq!(cached.body, b"cached".to_vec()),
+            other => panic!("expected Replay, got {other:?}"),
         }
-        assert_eq!(store.len(), 10);
 
-        for i in 0..10 {
-            let cached = store.get(&format!("key-{}", i));
-            assert!(cached.is_some());
-            assert_eq!(cached.unwrap().body, format!("body-{}", i).into_bytes());
-        }
-    }
+        // Different hash on the same key → reuse conflict.
+        assert!(matches!(
+            store.claim(key, "different-hash").await.unwrap(),
+            Claim::ReuseConflict
+        ));
 
-    #[test]
-    fn test_cache_key_is_scoped_to_user_and_path() {
-        let k1 = compute_cache_key("user-a", "/api/v1/tasks", "key-1");
-        let k2 = compute_cache_key("user-b", "/api/v1/tasks", "key-1");
-        let k3 = compute_cache_key("user-a", "/api/v1/other", "key-1");
-        let k4 = compute_cache_key("user-a", "/api/v1/tasks", "key-2");
-        let k5 = compute_cache_key("user-a", "/api/v1/tasks", "key-1");
-
-        assert_ne!(k1, k2, "same key must be scoped per user");
-        assert_ne!(k1, k3, "same key must be scoped per path");
-        assert_ne!(k1, k4, "different keys differ");
-        assert_eq!(k1, k5, "deterministic");
+        // Abort removes the record; a fresh claim is New again.
+        store.abort(key).await;
+        assert!(matches!(store.claim(key, hash).await.unwrap(), Claim::New));
     }
 
     #[tokio::test]
@@ -482,11 +788,43 @@ mod tests {
     }
 
     #[test]
-    fn test_collect_body_empty() {
-        // Unit-style test for the collect_body helper.
+    fn test_cache_key_is_scoped_to_tenant_user_method_and_path() {
+        let k1 = compute_cache_key("tenant-a", "user-a", "POST", "/api/v1/tasks", "key-1");
+        let k2 = compute_cache_key("tenant-b", "user-a", "POST", "/api/v1/tasks", "key-1");
+        let k3 = compute_cache_key("tenant-a", "user-b", "POST", "/api/v1/tasks", "key-1");
+        let k4 = compute_cache_key("tenant-a", "user-a", "PUT", "/api/v1/tasks", "key-1");
+        let k5 = compute_cache_key("tenant-a", "user-a", "POST", "/api/v1/other", "key-1");
+        let k6 = compute_cache_key("tenant-a", "user-a", "POST", "/api/v1/tasks", "key-2");
+        let k7 = compute_cache_key("tenant-a", "user-a", "POST", "/api/v1/tasks", "key-1");
+
+        assert_ne!(k1, k2, "same key must be scoped per tenant");
+        assert_ne!(k1, k3, "same key must be scoped per user");
+        assert_ne!(k1, k4, "same key must be scoped per method");
+        assert_ne!(k1, k5, "same key must be scoped per path");
+        assert_ne!(k1, k6, "different keys differ");
+        assert_eq!(k1, k7, "deterministic");
+    }
+
+    #[test]
+    fn test_normalize_path_strips_trailing_slashes() {
+        assert_eq!(normalize_path("/api/v1/tasks"), "/api/v1/tasks");
+        assert_eq!(normalize_path("/api/v1/tasks/"), "/api/v1/tasks");
+        assert_eq!(normalize_path("/api/v1/tasks///"), "/api/v1/tasks");
+        assert_eq!(normalize_path("/"), "/");
+        assert_eq!(normalize_path("//"), "/");
+    }
+
+    #[test]
+    fn test_hash_hex_is_stable_and_distinct() {
+        assert_eq!(hash_hex(b"abc"), hash_hex(b"abc"));
+        assert_ne!(hash_hex(b"abc"), hash_hex(b"abd"));
+        assert_eq!(hash_hex(b"").len(), 64);
+    }
+
+    #[tokio::test]
+    async fn test_collect_body_empty() {
         let body = axum::body::Body::empty();
-        let rt = tokio::runtime::Runtime::new().unwrap();
-        let result = rt.block_on(collect_body(body));
+        let result = collect_body(body).await;
         assert!(result.is_ok());
         assert!(result.unwrap().is_empty());
     }

@@ -263,7 +263,7 @@ async fn test_sm_linked_task_status_role_enforcement() {
 
     // Link the task to the instance (no dedicated endpoint; set directly).
     {
-        let mut store = app.state.tasks.write().await;
+        let mut store = app.state.tasks.write(app.admin_tenant_id).await;
         store
             .get_mut(&task_id.parse().unwrap())
             .unwrap()
@@ -336,7 +336,7 @@ async fn test_sm_linked_task_hook_creates_notification() {
     let instance: Value = app.json_body(&mut resp).await;
     let instance_id = instance["id"].as_str().unwrap().to_string();
     {
-        let mut store = app.state.tasks.write().await;
+        let mut store = app.state.tasks.write(app.admin_tenant_id).await;
         store
             .get_mut(&task_id.parse().unwrap())
             .unwrap()

@@ -49,7 +49,7 @@ pub async fn list_modules(
     State(state): State<AppState>,
     Query(params): Query<ListModulesParams>,
 ) -> Result<Json<PaginatedResponse<LearningModule>>> {
-    let store = state.learning_modules.read().await;
+    let store = state.learning_modules.read(user.tenant_id).await;
     let mut modules: Vec<LearningModule> = store
         .values()
         .filter(|m| m.tenant_id == user.tenant_id)
@@ -89,7 +89,7 @@ pub async fn create_module(
         created_at: now,
         updated_at: now,
     };
-    let mut store = state.learning_modules.write().await;
+    let mut store = state.learning_modules.write(user.tenant_id).await;
     store.insert(module.id, module.clone());
     Ok(Json(module))
 }
@@ -100,7 +100,7 @@ pub async fn get_module(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<LearningModule>> {
-    let store = state.learning_modules.read().await;
+    let store = state.learning_modules.read(user.tenant_id).await;
     let module = store
         .values()
         .find(|m| m.id == id && m.tenant_id == user.tenant_id)
@@ -116,7 +116,7 @@ pub async fn update_module(
     Path(id): Path<Uuid>,
     Json(req): Json<ModuleRequest>,
 ) -> Result<Json<LearningModule>> {
-    let mut store = state.learning_modules.write().await;
+    let mut store = state.learning_modules.write(user.tenant_id).await;
     let module = store
         .get_mut(&id)
         .filter(|m| m.tenant_id == user.tenant_id)
@@ -138,7 +138,7 @@ pub async fn delete_module(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<()>> {
-    let mut store = state.learning_modules.write().await;
+    let mut store = state.learning_modules.write(user.tenant_id).await;
     let exists = store
         .get(&id)
         .filter(|m| m.tenant_id == user.tenant_id)

@@ -46,7 +46,7 @@ impl AppConfig {
     /// (in production), a value fails to parse, or a production security
     /// invariant is violated (e.g. the default JWT secret).
     pub fn from_env() -> Result<Self, ConfigError> {
-        let environment = Environment::from_env();
+        let environment = Environment::from_env()?;
         Ok(Self {
             database: DatabaseConfig::from_env()?,
             auth: AuthConfig::from_env()?,
@@ -74,16 +74,19 @@ pub enum Environment {
 }
 
 impl Environment {
-    /// Detect the environment from the `SENSEI_ENV` environment variable.
-    pub fn from_env() -> Self {
-        match std::env::var("SENSEI_ENV")
-            .unwrap_or_else(|_| "development".to_string())
-            .to_lowercase()
-            .as_str()
-        {
-            "production" | "prod" => Environment::Production,
-            "staging" => Environment::Staging,
-            _ => Environment::Development,
+    /// Load the environment from the `SENSEI_ENV` environment variable.
+    ///
+    /// Parsing is strict: any value that is not one of the accepted names
+    /// (see [`Environment::from_str`]) is an error. In particular a typo such
+    /// as `SENSEI_ENV=prodution` aborts startup instead of silently falling
+    /// back to development.
+    ///
+    /// When the variable is unset the environment defaults to
+    /// [`Environment::Development`].
+    pub fn from_env() -> Result<Self, ConfigError> {
+        match std::env::var("SENSEI_ENV") {
+            Ok(value) => value.parse::<Environment>(),
+            Err(_) => Ok(Environment::Development),
         }
     }
 
@@ -95,6 +98,32 @@ impl Environment {
     /// Returns `true` if this is a production environment.
     pub fn is_prod(&self) -> bool {
         matches!(self, Environment::Production)
+    }
+}
+
+impl FromStr for Environment {
+    type Err = ConfigError;
+
+    /// Strictly parse an environment name.
+    ///
+    /// Accepts the canonical names `development`, `staging` and `production`
+    /// (plus the short aliases `dev`, `test` and `prod`). Any other value —
+    /// including misspellings such as `prodution` — is rejected with a
+    /// [`ConfigError::InvalidValue`] so that misconfiguration fails fast
+    /// instead of silently degrading to the development defaults.
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value.trim().to_lowercase().as_str() {
+            "development" | "dev" => Ok(Environment::Development),
+            "staging" | "test" => Ok(Environment::Staging),
+            "production" | "prod" => Ok(Environment::Production),
+            other => Err(ConfigError::InvalidValue {
+                var: "SENSEI_ENV".to_string(),
+                reason: format!(
+                    "'{other}' is not a valid environment (expected one of: \
+                     development, dev, staging, test, production, prod)"
+                ),
+            }),
+        }
     }
 }
 
@@ -158,7 +187,7 @@ impl AuthConfig {
     /// In production the `JWT_SECRET` environment variable must be set and
     /// must not be the placeholder default `change-me-in-production`.
     pub fn from_env() -> Result<Self, ConfigError> {
-        let environment = Environment::from_env();
+        let environment = Environment::from_env()?;
         let jwt_secret = std::env::var("JWT_SECRET").ok();
         if environment.is_prod() {
             validate_production_jwt_secret(jwt_secret.as_deref())?;
@@ -170,7 +199,7 @@ impl AuthConfig {
             jwt_issuer: std::env::var("JWT_ISSUER").unwrap_or_else(|_| "sensei".to_string()),
             jwt_audience: std::env::var("JWT_AUDIENCE")
                 .unwrap_or_else(|_| "sensei-api".to_string()),
-            access_token_expiry_minutes: parse_env_int("JWT_ACCESS_EXPIRY_MINUTES", 15i64)?,
+            access_token_expiry_minutes: parse_env_int("JWT_ACCESS_TTL_MINUTES", 15i64)?,
             refresh_token_expiry_days: parse_env_int("JWT_REFRESH_EXPIRY_DAYS", 7i64)?,
             oauth2: OAuth2ProviderConfig::from_env()?,
         })
@@ -623,5 +652,85 @@ mod tests {
         assert!(cfg.csp.is_none());
         assert!(cfg.hsts);
         assert!(cfg.trusted_proxies.is_empty());
+    }
+
+    #[test]
+    fn environment_parses_valid_names() {
+        assert_eq!(
+            "development".parse::<Environment>().unwrap(),
+            Environment::Development
+        );
+        assert_eq!(
+            "dev".parse::<Environment>().unwrap(),
+            Environment::Development
+        );
+        assert_eq!(
+            "staging".parse::<Environment>().unwrap(),
+            Environment::Staging
+        );
+        assert_eq!("test".parse::<Environment>().unwrap(), Environment::Staging);
+        assert_eq!(
+            "production".parse::<Environment>().unwrap(),
+            Environment::Production
+        );
+        assert_eq!(
+            "prod".parse::<Environment>().unwrap(),
+            Environment::Production
+        );
+        // Case-insensitive and whitespace-tolerant.
+        assert_eq!(
+            "Production".parse::<Environment>().unwrap(),
+            Environment::Production
+        );
+        assert_eq!(
+            " development ".parse::<Environment>().unwrap(),
+            Environment::Development
+        );
+    }
+
+    #[test]
+    fn environment_rejects_unknown_names() {
+        for bad in [
+            "prodution",
+            "prodction",
+            "devprod",
+            "production2",
+            "testify",
+            "",
+        ] {
+            let err = bad.parse::<Environment>().unwrap_err();
+            assert!(
+                matches!(err, ConfigError::InvalidValue { ref var, .. } if var == "SENSEI_ENV"),
+                "expected SENSEI_ENV InvalidValue for {bad:?}, got {err:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn environment_from_env_propagates_invalid_value() {
+        std::env::set_var("SENSEI_ENV", "prodution");
+        assert!(matches!(
+            Environment::from_env(),
+            Err(ConfigError::InvalidValue { .. })
+        ));
+        std::env::remove_var("SENSEI_ENV");
+    }
+
+    #[test]
+    fn environment_from_env_defaults_to_development_when_unset() {
+        std::env::remove_var("SENSEI_ENV");
+        assert_eq!(Environment::from_env().unwrap(), Environment::Development);
+    }
+
+    #[test]
+    fn app_config_from_env_fails_on_invalid_environment() {
+        std::env::set_var("SENSEI_ENV", "prodution");
+        std::env::set_var("JWT_SECRET", "test-secret");
+        std::env::set_var("DATABASE_URL", "");
+        assert!(matches!(
+            AppConfig::from_env(),
+            Err(ConfigError::InvalidValue { .. })
+        ));
+        std::env::remove_var("SENSEI_ENV");
     }
 }

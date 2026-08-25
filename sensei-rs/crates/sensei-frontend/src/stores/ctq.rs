@@ -209,19 +209,13 @@ impl CtqStore {
     }
 
     /// Export CTQs as PDF or Excel.
+    ///
+    /// Uses the shared client (same connection pool, bearer token, and 401
+    /// refresh pipeline) instead of constructing a fresh `reqwest::Client`.
     pub async fn export_ctqs(client: &ApiClient, format: &str) -> Result<Vec<u8>, ApiError> {
-        let client_inner = reqwest::Client::new();
-        let url = client.url(&format!("/api/v1/ctq/export?format={}", format));
-        let resp = client_inner
-            .get(&url)
-            .send()
+        client
+            .get_bytes(&format!("/api/v1/ctq/export?format={}", format))
             .await
-            .map_err(|e| ApiError::Http(e.to_string()))?;
-        let bytes = resp
-            .bytes()
-            .await
-            .map_err(|e| ApiError::Http(e.to_string()))?;
-        Ok(bytes.to_vec())
     }
 
     pub fn clear_error(&self) {

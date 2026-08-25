@@ -340,7 +340,7 @@ pub async fn generate_work_packets(
 
     state
         .work_packets
-        .write()
+        .write(user.tenant_id)
         .await
         .insert(packet.id, packet.clone());
 
@@ -358,7 +358,7 @@ pub async fn list_work_packets(
 ) -> Result<Json<PaginatedResponse<WorkPacketResponse>>> {
     let packets: Vec<WorkPacketResponse> = state
         .work_packets
-        .read()
+        .read(user.tenant_id)
         .await
         .values()
         .filter(|wp| wp.rfq_id == rfq_id && wp.tenant_id == user.tenant_id)
@@ -383,7 +383,7 @@ pub async fn update_work_packet(
     Path(packet_id): Path<Uuid>,
     Json(req): Json<UpdateWorkPacketRequest>,
 ) -> Result<Json<WorkPacketResponse>> {
-    let mut store = state.work_packets.write().await;
+    let mut store = state.work_packets.write(user.tenant_id).await;
     let packet = store
         .get_mut(&packet_id)
         .ok_or_else(|| SenseiError::NotFound(format!("Work packet {packet_id} not found")))?;
@@ -505,8 +505,16 @@ pub async fn ingest_rfq_documents(
             created_at: now,
             completed_at: Some(now),
         };
-        state.ingestion_jobs.write().await.insert(job_id, job);
-        state.ingestion_data.write().await.insert(job_id, raw);
+        state
+            .ingestion_jobs
+            .write(user.tenant_id)
+            .await
+            .insert(job_id, job);
+        state
+            .ingestion_data
+            .write(user.tenant_id)
+            .await
+            .insert(job_id, raw);
         job_ids.push(job_id);
     }
 
@@ -586,7 +594,7 @@ pub async fn build_quote_cost(
 
     state
         .cost_builds
-        .write()
+        .write(user.tenant_id)
         .await
         .insert(cost_build.id, cost_build.clone());
 
@@ -666,7 +674,7 @@ pub async fn convert_quote_to_npi(
 
     state
         .npi_conversions
-        .write()
+        .write(user.tenant_id)
         .await
         .insert(conversion.id, conversion.clone());
 

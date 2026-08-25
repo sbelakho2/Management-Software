@@ -128,7 +128,7 @@ pub async fn list_inventory_items(
     Query(params): Query<ListInventoryItemsParams>,
 ) -> Result<Json<PaginatedResponse<InventoryItem>>> {
     let tenant_id = user.tenant_id;
-    let store = state.inventory_items.read().await;
+    let store = state.inventory_items.read(user.tenant_id).await;
     let mut items: Vec<InventoryItem> = store
         .values()
         .filter(|i| i.tenant_id == tenant_id)
@@ -168,7 +168,7 @@ pub async fn get_inventory_item(
     Path(id): Path<Uuid>,
 ) -> Result<Json<InventoryItem>> {
     let tenant_id = user.tenant_id;
-    let store = state.inventory_items.read().await;
+    let store = state.inventory_items.read(user.tenant_id).await;
     let item = store
         .values()
         .find(|i| i.id == id && i.tenant_id == tenant_id)
@@ -215,7 +215,7 @@ pub async fn create_inventory_item(
         created_at: now,
         updated_at: now,
     };
-    let mut store = state.inventory_items.write().await;
+    let mut store = state.inventory_items.write(user.tenant_id).await;
     store.insert(item.id, item.clone());
     Ok(Json(item))
 }
@@ -228,7 +228,7 @@ pub async fn update_inventory_item(
     Json(req): Json<UpdateInventoryItemRequest>,
 ) -> Result<Json<InventoryItem>> {
     let tenant_id = user.tenant_id;
-    let mut store = state.inventory_items.write().await;
+    let mut store = state.inventory_items.write(user.tenant_id).await;
     let item = store
         .get_mut(&id)
         .filter(|i| i.tenant_id == tenant_id)
@@ -287,7 +287,7 @@ pub async fn list_stock_moves(
     Query(params): Query<ListStockMovesParams>,
 ) -> Result<Json<PaginatedResponse<StockMove>>> {
     let tenant_id = user.tenant_id;
-    let store = state.stock_moves.read().await;
+    let store = state.stock_moves.read(user.tenant_id).await;
     let mut moves: Vec<StockMove> = store
         .values()
         .filter(|m| m.tenant_id == tenant_id)
@@ -337,7 +337,7 @@ pub async fn create_stock_move(
     // Transfers reference a warehouse; it must exist and belong to the
     // tenant before any quantity is adjusted.
     if req.move_type.starts_with("transfer_") {
-        let warehouses = state.warehouses.read().await;
+        let warehouses = state.warehouses.read(user.tenant_id).await;
         let exists = warehouses
             .values()
             .any(|w| w.id == req.warehouse_id && w.tenant_id == tenant_id);
@@ -350,7 +350,7 @@ pub async fn create_stock_move(
     }
 
     // Update the inventory item's quantities
-    let mut inv_store = state.inventory_items.write().await;
+    let mut inv_store = state.inventory_items.write(user.tenant_id).await;
     if let Some(item) = inv_store
         .values_mut()
         .find(|i| i.id == req.item_id && i.tenant_id == tenant_id)
@@ -402,7 +402,7 @@ pub async fn create_stock_move(
         created_by: user.user_id,
         created_at: now,
     };
-    let mut store = state.stock_moves.write().await;
+    let mut store = state.stock_moves.write(user.tenant_id).await;
     store.insert(stock_move.id, stock_move.clone());
     Ok(Json(stock_move))
 }
@@ -416,7 +416,7 @@ pub async fn list_warehouses(
     Query(params): Query<ListWarehousesParams>,
 ) -> Result<Json<PaginatedResponse<Warehouse>>> {
     let tenant_id = user.tenant_id;
-    let store = state.warehouses.read().await;
+    let store = state.warehouses.read(user.tenant_id).await;
     let mut warehouses: Vec<Warehouse> = store
         .values()
         .filter(|w| w.tenant_id == tenant_id)
@@ -453,7 +453,7 @@ pub async fn create_warehouse(
         created_at: now,
         updated_at: now,
     };
-    let mut store = state.warehouses.write().await;
+    let mut store = state.warehouses.write(user.tenant_id).await;
     store.insert(warehouse.id, warehouse.clone());
     Ok(Json(warehouse))
 }
@@ -466,7 +466,7 @@ pub async fn get_inventory_stats(
     State(state): State<AppState>,
 ) -> Result<Json<InventoryStats>> {
     let tenant_id = user.tenant_id;
-    let store = state.inventory_items.read().await;
+    let store = state.inventory_items.read(user.tenant_id).await;
     let items: Vec<&InventoryItem> = store
         .values()
         .filter(|i| i.tenant_id == tenant_id)
@@ -492,7 +492,7 @@ pub async fn get_inventory_stats(
     // Calculate turnover rate per item (total issued / average inventory),
     // then average across items with data. No hardcoded fallback values:
     // with no items or no moves the rate is simply 0.0.
-    let moves_store = state.stock_moves.read().await;
+    let moves_store = state.stock_moves.read(user.tenant_id).await;
     let mut turnover_rates: Vec<f64> = Vec::new();
     for item in &items {
         let issued: f64 = moves_store

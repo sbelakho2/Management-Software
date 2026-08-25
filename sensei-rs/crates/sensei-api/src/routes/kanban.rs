@@ -120,7 +120,7 @@ pub async fn list_boards(
     Query(params): Query<ListBoardsParams>,
 ) -> Result<Json<PaginatedResponse<KanbanBoard>>> {
     let tenant_id = user.tenant_id;
-    let store = state.kanban_boards.read().await;
+    let store = state.kanban_boards.read(user.tenant_id).await;
     let mut boards: Vec<KanbanBoard> = store
         .values()
         .filter(|b| b.tenant_id == tenant_id)
@@ -149,7 +149,7 @@ pub async fn create_board(
         created_at: now,
         updated_at: now,
     };
-    let mut store = state.kanban_boards.write().await;
+    let mut store = state.kanban_boards.write(user.tenant_id).await;
     store.insert(board.id, board.clone());
     Ok(Json(board))
 }
@@ -161,7 +161,7 @@ pub async fn get_board(
     Path(id): Path<Uuid>,
 ) -> Result<Json<KanbanBoard>> {
     let tenant_id = user.tenant_id;
-    let store = state.kanban_boards.read().await;
+    let store = state.kanban_boards.read(user.tenant_id).await;
     let board = store
         .values()
         .find(|b| b.id == id && b.tenant_id == tenant_id)
@@ -178,7 +178,7 @@ pub async fn update_board(
     Json(req): Json<BoardRequest>,
 ) -> Result<Json<KanbanBoard>> {
     let tenant_id = user.tenant_id;
-    let mut store = state.kanban_boards.write().await;
+    let mut store = state.kanban_boards.write(user.tenant_id).await;
     let board = store
         .get_mut(&id)
         .filter(|b| b.tenant_id == tenant_id)
@@ -196,7 +196,7 @@ pub async fn delete_board(
     Path(id): Path<Uuid>,
 ) -> Result<Json<()>> {
     let tenant_id = user.tenant_id;
-    let mut store = state.kanban_boards.write().await;
+    let mut store = state.kanban_boards.write(user.tenant_id).await;
     let exists = store
         .get(&id)
         .filter(|b| b.tenant_id == tenant_id)
@@ -230,7 +230,7 @@ pub async fn add_column(
         updated_at: now,
     };
 
-    let mut store = state.kanban_boards.write().await;
+    let mut store = state.kanban_boards.write(user.tenant_id).await;
     let board = store
         .get_mut(&board_id)
         .filter(|b| b.tenant_id == tenant_id)
@@ -249,7 +249,7 @@ pub async fn update_column(
 ) -> Result<Json<KanbanColumn>> {
     let tenant_id = user.tenant_id;
     let now = Utc::now();
-    let mut store = state.kanban_boards.write().await;
+    let mut store = state.kanban_boards.write(user.tenant_id).await;
 
     for board in store.values_mut().filter(|b| b.tenant_id == tenant_id) {
         if let Some(col) = board.columns.iter_mut().find(|c| c.id == id) {
@@ -271,7 +271,7 @@ pub async fn delete_column(
     Path(id): Path<Uuid>,
 ) -> Result<Json<()>> {
     let tenant_id = user.tenant_id;
-    let mut store = state.kanban_boards.write().await;
+    let mut store = state.kanban_boards.write(user.tenant_id).await;
 
     for board in store.values_mut().filter(|b| b.tenant_id == tenant_id) {
         if let Some(pos) = board.columns.iter().position(|c| c.id == id) {
@@ -298,7 +298,7 @@ pub async fn add_card(
     let tenant_id = user.tenant_id;
     let now = Utc::now();
 
-    let mut store = state.kanban_boards.write().await;
+    let mut store = state.kanban_boards.write(user.tenant_id).await;
 
     // Find the board that owns this column and get column info
     let (board_id, column) = store
@@ -390,7 +390,7 @@ pub async fn update_card(
 ) -> Result<Json<KanbanCard>> {
     let tenant_id = user.tenant_id;
     let now = Utc::now();
-    let mut store = state.kanban_boards.write().await;
+    let mut store = state.kanban_boards.write(user.tenant_id).await;
 
     // ── P1-B1: Pre-check WIP limit if moving to a different column ──
     // This uses immutable access only, before any mutable iteration.
@@ -526,7 +526,7 @@ pub async fn delete_card(
     Path(id): Path<Uuid>,
 ) -> Result<Json<()>> {
     let tenant_id = user.tenant_id;
-    let mut store = state.kanban_boards.write().await;
+    let mut store = state.kanban_boards.write(user.tenant_id).await;
 
     for board in store.values_mut().filter(|b| b.tenant_id == tenant_id) {
         for col in board.columns.iter_mut() {
@@ -565,7 +565,7 @@ pub async fn move_card(
 ) -> Result<Json<KanbanCard>> {
     let tenant_id = user.tenant_id;
     let now = Utc::now();
-    let mut store = state.kanban_boards.write().await;
+    let mut store = state.kanban_boards.write(user.tenant_id).await;
 
     for board in store.values_mut().filter(|b| b.tenant_id == tenant_id) {
         // Use indexed access to avoid nested mutable borrow conflicts
@@ -664,7 +664,7 @@ pub async fn get_kanban_metrics(
     Query(query): Query<MetricsQuery>,
 ) -> Result<Json<KanbanMetrics>> {
     let tenant_id = user.tenant_id;
-    let store = state.kanban_boards.read().await;
+    let store = state.kanban_boards.read(user.tenant_id).await;
     let boards: Vec<&KanbanBoard> = store
         .values()
         .filter(|b| b.tenant_id == tenant_id)

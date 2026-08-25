@@ -9,13 +9,14 @@
 //! configured [`FileStorageService`], and tracks progress in a NATS KV store.
 
 use crate::error::{Result, WorkerError};
-use crate::task::{TaskConsumer, TaskMetadata};
+use crate::task::{IdempotencyGuard, TaskConsumer, TaskMetadata, TaskOutcome};
 use async_nats::jetstream::kv::Store;
 use async_nats::jetstream::Context;
 use async_trait::async_trait;
 use sensei_services::export::pdf::{A3Data, PdfExportService, QuoteData};
 use sensei_services::storage::file_storage::{FileStorageService, InMemoryStorageService};
 use serde::{Deserialize, Serialize};
+use sqlx::PgPool;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::{error, info, warn};
@@ -76,17 +77,26 @@ pub struct PdfWorker {
     storage: Arc<dyn FileStorageService>,
     /// PDF rendering service.
     pdf: PdfExportService,
+    /// Idempotency guard (migration 053): claims the task_id before
+    /// generating/storing the PDF so redelivery never renders twice.
+    idempotency: IdempotencyGuard,
 }
 
 impl PdfWorker {
     /// Create a new [`PdfWorker`] with the default in-memory storage backend.
     pub fn new(js: Context) -> Self {
+        Self::with_pool(js, None)
+    }
+
+    /// Create a new [`PdfWorker`] with a database pool for task idempotency.
+    pub fn with_pool(js: Context, pool: Option<Arc<PgPool>>) -> Self {
         Self {
             js,
             kv: Arc::new(RwLock::new(None)),
             kv_bucket: "sensei_pdf_progress".to_string(),
             storage: Arc::new(InMemoryStorageService::new()),
             pdf: PdfExportService::new(),
+            idempotency: IdempotencyGuard::new(pool, "pdf"),
         }
     }
 
@@ -98,6 +108,7 @@ impl PdfWorker {
             kv_bucket: "sensei_pdf_progress".to_string(),
             storage,
             pdf: PdfExportService::new(),
+            idempotency: IdempotencyGuard::new(None, "pdf"),
         }
     }
 
@@ -219,7 +230,7 @@ impl TaskConsumer for PdfWorker {
         "sensei-workers-pdf"
     }
 
-    async fn process(&self, payload: &[u8], metadata: &TaskMetadata) -> Result<()> {
+    async fn process(&self, payload: &[u8], metadata: &TaskMetadata) -> Result<TaskOutcome> {
         let pdf_payload: PdfTaskPayload = serde_json::from_slice(payload).map_err(|e| {
             error!(
                 task_id = %metadata.task_id,
@@ -230,6 +241,24 @@ impl TaskConsumer for PdfWorker {
         })?;
 
         let task_id_str = metadata.task_id.to_string();
+
+        // Idempotency: claim the task_id BEFORE the side effect (PDF
+        // generation + storage). A redelivered message is skipped.
+        match self.idempotency.try_claim(&task_id_str).await {
+            Ok(true) => {}
+            Ok(false) => {
+                info!(
+                    task_id = %metadata.task_id,
+                    "PDF task already processed — skipping (idempotent)"
+                );
+                return Ok(TaskOutcome::Completed);
+            }
+            Err(e) => {
+                return Err(WorkerError::RetryLater(format!(
+                    "idempotency claim failed for pdf task: {e}"
+                )));
+            }
+        }
 
         // Mark as pending.
         if let Err(e) = self
@@ -261,7 +290,7 @@ impl TaskConsumer for PdfWorker {
                     kind = ?pdf_payload.kind,
                     "PDF task completed successfully"
                 );
-                Ok(())
+                Ok(TaskOutcome::Completed)
             }
             Err(e) => {
                 self.update_progress(
@@ -279,6 +308,8 @@ impl TaskConsumer for PdfWorker {
                     error = %e,
                     "PDF task failed"
                 );
+                // PDF rendering failures are permanent (bad payload data,
+                // storage misconfiguration) — dead-letter them.
                 Err(e)
             }
         }
@@ -298,6 +329,12 @@ impl A3PdfWorker {
             inner: PdfWorker::new(js),
         }
     }
+
+    pub fn with_pool(js: Context, pool: Option<Arc<PgPool>>) -> Self {
+        Self {
+            inner: PdfWorker::with_pool(js, pool),
+        }
+    }
 }
 
 #[async_trait]
@@ -310,7 +347,7 @@ impl TaskConsumer for A3PdfWorker {
         "sensei-workers-pdf-a3"
     }
 
-    async fn process(&self, payload: &[u8], metadata: &TaskMetadata) -> Result<()> {
+    async fn process(&self, payload: &[u8], metadata: &TaskMetadata) -> Result<TaskOutcome> {
         self.inner.process(payload, metadata).await
     }
 }
@@ -328,6 +365,12 @@ impl QuotePdfWorker {
             inner: PdfWorker::new(js),
         }
     }
+
+    pub fn with_pool(js: Context, pool: Option<Arc<PgPool>>) -> Self {
+        Self {
+            inner: PdfWorker::with_pool(js, pool),
+        }
+    }
 }
 
 #[async_trait]
@@ -340,7 +383,7 @@ impl TaskConsumer for QuotePdfWorker {
         "sensei-workers-pdf-quote"
     }
 
-    async fn process(&self, payload: &[u8], metadata: &TaskMetadata) -> Result<()> {
+    async fn process(&self, payload: &[u8], metadata: &TaskMetadata) -> Result<TaskOutcome> {
         self.inner.process(payload, metadata).await
     }
 }

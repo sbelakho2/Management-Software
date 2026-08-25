@@ -73,7 +73,7 @@ pub async fn list_policies(
     State(state): State<AppState>,
     Query(params): Query<ListPoliciesParams>,
 ) -> Result<Json<PaginatedResponse<EscalationPolicy>>> {
-    let store = state.escalation_policies.read().await;
+    let store = state.escalation_policies.read(user.tenant_id).await;
     let mut policies: Vec<EscalationPolicy> = store
         .values()
         .filter(|p| p.tenant_id == user.tenant_id)
@@ -111,7 +111,7 @@ pub async fn create_policy(
         created_at: now,
         updated_at: now,
     };
-    let mut store = state.escalation_policies.write().await;
+    let mut store = state.escalation_policies.write(user.tenant_id).await;
     store.insert(policy.id, policy.clone());
     Ok(Json(policy))
 }
@@ -122,7 +122,7 @@ pub async fn get_policy(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<EscalationPolicy>> {
-    let store = state.escalation_policies.read().await;
+    let store = state.escalation_policies.read(user.tenant_id).await;
     let policy = store
         .values()
         .find(|p| p.id == id && p.tenant_id == user.tenant_id)
@@ -139,7 +139,7 @@ pub async fn update_policy(
     Json(req): Json<PolicyRequest>,
 ) -> Result<Json<EscalationPolicy>> {
     validate_rules(&req.rules)?;
-    let mut store = state.escalation_policies.write().await;
+    let mut store = state.escalation_policies.write(user.tenant_id).await;
     let policy = store
         .get_mut(&id)
         .filter(|p| p.tenant_id == user.tenant_id)
@@ -159,7 +159,7 @@ pub async fn delete_policy(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<()>> {
-    let mut store = state.escalation_policies.write().await;
+    let mut store = state.escalation_policies.write(user.tenant_id).await;
     let exists = store
         .get(&id)
         .filter(|p| p.tenant_id == user.tenant_id)

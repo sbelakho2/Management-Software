@@ -13,7 +13,7 @@
 //! tables; otherwise the model operates on synthetic calibration data with a warning.
 
 use crate::error::{Result, WorkerError};
-use crate::task::{TaskConsumer, TaskMetadata};
+use crate::task::{IdempotencyGuard, TaskConsumer, TaskMetadata, TaskOutcome};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
@@ -393,15 +393,15 @@ pub struct MlWorker {
     registry: Arc<ModelRegistry>,
     /// Optional database pool for loading training data.
     pool: Option<Arc<PgPool>>,
+    /// Idempotency guard (migration 053): claims the task_id before
+    /// training/drift-check side effects.
+    idempotency: IdempotencyGuard,
 }
 
 impl MlWorker {
     /// Create a new [`MlWorker`] with the default model registry (no DB pool).
     pub fn new() -> Self {
-        Self {
-            registry: Arc::new(ModelRegistry::new()),
-            pool: None,
-        }
+        Self::with_pool(None)
     }
 
     /// Create an [`MlWorker`] with a custom model registry.
@@ -409,14 +409,34 @@ impl MlWorker {
         Self {
             registry,
             pool: None,
+            idempotency: IdempotencyGuard::new(None, "ml"),
         }
     }
 
-    /// Create an [`MlWorker`] with a database pool for loading training data.
-    pub fn with_pool(pool: Arc<PgPool>) -> Self {
+    /// Create an [`MlWorker`] with a database pool for loading training data
+    /// and task idempotency.
+    pub fn with_pool(pool: Option<Arc<PgPool>>) -> Self {
         Self {
             registry: Arc::new(ModelRegistry::new()),
-            pool: Some(pool),
+            pool: pool.clone(),
+            idempotency: IdempotencyGuard::new(pool, "ml"),
+        }
+    }
+
+    /// Claim the task for idempotency before any side effect.
+    ///
+    /// `Ok(true)` → proceed; `Ok(false)` → already processed, skip and ack;
+    /// `Err` → database unavailable, retry later without executing.
+    async fn claim(&self, task_id: &str) -> Result<bool> {
+        match self.idempotency.try_claim(task_id).await {
+            Ok(true) => Ok(true),
+            Ok(false) => {
+                info!(task_id = %task_id, "ML task already processed — skipping (idempotent)");
+                Ok(false)
+            }
+            Err(e) => Err(WorkerError::RetryLater(format!(
+                "idempotency claim failed for ml task: {e}"
+            ))),
         }
     }
 
@@ -828,7 +848,7 @@ impl TaskConsumer for MlWorker {
         "sensei-workers-ml"
     }
 
-    async fn process(&self, payload: &[u8], metadata: &TaskMetadata) -> Result<()> {
+    async fn process(&self, payload: &[u8], metadata: &TaskMetadata) -> Result<TaskOutcome> {
         let ml_payload: MlTaskPayload = serde_json::from_slice(payload).map_err(|e| {
             error!(
                 task_id = %metadata.task_id,
@@ -837,6 +857,11 @@ impl TaskConsumer for MlWorker {
             );
             WorkerError::Serialization(e)
         })?;
+
+        let task_id_str = metadata.task_id.to_string();
+        if !self.claim(&task_id_str).await? {
+            return Ok(TaskOutcome::Completed);
+        }
 
         let model_name = ml_payload
             .model_name
@@ -852,7 +877,7 @@ impl TaskConsumer for MlWorker {
                     status = ?status,
                     "Model training task completed"
                 );
-                Ok(())
+                Ok(TaskOutcome::Completed)
             }
             crate::task::TaskType::CheckDriftAndRetrain => {
                 let drift_status = self.check_drift(model_name).await?;
@@ -877,7 +902,7 @@ impl TaskConsumer for MlWorker {
                     model = %model_name,
                     "Drift check completed"
                 );
-                Ok(())
+                Ok(TaskOutcome::Completed)
             }
             crate::task::TaskType::ForceModelRetrain => {
                 let status = self.force_retrain(model_name).await?;
@@ -887,7 +912,7 @@ impl TaskConsumer for MlWorker {
                     status = ?status,
                     "Force retrain completed"
                 );
-                Ok(())
+                Ok(TaskOutcome::Completed)
             }
             crate::task::TaskType::ScheduledRetrainAll => {
                 let results = self.retrain_all().await?;
@@ -896,7 +921,7 @@ impl TaskConsumer for MlWorker {
                     model_count = results.len(),
                     "Scheduled retrain-all completed"
                 );
-                Ok(())
+                Ok(TaskOutcome::Completed)
             }
             _ => Err(WorkerError::Processing(format!(
                 "Unsupported task type for MlWorker: {:?}",
@@ -917,6 +942,12 @@ impl TrainingWorker {
             inner: MlWorker::new(),
         }
     }
+
+    pub fn with_pool(pool: Option<Arc<PgPool>>) -> Self {
+        Self {
+            inner: MlWorker::with_pool(pool),
+        }
+    }
 }
 
 impl Default for TrainingWorker {
@@ -935,7 +966,7 @@ impl TaskConsumer for TrainingWorker {
         "sensei-workers-ml-training"
     }
 
-    async fn process(&self, payload: &[u8], metadata: &TaskMetadata) -> Result<()> {
+    async fn process(&self, payload: &[u8], metadata: &TaskMetadata) -> Result<TaskOutcome> {
         self.inner.process(payload, metadata).await
     }
 }
@@ -949,6 +980,12 @@ impl DriftCheckWorker {
     pub fn new() -> Self {
         Self {
             inner: MlWorker::new(),
+        }
+    }
+
+    pub fn with_pool(pool: Option<Arc<PgPool>>) -> Self {
+        Self {
+            inner: MlWorker::with_pool(pool),
         }
     }
 }
@@ -969,7 +1006,7 @@ impl TaskConsumer for DriftCheckWorker {
         "sensei-workers-ml-drift"
     }
 
-    async fn process(&self, payload: &[u8], metadata: &TaskMetadata) -> Result<()> {
+    async fn process(&self, payload: &[u8], metadata: &TaskMetadata) -> Result<TaskOutcome> {
         self.inner.process(payload, metadata).await
     }
 }
@@ -983,6 +1020,12 @@ impl ForceRetrainWorker {
     pub fn new() -> Self {
         Self {
             inner: MlWorker::new(),
+        }
+    }
+
+    pub fn with_pool(pool: Option<Arc<PgPool>>) -> Self {
+        Self {
+            inner: MlWorker::with_pool(pool),
         }
     }
 }
@@ -1003,7 +1046,7 @@ impl TaskConsumer for ForceRetrainWorker {
         "sensei-workers-ml-force-retrain"
     }
 
-    async fn process(&self, payload: &[u8], metadata: &TaskMetadata) -> Result<()> {
+    async fn process(&self, payload: &[u8], metadata: &TaskMetadata) -> Result<TaskOutcome> {
         self.inner.process(payload, metadata).await
     }
 }
@@ -1017,6 +1060,12 @@ impl RetrainAllWorker {
     pub fn new() -> Self {
         Self {
             inner: MlWorker::new(),
+        }
+    }
+
+    pub fn with_pool(pool: Option<Arc<PgPool>>) -> Self {
+        Self {
+            inner: MlWorker::with_pool(pool),
         }
     }
 }
@@ -1037,7 +1086,7 @@ impl TaskConsumer for RetrainAllWorker {
         "sensei-workers-ml-retrain-all"
     }
 
-    async fn process(&self, payload: &[u8], metadata: &TaskMetadata) -> Result<()> {
+    async fn process(&self, payload: &[u8], metadata: &TaskMetadata) -> Result<TaskOutcome> {
         self.inner.process(payload, metadata).await
     }
 }

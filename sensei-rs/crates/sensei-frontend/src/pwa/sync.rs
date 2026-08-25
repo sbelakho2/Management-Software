@@ -137,6 +137,11 @@ pub struct SyncService {
     bg_sync_supported: bool,
     /// Whether periodic sync is supported in this browser.
     periodic_sync_supported: bool,
+    /// Shared API client used for queue replay. Built once per service (not
+    /// per operation). Tokens are never read from `localStorage`; the sync
+    /// engine must be wired to `AppState`'s shared client when it is
+    /// integrated into the application.
+    client: ApiClient,
 }
 
 impl SyncService {
@@ -147,12 +152,16 @@ impl SyncService {
     pub fn new(sync_store: SyncStore) -> Self {
         let bg_sync_supported = is_background_sync_supported();
         let periodic_sync_supported = is_periodic_sync_supported();
+        let base_url = web_sys::window()
+            .and_then(|w| w.location().origin().ok())
+            .unwrap_or_else(|| "http://localhost:3000".to_string());
 
         Self {
             sync_store,
             db: None,
             bg_sync_supported,
             periodic_sync_supported,
+            client: ApiClient::new(&base_url),
         }
     }
 
@@ -181,9 +190,10 @@ impl SyncService {
         // Attempt to replay the offline queue (if we're online now)
         if is_online() {
             let store = self.sync_store.clone();
+            let client = self.client.clone();
             wasm_bindgen_futures::spawn_local(async move {
                 if store.get_pending_count() > 0 {
-                    let _ = replay_queue_internal(store).await;
+                    let _ = replay_queue_internal(store, client).await;
                 }
             });
         }
@@ -194,12 +204,14 @@ impl SyncService {
     /// Set up `online` / `offline` event listeners to react to connectivity changes.
     fn setup_connectivity_listeners(&self) {
         let store = self.sync_store.clone();
+        let client = self.client.clone();
         service_worker::add_online_listener(move || {
             store.set_online(true);
             // Attempt queue replay on reconnect
             let store_clone = store.clone();
+            let client_clone = client.clone();
             wasm_bindgen_futures::spawn_local(async move {
-                let _ = replay_queue_internal(store_clone).await;
+                let _ = replay_queue_internal(store_clone, client_clone).await;
             });
         });
 
@@ -448,7 +460,7 @@ impl SyncService {
     pub async fn replay_queue(&self) -> Result<SyncCycleResult> {
         self.sync_store.set_syncing(true);
 
-        let result = replay_queue_internal(self.sync_store.clone()).await;
+        let result = replay_queue_internal(self.sync_store.clone(), self.client.clone()).await;
 
         // Update sync state
         match &result {
@@ -563,7 +575,7 @@ async fn get_service_worker_registration() -> Result<ServiceWorkerRegistration> 
 /// This is extracted as a free function so it can be used both by
 /// [`SyncService::replay_queue`] and the standalone `spawn_local` call
 /// in [`SyncService::init`] without cloning the entire service.
-async fn replay_queue_internal(store: SyncStore) -> Result<SyncCycleResult> {
+async fn replay_queue_internal(store: SyncStore, client: ApiClient) -> Result<SyncCycleResult> {
     let operations = store.pending_operations.get();
     let pending: Vec<PendingOperation> = operations
         .into_iter()
@@ -595,7 +607,7 @@ async fn replay_queue_internal(store: SyncStore) -> Result<SyncCycleResult> {
         }
 
         // Attempt to execute the operation
-        match execute_operation(&store, operation).await {
+        match execute_operation(&store, &client, operation).await {
             Ok(()) => {
                 store.update_operation_status(&operation.id, "completed", None);
                 synced_count += 1;
@@ -637,9 +649,10 @@ async fn replay_queue_internal(store: SyncStore) -> Result<SyncCycleResult> {
 
 /// Execute a single pending operation against the API.
 ///
-/// Creates an [`ApiClient`] using the current window origin, reads the auth
-/// token from `localStorage`, and dispatches the operation to the correct
-/// backend endpoint based on `entity_type` and `operation_type`.
+/// Uses the shared [`ApiClient`] owned by the [`SyncService`] (one client per
+/// service — never constructed per operation). The client carries the bearer
+/// token in memory; unlike the previous implementation it never reads tokens
+/// from `localStorage`.
 ///
 /// # Operation dispatch
 ///
@@ -652,24 +665,9 @@ async fn replay_queue_internal(store: SyncStore) -> Result<SyncCycleResult> {
 /// The `entity_type` is mapped to an API path via [`entity_api_path`].
 async fn execute_operation(
     _store: &SyncStore,
+    client: &ApiClient,
     operation: &PendingOperation,
 ) -> std::result::Result<(), String> {
-    // Build the API base URL from the current window origin.
-    let base_url = web_sys::window()
-        .and_then(|w| w.location().origin().ok())
-        .unwrap_or_else(|| "http://localhost:3000".to_string());
-
-    let mut client = ApiClient::new(&base_url);
-
-    // Read the auth token from localStorage (set by the auth module).
-    if let Some(window) = web_sys::window() {
-        if let Ok(Some(storage)) = window.local_storage() {
-            if let Ok(Some(token)) = storage.get_item("auth_token") {
-                client.set_token(&token);
-            }
-        }
-    }
-
     // Resolve the API path for this entity type.
     let api_path = entity_api_path(&operation.entity_type, operation.entity_id.as_deref());
 

@@ -88,7 +88,7 @@ pub async fn list_standard_work(
     Query(params): Query<ListStandardWorkParams>,
 ) -> Result<Json<PaginatedResponse<StandardWorkDocument>>> {
     let tenant_id = user.tenant_id;
-    let store = state.standard_work_documents.read().await;
+    let store = state.standard_work_documents.read(user.tenant_id).await;
     let mut docs: Vec<StandardWorkDocument> = store
         .values()
         .filter(|d| d.tenant_id == tenant_id)
@@ -152,7 +152,7 @@ pub async fn create_standard_work(
         created_at: now,
         updated_at: now,
     };
-    let mut store = state.standard_work_documents.write().await;
+    let mut store = state.standard_work_documents.write(tenant_id).await;
     store.insert(doc.id, doc.clone());
     Ok(Json(doc))
 }
@@ -164,7 +164,7 @@ pub async fn get_standard_work(
     Path(sw_id): Path<Uuid>,
 ) -> Result<Json<StandardWorkDocument>> {
     let tenant_id = user.tenant_id;
-    let store = state.standard_work_documents.read().await;
+    let store = state.standard_work_documents.read(user.tenant_id).await;
     let doc = store
         .values()
         .find(|d| d.id == sw_id && d.tenant_id == tenant_id)
@@ -181,7 +181,7 @@ pub async fn update_standard_work(
     Json(req): Json<UpdateStandardWorkRequest>,
 ) -> Result<Json<StandardWorkDocument>> {
     let tenant_id = user.tenant_id;
-    let mut store = state.standard_work_documents.write().await;
+    let mut store = state.standard_work_documents.write(tenant_id).await;
     let doc = store
         .get_mut(&sw_id)
         .filter(|d| d.tenant_id == tenant_id)
@@ -243,7 +243,7 @@ pub async fn approve_standard_work(
     Json(_req): Json<ApproveStandardWorkRequest>,
 ) -> Result<Json<StandardWorkDocument>> {
     let tenant_id = user.tenant_id;
-    let mut store = state.standard_work_documents.write().await;
+    let mut store = state.standard_work_documents.write(tenant_id).await;
     let doc = store
         .get_mut(&sw_id)
         .filter(|d| d.tenant_id == tenant_id)
@@ -272,7 +272,7 @@ pub async fn reject_standard_work(
     Path(sw_id): Path<Uuid>,
 ) -> Result<Json<StandardWorkDocument>> {
     let tenant_id = _user.tenant_id;
-    let mut store = state.standard_work_documents.write().await;
+    let mut store = state.standard_work_documents.write(tenant_id).await;
     let doc = store
         .get_mut(&sw_id)
         .filter(|d| d.tenant_id == tenant_id)
@@ -298,7 +298,7 @@ pub async fn delete_standard_work(
     Path(sw_id): Path<Uuid>,
 ) -> Result<Json<()>> {
     let tenant_id = user.tenant_id;
-    let mut store = state.standard_work_documents.write().await;
+    let mut store = state.standard_work_documents.write(tenant_id).await;
     let exists = store
         .get(&sw_id)
         .filter(|d| d.tenant_id == tenant_id)
@@ -321,7 +321,7 @@ pub async fn list_versions(
     Path(sw_id): Path<Uuid>,
 ) -> Result<Json<Vec<StandardWorkVersion>>> {
     let tenant_id = user.tenant_id;
-    let store = state.standard_work_versions.read().await;
+    let store = state.standard_work_versions.read(user.tenant_id).await;
     let mut versions: Vec<StandardWorkVersion> = store
         .values()
         .filter(|v| v.document_id == sw_id && v.tenant_id == tenant_id)
@@ -342,7 +342,7 @@ pub async fn create_version(
 
     // Fetch the current document to snapshot
     let doc = {
-        let store = state.standard_work_documents.read().await;
+        let store = state.standard_work_documents.read(user.tenant_id).await;
         store
             .values()
             .find(|d| d.id == sw_id && d.tenant_id == tenant_id)
@@ -366,13 +366,13 @@ pub async fn create_version(
 
     // Store the version
     {
-        let mut store = state.standard_work_versions.write().await;
+        let mut store = state.standard_work_versions.write(user.tenant_id).await;
         store.insert(version.id, version.clone());
     }
 
     // Update the document's current version number
     {
-        let mut store = state.standard_work_documents.write().await;
+        let mut store = state.standard_work_documents.write(tenant_id).await;
         if let Some(d) = store.get_mut(&sw_id) {
             d.current_version = new_version_number;
             d.updated_at = now;
@@ -392,7 +392,7 @@ pub async fn get_version(
     Path((sw_id, version_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<StandardWorkVersion>> {
     let tenant_id = user.tenant_id;
-    let store = state.standard_work_versions.read().await;
+    let store = state.standard_work_versions.read(user.tenant_id).await;
     let version = store
         .values()
         .find(|v| v.id == version_id && v.document_id == sw_id && v.tenant_id == tenant_id)

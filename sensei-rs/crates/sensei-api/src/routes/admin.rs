@@ -197,40 +197,43 @@ pub async fn get_db_stats(
 
     total_entities.insert(
         "inventory_items".to_string(),
-        state.inventory_items.read().await.len(),
+        state.inventory_items.read(user.tenant_id).await.len(),
     );
     total_entities.insert(
         "warehouses".to_string(),
-        state.warehouses.read().await.len(),
+        state.warehouses.read(user.tenant_id).await.len(),
     );
     total_entities.insert(
         "stock_moves".to_string(),
-        state.stock_moves.read().await.len(),
+        state.stock_moves.read(user.tenant_id).await.len(),
     );
-    total_entities.insert("tasks".to_string(), state.tasks.read().await.len());
+    total_entities.insert(
+        "tasks".to_string(),
+        state.tasks.read(user.tenant_id).await.len(),
+    );
     total_entities.insert(
         "audit_logs".to_string(),
-        state.audit_log_entries.read().await.len(),
+        state.audit_log_entries.read(user.tenant_id).await.len(),
     );
     total_entities.insert(
         "kanban_boards".to_string(),
-        state.kanban_boards.read().await.len(),
+        state.kanban_boards.read(user.tenant_id).await.len(),
     );
     total_entities.insert(
         "production_cells".to_string(),
-        state.production_cells.read().await.len(),
+        state.production_cells.read(user.tenant_id).await.len(),
     );
     total_entities.insert(
         "work_centers".to_string(),
-        state.work_centers.read().await.len(),
+        state.work_centers.read(user.tenant_id).await.len(),
     );
     total_entities.insert(
         "demand_entries".to_string(),
-        state.demand_entries.read().await.len(),
+        state.demand_entries.read(user.tenant_id).await.len(),
     );
     total_entities.insert(
         "supply_orders".to_string(),
-        state.supply_orders.read().await.len(),
+        state.supply_orders.read(user.tenant_id).await.len(),
     );
 
     let total_tenants = state
@@ -304,7 +307,7 @@ pub async fn get_system_logs(
     require_admin(&user)?;
 
     let tenant_id = user.tenant_id;
-    let store = state.audit_log_entries.read().await;
+    let store = state.audit_log_entries.read(user.tenant_id).await;
     let mut entries: Vec<AuditLogEntry> = store
         .values()
         .filter(|e| e.tenant_id == tenant_id)

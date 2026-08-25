@@ -161,7 +161,7 @@ pub async fn create_quote_version(
         .get_quote(tenant_id, quote_id)
         .await?;
 
-    let mut version_store = state.quote_versions.write().await;
+    let mut version_store = state.quote_versions.write(user.tenant_id).await;
     let version_number = version_store
         .values()
         .filter(|v| v.quote_id == quote_id && v.tenant_id == tenant_id)
@@ -197,7 +197,7 @@ pub async fn list_quote_versions(
         .get_quote(tenant_id, quote_id)
         .await?;
 
-    let version_store = state.quote_versions.read().await;
+    let version_store = state.quote_versions.read(user.tenant_id).await;
     let mut versions: Vec<QuoteVersion> = version_store
         .values()
         .filter(|v| v.quote_id == quote_id && v.tenant_id == tenant_id)

@@ -105,7 +105,7 @@ async fn on_hand_for_product(state: &AppState, tenant_id: Uuid, product_id: Uuid
         Ok(product) => product.sku,
         Err(_) => return 0.0,
     };
-    let inv_store = state.inventory_items.read().await;
+    let inv_store = state.inventory_items.read(tenant_id).await;
     inv_store
         .values()
         .find(|i| i.tenant_id == tenant_id && i.sku == sku)
@@ -125,7 +125,7 @@ pub async fn list_demand(
     let date_from = parse_date_filter("date_from", params.date_from.as_deref())?;
     let date_to = parse_date_filter("date_to", params.date_to.as_deref())?;
 
-    let store = state.demand_entries.read().await;
+    let store = state.demand_entries.read(user.tenant_id).await;
     let mut entries: Vec<DemandEntry> = store
         .values()
         .filter(|d| d.tenant_id == tenant_id)
@@ -178,7 +178,7 @@ pub async fn create_demand(
         created_at: now,
         updated_at: now,
     };
-    let mut store = state.demand_entries.write().await;
+    let mut store = state.demand_entries.write(user.tenant_id).await;
     store.insert(entry.id, entry.clone());
     Ok(Json(entry))
 }
@@ -192,7 +192,7 @@ pub async fn list_supply(
     Query(params): Query<ListSupplyParams>,
 ) -> Result<Json<PaginatedResponse<SupplyOrder>>> {
     let tenant_id = user.tenant_id;
-    let store = state.supply_orders.read().await;
+    let store = state.supply_orders.read(user.tenant_id).await;
     let mut orders: Vec<SupplyOrder> = store
         .values()
         .filter(|o| o.tenant_id == tenant_id)
@@ -229,7 +229,7 @@ pub async fn run_mrp(
     let now = Utc::now();
 
     // Gather demand entries for this tenant
-    let demand_store = state.demand_entries.read().await;
+    let demand_store = state.demand_entries.read(user.tenant_id).await;
     let demands: Vec<&DemandEntry> = demand_store
         .values()
         .filter(|d| d.tenant_id == tenant_id)
@@ -278,12 +278,12 @@ pub async fn run_mrp(
         created_by: user.user_id,
     };
 
-    let mut run_store = state.mrp_runs.write().await;
+    let mut run_store = state.mrp_runs.write(user.tenant_id).await;
     run_store.insert(run_id, mrp_run.clone());
 
     // Create supply orders from planned orders, tagging each with the
     // generating run's id so planned orders can be reconstructed exactly.
-    let mut supply_store = state.supply_orders.write().await;
+    let mut supply_store = state.supply_orders.write(user.tenant_id).await;
     for po in &planned_orders {
         if po.suggested_order_quantity > 0.0 {
             let order_date = now;
@@ -323,7 +323,7 @@ pub async fn list_mrp_runs(
     State(state): State<AppState>,
 ) -> Result<Json<Vec<MrpRun>>> {
     let tenant_id = user.tenant_id;
-    let store = state.mrp_runs.read().await;
+    let store = state.mrp_runs.read(user.tenant_id).await;
     let mut runs: Vec<MrpRun> = store
         .values()
         .filter(|r| r.tenant_id == tenant_id)
@@ -344,7 +344,7 @@ pub async fn get_mrp_run(
     Path(id): Path<Uuid>,
 ) -> Result<Json<MrpRunDetail>> {
     let tenant_id = user.tenant_id;
-    let store = state.mrp_runs.read().await;
+    let store = state.mrp_runs.read(user.tenant_id).await;
     let run = store
         .values()
         .find(|r| r.id == id && r.tenant_id == tenant_id)
@@ -352,7 +352,7 @@ pub async fn get_mrp_run(
         .ok_or_else(|| SenseiError::NotFound(format!("MRP run {id} not found")))?;
 
     // Gather planned orders from the supply orders tagged with this run.
-    let supply_store = state.supply_orders.read().await;
+    let supply_store = state.supply_orders.read(user.tenant_id).await;
     let mut planned_orders: Vec<PlannedOrder> = supply_store
         .values()
         .filter(|o| o.tenant_id == tenant_id && o.run_id == Some(id))

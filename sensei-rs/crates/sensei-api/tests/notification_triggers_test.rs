@@ -288,7 +288,7 @@ async fn test_worker_creates_notifications_for_matching_events() {
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
     let mut found = false;
     while std::time::Instant::now() < deadline {
-        let notifications = app.state.notifications.read().await;
+        let notifications = app.state.notifications.read(app.admin_tenant_id).await;
         let matching: Vec<_> = notifications
             .values()
             .filter(|n| {
@@ -395,7 +395,7 @@ async fn test_worker_respects_cooldown_and_empty_target_roles() {
 
 /// Count in-app notifications created by triggers for the admin user.
 async fn count_trigger_notifications(app: &common::TestApp) -> usize {
-    let notifications = app.state.notifications.read().await;
+    let notifications = app.state.notifications.read(app.admin_tenant_id).await;
     notifications
         .values()
         .filter(|n| {

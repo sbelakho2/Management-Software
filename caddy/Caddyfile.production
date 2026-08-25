@@ -1,11 +1,28 @@
 # Production Caddyfile for HTTPS deployment
 # Usage: Copy this file to Caddyfile and set DOMAIN environment variable
 # Example: DOMAIN=app.starzmorocco.com docker-compose up
+#
+# SECURITY HEADER POLICY — see docs/guides/configuration-reference.md
+# -----------------------------------------------------------------------------
+# The security header policy is defined ONCE and emitted by the BACKEND
+# (sensei-api/src/middleware/secure_headers.rs). Caddy must NOT duplicate or
+# contradict those headers:
+#   - X-XSS-Protection: "0" (matches the backend; the legacy "1; mode=block"
+#     was removed because it is ineffective and can create vulnerabilities).
+#   - HSTS is emitted by the backend only (TLS-aware), never by Caddy.
+#   - Content-Security-Policy is identical to the backend's built-in default.
+#     NOTE: once the frontend is consolidated to remove 'unsafe-inline'/
+#     'unsafe-eval', both the backend default CSP AND this file must drop
+#     them together (tracked with the frontend hardening work).
+#   - CORS is handled by the backend (CORS_ALLOWED_ORIGINS); Caddy adds no
+#     Access-Control-* headers.
+# If you must override any of these values, change the backend, not Caddy.
+# =============================================================================
 
 {
     # Admin email for ACME (Let's Encrypt) certificates
     email {$TLS_EMAIL:admin@starzmorocco.com}
-    
+
     # Enable HTTP/2 and HTTP/3
     servers {
         protocols h1 h2 h2c h3
@@ -24,21 +41,25 @@ http:// {
     # Automatic HTTPS with Let's Encrypt
     tls {$TLS_EMAIL:admin@starzmorocco.com}
 
-    # Security headers
+    # Security headers — policy owned by the backend (see top of file).
+    # These headers mirror the backend values exactly; HSTS is NOT set here
+    # (the backend emits it, TLS-aware) and no Access-Control-* headers are
+    # added (backend CORS via CORS_ALLOWED_ORIGINS).
     header {
-        # HSTS - 1 year
-        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
-        # Prevent clickjacking
+        # Prevent clickjacking (identical to backend value)
         X-Frame-Options "DENY"
-        # XSS protection
+        # MIME-type sniffing protection (identical to backend value)
         X-Content-Type-Options "nosniff"
-        X-XSS-Protection "1; mode=block"
-        # Referrer policy
+        # XSS protection: MUST stay "0" — matches the backend policy
+        X-XSS-Protection "0"
+        # Referrer policy (identical to backend value)
         Referrer-Policy "strict-origin-when-cross-origin"
-        # Permissions policy
-        Permissions-Policy "geolocation=(), microphone=(), camera=()"
-        # Content Security Policy
-        Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' ws: wss: https:; frame-ancestors 'none';"
+        # Permissions policy (identical to backend value)
+        Permissions-Policy "camera=(), microphone=(), geolocation=()"
+        # Content-Security-Policy — identical to the backend's built-in
+        # default. Drop 'unsafe-inline'/'unsafe-eval' together with the
+        # backend once the frontend is consolidated (see note at top).
+        Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self' ws: wss:; frame-ancestors 'none'"
         # Remove server identification
         -Server
     }
@@ -46,8 +67,8 @@ http:// {
     # WebSocket route — proxies /ws/* to Rust API for real-time features
     route /ws/* {
         reverse_proxy sensei-api:8080 {
-            # Health checks
-            health_uri /api/v1/health
+            # Health checks (liveness/readiness probes provided by the backend)
+            health_uri /health/ready
             health_interval 30s
             health_timeout 5s
             health_status 200
@@ -71,7 +92,7 @@ http:// {
     route /api/* {
         reverse_proxy sensei-api:8080 {
             # Health checks
-            health_uri /api/v1/health
+            health_uri /health/ready
             health_interval 30s
             health_timeout 5s
             health_status 200
@@ -98,7 +119,7 @@ http:// {
     route /* {
         reverse_proxy sensei-api:8080 {
             # Health checks
-            health_uri /api/v1/health
+            health_uri /health/ready
             health_interval 30s
             health_timeout 5s
             health_status 200

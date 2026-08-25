@@ -8,7 +8,7 @@ use sensei_auth::oauth2::OAuth2Client;
 use sensei_auth::rbac::RbacService;
 use sensei_auth::refresh_tokens::RefreshTokenStore;
 use sensei_core::config::AppConfig;
-use sensei_core::types::{EntityId, Timestamp};
+use sensei_core::types::{EntityId, TenantId, Timestamp};
 use sensei_event_bus::EventBus;
 use sensei_services::accounts::{
     AccountsService, DatabaseAccountsService, InMemoryAccountsService,
@@ -54,11 +54,185 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
+use dashmap::DashMap;
+use uuid::Uuid;
+
 use crate::middleware::audit::AuditLog;
 use crate::middleware::rate_limiter::RateLimiter;
 use crate::middleware::session::SessionStore;
 use crate::services::{sse::SseManager, ws::WebSocketManager};
 use crate::stores;
+
+/// Time-to-live for realtime connection tickets, in seconds.
+pub const REALTIME_TICKET_TTL_SECS: u64 = 30;
+
+/// A realtime connection ticket (WebSocket / SSE transport credential).
+#[derive(Debug, Clone)]
+pub struct RealtimeTicket {
+    /// The one-time ticket value.
+    pub ticket: Uuid,
+    /// The user the ticket authenticates.
+    pub user_id: EntityId,
+    /// The tenant the user belongs to.
+    pub tenant_id: TenantId,
+    /// Transport scope: `"ws"` or `"sse"`.
+    pub scope: String,
+    /// When the ticket stops being valid.
+    pub expires_at: Timestamp,
+}
+
+/// In-memory ticket record (dev mode, no pool).
+#[derive(Debug, Clone)]
+struct InMemoryRealtimeTicket {
+    user_id: EntityId,
+    tenant_id: TenantId,
+    scope: String,
+    expires_at: Timestamp,
+    consumed_at: Option<Timestamp>,
+}
+
+/// One-time realtime connection ticket store.
+///
+/// Backed by the `realtime_tickets` table when a database pool is
+/// configured, in-memory otherwise (development mode). Tickets are consumed
+/// atomically on first use and are short-lived (see
+/// [`REALTIME_TICKET_TTL_SECS`]), so a stolen ticket is usable only within
+/// a narrow window and never twice.
+#[derive(Clone)]
+pub struct RealtimeTicketStore {
+    tickets: Arc<DashMap<Uuid, InMemoryRealtimeTicket>>,
+    pool: Option<Arc<PgPool>>,
+}
+
+impl RealtimeTicketStore {
+    /// Create a dev-mode (in-memory) ticket store.
+    pub fn new() -> Self {
+        Self {
+            tickets: Arc::new(DashMap::new()),
+            pool: None,
+        }
+    }
+
+    /// Create a ticket store backed by the given pool (or in-memory when
+    /// `None`).
+    pub fn with_pool(pool: Option<Arc<PgPool>>) -> Self {
+        Self {
+            tickets: Arc::new(DashMap::new()),
+            pool,
+        }
+    }
+
+    /// Mint a new one-time ticket for the given user/tenant/scope.
+    pub async fn create(
+        &self,
+        user_id: EntityId,
+        tenant_id: TenantId,
+        scope: &str,
+    ) -> Result<RealtimeTicket, String> {
+        let expires_at =
+            chrono::Utc::now() + chrono::Duration::seconds(REALTIME_TICKET_TTL_SECS as i64);
+
+        match &self.pool {
+            Some(pool) => {
+                let ticket = Uuid::new_v4();
+                sqlx::query(
+                    "INSERT INTO realtime_tickets (ticket, user_id, tenant_id, scope, expires_at) \
+                     VALUES ($1, $2, $3, $4, $5)",
+                )
+                .bind(ticket)
+                .bind(user_id)
+                .bind(tenant_id)
+                .bind(scope)
+                .bind(expires_at)
+                .execute(&**pool)
+                .await
+                .map_err(|e| format!("Failed to create realtime ticket: {e}"))?;
+                Ok(RealtimeTicket {
+                    ticket,
+                    user_id,
+                    tenant_id,
+                    scope: scope.to_string(),
+                    expires_at,
+                })
+            }
+            None => {
+                self.purge_expired_in_memory();
+                let ticket = Uuid::new_v4();
+                self.tickets.insert(
+                    ticket,
+                    InMemoryRealtimeTicket {
+                        user_id,
+                        tenant_id,
+                        scope: scope.to_string(),
+                        expires_at,
+                        consumed_at: None,
+                    },
+                );
+                Ok(RealtimeTicket {
+                    ticket,
+                    user_id,
+                    tenant_id,
+                    scope: scope.to_string(),
+                    expires_at,
+                })
+            }
+        }
+    }
+
+    /// Atomically consume a ticket for the given scope.
+    ///
+    /// Returns the ticket's `(user_id, tenant_id)` on success, `None` when
+    /// the ticket is unknown, already consumed, expired, or scoped to the
+    /// other transport. A ticket can be used at most once.
+    pub async fn consume(
+        &self,
+        ticket: Uuid,
+        scope: &str,
+    ) -> Result<Option<(EntityId, TenantId)>, String> {
+        match &self.pool {
+            Some(pool) => sqlx::query_as::<_, (Uuid, Uuid)>(
+                "UPDATE realtime_tickets \
+                     SET consumed_at = NOW() \
+                     WHERE ticket = $1 AND scope = $2 \
+                       AND consumed_at IS NULL AND expires_at > NOW() \
+                     RETURNING user_id, tenant_id",
+            )
+            .bind(ticket)
+            .bind(scope)
+            .fetch_optional(&**pool)
+            .await
+            .map_err(|e| format!("Failed to consume realtime ticket: {e}")),
+            None => {
+                self.purge_expired_in_memory();
+                let Some(mut entry) = self.tickets.get_mut(&ticket) else {
+                    return Ok(None);
+                };
+                let stored = entry.value_mut();
+                if stored.scope != scope
+                    || stored.consumed_at.is_some()
+                    || stored.expires_at <= chrono::Utc::now()
+                {
+                    return Ok(None);
+                }
+                stored.consumed_at = Some(chrono::Utc::now());
+                Ok(Some((stored.user_id, stored.tenant_id)))
+            }
+        }
+    }
+
+    /// Drop expired / already-consumed in-memory tickets (dev mode).
+    fn purge_expired_in_memory(&self) {
+        let now = chrono::Utc::now();
+        self.tickets
+            .retain(|_, t| t.expires_at > now && t.consumed_at.is_none());
+    }
+}
+
+impl Default for RealtimeTicketStore {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 /// A stored password reset token.
 #[derive(Debug, Clone)]
@@ -207,6 +381,8 @@ pub struct AppState {
     pub ws_manager: WebSocketManager,
     /// Server-Sent Events manager for one-way event streaming.
     pub sse_manager: SseManager,
+    /// One-time realtime connection tickets (WS/SSE auth).
+    pub realtime_tickets: RealtimeTicketStore,
 
     // ── In-memory stores (temporary; replaced by domain services later) ─
     /// Kanban boards entity store.
@@ -518,6 +694,7 @@ impl AppState {
             // ── Real-time communication managers ──────────────────────
             ws_manager: WebSocketManager::new(),
             sse_manager: SseManager::new(),
+            realtime_tickets: RealtimeTicketStore::new(),
             // ── Entity stores (in-memory by default, DB-backed when pool is configured) ──
             kanban_boards,
             notifications,
@@ -571,10 +748,11 @@ impl AppState {
     /// mutations to the `entity_store` table.
     /// The email service is preserved as-is (no DB needed).
     ///
-    /// The search service is deliberately **not** swapped: the
-    /// [`InMemorySearchService`] searches the shared stores and domain
-    /// services above (now DB-backed), keeping search results consistent
-    /// with route data in both modes.
+    /// The search service is swapped for the SQL-backed
+    /// [`DatabaseSearchService`]: the [`InMemorySearchService`] captured
+    /// `Arc`s to the *original* in-memory account/contact/product/user
+    /// services at construction, so swapping the state fields alone would
+    /// leave DB-mode search pointing at stale in-memory instances.
     pub fn with_db_pool(mut self, pool: Arc<PgPool>) -> Self {
         let p = (*pool).clone();
 
@@ -667,14 +845,25 @@ impl AppState {
         self.training_enrollments = EntityStore::with_pool("training_enrollment", p.clone());
 
         // Refresh tokens persist to the database when a pool is available.
-        self.refresh_token_store = Arc::new(RefreshTokenStore::new(Some(p)));
+        self.refresh_token_store = Arc::new(RefreshTokenStore::new(Some(p.clone())));
+
+        // Realtime tickets persist to the database when a pool is available.
+        self.realtime_tickets = RealtimeTicketStore::with_pool(Some(Arc::new(p.clone())));
+
+        // Durable audit logging: writes go to PostgreSQL instead of the
+        // dev-mode ring buffer.
+        self.audit_log = self.audit_log.with_pool(Arc::new(p));
 
         self.db_pool = Some(pool);
         self
     }
 
     /// Replace the event bus with a custom implementation.
+    ///
+    /// The WebSocket manager is re-attached so cross-replica fanout uses
+    /// the new bus.
     pub fn with_event_bus(mut self, event_bus: Arc<dyn EventBus>) -> Self {
+        self.ws_manager.set_event_bus(event_bus.clone());
         self.event_bus = event_bus;
         self
     }

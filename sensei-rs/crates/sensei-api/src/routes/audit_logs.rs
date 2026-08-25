@@ -76,7 +76,7 @@ pub async fn list_audit_logs(
     Query(params): Query<ListAuditLogsParams>,
 ) -> Result<Json<PaginatedResponse<AuditLogEntry>>> {
     let tenant_id = user.tenant_id;
-    let store = state.audit_log_entries.read().await;
+    let store = state.audit_log_entries.read(user.tenant_id).await;
     let date_from = parse_date_filter("date_from", params.date_from.as_deref())?;
     let date_to = parse_date_filter("date_to", params.date_to.as_deref())?;
 
@@ -120,7 +120,7 @@ pub async fn get_audit_log(
     Path(id): Path<Uuid>,
 ) -> Result<Json<AuditLogEntry>> {
     let tenant_id = user.tenant_id;
-    let store = state.audit_log_entries.read().await;
+    let store = state.audit_log_entries.read(user.tenant_id).await;
     let entry = store
         .values()
         .find(|e| e.id == id && e.tenant_id == tenant_id)
@@ -136,7 +136,7 @@ pub async fn get_entity_audit_trail(
     Path((entity_type, entity_id)): Path<(String, Uuid)>,
 ) -> Result<Json<Vec<AuditLogEntry>>> {
     let tenant_id = user.tenant_id;
-    let store = state.audit_log_entries.read().await;
+    let store = state.audit_log_entries.read(user.tenant_id).await;
     let mut entries: Vec<AuditLogEntry> = store
         .values()
         .filter(|e| {
@@ -154,7 +154,7 @@ pub async fn get_audit_log_stats(
     State(state): State<AppState>,
 ) -> Result<Json<AuditLogStats>> {
     let tenant_id = user.tenant_id;
-    let store = state.audit_log_entries.read().await;
+    let store = state.audit_log_entries.read(user.tenant_id).await;
     let entries: Vec<&AuditLogEntry> = store
         .values()
         .filter(|e| e.tenant_id == tenant_id)

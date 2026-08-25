@@ -188,7 +188,7 @@ pub async fn list_boards(
 ) -> Result<Json<PaginatedResponse<ObeyaBoard>>> {
     let tenant_id = user.tenant_id;
     let store = get_store(&state);
-    let map = store.read().await;
+    let map = store.read(user.tenant_id).await;
 
     let mut items: Vec<ObeyaBoard> = map
         .values()
@@ -232,7 +232,7 @@ pub async fn get_board(
 ) -> Result<Json<ObeyaBoard>> {
     let tenant_id = user.tenant_id;
     let store = get_store(&state);
-    let map = store.read().await;
+    let map = store.read(user.tenant_id).await;
 
     let board = map
         .get(&id)
@@ -268,7 +268,10 @@ pub async fn create_board(
     };
 
     let store = get_store(&state);
-    store.write().await.insert(board.id, board.clone());
+    store
+        .write(user.tenant_id)
+        .await
+        .insert(board.id, board.clone());
     Ok(Json(board))
 }
 
@@ -281,7 +284,7 @@ pub async fn update_board(
 ) -> Result<Json<ObeyaBoard>> {
     let tenant_id = user.tenant_id;
     let store = get_store(&state);
-    let mut map = store.write().await;
+    let mut map = store.write(user.tenant_id).await;
 
     let board = map
         .get_mut(&id)
@@ -320,7 +323,7 @@ pub async fn delete_board(
 ) -> Result<Json<()>> {
     let tenant_id = user.tenant_id;
     let store = get_store(&state);
-    let mut map = store.write().await;
+    let mut map = store.write(user.tenant_id).await;
 
     let board = map
         .get_mut(&id)
@@ -343,7 +346,7 @@ pub async fn list_board_items(
 ) -> Result<Json<PaginatedResponse<ObeyaItem>>> {
     let tenant_id = user.tenant_id;
     let store = get_store(&state);
-    let map = store.read().await;
+    let map = store.read(user.tenant_id).await;
 
     let board = map
         .get(&board_id)
@@ -416,7 +419,7 @@ pub async fn add_board_item(
     };
 
     let store = get_store(&state);
-    let mut map = store.write().await;
+    let mut map = store.write(user.tenant_id).await;
 
     let board = map
         .get_mut(&board_id)
@@ -452,7 +455,7 @@ pub async fn update_board_item(
     let tenant_id = user.tenant_id;
     let now = Utc::now();
     let store = get_store(&state);
-    let mut map = store.write().await;
+    let mut map = store.write(user.tenant_id).await;
 
     let board = map
         .get_mut(&board_id)
@@ -531,7 +534,7 @@ pub async fn delete_board_item(
 ) -> Result<Json<()>> {
     let tenant_id = user.tenant_id;
     let store = get_store(&state);
-    let mut map = store.write().await;
+    let mut map = store.write(user.tenant_id).await;
 
     let board = map
         .get_mut(&board_id)

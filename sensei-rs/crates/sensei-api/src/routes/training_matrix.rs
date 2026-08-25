@@ -65,7 +65,7 @@ pub async fn list_matrix_entries(
     State(state): State<AppState>,
     Query(params): Query<ListMatrixParams>,
 ) -> Result<Json<PaginatedResponse<TrainingMatrixEntry>>> {
-    let store = state.training_matrix.read().await;
+    let store = state.training_matrix.read(user.tenant_id).await;
     let mut entries: Vec<TrainingMatrixEntry> = store
         .values()
         .filter(|e| e.tenant_id == user.tenant_id)
@@ -112,7 +112,7 @@ pub async fn create_matrix_entry(
         created_at: now,
         updated_at: now,
     };
-    let mut store = state.training_matrix.write().await;
+    let mut store = state.training_matrix.write(user.tenant_id).await;
     store.insert(entry.id, entry.clone());
     Ok(Json(entry))
 }
@@ -124,7 +124,7 @@ pub async fn update_matrix_entry(
     Path(id): Path<Uuid>,
     Json(req): Json<MatrixEntryRequest>,
 ) -> Result<Json<TrainingMatrixEntry>> {
-    let mut store = state.training_matrix.write().await;
+    let mut store = state.training_matrix.write(user.tenant_id).await;
     let entry = store
         .get_mut(&id)
         .filter(|e| e.tenant_id == user.tenant_id)
@@ -167,7 +167,7 @@ pub async fn list_skill_gaps(
     user: AuthenticatedUser,
     State(state): State<AppState>,
 ) -> Result<Json<Vec<SkillGap>>> {
-    let store = state.training_matrix.read().await;
+    let store = state.training_matrix.read(user.tenant_id).await;
 
     let mut gaps: Vec<SkillGap> = store
         .values()

@@ -94,7 +94,7 @@ pub async fn list_triggers(
     Query(params): Query<ListTriggersParams>,
 ) -> Result<Json<PaginatedResponse<NotificationTrigger>>> {
     let tenant_id = user.tenant_id;
-    let store = state.notification_triggers.read().await;
+    let store = state.notification_triggers.read(user.tenant_id).await;
     let mut triggers: Vec<NotificationTrigger> = store
         .values()
         .filter(|t| t.tenant_id == tenant_id)
@@ -144,7 +144,7 @@ pub async fn create_trigger(
         created_at: now,
         updated_at: now,
     };
-    let mut store = state.notification_triggers.write().await;
+    let mut store = state.notification_triggers.write(user.tenant_id).await;
     store.insert(trigger.id, trigger.clone());
     Ok(Json(trigger))
 }
@@ -156,7 +156,7 @@ pub async fn get_trigger(
     Path(trigger_id): Path<Uuid>,
 ) -> Result<Json<NotificationTrigger>> {
     let tenant_id = user.tenant_id;
-    let store = state.notification_triggers.read().await;
+    let store = state.notification_triggers.read(user.tenant_id).await;
     let trigger = store
         .values()
         .find(|t| t.id == trigger_id && t.tenant_id == tenant_id)
@@ -175,7 +175,7 @@ pub async fn update_trigger(
     Json(req): Json<UpdateTriggerRequest>,
 ) -> Result<Json<NotificationTrigger>> {
     let tenant_id = user.tenant_id;
-    let mut store = state.notification_triggers.write().await;
+    let mut store = state.notification_triggers.write(user.tenant_id).await;
     let trigger = store
         .get_mut(&trigger_id)
         .filter(|t| t.tenant_id == tenant_id)
@@ -222,7 +222,7 @@ pub async fn delete_trigger(
     Path(trigger_id): Path<Uuid>,
 ) -> Result<Json<()>> {
     let tenant_id = user.tenant_id;
-    let mut store = state.notification_triggers.write().await;
+    let mut store = state.notification_triggers.write(user.tenant_id).await;
     let exists = store
         .get(&trigger_id)
         .filter(|t| t.tenant_id == tenant_id)
@@ -243,7 +243,7 @@ pub async fn toggle_trigger(
     Path(trigger_id): Path<Uuid>,
 ) -> Result<Json<NotificationTrigger>> {
     let tenant_id = user.tenant_id;
-    let mut store = state.notification_triggers.write().await;
+    let mut store = state.notification_triggers.write(user.tenant_id).await;
     let trigger = store
         .get_mut(&trigger_id)
         .filter(|t| t.tenant_id == tenant_id)
@@ -295,7 +295,7 @@ pub async fn test_trigger(
     Json(req): Json<TestTriggerRequest>,
 ) -> Result<Json<TriggerTestResult>> {
     let tenant_id = user.tenant_id;
-    let store = state.notification_triggers.read().await;
+    let store = state.notification_triggers.read(user.tenant_id).await;
     let trigger = store
         .values()
         .find(|t| t.id == trigger_id && t.tenant_id == tenant_id)

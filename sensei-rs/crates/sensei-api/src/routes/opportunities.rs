@@ -90,7 +90,7 @@ pub async fn list_opportunities(
     State(state): State<AppState>,
     Query(params): Query<ListOpportunitiesParams>,
 ) -> Result<Json<PaginatedResponse<Opportunity>>> {
-    let store = state.opportunities.read().await;
+    let store = state.opportunities.read(user.tenant_id).await;
     let mut ops: Vec<Opportunity> = store
         .values()
         .filter(|o| o.tenant_id == user.tenant_id)
@@ -129,7 +129,7 @@ pub async fn create_opportunity(
         created_at: now,
         updated_at: now,
     };
-    let mut store = state.opportunities.write().await;
+    let mut store = state.opportunities.write(user.tenant_id).await;
     store.insert(opportunity.id, opportunity.clone());
     Ok(Json(opportunity))
 }
@@ -140,7 +140,7 @@ pub async fn get_opportunity(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<Opportunity>> {
-    let store = state.opportunities.read().await;
+    let store = state.opportunities.read(user.tenant_id).await;
     let opp = store
         .values()
         .find(|o| o.id == id && o.tenant_id == user.tenant_id)
@@ -157,7 +157,7 @@ pub async fn update_opportunity(
     Json(req): Json<OpportunityRequest>,
 ) -> Result<Json<Opportunity>> {
     validate_opportunity(&req)?;
-    let mut store = state.opportunities.write().await;
+    let mut store = state.opportunities.write(user.tenant_id).await;
     let opp = store
         .get_mut(&id)
         .filter(|o| o.tenant_id == user.tenant_id)
@@ -197,7 +197,7 @@ pub async fn delete_opportunity(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<()>> {
-    let mut store = state.opportunities.write().await;
+    let mut store = state.opportunities.write(user.tenant_id).await;
     let exists = store
         .get(&id)
         .filter(|o| o.tenant_id == user.tenant_id)

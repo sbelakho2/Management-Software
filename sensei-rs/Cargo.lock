@@ -6800,6 +6800,8 @@ dependencies = [
  "chrono",
  "futures",
  "lettre",
+ "sensei-core",
+ "sensei-db",
  "sensei-event-bus",
  "sensei-services",
  "serde",
@@ -6808,6 +6810,7 @@ dependencies = [
  "thiserror 2.0.18",
  "tokio",
  "tracing",
+ "tracing-subscriber",
  "uuid",
 ]
 

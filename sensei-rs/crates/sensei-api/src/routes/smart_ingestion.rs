@@ -163,11 +163,11 @@ pub async fn upload_document(
 
     // Persist the job and the raw bytes.
     {
-        let mut store = state.ingestion_jobs.write().await;
+        let mut store = state.ingestion_jobs.write(user.tenant_id).await;
         store.insert(job.id, job.clone());
     }
     {
-        let mut store = state.ingestion_data.write().await;
+        let mut store = state.ingestion_data.write(user.tenant_id).await;
         store.insert(job.id, file_data);
     }
 
@@ -180,7 +180,7 @@ pub async fn upload_document(
     let job_tenant = user.tenant_id;
     tokio::spawn(async move {
         let metadata = {
-            let data_store = data_store.read().await;
+            let data_store = data_store.read(user.tenant_id).await;
             data_store
                 .get(&job_id)
                 .map(|raw| {
@@ -206,7 +206,7 @@ pub async fn upload_document(
         };
 
         let completed_at = Utc::now();
-        let mut store = jobs_store.write().await;
+        let mut store = jobs_store.write(user.tenant_id).await;
         let job = match store.get_mut(&job_id) {
             Some(j) => j,
             None => return, // Job removed while processing.
@@ -247,7 +247,7 @@ pub async fn get_ingestion_status(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<IngestionJob>> {
-    let store = state.ingestion_jobs.read().await;
+    let store = state.ingestion_jobs.read(user.tenant_id).await;
     let job = store
         .values()
         .find(|j| j.id == id && j.tenant_id == user.tenant_id)
@@ -262,7 +262,7 @@ pub async fn list_ingestion_history(
     State(state): State<AppState>,
     Query(params): Query<IngestionHistoryParams>,
 ) -> Result<Json<PaginatedResponse<IngestionJob>>> {
-    let store = state.ingestion_jobs.read().await;
+    let store = state.ingestion_jobs.read(user.tenant_id).await;
     let mut jobs: Vec<IngestionJob> = store
         .values()
         .filter(|j| j.tenant_id == user.tenant_id)

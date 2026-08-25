@@ -1,6 +1,9 @@
 {{- if .Values.networkPolicy.enabled }}
 # =============================================================================
 # NetworkPolicy: backend — restrict traffic to only necessary endpoints
+# NOTE: legacy Python-era policy (component: backend). The Rust stack uses the
+# sensei-api/worker policies below. Rendered with the current service port so
+# the chart stays valid; pending cleanup by the platform team.
 # =============================================================================
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -26,7 +29,7 @@ spec:
               app.kubernetes.io/name: nginx-ingress
       ports:
         - protocol: TCP
-          port: {{ .Values.service.backend.targetPort }}
+          port: {{ .Values.service.senseiApi.port | default 8080 }}
   egress:
     # Egress to PostgreSQL (main app DB)
     - to:
@@ -123,7 +126,7 @@ spec:
               app.kubernetes.io/name: nginx-ingress
       ports:
         - protocol: TCP
-          port: {{ .Values.service.frontend.targetPort }}
+          port: {{ .Values.service.senseiApi.port | default 8080 }}
   egress:
     # Frontend only needs to reach backend API (no direct external access)
     - to:
@@ -133,7 +136,7 @@ spec:
               app.kubernetes.io/component: backend
       ports:
         - protocol: TCP
-          port: {{ .Values.service.backend.port }}
+          port: {{ .Values.service.senseiApi.port | default 8080 }}
     # DNS egress (restricted to kube-system namespace)
     - to:
         - namespaceSelector:

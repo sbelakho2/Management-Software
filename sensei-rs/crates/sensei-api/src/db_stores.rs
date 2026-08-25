@@ -22,18 +22,40 @@
 //!                     └─────────────────────┘
 //! ```
 //!
+//! # Tenant isolation
+//!
+//! Every entity is keyed by `(tenant_id, entity_type, id)` — both in the
+//! database (`entity_store` PK, migration 046) and in the shared in-memory
+//! map ([`StoreKey`]). All SQL statements filter by `tenant_id`, so one
+//! tenant can never read or overwrite another tenant's rows.
+//!
+//! The guard objects returned by [`EntityStore::read`] / [`EntityStore::write`]
+//! present a **tenant-scoped view**: they only ever expose the calling
+//! tenant's entities, keyed by plain entity id (the API routes are built
+//! around `HashMap<Uuid, T>` semantics).
+//!
 //! # Persistence model
 //!
-//! A write guard snapshots the store contents once at acquisition. When the
-//! guard is dropped (or [`StoreWriteGuard::persist`] is called), only the
-//! changed keys are written back:
+//! A write guard snapshots the calling tenant's store contents once at
+//! acquisition. When [`StoreWriteGuard::persist`] is called (or the guard is
+//! dropped), only the changed keys are written back:
 //!
 //! * **inserted/updated** keys are batched into a single upsert transaction,
 //! * **removed** keys are deleted in the same transaction.
 //!
-//! A per-store persist mutex serializes concurrent persistence (e.g. the
-//! asynchronous drop path racing an explicit `persist()`), so a slow
-//! fire-and-forget write can never reorder a newer write behind it.
+//! A per-store persist mutex serializes concurrent persistence, so a slow
+//! write can never reorder a newer write behind it.
+//!
+//! # Durability
+//!
+//! [`StoreWriteGuard::persist`] is the **explicit, awaited** persistence path
+//! and propagates database errors to the caller. The `Drop` implementation
+//! never spawns a background task: as a last-resort fallback it attempts a
+//! **best-effort synchronous** persist (via
+//! [`tokio::runtime::Handle::try_current`] +
+//! [`futures::executor::block_on`]) when a Tokio runtime is present, logging
+//! an `ERROR` on failure. Without a runtime (e.g. during shutdown) it logs a
+//! warning that the guard was dropped unpersisted.
 
 use serde::de::DeserializeOwned;
 use serde::Serialize;
@@ -45,6 +67,8 @@ use std::time::{Duration, Instant};
 use thiserror::Error;
 use tokio::sync::{Mutex, RwLock};
 use uuid::Uuid;
+
+use sensei_core::error::SenseiError;
 
 // ── Error types ─────────────────────────────────────────────────────────────
 
@@ -65,18 +89,68 @@ pub enum StoreError {
     NotConnected,
 }
 
+impl From<StoreError> for SenseiError {
+    fn from(err: StoreError) -> Self {
+        match err {
+            StoreError::Database(e) => {
+                SenseiError::Database(format!("Entity store database error: {e}"))
+            }
+            StoreError::Serialization(e) => {
+                SenseiError::Internal(format!("Entity store serialization error: {e}"))
+            }
+            StoreError::NotFound(id) => SenseiError::NotFound(id.to_string()),
+            StoreError::NotConnected => {
+                SenseiError::Database("Entity store is not connected to a database".to_string())
+            }
+        }
+    }
+}
+
+// ── Composite store key ────────────────────────────────────────────────────
+
+/// The isolation key of an entity inside a store: `(tenant_id, id)`.
+///
+/// The `entity_type` dimension is the store itself (each [`EntityStore`] is
+/// created for exactly one entity type), so together the three columns of
+/// the `entity_store` PK — `(tenant_id, entity_type, id)` — are represented
+/// by this key plus the store's entity type.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct StoreKey {
+    /// The tenant that owns the entity.
+    pub tenant_id: Uuid,
+    /// The entity's unique identifier.
+    pub id: Uuid,
+}
+
+impl StoreKey {
+    /// Create a new composite key for the given tenant and entity id.
+    pub fn new(tenant_id: Uuid, id: Uuid) -> Self {
+        Self { tenant_id, id }
+    }
+}
+
+impl std::fmt::Display for StoreKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}|{}", self.tenant_id, self.id)
+    }
+}
+
 // ── Inner storage ──────────────────────────────────────────────────────────
 
 struct StoreInner<T> {
-    data: HashMap<Uuid, T>,
+    data: HashMap<StoreKey, T>,
     pool: Option<PgPool>,
     entity_type: String,
-    db_loaded: bool,
+    /// Tenants whose rows have been successfully loaded from the database.
+    /// A tenant missing from this set triggers a (rate-limited) load on the
+    /// next access, so a failed load is retried instead of serving empty
+    /// data.
+    loaded_tenants: HashSet<Uuid>,
     /// When the last DB load was attempted, so failed loads are retried at
     /// most once per second instead of on every access.
     last_db_load_attempt: Option<Instant>,
     /// Serializes persistence operations (explicit `persist()` and the
-    /// asynchronous drop path) so only one persist runs at a time.
+    /// best-effort drop path) so only one persist runs at a time.
     persist_lock: Arc<Mutex<()>>,
 }
 
@@ -86,7 +160,7 @@ impl<T> StoreInner<T> {
             data: HashMap::new(),
             pool,
             entity_type: entity_type.to_string(),
-            db_loaded: false,
+            loaded_tenants: HashSet::new(),
             last_db_load_attempt: None,
             persist_lock: Arc::new(Mutex::new(())),
         }
@@ -99,9 +173,15 @@ impl<T> StoreInner<T> {
 /// available.
 ///
 /// When no pool is configured, it behaves exactly like an in-memory
-/// `HashMap<Uuid, T>`. When a pool is set, mutations are asynchronously
-/// persisted to the `entity_store` table on write-guard drop, and data is
-/// lazily loaded from the database on first read.
+/// `HashMap<Uuid, T>`. When a pool is set, mutations are persisted to the
+/// `entity_store` table on explicit [`StoreWriteGuard::persist`] (and
+/// best-effort on write-guard drop), and data is lazily loaded from the
+/// database per tenant on first access.
+///
+/// Every operation is **tenant-scoped**: pass the calling user's `tenant_id`
+/// to [`EntityStore::read`] / [`EntityStore::write`] /
+/// [`EntityStore::list_paginated`] / [`EntityStore::list_by_field`] and only
+/// that tenant's entities are ever visible or written.
 ///
 /// # Type Parameters
 /// * `T` — The entity type. Must implement `Serialize + DeserializeOwned +
@@ -115,15 +195,15 @@ impl<T> StoreInner<T> {
 ///
 /// // In-memory mode — same as before
 /// {
-///     let mut guard = store.write().await;
+///     let mut guard = store.write(tenant_id).await;
 ///     guard.insert(id, board);
 /// }
 ///
 /// // Database mode — transparent persistence
 /// let store = EntityStore::with_pool("kanban_board", pool);
 /// {
-///     let mut guard = store.write().await;
-///     guard.insert(id, board); // persisted on drop
+///     let mut guard = store.write(tenant_id).await;
+///     guard.insert(id, board); // persist on drop; prefer explicit persist()
 /// }
 /// ```
 pub struct EntityStore<T> {
@@ -148,7 +228,8 @@ impl<T> EntityStore<T> {
 
     /// Create a new store backed by the given database pool.
     ///
-    /// Data will be lazily loaded from the database on first access.
+    /// Data will be lazily loaded from the database per tenant on first
+    /// access.
     pub fn with_pool(entity_type: &str, pool: PgPool) -> Self {
         Self {
             inner: Arc::new(RwLock::new(StoreInner::new(entity_type, Some(pool)))),
@@ -157,53 +238,62 @@ impl<T> EntityStore<T> {
 }
 
 impl<T: Serialize + DeserializeOwned + Clone + PartialEq + Send + Sync + 'static> EntityStore<T> {
-    /// Acquire a read guard.
-    ///
-    /// On first access when a pool is configured, data is loaded from the
-    /// database before returning the guard. A failed load is retried on the
-    /// next access, but at most once per second (rate-limited retries).
-    pub async fn read(&self) -> StoreReadGuard<'_, T> {
-        // Fast path: already loaded or no pool
-        {
-            let inner = self.inner.read().await;
-            if inner.db_loaded || inner.pool.is_none() {
-                return StoreReadGuard { inner };
-            }
+    /// Ensure the calling tenant's rows have been loaded from the database
+    /// (rate-limited retry on failure; a no-op without a pool).
+    async fn ensure_loaded(&self, tenant_id: Uuid) {
+        let mut inner = self.inner.write().await;
+        if inner.pool.is_none() || inner.loaded_tenants.contains(&tenant_id) {
+            return;
         }
-
-        // Slow path: load from DB (double-checked locking)
-        {
-            let mut inner = self.inner.write().await;
-            if !inner.db_loaded && inner.pool.is_some() {
-                load_from_db(&mut inner).await;
-            }
-        }
-
-        let inner = self.inner.read().await;
-        StoreReadGuard { inner }
+        load_from_db(&mut inner, tenant_id).await;
     }
 
-    /// Acquire a write guard.
+    /// Acquire a read guard scoped to the given tenant.
     ///
-    /// On first access when a pool is configured, data is loaded from the
-    /// database before returning the guard. The guard snapshots the current
-    /// contents; changes are persisted to the database (as a diff) when the
-    /// guard is dropped.
-    pub async fn write(&self) -> StoreWriteGuard<'_, T> {
-        // Ensure data is loaded from DB if needed, then release the lock
-        {
-            let mut inner = self.inner.write().await;
-            if !inner.db_loaded && inner.pool.is_some() {
-                load_from_db(&mut inner).await;
-            }
-        }
+    /// On first access when a pool is configured, the tenant's data is
+    /// loaded from the database before returning the guard. A failed load
+    /// is retried on the next access, but at most once per second
+    /// (rate-limited retries).
+    pub async fn read(&self, tenant_id: Uuid) -> StoreReadGuard<T> {
+        self.ensure_loaded(tenant_id).await;
 
-        // Re-acquire the write lock and snapshot the current state for
-        // change tracking.
-        let inner = self.inner.write().await;
-        let original_values = inner.data.clone();
+        let inner = self.inner.read().await;
+        let map = inner
+            .data
+            .iter()
+            .filter(|(key, _)| key.tenant_id == tenant_id)
+            .map(|(key, value)| (key.id, value.clone()))
+            .collect();
+        StoreReadGuard { map }
+    }
+
+    /// Acquire a write guard scoped to the given tenant.
+    ///
+    /// On first access when a pool is configured, the tenant's data is
+    /// loaded from the database before returning the guard. The guard
+    /// snapshots the tenant's current contents; changes are written back to
+    /// the shared map and persisted to the database (as a diff) when
+    /// [`StoreWriteGuard::persist`] is called, and best-effort when the
+    /// guard is dropped.
+    pub async fn write(&self, tenant_id: Uuid) -> StoreWriteGuard<T> {
+        self.ensure_loaded(tenant_id).await;
+
+        let inner = self.inner.read().await;
+        let map: HashMap<Uuid, T> = inner
+            .data
+            .iter()
+            .filter(|(key, _)| key.tenant_id == tenant_id)
+            .map(|(key, value)| (key.id, value.clone()))
+            .collect();
+
+        let original_values = map.clone();
         StoreWriteGuard {
-            inner,
+            inner: self.inner.clone(),
+            tenant_id,
+            pool: inner.pool.clone(),
+            entity_type: inner.entity_type.clone(),
+            persist_lock: Arc::clone(&inner.persist_lock),
+            map,
             original_values,
             dirty: HashSet::new(),
             removed: HashSet::new(),
@@ -213,36 +303,42 @@ impl<T: Serialize + DeserializeOwned + Clone + PartialEq + Send + Sync + 'static
 
 // ── Read guard ─────────────────────────────────────────────────────────────
 
-/// Read guard that dereferences to `HashMap<Uuid, T>`.
+/// Tenant-scoped read guard that dereferences to `HashMap<Uuid, T>`.
 ///
-/// Obtained from [`EntityStore::read()`]. Behaves identically to
-/// `RwLockReadGuard<HashMap<Uuid, T>>`.
-pub struct StoreReadGuard<'a, T> {
-    inner: tokio::sync::RwLockReadGuard<'a, StoreInner<T>>,
+/// Obtained from [`EntityStore::read()`]. Only the calling tenant's entities
+/// are visible; keys are plain entity ids.
+pub struct StoreReadGuard<T> {
+    map: HashMap<Uuid, T>,
 }
 
-impl<T> Deref for StoreReadGuard<'_, T> {
+impl<T> Deref for StoreReadGuard<T> {
     type Target = HashMap<Uuid, T>;
 
     fn deref(&self) -> &Self::Target {
-        &self.inner.data
+        &self.map
     }
 }
 
 // ── Write guard ────────────────────────────────────────────────────────────
 
-/// Write guard that dereferences to `HashMap<Uuid, T>`.
+/// Tenant-scoped write guard that dereferences to `HashMap<Uuid, T>`.
 ///
-/// Obtained from [`EntityStore::write()`]. When dropped, the changed keys
-/// (inserted/updated/removed since the guard was acquired) are
-/// asynchronously persisted to the database (if a pool is configured).
+/// Obtained from [`EntityStore::write()`]. Mutations apply to the tenant's
+/// snapshot; they are committed to the shared map and (when a pool is
+/// configured) to the `entity_store` table by [`StoreWriteGuard::persist`],
+/// and best-effort on drop.
 pub struct StoreWriteGuard<
-    'a,
     T: Serialize + DeserializeOwned + Clone + PartialEq + Send + Sync + 'static,
 > {
-    inner: tokio::sync::RwLockWriteGuard<'a, StoreInner<T>>,
-    /// Snapshot of the store contents when the guard was acquired. Used to
-    /// detect inserted/updated/removed keys without cloning the whole map
+    inner: Arc<RwLock<StoreInner<T>>>,
+    tenant_id: Uuid,
+    pool: Option<PgPool>,
+    entity_type: String,
+    persist_lock: Arc<Mutex<()>>,
+    /// The tenant's working set, keyed by entity id.
+    map: HashMap<Uuid, T>,
+    /// Snapshot of the tenant's contents when the guard was acquired. Used
+    /// to detect inserted/updated/removed keys without cloning the whole map
     /// at persist time.
     original_values: HashMap<Uuid, T>,
     /// Keys that were inserted or updated since the guard was acquired.
@@ -252,33 +348,38 @@ pub struct StoreWriteGuard<
 }
 
 impl<T: Serialize + DeserializeOwned + Clone + PartialEq + Send + Sync + 'static> Deref
-    for StoreWriteGuard<'_, T>
+    for StoreWriteGuard<T>
 {
     type Target = HashMap<Uuid, T>;
 
     fn deref(&self) -> &Self::Target {
-        &self.inner.data
+        &self.map
     }
 }
 
 impl<T: Serialize + DeserializeOwned + Clone + PartialEq + Send + Sync + 'static> DerefMut
-    for StoreWriteGuard<'_, T>
+    for StoreWriteGuard<T>
 {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.inner.data
+        &mut self.map
     }
 }
 
 // ── Explicit persistence ────────────────────────────────────────────────────
 
 impl<T: Serialize + DeserializeOwned + Clone + PartialEq + Send + Sync + 'static>
-    StoreWriteGuard<'_, T>
+    StoreWriteGuard<T>
 {
-    /// Explicitly persist the pending changes to the database.
+    /// Explicitly persist the pending changes.
     ///
-    /// Only the dirty (inserted/updated) and removed keys are written, in a
-    /// single transaction. On transient failures (DB connection), a single
-    /// retry with a 100ms delay is attempted before giving up.
+    /// Commits the tenant's changes to the shared in-memory map and, when a
+    /// database pool is configured, to the `entity_store` table. Only the
+    /// dirty (inserted/updated) and removed keys are written, in a single
+    /// transaction. On transient failures (DB connection), a single retry
+    /// with a 100ms delay is attempted before giving up.
+    ///
+    /// In in-memory mode (no pool) this commits the changes to the shared
+    /// map and succeeds — there is no database to persist to.
     ///
     /// After a successful persist, the dirty/removed sets are cleared and
     /// the snapshot is refreshed so that the `Drop` impl will not
@@ -286,26 +387,37 @@ impl<T: Serialize + DeserializeOwned + Clone + PartialEq + Send + Sync + 'static
     ///
     /// # Errors
     ///
-    /// Returns [`StoreError::NotConnected`] if no pool is configured.
-    /// Returns [`StoreError::Database`] if the SQL operation fails after retry.
-    /// Returns [`StoreError::Serialization`] if the entity cannot be serialized.
+    /// Returns [`StoreError::Database`] if the SQL operation fails after
+    /// retry, or [`StoreError::Serialization`] if an entity cannot be
+    /// serialized. The changes remain pending and the `Drop` fallback will
+    /// retry them best-effort.
     pub async fn persist(&mut self) -> Result<(), StoreError> {
-        let pool = self.inner.pool.clone().ok_or(StoreError::NotConnected)?;
-
         self.compute_diff();
 
         if self.dirty.is_empty() && self.removed.is_empty() {
             return Ok(());
         }
 
-        let entity_type = self.inner.entity_type.clone();
-        let persist_lock = Arc::clone(&self.inner.persist_lock);
         let (dirty_values, removed_ids) = self.collect_changes()?;
+
+        // 1. Commit to the shared in-memory map (always; in-memory mode
+        //    "persists" here and nowhere else).
+        self.write_back();
+
+        // 2. Persist to the database when a pool is configured.
+        let Some(pool) = self.pool.clone() else {
+            self.after_persist_success();
+            return Ok(());
+        };
+
+        let entity_type = self.entity_type.clone();
+        let tenant_id = self.tenant_id;
+        let persist_lock = Arc::clone(&self.persist_lock);
 
         // Attempt persist with one retry on transient failure
         let result = {
             let _guard = persist_lock.lock().await;
-            persist_changes_inner(&pool, &entity_type, &dirty_values, &removed_ids).await
+            persist_changes_inner(&pool, &entity_type, tenant_id, &dirty_values, &removed_ids).await
         };
         match result {
             Ok(()) => {
@@ -321,7 +433,8 @@ impl<T: Serialize + DeserializeOwned + Clone + PartialEq + Send + Sync + 'static
                 tokio::time::sleep(Duration::from_millis(100)).await;
                 // Use ? to convert sqlx::Error -> StoreError via #[from]
                 let _guard = persist_lock.lock().await;
-                persist_changes_inner(&pool, &entity_type, &dirty_values, &removed_ids).await?;
+                persist_changes_inner(&pool, &entity_type, tenant_id, &dirty_values, &removed_ids)
+                    .await?;
                 self.after_persist_success();
                 Ok(())
             }
@@ -333,7 +446,7 @@ impl<T: Serialize + DeserializeOwned + Clone + PartialEq + Send + Sync + 'static
     fn compute_diff(&mut self) {
         self.dirty.clear();
         self.removed.clear();
-        for (id, value) in self.inner.data.iter() {
+        for (id, value) in self.map.iter() {
             match self.original_values.get(id) {
                 Some(original) if original == value => {}
                 _ => {
@@ -343,7 +456,7 @@ impl<T: Serialize + DeserializeOwned + Clone + PartialEq + Send + Sync + 'static
             }
         }
         for id in self.original_values.keys() {
-            if !self.inner.data.contains_key(id) {
+            if !self.map.contains_key(id) {
                 self.removed.insert(*id);
             }
         }
@@ -353,7 +466,7 @@ impl<T: Serialize + DeserializeOwned + Clone + PartialEq + Send + Sync + 'static
     fn collect_changes(&self) -> Result<(HashMap<Uuid, T>, Vec<Uuid>), StoreError> {
         let mut dirty_values = HashMap::with_capacity(self.dirty.len());
         for id in &self.dirty {
-            if let Some(value) = self.inner.data.get(id) {
+            if let Some(value) = self.map.get(id) {
                 dirty_values.insert(*id, value.clone());
             }
         }
@@ -361,67 +474,143 @@ impl<T: Serialize + DeserializeOwned + Clone + PartialEq + Send + Sync + 'static
         Ok((dirty_values, removed_ids))
     }
 
+    /// Apply the pending changes to the shared in-memory map using a
+    /// best-effort synchronous lock acquisition (used by `Drop`, where
+    /// awaiting is impossible).
+    fn write_back(&mut self) {
+        match self.inner.try_write() {
+            Ok(mut inner) => {
+                for (id, value) in self.map.iter() {
+                    inner
+                        .data
+                        .insert(StoreKey::new(self.tenant_id, *id), value.clone());
+                }
+                for id in &self.removed {
+                    inner.data.remove(&StoreKey::new(self.tenant_id, *id));
+                }
+            }
+            Err(_) => {
+                tracing::warn!(
+                    entity_type = %self.entity_type,
+                    tenant_id = %self.tenant_id,
+                    "Could not acquire the store lock to write back changes \
+                     (lock busy); the shared in-memory map may be stale"
+                );
+            }
+        }
+    }
+
     /// After a successful persist: refresh the snapshot and clear the
     /// change sets so the `Drop` impl is a no-op.
     fn after_persist_success(&mut self) {
-        self.original_values = self.inner.data.clone();
+        self.original_values = self.map.clone();
         self.dirty.clear();
         self.removed.clear();
     }
-}
 
-// ── Drop implementation (last-resort fallback) ──────────────────────────────
-
-impl<T: Serialize + DeserializeOwned + Clone + PartialEq + Send + Sync + 'static> Drop
-    for StoreWriteGuard<'_, T>
-{
-    /// Last-resort persistence on drop.
+    /// The `Drop` fallback: write back to the shared map and attempt a
+    /// best-effort synchronous database persist.
     ///
-    /// If [`persist()`](StoreWriteGuard::persist) was already called
-    /// successfully, the dirty/removed sets are empty and this is a no-op.
-    /// Otherwise, it spawns a fire-and-forget task that acquires the
-    /// per-store persist lock before writing, so a concurrent explicit
-    /// `persist()` can never be reordered behind this write.
-    ///
-    /// **Callers should prefer the explicit `persist()` method** and handle
-    /// errors properly, rather than relying on `Drop`.
-    fn drop(&mut self) {
-        let pool = match self.inner.pool.clone() {
-            Some(p) => p,
-            None => return,
-        };
-
+    /// * The in-memory write-back always runs (via `try_write`, which needs
+    ///   no executor).
+    /// * The database persist runs only when a pool is configured AND a
+    ///   Tokio runtime handle is available; it is executed synchronously
+    ///   with [`futures::executor::block_on`] — **never spawned**, so a
+    ///   crash cannot lose acknowledged-but-unflushed writes.
+    fn drop_fallback(&mut self) {
         self.compute_diff();
         if self.dirty.is_empty() && self.removed.is_empty() {
             return;
         }
 
-        let entity_type = self.inner.entity_type.clone();
-        let persist_lock = Arc::clone(&self.inner.persist_lock);
+        let entity_type = self.entity_type.clone();
+        let tenant_id = self.tenant_id;
         let (dirty_values, removed_ids) = match self.collect_changes() {
             Ok(changes) => changes,
             Err(e) => {
                 tracing::error!(
                     entity_type = %entity_type,
                     error = %e,
-                    "CRITICAL: Failed to prepare data for persistence on StoreWriteGuard drop. Data may be lost!"
+                    "CRITICAL: Failed to prepare data for persistence on StoreWriteGuard \
+                     drop. Data may be lost!"
                 );
                 return;
             }
         };
 
-        tokio::spawn(async move {
-            let _guard = persist_lock.lock().await;
-            if let Err(e) =
-                persist_changes_inner(&pool, &entity_type, &dirty_values, &removed_ids).await
-            {
-                tracing::error!(
+        // The shared in-memory map must reflect the changes even if the
+        // database cannot be reached (in-memory mode, shutdown, lock busy).
+        self.write_back();
+
+        let Some(pool) = self.pool.clone() else {
+            return;
+        };
+
+        let persist_lock = Arc::clone(&self.persist_lock);
+        match tokio::runtime::Handle::try_current() {
+            Ok(_) => {
+                let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    futures::executor::block_on(async {
+                        let _guard = persist_lock.lock().await;
+                        persist_changes_inner(
+                            &pool,
+                            &entity_type,
+                            tenant_id,
+                            &dirty_values,
+                            &removed_ids,
+                        )
+                        .await
+                    })
+                }));
+                match result {
+                    Ok(Ok(())) => {}
+                    Ok(Err(e)) => {
+                        tracing::error!(
+                            entity_type = %entity_type,
+                            error = %e,
+                            "CRITICAL: Failed to persist data on StoreWriteGuard drop. \
+                             Data may be lost!"
+                        );
+                    }
+                    Err(_) => {
+                        tracing::error!(
+                            entity_type = %entity_type,
+                            "CRITICAL: Persistence on StoreWriteGuard drop panicked. \
+                             Data may be lost!"
+                        );
+                    }
+                }
+            }
+            Err(_) => {
+                tracing::warn!(
                     entity_type = %entity_type,
-                    error = %e,
-                    "CRITICAL: Failed to persist data on StoreWriteGuard drop. Data may be lost!"
+                    "StoreWriteGuard dropped with unpersisted changes outside a Tokio \
+                     runtime (e.g. during shutdown). Changes could not be flushed to the \
+                     database and may be lost."
                 );
             }
-        });
+        }
+    }
+}
+
+// ── Drop implementation (last-resort fallback) ──────────────────────────────
+
+impl<T: Serialize + DeserializeOwned + Clone + PartialEq + Send + Sync + 'static> Drop
+    for StoreWriteGuard<T>
+{
+    /// Last-resort persistence on drop.
+    ///
+    /// If [`persist()`](StoreWriteGuard::persist) was already called
+    /// successfully, the dirty/removed sets are empty and this is a no-op.
+    /// Otherwise the changes are committed to the shared map and a
+    /// **synchronous, best-effort** database persist is attempted (never a
+    /// spawned task), with an `ERROR` logged on failure and a warning when
+    /// no Tokio runtime is available.
+    ///
+    /// **Callers should prefer the explicit `persist()` method** and handle
+    /// errors properly, rather than relying on `Drop`.
+    fn drop(&mut self) {
+        self.drop_fallback();
     }
 }
 
@@ -429,12 +618,13 @@ impl<T: Serialize + DeserializeOwned + Clone + PartialEq + Send + Sync + 'static
 // DB helpers
 // ═══════════════════════════════════════════════════════════════════════════
 
-/// Load all entities of a given type from the database into the in-memory map.
+/// Load all entities of a given type for one tenant from the database into
+/// the in-memory map.
 ///
-/// `db_loaded` is set to `true` **only on success**, so a failed load is
-/// retried on the next access (rate-limited to at most one attempt per
-/// second). On failure, logs a warning and leaves the map empty.
-async fn load_from_db<T: DeserializeOwned + Clone>(inner: &mut StoreInner<T>) {
+/// The tenant is added to `loaded_tenants` **only on success**, so a failed
+/// load is retried on the next access (rate-limited to at most one attempt
+/// per second). On failure, logs a warning and leaves the map unchanged.
+async fn load_from_db<T: DeserializeOwned + Clone>(inner: &mut StoreInner<T>, tenant_id: Uuid) {
     let pool = match inner.pool.as_ref() {
         Some(p) => p.clone(),
         None => return,
@@ -449,12 +639,14 @@ async fn load_from_db<T: DeserializeOwned + Clone>(inner: &mut StoreInner<T>) {
     }
     inner.last_db_load_attempt = Some(now);
 
-    match sqlx::query("SELECT id, data FROM entity_store WHERE entity_type = $1")
+    match sqlx::query("SELECT id, data FROM entity_store WHERE entity_type = $1 AND tenant_id = $2")
         .bind(&inner.entity_type)
+        .bind(tenant_id)
         .fetch_all(&pool)
         .await
     {
         Ok(rows) => {
+            let loaded = rows.len();
             for row in rows {
                 let id: Uuid = match row.try_get("id") {
                     Ok(v) => v,
@@ -479,7 +671,7 @@ async fn load_from_db<T: DeserializeOwned + Clone>(inner: &mut StoreInner<T>) {
                 };
                 match serde_json::from_value::<T>(data) {
                     Ok(entity) => {
-                        inner.data.insert(id, entity);
+                        inner.data.insert(StoreKey::new(tenant_id, id), entity);
                     }
                     Err(e) => {
                         tracing::warn!(
@@ -492,16 +684,18 @@ async fn load_from_db<T: DeserializeOwned + Clone>(inner: &mut StoreInner<T>) {
             }
             tracing::info!(
                 entity_type = %inner.entity_type,
-                count = inner.data.len(),
+                tenant_id = %tenant_id,
+                count = loaded,
                 "Loaded entities from database"
             );
-            inner.db_loaded = true;
+            inner.loaded_tenants.insert(tenant_id);
         }
         Err(e) => {
-            // Keep db_loaded = false so the next read retries (rate-limited
-            // to once per second by last_db_load_attempt).
+            // Keep the tenant out of `loaded_tenants` so the next access
+            // retries (rate-limited to once per second).
             tracing::warn!(
                 entity_type = %inner.entity_type,
+                tenant_id = %tenant_id,
                 "Failed to load from database (table may not exist yet): {e}"
             );
         }
@@ -511,11 +705,13 @@ async fn load_from_db<T: DeserializeOwned + Clone>(inner: &mut StoreInner<T>) {
 /// Persist changes to the database (inner helper, no retry).
 ///
 /// Runs a **single transaction** containing:
-/// - one batched upsert of all dirty entries,
-/// - one batched delete of all removed entries.
+/// - one batched upsert of all dirty entries (keyed by `(tenant_id,
+///   entity_type, id)`),
+/// - one batched delete of all removed entries (scoped to the tenant).
 async fn persist_changes_inner<T: Serialize>(
     pool: &PgPool,
     entity_type: &str,
+    tenant_id: Uuid,
     data: &HashMap<Uuid, T>,
     removed_ids: &[Uuid],
 ) -> Result<(), sqlx::Error> {
@@ -528,6 +724,7 @@ async fn persist_changes_inner<T: Serialize>(
             let json = serde_json::to_value(entity).map_err(|e| {
                 tracing::error!(
                     entity_type = %entity_type,
+                    tenant_id = %tenant_id,
                     id = %id,
                     "Failed to serialize entity: {e}"
                 );
@@ -538,12 +735,13 @@ async fn persist_changes_inner<T: Serialize>(
         }
 
         sqlx::query(
-            r#"INSERT INTO entity_store (entity_type, id, data)
-               SELECT $1, u.id, u.data
-               FROM UNNEST($2::uuid[], $3::jsonb[]) AS u(id, data)
-               ON CONFLICT (entity_type, id)
+            r#"INSERT INTO entity_store (tenant_id, entity_type, id, data)
+               SELECT $1, $2, u.id, u.data
+               FROM UNNEST($3::uuid[], $4::jsonb[]) AS u(id, data)
+               ON CONFLICT (tenant_id, entity_type, id)
                DO UPDATE SET data = EXCLUDED.data, updated_at = NOW()"#,
         )
+        .bind(tenant_id)
         .bind(entity_type)
         .bind(&ids)
         .bind(&values)
@@ -552,11 +750,14 @@ async fn persist_changes_inner<T: Serialize>(
     }
 
     if !removed_ids.is_empty() {
-        sqlx::query("DELETE FROM entity_store WHERE entity_type = $1 AND id = ANY($2)")
-            .bind(entity_type)
-            .bind(removed_ids)
-            .execute(&mut *tx)
-            .await?;
+        sqlx::query(
+            "DELETE FROM entity_store WHERE tenant_id = $1 AND entity_type = $2 AND id = ANY($3)",
+        )
+        .bind(tenant_id)
+        .bind(entity_type)
+        .bind(removed_ids)
+        .execute(&mut *tx)
+        .await?;
     }
 
     tx.commit().await?;
@@ -568,34 +769,44 @@ async fn persist_changes_inner<T: Serialize>(
 // ═══════════════════════════════════════════════════════════════════════════
 
 impl<T: Serialize + DeserializeOwned + Clone + PartialEq + Send + Sync + 'static> EntityStore<T> {
-    /// Fetch a page of entities directly from the database, bypassing the
-    /// in-memory cache.
+    /// Fetch a page of the calling tenant's entities directly from the
+    /// database, bypassing the in-memory cache.
     ///
     /// Returns a tuple of `(records, total_count)` where `total_count` is the
     /// number of matching entities **without** pagination applied. Records
     /// are ordered by `created_at DESC, id` (migration 021 added the
-    /// `created_at` column).
+    /// `created_at` column). All queries are scoped to `tenant_id`.
     ///
     /// When no pool is configured, falls back to in-memory filtering with
     /// the same ordering (parsing `created_at` from the serialized entity
     /// when present, otherwise falling back to the id).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SenseiError::Database`] when a pool is configured but the
+    /// tenant's data could not be loaded from the database — never an empty
+    /// or stale result set — and when the SQL query itself fails.
     pub async fn list_paginated(
         &self,
+        tenant_id: Uuid,
         page: usize,
         per_page: usize,
-    ) -> Result<(Vec<(Uuid, T)>, u64), StoreError> {
+    ) -> Result<(Vec<(Uuid, T)>, u64), SenseiError> {
         let inner = self.inner.read().await;
 
         let pool = match inner.pool.as_ref() {
             Some(p) => p,
             None => {
-                // In-memory fallback: apply pagination to the full map,
-                // ordered by created_at DESC, id (mirroring the DB order).
-                drop(inner);
-                let guard = self.read().await;
-                let total = guard.len() as u64;
-                let mut items: Vec<(Uuid, T)> =
-                    guard.iter().map(|(k, v)| (*k, v.clone())).collect();
+                // In-memory fallback: filter by tenant and apply pagination
+                // to the tenant's slice, ordered by created_at DESC, id
+                // (mirroring the DB order).
+                let mut items: Vec<(Uuid, T)> = inner
+                    .data
+                    .iter()
+                    .filter(|(key, _)| key.tenant_id == tenant_id)
+                    .map(|(key, value)| (key.id, value.clone()))
+                    .collect();
+                let total = items.len() as u64;
                 items.sort_by(|(id_a, a), (id_b, b)| {
                     let ts_a = created_at_timestamp(a);
                     let ts_b = created_at_timestamp(b);
@@ -610,72 +821,109 @@ impl<T: Serialize + DeserializeOwned + Clone + PartialEq + Send + Sync + 'static
             }
         };
 
+        // Never return empty/stale data when the tenant's load from the DB
+        // failed: surface the failure as a Database error instead.
+        if !inner.loaded_tenants.contains(&tenant_id) {
+            return Err(SenseiError::Database(format!(
+                "Entity store for {} could not be loaded",
+                inner.entity_type
+            )));
+        }
+
         let entity_type = &inner.entity_type;
         let offset = (page.saturating_sub(1).saturating_mul(per_page)) as i64;
         let limit = per_page as i64;
 
         // Get total count
-        let (count_row,): (i64,) =
-            sqlx::query_as("SELECT COUNT(*)::bigint FROM entity_store WHERE entity_type = $1")
-                .bind(entity_type)
-                .fetch_one(pool)
-                .await?;
+        let (count_row,): (i64,) = sqlx::query_as(
+            "SELECT COUNT(*)::bigint FROM entity_store WHERE tenant_id = $1 AND entity_type = $2",
+        )
+        .bind(tenant_id)
+        .bind(entity_type)
+        .fetch_one(pool)
+        .await
+        .map_err(|e| SenseiError::Database(format!("Entity store count failed: {e}")))?;
 
         // Get page of data, newest first.
         let rows = sqlx::query(
-            "SELECT id, data FROM entity_store WHERE entity_type = $1 \
-             ORDER BY created_at DESC, id LIMIT $2 OFFSET $3",
+            "SELECT id, data FROM entity_store WHERE tenant_id = $1 AND entity_type = $2 \
+             ORDER BY created_at DESC, id LIMIT $3 OFFSET $4",
         )
+        .bind(tenant_id)
         .bind(entity_type)
         .bind(limit)
         .bind(offset)
         .fetch_all(pool)
-        .await?;
+        .await
+        .map_err(|e| SenseiError::Database(format!("Entity store page query failed: {e}")))?;
 
         let mut items = Vec::with_capacity(rows.len());
         for row in rows {
-            let id: Uuid = row.try_get("id")?;
-            let data: serde_json::Value = row.try_get("data")?;
-            let entity: T = serde_json::from_value(data)?;
+            let id: Uuid = row
+                .try_get("id")
+                .map_err(|e| SenseiError::Database(format!("Entity store row id failed: {e}")))?;
+            let data: serde_json::Value = row
+                .try_get("data")
+                .map_err(|e| SenseiError::Database(format!("Entity store row data failed: {e}")))?;
+            let entity: T = serde_json::from_value(data).map_err(|e| {
+                SenseiError::Database(format!("Entity store row decode failed: {e}"))
+            })?;
             items.push((id, entity));
         }
 
         Ok((items, count_row as u64))
     }
 
-    /// Fetch entities from the database filtered by a JSONB field match.
+    /// Fetch the calling tenant's entities from the database filtered by a
+    /// JSONB field match.
     ///
     /// Uses the GIN index on `data` via the `@>` containment operator.
-    /// Example: `list_by_field("status", &serde_json::json!("\"done\""))`
+    /// Example: `list_by_field(tenant_id, "status", &serde_json::json!("\"done\""))`
     ///
     /// When no pool is configured, falls back to in-memory filtering.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SenseiError::Database`] when a pool is configured but the
+    /// tenant's data could not be loaded from the database — never an empty
+    /// or stale result set — and when the SQL query itself fails.
     pub async fn list_by_field(
         &self,
+        tenant_id: Uuid,
         field: &str,
         value: &serde_json::Value,
-    ) -> Result<Vec<(Uuid, T)>, StoreError> {
+    ) -> Result<Vec<(Uuid, T)>, SenseiError> {
         let inner = self.inner.read().await;
 
         let pool = match inner.pool.as_ref() {
             Some(p) => p,
             None => {
-                // In-memory fallback
-                drop(inner);
-                let guard = self.read().await;
-                let items: Vec<(Uuid, T)> = guard
+                // In-memory fallback (tenant-scoped)
+                let items: Vec<(Uuid, T)> = inner
+                    .data
                     .iter()
-                    .filter(|(_, v)| {
-                        serde_json::to_value(v)
-                            .ok()
-                            .and_then(|val| val.get(field).cloned())
-                            .as_ref()
-                            == Some(value)
+                    .filter(|(key, entity)| {
+                        key.tenant_id == tenant_id
+                            && serde_json::to_value(entity)
+                                .ok()
+                                .and_then(|val| val.get(field).cloned())
+                                .as_ref()
+                                == Some(value)
                     })
-                    .map(|(k, v)| (*k, v.clone()))
+                    .map(|(key, value)| (key.id, value.clone()))
                     .collect();
                 return Ok(items);
             }
         };
+
+        // Never return empty/stale data when the tenant's load from the DB
+        // failed: surface the failure as a Database error instead.
+        if !inner.loaded_tenants.contains(&tenant_id) {
+            return Err(SenseiError::Database(format!(
+                "Entity store for {} could not be loaded",
+                inner.entity_type
+            )));
+        }
 
         let entity_type = &inner.entity_type;
 
@@ -684,19 +932,27 @@ impl<T: Serialize + DeserializeOwned + Clone + PartialEq + Send + Sync + 'static
 
         let rows = sqlx::query(
             r#"SELECT id, data FROM entity_store
-               WHERE entity_type = $1 AND data @> $2
+               WHERE tenant_id = $1 AND entity_type = $2 AND data @> $3
                ORDER BY id"#,
         )
+        .bind(tenant_id)
         .bind(entity_type)
         .bind(&filter)
         .fetch_all(pool)
-        .await?;
+        .await
+        .map_err(|e| SenseiError::Database(format!("Entity store field query failed: {e}")))?;
 
         let mut items = Vec::with_capacity(rows.len());
         for row in rows {
-            let id: Uuid = row.try_get("id")?;
-            let data: serde_json::Value = row.try_get("data")?;
-            let entity: T = serde_json::from_value(data)?;
+            let id: Uuid = row
+                .try_get("id")
+                .map_err(|e| SenseiError::Database(format!("Entity store row id failed: {e}")))?;
+            let data: serde_json::Value = row
+                .try_get("data")
+                .map_err(|e| SenseiError::Database(format!("Entity store row data failed: {e}")))?;
+            let entity: T = serde_json::from_value(data).map_err(|e| {
+                SenseiError::Database(format!("Entity store row decode failed: {e}"))
+            })?;
             items.push((id, entity));
         }
 
@@ -739,25 +995,32 @@ mod tests {
         }
     }
 
-    /// In-memory mode: persist() reports NotConnected, but the dirty-diff
-    /// computation must track exactly the inserted/updated and removed keys.
+    fn tenant() -> Uuid {
+        Uuid::new_v4()
+    }
+
+    /// In-memory mode: the dirty-diff computation must track exactly the
+    /// inserted/updated and removed keys, and persist() must commit the
+    /// changes to the shared map (in-memory mode is a no-op success).
     #[tokio::test]
     async fn write_guard_tracks_only_dirty_keys() {
         let store: EntityStore<TestEntity> = EntityStore::new("test_entity");
+        let tenant_id = tenant();
         let id_a = Uuid::new_v4();
         let id_b = Uuid::new_v4();
         let id_c = Uuid::new_v4();
 
         // Seed the store with three entities.
         {
-            let mut guard = store.write().await;
+            let mut guard = store.write(tenant_id).await;
             guard.insert(id_a, entity("a"));
             guard.insert(id_b, entity("b"));
             guard.insert(id_c, entity("c"));
+            guard.persist().await.expect("in-memory persist succeeds");
         }
 
         {
-            let mut guard = store.write().await;
+            let mut guard = store.write(tenant_id).await;
             // `a` stays untouched — must NOT appear in the diff.
             // `b` is updated in place.
             guard.get_mut(&id_b).unwrap().name = "b-updated".to_string();
@@ -782,24 +1045,26 @@ mod tests {
             assert_eq!(guard.removed.len(), 1, "only c was removed");
             assert!(guard.removed.contains(&id_c));
 
-            // No pool configured → persist() fails cleanly and leaves the
-            // diff intact for the drop path.
-            assert!(matches!(
-                guard.persist().await,
-                Err(StoreError::NotConnected)
-            ));
+            // No pool configured → persist() commits to the shared map and
+            // succeeds.
+            guard
+                .persist()
+                .await
+                .expect("in-memory persist must succeed");
+            assert!(guard.dirty.is_empty());
+            assert!(guard.removed.is_empty());
         }
     }
 
     /// After a successful persist the change sets must be cleared so the
-    /// drop path is a no-op. (Exercised via the diff helpers; SQL execution
-    /// requires a live pool.)
+    /// drop path is a no-op.
     #[tokio::test]
     async fn after_persist_success_clears_changes() {
         let store: EntityStore<TestEntity> = EntityStore::new("test_entity");
+        let tenant_id = tenant();
         let id = Uuid::new_v4();
         {
-            let mut guard = store.write().await;
+            let mut guard = store.write(tenant_id).await;
             guard.insert(id, entity("x"));
             guard.compute_diff();
             assert!(!guard.dirty.is_empty());
@@ -809,9 +1074,37 @@ mod tests {
         }
     }
 
+    /// Entities of other tenants must never leak into a tenant's view, and
+    /// writes must not overwrite another tenant's entries with the same id.
+    #[tokio::test]
+    async fn tenants_are_isolated_in_memory() {
+        let store: EntityStore<TestEntity> = EntityStore::new("test_entity");
+        let tenant_a = tenant();
+        let tenant_b = tenant();
+        let shared_id = Uuid::new_v4();
+        {
+            let mut guard = store.write(tenant_a).await;
+            guard.insert(shared_id, entity("a-owner"));
+            guard.persist().await.unwrap();
+        }
+        {
+            let mut guard = store.write(tenant_b).await;
+            guard.insert(shared_id, entity("b-owner"));
+            guard.persist().await.unwrap();
+        }
+
+        let view_a = store.read(tenant_a).await;
+        assert_eq!(view_a.get(&shared_id).unwrap().name, "a-owner");
+        drop(view_a);
+        let view_b = store.read(tenant_b).await;
+        assert_eq!(view_b.get(&shared_id).unwrap().name, "b-owner");
+        assert_eq!(view_b.len(), 1);
+    }
+
     #[tokio::test]
     async fn pagination_sorts_newest_first_in_memory() {
         let store: EntityStore<TestEntity> = EntityStore::new("test_entity");
+        let tenant_id = tenant();
         let now = chrono::Utc::now();
 
         let make = |offset_secs: i64, name: &str| TestEntity {
@@ -823,13 +1116,14 @@ mod tests {
         let id_new = Uuid::new_v4();
         let id_no_ts = Uuid::new_v4();
         {
-            let mut guard = store.write().await;
+            let mut guard = store.write(tenant_id).await;
             guard.insert(id_old, make(100, "old"));
             guard.insert(id_new, make(10, "new"));
             guard.insert(id_no_ts, entity("no-timestamp"));
+            guard.persist().await.unwrap();
         }
 
-        let (items, total) = store.list_paginated(1, 10).await.unwrap();
+        let (items, total) = store.list_paginated(tenant_id, 1, 10).await.unwrap();
         assert_eq!(total, 3);
         assert_eq!(items.len(), 3);
         // Newest created_at first; entities without created_at sort last.
@@ -841,39 +1135,62 @@ mod tests {
     #[tokio::test]
     async fn pagination_clamps_page_and_per_page() {
         let store: EntityStore<TestEntity> = EntityStore::new("test_entity");
+        let tenant_id = tenant();
         {
-            let mut guard = store.write().await;
+            let mut guard = store.write(tenant_id).await;
             for i in 0..5 {
                 guard.insert(Uuid::new_v4(), entity(&format!("e{i}")));
             }
+            guard.persist().await.unwrap();
         }
 
         // page 0 behaves like page 1.
-        let (items, total) = store.list_paginated(0, 2).await.unwrap();
+        let (items, total) = store.list_paginated(tenant_id, 0, 2).await.unwrap();
         assert_eq!(total, 5);
         assert_eq!(items.len(), 2);
 
         // Out-of-range page yields an empty page, not a panic.
-        let (items, _) = store.list_paginated(999, 2).await.unwrap();
+        let (items, _) = store.list_paginated(tenant_id, 999, 2).await.unwrap();
         assert!(items.is_empty());
     }
 
     #[tokio::test]
     async fn list_by_field_filters_in_memory() {
         let store: EntityStore<TestEntity> = EntityStore::new("test_entity");
+        let tenant_id = tenant();
         let id_a = Uuid::new_v4();
         let id_b = Uuid::new_v4();
         {
-            let mut guard = store.write().await;
+            let mut guard = store.write(tenant_id).await;
             guard.insert(id_a, entity("alpha"));
             guard.insert(id_b, entity("beta"));
+            guard.persist().await.unwrap();
         }
 
         let found = store
-            .list_by_field("name", &serde_json::json!("alpha"))
+            .list_by_field(tenant_id, "name", &serde_json::json!("alpha"))
             .await
             .unwrap();
         assert_eq!(found.len(), 1);
         assert_eq!(found[0].0, id_a);
+    }
+
+    /// list_paginated/list_by_field must never report empty/stale data on a
+    /// DB failure: with a pool configured but the tenant's load failed, they
+    /// return a SenseiError::Database.
+    #[tokio::test]
+    async fn list_paginated_reports_database_error_when_load_failed() {
+        // Simulate a failed load: a pool that cannot be reached. The load
+        // attempt inside `list_paginated` fails, and the method must return
+        // Err(SenseiError::Database) instead of an empty page.
+        let url = "postgres://invalid:invalid@127.0.0.1:1/nowhere";
+        let pool = PgPool::connect_lazy(url).expect("lazy pool is cheap");
+        let store: EntityStore<TestEntity> = EntityStore::with_pool("test_entity", pool);
+
+        let result = store.list_paginated(Uuid::new_v4(), 1, 10).await;
+        assert!(
+            matches!(result, Err(SenseiError::Database(_))),
+            "a failed DB load must surface as a Database error, not empty data"
+        );
     }
 }

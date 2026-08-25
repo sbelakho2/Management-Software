@@ -115,7 +115,7 @@ async fn handle_event(state: AppState, envelope: sensei_event_bus::types::EventE
     // Evaluate all matching triggers and stamp `last_triggered_at` inside a
     // single write guard so cooldown checks are atomic with the update.
     let matched: Vec<NotificationTrigger> = {
-        let mut store = state.notification_triggers.write().await;
+        let mut store = state.notification_triggers.write(tenant_id).await;
         let now = Utc::now();
         let mut matched = Vec::new();
         for trigger in store.values_mut() {
@@ -206,7 +206,7 @@ async fn handle_event(state: AppState, envelope: sensei_event_bus::types::EventE
     }
 
     if !notifications_to_create.is_empty() {
-        let mut store = state.notifications.write().await;
+        let mut store = state.notifications.write(tenant_id).await;
         for notification in notifications_to_create {
             store.insert(notification.id, notification.clone());
         }

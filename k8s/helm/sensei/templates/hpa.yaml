@@ -1,59 +1,30 @@
-{{- if .Values.autoscaling.backend.enabled }}
+{{- /*
+  HorizontalPodAutoscaler for the Rust sensei-api deployment.
+  NOTE: the previous Python-era backend/frontend HPA blocks targeted
+  deployments that no longer exist and broke `helm template` (they referenced
+  .Values.autoscaling.backend/.frontend, removed from values.yaml). Replaced
+  with the current component's HPA.
+*/ -}}
+{{- if .Values.autoscaling.senseiApi.enabled }}
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
-  name: {{ include "sensei.fullname" . }}-backend
+  name: {{ include "sensei.fullname" . }}-sensei-api
   labels:
     {{- include "sensei.labels" . | nindent 4 }}
-    app.kubernetes.io/component: backend
+    app.kubernetes.io/component: sensei-api
 spec:
   scaleTargetRef:
     apiVersion: apps/v1
     kind: Deployment
-    name: {{ include "sensei.fullname" . }}-backend
-  minReplicas: {{ .Values.autoscaling.backend.minReplicas }}
-  maxReplicas: {{ .Values.autoscaling.backend.maxReplicas }}
+    name: {{ include "sensei.fullname" . }}-sensei-api
+  minReplicas: {{ .Values.autoscaling.senseiApi.minReplicas }}
+  maxReplicas: {{ .Values.autoscaling.senseiApi.maxReplicas }}
   metrics:
-    {{- if .Values.autoscaling.backend.targetCPUUtilizationPercentage }}
     - type: Resource
       resource:
         name: cpu
         target:
           type: Utilization
-          averageUtilization: {{ .Values.autoscaling.backend.targetCPUUtilizationPercentage }}
-    {{- end }}
-    {{- if .Values.autoscaling.backend.targetMemoryUtilizationPercentage }}
-    - type: Resource
-      resource:
-        name: memory
-        target:
-          type: Utilization
-          averageUtilization: {{ .Values.autoscaling.backend.targetMemoryUtilizationPercentage }}
-    {{- end }}
-{{- end }}
----
-{{- if .Values.autoscaling.frontend.enabled }}
-apiVersion: autoscaling/v2
-kind: HorizontalPodAutoscaler
-metadata:
-  name: {{ include "sensei.fullname" . }}-frontend
-  labels:
-    {{- include "sensei.labels" . | nindent 4 }}
-    app.kubernetes.io/component: frontend
-spec:
-  scaleTargetRef:
-    apiVersion: apps/v1
-    kind: Deployment
-    name: {{ include "sensei.fullname" . }}-frontend
-  minReplicas: {{ .Values.autoscaling.frontend.minReplicas }}
-  maxReplicas: {{ .Values.autoscaling.frontend.maxReplicas }}
-  metrics:
-    {{- if .Values.autoscaling.frontend.targetCPUUtilizationPercentage }}
-    - type: Resource
-      resource:
-        name: cpu
-        target:
-          type: Utilization
-          averageUtilization: {{ .Values.autoscaling.frontend.targetCPUUtilizationPercentage }}
-    {{- end }}
+          averageUtilization: {{ .Values.autoscaling.senseiApi.targetCPUUtilizationPercentage }}
 {{- end }}

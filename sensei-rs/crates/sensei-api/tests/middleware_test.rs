@@ -210,10 +210,10 @@ async fn idempotency_key_is_scoped_per_user() {
     // Two distinct tasks were created (keys did not collide across users).
     assert_eq!(task_count(&app, &admin_token).await, 2);
 
-    // A retry with the same key+user replays the cached response: the task
-    // count does not grow.
+    // A retry with the same key + user + body replays the cached response:
+    // the task count does not grow.
     let resp = app
-        .send_request(create_task(&app, &admin_token, "scoped-a-retry", Some("shared-key")).await)
+        .send_request(create_task(&app, &admin_token, "scoped-a", Some("shared-key")).await)
         .await;
     assert_eq!(resp.status(), StatusCode::OK);
     assert_eq!(
@@ -221,6 +221,20 @@ async fn idempotency_key_is_scoped_per_user() {
         2,
         "retry must not re-execute"
     );
+
+    // Reusing the key with a DIFFERENT body is a replay attack: 422.
+    let resp = app
+        .send_request(
+            create_task(
+                &app,
+                &admin_token,
+                "scoped-a-different-body",
+                Some("shared-key"),
+            )
+            .await,
+        )
+        .await;
+    assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
 }
 
 #[tokio::test]

@@ -51,7 +51,7 @@ pub async fn list_packs(
     State(state): State<AppState>,
     Query(params): Query<ListPacksParams>,
 ) -> Result<Json<PaginatedResponse<KnowledgePack>>> {
-    let store = state.knowledge_packs.read().await;
+    let store = state.knowledge_packs.read(user.tenant_id).await;
     let mut packs: Vec<KnowledgePack> = store
         .values()
         .filter(|p| p.tenant_id == user.tenant_id)
@@ -96,7 +96,7 @@ pub async fn create_pack(
         created_at: now,
         updated_at: now,
     };
-    let mut store = state.knowledge_packs.write().await;
+    let mut store = state.knowledge_packs.write(user.tenant_id).await;
     store.insert(pack.id, pack.clone());
     Ok(Json(pack))
 }
@@ -107,7 +107,7 @@ pub async fn get_pack(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<KnowledgePack>> {
-    let store = state.knowledge_packs.read().await;
+    let store = state.knowledge_packs.read(user.tenant_id).await;
     let pack = store
         .values()
         .find(|p| p.id == id && p.tenant_id == user.tenant_id)
@@ -123,7 +123,7 @@ pub async fn update_pack(
     Path(id): Path<Uuid>,
     Json(req): Json<PackRequest>,
 ) -> Result<Json<KnowledgePack>> {
-    let mut store = state.knowledge_packs.write().await;
+    let mut store = state.knowledge_packs.write(user.tenant_id).await;
     let pack = store
         .get_mut(&id)
         .filter(|p| p.tenant_id == user.tenant_id)
@@ -146,7 +146,7 @@ pub async fn delete_pack(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<()>> {
-    let mut store = state.knowledge_packs.write().await;
+    let mut store = state.knowledge_packs.write(user.tenant_id).await;
     let exists = store
         .get(&id)
         .filter(|p| p.tenant_id == user.tenant_id)

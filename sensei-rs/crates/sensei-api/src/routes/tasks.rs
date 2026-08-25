@@ -145,7 +145,7 @@ pub async fn list_tasks(
     Query(params): Query<ListTasksParams>,
 ) -> Result<Json<PaginatedResponse<Task>>> {
     let tenant_id = user.tenant_id;
-    let store = state.tasks.read().await;
+    let store = state.tasks.read(user.tenant_id).await;
     let mut tasks: Vec<Task> = store
         .values()
         .filter(|t| t.tenant_id == tenant_id)
@@ -222,7 +222,7 @@ pub async fn create_task(
         updated_at: now,
         state_machine_instance_id: None,
     };
-    let mut store = state.tasks.write().await;
+    let mut store = state.tasks.write(user.tenant_id).await;
     store.insert(task.id, task.clone());
 
     // Publish TaskCreatedEvent
@@ -249,7 +249,7 @@ pub async fn get_task(
     Path(id): Path<Uuid>,
 ) -> Result<Json<Task>> {
     let tenant_id = user.tenant_id;
-    let store = state.tasks.read().await;
+    let store = state.tasks.read(user.tenant_id).await;
     let task = store
         .values()
         .find(|t| t.id == id && t.tenant_id == tenant_id)
@@ -266,7 +266,7 @@ pub async fn update_task(
     Json(req): Json<UpdateTaskRequest>,
 ) -> Result<Json<Task>> {
     let tenant_id = user.tenant_id;
-    let mut store = state.tasks.write().await;
+    let mut store = state.tasks.write(user.tenant_id).await;
     let task = store
         .get_mut(&id)
         .filter(|t| t.tenant_id == tenant_id)
@@ -354,7 +354,7 @@ pub async fn delete_task(
     Path(id): Path<Uuid>,
 ) -> Result<Json<()>> {
     let tenant_id = user.tenant_id;
-    let mut store = state.tasks.write().await;
+    let mut store = state.tasks.write(user.tenant_id).await;
     let exists = store
         .get(&id)
         .filter(|t| t.tenant_id == tenant_id)
@@ -377,7 +377,7 @@ pub async fn update_task_status(
     Json(req): Json<UpdateStatusRequest>,
 ) -> Result<Json<Task>> {
     let tenant_id = user.tenant_id;
-    let mut store = state.tasks.write().await;
+    let mut store = state.tasks.write(user.tenant_id).await;
     let task = store
         .get_mut(&id)
         .filter(|t| t.tenant_id == tenant_id)
@@ -388,7 +388,7 @@ pub async fn update_task_status(
 
     // If the task is linked to a state machine instance, validate via SM
     if let Some(sm_instance_id) = task.state_machine_instance_id {
-        let mut sm_store = state.state_machine_instances.write().await;
+        let mut sm_store = state.state_machine_instances.write(user.tenant_id).await;
         let instance = sm_store
             .get_mut(&sm_instance_id)
             .filter(|i| i.tenant_id == tenant_id)
@@ -397,7 +397,7 @@ pub async fn update_task_status(
             })?;
 
         // Look up the definition to find a matching transition
-        let def_store = state.state_machine_definitions.read().await;
+        let def_store = state.state_machine_definitions.read(user.tenant_id).await;
         let definition = def_store
             .values()
             .find(|d| d.id == instance.definition_id)
@@ -542,7 +542,7 @@ pub async fn assign_task(
     Json(req): Json<AssignTaskRequest>,
 ) -> Result<Json<Task>> {
     let tenant_id = user.tenant_id;
-    let mut store = state.tasks.write().await;
+    let mut store = state.tasks.write(user.tenant_id).await;
     let task = store
         .get_mut(&id)
         .filter(|t| t.tenant_id == tenant_id)
@@ -568,7 +568,7 @@ pub async fn get_task_stats(
     State(state): State<AppState>,
 ) -> Result<Json<TaskStats>> {
     let tenant_id = user.tenant_id;
-    let store = state.tasks.read().await;
+    let store = state.tasks.read(user.tenant_id).await;
     let tasks: Vec<&Task> = store
         .values()
         .filter(|t| t.tenant_id == tenant_id)

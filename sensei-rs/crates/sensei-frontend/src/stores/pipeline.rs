@@ -171,6 +171,9 @@ impl PipelineStore {
     }
 
     /// Export RFQs as a file (PDF/Excel).
+    ///
+    /// Uses the shared client (same connection pool, bearer token, and 401
+    /// refresh pipeline) instead of constructing a fresh `reqwest::Client`.
     pub async fn export_rfqs(
         client: &ApiClient,
         ids: Option<&[String]>,
@@ -182,18 +185,7 @@ impl PipelineStore {
             }
             None => "/api/v1/rfqs/export".to_string(),
         };
-        let req_client = reqwest::Client::new();
-        let url = client.url(&path);
-        let resp = req_client
-            .get(&url)
-            .send()
-            .await
-            .map_err(|e| ApiError::Http(e.to_string()))?;
-        let bytes = resp
-            .bytes()
-            .await
-            .map_err(|e| ApiError::Http(e.to_string()))?;
-        Ok(bytes.to_vec())
+        client.get_bytes(&path).await
     }
 
     /// Set RFQ status.

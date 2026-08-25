@@ -5,7 +5,15 @@ edition.workspace = true
 license.workspace = true
 description = "NATS JetStream pull-based task consumer system replacing Celery workers"
 
+# The worker binary — `cargo run -p sensei-workers` starts the consumer
+# process (NATS JetStream dispatcher + Beat-style scheduler).
+[[bin]]
+name = "sensei-workers"
+path = "src/main.rs"
+
 [dependencies]
+sensei-core = { path = "../sensei-core" }
+sensei-db = { path = "../sensei-db" }
 sensei-event-bus = { path = "../sensei-event-bus" }
 sensei-services = { path = "../sensei-services" }
 async-nats.workspace = true
@@ -14,6 +22,7 @@ tokio = { workspace = true, features = ["full"] }
 serde.workspace = true
 serde_json.workspace = true
 tracing.workspace = true
+tracing-subscriber.workspace = true
 async-trait.workspace = true
 uuid.workspace = true
 chrono.workspace = true
