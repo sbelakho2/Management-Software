@@ -76,8 +76,16 @@ pub async fn secure_headers_middleware(
     insert_header(headers, "x-content-type-options", "nosniff");
     insert_header(headers, "x-frame-options", "DENY");
     insert_header(headers, "x-xss-protection", "0");
-    insert_header(headers, "referrer-policy", "strict-origin-when-cross-origin");
-    insert_header(headers, "permissions-policy", "camera=(), microphone=(), geolocation=()");
+    insert_header(
+        headers,
+        "referrer-policy",
+        "strict-origin-when-cross-origin",
+    );
+    insert_header(
+        headers,
+        "permissions-policy",
+        "camera=(), microphone=(), geolocation=()",
+    );
 
     if state.config.security.hsts && is_https {
         insert_header(headers, "strict-transport-security", HSTS_HEADER);
@@ -99,10 +107,7 @@ pub async fn secure_headers_middleware(
 fn insert_header(headers: &mut axum::http::HeaderMap, name: &'static str, value: &str) {
     match HeaderValue::from_str(value) {
         Ok(val) => {
-            headers.insert(
-                axum::http::HeaderName::from_static(name),
-                val,
-            );
+            headers.insert(axum::http::HeaderName::from_static(name), val);
         }
         Err(e) => {
             warn!(
@@ -139,12 +144,7 @@ impl WithConnectInfo for Request<axum::body::Body> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use axum::{
-        body::Body,
-        http::Request,
-        routing::get,
-        Router,
-    };
+    use axum::{body::Body, http::Request, routing::get, Router};
     use tower::util::ServiceExt;
 
     /// Build a deterministic test configuration regardless of the ambient
@@ -162,10 +162,7 @@ mod tests {
     /// handler with the secure-headers middleware.
     async fn app_with_security(security: sensei_core::config::SecurityConfig) -> Router {
         let config = test_config();
-        let config = sensei_core::config::AppConfig {
-            security,
-            ..config
-        };
+        let config = sensei_core::config::AppConfig { security, ..config };
         let users_service: std::sync::Arc<dyn sensei_services::users::UsersService> =
             std::sync::Arc::new(sensei_services::users::InMemoryUsersService::new());
         let state = crate::state::AppState::new(config, users_service);
@@ -181,21 +178,13 @@ mod tests {
     async fn test_secure_headers_middleware_adds_headers() {
         let app = app_with_security(sensei_core::config::SecurityConfig::default()).await;
         let response = app
-            .oneshot(
-                Request::builder()
-                    .uri("/")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
+            .oneshot(Request::builder().uri("/").body(Body::empty()).unwrap())
             .await
             .unwrap();
 
         let headers = response.headers();
 
-        assert_eq!(
-            headers.get("x-content-type-options").unwrap(),
-            "nosniff"
-        );
+        assert_eq!(headers.get("x-content-type-options").unwrap(), "nosniff");
         assert_eq!(headers.get("x-frame-options").unwrap(), "DENY");
         assert_eq!(headers.get("x-xss-protection").unwrap(), "0");
         assert_eq!(
@@ -236,12 +225,7 @@ mod tests {
     async fn test_hsts_omitted_on_plain_http() {
         let app = app_with_security(sensei_core::config::SecurityConfig::default()).await;
         let response = app
-            .oneshot(
-                Request::builder()
-                    .uri("/")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
+            .oneshot(Request::builder().uri("/").body(Body::empty()).unwrap())
             .await
             .unwrap();
 
@@ -250,7 +234,10 @@ mod tests {
         // ignored by browsers, and mirrors the broken practice of sending it
         // unencrypted).
         assert!(
-            response.headers().get("strict-transport-security").is_none(),
+            response
+                .headers()
+                .get("strict-transport-security")
+                .is_none(),
             "HSTS must be omitted on plain HTTP"
         );
     }
@@ -272,19 +259,17 @@ mod tests {
             .await
             .unwrap();
 
-        assert!(response.headers().get("strict-transport-security").is_none());
+        assert!(response
+            .headers()
+            .get("strict-transport-security")
+            .is_none());
     }
 
     #[tokio::test]
     async fn test_secure_headers_csp_value() {
         let app = app_with_security(sensei_core::config::SecurityConfig::default()).await;
         let response = app
-            .oneshot(
-                Request::builder()
-                    .uri("/")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
+            .oneshot(Request::builder().uri("/").body(Body::empty()).unwrap())
             .await
             .unwrap();
 
@@ -306,12 +291,7 @@ mod tests {
         };
         let app = app_with_security(security).await;
         let response = app
-            .oneshot(
-                Request::builder()
-                    .uri("/")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
+            .oneshot(Request::builder().uri("/").body(Body::empty()).unwrap())
             .await
             .unwrap();
 
@@ -328,12 +308,7 @@ mod tests {
     async fn test_secure_headers_preserves_body() {
         let app = app_with_security(sensei_core::config::SecurityConfig::default()).await;
         let response = app
-            .oneshot(
-                Request::builder()
-                    .uri("/")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
+            .oneshot(Request::builder().uri("/").body(Body::empty()).unwrap())
             .await
             .unwrap();
 
@@ -347,10 +322,7 @@ mod tests {
     fn test_insert_header_valid() {
         let mut headers = axum::http::HeaderMap::new();
         insert_header(&mut headers, "x-custom", "valid-value");
-        assert_eq!(
-            headers.get("x-custom").unwrap(),
-            "valid-value"
-        );
+        assert_eq!(headers.get("x-custom").unwrap(), "valid-value");
     }
 
     #[test]
@@ -374,7 +346,10 @@ mod tests {
                 "/",
                 get(|| async {
                     (
-                        [(axum::http::header::CONTENT_TYPE.as_str(), "application/json")],
+                        [(
+                            axum::http::header::CONTENT_TYPE.as_str(),
+                            "application/json",
+                        )],
                         "body",
                     )
                 }),
@@ -385,12 +360,7 @@ mod tests {
             ));
 
         let response = app
-            .oneshot(
-                Request::builder()
-                    .uri("/")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
+            .oneshot(Request::builder().uri("/").body(Body::empty()).unwrap())
             .await
             .unwrap();
 
@@ -427,10 +397,7 @@ mod tests {
         assert!(!request_is_https(&req, &trusted));
 
         // No proxy header, no scheme → http.
-        let req = Request::builder()
-            .uri("/")
-            .body(Body::empty())
-            .unwrap();
+        let req = Request::builder().uri("/").body(Body::empty()).unwrap();
         assert!(!request_is_https(&req, &trusted));
     }
 }

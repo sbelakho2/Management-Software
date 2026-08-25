@@ -6,15 +6,15 @@
 //! is kept in an in-memory store (to be replaced with a database model later).
 
 use axum::{
-    Json,
     extract::{Multipart, Path, Query, State},
+    Json,
 };
 use chrono::Utc;
-use serde::Deserialize;
 use sensei_auth::middleware::AuthenticatedUser;
 use sensei_core::error::{Result, SenseiError};
 use sensei_core::pagination::PaginatedResponse;
 use sensei_core::types::new_id;
+use serde::Deserialize;
 use uuid::Uuid;
 
 use crate::state::AppState;
@@ -95,10 +95,7 @@ pub async fn upload_attachment(
         let name = field.name().unwrap_or("").to_string();
         match name.as_str() {
             "file" => {
-                file_name = field
-                    .file_name()
-                    .unwrap_or("unnamed")
-                    .to_string();
+                file_name = field.file_name().unwrap_or("unnamed").to_string();
                 content_type = field
                     .content_type()
                     .map(|m| m.to_string())
@@ -110,20 +107,14 @@ pub async fn upload_attachment(
                     .to_vec();
             }
             "entity_type" => {
-                entity_type = field
-                    .text()
-                    .await
-                    .unwrap_or_default();
+                entity_type = field.text().await.unwrap_or_default();
             }
             "entity_id" => {
-                let id_str = field
-                    .text()
-                    .await
-                    .unwrap_or_default();
-                entity_id = Some(
-                    Uuid::parse_str(&id_str)
-                        .map_err(|_| SenseiError::Validation("Invalid entity_id UUID".to_string()))?,
-                );
+                let id_str = field.text().await.unwrap_or_default();
+                entity_id =
+                    Some(Uuid::parse_str(&id_str).map_err(|_| {
+                        SenseiError::Validation("Invalid entity_id UUID".to_string())
+                    })?);
             }
             _ => {}
         }
@@ -132,10 +123,12 @@ pub async fn upload_attachment(
     if file_data.is_empty() {
         return Err(SenseiError::Validation("No file data provided".to_string()));
     }
-    let entity_id = entity_id
-        .ok_or_else(|| SenseiError::Validation("entity_id is required".to_string()))?;
+    let entity_id =
+        entity_id.ok_or_else(|| SenseiError::Validation("entity_id is required".to_string()))?;
     if entity_type.is_empty() {
-        return Err(SenseiError::Validation("entity_type is required".to_string()));
+        return Err(SenseiError::Validation(
+            "entity_type is required".to_string(),
+        ));
     }
 
     // Enforce the per-file size limit from the request body limit config so
@@ -160,7 +153,7 @@ pub async fn upload_attachment(
     // The storage service isolates by tenant_id, so the relative path only
     // needs the entity_type, entity_id, timestamp, and filename.
     let storage_dir = format!("{}/{}/", entity_type, entity_id);
-    let relative_path = format!("{}{}_{}", storage_dir, now.timestamp(), &file_name);
+    let relative_path = format!("{}{}_{}", storage_dir, now.timestamp(), file_name);
 
     // Store the file data via the storage service.
     let storage_path = state
@@ -207,7 +200,7 @@ pub async fn list_attachments(
         })
         .cloned()
         .collect();
-    attachments.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+    attachments.sort_by_key(|a| std::cmp::Reverse(a.created_at));
     let result = PaginatedResponse::new(attachments, params.page, params.per_page);
     Ok(Json(result))
 }
@@ -223,8 +216,7 @@ pub async fn delete_attachment(
     // Read the metadata entry first.
     let attachment = {
         let meta = state.attachment_meta.read().await;
-        meta
-            .get(&id)
+        meta.get(&id)
             .filter(|a| a.tenant_id == user.tenant_id)
             .cloned()
             .ok_or_else(|| SenseiError::NotFound(format!("Attachment {id} not found")))?

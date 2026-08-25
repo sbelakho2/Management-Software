@@ -9,15 +9,15 @@
 //! text formats, sha256) before marking the job completed.
 
 use axum::{
-    Json,
     extract::{Multipart, Path, Query, State},
+    Json,
 };
 use chrono::Utc;
-use serde::{Deserialize, Serialize};
 use sensei_auth::middleware::AuthenticatedUser;
 use sensei_core::error::{Result, SenseiError};
 use sensei_core::pagination::PaginatedResponse;
 use sensei_core::types::new_id;
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::state::AppState;
@@ -267,18 +267,16 @@ pub async fn list_ingestion_history(
         .values()
         .filter(|j| j.tenant_id == user.tenant_id)
         .filter(|j| {
-            params.status.as_ref().map_or(true, |s| {
-                match &j.status {
-                    IngestionStatus::Pending => s == "pending",
-                    IngestionStatus::Processing => s == "processing",
-                    IngestionStatus::Completed => s == "completed",
-                    IngestionStatus::Failed(_) => s == "failed",
-                }
+            params.status.as_ref().is_none_or(|s| match &j.status {
+                IngestionStatus::Pending => s == "pending",
+                IngestionStatus::Processing => s == "processing",
+                IngestionStatus::Completed => s == "completed",
+                IngestionStatus::Failed(_) => s == "failed",
             })
         })
         .cloned()
         .collect();
-    jobs.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+    jobs.sort_by_key(|a| std::cmp::Reverse(a.created_at));
     let result = PaginatedResponse::new(jobs, params.page, params.per_page);
     Ok(Json(result))
 }

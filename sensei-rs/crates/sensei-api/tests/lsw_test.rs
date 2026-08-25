@@ -19,7 +19,7 @@ async fn test_create_lsw_standard() {
     let mut resp = app.send_request(req).await;
     assert_eq!(resp.status(), StatusCode::OK);
     let json: Value = app.json_body(&mut resp).await;
-    assert!(json["id"].as_str().unwrap_or("").len() > 0);
+    assert!(!json["id"].as_str().unwrap_or("").is_empty());
     assert_eq!(json["title"], "Daily Checklist");
 }
 
@@ -35,7 +35,7 @@ async fn test_list_lsw_standards() {
     let mut resp = app.send_request(req).await;
     assert_eq!(resp.status(), StatusCode::OK);
     let json: Value = app.json_body(&mut resp).await;
-    assert!(json["data"].as_array().map_or(false, |a| a.len() >= 1));
+    assert!(json["data"].as_array().is_some_and(|a| !a.is_empty()));
 }
 
 #[tokio::test]
@@ -78,11 +78,7 @@ async fn test_update_lsw_standard() {
     let std_id = created["id"].as_str().unwrap();
 
     let update = serde_json::json!({"title": "Updated Standard"});
-    let req = app.put_authenticated(
-        &format!("/api/v1/lsw/standards/{}", std_id),
-        &token,
-        update,
-    );
+    let req = app.put_authenticated(&format!("/api/v1/lsw/standards/{}", std_id), &token, update);
     let mut resp = app.send_request(req).await;
     assert_eq!(resp.status(), StatusCode::OK);
     let json: Value = app.json_body(&mut resp).await;
@@ -130,7 +126,7 @@ async fn test_perform_audit() {
     let mut resp = app.send_request(req).await;
     assert_eq!(resp.status(), StatusCode::OK);
     let json: Value = app.json_body(&mut resp).await;
-    assert!(json["id"].as_str().unwrap_or("").len() > 0);
+    assert!(!json["id"].as_str().unwrap_or("").is_empty());
 }
 
 #[tokio::test]
@@ -153,10 +149,7 @@ async fn test_list_audits() {
     );
     let _ = app.send_request(req).await;
 
-    let req = app.get_authenticated(
-        &format!("/api/v1/lsw/standards/{}/audits", std_id),
-        &token,
-    );
+    let req = app.get_authenticated(&format!("/api/v1/lsw/standards/{}/audits", std_id), &token);
     let resp = app.send_request(req).await;
     assert_eq!(resp.status(), StatusCode::OK);
 }

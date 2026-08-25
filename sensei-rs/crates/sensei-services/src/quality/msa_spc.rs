@@ -12,7 +12,7 @@
 
 use async_trait::async_trait;
 use sensei_core::error::{Result, SenseiError};
-use sensei_core::types::{EntityId, TenantId, new_id, now};
+use sensei_core::types::{new_id, now, EntityId, TenantId};
 use uuid::Uuid;
 
 use super::models::{
@@ -326,11 +326,7 @@ impl MsaService for InMemoryMsaSpcService {
         let tv = (grr.powi(2) + pv.powi(2)).sqrt();
 
         // %GRR = (GRR / TV) * 100
-        let grr_percent = if tv > 0.0 {
-            (grr / tv) * 100.0
-        } else {
-            0.0
-        };
+        let grr_percent = if tv > 0.0 { (grr / tv) * 100.0 } else { 0.0 };
 
         // ndc = number of distinct categories = 1.41 * (PV / GRR)
         let ndc = if grr > 0.0 {
@@ -398,10 +394,7 @@ impl ProcessCapabilityService for InMemoryMsaSpcService {
             .ok_or_else(|| SenseiError::NotFound(format!("Capability study {id} not found")))
     }
 
-    async fn list_studies(
-        &self,
-        _tenant_id: TenantId,
-    ) -> Result<Vec<ProcessCapabilityStudy>> {
+    async fn list_studies(&self, _tenant_id: TenantId) -> Result<Vec<ProcessCapabilityStudy>> {
         let studies = self.capa_studies.read().await;
         Ok(studies.clone())
     }
@@ -416,7 +409,9 @@ impl ProcessCapabilityService for InMemoryMsaSpcService {
         let study = studies
             .iter_mut()
             .find(|s| s.id == study_id)
-            .ok_or_else(|| SenseiError::NotFound(format!("Capability study {study_id} not found")))?;
+            .ok_or_else(|| {
+                SenseiError::NotFound(format!("Capability study {study_id} not found"))
+            })?;
 
         let measurement = ProcessCapabilityMeasurement {
             id: new_id(),
@@ -434,7 +429,9 @@ impl ProcessCapabilityService for InMemoryMsaSpcService {
         let study = studies
             .iter_mut()
             .find(|s| s.id == study_id)
-            .ok_or_else(|| SenseiError::NotFound(format!("Capability study {study_id} not found")))?;
+            .ok_or_else(|| {
+                SenseiError::NotFound(format!("Capability study {study_id} not found"))
+            })?;
 
         if study.measurements.len() < 2 {
             return Err(SenseiError::Validation(
@@ -451,20 +448,12 @@ impl ProcessCapabilityService for InMemoryMsaSpcService {
         let mean: f64 = values.iter().sum::<f64>() / n;
 
         // Within-sample (subgroup) standard deviation — Cp/Cpk basis.
-        let variance: f64 = values
-            .iter()
-            .map(|v| (v - mean).powi(2))
-            .sum::<f64>()
-            / (n - 1.0);
+        let variance: f64 = values.iter().map(|v| (v - mean).powi(2)).sum::<f64>() / (n - 1.0);
         let std_dev = variance.sqrt();
 
         // Overall (population) standard deviation — Pp/Ppk basis. With
         // individual measurements this is the exact overall dispersion.
-        let overall_variance: f64 = values
-            .iter()
-            .map(|v| (v - mean).powi(2))
-            .sum::<f64>()
-            / n;
+        let overall_variance: f64 = values.iter().map(|v| (v - mean).powi(2)).sum::<f64>() / n;
         let overall_std_dev = overall_variance.sqrt();
 
         let tolerance = study.usl - study.lsl;
@@ -586,17 +575,11 @@ impl ChangePointService for InMemoryMsaSpcService {
         Ok(observation)
     }
 
-    async fn list_observations(
-        &self,
-        study_id: EntityId,
-    ) -> Result<Vec<ChangePointObservation>> {
+    async fn list_observations(&self, study_id: EntityId) -> Result<Vec<ChangePointObservation>> {
         let studies = self.cp_studies.read().await;
-        let study = studies
-            .iter()
-            .find(|s| s.id == study_id)
-            .ok_or_else(|| {
-                SenseiError::NotFound(format!("Change point study {study_id} not found"))
-            })?;
+        let study = studies.iter().find(|s| s.id == study_id).ok_or_else(|| {
+            SenseiError::NotFound(format!("Change point study {study_id} not found"))
+        })?;
         Ok(study.observations.clone())
     }
 
@@ -652,42 +635,47 @@ impl ChangePointService for InMemoryMsaSpcService {
 
         study.events.extend(events.clone());
         Ok(events)
-        }
     }
-    
-    // ──────────────────────────────────────────────
-    // SIMD-accelerated SPC helpers
-    // ──────────────────────────────────────────────
-    
-    /// Re-export [`sensei_zt::stats::CapabilityResult`] for convenience.
-    pub use sensei_zt::stats::CapabilityResult;
-    
-    /// Re-export [`sensei_zt::stats::HistogramResult`] for convenience.
-    pub use sensei_zt::stats::HistogramResult;
-    
-    /// Re-export [`sensei_zt::stats::mean`] for convenience.
-    pub use sensei_zt::stats::mean;
-    
-    /// Re-export [`sensei_zt::stats::std_dev`] for convenience.
-    pub use sensei_zt::stats::std_dev;
-    
-    /// Re-export [`sensei_zt::stats::normal_cdf`] for convenience.
-    pub use sensei_zt::stats::normal_cdf;
-    
-    /// Re-export [`sensei_zt::stats::normal_quantile`] for convenience.
-    pub use sensei_zt::stats::normal_quantile;
-    
-    /// Compute process capability indices (Cp, Cpk, Pp, Ppk) with SIMD
-    /// acceleration via the Zig native library when available.
-    ///
-    /// Delegates to [`sensei_zt::stats::calculate_capability`].
-    pub fn calculate_capability_spc(data: &[f64], lsl: f64, usl: f64, subgroup_size: usize) -> CapabilityResult {
-        sensei_zt::stats::calculate_capability(data, lsl, usl, subgroup_size)
-    }
-    
-    /// Compute a histogram with SIMD-accelerated min/max and bin assignment.
-    ///
-    /// Delegates to [`sensei_zt::stats::calculate_histogram`].
-    pub fn calculate_histogram_spc(data: &[f64], bin_count: usize) -> HistogramResult {
-        sensei_zt::stats::calculate_histogram(data, bin_count)
-    }
+}
+
+// ──────────────────────────────────────────────
+// SIMD-accelerated SPC helpers
+// ──────────────────────────────────────────────
+
+/// Re-export [`sensei_zt::stats::CapabilityResult`] for convenience.
+pub use sensei_zt::stats::CapabilityResult;
+
+/// Re-export [`sensei_zt::stats::HistogramResult`] for convenience.
+pub use sensei_zt::stats::HistogramResult;
+
+/// Re-export [`sensei_zt::stats::mean`] for convenience.
+pub use sensei_zt::stats::mean;
+
+/// Re-export [`sensei_zt::stats::std_dev`] for convenience.
+pub use sensei_zt::stats::std_dev;
+
+/// Re-export [`sensei_zt::stats::normal_cdf`] for convenience.
+pub use sensei_zt::stats::normal_cdf;
+
+/// Re-export [`sensei_zt::stats::normal_quantile`] for convenience.
+pub use sensei_zt::stats::normal_quantile;
+
+/// Compute process capability indices (Cp, Cpk, Pp, Ppk) with SIMD
+/// acceleration via the Zig native library when available.
+///
+/// Delegates to [`sensei_zt::stats::calculate_capability`].
+pub fn calculate_capability_spc(
+    data: &[f64],
+    lsl: f64,
+    usl: f64,
+    subgroup_size: usize,
+) -> CapabilityResult {
+    sensei_zt::stats::calculate_capability(data, lsl, usl, subgroup_size)
+}
+
+/// Compute a histogram with SIMD-accelerated min/max and bin assignment.
+///
+/// Delegates to [`sensei_zt::stats::calculate_histogram`].
+pub fn calculate_histogram_spc(data: &[f64], bin_count: usize) -> HistogramResult {
+    sensei_zt::stats::calculate_histogram(data, bin_count)
+}

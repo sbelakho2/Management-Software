@@ -109,7 +109,11 @@ impl WebSocketManager {
                 }
                 Err(e) => {
                     self.dropped_sends.fetch_add(1, Ordering::Relaxed);
-                    debug!(room, dropped_total = self.dropped_send_count(), "WS broadcast dropped: {e}");
+                    debug!(
+                        room,
+                        dropped_total = self.dropped_send_count(),
+                        "WS broadcast dropped: {e}"
+                    );
                 }
             }
         }

@@ -3,7 +3,7 @@
 //! Provides endpoints for readiness and liveness probes used by
 //! container orchestration systems (Kubernetes, Docker, etc.).
 
-use axum::{Json, extract::State};
+use axum::{extract::State, Json};
 use serde::Serialize;
 use std::time::Instant;
 
@@ -36,16 +36,15 @@ pub async fn liveness() -> Json<serde_json::Value> {
 ///
 /// Performs a real `SELECT 1` against the configured database pool when one
 /// is present, so the reported state reflects actual connectivity.
-pub async fn readiness(
-    State(state): State<AppState>,
-) -> Json<HealthResponse> {
+pub async fn readiness(State(state): State<AppState>) -> Json<HealthResponse> {
     let db_status = match &state.db_pool {
         Some(pool) => {
-            let ok = sqlx::query("SELECT 1")
-                .execute(&**pool)
-                .await
-                .is_ok();
-            if ok { "connected" } else { "unreachable" }
+            let ok = sqlx::query("SELECT 1").execute(&**pool).await.is_ok();
+            if ok {
+                "connected"
+            } else {
+                "unreachable"
+            }
         }
         None => "not_configured",
     };
@@ -111,7 +110,11 @@ pub fn read_memory_usage_mb() -> Option<f64> {
             .args(["-o", "rss=", "-p", &pid])
             .output()
             .ok()?;
-        let kb = String::from_utf8(out.stdout).ok()?.trim().parse::<f64>().ok()?;
+        let kb = String::from_utf8(out.stdout)
+            .ok()?
+            .trim()
+            .parse::<f64>()
+            .ok()?;
         Some(kb / 1024.0)
     }
     #[cfg(not(any(target_os = "linux", target_os = "macos")))]
@@ -163,7 +166,11 @@ pub fn read_cpu_usage_pct() -> Option<f64> {
             .args(["-o", "%cpu=", "-p", &pid])
             .output()
             .ok()?;
-        String::from_utf8(out.stdout).ok()?.trim().parse::<f64>().ok()
+        String::from_utf8(out.stdout)
+            .ok()?
+            .trim()
+            .parse::<f64>()
+            .ok()
     }
     #[cfg(not(any(target_os = "linux", target_os = "macos")))]
     {

@@ -6,7 +6,7 @@
 
 use async_trait::async_trait;
 use sensei_core::error::{Result, SenseiError};
-use sensei_core::types::{EntityId, TenantId, new_id, now};
+use sensei_core::types::{new_id, now, EntityId, TenantId};
 
 use super::models::{
     AqlLotInspection, AqlSamplingPlan, FirstArticleCharacteristic, FirstArticleInspection,
@@ -192,7 +192,9 @@ impl AqlSamplingService for InMemoryInspectionService {
             )));
         }
         if sample_size == 0 {
-            return Err(SenseiError::Validation("Sample size must be > 0".to_string()));
+            return Err(SenseiError::Validation(
+                "Sample size must be > 0".to_string(),
+            ));
         }
         if lot_size_from >= lot_size_to {
             return Err(SenseiError::Validation(format!(
@@ -434,7 +436,8 @@ impl SelfInspectionService for InMemoryInspectionService {
     ) -> Result<SelfInspection> {
         let mut counter = self.si_counter.write().await;
         *counter += 1;
-        let inspection_number = format!("SI-{}-{:04}", chrono::Utc::now().format("%Y%m%d"), counter);
+        let inspection_number =
+            format!("SI-{}-{:04}", chrono::Utc::now().format("%Y%m%d"), counter);
 
         let inspection = SelfInspection {
             id: new_id(),
@@ -461,7 +464,9 @@ impl SelfInspectionService for InMemoryInspectionService {
             .iter()
             .find(|i| i.id == inspection_id)
             .cloned()
-            .ok_or_else(|| SenseiError::NotFound(format!("Self-inspection {inspection_id} not found")))
+            .ok_or_else(|| {
+                SenseiError::NotFound(format!("Self-inspection {inspection_id} not found"))
+            })
     }
 
     async fn list_inspections(&self, _tenant_id: TenantId) -> Result<Vec<SelfInspection>> {
@@ -511,10 +516,14 @@ impl SelfInspectionService for InMemoryInspectionService {
         let inspection = inspections
             .iter_mut()
             .find(|i| i.id == inspection_id)
-            .ok_or_else(|| SenseiError::NotFound(format!("Self-inspection {inspection_id} not found")))?;
+            .ok_or_else(|| {
+                SenseiError::NotFound(format!("Self-inspection {inspection_id} not found"))
+            })?;
 
         if inspection.status == "completed" {
-            return Err(SenseiError::Validation("Self-inspection is already completed".to_string()));
+            return Err(SenseiError::Validation(
+                "Self-inspection is already completed".to_string(),
+            ));
         }
 
         inspection.status = "completed".to_string();

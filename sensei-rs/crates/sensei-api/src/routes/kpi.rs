@@ -3,13 +3,16 @@
 //! Provides endpoints for managing KPI definitions, recording values,
 //! and viewing trend dashboards.
 
-use axum::{Json, extract::{Path, Query, State}};
+use axum::{
+    extract::{Path, Query, State},
+    Json,
+};
 use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
 use sensei_auth::middleware::AuthenticatedUser;
 use sensei_core::error::{Result, SenseiError};
 use sensei_core::pagination::PaginatedResponse;
 use sensei_core::types::new_id;
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::state::AppState;
@@ -276,7 +279,10 @@ pub async fn record_kpi_value(
     // Verify KPI exists
     {
         let store = state.kpi_definitions.read().await;
-        if !store.values().any(|k| k.id == kpi_id && k.tenant_id == tenant_id) {
+        if !store
+            .values()
+            .any(|k| k.id == kpi_id && k.tenant_id == tenant_id)
+        {
             return Err(SenseiError::NotFound(format!("KPI {kpi_id} not found")));
         }
     }
@@ -323,7 +329,7 @@ pub async fn list_kpi_values(
         })
         .cloned()
         .collect();
-    values.sort_by(|a, b| b.recorded_at.cmp(&a.recorded_at));
+    values.sort_by_key(|a| std::cmp::Reverse(a.recorded_at));
     let result = PaginatedResponse::new(values, params.page, params.per_page);
     Ok(Json(result))
 }
@@ -367,7 +373,7 @@ pub async fn get_kpi_dashboard(
             value: v.value,
         })
         .collect();
-    trend.sort_by(|a, b| a.recorded_at.cmp(&b.recorded_at));
+    trend.sort_by_key(|a| a.recorded_at);
 
     let dashboard = KpiDashboard {
         kpi,

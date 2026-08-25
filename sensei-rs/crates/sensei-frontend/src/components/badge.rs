@@ -36,11 +36,12 @@ pub fn Badge(
 ) -> impl IntoView {
     let label_upper = label.to_uppercase();
     let variant_class = move || {
-        variant.clone().map(|v| format!(" {}", v)).unwrap_or_default()
+        variant
+            .clone()
+            .map(|v| format!(" {}", v))
+            .unwrap_or_default()
     };
-    let extra_class = move || {
-        class.clone().map(|c| format!(" {}", c)).unwrap_or_default()
-    };
+    let extra_class = move || class.clone().map(|c| format!(" {}", c)).unwrap_or_default();
 
     view! {
         <span

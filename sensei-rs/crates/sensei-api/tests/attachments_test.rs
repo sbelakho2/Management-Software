@@ -22,7 +22,11 @@ async fn test_upload_attachment() {
     let resp = app.send_request(req).await;
     // May accept JSON or require multipart; either way endpoint responds
     let status = resp.status();
-    assert!(status == StatusCode::OK || status == StatusCode::UNSUPPORTED_MEDIA_TYPE || status == StatusCode::BAD_REQUEST);
+    assert!(
+        status == StatusCode::OK
+            || status == StatusCode::UNSUPPORTED_MEDIA_TYPE
+            || status == StatusCode::BAD_REQUEST
+    );
 }
 
 #[tokio::test]

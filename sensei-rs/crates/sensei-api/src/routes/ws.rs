@@ -12,7 +12,10 @@ use axum::{
         ws::{Message, WebSocket, WebSocketUpgrade},
         Query, State,
     },
-    response::{sse::{Event, Sse}, IntoResponse},
+    response::{
+        sse::{Event, Sse},
+        IntoResponse,
+    },
 };
 use futures::stream::{select, StreamExt};
 use futures::SinkExt;
@@ -87,12 +90,7 @@ pub async fn ws_handler(
 /// 4. Forwards user-directed and tenant messages from the broadcast channels
 ///    to the client, plus periodic heartbeat pings.
 /// 5. On disconnect or error, cleans up all state.
-async fn handle_socket(
-    socket: WebSocket,
-    state: AppState,
-    user_id: Uuid,
-    tenant_id: Uuid,
-) {
+async fn handle_socket(socket: WebSocket, state: AppState, user_id: Uuid, tenant_id: Uuid) {
     let ws_manager = &state.ws_manager;
     let tenant_room = format!("tenant:{tenant_id}");
 
@@ -231,14 +229,12 @@ async fn handle_socket(
     ) -> Option<bool> {
         // Each store is checked only for membership + tenant ownership.
         macro_rules! check_store {
-            ($store:expr) => {
-                {
-                    let map = $store.read().await;
-                    if let Some(entity) = map.get(&entity_id) {
-                        return Some(entity.tenant_id == tenant_id);
-                    }
+            ($store:expr) => {{
+                let map = $store.read().await;
+                if let Some(entity) = map.get(&entity_id) {
+                    return Some(entity.tenant_id == tenant_id);
                 }
-            };
+            }};
         }
         check_store!(state.tasks);
         check_store!(state.work_centers);

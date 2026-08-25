@@ -1,21 +1,33 @@
 //! Build script for sensei-zt.
 //!
-//! Compiles the Zig static library (from `zig/`) and links it
-//! against the Rust crate when the `zig` feature is enabled.
-//!
-//! When building without Zig installed, this build script gracefully
-//! skips compilation and the crate exposes pure-Rust fallbacks.
+//! Compiles the Zig static library (from `zig/`) and links it against the
+//! Rust crate. Zig is a REQUIRED build component: the high-performance
+//! paths (SIMD, ONNX, LLM, image, stats) live in Zig, so silently skipping
+//! it would ship a different (slower, non-accelerated) binary without any
+//! signal. The only way to build without Zig is the explicit opt-out
+//! environment variable `SENSEI_NO_ZIG=1`, which is a deliberate developer
+//! choice (e.g. cross-compilation CI) — never an automatic fallback.
 
 fn main() {
     // Allow the custom `no_zig` cfg key used for fallback detection
     println!("cargo::rustc-check-cfg=cfg(no_zig)");
-    // Attempt to locate the `zig` binary
+
+    if std::env::var("SENSEI_NO_ZIG").is_ok() {
+        println!("cargo:warning=SENSEI_NO_ZIG is set — building sensei-zt without the Zig library (pure Rust implementations)");
+        println!("cargo:rustc-cfg=no_zig");
+        return;
+    }
+
+    // Locate the `zig` binary — its absence is a build error, not a fallback.
     let zig = match which::which("zig") {
         Ok(path) => path,
         Err(_) => {
-            println!("cargo:warning=zig not found on PATH — skipping Zig compilation");
-            println!("cargo:rustc-cfg=no_zig");
-            return;
+            panic!(
+                "sensei-zt requires the Zig toolchain (>= 0.15.0). Install Zig \
+                 (https://ziglang.org/download/) and ensure `zig` is on PATH, or \
+                 explicitly opt out with SENSEI_NO_ZIG=1 if you intend to build \
+                 the pure-Rust variant."
+            );
         }
     };
 
@@ -39,27 +51,22 @@ fn main() {
     // Run `zig build`
     let prefix = workspace_root.join("target").join("zig");
     let status = std::process::Command::new(&zig)
-        .args(&[
-            "build",
-            build_mode,
-            "--prefix",
-            &prefix.display().to_string(),
-        ])
+        .args(["build", build_mode, "--prefix"])
+        .arg(&prefix)
         .current_dir(&zig_src)
         .status()
-        .expect("failed to run zig build");
+        .expect("failed to spawn zig build");
 
     if !status.success() {
-        println!("cargo:warning=zig build failed — falling back to pure Rust implementation");
-        println!("cargo:rustc-cfg=no_zig");
-        return;
+        panic!(
+            "`zig build` failed (exit status {status}). The Zig library is a required \
+             component of sensei-zt — fix the build failure rather than bypassing it, \
+             or explicitly opt out with SENSEI_NO_ZIG=1."
+        );
     }
 
     // Link the Zig static library
-    let lib_dir = workspace_root
-        .join("target")
-        .join("zig")
-        .join("lib");
+    let lib_dir = workspace_root.join("target").join("zig").join("lib");
 
     println!("cargo:rustc-link-search={}", lib_dir.display());
     println!("cargo:rustc-link-lib=static=sensei_zig");

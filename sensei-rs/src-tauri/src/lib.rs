@@ -48,10 +48,7 @@ async fn get_battery_level() -> BatteryInfo {
 /// Checks network connectivity by performing a lightweight DNS / TCP check.
 #[tauri::command]
 async fn check_connectivity() -> bool {
-    matches!(
-        tokio::net::TcpStream::connect("8.8.8.8:53").await,
-        Ok(_)
-    )
+    tokio::net::TcpStream::connect("8.8.8.8:53").await.is_ok()
 }
 
 /// Returns the push notification token for the current device.
@@ -114,7 +111,8 @@ fn shell_escape(s: &str) -> String {
     let mut escaped = String::with_capacity(s.len() + 4);
     for ch in s.chars() {
         match ch {
-            '\\' | '\'' | '"' | '`' | '$' | '!' | '&' | '|' | ';' | '<' | '>' | '(' | ')' | '{' | '}' | '[' | ']' | '*' | '?' | '~' | ' ' | '\t' | '\n' => {
+            '\\' | '\'' | '"' | '`' | '$' | '!' | '&' | '|' | ';' | '<' | '>' | '(' | ')' | '{'
+            | '}' | '[' | ']' | '*' | '?' | '~' | ' ' | '\t' | '\n' => {
                 escaped.push('\\');
                 escaped.push(ch);
             }

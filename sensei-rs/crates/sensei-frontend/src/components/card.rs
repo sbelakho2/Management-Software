@@ -30,12 +30,11 @@ pub fn ModuleCard(
     /// Module body content.
     children: Children,
 ) -> impl IntoView {
-    let heading_id = title.as_ref().map(|t| {
-        format!("module-{}", t.to_lowercase().replace(' ', "-"))
-    }).unwrap_or_default();
-    let extra_class = move || {
-        class.clone().map(|c| format!(" {}", c)).unwrap_or_default()
-    };
+    let heading_id = title
+        .as_ref()
+        .map(|t| format!("module-{}", t.to_lowercase().replace(' ', "-")))
+        .unwrap_or_default();
+    let extra_class = move || class.clone().map(|c| format!(" {}", c)).unwrap_or_default();
 
     view! {
         <section

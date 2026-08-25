@@ -5,12 +5,6 @@
 //! strategies (greedy, top-k, top-p), and a [`LlamaRunner`] that
 //! orchestrates tokenization + transformer inference + sampling.
 //!
-//! ## Software fallback
-//!
-//! When no real model weights are available, [`LlamaRunner`] falls back to a
-//! hardcoded pattern-matching chatbot that matches keywords in the prompt and
-//! returns predefined responses. The transformer pipeline can still be run for
-//! benchmarking with random weights.
 
 const std = @import("std");
 const onnx = @import("onnx_runtime.zig");
@@ -607,8 +601,6 @@ fn sampleFromDistribution(probs: []const f32, rng: *std.Random) u32 {
 }
 
 // ══════════════════════════════════════════════
-// Software fallback chatbot
-// ══════════════════════════════════════════════
 
 /// Hardcoded response patterns for the software fallback chatbot.
 const ResponsePattern = struct {
@@ -718,16 +710,15 @@ pub const LlamaRunner = struct {
 
     /// Generate a response to the given prompt.
     ///
-    /// When real weights are available (matching the expected transformer
-    /// layout), runs the full transformer pipeline with a KV cache and
+    /// Runs the full transformer pipeline with a KV cache and
     /// temperature/top-k/top-p sampling until EOS or `max_tokens`.
-    /// Otherwise, uses the software fallback pattern-matching chatbot.
     ///
-    /// Returns the generated text.
+    /// Returns an error when real model weights are not loaded — the caller
+    /// must not present pattern-matched filler as AI output.
     pub fn generate(self: *LlamaRunner, prompt: []const u8, max_tokens: usize, temperature: f32, top_k: u32, top_p: f32, allocator: std.mem.Allocator) ![]u8 {
         // Check if we have real weights (not random initialised)
         if (!self.hasRealWeights()) {
-            return fallbackResponse(self, prompt, allocator);
+            return error.ModelWeightsNotLoaded;
         }
 
         const dim = self.config.dim;
@@ -908,7 +899,7 @@ pub const LlamaRunner = struct {
     /// Real weights must match the expected transformer layout exactly and
     /// have a non-trivial magnitude distribution. Random uniform [-1, 1]
     /// weights have mean abs ≈ 0.5 and are treated as "no real weights".
-    fn hasRealWeights(self: *const LlamaRunner) bool {
+    pub fn hasRealWeights(self: *const LlamaRunner) bool {
         if (self.transformer_weights.len != self.expectedWeightLen()) return false;
         if (self.transformer_weights.len < 100) return false;
 
@@ -923,12 +914,6 @@ pub const LlamaRunner = struct {
         return mean_abs > 0.02 and mean_abs < 0.5;
     }
 
-    /// Fallback pattern-matching response generation.
-    fn fallbackResponse(self: *LlamaRunner, prompt: []const u8, allocator: std.mem.Allocator) ![]u8 {
-        _ = self;
-        const response = fallbackChat(prompt);
-        return allocator.dupe(u8, response);
-    }
 };
 
 // ══════════════════════════════════════════════
@@ -1036,22 +1021,8 @@ test "Sampler sample with temperature" {
     try testing.expectEqual(@as(u32, 0), idx);
 }
 
-test "fillbackChat basic matching" {
-    const response = fallbackChat("hello there");
-    // Should match the "hello" pattern
-    try testing.expect(std.mem.indexOf(u8, response, "Hello!") != null);
-}
 
-test "fillbackChat quality topic" {
-    const response = fallbackChat("I need help with quality inspection");
-    try testing.expect(std.mem.indexOf(u8, response, "quality") != null);
-}
 
-test "fillbackChat unknown input" {
-    const response = fallbackChat("asdfghjkl");
-    // Should return the default response
-    try testing.expect(std.mem.indexOf(u8, response, "Sensei AI") != null);
-}
 
 test "TransformerBlock forward runs without error" {
     // Small config for testing
@@ -1151,32 +1122,14 @@ test "LlamaRunner init and deinit" {
     var runner = try LlamaRunner.init(config, &weights, tokenizer, std.heap.page_allocator);
     defer runner.deinit();
 
-    // Should use fallback (weights are flat/zero)
-    const response = try runner.generate("hello", 10, 1.0, 10, 0.9, std.heap.page_allocator);
-    defer std.heap.page_allocator.free(response);
-
-    try testing.expect(response.len > 0);
-}
-
-test "LlamaRunner fallback response" {
-    const config = TransformerConfig{
-        .dim = 4,
-        .n_layers = 1,
-        .n_heads = 2,
-        .n_kv_heads = 1,
-        .vocab_size = 10,
-        .max_seq_len = 8,
-    };
-
-    const weights = [_]f32{0.0} ** 100;
-    const tokenizer = Tokenizer.init(std.heap.page_allocator);
-
-    // The tokenizer is moved into the runner, which owns and frees it.
-    var runner = try LlamaRunner.init(config, &weights, tokenizer, std.heap.page_allocator);
-    defer runner.deinit();
-
-    const response = try runner.generate("help me with maintenance", 10, 1.0, 10, 0.9, std.heap.page_allocator);
-    defer std.heap.page_allocator.free(response);
-
-    try testing.expect(std.mem.indexOf(u8, response, "maintenance") != null);
+    // Without real weights, generation must fail with a clear error —
+    // never fabricate an answer.
+    try testing.expectError(error.ModelWeightsNotLoaded, runner.generate(
+        "hello",
+        10,
+        1.0,
+        10,
+        0.9,
+        std.heap.page_allocator,
+    ));
 }

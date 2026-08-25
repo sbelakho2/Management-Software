@@ -6,8 +6,8 @@
 use chrono::{Duration, Utc};
 use jsonwebtoken::errors::ErrorKind;
 use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation};
-use serde::{Deserialize, Serialize};
 use sensei_core::error::{Result, SenseiError};
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 /// JWT claims for access tokens.

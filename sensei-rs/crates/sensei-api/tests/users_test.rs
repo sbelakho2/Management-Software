@@ -55,10 +55,7 @@ async fn test_get_user_not_found() {
     let app = common::TestApp::new().await;
     let token = app.login_as_admin().await;
 
-    let req = app.get_authenticated(
-        &format!("/api/v1/users/{}", uuid::Uuid::new_v4()),
-        &token,
-    );
+    let req = app.get_authenticated(&format!("/api/v1/users/{}", uuid::Uuid::new_v4()), &token);
     let resp = app.send_request(req).await;
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 }
@@ -115,7 +112,7 @@ async fn test_update_user_roles() {
 #[tokio::test]
 async fn test_user_routes_require_admin() {
     let app = common::TestApp::new().await;
-    let token = app.login_as_admin().await;
+    let _token = app.login_as_admin().await;
 
     // A plain user (no admin role) in the same tenant.
     let _ = app
@@ -157,7 +154,7 @@ async fn test_user_routes_require_admin() {
         &format!("/api/v1/users/{}", app.admin_user_id),
         &plain_token,
     );
-    let mut resp = app.send_request(req).await;
+    let resp = app.send_request(req).await;
     assert_eq!(resp.status(), StatusCode::OK);
 }
 
@@ -166,12 +163,14 @@ async fn test_admin_list_users_scoped_to_tenant() {
     let app = common::TestApp::new().await;
     let token = app.login_as_admin().await;
 
-    // Two users in the admin's tenant.
+    // Two users in the admin's tenant: one plain "user", one with a
+    // non-user role so the role filter can be exercised meaningfully
+    // (the admin bootstrap account carries ["admin", "user"]).
     let _ = app
         .create_user_with_roles("a@sensei.test", "TestPass123!", &["user"])
         .await;
     let _ = app
-        .create_user_with_roles("b@sensei.test", "TestPass123!", &["user"])
+        .create_user_with_roles("b@sensei.test", "TestPass123!", &["quality_manager"])
         .await;
 
     let req = app.get_authenticated("/api/v1/users", &token);
@@ -189,9 +188,15 @@ async fn test_admin_list_users_scoped_to_tenant() {
     assert!(emails.contains(&"a@sensei.test"));
     assert!(emails.contains(&"b@sensei.test"));
 
-    // Role filter works.
+    // Role filter works (exact membership): "user" matches the admin and
+    // user a; "quality_manager" matches only user b.
     let req = app.get_authenticated("/api/v1/users?role=user", &token);
     let mut resp = app.send_request(req).await;
     let json: Value = app.json_body(&mut resp).await;
     assert_eq!(json["total"], 2);
+
+    let req = app.get_authenticated("/api/v1/users?role=quality_manager", &token);
+    let mut resp = app.send_request(req).await;
+    let json: Value = app.json_body(&mut resp).await;
+    assert_eq!(json["total"], 1);
 }

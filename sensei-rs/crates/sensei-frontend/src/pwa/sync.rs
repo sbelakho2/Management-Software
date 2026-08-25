@@ -173,7 +173,9 @@ impl SyncService {
 
         // Register periodic sync if supported
         if self.periodic_sync_supported {
-            let _ = self.register_periodic_sync(DEFAULT_PERIODIC_SYNC_INTERVAL_SECS).await;
+            let _ = self
+                .register_periodic_sync(DEFAULT_PERIODIC_SYNC_INTERVAL_SECS)
+                .await;
         }
 
         // Attempt to replay the offline queue (if we're online now)
@@ -254,9 +256,9 @@ impl SyncService {
         let promise_js = js_sys::Reflect::apply(register_fn, &sync_manager, &args)
             .map_err(|e| SyncError::RegistrationFailed(format!("{e:?}")))?;
 
-        let promise: js_sys::Promise = promise_js
-            .dyn_into()
-            .map_err(|_| SyncError::RegistrationFailed("register did not return a Promise".into()))?;
+        let promise: js_sys::Promise = promise_js.dyn_into().map_err(|_| {
+            SyncError::RegistrationFailed("register did not return a Promise".into())
+        })?;
 
         JsFuture::from(promise)
             .await
@@ -278,8 +280,9 @@ impl SyncService {
         let registration_value: JsValue = registration.into();
 
         // Access `registration.periodicSync` dynamically
-        let periodic_sync = js_sys::Reflect::get(&registration_value, &JsValue::from_str("periodicSync"))
-            .map_err(|_| SyncError::NotSupported)?;
+        let periodic_sync =
+            js_sys::Reflect::get(&registration_value, &JsValue::from_str("periodicSync"))
+                .map_err(|_| SyncError::NotSupported)?;
 
         if periodic_sync.is_undefined() || periodic_sync.is_null() {
             return Ok(false);
@@ -295,8 +298,9 @@ impl SyncService {
         .map_err(|_| SyncError::RegistrationFailed("Cannot set minInterval".into()))?;
 
         // Call periodicSync.register(tag, options) which returns a Promise
-        let register_fn_js = js_sys::Reflect::get(&periodic_sync, &JsValue::from_str("register"))
-            .map_err(|_| SyncError::RegistrationFailed("register method not found".into()))?;
+        let register_fn_js =
+            js_sys::Reflect::get(&periodic_sync, &JsValue::from_str("register"))
+                .map_err(|_| SyncError::RegistrationFailed("register method not found".into()))?;
         let register_fn: &js_sys::Function = register_fn_js
             .dyn_ref()
             .ok_or_else(|| SyncError::RegistrationFailed("register is not a function".into()))?;
@@ -307,9 +311,9 @@ impl SyncService {
         let promise_js = js_sys::Reflect::apply(register_fn, &periodic_sync, &args)
             .map_err(|e| SyncError::RegistrationFailed(format!("{e:?}")))?;
 
-        let promise: js_sys::Promise = promise_js
-            .dyn_into()
-            .map_err(|_| SyncError::RegistrationFailed("register did not return a Promise".into()))?;
+        let promise: js_sys::Promise = promise_js.dyn_into().map_err(|_| {
+            SyncError::RegistrationFailed("register did not return a Promise".into())
+        })?;
 
         JsFuture::from(promise)
             .await
@@ -328,16 +332,18 @@ impl SyncService {
         let registration_value: JsValue = registration.into();
 
         // Access `registration.periodicSync` dynamically
-        let periodic_sync = js_sys::Reflect::get(&registration_value, &JsValue::from_str("periodicSync"))
-            .map_err(|_| SyncError::NotSupported)?;
+        let periodic_sync =
+            js_sys::Reflect::get(&registration_value, &JsValue::from_str("periodicSync"))
+                .map_err(|_| SyncError::NotSupported)?;
 
         if periodic_sync.is_undefined() || periodic_sync.is_null() {
             return Ok(false);
         }
 
         // Call periodicSync.unregister(tag) which returns a Promise
-        let unregister_fn_js = js_sys::Reflect::get(&periodic_sync, &JsValue::from_str("unregister"))
-            .map_err(|_| SyncError::RegistrationFailed("unregister method not found".into()))?;
+        let unregister_fn_js =
+            js_sys::Reflect::get(&periodic_sync, &JsValue::from_str("unregister"))
+                .map_err(|_| SyncError::RegistrationFailed("unregister method not found".into()))?;
         let unregister_fn: &js_sys::Function = unregister_fn_js
             .dyn_ref()
             .ok_or_else(|| SyncError::RegistrationFailed("unregister is not a function".into()))?;
@@ -347,9 +353,9 @@ impl SyncService {
         let promise_js = js_sys::Reflect::apply(unregister_fn, &periodic_sync, &args)
             .map_err(|e| SyncError::RegistrationFailed(format!("{e:?}")))?;
 
-        let promise: js_sys::Promise = promise_js
-            .dyn_into()
-            .map_err(|_| SyncError::RegistrationFailed("unregister did not return a Promise".into()))?;
+        let promise: js_sys::Promise = promise_js.dyn_into().map_err(|_| {
+            SyncError::RegistrationFailed("unregister did not return a Promise".into())
+        })?;
 
         JsFuture::from(promise)
             .await
@@ -369,9 +375,8 @@ impl SyncService {
 
         // Persist to IndexedDB
         if let Some(db) = &self.db {
-            let value =
-                serde_wasm_bindgen::to_value(&operation)
-                    .map_err(|e| SyncError::Serde(e.to_string()))?;
+            let value = serde_wasm_bindgen::to_value(&operation)
+                .map_err(|e| SyncError::Serde(e.to_string()))?;
             db.put_pending_operation(&value).await?;
         }
 
@@ -398,7 +403,9 @@ impl SyncService {
     /// Get all pending operations from the persistent store.
     pub async fn get_pending_operations_from_db(&self) -> Result<Vec<PendingOperation>> {
         let db = self.db.as_ref().ok_or_else(|| {
-            SyncError::IndexedDb(IndexedDbError::StoreNotFound(StoreNames::PENDING_OPERATIONS.into()))
+            SyncError::IndexedDb(IndexedDbError::StoreNotFound(
+                StoreNames::PENDING_OPERATIONS.into(),
+            ))
         })?;
 
         let items = db.get_all_pending_operations().await?;
@@ -451,8 +458,10 @@ impl SyncService {
                     let now = chrono::Utc::now().to_rfc3339();
                     self.sync_store.set_last_sync_at(&now);
                 } else {
-                    self.sync_store
-                        .set_sync_error(Some(&format!("{} operations failed", cycle_result.failed_count)));
+                    self.sync_store.set_sync_error(Some(&format!(
+                        "{} operations failed",
+                        cycle_result.failed_count
+                    )));
                 }
             }
             Err(e) => {
@@ -471,7 +480,11 @@ impl SyncService {
     /// The default strategy is **Local Wins**: keep the local change and attempt
     /// to re-apply it on the server. Other strategies can be implemented
     /// per-operation-type.
-    pub fn resolve_conflict(&self, operation: &PendingOperation, _server_data: &JsValue) -> ConflictResolution {
+    pub fn resolve_conflict(
+        &self,
+        operation: &PendingOperation,
+        _server_data: &JsValue,
+    ) -> ConflictResolution {
         match operation.operation_type.as_str() {
             // For deletes, if the entity is already gone on the server, no conflict
             "delete" => ConflictResolution::ServerWins,
@@ -607,10 +620,13 @@ async fn replay_queue_internal(store: SyncStore) -> Result<SyncCycleResult> {
     }
 
     // Dispatch custom events for UI updates
-    dispatch_sync_event("sync-complete", &serde_json::json!({
-        "syncedCount": synced_count,
-        "failedCount": failed_count,
-    }));
+    dispatch_sync_event(
+        "sync-complete",
+        &serde_json::json!({
+            "syncedCount": synced_count,
+            "failedCount": failed_count,
+        }),
+    );
 
     Ok(SyncCycleResult {
         synced_count,

@@ -31,7 +31,12 @@ async fn login(app: &TestApp, email: &str, password: &str) -> String {
 }
 
 /// POST /api/v1/tasks with an optional Idempotency-Key, returning the response.
-async fn create_task(app: &TestApp, token: &str, title: &str, key: Option<&str>) -> axum::http::Request<axum::body::Body> {
+async fn create_task(
+    _app: &TestApp,
+    token: &str,
+    title: &str,
+    key: Option<&str>,
+) -> axum::http::Request<axum::body::Body> {
     let body = serde_json::json!({
         "title": title,
         "description": "created by middleware test",
@@ -68,14 +73,13 @@ async fn rate_limiter_returns_429_after_limit() {
     let password = "TestAdmin123!";
     let hash = sensei_auth::password::hash_password(password).unwrap();
     let tenant = sensei_core::types::TenantId::new_v4();
-    let users: std::sync::Arc<dyn sensei_services::users::UsersService> = std::sync::Arc::new(
-        sensei_services::users::InMemoryUsersService::with_admin(
+    let users: std::sync::Arc<dyn sensei_services::users::UsersService> =
+        std::sync::Arc::new(sensei_services::users::InMemoryUsersService::with_admin(
             "admin@sensei.test",
             "Admin User",
             &hash,
             tenant,
-        ),
-    );
+        ));
     let config = sensei_core::config::AppConfig::from_env().unwrap();
     let mut state = sensei_api::AppState::new(config, users);
     // Two requests per minute; all requests in this test share the
@@ -161,7 +165,9 @@ async fn session_mismatch_returns_401_and_removes_binding() {
 
     // The stale binding must have been removed (forces re-login re-bind).
     assert_eq!(
-        app.state.session_store.verify(&user_id, "attacker-fingerprint"),
+        app.state
+            .session_store
+            .verify(&user_id, "attacker-fingerprint"),
         sensei_api::middleware::session::SessionResult::Unknown,
         "mismatched binding must be removed"
     );
@@ -192,9 +198,13 @@ async fn idempotency_key_is_scoped_per_user() {
     let other_token = login(&app, "other@sensei.test", "Other123!").await;
 
     // Both users send the same Idempotency-Key on the same path.
-    let resp = app.send_request(create_task(&app, &admin_token, "scoped-a", Some("shared-key")).await).await;
+    let resp = app
+        .send_request(create_task(&app, &admin_token, "scoped-a", Some("shared-key")).await)
+        .await;
     assert_eq!(resp.status(), StatusCode::OK);
-    let resp = app.send_request(create_task(&app, &other_token, "scoped-b", Some("shared-key")).await).await;
+    let resp = app
+        .send_request(create_task(&app, &other_token, "scoped-b", Some("shared-key")).await)
+        .await;
     assert_eq!(resp.status(), StatusCode::OK);
 
     // Two distinct tasks were created (keys did not collide across users).
@@ -202,9 +212,15 @@ async fn idempotency_key_is_scoped_per_user() {
 
     // A retry with the same key+user replays the cached response: the task
     // count does not grow.
-    let resp = app.send_request(create_task(&app, &admin_token, "scoped-a-retry", Some("shared-key")).await).await;
+    let resp = app
+        .send_request(create_task(&app, &admin_token, "scoped-a-retry", Some("shared-key")).await)
+        .await;
     assert_eq!(resp.status(), StatusCode::OK);
-    assert_eq!(task_count(&app, &admin_token).await, 2, "retry must not re-execute");
+    assert_eq!(
+        task_count(&app, &admin_token).await,
+        2,
+        "retry must not re-execute"
+    );
 }
 
 #[tokio::test]
@@ -215,10 +231,7 @@ async fn duplicate_concurrent_key_executes_once() {
     // Fire two identical requests concurrently with the same key.
     let req_a = create_task(&app, &token, "concurrent", Some("concurrent-key")).await;
     let req_b = create_task(&app, &token, "concurrent", Some("concurrent-key")).await;
-    let (resp_a, resp_b) = tokio::join!(
-        app.send_request(req_a),
-        app.send_request(req_b),
-    );
+    let (resp_a, resp_b) = tokio::join!(app.send_request(req_a), app.send_request(req_b),);
 
     assert_eq!(resp_a.status(), StatusCode::OK);
     assert_eq!(resp_b.status(), StatusCode::OK);
@@ -244,9 +257,7 @@ async fn hsts_omitted_on_plain_http() {
     let resp = app.send_request(req).await;
 
     assert!(
-        resp.headers()
-            .get("strict-transport-security")
-            .is_none(),
+        resp.headers().get("strict-transport-security").is_none(),
         "HSTS must be omitted on plain HTTP"
     );
     // Other security headers are still present.

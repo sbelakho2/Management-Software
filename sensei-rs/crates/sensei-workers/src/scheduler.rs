@@ -71,9 +71,9 @@ impl CronSchedule {
             Ok(Self::Daily { hour, minute })
         } else if let Some(rest) = expr.strip_prefix("hourly@") {
             let minute_str = rest.strip_prefix(':').unwrap_or(rest);
-            let minute: u32 = minute_str.parse().map_err(|_| {
-                WorkerError::InvalidConfig(format!("Invalid minute in '{}'", expr))
-            })?;
+            let minute: u32 = minute_str
+                .parse()
+                .map_err(|_| WorkerError::InvalidConfig(format!("Invalid minute in '{}'", expr)))?;
             if minute > 59 {
                 return Err(WorkerError::InvalidConfig(format!(
                     "Invalid minute in '{}': must be 0-59",
@@ -347,7 +347,13 @@ mod tests {
         assert!(matches!(s, CronSchedule::Daily { hour: 0, minute: 0 }));
 
         let s = CronSchedule::parse("daily@23:59").unwrap();
-        assert!(matches!(s, CronSchedule::Daily { hour: 23, minute: 59 }));
+        assert!(matches!(
+            s,
+            CronSchedule::Daily {
+                hour: 23,
+                minute: 59
+            }
+        ));
     }
 
     #[test]

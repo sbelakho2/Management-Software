@@ -98,7 +98,11 @@ impl SseManager {
                 Ok(_) => {}
                 Err(e) => {
                     self.dropped_publishes.fetch_add(1, Ordering::Relaxed);
-                    debug!(channel, dropped_total = self.dropped_publish_count(), "SSE publish dropped: {e}");
+                    debug!(
+                        channel,
+                        dropped_total = self.dropped_publish_count(),
+                        "SSE publish dropped: {e}"
+                    );
                 }
             }
         }

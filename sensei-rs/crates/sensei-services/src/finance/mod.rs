@@ -14,7 +14,6 @@ pub use database::DatabaseFinanceService;
 
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
 use sensei_core::domain::events::{
     CostRollupCompleted, DomainEvent, InvoiceCreatedEvent, JournalEntryPosted,
     PaymentProcessedEvent,
@@ -22,6 +21,7 @@ use sensei_core::domain::events::{
 use sensei_core::error::{Result, SenseiError};
 use sensei_core::pagination::PaginatedResponse;
 use sensei_event_bus::bus::EventBus;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -220,12 +220,7 @@ pub trait FinanceService: Send + Sync {
         per_page: Option<usize>,
     ) -> Result<PaginatedResponse<Budget>>;
     /// Allocate additional funds to a budget.
-    async fn allocate_budget(
-        &self,
-        tenant_id: Uuid,
-        id: Uuid,
-        amount: f64,
-    ) -> Result<Budget>;
+    async fn allocate_budget(&self, tenant_id: Uuid, id: Uuid, amount: f64) -> Result<Budget>;
 
     // ── Journal Entries ─────────────────────────────────────────────────
     /// Post a new journal entry.
@@ -245,34 +240,19 @@ pub trait FinanceService: Send + Sync {
 
     // ── Invoice Mutations ──────────────────────────────────────────────
     /// Update an invoice.
-    async fn update_invoice(
-        &self,
-        tenant_id: Uuid,
-        id: Uuid,
-        invoice: Invoice,
-    ) -> Result<Invoice>;
+    async fn update_invoice(&self, tenant_id: Uuid, id: Uuid, invoice: Invoice) -> Result<Invoice>;
     /// Delete an invoice.
     async fn delete_invoice(&self, tenant_id: Uuid, id: Uuid) -> Result<()>;
 
     // ── Payment Mutations ──────────────────────────────────────────────
     /// Update a payment.
-    async fn update_payment(
-        &self,
-        tenant_id: Uuid,
-        id: Uuid,
-        payment: Payment,
-    ) -> Result<Payment>;
+    async fn update_payment(&self, tenant_id: Uuid, id: Uuid, payment: Payment) -> Result<Payment>;
     /// Delete a payment.
     async fn delete_payment(&self, tenant_id: Uuid, id: Uuid) -> Result<()>;
 
     // ── Budget Mutations ───────────────────────────────────────────────
     /// Update a budget.
-    async fn update_budget(
-        &self,
-        tenant_id: Uuid,
-        id: Uuid,
-        budget: Budget,
-    ) -> Result<Budget>;
+    async fn update_budget(&self, tenant_id: Uuid, id: Uuid, budget: Budget) -> Result<Budget>;
     /// Delete a budget.
     async fn delete_budget(&self, tenant_id: Uuid, id: Uuid) -> Result<()>;
 
@@ -289,17 +269,9 @@ pub trait FinanceService: Send + Sync {
 
     // ── Cost Rollup ─────────────────────────────────────────────────────
     /// Run a cost rollup for a product.
-    async fn run_cost_rollup(
-        &self,
-        tenant_id: Uuid,
-        product_id: Uuid,
-    ) -> Result<CostRollup>;
+    async fn run_cost_rollup(&self, tenant_id: Uuid, product_id: Uuid) -> Result<CostRollup>;
     /// Get the latest cost rollup for a product.
-    async fn get_cost_rollup(
-        &self,
-        tenant_id: Uuid,
-        product_id: Uuid,
-    ) -> Result<CostRollup>;
+    async fn get_cost_rollup(&self, tenant_id: Uuid, product_id: Uuid) -> Result<CostRollup>;
 
     // ── AP 3-Way Matching ───────────────────────────────────────────────
     /// Match a purchase order, its goods receipts, and a supplier invoice.
@@ -442,15 +414,22 @@ impl InMemoryFinanceService {
 
     /// Seed a product display name for cost rollups.
     pub async fn seed_product_name(&self, product_id: Uuid, name: impl Into<String>) {
-        self.product_names.write().await.insert(product_id, name.into());
+        self.product_names
+            .write()
+            .await
+            .insert(product_id, name.into());
     }
 
     /// Seed a purchase order for AP 3-way matching.
     pub async fn seed_purchase_order(&self, tenant_id: Uuid, id: Uuid, lines: Vec<(Uuid, f64)>) {
-        self.purchase_orders
-            .write()
-            .await
-            .insert(id, PoLite { id, tenant_id, lines });
+        self.purchase_orders.write().await.insert(
+            id,
+            PoLite {
+                id,
+                tenant_id,
+                lines,
+            },
+        );
     }
 
     /// Seed a goods receipt for AP 3-way matching.
@@ -461,10 +440,15 @@ impl InMemoryFinanceService {
         po_id: Uuid,
         lines: Vec<(Uuid, f64)>,
     ) {
-        self.receipts
-            .write()
-            .await
-            .insert(id, ReceiptLite { id, tenant_id, po_id, lines });
+        self.receipts.write().await.insert(
+            id,
+            ReceiptLite {
+                id,
+                tenant_id,
+                po_id,
+                lines,
+            },
+        );
     }
 
     async fn publish_event(&self, event: impl DomainEvent + 'static) {
@@ -510,11 +494,7 @@ impl Default for InMemoryFinanceService {
 impl FinanceService for InMemoryFinanceService {
     // ── Invoices ────────────────────────────────────────────────────────
 
-    async fn create_invoice(
-        &self,
-        tenant_id: Uuid,
-        mut invoice: Invoice,
-    ) -> Result<Invoice> {
+    async fn create_invoice(&self, tenant_id: Uuid, mut invoice: Invoice) -> Result<Invoice> {
         let mut counter = self.inv_counter.write().await;
         *counter += 1;
         let inv_number = Self::generate_invoice_number(*counter);
@@ -575,10 +555,7 @@ impl FinanceService for InMemoryFinanceService {
         let store = self.invoices.read().await;
         let items: Vec<_> = store
             .values()
-            .filter(|inv| {
-                inv.tenant_id == tenant_id
-                    && status.is_none_or(|s| inv.status == s)
-            })
+            .filter(|inv| inv.tenant_id == tenant_id && status.is_none_or(|s| inv.status == s))
             .cloned()
             .collect();
         Ok(PaginatedResponse::new(items, page, per_page))
@@ -611,9 +588,9 @@ impl FinanceService for InMemoryFinanceService {
 
         // Validate the payment being applied belongs to this invoice.
         let payments = self.payments.read().await;
-        let payment = payments.get(&payment_id).ok_or_else(|| {
-            SenseiError::NotFound(format!("Payment {payment_id} not found"))
-        })?;
+        let payment = payments
+            .get(&payment_id)
+            .ok_or_else(|| SenseiError::NotFound(format!("Payment {payment_id} not found")))?;
         if payment.invoice_id != id {
             return Err(SenseiError::Validation(format!(
                 "Payment {payment_id} does not belong to invoice {id}"
@@ -644,17 +621,17 @@ impl FinanceService for InMemoryFinanceService {
 
     // ── Payments ────────────────────────────────────────────────────────
 
-    async fn record_payment(
-        &self,
-        tenant_id: Uuid,
-        mut payment: Payment,
-    ) -> Result<Payment> {
+    async fn record_payment(&self, tenant_id: Uuid, mut payment: Payment) -> Result<Payment> {
         let mut counter = self.pay_counter.write().await;
         *counter += 1;
         let pay_number = Self::generate_payment_number(*counter);
         drop(counter);
 
-        payment.id = Uuid::new_v4();
+        // Preserve a caller-supplied id (callers reference it when marking
+        // the invoice paid); only generate one when the caller left it nil.
+        if payment.id.is_nil() {
+            payment.id = Uuid::new_v4();
+        }
         payment.tenant_id = tenant_id;
         payment.payment_number = pay_number;
         payment.received_at = Utc::now();
@@ -684,8 +661,7 @@ impl FinanceService for InMemoryFinanceService {
         let items: Vec<_> = store
             .values()
             .filter(|p| {
-                p.tenant_id == tenant_id
-                    && invoice_id.is_none_or(|inv_id| p.invoice_id == inv_id)
+                p.tenant_id == tenant_id && invoice_id.is_none_or(|inv_id| p.invoice_id == inv_id)
             })
             .cloned()
             .collect();
@@ -694,11 +670,7 @@ impl FinanceService for InMemoryFinanceService {
 
     // ── Budget ──────────────────────────────────────────────────────────
 
-    async fn create_budget(
-        &self,
-        tenant_id: Uuid,
-        mut budget: Budget,
-    ) -> Result<Budget> {
+    async fn create_budget(&self, tenant_id: Uuid, mut budget: Budget) -> Result<Budget> {
         budget.id = Uuid::new_v4();
         budget.tenant_id = tenant_id;
         budget.spent_amount = 0.0;
@@ -738,12 +710,7 @@ impl FinanceService for InMemoryFinanceService {
         Ok(PaginatedResponse::new(items, page, per_page))
     }
 
-    async fn allocate_budget(
-        &self,
-        _tenant_id: Uuid,
-        id: Uuid,
-        amount: f64,
-    ) -> Result<Budget> {
+    async fn allocate_budget(&self, _tenant_id: Uuid, id: Uuid, amount: f64) -> Result<Budget> {
         let mut store = self.budgets.write().await;
         let budget = store
             .get_mut(&id)
@@ -802,9 +769,7 @@ impl FinanceService for InMemoryFinanceService {
             .values()
             .filter(|e| {
                 e.tenant_id == tenant_id
-                    && account.is_none_or(|a| {
-                        e.debit_account == a || e.credit_account == a
-                    })
+                    && account.is_none_or(|a| e.debit_account == a || e.credit_account == a)
             })
             .cloned()
             .collect();
@@ -813,17 +778,16 @@ impl FinanceService for InMemoryFinanceService {
 
     // ── Cost Rollup ─────────────────────────────────────────────────────
 
-    async fn run_cost_rollup(
-        &self,
-        tenant_id: Uuid,
-        product_id: Uuid,
-    ) -> Result<CostRollup> {
+    async fn run_cost_rollup(&self, tenant_id: Uuid, product_id: Uuid) -> Result<CostRollup> {
         // Real rollup from seeded BOM/routing data, summed in integer cents.
         let bom = self.bom.read().await;
         let costs = self.standard_costs.read().await;
         let mut material_cents: i64 = 0;
         for entry in bom.get(&product_id).into_iter().flatten() {
-            let unit_cost = costs.get(&entry.component_product_id).copied().unwrap_or(0.0);
+            let unit_cost = costs
+                .get(&entry.component_product_id)
+                .copied()
+                .unwrap_or(0.0);
             let line = sensei_core::domain::value_objects::Money::from_decimal(
                 entry.quantity * unit_cost,
                 sensei_core::domain::value_objects::CurrencyCode::USD,
@@ -847,7 +811,8 @@ impl FinanceService for InMemoryFinanceService {
         drop(routings);
 
         let overhead_pct = overhead_percentage();
-        let overhead_cents = ((material_cents + labor_cents) as f64 * overhead_pct / 100.0).round() as i64;
+        let overhead_cents =
+            ((material_cents + labor_cents) as f64 * overhead_pct / 100.0).round() as i64;
 
         let material_cost = material_cents as f64 / 100.0;
         let labor_cost = labor_cents as f64 / 100.0;
@@ -889,20 +854,11 @@ impl FinanceService for InMemoryFinanceService {
         Ok(rollup)
     }
 
-    async fn get_cost_rollup(
-        &self,
-        _tenant_id: Uuid,
-        product_id: Uuid,
-    ) -> Result<CostRollup> {
+    async fn get_cost_rollup(&self, _tenant_id: Uuid, product_id: Uuid) -> Result<CostRollup> {
         let store = self.cost_rollups.read().await;
-        store
-            .get(&product_id)
-            .cloned()
-            .ok_or_else(|| {
-                SenseiError::NotFound(format!(
-                    "Cost rollup for product {product_id} not found"
-                ))
-            })
+        store.get(&product_id).cloned().ok_or_else(|| {
+            SenseiError::NotFound(format!("Cost rollup for product {product_id} not found"))
+        })
     }
 
     // ── AP 3-Way Matching ───────────────────────────────────────────────
@@ -919,7 +875,9 @@ impl FinanceService for InMemoryFinanceService {
             .get(&po_id)
             .ok_or_else(|| SenseiError::NotFound(format!("Purchase order {po_id} not found")))?;
         if po.tenant_id != tenant_id {
-            return Err(SenseiError::NotFound(format!("Purchase order {po_id} not found")));
+            return Err(SenseiError::NotFound(format!(
+                "Purchase order {po_id} not found"
+            )));
         }
 
         let receipts = self.receipts.read().await;
@@ -949,7 +907,9 @@ impl FinanceService for InMemoryFinanceService {
             .get(&invoice_id)
             .ok_or_else(|| SenseiError::NotFound(format!("Invoice {invoice_id} not found")))?;
         if invoice.tenant_id != tenant_id {
-            return Err(SenseiError::NotFound(format!("Invoice {invoice_id} not found")));
+            return Err(SenseiError::NotFound(format!(
+                "Invoice {invoice_id} not found"
+            )));
         }
 
         // Invoiced quantity per product.
@@ -1012,7 +972,11 @@ impl FinanceService for InMemoryFinanceService {
             });
         }
 
-        let verdict = if lines.is_empty() || lines.iter().any(|l| l.status != ThreeWayLineStatus::Matched) {
+        let verdict = if lines.is_empty()
+            || lines
+                .iter()
+                .any(|l| l.status != ThreeWayLineStatus::Matched)
+        {
             ThreeWayVerdict::Mismatch
         } else {
             ThreeWayVerdict::Matched
@@ -1053,9 +1017,9 @@ impl FinanceService for InMemoryFinanceService {
 
     async fn delete_invoice(&self, _tenant_id: Uuid, id: Uuid) -> Result<()> {
         let mut store = self.invoices.write().await;
-        store.remove(&id).ok_or_else(|| {
-            SenseiError::NotFound(format!("Invoice {id} not found"))
-        })?;
+        store
+            .remove(&id)
+            .ok_or_else(|| SenseiError::NotFound(format!("Invoice {id} not found")))?;
         Ok(())
     }
 
@@ -1080,20 +1044,15 @@ impl FinanceService for InMemoryFinanceService {
 
     async fn delete_payment(&self, _tenant_id: Uuid, id: Uuid) -> Result<()> {
         let mut store = self.payments.write().await;
-        store.remove(&id).ok_or_else(|| {
-            SenseiError::NotFound(format!("Payment {id} not found"))
-        })?;
+        store
+            .remove(&id)
+            .ok_or_else(|| SenseiError::NotFound(format!("Payment {id} not found")))?;
         Ok(())
     }
 
     // ── Budget Mutations ───────────────────────────────────────────────
 
-    async fn update_budget(
-        &self,
-        _tenant_id: Uuid,
-        id: Uuid,
-        budget: Budget,
-    ) -> Result<Budget> {
+    async fn update_budget(&self, _tenant_id: Uuid, id: Uuid, budget: Budget) -> Result<Budget> {
         let mut store = self.budgets.write().await;
         let existing = store
             .get_mut(&id)
@@ -1109,9 +1068,9 @@ impl FinanceService for InMemoryFinanceService {
 
     async fn delete_budget(&self, _tenant_id: Uuid, id: Uuid) -> Result<()> {
         let mut store = self.budgets.write().await;
-        store.remove(&id).ok_or_else(|| {
-            SenseiError::NotFound(format!("Budget {id} not found"))
-        })?;
+        store
+            .remove(&id)
+            .ok_or_else(|| SenseiError::NotFound(format!("Budget {id} not found")))?;
         Ok(())
     }
 
@@ -1137,9 +1096,9 @@ impl FinanceService for InMemoryFinanceService {
 
     async fn delete_journal_entry(&self, _tenant_id: Uuid, id: Uuid) -> Result<()> {
         let mut store = self.journal_entries.write().await;
-        store.remove(&id).ok_or_else(|| {
-            SenseiError::NotFound(format!("JournalEntry {id} not found"))
-        })?;
+        store
+            .remove(&id)
+            .ok_or_else(|| SenseiError::NotFound(format!("JournalEntry {id} not found")))?;
         Ok(())
     }
 }
@@ -1221,7 +1180,14 @@ mod tests {
             customer_id: Uuid::new_v4(),
             customer_name: "Test".to_string(),
             status: String::new(),
-            line_items: vec![],
+            // Totals are derived from line items by create_invoice.
+            line_items: vec![InvoiceLineItem {
+                description: "Widgets".to_string(),
+                quantity: 2,
+                unit_price: 50.0,
+                total: 100.0,
+                product_id: None,
+            }],
             subtotal: 100.0,
             tax_percentage: 0.0,
             tax_amount: 0.0,
@@ -1514,12 +1480,20 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(result.verdict, ThreeWayVerdict::Matched);
-        assert!(result.lines.iter().all(|l| l.status == ThreeWayLineStatus::Matched));
+        assert!(result
+            .lines
+            .iter()
+            .all(|l| l.status == ThreeWayLineStatus::Matched));
 
         // Short delivery on p2 → UnderDelivered + overall Mismatch.
         let short_receipt = Uuid::new_v4();
         service
-            .seed_goods_receipt(tenant_id, short_receipt, po_id, vec![(p1, 100.0), (p2, 40.0)])
+            .seed_goods_receipt(
+                tenant_id,
+                short_receipt,
+                po_id,
+                vec![(p1, 100.0), (p2, 40.0)],
+            )
             .await;
         let result = service
             .match_three_way(tenant_id, po_id, vec![short_receipt], invoice_id)

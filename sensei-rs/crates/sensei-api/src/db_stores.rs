@@ -156,9 +156,7 @@ impl<T> EntityStore<T> {
     }
 }
 
-impl<T: Serialize + DeserializeOwned + Clone + PartialEq + Send + Sync + 'static>
-    EntityStore<T>
-{
+impl<T: Serialize + DeserializeOwned + Clone + PartialEq + Send + Sync + 'static> EntityStore<T> {
     /// Acquire a read guard.
     ///
     /// On first access when a pool is configured, data is loaded from the
@@ -292,11 +290,7 @@ impl<T: Serialize + DeserializeOwned + Clone + PartialEq + Send + Sync + 'static
     /// Returns [`StoreError::Database`] if the SQL operation fails after retry.
     /// Returns [`StoreError::Serialization`] if the entity cannot be serialized.
     pub async fn persist(&mut self) -> Result<(), StoreError> {
-        let pool = self
-            .inner
-            .pool
-            .clone()
-            .ok_or(StoreError::NotConnected)?;
+        let pool = self.inner.pool.clone().ok_or(StoreError::NotConnected)?;
 
         self.compute_diff();
 
@@ -527,21 +521,21 @@ async fn persist_changes_inner<T: Serialize>(
 ) -> Result<(), sqlx::Error> {
     let mut tx = pool.begin().await?;
 
-        if !data.is_empty() {
-            let mut ids = Vec::with_capacity(data.len());
-            let mut values = Vec::with_capacity(data.len());
-            for (id, entity) in data {
-                let json = serde_json::to_value(entity).map_err(|e| {
-                    tracing::error!(
-                        entity_type = %entity_type,
-                        id = %id,
-                        "Failed to serialize entity: {e}"
-                    );
-                    sqlx::Error::Protocol(format!("Serialization error: {e}"))
-                })?;
-                ids.push(*id);
-                values.push(sqlx::types::Json(json));
-            }
+    if !data.is_empty() {
+        let mut ids = Vec::with_capacity(data.len());
+        let mut values = Vec::with_capacity(data.len());
+        for (id, entity) in data {
+            let json = serde_json::to_value(entity).map_err(|e| {
+                tracing::error!(
+                    entity_type = %entity_type,
+                    id = %id,
+                    "Failed to serialize entity: {e}"
+                );
+                sqlx::Error::Protocol(format!("Serialization error: {e}"))
+            })?;
+            ids.push(*id);
+            values.push(sqlx::types::Json(json));
+        }
 
         sqlx::query(
             r#"INSERT INTO entity_store (entity_type, id, data)
@@ -573,9 +567,7 @@ async fn persist_changes_inner<T: Serialize>(
 // DB-level pagination & filtering (bypasses in-memory cache)
 // ═══════════════════════════════════════════════════════════════════════════
 
-impl<T: Serialize + DeserializeOwned + Clone + PartialEq + Send + Sync + 'static>
-    EntityStore<T>
-{
+impl<T: Serialize + DeserializeOwned + Clone + PartialEq + Send + Sync + 'static> EntityStore<T> {
     /// Fetch a page of entities directly from the database, bypassing the
     /// in-memory cache.
     ///
@@ -602,10 +594,8 @@ impl<T: Serialize + DeserializeOwned + Clone + PartialEq + Send + Sync + 'static
                 drop(inner);
                 let guard = self.read().await;
                 let total = guard.len() as u64;
-                let mut items: Vec<(Uuid, T)> = guard
-                    .iter()
-                    .map(|(k, v)| (*k, v.clone()))
-                    .collect();
+                let mut items: Vec<(Uuid, T)> =
+                    guard.iter().map(|(k, v)| (*k, v.clone())).collect();
                 items.sort_by(|(id_a, a), (id_b, b)| {
                     let ts_a = created_at_timestamp(a);
                     let ts_b = created_at_timestamp(b);
@@ -625,12 +615,11 @@ impl<T: Serialize + DeserializeOwned + Clone + PartialEq + Send + Sync + 'static
         let limit = per_page as i64;
 
         // Get total count
-        let (count_row,): (i64,) = sqlx::query_as(
-            "SELECT COUNT(*)::bigint FROM entity_store WHERE entity_type = $1",
-        )
-        .bind(entity_type)
-        .fetch_one(pool)
-        .await?;
+        let (count_row,): (i64,) =
+            sqlx::query_as("SELECT COUNT(*)::bigint FROM entity_store WHERE entity_type = $1")
+                .bind(entity_type)
+                .fetch_one(pool)
+                .await?;
 
         // Get page of data, newest first.
         let rows = sqlx::query(
@@ -779,10 +768,17 @@ mod tests {
             guard.insert(id_d, entity("d"));
 
             guard.compute_diff();
-            assert_eq!(guard.dirty.len(), 2, "only b (updated) and d (inserted) are dirty");
+            assert_eq!(
+                guard.dirty.len(),
+                2,
+                "only b (updated) and d (inserted) are dirty"
+            );
             assert!(guard.dirty.contains(&id_b));
             assert!(guard.dirty.contains(&id_d));
-            assert!(!guard.dirty.contains(&id_a), "untouched key must not be persisted");
+            assert!(
+                !guard.dirty.contains(&id_a),
+                "untouched key must not be persisted"
+            );
             assert_eq!(guard.removed.len(), 1, "only c was removed");
             assert!(guard.removed.contains(&id_c));
 
@@ -820,9 +816,7 @@ mod tests {
 
         let make = |offset_secs: i64, name: &str| TestEntity {
             name: name.to_string(),
-            created_at: Some(
-                (now - chrono::Duration::seconds(offset_secs)).to_rfc3339(),
-            ),
+            created_at: Some((now - chrono::Duration::seconds(offset_secs)).to_rfc3339()),
         };
 
         let id_old = Uuid::new_v4();

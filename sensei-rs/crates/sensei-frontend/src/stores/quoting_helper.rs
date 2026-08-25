@@ -68,7 +68,10 @@ impl QuotingHelperStore {
         rfq_id: &str,
     ) -> Result<Vec<WorkPacketDto>, ApiError> {
         let packets: Vec<WorkPacketDto> = client
-            .post(&format!("/api/v1/quoting/generate/{}", rfq_id), &serde_json::json!({}))
+            .post(
+                &format!("/api/v1/quoting/generate/{}", rfq_id),
+                &serde_json::json!({}),
+            )
             .await?;
         self.work_packets.set(packets.clone());
         Ok(packets)
@@ -99,7 +102,10 @@ impl QuotingHelperStore {
         quote_id: &str,
     ) -> Result<serde_json::Value, ApiError> {
         client
-            .post(&format!("/api/v1/quoting/calculate/{}", quote_id), &serde_json::json!({}))
+            .post(
+                &format!("/api/v1/quoting/calculate/{}", quote_id),
+                &serde_json::json!({}),
+            )
             .await
     }
 
@@ -138,7 +144,10 @@ impl QuotingHelperStore {
         quote_id: &str,
     ) -> Result<serde_json::Value, ApiError> {
         client
-            .post(&format!("/api/v1/quoting/convert-to-npi/{}", quote_id), &serde_json::json!({}))
+            .post(
+                &format!("/api/v1/quoting/convert-to-npi/{}", quote_id),
+                &serde_json::json!({}),
+            )
             .await
     }
 }

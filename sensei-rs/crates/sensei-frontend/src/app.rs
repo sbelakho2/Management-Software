@@ -17,35 +17,30 @@ use leptos_router::components::*;
 use leptos_router::path;
 
 use crate::components::layout::ProtectedShell;
-use crate::i18n::provide_i18n;
 use crate::hooks::use_responsive::provide_responsive;
+use crate::i18n::provide_i18n;
 use crate::pages::{
     dashboard::DashboardPage,
     finance::{
-        BudgetListPage, CostRollupListPage, FinancePage, InvoiceListPage,
-        JournalEntryListPage, PaymentListPage,
+        BudgetListPage, CostRollupListPage, FinancePage, InvoiceListPage, JournalEntryListPage,
+        PaymentListPage,
     },
     hr::{
-        EmployeeListPage, HrPage, LeaveListPage, ReviewListPage,
-        TimecardListPage, TrainingListPage,
+        EmployeeListPage, HrPage, LeaveListPage, ReviewListPage, TimecardListPage, TrainingListPage,
     },
     login::LoginPage,
-    maintenance::{
-        EquipmentListPage, MaintenancePage, PmScheduleListPage,
-        WorkRequestListPage,
-    },
+    maintenance::{EquipmentListPage, MaintenancePage, PmScheduleListPage, WorkRequestListPage},
     ops::{A3ListPage, AndonListPage, OpsPage, ProjectListPage, RiskListPage},
     production::{
-        BomListPage, MrpPage, ProductionOrderListPage, ProductionPage,
-        WorkOrderListPage,
+        BomListPage, MrpPage, ProductionOrderListPage, ProductionPage, WorkOrderListPage,
     },
     quality::{
-        AuditListPage, CapaListPage, InspectionListPage, NcrListPage,
-        QualityPage, SupplierEvalListPage,
+        AuditListPage, CapaListPage, InspectionListPage, NcrListPage, QualityPage,
+        SupplierEvalListPage,
     },
     supply_chain::{
-        InventoryListPage, PurchaseOrderListPage, QuoteListPage, RfqListPage,
-        SalesOrderListPage, StockMoveListPage, SupplyChainPage,
+        InventoryListPage, PurchaseOrderListPage, QuoteListPage, RfqListPage, SalesOrderListPage,
+        StockMoveListPage, SupplyChainPage,
     },
 };
 use crate::state::AppState;

@@ -2,13 +2,16 @@
 //!
 //! Provides CRUD endpoints for learning/training modules.
 
-use axum::{Json, extract::{Path, Query, State}};
+use axum::{
+    extract::{Path, Query, State},
+    Json,
+};
 use chrono::Utc;
-use serde::Deserialize;
 use sensei_auth::middleware::AuthenticatedUser;
 use sensei_core::error::{Result, SenseiError};
 use sensei_core::pagination::PaginatedResponse;
 use sensei_core::types::new_id;
+use serde::Deserialize;
 use uuid::Uuid;
 
 use crate::state::AppState;
@@ -50,12 +53,17 @@ pub async fn list_modules(
     let mut modules: Vec<LearningModule> = store
         .values()
         .filter(|m| m.tenant_id == user.tenant_id)
-        .filter(|m| params.category.as_ref().map_or(true, |c| m.category == *c))
-        .filter(|m| params.difficulty.as_ref().map_or(true, |d| m.difficulty == *d))
-        .filter(|m| params.is_published.map_or(true, |p| m.is_published == p))
+        .filter(|m| params.category.as_ref().is_none_or(|c| m.category == *c))
+        .filter(|m| {
+            params
+                .difficulty
+                .as_ref()
+                .is_none_or(|d| m.difficulty == *d)
+        })
+        .filter(|m| params.is_published.is_none_or(|p| m.is_published == p))
         .cloned()
         .collect();
-    modules.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
+    modules.sort_by_key(|a| std::cmp::Reverse(a.updated_at));
     let result = PaginatedResponse::new(modules, params.page, params.per_page);
     Ok(Json(result))
 }
@@ -136,7 +144,9 @@ pub async fn delete_module(
         .filter(|m| m.tenant_id == user.tenant_id)
         .is_some();
     if !exists {
-        return Err(SenseiError::NotFound(format!("Learning module {id} not found")));
+        return Err(SenseiError::NotFound(format!(
+            "Learning module {id} not found"
+        )));
     }
     store.remove(&id);
     Ok(Json(()))

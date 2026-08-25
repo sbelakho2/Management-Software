@@ -67,13 +67,12 @@ pub fn ProgressBar(
                 aria-valuemin="0"
                 aria-valuemax="100"
                 aria-label=label.clone().unwrap_or_default()
-                style=format!(
-                    "width: 100%; height: 8px; \
+                style="width: 100%; height: 8px; \
                      background-color: var(--rams-panel); \
                      border: 1px solid var(--rams-line); \
                      border-radius: var(--rams-radius-sm); \
                      overflow: hidden;"
-                )
+                    .to_string()
             >
                 <div
                     style=move || format!(

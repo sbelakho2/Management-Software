@@ -7,16 +7,13 @@
 //! Registration and encoding failures are logged and skipped; they never
 //! panic the server.
 
-use axum::http::{StatusCode, header};
+use axum::http::{header, StatusCode};
 use axum::response::{IntoResponse, Response};
 use once_cell::sync::Lazy;
-use prometheus::{
-    CounterVec, Gauge, HistogramVec, Opts,
-    Registry, TextEncoder,
-};
+use prometheus::{CounterVec, Gauge, HistogramVec, Opts, Registry, TextEncoder};
 
 /// Global Prometheus registry.
-pub static METRICS_REGISTRY: Lazy<Registry> = Lazy::new(|| Registry::new());
+pub static METRICS_REGISTRY: Lazy<Registry> = Lazy::new(Registry::new);
 
 /// Total HTTP requests by method, path, and status code.
 pub static HTTP_REQUESTS_TOTAL: Lazy<CounterVec> = Lazy::new(|| {

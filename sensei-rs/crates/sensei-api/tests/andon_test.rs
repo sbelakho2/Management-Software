@@ -19,7 +19,7 @@ async fn test_raise_andon() {
     assert_eq!(resp.status(), StatusCode::OK);
 
     let json: Value = app.json_body(&mut resp).await;
-    assert!(json["id"].as_str().unwrap_or("").len() > 0);
+    assert!(!json["id"].as_str().unwrap_or("").is_empty());
 }
 
 #[tokio::test]
@@ -38,7 +38,7 @@ async fn test_list_andons() {
     assert_eq!(resp.status(), StatusCode::OK);
 
     let json: Value = app.json_body(&mut resp).await;
-    assert!(json["data"].as_array().unwrap_or(&vec![]).len() >= 1);
+    assert!(!json["data"].as_array().unwrap_or(&vec![]).is_empty());
 }
 
 #[tokio::test]
@@ -67,10 +67,7 @@ async fn test_get_andon_not_found() {
     let app = common::TestApp::new().await;
     let token = app.login_as_admin().await;
 
-    let req = app.get_authenticated(
-        &format!("/api/v1/andon/{}", uuid::Uuid::new_v4()),
-        &token,
-    );
+    let req = app.get_authenticated(&format!("/api/v1/andon/{}", uuid::Uuid::new_v4()), &token);
     let resp = app.send_request(req).await;
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 }

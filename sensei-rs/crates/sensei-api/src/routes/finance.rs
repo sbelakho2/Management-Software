@@ -3,12 +3,15 @@
 //! Provides endpoints for invoice management, payment recording, budgeting,
 //! journal entries, and cost rollups.
 
-use axum::{Json, extract::{Path, Query, State}};
-use serde::Deserialize;
+use axum::{
+    extract::{Path, Query, State},
+    Json,
+};
 use sensei_auth::middleware::AuthenticatedUser;
 use sensei_core::error::Result;
 use sensei_core::pagination::PaginatedResponse;
 use sensei_services::finance::{Budget, CostRollup, Invoice, JournalEntry, Payment};
+use serde::Deserialize;
 use uuid::Uuid;
 
 use crate::state::AppState;
@@ -88,7 +91,12 @@ pub async fn list_invoices(
     let tenant_id = user.tenant_id;
     let invoices = state
         .finance_service
-        .list_invoices(tenant_id, params.status.as_deref(), params.page, params.per_page)
+        .list_invoices(
+            tenant_id,
+            params.status.as_deref(),
+            params.page,
+            params.per_page,
+        )
         .await?;
     Ok(Json(invoices))
 }
@@ -100,10 +108,7 @@ pub async fn create_invoice(
     Json(req): Json<Invoice>,
 ) -> Result<Json<Invoice>> {
     let tenant_id = user.tenant_id;
-    let invoice = state
-        .finance_service
-        .create_invoice(tenant_id, req)
-        .await?;
+    let invoice = state.finance_service.create_invoice(tenant_id, req).await?;
     Ok(Json(invoice))
 }
 
@@ -114,10 +119,7 @@ pub async fn get_invoice(
     Path(id): Path<Uuid>,
 ) -> Result<Json<Invoice>> {
     let tenant_id = user.tenant_id;
-    let invoice = state
-        .finance_service
-        .get_invoice(tenant_id, id)
-        .await?;
+    let invoice = state.finance_service.get_invoice(tenant_id, id).await?;
     Ok(Json(invoice))
 }
 
@@ -158,10 +160,7 @@ pub async fn delete_invoice(
     Path(id): Path<Uuid>,
 ) -> Result<Json<()>> {
     let tenant_id = user.tenant_id;
-    state
-        .finance_service
-        .delete_invoice(tenant_id, id)
-        .await?;
+    state.finance_service.delete_invoice(tenant_id, id).await?;
     Ok(Json(()))
 }
 
@@ -174,10 +173,7 @@ pub async fn record_payment(
     Json(req): Json<Payment>,
 ) -> Result<Json<Payment>> {
     let tenant_id = user.tenant_id;
-    let payment = state
-        .finance_service
-        .record_payment(tenant_id, req)
-        .await?;
+    let payment = state.finance_service.record_payment(tenant_id, req).await?;
     Ok(Json(payment))
 }
 
@@ -217,10 +213,7 @@ pub async fn delete_payment(
     Path(id): Path<Uuid>,
 ) -> Result<Json<()>> {
     let tenant_id = user.tenant_id;
-    state
-        .finance_service
-        .delete_payment(tenant_id, id)
-        .await?;
+    state.finance_service.delete_payment(tenant_id, id).await?;
     Ok(Json(()))
 }
 
@@ -235,7 +228,13 @@ pub async fn list_budgets(
     let tenant_id = user.tenant_id;
     let budgets = state
         .finance_service
-        .list_budgets(tenant_id, params.fiscal_year, params.department.as_deref(), params.page, params.per_page)
+        .list_budgets(
+            tenant_id,
+            params.fiscal_year,
+            params.department.as_deref(),
+            params.page,
+            params.per_page,
+        )
         .await?;
     Ok(Json(budgets))
 }
@@ -247,10 +246,7 @@ pub async fn create_budget(
     Json(req): Json<Budget>,
 ) -> Result<Json<Budget>> {
     let tenant_id = user.tenant_id;
-    let budget = state
-        .finance_service
-        .create_budget(tenant_id, req)
-        .await?;
+    let budget = state.finance_service.create_budget(tenant_id, req).await?;
     Ok(Json(budget))
 }
 
@@ -261,10 +257,7 @@ pub async fn get_budget(
     Path(id): Path<Uuid>,
 ) -> Result<Json<Budget>> {
     let tenant_id = user.tenant_id;
-    let budget = state
-        .finance_service
-        .get_budget(tenant_id, id)
-        .await?;
+    let budget = state.finance_service.get_budget(tenant_id, id).await?;
     Ok(Json(budget))
 }
 
@@ -305,10 +298,7 @@ pub async fn delete_budget(
     Path(id): Path<Uuid>,
 ) -> Result<Json<()>> {
     let tenant_id = user.tenant_id;
-    state
-        .finance_service
-        .delete_budget(tenant_id, id)
-        .await?;
+    state.finance_service.delete_budget(tenant_id, id).await?;
     Ok(Json(()))
 }
 
@@ -337,7 +327,12 @@ pub async fn list_journal_entries(
     let tenant_id = user.tenant_id;
     let entries = state
         .finance_service
-        .list_journal_entries(tenant_id, params.account.as_deref(), params.page, params.per_page)
+        .list_journal_entries(
+            tenant_id,
+            params.account.as_deref(),
+            params.page,
+            params.per_page,
+        )
         .await?;
     Ok(Json(entries))
 }

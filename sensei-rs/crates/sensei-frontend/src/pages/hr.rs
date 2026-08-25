@@ -30,13 +30,48 @@ pub fn EmployeeListPage() -> impl IntoView {
     });
 
     let columns = vec![
-        TableColumn { label: "CODE", key: "employee_code", sortable: true, width: None },
-        TableColumn { label: "NAME", key: "name", sortable: true, width: None },
-        TableColumn { label: "EMAIL", key: "email", sortable: true, width: None },
-        TableColumn { label: "DEPARTMENT", key: "department", sortable: true, width: None },
-        TableColumn { label: "POSITION", key: "position", sortable: true, width: None },
-        TableColumn { label: "STATUS", key: "status", sortable: true, width: Some("90px") },
-        TableColumn { label: "HIRE DATE", key: "hire_date", sortable: true, width: None },
+        TableColumn {
+            label: "CODE",
+            key: "employee_code",
+            sortable: true,
+            width: None,
+        },
+        TableColumn {
+            label: "NAME",
+            key: "name",
+            sortable: true,
+            width: None,
+        },
+        TableColumn {
+            label: "EMAIL",
+            key: "email",
+            sortable: true,
+            width: None,
+        },
+        TableColumn {
+            label: "DEPARTMENT",
+            key: "department",
+            sortable: true,
+            width: None,
+        },
+        TableColumn {
+            label: "POSITION",
+            key: "position",
+            sortable: true,
+            width: None,
+        },
+        TableColumn {
+            label: "STATUS",
+            key: "status",
+            sortable: true,
+            width: Some("90px"),
+        },
+        TableColumn {
+            label: "HIRE DATE",
+            key: "hire_date",
+            sortable: true,
+            width: None,
+        },
     ];
 
     view! {
@@ -72,11 +107,36 @@ pub fn TrainingListPage() -> impl IntoView {
     });
 
     let columns = vec![
-        TableColumn { label: "EMPLOYEE", key: "employee_id", sortable: true, width: None },
-        TableColumn { label: "COURSE", key: "course_name", sortable: true, width: None },
-        TableColumn { label: "COMPLETED", key: "completed_at", sortable: true, width: None },
-        TableColumn { label: "EXPIRES", key: "expires_at", sortable: true, width: None },
-        TableColumn { label: "SCORE", key: "score", sortable: true, width: Some("60px") },
+        TableColumn {
+            label: "EMPLOYEE",
+            key: "employee_id",
+            sortable: true,
+            width: None,
+        },
+        TableColumn {
+            label: "COURSE",
+            key: "course_name",
+            sortable: true,
+            width: None,
+        },
+        TableColumn {
+            label: "COMPLETED",
+            key: "completed_at",
+            sortable: true,
+            width: None,
+        },
+        TableColumn {
+            label: "EXPIRES",
+            key: "expires_at",
+            sortable: true,
+            width: None,
+        },
+        TableColumn {
+            label: "SCORE",
+            key: "score",
+            sortable: true,
+            width: Some("60px"),
+        },
     ];
 
     view! {
@@ -110,12 +170,42 @@ pub fn LeaveListPage() -> impl IntoView {
     });
 
     let columns = vec![
-        TableColumn { label: "EMPLOYEE", key: "employee_id", sortable: true, width: None },
-        TableColumn { label: "TYPE", key: "leave_type", sortable: true, width: None },
-        TableColumn { label: "START", key: "start_date", sortable: true, width: None },
-        TableColumn { label: "END", key: "end_date", sortable: true, width: None },
-        TableColumn { label: "STATUS", key: "status", sortable: true, width: Some("90px") },
-        TableColumn { label: "APPROVED BY", key: "approved_by", sortable: true, width: None },
+        TableColumn {
+            label: "EMPLOYEE",
+            key: "employee_id",
+            sortable: true,
+            width: None,
+        },
+        TableColumn {
+            label: "TYPE",
+            key: "leave_type",
+            sortable: true,
+            width: None,
+        },
+        TableColumn {
+            label: "START",
+            key: "start_date",
+            sortable: true,
+            width: None,
+        },
+        TableColumn {
+            label: "END",
+            key: "end_date",
+            sortable: true,
+            width: None,
+        },
+        TableColumn {
+            label: "STATUS",
+            key: "status",
+            sortable: true,
+            width: Some("90px"),
+        },
+        TableColumn {
+            label: "APPROVED BY",
+            key: "approved_by",
+            sortable: true,
+            width: None,
+        },
     ];
 
     view! {
@@ -150,12 +240,42 @@ pub fn ReviewListPage() -> impl IntoView {
     });
 
     let columns = vec![
-        TableColumn { label: "EMPLOYEE", key: "employee_id", sortable: true, width: None },
-        TableColumn { label: "REVIEWER", key: "reviewer_id", sortable: true, width: None },
-        TableColumn { label: "RATING", key: "rating", sortable: true, width: Some("60px") },
-        TableColumn { label: "COMMENTS", key: "comments", sortable: true, width: None },
-        TableColumn { label: "STATUS", key: "status", sortable: true, width: Some("90px") },
-        TableColumn { label: "REVIEW DATE", key: "review_date", sortable: true, width: None },
+        TableColumn {
+            label: "EMPLOYEE",
+            key: "employee_id",
+            sortable: true,
+            width: None,
+        },
+        TableColumn {
+            label: "REVIEWER",
+            key: "reviewer_id",
+            sortable: true,
+            width: None,
+        },
+        TableColumn {
+            label: "RATING",
+            key: "rating",
+            sortable: true,
+            width: Some("60px"),
+        },
+        TableColumn {
+            label: "COMMENTS",
+            key: "comments",
+            sortable: true,
+            width: None,
+        },
+        TableColumn {
+            label: "STATUS",
+            key: "status",
+            sortable: true,
+            width: Some("90px"),
+        },
+        TableColumn {
+            label: "REVIEW DATE",
+            key: "review_date",
+            sortable: true,
+            width: None,
+        },
     ];
 
     view! {
@@ -190,10 +310,30 @@ pub fn TimecardListPage() -> impl IntoView {
     });
 
     let columns = vec![
-        TableColumn { label: "EMPLOYEE", key: "employee_id", sortable: true, width: None },
-        TableColumn { label: "CLOCK IN", key: "clock_in", sortable: true, width: None },
-        TableColumn { label: "CLOCK OUT", key: "clock_out", sortable: true, width: None },
-        TableColumn { label: "TOTAL HOURS", key: "total_hours", sortable: true, width: Some("90px") },
+        TableColumn {
+            label: "EMPLOYEE",
+            key: "employee_id",
+            sortable: true,
+            width: None,
+        },
+        TableColumn {
+            label: "CLOCK IN",
+            key: "clock_in",
+            sortable: true,
+            width: None,
+        },
+        TableColumn {
+            label: "CLOCK OUT",
+            key: "clock_out",
+            sortable: true,
+            width: None,
+        },
+        TableColumn {
+            label: "TOTAL HOURS",
+            key: "total_hours",
+            sortable: true,
+            width: Some("90px"),
+        },
     ];
 
     view! {

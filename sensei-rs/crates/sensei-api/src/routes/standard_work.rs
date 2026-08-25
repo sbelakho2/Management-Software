@@ -3,13 +3,16 @@
 //! Provides endpoints for managing standard work documents, including
 //! CRUD, versioning, and version history.
 
-use axum::{Json, extract::{Path, Query, State}};
+use axum::{
+    extract::{Path, Query, State},
+    Json,
+};
 use chrono::Utc;
-use serde::Deserialize;
 use sensei_auth::middleware::AuthenticatedUser;
 use sensei_core::error::{Result, SenseiError};
 use sensei_core::pagination::PaginatedResponse;
 use sensei_core::types::new_id;
+use serde::Deserialize;
 use uuid::Uuid;
 
 use crate::state::AppState;
@@ -112,7 +115,7 @@ pub async fn list_standard_work(
         })
         .cloned()
         .collect();
-    docs.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
+    docs.sort_by_key(|a| std::cmp::Reverse(a.updated_at));
     let result = PaginatedResponse::new(docs, params.page, params.per_page);
     Ok(Json(result))
 }
@@ -301,7 +304,9 @@ pub async fn delete_standard_work(
         .filter(|d| d.tenant_id == tenant_id)
         .is_some();
     if !exists {
-        return Err(SenseiError::NotFound(format!("Standard work {sw_id} not found")));
+        return Err(SenseiError::NotFound(format!(
+            "Standard work {sw_id} not found"
+        )));
     }
     store.remove(&sw_id);
     Ok(Json(()))
@@ -322,7 +327,7 @@ pub async fn list_versions(
         .filter(|v| v.document_id == sw_id && v.tenant_id == tenant_id)
         .cloned()
         .collect();
-    versions.sort_by(|a, b| b.version_number.cmp(&a.version_number));
+    versions.sort_by_key(|a| std::cmp::Reverse(a.version_number));
     Ok(Json(versions))
 }
 
@@ -412,18 +417,25 @@ mod tests {
     async fn test_state() -> (AppState, TenantId, Uuid) {
         let hash = hash_password("Test@1234").unwrap();
         let tenant_id = TenantId::new_v4();
-        let users_service = InMemoryUsersService::with_admin(
-            "admin@test.com", "Admin User", &hash, tenant_id,
-        );
+        let users_service =
+            InMemoryUsersService::with_admin("admin@test.com", "Admin User", &hash, tenant_id);
         let users_service = Arc::new(users_service) as Arc<dyn UsersService>;
         let config = AppConfig::from_env().unwrap();
         let state = AppState::new(config, users_service);
-        let admin = state.users_service.find_by_email("admin@test.com").await.unwrap();
+        let admin = state
+            .users_service
+            .find_by_email("admin@test.com")
+            .await
+            .unwrap();
         (state, tenant_id, admin.id)
     }
 
     fn auth_user(tenant_id: TenantId, user_id: Uuid) -> AuthenticatedUser {
-        AuthenticatedUser { user_id, tenant_id, roles: vec!["admin".to_string()] }
+        AuthenticatedUser {
+            user_id,
+            tenant_id,
+            roles: vec!["admin".to_string()],
+        }
     }
 
     fn doc_payload() -> CreateStandardWorkRequest {
@@ -448,13 +460,9 @@ mod tests {
     async fn test_approve_publishes_and_records_approver() {
         let (state, tid, uid) = test_state().await;
         let user = auth_user(tid, uid);
-        let created = create_standard_work(
-            user.clone(),
-            State(state.clone()),
-            Json(doc_payload()),
-        )
-        .await
-        .unwrap();
+        let created = create_standard_work(user.clone(), State(state.clone()), Json(doc_payload()))
+            .await
+            .unwrap();
         assert_eq!(created.status, SwStatus::Draft);
 
         let approved = approve_standard_work(
@@ -485,13 +493,9 @@ mod tests {
     async fn test_reject_clears_approval() {
         let (state, tid, uid) = test_state().await;
         let user = auth_user(tid, uid);
-        let created = create_standard_work(
-            user.clone(),
-            State(state.clone()),
-            Json(doc_payload()),
-        )
-        .await
-        .unwrap();
+        let created = create_standard_work(user.clone(), State(state.clone()), Json(doc_payload()))
+            .await
+            .unwrap();
 
         let rejected = reject_standard_work(user.clone(), State(state.clone()), Path(created.id))
             .await
@@ -505,20 +509,12 @@ mod tests {
     async fn test_get_version_scoped_by_document() {
         let (state, tid, uid) = test_state().await;
         let user = auth_user(tid, uid);
-        let doc_a = create_standard_work(
-            user.clone(),
-            State(state.clone()),
-            Json(doc_payload()),
-        )
-        .await
-        .unwrap();
-        let doc_b = create_standard_work(
-            user.clone(),
-            State(state.clone()),
-            Json(doc_payload()),
-        )
-        .await
-        .unwrap();
+        let doc_a = create_standard_work(user.clone(), State(state.clone()), Json(doc_payload()))
+            .await
+            .unwrap();
+        let doc_b = create_standard_work(user.clone(), State(state.clone()), Json(doc_payload()))
+            .await
+            .unwrap();
 
         let version = create_version(
             user.clone(),

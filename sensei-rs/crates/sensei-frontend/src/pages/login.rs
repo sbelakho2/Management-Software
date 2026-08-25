@@ -4,11 +4,11 @@
 //! DymoLabel branding, and Primary IndustrialButton.
 
 use crate::api::auth;
-use crate::state::{AppState, AuthTokens};
 use crate::components::button::{ButtonVariant, IndustrialButton};
 use crate::components::dymo_label::DymoLabel;
 use crate::components::input::IndustrialInput;
 use crate::components::module::Module;
+use crate::state::{AppState, AuthTokens};
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 use leptos_router::hooks::use_navigate;
@@ -65,7 +65,9 @@ pub fn LoginPage() -> impl IntoView {
                 Err(e) => {
                     let msg = match &e {
                         crate::api::client::ApiError::Status(401) => "INVALID CREDENTIALS".into(),
-                        crate::api::client::ApiError::Status(429) => "RATE LIMITED - RETRY LATER".into(),
+                        crate::api::client::ApiError::Status(429) => {
+                            "RATE LIMITED - RETRY LATER".into()
+                        }
                         _ => format!("LOGIN FAILED: {}", e),
                     };
                     error_msg.set(Some(msg));

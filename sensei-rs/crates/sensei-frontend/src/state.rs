@@ -58,8 +58,7 @@ impl AppState {
 
         let user = RwSignal::new(None);
         let user_roles = Memo::new(move |_| {
-            user
-                .get()
+            user.get()
                 .map(|u: UserProfile| u.roles.clone())
                 .unwrap_or_default()
         });
@@ -95,7 +94,11 @@ impl AppState {
     /// On success, stores tokens and marks the user as authenticated.
     /// The caller is responsible for fetching the user profile separately
     /// via [`AppState::set_user_profile`] or [`AppState::fetch_profile`].
-    pub async fn login(&self, email: &str, password: &str) -> Result<auth::LoginResponse, ApiError> {
+    pub async fn login(
+        &self,
+        email: &str,
+        password: &str,
+    ) -> Result<auth::LoginResponse, ApiError> {
         let client = self.api_client();
         let resp = auth::login(&client, email, password).await?;
         let tokens = AuthTokens {

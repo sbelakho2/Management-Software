@@ -30,15 +30,60 @@ pub fn AndonListPage() -> impl IntoView {
     });
 
     let columns = vec![
-        TableColumn { label: "ANDON #", key: "andon_number", sortable: true, width: None },
-        TableColumn { label: "TITLE", key: "title", sortable: true, width: None },
-        TableColumn { label: "SEVERITY", key: "severity", sortable: true, width: Some("80px") },
-        TableColumn { label: "STATUS", key: "status", sortable: true, width: Some("90px") },
-        TableColumn { label: "LOCATION", key: "location", sortable: true, width: None },
-        TableColumn { label: "RAISED BY", key: "raised_by", sortable: true, width: None },
-        TableColumn { label: "RESPONSE (S)", key: "response_time_seconds", sortable: true, width: Some("100px") },
-        TableColumn { label: "RESOLUTION (S)", key: "resolution_time_seconds", sortable: true, width: Some("100px") },
-        TableColumn { label: "CREATED", key: "created_at", sortable: true, width: None },
+        TableColumn {
+            label: "ANDON #",
+            key: "andon_number",
+            sortable: true,
+            width: None,
+        },
+        TableColumn {
+            label: "TITLE",
+            key: "title",
+            sortable: true,
+            width: None,
+        },
+        TableColumn {
+            label: "SEVERITY",
+            key: "severity",
+            sortable: true,
+            width: Some("80px"),
+        },
+        TableColumn {
+            label: "STATUS",
+            key: "status",
+            sortable: true,
+            width: Some("90px"),
+        },
+        TableColumn {
+            label: "LOCATION",
+            key: "location",
+            sortable: true,
+            width: None,
+        },
+        TableColumn {
+            label: "RAISED BY",
+            key: "raised_by",
+            sortable: true,
+            width: None,
+        },
+        TableColumn {
+            label: "RESPONSE (S)",
+            key: "response_time_seconds",
+            sortable: true,
+            width: Some("100px"),
+        },
+        TableColumn {
+            label: "RESOLUTION (S)",
+            key: "resolution_time_seconds",
+            sortable: true,
+            width: Some("100px"),
+        },
+        TableColumn {
+            label: "CREATED",
+            key: "created_at",
+            sortable: true,
+            width: None,
+        },
     ];
 
     view! {
@@ -76,13 +121,48 @@ pub fn ProjectListPage() -> impl IntoView {
     });
 
     let columns = vec![
-        TableColumn { label: "PROJECT #", key: "project_number", sortable: true, width: None },
-        TableColumn { label: "NAME", key: "name", sortable: true, width: None },
-        TableColumn { label: "PRIORITY", key: "priority", sortable: true, width: Some("80px") },
-        TableColumn { label: "STATUS", key: "status", sortable: true, width: Some("90px") },
-        TableColumn { label: "OWNER", key: "owner", sortable: true, width: None },
-        TableColumn { label: "START", key: "start_date", sortable: true, width: None },
-        TableColumn { label: "END", key: "end_date", sortable: true, width: None },
+        TableColumn {
+            label: "PROJECT #",
+            key: "project_number",
+            sortable: true,
+            width: None,
+        },
+        TableColumn {
+            label: "NAME",
+            key: "name",
+            sortable: true,
+            width: None,
+        },
+        TableColumn {
+            label: "PRIORITY",
+            key: "priority",
+            sortable: true,
+            width: Some("80px"),
+        },
+        TableColumn {
+            label: "STATUS",
+            key: "status",
+            sortable: true,
+            width: Some("90px"),
+        },
+        TableColumn {
+            label: "OWNER",
+            key: "owner",
+            sortable: true,
+            width: None,
+        },
+        TableColumn {
+            label: "START",
+            key: "start_date",
+            sortable: true,
+            width: None,
+        },
+        TableColumn {
+            label: "END",
+            key: "end_date",
+            sortable: true,
+            width: None,
+        },
     ];
 
     view! {
@@ -118,13 +198,48 @@ pub fn A3ListPage() -> impl IntoView {
     });
 
     let columns = vec![
-        TableColumn { label: "A3 #", key: "a3_number", sortable: true, width: None },
-        TableColumn { label: "TITLE", key: "title", sortable: true, width: None },
-        TableColumn { label: "ROOT CAUSE", key: "root_cause", sortable: true, width: None },
-        TableColumn { label: "STATUS", key: "status", sortable: true, width: Some("90px") },
-        TableColumn { label: "OWNER", key: "owner", sortable: true, width: None },
-        TableColumn { label: "CREATED", key: "created_at", sortable: true, width: None },
-        TableColumn { label: "CLOSED", key: "closed_at", sortable: true, width: None },
+        TableColumn {
+            label: "A3 #",
+            key: "a3_number",
+            sortable: true,
+            width: None,
+        },
+        TableColumn {
+            label: "TITLE",
+            key: "title",
+            sortable: true,
+            width: None,
+        },
+        TableColumn {
+            label: "ROOT CAUSE",
+            key: "root_cause",
+            sortable: true,
+            width: None,
+        },
+        TableColumn {
+            label: "STATUS",
+            key: "status",
+            sortable: true,
+            width: Some("90px"),
+        },
+        TableColumn {
+            label: "OWNER",
+            key: "owner",
+            sortable: true,
+            width: None,
+        },
+        TableColumn {
+            label: "CREATED",
+            key: "created_at",
+            sortable: true,
+            width: None,
+        },
+        TableColumn {
+            label: "CLOSED",
+            key: "closed_at",
+            sortable: true,
+            width: None,
+        },
     ];
 
     view! {
@@ -160,14 +275,54 @@ pub fn RiskListPage() -> impl IntoView {
     });
 
     let columns = vec![
-        TableColumn { label: "RISK #", key: "risk_number", sortable: true, width: None },
-        TableColumn { label: "TITLE", key: "title", sortable: true, width: None },
-        TableColumn { label: "LIKELIHOOD", key: "likelihood", sortable: true, width: None },
-        TableColumn { label: "IMPACT", key: "impact", sortable: true, width: None },
-        TableColumn { label: "SCORE", key: "risk_score", sortable: true, width: Some("60px") },
-        TableColumn { label: "STATUS", key: "status", sortable: true, width: Some("90px") },
-        TableColumn { label: "OWNER", key: "owner", sortable: true, width: None },
-        TableColumn { label: "CREATED", key: "created_at", sortable: true, width: None },
+        TableColumn {
+            label: "RISK #",
+            key: "risk_number",
+            sortable: true,
+            width: None,
+        },
+        TableColumn {
+            label: "TITLE",
+            key: "title",
+            sortable: true,
+            width: None,
+        },
+        TableColumn {
+            label: "LIKELIHOOD",
+            key: "likelihood",
+            sortable: true,
+            width: None,
+        },
+        TableColumn {
+            label: "IMPACT",
+            key: "impact",
+            sortable: true,
+            width: None,
+        },
+        TableColumn {
+            label: "SCORE",
+            key: "risk_score",
+            sortable: true,
+            width: Some("60px"),
+        },
+        TableColumn {
+            label: "STATUS",
+            key: "status",
+            sortable: true,
+            width: Some("90px"),
+        },
+        TableColumn {
+            label: "OWNER",
+            key: "owner",
+            sortable: true,
+            width: None,
+        },
+        TableColumn {
+            label: "CREATED",
+            key: "created_at",
+            sortable: true,
+            width: None,
+        },
     ];
 
     view! {

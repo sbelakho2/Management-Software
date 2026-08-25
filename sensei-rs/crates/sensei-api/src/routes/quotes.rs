@@ -3,14 +3,17 @@
 //! Provides endpoints for managing quotes, including versioning and lifecycle,
 //! delegating to the supply chain service.
 
-use axum::{Json, extract::{Path, Query, State}};
+use axum::{
+    extract::{Path, Query, State},
+    Json,
+};
 use chrono::{DateTime, Utc};
-use serde::Deserialize;
 use sensei_auth::middleware::AuthenticatedUser;
 use sensei_core::error::{Result, SenseiError};
 use sensei_core::pagination::PaginatedResponse;
 use sensei_core::types::new_id;
 use sensei_services::supply_chain::{Quote, QuoteLineItem};
+use serde::Deserialize;
 use uuid::Uuid;
 
 use crate::state::AppState;
@@ -59,7 +62,12 @@ pub async fn list_quotes(
     let tenant_id = user.tenant_id;
     let quotes = state
         .supply_chain_service
-        .list_quotes(tenant_id, params.status.as_deref(), params.page, params.per_page)
+        .list_quotes(
+            tenant_id,
+            params.status.as_deref(),
+            params.page,
+            params.per_page,
+        )
         .await?;
     Ok(Json(quotes))
 }
@@ -86,7 +94,10 @@ pub async fn create_quote(
         created_by: user.user_id,
         created_at: Utc::now(),
     };
-    let created = state.supply_chain_service.create_quote(tenant_id, quote).await?;
+    let created = state
+        .supply_chain_service
+        .create_quote(tenant_id, quote)
+        .await?;
     Ok(Json(created))
 }
 
@@ -117,7 +128,10 @@ pub async fn update_quote(
     quote.total_amount = req.total_amount;
     quote.currency = req.currency;
     quote.valid_until = req.valid_until;
-    let updated = state.supply_chain_service.update_quote(tenant_id, id, quote).await?;
+    let updated = state
+        .supply_chain_service
+        .update_quote(tenant_id, id, quote)
+        .await?;
     Ok(Json(updated))
 }
 
@@ -128,7 +142,10 @@ pub async fn delete_quote(
     Path(id): Path<Uuid>,
 ) -> Result<Json<()>> {
     let tenant_id = user.tenant_id;
-    state.supply_chain_service.delete_quote(tenant_id, id).await?;
+    state
+        .supply_chain_service
+        .delete_quote(tenant_id, id)
+        .await?;
     Ok(Json(()))
 }
 
@@ -139,7 +156,10 @@ pub async fn create_quote_version(
     Path(quote_id): Path<Uuid>,
 ) -> Result<Json<QuoteVersion>> {
     let tenant_id = user.tenant_id;
-    let quote = state.supply_chain_service.get_quote(tenant_id, quote_id).await?;
+    let quote = state
+        .supply_chain_service
+        .get_quote(tenant_id, quote_id)
+        .await?;
 
     let mut version_store = state.quote_versions.write().await;
     let version_number = version_store
@@ -172,7 +192,10 @@ pub async fn list_quote_versions(
 ) -> Result<Json<Vec<QuoteVersion>>> {
     let tenant_id = user.tenant_id;
     // Verify the quote exists
-    let _ = state.supply_chain_service.get_quote(tenant_id, quote_id).await?;
+    let _ = state
+        .supply_chain_service
+        .get_quote(tenant_id, quote_id)
+        .await?;
 
     let version_store = state.quote_versions.read().await;
     let mut versions: Vec<QuoteVersion> = version_store
@@ -180,6 +203,6 @@ pub async fn list_quote_versions(
         .filter(|v| v.quote_id == quote_id && v.tenant_id == tenant_id)
         .cloned()
         .collect();
-    versions.sort_by(|a, b| a.version_number.cmp(&b.version_number));
+    versions.sort_by_key(|a| a.version_number);
     Ok(Json(versions))
 }

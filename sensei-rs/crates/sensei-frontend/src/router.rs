@@ -77,8 +77,13 @@ pub enum RouteGroup {
 /// Return the route group for a given path.
 pub fn classify_route(path: &str) -> RouteGroup {
     match path {
-        "/" | "/login" | "/api/v1/auth/login" | "/api/v1/auth/refresh"
-        | "/health/live" | "/health/ready" | "/metrics" => RouteGroup::Public,
+        "/"
+        | "/login"
+        | "/api/v1/auth/login"
+        | "/api/v1/auth/refresh"
+        | "/health/live"
+        | "/health/ready"
+        | "/metrics" => RouteGroup::Public,
         // All other routes require authentication
         _ => RouteGroup::Authenticated,
     }

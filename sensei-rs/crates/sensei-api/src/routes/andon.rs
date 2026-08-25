@@ -3,12 +3,15 @@
 //! Provides endpoints for raising, acknowledging, resolving, and managing
 //! Andon events – visual signals that alert teams to production issues.
 
-use axum::{Json, extract::{Path, Query, State}};
-use serde::Deserialize;
+use axum::{
+    extract::{Path, Query, State},
+    Json,
+};
 use sensei_auth::middleware::AuthenticatedUser;
 use sensei_core::error::Result;
 use sensei_core::pagination::PaginatedResponse;
 use sensei_services::ops::Andon;
+use serde::Deserialize;
 use uuid::Uuid;
 
 use crate::state::AppState;
@@ -52,7 +55,13 @@ pub async fn list_andons(
     let tenant_id = user.tenant_id;
     let andons = state
         .ops_service
-        .list_andons(tenant_id, params.status.as_deref(), params.work_center_id, params.page, params.per_page)
+        .list_andons(
+            tenant_id,
+            params.status.as_deref(),
+            params.work_center_id,
+            params.page,
+            params.per_page,
+        )
         .await?;
     Ok(Json(andons))
 }
@@ -64,10 +73,7 @@ pub async fn raise_andon(
     Json(req): Json<Andon>,
 ) -> Result<Json<Andon>> {
     let tenant_id = user.tenant_id;
-    let andon = state
-        .ops_service
-        .raise_andon(tenant_id, req)
-        .await?;
+    let andon = state.ops_service.raise_andon(tenant_id, req).await?;
     Ok(Json(andon))
 }
 
@@ -78,10 +84,7 @@ pub async fn get_andon(
     Path(id): Path<Uuid>,
 ) -> Result<Json<Andon>> {
     let tenant_id = user.tenant_id;
-    let andon = state
-        .ops_service
-        .get_andon(tenant_id, id)
-        .await?;
+    let andon = state.ops_service.get_andon(tenant_id, id).await?;
     Ok(Json(andon))
 }
 
@@ -129,10 +132,7 @@ pub async fn update_andon(
     Json(req): Json<Andon>,
 ) -> Result<Json<Andon>> {
     let tenant_id = user.tenant_id;
-    let andon = state
-        .ops_service
-        .update_andon(tenant_id, id, req)
-        .await?;
+    let andon = state.ops_service.update_andon(tenant_id, id, req).await?;
     Ok(Json(andon))
 }
 
@@ -143,9 +143,6 @@ pub async fn delete_andon(
     Path(id): Path<Uuid>,
 ) -> Result<Json<()>> {
     let tenant_id = user.tenant_id;
-    state
-        .ops_service
-        .delete_andon(tenant_id, id)
-        .await?;
+    state.ops_service.delete_andon(tenant_id, id).await?;
     Ok(Json(()))
 }

@@ -99,43 +99,85 @@ impl ProductionApi {
     }
 
     pub async fn get_work_order(client: &ApiClient, id: &str) -> Result<WorkOrderDto, ApiError> {
-        client.get(&format!("/api/v1/production/work-orders/{}", id)).await
+        client
+            .get(&format!("/api/v1/production/work-orders/{}", id))
+            .await
     }
 
-    pub async fn create_work_order(client: &ApiClient, req: &CreateWorkOrderRequest) -> Result<WorkOrderDto, ApiError> {
+    pub async fn create_work_order(
+        client: &ApiClient,
+        req: &CreateWorkOrderRequest,
+    ) -> Result<WorkOrderDto, ApiError> {
         client.post("/api/v1/production/work-orders", req).await
     }
 
-    pub async fn update_work_order_status(client: &ApiClient, id: &str, status: &str) -> Result<WorkOrderDto, ApiError> {
+    pub async fn update_work_order_status(
+        client: &ApiClient,
+        id: &str,
+        status: &str,
+    ) -> Result<WorkOrderDto, ApiError> {
         #[derive(Serialize)]
-        struct Body<'a> { status: &'a str }
-        client.put(&format!("/api/v1/production/work-orders/{}/status", id), &Body { status }).await
+        struct Body<'a> {
+            status: &'a str,
+        }
+        client
+            .put(
+                &format!("/api/v1/production/work-orders/{}/status", id),
+                &Body { status },
+            )
+            .await
     }
 
     // ---- Production Orders ----
-    pub async fn list_production_orders(client: &ApiClient) -> Result<Vec<ProductionOrderDto>, ApiError> {
+    pub async fn list_production_orders(
+        client: &ApiClient,
+    ) -> Result<Vec<ProductionOrderDto>, ApiError> {
         client.get("/api/v1/production/orders").await
     }
 
-    pub async fn get_production_order(client: &ApiClient, id: &str) -> Result<ProductionOrderDto, ApiError> {
-        client.get(&format!("/api/v1/production/orders/{}", id)).await
+    pub async fn get_production_order(
+        client: &ApiClient,
+        id: &str,
+    ) -> Result<ProductionOrderDto, ApiError> {
+        client
+            .get(&format!("/api/v1/production/orders/{}", id))
+            .await
     }
 
-    pub async fn create_production_order(client: &ApiClient, req: &CreateProductionOrderRequest) -> Result<ProductionOrderDto, ApiError> {
+    pub async fn create_production_order(
+        client: &ApiClient,
+        req: &CreateProductionOrderRequest,
+    ) -> Result<ProductionOrderDto, ApiError> {
         client.post("/api/v1/production/orders", req).await
     }
 
     // ---- BOM ----
-    pub async fn get_bom(client: &ApiClient, product_id: &str) -> Result<Vec<BomItemDto>, ApiError> {
-        client.get(&format!("/api/v1/production/bom/{}", product_id)).await
+    pub async fn get_bom(
+        client: &ApiClient,
+        product_id: &str,
+    ) -> Result<Vec<BomItemDto>, ApiError> {
+        client
+            .get(&format!("/api/v1/production/bom/{}", product_id))
+            .await
     }
 
-    pub async fn add_bom_item(client: &ApiClient, req: &AddBomItemRequest) -> Result<BomItemDto, ApiError> {
+    pub async fn add_bom_item(
+        client: &ApiClient,
+        req: &AddBomItemRequest,
+    ) -> Result<BomItemDto, ApiError> {
         client.post("/api/v1/production/bom", req).await
     }
 
     // ---- MRP ----
-    pub async fn run_mrp(client: &ApiClient, product_id: &str) -> Result<Vec<MrpRecordDto>, ApiError> {
-        client.post(&format!("/api/v1/production/mrp/{}", product_id), &serde_json::json!({})).await
+    pub async fn run_mrp(
+        client: &ApiClient,
+        product_id: &str,
+    ) -> Result<Vec<MrpRecordDto>, ApiError> {
+        client
+            .post(
+                &format!("/api/v1/production/mrp/{}", product_id),
+                &serde_json::json!({}),
+            )
+            .await
     }
 }

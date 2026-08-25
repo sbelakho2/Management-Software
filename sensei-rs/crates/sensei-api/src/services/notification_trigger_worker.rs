@@ -18,6 +18,7 @@
 //! Subscription failures are retried with exponential backoff so a
 //! temporarily unavailable bus does not take the worker down.
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -43,13 +44,25 @@ const MAX_RETRY_DELAY: Duration = Duration::from_secs(60);
 /// The worker subscribes to the event bus and stays alive for the lifetime
 /// of the process. With an in-memory bus this only sees events published
 /// within this process; the caller should log that context.
-pub fn spawn(state: AppState) {
+///
+/// Returns a flag that turns `true` once the subscription is active.
+/// Callers that publish immediately after spawning should await this flag:
+/// neither the in-memory bus nor a freshly-created NATS consumer replays
+/// events published before the subscription exists.
+pub fn spawn(state: AppState) -> Arc<AtomicBool> {
+    let subscribed = Arc::new(AtomicBool::new(false));
+    let flag = Arc::clone(&subscribed);
     tokio::spawn(async move {
         let handler = Arc::new(build_handler(state.clone()));
         let mut delay = INITIAL_RETRY_DELAY;
         loop {
-            match state.event_bus.subscribe_with_group(SUBJECT, WORKER_GROUP, handler.clone()).await {
+            match state
+                .event_bus
+                .subscribe_with_group(SUBJECT, WORKER_GROUP, handler.clone())
+                .await
+            {
                 Ok(()) => {
+                    flag.store(true, Ordering::SeqCst);
                     info!(
                         subject = SUBJECT,
                         group = WORKER_GROUP,
@@ -58,6 +71,7 @@ pub fn spawn(state: AppState) {
                     return;
                 }
                 Err(e) => {
+                    flag.store(false, Ordering::SeqCst);
                     warn!(
                         error = %e,
                         retry_in_ms = delay.as_millis(),
@@ -69,13 +83,20 @@ pub fn spawn(state: AppState) {
             }
         }
     });
+    subscribed
 }
 
 /// Build the synchronous event handler.
 ///
 /// The event bus invokes handlers synchronously, so the actual work is
 /// spawned onto the Tokio runtime; the handler itself only enqueues.
-fn build_handler(state: AppState) -> impl Fn(sensei_event_bus::types::EventEnvelope) -> Result<(), sensei_event_bus::error::EventBusError> + Send + Sync {
+fn build_handler(
+    state: AppState,
+) -> impl Fn(
+    sensei_event_bus::types::EventEnvelope,
+) -> Result<(), sensei_event_bus::error::EventBusError>
+       + Send
+       + Sync {
     move |envelope| {
         let state = state.clone();
         tokio::spawn(async move {
@@ -192,7 +213,11 @@ async fn handle_event(state: AppState, envelope: sensei_event_bus::types::EventE
     }
 
     for (to, subject, body) in emails_to_send {
-        if let Err(e) = state.email_service.send_notification(&to, &subject, &body).await {
+        if let Err(e) = state
+            .email_service
+            .send_notification(&to, &subject, &body)
+            .await
+        {
             warn!(to = %to, error = %e, "Failed to send trigger notification email");
         }
     }

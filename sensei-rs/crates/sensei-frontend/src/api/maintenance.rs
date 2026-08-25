@@ -81,18 +81,37 @@ impl MaintenanceApi {
         client.get("/api/v1/maintenance/work-requests").await
     }
 
-    pub async fn get_work_request(client: &ApiClient, id: &str) -> Result<WorkRequestDto, ApiError> {
-        client.get(&format!("/api/v1/maintenance/work-requests/{}", id)).await
+    pub async fn get_work_request(
+        client: &ApiClient,
+        id: &str,
+    ) -> Result<WorkRequestDto, ApiError> {
+        client
+            .get(&format!("/api/v1/maintenance/work-requests/{}", id))
+            .await
     }
 
-    pub async fn create_work_request(client: &ApiClient, req: &CreateWorkRequestRequest) -> Result<WorkRequestDto, ApiError> {
+    pub async fn create_work_request(
+        client: &ApiClient,
+        req: &CreateWorkRequestRequest,
+    ) -> Result<WorkRequestDto, ApiError> {
         client.post("/api/v1/maintenance/work-requests", req).await
     }
 
-    pub async fn update_work_request_status(client: &ApiClient, id: &str, status: &str) -> Result<WorkRequestDto, ApiError> {
+    pub async fn update_work_request_status(
+        client: &ApiClient,
+        id: &str,
+        status: &str,
+    ) -> Result<WorkRequestDto, ApiError> {
         #[derive(Serialize)]
-        struct Body<'a> { status: &'a str }
-        client.put(&format!("/api/v1/maintenance/work-requests/{}/status", id), &Body { status }).await
+        struct Body<'a> {
+            status: &'a str,
+        }
+        client
+            .put(
+                &format!("/api/v1/maintenance/work-requests/{}/status", id),
+                &Body { status },
+            )
+            .await
     }
 
     // ---- PM Schedules ----
@@ -101,10 +120,15 @@ impl MaintenanceApi {
     }
 
     pub async fn get_pm_schedule(client: &ApiClient, id: &str) -> Result<PmScheduleDto, ApiError> {
-        client.get(&format!("/api/v1/maintenance/pm-schedules/{}", id)).await
+        client
+            .get(&format!("/api/v1/maintenance/pm-schedules/{}", id))
+            .await
     }
 
-    pub async fn create_pm_schedule(client: &ApiClient, req: &CreatePmScheduleRequest) -> Result<PmScheduleDto, ApiError> {
+    pub async fn create_pm_schedule(
+        client: &ApiClient,
+        req: &CreatePmScheduleRequest,
+    ) -> Result<PmScheduleDto, ApiError> {
         client.post("/api/v1/maintenance/pm-schedules", req).await
     }
 
@@ -114,10 +138,15 @@ impl MaintenanceApi {
     }
 
     pub async fn get_equipment(client: &ApiClient, id: &str) -> Result<EquipmentDto, ApiError> {
-        client.get(&format!("/api/v1/maintenance/equipment/{}", id)).await
+        client
+            .get(&format!("/api/v1/maintenance/equipment/{}", id))
+            .await
     }
 
-    pub async fn register_equipment(client: &ApiClient, req: &RegisterEquipmentRequest) -> Result<EquipmentDto, ApiError> {
+    pub async fn register_equipment(
+        client: &ApiClient,
+        req: &RegisterEquipmentRequest,
+    ) -> Result<EquipmentDto, ApiError> {
         client.post("/api/v1/maintenance/equipment", req).await
     }
 }

@@ -3,7 +3,6 @@
 //! Port of [`frontend/src/stores/command-palette-store.ts`](frontend/src/stores/command-palette-store.ts).
 
 use leptos::prelude::*;
-use std::collections::HashMap;
 
 // ---------------------------------------------------------------------------
 // Domain types
@@ -95,14 +94,14 @@ fn fuzzy_match(query: &str, text: &str) -> Option<(f64, Vec<(usize, usize)>)> {
     }
 
     // Fuzzy contiguous character matching
-    let mut chars = query_lower.chars().peekable();
+    let chars = query_lower.chars().peekable();
     let mut text_chars = text_lower.char_indices();
     let mut matched_indices: Vec<(usize, usize)> = Vec::new();
     let mut score = 0.5;
 
-    while let Some(qc) = chars.next() {
+    for qc in chars {
         let mut found = false;
-        while let Some((ti, tc)) = text_chars.next() {
+        for (ti, tc) in text_chars.by_ref() {
             if tc == qc {
                 // Bonus for matching after word boundary
                 if ti == 0 || text_lower.as_bytes().get(ti - 1).copied() == Some(b' ') {
@@ -175,7 +174,11 @@ fn search_commands(commands: &[Command], query: &str) -> Vec<CommandSearchResult
     }
 
     // Sort by score descending
-    results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+    results.sort_by(|a, b| {
+        b.score
+            .partial_cmp(&a.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
 
     results
 }
@@ -269,7 +272,8 @@ impl CommandPaletteStore {
     pub fn select_previous(&self) {
         let count = self.filtered_results.get().len() as i32;
         if count > 0 {
-            self.selected_index.update(|i| *i = (*i - 1 + count) % count);
+            self.selected_index
+                .update(|i| *i = (*i - 1 + count) % count);
         }
     }
 
@@ -292,7 +296,11 @@ impl CommandPaletteStore {
             }
         }
 
-        results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        results.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         self.filtered_results.set(results);
     }
 

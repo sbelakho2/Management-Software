@@ -15,7 +15,6 @@ pub use database::DatabaseHrService;
 
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
 use sensei_core::domain::events::{
     DomainEvent, EmployeeOnboardedEvent, LeaveRequestApprovedEvent, LeaveRequestCreatedEvent,
     PerformanceReviewCompletedEvent, TimecardSubmittedEvent, TrainingCompletedEvent,
@@ -23,6 +22,7 @@ use sensei_core::domain::events::{
 use sensei_core::error::{Result, SenseiError};
 use sensei_core::pagination::PaginatedResponse;
 use sensei_event_bus::bus::EventBus;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -75,7 +75,7 @@ pub struct LeaveRequest {
     pub start_date: DateTime<Utc>,
     pub end_date: DateTime<Utc>,
     pub total_days: i32,
-    pub status: String,   // pending, approved, rejected, cancelled
+    pub status: String, // pending, approved, rejected, cancelled
     pub reason: String,
     pub approved_by: Option<Uuid>,
     pub created_at: DateTime<Utc>,
@@ -93,7 +93,7 @@ pub struct PerformanceReview {
     pub strengths: String,
     pub areas_for_improvement: String,
     pub goals: String,
-    pub status: String,        // draft, submitted, acknowledged, completed
+    pub status: String, // draft, submitted, acknowledged, completed
     pub created_at: DateTime<Utc>,
     pub completed_at: Option<DateTime<Utc>>,
 }
@@ -168,10 +168,7 @@ pub trait HrService: Send + Sync {
         per_page: Option<usize>,
     ) -> Result<PaginatedResponse<TrainingRecord>>;
     /// Get all training records with expired certifications.
-    async fn get_expired_certifications(
-        &self,
-        tenant_id: Uuid,
-    ) -> Result<Vec<TrainingRecord>>;
+    async fn get_expired_certifications(&self, tenant_id: Uuid) -> Result<Vec<TrainingRecord>>;
     /// Update a training record.
     async fn update_training(
         &self,
@@ -333,11 +330,7 @@ impl Default for InMemoryHrService {
 impl HrService for InMemoryHrService {
     // ── Employees ───────────────────────────────────────────────────────
 
-    async fn create_employee(
-        &self,
-        tenant_id: Uuid,
-        mut employee: Employee,
-    ) -> Result<Employee> {
+    async fn create_employee(&self, tenant_id: Uuid, mut employee: Employee) -> Result<Employee> {
         let mut counter = self.emp_counter.write().await;
         *counter += 1;
         let emp_code = Self::generate_employee_code(*counter);
@@ -354,10 +347,7 @@ impl HrService for InMemoryHrService {
         let position = employee.job_title.clone();
         self.employees.write().await.insert(id, employee.clone());
         self.publish_event(EmployeeOnboardedEvent::new(
-            tenant_id,
-            id,
-            department,
-            position,
+            tenant_id, id, department, position,
         ))
         .await;
         Ok(employee)
@@ -434,7 +424,10 @@ impl HrService for InMemoryHrService {
         record.tenant_id = tenant_id;
 
         let id = record.id;
-        self.training_records.write().await.insert(id, record.clone());
+        self.training_records
+            .write()
+            .await
+            .insert(id, record.clone());
         self.publish_event(TrainingCompletedEvent::new(
             tenant_id,
             record.employee_id,
@@ -463,17 +456,12 @@ impl HrService for InMemoryHrService {
         Ok(PaginatedResponse::new(items, page, per_page))
     }
 
-    async fn get_expired_certifications(
-        &self,
-        _tenant_id: Uuid,
-    ) -> Result<Vec<TrainingRecord>> {
+    async fn get_expired_certifications(&self, _tenant_id: Uuid) -> Result<Vec<TrainingRecord>> {
         let now = Utc::now();
         let store = self.training_records.read().await;
         Ok(store
             .values()
-            .filter(|tr| {
-                tr.expires_at.is_some_and(|exp| exp < now)
-            })
+            .filter(|tr| tr.expires_at.is_some_and(|exp| exp < now))
             .cloned()
             .collect())
     }
@@ -645,8 +633,7 @@ impl HrService for InMemoryHrService {
         let items: Vec<_> = store
             .values()
             .filter(|r| {
-                r.tenant_id == tenant_id
-                    && employee_id.is_none_or(|eid| r.employee_id == eid)
+                r.tenant_id == tenant_id && employee_id.is_none_or(|eid| r.employee_id == eid)
             })
             .cloned()
             .collect();
@@ -662,9 +649,7 @@ impl HrService for InMemoryHrService {
         {
             let store = self.timecards.read().await;
             let has_open = store.values().any(|tc| {
-                tc.tenant_id == tenant_id
-                    && tc.employee_id == employee_id
-                    && tc.clock_out.is_none()
+                tc.tenant_id == tenant_id && tc.employee_id == employee_id && tc.clock_out.is_none()
             });
             if has_open {
                 return Err(SenseiError::Validation(
@@ -1109,10 +1094,7 @@ mod tests {
             .unwrap();
         assert_eq!(records.data.len(), 1);
 
-        let expired = service
-            .get_expired_certifications(tenant_id)
-            .await
-            .unwrap();
+        let expired = service.get_expired_certifications(tenant_id).await.unwrap();
         assert_eq!(expired.len(), 1);
     }
 }

@@ -47,7 +47,10 @@ impl ApiClient {
             req = req.bearer_auth(token);
         }
 
-        let resp = req.send().await.map_err(|e| ApiError::Http(e.to_string()))?;
+        let resp = req
+            .send()
+            .await
+            .map_err(|e| ApiError::Http(e.to_string()))?;
 
         if !resp.status().is_success() {
             return Err(ApiError::Status(resp.status().as_u16()));
@@ -69,7 +72,10 @@ impl ApiClient {
             req = req.bearer_auth(token);
         }
 
-        let resp = req.send().await.map_err(|e| ApiError::Http(e.to_string()))?;
+        let resp = req
+            .send()
+            .await
+            .map_err(|e| ApiError::Http(e.to_string()))?;
 
         if !resp.status().is_success() {
             return Err(ApiError::Status(resp.status().as_u16()));
@@ -91,7 +97,10 @@ impl ApiClient {
             req = req.bearer_auth(token);
         }
 
-        let resp = req.send().await.map_err(|e| ApiError::Http(e.to_string()))?;
+        let resp = req
+            .send()
+            .await
+            .map_err(|e| ApiError::Http(e.to_string()))?;
 
         if !resp.status().is_success() {
             return Err(ApiError::Status(resp.status().as_u16()));
@@ -109,7 +118,10 @@ impl ApiClient {
             req = req.bearer_auth(token);
         }
 
-        let resp = req.send().await.map_err(|e| ApiError::Http(e.to_string()))?;
+        let resp = req
+            .send()
+            .await
+            .map_err(|e| ApiError::Http(e.to_string()))?;
 
         if !resp.status().is_success() {
             return Err(ApiError::Status(resp.status().as_u16()));

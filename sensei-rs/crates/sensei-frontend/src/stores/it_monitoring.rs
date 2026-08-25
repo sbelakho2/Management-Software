@@ -4,7 +4,6 @@
 
 use crate::api::client::{ApiClient, ApiError};
 use leptos::prelude::*;
-use std::collections::HashMap;
 
 /// Reactive store for IT monitoring data.
 #[derive(Debug, Clone)]
@@ -97,11 +96,17 @@ impl ItMonitoringStore {
         }
 
         // Collect errors from any failed fetches
-        let errors: Vec<String> = [health.as_ref().err(), stats.as_ref().err(), svcs.as_ref().err(), alrts.as_ref().err(), users.as_ref().err()]
-            .iter()
-            .filter_map(|r| *r)
-            .map(|e| e.to_string())
-            .collect();
+        let errors: Vec<String> = [
+            health.as_ref().err(),
+            stats.as_ref().err(),
+            svcs.as_ref().err(),
+            alrts.as_ref().err(),
+            users.as_ref().err(),
+        ]
+        .iter()
+        .filter_map(|r| *r)
+        .map(|e| e.to_string())
+        .collect();
 
         if !errors.is_empty() {
             self.error.set(Some(errors.join("; ")));
@@ -194,9 +199,7 @@ impl ItMonitoringStore {
         service_name: &str,
     ) -> Result<serde_json::Value, ApiError> {
         let payload = serde_json::json!({ "service": service_name });
-        client
-            .post("/api/v1/monitoring/restart", &payload)
-            .await
+        client.post("/api/v1/monitoring/restart", &payload).await
     }
 }
 

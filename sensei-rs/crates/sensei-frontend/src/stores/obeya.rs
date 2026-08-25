@@ -3,9 +3,9 @@
 //!
 //! Port of [`frontend/src/stores/obeya.ts`](frontend/src/stores/obeya.ts).
 
+use crate::api::client::{ApiClient, ApiError};
 use leptos::prelude::*;
 use std::collections::HashMap;
-use crate::api::client::{ApiClient, ApiError};
 
 // ---------------------------------------------------------------------------
 // Domain types
@@ -48,7 +48,7 @@ pub struct ObeyaComment {
     pub created_at: String,
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct ObeyaStats {
     pub total_items: i32,
     pub by_status: HashMap<String, i32>,
@@ -56,19 +56,6 @@ pub struct ObeyaStats {
     pub by_category: HashMap<String, i32>,
     pub completed_this_week: i32,
     pub overdue: i32,
-}
-
-impl Default for ObeyaStats {
-    fn default() -> Self {
-        Self {
-            total_items: 0,
-            by_status: HashMap::new(),
-            by_priority: HashMap::new(),
-            by_category: HashMap::new(),
-            completed_this_week: 0,
-            overdue: 0,
-        }
-    }
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -213,9 +200,16 @@ impl ObeyaStore {
         self.loading.set(false);
     }
 
-    pub async fn create_item(&self, client: &ApiClient, item_data: serde_json::Value) -> Result<ObeyaItem, ()> {
+    pub async fn create_item(
+        &self,
+        client: &ApiClient,
+        item_data: serde_json::Value,
+    ) -> Result<ObeyaItem, ApiError> {
         self.loading.set(true);
-        match client.post::<ObeyaItem, serde_json::Value>("/obeya/items", &item_data).await {
+        match client
+            .post::<ObeyaItem, serde_json::Value>("/obeya/items", &item_data)
+            .await
+        {
             Ok(new_item) => {
                 self.items.update(|items| items.push(new_item.clone()));
                 let stats = self.compute_stats();
@@ -226,14 +220,22 @@ impl ObeyaStore {
             Err(e) => {
                 self.error.set(Some(e.to_string()));
                 self.loading.set(false);
-                Err(())
+                Err(e)
             }
         }
     }
 
-    pub async fn update_item(&self, client: &ApiClient, id: &str, updates: serde_json::Value) -> Result<ObeyaItem, ()> {
+    pub async fn update_item(
+        &self,
+        client: &ApiClient,
+        id: &str,
+        updates: serde_json::Value,
+    ) -> Result<ObeyaItem, ApiError> {
         self.loading.set(true);
-        match client.put::<ObeyaItem, serde_json::Value>(&format!("/obeya/items/{id}"), &updates).await {
+        match client
+            .put::<ObeyaItem, serde_json::Value>(&format!("/obeya/items/{id}"), &updates)
+            .await
+        {
             Ok(updated) => {
                 self.items.update(|items| {
                     if let Some(pos) = items.iter().position(|i| i.id == id) {
@@ -249,14 +251,17 @@ impl ObeyaStore {
             Err(e) => {
                 self.error.set(Some(e.to_string()));
                 self.loading.set(false);
-                Err(())
+                Err(e)
             }
         }
     }
 
-    pub async fn delete_item(&self, client: &ApiClient, id: &str) -> Result<(), ()> {
+    pub async fn delete_item(&self, client: &ApiClient, id: &str) -> Result<(), ApiError> {
         self.loading.set(true);
-        match client.delete::<serde_json::Value>(&format!("/obeya/items/{id}")).await {
+        match client
+            .delete::<serde_json::Value>(&format!("/obeya/items/{id}"))
+            .await
+        {
             Ok(_) => {
                 self.items.update(|items| items.retain(|i| i.id != id));
                 let stats = self.compute_stats();
@@ -267,12 +272,18 @@ impl ObeyaStore {
             Err(e) => {
                 self.error.set(Some(e.to_string()));
                 self.loading.set(false);
-                Err(())
+                Err(e)
             }
         }
     }
 
-    pub async fn move_item(&self, client: &ApiClient, id: &str, column: &str, position: i32) -> Result<ObeyaItem, ()> {
+    pub async fn move_item(
+        &self,
+        client: &ApiClient,
+        id: &str,
+        column: &str,
+        position: i32,
+    ) -> Result<ObeyaItem, ApiError> {
         let updates = serde_json::json!({ "column": column, "position": position });
         self.update_item(client, id, updates).await
     }
@@ -281,25 +292,39 @@ impl ObeyaStore {
     // Comments
     // -----------------------------------------------------------------------
 
-    pub async fn add_comment(&self, client: &ApiClient, item_id: &str, comment_data: serde_json::Value) -> Result<ObeyaComment, ()> {
-        match client.post::<ObeyaComment, serde_json::Value>(
-            &format!("/obeya/items/{item_id}/comments"), &comment_data,
-        ).await {
+    pub async fn add_comment(
+        &self,
+        client: &ApiClient,
+        item_id: &str,
+        comment_data: serde_json::Value,
+    ) -> Result<ObeyaComment, ApiError> {
+        match client
+            .post::<ObeyaComment, serde_json::Value>(
+                &format!("/obeya/items/{item_id}/comments"),
+                &comment_data,
+            )
+            .await
+        {
             Ok(comment) => {
                 self.comments.update(|c| {
-                    c.entry(item_id.to_string()).or_default().push(comment.clone());
+                    c.entry(item_id.to_string())
+                        .or_default()
+                        .push(comment.clone());
                 });
                 Ok(comment)
             }
             Err(e) => {
                 self.error.set(Some(e.to_string()));
-                Err(())
+                Err(e)
             }
         }
     }
 
     pub async fn fetch_comments(&self, client: &ApiClient, item_id: &str) {
-        match client.get::<Vec<ObeyaComment>>(&format!("/obeya/items/{item_id}/comments")).await {
+        match client
+            .get::<Vec<ObeyaComment>>(&format!("/obeya/items/{item_id}/comments"))
+            .await
+        {
             Ok(comments) => {
                 self.comments.update(|c| {
                     c.insert(item_id.to_string(), comments);
@@ -313,7 +338,13 @@ impl ObeyaStore {
     // Escalation & Resolution
     // -----------------------------------------------------------------------
 
-    pub async fn escalate_item(&self, client: &ApiClient, id: &str, reason: &str, escalated_to_id: &str) -> Result<ObeyaItem, ()> {
+    pub async fn escalate_item(
+        &self,
+        client: &ApiClient,
+        id: &str,
+        reason: &str,
+        escalated_to_id: &str,
+    ) -> Result<ObeyaItem, ApiError> {
         let updates = serde_json::json!({
             "escalated": true,
             "escalation_reason": reason,
@@ -323,7 +354,12 @@ impl ObeyaStore {
         self.update_item(client, id, updates).await
     }
 
-    pub async fn resolve_item(&self, client: &ApiClient, id: &str, resolution: &str) -> Result<ObeyaItem, ()> {
+    pub async fn resolve_item(
+        &self,
+        client: &ApiClient,
+        id: &str,
+        resolution: &str,
+    ) -> Result<ObeyaItem, ApiError> {
         let updates = serde_json::json!({
             "resolution": resolution,
             "status": "resolved",
@@ -338,7 +374,7 @@ impl ObeyaStore {
 
     pub async fn fetch_sqdcp_metrics(&self, client: &ApiClient) {
         self.loading.set(true);
-        match client.get::<SqdqpMetrics>(&format!("/obeya/sqdcp")).await {
+        match client.get::<SqdqpMetrics>("/obeya/sqdcp").await {
             Ok(metrics) => self.sqdcp_metrics.set(Some(metrics)),
             Err(e) => self.error.set(Some(e.to_string())),
         }
@@ -347,7 +383,10 @@ impl ObeyaStore {
 
     pub async fn fetch_cognitive_insights(&self, client: &ApiClient) {
         self.loading.set(true);
-        match client.get::<Vec<CognitiveInsight>>(&format!("/obeya/cognitive-insights")).await {
+        match client
+            .get::<Vec<CognitiveInsight>>("/obeya/cognitive-insights")
+            .await
+        {
             Ok(insights) => self.cognitive_insights.set(insights),
             Err(e) => self.error.set(Some(e.to_string())),
         }

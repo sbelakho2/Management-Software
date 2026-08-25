@@ -3,17 +3,17 @@
 //!
 //! Port of [`frontend/src/stores/kanban-store.ts`](frontend/src/stores/kanban-store.ts).
 
-use leptos::prelude::*;
-use std::collections::HashMap;
 use crate::api::client::ApiClient;
 use crate::api::rfq::RfqDto;
+use leptos::prelude::*;
+use std::collections::HashMap;
 
 // ---------------------------------------------------------------------------
 // Domain types
 // ---------------------------------------------------------------------------
 
 pub type RfqStatus = String; // "new" | "in_progress" | "review" | "sent" | "won" | "lost" | "archived"
-pub type Priority = String;  // "low" | "medium" | "high" | "critical"
+pub type Priority = String; // "low" | "medium" | "high" | "critical"
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct KanbanCard {
@@ -44,7 +44,7 @@ pub struct DragState {
     pub target_column: Option<RfqStatus>,
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct KanbanFilters {
     pub priority: Option<Priority>,
     pub search_query: String,
@@ -52,19 +52,6 @@ pub struct KanbanFilters {
     pub date_range: Option<(String, String)>,
     pub min_value: Option<f64>,
     pub max_value: Option<f64>,
-}
-
-impl Default for KanbanFilters {
-    fn default() -> Self {
-        Self {
-            priority: None,
-            search_query: String::new(),
-            assigned_to: None,
-            date_range: None,
-            min_value: None,
-            max_value: None,
-        }
-    }
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -126,10 +113,13 @@ impl KanbanStore {
         let mut column_configs = HashMap::new();
         for col_id in &default_columns {
             columns.insert(col_id.clone(), Vec::new());
-            column_configs.insert(col_id.clone(), ColumnConfig {
-                visible: *col_id != "archived",
-                wip_limit: None,
-            });
+            column_configs.insert(
+                col_id.clone(),
+                ColumnConfig {
+                    visible: *col_id != "archived",
+                    wip_limit: None,
+                },
+            );
         }
 
         Self {
@@ -206,13 +196,6 @@ impl KanbanStore {
             let pos = (new_position as usize).min(target.len());
             target.insert(pos, card_id.to_string());
 
-            // Reorder rest of target
-            for (i, id) in target.clone().iter().enumerate() {
-                if *id == card_id {
-                    continue;
-                }
-                // Re-index remaining
-            }
             // Re-sort remaining to maintain positions
             let mut reordered: Vec<String> = Vec::new();
             let mut idx = 0usize;
@@ -220,13 +203,13 @@ impl KanbanStore {
                 if id == card_id {
                     continue;
                 }
-                if idx == pos as usize {
+                if idx == pos {
                     reordered.push(card_id.to_string());
                 }
                 reordered.push(id);
                 idx += 1;
             }
-            if idx == pos as usize {
+            if idx == pos {
                 reordered.push(card_id.to_string());
             }
             cols.insert(to_column.to_string(), reordered);
@@ -242,14 +225,16 @@ impl KanbanStore {
         }
 
         // Persist to server
-        let _ = client.post::<serde_json::Value, serde_json::Value>(
-            &format!("/rfqs/{card_id}/move"),
-            &serde_json::json!({
-                "from_column": from_column,
-                "to_column": to_column,
-                "position": new_position,
-            }),
-        ).await;
+        let _ = client
+            .post::<serde_json::Value, serde_json::Value>(
+                &format!("/rfqs/{card_id}/move"),
+                &serde_json::json!({
+                    "from_column": from_column,
+                    "to_column": to_column,
+                    "position": new_position,
+                }),
+            )
+            .await;
     }
 
     pub fn reorder_card(&self, card_id: &str, column: &str, new_position: u32) {
@@ -260,7 +245,7 @@ impl KanbanStore {
                 card_ids.insert(pos, card_id.to_string());
 
                 // Reset positions sequentially
-                for (i, id) in card_ids.clone().iter().enumerate() {
+                for id in card_ids.iter() {
                     if let Some(card) = self.cards.get().get(id) {
                         let mut updated = card.clone();
                         updated.status = column.to_string();
@@ -305,7 +290,7 @@ impl KanbanStore {
             c.remove(card_id);
         });
         self.columns.update(|cols| {
-            for (_col, card_ids) in cols.iter_mut() {
+            for card_ids in cols.values_mut() {
                 card_ids.retain(|id| id != card_id);
             }
         });
@@ -454,7 +439,12 @@ impl KanbanStore {
         if !filters.search_query.is_empty() {
             let q = filters.search_query.to_lowercase();
             if !card.title.to_lowercase().contains(&q)
-                && !card.customer.as_deref().unwrap_or("").to_lowercase().contains(&q)
+                && !card
+                    .customer
+                    .as_deref()
+                    .unwrap_or("")
+                    .to_lowercase()
+                    .contains(&q)
             {
                 return false;
             }
@@ -478,8 +468,17 @@ impl KanbanStore {
     }
 
     pub fn get_column_wip_status(&self, column_id: &str) -> (u32, Option<u32>) {
-        let count = self.columns.get().get(column_id).map(|ids| ids.len() as u32).unwrap_or(0);
-        let limit = self.column_configs.get().get(column_id).and_then(|c| c.wip_limit);
+        let count = self
+            .columns
+            .get()
+            .get(column_id)
+            .map(|ids| ids.len() as u32)
+            .unwrap_or(0);
+        let limit = self
+            .column_configs
+            .get()
+            .get(column_id)
+            .and_then(|c| c.wip_limit);
         (count, limit)
     }
 }

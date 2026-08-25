@@ -12,7 +12,7 @@ use std::collections::HashMap;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TaskListParams {
-    pub status: Option<serde_json::Value>,  // String or Vec<String>
+    pub status: Option<serde_json::Value>, // String or Vec<String>
     pub priority: Option<serde_json::Value>, // String or Vec<String>
     pub task_type: Option<serde_json::Value>, // String or Vec<String>
     pub assigned_to: Option<String>,
@@ -60,7 +60,7 @@ pub struct UpdateTaskData {
     pub assigned_to: Option<serde_json::Value>, // String or null
     pub due_date: Option<serde_json::Value>,    // String or null
     pub estimated_hours: Option<serde_json::Value>, // f64 or null
-    pub actual_hours: Option<serde_json::Value>,    // f64 or null
+    pub actual_hours: Option<serde_json::Value>, // f64 or null
     pub tags: Option<Vec<String>>,
 }
 
@@ -219,10 +219,7 @@ impl TaskApi {
         client.put(&format!("/api/v1/tasks/{}", id), data).await
     }
 
-    pub async fn delete_task(
-        client: &ApiClient,
-        id: &str,
-    ) -> Result<serde_json::Value, ApiError> {
+    pub async fn delete_task(client: &ApiClient, id: &str) -> Result<serde_json::Value, ApiError> {
         client.delete(&format!("/api/v1/tasks/{}", id)).await
     }
 
@@ -250,7 +247,10 @@ impl TaskApi {
             user_id: &'a str,
         }
         client
-            .post(&format!("/api/v1/tasks/{}/assign", id), &AssignBody { user_id })
+            .post(
+                &format!("/api/v1/tasks/{}/assign", id),
+                &AssignBody { user_id },
+            )
             .await
     }
 
@@ -354,10 +354,7 @@ impl TaskApi {
         item_id: &str,
     ) -> Result<serde_json::Value, ApiError> {
         client
-            .delete(&format!(
-                "/api/v1/tasks/{}/checklist/{}",
-                task_id, item_id
-            ))
+            .delete(&format!("/api/v1/tasks/{}/checklist/{}", task_id, item_id))
             .await
     }
 
@@ -455,7 +452,9 @@ impl KanbanApi {
         client: &ApiClient,
         id: &str,
     ) -> Result<serde_json::Value, ApiError> {
-        client.delete(&format!("/api/v1/kanban/boards/{}", id)).await
+        client
+            .delete(&format!("/api/v1/kanban/boards/{}", id))
+            .await
     }
 
     pub async fn get_kanban_board_tasks(
@@ -463,10 +462,8 @@ impl KanbanApi {
         id: &str,
         params: Option<&TaskListParams>,
     ) -> Result<HashMap<String, Vec<TaskDto>>, ApiError> {
-        let path = build_task_query_with_prefix(
-            &format!("/api/v1/kanban/boards/{}/tasks", id),
-            params,
-        );
+        let path =
+            build_task_query_with_prefix(&format!("/api/v1/kanban/boards/{}/tasks", id), params);
         client.get(&path).await
     }
 
@@ -484,10 +481,7 @@ impl KanbanApi {
         }
         client
             .post(
-                &format!(
-                    "/api/v1/kanban/boards/{}/tasks/{}/move",
-                    board_id, task_id
-                ),
+                &format!("/api/v1/kanban/boards/{}/tasks/{}/move", board_id, task_id),
                 &MoveBody { status, position },
             )
             .await
@@ -538,10 +532,7 @@ impl KanbanApi {
     ) -> Result<KanbanColumnDto, ApiError> {
         client
             .put(
-                &format!(
-                    "/api/v1/kanban/boards/{}/columns/{}",
-                    board_id, column_id
-                ),
+                &format!("/api/v1/kanban/boards/{}/columns/{}", board_id, column_id),
                 data,
             )
             .await

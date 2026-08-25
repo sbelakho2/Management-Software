@@ -6,13 +6,13 @@
 
 use axum::{
     extract::{FromRequestParts, Request},
-    http::{request::Parts, StatusCode, header},
+    http::{header, request::Parts, StatusCode},
     middleware::Next,
     response::Response,
     Json,
 };
-use serde::Serialize;
 use sensei_core::error::SenseiError;
+use serde::Serialize;
 use uuid::Uuid;
 
 use crate::jwt::JwtService;
@@ -135,15 +135,19 @@ where
     type Rejection = (StatusCode, Json<AuthErrorResponse>);
 
     async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
-        parts.extensions.get::<AuthenticatedUser>().cloned().ok_or_else(|| {
-            (
-                StatusCode::UNAUTHORIZED,
-                Json(AuthErrorResponse {
-                    error: "not_authenticated".to_string(),
-                    message: "Not authenticated".to_string(),
-                }),
-            )
-        })
+        parts
+            .extensions
+            .get::<AuthenticatedUser>()
+            .cloned()
+            .ok_or_else(|| {
+                (
+                    StatusCode::UNAUTHORIZED,
+                    Json(AuthErrorResponse {
+                        error: "not_authenticated".to_string(),
+                        message: "Not authenticated".to_string(),
+                    }),
+                )
+            })
     }
 }
 
@@ -159,6 +163,8 @@ where
     type Rejection = (StatusCode, Json<AuthErrorResponse>);
 
     async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
-        Ok(OptionalUser(parts.extensions.get::<AuthenticatedUser>().cloned()))
+        Ok(OptionalUser(
+            parts.extensions.get::<AuthenticatedUser>().cloned(),
+        ))
     }
 }

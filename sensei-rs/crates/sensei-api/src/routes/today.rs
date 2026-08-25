@@ -4,14 +4,14 @@
 //! of the day's key metrics across production, quality, and operations,
 //! designed for "Today Screen" / daily stand-up dashboards.
 
-use axum::{Json, extract::State};
+use axum::{extract::State, Json};
 use chrono::Utc;
-use serde::Serialize;
 use sensei_auth::middleware::AuthenticatedUser;
 use sensei_core::error::Result;
-use sensei_services::ops::{A3, Andon, Project, Risk};
+use sensei_services::ops::{Andon, Project, Risk, A3};
 use sensei_services::production::WorkOrder;
 use sensei_services::quality::{CapaExtended, CapaStatusEx, NcrStatus, NonConformance};
+use serde::Serialize;
 use uuid::Uuid;
 
 use crate::state::AppState;
@@ -230,7 +230,7 @@ pub async fn get_today_snapshot(
             .filter(|o| {
                 o.status != "Completed"
                     && o.status != "Cancelled"
-                    && o.scheduled_end.map_or(false, |end| end.date_naive() < today)
+                    && o.scheduled_end.is_some_and(|end| end.date_naive() < today)
             })
             .count();
 

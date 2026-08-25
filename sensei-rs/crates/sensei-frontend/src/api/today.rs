@@ -164,9 +164,7 @@ impl TodayApi {
         user_id: &str,
         user_name: Option<&str>,
     ) -> Result<TodayScreenData, ApiError> {
-        let safe_name = user_name
-            .filter(|n| !n.trim().is_empty())
-            .unwrap_or("User");
+        let safe_name = user_name.filter(|n| !n.trim().is_empty()).unwrap_or("User");
         client
             .get(&format!("/api/v1/today/screen/{}/{}", user_id, safe_name))
             .await

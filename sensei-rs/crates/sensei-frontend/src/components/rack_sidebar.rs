@@ -42,14 +42,46 @@ pub fn RackSidebar(
     let pathname = move || location.pathname.get();
 
     let nav_items = vec![
-        NavItem { label: "DASHBOARD", path: "/dashboard", icon: "●" },
-        NavItem { label: "QUALITY", path: "/quality", icon: "■" },
-        NavItem { label: "PRODUCTION", path: "/production", icon: "◆" },
-        NavItem { label: "MAINTENANCE", path: "/maintenance", icon: "▲" },
-        NavItem { label: "FINANCE", path: "/finance", icon: "⬡" },
-        NavItem { label: "HR", path: "/hr", icon: "✦" },
-        NavItem { label: "SUPPLY CHAIN", path: "/supply-chain", icon: "⬥" },
-        NavItem { label: "OPS", path: "/ops", icon: "●" },
+        NavItem {
+            label: "DASHBOARD",
+            path: "/dashboard",
+            icon: "●",
+        },
+        NavItem {
+            label: "QUALITY",
+            path: "/quality",
+            icon: "■",
+        },
+        NavItem {
+            label: "PRODUCTION",
+            path: "/production",
+            icon: "◆",
+        },
+        NavItem {
+            label: "MAINTENANCE",
+            path: "/maintenance",
+            icon: "▲",
+        },
+        NavItem {
+            label: "FINANCE",
+            path: "/finance",
+            icon: "⬡",
+        },
+        NavItem {
+            label: "HR",
+            path: "/hr",
+            icon: "✦",
+        },
+        NavItem {
+            label: "SUPPLY CHAIN",
+            path: "/supply-chain",
+            icon: "⬥",
+        },
+        NavItem {
+            label: "OPS",
+            path: "/ops",
+            icon: "●",
+        },
     ];
 
     view! {

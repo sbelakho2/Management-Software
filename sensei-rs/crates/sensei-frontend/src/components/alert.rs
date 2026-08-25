@@ -4,8 +4,8 @@
 //! messages. Follows the Rams design system's industrial notification pattern:
 //! solid background, border accent, no shadows.
 
-use std::sync::Arc;
 use leptos::prelude::*;
+use std::sync::Arc;
 
 /// Status banner for success/warning/error/info notifications.
 ///
@@ -47,13 +47,11 @@ pub fn Alert(
             _ => "var(--rams-steel)",
         }
     };
-    let get_dot = move || {
-        match level.clone().unwrap_or_else(|| "info".to_string()).as_str() {
-            "success" => "var(--rams-green)",
-            "warning" => "var(--rams-orange)",
-            "error" => "var(--rams-red)",
-            _ => "var(--rams-steel)",
-        }
+    let get_dot = move || match level.clone().unwrap_or_else(|| "info".to_string()).as_str() {
+        "success" => "var(--rams-green)",
+        "warning" => "var(--rams-orange)",
+        "error" => "var(--rams-red)",
+        _ => "var(--rams-steel)",
     };
 
     let visible = RwSignal::new(true);

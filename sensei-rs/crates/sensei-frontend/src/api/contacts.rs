@@ -81,10 +81,7 @@ impl ContactsApi {
         client.get(&path).await
     }
 
-    pub async fn get_contact(
-        client: &ApiClient,
-        id: &str,
-    ) -> Result<ContactResponse, ApiError> {
+    pub async fn get_contact(client: &ApiClient, id: &str) -> Result<ContactResponse, ApiError> {
         client.get(&format!("/api/v1/contacts/{}", id)).await
     }
 

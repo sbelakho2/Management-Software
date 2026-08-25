@@ -16,11 +16,11 @@
 //! consulted.
 
 use async_trait::async_trait;
-use serde::de::DeserializeOwned;
-use serde::Serialize;
 use sensei_core::error::Result;
 use sensei_core::types::EntityId;
 use sensei_services::ops::search::{SearchResult, SearchableEntityProvider};
+use serde::de::DeserializeOwned;
+use serde::Serialize;
 use std::sync::Arc;
 use uuid::Uuid;
 
@@ -84,11 +84,7 @@ struct EntityStoreProvider<T> {
 impl<T: Serialize + DeserializeOwned + Clone + PartialEq + Send + Sync + 'static>
     SearchableEntityProvider for EntityStoreProvider<T>
 {
-    async fn search_entities(
-        &self,
-        tenant_id: EntityId,
-        query: &str,
-    ) -> Result<Vec<SearchResult>> {
+    async fn search_entities(&self, tenant_id: EntityId, query: &str) -> Result<Vec<SearchResult>> {
         let store = self.store.read().await;
         let mut results = Vec::new();
 
@@ -344,9 +340,7 @@ pub fn standard_work_search_provider(
 }
 
 /// Create a [`SearchableEntityProvider`] for LSW standards.
-pub fn lsw_standard_search_provider(
-    store: LswStandardStore,
-) -> Arc<dyn SearchableEntityProvider> {
+pub fn lsw_standard_search_provider(store: LswStandardStore) -> Arc<dyn SearchableEntityProvider> {
     Arc::new(EntityStoreProvider {
         entity_type: "lsw_standard",
         store: store.clone(),
@@ -434,14 +428,22 @@ mod tests {
         };
         {
             let mut guard = store.write().await;
-            guard.insert(match_id, make(match_id, tenant_a, "Alpha", "Widget quality issue"));
+            guard.insert(
+                match_id,
+                make(match_id, tenant_a, "Alpha", "Widget quality issue"),
+            );
             guard.insert(
                 Uuid::new_v4(),
                 make(Uuid::new_v4(), tenant_a, "Beta", "Unrelated text"),
             );
             guard.insert(
                 Uuid::new_v4(),
-                make(Uuid::new_v4(), tenant_b, "Gamma", "Widget quality issue in other tenant"),
+                make(
+                    Uuid::new_v4(),
+                    tenant_b,
+                    "Gamma",
+                    "Widget quality issue in other tenant",
+                ),
             );
         }
 
@@ -457,7 +459,11 @@ mod tests {
         assert_eq!(provider.entity_type_name(), "test_entity");
 
         let results = provider.search_entities(tenant_a, "quality").await.unwrap();
-        assert_eq!(results.len(), 1, "only tenant A's matching entity is returned");
+        assert_eq!(
+            results.len(),
+            1,
+            "only tenant A's matching entity is returned"
+        );
         assert_eq!(results[0].result_type, "test_entity");
         assert_eq!(results[0].result_id, match_id);
         assert!(results[0].relevance > 0.0);
@@ -494,4 +500,3 @@ mod tests {
         assert!(results[0].relevance > 0.0);
     }
 }
-

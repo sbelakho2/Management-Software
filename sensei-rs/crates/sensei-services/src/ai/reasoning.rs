@@ -183,10 +183,7 @@ pub struct RootCauseSuggestion {
 // ---------------------------------------------------------------------------
 
 /// Prompt templates indexed by (persona, prompt_type).
-fn prompt_templates(
-    persona: MentorPersona,
-    prompt_type: PromptType,
-) -> &'static [&'static str] {
+fn prompt_templates(persona: MentorPersona, prompt_type: PromptType) -> &'static [&'static str] {
     use MentorPersona::*;
     use PromptType::*;
 
@@ -320,7 +317,11 @@ fn phase_focus(phase: A3Phase) -> &'static [PromptType] {
         A3Phase::ProblemDefinition => &[PromptType::Exploration, PromptType::Assumption],
         A3Phase::CurrentState => &[PromptType::Exploration, PromptType::Evidence],
         A3Phase::TargetState => &[PromptType::Reflection, PromptType::Perspective],
-        A3Phase::RootCauseAnalysis => &[PromptType::Assumption, PromptType::Evidence, PromptType::Exploration],
+        A3Phase::RootCauseAnalysis => &[
+            PromptType::Assumption,
+            PromptType::Evidence,
+            PromptType::Exploration,
+        ],
         A3Phase::CountermeasurePlanning => &[PromptType::ActionPlanning, PromptType::Perspective],
         A3Phase::Implementation => &[PromptType::ActionPlanning, PromptType::Reflection],
         A3Phase::ResultsReview => &[PromptType::Evidence, PromptType::Reflection],
@@ -335,79 +336,234 @@ fn phase_focus(phase: A3Phase) -> &'static [PromptType] {
 fn waste_keywords() -> [(LeanWasteCategory, &'static [&'static str]); 8] {
     use LeanWasteCategory::*;
     [
-        (Defects, &[
-            "defect", "rework", "scrap", "error", "mistake", "non-conformance",
-            "nonconformance", "nc", "fail", "failure", "correction", "reject",
-            "rejection", "quality issue", "nonconforming",
-        ]),
-        (Overproduction, &[
-            "overproduction", "too much", "excess", "overproduce", "producing ahead",
-            "making more", "over supply", "oversupply", "building ahead",
-        ]),
-        (Waiting, &[
-            "waiting", "delay", "idle", "downtime", "queue", "bottleneck",
-            "wait", "stalled", "held up", "not moving", "standby",
-        ]),
-        (NonUtilizedTalent, &[
-            "underutilized", "talent", "skill", "creativity", "suggestion",
-            "ideas not used", "not engaged", "boredom", "lack of training",
-            "not empowered", "employee potential",
-        ]),
-        (Transportation, &[
-            "transportation", "moving", "conveyance", "material handling",
-            "excess movement", "relocation", "transferring", "shipping back and forth",
-        ]),
-        (Inventory, &[
-            "inventory", "stock", "wip", "work in progress", "finished goods",
-            "excess material", "storage", "warehouse overflow", "buffer stock",
-        ]),
-        (Motion, &[
-            "motion", "walking", "reaching", "bending", "searching for tools",
-            "excessive movement", "unnecessary motion", "ergonomic",
-        ]),
-        (ExcessProcessing, &[
-            "overprocessing", "excess processing", "extra steps", "redundant",
-            "unnecessary process", "over-engineer", "too many approvals",
-            "duplicate entry", "double checking",
-        ]),
+        (
+            Defects,
+            &[
+                "defect",
+                "rework",
+                "scrap",
+                "error",
+                "mistake",
+                "non-conformance",
+                "nonconformance",
+                "nc",
+                "fail",
+                "failure",
+                "correction",
+                "reject",
+                "rejection",
+                "quality issue",
+                "nonconforming",
+            ],
+        ),
+        (
+            Overproduction,
+            &[
+                "overproduction",
+                "too much",
+                "excess",
+                "overproduce",
+                "producing ahead",
+                "making more",
+                "over supply",
+                "oversupply",
+                "building ahead",
+            ],
+        ),
+        (
+            Waiting,
+            &[
+                "waiting",
+                "delay",
+                "idle",
+                "downtime",
+                "queue",
+                "bottleneck",
+                "wait",
+                "stalled",
+                "held up",
+                "not moving",
+                "standby",
+            ],
+        ),
+        (
+            NonUtilizedTalent,
+            &[
+                "underutilized",
+                "talent",
+                "skill",
+                "creativity",
+                "suggestion",
+                "ideas not used",
+                "not engaged",
+                "boredom",
+                "lack of training",
+                "not empowered",
+                "employee potential",
+            ],
+        ),
+        (
+            Transportation,
+            &[
+                "transportation",
+                "moving",
+                "conveyance",
+                "material handling",
+                "excess movement",
+                "relocation",
+                "transferring",
+                "shipping back and forth",
+            ],
+        ),
+        (
+            Inventory,
+            &[
+                "inventory",
+                "stock",
+                "wip",
+                "work in progress",
+                "finished goods",
+                "excess material",
+                "storage",
+                "warehouse overflow",
+                "buffer stock",
+            ],
+        ),
+        (
+            Motion,
+            &[
+                "motion",
+                "walking",
+                "reaching",
+                "bending",
+                "searching for tools",
+                "excessive movement",
+                "unnecessary motion",
+                "ergonomic",
+            ],
+        ),
+        (
+            ExcessProcessing,
+            &[
+                "overprocessing",
+                "excess processing",
+                "extra steps",
+                "redundant",
+                "unnecessary process",
+                "over-engineer",
+                "too many approvals",
+                "duplicate entry",
+                "double checking",
+            ],
+        ),
     ]
 }
 
 fn muda_keywords() -> [(MudaType, &'static [&'static str]); 8] {
     use MudaType::*;
     [
-        (Correction, &[
-            "fix", "rework", "correct", "repair", "scrap", "reject",
-            "inspection", "testing", "checking", "re-do",
-        ]),
-        (Overproduction, &[
-            "overproduc", "batch", "large lot", "push system", "produce ahead",
-            "excess capacity",
-        ]),
-        (Motion, &[
-            "walk", "reach", "search", "bend", "lift", "carry", "move to",
-        ]),
-        (Conveyance, &[
-            "transport", "move material", "transfer", "ship", "deliver",
-            "conveyor", "forklift", "truck",
-        ]),
-        (Inventory, &[
-            "stock", "storage", "warehouse", "wip", "buffer", "inventory",
-            "stored", "pile", "stack",
-        ]),
-        (Processing, &[
-            "process step", "approval", "sign-off", "verification", "document",
-            "report", "entry", "data input",
-        ]),
-        (WaitTime, &[
-            "wait", "delay", "queue", "idle", "downtime", "held", "standby",
-            "bottleneck", "slow",
-        ]),
-        (KnowledgeDeficit, &[
-            "training", "knowledge", "skill", "information", "procedure",
-            "instruction", "unclear", "confusion", "misunderstanding",
-            "not know", "lack of training",
-        ]),
+        (
+            Correction,
+            &[
+                "fix",
+                "rework",
+                "correct",
+                "repair",
+                "scrap",
+                "reject",
+                "inspection",
+                "testing",
+                "checking",
+                "re-do",
+            ],
+        ),
+        (
+            Overproduction,
+            &[
+                "overproduc",
+                "batch",
+                "large lot",
+                "push system",
+                "produce ahead",
+                "excess capacity",
+            ],
+        ),
+        (
+            Motion,
+            &[
+                "walk", "reach", "search", "bend", "lift", "carry", "move to",
+            ],
+        ),
+        (
+            Conveyance,
+            &[
+                "transport",
+                "move material",
+                "transfer",
+                "ship",
+                "deliver",
+                "conveyor",
+                "forklift",
+                "truck",
+            ],
+        ),
+        (
+            Inventory,
+            &[
+                "stock",
+                "storage",
+                "warehouse",
+                "wip",
+                "buffer",
+                "inventory",
+                "stored",
+                "pile",
+                "stack",
+            ],
+        ),
+        (
+            Processing,
+            &[
+                "process step",
+                "approval",
+                "sign-off",
+                "verification",
+                "document",
+                "report",
+                "entry",
+                "data input",
+            ],
+        ),
+        (
+            WaitTime,
+            &[
+                "wait",
+                "delay",
+                "queue",
+                "idle",
+                "downtime",
+                "held",
+                "standby",
+                "bottleneck",
+                "slow",
+            ],
+        ),
+        (
+            KnowledgeDeficit,
+            &[
+                "training",
+                "knowledge",
+                "skill",
+                "information",
+                "procedure",
+                "instruction",
+                "unclear",
+                "confusion",
+                "misunderstanding",
+                "not know",
+                "lack of training",
+            ],
+        ),
     ]
 }
 
@@ -563,7 +719,7 @@ impl A3PatternAnalyzer {
             .values()
             .map(|a3| (a3.closed_at, a3.id))
             .collect();
-        entries.sort_by(|a, b| a.0.cmp(&b.0));
+        entries.sort_by_key(|a| a.0);
 
         let to_remove = self.max_history / 4;
         for (_, id) in entries.iter().take(to_remove) {
@@ -636,7 +792,11 @@ impl A3PatternAnalyzer {
         }
 
         // Sort by success rate descending
-        correlations.sort_by(|a, b| b.success_rate.partial_cmp(&a.success_rate).unwrap_or(std::cmp::Ordering::Equal));
+        correlations.sort_by(|a, b| {
+            b.success_rate
+                .partial_cmp(&a.success_rate)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
 
         self.correlations = correlations;
         self.success_rates = success_rates;
@@ -645,7 +805,10 @@ impl A3PatternAnalyzer {
 
     /// Suggest countermeasures for a given waste category, sorted by
     /// historical success rate.
-    pub fn suggest_countermeasures(&mut self, waste_category: &str) -> Vec<CountermeasureCorrelation> {
+    pub fn suggest_countermeasures(
+        &mut self,
+        waste_category: &str,
+    ) -> Vec<CountermeasureCorrelation> {
         self.compute_correlations();
         // Filter and return correlations that match the waste category
         // (or return all if no specific matches)
@@ -653,7 +816,9 @@ impl A3PatternAnalyzer {
             .correlations
             .iter()
             .filter(|c| {
-                c.category.to_lowercase().contains(&waste_category.to_lowercase())
+                c.category
+                    .to_lowercase()
+                    .contains(&waste_category.to_lowercase())
             })
             .cloned()
             .collect();
@@ -669,10 +834,7 @@ impl A3PatternAnalyzer {
     /// Get the historical success rate for a countermeasure category.
     pub fn get_success_rate(&mut self, category: &str) -> f64 {
         self.compute_correlations();
-        self.success_rates
-            .get(category)
-            .copied()
-            .unwrap_or(0.5) // default 50 % if unknown
+        self.success_rates.get(category).copied().unwrap_or(0.5) // default 50 % if unknown
     }
 
     /// Get statistics about the pattern analysis.
@@ -821,7 +983,7 @@ impl SocraticMentor {
                 content: format!("{} (Ref: {})", chosen, aspect),
                 persona,
                 phase,
-                follow_ups: follow_ups.into_iter().map(|s| s.to_string()).collect(),
+                follow_ups: follow_ups.iter().map(|s| s.to_string()).collect(),
                 created_at: Utc::now(),
             };
 
@@ -835,17 +997,14 @@ impl SocraticMentor {
     /// returns unique, non-trivial words).
     fn extract_key_terms(&self, content: &str) -> Vec<String> {
         let stop_words = [
-            "the", "a", "an", "is", "are", "was", "were", "be", "been",
-            "have", "has", "had", "do", "does", "did", "will", "would",
-            "could", "should", "may", "might", "shall", "can", "need",
-            "this", "that", "these", "those", "it", "its", "they", "them",
-            "their", "we", "us", "our", "you", "your", "he", "she", "his",
-            "her", "and", "or", "but", "not", "no", "nor", "so", "if",
-            "then", "else", "when", "where", "why", "how", "what", "which",
-            "who", "whom", "to", "of", "in", "for", "on", "with", "at",
-            "by", "from", "as", "into", "through", "during", "before",
-            "after", "above", "below", "between", "out", "off", "over",
-            "under", "again", "further", "once",
+            "the", "a", "an", "is", "are", "was", "were", "be", "been", "have", "has", "had", "do",
+            "does", "did", "will", "would", "could", "should", "may", "might", "shall", "can",
+            "need", "this", "that", "these", "those", "it", "its", "they", "them", "their", "we",
+            "us", "our", "you", "your", "he", "she", "his", "her", "and", "or", "but", "not", "no",
+            "nor", "so", "if", "then", "else", "when", "where", "why", "how", "what", "which",
+            "who", "whom", "to", "of", "in", "for", "on", "with", "at", "by", "from", "as", "into",
+            "through", "during", "before", "after", "above", "below", "between", "out", "off",
+            "over", "under", "again", "further", "once",
         ];
 
         content
@@ -865,7 +1024,8 @@ impl SocraticMentor {
             "Timing / Delay".to_string()
         } else if lower.contains("cost") || lower.contains("budget") || lower.contains("expense") {
             "Cost Concern".to_string()
-        } else if lower.contains("process") || lower.contains("procedure") || lower.contains("step") {
+        } else if lower.contains("process") || lower.contains("procedure") || lower.contains("step")
+        {
             "Process Related".to_string()
         } else if lower.contains("people") || lower.contains("team") || lower.contains("training") {
             "People / Skills".to_string()
@@ -956,12 +1116,10 @@ impl SocraticMentor {
         let mut all_entries: Vec<(String, ChallengingPrompt)> = self
             .session_history
             .iter()
-            .flat_map(|(key, prompts)| {
-                prompts.iter().map(|p| (key.clone(), p.clone()))
-            })
+            .flat_map(|(key, prompts)| prompts.iter().map(|p| (key.clone(), p.clone())))
             .collect();
 
-        all_entries.sort_by(|a, b| a.1.created_at.cmp(&b.1.created_at));
+        all_entries.sort_by_key(|a| a.1.created_at);
 
         let target = self.max_history * 3 / 4; // keep 75 %
         let to_remove = all_entries.len().saturating_sub(target);
@@ -990,7 +1148,10 @@ impl SocraticMentor {
         state.insert(
             "total_history".to_string(),
             serde_json::Value::Number(serde_json::Number::from(
-                self.session_history.values().map(|v| v.len()).sum::<usize>() as u64,
+                self.session_history
+                    .values()
+                    .map(|v| v.len())
+                    .sum::<usize>() as u64,
             )),
         );
         state
@@ -1011,14 +1172,11 @@ impl Default for SocraticMentor {
 ///
 /// Uses keyword-based pattern matching to identify waste categories, muda
 /// types, and potential root causes from problem descriptions.
-#[allow(dead_code)]
 pub struct FiveWhysAssistant {
     /// Maximum number of historical cause entries.
     max_history: usize,
     /// Historical (problem, cause) pairs.
     historical_causes: Vec<(String, String)>,
-    /// Maximum historical entries before eviction.
-    max_historical_causes: usize,
 }
 
 impl FiveWhysAssistant {
@@ -1027,7 +1185,6 @@ impl FiveWhysAssistant {
         Self {
             max_history,
             historical_causes: Vec::new(),
-            max_historical_causes: 5000,
         }
     }
 
@@ -1058,27 +1215,25 @@ impl FiveWhysAssistant {
                         },
                     )
                 } else {
-                    (0.0, RootCauseSuggestion {
-                        cause: pattern.category.to_string(),
-                        pattern_match_score: 0.0,
-                        evidence_needed: Vec::new(),
-                        related_waste: None,
-                        related_muda: None,
-                    })
+                    (
+                        0.0,
+                        RootCauseSuggestion {
+                            cause: pattern.category.to_string(),
+                            pattern_match_score: 0.0,
+                            evidence_needed: Vec::new(),
+                            related_waste: None,
+                            related_muda: None,
+                        },
+                    )
                 }
             })
             .filter(|(score, _)| *score > 0.0)
             .collect();
 
         // Sort by score descending
-        suggestions.sort_by(|a, b| {
-            b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal)
-        });
+        suggestions.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
 
-        let result: Vec<RootCauseSuggestion> = suggestions
-            .into_iter()
-            .map(|(_, s)| s)
-            .collect();
+        let result: Vec<RootCauseSuggestion> = suggestions.into_iter().map(|(_, s)| s).collect();
 
         // Store in historical causes
         if let Some(best) = result.first() {
@@ -1101,15 +1256,11 @@ impl FiveWhysAssistant {
             return 0.0;
         }
 
-        let matches: usize = keywords
-            .iter()
-            .filter(|kw| lower.contains(*kw))
-            .count();
+        let matches: usize = keywords.iter().filter(|kw| lower.contains(*kw)).count();
 
         // Score = (matches / total_keywords) * coverage_factor
         let ratio = matches as f64 / keywords.len() as f64;
-        let coverage = ratio.min(1.0);
-        coverage
+        ratio.min(1.0)
     }
 
     /// Classify waste category and muda type from text.
@@ -1126,10 +1277,7 @@ impl FiveWhysAssistant {
         let mut best_score = 0.0f64;
 
         for (category, keywords) in waste_keywords() {
-            let matches: usize = keywords
-                .iter()
-                .filter(|kw| lower.contains(*kw))
-                .count();
+            let matches: usize = keywords.iter().filter(|kw| lower.contains(*kw)).count();
             let score = matches as f64 / keywords.len() as f64;
 
             if score > best_score {
@@ -1148,10 +1296,7 @@ impl FiveWhysAssistant {
         let mut best_score = 0.0f64;
 
         for (muda_type, keywords) in muda_keywords() {
-            let matches: usize = keywords
-                .iter()
-                .filter(|kw| lower.contains(*kw))
-                .count();
+            let matches: usize = keywords.iter().filter(|kw| lower.contains(*kw)).count();
             let score = matches as f64 / keywords.len() as f64;
 
             if score > best_score {
@@ -1191,10 +1336,14 @@ impl FiveWhysAssistant {
             })
             .collect();
 
-        matches.sort_by(|a, b| b.0.cmp(&a.0));
+        matches.sort_by_key(|a| std::cmp::Reverse(a.0));
         matches.dedup_by(|a, b| a.1 == b.1);
 
-        matches.into_iter().take(5).map(|(_, s)| s.to_string()).collect()
+        matches
+            .into_iter()
+            .take(5)
+            .map(|(_, s)| s.to_string())
+            .collect()
     }
 
     /// Get evidence needs for a given pattern.
@@ -1219,8 +1368,8 @@ impl FiveWhysAssistant {
         self.historical_causes
             .push((problem.to_string(), cause.to_string()));
 
-        if self.historical_causes.len() > self.max_historical_causes {
-            let to_remove = self.max_historical_causes / 4;
+        if self.historical_causes.len() > self.max_history {
+            let to_remove = self.max_history / 4;
             self.historical_causes.drain(..to_remove);
         }
     }
@@ -1235,7 +1384,7 @@ impl FiveWhysAssistant {
         }
 
         let mut result: Vec<(LeanWasteCategory, usize)> = counts.into_iter().collect();
-        result.sort_by(|a, b| b.1.cmp(&a.1));
+        result.sort_by_key(|a| std::cmp::Reverse(a.1));
         result
     }
 
@@ -1244,7 +1393,9 @@ impl FiveWhysAssistant {
         let mut state = HashMap::new();
         state.insert(
             "historical_causes_count".to_string(),
-            serde_json::Value::Number(serde_json::Number::from(self.historical_causes.len() as u64)),
+            serde_json::Value::Number(
+                serde_json::Number::from(self.historical_causes.len() as u64),
+            ),
         );
         state
     }
@@ -1288,7 +1439,8 @@ impl SenseiReasoningEngine {
         &mut self,
         waste_category: &str,
     ) -> Vec<CountermeasureCorrelation> {
-        self.pattern_analyzer.suggest_countermeasures(waste_category)
+        self.pattern_analyzer
+            .suggest_countermeasures(waste_category)
     }
 
     /// Generate challenging prompts for a session.
@@ -1324,7 +1476,10 @@ impl SenseiReasoningEngine {
     }
 
     /// End a mentoring session.
-    pub fn end_mentoring_session(&mut self, session_id: &str) -> HashMap<String, serde_json::Value> {
+    pub fn end_mentoring_session(
+        &mut self,
+        session_id: &str,
+    ) -> HashMap<String, serde_json::Value> {
         self.socratic_mentor.end_session(session_id)
     }
 
@@ -1430,28 +1585,24 @@ mod tests {
             problem_statement: "High defect rate on line A".to_string(),
             waste_category: Some(LeanWasteCategory::Defects),
             muda_type: Some(MudaType::Correction),
-            countermeasures: vec![
-                Countermeasure {
-                    id: Uuid::new_v4(),
-                    description: "Implement poka-yoke".to_string(),
-                    category: "Quality".to_string(),
-                    expected_impact: "Reduce defects by 50%".to_string(),
-                    effort: "Medium".to_string(),
-                    owner: "QA Team".to_string(),
-                    target_date: Utc::now(),
-                },
-            ],
-            kpis: vec![
-                KPIMetric {
-                    name: "Defect Rate".to_string(),
-                    current_value: 2.0,
-                    target_value: 1.0,
-                    baseline_value: 5.0,
-                    unit: "%".to_string(),
-                    trend: KPITrend::Improving,
-                    measured_at: Utc::now(),
-                },
-            ],
+            countermeasures: vec![Countermeasure {
+                id: Uuid::new_v4(),
+                description: "Implement poka-yoke".to_string(),
+                category: "Quality".to_string(),
+                expected_impact: "Reduce defects by 50%".to_string(),
+                effort: "Medium".to_string(),
+                owner: "QA Team".to_string(),
+                target_date: Utc::now(),
+            }],
+            kpis: vec![KPIMetric {
+                name: "Defect Rate".to_string(),
+                current_value: 2.0,
+                target_value: 1.0,
+                baseline_value: 5.0,
+                unit: "%".to_string(),
+                trend: KPITrend::Improving,
+                measured_at: Utc::now(),
+            }],
             closed_at: Utc::now(),
         };
         analyzer.add_closed_a3(a3);
@@ -1492,7 +1643,10 @@ mod tests {
     fn test_identify_aspect() {
         let mentor = SocraticMentor::new(1000);
         assert_eq!(mentor.identify_aspect("defect on line"), "Quality Issue");
-        assert_eq!(mentor.identify_aspect("process improvement"), "Process Related");
+        assert_eq!(
+            mentor.identify_aspect("process improvement"),
+            "Process Related"
+        );
         assert_eq!(mentor.identify_aspect("general topic"), "General");
     }
 
@@ -1509,10 +1663,7 @@ mod tests {
             assistant.classify_waste("Long waiting times between operations"),
             Some(LeanWasteCategory::Waiting)
         );
-        assert_eq!(
-            assistant.classify_waste("No relevant keywords here"),
-            None
-        );
+        assert_eq!(assistant.classify_waste("No relevant keywords here"), None);
     }
 
     #[test]
@@ -1531,9 +1682,8 @@ mod tests {
     #[test]
     fn test_analyze_problem() {
         let mut assistant = FiveWhysAssistant::new(5000);
-        let results = assistant.analyze_problem(
-            "Operators lack proper training on the new standard work procedure"
-        );
+        let results = assistant
+            .analyze_problem("Operators lack proper training on the new standard work procedure");
         assert!(!results.is_empty());
         // Should match "training" pattern → "Insufficient Training"
         assert!(results.iter().any(|r| r.cause.contains("Training")));
@@ -1549,14 +1699,10 @@ mod tests {
 
     #[test]
     fn test_historical_cause_eviction() {
-        let mut assistant = FiveWhysAssistant::new(10);
-        assistant.max_historical_causes = 4;
+        let mut assistant = FiveWhysAssistant::new(4);
 
         for i in 0..6 {
-            assistant.add_historical_cause(
-                &format!("Problem {}", i),
-                &format!("Cause {}", i),
-            );
+            assistant.add_historical_cause(&format!("Problem {}", i), &format!("Cause {}", i));
         }
         // After 6 insertions with max 4, oldest 25% (1) should be evicted, so 3 remain
         assert!(assistant.historical_causes.len() <= 4);
@@ -1609,7 +1755,7 @@ mod tests {
 
         // 3. Analyze root cause
         let causes = engine.analyze_root_cause(
-            "Operators spend too much time searching for tools during changeover"
+            "Operators spend too much time searching for tools during changeover",
         );
         assert!(!causes.is_empty());
 

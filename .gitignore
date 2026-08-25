@@ -354,3 +354,9 @@ ingestion.log
 *.sh.bak
 book_downloader_v2.py
 gutenberg_catalog.json
+
+# ============================================
+# Rust / Zig build artifacts
+# ============================================
+/zig-cache/
+.zig-cache/

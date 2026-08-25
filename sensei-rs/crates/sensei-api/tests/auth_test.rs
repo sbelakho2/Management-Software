@@ -27,8 +27,8 @@ async fn test_login_success() {
     assert!(!body["access_token"].as_str().unwrap_or("").is_empty());
     assert!(!body["refresh_token"].as_str().unwrap_or("").is_empty());
     assert_eq!(body["token_type"], "Bearer");
-    assert!(body["user_id"].as_str().unwrap_or("").len() > 0);
-    assert!(body["roles"].as_array().unwrap_or(&vec![]).len() > 0);
+    assert!(!body["user_id"].as_str().unwrap_or("").is_empty());
+    assert!(!body["roles"].as_array().unwrap_or(&vec![]).is_empty());
 }
 
 #[tokio::test]
@@ -52,8 +52,7 @@ async fn test_login_nonexistent_user() {
 async fn test_login_unknown_email_matches_wrong_password_response() {
     let app = common::TestApp::new().await;
 
-    let (status_unknown, body_unknown) =
-        login(&app, "nobody@sensei.test", "SomePass123!").await;
+    let (status_unknown, body_unknown) = login(&app, "nobody@sensei.test", "SomePass123!").await;
     let (status_wrong, body_wrong) = login(&app, "admin@sensei.test", "SomePass123!").await;
 
     // Same status code and same message: the endpoint cannot be used to
@@ -287,7 +286,10 @@ async fn test_request_password_reset() {
     assert_eq!(resp.status(), StatusCode::OK);
 
     let json: Value = app.json_body(&mut resp).await;
-    assert!(json["message"].as_str().unwrap_or("").contains("If the email exists"));
+    assert!(json["message"]
+        .as_str()
+        .unwrap_or("")
+        .contains("If the email exists"));
 }
 
 #[tokio::test]
@@ -301,7 +303,10 @@ async fn test_request_password_reset_nonexistent() {
     assert_eq!(resp.status(), StatusCode::OK);
 
     let json: Value = app.json_body(&mut resp).await;
-    assert!(json["message"].as_str().unwrap_or("").contains("If the email exists"));
+    assert!(json["message"]
+        .as_str()
+        .unwrap_or("")
+        .contains("If the email exists"));
 }
 
 #[tokio::test]
@@ -383,7 +388,10 @@ async fn test_request_email_verification() {
     assert_eq!(resp.status(), StatusCode::OK);
 
     let json: Value = app.json_body(&mut resp).await;
-    assert!(json["message"].as_str().unwrap_or("").contains("If the email exists"));
+    assert!(json["message"]
+        .as_str()
+        .unwrap_or("")
+        .contains("If the email exists"));
 }
 
 #[tokio::test]
@@ -427,13 +435,12 @@ async fn test_confirm_email_verification() {
         .find_by_email("verify-e2e@sensei.test")
         .await
         .expect("verified user should exist");
-    assert!(
-        app.state
-            .users_service
-            .is_email_verified(verified.id)
-            .await
-            .expect("verification lookup should work")
-    );
+    assert!(app
+        .state
+        .users_service
+        .is_email_verified(verified.id)
+        .await
+        .expect("verification lookup should work"));
 }
 
 #[tokio::test]

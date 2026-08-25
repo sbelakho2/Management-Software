@@ -5,11 +5,8 @@
 //! - GET /api/v1/smart-ingestion/{id}/status
 //! - GET /api/v1/smart-ingestion/history
 
-use axum::{
-    body::Body,
-    http::Request,
-};
 use axum::http::StatusCode;
+use axum::{body::Body, http::Request};
 use serde_json::Value;
 use std::time::Duration;
 use uuid::Uuid;
@@ -18,7 +15,7 @@ mod common;
 
 /// Build a multipart upload request with a single "file" part.
 fn multipart_upload(
-    app: &common::TestApp,
+    _app: &common::TestApp,
     token: &str,
     file_name: &str,
     content_type: &str,
@@ -38,24 +35,21 @@ fn multipart_upload(
     Request::builder()
         .uri("/api/v1/smart-ingestion/upload")
         .method("POST")
-        .header("Content-Type", format!("multipart/form-data; boundary={boundary}"))
+        .header(
+            "Content-Type",
+            format!("multipart/form-data; boundary={boundary}"),
+        )
         .header("Authorization", format!("Bearer {token}"))
         .body(Body::from(body))
         .expect("Failed to build multipart request")
 }
 
 /// Poll the ingestion job until it completes (or the deadline passes).
-async fn wait_for_completion(
-    app: &common::TestApp,
-    token: &str,
-    job_id: &str,
-) -> Value {
+async fn wait_for_completion(app: &common::TestApp, token: &str, job_id: &str) -> Value {
     let deadline = std::time::Instant::now() + Duration::from_secs(10);
     loop {
-        let req = app.get_authenticated(
-            &format!("/api/v1/smart-ingestion/{}/status", job_id),
-            token,
-        );
+        let req =
+            app.get_authenticated(&format!("/api/v1/smart-ingestion/{}/status", job_id), token);
         let mut resp = app.send_request(req).await;
         assert_eq!(resp.status(), StatusCode::OK);
         let job: Value = app.json_body(&mut resp).await;
@@ -117,20 +111,17 @@ async fn test_upload_sanitizes_file_name() {
     let token = app.login_as_admin().await;
 
     // Path traversal attempt in the file name.
-    let req = multipart_upload(
-        &app,
-        &token,
-        "../../etc/passwd.txt",
-        "text/plain",
-        b"data",
-    );
+    let req = multipart_upload(&app, &token, "../../etc/passwd.txt", "text/plain", b"data");
     let mut resp = app.send_request(req).await;
     assert_eq!(resp.status(), StatusCode::OK);
     let json: Value = app.json_body(&mut resp).await;
     let job_id = json["id"].as_str().unwrap();
     let job = wait_for_completion(&app, &token, job_id).await;
     let name = job["file_name"].as_str().unwrap();
-    assert!(!name.contains('/') && !name.contains(".."), "file name must be sanitized");
+    assert!(
+        !name.contains('/') && !name.contains(".."),
+        "file name must be sanitized"
+    );
 }
 
 #[tokio::test]
@@ -139,10 +130,7 @@ async fn test_get_ingestion_status_not_found() {
     let token = app.login_as_admin().await;
 
     let id = Uuid::nil().to_string();
-    let req = app.get_authenticated(
-        &format!("/api/v1/smart-ingestion/{}/status", id),
-        &token,
-    );
+    let req = app.get_authenticated(&format!("/api/v1/smart-ingestion/{}/status", id), &token);
     let resp = app.send_request(req).await;
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 }

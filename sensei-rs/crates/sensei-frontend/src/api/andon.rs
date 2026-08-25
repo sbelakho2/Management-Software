@@ -72,10 +72,7 @@ impl AndonApi {
         client.get("/api/v1/andon/events").await
     }
 
-    pub async fn get_andon(
-        client: &ApiClient,
-        id: &str,
-    ) -> Result<AndonEventDto, ApiError> {
+    pub async fn get_andon(client: &ApiClient, id: &str) -> Result<AndonEventDto, ApiError> {
         client.get(&format!("/api/v1/andon/events/{}", id)).await
     }
 
@@ -108,10 +105,7 @@ impl AndonApi {
             .await
     }
 
-    pub async fn escalate_andon(
-        client: &ApiClient,
-        id: &str,
-    ) -> Result<AndonEventDto, ApiError> {
+    pub async fn escalate_andon(client: &ApiClient, id: &str) -> Result<AndonEventDto, ApiError> {
         client
             .post(
                 &format!("/api/v1/andon/events/{}/escalate", id),

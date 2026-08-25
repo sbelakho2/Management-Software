@@ -7,7 +7,6 @@ use serde_json::Value;
 
 mod common;
 
-
 /// Work order payload with all required `WorkOrder` fields (the shared
 /// fixture omits id/tenant_id/wo_number/quantity_completed/assigned_to/
 /// created_at/updated_at, which the entity requires).
@@ -45,9 +44,18 @@ async fn test_get_today_snapshot() {
     assert!(json.as_object().unwrap().contains_key("work_orders"));
     assert!(json.as_object().unwrap().contains_key("quality"));
     assert!(json.as_object().unwrap().contains_key("operations"));
-    assert!(json["work_orders"].as_object().unwrap().contains_key("total_active"));
-    assert!(json["quality"].as_object().unwrap().contains_key("active_andons"));
-    assert!(json["operations"].as_object().unwrap().contains_key("open_risks"));
+    assert!(json["work_orders"]
+        .as_object()
+        .unwrap()
+        .contains_key("total_active"));
+    assert!(json["quality"]
+        .as_object()
+        .unwrap()
+        .contains_key("active_andons"));
+    assert!(json["operations"]
+        .as_object()
+        .unwrap()
+        .contains_key("open_risks"));
 }
 
 #[tokio::test]
@@ -97,7 +105,10 @@ async fn test_today_snapshot_counts_are_real() {
 
     assert_eq!(json["work_orders"]["total_active"], 1);
     assert_eq!(json["work_orders"]["in_progress"], 0);
-    assert_eq!(json["quality"]["open_ncrs"], 1, "closed NCRs must not count as open");
+    assert_eq!(
+        json["quality"]["open_ncrs"], 1,
+        "closed NCRs must not count as open"
+    );
     assert_eq!(json["quality"]["open_capas"], 0);
 }
 

@@ -12,7 +12,7 @@ async fn test_ops_list_andons() {
     let app = common::TestApp::new().await;
     let token = app.login_as_admin().await;
     let req = app.get_authenticated("/api/v1/ops/andons", &token);
-    let mut resp = app.send_request(req).await;
+    let resp = app.send_request(req).await;
     assert_eq!(resp.status(), StatusCode::OK);
 }
 
@@ -40,7 +40,7 @@ async fn test_ops_raise_andon() {
         "resolved_at": null,
     });
     let req = app.post_authenticated("/api/v1/ops/andons", &token, body);
-    let mut resp = app.send_request(req).await;
+    let resp = app.send_request(req).await;
     assert_eq!(resp.status(), StatusCode::OK);
 }
 
@@ -71,7 +71,7 @@ async fn test_ops_create_project() {
     let mut resp = app.send_request(req).await;
     assert_eq!(resp.status(), StatusCode::OK);
     let json: Value = app.json_body(&mut resp).await;
-    assert!(json["id"].as_str().unwrap_or("").len() > 0);
+    assert!(!json["id"].as_str().unwrap_or("").is_empty());
 }
 
 #[tokio::test]
@@ -79,7 +79,7 @@ async fn test_ops_list_projects() {
     let app = common::TestApp::new().await;
     let token = app.login_as_admin().await;
     let req = app.get_authenticated("/api/v1/ops/projects", &token);
-    let mut resp = app.send_request(req).await;
+    let resp = app.send_request(req).await;
     assert_eq!(resp.status(), StatusCode::OK);
 }
 
@@ -105,7 +105,7 @@ async fn test_ops_create_a3() {
         "closed_at": null,
     });
     let req = app.post_authenticated("/api/v1/ops/a3s", &token, body);
-    let mut resp = app.send_request(req).await;
+    let resp = app.send_request(req).await;
     assert_eq!(resp.status(), StatusCode::OK);
 }
 
@@ -114,7 +114,7 @@ async fn test_ops_list_a3s() {
     let app = common::TestApp::new().await;
     let token = app.login_as_admin().await;
     let req = app.get_authenticated("/api/v1/ops/a3s", &token);
-    let mut resp = app.send_request(req).await;
+    let resp = app.send_request(req).await;
     assert_eq!(resp.status(), StatusCode::OK);
 }
 
@@ -140,7 +140,7 @@ async fn test_ops_create_risk() {
         "mitigated_at": null,
     });
     let req = app.post_authenticated("/api/v1/ops/risks", &token, body);
-    let mut resp = app.send_request(req).await;
+    let resp = app.send_request(req).await;
     assert_eq!(resp.status(), StatusCode::OK);
 }
 
@@ -149,7 +149,7 @@ async fn test_ops_list_risks() {
     let app = common::TestApp::new().await;
     let token = app.login_as_admin().await;
     let req = app.get_authenticated("/api/v1/ops/risks", &token);
-    let mut resp = app.send_request(req).await;
+    let resp = app.send_request(req).await;
     assert_eq!(resp.status(), StatusCode::OK);
 }
 

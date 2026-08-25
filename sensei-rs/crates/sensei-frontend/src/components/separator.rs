@@ -28,16 +28,14 @@ pub fn Separator(
         <div
             role="separator"
             aria-orientation="horizontal"
-            style=format!(
-                "width: 100%; height: 1px; background-color: var(--rams-line); \
+            style="width: 100%; height: 1px; background-color: var(--rams-line); \
                  margin: var(--rams-space-4) 0; position: relative;"
-            )
+                .to_string()
         >
             {label_upper.map(|l| {
                 view! {
                     <span
-                        style=format!(
-                            "position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); \
+                        style="position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); \
                              background-color: var(--rams-chassis); \
                              padding: 0 var(--rams-space-3); \
                              font-family: var(--rams-font-mono); \
@@ -47,7 +45,7 @@ pub fn Separator(
                              letter-spacing: 0.1em; \
                              color: var(--rams-muted); \
                              white-space: nowrap;"
-                        )
+                            .to_string()
                     >
                         {l}
                     </span>

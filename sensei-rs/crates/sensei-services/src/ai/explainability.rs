@@ -95,10 +95,7 @@ impl FeatureContribution {
 
     pub fn to_map(&self) -> HashMap<String, serde_json::Value> {
         let mut map = HashMap::new();
-        map.insert(
-            "feature_name".into(),
-            serde_json::json!(self.feature_name),
-        );
+        map.insert("feature_name".into(), serde_json::json!(self.feature_name));
         map.insert(
             "feature_value".into(),
             serde_json::json!(self.feature_value),
@@ -269,6 +266,19 @@ impl GlobalExplanation {
 // Explainability Service
 // ---------------------------------------------------------------------------
 
+/// Inputs for generating a local (SHAP-style) explanation.
+#[derive(Debug, Clone)]
+pub struct LocalExplanationRequest<'a> {
+    pub model_name: &'a str,
+    pub explanation_type: ExplanationType,
+    pub feature_values: &'a HashMap<String, f64>,
+    pub baseline_values: &'a HashMap<String, f64>,
+    pub feature_importance: &'a HashMap<String, f64>,
+    pub predicted_class: Option<i32>,
+    pub predicted_probability: f64,
+    pub feature_names: &'a [String],
+}
+
 /// Service providing model explainability with SHAP/LIME-style explanations.
 #[derive(Debug, Clone)]
 pub struct ModelExplainabilityService {
@@ -276,6 +286,9 @@ pub struct ModelExplainabilityService {
     global_cache: HashMap<String, GlobalExplanation>,
     /// Cache of local explanations keyed by model_name:entity_id
     local_cache: HashMap<String, LocalExplanation>,
+    /// Insertion order of local-cache keys (FIFO eviction; HashMap
+    /// iteration order is arbitrary and cannot serve as "oldest").
+    local_cache_order: std::collections::VecDeque<String>,
     /// Maximum cache size
     max_cache_size: usize,
 }
@@ -291,6 +304,7 @@ impl ModelExplainabilityService {
         Self {
             global_cache: HashMap::new(),
             local_cache: HashMap::new(),
+            local_cache_order: std::collections::VecDeque::new(),
             max_cache_size,
         }
     }
@@ -300,26 +314,17 @@ impl ModelExplainabilityService {
     /// `feature_values`: Current input feature values.
     /// `baseline_values`: Expected/background feature values (mean of training data).
     /// `feature_importance`: Precomputed feature importance weights (e.g. from a trained model).
-    pub fn explain_local(
-        &self,
-        model_name: &str,
-        explanation_type: ExplanationType,
-        feature_values: &HashMap<String, f64>,
-        baseline_values: &HashMap<String, f64>,
-        feature_importance: &HashMap<String, f64>,
-        predicted_class: Option<i32>,
-        predicted_probability: f64,
-        feature_names: &[String],
-    ) -> LocalExplanation {
+    pub fn explain_local(&self, request: LocalExplanationRequest) -> LocalExplanation {
         let start = std::time::Instant::now();
 
         // Compute SHAP-style contributions: (feature_value - baseline) * importance
-        let mut contributions: Vec<FeatureContribution> = feature_names
+        let mut contributions: Vec<FeatureContribution> = request
+            .feature_names
             .iter()
             .map(|name| {
-                let value = feature_values.get(name).copied().unwrap_or(0.0);
-                let baseline = baseline_values.get(name).copied().unwrap_or(0.0);
-                let importance = feature_importance.get(name).copied().unwrap_or(0.0);
+                let value = request.feature_values.get(name).copied().unwrap_or(0.0);
+                let baseline = request.baseline_values.get(name).copied().unwrap_or(0.0);
+                let importance = request.feature_importance.get(name).copied().unwrap_or(0.0);
                 let contribution = (value - baseline) * importance;
                 FeatureContribution::new(name.clone(), value, contribution)
             })
@@ -347,17 +352,18 @@ impl ModelExplainabilityService {
             .collect();
 
         // Base value: expected prediction (mean of baseline * importance)
-        let base_value: f64 = baseline_values
+        let base_value: f64 = request
+            .baseline_values
             .iter()
             .map(|(name, val)| {
-                let imp = feature_importance.get(name).copied().unwrap_or(0.0);
+                let imp = request.feature_importance.get(name).copied().unwrap_or(0.0);
                 val * imp
             })
             .sum();
 
         // Natural language explanation
         let nl_explanation = self.generate_nl_explanation(
-            predicted_probability,
+            request.predicted_probability,
             &top_positive,
             &top_negative,
             &contributions,
@@ -367,12 +373,12 @@ impl ModelExplainabilityService {
 
         LocalExplanation {
             explanation_id: Uuid::new_v4(),
-            model_name: model_name.to_string(),
-            explanation_type,
+            model_name: request.model_name.to_string(),
+            explanation_type: request.explanation_type,
             timestamp: Utc::now(),
-            input_features: feature_values.clone(),
-            predicted_class,
-            predicted_probability,
+            input_features: request.feature_values.clone(),
+            predicted_class: request.predicted_class,
+            predicted_probability: request.predicted_probability,
             base_value,
             feature_contributions: contributions,
             top_positive_features: top_positive,
@@ -391,10 +397,7 @@ impl ModelExplainabilityService {
         feature_importance_std: &HashMap<String, f64>,
     ) -> GlobalExplanation {
         let mut sorted: Vec<(&String, &f64)> = feature_importance.iter().collect();
-        sorted.sort_by(|a, b| {
-            b.1.partial_cmp(a.1)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        });
+        sorted.sort_by(|a, b| b.1.partial_cmp(a.1).unwrap_or(std::cmp::Ordering::Equal));
 
         let top_features: Vec<String> = sorted
             .iter()
@@ -536,11 +539,17 @@ impl ModelExplainabilityService {
 
     /// Cache a local explanation.
     pub fn cache_local(&mut self, key: &str, explanation: LocalExplanation) {
+        // Evict the least-recently-inserted entry when at capacity (FIFO).
         if self.local_cache.len() >= self.max_cache_size {
-            // Evict oldest entry
-            if let Some(oldest_key) = self.local_cache.keys().next().cloned() {
-                self.local_cache.remove(&oldest_key);
+            while let Some(oldest_key) = self.local_cache_order.pop_front() {
+                if self.local_cache.remove(&oldest_key).is_some() {
+                    break;
+                }
             }
+        }
+        // Re-inserting an existing key does not duplicate its order entry.
+        if !self.local_cache.contains_key(key) {
+            self.local_cache_order.push_back(key.to_string());
         }
         self.local_cache.insert(key.to_string(), explanation);
     }
@@ -639,26 +648,27 @@ mod tests {
     #[test]
     fn test_local_explanation() {
         let service = ModelExplainabilityService::default();
-        let feature_names: Vec<String> =
-            vec!["temp", "vibration", "pressure"]
-                .iter()
-                .map(|&s| s.to_string())
-                .collect();
+        let feature_names: Vec<String> = ["temp", "vibration", "pressure"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
 
-        let feature_values = make_feature_map(&["temp", "vibration", "pressure"], &[75.0, 5.0, 100.0]);
-        let baseline_values = make_feature_map(&["temp", "vibration", "pressure"], &[70.0, 4.0, 90.0]);
+        let feature_values =
+            make_feature_map(&["temp", "vibration", "pressure"], &[75.0, 5.0, 100.0]);
+        let baseline_values =
+            make_feature_map(&["temp", "vibration", "pressure"], &[70.0, 4.0, 90.0]);
         let importance = make_feature_map(&["temp", "vibration", "pressure"], &[0.5, 0.3, 0.2]);
 
-        let explanation = service.explain_local(
-            "cbm_model",
-            ExplanationType::ShapLocal,
-            &feature_values,
-            &baseline_values,
-            &importance,
-            Some(1),
-            0.85,
-            &feature_names,
-        );
+        let explanation = service.explain_local(LocalExplanationRequest {
+            model_name: "cbm_model",
+            explanation_type: ExplanationType::ShapLocal,
+            feature_values: &feature_values,
+            baseline_values: &baseline_values,
+            feature_importance: &importance,
+            predicted_class: Some(1),
+            predicted_probability: 0.85,
+            feature_names: &feature_names,
+        });
 
         assert_eq!(explanation.model_name, "cbm_model");
         assert_eq!(explanation.feature_contributions.len(), 3);

@@ -352,17 +352,57 @@ pub struct CapaCreationResult {
 
 /// Default closure gates for CAPA workflow.
 pub const DEFAULT_CLOSURE_GATES: &[(ClosureGateType, &str, bool)] = &[
-    (ClosureGateType::NcConfirmed, "Non-conformance confirmed", true),
-    (ClosureGateType::RootCauseIdentified, "Root cause identified", true),
-    (ClosureGateType::RootCauseVerified, "Root cause verified", true),
-    (ClosureGateType::ActionPlanned, "Corrective action planned", true),
-    (ClosureGateType::ActionsImplemented, "Actions implemented", true),
+    (
+        ClosureGateType::NcConfirmed,
+        "Non-conformance confirmed",
+        true,
+    ),
+    (
+        ClosureGateType::RootCauseIdentified,
+        "Root cause identified",
+        true,
+    ),
+    (
+        ClosureGateType::RootCauseVerified,
+        "Root cause verified",
+        true,
+    ),
+    (
+        ClosureGateType::ActionPlanned,
+        "Corrective action planned",
+        true,
+    ),
+    (
+        ClosureGateType::ActionsImplemented,
+        "Actions implemented",
+        true,
+    ),
     (ClosureGateType::ActionsVerified, "Actions verified", true),
-    (ClosureGateType::EffectivenessCheck, "Effectiveness verified", true),
-    (ClosureGateType::DocumentationComplete, "Documentation complete", false),
-    (ClosureGateType::TrainingCompleted, "Training completed", false),
-    (ClosureGateType::RegulatoryCompliance, "Regulatory compliance", true),
-    (ClosureGateType::ManagementApproval, "Management approval", true),
+    (
+        ClosureGateType::EffectivenessCheck,
+        "Effectiveness verified",
+        true,
+    ),
+    (
+        ClosureGateType::DocumentationComplete,
+        "Documentation complete",
+        false,
+    ),
+    (
+        ClosureGateType::TrainingCompleted,
+        "Training completed",
+        false,
+    ),
+    (
+        ClosureGateType::RegulatoryCompliance,
+        "Regulatory compliance",
+        true,
+    ),
+    (
+        ClosureGateType::ManagementApproval,
+        "Management approval",
+        true,
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -1823,7 +1863,10 @@ pub struct NpiArtifact {
 impl NpiArtifact {
     /// Check if artifact is complete (approved or waived).
     pub fn is_complete(&self) -> bool {
-        matches!(self.status, ArtifactStatus::Approved | ArtifactStatus::Waived)
+        matches!(
+            self.status,
+            ArtifactStatus::Approved | ArtifactStatus::Waived
+        )
     }
 
     /// Check if waiver is still valid.

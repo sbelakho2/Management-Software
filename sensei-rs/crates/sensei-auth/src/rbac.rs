@@ -208,7 +208,10 @@ mod tests {
 
         assert!(rbac.has_permission(&roles, &Permission("quality:ncr:create".to_string())));
         assert!(rbac.has_permission(&roles, &Permission("quality:ncr:approve".to_string())));
-        assert!(!rbac.has_permission(&roles, &Permission("production:work-order:create".to_string())));
+        assert!(!rbac.has_permission(
+            &roles,
+            &Permission("production:work-order:create".to_string())
+        ));
     }
 
     #[test]
@@ -238,22 +241,42 @@ mod tests {
         assert!(RbacService::matches("quality:*", "quality", "ncr:create"));
         assert!(RbacService::matches("quality:*", "quality", "ncr:update"));
         assert!(RbacService::matches("*:*", "quality", "ncr:create"));
-        assert!(!RbacService::matches("production:*", "quality", "ncr:create"));
+        assert!(!RbacService::matches(
+            "production:*",
+            "quality",
+            "ncr:create"
+        ));
     }
 
     #[test]
     fn test_exact_match() {
-        assert!(RbacService::matches("quality:ncr:create", "quality", "ncr:create"));
+        assert!(RbacService::matches(
+            "quality:ncr:create",
+            "quality",
+            "ncr:create"
+        ));
         assert!(RbacService::matches("users:read", "users", "read"));
-        assert!(!RbacService::matches("quality:ncr:read", "quality", "ncr:create"));
-        assert!(!RbacService::matches("quality:ncr:create", "production", "ncr:create"));
+        assert!(!RbacService::matches(
+            "quality:ncr:read",
+            "quality",
+            "ncr:create"
+        ));
+        assert!(!RbacService::matches(
+            "quality:ncr:create",
+            "production",
+            "ncr:create"
+        ));
     }
 
     #[test]
     fn test_malformed_permission_never_matches() {
         assert!(!RbacService::matches("no-colon", "quality", "ncr:create"));
         assert!(!RbacService::matches("", "quality", "ncr:create"));
-        assert!(!RbacService::matches("a:b:c:extra", "quality", "ncr:create"));
+        assert!(!RbacService::matches(
+            "a:b:c:extra",
+            "quality",
+            "ncr:create"
+        ));
     }
 
     #[test]

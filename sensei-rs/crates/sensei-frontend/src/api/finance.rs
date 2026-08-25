@@ -118,10 +118,15 @@ impl FinanceApi {
     }
 
     pub async fn get_invoice(client: &ApiClient, id: &str) -> Result<InvoiceDto, ApiError> {
-        client.get(&format!("/api/v1/finance/invoices/{}", id)).await
+        client
+            .get(&format!("/api/v1/finance/invoices/{}", id))
+            .await
     }
 
-    pub async fn create_invoice(client: &ApiClient, req: &CreateInvoiceRequest) -> Result<InvoiceDto, ApiError> {
+    pub async fn create_invoice(
+        client: &ApiClient,
+        req: &CreateInvoiceRequest,
+    ) -> Result<InvoiceDto, ApiError> {
         client.post("/api/v1/finance/invoices", req).await
     }
 
@@ -130,7 +135,10 @@ impl FinanceApi {
         client.get("/api/v1/finance/payments").await
     }
 
-    pub async fn record_payment(client: &ApiClient, req: &RecordPaymentRequest) -> Result<PaymentDto, ApiError> {
+    pub async fn record_payment(
+        client: &ApiClient,
+        req: &RecordPaymentRequest,
+    ) -> Result<PaymentDto, ApiError> {
         client.post("/api/v1/finance/payments", req).await
     }
 
@@ -139,16 +147,24 @@ impl FinanceApi {
         client.get("/api/v1/finance/budgets").await
     }
 
-    pub async fn create_budget(client: &ApiClient, req: &CreateBudgetRequest) -> Result<BudgetDto, ApiError> {
+    pub async fn create_budget(
+        client: &ApiClient,
+        req: &CreateBudgetRequest,
+    ) -> Result<BudgetDto, ApiError> {
         client.post("/api/v1/finance/budgets", req).await
     }
 
     // ---- Journal Entries ----
-    pub async fn list_journal_entries(client: &ApiClient) -> Result<Vec<JournalEntryDto>, ApiError> {
+    pub async fn list_journal_entries(
+        client: &ApiClient,
+    ) -> Result<Vec<JournalEntryDto>, ApiError> {
         client.get("/api/v1/finance/journal-entries").await
     }
 
-    pub async fn post_journal_entry(client: &ApiClient, req: &PostJournalEntryRequest) -> Result<JournalEntryDto, ApiError> {
+    pub async fn post_journal_entry(
+        client: &ApiClient,
+        req: &PostJournalEntryRequest,
+    ) -> Result<JournalEntryDto, ApiError> {
         client.post("/api/v1/finance/journal-entries", req).await
     }
 
@@ -157,7 +173,15 @@ impl FinanceApi {
         client.get("/api/v1/finance/cost-rollups").await
     }
 
-    pub async fn run_cost_rollup(client: &ApiClient, product_id: &str) -> Result<CostRollupDto, ApiError> {
-        client.post(&format!("/api/v1/finance/cost-rollups/{}", product_id), &serde_json::json!({})).await
+    pub async fn run_cost_rollup(
+        client: &ApiClient,
+        product_id: &str,
+    ) -> Result<CostRollupDto, ApiError> {
+        client
+            .post(
+                &format!("/api/v1/finance/cost-rollups/{}", product_id),
+                &serde_json::json!({}),
+            )
+            .await
     }
 }

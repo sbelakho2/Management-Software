@@ -18,7 +18,6 @@ pub use database::DatabaseOperationsService;
 
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
 use sensei_core::domain::events::{
     A3ClosedEvent, A3CreatedEvent, AndonAcknowledgedEvent, AndonCreatedEvent, AndonResolvedEvent,
     DomainEvent, ProjectCreatedEvent, RiskCreatedEvent, RiskMitigatedEvent,
@@ -26,6 +25,7 @@ use sensei_core::domain::events::{
 use sensei_core::error::{Result, SenseiError};
 use sensei_core::pagination::PaginatedResponse;
 use sensei_event_bus::bus::EventBus;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -42,10 +42,10 @@ pub struct Andon {
     pub tenant_id: Uuid,
     pub andon_number: String,
     pub work_center_id: Uuid,
-    pub issue_type: String,   // quality, safety, maintenance, material, other
-    pub severity: String,     // low, medium, high, critical
+    pub issue_type: String, // quality, safety, maintenance, material, other
+    pub severity: String,   // low, medium, high, critical
     pub description: String,
-    pub status: String,       // active, acknowledged, resolved, closed
+    pub status: String, // active, acknowledged, resolved, closed
     pub raised_by: Uuid,
     pub acknowledged_by: Option<Uuid>,
     pub resolved_by: Option<Uuid>,
@@ -93,7 +93,7 @@ pub struct A3 {
     pub countermeasures: String,
     pub check_plan: String,
     pub follow_up: String,
-    pub status: String,   // draft, active, implemented, verified, closed
+    pub status: String, // draft, active, implemented, verified, closed
     /// Problem-solving discipline (e.g. standard, safety, quality).
     #[serde(default)]
     pub a3_type: String,
@@ -113,13 +113,13 @@ pub struct Risk {
     pub risk_number: String,
     pub title: String,
     pub description: String,
-    pub category: String,      // strategic, operational, financial, compliance, safety, quality
-    pub likelihood: String,    // rare, unlikely, possible, likely, almost_certain
-    pub impact: String,        // insignificant, minor, moderate, major, catastrophic
-    pub risk_score: i32,       // likelihood × impact (1-25)
+    pub category: String, // strategic, operational, financial, compliance, safety, quality
+    pub likelihood: String, // rare, unlikely, possible, likely, almost_certain
+    pub impact: String,   // insignificant, minor, moderate, major, catastrophic
+    pub risk_score: i32,  // likelihood × impact (1-25)
     pub mitigation: String,
     pub contingency: String,
-    pub status: String,        // identified, assessed, mitigated, monitored, closed
+    pub status: String, // identified, assessed, mitigated, monitored, closed
     pub owner_id: Uuid,
     pub created_at: DateTime<Utc>,
     pub mitigated_at: Option<DateTime<Utc>>,
@@ -329,11 +329,7 @@ impl Default for InMemoryOperationsService {
 impl OperationsService for InMemoryOperationsService {
     // ── Andon ───────────────────────────────────────────────────────────
 
-    async fn raise_andon(
-        &self,
-        tenant_id: Uuid,
-        mut andon: Andon,
-    ) -> Result<Andon> {
+    async fn raise_andon(&self, tenant_id: Uuid, mut andon: Andon) -> Result<Andon> {
         let mut counter = self.andon_counter.write().await;
         *counter += 1;
         let andon_number = Self::generate_andon_number(*counter);
@@ -391,7 +387,8 @@ impl OperationsService for InMemoryOperationsService {
 
         let result = andon.clone();
         drop(store);
-        self.publish_event(AndonAcknowledgedEvent::new(tenant_id, id, acknowledged_by)).await;
+        self.publish_event(AndonAcknowledgedEvent::new(tenant_id, id, acknowledged_by))
+            .await;
         Ok(result)
     }
 
@@ -475,11 +472,7 @@ impl OperationsService for InMemoryOperationsService {
 
     // ── Projects ────────────────────────────────────────────────────────
 
-    async fn create_project(
-        &self,
-        tenant_id: Uuid,
-        mut project: Project,
-    ) -> Result<Project> {
+    async fn create_project(&self, tenant_id: Uuid, mut project: Project) -> Result<Project> {
         let mut counter = self.project_counter.write().await;
         *counter += 1;
         let project_code = Self::generate_project_code(*counter);
@@ -608,10 +601,7 @@ impl OperationsService for InMemoryOperationsService {
         let store = self.a3s.read().await;
         let items: Vec<_> = store
             .values()
-            .filter(|a| {
-                a.tenant_id == tenant_id
-                    && status.is_none_or(|s| a.status == s)
-            })
+            .filter(|a| a.tenant_id == tenant_id && status.is_none_or(|s| a.status == s))
             .cloned()
             .collect();
         Ok(PaginatedResponse::new(items, page, per_page))
@@ -641,7 +631,7 @@ impl OperationsService for InMemoryOperationsService {
         };
         drop(store);
         self.publish_event(A3ClosedEvent::new(tenant_id, id, outcome))
-        .await;
+            .await;
         Ok(result)
     }
 
@@ -658,7 +648,10 @@ impl OperationsService for InMemoryOperationsService {
         let impact_score = Self::impact_score(&risk.impact);
         let risk_score = likelihood_score * impact_score;
 
-        risk.id = Uuid::new_v4();
+        // Preserve a caller-supplied id; only generate one when absent.
+        if risk.id.is_nil() {
+            risk.id = Uuid::new_v4();
+        }
         risk.tenant_id = tenant_id;
         risk.risk_number = risk_number;
         risk.risk_score = risk_score;
@@ -752,12 +745,7 @@ impl OperationsService for InMemoryOperationsService {
     }
     // ── New: Update / Delete ─────────────────────────────────────────────
 
-    async fn update_andon(
-        &self,
-        _tenant_id: Uuid,
-        id: Uuid,
-        andon: Andon,
-    ) -> Result<Andon> {
+    async fn update_andon(&self, _tenant_id: Uuid, id: Uuid, andon: Andon) -> Result<Andon> {
         let mut store = self.andons.write().await;
         let existing = store
             .get_mut(&id)
@@ -815,12 +803,7 @@ impl OperationsService for InMemoryOperationsService {
         Ok(())
     }
 
-    async fn update_a3(
-        &self,
-        _tenant_id: Uuid,
-        id: Uuid,
-        a3: A3,
-    ) -> Result<A3> {
+    async fn update_a3(&self, _tenant_id: Uuid, id: Uuid, a3: A3) -> Result<A3> {
         let mut store = self.a3s.write().await;
         let existing = store
             .get_mut(&id)
@@ -847,12 +830,7 @@ impl OperationsService for InMemoryOperationsService {
         Ok(())
     }
 
-    async fn update_risk(
-        &self,
-        _tenant_id: Uuid,
-        id: Uuid,
-        risk: Risk,
-    ) -> Result<Risk> {
+    async fn update_risk(&self, _tenant_id: Uuid, id: Uuid, risk: Risk) -> Result<Risk> {
         let mut store = self.risks.write().await;
         let existing = store
             .get_mut(&id)
@@ -926,7 +904,12 @@ mod tests {
         assert!(ack.response_time_seconds.is_some());
 
         let resolved = service
-            .resolve_andon(tenant_id, raised.id, user_id, "Rebooted controller, temperature normalised")
+            .resolve_andon(
+                tenant_id,
+                raised.id,
+                user_id,
+                "Rebooted controller, temperature normalised",
+            )
             .await
             .unwrap();
         assert_eq!(resolved.status, "resolved");
@@ -1011,10 +994,7 @@ mod tests {
         assert!(created.a3_number.starts_with("A3-"));
         assert_eq!(created.status, "draft");
 
-        let closed = service
-            .close_a3(tenant_id, created.id)
-            .await
-            .unwrap();
+        let closed = service.close_a3(tenant_id, created.id).await.unwrap();
         assert_eq!(closed.status, "closed");
         assert!(closed.closed_at.is_some());
     }
@@ -1052,10 +1032,7 @@ mod tests {
         assert_eq!(created.risk_score, 16);
         assert_eq!(created.status, "identified");
 
-        let mitigated = service
-            .mitigate_risk(tenant_id, created.id)
-            .await
-            .unwrap();
+        let mitigated = service.mitigate_risk(tenant_id, created.id).await.unwrap();
         assert_eq!(mitigated.status, "mitigated");
         assert!(mitigated.mitigated_at.is_some());
     }

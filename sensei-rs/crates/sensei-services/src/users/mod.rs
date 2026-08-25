@@ -7,7 +7,7 @@ use async_trait::async_trait;
 use sensei_core::domain::entities::User;
 use sensei_core::error::{Result, SenseiError};
 use sensei_core::pagination::PaginatedResponse;
-use sensei_core::types::{EntityId, TenantId, now};
+use sensei_core::types::{now, EntityId, TenantId};
 use std::collections::{HashMap, HashSet};
 use tokio::sync::RwLock;
 
@@ -71,7 +71,7 @@ pub trait UsersService: Send + Sync {
 /// - `Invalid` → 401 Unauthorized.
 /// - `Malformed` → the stored hash is corrupt; log and surface as a 500.
 pub(crate) async fn check_password(user: &User, password: &str) -> Result<()> {
-    use sensei_auth::password::{PasswordCheck, verify_password};
+    use sensei_auth::password::{verify_password, PasswordCheck};
     match verify_password(password, &user.password_hash)
         .map_err(|e| SenseiError::Internal(format!("Password verification failed: {e}")))?
     {
@@ -123,7 +123,15 @@ impl InMemoryUsersService {
     ) -> Self {
         let mut users = HashMap::new();
         let email: String = email.into();
-        let user = User::new(tenant_id, email, name.into(), password_hash.into());
+        // The whole point of this constructor is an admin bootstrap account:
+        // the user must carry the admin role (User::new only grants "user").
+        let user = User::with_roles(
+            tenant_id,
+            email,
+            name.into(),
+            password_hash.into(),
+            vec!["admin".to_string(), "user".to_string()],
+        );
         users.insert(user.id, user);
         Self {
             users: RwLock::new(users),
@@ -146,9 +154,7 @@ impl UsersService for InMemoryUsersService {
             .values()
             .find(|u| u.email.eq_ignore_ascii_case(email))
             .cloned()
-            .ok_or_else(|| {
-                SenseiError::NotFound(format!("User with email '{email}' not found"))
-            })
+            .ok_or_else(|| SenseiError::NotFound(format!("User with email '{email}' not found")))
     }
 
     async fn find_by_id(&self, id: EntityId) -> Result<User> {
@@ -210,7 +216,9 @@ impl UsersService for InMemoryUsersService {
     async fn update_user(&self, id: EntityId, updated: User) -> Result<User> {
         let mut users = self.users.write().await;
         if !users.contains_key(&id) {
-            return Err(SenseiError::NotFound(format!("User with id '{id}' not found")));
+            return Err(SenseiError::NotFound(format!(
+                "User with id '{id}' not found"
+            )));
         }
         // Check email uniqueness before taking the mutable borrow so the
         // immutable scan does not overlap the `get_mut` borrow.
@@ -224,9 +232,7 @@ impl UsersService for InMemoryUsersService {
             )));
         }
 
-        let user = users
-            .get_mut(&id)
-            .expect("user presence checked above");
+        let user = users.get_mut(&id).expect("user presence checked above");
         user.name = updated.name;
         user.email = updated.email;
         user.password_hash = updated.password_hash;
@@ -273,7 +279,9 @@ impl UsersService for InMemoryUsersService {
     async fn set_email_verified(&self, id: EntityId, verified: bool) -> Result<()> {
         let users = self.users.read().await;
         if !users.contains_key(&id) {
-            return Err(SenseiError::NotFound(format!("User with id '{id}' not found")));
+            return Err(SenseiError::NotFound(format!(
+                "User with id '{id}' not found"
+            )));
         }
         drop(users);
         let mut verified_set = self.verified_emails.write().await;
@@ -294,9 +302,7 @@ pub(crate) fn validate_roles(roles: &[String]) -> Result<()> {
     let rbac = sensei_auth::rbac::RbacService::new();
     for role in roles {
         if !rbac.role_exists(role) {
-            return Err(SenseiError::Validation(format!(
-                "Unknown role '{role}'"
-            )));
+            return Err(SenseiError::Validation(format!("Unknown role '{role}'")));
         }
     }
     Ok(())
@@ -330,7 +336,10 @@ mod tests {
         assert!(svc.find_by_email("old@example.com").await.is_err());
         let found = svc.find_by_email("new@example.com").await.unwrap();
         assert_eq!(found.id, created.id);
-        assert_eq!(svc.find_by_id(created.id).await.unwrap().email, "new@example.com");
+        assert_eq!(
+            svc.find_by_id(created.id).await.unwrap().email,
+            "new@example.com"
+        );
     }
 
     #[tokio::test]

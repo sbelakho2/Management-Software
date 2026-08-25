@@ -12,8 +12,8 @@ use sqlx::PgPool;
 use uuid::Uuid;
 
 use super::{
-    InventoryItem, POItem, PurchaseOrder, Quote, QuoteLineItem, RFQ, RFQItem, SalesOrder,
-    SalesOrderItem, StockMove, SupplyChainService,
+    InventoryItem, POItem, PurchaseOrder, Quote, QuoteLineItem, RFQItem, SalesOrder,
+    SalesOrderItem, StockMove, SupplyChainService, RFQ,
 };
 
 /// PostgreSQL-backed implementation of [`SupplyChainService`].
@@ -199,34 +199,117 @@ struct StockMoveRow {
 
 fn rfq_row_to_domain(r: RfqRow) -> RFQ {
     let items: Vec<RFQItem> = serde_json::from_value(r.items).unwrap_or_default();
-    RFQ { id: r.id, tenant_id: r.tenant_id, rfq_number: r.rfq_number, supplier_id: r.supplier_id, supplier_name: r.supplier_name, status: r.status, items, notes: r.notes, created_by: r.created_by, created_at: r.created_at }
+    RFQ {
+        id: r.id,
+        tenant_id: r.tenant_id,
+        rfq_number: r.rfq_number,
+        supplier_id: r.supplier_id,
+        supplier_name: r.supplier_name,
+        status: r.status,
+        items,
+        notes: r.notes,
+        created_by: r.created_by,
+        created_at: r.created_at,
+    }
 }
 
 fn quote_row_to_domain(r: QuoteRow) -> Quote {
     let line_items: Vec<QuoteLineItem> = serde_json::from_value(r.line_items).unwrap_or_default();
-    Quote { id: r.id, tenant_id: r.tenant_id, quote_number: r.quote_number, rfq_id: r.rfq_id, customer_id: r.customer_id, customer_name: r.customer_name, status: r.status, line_items, total_amount: r.total_amount, currency: r.currency, valid_until: r.valid_until, created_by: r.created_by, created_at: r.created_at }
+    Quote {
+        id: r.id,
+        tenant_id: r.tenant_id,
+        quote_number: r.quote_number,
+        rfq_id: r.rfq_id,
+        customer_id: r.customer_id,
+        customer_name: r.customer_name,
+        status: r.status,
+        line_items,
+        total_amount: r.total_amount,
+        currency: r.currency,
+        valid_until: r.valid_until,
+        created_by: r.created_by,
+        created_at: r.created_at,
+    }
 }
 
 fn so_row_to_domain(r: SalesOrderRow) -> SalesOrder {
     let line_items: Vec<SalesOrderItem> = serde_json::from_value(r.line_items).unwrap_or_default();
-    SalesOrder { id: r.id, tenant_id: r.tenant_id, order_number: r.order_number, customer_id: r.customer_id, customer_name: r.customer_name, status: r.status, line_items, total_amount: r.total_amount, currency: r.currency, delivery_date: r.delivery_date, shipping_address: r.shipping_address, created_by: r.created_by, created_at: r.created_at }
+    SalesOrder {
+        id: r.id,
+        tenant_id: r.tenant_id,
+        order_number: r.order_number,
+        customer_id: r.customer_id,
+        customer_name: r.customer_name,
+        status: r.status,
+        line_items,
+        total_amount: r.total_amount,
+        currency: r.currency,
+        delivery_date: r.delivery_date,
+        shipping_address: r.shipping_address,
+        created_by: r.created_by,
+        created_at: r.created_at,
+    }
 }
 
 fn po_row_to_domain(r: PurchaseOrderRow) -> PurchaseOrder {
     let line_items: Vec<POItem> = serde_json::from_value(r.line_items).unwrap_or_default();
-    PurchaseOrder { id: r.id, tenant_id: r.tenant_id, po_number: r.po_number, supplier_id: r.supplier_id, supplier_name: r.supplier_name, status: r.status, line_items, total_amount: r.total_amount, currency: r.currency, expected_delivery: r.expected_delivery, created_by: r.created_by, created_at: r.created_at }
+    PurchaseOrder {
+        id: r.id,
+        tenant_id: r.tenant_id,
+        po_number: r.po_number,
+        supplier_id: r.supplier_id,
+        supplier_name: r.supplier_name,
+        status: r.status,
+        line_items,
+        total_amount: r.total_amount,
+        currency: r.currency,
+        expected_delivery: r.expected_delivery,
+        created_by: r.created_by,
+        created_at: r.created_at,
+    }
 }
 
 fn inv_row_to_domain(r: InventoryRow) -> InventoryItem {
-    InventoryItem { id: r.id, tenant_id: r.tenant_id, product_id: r.product_id, product_name: r.product_name, quantity_on_hand: r.quantity_on_hand, quantity_reserved: r.quantity_reserved, quantity_available: r.quantity_available, location: r.location, lot_number: r.lot_number, reorder_point: r.reorder_point, reorder_quantity: r.reorder_quantity }
+    InventoryItem {
+        id: r.id,
+        tenant_id: r.tenant_id,
+        product_id: r.product_id,
+        product_name: r.product_name,
+        quantity_on_hand: r.quantity_on_hand,
+        quantity_reserved: r.quantity_reserved,
+        quantity_available: r.quantity_available,
+        location: r.location,
+        lot_number: r.lot_number,
+        reorder_point: r.reorder_point,
+        reorder_quantity: r.reorder_quantity,
+    }
 }
 
 fn sm_row_to_domain(r: StockMoveRow) -> StockMove {
-    StockMove { id: r.id, tenant_id: r.tenant_id, product_id: r.product_id, product_name: r.product_name, quantity: r.quantity, move_type: r.move_type, from_location: r.from_location, to_location: r.to_location, reference_type: r.reference_type, reference_id: r.reference_id, created_by: r.created_by, created_at: r.created_at }
+    StockMove {
+        id: r.id,
+        tenant_id: r.tenant_id,
+        product_id: r.product_id,
+        product_name: r.product_name,
+        quantity: r.quantity,
+        move_type: r.move_type,
+        from_location: r.from_location,
+        to_location: r.to_location,
+        reference_type: r.reference_type,
+        reference_id: r.reference_id,
+        created_by: r.created_by,
+        created_at: r.created_at,
+    }
 }
 
 fn paginate<T>(items: Vec<T>, count: i64, page: usize, per_page: usize) -> PaginatedResponse<T> {
-    PaginatedResponse { data: items, total: count as usize, page, per_page, total_pages: ((count as usize).max(1) + per_page - 1) / per_page }
+    PaginatedResponse {
+        data: items,
+        total: count as usize,
+        page,
+        per_page,
+        total_pages: (count as usize).max(1).div_ceil(per_page),
+    }
 }
 
 fn gen_id() -> (Uuid, String) {
@@ -243,7 +326,8 @@ impl SupplyChainService for DatabaseSupplyChainService {
         let now = Utc::now();
         let (id, suffix) = gen_id();
         let rfq_number = format!("RFQ-{}-{}", now.format("%Y%m%d"), suffix);
-        let items_json = serde_json::to_value(&rfq.items).unwrap_or(serde_json::Value::Array(vec![]));
+        let items_json =
+            serde_json::to_value(&rfq.items).unwrap_or(serde_json::Value::Array(vec![]));
 
         let row = sqlx::query_as::<_, RfqRow>(
             r#"INSERT INTO rfqs (id, tenant_id, rfq_number, supplier_id, supplier_name, status, items, notes, created_by, created_at)
@@ -266,16 +350,35 @@ impl SupplyChainService for DatabaseSupplyChainService {
         Ok(rfq_row_to_domain(row))
     }
 
-    async fn list_rfqs(&self, tenant_id: Uuid, status: Option<&str>, page: Option<usize>, per_page: Option<usize>) -> Result<PaginatedResponse<RFQ>> {
-        let page = page.unwrap_or(1).max(1); let per_page = per_page.unwrap_or(20).clamp(1, 100); let offset = (page - 1) * per_page;
+    async fn list_rfqs(
+        &self,
+        tenant_id: Uuid,
+        status: Option<&str>,
+        page: Option<usize>,
+        per_page: Option<usize>,
+    ) -> Result<PaginatedResponse<RFQ>> {
+        let page = page.unwrap_or(1).max(1);
+        let per_page = per_page.unwrap_or(20).clamp(1, 100);
+        let offset = (page - 1) * per_page;
         let items: Vec<RfqRow> = sqlx::query_as(
             r#"SELECT id, tenant_id, rfq_number, supplier_id, supplier_name, status, items, notes, created_by, created_at FROM rfqs
                WHERE tenant_id=$1 AND ($2::text IS NULL OR status=$2) ORDER BY created_at DESC LIMIT $3 OFFSET $4"#,
         ).bind(tenant_id).bind(status).bind(per_page as i64).bind(offset as i64).fetch_all(&self.pool).await
             .map_err(|e| SenseiError::Database(format!("Failed to list RFQs: {e}")))?;
-        let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM rfqs WHERE tenant_id=$1 AND ($2::text IS NULL OR status=$2)")
-            .bind(tenant_id).bind(status).fetch_one(&self.pool).await.map_err(|e| SenseiError::Database(format!("Failed to count RFQs: {e}")))?;
-        Ok(paginate(items.into_iter().map(rfq_row_to_domain).collect(), count, page, per_page))
+        let count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM rfqs WHERE tenant_id=$1 AND ($2::text IS NULL OR status=$2)",
+        )
+        .bind(tenant_id)
+        .bind(status)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|e| SenseiError::Database(format!("Failed to count RFQs: {e}")))?;
+        Ok(paginate(
+            items.into_iter().map(rfq_row_to_domain).collect(),
+            count,
+            page,
+            per_page,
+        ))
     }
 
     async fn update_rfq_status(&self, tenant_id: Uuid, id: Uuid, status: &str) -> Result<RFQ> {
@@ -291,9 +394,11 @@ impl SupplyChainService for DatabaseSupplyChainService {
     // ── Quotes ──────────────────────────────────────────────────────────
 
     async fn create_quote(&self, tenant_id: Uuid, quote: Quote) -> Result<Quote> {
-        let now = Utc::now(); let (id, suffix) = gen_id();
+        let now = Utc::now();
+        let (id, suffix) = gen_id();
         let quote_number = format!("QTE-{}-{}", now.format("%Y%m%d"), suffix);
-        let li_json = serde_json::to_value(&quote.line_items).unwrap_or(serde_json::Value::Array(vec![]));
+        let li_json =
+            serde_json::to_value(&quote.line_items).unwrap_or(serde_json::Value::Array(vec![]));
         let total: f64 = quote.line_items.iter().map(|li| li.net_price).sum();
 
         let row = sqlx::query_as::<_, QuoteRow>(
@@ -316,16 +421,35 @@ impl SupplyChainService for DatabaseSupplyChainService {
         Ok(quote_row_to_domain(row))
     }
 
-    async fn list_quotes(&self, tenant_id: Uuid, status: Option<&str>, page: Option<usize>, per_page: Option<usize>) -> Result<PaginatedResponse<Quote>> {
-        let page = page.unwrap_or(1).max(1); let per_page = per_page.unwrap_or(20).clamp(1, 100); let offset = (page - 1) * per_page;
+    async fn list_quotes(
+        &self,
+        tenant_id: Uuid,
+        status: Option<&str>,
+        page: Option<usize>,
+        per_page: Option<usize>,
+    ) -> Result<PaginatedResponse<Quote>> {
+        let page = page.unwrap_or(1).max(1);
+        let per_page = per_page.unwrap_or(20).clamp(1, 100);
+        let offset = (page - 1) * per_page;
         let items: Vec<QuoteRow> = sqlx::query_as(
             r#"SELECT id, tenant_id, quote_number, rfq_id, customer_id, customer_name, status, line_items, total_amount, currency, valid_until, created_by, created_at FROM quotes
                WHERE tenant_id=$1 AND ($2::text IS NULL OR status=$2) ORDER BY created_at DESC LIMIT $3 OFFSET $4"#,
         ).bind(tenant_id).bind(status).bind(per_page as i64).bind(offset as i64).fetch_all(&self.pool).await
             .map_err(|e| SenseiError::Database(format!("Failed to list quotes: {e}")))?;
-        let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM quotes WHERE tenant_id=$1 AND ($2::text IS NULL OR status=$2)")
-            .bind(tenant_id).bind(status).fetch_one(&self.pool).await.map_err(|e| SenseiError::Database(format!("Failed to count quotes: {e}")))?;
-        Ok(paginate(items.into_iter().map(quote_row_to_domain).collect(), count, page, per_page))
+        let count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM quotes WHERE tenant_id=$1 AND ($2::text IS NULL OR status=$2)",
+        )
+        .bind(tenant_id)
+        .bind(status)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|e| SenseiError::Database(format!("Failed to count quotes: {e}")))?;
+        Ok(paginate(
+            items.into_iter().map(quote_row_to_domain).collect(),
+            count,
+            page,
+            per_page,
+        ))
     }
 
     async fn approve_quote(&self, tenant_id: Uuid, id: Uuid) -> Result<Quote> {
@@ -340,12 +464,20 @@ impl SupplyChainService for DatabaseSupplyChainService {
 
     async fn convert_quote_to_order(&self, tenant_id: Uuid, quote_id: Uuid) -> Result<SalesOrder> {
         let quote = self.get_quote(tenant_id, quote_id).await?;
-        let now = Utc::now(); let (id, suffix) = gen_id();
+        let now = Utc::now();
+        let (id, suffix) = gen_id();
         let order_number = format!("SO-{}-{}", now.format("%Y%m%d"), suffix);
-        let so_items: Vec<SalesOrderItem> = quote.line_items.iter().map(|li| SalesOrderItem {
-            product_id: li.product_id, product_name: li.product_name.clone(),
-            quantity: li.quantity, unit_price: li.unit_price, delivered_quantity: 0,
-        }).collect();
+        let so_items: Vec<SalesOrderItem> = quote
+            .line_items
+            .iter()
+            .map(|li| SalesOrderItem {
+                product_id: li.product_id,
+                product_name: li.product_name.clone(),
+                quantity: li.quantity,
+                unit_price: li.unit_price,
+                delivered_quantity: 0,
+            })
+            .collect();
         let li_json = serde_json::to_value(&so_items).unwrap_or(serde_json::Value::Array(vec![]));
 
         let row = sqlx::query_as::<_, SalesOrderRow>(
@@ -357,7 +489,10 @@ impl SupplyChainService for DatabaseSupplyChainService {
             .fetch_one(&self.pool).await.map_err(|e| SenseiError::Database(format!("Failed to convert quote to order: {e}")))?;
 
         sqlx::query("UPDATE quotes SET status='converted' WHERE id=$1 AND tenant_id=$2")
-            .bind(quote_id).bind(tenant_id).execute(&self.pool).await
+            .bind(quote_id)
+            .bind(tenant_id)
+            .execute(&self.pool)
+            .await
             .map_err(|e| SenseiError::Database(format!("Failed to update quote status: {e}")))?;
 
         Ok(so_row_to_domain(row))
@@ -366,10 +501,16 @@ impl SupplyChainService for DatabaseSupplyChainService {
     // ── Sales Orders ────────────────────────────────────────────────────
 
     async fn create_sales_order(&self, tenant_id: Uuid, order: SalesOrder) -> Result<SalesOrder> {
-        let now = Utc::now(); let (id, suffix) = gen_id();
+        let now = Utc::now();
+        let (id, suffix) = gen_id();
         let order_number = format!("SO-{}-{}", now.format("%Y%m%d"), suffix);
-        let li_json = serde_json::to_value(&order.line_items).unwrap_or(serde_json::Value::Array(vec![]));
-        let total: f64 = order.line_items.iter().map(|li| li.quantity as f64 * li.unit_price).sum();
+        let li_json =
+            serde_json::to_value(&order.line_items).unwrap_or(serde_json::Value::Array(vec![]));
+        let total: f64 = order
+            .line_items
+            .iter()
+            .map(|li| li.quantity as f64 * li.unit_price)
+            .sum();
 
         let row = sqlx::query_as::<_, SalesOrderRow>(
             r#"INSERT INTO sales_orders (id, tenant_id, order_number, customer_id, customer_name, status, line_items, total_amount, currency, delivery_date, shipping_address, created_by, created_at)
@@ -390,8 +531,16 @@ impl SupplyChainService for DatabaseSupplyChainService {
         Ok(so_row_to_domain(row))
     }
 
-    async fn list_sales_orders(&self, tenant_id: Uuid, status: Option<&str>, page: Option<usize>, per_page: Option<usize>) -> Result<PaginatedResponse<SalesOrder>> {
-        let page = page.unwrap_or(1).max(1); let per_page = per_page.unwrap_or(20).clamp(1, 100); let offset = (page - 1) * per_page;
+    async fn list_sales_orders(
+        &self,
+        tenant_id: Uuid,
+        status: Option<&str>,
+        page: Option<usize>,
+        per_page: Option<usize>,
+    ) -> Result<PaginatedResponse<SalesOrder>> {
+        let page = page.unwrap_or(1).max(1);
+        let per_page = per_page.unwrap_or(20).clamp(1, 100);
+        let offset = (page - 1) * per_page;
         let items: Vec<SalesOrderRow> = sqlx::query_as(
             r#"SELECT id, tenant_id, order_number, customer_id, customer_name, status, line_items, total_amount, currency, delivery_date, shipping_address, created_by, created_at FROM sales_orders
                WHERE tenant_id=$1 AND ($2::text IS NULL OR status=$2) ORDER BY created_at DESC LIMIT $3 OFFSET $4"#,
@@ -399,10 +548,20 @@ impl SupplyChainService for DatabaseSupplyChainService {
             .map_err(|e| SenseiError::Database(format!("Failed to list sales orders: {e}")))?;
         let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM sales_orders WHERE tenant_id=$1 AND ($2::text IS NULL OR status=$2)")
             .bind(tenant_id).bind(status).fetch_one(&self.pool).await.map_err(|e| SenseiError::Database(format!("Failed to count sales orders: {e}")))?;
-        Ok(paginate(items.into_iter().map(so_row_to_domain).collect(), count, page, per_page))
+        Ok(paginate(
+            items.into_iter().map(so_row_to_domain).collect(),
+            count,
+            page,
+            per_page,
+        ))
     }
 
-    async fn update_sales_order_status(&self, tenant_id: Uuid, id: Uuid, status: &str) -> Result<SalesOrder> {
+    async fn update_sales_order_status(
+        &self,
+        tenant_id: Uuid,
+        id: Uuid,
+        status: &str,
+    ) -> Result<SalesOrder> {
         let row = sqlx::query_as::<_, SalesOrderRow>(
             r#"UPDATE sales_orders SET status=$1 WHERE id=$2 AND tenant_id=$3
                RETURNING id, tenant_id, order_number, customer_id, customer_name, status, line_items, total_amount, currency, delivery_date, shipping_address, created_by, created_at"#,
@@ -414,11 +573,21 @@ impl SupplyChainService for DatabaseSupplyChainService {
 
     // ── Purchase Orders ─────────────────────────────────────────────────
 
-    async fn create_purchase_order(&self, tenant_id: Uuid, po: PurchaseOrder) -> Result<PurchaseOrder> {
-        let now = Utc::now(); let (id, suffix) = gen_id();
+    async fn create_purchase_order(
+        &self,
+        tenant_id: Uuid,
+        po: PurchaseOrder,
+    ) -> Result<PurchaseOrder> {
+        let now = Utc::now();
+        let (id, suffix) = gen_id();
         let po_number = format!("PO-{}-{}", now.format("%Y%m%d"), suffix);
-        let li_json = serde_json::to_value(&po.line_items).unwrap_or(serde_json::Value::Array(vec![]));
-        let total: f64 = po.line_items.iter().map(|li| li.quantity_ordered as f64 * li.unit_price).sum();
+        let li_json =
+            serde_json::to_value(&po.line_items).unwrap_or(serde_json::Value::Array(vec![]));
+        let total: f64 = po
+            .line_items
+            .iter()
+            .map(|li| li.quantity_ordered as f64 * li.unit_price)
+            .sum();
 
         let row = sqlx::query_as::<_, PurchaseOrderRow>(
             r#"INSERT INTO purchase_orders (id, tenant_id, po_number, supplier_id, supplier_name, status, line_items, total_amount, currency, expected_delivery, created_by, created_at)
@@ -439,8 +608,16 @@ impl SupplyChainService for DatabaseSupplyChainService {
         Ok(po_row_to_domain(row))
     }
 
-    async fn list_purchase_orders(&self, tenant_id: Uuid, status: Option<&str>, page: Option<usize>, per_page: Option<usize>) -> Result<PaginatedResponse<PurchaseOrder>> {
-        let page = page.unwrap_or(1).max(1); let per_page = per_page.unwrap_or(20).clamp(1, 100); let offset = (page - 1) * per_page;
+    async fn list_purchase_orders(
+        &self,
+        tenant_id: Uuid,
+        status: Option<&str>,
+        page: Option<usize>,
+        per_page: Option<usize>,
+    ) -> Result<PaginatedResponse<PurchaseOrder>> {
+        let page = page.unwrap_or(1).max(1);
+        let per_page = per_page.unwrap_or(20).clamp(1, 100);
+        let offset = (page - 1) * per_page;
         let items: Vec<PurchaseOrderRow> = sqlx::query_as(
             r#"SELECT id, tenant_id, po_number, supplier_id, supplier_name, status, line_items, total_amount, currency, expected_delivery, created_by, created_at FROM purchase_orders
                WHERE tenant_id=$1 AND ($2::text IS NULL OR status=$2) ORDER BY created_at DESC LIMIT $3 OFFSET $4"#,
@@ -448,16 +625,30 @@ impl SupplyChainService for DatabaseSupplyChainService {
             .map_err(|e| SenseiError::Database(format!("Failed to list POs: {e}")))?;
         let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM purchase_orders WHERE tenant_id=$1 AND ($2::text IS NULL OR status=$2)")
             .bind(tenant_id).bind(status).fetch_one(&self.pool).await.map_err(|e| SenseiError::Database(format!("Failed to count POs: {e}")))?;
-        Ok(paginate(items.into_iter().map(po_row_to_domain).collect(), count, page, per_page))
+        Ok(paginate(
+            items.into_iter().map(po_row_to_domain).collect(),
+            count,
+            page,
+            per_page,
+        ))
     }
 
-    async fn receive_po_line(&self, tenant_id: Uuid, po_id: Uuid, product_id: Uuid, quantity_received: i64) -> Result<PurchaseOrder> {
+    async fn receive_po_line(
+        &self,
+        tenant_id: Uuid,
+        po_id: Uuid,
+        product_id: Uuid,
+        quantity_received: i64,
+    ) -> Result<PurchaseOrder> {
         if quantity_received <= 0 {
             return Err(SenseiError::Validation(
                 "Received quantity must be positive".to_string(),
             ));
         }
-        let mut tx = self.pool.begin().await
+        let mut tx = self
+            .pool
+            .begin()
+            .await
             .map_err(|e| SenseiError::Database(format!("Failed to begin transaction: {e}")))?;
 
         // Load the PO's JSONB line items and supplier, then update them.
@@ -466,14 +657,18 @@ impl SupplyChainService for DatabaseSupplyChainService {
                       line_items, total_amount, currency, expected_delivery, created_by, created_at
                FROM purchase_orders WHERE id=$1 AND tenant_id=$2 FOR UPDATE"#,
         )
-        .bind(po_id).bind(tenant_id)
-        .fetch_optional(&mut *tx).await
+        .bind(po_id)
+        .bind(tenant_id)
+        .fetch_optional(&mut *tx)
+        .await
         .map_err(|e| SenseiError::Database(format!("Failed to get PO: {e}")))?
         .ok_or_else(|| SenseiError::NotFound(format!("Purchase order {po_id} not found")))?;
 
         let mut items: Vec<POItem> = serde_json::from_value(row.line_items).map_err(|e| {
             tracing::error!(po_id = %po_id, "Failed to deserialize PO line items: {e}");
-            SenseiError::Database(format!("Purchase order {po_id} has corrupt line items: {e}"))
+            SenseiError::Database(format!(
+                "Purchase order {po_id} has corrupt line items: {e}"
+            ))
         })?;
 
         let mut found = false;
@@ -496,8 +691,14 @@ impl SupplyChainService for DatabaseSupplyChainService {
                 "Product {product_id} not found in purchase order {po_id}"
             )));
         }
-        let all_received = items.iter().all(|i| i.quantity_received >= i.quantity_ordered);
-        let new_status = if all_received { "received" } else { "partially_received" };
+        let all_received = items
+            .iter()
+            .all(|i| i.quantity_received >= i.quantity_ordered);
+        let new_status = if all_received {
+            "received"
+        } else {
+            "partially_received"
+        };
         let li_json = serde_json::to_value(&items).map_err(|e| {
             SenseiError::Database(format!("Failed to serialize PO line items: {e}"))
         })?;
@@ -508,8 +709,11 @@ impl SupplyChainService for DatabaseSupplyChainService {
             .map_err(|e| SenseiError::Database(format!("Failed to receive PO line: {e}")))?;
 
         // Update inventory at the product's first known location.
-        let location = self.resolve_stock_location(&mut tx, tenant_id, product_id).await?;
-        self.apply_inventory_delta(&mut tx, tenant_id, product_id, &location, quantity_received).await?;
+        let location = self
+            .resolve_stock_location(&mut tx, tenant_id, product_id)
+            .await?;
+        self.apply_inventory_delta(&mut tx, tenant_id, product_id, &location, quantity_received)
+            .await?;
 
         // Record the stock move and goods receipt inside the same transaction.
         sqlx::query(
@@ -536,11 +740,14 @@ impl SupplyChainService for DatabaseSupplyChainService {
                       line_items, total_amount, currency, expected_delivery, created_by, created_at
                FROM purchase_orders WHERE id=$1 AND tenant_id=$2"#,
         )
-        .bind(po_id).bind(tenant_id)
-        .fetch_one(&mut *tx).await
+        .bind(po_id)
+        .bind(tenant_id)
+        .fetch_one(&mut *tx)
+        .await
         .map_err(|e| SenseiError::Database(format!("Failed to reload PO: {e}")))?;
 
-        tx.commit().await
+        tx.commit()
+            .await
             .map_err(|e| SenseiError::Database(format!("Failed to commit receipt: {e}")))?;
 
         Ok(po_row_to_domain(updated))
@@ -559,8 +766,16 @@ impl SupplyChainService for DatabaseSupplyChainService {
         Ok(rows.into_iter().map(inv_row_to_domain).collect())
     }
 
-    async fn list_inventory(&self, tenant_id: Uuid, location: Option<&str>, page: Option<usize>, per_page: Option<usize>) -> Result<PaginatedResponse<InventoryItem>> {
-        let page = page.unwrap_or(1).max(1); let per_page = per_page.unwrap_or(20).clamp(1, 100); let offset = (page - 1) * per_page;
+    async fn list_inventory(
+        &self,
+        tenant_id: Uuid,
+        location: Option<&str>,
+        page: Option<usize>,
+        per_page: Option<usize>,
+    ) -> Result<PaginatedResponse<InventoryItem>> {
+        let page = page.unwrap_or(1).max(1);
+        let per_page = per_page.unwrap_or(20).clamp(1, 100);
+        let offset = (page - 1) * per_page;
         let items: Vec<InventoryRow> = sqlx::query_as(
             r#"SELECT id, tenant_id, product_id, product_name,
                       quantity_on_hand::bigint, quantity_reserved::bigint, quantity_available::bigint,
@@ -571,10 +786,22 @@ impl SupplyChainService for DatabaseSupplyChainService {
             .map_err(|e| SenseiError::Database(format!("Failed to list inventory: {e}")))?;
         let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM inventory_items WHERE tenant_id=$1 AND ($2::text IS NULL OR location=$2)")
             .bind(tenant_id).bind(location).fetch_one(&self.pool).await.map_err(|e| SenseiError::Database(format!("Failed to count inventory: {e}")))?;
-        Ok(paginate(items.into_iter().map(inv_row_to_domain).collect(), count, page, per_page))
+        Ok(paginate(
+            items.into_iter().map(inv_row_to_domain).collect(),
+            count,
+            page,
+            per_page,
+        ))
     }
 
-    async fn adjust_inventory(&self, tenant_id: Uuid, product_id: Uuid, location: &str, quantity_change: i64, _reason: &str) -> Result<InventoryItem> {
+    async fn adjust_inventory(
+        &self,
+        tenant_id: Uuid,
+        product_id: Uuid,
+        location: &str,
+        quantity_change: i64,
+        _reason: &str,
+    ) -> Result<InventoryItem> {
         // Adjusting stock at a location that has no row is an error — never
         // auto-create an inventory row for an arbitrary location name.
         let row = sqlx::query_as::<_, InventoryRow>(
@@ -594,8 +821,12 @@ impl SupplyChainService for DatabaseSupplyChainService {
     // ── Stock Movements ─────────────────────────────────────────────────
 
     async fn create_stock_move(&self, tenant_id: Uuid, stock_move: StockMove) -> Result<StockMove> {
-        let now = Utc::now(); let id = Uuid::new_v4();
-        let mut tx = self.pool.begin().await
+        let now = Utc::now();
+        let id = Uuid::new_v4();
+        let mut tx = self
+            .pool
+            .begin()
+            .await
             .map_err(|e| SenseiError::Database(format!("Failed to begin transaction: {e}")))?;
 
         let row = sqlx::query_as::<_, StockMoveRow>(
@@ -612,57 +843,107 @@ impl SupplyChainService for DatabaseSupplyChainService {
         // the move semantics: receipts credit the destination, issues/debits
         // the source, transfers move between both, adjustments apply to the
         // named location.
-        let from_location = stock_move
-            .from_location
-            .as_deref()
-            .map(str::to_string);
+        let from_location = stock_move.from_location.as_deref().map(str::to_string);
         let to_location = stock_move.to_location.clone();
 
         match stock_move.move_type.as_str() {
             "receipt" => {
                 let location = match to_location.as_str() {
-                    "" => self.resolve_stock_location(&mut tx, tenant_id, stock_move.product_id).await?,
+                    "" => {
+                        self.resolve_stock_location(&mut tx, tenant_id, stock_move.product_id)
+                            .await?
+                    }
                     l => l.to_string(),
                 };
-                self.apply_inventory_delta(&mut tx, tenant_id, stock_move.product_id, &location, stock_move.quantity).await?;
+                self.apply_inventory_delta(
+                    &mut tx,
+                    tenant_id,
+                    stock_move.product_id,
+                    &location,
+                    stock_move.quantity,
+                )
+                .await?;
             }
             "delivery" | "issue" => {
                 let location = match from_location {
                     Some(l) if !l.is_empty() => l,
-                    _ => self.resolve_stock_location(&mut tx, tenant_id, stock_move.product_id).await?,
+                    _ => {
+                        self.resolve_stock_location(&mut tx, tenant_id, stock_move.product_id)
+                            .await?
+                    }
                 };
-                self.apply_inventory_delta(&mut tx, tenant_id, stock_move.product_id, &location, -stock_move.quantity).await?;
+                self.apply_inventory_delta(
+                    &mut tx,
+                    tenant_id,
+                    stock_move.product_id,
+                    &location,
+                    -stock_move.quantity,
+                )
+                .await?;
             }
             "transfer" => {
                 if let Some(from) = from_location {
                     if !from.is_empty() {
-                        self.apply_inventory_delta(&mut tx, tenant_id, stock_move.product_id, &from, -stock_move.quantity).await?;
+                        self.apply_inventory_delta(
+                            &mut tx,
+                            tenant_id,
+                            stock_move.product_id,
+                            &from,
+                            -stock_move.quantity,
+                        )
+                        .await?;
                     }
                 }
                 let to = match to_location.as_str() {
-                    "" => self.resolve_stock_location(&mut tx, tenant_id, stock_move.product_id).await?,
+                    "" => {
+                        self.resolve_stock_location(&mut tx, tenant_id, stock_move.product_id)
+                            .await?
+                    }
                     l => l.to_string(),
                 };
-                self.apply_inventory_delta(&mut tx, tenant_id, stock_move.product_id, &to, stock_move.quantity).await?;
+                self.apply_inventory_delta(
+                    &mut tx,
+                    tenant_id,
+                    stock_move.product_id,
+                    &to,
+                    stock_move.quantity,
+                )
+                .await?;
             }
             "adjustment" => {
                 let location = match from_location {
                     Some(l) if !l.is_empty() => l,
                     _ => to_location,
                 };
-                self.apply_inventory_delta(&mut tx, tenant_id, stock_move.product_id, &location, stock_move.quantity).await?;
+                self.apply_inventory_delta(
+                    &mut tx,
+                    tenant_id,
+                    stock_move.product_id,
+                    &location,
+                    stock_move.quantity,
+                )
+                .await?;
             }
             _ => {}
         }
 
-        tx.commit().await
+        tx.commit()
+            .await
             .map_err(|e| SenseiError::Database(format!("Failed to commit stock move: {e}")))?;
 
         Ok(sm_row_to_domain(row))
     }
 
-    async fn list_stock_moves(&self, tenant_id: Uuid, product_id: Option<Uuid>, page: Option<usize>, per_page: Option<usize>) -> Result<PaginatedResponse<StockMove>> {
-        let page = page.unwrap_or(1).max(1); let per_page = per_page.unwrap_or(20).clamp(1, 100); let offset = (page - 1) * per_page;
+    async fn list_stock_moves(
+        &self,
+        tenant_id: Uuid,
+        product_id: Option<Uuid>,
+        page: Option<usize>,
+        per_page: Option<usize>,
+    ) -> Result<PaginatedResponse<StockMove>> {
+        let page = page.unwrap_or(1).max(1);
+        let per_page = per_page.unwrap_or(20).clamp(1, 100);
+        let offset = (page - 1) * per_page;
         let items: Vec<StockMoveRow> = sqlx::query_as(
             r#"SELECT id, tenant_id, product_id, product_name, quantity, move_type, from_location, to_location, reference_type, reference_id, created_by, created_at FROM stock_moves
                WHERE tenant_id=$1 AND ($2::uuid IS NULL OR product_id=$2) ORDER BY created_at DESC LIMIT $3 OFFSET $4"#,
@@ -670,13 +951,19 @@ impl SupplyChainService for DatabaseSupplyChainService {
             .map_err(|e| SenseiError::Database(format!("Failed to list stock moves: {e}")))?;
         let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM stock_moves WHERE tenant_id=$1 AND ($2::uuid IS NULL OR product_id=$2)")
             .bind(tenant_id).bind(product_id).fetch_one(&self.pool).await.map_err(|e| SenseiError::Database(format!("Failed to count stock moves: {e}")))?;
-        Ok(paginate(items.into_iter().map(sm_row_to_domain).collect(), count, page, per_page))
+        Ok(paginate(
+            items.into_iter().map(sm_row_to_domain).collect(),
+            count,
+            page,
+            per_page,
+        ))
     }
 
     // ── RFQ Mutations ──────────────────────────────────────────────────
 
     async fn update_rfq(&self, tenant_id: Uuid, id: Uuid, rfq: RFQ) -> Result<RFQ> {
-        let items_json = serde_json::to_value(&rfq.items).unwrap_or(serde_json::Value::Array(vec![]));
+        let items_json =
+            serde_json::to_value(&rfq.items).unwrap_or(serde_json::Value::Array(vec![]));
         let row = sqlx::query_as::<_, RfqRow>(
             r#"UPDATE rfqs SET supplier_id=$1, supplier_name=$2, items=$3, notes=$4 WHERE id=$5 AND tenant_id=$6
                RETURNING id, tenant_id, rfq_number, supplier_id, supplier_name, status, items, notes, created_by, created_at"#,
@@ -687,19 +974,30 @@ impl SupplyChainService for DatabaseSupplyChainService {
     }
 
     async fn delete_rfq(&self, tenant_id: Uuid, id: Uuid) -> Result<()> {
-        let r = sqlx::query("DELETE FROM rfqs WHERE id=$1 AND tenant_id=$2").bind(id).bind(tenant_id).execute(&self.pool).await
+        let r = sqlx::query("DELETE FROM rfqs WHERE id=$1 AND tenant_id=$2")
+            .bind(id)
+            .bind(tenant_id)
+            .execute(&self.pool)
+            .await
             .map_err(|e| SenseiError::Database(format!("Failed to delete RFQ: {e}")))?;
-        if r.rows_affected() == 0 { return Err(SenseiError::NotFound(format!("RFQ {id} not found"))); }
+        if r.rows_affected() == 0 {
+            return Err(SenseiError::NotFound(format!("RFQ {id} not found")));
+        }
         Ok(())
     }
 
-    async fn submit_rfq(&self, tenant_id: Uuid, id: Uuid) -> Result<RFQ> { self.update_rfq_status(tenant_id, id, "sent").await }
-    async fn cancel_rfq(&self, tenant_id: Uuid, id: Uuid) -> Result<RFQ> { self.update_rfq_status(tenant_id, id, "cancelled").await }
+    async fn submit_rfq(&self, tenant_id: Uuid, id: Uuid) -> Result<RFQ> {
+        self.update_rfq_status(tenant_id, id, "sent").await
+    }
+    async fn cancel_rfq(&self, tenant_id: Uuid, id: Uuid) -> Result<RFQ> {
+        self.update_rfq_status(tenant_id, id, "cancelled").await
+    }
 
     // ── Quote Mutations ─────────────────────────────────────────────────
 
     async fn update_quote(&self, tenant_id: Uuid, id: Uuid, quote: Quote) -> Result<Quote> {
-        let li_json = serde_json::to_value(&quote.line_items).unwrap_or(serde_json::Value::Array(vec![]));
+        let li_json =
+            serde_json::to_value(&quote.line_items).unwrap_or(serde_json::Value::Array(vec![]));
         let total: f64 = quote.line_items.iter().map(|li| li.net_price).sum();
         let row = sqlx::query_as::<_, QuoteRow>(
             r#"UPDATE quotes SET customer_id=$1, customer_name=$2, line_items=$3, total_amount=$4, currency=$5, valid_until=$6 WHERE id=$7 AND tenant_id=$8
@@ -711,9 +1009,15 @@ impl SupplyChainService for DatabaseSupplyChainService {
     }
 
     async fn delete_quote(&self, tenant_id: Uuid, id: Uuid) -> Result<()> {
-        let r = sqlx::query("DELETE FROM quotes WHERE id=$1 AND tenant_id=$2").bind(id).bind(tenant_id).execute(&self.pool).await
+        let r = sqlx::query("DELETE FROM quotes WHERE id=$1 AND tenant_id=$2")
+            .bind(id)
+            .bind(tenant_id)
+            .execute(&self.pool)
+            .await
             .map_err(|e| SenseiError::Database(format!("Failed to delete quote: {e}")))?;
-        if r.rows_affected() == 0 { return Err(SenseiError::NotFound(format!("Quote {id} not found"))); }
+        if r.rows_affected() == 0 {
+            return Err(SenseiError::NotFound(format!("Quote {id} not found")));
+        }
         Ok(())
     }
 
@@ -726,7 +1030,9 @@ impl SupplyChainService for DatabaseSupplyChainService {
         Ok(quote_row_to_domain(row))
     }
 
-    async fn accept_quote(&self, tenant_id: Uuid, id: Uuid) -> Result<Quote> { self.approve_quote(tenant_id, id).await }
+    async fn accept_quote(&self, tenant_id: Uuid, id: Uuid) -> Result<Quote> {
+        self.approve_quote(tenant_id, id).await
+    }
     async fn reject_quote(&self, tenant_id: Uuid, id: Uuid) -> Result<Quote> {
         let row = sqlx::query_as::<_, QuoteRow>(
             r#"UPDATE quotes SET status='rejected' WHERE id=$1 AND tenant_id=$2
@@ -738,9 +1044,19 @@ impl SupplyChainService for DatabaseSupplyChainService {
 
     // ── Sales Order Mutations ───────────────────────────────────────────
 
-    async fn update_sales_order(&self, tenant_id: Uuid, id: Uuid, order: SalesOrder) -> Result<SalesOrder> {
-        let li_json = serde_json::to_value(&order.line_items).unwrap_or(serde_json::Value::Array(vec![]));
-        let total: f64 = order.line_items.iter().map(|li| li.quantity as f64 * li.unit_price).sum();
+    async fn update_sales_order(
+        &self,
+        tenant_id: Uuid,
+        id: Uuid,
+        order: SalesOrder,
+    ) -> Result<SalesOrder> {
+        let li_json =
+            serde_json::to_value(&order.line_items).unwrap_or(serde_json::Value::Array(vec![]));
+        let total: f64 = order
+            .line_items
+            .iter()
+            .map(|li| li.quantity as f64 * li.unit_price)
+            .sum();
         let row = sqlx::query_as::<_, SalesOrderRow>(
             r#"UPDATE sales_orders SET customer_id=$1, customer_name=$2, line_items=$3, total_amount=$4, currency=$5, delivery_date=$6, shipping_address=$7 WHERE id=$8 AND tenant_id=$9
                RETURNING id, tenant_id, order_number, customer_id, customer_name, status, line_items, total_amount, currency, delivery_date, shipping_address, created_by, created_at"#,
@@ -751,17 +1067,33 @@ impl SupplyChainService for DatabaseSupplyChainService {
     }
 
     async fn delete_sales_order(&self, tenant_id: Uuid, id: Uuid) -> Result<()> {
-        let r = sqlx::query("DELETE FROM sales_orders WHERE id=$1 AND tenant_id=$2").bind(id).bind(tenant_id).execute(&self.pool).await
+        let r = sqlx::query("DELETE FROM sales_orders WHERE id=$1 AND tenant_id=$2")
+            .bind(id)
+            .bind(tenant_id)
+            .execute(&self.pool)
+            .await
             .map_err(|e| SenseiError::Database(format!("Failed to delete sales order: {e}")))?;
-        if r.rows_affected() == 0 { return Err(SenseiError::NotFound(format!("Sales order {id} not found"))); }
+        if r.rows_affected() == 0 {
+            return Err(SenseiError::NotFound(format!("Sales order {id} not found")));
+        }
         Ok(())
     }
 
     // ── Purchase Order Mutations ────────────────────────────────────────
 
-    async fn update_purchase_order(&self, tenant_id: Uuid, id: Uuid, po: PurchaseOrder) -> Result<PurchaseOrder> {
-        let li_json = serde_json::to_value(&po.line_items).unwrap_or(serde_json::Value::Array(vec![]));
-        let total: f64 = po.line_items.iter().map(|li| li.quantity_ordered as f64 * li.unit_price).sum();
+    async fn update_purchase_order(
+        &self,
+        tenant_id: Uuid,
+        id: Uuid,
+        po: PurchaseOrder,
+    ) -> Result<PurchaseOrder> {
+        let li_json =
+            serde_json::to_value(&po.line_items).unwrap_or(serde_json::Value::Array(vec![]));
+        let total: f64 = po
+            .line_items
+            .iter()
+            .map(|li| li.quantity_ordered as f64 * li.unit_price)
+            .sum();
         let row = sqlx::query_as::<_, PurchaseOrderRow>(
             r#"UPDATE purchase_orders SET supplier_id=$1, supplier_name=$2, line_items=$3, total_amount=$4, currency=$5, expected_delivery=$6 WHERE id=$7 AND tenant_id=$8
                RETURNING id, tenant_id, po_number, supplier_id, supplier_name, status, line_items, total_amount, currency, expected_delivery, created_by, created_at"#,
@@ -772,14 +1104,25 @@ impl SupplyChainService for DatabaseSupplyChainService {
     }
 
     async fn delete_purchase_order(&self, tenant_id: Uuid, id: Uuid) -> Result<()> {
-        let r = sqlx::query("DELETE FROM purchase_orders WHERE id=$1 AND tenant_id=$2").bind(id).bind(tenant_id).execute(&self.pool).await
+        let r = sqlx::query("DELETE FROM purchase_orders WHERE id=$1 AND tenant_id=$2")
+            .bind(id)
+            .bind(tenant_id)
+            .execute(&self.pool)
+            .await
             .map_err(|e| SenseiError::Database(format!("Failed to delete PO: {e}")))?;
-        if r.rows_affected() == 0 { return Err(SenseiError::NotFound(format!("Purchase order {id} not found"))); }
+        if r.rows_affected() == 0 {
+            return Err(SenseiError::NotFound(format!(
+                "Purchase order {id} not found"
+            )));
+        }
         Ok(())
     }
 
     async fn receive_full_po(&self, tenant_id: Uuid, id: Uuid) -> Result<PurchaseOrder> {
-        let mut tx = self.pool.begin().await
+        let mut tx = self
+            .pool
+            .begin()
+            .await
             .map_err(|e| SenseiError::Database(format!("Failed to begin transaction: {e}")))?;
 
         let row: PurchaseOrderRow = sqlx::query_as(
@@ -787,8 +1130,10 @@ impl SupplyChainService for DatabaseSupplyChainService {
                       line_items, total_amount, currency, expected_delivery, created_by, created_at
                FROM purchase_orders WHERE id=$1 AND tenant_id=$2 FOR UPDATE"#,
         )
-        .bind(id).bind(tenant_id)
-        .fetch_optional(&mut *tx).await
+        .bind(id)
+        .bind(tenant_id)
+        .fetch_optional(&mut *tx)
+        .await
         .map_err(|e| SenseiError::Database(format!("Failed to get PO: {e}")))?
         .ok_or_else(|| SenseiError::NotFound(format!("Purchase order {id} not found")))?;
 
@@ -824,8 +1169,11 @@ impl SupplyChainService for DatabaseSupplyChainService {
 
         // Update inventory for the quantities captured before the mutation.
         for (product_id, _product_name, qty) in &remaining {
-            let location = self.resolve_stock_location(&mut tx, tenant_id, *product_id).await?;
-            self.apply_inventory_delta(&mut tx, tenant_id, *product_id, &location, *qty).await?;
+            let location = self
+                .resolve_stock_location(&mut tx, tenant_id, *product_id)
+                .await?;
+            self.apply_inventory_delta(&mut tx, tenant_id, *product_id, &location, *qty)
+                .await?;
             sqlx::query(
                 "INSERT INTO stock_moves (id, tenant_id, product_id, from_location, to_location, quantity, move_type, reference_type, reference_id, moved_at, created_at) \
                  VALUES ($1,$2,$3,NULL,$4,$5,'receipt','purchase_order',$6,NOW(),NOW())",
@@ -841,11 +1189,14 @@ impl SupplyChainService for DatabaseSupplyChainService {
                       line_items, total_amount, currency, expected_delivery, created_by, created_at
                FROM purchase_orders WHERE id=$1 AND tenant_id=$2"#,
         )
-        .bind(id).bind(tenant_id)
-        .fetch_one(&mut *tx).await
+        .bind(id)
+        .bind(tenant_id)
+        .fetch_one(&mut *tx)
+        .await
         .map_err(|e| SenseiError::Database(format!("Failed to reload PO: {e}")))?;
 
-        tx.commit().await
+        tx.commit()
+            .await
             .map_err(|e| SenseiError::Database(format!("Failed to commit full receipt: {e}")))?;
 
         Ok(po_row_to_domain(updated))
@@ -853,7 +1204,12 @@ impl SupplyChainService for DatabaseSupplyChainService {
 
     // ── Inventory Mutations ─────────────────────────────────────────────
 
-    async fn update_inventory(&self, tenant_id: Uuid, id: Uuid, item: InventoryItem) -> Result<InventoryItem> {
+    async fn update_inventory(
+        &self,
+        tenant_id: Uuid,
+        id: Uuid,
+        item: InventoryItem,
+    ) -> Result<InventoryItem> {
         let row = sqlx::query_as::<_, InventoryRow>(
             r#"UPDATE inventory_items SET product_name=$1, reorder_point=$2, reorder_quantity=$3 WHERE id=$4 AND tenant_id=$5
                RETURNING id, tenant_id, product_id, product_name,
@@ -866,18 +1222,32 @@ impl SupplyChainService for DatabaseSupplyChainService {
     }
 
     async fn delete_inventory(&self, tenant_id: Uuid, id: Uuid) -> Result<()> {
-        let r = sqlx::query("DELETE FROM inventory_items WHERE id=$1 AND tenant_id=$2").bind(id).bind(tenant_id).execute(&self.pool).await
+        let r = sqlx::query("DELETE FROM inventory_items WHERE id=$1 AND tenant_id=$2")
+            .bind(id)
+            .bind(tenant_id)
+            .execute(&self.pool)
+            .await
             .map_err(|e| SenseiError::Database(format!("Failed to delete inventory: {e}")))?;
-        if r.rows_affected() == 0 { return Err(SenseiError::NotFound(format!("Inventory item {id} not found"))); }
+        if r.rows_affected() == 0 {
+            return Err(SenseiError::NotFound(format!(
+                "Inventory item {id} not found"
+            )));
+        }
         Ok(())
     }
 
     // ── Stock Move Mutations ────────────────────────────────────────────
 
     async fn delete_stock_move(&self, tenant_id: Uuid, id: Uuid) -> Result<()> {
-        let r = sqlx::query("DELETE FROM stock_moves WHERE id=$1 AND tenant_id=$2").bind(id).bind(tenant_id).execute(&self.pool).await
+        let r = sqlx::query("DELETE FROM stock_moves WHERE id=$1 AND tenant_id=$2")
+            .bind(id)
+            .bind(tenant_id)
+            .execute(&self.pool)
+            .await
             .map_err(|e| SenseiError::Database(format!("Failed to delete stock move: {e}")))?;
-        if r.rows_affected() == 0 { return Err(SenseiError::NotFound(format!("Stock move {id} not found"))); }
+        if r.rows_affected() == 0 {
+            return Err(SenseiError::NotFound(format!("Stock move {id} not found")));
+        }
         Ok(())
     }
 }

@@ -3,12 +3,15 @@
 //! Provides endpoints for managing Requests for Quotation (RFQs)
 //! and their line items, delegating to the supply chain service.
 
-use axum::{Json, extract::{Path, Query, State}};
-use serde::Deserialize;
+use axum::{
+    extract::{Path, Query, State},
+    Json,
+};
 use sensei_auth::middleware::AuthenticatedUser;
 use sensei_core::error::Result;
 use sensei_core::pagination::PaginatedResponse;
-use sensei_services::supply_chain::{RFQ, RFQItem};
+use sensei_services::supply_chain::{RFQItem, RFQ};
+use serde::Deserialize;
 use uuid::Uuid;
 
 use crate::state::AppState;
@@ -62,7 +65,12 @@ pub async fn list_rfqs(
     let tenant_id = user.tenant_id;
     let rfqs = state
         .supply_chain_service
-        .list_rfqs(tenant_id, params.status.as_deref(), params.page, params.per_page)
+        .list_rfqs(
+            tenant_id,
+            params.status.as_deref(),
+            params.page,
+            params.per_page,
+        )
         .await?;
     Ok(Json(rfqs))
 }
@@ -86,7 +94,10 @@ pub async fn create_rfq(
         created_by: user.user_id,
         created_at: chrono::Utc::now(),
     };
-    let created = state.supply_chain_service.create_rfq(tenant_id, rfq).await?;
+    let created = state
+        .supply_chain_service
+        .create_rfq(tenant_id, rfq)
+        .await?;
     Ok(Json(created))
 }
 
@@ -113,7 +124,10 @@ pub async fn update_rfq(
     rfq.supplier_id = req.supplier_id;
     rfq.supplier_name = req.supplier_name;
     rfq.notes = req.notes;
-    let updated = state.supply_chain_service.update_rfq(tenant_id, id, rfq).await?;
+    let updated = state
+        .supply_chain_service
+        .update_rfq(tenant_id, id, rfq)
+        .await?;
     Ok(Json(updated))
 }
 
@@ -145,9 +159,15 @@ pub async fn add_rfq_line_item(
         target_price: req.target_price,
     };
 
-    let mut rfq = state.supply_chain_service.get_rfq(tenant_id, rfq_id).await?;
+    let mut rfq = state
+        .supply_chain_service
+        .get_rfq(tenant_id, rfq_id)
+        .await?;
     rfq.items.push(item.clone());
-    state.supply_chain_service.update_rfq(tenant_id, rfq_id, rfq).await?;
+    state
+        .supply_chain_service
+        .update_rfq(tenant_id, rfq_id, rfq)
+        .await?;
     Ok(Json(item))
 }
 
@@ -162,7 +182,10 @@ pub async fn update_rfq_line_item(
     Json(req): Json<RfqLineItemRequest>,
 ) -> Result<Json<RFQItem>> {
     let tenant_id = user.tenant_id;
-    let mut rfq = state.supply_chain_service.get_rfq(tenant_id, rfq_id).await?;
+    let mut rfq = state
+        .supply_chain_service
+        .get_rfq(tenant_id, rfq_id)
+        .await?;
     let item = rfq
         .items
         .iter_mut()
@@ -178,6 +201,9 @@ pub async fn update_rfq_line_item(
     item.target_price = req.target_price;
 
     let updated_item = item.clone();
-    state.supply_chain_service.update_rfq(tenant_id, rfq_id, rfq).await?;
+    state
+        .supply_chain_service
+        .update_rfq(tenant_id, rfq_id, rfq)
+        .await?;
     Ok(Json(updated_item))
 }

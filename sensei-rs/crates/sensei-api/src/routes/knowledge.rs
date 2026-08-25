@@ -3,13 +3,16 @@
 //! Provides CRUD endpoints for knowledge packs used in the
 //! training and continuous improvement system.
 
-use axum::{Json, extract::{Path, Query, State}};
+use axum::{
+    extract::{Path, Query, State},
+    Json,
+};
 use chrono::Utc;
-use serde::Deserialize;
 use sensei_auth::middleware::AuthenticatedUser;
 use sensei_core::error::{Result, SenseiError};
 use sensei_core::pagination::PaginatedResponse;
 use sensei_core::types::new_id;
+use serde::Deserialize;
 use uuid::Uuid;
 
 use crate::state::AppState;
@@ -52,14 +55,21 @@ pub async fn list_packs(
     let mut packs: Vec<KnowledgePack> = store
         .values()
         .filter(|p| p.tenant_id == user.tenant_id)
-        .filter(|p| params.category.as_ref().map_or(true, |c| p.category == *c))
-        .filter(|p| params.is_published.map_or(true, |p_flag| p.is_published == p_flag))
+        .filter(|p| params.category.as_ref().is_none_or(|c| p.category == *c))
         .filter(|p| {
-            params.tag.as_ref().map_or(true, |t| p.tags.iter().any(|tag| tag == t))
+            params
+                .is_published
+                .is_none_or(|p_flag| p.is_published == p_flag)
+        })
+        .filter(|p| {
+            params
+                .tag
+                .as_ref()
+                .is_none_or(|t| p.tags.iter().any(|tag| tag == t))
         })
         .cloned()
         .collect();
-    packs.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
+    packs.sort_by_key(|a| std::cmp::Reverse(a.updated_at));
     let result = PaginatedResponse::new(packs, params.page, params.per_page);
     Ok(Json(result))
 }
@@ -142,7 +152,9 @@ pub async fn delete_pack(
         .filter(|p| p.tenant_id == user.tenant_id)
         .is_some();
     if !exists {
-        return Err(SenseiError::NotFound(format!("Knowledge pack {id} not found")));
+        return Err(SenseiError::NotFound(format!(
+            "Knowledge pack {id} not found"
+        )));
     }
     store.remove(&id);
     Ok(Json(()))

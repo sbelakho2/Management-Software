@@ -307,10 +307,7 @@ impl RfqApi {
         client.get(&format!("/api/v1/rfqs/{}", id)).await
     }
 
-    pub async fn create_rfq(
-        client: &ApiClient,
-        data: &CreateRfqData,
-    ) -> Result<RfqDto, ApiError> {
+    pub async fn create_rfq(client: &ApiClient, data: &CreateRfqData) -> Result<RfqDto, ApiError> {
         client.post("/api/v1/rfqs", data).await
     }
 
@@ -322,16 +319,16 @@ impl RfqApi {
         client.put(&format!("/api/v1/rfqs/{}", id), data).await
     }
 
-    pub async fn delete_rfq(
-        client: &ApiClient,
-        id: &str,
-    ) -> Result<serde_json::Value, ApiError> {
+    pub async fn delete_rfq(client: &ApiClient, id: &str) -> Result<serde_json::Value, ApiError> {
         client.delete(&format!("/api/v1/rfqs/{}", id)).await
     }
 
     pub async fn submit_rfq(client: &ApiClient, id: &str) -> Result<RfqDto, ApiError> {
         client
-            .post(&format!("/api/v1/rfqs/{}/submit", id), &serde_json::json!({}))
+            .post(
+                &format!("/api/v1/rfqs/{}/submit", id),
+                &serde_json::json!({}),
+            )
             .await
     }
 
@@ -365,7 +362,10 @@ impl RfqApi {
             reason: Option<&'a str>,
         }
         client
-            .post(&format!("/api/v1/rfqs/{}/no-bid", id), &NoBidBody { reason })
+            .post(
+                &format!("/api/v1/rfqs/{}/no-bid", id),
+                &NoBidBody { reason },
+            )
             .await
     }
 
@@ -379,7 +379,10 @@ impl RfqApi {
             reason: Option<&'a str>,
         }
         client
-            .post(&format!("/api/v1/rfqs/{}/cancel", id), &CancelBody { reason })
+            .post(
+                &format!("/api/v1/rfqs/{}/cancel", id),
+                &CancelBody { reason },
+            )
             .await
     }
 
@@ -393,7 +396,10 @@ impl RfqApi {
             user_id: &'a str,
         }
         client
-            .post(&format!("/api/v1/rfqs/{}/assign", id), &AssignBody { user_id })
+            .post(
+                &format!("/api/v1/rfqs/{}/assign", id),
+                &AssignBody { user_id },
+            )
             .await
     }
 
@@ -408,7 +414,10 @@ impl RfqApi {
 
     pub async fn duplicate_rfq(client: &ApiClient, id: &str) -> Result<RfqDto, ApiError> {
         client
-            .post(&format!("/api/v1/rfqs/{}/duplicate", id), &serde_json::json!({}))
+            .post(
+                &format!("/api/v1/rfqs/{}/duplicate", id),
+                &serde_json::json!({}),
+            )
             .await
     }
 
@@ -466,10 +475,7 @@ impl RfqApi {
     ) -> Result<RfqLineItemDto, ApiError> {
         client
             .put(
-                &format!(
-                    "/api/v1/rfqs/{}/line-items/{}",
-                    rfq_id, line_item_id
-                ),
+                &format!("/api/v1/rfqs/{}/line-items/{}", rfq_id, line_item_id),
                 data,
             )
             .await
@@ -517,9 +523,7 @@ impl RfqApi {
         client
             .post(
                 &format!("/api/v1/rfqs/{}/line-items/bulk-delete", rfq_id),
-                &BulkDeleteBody {
-                    ids: line_item_ids,
-                },
+                &BulkDeleteBody { ids: line_item_ids },
             )
             .await
     }
@@ -559,10 +563,7 @@ impl QuoteApi {
         client.put(&format!("/api/v1/quotes/{}", id), data).await
     }
 
-    pub async fn delete_quote(
-        client: &ApiClient,
-        id: &str,
-    ) -> Result<serde_json::Value, ApiError> {
+    pub async fn delete_quote(client: &ApiClient, id: &str) -> Result<serde_json::Value, ApiError> {
         client.delete(&format!("/api/v1/quotes/{}", id)).await
     }
 
@@ -588,7 +589,10 @@ impl QuoteApi {
             notes: Option<&'a str>,
         }
         client
-            .post(&format!("/api/v1/quotes/{}/approve", id), &ApproveBody { notes })
+            .post(
+                &format!("/api/v1/quotes/{}/approve", id),
+                &ApproveBody { notes },
+            )
             .await
     }
 
@@ -602,7 +606,10 @@ impl QuoteApi {
             reason: &'a str,
         }
         client
-            .post(&format!("/api/v1/quotes/{}/reject", id), &RejectBody { reason })
+            .post(
+                &format!("/api/v1/quotes/{}/reject", id),
+                &RejectBody { reason },
+            )
             .await
     }
 
@@ -646,12 +653,12 @@ impl QuoteApi {
             .await
     }
 
-    pub async fn create_quote_revision(
-        client: &ApiClient,
-        id: &str,
-    ) -> Result<QuoteDto, ApiError> {
+    pub async fn create_quote_revision(client: &ApiClient, id: &str) -> Result<QuoteDto, ApiError> {
         client
-            .post(&format!("/api/v1/quotes/{}/revise", id), &serde_json::json!({}))
+            .post(
+                &format!("/api/v1/quotes/{}/revise", id),
+                &serde_json::json!({}),
+            )
             .await
     }
 
@@ -723,10 +730,7 @@ impl QuoteApi {
     ) -> Result<QuoteLineItemDto, ApiError> {
         client
             .put(
-                &format!(
-                    "/api/v1/quotes/{}/line-items/{}",
-                    quote_id, line_item_id
-                ),
+                &format!("/api/v1/quotes/{}/line-items/{}", quote_id, line_item_id),
                 data,
             )
             .await
@@ -757,9 +761,7 @@ impl QuoteApi {
         client
             .post(
                 &format!("/api/v1/quotes/{}/line-items/reorder", quote_id),
-                &ReorderBody {
-                    ids: line_item_ids,
-                },
+                &ReorderBody { ids: line_item_ids },
             )
             .await
     }

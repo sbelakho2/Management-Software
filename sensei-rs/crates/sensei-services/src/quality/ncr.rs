@@ -10,15 +10,14 @@
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use sensei_core::error::{Result, SenseiError};
-use sensei_core::types::{EntityId, TenantId, new_id, now};
+use sensei_core::types::{new_id, now, EntityId, TenantId};
 use uuid::Uuid;
 
 use super::models::{
     ActionStatus, CapaConfig, CapaCreationResult, CapaExtended, CapaPriority, CapaStatusEx,
     CapaType, ClosureCheckResult, ClosureGate, ClosureGateType, CorrectiveAction,
-    EffectivenessCheck, EntityLink, LinkType, NcSeverity, NcrStatus, NcType, NonConformance,
-    RecurrenceCheckResult, RootCauseAnalysis,
-    DEFAULT_CLOSURE_GATES,
+    EffectivenessCheck, EntityLink, LinkType, NcSeverity, NcType, NcrStatus, NonConformance,
+    RecurrenceCheckResult, RootCauseAnalysis, DEFAULT_CLOSURE_GATES,
 };
 
 /// NCR service trait defining the non-conformance report lifecycle.
@@ -141,7 +140,11 @@ pub trait CapaWorkflowService: Send + Sync {
     ) -> Result<CorrectiveAction>;
 
     /// Start an action.
-    async fn start_action(&self, capa_id: EntityId, action_id: EntityId) -> Result<CorrectiveAction>;
+    async fn start_action(
+        &self,
+        capa_id: EntityId,
+        action_id: EntityId,
+    ) -> Result<CorrectiveAction>;
 
     /// Complete an action.
     async fn complete_action(
@@ -204,7 +207,10 @@ pub trait CapaWorkflowService: Send + Sync {
     ) -> Result<EffectivenessCheck>;
 
     /// Get pending effectiveness checks.
-    async fn get_pending_effectiveness_checks(&self, tenant_id: TenantId) -> Result<Vec<CapaExtended>>;
+    async fn get_pending_effectiveness_checks(
+        &self,
+        tenant_id: TenantId,
+    ) -> Result<Vec<CapaExtended>>;
 
     /// Close a CAPA.
     async fn close_capa(&self, capa_id: EntityId, closed_by: EntityId) -> Result<CapaExtended>;
@@ -251,7 +257,11 @@ impl InMemoryCapaWorkflowService {
     }
 
     fn generate_capa_number(counter: u64) -> String {
-        format!("CAPA-{}-{:04}", chrono::Utc::now().format("%Y%m%d"), counter)
+        format!(
+            "CAPA-{}-{:04}",
+            chrono::Utc::now().format("%Y%m%d"),
+            counter
+        )
     }
 }
 
@@ -432,7 +442,10 @@ impl CapaWorkflowService for InMemoryCapaWorkflowService {
 
         let auto_created = config.auto_create_capa;
         let creation_reason = if auto_created {
-            format!("Auto-created from NC {} (severity: {:?})", nc.nc_number, nc.severity)
+            format!(
+                "Auto-created from NC {} (severity: {:?})",
+                nc.nc_number, nc.severity
+            )
         } else {
             format!("Manual creation from NC {}", nc.nc_number)
         };
@@ -517,17 +530,29 @@ impl CapaWorkflowService for InMemoryCapaWorkflowService {
     async fn get_capa_metrics(&self, _tenant_id: TenantId) -> Result<serde_json::Value> {
         let capas = self.capas.read().await;
         let total = capas.len();
-        let open = capas.iter().filter(|c| {
-            matches!(c.status, CapaStatusEx::Open | CapaStatusEx::Draft | CapaStatusEx::PendingApproval)
-        }).count();
-        let closed = capas.iter().filter(|c| c.status == CapaStatusEx::Closed).count();
-        let overdue = capas.iter().filter(|c| {
-            if let Some(due) = c.due_date {
-                due < now() && c.status != CapaStatusEx::Closed
-            } else {
-                false
-            }
-        }).count();
+        let open = capas
+            .iter()
+            .filter(|c| {
+                matches!(
+                    c.status,
+                    CapaStatusEx::Open | CapaStatusEx::Draft | CapaStatusEx::PendingApproval
+                )
+            })
+            .count();
+        let closed = capas
+            .iter()
+            .filter(|c| c.status == CapaStatusEx::Closed)
+            .count();
+        let overdue = capas
+            .iter()
+            .filter(|c| {
+                if let Some(due) = c.due_date {
+                    due < now() && c.status != CapaStatusEx::Closed
+                } else {
+                    false
+                }
+            })
+            .count();
 
         Ok(serde_json::json!({
             "total": total,
@@ -634,7 +659,9 @@ impl CapaWorkflowService for InMemoryCapaWorkflowService {
         let mut capas = self.capas.write().await;
         if let Some(capa) = capas.iter_mut().find(|c| c.id == capa_id) {
             capa.actions.push(action.clone());
-            if capa.status == CapaStatusEx::RootCauseAnalysis || capa.status == CapaStatusEx::ActionPlanning {
+            if capa.status == CapaStatusEx::RootCauseAnalysis
+                || capa.status == CapaStatusEx::ActionPlanning
+            {
                 capa.status = CapaStatusEx::ActionPlanning;
             }
             capa.updated_at = now();
@@ -643,7 +670,11 @@ impl CapaWorkflowService for InMemoryCapaWorkflowService {
         Ok(action)
     }
 
-    async fn start_action(&self, capa_id: EntityId, action_id: EntityId) -> Result<CorrectiveAction> {
+    async fn start_action(
+        &self,
+        capa_id: EntityId,
+        action_id: EntityId,
+    ) -> Result<CorrectiveAction> {
         let mut actions = self.actions.write().await;
         let action = actions
             .iter_mut()
@@ -651,9 +682,10 @@ impl CapaWorkflowService for InMemoryCapaWorkflowService {
             .ok_or_else(|| SenseiError::NotFound(format!("Action {action_id} not found")))?;
 
         if action.status != ActionStatus::Open {
-            return Err(SenseiError::Validation(
-                format!("Cannot start action {action_id}: status is {:?}", action.status)
-            ));
+            return Err(SenseiError::Validation(format!(
+                "Cannot start action {action_id}: status is {:?}",
+                action.status
+            )));
         }
 
         action.status = ActionStatus::InProgress;
@@ -772,7 +804,11 @@ impl CapaWorkflowService for InMemoryCapaWorkflowService {
 
     async fn get_linked_entities(&self, capa_id: EntityId) -> Result<Vec<EntityLink>> {
         let links = self.links.read().await;
-        Ok(links.iter().filter(|l| l.capa_id == capa_id).cloned().collect())
+        Ok(links
+            .iter()
+            .filter(|l| l.capa_id == capa_id)
+            .cloned()
+            .collect())
     }
 
     async fn pass_closure_gate(
@@ -785,7 +821,10 @@ impl CapaWorkflowService for InMemoryCapaWorkflowService {
         let mut gates = self.gates.write().await;
 
         // Check if gate exists, create if not
-        let gate = if let Some(g) = gates.iter_mut().find(|g| g.capa_id == capa_id && g.gate_type == gate_type) {
+        let gate = if let Some(g) = gates
+            .iter_mut()
+            .find(|g| g.capa_id == capa_id && g.gate_type == gate_type)
+        {
             g.passed = true;
             g.passed_by = Some(passed_by);
             g.passed_at = Some(now());
@@ -847,7 +886,11 @@ impl CapaWorkflowService for InMemoryCapaWorkflowService {
         if capa.actions.is_empty() {
             missing_items.push("No corrective actions defined".to_string());
         }
-        if capa.actions.iter().any(|a| a.status != ActionStatus::Verified) {
+        if capa
+            .actions
+            .iter()
+            .any(|a| a.status != ActionStatus::Verified)
+        {
             missing_items.push("Not all actions are verified".to_string());
         }
 
@@ -900,11 +943,17 @@ impl CapaWorkflowService for InMemoryCapaWorkflowService {
         Ok(ec)
     }
 
-    async fn get_pending_effectiveness_checks(&self, _tenant_id: TenantId) -> Result<Vec<CapaExtended>> {
+    async fn get_pending_effectiveness_checks(
+        &self,
+        _tenant_id: TenantId,
+    ) -> Result<Vec<CapaExtended>> {
         let capas = self.capas.read().await;
         Ok(capas
             .iter()
-            .filter(|c| c.status == CapaStatusEx::EffectivenessCheck || c.status == CapaStatusEx::PendingClosure)
+            .filter(|c| {
+                c.status == CapaStatusEx::EffectivenessCheck
+                    || c.status == CapaStatusEx::PendingClosure
+            })
             .cloned()
             .collect())
     }
@@ -917,7 +966,9 @@ impl CapaWorkflowService for InMemoryCapaWorkflowService {
             .ok_or_else(|| SenseiError::NotFound(format!("CAPA {capa_id} not found")))?;
 
         if capa.status == CapaStatusEx::Closed {
-            return Err(SenseiError::Validation("CAPA is already closed".to_string()));
+            return Err(SenseiError::Validation(
+                "CAPA is already closed".to_string(),
+            ));
         }
 
         capa.status = CapaStatusEx::Closed;

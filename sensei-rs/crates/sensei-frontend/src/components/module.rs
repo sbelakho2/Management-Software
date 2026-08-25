@@ -29,9 +29,10 @@ pub fn Module(
     /// Module body content.
     children: Children,
 ) -> impl IntoView {
-    let module_id = title.as_ref().map(|t| {
-        format!("module-{}", t.to_lowercase().replace(' ', "-"))
-    }).unwrap_or_default();
+    let module_id = title
+        .as_ref()
+        .map(|t| format!("module-{}", t.to_lowercase().replace(' ', "-")))
+        .unwrap_or_default();
 
     view! {
         <div

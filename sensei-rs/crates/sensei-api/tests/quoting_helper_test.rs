@@ -9,16 +9,13 @@ use serde_json::{json, Value};
 mod common;
 
 /// Create an RFQ with one line item and return (rfq_id, line_item_id).
-async fn create_rfq_with_line_item(
-    app: &common::TestApp,
-    token: &str,
-) -> (String, String) {
+async fn create_rfq_with_line_item(app: &common::TestApp, token: &str) -> (String, String) {
     let body = json!({
         "supplier_id": uuid::Uuid::new_v4().to_string(),
         "supplier_name": "Acme Supplies",
         "notes": "Please quote",
     });
-    let req = app.post_authenticated("/api/v1/rfqs", &token, body);
+    let req = app.post_authenticated("/api/v1/rfqs", token, body);
     let mut resp = app.send_request(req).await;
     assert_eq!(resp.status(), StatusCode::OK);
     let created: Value = app.json_body(&mut resp).await;
@@ -31,11 +28,7 @@ async fn create_rfq_with_line_item(
         "unit_of_measure": "pcs",
         "target_price": 12.5,
     });
-    let req = app.post_authenticated(
-        &format!("/api/v1/rfqs/{}/line-items", rfq_id),
-        &token,
-        item,
-    );
+    let req = app.post_authenticated(&format!("/api/v1/rfqs/{}/line-items", rfq_id), token, item);
     let mut resp = app.send_request(req).await;
     assert_eq!(resp.status(), StatusCode::OK);
     let item: Value = app.json_body(&mut resp).await;
@@ -51,14 +44,17 @@ async fn test_generate_work_packets() {
     let (rfq_id, line_item_id) = create_rfq_with_line_item(&app, &token).await;
 
     let req = app.post_authenticated(
-        &format!("/api/v1/quoting-helper/rfqs/{}/workpackets/generate", rfq_id),
+        &format!(
+            "/api/v1/quoting-helper/rfqs/{}/workpackets/generate",
+            rfq_id
+        ),
         &token,
         json!({ "line_items": [line_item_id] }),
     );
     let mut resp = app.send_request(req).await;
     assert_eq!(resp.status(), StatusCode::CREATED);
     let json: Value = app.json_body(&mut resp).await;
-    assert!(json["id"].as_str().unwrap_or("").len() > 0);
+    assert!(!json["id"].as_str().unwrap_or("").is_empty());
 
     // One operation per discipline from the estimation table.
     let ops = json["workpackets"].as_array().unwrap();
@@ -75,7 +71,10 @@ async fn test_generate_work_packets_unknown_rfq() {
     let app = common::TestApp::new().await;
     let token = app.login_as_admin().await;
     let req = app.post_authenticated(
-        &format!("/api/v1/quoting-helper/rfqs/{}/workpackets/generate", uuid::Uuid::new_v4()),
+        &format!(
+            "/api/v1/quoting-helper/rfqs/{}/workpackets/generate",
+            uuid::Uuid::new_v4()
+        ),
         &token,
         json!({ "line_items": [] }),
     );
@@ -90,7 +89,10 @@ async fn test_list_work_packets() {
     let (rfq_id, line_item_id) = create_rfq_with_line_item(&app, &token).await;
 
     let req = app.post_authenticated(
-        &format!("/api/v1/quoting-helper/rfqs/{}/workpackets/generate", rfq_id),
+        &format!(
+            "/api/v1/quoting-helper/rfqs/{}/workpackets/generate",
+            rfq_id
+        ),
         &token,
         json!({ "line_items": [line_item_id] }),
     );
@@ -103,7 +105,7 @@ async fn test_list_work_packets() {
     let mut resp = app.send_request(req).await;
     assert_eq!(resp.status(), StatusCode::OK);
     let json: Value = app.json_body(&mut resp).await;
-    assert!(json["data"].as_array().map_or(false, |a| a.len() >= 1));
+    assert!(json["data"].as_array().is_some_and(|a| !a.is_empty()));
 }
 
 #[tokio::test]
@@ -113,7 +115,10 @@ async fn test_update_work_packet() {
     let (rfq_id, line_item_id) = create_rfq_with_line_item(&app, &token).await;
 
     let req = app.post_authenticated(
-        &format!("/api/v1/quoting-helper/rfqs/{}/workpackets/generate", rfq_id),
+        &format!(
+            "/api/v1/quoting-helper/rfqs/{}/workpackets/generate",
+            rfq_id
+        ),
         &token,
         json!({ "line_items": [line_item_id] }),
     );
@@ -252,7 +257,7 @@ async fn test_convert_quote_to_npi() {
     let mut resp = app.send_request(req).await;
     assert_eq!(resp.status(), StatusCode::CREATED);
     let json: Value = app.json_body(&mut resp).await;
-    assert!(json["npi_project_id"].as_str().unwrap_or("").len() > 0);
+    assert!(!json["npi_project_id"].as_str().unwrap_or("").is_empty());
     assert_eq!(json["quote_id"], quote_id);
 
     // The NPI project must actually exist via the quality service.
@@ -292,7 +297,10 @@ async fn test_suggest_clarifications_only_missing_fields() {
     // The RFQ line item has a target_price and UoM, and the RFQ has notes:
     // only the RFQ-level missing fields (in empty notes) are asked.
     let req = app.get_authenticated(
-        &format!("/api/v1/quoting-helper/ai/clarifications/suggest/{}", rfq_id),
+        &format!(
+            "/api/v1/quoting-helper/ai/clarifications/suggest/{}",
+            rfq_id
+        ),
         &token,
     );
     let mut resp = app.send_request(req).await;
@@ -326,15 +334,14 @@ async fn test_suggest_clarifications_missing_target_price() {
         "unit_of_measure": "pcs",
         "target_price": null,
     });
-    let req = app.post_authenticated(
-        &format!("/api/v1/rfqs/{}/line-items", rfq_id),
-        &token,
-        item,
-    );
+    let req = app.post_authenticated(&format!("/api/v1/rfqs/{}/line-items", rfq_id), &token, item);
     let _ = app.send_request(req).await;
 
     let req = app.get_authenticated(
-        &format!("/api/v1/quoting-helper/ai/clarifications/suggest/{}", rfq_id),
+        &format!(
+            "/api/v1/quoting-helper/ai/clarifications/suggest/{}",
+            rfq_id
+        ),
         &token,
     );
     let mut resp = app.send_request(req).await;

@@ -245,7 +245,9 @@ impl ContactsService for DatabaseContactsService {
 
         // Verify tenant ownership.
         if model.model.tenant_id != tenant_id {
-            return Err(SenseiError::Forbidden("Cross-tenant access denied".to_string()));
+            return Err(SenseiError::Forbidden(
+                "Cross-tenant access denied".to_string(),
+            ));
         }
 
         Ok(contact_row_to_domain(model))
@@ -277,7 +279,9 @@ impl ContactsService for DatabaseContactsService {
             .bind(tenant_id)
             .fetch_one(&self.pool)
             .await
-            .map_err(|e| SenseiError::Database(format!("Failed to check contact existence: {e}")))?;
+            .map_err(|e| {
+                SenseiError::Database(format!("Failed to check contact existence: {e}"))
+            })?;
 
             if exists == 0 {
                 return Err(SenseiError::NotFound(format!("Contact {id} not found")));

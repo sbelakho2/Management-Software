@@ -7,9 +7,9 @@
 
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use serde::Serialize;
 use sensei_core::error::{Result, SenseiError};
 use sensei_core::types::EntityId;
+use serde::Serialize;
 use sqlx::PgPool;
 use std::collections::HashMap;
 use tokio::sync::RwLock;
@@ -67,6 +67,25 @@ pub struct NotificationPreferences {
     pub quiet_hours_end: Option<String>,
 }
 
+/// Payload for creating and delivering a notification.
+#[derive(Debug, Clone, Serialize)]
+pub struct NewNotification {
+    /// Tenant this notification belongs to.
+    pub tenant_id: EntityId,
+    /// The recipient user.
+    pub user_id: EntityId,
+    /// Short notification title.
+    pub title: String,
+    /// Notification body text.
+    pub body: String,
+    /// Type: "info", "warning", "error", "success".
+    pub notification_type: String,
+    /// Optional entity type this notification references (e.g., "ncr", "capa", "work_order").
+    pub reference_type: Option<String>,
+    /// Optional entity ID this notification references.
+    pub reference_id: Option<EntityId>,
+}
+
 // ---------------------------------------------------------------------------
 // Trait
 // ---------------------------------------------------------------------------
@@ -75,16 +94,7 @@ pub struct NotificationPreferences {
 #[async_trait]
 pub trait NotificationService: Send + Sync {
     /// Create and deliver a notification to a user.
-    async fn notify(
-        &self,
-        tenant_id: EntityId,
-        user_id: EntityId,
-        title: &str,
-        body: &str,
-        ntype: &str,
-        ref_type: Option<&str>,
-        ref_id: Option<EntityId>,
-    ) -> Result<Notification>;
+    async fn notify(&self, notification: NewNotification) -> Result<Notification>;
 
     /// List notifications for a user with pagination (newest first).
     async fn list_notifications(
@@ -96,11 +106,7 @@ pub trait NotificationService: Send + Sync {
     ) -> Result<Vec<Notification>>;
 
     /// Get the count of unread notifications for a user.
-    async fn unread_count(
-        &self,
-        tenant_id: EntityId,
-        user_id: EntityId,
-    ) -> Result<i64>;
+    async fn unread_count(&self, tenant_id: EntityId, user_id: EntityId) -> Result<i64>;
 
     /// Mark a single notification as read.
     async fn mark_read(
@@ -111,11 +117,7 @@ pub trait NotificationService: Send + Sync {
     ) -> Result<()>;
 
     /// Mark all notifications as read for a user.
-    async fn mark_all_read(
-        &self,
-        tenant_id: EntityId,
-        user_id: EntityId,
-    ) -> Result<()>;
+    async fn mark_all_read(&self, tenant_id: EntityId, user_id: EntityId) -> Result<()>;
 
     /// Get notification preferences for a user. Creates default preferences
     /// if none exist.
@@ -126,10 +128,7 @@ pub trait NotificationService: Send + Sync {
     ) -> Result<NotificationPreferences>;
 
     /// Update notification preferences (UPSERT).
-    async fn update_preferences(
-        &self,
-        prefs: &NotificationPreferences,
-    ) -> Result<()>;
+    async fn update_preferences(&self, prefs: &NotificationPreferences) -> Result<()>;
 }
 
 // ---------------------------------------------------------------------------
@@ -163,31 +162,25 @@ impl Default for InMemoryNotificationService {
 
 #[async_trait]
 impl NotificationService for InMemoryNotificationService {
-    async fn notify(
-        &self,
-        tenant_id: EntityId,
-        user_id: EntityId,
-        title: &str,
-        body: &str,
-        ntype: &str,
-        ref_type: Option<&str>,
-        ref_id: Option<EntityId>,
-    ) -> Result<Notification> {
+    async fn notify(&self, notification: NewNotification) -> Result<Notification> {
         let notification = Notification {
             id: Uuid::new_v4(),
-            tenant_id,
-            user_id,
-            title: title.to_string(),
-            body: body.to_string(),
-            notification_type: ntype.to_string(),
-            reference_type: ref_type.map(|s| s.to_string()),
-            reference_id: ref_id,
+            tenant_id: notification.tenant_id,
+            user_id: notification.user_id,
+            title: notification.title,
+            body: notification.body,
+            notification_type: notification.notification_type,
+            reference_type: notification.reference_type,
+            reference_id: notification.reference_id,
             is_read: false,
             created_at: Utc::now(),
         };
 
         let id = notification.id;
-        self.notifications.write().await.insert(id, notification.clone());
+        self.notifications
+            .write()
+            .await
+            .insert(id, notification.clone());
 
         Ok(notification)
     }
@@ -206,18 +199,14 @@ impl NotificationService for InMemoryNotificationService {
             .cloned()
             .collect();
 
-        notes.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+        notes.sort_by_key(|a| std::cmp::Reverse(a.created_at));
 
         let offset = offset.max(0) as usize;
         let limit = limit.max(1) as usize;
         Ok(notes.into_iter().skip(offset).take(limit).collect())
     }
 
-    async fn unread_count(
-        &self,
-        tenant_id: EntityId,
-        user_id: EntityId,
-    ) -> Result<i64> {
+    async fn unread_count(&self, tenant_id: EntityId, user_id: EntityId) -> Result<i64> {
         let store = self.notifications.read().await;
         let count = store
             .values()
@@ -236,17 +225,15 @@ impl NotificationService for InMemoryNotificationService {
         let note = store
             .get_mut(&notification_id)
             .filter(|n| n.tenant_id == tenant_id && n.user_id == user_id)
-            .ok_or_else(|| SenseiError::NotFound(format!("Notification {notification_id} not found")))?;
+            .ok_or_else(|| {
+                SenseiError::NotFound(format!("Notification {notification_id} not found"))
+            })?;
 
         note.is_read = true;
         Ok(())
     }
 
-    async fn mark_all_read(
-        &self,
-        tenant_id: EntityId,
-        user_id: EntityId,
-    ) -> Result<()> {
+    async fn mark_all_read(&self, tenant_id: EntityId, user_id: EntityId) -> Result<()> {
         let mut store = self.notifications.write().await;
         for note in store.values_mut() {
             if note.tenant_id == tenant_id && note.user_id == user_id {
@@ -291,10 +278,7 @@ impl NotificationService for InMemoryNotificationService {
         Ok(prefs)
     }
 
-    async fn update_preferences(
-        &self,
-        prefs: &NotificationPreferences,
-    ) -> Result<()> {
+    async fn update_preferences(&self, prefs: &NotificationPreferences) -> Result<()> {
         let mut store = self.preferences.write().await;
 
         // Check if preferences exist for this user/tenant
@@ -337,28 +321,19 @@ impl DatabaseNotificationService {
 
 #[async_trait]
 impl NotificationService for DatabaseNotificationService {
-    async fn notify(
-        &self,
-        tenant_id: EntityId,
-        user_id: EntityId,
-        title: &str,
-        body: &str,
-        ntype: &str,
-        ref_type: Option<&str>,
-        ref_id: Option<EntityId>,
-    ) -> Result<Notification> {
+    async fn notify(&self, notification: NewNotification) -> Result<Notification> {
         let row = sqlx::query_as::<_, (Uuid, Uuid, Uuid, String, String, String, Option<String>, Option<Uuid>, bool, DateTime<Utc>)>(
             r#"INSERT INTO notifications (tenant_id, user_id, title, body, notification_type, entity_type, entity_id, is_read, created_at)
                VALUES ($1, $2, $3, $4, $5, $6, $7, false, NOW())
                RETURNING id, tenant_id, user_id, title, body, notification_type, entity_type, entity_id, is_read, created_at"#,
         )
-        .bind(tenant_id)
-        .bind(user_id)
-        .bind(title)
-        .bind(body)
-        .bind(ntype)
-        .bind(ref_type)
-        .bind(ref_id)
+        .bind(notification.tenant_id)
+        .bind(notification.user_id)
+        .bind(&notification.title)
+        .bind(&notification.body)
+        .bind(&notification.notification_type)
+        .bind(&notification.reference_type)
+        .bind(notification.reference_id)
         .fetch_one(&self.pool)
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to create notification: {e}")))?;
@@ -416,11 +391,7 @@ impl NotificationService for DatabaseNotificationService {
             .collect())
     }
 
-    async fn unread_count(
-        &self,
-        tenant_id: EntityId,
-        user_id: EntityId,
-    ) -> Result<i64> {
+    async fn unread_count(&self, tenant_id: EntityId, user_id: EntityId) -> Result<i64> {
         let (count,): (i64,) = sqlx::query_as(
             r#"SELECT COUNT(*) FROM notifications
                WHERE tenant_id = $1 AND user_id = $2 AND is_read = false"#,
@@ -461,11 +432,7 @@ impl NotificationService for DatabaseNotificationService {
         Ok(())
     }
 
-    async fn mark_all_read(
-        &self,
-        tenant_id: EntityId,
-        user_id: EntityId,
-    ) -> Result<()> {
+    async fn mark_all_read(&self, tenant_id: EntityId, user_id: EntityId) -> Result<()> {
         sqlx::query(
             r#"UPDATE notifications
                SET is_read = true
@@ -475,7 +442,9 @@ impl NotificationService for DatabaseNotificationService {
         .bind(user_id)
         .execute(&self.pool)
         .await
-        .map_err(|e| SenseiError::Database(format!("Failed to mark all notifications as read: {e}")))?;
+        .map_err(|e| {
+            SenseiError::Database(format!("Failed to mark all notifications as read: {e}"))
+        })?;
 
         Ok(())
     }
@@ -539,10 +508,7 @@ impl NotificationService for DatabaseNotificationService {
         })
     }
 
-    async fn update_preferences(
-        &self,
-        prefs: &NotificationPreferences,
-    ) -> Result<()> {
+    async fn update_preferences(&self, prefs: &NotificationPreferences) -> Result<()> {
         let result = sqlx::query(
             r#"INSERT INTO user_notification_preferences (id, tenant_id, user_id, email_notifications, push_notifications,
                       in_app_notifications, digest_frequency, quiet_hours_start, quiet_hours_end, updated_at)

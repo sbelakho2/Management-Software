@@ -7,14 +7,14 @@
 
 use async_trait::async_trait;
 use sensei_core::error::{Result, SenseiError};
-use sensei_core::types::{EntityId, TenantId, Timestamp, new_id, now};
+use sensei_core::types::{new_id, now, EntityId, TenantId, Timestamp};
 use uuid::Uuid;
 
 use super::models::{
     ApprovalDecision, ApprovalPolicy, ChangeAuditEntry, ChangeRequest, ChangeRisk, ChangeStatus,
     ChangeType, ConfigSnapshot, ConfigValue, HeatMapCell, ImpactAssessment, NpiMitigationAction,
-    NpiMitigationStatus, NpiRisk, NpiRiskCategory, NpiRiskReview, RiskPhase,
-    RiskPriority, RiskTemplate,
+    NpiMitigationStatus, NpiRisk, NpiRiskCategory, NpiRiskReview, RiskPhase, RiskPriority,
+    RiskTemplate,
 };
 
 // ---------------------------------------------------------------------------
@@ -319,7 +319,8 @@ impl InMemoryNpiRiskRegisterService {
             RiskTemplate {
                 id: new_id(),
                 name: "Supplier Capability Risk".into(),
-                description: "Risk that supplier cannot meet quality or delivery requirements".into(),
+                description: "Risk that supplier cannot meet quality or delivery requirements"
+                    .into(),
                 category: NpiRiskCategory::SupplierCapability,
                 phase: RiskPhase::Dfm,
                 default_severity: 7,
@@ -459,9 +460,7 @@ impl NpiRiskRegisterService for InMemoryNpiRiskRegisterService {
             .iter()
             .find(|r| r.risk_number == risk_number)
             .cloned()
-            .ok_or_else(|| {
-                SenseiError::NotFound(format!("Risk {risk_number} not found"))
-            })
+            .ok_or_else(|| SenseiError::NotFound(format!("Risk {risk_number} not found")))
     }
 
     async fn update_risk(
@@ -609,15 +608,14 @@ impl NpiRiskRegisterService for InMemoryNpiRiskRegisterService {
     ) -> Result<NpiMitigationAction> {
         let mut risks = self.risks.write().await;
         for risk in risks.iter_mut() {
-            if let Some(mit) = risk
-                .mitigations
-                .iter_mut()
-                .find(|m| m.id == mitigation_id)
-            {
+            if let Some(mit) = risk.mitigations.iter_mut().find(|m| m.id == mitigation_id) {
                 mit.status = status;
                 mit.effectiveness = effectiveness;
                 mit.updated_at = now();
-                if matches!(status, NpiMitigationStatus::Completed | NpiMitigationStatus::Verified) {
+                if matches!(
+                    status,
+                    NpiMitigationStatus::Completed | NpiMitigationStatus::Verified
+                ) {
                     mit.completed_at = Some(now());
                 }
                 return Ok(mit.clone());
@@ -633,8 +631,12 @@ impl NpiRiskRegisterService for InMemoryNpiRiskRegisterService {
         mitigation_id: EntityId,
         effectiveness: u32,
     ) -> Result<NpiMitigationAction> {
-        self.update_mitigation_status(mitigation_id, NpiMitigationStatus::Verified, Some(effectiveness))
-            .await
+        self.update_mitigation_status(
+            mitigation_id,
+            NpiMitigationStatus::Verified,
+            Some(effectiveness),
+        )
+        .await
     }
 
     async fn get_overdue_mitigations(&self) -> Result<Vec<NpiMitigationAction>> {
@@ -778,16 +780,13 @@ impl NpiRiskRegisterService for InMemoryNpiRiskRegisterService {
         let mut cell_map: std::collections::HashMap<(u32, u32), HeatMapCell> =
             std::collections::HashMap::new();
 
-        for risk in risks
-            .iter()
-            .filter(|r| !r.is_closed)
-            .filter(|r| {
-                if let Some(p) = &phase {
-                    &r.phase == p
-                } else {
-                    true
-                }
-            }) {
+        for risk in risks.iter().filter(|r| !r.is_closed).filter(|r| {
+            if let Some(p) = &phase {
+                &r.phase == p
+            } else {
+                true
+            }
+        }) {
             let key = (risk.current_severity, risk.current_occurrence);
             let entry = cell_map.entry(key).or_insert(HeatMapCell {
                 severity: risk.current_severity,
@@ -990,10 +989,7 @@ impl ChangeControlService for InMemoryChangeControlService {
             .ok_or_else(|| SenseiError::NotFound(format!("Change request {id} not found")))
     }
 
-    async fn list_change_requests(
-        &self,
-        _tenant_id: TenantId,
-    ) -> Result<Vec<ChangeRequest>> {
+    async fn list_change_requests(&self, _tenant_id: TenantId) -> Result<Vec<ChangeRequest>> {
         let changes = self.changes.read().await;
         Ok(changes.clone())
     }
@@ -1081,7 +1077,9 @@ impl ChangeControlService for InMemoryChangeControlService {
         let change = changes
             .iter_mut()
             .find(|c| c.id == change_id)
-            .ok_or_else(|| SenseiError::NotFound(format!("Change request {change_id} not found")))?;
+            .ok_or_else(|| {
+                SenseiError::NotFound(format!("Change request {change_id} not found"))
+            })?;
 
         let assessment = ImpactAssessment {
             id: new_id(),
@@ -1127,7 +1125,9 @@ impl ChangeControlService for InMemoryChangeControlService {
 
         // Check if enough approvals collected
         let policies = self.policies.read().await;
-        let policy = policies.iter().find(|p| p.change_type == change.change_type);
+        let policy = policies
+            .iter()
+            .find(|p| p.change_type == change.change_type);
         let required = policy.map(|p| p.required_approvers).unwrap_or(1);
 
         if change.approvals.len() as u32 >= required {
@@ -1344,10 +1344,9 @@ impl ChangeControlService for InMemoryChangeControlService {
 
     async fn get_audit_trail(&self, change_id: EntityId) -> Result<Vec<ChangeAuditEntry>> {
         let changes = self.changes.read().await;
-        let change = changes
-            .iter()
-            .find(|c| c.id == change_id)
-            .ok_or_else(|| SenseiError::NotFound(format!("Change request {change_id} not found")))?;
+        let change = changes.iter().find(|c| c.id == change_id).ok_or_else(|| {
+            SenseiError::NotFound(format!("Change request {change_id} not found"))
+        })?;
         Ok(change.audit_trail.clone())
     }
 }

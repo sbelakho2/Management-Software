@@ -27,7 +27,12 @@ impl TodayStore {
     }
 
     /// Fetch the today screen for a given user.
-    pub async fn fetch_today_screen(&self, client: &ApiClient, user_id: &str, user_name: Option<&str>) {
+    pub async fn fetch_today_screen(
+        &self,
+        client: &ApiClient,
+        user_id: &str,
+        user_name: Option<&str>,
+    ) {
         self.loading.set(true);
         self.error.set(None);
         match TodayApi::get_today(client, user_id, user_name).await {

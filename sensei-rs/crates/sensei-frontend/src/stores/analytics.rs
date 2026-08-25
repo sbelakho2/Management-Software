@@ -2,7 +2,7 @@
 //!
 //! Mirrors the Zustand [`analytics.ts`](frontend/src/stores/analytics.ts) store.
 
-use crate::api::client::{ApiClient, ApiError};
+use crate::api::client::ApiClient;
 use leptos::prelude::*;
 
 /// Reactive store for analytics data.
@@ -35,7 +35,10 @@ impl AnalyticsStore {
     pub async fn fetch_insights(&self, client: &ApiClient) {
         self.loading.set(true);
         self.error.set(None);
-        match client.get::<serde_json::Value>("/api/v1/analytics/insights").await {
+        match client
+            .get::<serde_json::Value>("/api/v1/analytics/insights")
+            .await
+        {
             Ok(data) => {
                 self.insights.set(Some(data));
             }
@@ -50,7 +53,10 @@ impl AnalyticsStore {
     pub async fn fetch_trends(&self, client: &ApiClient) {
         self.loading.set(true);
         self.error.set(None);
-        match client.get::<serde_json::Value>("/api/v1/analytics/trends").await {
+        match client
+            .get::<serde_json::Value>("/api/v1/analytics/trends")
+            .await
+        {
             Ok(data) => {
                 self.trends.set(Some(data));
             }
@@ -65,7 +71,10 @@ impl AnalyticsStore {
     pub async fn fetch_health(&self, client: &ApiClient) {
         self.loading.set(true);
         self.error.set(None);
-        match client.get::<serde_json::Value>("/api/v1/analytics/health").await {
+        match client
+            .get::<serde_json::Value>("/api/v1/analytics/health")
+            .await
+        {
             Ok(data) => {
                 self.health.set(Some(data));
             }

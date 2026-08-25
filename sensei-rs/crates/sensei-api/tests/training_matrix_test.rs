@@ -156,7 +156,7 @@ async fn test_list_skill_gaps() {
         "notes": "Beginner level",
     });
     let req = app.post_authenticated("/api/v1/training-matrix", &token, body);
-    let mut resp = app.send_request(req).await;
+    let resp = app.send_request(req).await;
     assert_eq!(resp.status(), StatusCode::OK);
 
     // List skill gaps

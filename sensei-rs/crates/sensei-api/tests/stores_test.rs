@@ -102,8 +102,14 @@ async fn list_paginated_orders_by_created_at_desc_then_id() {
     let id_no_ts = Uuid::new_v4();
     {
         let mut guard = store.write().await;
-        guard.insert(id_old, entity_at(&(now - chrono::Duration::days(3)).to_rfc3339(), "old"));
-        guard.insert(id_mid, entity_at(&(now - chrono::Duration::days(1)).to_rfc3339(), "mid"));
+        guard.insert(
+            id_old,
+            entity_at(&(now - chrono::Duration::days(3)).to_rfc3339(), "old"),
+        );
+        guard.insert(
+            id_mid,
+            entity_at(&(now - chrono::Duration::days(1)).to_rfc3339(), "mid"),
+        );
         guard.insert(id_new, entity_at(&now.to_rfc3339(), "new"));
         guard.insert(id_no_ts, entity("no-timestamp", "active"));
     }

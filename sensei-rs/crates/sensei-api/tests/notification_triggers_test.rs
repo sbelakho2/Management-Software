@@ -16,7 +16,7 @@ async fn test_create_notification_trigger() {
     let mut resp = app.send_request(req).await;
     assert_eq!(resp.status(), StatusCode::OK);
     let json: Value = app.json_body(&mut resp).await;
-    assert!(json["id"].as_str().unwrap_or("").len() > 0);
+    assert!(!json["id"].as_str().unwrap_or("").is_empty());
     assert_eq!(json["name"], "Andon Raised Alert");
 }
 
@@ -32,7 +32,7 @@ async fn test_list_notification_triggers() {
     let mut resp = app.send_request(req).await;
     assert_eq!(resp.status(), StatusCode::OK);
     let json: Value = app.json_body(&mut resp).await;
-    assert!(json["data"].as_array().map_or(false, |a| a.len() >= 1));
+    assert!(json["data"].as_array().is_some_and(|a| !a.is_empty()));
 }
 
 #[tokio::test]
@@ -154,7 +154,9 @@ async fn test_list_event_types() {
     );
     // Deprecated fake event types must be gone.
     assert!(
-        !event_types.iter().any(|e| e["event_type"] == "andon.raised"),
+        !event_types
+            .iter()
+            .any(|e| e["event_type"] == "andon.raised"),
         "fake event type andon.raised must not be in the catalog"
     );
 }
@@ -178,7 +180,7 @@ async fn create_real_trigger(
         "target_roles": ["admin"],
         "is_active": true,
     });
-    let req = app.post_authenticated("/api/v1/notification-triggers", &token, body);
+    let req = app.post_authenticated("/api/v1/notification-triggers", token, body);
     let mut resp = app.send_request(req).await;
     assert_eq!(resp.status(), StatusCode::OK, "trigger creation failed");
     app.json_body(&mut resp).await
@@ -217,7 +219,10 @@ async fn test_test_trigger_condition_matches_and_reports_rules() {
     let json: Value = app.json_body(&mut resp).await;
     assert_eq!(json["condition_matched"], true);
     assert_eq!(json["matched_rules"][0], "NCR Severity Alert");
-    assert!(!json["actions_executed"].as_array().unwrap_or(&vec![]).is_empty());
+    assert!(!json["actions_executed"]
+        .as_array()
+        .unwrap_or(&vec![])
+        .is_empty());
 
     // Non-matching payload: no rule matched, no actions.
     let other_payload = serde_json::json!({ "severity": "low" });
@@ -229,7 +234,10 @@ async fn test_test_trigger_condition_matches_and_reports_rules() {
     let mut resp = app.send_request(req).await;
     let json: Value = app.json_body(&mut resp).await;
     assert_eq!(json["condition_matched"], false);
-    assert!(json["matched_rules"].as_array().unwrap_or(&vec![]).is_empty());
+    assert!(json["matched_rules"]
+        .as_array()
+        .unwrap_or(&vec![])
+        .is_empty());
 }
 
 #[tokio::test]
@@ -248,8 +256,18 @@ async fn test_worker_creates_notifications_for_matching_events() {
     )
     .await;
 
-    // Start the worker on the in-memory bus.
-    sensei_api::services::notification_trigger_worker::spawn(app.state.clone());
+    // Start the worker on the in-memory bus and wait until the subscription
+    // is active: the in-memory bus does not replay events published before
+    // the worker subscribed.
+    let subscribed = sensei_api::services::notification_trigger_worker::spawn(app.state.clone());
+    let subscribe_deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    while !subscribed.load(std::sync::atomic::Ordering::SeqCst) {
+        assert!(
+            std::time::Instant::now() < subscribe_deadline,
+            "worker never subscribed to the event bus"
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
 
     // Publish a matching event.
     let event = NcrCreatedEvent::new(
@@ -320,7 +338,15 @@ async fn test_worker_respects_cooldown_and_empty_target_roles() {
     let resp = app.send_request(req).await;
     assert_eq!(resp.status(), StatusCode::OK);
 
-    sensei_api::services::notification_trigger_worker::spawn(app.state.clone());
+    let subscribed = sensei_api::services::notification_trigger_worker::spawn(app.state.clone());
+    let subscribe_deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    while !subscribed.load(std::sync::atomic::Ordering::SeqCst) {
+        assert!(
+            std::time::Instant::now() < subscribe_deadline,
+            "worker never subscribed to the event bus"
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
 
     let event = NcrCreatedEvent::new(
         app.admin_tenant_id,
@@ -334,7 +360,11 @@ async fn test_worker_respects_cooldown_and_empty_target_roles() {
     // First publication fires the cooldown-enabled trigger once. Wait
     // until the worker has processed it (poll) so the second event is
     // guaranteed to arrive after last_triggered_at was stamped.
-    app.state.event_bus.publish(&event).await.expect("publish ok");
+    app.state
+        .event_bus
+        .publish(&event)
+        .await
+        .expect("publish ok");
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
     loop {
         let count = count_trigger_notifications(&app).await;
@@ -350,7 +380,11 @@ async fn test_worker_respects_cooldown_and_empty_target_roles() {
 
     // A second event within the 60-minute cooldown must be suppressed, and
     // the no-roles trigger never fires.
-    app.state.event_bus.publish(&event).await.expect("publish ok");
+    app.state
+        .event_bus
+        .publish(&event)
+        .await
+        .expect("publish ok");
     tokio::time::sleep(std::time::Duration::from_millis(300)).await;
     let count_after_second = count_trigger_notifications(&app).await;
     assert_eq!(

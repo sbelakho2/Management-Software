@@ -20,12 +20,7 @@ pub async fn admin_login(app: &TestApp) -> Value {
 }
 
 /// Register a new user and return the parsed login response.
-pub async fn register_user(
-    app: &TestApp,
-    email: &str,
-    password: &str,
-    name: &str,
-) -> Value {
+pub async fn register_user(app: &TestApp, email: &str, password: &str, name: &str) -> Value {
     let body = serde_json::json!({
         "email": email,
         "password": password,

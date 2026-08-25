@@ -20,14 +20,14 @@ static CHANNELS: Lazy<Mutex<HashMap<String, Vec<Vec<u8>>>>> =
 /// When the Zig library is linked, this delegates to the native
 /// shared-memory implementation. Otherwise it uses an in-memory
 /// `HashMap` (single-process only).
-// NOTE: The Zig exports `sensei_ipc_send` / `sensei_ipc_recv` exist for
-// direct C ABI consumers, but this Rust wrapper deliberately uses the
-// in-memory channel implementation for BOTH directions. Wiring only the
-// send direction to Zig while receiving from the in-memory map would
-// create an asymmetric pair of channels (messages would be sent to one
-// store and read from another). A cross-process shared-memory transport
-// would need to implement both directions against the same store.
-
+///
+/// NOTE: The Zig exports `sensei_ipc_send` / `sensei_ipc_recv` exist for
+/// direct C ABI consumers, but this Rust wrapper deliberately uses the
+/// in-memory channel implementation for BOTH directions. Wiring only the
+/// send direction to Zig while receiving from the in-memory map would
+/// create an asymmetric pair of channels (messages would be sent to one
+/// store and read from another). A cross-process shared-memory transport
+/// would need to implement both directions against the same store.
 pub fn channel_send(channel: &str, data: &[u8]) -> Result<(), IpcError> {
     let mut channels = CHANNELS.lock().map_err(|_| IpcError::LockPoisoned)?;
     channels

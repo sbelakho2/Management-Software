@@ -3,13 +3,16 @@
 //! Provides admin CRUD endpoints for user management including
 //! listing, updating, deactivating, reactivating, and role management.
 
-use axum::{Json, extract::{Path, Query, State}};
-use serde::{Deserialize, Serialize};
+use axum::{
+    extract::{Path, Query, State},
+    Json,
+};
 use sensei_auth::middleware::AuthenticatedUser;
 use sensei_core::domain::entities::User;
 use sensei_core::error::{Result, SenseiError};
 use sensei_core::pagination::PaginatedResponse;
 use sensei_core::types::EntityId;
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::state::AppState;
@@ -87,10 +90,15 @@ pub async fn list_users(
     let mut filtered: Vec<User> = all
         .into_iter()
         .filter(|u| u.tenant_id == user.tenant_id)
-        .filter(|u| params.role.as_ref().map_or(true, |r| u.roles.iter().any(|ur| ur == r)))
-        .filter(|u| params.is_active.map_or(true, |a| u.is_active == a))
+        .filter(|u| {
+            params
+                .role
+                .as_ref()
+                .is_none_or(|r| u.roles.iter().any(|ur| ur == r))
+        })
+        .filter(|u| params.is_active.is_none_or(|a| u.is_active == a))
         .collect();
-    filtered.sort_by(|a, b| a.created_at.cmp(&b.created_at));
+    filtered.sort_by_key(|a| a.created_at);
 
     let total = filtered.len();
     let page = params.page.unwrap_or(1).max(1);
@@ -145,9 +153,7 @@ pub async fn update_user(
         existing.name = name;
     }
     if let Some(email) = req.email {
-        if email != existing.email
-            && state.users_service.find_by_email(&email).await.is_ok()
-        {
+        if email != existing.email && state.users_service.find_by_email(&email).await.is_ok() {
             return Err(SenseiError::AlreadyExists(format!(
                 "Email '{}' is already in use",
                 email
@@ -225,13 +231,16 @@ mod tests {
     async fn test_state() -> (AppState, TenantId, EntityId) {
         let hash = hash_password("Test@1234").unwrap();
         let tenant_id = TenantId::new_v4();
-        let users_service = InMemoryUsersService::with_admin(
-            "admin@test.com", "Admin User", &hash, tenant_id,
-        );
+        let users_service =
+            InMemoryUsersService::with_admin("admin@test.com", "Admin User", &hash, tenant_id);
         let users_service = Arc::new(users_service) as Arc<dyn UsersService>;
         let config = AppConfig::from_env().unwrap();
         let state = AppState::new(config, users_service);
-        let admin = state.users_service.find_by_email("admin@test.com").await.unwrap();
+        let admin = state
+            .users_service
+            .find_by_email("admin@test.com")
+            .await
+            .unwrap();
         let admin_id = admin.id;
         (state, tenant_id, admin_id)
     }
@@ -331,13 +340,9 @@ mod tests {
         let user = admin_user(tenant_id, user_id);
 
         // First deactivate
-        let _ = deactivate_user(
-            user.clone(),
-            State(state.clone()),
-            Path(user_id),
-        )
-        .await
-        .unwrap();
+        let _ = deactivate_user(user.clone(), State(state.clone()), Path(user_id))
+            .await
+            .unwrap();
 
         // Then reactivate
         let resp = activate_user(user, State(state.clone()), Path(user_id))

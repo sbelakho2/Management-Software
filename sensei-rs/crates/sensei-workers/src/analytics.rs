@@ -7,7 +7,6 @@
 //!
 //! Queries real aggregate data from the database when a pool is available.
 /// Falls back to empty results with a warning when no pool is configured.
-
 use crate::error::{Result, WorkerError};
 use crate::task::{TaskConsumer, TaskMetadata};
 use async_trait::async_trait;
@@ -62,10 +61,15 @@ pub struct KpiValue {
 ///
 /// Prevents redundant recomputation within the configured TTL window.
 /// Entries older than the TTL are treated as expired and recomputed.
+/// A cached snapshot entry: when it was computed and the snapshot itself.
+type SnapshotEntry = (std::time::Instant, AnalyticsSnapshot);
+/// A cached KPI entry: when it was computed and the KPI values.
+type KpiEntry = (std::time::Instant, Vec<KpiValue>);
+
 #[derive(Debug)]
 pub struct AnalyticsCache {
-    snapshots: Arc<RwLock<HashMap<String, (std::time::Instant, AnalyticsSnapshot)>>>,
-    kpis: Arc<RwLock<HashMap<String, (std::time::Instant, Vec<KpiValue>)>>>,
+    snapshots: Arc<RwLock<HashMap<String, SnapshotEntry>>>,
+    kpis: Arc<RwLock<HashMap<String, KpiEntry>>>,
     ttl: Duration,
 }
 
@@ -270,9 +274,7 @@ impl AnalyticsWorker {
         };
 
         // Cache the result.
-        self.cache
-            .put_snapshot(cache_key, snapshot.clone())
-            .await;
+        self.cache.put_snapshot(cache_key, snapshot.clone()).await;
 
         info!(date = %date, "Analytics snapshot computed");
         Ok(snapshot)
@@ -343,11 +345,7 @@ impl AnalyticsWorker {
     /// Quality state lives in the `ncr_reports` and `capas` tables with
     /// plain `status` columns (there is no JSONB-backed `quality_ncrs` /
     /// `quality_capas` pair in the schema).
-    async fn query_quality_metrics(
-        &self,
-        pool: &PgPool,
-        date: &str,
-    ) -> Result<serde_json::Value> {
+    async fn query_quality_metrics(&self, pool: &PgPool, date: &str) -> Result<serde_json::Value> {
         let ncrs_opened = self
             .fetch_count(
                 pool,
@@ -376,7 +374,9 @@ impl AnalyticsWorker {
         .map_err(|e| {
             let msg = e.to_string();
             error!(query = "quality.open_ncr_count", error = %msg, "Analytics query failed");
-            WorkerError::Processing(format!("Analytics query 'quality.open_ncr_count' failed: {msg}"))
+            WorkerError::Processing(format!(
+                "Analytics query 'quality.open_ncr_count' failed: {msg}"
+            ))
         })?;
 
         let capa_open: i64 = sqlx::query_scalar(
@@ -404,11 +404,7 @@ impl AnalyticsWorker {
     ///
     /// `invoices` has no `paid_at` column: `invoice_date` is the issuance
     /// date and `updated_at` the payment-status transition timestamp.
-    async fn query_finance_metrics(
-        &self,
-        pool: &PgPool,
-        date: &str,
-    ) -> Result<serde_json::Value> {
+    async fn query_finance_metrics(&self, pool: &PgPool, date: &str) -> Result<serde_json::Value> {
         let invoices_issued = self
             .fetch_count(
                 pool,
@@ -437,7 +433,9 @@ impl AnalyticsWorker {
         .map_err(|e| {
             let msg = e.to_string();
             error!(query = "finance.outstanding_ar", error = %msg, "Analytics query failed");
-            WorkerError::Processing(format!("Analytics query 'finance.outstanding_ar' failed: {msg}"))
+            WorkerError::Processing(format!(
+                "Analytics query 'finance.outstanding_ar' failed: {msg}"
+            ))
         })?;
 
         Ok(serde_json::json!({
@@ -463,7 +461,9 @@ impl AnalyticsWorker {
             .map_err(|e| {
                 let msg = e.to_string();
                 error!(query = "inventory.total_items", error = %msg, "Analytics query failed");
-                WorkerError::Processing(format!("Analytics query 'inventory.total_items' failed: {msg}"))
+                WorkerError::Processing(format!(
+                    "Analytics query 'inventory.total_items' failed: {msg}"
+                ))
             })?;
 
         let low_stock_items: i64 = sqlx::query_scalar(
@@ -476,7 +476,9 @@ impl AnalyticsWorker {
         .map_err(|e| {
             let msg = e.to_string();
             error!(query = "inventory.low_stock", error = %msg, "Analytics query failed");
-            WorkerError::Processing(format!("Analytics query 'inventory.low_stock' failed: {msg}"))
+            WorkerError::Processing(format!(
+                "Analytics query 'inventory.low_stock' failed: {msg}"
+            ))
         })?;
 
         // Turnover: units moved out over the trailing 30 days divided by the
@@ -538,7 +540,9 @@ impl AnalyticsWorker {
             .map_err(|e| {
                 let msg = e.to_string();
                 error!(query = "kpi.storage_utilization", error = %msg, "Analytics query failed");
-                WorkerError::Processing(format!("Analytics query 'kpi.storage_utilization' failed: {msg}"))
+                WorkerError::Processing(format!(
+                    "Analytics query 'kpi.storage_utilization' failed: {msg}"
+                ))
             })?;
 
             let picking_accuracy: f64 = sqlx::query_scalar(
@@ -595,7 +599,9 @@ impl AnalyticsWorker {
             .map_err(|e| {
                 let msg = e.to_string();
                 error!(query = "kpi.inventory_accuracy", error = %msg, "Analytics query failed");
-                WorkerError::Processing(format!("Analytics query 'kpi.inventory_accuracy' failed: {msg}"))
+                WorkerError::Processing(format!(
+                    "Analytics query 'kpi.inventory_accuracy' failed: {msg}"
+                ))
             })?;
 
             vec![
@@ -667,8 +673,8 @@ impl TaskConsumer for AnalyticsWorker {
     }
 
     async fn process(&self, payload: &[u8], metadata: &TaskMetadata) -> Result<()> {
-        let analytics_payload: AnalyticsTaskPayload = serde_json::from_slice(payload)
-            .map_err(|e| {
+        let analytics_payload: AnalyticsTaskPayload =
+            serde_json::from_slice(payload).map_err(|e| {
                 error!(
                     task_id = %metadata.task_id,
                     error = %e,

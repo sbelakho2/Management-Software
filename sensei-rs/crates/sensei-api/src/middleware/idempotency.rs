@@ -97,7 +97,11 @@ impl IdempotencyStore {
                 // correctness.
                 locks.retain(|key, _| inner.contains_key(key));
                 if removed > 0 {
-                    debug!(removed, remaining = inner.len(), "Idempotency-store cleanup");
+                    debug!(
+                        removed,
+                        remaining = inner.len(),
+                        "Idempotency-store cleanup"
+                    );
                 }
             }
         });
@@ -175,10 +179,7 @@ fn compute_cache_key(user_id: &str, path: &str, idempotency_key: &str) -> String
 /// this middleware runs.
 pub async fn idempotency_middleware(req: Request, next: Next) -> Response {
     let method = req.method().clone();
-    let is_idempotent_method = matches!(
-        method.as_str(),
-        "POST" | "PUT" | "PATCH"
-    );
+    let is_idempotent_method = matches!(method.as_str(), "POST" | "PUT" | "PATCH");
 
     if !is_idempotent_method {
         return next.run(req).await;
@@ -253,20 +254,22 @@ pub async fn idempotency_middleware(req: Request, next: Next) -> Response {
 
     // Do not cache oversized bodies.
     if body_bytes.len() > MAX_CACHED_BODY_BYTES {
-        debug!(bytes = body_bytes.len(), "Response body exceeds idempotency cache limit; not caching");
-        return (parts, axum::body::Body::from(axum::body::Bytes::from(body_bytes))).into_response();
+        debug!(
+            bytes = body_bytes.len(),
+            "Response body exceeds idempotency cache limit; not caching"
+        );
+        return (
+            parts,
+            axum::body::Body::from(axum::body::Bytes::from(body_bytes)),
+        )
+            .into_response();
     }
 
     // Collect response headers.
     let headers: Vec<(String, String)> = parts
         .headers
         .iter()
-        .map(|(name, value)| {
-            (
-                name.to_string(),
-                value.to_str().unwrap_or("").to_string(),
-            )
-        })
+        .map(|(name, value)| (name.to_string(), value.to_str().unwrap_or("").to_string()))
         .collect();
 
     let stored = StoredResponse {
@@ -278,16 +281,18 @@ pub async fn idempotency_middleware(req: Request, next: Next) -> Response {
     store.store(cache_key, stored);
 
     // Reconstruct the response.
-    (parts, axum::body::Body::from(axum::body::Bytes::from(body_bytes))).into_response()
+    (
+        parts,
+        axum::body::Body::from(axum::body::Bytes::from(body_bytes)),
+    )
+        .into_response()
 }
 
 /// Rebuild an HTTP response from a [`StoredResponse`].
 fn stored_response_into_response(cached: StoredResponse) -> Response {
-    let mut response = Response::new(axum::body::Body::from(
-        axum::body::Bytes::from(cached.body),
-    ));
-    *response.status_mut() = StatusCode::from_u16(cached.status_code)
-        .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+    let mut response = Response::new(axum::body::Body::from(axum::body::Bytes::from(cached.body)));
+    *response.status_mut() =
+        StatusCode::from_u16(cached.status_code).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
     for (name, value) in &cached.headers {
         if let (Ok(header_name), Ok(header_value)) = (
             axum::http::HeaderName::from_bytes(name.as_bytes()),
@@ -426,10 +431,7 @@ mod tests {
         for i in 0..10 {
             let cached = store.get(&format!("key-{}", i));
             assert!(cached.is_some());
-            assert_eq!(
-                cached.unwrap().body,
-                format!("body-{}", i).into_bytes()
-            );
+            assert_eq!(cached.unwrap().body, format!("body-{}", i).into_bytes());
         }
     }
 

@@ -4,28 +4,30 @@
 //! profile management, and email verification endpoints.
 
 use axum::{
-    Json,
     extract::{ConnectInfo, FromRequestParts, State},
-    http::{HeaderMap, header},
     http::request::Parts,
+    http::{header, HeaderMap},
+    Json,
 };
 use dashmap::DashMap;
 use once_cell::sync::Lazy;
-use serde::{Deserialize, Serialize};
 use sensei_auth::jwt::{AccessTokenClaims, RefreshTokenClaims};
 use sensei_auth::middleware::AuthenticatedUser;
-use sensei_auth::password::{PasswordCheck, hash_password, validate_password_strength, verify_password};
+use sensei_auth::password::{
+    hash_password, validate_password_strength, verify_password, PasswordCheck,
+};
 use sensei_auth::refresh_tokens::TokenReuseDetected;
 use sensei_core::domain::entities::User;
 use sensei_core::error::{Result, SenseiError};
-use sensei_core::types::{EntityId, now, new_id};
+use sensei_core::types::{new_id, now, EntityId};
+use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 use std::net::SocketAddr;
 use std::time::{Duration as StdDuration, Instant};
 use uuid::Uuid;
 
 use crate::middleware::session::session_fingerprint;
-use crate::state::{AppState, PasswordResetToken, EmailVerificationToken};
+use crate::state::{AppState, EmailVerificationToken, PasswordResetToken};
 use chrono::{Duration, Utc};
 
 /// Login request body.
@@ -224,9 +226,7 @@ fn fingerprint_for_request(
         .get(header::USER_AGENT)
         .and_then(|v| v.to_str().ok())
         .map(|s| s.to_string());
-    let xff = headers
-        .get("x-forwarded-for")
-        .and_then(|v| v.to_str().ok());
+    let xff = headers.get("x-forwarded-for").and_then(|v| v.to_str().ok());
     session_fingerprint(
         peer.map(|p| p.ip()),
         xff,
@@ -237,11 +237,7 @@ fn fingerprint_for_request(
 
 /// Issue a fresh token pair for a user, storing the refresh token in the
 /// refresh-token store so rotation and reuse detection can be enforced.
-async fn issue_token_pair(
-    state: &AppState,
-    user: &User,
-    family_id: Uuid,
-) -> Result<LoginResponse> {
+async fn issue_token_pair(state: &AppState, user: &User, family_id: Uuid) -> Result<LoginResponse> {
     let user_id = user.id;
     let tenant_id = user.tenant_id;
     let roles = user.roles.clone();
@@ -355,7 +351,9 @@ pub async fn refresh(
             // A rotated token presented again means it was stolen: kill the
             // whole family so neither the thief nor the victim can continue.
             let _ = state.refresh_token_store.revoke_family(family_id).await;
-            return Err(SenseiError::Unauthorized("Token reuse detected".to_string()));
+            return Err(SenseiError::Unauthorized(
+                "Token reuse detected".to_string(),
+            ));
         }
         Err(TokenReuseDetected::Invalid) | Err(TokenReuseDetected::Database(_)) => {
             return Err(SenseiError::Unauthorized(
@@ -477,9 +475,7 @@ pub async fn update_me(
     }
     if let Some(email) = req.email {
         // Check if new email is taken
-        if email != profile.email
-            && state.users_service.find_by_email(&email).await.is_ok()
-        {
+        if email != profile.email && state.users_service.find_by_email(&email).await.is_ok() {
             return Err(SenseiError::AlreadyExists(format!(
                 "Email '{}' is already in use",
                 email
@@ -489,7 +485,10 @@ pub async fn update_me(
     }
 
     profile.updated_at = now();
-    let updated = state.users_service.update_user(user.user_id, profile).await?;
+    let updated = state
+        .users_service
+        .update_user(user.user_id, profile)
+        .await?;
     Ok(Json(UserProfileResponse::from(updated)))
 }
 
@@ -524,7 +523,10 @@ pub async fn change_password(
     let mut updated = profile.clone();
     updated.password_hash = new_hash;
     updated.updated_at = now();
-    state.users_service.update_user(user.user_id, updated).await?;
+    state
+        .users_service
+        .update_user(user.user_id, updated)
+        .await?;
 
     Ok(Json(MessageResponse {
         message: "Password changed successfully".to_string(),
@@ -541,12 +543,26 @@ pub async fn request_password_reset(
     if !allow_email_request(&req.email) {
         return Err(SenseiError::HttpError {
             status: 429,
-            message: "Too many password reset requests for this email. Try again later.".to_string(),
+            message: "Too many password reset requests for this email. Try again later."
+                .to_string(),
         });
     }
 
-    // Check if the email exists (don't reveal to caller)
-    if let Ok(user) = state.users_service.find_by_email(&req.email).await {
+    // Check if the email exists (don't reveal to caller). A lookup failure
+    // (e.g. database outage) is NOT the same as "email unknown" — surface
+    // it so the user is not silently told the request succeeded.
+    let user = match state.users_service.find_by_email(&req.email).await {
+        Ok(user) => Some(user),
+        Err(SenseiError::NotFound(_)) => None,
+        Err(e) => {
+            tracing::error!(error = %e, email = %req.email, "Failed to look up email for password reset");
+            return Err(SenseiError::Database(
+                "Unable to process the password reset request right now. Please try again later."
+                    .to_string(),
+            ));
+        }
+    };
+    if let Some(user) = user {
         let tenant_id = user.tenant_id;
         let token = Uuid::new_v4().to_string();
         let reset_token = PasswordResetToken {
@@ -591,7 +607,9 @@ pub async fn confirm_password_reset(
         .ok_or_else(|| SenseiError::Unauthorized("Invalid or expired reset token".to_string()))?;
 
     if stored.expires_at < now() {
-        return Err(SenseiError::Unauthorized("Reset token has expired".to_string()));
+        return Err(SenseiError::Unauthorized(
+            "Reset token has expired".to_string(),
+        ));
     }
 
     // Validate and hash new password
@@ -602,7 +620,10 @@ pub async fn confirm_password_reset(
     let mut user = state.users_service.find_by_id(stored.user_id).await?;
     user.password_hash = new_hash;
     user.updated_at = now();
-    state.users_service.update_user(stored.user_id, user).await?;
+    state
+        .users_service
+        .update_user(stored.user_id, user)
+        .await?;
 
     Ok(Json(MessageResponse {
         message: "Password has been reset successfully".to_string(),
@@ -623,14 +644,34 @@ pub async fn request_email_verification(
         });
     }
 
-    if let Ok(user) = state.users_service.find_by_email(&req.email).await {
+    // Look up the email without revealing existence to the caller. Only a
+    // genuine lookup failure (database outage, ...) differs from "unknown
+    // email" and must be surfaced.
+    let user = match state.users_service.find_by_email(&req.email).await {
+        Ok(user) => Some(user),
+        Err(SenseiError::NotFound(_)) => None,
+        Err(e) => {
+            tracing::error!(error = %e, email = %req.email, "Failed to look up email for verification request");
+            return Err(SenseiError::Database(
+                "Unable to process the verification request right now. Please try again later."
+                    .to_string(),
+            ));
+        }
+    };
+    if let Some(user) = user {
         // Already verified users get no new token.
-        if !state
+        let verified = state
             .users_service
             .is_email_verified(user.id)
             .await
-            .unwrap_or(false)
-        {
+            .map_err(|e| {
+                tracing::error!(error = %e, user_id = %user.id, "Failed to check email verification state");
+                SenseiError::Database(
+                    "Unable to process the verification request right now. Please try again later."
+                        .to_string(),
+                )
+            })?;
+        if !verified {
             let tenant_id = user.tenant_id;
             let token = Uuid::new_v4().to_string();
             let verification_token = EmailVerificationToken {
@@ -673,12 +714,14 @@ pub async fn confirm_email_verification(
     Json(req): Json<VerifyEmailConfirmRequest>,
 ) -> Result<Json<MessageResponse>> {
     let mut tokens = state.email_verification_tokens.write().await;
-    let stored = tokens
-        .remove(&req.token)
-        .ok_or_else(|| SenseiError::Unauthorized("Invalid or expired verification token".to_string()))?;
+    let stored = tokens.remove(&req.token).ok_or_else(|| {
+        SenseiError::Unauthorized("Invalid or expired verification token".to_string())
+    })?;
 
     if stored.expires_at < now() {
-        return Err(SenseiError::Unauthorized("Verification token has expired".to_string()));
+        return Err(SenseiError::Unauthorized(
+            "Verification token has expired".to_string(),
+        ));
     }
 
     state
@@ -710,18 +753,18 @@ mod tests {
         let password = "Test@1234".to_string();
         let hash = hash_password(&password).unwrap();
         let tenant_id = TenantId::new_v4();
-        let users_service = InMemoryUsersService::with_admin(
-            "admin@test.com",
-            "Admin User",
-            &hash,
-            tenant_id,
-        );
+        let users_service =
+            InMemoryUsersService::with_admin("admin@test.com", "Admin User", &hash, tenant_id);
         let users_service = Arc::new(users_service) as Arc<dyn UsersService>;
         let config = AppConfig::from_env().unwrap();
         let state = AppState::new(config, users_service);
 
         // Get the admin user's ID from the service
-        let admin = state.users_service.find_by_email("admin@test.com").await.unwrap();
+        let admin = state
+            .users_service
+            .find_by_email("admin@test.com")
+            .await
+            .unwrap();
         let admin_id = admin.id;
 
         (state, password, tenant_id, admin_id)
@@ -739,7 +782,10 @@ mod tests {
     /// Client extractors for a default "client" (no UA, no XFF).
     fn empty_client() -> (OptionalPeer, HeaderMap) {
         // A fixed loopback peer keeps fingerprints deterministic.
-        (OptionalPeer(Some(SocketAddr::from(([127, 0, 0, 1], 9999)))), HeaderMap::new())
+        (
+            OptionalPeer(Some(SocketAddr::from(([127, 0, 0, 1], 9999)))),
+            HeaderMap::new(),
+        )
     }
 
     #[tokio::test]
@@ -750,14 +796,20 @@ mod tests {
             password: password.clone(),
         };
         let (peer, headers) = empty_client();
-        let resp = login(State(state.clone()), peer, headers, Json(req)).await.unwrap();
+        let resp = login(State(state.clone()), peer, headers, Json(req))
+            .await
+            .unwrap();
         assert_eq!(resp.token_type, "Bearer");
         assert!(!resp.access_token.is_empty());
         assert!(!resp.refresh_token.is_empty());
         assert!(resp.roles.contains(&"user".to_string()));
 
         // The refresh token must be registered for rotation.
-        let user = state.users_service.find_by_email("admin@test.com").await.unwrap();
+        let user = state
+            .users_service
+            .find_by_email("admin@test.com")
+            .await
+            .unwrap();
         let fp = state.session_store.verify(
             &user.id.to_string(),
             &session_fingerprint(
@@ -808,8 +860,12 @@ mod tests {
             password: "SomePass1!".to_string(),
         };
 
-        let unknown_err = login(State(state.clone()), peer, headers.clone(), Json(unknown)).await.unwrap_err();
-        let wrong_err = login(State(state.clone()), peer, headers, Json(wrong)).await.unwrap_err();
+        let unknown_err = login(State(state.clone()), peer, headers.clone(), Json(unknown))
+            .await
+            .unwrap_err();
+        let wrong_err = login(State(state.clone()), peer, headers, Json(wrong))
+            .await
+            .unwrap_err();
 
         // Both must produce the same 401 class with the same message so the
         // endpoint cannot be used to enumerate accounts.
@@ -827,7 +883,9 @@ mod tests {
             name: "New User".to_string(),
         };
         let (peer, headers) = empty_client();
-        let resp = register(State(state.clone()), peer, headers, Json(req)).await.unwrap();
+        let resp = register(State(state.clone()), peer, headers, Json(req))
+            .await
+            .unwrap();
         assert_eq!(resp.token_type, "Bearer");
         assert!(!resp.access_token.is_empty());
     }
@@ -867,13 +925,17 @@ mod tests {
             password: password.clone(),
         };
         let (peer, headers) = empty_client();
-        let login_resp = login(State(state.clone()), peer.clone(), headers.clone(), Json(login_req)).await.unwrap();
+        let login_resp = login(State(state.clone()), peer, headers.clone(), Json(login_req))
+            .await
+            .unwrap();
 
         // Refresh the token
         let refresh_req = RefreshRequest {
             refresh_token: login_resp.refresh_token.clone(),
         };
-        let resp = refresh(State(state.clone()), peer, headers, Json(refresh_req)).await.unwrap();
+        let resp = refresh(State(state.clone()), peer, headers, Json(refresh_req))
+            .await
+            .unwrap();
         assert_eq!(resp.token_type, "Bearer");
         assert!(!resp.access_token.is_empty());
     }
@@ -886,18 +948,29 @@ mod tests {
             password: password.clone(),
         };
         let (peer, headers) = empty_client();
-        let login_resp = login(State(state.clone()), peer.clone(), headers.clone(), Json(login_req)).await.unwrap();
+        let login_resp = login(State(state.clone()), peer, headers.clone(), Json(login_req))
+            .await
+            .unwrap();
 
         let refresh_req = RefreshRequest {
             refresh_token: login_resp.refresh_token.clone(),
         };
-        let first = refresh(State(state.clone()), peer.clone(), headers.clone(), Json(refresh_req)).await.unwrap();
+        let first = refresh(
+            State(state.clone()),
+            peer,
+            headers.clone(),
+            Json(refresh_req),
+        )
+        .await
+        .unwrap();
 
         // The old token has been rotated: presenting it again is reuse.
         let reuse = RefreshRequest {
             refresh_token: login_resp.refresh_token.clone(),
         };
-        let err = refresh(State(state.clone()), peer.clone(), headers.clone(), Json(reuse)).await.unwrap_err();
+        let err = refresh(State(state.clone()), peer, headers.clone(), Json(reuse))
+            .await
+            .unwrap_err();
         assert!(err.to_string().contains("reuse"), "got: {err}");
 
         // Reuse detection revokes the WHOLE family, so the rotated-in token
@@ -905,7 +978,9 @@ mod tests {
         let second = RefreshRequest {
             refresh_token: first.refresh_token.clone(),
         };
-        let err2 = refresh(State(state.clone()), peer, headers, Json(second)).await.unwrap_err();
+        let err2 = refresh(State(state.clone()), peer, headers, Json(second))
+            .await
+            .unwrap_err();
         assert!(
             err2.to_string().contains("Invalid or expired"),
             "family was not revoked after reuse detection: got: {err2}"
@@ -931,23 +1006,32 @@ mod tests {
             password: password.clone(),
         };
         let (peer, headers) = empty_client();
-        let login_resp = login(State(state.clone()), peer, headers.clone(), Json(login_req)).await.unwrap();
+        let login_resp = login(State(state.clone()), peer, headers.clone(), Json(login_req))
+            .await
+            .unwrap();
 
         // The access token must be presented on logout to extract its jti.
         let mut logout_headers = HeaderMap::new();
         logout_headers.insert(
             header::AUTHORIZATION,
-            format!("Bearer {}", login_resp.access_token).parse().unwrap(),
+            format!("Bearer {}", login_resp.access_token)
+                .parse()
+                .unwrap(),
         );
         let user = admin_user(tenant_id, user_id);
-        let _ = logout(user, State(state.clone()), logout_headers).await.unwrap();
+        let _ = logout(user, State(state.clone()), logout_headers)
+            .await
+            .unwrap();
 
         assert!(!state.blacklisted_tokens.read().await.is_empty());
 
         // The blacklisted token must be rejected by the middleware.
         let req = axum::http::Request::builder()
             .uri("/api/v1/auth/me")
-            .header("Authorization", format!("Bearer {}", login_resp.access_token))
+            .header(
+                "Authorization",
+                format!("Bearer {}", login_resp.access_token),
+            )
             .body(axum::body::Body::empty())
             .unwrap();
         let router = crate::router::build_router(state.clone());
@@ -972,7 +1056,9 @@ mod tests {
             name: Some("Updated Name".to_string()),
             email: None,
         };
-        let resp = update_me(user, State(state.clone()), Json(req)).await.unwrap();
+        let resp = update_me(user, State(state.clone()), Json(req))
+            .await
+            .unwrap();
         assert_eq!(resp.name, "Updated Name");
         assert_eq!(resp.email, "admin@test.com");
     }
@@ -987,7 +1073,9 @@ mod tests {
             name: "Other".to_string(),
         };
         let (peer, headers) = empty_client();
-        let _ = register(State(state.clone()), peer, headers, Json(reg_req)).await.unwrap();
+        let _ = register(State(state.clone()), peer, headers, Json(reg_req))
+            .await
+            .unwrap();
 
         // Try to update admin's email to the other user's email
         let user = admin_user(tenant_id, user_id);
@@ -1007,7 +1095,9 @@ mod tests {
             old_password: password.clone(),
             new_password: "NewStrong1!".to_string(),
         };
-        let resp = change_password(user, State(state.clone()), Json(req)).await.unwrap();
+        let resp = change_password(user, State(state.clone()), Json(req))
+            .await
+            .unwrap();
         assert_eq!(resp.message, "Password changed successfully");
     }
 
@@ -1030,7 +1120,9 @@ mod tests {
         let req = PasswordResetRequest {
             email: "admin@test.com".to_string(),
         };
-        let resp = request_password_reset(State(state.clone()), Json(req)).await.unwrap();
+        let resp = request_password_reset(State(state.clone()), Json(req))
+            .await
+            .unwrap();
         assert!(resp.message.contains("If the email exists"));
     }
 
@@ -1041,7 +1133,9 @@ mod tests {
         let req = PasswordResetRequest {
             email: "doesnotexist@test.com".to_string(),
         };
-        let resp = request_password_reset(State(state.clone()), Json(req)).await.unwrap();
+        let resp = request_password_reset(State(state.clone()), Json(req))
+            .await
+            .unwrap();
         assert!(resp.message.contains("If the email exists"));
     }
 
@@ -1053,12 +1147,16 @@ mod tests {
             let req = PasswordResetRequest {
                 email: "rate@test.com".to_string(),
             };
-            let _ = request_password_reset(State(state.clone()), Json(req)).await.unwrap();
+            let _ = request_password_reset(State(state.clone()), Json(req))
+                .await
+                .unwrap();
         }
         let req = PasswordResetRequest {
             email: "rate@test.com".to_string(),
         };
-        let err = request_password_reset(State(state.clone()), Json(req)).await.unwrap_err();
+        let err = request_password_reset(State(state.clone()), Json(req))
+            .await
+            .unwrap_err();
         assert_eq!(err.http_status(), 429);
     }
 
@@ -1070,7 +1168,9 @@ mod tests {
         let req = PasswordResetRequest {
             email: "admin@test.com".to_string(),
         };
-        let _ = request_password_reset(State(state.clone()), Json(req)).await.unwrap();
+        let _ = request_password_reset(State(state.clone()), Json(req))
+            .await
+            .unwrap();
 
         // Get the token from state
         let token_map = state.password_reset_tokens.read().await;
@@ -1081,7 +1181,9 @@ mod tests {
             token,
             new_password: "ResetPass1!".to_string(),
         };
-        let resp = confirm_password_reset(State(state.clone()), Json(confirm_req)).await.unwrap();
+        let resp = confirm_password_reset(State(state.clone()), Json(confirm_req))
+            .await
+            .unwrap();
         assert_eq!(resp.message, "Password has been reset successfully");
     }
 
@@ -1103,7 +1205,9 @@ mod tests {
         let req = VerifyEmailRequest {
             email: "admin@test.com".to_string(),
         };
-        let resp = request_email_verification(State(state.clone()), Json(req)).await.unwrap();
+        let resp = request_email_verification(State(state.clone()), Json(req))
+            .await
+            .unwrap();
         assert!(resp.message.contains("If the email exists"));
     }
 
@@ -1115,7 +1219,9 @@ mod tests {
         let req = VerifyEmailRequest {
             email: "admin@test.com".to_string(),
         };
-        let _ = request_email_verification(State(state.clone()), Json(req)).await.unwrap();
+        let _ = request_email_verification(State(state.clone()), Json(req))
+            .await
+            .unwrap();
 
         // Get the token from state
         let token_map = state.email_verification_tokens.read().await;
@@ -1123,12 +1229,22 @@ mod tests {
         drop(token_map);
 
         let confirm_req = VerifyEmailConfirmRequest { token };
-        let resp = confirm_email_verification(State(state.clone()), Json(confirm_req)).await.unwrap();
+        let resp = confirm_email_verification(State(state.clone()), Json(confirm_req))
+            .await
+            .unwrap();
         assert_eq!(resp.message, "Email verified successfully");
 
         // The user must now actually be marked verified.
-        let user = state.users_service.find_by_email("admin@test.com").await.unwrap();
-        assert!(state.users_service.is_email_verified(user.id).await.unwrap());
+        let user = state
+            .users_service
+            .find_by_email("admin@test.com")
+            .await
+            .unwrap();
+        assert!(state
+            .users_service
+            .is_email_verified(user.id)
+            .await
+            .unwrap());
     }
 
     #[tokio::test]

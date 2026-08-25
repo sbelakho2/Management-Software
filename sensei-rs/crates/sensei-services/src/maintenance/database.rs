@@ -78,10 +78,17 @@ struct EquipmentRow {
 
 fn wr_row_to_domain(r: WorkRequestRow) -> MaintenanceWorkRequest {
     MaintenanceWorkRequest {
-        id: r.id, tenant_id: r.tenant_id, equipment_id: r.equipment_id,
-        title: r.title, description: r.description, priority: r.priority,
-        status: r.status, requested_by: r.requested_by, assigned_to: r.assigned_to,
-        created_at: r.created_at, completed_at: r.completed_at,
+        id: r.id,
+        tenant_id: r.tenant_id,
+        equipment_id: r.equipment_id,
+        title: r.title,
+        description: r.description,
+        priority: r.priority,
+        status: r.status,
+        requested_by: r.requested_by,
+        assigned_to: r.assigned_to,
+        created_at: r.created_at,
+        completed_at: r.completed_at,
     }
 }
 
@@ -90,18 +97,29 @@ fn pm_row_to_domain(r: PmScheduleRow) -> PMSchedule {
     // exposes a list, so a NULL assignment maps to an empty list.
     let assigned_to: Vec<Uuid> = r.assigned_to.into_iter().collect();
     PMSchedule {
-        id: r.id, tenant_id: r.tenant_id, equipment_id: r.equipment_id,
-        task_name: r.task_name, frequency_days: r.frequency_days,
-        last_performed: r.last_performed, next_due: r.next_due,
-        assigned_to, is_active: r.is_active,
+        id: r.id,
+        tenant_id: r.tenant_id,
+        equipment_id: r.equipment_id,
+        task_name: r.task_name,
+        frequency_days: r.frequency_days,
+        last_performed: r.last_performed,
+        next_due: r.next_due,
+        assigned_to,
+        is_active: r.is_active,
     }
 }
 
 fn eq_row_to_domain(r: EquipmentRow) -> EquipmentRecord {
     EquipmentRecord {
-        id: r.id, tenant_id: r.tenant_id, equipment_code: r.equipment_code,
-        name: r.name, equipment_type: r.equipment_type, location: r.location,
-        status: r.status, install_date: r.install_date, last_maintenance: r.last_maintenance,
+        id: r.id,
+        tenant_id: r.tenant_id,
+        equipment_code: r.equipment_code,
+        name: r.name,
+        equipment_type: r.equipment_type,
+        location: r.location,
+        status: r.status,
+        install_date: r.install_date,
+        last_maintenance: r.last_maintenance,
         maintenance_completed_at: r.maintenance_completed_at,
         oee_percentage: r.oee_percentage,
     }
@@ -109,8 +127,11 @@ fn eq_row_to_domain(r: EquipmentRow) -> EquipmentRecord {
 
 fn paginate<T>(items: Vec<T>, count: i64, page: usize, per_page: usize) -> PaginatedResponse<T> {
     PaginatedResponse {
-        data: items, total: count as usize, page, per_page,
-        total_pages: ((count as usize).max(1) + per_page - 1) / per_page,
+        data: items,
+        total: count as usize,
+        page,
+        per_page,
+        total_pages: (count as usize).max(1).div_ceil(per_page),
     }
 }
 
@@ -118,11 +139,23 @@ fn paginate<T>(items: Vec<T>, count: i64, page: usize, per_page: usize) -> Pagin
 impl MaintenanceService for DatabaseMaintenanceService {
     // ── Work Requests ───────────────────────────────────────────────────
 
-    async fn create_work_request(&self, tenant_id: TenantId, request: MaintenanceWorkRequest) -> Result<MaintenanceWorkRequest> {
+    async fn create_work_request(
+        &self,
+        tenant_id: TenantId,
+        request: MaintenanceWorkRequest,
+    ) -> Result<MaintenanceWorkRequest> {
         let now = Utc::now();
         let id = Uuid::new_v4();
-        let status = if request.status.is_empty() { "submitted" } else { &request.status };
-        let priority = if request.priority.is_empty() { "medium" } else { &request.priority };
+        let status = if request.status.is_empty() {
+            "submitted"
+        } else {
+            &request.status
+        };
+        let priority = if request.priority.is_empty() {
+            "medium"
+        } else {
+            &request.priority
+        };
 
         let row = sqlx::query_as::<_, WorkRequestRow>(
             r#"INSERT INTO maintenance_work_requests (id, tenant_id, equipment_id, title, description, priority, status, requested_by, assigned_to, created_at, completed_at)
@@ -138,7 +171,11 @@ impl MaintenanceService for DatabaseMaintenanceService {
         Ok(wr_row_to_domain(row))
     }
 
-    async fn get_work_request(&self, tenant_id: TenantId, id: Uuid) -> Result<MaintenanceWorkRequest> {
+    async fn get_work_request(
+        &self,
+        tenant_id: TenantId,
+        id: Uuid,
+    ) -> Result<MaintenanceWorkRequest> {
         let row = sqlx::query_as::<_, WorkRequestRow>(
             "SELECT id, tenant_id, equipment_id, title, description, priority, status, requested_by, assigned_to, created_at, completed_at FROM maintenance_work_requests WHERE id = $1 AND tenant_id = $2",
         )
@@ -150,7 +187,14 @@ impl MaintenanceService for DatabaseMaintenanceService {
         Ok(wr_row_to_domain(row))
     }
 
-    async fn list_work_requests(&self, tenant_id: TenantId, status: Option<&str>, priority: Option<&str>, page: Option<usize>, per_page: Option<usize>) -> Result<PaginatedResponse<MaintenanceWorkRequest>> {
+    async fn list_work_requests(
+        &self,
+        tenant_id: TenantId,
+        status: Option<&str>,
+        priority: Option<&str>,
+        page: Option<usize>,
+        per_page: Option<usize>,
+    ) -> Result<PaginatedResponse<MaintenanceWorkRequest>> {
         let page = page.unwrap_or(1).max(1);
         let per_page = per_page.unwrap_or(20).clamp(1, 100);
         let offset = (page - 1) * per_page;
@@ -170,10 +214,20 @@ impl MaintenanceService for DatabaseMaintenanceService {
         .bind(tenant_id).bind(status).bind(priority).fetch_one(&self.pool).await
         .map_err(|e| SenseiError::Database(format!("Failed to count work requests: {e}")))?;
 
-        Ok(paginate(items.into_iter().map(wr_row_to_domain).collect(), count, page, per_page))
+        Ok(paginate(
+            items.into_iter().map(wr_row_to_domain).collect(),
+            count,
+            page,
+            per_page,
+        ))
     }
 
-    async fn update_work_request_status(&self, tenant_id: TenantId, id: Uuid, status: &str) -> Result<MaintenanceWorkRequest> {
+    async fn update_work_request_status(
+        &self,
+        tenant_id: TenantId,
+        id: Uuid,
+        status: &str,
+    ) -> Result<MaintenanceWorkRequest> {
         let now = Utc::now();
         let row = sqlx::query_as::<_, WorkRequestRow>(
             r#"UPDATE maintenance_work_requests SET status=$1, completed_at=CASE WHEN $1='completed' THEN $3 ELSE completed_at END
@@ -188,7 +242,12 @@ impl MaintenanceService for DatabaseMaintenanceService {
         Ok(wr_row_to_domain(row))
     }
 
-    async fn assign_work_request(&self, tenant_id: TenantId, id: Uuid, assigned_to: Uuid) -> Result<MaintenanceWorkRequest> {
+    async fn assign_work_request(
+        &self,
+        tenant_id: TenantId,
+        id: Uuid,
+        assigned_to: Uuid,
+    ) -> Result<MaintenanceWorkRequest> {
         let row = sqlx::query_as::<_, WorkRequestRow>(
             r#"UPDATE maintenance_work_requests SET assigned_to=$1, status=CASE WHEN status='submitted' THEN 'approved' ELSE status END
                WHERE id=$2 AND tenant_id=$3
@@ -204,7 +263,11 @@ impl MaintenanceService for DatabaseMaintenanceService {
 
     // ── PM Schedules ───────────────────────────────────────────────────
 
-    async fn create_pm_schedule(&self, tenant_id: TenantId, schedule: PMSchedule) -> Result<PMSchedule> {
+    async fn create_pm_schedule(
+        &self,
+        tenant_id: TenantId,
+        schedule: PMSchedule,
+    ) -> Result<PMSchedule> {
         let id = Uuid::new_v4();
         let assigned_to = schedule.assigned_to.first().copied();
         let base = schedule.last_performed.unwrap_or_else(Utc::now);
@@ -219,7 +282,7 @@ impl MaintenanceService for DatabaseMaintenanceService {
                          last_performed_at AS "last_performed", next_due_at AS "next_due", assigned_to, is_active"#,
         )
         .bind(id).bind(tenant_id).bind(schedule.equipment_id)
-        .bind(format!("PM-{}-{}", Utc::now().format("%Y%m%d"), id.as_simple().encode_lower(&mut Uuid::encode_buffer())[..8].to_string()))
+        .bind(format!("PM-{}-{}", Utc::now().format("%Y%m%d"), &id.as_simple().encode_lower(&mut Uuid::encode_buffer())[..8]))
         .bind(&schedule.task_name)
         .bind(schedule.frequency_days).bind(schedule.last_performed).bind(next_due).bind(assigned_to)
         .fetch_one(&self.pool)
@@ -242,7 +305,13 @@ impl MaintenanceService for DatabaseMaintenanceService {
         Ok(pm_row_to_domain(row))
     }
 
-    async fn list_pm_schedules(&self, tenant_id: TenantId, equipment_id: Option<Uuid>, page: Option<usize>, per_page: Option<usize>) -> Result<PaginatedResponse<PMSchedule>> {
+    async fn list_pm_schedules(
+        &self,
+        tenant_id: TenantId,
+        equipment_id: Option<Uuid>,
+        page: Option<usize>,
+        per_page: Option<usize>,
+    ) -> Result<PaginatedResponse<PMSchedule>> {
         let page = page.unwrap_or(1).max(1);
         let per_page = per_page.unwrap_or(20).clamp(1, 100);
         let offset = (page - 1) * per_page;
@@ -263,7 +332,12 @@ impl MaintenanceService for DatabaseMaintenanceService {
         .bind(tenant_id).bind(equipment_id).fetch_one(&self.pool).await
         .map_err(|e| SenseiError::Database(format!("Failed to count PM schedules: {e}")))?;
 
-        Ok(paginate(items.into_iter().map(pm_row_to_domain).collect(), count, page, per_page))
+        Ok(paginate(
+            items.into_iter().map(pm_row_to_domain).collect(),
+            count,
+            page,
+            per_page,
+        ))
     }
 
     async fn complete_pm_task(&self, tenant_id: TenantId, schedule_id: Uuid) -> Result<PMSchedule> {
@@ -307,9 +381,17 @@ impl MaintenanceService for DatabaseMaintenanceService {
 
     // ── Equipment ──────────────────────────────────────────────────────
 
-    async fn register_equipment(&self, tenant_id: TenantId, equipment: EquipmentRecord) -> Result<EquipmentRecord> {
+    async fn register_equipment(
+        &self,
+        tenant_id: TenantId,
+        equipment: EquipmentRecord,
+    ) -> Result<EquipmentRecord> {
         let id = Uuid::new_v4();
-        let equipment_code = format!("EQ-{}-{}", Utc::now().format("%Y%m%d"), id.as_simple().encode_lower(&mut Uuid::encode_buffer())[..8].to_string());
+        let equipment_code = format!(
+            "EQ-{}-{}",
+            Utc::now().format("%Y%m%d"),
+            &id.as_simple().encode_lower(&mut Uuid::encode_buffer())[..8]
+        );
 
         let row = sqlx::query_as::<_, EquipmentRow>(
             r#"INSERT INTO equipment (id, tenant_id, equipment_number, name, equipment_type, location, status,
@@ -342,7 +424,14 @@ impl MaintenanceService for DatabaseMaintenanceService {
         Ok(eq_row_to_domain(row))
     }
 
-    async fn list_equipment(&self, tenant_id: TenantId, equipment_type: Option<&str>, status: Option<&str>, page: Option<usize>, per_page: Option<usize>) -> Result<PaginatedResponse<EquipmentRecord>> {
+    async fn list_equipment(
+        &self,
+        tenant_id: TenantId,
+        equipment_type: Option<&str>,
+        status: Option<&str>,
+        page: Option<usize>,
+        per_page: Option<usize>,
+    ) -> Result<PaginatedResponse<EquipmentRecord>> {
         let page = page.unwrap_or(1).max(1);
         let per_page = per_page.unwrap_or(20).clamp(1, 100);
         let offset = (page - 1) * per_page;
@@ -363,10 +452,20 @@ impl MaintenanceService for DatabaseMaintenanceService {
         .bind(tenant_id).bind(equipment_type).bind(status).fetch_one(&self.pool).await
         .map_err(|e| SenseiError::Database(format!("Failed to count equipment: {e}")))?;
 
-        Ok(paginate(items.into_iter().map(eq_row_to_domain).collect(), count, page, per_page))
+        Ok(paginate(
+            items.into_iter().map(eq_row_to_domain).collect(),
+            count,
+            page,
+            per_page,
+        ))
     }
 
-    async fn update_equipment_status(&self, tenant_id: TenantId, id: Uuid, status: &str) -> Result<EquipmentRecord> {
+    async fn update_equipment_status(
+        &self,
+        tenant_id: TenantId,
+        id: Uuid,
+        status: &str,
+    ) -> Result<EquipmentRecord> {
         let now = Utc::now();
         let row = sqlx::query_as::<_, EquipmentRow>(
             r#"UPDATE equipment SET status=$1,
@@ -384,7 +483,12 @@ impl MaintenanceService for DatabaseMaintenanceService {
         Ok(eq_row_to_domain(row))
     }
 
-    async fn update_work_request(&self, tenant_id: TenantId, id: Uuid, request: MaintenanceWorkRequest) -> Result<MaintenanceWorkRequest> {
+    async fn update_work_request(
+        &self,
+        tenant_id: TenantId,
+        id: Uuid,
+        request: MaintenanceWorkRequest,
+    ) -> Result<MaintenanceWorkRequest> {
         let row = sqlx::query_as::<_, WorkRequestRow>(
             r#"UPDATE maintenance_work_requests SET title=$1, description=$2, priority=$3, equipment_id=$4
                WHERE id=$5 AND tenant_id=$6
@@ -400,14 +504,29 @@ impl MaintenanceService for DatabaseMaintenanceService {
     }
 
     async fn delete_work_request(&self, tenant_id: TenantId, id: Uuid) -> Result<()> {
-        let result = sqlx::query("DELETE FROM maintenance_work_requests WHERE id = $1 AND tenant_id = $2")
-            .bind(id).bind(tenant_id).execute(&self.pool)
-            .await.map_err(|e| SenseiError::Database(format!("Failed to delete work request: {e}")))?;
-        if result.rows_affected() == 0 { return Err(SenseiError::NotFound(format!("Work request {id} not found"))); }
+        let result =
+            sqlx::query("DELETE FROM maintenance_work_requests WHERE id = $1 AND tenant_id = $2")
+                .bind(id)
+                .bind(tenant_id)
+                .execute(&self.pool)
+                .await
+                .map_err(|e| {
+                    SenseiError::Database(format!("Failed to delete work request: {e}"))
+                })?;
+        if result.rows_affected() == 0 {
+            return Err(SenseiError::NotFound(format!(
+                "Work request {id} not found"
+            )));
+        }
         Ok(())
     }
 
-    async fn update_pm_schedule(&self, tenant_id: TenantId, id: Uuid, schedule: PMSchedule) -> Result<PMSchedule> {
+    async fn update_pm_schedule(
+        &self,
+        tenant_id: TenantId,
+        id: Uuid,
+        schedule: PMSchedule,
+    ) -> Result<PMSchedule> {
         let assigned_to = schedule.assigned_to.first().copied();
         let row = sqlx::query_as::<_, PmScheduleRow>(
             r#"UPDATE pm_schedules SET title=$1, frequency_value=$2, assigned_to=$3, is_active=$4
@@ -426,13 +545,23 @@ impl MaintenanceService for DatabaseMaintenanceService {
 
     async fn delete_pm_schedule(&self, tenant_id: TenantId, id: Uuid) -> Result<()> {
         let result = sqlx::query("DELETE FROM pm_schedules WHERE id = $1 AND tenant_id = $2")
-            .bind(id).bind(tenant_id).execute(&self.pool)
-            .await.map_err(|e| SenseiError::Database(format!("Failed to delete PM schedule: {e}")))?;
-        if result.rows_affected() == 0 { return Err(SenseiError::NotFound(format!("PM schedule {id} not found"))); }
+            .bind(id)
+            .bind(tenant_id)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to delete PM schedule: {e}")))?;
+        if result.rows_affected() == 0 {
+            return Err(SenseiError::NotFound(format!("PM schedule {id} not found")));
+        }
         Ok(())
     }
 
-    async fn update_equipment(&self, tenant_id: TenantId, id: Uuid, equipment: EquipmentRecord) -> Result<EquipmentRecord> {
+    async fn update_equipment(
+        &self,
+        tenant_id: TenantId,
+        id: Uuid,
+        equipment: EquipmentRecord,
+    ) -> Result<EquipmentRecord> {
         let row = sqlx::query_as::<_, EquipmentRow>(
             r#"UPDATE equipment SET name=$1, equipment_type=$2, location=$3, oee_percentage=$4
                WHERE id=$5 AND tenant_id=$6
@@ -450,9 +579,14 @@ impl MaintenanceService for DatabaseMaintenanceService {
 
     async fn delete_equipment(&self, tenant_id: TenantId, id: Uuid) -> Result<()> {
         let result = sqlx::query("DELETE FROM equipment WHERE id = $1 AND tenant_id = $2")
-            .bind(id).bind(tenant_id).execute(&self.pool)
-            .await.map_err(|e| SenseiError::Database(format!("Failed to delete equipment: {e}")))?;
-        if result.rows_affected() == 0 { return Err(SenseiError::NotFound(format!("Equipment {id} not found"))); }
+            .bind(id)
+            .bind(tenant_id)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to delete equipment: {e}")))?;
+        if result.rows_affected() == 0 {
+            return Err(SenseiError::NotFound(format!("Equipment {id} not found")));
+        }
         Ok(())
     }
 }

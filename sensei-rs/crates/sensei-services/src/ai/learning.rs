@@ -93,7 +93,7 @@ pub struct RetrainingConfig {
 impl Default for RetrainingConfig {
     fn default() -> Self {
         Self {
-            schedule_interval_hours: 168,     // 7 days
+            schedule_interval_hours: 168, // 7 days
             min_data_threshold: 100,
             max_concurrent_jobs: 2,
             performance_degradation_threshold: 0.05, // 5 % degradation triggers retrain
@@ -230,10 +230,8 @@ impl FeedbackCollector {
             None => return (Vec::new(), Vec::new()),
         };
 
-        let features: Vec<HashMap<String, f64>> = buffer
-            .iter()
-            .map(|f| f.features.clone())
-            .collect();
+        let features: Vec<HashMap<String, f64>> =
+            buffer.iter().map(|f| f.features.clone()).collect();
 
         let labels: Vec<bool> = buffer.iter().map(|f| f.correct).collect();
 
@@ -253,16 +251,10 @@ impl FeedbackCollector {
         let mut stats = HashMap::new();
         stats.insert(
             "models_tracked".to_string(),
-            serde_json::Value::Number(serde_json::Number::from(
-                self.feedback_buffers.len() as u64,
-            )),
+            serde_json::Value::Number(serde_json::Number::from(self.feedback_buffers.len() as u64)),
         );
 
-        let total_feedback: usize = self
-            .feedback_buffers
-            .values()
-            .map(|b| b.len())
-            .sum();
+        let total_feedback: usize = self.feedback_buffers.values().map(|b| b.len()).sum();
         stats.insert(
             "total_feedback".to_string(),
             serde_json::Value::Number(serde_json::Number::from(total_feedback as u64)),
@@ -344,8 +336,7 @@ impl RetrainingManager {
             version: "v0.1.0".to_string(),
             created_at: Utc::now(),
         };
-        self.model_states
-            .insert(model_name.to_string(), state);
+        self.model_states.insert(model_name.to_string(), state);
         self.performance_history
             .entry(model_name.to_string())
             .or_default();
@@ -401,9 +392,7 @@ impl RetrainingManager {
         // 4. Distribution drift (PSI)
         if let Some(psi) = self.check_drift(model_name) {
             if self.severity_meets_threshold(psi * 0.2) {
-                reasons.push(format!(
-                    "Drift detected (PSI = {psi:.3})"
-                ));
+                reasons.push(format!("Drift detected (PSI = {psi:.3})"));
             }
         }
 
@@ -443,8 +432,8 @@ impl RetrainingManager {
             let lo = bin as f64 / BINS as f64;
             let hi = (bin + 1) as f64 / BINS as f64;
             let in_bin = |v: &f64| *v >= lo && (*v < hi || (bin == BINS - 1 && *v <= hi));
-            let expected = historical.iter().filter(|v| in_bin(v)).count() as f64
-                / historical.len() as f64;
+            let expected =
+                historical.iter().filter(|v| in_bin(v)).count() as f64 / historical.len() as f64;
             let actual = recent.iter().filter(|v| in_bin(v)).count() as f64 / recent.len() as f64;
 
             let expected_s = (expected + EPSILON).max(EPSILON);
@@ -609,10 +598,7 @@ impl RetrainingManager {
         stats.insert(
             "running_jobs".to_string(),
             serde_json::Value::Number(serde_json::Number::from(
-                self.jobs
-                    .iter()
-                    .filter(|j| j.status == "running")
-                    .count() as u64,
+                self.jobs.iter().filter(|j| j.status == "running").count() as u64,
             )),
         );
         stats.insert(
@@ -706,20 +692,11 @@ impl ContinuousLearningService {
         features: HashMap<String, f64>,
         confidence: f64,
     ) {
-        self.feedback_collector.record_user_correction(
-            model_name,
-            prediction,
-            correction,
-            features,
-            confidence,
-        );
+        self.feedback_collector
+            .record_user_correction(model_name, prediction, correction, features, confidence);
 
         // Increment data size for the model
-        if let Some(state) = self
-            .retraining_manager
-            .model_states
-            .get_mut(model_name)
-        {
+        if let Some(state) = self.retraining_manager.model_states.get_mut(model_name) {
             state.data_size = self
                 .feedback_collector
                 .feedback_buffers
@@ -731,10 +708,7 @@ impl ContinuousLearningService {
     /// Check if retraining is needed and trigger it if so.
     ///
     /// Returns the retraining job if one was started.
-    pub fn check_and_retrain_if_needed(
-        &mut self,
-        model_name: &str,
-    ) -> Option<RetrainingJob> {
+    pub fn check_and_retrain_if_needed(&mut self, model_name: &str) -> Option<RetrainingJob> {
         let reasons = self.retraining_manager.check_retraining_needed(model_name);
         if reasons.is_empty() {
             return None;
@@ -760,10 +734,7 @@ impl ContinuousLearningService {
     }
 
     /// Force retraining for a model.
-    pub fn force_retrain(
-        &mut self,
-        model_name: &str,
-    ) -> Option<RetrainingJob> {
+    pub fn force_retrain(&mut self, model_name: &str) -> Option<RetrainingJob> {
         let data_size = self
             .feedback_collector
             .feedback_buffers
@@ -782,7 +753,8 @@ impl ContinuousLearningService {
             health.insert(
                 "accuracy".to_string(),
                 serde_json::Value::Number(
-                    serde_json::Number::from_f64(state.accuracy).unwrap_or(serde_json::Number::from(0)),
+                    serde_json::Number::from_f64(state.accuracy)
+                        .unwrap_or(serde_json::Number::from(0)),
                 ),
             );
             health.insert(
@@ -807,10 +779,7 @@ impl ContinuousLearningService {
             health.insert(
                 "retraining_reasons".to_string(),
                 serde_json::Value::Array(
-                    reasons
-                        .into_iter()
-                        .map(serde_json::Value::String)
-                        .collect(),
+                    reasons.into_iter().map(serde_json::Value::String).collect(),
                 ),
             );
         }
@@ -1051,7 +1020,10 @@ mod tests {
             manager.complete_retraining(job.id, 0.45);
         }
         let reasons = manager.check_retraining_needed("drift_model");
-        assert!(reasons.iter().any(|r| r.contains("Drift")), "reasons: {reasons:?}");
+        assert!(
+            reasons.iter().any(|r| r.contains("Drift")),
+            "reasons: {reasons:?}"
+        );
     }
 
     // -- ContinuousLearningService Integration Tests -------------------------
@@ -1066,12 +1038,7 @@ mod tests {
         // Log some predictions
         for i in 0..10 {
             let features = [("temp".to_string(), 80.0 + i as f64)].into();
-            service.log_prediction(
-                "quality_predictor",
-                serde_json::json!("ok"),
-                features,
-                0.9,
-            );
+            service.log_prediction("quality_predictor", serde_json::json!("ok"), features, 0.9);
         }
 
         // Record some corrections
@@ -1108,9 +1075,6 @@ mod tests {
 
         let stats = service.get_statistics();
         assert!(stats.contains_key("models_registered"));
-        assert_eq!(
-            stats.get("models_registered").unwrap().as_u64().unwrap(),
-            2
-        );
+        assert_eq!(stats.get("models_registered").unwrap().as_u64().unwrap(), 2);
     }
 }

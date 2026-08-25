@@ -3,12 +3,15 @@
 //! Provides endpoints for maintenance work requests, preventive maintenance
 //! schedules, and equipment management.
 
-use axum::{Json, extract::{Path, Query, State}};
-use serde::Deserialize;
+use axum::{
+    extract::{Path, Query, State},
+    Json,
+};
 use sensei_auth::middleware::AuthenticatedUser;
 use sensei_core::error::Result;
 use sensei_core::pagination::PaginatedResponse;
 use sensei_services::maintenance::{EquipmentRecord, MaintenanceWorkRequest, PMSchedule};
+use serde::Deserialize;
 use uuid::Uuid;
 
 use crate::state::AppState;
@@ -73,7 +76,13 @@ pub async fn list_work_requests(
     let tenant_id = user.tenant_id;
     let requests = state
         .maintenance_service
-        .list_work_requests(tenant_id, params.status.as_deref(), params.priority.as_deref(), params.page, params.per_page)
+        .list_work_requests(
+            tenant_id,
+            params.status.as_deref(),
+            params.priority.as_deref(),
+            params.page,
+            params.per_page,
+        )
         .await?;
     Ok(Json(requests))
 }
@@ -228,7 +237,13 @@ pub async fn list_equipment(
     let tenant_id = user.tenant_id;
     let equipment = state
         .maintenance_service
-        .list_equipment(tenant_id, params.equipment_type.as_deref(), params.status.as_deref(), params.page, params.per_page)
+        .list_equipment(
+            tenant_id,
+            params.equipment_type.as_deref(),
+            params.status.as_deref(),
+            params.page,
+            params.per_page,
+        )
         .await?;
     Ok(Json(equipment))
 }

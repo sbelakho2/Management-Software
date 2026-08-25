@@ -2,13 +2,16 @@
 //!
 //! Provides CRUD endpoints for customer and supplier account management.
 
-use axum::{Json, extract::{Path, Query, State}};
-use serde::{Deserialize, Serialize};
+use axum::{
+    extract::{Path, Query, State},
+    Json,
+};
 use sensei_auth::middleware::AuthenticatedUser;
 use sensei_core::domain::entities::Account;
 use sensei_core::error::Result;
 use sensei_core::pagination::PaginatedResponse;
-use sensei_core::types::{EntityId, TenantId, now};
+use sensei_core::types::{now, EntityId, TenantId};
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::state::AppState;
@@ -140,7 +143,10 @@ pub async fn create_account(
         created_at: now(),
         updated_at: now(),
     };
-    let created = state.accounts_service.create_account(tenant_id, account).await?;
+    let created = state
+        .accounts_service
+        .create_account(tenant_id, account)
+        .await?;
     Ok(Json(AccountResponse::from(created)))
 }
 
@@ -186,7 +192,10 @@ pub async fn update_account(
         created_at: existing.created_at,
         updated_at: now(),
     };
-    let updated = state.accounts_service.update_account(tenant_id, id, account).await?;
+    let updated = state
+        .accounts_service
+        .update_account(tenant_id, id, account)
+        .await?;
     Ok(Json(AccountResponse::from(updated)))
 }
 
@@ -220,18 +229,25 @@ mod tests {
     async fn test_state() -> (AppState, TenantId, EntityId) {
         let hash = hash_password("Test@1234").unwrap();
         let tenant_id = TenantId::new_v4();
-        let users_service = InMemoryUsersService::with_admin(
-            "admin@test.com", "Admin User", &hash, tenant_id,
-        );
+        let users_service =
+            InMemoryUsersService::with_admin("admin@test.com", "Admin User", &hash, tenant_id);
         let users_service = Arc::new(users_service) as Arc<dyn UsersService>;
         let config = AppConfig::from_env().unwrap();
         let state = AppState::new(config, users_service);
-        let admin = state.users_service.find_by_email("admin@test.com").await.unwrap();
+        let admin = state
+            .users_service
+            .find_by_email("admin@test.com")
+            .await
+            .unwrap();
         (state, tenant_id, admin.id)
     }
 
     fn auth_user(tenant_id: TenantId, user_id: EntityId) -> AuthenticatedUser {
-        AuthenticatedUser { user_id, tenant_id, roles: vec!["admin".to_string()] }
+        AuthenticatedUser {
+            user_id,
+            tenant_id,
+            roles: vec!["admin".to_string()],
+        }
     }
 
     #[tokio::test]
@@ -267,9 +283,15 @@ mod tests {
         let user = auth_user(tid, uid);
         let req = AccountRequest {
             name: "Get Corp".to_string(),
-            tax_id: None, email: None, phone: None,
-            address_line1: None, address_line2: None, city: None,
-            state: None, postal_code: None, country: None,
+            tax_id: None,
+            email: None,
+            phone: None,
+            address_line1: None,
+            address_line2: None,
+            city: None,
+            state: None,
+            postal_code: None,
+            country: None,
             account_type: "supplier".to_string(),
             notes: None,
             is_active: None,
@@ -297,16 +319,27 @@ mod tests {
         let user = auth_user(tid, uid);
         let req = AccountRequest {
             name: "List Corp".to_string(),
-            tax_id: None, email: None, phone: None,
-            address_line1: None, address_line2: None, city: None,
-            state: None, postal_code: None, country: None,
+            tax_id: None,
+            email: None,
+            phone: None,
+            address_line1: None,
+            address_line2: None,
+            city: None,
+            state: None,
+            postal_code: None,
+            country: None,
             account_type: "customer".to_string(),
             notes: None,
             is_active: None,
         };
-        let _ = create_account(user.clone(), State(state.clone()), Json(req)).await.unwrap();
+        let _ = create_account(user.clone(), State(state.clone()), Json(req))
+            .await
+            .unwrap();
         let params = ListAccountsParams {
-            account_type: None, is_active: None, page: None, per_page: None,
+            account_type: None,
+            is_active: None,
+            page: None,
+            per_page: None,
         };
         let resp = list_accounts(user, State(state.clone()), Query(params))
             .await
@@ -320,9 +353,15 @@ mod tests {
         let user = auth_user(tid, uid);
         let req = AccountRequest {
             name: "Old Name".to_string(),
-            tax_id: None, email: None, phone: None,
-            address_line1: None, address_line2: None, city: None,
-            state: None, postal_code: None, country: None,
+            tax_id: None,
+            email: None,
+            phone: None,
+            address_line1: None,
+            address_line2: None,
+            city: None,
+            state: None,
+            postal_code: None,
+            country: None,
             account_type: "customer".to_string(),
             notes: None,
             is_active: None,
@@ -332,16 +371,27 @@ mod tests {
             .unwrap();
         let update_req = AccountRequest {
             name: "Updated Name".to_string(),
-            tax_id: None, email: None, phone: None,
-            address_line1: None, address_line2: None, city: None,
-            state: None, postal_code: None, country: None,
+            tax_id: None,
+            email: None,
+            phone: None,
+            address_line1: None,
+            address_line2: None,
+            city: None,
+            state: None,
+            postal_code: None,
+            country: None,
             account_type: "customer".to_string(),
             notes: None,
             is_active: None,
         };
-        let resp = update_account(user, State(state.clone()), Path(created.id), Json(update_req))
-            .await
-            .unwrap();
+        let resp = update_account(
+            user,
+            State(state.clone()),
+            Path(created.id),
+            Json(update_req),
+        )
+        .await
+        .unwrap();
         assert_eq!(resp.name, "Updated Name");
     }
 
@@ -351,9 +401,15 @@ mod tests {
         let user = auth_user(tid, uid);
         let req = AccountRequest {
             name: "Del Corp".to_string(),
-            tax_id: None, email: None, phone: None,
-            address_line1: None, address_line2: None, city: None,
-            state: None, postal_code: None, country: None,
+            tax_id: None,
+            email: None,
+            phone: None,
+            address_line1: None,
+            address_line2: None,
+            city: None,
+            state: None,
+            postal_code: None,
+            country: None,
             account_type: "customer".to_string(),
             notes: None,
             is_active: None,
@@ -378,9 +434,15 @@ mod tests {
         let user = auth_user(tid, uid);
         let req = AccountRequest {
             name: "Preserve Corp".to_string(),
-            tax_id: None, email: None, phone: None,
-            address_line1: None, address_line2: None, city: None,
-            state: None, postal_code: None, country: None,
+            tax_id: None,
+            email: None,
+            phone: None,
+            address_line1: None,
+            address_line2: None,
+            city: None,
+            state: None,
+            postal_code: None,
+            country: None,
             account_type: "customer".to_string(),
             notes: None,
             is_active: Some(false),
@@ -394,32 +456,54 @@ mod tests {
         // preserves created_at.
         let update_req = AccountRequest {
             name: "Preserved Name".to_string(),
-            tax_id: None, email: None, phone: None,
-            address_line1: None, address_line2: None, city: None,
-            state: None, postal_code: None, country: None,
+            tax_id: None,
+            email: None,
+            phone: None,
+            address_line1: None,
+            address_line2: None,
+            city: None,
+            state: None,
+            postal_code: None,
+            country: None,
             account_type: "customer".to_string(),
             notes: None,
             is_active: None,
         };
-        let updated = update_account(user.clone(), State(state.clone()), Path(created.id), Json(update_req))
-            .await
-            .unwrap();
+        let updated = update_account(
+            user.clone(),
+            State(state.clone()),
+            Path(created.id),
+            Json(update_req),
+        )
+        .await
+        .unwrap();
         assert_eq!(updated.created_at, created.created_at);
         assert!(!updated.is_active);
 
         // An explicit is_active=true must reactivate it.
         let reactivate_req = AccountRequest {
             name: "Preserved Name".to_string(),
-            tax_id: None, email: None, phone: None,
-            address_line1: None, address_line2: None, city: None,
-            state: None, postal_code: None, country: None,
+            tax_id: None,
+            email: None,
+            phone: None,
+            address_line1: None,
+            address_line2: None,
+            city: None,
+            state: None,
+            postal_code: None,
+            country: None,
             account_type: "customer".to_string(),
             notes: None,
             is_active: Some(true),
         };
-        let reactivated = update_account(user, State(state.clone()), Path(created.id), Json(reactivate_req))
-            .await
-            .unwrap();
+        let reactivated = update_account(
+            user,
+            State(state.clone()),
+            Path(created.id),
+            Json(reactivate_req),
+        )
+        .await
+        .unwrap();
         assert!(reactivated.is_active);
     }
 }

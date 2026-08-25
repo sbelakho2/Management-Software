@@ -3,12 +3,15 @@
 //! Provides endpoints for work orders, production orders, BOM management,
 //! and MRP (Material Requirements Planning).
 
-use axum::{Json, extract::{Path, Query, State}};
-use serde::Deserialize;
+use axum::{
+    extract::{Path, Query, State},
+    Json,
+};
 use sensei_auth::middleware::AuthenticatedUser;
 use sensei_core::error::Result;
 use sensei_core::pagination::PaginatedResponse;
 use sensei_services::production::{BOMItem, MRPRecord, ProductionOrder, WorkOrder};
+use serde::Deserialize;
 use uuid::Uuid;
 
 use crate::state::AppState;
@@ -60,7 +63,13 @@ pub async fn list_work_orders(
     let tenant_id = user.tenant_id;
     let orders = state
         .production_service
-        .list_work_orders(tenant_id, params.status.as_deref(), params.work_center_id, params.page, params.per_page)
+        .list_work_orders(
+            tenant_id,
+            params.status.as_deref(),
+            params.work_center_id,
+            params.page,
+            params.per_page,
+        )
         .await?;
     Ok(Json(orders))
 }
@@ -134,7 +143,12 @@ pub async fn list_production_orders(
     let tenant_id = user.tenant_id;
     let orders = state
         .production_service
-        .list_production_orders(tenant_id, params.status.as_deref(), params.page, params.per_page)
+        .list_production_orders(
+            tenant_id,
+            params.status.as_deref(),
+            params.page,
+            params.per_page,
+        )
         .await?;
     Ok(Json(orders))
 }

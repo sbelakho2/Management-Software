@@ -3,13 +3,16 @@
 //! Provides endpoints for managing demand entries, planned supply orders,
 //! and running MRP calculations.
 
-use axum::{Json, extract::{Path, Query, State}};
+use axum::{
+    extract::{Path, Query, State},
+    Json,
+};
 use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
 use sensei_auth::middleware::AuthenticatedUser;
 use sensei_core::error::{Result, SenseiError};
 use sensei_core::pagination::PaginatedResponse;
 use sensei_core::types::new_id;
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::state::AppState;
@@ -94,7 +97,11 @@ fn parse_date_filter(name: &str, value: Option<&str>) -> Result<Option<DateTime<
 /// the products service so the lookup matches on `product_id → sku` rather
 /// than string-comparing the product UUID against arbitrary SKU values.
 async fn on_hand_for_product(state: &AppState, tenant_id: Uuid, product_id: Uuid) -> f64 {
-    let sku = match state.products_service.get_product(tenant_id, product_id).await {
+    let sku = match state
+        .products_service
+        .get_product(tenant_id, product_id)
+        .await
+    {
         Ok(product) => product.sku,
         Err(_) => return 0.0,
     };
@@ -140,7 +147,7 @@ pub async fn list_demand(
         .filter(|d| date_to.is_none_or(|to| d.due_date <= to))
         .cloned()
         .collect();
-    entries.sort_by(|a, b| a.due_date.cmp(&b.due_date));
+    entries.sort_by_key(|a| a.due_date);
     let result = PaginatedResponse::new(entries, params.page, params.per_page);
     Ok(Json(result))
 }
@@ -205,7 +212,7 @@ pub async fn list_supply(
         })
         .cloned()
         .collect();
-    orders.sort_by(|a, b| a.order_date.cmp(&b.order_date));
+    orders.sort_by_key(|a| a.order_date);
     let result = PaginatedResponse::new(orders, params.page, params.per_page);
     Ok(Json(result))
 }
@@ -322,7 +329,7 @@ pub async fn list_mrp_runs(
         .filter(|r| r.tenant_id == tenant_id)
         .cloned()
         .collect();
-    runs.sort_by(|a, b| b.started_at.cmp(&a.started_at));
+    runs.sort_by_key(|a| std::cmp::Reverse(a.started_at));
     Ok(Json(runs))
 }
 

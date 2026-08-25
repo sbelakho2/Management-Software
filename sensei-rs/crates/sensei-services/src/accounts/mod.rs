@@ -7,7 +7,7 @@ use async_trait::async_trait;
 use sensei_core::domain::entities::Account;
 use sensei_core::error::{Result, SenseiError};
 use sensei_core::pagination::PaginatedResponse;
-use sensei_core::types::{EntityId, TenantId, now};
+use sensei_core::types::{now, EntityId, TenantId};
 use std::collections::HashMap;
 use tokio::sync::RwLock;
 
@@ -38,7 +38,12 @@ pub trait AccountsService: Send + Sync {
     ) -> Result<PaginatedResponse<Account>>;
 
     /// Update an account.
-    async fn update_account(&self, tenant_id: TenantId, id: EntityId, account: Account) -> Result<Account>;
+    async fn update_account(
+        &self,
+        tenant_id: TenantId,
+        id: EntityId,
+        account: Account,
+    ) -> Result<Account>;
 
     /// Delete (deactivate) an account.
     async fn delete_account(&self, tenant_id: TenantId, id: EntityId) -> Result<()>;
@@ -109,14 +114,21 @@ impl AccountsService for InMemoryAccountsService {
         Ok(PaginatedResponse::new(items, page, per_page))
     }
 
-    async fn update_account(&self, tenant_id: TenantId, id: EntityId, account: Account) -> Result<Account> {
+    async fn update_account(
+        &self,
+        tenant_id: TenantId,
+        id: EntityId,
+        account: Account,
+    ) -> Result<Account> {
         let mut store = self.accounts.write().await;
         let existing = store
             .get_mut(&id)
             .ok_or_else(|| SenseiError::NotFound(format!("Account {id} not found")))?;
 
         if existing.tenant_id != tenant_id {
-            return Err(SenseiError::Forbidden("Cross-tenant access denied".to_string()));
+            return Err(SenseiError::Forbidden(
+                "Cross-tenant access denied".to_string(),
+            ));
         }
 
         existing.name = account.name;
@@ -144,7 +156,9 @@ impl AccountsService for InMemoryAccountsService {
             .ok_or_else(|| SenseiError::NotFound(format!("Account {id} not found")))?;
 
         if existing.tenant_id != tenant_id {
-            return Err(SenseiError::Forbidden("Cross-tenant access denied".to_string()));
+            return Err(SenseiError::Forbidden(
+                "Cross-tenant access denied".to_string(),
+            ));
         }
 
         existing.is_active = false;
@@ -213,16 +227,25 @@ mod tests {
         svc.create_account(tid, a3).await.unwrap();
 
         // All accounts for tenant.
-        let all = svc.list_accounts(tid, None, None, None, None).await.unwrap();
+        let all = svc
+            .list_accounts(tid, None, None, None, None)
+            .await
+            .unwrap();
         assert_eq!(all.data.len(), 3);
 
         // Filter by type.
-        let cust = svc.list_accounts(tid, Some("customer"), None, None, None).await.unwrap();
+        let cust = svc
+            .list_accounts(tid, Some("customer"), None, None, None)
+            .await
+            .unwrap();
         assert_eq!(cust.data.len(), 1);
         assert_eq!(cust.data[0].account_type, "customer");
 
         // Pagination.
-        let paged = svc.list_accounts(tid, None, None, Some(1), Some(2)).await.unwrap();
+        let paged = svc
+            .list_accounts(tid, None, None, Some(1), Some(2))
+            .await
+            .unwrap();
         assert_eq!(paged.data.len(), 2);
         assert_eq!(paged.total, 3);
     }
@@ -234,9 +257,11 @@ mod tests {
         let t2 = other_tenant();
 
         svc.create_account(t1, Account::new(t1, "T1 Co".into(), "customer".into()))
-            .await.unwrap();
+            .await
+            .unwrap();
         svc.create_account(t2, Account::new(t2, "T2 Inc".into(), "supplier".into()))
-            .await.unwrap();
+            .await
+            .unwrap();
 
         let t1_list = svc.list_accounts(t1, None, None, None, None).await.unwrap();
         assert_eq!(t1_list.data.len(), 1);
@@ -260,7 +285,10 @@ mod tests {
         updated.name = "New Name".into();
         updated.email = Some("new@example.com".into());
 
-        let result = svc.update_account(tid, created.id, updated.clone()).await.unwrap();
+        let result = svc
+            .update_account(tid, created.id, updated.clone())
+            .await
+            .unwrap();
         assert_eq!(result.name, "New Name");
         assert_eq!(result.email, Some("new@example.com".into()));
     }
@@ -319,7 +347,10 @@ mod tests {
         assert!(a.is_active);
 
         // List — should appear
-        let list = svc.list_accounts(tid, None, None, None, None).await.unwrap();
+        let list = svc
+            .list_accounts(tid, None, None, None, None)
+            .await
+            .unwrap();
         assert_eq!(list.data.len(), 1);
 
         // Soft delete

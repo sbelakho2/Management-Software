@@ -109,7 +109,10 @@ impl WarehouseStore {
         }
         self.loading.set(true);
         self.error.set(None);
-        match client.get::<WarehouseStatsDto>("/api/v1/warehouse/stats").await {
+        match client
+            .get::<WarehouseStatsDto>("/api/v1/warehouse/stats")
+            .await
+        {
             Ok(data) => self.stats.set(Some(data)),
             Err(e) => self.error.set(Some(e.to_string())),
         }
@@ -148,7 +151,10 @@ impl WarehouseStore {
     pub async fn fetch_warehouses(&self, client: &ApiClient) {
         self.loading.set(true);
         self.error.set(None);
-        match client.get::<Vec<WarehouseDto>>("/api/v1/warehouse/warehouses").await {
+        match client
+            .get::<Vec<WarehouseDto>>("/api/v1/warehouse/warehouses")
+            .await
+        {
             Ok(data) => self.warehouses.set(data),
             Err(e) => self.error.set(Some(e.to_string())),
         }

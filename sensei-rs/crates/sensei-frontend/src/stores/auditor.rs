@@ -115,30 +115,63 @@ impl AuditorStore {
 
         let s = client.get::<AuditStatsDto>("/api/v1/auditor/stats").await;
         let a = client.get::<Vec<AuditDto>>("/api/v1/auditor/audits").await;
-        let u = client.get::<Vec<AuditDto>>("/api/v1/auditor/upcoming").await;
-        let f = client.get::<Vec<AuditFindingDto>>("/api/v1/auditor/findings").await;
-        let o = client.get::<Vec<AuditFindingDto>>("/api/v1/auditor/findings/open").await;
-        let c = client.get::<Vec<ComplianceAreaDto>>("/api/v1/auditor/compliance-areas").await;
+        let u = client
+            .get::<Vec<AuditDto>>("/api/v1/auditor/upcoming")
+            .await;
+        let f = client
+            .get::<Vec<AuditFindingDto>>("/api/v1/auditor/findings")
+            .await;
+        let o = client
+            .get::<Vec<AuditFindingDto>>("/api/v1/auditor/findings/open")
+            .await;
+        let c = client
+            .get::<Vec<ComplianceAreaDto>>("/api/v1/auditor/compliance-areas")
+            .await;
 
         let mut errors: Vec<String> = Vec::new();
-        if let Err(e) = &s { errors.push(e.to_string()); }
-        if let Err(e) = &a { errors.push(e.to_string()); }
-        if let Err(e) = &u { errors.push(e.to_string()); }
-        if let Err(e) = &f { errors.push(e.to_string()); }
-        if let Err(e) = &o { errors.push(e.to_string()); }
-        if let Err(e) = &c { errors.push(e.to_string()); }
+        if let Err(e) = &s {
+            errors.push(e.to_string());
+        }
+        if let Err(e) = &a {
+            errors.push(e.to_string());
+        }
+        if let Err(e) = &u {
+            errors.push(e.to_string());
+        }
+        if let Err(e) = &f {
+            errors.push(e.to_string());
+        }
+        if let Err(e) = &o {
+            errors.push(e.to_string());
+        }
+        if let Err(e) = &c {
+            errors.push(e.to_string());
+        }
 
-        if let Ok(data) = s { self.stats.set(Some(data)); }
-        if let Ok(data) = a { self.audits.set(data); }
-        if let Ok(data) = u { self.upcoming_audits.set(data); }
-        if let Ok(data) = f { self.findings.set(data); }
-        if let Ok(data) = o { self.open_findings.set(data); }
-        if let Ok(data) = c { self.compliance_areas.set(data); }
+        if let Ok(data) = s {
+            self.stats.set(Some(data));
+        }
+        if let Ok(data) = a {
+            self.audits.set(data);
+        }
+        if let Ok(data) = u {
+            self.upcoming_audits.set(data);
+        }
+        if let Ok(data) = f {
+            self.findings.set(data);
+        }
+        if let Ok(data) = o {
+            self.open_findings.set(data);
+        }
+        if let Ok(data) = c {
+            self.compliance_areas.set(data);
+        }
         if !errors.is_empty() {
             self.error.set(Some(errors.join("; ")));
         }
 
-        self.last_fetched_at.set(Some(chrono::Utc::now().to_rfc3339()));
+        self.last_fetched_at
+            .set(Some(chrono::Utc::now().to_rfc3339()));
         self.loading.set(false);
     }
 
@@ -165,7 +198,10 @@ impl AuditorStore {
     pub async fn fetch_upcoming_audits(&self, client: &ApiClient) {
         self.loading.set(true);
         self.error.set(None);
-        match client.get::<Vec<AuditDto>>("/api/v1/auditor/upcoming").await {
+        match client
+            .get::<Vec<AuditDto>>("/api/v1/auditor/upcoming")
+            .await
+        {
             Ok(data) => self.upcoming_audits.set(data),
             Err(e) => self.error.set(Some(e.to_string())),
         }
@@ -175,7 +211,10 @@ impl AuditorStore {
     pub async fn fetch_findings(&self, client: &ApiClient) {
         self.loading.set(true);
         self.error.set(None);
-        match client.get::<Vec<AuditFindingDto>>("/api/v1/auditor/findings").await {
+        match client
+            .get::<Vec<AuditFindingDto>>("/api/v1/auditor/findings")
+            .await
+        {
             Ok(data) => self.findings.set(data),
             Err(e) => self.error.set(Some(e.to_string())),
         }
@@ -185,7 +224,10 @@ impl AuditorStore {
     pub async fn fetch_open_findings(&self, client: &ApiClient) {
         self.loading.set(true);
         self.error.set(None);
-        match client.get::<Vec<AuditFindingDto>>("/api/v1/auditor/findings/open").await {
+        match client
+            .get::<Vec<AuditFindingDto>>("/api/v1/auditor/findings/open")
+            .await
+        {
             Ok(data) => self.open_findings.set(data),
             Err(e) => self.error.set(Some(e.to_string())),
         }
@@ -195,22 +237,39 @@ impl AuditorStore {
     pub async fn fetch_compliance_areas(&self, client: &ApiClient) {
         self.loading.set(true);
         self.error.set(None);
-        match client.get::<Vec<ComplianceAreaDto>>("/api/v1/auditor/compliance-areas").await {
+        match client
+            .get::<Vec<ComplianceAreaDto>>("/api/v1/auditor/compliance-areas")
+            .await
+        {
             Ok(data) => self.compliance_areas.set(data),
             Err(e) => self.error.set(Some(e.to_string())),
         }
         self.loading.set(false);
     }
 
-    pub async fn create_audit(&self, client: &ApiClient, data: &serde_json::Value) -> Result<AuditDto, ApiError> {
+    pub async fn create_audit(
+        &self,
+        client: &ApiClient,
+        data: &serde_json::Value,
+    ) -> Result<AuditDto, ApiError> {
         let audit: AuditDto = client.post("/api/v1/auditor/audits", data).await?;
         self.audits.update(|a| a.push(audit.clone()));
         Ok(audit)
     }
 
-    pub async fn update_audit_status(&self, client: &ApiClient, audit_id: &str, status: &str) -> Result<AuditDto, ApiError> {
+    pub async fn update_audit_status(
+        &self,
+        client: &ApiClient,
+        audit_id: &str,
+        status: &str,
+    ) -> Result<AuditDto, ApiError> {
         let payload = serde_json::json!({ "status": status });
-        let audit: AuditDto = client.put(&format!("/api/v1/auditor/audits/{}/status", audit_id), &payload).await?;
+        let audit: AuditDto = client
+            .put(
+                &format!("/api/v1/auditor/audits/{}/status", audit_id),
+                &payload,
+            )
+            .await?;
         self.audits.update(|a| {
             if let Some(pos) = a.iter().position(|x| x.id == audit_id) {
                 a[pos] = audit.clone();
@@ -219,15 +278,29 @@ impl AuditorStore {
         Ok(audit)
     }
 
-    pub async fn create_finding(&self, client: &ApiClient, data: &serde_json::Value) -> Result<AuditFindingDto, ApiError> {
+    pub async fn create_finding(
+        &self,
+        client: &ApiClient,
+        data: &serde_json::Value,
+    ) -> Result<AuditFindingDto, ApiError> {
         let finding: AuditFindingDto = client.post("/api/v1/auditor/findings", data).await?;
         self.findings.update(|f| f.push(finding.clone()));
         Ok(finding)
     }
 
-    pub async fn update_finding_status(&self, client: &ApiClient, finding_id: &str, status: &str) -> Result<AuditFindingDto, ApiError> {
+    pub async fn update_finding_status(
+        &self,
+        client: &ApiClient,
+        finding_id: &str,
+        status: &str,
+    ) -> Result<AuditFindingDto, ApiError> {
         let payload = serde_json::json!({ "status": status });
-        let finding: AuditFindingDto = client.put(&format!("/api/v1/auditor/findings/{}/status", finding_id), &payload).await?;
+        let finding: AuditFindingDto = client
+            .put(
+                &format!("/api/v1/auditor/findings/{}/status", finding_id),
+                &payload,
+            )
+            .await?;
         self.findings.update(|f| {
             if let Some(pos) = f.iter().position(|x| x.id == finding_id) {
                 f[pos] = finding.clone();

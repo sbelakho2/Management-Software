@@ -78,7 +78,9 @@ impl AnalyticsApi {
         client.get("/api/v1/analytics/insights").await
     }
 
-    pub async fn get_performance_trends(client: &ApiClient) -> Result<Vec<PerformanceTrend>, ApiError> {
+    pub async fn get_performance_trends(
+        client: &ApiClient,
+    ) -> Result<Vec<PerformanceTrend>, ApiError> {
         client.get("/api/v1/analytics/trends").await
     }
 

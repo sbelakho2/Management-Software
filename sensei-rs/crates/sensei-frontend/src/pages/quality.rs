@@ -32,12 +32,42 @@ pub fn NcrListPage() -> impl IntoView {
     });
 
     let columns = vec![
-        TableColumn { label: "TITLE", key: "title", sortable: true, width: None },
-        TableColumn { label: "SEVERITY", key: "severity", sortable: true, width: Some("80px") },
-        TableColumn { label: "STATUS", key: "status", sortable: true, width: Some("90px") },
-        TableColumn { label: "SOURCE", key: "source", sortable: true, width: None },
-        TableColumn { label: "ASSIGNED TO", key: "assigned_to", sortable: true, width: None },
-        TableColumn { label: "CREATED", key: "created_at", sortable: true, width: None },
+        TableColumn {
+            label: "TITLE",
+            key: "title",
+            sortable: true,
+            width: None,
+        },
+        TableColumn {
+            label: "SEVERITY",
+            key: "severity",
+            sortable: true,
+            width: Some("80px"),
+        },
+        TableColumn {
+            label: "STATUS",
+            key: "status",
+            sortable: true,
+            width: Some("90px"),
+        },
+        TableColumn {
+            label: "SOURCE",
+            key: "source",
+            sortable: true,
+            width: None,
+        },
+        TableColumn {
+            label: "ASSIGNED TO",
+            key: "assigned_to",
+            sortable: true,
+            width: None,
+        },
+        TableColumn {
+            label: "CREATED",
+            key: "created_at",
+            sortable: true,
+            width: None,
+        },
     ];
 
     view! {
@@ -72,11 +102,36 @@ pub fn CapaListPage() -> impl IntoView {
     });
 
     let columns = vec![
-        TableColumn { label: "ROOT CAUSE", key: "root_cause", sortable: true, width: None },
-        TableColumn { label: "ACTION PLAN", key: "action_plan", sortable: true, width: None },
-        TableColumn { label: "STATUS", key: "status", sortable: true, width: Some("90px") },
-        TableColumn { label: "DUE DATE", key: "due_date", sortable: true, width: None },
-        TableColumn { label: "ASSIGNED TO", key: "assigned_to", sortable: true, width: None },
+        TableColumn {
+            label: "ROOT CAUSE",
+            key: "root_cause",
+            sortable: true,
+            width: None,
+        },
+        TableColumn {
+            label: "ACTION PLAN",
+            key: "action_plan",
+            sortable: true,
+            width: None,
+        },
+        TableColumn {
+            label: "STATUS",
+            key: "status",
+            sortable: true,
+            width: Some("90px"),
+        },
+        TableColumn {
+            label: "DUE DATE",
+            key: "due_date",
+            sortable: true,
+            width: None,
+        },
+        TableColumn {
+            label: "ASSIGNED TO",
+            key: "assigned_to",
+            sortable: true,
+            width: None,
+        },
     ];
 
     view! {
@@ -110,11 +165,36 @@ pub fn InspectionListPage() -> impl IntoView {
     });
 
     let columns = vec![
-        TableColumn { label: "TITLE", key: "title", sortable: true, width: None },
-        TableColumn { label: "TYPE", key: "inspection_type", sortable: true, width: None },
-        TableColumn { label: "RESULT", key: "result", sortable: true, width: None },
-        TableColumn { label: "INSPECTOR", key: "inspector", sortable: true, width: None },
-        TableColumn { label: "DATE", key: "created_at", sortable: true, width: None },
+        TableColumn {
+            label: "TITLE",
+            key: "title",
+            sortable: true,
+            width: None,
+        },
+        TableColumn {
+            label: "TYPE",
+            key: "inspection_type",
+            sortable: true,
+            width: None,
+        },
+        TableColumn {
+            label: "RESULT",
+            key: "result",
+            sortable: true,
+            width: None,
+        },
+        TableColumn {
+            label: "INSPECTOR",
+            key: "inspector",
+            sortable: true,
+            width: None,
+        },
+        TableColumn {
+            label: "DATE",
+            key: "created_at",
+            sortable: true,
+            width: None,
+        },
     ];
 
     view! {
@@ -148,12 +228,42 @@ pub fn AuditListPage() -> impl IntoView {
     });
 
     let columns = vec![
-        TableColumn { label: "TYPE", key: "audit_type", sortable: true, width: None },
-        TableColumn { label: "SCOPE", key: "scope", sortable: true, width: None },
-        TableColumn { label: "SCORE", key: "score", sortable: true, width: Some("60px") },
-        TableColumn { label: "STATUS", key: "status", sortable: true, width: Some("90px") },
-        TableColumn { label: "CONDUCTED BY", key: "conducted_by", sortable: true, width: None },
-        TableColumn { label: "COMPLETED", key: "completed_at", sortable: true, width: None },
+        TableColumn {
+            label: "TYPE",
+            key: "audit_type",
+            sortable: true,
+            width: None,
+        },
+        TableColumn {
+            label: "SCOPE",
+            key: "scope",
+            sortable: true,
+            width: None,
+        },
+        TableColumn {
+            label: "SCORE",
+            key: "score",
+            sortable: true,
+            width: Some("60px"),
+        },
+        TableColumn {
+            label: "STATUS",
+            key: "status",
+            sortable: true,
+            width: Some("90px"),
+        },
+        TableColumn {
+            label: "CONDUCTED BY",
+            key: "conducted_by",
+            sortable: true,
+            width: None,
+        },
+        TableColumn {
+            label: "COMPLETED",
+            key: "completed_at",
+            sortable: true,
+            width: None,
+        },
     ];
 
     view! {
@@ -188,11 +298,36 @@ pub fn SupplierEvalListPage() -> impl IntoView {
     });
 
     let columns = vec![
-        TableColumn { label: "SUPPLIER", key: "supplier_name", sortable: true, width: None },
-        TableColumn { label: "SCORE", key: "score", sortable: true, width: Some("60px") },
-        TableColumn { label: "TIER", key: "tier", sortable: true, width: Some("60px") },
-        TableColumn { label: "EVALUATED BY", key: "evaluated_by", sortable: true, width: None },
-        TableColumn { label: "DATE", key: "evaluated_at", sortable: true, width: None },
+        TableColumn {
+            label: "SUPPLIER",
+            key: "supplier_name",
+            sortable: true,
+            width: None,
+        },
+        TableColumn {
+            label: "SCORE",
+            key: "score",
+            sortable: true,
+            width: Some("60px"),
+        },
+        TableColumn {
+            label: "TIER",
+            key: "tier",
+            sortable: true,
+            width: Some("60px"),
+        },
+        TableColumn {
+            label: "EVALUATED BY",
+            key: "evaluated_by",
+            sortable: true,
+            width: None,
+        },
+        TableColumn {
+            label: "DATE",
+            key: "evaluated_at",
+            sortable: true,
+            width: None,
+        },
     ];
 
     view! {

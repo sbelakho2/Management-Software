@@ -18,7 +18,7 @@ async fn test_create_inventory_item() {
     assert_eq!(resp.status(), StatusCode::OK);
 
     let json: Value = app.json_body(&mut resp).await;
-    assert!(json["id"].as_str().unwrap_or("").len() > 0);
+    assert!(!json["id"].as_str().unwrap_or("").is_empty());
     assert_eq!(json["name"], "Raw Steel");
 }
 
@@ -36,7 +36,7 @@ async fn test_list_inventory_items() {
     assert_eq!(resp.status(), StatusCode::OK);
 
     let json: Value = app.json_body(&mut resp).await;
-    assert!(json["data"].as_array().unwrap_or(&vec![]).len() >= 1);
+    assert!(!json["data"].as_array().unwrap_or(&vec![]).is_empty());
 }
 
 #[tokio::test]
@@ -86,7 +86,11 @@ async fn test_update_inventory_item() {
         "name": "Updated Steel Bolts",
         "quantity_on_hand": 200.0,
     });
-    let req = app.put_authenticated(&format!("/api/v1/inventory/items/{}", item_id), &token, update_body);
+    let req = app.put_authenticated(
+        &format!("/api/v1/inventory/items/{}", item_id),
+        &token,
+        update_body,
+    );
     let mut resp = app.send_request(req).await;
     assert_eq!(resp.status(), StatusCode::OK);
 
@@ -132,7 +136,7 @@ async fn test_list_warehouses() {
     assert_eq!(resp.status(), StatusCode::OK);
 
     let json: Value = app.json_body(&mut resp).await;
-    assert!(json["data"].as_array().unwrap_or(&vec![]).len() >= 1);
+    assert!(!json["data"].as_array().unwrap_or(&vec![]).is_empty());
 }
 
 #[tokio::test]
@@ -183,7 +187,7 @@ async fn test_create_stock_move() {
     assert_eq!(resp.status(), StatusCode::OK);
 
     let json: Value = app.json_body(&mut resp).await;
-    assert!(json["id"].as_str().unwrap_or("").len() > 0);
+    assert!(!json["id"].as_str().unwrap_or("").is_empty());
 }
 
 #[tokio::test]

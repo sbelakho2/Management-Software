@@ -30,13 +30,48 @@ pub fn WorkRequestListPage() -> impl IntoView {
     });
 
     let columns = vec![
-        TableColumn { label: "REQUEST #", key: "request_number", sortable: true, width: None },
-        TableColumn { label: "TITLE", key: "title", sortable: true, width: None },
-        TableColumn { label: "PRIORITY", key: "priority", sortable: true, width: Some("80px") },
-        TableColumn { label: "STATUS", key: "status", sortable: true, width: Some("90px") },
-        TableColumn { label: "ASSET", key: "asset_id", sortable: true, width: None },
-        TableColumn { label: "ASSIGNED TO", key: "assigned_to", sortable: true, width: None },
-        TableColumn { label: "CREATED", key: "created_at", sortable: true, width: None },
+        TableColumn {
+            label: "REQUEST #",
+            key: "request_number",
+            sortable: true,
+            width: None,
+        },
+        TableColumn {
+            label: "TITLE",
+            key: "title",
+            sortable: true,
+            width: None,
+        },
+        TableColumn {
+            label: "PRIORITY",
+            key: "priority",
+            sortable: true,
+            width: Some("80px"),
+        },
+        TableColumn {
+            label: "STATUS",
+            key: "status",
+            sortable: true,
+            width: Some("90px"),
+        },
+        TableColumn {
+            label: "ASSET",
+            key: "asset_id",
+            sortable: true,
+            width: None,
+        },
+        TableColumn {
+            label: "ASSIGNED TO",
+            key: "assigned_to",
+            sortable: true,
+            width: None,
+        },
+        TableColumn {
+            label: "CREATED",
+            key: "created_at",
+            sortable: true,
+            width: None,
+        },
     ];
 
     view! {
@@ -72,13 +107,48 @@ pub fn PmScheduleListPage() -> impl IntoView {
     });
 
     let columns = vec![
-        TableColumn { label: "SCHEDULE #", key: "schedule_number", sortable: true, width: None },
-        TableColumn { label: "TITLE", key: "title", sortable: true, width: None },
-        TableColumn { label: "ASSET", key: "asset_id", sortable: true, width: None },
-        TableColumn { label: "FREQUENCY (DAYS)", key: "frequency_days", sortable: true, width: Some("120px") },
-        TableColumn { label: "LAST DONE", key: "last_performed", sortable: true, width: None },
-        TableColumn { label: "NEXT DUE", key: "next_due", sortable: true, width: None },
-        TableColumn { label: "STATUS", key: "status", sortable: true, width: Some("90px") },
+        TableColumn {
+            label: "SCHEDULE #",
+            key: "schedule_number",
+            sortable: true,
+            width: None,
+        },
+        TableColumn {
+            label: "TITLE",
+            key: "title",
+            sortable: true,
+            width: None,
+        },
+        TableColumn {
+            label: "ASSET",
+            key: "asset_id",
+            sortable: true,
+            width: None,
+        },
+        TableColumn {
+            label: "FREQUENCY (DAYS)",
+            key: "frequency_days",
+            sortable: true,
+            width: Some("120px"),
+        },
+        TableColumn {
+            label: "LAST DONE",
+            key: "last_performed",
+            sortable: true,
+            width: None,
+        },
+        TableColumn {
+            label: "NEXT DUE",
+            key: "next_due",
+            sortable: true,
+            width: None,
+        },
+        TableColumn {
+            label: "STATUS",
+            key: "status",
+            sortable: true,
+            width: Some("90px"),
+        },
     ];
 
     view! {
@@ -114,12 +184,42 @@ pub fn EquipmentListPage() -> impl IntoView {
     });
 
     let columns = vec![
-        TableColumn { label: "CODE", key: "equipment_code", sortable: true, width: None },
-        TableColumn { label: "NAME", key: "name", sortable: true, width: None },
-        TableColumn { label: "TYPE", key: "equipment_type", sortable: true, width: None },
-        TableColumn { label: "LOCATION", key: "location", sortable: true, width: None },
-        TableColumn { label: "STATUS", key: "status", sortable: true, width: Some("90px") },
-        TableColumn { label: "SERIAL #", key: "serial_number", sortable: true, width: None },
+        TableColumn {
+            label: "CODE",
+            key: "equipment_code",
+            sortable: true,
+            width: None,
+        },
+        TableColumn {
+            label: "NAME",
+            key: "name",
+            sortable: true,
+            width: None,
+        },
+        TableColumn {
+            label: "TYPE",
+            key: "equipment_type",
+            sortable: true,
+            width: None,
+        },
+        TableColumn {
+            label: "LOCATION",
+            key: "location",
+            sortable: true,
+            width: None,
+        },
+        TableColumn {
+            label: "STATUS",
+            key: "status",
+            sortable: true,
+            width: Some("90px"),
+        },
+        TableColumn {
+            label: "SERIAL #",
+            key: "serial_number",
+            sortable: true,
+            width: None,
+        },
     ];
 
     view! {

@@ -16,17 +16,17 @@
 mod database;
 pub use database::DatabaseQualityService;
 
-pub mod models;
-pub mod ncr;
-pub mod inspection;
 pub mod audit;
-pub mod supplier;
-pub mod npi_risk;
+pub mod inspection;
+pub mod models;
 pub mod msa_spc;
-pub mod stage_gates;
+pub mod ncr;
+pub mod npi_risk;
 pub mod service;
+pub mod stage_gates;
+pub mod supplier;
 
 // Re-export key types for convenience
 pub use models::*;
-pub use service::{InMemoryQualityService, QualityService};
 pub use sensei_core::pagination::PaginatedResponse;
+pub use service::{InMemoryQualityService, QualityService};

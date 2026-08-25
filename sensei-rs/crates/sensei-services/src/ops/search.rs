@@ -10,9 +10,9 @@
 //! and [`SearchService::remove_from_index`] for real-time search index updates.
 
 use async_trait::async_trait;
-use serde::Serialize;
 use sensei_core::error::{Result, SenseiError};
 use sensei_core::types::EntityId;
+use serde::Serialize;
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -51,11 +51,7 @@ pub struct SearchResult {
 #[async_trait]
 pub trait SearchableEntityProvider: Send + Sync {
     /// Search all entities managed by this provider for the given query.
-    async fn search_entities(
-        &self,
-        tenant_id: EntityId,
-        query: &str,
-    ) -> Result<Vec<SearchResult>>;
+    async fn search_entities(&self, tenant_id: EntityId, query: &str) -> Result<Vec<SearchResult>>;
 
     /// The entity type name returned in [`SearchResult::result_type`].
     fn entity_type_name(&self) -> &str;
@@ -251,21 +247,28 @@ impl SearchService for InMemorySearchService {
         // ── Search domain services ──────────────────────────────────────────
         // (only when no entity_type filter or filter matches)
 
-        let search_domain = entity_type.map_or(true, |et| {
-            matches!(et, "account" | "contact" | "product" | "user")
-        });
+        let search_domain =
+            entity_type.is_none_or(|et| matches!(et, "account" | "contact" | "product" | "user"));
 
         if search_domain {
             // Search accounts
-            if entity_type.map_or(true, |et| et == "account") {
+            if entity_type.is_none_or(|et| et == "account") {
                 let accounts = self
                     .accounts_service
                     .list_accounts(tenant_id, None, None, Some(1), Some(200))
                     .await?;
                 for a in accounts.data {
                     let name_score = Self::score_match(query, &a.name);
-                    let email_score = a.email.as_ref().map(|e| Self::score_match(query, e)).unwrap_or(0.0);
-                    let tax_score = a.tax_id.as_ref().map(|t| Self::score_match(query, t)).unwrap_or(0.0);
+                    let email_score = a
+                        .email
+                        .as_ref()
+                        .map(|e| Self::score_match(query, e))
+                        .unwrap_or(0.0);
+                    let tax_score = a
+                        .tax_id
+                        .as_ref()
+                        .map(|t| Self::score_match(query, t))
+                        .unwrap_or(0.0);
                     let score = name_score.max(email_score).max(tax_score);
                     if score > 0.0 {
                         results.push(SearchResult {
@@ -279,7 +282,7 @@ impl SearchService for InMemorySearchService {
             }
 
             // Search contacts
-            if entity_type.map_or(true, |et| et == "contact") {
+            if entity_type.is_none_or(|et| et == "contact") {
                 let contacts = self
                     .contacts_service
                     .list_contacts(tenant_id, None, Some(1), Some(200))
@@ -299,7 +302,7 @@ impl SearchService for InMemorySearchService {
             }
 
             // Search products
-            if entity_type.map_or(true, |et| et == "product") {
+            if entity_type.is_none_or(|et| et == "product") {
                 let products = self
                     .products_service
                     .list_products(tenant_id, None, None, Some(1), Some(200))
@@ -307,7 +310,11 @@ impl SearchService for InMemorySearchService {
                 for p in products.data {
                     let name_score = Self::score_match(query, &p.name);
                     let sku_score = Self::score_match(query, &p.sku);
-                    let desc_score = p.description.as_ref().map(|d| Self::score_match(query, d)).unwrap_or(0.0);
+                    let desc_score = p
+                        .description
+                        .as_ref()
+                        .map(|d| Self::score_match(query, d))
+                        .unwrap_or(0.0);
                     let score = name_score.max(sku_score).max(desc_score);
                     if score > 0.0 {
                         results.push(SearchResult {
@@ -321,7 +328,7 @@ impl SearchService for InMemorySearchService {
             }
 
             // Search users
-            if entity_type.map_or(true, |et| et == "user") {
+            if entity_type.is_none_or(|et| et == "user") {
                 let users = self
                     .users_service
                     .list_users_paginated(None, None, Some(1), Some(200))
@@ -346,7 +353,7 @@ impl SearchService for InMemorySearchService {
         // ── Search entity providers (PM stores) ─────────────────────────────
         for provider in &self.entity_providers {
             let p_entity_type = provider.entity_type_name();
-            if entity_type.map_or(true, |et| et == p_entity_type) {
+            if entity_type.is_none_or(|et| et == p_entity_type) {
                 match provider.search_entities(tenant_id, query).await {
                     Ok(mut entities) => results.append(&mut entities),
                     Err(e) => {
@@ -365,7 +372,11 @@ impl SearchService for InMemorySearchService {
         results.extend(indexed);
 
         // ── Sort by relevance descending, limit to 50 ───────────────────────
-        results.sort_by(|a, b| b.relevance.partial_cmp(&a.relevance).unwrap_or(std::cmp::Ordering::Equal));
+        results.sort_by(|a, b| {
+            b.relevance
+                .partial_cmp(&a.relevance)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         results.truncate(50);
 
         Ok(results)
@@ -475,12 +486,14 @@ impl SearchService for DatabaseSearchService {
 
         let results = rows
             .into_iter()
-            .map(|(result_type, result_id, result_title, relevance)| SearchResult {
-                result_type,
-                result_id,
-                result_title,
-                relevance,
-            })
+            .map(
+                |(result_type, result_id, result_title, relevance)| SearchResult {
+                    result_type,
+                    result_id,
+                    result_title,
+                    relevance,
+                },
+            )
             .collect();
 
         Ok(results)

@@ -7,9 +7,9 @@
 
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
 use sensei_core::error::{Result, SenseiError};
 use sensei_core::types::EntityId;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::{mpsc, Mutex, RwLock};
@@ -412,10 +412,9 @@ impl ChatbotService for SenseiChatbotService {
         conversation_id: &str,
     ) -> Result<Vec<ChatMessage>> {
         let store = self.conversation_store.read().await;
-        store
-            .get(conversation_id)
-            .cloned()
-            .ok_or_else(|| SenseiError::NotFound(format!("Conversation {conversation_id} not found")))
+        store.get(conversation_id).cloned().ok_or_else(|| {
+            SenseiError::NotFound(format!("Conversation {conversation_id} not found"))
+        })
     }
 }
 
@@ -759,7 +758,13 @@ mod tests {
         let user_id = EntityId::new_v4();
 
         let response = service
-            .chat(tenant_id, user_id, "I need help with quality inspection", None, None)
+            .chat(
+                tenant_id,
+                user_id,
+                "I need help with quality inspection",
+                None,
+                None,
+            )
             .await
             .expect("chat should succeed");
 

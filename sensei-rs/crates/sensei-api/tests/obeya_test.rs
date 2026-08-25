@@ -18,7 +18,7 @@ async fn test_create_obeya_board() {
     assert_eq!(resp.status(), StatusCode::OK);
 
     let json: Value = app.json_body(&mut resp).await;
-    assert!(json["id"].as_str().unwrap_or("").len() > 0);
+    assert!(!json["id"].as_str().unwrap_or("").is_empty());
     assert_eq!(json["name"], "Daily Management");
 }
 
@@ -36,7 +36,7 @@ async fn test_list_obeya_boards() {
     assert_eq!(resp.status(), StatusCode::OK);
 
     let json: Value = app.json_body(&mut resp).await;
-    assert!(json["data"].as_array().unwrap_or(&vec![]).len() >= 1);
+    assert!(!json["data"].as_array().unwrap_or(&vec![]).is_empty());
 }
 
 #[tokio::test]
@@ -83,7 +83,11 @@ async fn test_update_obeya_board() {
     let board_id = created["id"].as_str().unwrap().to_string();
 
     let update_body = serde_json::json!({ "name": "Updated Board Name" });
-    let req = app.put_authenticated(&format!("/api/v1/obeya/boards/{}", board_id), &token, update_body);
+    let req = app.put_authenticated(
+        &format!("/api/v1/obeya/boards/{}", board_id),
+        &token,
+        update_body,
+    );
     let mut resp = app.send_request(req).await;
     assert_eq!(resp.status(), StatusCode::OK);
 
@@ -136,7 +140,7 @@ async fn test_add_board_item() {
     assert_eq!(resp.status(), StatusCode::OK);
 
     let json: Value = app.json_body(&mut resp).await;
-    assert!(json["id"].as_str().unwrap_or("").len() > 0);
+    assert!(!json["id"].as_str().unwrap_or("").is_empty());
 }
 
 #[tokio::test]
@@ -166,15 +170,12 @@ async fn test_list_board_items() {
     app.send_request(req).await;
 
     // List items
-    let req = app.get_authenticated(
-        &format!("/api/v1/obeya/boards/{}/items", board_id),
-        &token,
-    );
+    let req = app.get_authenticated(&format!("/api/v1/obeya/boards/{}/items", board_id), &token);
     let mut resp = app.send_request(req).await;
     assert_eq!(resp.status(), StatusCode::OK);
 
     let json: Value = app.json_body(&mut resp).await;
-    assert!(json["data"].as_array().unwrap_or(&vec![]).len() >= 1);
+    assert!(!json["data"].as_array().unwrap_or(&vec![]).is_empty());
 }
 
 #[tokio::test]
@@ -323,10 +324,7 @@ async fn test_delete_board_item() {
     assert_eq!(resp.status(), StatusCode::OK);
 
     // The item must be gone from the board.
-    let req = app.get_authenticated(
-        &format!("/api/v1/obeya/boards/{}/items", board_id),
-        &token,
-    );
+    let req = app.get_authenticated(&format!("/api/v1/obeya/boards/{}/items", board_id), &token);
     let mut resp = app.send_request(req).await;
     let json: Value = app.json_body(&mut resp).await;
     let items = json["data"].as_array().unwrap();

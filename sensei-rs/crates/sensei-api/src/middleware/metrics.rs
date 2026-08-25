@@ -19,9 +19,7 @@ use std::time::Instant;
 
 use axum::{extract::Request, middleware::Next, response::Response};
 
-use crate::routes::metrics::{
-    HTTP_REQUESTS_IN_FLIGHT, HTTP_REQUESTS_TOTAL, HTTP_REQUEST_DURATION,
-};
+use crate::routes::metrics::{HTTP_REQUESTS_IN_FLIGHT, HTTP_REQUESTS_TOTAL, HTTP_REQUEST_DURATION};
 
 /// Minimum length for a numeric segment to be normalized to `{id}`.
 const MIN_NUMERIC_ID_LEN: usize = 8;

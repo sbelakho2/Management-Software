@@ -134,7 +134,11 @@ impl AccountsService for DatabaseAccountsService {
         let use_type_filter = account_type.is_some();
         let use_active_filter = is_active.is_some();
         let type_val = account_type.unwrap_or("");
-        let status_val = if is_active.unwrap_or(true) { "active" } else { "inactive" };
+        let status_val = if is_active.unwrap_or(true) {
+            "active"
+        } else {
+            "inactive"
+        };
 
         // Count query
         let count_sql = match (use_type_filter, use_active_filter) {
@@ -293,7 +297,11 @@ impl AccountsService for DatabaseAccountsService {
         account: Account,
     ) -> Result<Account> {
         let now = Utc::now();
-        let status_str = if account.is_active { "active" } else { "inactive" };
+        let status_str = if account.is_active {
+            "active"
+        } else {
+            "inactive"
+        };
 
         let model = sqlx::query_as::<_, AccountRow>(
             r#"
@@ -330,7 +338,9 @@ impl AccountsService for DatabaseAccountsService {
 
         // Verify tenant ownership.
         if model.model.tenant_id != tenant_id {
-            return Err(SenseiError::Forbidden("Cross-tenant access denied".to_string()));
+            return Err(SenseiError::Forbidden(
+                "Cross-tenant access denied".to_string(),
+            ));
         }
 
         Ok(account_row_to_domain(model))
@@ -362,7 +372,9 @@ impl AccountsService for DatabaseAccountsService {
             .bind(tenant_id)
             .fetch_one(&self.pool)
             .await
-            .map_err(|e| SenseiError::Database(format!("Failed to check account existence: {e}")))?;
+            .map_err(|e| {
+                SenseiError::Database(format!("Failed to check account existence: {e}"))
+            })?;
 
             if exists == 0 {
                 return Err(SenseiError::NotFound(format!("Account {id} not found")));

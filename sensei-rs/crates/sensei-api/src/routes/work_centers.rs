@@ -4,12 +4,15 @@
 //! cells / manufacturing units), including capacity, efficiency tracking,
 //! and active/inactive status management.
 
-use axum::{Json, extract::{Path, Query, State}};
+use axum::{
+    extract::{Path, Query, State},
+    Json,
+};
 use chrono::Utc;
-use serde::{Deserialize, Serialize};
 use sensei_auth::middleware::AuthenticatedUser;
 use sensei_core::error::{Result, SenseiError};
 use sensei_core::pagination::PaginatedResponse;
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::state::AppState;
@@ -282,7 +285,7 @@ pub async fn deactivate_work_center(
     user: AuthenticatedUser,
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
-) -> Result<Json<()>> {
+) -> Result<Json<WorkCenter>> {
     let tenant_id = user.tenant_id;
     let store = get_store(&state);
     let mut map = store.write().await;
@@ -294,7 +297,7 @@ pub async fn deactivate_work_center(
 
     wc.is_active = false;
     wc.updated_at = Utc::now();
-    Ok(Json(()))
+    Ok(Json(wc.clone()))
 }
 
 /// Get work center capacity and utilization metrics.

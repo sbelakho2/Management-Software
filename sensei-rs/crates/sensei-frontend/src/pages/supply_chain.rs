@@ -30,11 +30,36 @@ pub fn RfqListPage() -> impl IntoView {
     });
 
     let columns = vec![
-        TableColumn { label: "RFQ #", key: "rfq_number", sortable: true, width: None },
-        TableColumn { label: "SUPPLIER", key: "supplier_id", sortable: true, width: None },
-        TableColumn { label: "ITEMS", key: "items", sortable: true, width: Some("60px") },
-        TableColumn { label: "STATUS", key: "status", sortable: true, width: Some("90px") },
-        TableColumn { label: "CREATED", key: "created_at", sortable: true, width: None },
+        TableColumn {
+            label: "RFQ #",
+            key: "rfq_number",
+            sortable: true,
+            width: None,
+        },
+        TableColumn {
+            label: "SUPPLIER",
+            key: "supplier_id",
+            sortable: true,
+            width: None,
+        },
+        TableColumn {
+            label: "ITEMS",
+            key: "items",
+            sortable: true,
+            width: Some("60px"),
+        },
+        TableColumn {
+            label: "STATUS",
+            key: "status",
+            sortable: true,
+            width: Some("90px"),
+        },
+        TableColumn {
+            label: "CREATED",
+            key: "created_at",
+            sortable: true,
+            width: None,
+        },
     ];
 
     view! {
@@ -68,12 +93,42 @@ pub fn QuoteListPage() -> impl IntoView {
     });
 
     let columns = vec![
-        TableColumn { label: "QUOTE #", key: "quote_number", sortable: true, width: None },
-        TableColumn { label: "SUPPLIER", key: "supplier_id", sortable: true, width: None },
-        TableColumn { label: "TOTAL", key: "total", sortable: true, width: None },
-        TableColumn { label: "CURRENCY", key: "currency", sortable: true, width: Some("80px") },
-        TableColumn { label: "STATUS", key: "status", sortable: true, width: Some("90px") },
-        TableColumn { label: "VALID UNTIL", key: "valid_until", sortable: true, width: None },
+        TableColumn {
+            label: "QUOTE #",
+            key: "quote_number",
+            sortable: true,
+            width: None,
+        },
+        TableColumn {
+            label: "SUPPLIER",
+            key: "supplier_id",
+            sortable: true,
+            width: None,
+        },
+        TableColumn {
+            label: "TOTAL",
+            key: "total",
+            sortable: true,
+            width: None,
+        },
+        TableColumn {
+            label: "CURRENCY",
+            key: "currency",
+            sortable: true,
+            width: Some("80px"),
+        },
+        TableColumn {
+            label: "STATUS",
+            key: "status",
+            sortable: true,
+            width: Some("90px"),
+        },
+        TableColumn {
+            label: "VALID UNTIL",
+            key: "valid_until",
+            sortable: true,
+            width: None,
+        },
     ];
 
     view! {
@@ -108,13 +163,48 @@ pub fn SalesOrderListPage() -> impl IntoView {
     });
 
     let columns = vec![
-        TableColumn { label: "SO #", key: "sales_order_number", sortable: true, width: None },
-        TableColumn { label: "CUSTOMER", key: "customer_id", sortable: true, width: None },
-        TableColumn { label: "ITEMS", key: "items", sortable: true, width: Some("60px") },
-        TableColumn { label: "TOTAL", key: "total", sortable: true, width: None },
-        TableColumn { label: "CURRENCY", key: "currency", sortable: true, width: Some("80px") },
-        TableColumn { label: "STATUS", key: "status", sortable: true, width: Some("90px") },
-        TableColumn { label: "CREATED", key: "created_at", sortable: true, width: None },
+        TableColumn {
+            label: "SO #",
+            key: "sales_order_number",
+            sortable: true,
+            width: None,
+        },
+        TableColumn {
+            label: "CUSTOMER",
+            key: "customer_id",
+            sortable: true,
+            width: None,
+        },
+        TableColumn {
+            label: "ITEMS",
+            key: "items",
+            sortable: true,
+            width: Some("60px"),
+        },
+        TableColumn {
+            label: "TOTAL",
+            key: "total",
+            sortable: true,
+            width: None,
+        },
+        TableColumn {
+            label: "CURRENCY",
+            key: "currency",
+            sortable: true,
+            width: Some("80px"),
+        },
+        TableColumn {
+            label: "STATUS",
+            key: "status",
+            sortable: true,
+            width: Some("90px"),
+        },
+        TableColumn {
+            label: "CREATED",
+            key: "created_at",
+            sortable: true,
+            width: None,
+        },
     ];
 
     view! {
@@ -150,13 +240,48 @@ pub fn PurchaseOrderListPage() -> impl IntoView {
     });
 
     let columns = vec![
-        TableColumn { label: "PO #", key: "po_number", sortable: true, width: None },
-        TableColumn { label: "SUPPLIER", key: "supplier_id", sortable: true, width: None },
-        TableColumn { label: "ITEMS", key: "items", sortable: true, width: Some("60px") },
-        TableColumn { label: "TOTAL", key: "total", sortable: true, width: None },
-        TableColumn { label: "CURRENCY", key: "currency", sortable: true, width: Some("80px") },
-        TableColumn { label: "STATUS", key: "status", sortable: true, width: Some("90px") },
-        TableColumn { label: "CREATED", key: "created_at", sortable: true, width: None },
+        TableColumn {
+            label: "PO #",
+            key: "po_number",
+            sortable: true,
+            width: None,
+        },
+        TableColumn {
+            label: "SUPPLIER",
+            key: "supplier_id",
+            sortable: true,
+            width: None,
+        },
+        TableColumn {
+            label: "ITEMS",
+            key: "items",
+            sortable: true,
+            width: Some("60px"),
+        },
+        TableColumn {
+            label: "TOTAL",
+            key: "total",
+            sortable: true,
+            width: None,
+        },
+        TableColumn {
+            label: "CURRENCY",
+            key: "currency",
+            sortable: true,
+            width: Some("80px"),
+        },
+        TableColumn {
+            label: "STATUS",
+            key: "status",
+            sortable: true,
+            width: Some("90px"),
+        },
+        TableColumn {
+            label: "CREATED",
+            key: "created_at",
+            sortable: true,
+            width: None,
+        },
     ];
 
     view! {
@@ -192,12 +317,42 @@ pub fn InventoryListPage() -> impl IntoView {
     });
 
     let columns = vec![
-        TableColumn { label: "PRODUCT", key: "product_name", sortable: true, width: None },
-        TableColumn { label: "ON HAND", key: "quantity_on_hand", sortable: true, width: None },
-        TableColumn { label: "RESERVED", key: "quantity_reserved", sortable: true, width: None },
-        TableColumn { label: "AVAILABLE", key: "quantity_available", sortable: true, width: None },
-        TableColumn { label: "LOCATION", key: "location", sortable: true, width: None },
-        TableColumn { label: "UNIT", key: "unit", sortable: true, width: Some("60px") },
+        TableColumn {
+            label: "PRODUCT",
+            key: "product_name",
+            sortable: true,
+            width: None,
+        },
+        TableColumn {
+            label: "ON HAND",
+            key: "quantity_on_hand",
+            sortable: true,
+            width: None,
+        },
+        TableColumn {
+            label: "RESERVED",
+            key: "quantity_reserved",
+            sortable: true,
+            width: None,
+        },
+        TableColumn {
+            label: "AVAILABLE",
+            key: "quantity_available",
+            sortable: true,
+            width: None,
+        },
+        TableColumn {
+            label: "LOCATION",
+            key: "location",
+            sortable: true,
+            width: None,
+        },
+        TableColumn {
+            label: "UNIT",
+            key: "unit",
+            sortable: true,
+            width: Some("60px"),
+        },
     ];
 
     view! {
@@ -232,13 +387,48 @@ pub fn StockMoveListPage() -> impl IntoView {
     });
 
     let columns = vec![
-        TableColumn { label: "PRODUCT", key: "product_id", sortable: true, width: None },
-        TableColumn { label: "QUANTITY", key: "quantity", sortable: true, width: None },
-        TableColumn { label: "TYPE", key: "move_type", sortable: true, width: None },
-        TableColumn { label: "FROM", key: "from_location", sortable: true, width: None },
-        TableColumn { label: "TO", key: "to_location", sortable: true, width: None },
-        TableColumn { label: "REFERENCE", key: "reference", sortable: true, width: None },
-        TableColumn { label: "MOVED AT", key: "moved_at", sortable: true, width: None },
+        TableColumn {
+            label: "PRODUCT",
+            key: "product_id",
+            sortable: true,
+            width: None,
+        },
+        TableColumn {
+            label: "QUANTITY",
+            key: "quantity",
+            sortable: true,
+            width: None,
+        },
+        TableColumn {
+            label: "TYPE",
+            key: "move_type",
+            sortable: true,
+            width: None,
+        },
+        TableColumn {
+            label: "FROM",
+            key: "from_location",
+            sortable: true,
+            width: None,
+        },
+        TableColumn {
+            label: "TO",
+            key: "to_location",
+            sortable: true,
+            width: None,
+        },
+        TableColumn {
+            label: "REFERENCE",
+            key: "reference",
+            sortable: true,
+            width: None,
+        },
+        TableColumn {
+            label: "MOVED AT",
+            key: "moved_at",
+            sortable: true,
+            width: None,
+        },
     ];
 
     view! {

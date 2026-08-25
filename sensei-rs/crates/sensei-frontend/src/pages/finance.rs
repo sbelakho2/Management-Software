@@ -30,14 +30,54 @@ pub fn InvoiceListPage() -> impl IntoView {
     });
 
     let columns = vec![
-        TableColumn { label: "INVOICE #", key: "invoice_number", sortable: true, width: None },
-        TableColumn { label: "CUSTOMER", key: "customer_id", sortable: true, width: None },
-        TableColumn { label: "SUBTOTAL", key: "subtotal", sortable: true, width: None },
-        TableColumn { label: "TAX", key: "tax", sortable: true, width: None },
-        TableColumn { label: "TOTAL", key: "total", sortable: true, width: None },
-        TableColumn { label: "CURRENCY", key: "currency", sortable: true, width: Some("80px") },
-        TableColumn { label: "STATUS", key: "status", sortable: true, width: Some("90px") },
-        TableColumn { label: "DUE DATE", key: "due_date", sortable: true, width: None },
+        TableColumn {
+            label: "INVOICE #",
+            key: "invoice_number",
+            sortable: true,
+            width: None,
+        },
+        TableColumn {
+            label: "CUSTOMER",
+            key: "customer_id",
+            sortable: true,
+            width: None,
+        },
+        TableColumn {
+            label: "SUBTOTAL",
+            key: "subtotal",
+            sortable: true,
+            width: None,
+        },
+        TableColumn {
+            label: "TAX",
+            key: "tax",
+            sortable: true,
+            width: None,
+        },
+        TableColumn {
+            label: "TOTAL",
+            key: "total",
+            sortable: true,
+            width: None,
+        },
+        TableColumn {
+            label: "CURRENCY",
+            key: "currency",
+            sortable: true,
+            width: Some("80px"),
+        },
+        TableColumn {
+            label: "STATUS",
+            key: "status",
+            sortable: true,
+            width: Some("90px"),
+        },
+        TableColumn {
+            label: "DUE DATE",
+            key: "due_date",
+            sortable: true,
+            width: None,
+        },
     ];
 
     view! {
@@ -74,13 +114,48 @@ pub fn PaymentListPage() -> impl IntoView {
     });
 
     let columns = vec![
-        TableColumn { label: "PAYMENT #", key: "payment_number", sortable: true, width: None },
-        TableColumn { label: "INVOICE", key: "invoice_id", sortable: true, width: None },
-        TableColumn { label: "AMOUNT", key: "amount", sortable: true, width: None },
-        TableColumn { label: "CURRENCY", key: "currency", sortable: true, width: Some("80px") },
-        TableColumn { label: "METHOD", key: "method", sortable: true, width: None },
-        TableColumn { label: "STATUS", key: "status", sortable: true, width: Some("90px") },
-        TableColumn { label: "PAID AT", key: "paid_at", sortable: true, width: None },
+        TableColumn {
+            label: "PAYMENT #",
+            key: "payment_number",
+            sortable: true,
+            width: None,
+        },
+        TableColumn {
+            label: "INVOICE",
+            key: "invoice_id",
+            sortable: true,
+            width: None,
+        },
+        TableColumn {
+            label: "AMOUNT",
+            key: "amount",
+            sortable: true,
+            width: None,
+        },
+        TableColumn {
+            label: "CURRENCY",
+            key: "currency",
+            sortable: true,
+            width: Some("80px"),
+        },
+        TableColumn {
+            label: "METHOD",
+            key: "method",
+            sortable: true,
+            width: None,
+        },
+        TableColumn {
+            label: "STATUS",
+            key: "status",
+            sortable: true,
+            width: Some("90px"),
+        },
+        TableColumn {
+            label: "PAID AT",
+            key: "paid_at",
+            sortable: true,
+            width: None,
+        },
     ];
 
     view! {
@@ -116,12 +191,42 @@ pub fn BudgetListPage() -> impl IntoView {
     });
 
     let columns = vec![
-        TableColumn { label: "DEPARTMENT", key: "department", sortable: true, width: None },
-        TableColumn { label: "FISCAL YEAR", key: "fiscal_year", sortable: true, width: None },
-        TableColumn { label: "ALLOCATED", key: "allocated", sortable: true, width: None },
-        TableColumn { label: "SPENT", key: "spent", sortable: true, width: None },
-        TableColumn { label: "REMAINING", key: "remaining", sortable: true, width: None },
-        TableColumn { label: "STATUS", key: "status", sortable: true, width: Some("90px") },
+        TableColumn {
+            label: "DEPARTMENT",
+            key: "department",
+            sortable: true,
+            width: None,
+        },
+        TableColumn {
+            label: "FISCAL YEAR",
+            key: "fiscal_year",
+            sortable: true,
+            width: None,
+        },
+        TableColumn {
+            label: "ALLOCATED",
+            key: "allocated",
+            sortable: true,
+            width: None,
+        },
+        TableColumn {
+            label: "SPENT",
+            key: "spent",
+            sortable: true,
+            width: None,
+        },
+        TableColumn {
+            label: "REMAINING",
+            key: "remaining",
+            sortable: true,
+            width: None,
+        },
+        TableColumn {
+            label: "STATUS",
+            key: "status",
+            sortable: true,
+            width: Some("90px"),
+        },
     ];
 
     view! {
@@ -156,12 +261,42 @@ pub fn JournalEntryListPage() -> impl IntoView {
     });
 
     let columns = vec![
-        TableColumn { label: "ENTRY #", key: "entry_number", sortable: true, width: None },
-        TableColumn { label: "DESCRIPTION", key: "description", sortable: true, width: None },
-        TableColumn { label: "DEBIT", key: "debit", sortable: true, width: None },
-        TableColumn { label: "CREDIT", key: "credit", sortable: true, width: None },
-        TableColumn { label: "ACCOUNT", key: "account", sortable: true, width: None },
-        TableColumn { label: "POSTED AT", key: "posted_at", sortable: true, width: None },
+        TableColumn {
+            label: "ENTRY #",
+            key: "entry_number",
+            sortable: true,
+            width: None,
+        },
+        TableColumn {
+            label: "DESCRIPTION",
+            key: "description",
+            sortable: true,
+            width: None,
+        },
+        TableColumn {
+            label: "DEBIT",
+            key: "debit",
+            sortable: true,
+            width: None,
+        },
+        TableColumn {
+            label: "CREDIT",
+            key: "credit",
+            sortable: true,
+            width: None,
+        },
+        TableColumn {
+            label: "ACCOUNT",
+            key: "account",
+            sortable: true,
+            width: None,
+        },
+        TableColumn {
+            label: "POSTED AT",
+            key: "posted_at",
+            sortable: true,
+            width: None,
+        },
     ];
 
     view! {
@@ -196,13 +331,48 @@ pub fn CostRollupListPage() -> impl IntoView {
     });
 
     let columns = vec![
-        TableColumn { label: "PRODUCT", key: "product_id", sortable: true, width: None },
-        TableColumn { label: "MATERIAL", key: "material_cost", sortable: true, width: None },
-        TableColumn { label: "LABOR", key: "labor_cost", sortable: true, width: None },
-        TableColumn { label: "OVERHEAD", key: "overhead_cost", sortable: true, width: None },
-        TableColumn { label: "TOTAL", key: "total_cost", sortable: true, width: None },
-        TableColumn { label: "CURRENCY", key: "currency", sortable: true, width: Some("80px") },
-        TableColumn { label: "CALCULATED AT", key: "calculated_at", sortable: true, width: None },
+        TableColumn {
+            label: "PRODUCT",
+            key: "product_id",
+            sortable: true,
+            width: None,
+        },
+        TableColumn {
+            label: "MATERIAL",
+            key: "material_cost",
+            sortable: true,
+            width: None,
+        },
+        TableColumn {
+            label: "LABOR",
+            key: "labor_cost",
+            sortable: true,
+            width: None,
+        },
+        TableColumn {
+            label: "OVERHEAD",
+            key: "overhead_cost",
+            sortable: true,
+            width: None,
+        },
+        TableColumn {
+            label: "TOTAL",
+            key: "total_cost",
+            sortable: true,
+            width: None,
+        },
+        TableColumn {
+            label: "CURRENCY",
+            key: "currency",
+            sortable: true,
+            width: Some("80px"),
+        },
+        TableColumn {
+            label: "CALCULATED AT",
+            key: "calculated_at",
+            sortable: true,
+            width: None,
+        },
     ];
 
     view! {

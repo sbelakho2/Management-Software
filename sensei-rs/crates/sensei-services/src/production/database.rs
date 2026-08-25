@@ -11,7 +11,9 @@ use sqlx::PgPool;
 use std::collections::HashMap;
 use uuid::Uuid;
 
-use super::{BOMItem, MRPRecord, ProductionOrder, ProductionService, WorkOrder, WorkOrderOperation};
+use super::{
+    BOMItem, MRPRecord, ProductionOrder, ProductionService, WorkOrder, WorkOrderOperation,
+};
 
 // ---------------------------------------------------------------------------
 // Row structs (map 1:1 to PostgreSQL rows)
@@ -172,115 +174,119 @@ impl DatabaseProductionService {
         Self { pool }
     }
 
-        /// Generate `work_order_operations` rows from the product's routing.
-        ///
-        /// Each active routing step becomes one operation in sequence order. The
-        /// `work_order_operations.station_id` is NOT NULL, so each step's work
-        /// center is resolved to its first station (falling back to any station
-        /// of the tenant); steps whose work center has no station are skipped
-        /// rather than failed.
-        async fn generate_operations(
-            &self,
-            tenant_id: Uuid,
-            work_order_id: Uuid,
-            product_id: Uuid,
-        ) -> Result<()> {
-            #[derive(sqlx::FromRow)]
-            struct RoutingStepRow {
-                sequence: i32,
-                work_center_id: Option<Uuid>,
-                operation: String,
-                standard_time: f64,
-                setup_time: f64,
-            }
-            let steps: Vec<RoutingStepRow> = sqlx::query_as(
-                "SELECT sequence, work_center_id, operation, standard_time, setup_time \
+    /// Generate `work_order_operations` rows from the product's routing.
+    ///
+    /// Each active routing step becomes one operation in sequence order. The
+    /// `work_order_operations.station_id` is NOT NULL, so each step's work
+    /// center is resolved to its first station (falling back to any station
+    /// of the tenant); steps whose work center has no station are skipped
+    /// rather than failed.
+    async fn generate_operations(
+        &self,
+        tenant_id: Uuid,
+        work_order_id: Uuid,
+        product_id: Uuid,
+    ) -> Result<()> {
+        #[derive(sqlx::FromRow)]
+        struct RoutingStepRow {
+            sequence: i32,
+            work_center_id: Option<Uuid>,
+            operation: String,
+            standard_time: f64,
+            setup_time: f64,
+        }
+        let steps: Vec<RoutingStepRow> = sqlx::query_as(
+            "SELECT sequence, work_center_id, operation, standard_time, setup_time \
                  FROM routings WHERE product_id = $1 AND tenant_id = $2 AND is_active = TRUE \
                  ORDER BY sequence",
-            )
-            .bind(product_id)
-            .bind(tenant_id)
-            .fetch_all(&self.pool)
-            .await
-            .map_err(|e| SenseiError::Database(format!("Failed to load routings: {e}")))?;
+        )
+        .bind(product_id)
+        .bind(tenant_id)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| SenseiError::Database(format!("Failed to load routings: {e}")))?;
 
-            if steps.is_empty() {
-                return Ok(());
-            }
+        if steps.is_empty() {
+            return Ok(());
+        }
 
-            // Resolve station ids: prefer the work center's own station, then any
-            // station of the tenant. Steps with no resolvable station are skipped.
-            let mut station_for_wc: HashMap<Uuid, Uuid> = HashMap::new();
-            for step in &steps {
-                if let Some(wc_id) = step.work_center_id {
-                    if station_for_wc.contains_key(&wc_id) {
-                        continue;
-                    }
-                    let station: Option<Uuid> = sqlx::query_scalar(
-                        "SELECT id FROM stations WHERE tenant_id = $1 AND work_center_id = $2 \
+        // Resolve station ids: prefer the work center's own station, then any
+        // station of the tenant. Steps with no resolvable station are skipped.
+        let mut station_for_wc: HashMap<Uuid, Uuid> = HashMap::new();
+        for step in &steps {
+            if let Some(wc_id) = step.work_center_id {
+                if station_for_wc.contains_key(&wc_id) {
+                    continue;
+                }
+                let station: Option<Uuid> = sqlx::query_scalar(
+                    "SELECT id FROM stations WHERE tenant_id = $1 AND work_center_id = $2 \
                          ORDER BY created_at LIMIT 1",
-                    )
-                    .bind(tenant_id)
-                    .bind(wc_id)
-                    .fetch_optional(&self.pool)
-                    .await
-                    .map_err(|e| SenseiError::Database(format!("Failed to resolve station: {e}")))?;
-                    if let Some(st) = station {
-                        station_for_wc.insert(wc_id, st);
-                    }
+                )
+                .bind(tenant_id)
+                .bind(wc_id)
+                .fetch_optional(&self.pool)
+                .await
+                .map_err(|e| SenseiError::Database(format!("Failed to resolve station: {e}")))?;
+                if let Some(st) = station {
+                    station_for_wc.insert(wc_id, st);
                 }
             }
-            let fallback_station: Option<Uuid> = sqlx::query_scalar(
-                "SELECT id FROM stations WHERE tenant_id = $1 ORDER BY created_at LIMIT 1",
-            )
-            .bind(tenant_id)
-            .fetch_optional(&self.pool)
-            .await
-            .map_err(|e| SenseiError::Database(format!("Failed to resolve fallback station: {e}")))?;
+        }
+        let fallback_station: Option<Uuid> = sqlx::query_scalar(
+            "SELECT id FROM stations WHERE tenant_id = $1 ORDER BY created_at LIMIT 1",
+        )
+        .bind(tenant_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| SenseiError::Database(format!("Failed to resolve fallback station: {e}")))?;
 
-            let now = Utc::now();
-            for step in &steps {
-                let station_id = step
-                    .work_center_id
-                    .and_then(|wc| station_for_wc.get(&wc).copied())
-                    .or(fallback_station);
-                let Some(station_id) = station_id else { continue };
-                sqlx::query(
-                    "INSERT INTO work_order_operations \
+        let now = Utc::now();
+        for step in &steps {
+            let station_id = step
+                .work_center_id
+                .and_then(|wc| station_for_wc.get(&wc).copied())
+                .or(fallback_station);
+            let Some(station_id) = station_id else {
+                continue;
+            };
+            sqlx::query(
+                "INSERT INTO work_order_operations \
                      (id, tenant_id, work_order_id, sequence, station_id, operation, status, \
                       standard_time, setup_time, created_at, updated_at) \
                      VALUES ($1,$2,$3,$4,$5,$6,'pending',$7,$8,$9,$9)",
-                )
-                .bind(Uuid::new_v4())
-                .bind(tenant_id)
-                .bind(work_order_id)
-                .bind(step.sequence)
-                .bind(station_id)
-                .bind(&step.operation)
-                .bind(step.standard_time)
-                .bind(step.setup_time)
-                .bind(now)
-                .execute(&self.pool)
-                .await
-                .map_err(|e| SenseiError::Database(format!("Failed to create work order operation: {e}")))?;
-            }
-
-            Ok(())
+            )
+            .bind(Uuid::new_v4())
+            .bind(tenant_id)
+            .bind(work_order_id)
+            .bind(step.sequence)
+            .bind(station_id)
+            .bind(&step.operation)
+            .bind(step.standard_time)
+            .bind(step.setup_time)
+            .bind(now)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| {
+                SenseiError::Database(format!("Failed to create work order operation: {e}"))
+            })?;
         }
+
+        Ok(())
+    }
 }
 
 #[async_trait]
 impl ProductionService for DatabaseProductionService {
     // ── Work Orders ─────────────────────────────────────────────────────
 
-    async fn create_work_order(
-        &self,
-        tenant_id: Uuid,
-        mut wo: WorkOrder,
-    ) -> Result<WorkOrder> {
+    async fn create_work_order(&self, tenant_id: Uuid, mut wo: WorkOrder) -> Result<WorkOrder> {
         let now = Utc::now();
         let id = Uuid::new_v4();
-        let wo_number = format!("WO-{}-{}", now.format("%Y%m%d"), id.as_simple().encode_lower(&mut Uuid::encode_buffer())[..8].to_string());
+        let wo_number = format!(
+            "WO-{}-{}",
+            now.format("%Y%m%d"),
+            &id.as_simple().encode_lower(&mut Uuid::encode_buffer())[..8]
+        );
 
         wo.id = id;
         wo.tenant_id = tenant_id;
@@ -327,7 +333,8 @@ impl ProductionService for DatabaseProductionService {
         .map_err(|e| SenseiError::Database(format!("Failed to create work order: {e}")))?;
 
         // Generate the operations from the product's routing (when configured).
-        self.generate_operations(tenant_id, id, wo.product_id).await?;
+        self.generate_operations(tenant_id, id, wo.product_id)
+            .await?;
 
         Ok(wo_row_to_domain(row))
     }
@@ -408,7 +415,7 @@ impl ProductionService for DatabaseProductionService {
             total: count as usize,
             page,
             per_page,
-            total_pages: ((count as usize).max(1) + per_page - 1) / per_page,
+            total_pages: (count as usize).max(1).div_ceil(per_page),
         })
     }
 
@@ -446,7 +453,12 @@ impl ProductionService for DatabaseProductionService {
         Ok(wo_row_to_domain(row))
     }
 
-    async fn update_work_order(&self, tenant_id: Uuid, id: Uuid, wo: WorkOrder) -> Result<WorkOrder> {
+    async fn update_work_order(
+        &self,
+        tenant_id: Uuid,
+        id: Uuid,
+        wo: WorkOrder,
+    ) -> Result<WorkOrder> {
         let now = Utc::now();
 
         // Identity fields come from the stored record; the caller-supplied
@@ -545,7 +557,11 @@ impl ProductionService for DatabaseProductionService {
     ) -> Result<ProductionOrder> {
         let now = Utc::now();
         let id = Uuid::new_v4();
-        let order_number = format!("PO-{}-{}", now.format("%Y%m%d"), id.as_simple().encode_lower(&mut Uuid::encode_buffer())[..8].to_string());
+        let order_number = format!(
+            "PO-{}-{}",
+            now.format("%Y%m%d"),
+            &id.as_simple().encode_lower(&mut Uuid::encode_buffer())[..8]
+        );
 
         order.id = id;
         order.tenant_id = tenant_id;
@@ -661,7 +677,7 @@ impl ProductionService for DatabaseProductionService {
             total: count as usize,
             page,
             per_page,
-            total_pages: ((count as usize).max(1) + per_page - 1) / per_page,
+            total_pages: (count as usize).max(1).div_ceil(per_page),
         })
     }
 
@@ -783,7 +799,9 @@ impl ProductionService for DatabaseProductionService {
         .bind(tenant_id)
         .fetch_one(&self.pool)
         .await
-        .map_err(|e| SenseiError::Database(format!("Failed to compute MRP gross requirement: {e}")))?;
+        .map_err(|e| {
+            SenseiError::Database(format!("Failed to compute MRP gross requirement: {e}"))
+        })?;
 
         let scheduled_receipts: i64 = sqlx::query_scalar(
             r#"
@@ -796,7 +814,9 @@ impl ProductionService for DatabaseProductionService {
         .bind(tenant_id)
         .fetch_one(&self.pool)
         .await
-        .map_err(|e| SenseiError::Database(format!("Failed to compute MRP scheduled receipts: {e}")))?;
+        .map_err(|e| {
+            SenseiError::Database(format!("Failed to compute MRP scheduled receipts: {e}"))
+        })?;
 
         // Projected on-hand: real current inventory + scheduled receipts −
         // gross requirement (never negative), matching the in-memory impl.
@@ -866,7 +886,9 @@ impl ProductionService for DatabaseProductionService {
         .map_err(|e| SenseiError::Database(format!("Failed to check work order existence: {e}")))?;
 
         if !wo_exists {
-            return Err(SenseiError::NotFound(format!("Work order {work_order_id} not found")));
+            return Err(SenseiError::NotFound(format!(
+                "Work order {work_order_id} not found"
+            )));
         }
 
         let rows = sqlx::query_as::<_, WorkOrderOperationRow>(
@@ -885,19 +907,22 @@ impl ProductionService for DatabaseProductionService {
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to list work order operations: {e}")))?;
 
-        Ok(rows.into_iter().map(|r| WorkOrderOperation {
-            id: r.id,
-            work_order_id: r.work_order_id,
-            operation_number: r.sequence,
-            description: r.operation,
-            work_center_id: Some(r.station_id),
-            setup_time_minutes: Some(r.setup_time as i32),
-            run_time_minutes: Some(r.standard_time as i32),
-            status: r.status,
-            started_at: r.started_at,
-            completed_at: r.completed_at,
-            created_at: r.created_at,
-        }).collect())
+        Ok(rows
+            .into_iter()
+            .map(|r| WorkOrderOperation {
+                id: r.id,
+                work_order_id: r.work_order_id,
+                operation_number: r.sequence,
+                description: r.operation,
+                work_center_id: Some(r.station_id),
+                setup_time_minutes: Some(r.setup_time as i32),
+                run_time_minutes: Some(r.standard_time as i32),
+                status: r.status,
+                started_at: r.started_at,
+                completed_at: r.completed_at,
+                created_at: r.created_at,
+            })
+            .collect())
     }
 }
 

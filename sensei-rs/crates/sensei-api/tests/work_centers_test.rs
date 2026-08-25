@@ -21,7 +21,7 @@ async fn test_create_work_center() {
     let json: Value = app.json_body(&mut resp).await;
     assert_eq!(json["name"], "Assembly Line 1");
     assert_eq!(json["work_center_type"], "Assembly");
-    assert!(json["id"].as_str().unwrap_or("").len() > 0);
+    assert!(!json["id"].as_str().unwrap_or("").is_empty());
     // Per-tenant numbering: first work center in this tenant is WC-00001.
     assert_eq!(json["work_center_number"], "WC-00001");
 }
@@ -34,7 +34,7 @@ async fn test_work_center_numbering_is_per_tenant_sequential() {
     for _ in 0..3 {
         let body = common::fixtures::work_center_payload("Seq WC", "Assembly");
         let req = app.post_authenticated("/api/v1/work-centers", &token, body);
-        let mut resp = app.send_request(req).await;
+        let resp = app.send_request(req).await;
         assert_eq!(resp.status(), StatusCode::OK);
     }
 
@@ -52,7 +52,11 @@ async fn test_work_center_numbering_is_per_tenant_sequential() {
     let mut unique = numbers.clone();
     unique.sort();
     unique.dedup();
-    assert_eq!(unique.len(), 3, "work center numbers must be unique per tenant");
+    assert_eq!(
+        unique.len(),
+        3,
+        "work center numbers must be unique per tenant"
+    );
     assert_eq!(unique, vec!["WC-00001", "WC-00002", "WC-00003"]);
 }
 
@@ -61,10 +65,10 @@ async fn test_create_work_center_invalid_efficiency() {
     let app = common::TestApp::new().await;
     let token = app.login_as_admin().await;
     let mut body = common::fixtures::work_center_payload("Bad Eff WC", "Assembly");
-    body["efficiency"] = serde_json::json!(0.85);
+    body["efficiency"] = serde_json::json!(101.0);
     let req = app.post_authenticated("/api/v1/work-centers", &token, body);
     let resp = app.send_request(req).await;
-    // Efficiency is a percentage 0-100; 0.85 is out of contract.
+    // Efficiency is a percentage 0-100; 101 is out of contract.
     assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
 }
 
@@ -84,7 +88,7 @@ async fn test_list_work_centers() {
     assert_eq!(resp.status(), StatusCode::OK);
 
     let json: Value = app.json_body(&mut resp).await;
-    assert!(json["data"].as_array().unwrap_or(&vec![]).len() >= 1);
+    assert!(!json["data"].as_array().unwrap_or(&vec![]).is_empty());
 }
 
 #[tokio::test]
@@ -138,7 +142,11 @@ async fn test_update_work_center() {
         "name": "Updated WC Name",
         "description": "Updated description",
     });
-    let req = app.put_authenticated(&format!("/api/v1/work-centers/{}", wc_id), &token, update_body);
+    let req = app.put_authenticated(
+        &format!("/api/v1/work-centers/{}", wc_id),
+        &token,
+        update_body,
+    );
     let mut resp = app.send_request(req).await;
     assert_eq!(resp.status(), StatusCode::OK);
 
@@ -180,10 +188,7 @@ async fn test_get_work_center_capacity() {
     let wc_id = created["id"].as_str().unwrap().to_string();
 
     // Get capacity
-    let req = app.get_authenticated(
-        &format!("/api/v1/work-centers/{}/capacity", wc_id),
-        &token,
-    );
+    let req = app.get_authenticated(&format!("/api/v1/work-centers/{}/capacity", wc_id), &token);
     let mut resp = app.send_request(req).await;
     assert_eq!(resp.status(), StatusCode::OK);
 

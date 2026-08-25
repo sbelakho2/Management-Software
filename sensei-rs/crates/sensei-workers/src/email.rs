@@ -162,10 +162,7 @@ impl EmailWorker {
 
     /// Build the SMTP transport from the current configuration.
     fn build_transport(&self) -> Result<AsyncSmtpTransport<Tokio1Executor>> {
-        let creds = Credentials::new(
-            self.config.username.clone(),
-            self.config.password.clone(),
-        );
+        let creds = Credentials::new(self.config.username.clone(), self.config.password.clone());
 
         // Use STARTTLS for all connections. For local dev (MailHog/Mailpit),
         // STARTTLS will be negotiated but TLS won't be enforced.
@@ -208,13 +205,14 @@ impl EmailWorker {
 
         // Build the From mailbox.
         let from = Mailbox::from_str(&self.config.from_address).map_err(|e| {
-            WorkerError::Processing(format!("Invalid SMTP_FROM address '{}': {}", self.config.from_address, e))
+            WorkerError::Processing(format!(
+                "Invalid SMTP_FROM address '{}': {}",
+                self.config.from_address, e
+            ))
         })?;
 
         // Build the email message.
-        let mut builder = Message::builder()
-            .from(from)
-            .subject(&payload.subject);
+        let mut builder = Message::builder().from(from).subject(&payload.subject);
 
         // Add To recipients.
         for addr in &payload.to {
@@ -324,15 +322,14 @@ impl TaskConsumer for EmailWorker {
     }
 
     async fn process(&self, payload: &[u8], metadata: &TaskMetadata) -> Result<()> {
-        let email_payload: EmailTaskPayload = serde_json::from_slice(payload)
-            .map_err(|e| {
-                error!(
-                    task_id = %metadata.task_id,
-                    error = %e,
-                    "Failed to deserialize email task payload"
-                );
-                WorkerError::Serialization(e)
-            })?;
+        let email_payload: EmailTaskPayload = serde_json::from_slice(payload).map_err(|e| {
+            error!(
+                task_id = %metadata.task_id,
+                error = %e,
+                "Failed to deserialize email task payload"
+            );
+            WorkerError::Serialization(e)
+        })?;
 
         match self.send_email(&email_payload).await {
             Ok(()) => {

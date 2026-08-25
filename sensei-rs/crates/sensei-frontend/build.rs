@@ -57,7 +57,7 @@ fn main() -> io::Result<()> {
     for entry in entries {
         let entry = entry?;
         let path = entry.path();
-        if path.extension().map_or(true, |e| e != "json") {
+        if path.extension().is_none_or(|e| e != "json") {
             continue;
         }
         let locale_code = path
@@ -119,7 +119,12 @@ fn main() -> io::Result<()> {
 
     // ── 6. Generate i18n_translations.rs ──────────────────────────────
     let locale_codes_sorted: Vec<&str> = all_locales.keys().map(|s| s.as_str()).collect();
-    let trans_rs = generate_translations_module(&sorted_keys, &variant_map, &all_locales, &locale_codes_sorted);
+    let trans_rs = generate_translations_module(
+        &sorted_keys,
+        &variant_map,
+        &all_locales,
+        &locale_codes_sorted,
+    );
     fs::write(out_dir.join("i18n_translations.rs"), &trans_rs)?;
 
     // ── 7. Generate mod.rs ────────────────────────────────────────────
@@ -197,9 +202,7 @@ fn key_to_variant(key: &str) -> String {
         result.insert(0, '_');
     }
     // If the variant would be a Rust reserved word, add trailing underscore
-    let reserved = [
-        "Self", "Super", "Crate", "True", "False",
-    ];
+    let reserved = ["Self", "Super", "Crate", "True", "False"];
     if reserved.contains(&result.as_str()) {
         result.push('_');
     }
@@ -239,8 +242,9 @@ fn build_variant_map(sorted_keys: &[&str]) -> Vec<(String, bool /* is_duplicate 
                 // First occurrence keeps the base name
                 result.push((base.clone(), true));
             } else {
-                // Subsequent occurrences get a suffix
-                let disambiguated = format!("{}_{}", base, counter);
+                // Subsequent occurrences get a numeric suffix that keeps the
+                // identifier camel-cased (e.g. `...High2` — never `...High_2`).
+                let disambiguated = format!("{}{}", base, counter);
                 result.push((disambiguated, true));
             }
         }
@@ -250,10 +254,7 @@ fn build_variant_map(sorted_keys: &[&str]) -> Vec<(String, bool /* is_duplicate 
 }
 
 /// Generate the `i18n_keys.rs` module source code.
-fn generate_keys_module(
-    sorted_keys: &[&str],
-    variant_map: &[(String, bool)],
-) -> String {
+fn generate_keys_module(sorted_keys: &[&str], variant_map: &[(String, bool)]) -> String {
     let mut out = String::new();
 
     out.push_str(
@@ -383,10 +384,7 @@ fn generate_translations_module(
             "    // ── {} translations ──────────────────────────────────\n",
             locale
         ));
-        out.push_str(&format!(
-            "    static {}: &[(&str, &str)] = &[\n",
-            map_name
-        ));
+        out.push_str(&format!("    static {}: &[(&str, &str)] = &[\n", map_name));
 
         for key in sorted_keys {
             let value = locale_data.get(*key).map(|s| s.as_str()).unwrap_or("");

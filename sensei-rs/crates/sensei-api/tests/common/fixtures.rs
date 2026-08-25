@@ -59,7 +59,7 @@ pub fn work_center_payload(name: &str, wc_type: &str) -> Value {
 // ── Andon ────────────────────────────────────────────────────────────────────
 
 /// Generate a valid Andon raise payload.
-pub fn andon_payload(work_center: &str, problem: &str) -> Value {
+pub fn andon_payload(_work_center: &str, problem: &str) -> Value {
     serde_json::json!({
         "id": uuid::Uuid::new_v4().to_string(),
         "tenant_id": uuid::Uuid::new_v4().to_string(),
@@ -238,6 +238,8 @@ pub fn training_course_payload(title: &str, category: &str) -> Value {
         "description": format!("Course: {}", title),
         "category": category,
         "duration_minutes": 120,
+        "required_for_roles": [],
+        "prerequisites": [],
         "is_mandatory": false,
         "is_active": true,
     })
@@ -365,6 +367,7 @@ pub fn standard_work_payload(title: &str, area: &str, process: &str) -> Value {
         "status": "Draft",
         "steps": [
             {
+                "id": uuid::Uuid::new_v4().to_string(),
                 "step_number": 1,
                 "description": "Step 1 description",
                 "key_points": ["Point 1", "Point 2"],

@@ -87,6 +87,11 @@ pub fn use_responsive() -> ResponsiveInfo {
 
 fn get_window_width() -> f64 {
     web_sys::window()
-        .map(|w| w.inner_width().ok().and_then(|v| v.as_f64()).unwrap_or(1024.0))
+        .map(|w| {
+            w.inner_width()
+                .ok()
+                .and_then(|v| v.as_f64())
+                .unwrap_or(1024.0)
+        })
         .unwrap_or(1024.0)
 }

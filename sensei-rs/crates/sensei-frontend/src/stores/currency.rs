@@ -3,7 +3,6 @@
 //! Mirrors the Zustand [`currency-store.ts`](frontend/src/stores/currency-store.ts) store.
 
 use leptos::prelude::*;
-use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 /// Supported currency codes.
@@ -14,9 +13,8 @@ pub type ExchangeRates = HashMap<String, f64>;
 
 /// Supported currencies with metadata.
 pub const CURRENCIES: &[&str] = &[
-    "USD", "EUR", "GBP", "JPY", "CAD", "AUD", "CHF", "CNY", "INR", "MAD",
-    "BRL", "MXN", "SEK", "NOK", "DKK", "NZD", "KRW", "SGD", "HKD", "TRY",
-    "ZAR", "PLN", "THB", "ILS", "AED",
+    "USD", "EUR", "GBP", "JPY", "CAD", "AUD", "CHF", "CNY", "INR", "MAD", "BRL", "MXN", "SEK",
+    "NOK", "DKK", "NZD", "KRW", "SGD", "HKD", "TRY", "ZAR", "PLN", "THB", "ILS", "AED",
 ];
 
 /// Reactive store for currency exchange rate data.
@@ -76,8 +74,7 @@ impl CurrencyStore {
                     }
                     self.rates.set(rates);
                 }
-                self.last_fetched
-                    .set(Some(chrono::Utc::now().to_rfc3339()));
+                self.last_fetched.set(Some(chrono::Utc::now().to_rfc3339()));
             }
             Err(e) => {
                 self.error.set(Some(e.to_string()));

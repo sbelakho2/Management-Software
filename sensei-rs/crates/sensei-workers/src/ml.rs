@@ -210,9 +210,7 @@ impl ModelRegistry {
         )
         .fetch_all(pool.as_ref())
         .await
-        .map_err(|e| {
-            WorkerError::Processing(format!("Failed to load model registry: {e}"))
-        })?;
+        .map_err(|e| WorkerError::Processing(format!("Failed to load model registry: {e}")))?;
 
         let mut models = self.models.write().await;
         for row in rows {
@@ -223,9 +221,8 @@ impl ModelRegistry {
                 );
                 ModelStatus::Healthy
             });
-            let parameters: Option<ModelParameters> = row
-                .parameters
-                .and_then(|v| serde_json::from_value(v).ok());
+            let parameters: Option<ModelParameters> =
+                row.parameters.and_then(|v| serde_json::from_value(v).ok());
             let baseline_histogram: Option<Vec<f64>> = row
                 .baseline_histogram
                 .and_then(|v| serde_json::from_value(v).ok());
@@ -260,18 +257,17 @@ impl ModelRegistry {
         let Some(pool) = &self.pool else {
             return Ok(());
         };
-        let status = serde_json::to_value(&def.status)
-            .map_err(WorkerError::Serialization)?;
+        let status = serde_json::to_value(&def.status).map_err(WorkerError::Serialization)?;
         let parameters = def
             .parameters
             .as_ref()
-            .map(|p| serde_json::to_value(p))
+            .map(serde_json::to_value)
             .transpose()
             .map_err(WorkerError::Serialization)?;
         let baseline = def
             .baseline_histogram
             .as_ref()
-            .map(|b| serde_json::to_value(b))
+            .map(serde_json::to_value)
             .transpose()
             .map_err(WorkerError::Serialization)?;
 
@@ -464,7 +460,8 @@ impl MlWorker {
                         .await
                         .map_err(|e| {
                             WorkerError::Processing(format!(
-                                "Failed to load demand training data: {}", e
+                                "Failed to load demand training data: {}",
+                                e
                             ))
                         })?;
                         rows
@@ -532,7 +529,7 @@ impl MlWorker {
                         let base = 0.02;
                         // Deterministic spread using index.
                         let variation = ((i as f64 * 7.31) % 1.0 - 0.5) * 0.04;
-                        (base + variation).max(0.0).min(1.0)
+                        (base + variation).clamp(0.0, 1.0)
                     })
                     .collect()
             }
@@ -636,18 +633,12 @@ impl MlWorker {
         info!(model = %model_name, "Starting model training");
 
         self.registry
-            .update_status(
-                model_name,
-                ModelStatus::Training { progress: 0.0 },
-            )
+            .update_status(model_name, ModelStatus::Training { progress: 0.0 })
             .await;
 
         // Step 1: Load training data.
         self.registry
-            .update_status(
-                model_name,
-                ModelStatus::Training { progress: 0.2 },
-            )
+            .update_status(model_name, ModelStatus::Training { progress: 0.2 })
             .await;
 
         let mut data = self.load_training_data(model_name).await?;
@@ -658,10 +649,7 @@ impl MlWorker {
         }
 
         self.registry
-            .update_status(
-                model_name,
-                ModelStatus::Training { progress: 0.5 },
-            )
+            .update_status(model_name, ModelStatus::Training { progress: 0.5 })
             .await;
 
         // Step 2: Compute statistical model parameters.
@@ -676,10 +664,7 @@ impl MlWorker {
         let parameters = ModelParameters::from_data(&data, spec_lsl, spec_usl);
 
         self.registry
-            .update_status(
-                model_name,
-                ModelStatus::Training { progress: 0.75 },
-            )
+            .update_status(model_name, ModelStatus::Training { progress: 0.75 })
             .await;
 
         // Step 3: Build baseline histogram for future drift detection.
@@ -822,10 +807,7 @@ impl MlWorker {
             }
         }
 
-        info!(
-            trained = results.len(),
-            "Scheduled retrain-all completed"
-        );
+        info!(trained = results.len(), "Scheduled retrain-all completed");
         Ok(results)
     }
 }
@@ -1089,7 +1071,10 @@ mod tests {
     fn test_psi_identical_distributions() {
         let baseline = vec![0.1, 0.2, 0.4, 0.2, 0.1];
         let psi = MlWorker::compute_psi(&baseline, &baseline);
-        assert!(psi.abs() < 0.001, "PSI should be ~0 for identical distributions");
+        assert!(
+            psi.abs() < 0.001,
+            "PSI should be ~0 for identical distributions"
+        );
     }
 
     #[test]
@@ -1097,7 +1082,10 @@ mod tests {
         let baseline = vec![0.4, 0.3, 0.2, 0.08, 0.02];
         let current = vec![0.02, 0.08, 0.2, 0.3, 0.4];
         let psi = MlWorker::compute_psi(&baseline, &current);
-        assert!(psi > 0.25, "PSI should be significant for shifted distributions");
+        assert!(
+            psi > 0.25,
+            "PSI should be significant for shifted distributions"
+        );
     }
 
     #[test]

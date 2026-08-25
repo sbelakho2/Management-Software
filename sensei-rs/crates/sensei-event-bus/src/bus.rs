@@ -136,7 +136,11 @@ impl NatsEventBus {
 #[async_trait]
 impl EventBus for NatsEventBus {
     async fn connect(&self, url: &str) -> Result<()> {
-        info!(url, max_reconnect = self.max_reconnect, "Connecting to NATS event bus");
+        info!(
+            url,
+            max_reconnect = self.max_reconnect,
+            "Connecting to NATS event bus"
+        );
 
         let connect_options = ConnectOptions::new().max_reconnects(self.max_reconnect);
         let client = async_nats::connect_with_options(url, connect_options)
@@ -425,7 +429,10 @@ mod tests {
 
     #[test]
     fn normalize_subject_prefixes_when_missing() {
-        assert_eq!(normalize_subject("quality.ncr.created"), "sensei.quality.ncr.created");
+        assert_eq!(
+            normalize_subject("quality.ncr.created"),
+            "sensei.quality.ncr.created"
+        );
         assert_eq!(normalize_subject("sensei.>"), "sensei.>");
         assert_eq!(normalize_subject("sensei.quality.>"), "sensei.quality.>");
         assert_eq!(normalize_subject(">"), "sensei.>");
@@ -434,12 +441,27 @@ mod tests {
     #[test]
     fn subject_matching_supports_wildcards() {
         assert!(subject_matches("sensei.>", "sensei.quality.ncr.created"));
-        assert!(subject_matches("sensei.quality.>", "sensei.quality.ncr.created"));
-        assert!(!subject_matches("sensei.production.>", "sensei.quality.ncr.created"));
+        assert!(subject_matches(
+            "sensei.quality.>",
+            "sensei.quality.ncr.created"
+        ));
+        assert!(!subject_matches(
+            "sensei.production.>",
+            "sensei.quality.ncr.created"
+        ));
         assert!(subject_matches("sensei.quality.*", "sensei.quality.ncr"));
-        assert!(!subject_matches("sensei.quality.*", "sensei.quality.ncr.created"));
-        assert!(subject_matches("sensei.quality.ncr.created", "sensei.quality.ncr.created"));
-        assert!(!subject_matches("sensei.quality.ncr.updated", "sensei.quality.ncr.created"));
+        assert!(!subject_matches(
+            "sensei.quality.*",
+            "sensei.quality.ncr.created"
+        ));
+        assert!(subject_matches(
+            "sensei.quality.ncr.created",
+            "sensei.quality.ncr.created"
+        ));
+        assert!(!subject_matches(
+            "sensei.quality.ncr.updated",
+            "sensei.quality.ncr.created"
+        ));
     }
 
     fn ncr_event() -> NcrCreatedEvent {
@@ -462,7 +484,10 @@ mod tests {
         bus.subscribe(
             "sensei.>",
             Arc::new(move |envelope| {
-                received_clone.lock().unwrap().push(envelope.event_type.clone());
+                received_clone
+                    .lock()
+                    .unwrap()
+                    .push(envelope.event_type.clone());
                 Ok(())
             }),
         )
@@ -471,7 +496,10 @@ mod tests {
 
         bus.publish(&ncr_event()).await.unwrap();
 
-        assert_eq!(*received.lock().unwrap(), vec!["quality.ncr.created".to_string()]);
+        assert_eq!(
+            *received.lock().unwrap(),
+            vec!["quality.ncr.created".to_string()]
+        );
     }
 
     #[tokio::test]
@@ -484,7 +512,10 @@ mod tests {
         bus.subscribe(
             ">",
             Arc::new(move |envelope| {
-                received_clone.lock().unwrap().push(envelope.event_type.clone());
+                received_clone
+                    .lock()
+                    .unwrap()
+                    .push(envelope.event_type.clone());
                 Ok(())
             }),
         )
@@ -492,7 +523,10 @@ mod tests {
         .unwrap();
 
         bus.publish(&ncr_event()).await.unwrap();
-        assert_eq!(*received.lock().unwrap(), vec!["quality.ncr.created".to_string()]);
+        assert_eq!(
+            *received.lock().unwrap(),
+            vec!["quality.ncr.created".to_string()]
+        );
     }
 
     #[tokio::test]
@@ -504,7 +538,10 @@ mod tests {
         bus.subscribe(
             "sensei.production.>",
             Arc::new(move |envelope| {
-                received_clone.lock().unwrap().push(envelope.event_type.clone());
+                received_clone
+                    .lock()
+                    .unwrap()
+                    .push(envelope.event_type.clone());
                 Ok(())
             }),
         )
@@ -526,7 +563,10 @@ mod tests {
         // The trailing `>` token sanitizes to `-` (it is not a legal
         // consumer-name character); the original expectation omitted it.
         assert_eq!(default_group("sensei.quality.>"), "sensei-quality--");
-        assert_eq!(default_group("sensei.quality.ncr.created"), "sensei-quality-ncr-created");
+        assert_eq!(
+            default_group("sensei.quality.ncr.created"),
+            "sensei-quality-ncr-created"
+        );
     }
 
     #[test]

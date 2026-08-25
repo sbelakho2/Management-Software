@@ -12,10 +12,10 @@ use axum::{
     },
 };
 use futures::stream::Stream;
-use serde::Deserialize;
 use sensei_auth::middleware::AuthenticatedUser;
 use sensei_core::error::Result;
 use sensei_services::ai::chatbot::ChatSamplingParams;
+use serde::Deserialize;
 use std::convert::Infallible;
 use std::pin::Pin;
 use std::task::{Context, Poll};
@@ -169,9 +169,7 @@ pub async fn chat_stream(
                 while let Some(token_result) = token_rx.recv().await {
                     match token_result {
                         Ok(token) => {
-                            sse_manager
-                                .publish(&channel_clone, "token", &token)
-                                .await;
+                            sse_manager.publish(&channel_clone, "token", &token).await;
                         }
                         Err(e) => {
                             sse_manager

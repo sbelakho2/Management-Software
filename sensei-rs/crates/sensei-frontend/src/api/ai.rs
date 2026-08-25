@@ -61,27 +61,56 @@ impl AiApi {
             entity_type: &'a str,
             entity_id: &'a str,
         }
-        client.post("/api/v1/ai/anomalies/detect", &Body { entity_type, entity_id }).await
+        client
+            .post(
+                "/api/v1/ai/anomalies/detect",
+                &Body {
+                    entity_type,
+                    entity_id,
+                },
+            )
+            .await
     }
 
     /// Get quality predictions for a product.
-    pub async fn predict_quality(client: &ApiClient, product_id: &str) -> Result<QualityPredictionDto, ApiError> {
+    pub async fn predict_quality(
+        client: &ApiClient,
+        product_id: &str,
+    ) -> Result<QualityPredictionDto, ApiError> {
         #[derive(Serialize)]
-        struct Body<'a> { product_id: &'a str }
-        client.post("/api/v1/ai/quality/predict", &Body { product_id }).await
+        struct Body<'a> {
+            product_id: &'a str,
+        }
+        client
+            .post("/api/v1/ai/quality/predict", &Body { product_id })
+            .await
     }
 
     /// Get maintenance predictions for an asset.
-    pub async fn predict_maintenance(client: &ApiClient, asset_id: &str) -> Result<MaintenancePredictionDto, ApiError> {
+    pub async fn predict_maintenance(
+        client: &ApiClient,
+        asset_id: &str,
+    ) -> Result<MaintenancePredictionDto, ApiError> {
         #[derive(Serialize)]
-        struct Body<'a> { asset_id: &'a str }
-        client.post("/api/v1/ai/maintenance/predict", &Body { asset_id }).await
+        struct Body<'a> {
+            asset_id: &'a str,
+        }
+        client
+            .post("/api/v1/ai/maintenance/predict", &Body { asset_id })
+            .await
     }
 
     /// Retrain an AI model.
-    pub async fn retrain_model(client: &ApiClient, model_type: &str) -> Result<ModelInfoDto, ApiError> {
+    pub async fn retrain_model(
+        client: &ApiClient,
+        model_type: &str,
+    ) -> Result<ModelInfoDto, ApiError> {
         #[derive(Serialize)]
-        struct Body<'a> { model_type: &'a str }
-        client.post("/api/v1/ai/models/retrain", &Body { model_type }).await
+        struct Body<'a> {
+            model_type: &'a str,
+        }
+        client
+            .post("/api/v1/ai/models/retrain", &Body { model_type })
+            .await
     }
 }

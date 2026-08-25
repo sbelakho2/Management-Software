@@ -68,191 +68,6 @@ pub struct FormState {
 }
 
 // ---------------------------------------------------------------------------
-// Validation helpers
-// ---------------------------------------------------------------------------
-
-fn combine_results(results: &[ValidationResult]) -> ValidationResult {
-    let mut all_errors = Vec::new();
-    let mut all_warnings = Vec::new();
-    let mut all_valid = true;
-
-    for result in results {
-        if !result.valid {
-            all_valid = false;
-        }
-        all_errors.extend(result.errors.clone());
-        all_warnings.extend(result.warnings.clone());
-    }
-
-    ValidationResult {
-        valid: all_valid,
-        errors: all_errors,
-        warnings: all_warnings,
-    }
-}
-
-fn validate_required(value: &serde_json::Value) -> ValidationResult {
-    match value {
-        serde_json::Value::Null => ValidationResult {
-            valid: false,
-            errors: vec!["This field is required".to_string()],
-            warnings: Vec::new(),
-        },
-        serde_json::Value::String(s) if s.is_empty() => ValidationResult {
-            valid: false,
-            errors: vec!["This field is required".to_string()],
-            warnings: Vec::new(),
-        },
-        _ => ValidationResult {
-            valid: true,
-            errors: Vec::new(),
-            warnings: Vec::new(),
-        },
-    }
-}
-
-fn validate_email(value: &serde_json::Value) -> ValidationResult {
-    match value {
-        serde_json::Value::String(s) => {
-            if s.contains('@') && s.contains('.') {
-                ValidationResult {
-                    valid: true,
-                    errors: Vec::new(),
-                    warnings: Vec::new(),
-                }
-            } else {
-                ValidationResult {
-                    valid: false,
-                    errors: vec!["Invalid email format".to_string()],
-                    warnings: Vec::new(),
-                }
-            }
-        }
-        _ => ValidationResult {
-            valid: false,
-            errors: vec!["Invalid email format".to_string()],
-            warnings: Vec::new(),
-        },
-    }
-}
-
-fn validate_min_length(value: &serde_json::Value, min: usize) -> ValidationResult {
-    match value {
-        serde_json::Value::String(s) => {
-            if s.len() >= min {
-                ValidationResult {
-                    valid: true,
-                    errors: Vec::new(),
-                    warnings: Vec::new(),
-                }
-            } else {
-                ValidationResult {
-                    valid: false,
-                    errors: vec![format!("Must be at least {min} characters")],
-                    warnings: Vec::new(),
-                }
-            }
-        }
-        _ => ValidationResult {
-            valid: false,
-            errors: vec![format!("Must be at least {min} characters")],
-            warnings: Vec::new(),
-        },
-    }
-}
-
-fn validate_max_length(value: &serde_json::Value, max: usize) -> ValidationResult {
-    match value {
-        serde_json::Value::String(s) => {
-            if s.len() <= max {
-                ValidationResult {
-                    valid: true,
-                    errors: Vec::new(),
-                    warnings: Vec::new(),
-                }
-            } else {
-                ValidationResult {
-                    valid: false,
-                    errors: vec![format!("Must be at most {max} characters")],
-                    warnings: Vec::new(),
-                }
-            }
-        }
-        _ => ValidationResult {
-            valid: true,
-            errors: Vec::new(),
-            warnings: Vec::new(),
-        },
-    }
-}
-
-fn validate_pattern(value: &serde_json::Value, pattern: &str) -> ValidationResult {
-    match value {
-        serde_json::Value::String(s) => {
-            // Simple regex-like check using string operations
-            let matched = match pattern {
-                r"^\d+$" => s.chars().all(|c| c.is_ascii_digit()),
-                r"^[A-Za-z]+$" => s.chars().all(|c| c.is_ascii_alphabetic()),
-                r"^[A-Za-z0-9]+$" => s.chars().all(|c| c.is_ascii_alphanumeric()),
-                r"^[\w\.-]+@[\w\.-]+\.\w+$" => s.contains('@') && s.contains('.'),
-                _ => true, // unknown pattern, skip
-            };
-            if matched {
-                ValidationResult {
-                    valid: true,
-                    errors: Vec::new(),
-                    warnings: Vec::new(),
-                }
-            } else {
-                ValidationResult {
-                    valid: false,
-                    errors: vec![format!("Does not match pattern: {pattern}")],
-                    warnings: Vec::new(),
-                }
-            }
-        }
-        _ => ValidationResult {
-            valid: false,
-            errors: vec![format!("Does not match pattern: {pattern}")],
-            warnings: Vec::new(),
-        },
-    }
-}
-
-async fn validate_field(field: &FieldRegistration, value: &serde_json::Value) -> ValidationResult {
-    let mut results = Vec::new();
-
-    if field.required {
-        results.push(validate_required(value));
-    }
-
-    for (rule, param) in &field.rules {
-        match rule.as_str() {
-            "required" => results.push(validate_required(value)),
-            "email" => results.push(validate_email(value)),
-            "min_length" => {
-                if let Some(min) = param.as_u64() {
-                    results.push(validate_min_length(value, min as usize));
-                }
-            }
-            "max_length" => {
-                if let Some(max) = param.as_u64() {
-                    results.push(validate_max_length(value, max as usize));
-                }
-            }
-            "pattern" => {
-                if let Some(p) = param.as_str() {
-                    results.push(validate_pattern(value, p));
-                }
-            }
-            _ => {} // custom rules handled externally
-        }
-    }
-
-    combine_results(&results)
-}
-
-// ---------------------------------------------------------------------------
 // FormValidationStore
 // ---------------------------------------------------------------------------
 
@@ -274,13 +89,15 @@ impl FormValidationStore {
 
     pub fn init_form(&self, form_id: &str, config: Option<FormConfig>) {
         self.forms.update(|forms| {
-            forms.entry(form_id.to_string()).or_insert_with(|| FormState {
-                fields: HashMap::new(),
-                config: config.unwrap_or_default(),
-                valid: true,
-                submit_count: 0,
-                gates: Vec::new(),
-            });
+            forms
+                .entry(form_id.to_string())
+                .or_insert_with(|| FormState {
+                    fields: HashMap::new(),
+                    config: config.unwrap_or_default(),
+                    valid: true,
+                    submit_count: 0,
+                    gates: Vec::new(),
+                });
         });
     }
 
@@ -293,7 +110,7 @@ impl FormValidationStore {
     pub fn reset_form(&self, form_id: &str) {
         self.forms.update(|forms| {
             if let Some(form) = forms.get_mut(form_id) {
-                for (_name, state) in form.fields.iter_mut() {
+                for state in form.fields.values_mut() {
                     state.touched = false;
                     state.dirty = false;
                     state.errors.clear();
@@ -314,15 +131,18 @@ impl FormValidationStore {
         self.forms.update(|forms| {
             if let Some(form) = forms.get_mut(form_id) {
                 let name = registration.name.clone();
-                form.fields.insert(name, FieldState {
-                    value: registration.initial_value.clone(),
-                    errors: Vec::new(),
-                    warnings: Vec::new(),
-                    touched: false,
-                    dirty: false,
-                    valid: true,
-                    validating: false,
-                });
+                form.fields.insert(
+                    name,
+                    FieldState {
+                        value: registration.initial_value.clone(),
+                        errors: Vec::new(),
+                        warnings: Vec::new(),
+                        touched: false,
+                        dirty: false,
+                        valid: true,
+                        validating: false,
+                    },
+                );
             }
         });
     }
@@ -364,7 +184,12 @@ impl FormValidationStore {
     }
 
     pub fn get_value(&self, form_id: &str, field_name: &str) -> Option<serde_json::Value> {
-        self.forms.get().get(form_id)?.fields.get(field_name).map(|f| f.value.clone())
+        self.forms
+            .get()
+            .get(form_id)?
+            .fields
+            .get(field_name)
+            .map(|f| f.value.clone())
     }
 
     pub fn get_values(&self, form_id: &str) -> Option<HashMap<String, serde_json::Value>> {
@@ -395,7 +220,7 @@ impl FormValidationStore {
     pub fn set_all_touched(&self, form_id: &str, touched: bool) {
         self.forms.update(|forms| {
             if let Some(form) = forms.get_mut(form_id) {
-                for (_name, field) in form.fields.iter_mut() {
+                for field in form.fields.values_mut() {
                     field.touched = touched;
                 }
             }
@@ -406,7 +231,12 @@ impl FormValidationStore {
     // Validation
     // -----------------------------------------------------------------------
 
-    pub async fn validate_field_async(&self, form_id: &str, field_name: &str, registration: Option<&FieldRegistration>) {
+    pub async fn validate_field_async(
+        &self,
+        form_id: &str,
+        field_name: &str,
+        _registration: Option<&FieldRegistration>,
+    ) {
         self.forms.update(|forms| {
             if let Some(form) = forms.get_mut(form_id) {
                 if let Some(field) = form.fields.get_mut(field_name) {
@@ -426,7 +256,9 @@ impl FormValidationStore {
                     // Simplified validation
                     let value = &field.value;
                     let mut errors = Vec::new();
-                    if value.is_null() || (value.is_string() && value.as_str().unwrap_or("").is_empty()) {
+                    if value.is_null()
+                        || (value.is_string() && value.as_str().unwrap_or("").is_empty())
+                    {
                         errors.push("This field is required".to_string());
                     }
                     field.errors = errors.clone();
@@ -452,7 +284,11 @@ impl FormValidationStore {
             self.validate_field_async(form_id, field_name, None).await;
         }
 
-        self.forms.get().get(form_id).map(|f| f.valid).unwrap_or(true)
+        self.forms
+            .get()
+            .get(form_id)
+            .map(|f| f.valid)
+            .unwrap_or(true)
     }
 
     // -----------------------------------------------------------------------
@@ -474,7 +310,7 @@ impl FormValidationStore {
     pub fn clear_all_errors(&self, form_id: &str) {
         self.forms.update(|forms| {
             if let Some(form) = forms.get_mut(form_id) {
-                for (_name, field) in form.fields.iter_mut() {
+                for field in form.fields.values_mut() {
                     field.errors.clear();
                     field.warnings.clear();
                     field.valid = true;
@@ -504,7 +340,11 @@ impl FormValidationStore {
     pub fn run_gates(&self, form_id: &str) -> Vec<String> {
         // Gates are cross-field validation rules
         // In a real implementation, this would check complex conditions
-        self.forms.get().get(form_id).map(|f| f.gates.clone()).unwrap_or_default()
+        self.forms
+            .get()
+            .get(form_id)
+            .map(|f| f.gates.clone())
+            .unwrap_or_default()
     }
 
     // -----------------------------------------------------------------------

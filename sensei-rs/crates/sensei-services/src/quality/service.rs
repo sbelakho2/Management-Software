@@ -6,8 +6,7 @@
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use sensei_core::domain::events::{
-    CAPACreatedEvent, DomainEvent,
-    NcrCreatedEvent, SupplierEvaluatedEvent,
+    CAPACreatedEvent, DomainEvent, NcrCreatedEvent, SupplierEvaluatedEvent,
 };
 use sensei_core::error::{Result, SenseiError};
 use sensei_core::pagination::PaginatedResponse;
@@ -146,11 +145,7 @@ pub trait QualityService: Send + Sync {
     ) -> Result<PaginatedResponse<Audit>>;
 
     /// Create a new audit.
-    async fn create_audit(
-        &self,
-        tenant_id: Uuid,
-        audit: Audit,
-    ) -> Result<Audit>;
+    async fn create_audit(&self, tenant_id: Uuid, audit: Audit) -> Result<Audit>;
 
     /// Get a specific audit by ID.
     async fn get_audit(&self, tenant_id: Uuid, id: Uuid) -> Result<Audit>;
@@ -286,19 +281,39 @@ pub trait QualityService: Send + Sync {
 
     // ── New: NCR Update/Delete/Lifecycle ─────────────────────────────────
     /// Update an NCR.
-    async fn update_ncr(&self, tenant_id: Uuid, id: Uuid, ncr: NonConformance) -> Result<NonConformance>;
+    async fn update_ncr(
+        &self,
+        tenant_id: Uuid,
+        id: Uuid,
+        ncr: NonConformance,
+    ) -> Result<NonConformance>;
     /// Delete an NCR.
     async fn delete_ncr(&self, tenant_id: Uuid, id: Uuid) -> Result<()>;
     /// Investigate an NCR (add root cause analysis).
-    async fn investigate_ncr(&self, tenant_id: Uuid, id: Uuid, rca: RootCauseAnalysis) -> Result<NonConformance>;
+    async fn investigate_ncr(
+        &self,
+        tenant_id: Uuid,
+        id: Uuid,
+        rca: RootCauseAnalysis,
+    ) -> Result<NonConformance>;
     /// Add disposition to an NCR.
-    async fn disposition_ncr(&self, tenant_id: Uuid, id: Uuid, disposition: String) -> Result<NonConformance>;
+    async fn disposition_ncr(
+        &self,
+        tenant_id: Uuid,
+        id: Uuid,
+        disposition: String,
+    ) -> Result<NonConformance>;
     /// Close an NCR.
     async fn close_ncr(&self, tenant_id: Uuid, id: Uuid) -> Result<NonConformance>;
 
     // ── New: CAPA Update/Delete/Lifecycle ────────────────────────────────
     /// Update a CAPA.
-    async fn update_capa(&self, tenant_id: Uuid, id: Uuid, capa: CapaExtended) -> Result<CapaExtended>;
+    async fn update_capa(
+        &self,
+        tenant_id: Uuid,
+        id: Uuid,
+        capa: CapaExtended,
+    ) -> Result<CapaExtended>;
     /// Delete a CAPA.
     async fn delete_capa(&self, tenant_id: Uuid, id: Uuid) -> Result<()>;
     /// Verify a CAPA's effectiveness.
@@ -308,11 +323,21 @@ pub trait QualityService: Send + Sync {
 
     // ── New: Inspection Update/Delete ────────────────────────────────────
     /// Update a first article inspection.
-    async fn update_first_article_inspection(&self, tenant_id: Uuid, id: Uuid, fai: FirstArticleInspection) -> Result<FirstArticleInspection>;
+    async fn update_first_article_inspection(
+        &self,
+        tenant_id: Uuid,
+        id: Uuid,
+        fai: FirstArticleInspection,
+    ) -> Result<FirstArticleInspection>;
     /// Delete a first article inspection.
     async fn delete_first_article_inspection(&self, tenant_id: Uuid, id: Uuid) -> Result<()>;
     /// Update a self-inspection.
-    async fn update_self_inspection(&self, tenant_id: Uuid, id: Uuid, inspection: SelfInspection) -> Result<SelfInspection>;
+    async fn update_self_inspection(
+        &self,
+        tenant_id: Uuid,
+        id: Uuid,
+        inspection: SelfInspection,
+    ) -> Result<SelfInspection>;
     /// Delete a self-inspection.
     async fn delete_self_inspection(&self, tenant_id: Uuid, id: Uuid) -> Result<()>;
 
@@ -324,7 +349,12 @@ pub trait QualityService: Send + Sync {
 
     // ── New: Supplier Scorecard/SCAR Update/Delete ───────────────────────
     /// Update a supplier scorecard.
-    async fn update_supplier_scorecard(&self, tenant_id: Uuid, id: Uuid, scorecard: SupplierScorecard) -> Result<SupplierScorecard>;
+    async fn update_supplier_scorecard(
+        &self,
+        tenant_id: Uuid,
+        id: Uuid,
+        scorecard: SupplierScorecard,
+    ) -> Result<SupplierScorecard>;
     /// Delete a supplier scorecard.
     async fn delete_supplier_scorecard(&self, tenant_id: Uuid, id: Uuid) -> Result<()>;
     /// Create a SCAR.
@@ -338,7 +368,12 @@ pub trait QualityService: Send + Sync {
     /// Create a QMS document.
     async fn create_document(&self, tenant_id: Uuid, doc: QmsDocument) -> Result<QmsDocument>;
     /// Update a QMS document.
-    async fn update_document(&self, tenant_id: Uuid, id: Uuid, doc: QmsDocument) -> Result<QmsDocument>;
+    async fn update_document(
+        &self,
+        tenant_id: Uuid,
+        id: Uuid,
+        doc: QmsDocument,
+    ) -> Result<QmsDocument>;
     /// Delete a QMS document.
     async fn delete_document(&self, tenant_id: Uuid, id: Uuid) -> Result<()>;
 
@@ -350,7 +385,11 @@ pub trait QualityService: Send + Sync {
 
     // ── New: Process Capability Study Create/Delete ──────────────────────
     /// Create a process capability study.
-    async fn create_process_capability_study(&self, tenant_id: Uuid, study: ProcessCapabilityStudy) -> Result<ProcessCapabilityStudy>;
+    async fn create_process_capability_study(
+        &self,
+        tenant_id: Uuid,
+        study: ProcessCapabilityStudy,
+    ) -> Result<ProcessCapabilityStudy>;
     /// Delete a process capability study.
     async fn delete_process_capability_study(&self, tenant_id: Uuid, id: Uuid) -> Result<()>;
 
@@ -358,7 +397,12 @@ pub trait QualityService: Send + Sync {
     /// Create a control plan.
     async fn create_control_plan(&self, tenant_id: Uuid, cp: ControlPlan) -> Result<ControlPlan>;
     /// Update a control plan.
-    async fn update_control_plan(&self, tenant_id: Uuid, id: Uuid, cp: ControlPlan) -> Result<ControlPlan>;
+    async fn update_control_plan(
+        &self,
+        tenant_id: Uuid,
+        id: Uuid,
+        cp: ControlPlan,
+    ) -> Result<ControlPlan>;
     /// Delete a control plan.
     async fn delete_control_plan(&self, tenant_id: Uuid, id: Uuid) -> Result<()>;
 
@@ -372,7 +416,12 @@ pub trait QualityService: Send + Sync {
     /// Create an NPI project.
     async fn create_npi_project(&self, tenant_id: Uuid, project: NpiProject) -> Result<NpiProject>;
     /// Update an NPI project.
-    async fn update_npi_project(&self, tenant_id: Uuid, id: Uuid, project: NpiProject) -> Result<NpiProject>;
+    async fn update_npi_project(
+        &self,
+        tenant_id: Uuid,
+        id: Uuid,
+        project: NpiProject,
+    ) -> Result<NpiProject>;
     /// Delete an NPI project.
     async fn delete_npi_project(&self, tenant_id: Uuid, id: Uuid) -> Result<()>;
 
@@ -386,25 +435,52 @@ pub trait QualityService: Send + Sync {
 
     // ── New: Complaint Create/Update/Delete ──────────────────────────────
     /// Create a customer complaint.
-    async fn create_complaint(&self, tenant_id: Uuid, complaint: CustomerComplaint) -> Result<CustomerComplaint>;
+    async fn create_complaint(
+        &self,
+        tenant_id: Uuid,
+        complaint: CustomerComplaint,
+    ) -> Result<CustomerComplaint>;
     /// Update a customer complaint.
-    async fn update_complaint(&self, tenant_id: Uuid, id: Uuid, complaint: CustomerComplaint) -> Result<CustomerComplaint>;
+    async fn update_complaint(
+        &self,
+        tenant_id: Uuid,
+        id: Uuid,
+        complaint: CustomerComplaint,
+    ) -> Result<CustomerComplaint>;
     /// Delete a customer complaint.
     async fn delete_complaint(&self, tenant_id: Uuid, id: Uuid) -> Result<()>;
 
     // ── New: 8D Report Create/Update/Delete ──────────────────────────────
     /// Create an 8D report.
-    async fn create_eight_d_report(&self, tenant_id: Uuid, report: EightDReport) -> Result<EightDReport>;
+    async fn create_eight_d_report(
+        &self,
+        tenant_id: Uuid,
+        report: EightDReport,
+    ) -> Result<EightDReport>;
     /// Update an 8D report.
-    async fn update_eight_d_report(&self, tenant_id: Uuid, id: Uuid, report: EightDReport) -> Result<EightDReport>;
+    async fn update_eight_d_report(
+        &self,
+        tenant_id: Uuid,
+        id: Uuid,
+        report: EightDReport,
+    ) -> Result<EightDReport>;
     /// Delete an 8D report.
     async fn delete_eight_d_report(&self, tenant_id: Uuid, id: Uuid) -> Result<()>;
 
     // ── New: Management Review Create/Update/Delete ──────────────────────
     /// Create a management review.
-    async fn create_management_review(&self, tenant_id: Uuid, review: ManagementReview) -> Result<ManagementReview>;
+    async fn create_management_review(
+        &self,
+        tenant_id: Uuid,
+        review: ManagementReview,
+    ) -> Result<ManagementReview>;
     /// Update a management review.
-    async fn update_management_review(&self, tenant_id: Uuid, id: Uuid, review: ManagementReview) -> Result<ManagementReview>;
+    async fn update_management_review(
+        &self,
+        tenant_id: Uuid,
+        id: Uuid,
+        review: ManagementReview,
+    ) -> Result<ManagementReview>;
     /// Delete a management review.
     async fn delete_management_review(&self, tenant_id: Uuid, id: Uuid) -> Result<()>;
 
@@ -414,13 +490,21 @@ pub trait QualityService: Send + Sync {
     /// Get a QMS document by ID.
     async fn get_document(&self, tenant_id: Uuid, id: Uuid) -> Result<QmsDocument>;
     /// Get a first article inspection by ID.
-    async fn get_first_article_inspection(&self, tenant_id: Uuid, id: Uuid) -> Result<FirstArticleInspection>;
+    async fn get_first_article_inspection(
+        &self,
+        tenant_id: Uuid,
+        id: Uuid,
+    ) -> Result<FirstArticleInspection>;
     /// Get a self-inspection by ID.
     async fn get_self_inspection(&self, tenant_id: Uuid, id: Uuid) -> Result<SelfInspection>;
     /// Get an MSA study by ID.
     async fn get_msa_study(&self, tenant_id: Uuid, id: Uuid) -> Result<MsaStudy>;
     /// Get a process capability study by ID.
-    async fn get_process_capability_study(&self, tenant_id: Uuid, id: Uuid) -> Result<ProcessCapabilityStudy>;
+    async fn get_process_capability_study(
+        &self,
+        tenant_id: Uuid,
+        id: Uuid,
+    ) -> Result<ProcessCapabilityStudy>;
     /// Get a control plan by ID.
     async fn get_control_plan(&self, tenant_id: Uuid, id: Uuid) -> Result<ControlPlan>;
     /// Get a PFMEA by ID.
@@ -563,15 +647,17 @@ impl QualityService for InMemoryQualityService {
             .values()
             .filter(|ncr| {
                 // Tenant isolation
-                let belongs_to_tenant = idx
-                    .get(&ncr.id)
-                    .is_none_or(|&tid| tid == tenant_id);
+                let belongs_to_tenant = idx.get(&ncr.id).is_none_or(|&tid| tid == tenant_id);
                 if !belongs_to_tenant {
                     return false;
                 }
                 status.is_none_or(|s| enum_name_matches(s, ncr.status.as_str()))
                     && severity.is_none_or(|s| enum_name_matches(s, &format!("{:?}", ncr.severity)))
-                    && source.is_none_or(|s| ncr.source.as_deref().is_some_and(|src| src.eq_ignore_ascii_case(s)))
+                    && source.is_none_or(|s| {
+                        ncr.source
+                            .as_deref()
+                            .is_some_and(|src| src.eq_ignore_ascii_case(s))
+                    })
             })
             .cloned()
             .collect();
@@ -686,16 +772,16 @@ impl QualityService for InMemoryQualityService {
             .values()
             .filter(|capa| {
                 // Tenant isolation
-                let belongs_to_tenant = idx
-                    .get(&capa.id)
-                    .is_none_or(|&tid| tid == tenant_id);
+                let belongs_to_tenant = idx.get(&capa.id).is_none_or(|&tid| tid == tenant_id);
                 if !belongs_to_tenant {
                     return false;
                 }
-                let status_match = status.is_none_or(|s| enum_name_matches(s, &format!("{:?}", capa.status)));
+                let status_match =
+                    status.is_none_or(|s| enum_name_matches(s, &format!("{:?}", capa.status)));
                 // The API exposes `nc_type` but the model uses `capa_type`.
                 // Filter by capa_type when nc_type is provided.
-                let type_match = nc_type.is_none_or(|t| enum_name_matches(t, &format!("{:?}", capa.capa_type)));
+                let type_match =
+                    nc_type.is_none_or(|t| enum_name_matches(t, &format!("{:?}", capa.capa_type)));
                 status_match && type_match
             })
             .cloned()
@@ -759,7 +845,9 @@ impl QualityService for InMemoryQualityService {
 
     async fn get_capa(&self, tenant_id: Uuid, id: Uuid) -> Result<CapaExtended> {
         if !self.tenant_matches(id, tenant_id).await {
-            return Err(SenseiError::NotFound(format!("CAPA with id {id} not found")));
+            return Err(SenseiError::NotFound(format!(
+                "CAPA with id {id} not found"
+            )));
         }
         let store = self.capas.read().await;
         store
@@ -775,7 +863,9 @@ impl QualityService for InMemoryQualityService {
         status: CapaStatusEx,
     ) -> Result<CapaExtended> {
         if !self.tenant_matches(id, tenant_id).await {
-            return Err(SenseiError::NotFound(format!("CAPA with id {id} not found")));
+            return Err(SenseiError::NotFound(format!(
+                "CAPA with id {id} not found"
+            )));
         }
         let mut store = self.capas.write().await;
         let capa = store
@@ -819,7 +909,10 @@ impl QualityService for InMemoryQualityService {
         fai.updated_at = now;
         let id = fai.id;
         self.record_tenant(id, tenant_id).await;
-        self.first_article_inspections.write().await.insert(id, fai.clone());
+        self.first_article_inspections
+            .write()
+            .await
+            .insert(id, fai.clone());
         Ok(fai)
     }
 
@@ -850,7 +943,10 @@ impl QualityService for InMemoryQualityService {
         inspection.created_at = now;
         let id = inspection.id;
         self.record_tenant(id, tenant_id).await;
-        self.self_inspections.write().await.insert(id, inspection.clone());
+        self.self_inspections
+            .write()
+            .await
+            .insert(id, inspection.clone());
         Ok(inspection)
     }
 
@@ -870,14 +966,13 @@ impl QualityService for InMemoryQualityService {
             .values()
             .filter(|audit| {
                 // Tenant isolation
-                let belongs_to_tenant = idx
-                    .get(&audit.id)
-                    .is_none_or(|&tid| tid == tenant_id);
+                let belongs_to_tenant = idx.get(&audit.id).is_none_or(|&tid| tid == tenant_id);
                 if !belongs_to_tenant {
                     return false;
                 }
                 status.is_none_or(|s| enum_name_matches(s, &format!("{:?}", audit.status)))
-                    && audit_type.is_none_or(|t| enum_name_matches(t, &format!("{:?}", audit.audit_type)))
+                    && audit_type
+                        .is_none_or(|t| enum_name_matches(t, &format!("{:?}", audit.audit_type)))
             })
             .cloned()
             .collect();
@@ -885,11 +980,7 @@ impl QualityService for InMemoryQualityService {
         Ok(PaginatedResponse::new(items, page, per_page))
     }
 
-    async fn create_audit(
-        &self,
-        tenant_id: Uuid,
-        mut audit: Audit,
-    ) -> Result<Audit> {
+    async fn create_audit(&self, tenant_id: Uuid, mut audit: Audit) -> Result<Audit> {
         let now = Utc::now();
         audit.id = Uuid::new_v4();
         audit.created_at = now;
@@ -902,7 +993,9 @@ impl QualityService for InMemoryQualityService {
 
     async fn get_audit(&self, tenant_id: Uuid, id: Uuid) -> Result<Audit> {
         if !self.tenant_matches(id, tenant_id).await {
-            return Err(SenseiError::NotFound(format!("Audit with id {id} not found")));
+            return Err(SenseiError::NotFound(format!(
+                "Audit with id {id} not found"
+            )));
         }
         let store = self.audits.read().await;
         store
@@ -918,7 +1011,9 @@ impl QualityService for InMemoryQualityService {
     ) -> Result<Vec<AuditFinding>> {
         // Verify the audit belongs to the requesting tenant
         if !self.tenant_matches(audit_id, tenant_id).await {
-            return Err(SenseiError::NotFound(format!("Audit with id {audit_id} not found")));
+            return Err(SenseiError::NotFound(format!(
+                "Audit with id {audit_id} not found"
+            )));
         }
         let store = self.audit_findings.read().await;
         Ok(store
@@ -950,9 +1045,8 @@ impl QualityService for InMemoryQualityService {
                     return false;
                 }
                 // Filter by supplier_id if provided
-                let supplier_match = supplier_id.is_none_or(|sid| {
-                    sc.supplier_id == sid.to_string()
-                });
+                let supplier_match =
+                    supplier_id.is_none_or(|sid| sc.supplier_id == sid.to_string());
                 // Filter by period if provided
                 let period_match = period.is_none_or(|p| sc.period_key == p);
                 supplier_match && period_match
@@ -971,7 +1065,10 @@ impl QualityService for InMemoryQualityService {
         scorecard.computed_at = Utc::now();
         let id = Uuid::new_v4();
         self.record_tenant(id, tenant_id).await;
-        self.supplier_scorecards.write().await.insert(id, scorecard.clone());
+        self.supplier_scorecards
+            .write()
+            .await
+            .insert(id, scorecard.clone());
         let supplier_id = Uuid::parse_str(&scorecard.supplier_id).unwrap_or_default();
         self.publish_event(SupplierEvaluatedEvent::new(
             tenant_id,
@@ -1104,16 +1201,16 @@ impl QualityService for InMemoryQualityService {
         let items: Vec<_> = store
             .values()
             .filter(|proj| {
-                let belongs_to_tenant = idx
-                    .get(&proj.id)
-                    .is_none_or(|&tid| tid == tenant_id);
+                let belongs_to_tenant = idx.get(&proj.id).is_none_or(|&tid| tid == tenant_id);
                 if !belongs_to_tenant {
                     return false;
                 }
                 // Filter by stage if provided
-                let stage_match = stage.is_none_or(|s| enum_name_matches(s, &format!("{:?}", proj.current_stage)));
+                let stage_match = stage
+                    .is_none_or(|s| enum_name_matches(s, &format!("{:?}", proj.current_stage)));
                 // Filter by health_status when status is provided
-                let status_match = status.is_none_or(|s| proj.health_status.to_lowercase() == s.to_lowercase());
+                let status_match =
+                    status.is_none_or(|s| proj.health_status.to_lowercase() == s.to_lowercase());
                 stage_match && status_match
             })
             .cloned()
@@ -1135,9 +1232,7 @@ impl QualityService for InMemoryQualityService {
             .values()
             .filter(|r| {
                 // Tenant isolation
-                let belongs_to_tenant = idx
-                    .get(&r.id)
-                    .is_none_or(|&tid| tid == tenant_id);
+                let belongs_to_tenant = idx.get(&r.id).is_none_or(|&tid| tid == tenant_id);
                 if !belongs_to_tenant {
                     return false;
                 }
@@ -1223,7 +1318,12 @@ impl QualityService for InMemoryQualityService {
 
     // ── New: NCR Update/Delete/Investigate/Disposition/Close ──────────────
 
-    async fn update_ncr(&self, tenant_id: Uuid, id: Uuid, ncr: NonConformance) -> Result<NonConformance> {
+    async fn update_ncr(
+        &self,
+        tenant_id: Uuid,
+        id: Uuid,
+        ncr: NonConformance,
+    ) -> Result<NonConformance> {
         if !self.tenant_matches(id, tenant_id).await {
             return Err(SenseiError::NotFound(format!("NCR with id {id} not found")));
         }
@@ -1265,7 +1365,12 @@ impl QualityService for InMemoryQualityService {
         Ok(())
     }
 
-    async fn investigate_ncr(&self, tenant_id: Uuid, id: Uuid, rca: RootCauseAnalysis) -> Result<NonConformance> {
+    async fn investigate_ncr(
+        &self,
+        tenant_id: Uuid,
+        id: Uuid,
+        rca: RootCauseAnalysis,
+    ) -> Result<NonConformance> {
         if !self.tenant_matches(id, tenant_id).await {
             return Err(SenseiError::NotFound(format!("NCR with id {id} not found")));
         }
@@ -1291,7 +1396,12 @@ impl QualityService for InMemoryQualityService {
         Ok(existing.clone())
     }
 
-    async fn disposition_ncr(&self, tenant_id: Uuid, id: Uuid, disposition: String) -> Result<NonConformance> {
+    async fn disposition_ncr(
+        &self,
+        tenant_id: Uuid,
+        id: Uuid,
+        disposition: String,
+    ) -> Result<NonConformance> {
         if !self.tenant_matches(id, tenant_id).await {
             return Err(SenseiError::NotFound(format!("NCR with id {id} not found")));
         }
@@ -1330,9 +1440,7 @@ impl QualityService for InMemoryQualityService {
             .get_mut(&id)
             .ok_or_else(|| SenseiError::NotFound(format!("NCR with id {id} not found")))?;
         if existing.status == NcrStatus::Closed {
-            return Err(SenseiError::Validation(
-                "NCR is already closed".to_string(),
-            ));
+            return Err(SenseiError::Validation("NCR is already closed".to_string()));
         }
         if existing.status == NcrStatus::Cancelled {
             return Err(SenseiError::Validation(
@@ -1361,28 +1469,48 @@ impl QualityService for InMemoryQualityService {
 
     // ── New: CAPA Update/Delete/Verify/Close ──────────────────────────────
 
-    async fn update_capa(&self, tenant_id: Uuid, id: Uuid, capa: CapaExtended) -> Result<CapaExtended> {
+    async fn update_capa(
+        &self,
+        tenant_id: Uuid,
+        id: Uuid,
+        capa: CapaExtended,
+    ) -> Result<CapaExtended> {
         if !self.tenant_matches(id, tenant_id).await {
-            return Err(SenseiError::NotFound(format!("CAPA with id {id} not found")));
+            return Err(SenseiError::NotFound(format!(
+                "CAPA with id {id} not found"
+            )));
         }
         let mut store = self.capas.write().await;
         let existing = store
             .get_mut(&id)
             .ok_or_else(|| SenseiError::NotFound(format!("CAPA with id {id} not found")))?;
+        // Full-entity update: the database backend persists the whole CAPA
+        // (JSONB), so the in-memory backend must apply every editable field
+        // (workflow data included) to stay behaviorally identical.
+        existing.capa_number = capa.capa_number;
         existing.title = capa.title;
         existing.description = capa.description;
         existing.nc_ids = capa.nc_ids;
         existing.capa_type = capa.capa_type;
         existing.priority = capa.priority;
+        existing.status = capa.status;
+        existing.root_cause_analyses = capa.root_cause_analyses;
+        existing.actions = capa.actions;
+        existing.closure_gates = capa.closure_gates;
+        existing.effectiveness_checks = capa.effectiveness_checks;
+        existing.entity_links = capa.entity_links;
         existing.owner_id = capa.owner_id;
         existing.due_date = capa.due_date;
+        existing.closed_at = capa.closed_at;
         existing.updated_at = Utc::now();
         Ok(existing.clone())
     }
 
     async fn delete_capa(&self, tenant_id: Uuid, id: Uuid) -> Result<()> {
         if !self.tenant_matches(id, tenant_id).await {
-            return Err(SenseiError::NotFound(format!("CAPA with id {id} not found")));
+            return Err(SenseiError::NotFound(format!(
+                "CAPA with id {id} not found"
+            )));
         }
         let mut store = self.capas.write().await;
         store
@@ -1394,7 +1522,9 @@ impl QualityService for InMemoryQualityService {
 
     async fn verify_capa(&self, tenant_id: Uuid, id: Uuid) -> Result<CapaExtended> {
         if !self.tenant_matches(id, tenant_id).await {
-            return Err(SenseiError::NotFound(format!("CAPA with id {id} not found")));
+            return Err(SenseiError::NotFound(format!(
+                "CAPA with id {id} not found"
+            )));
         }
         let mut store = self.capas.write().await;
         let existing = store
@@ -1443,7 +1573,9 @@ impl QualityService for InMemoryQualityService {
 
     async fn close_capa(&self, tenant_id: Uuid, id: Uuid) -> Result<CapaExtended> {
         if !self.tenant_matches(id, tenant_id).await {
-            return Err(SenseiError::NotFound(format!("CAPA with id {id} not found")));
+            return Err(SenseiError::NotFound(format!(
+                "CAPA with id {id} not found"
+            )));
         }
         let mut store = self.capas.write().await;
         let existing = store
@@ -1457,14 +1589,21 @@ impl QualityService for InMemoryQualityService {
 
     // ── New: Inspection Update/Delete ────────────────────────────────────
 
-    async fn update_first_article_inspection(&self, tenant_id: Uuid, id: Uuid, fai: FirstArticleInspection) -> Result<FirstArticleInspection> {
+    async fn update_first_article_inspection(
+        &self,
+        tenant_id: Uuid,
+        id: Uuid,
+        fai: FirstArticleInspection,
+    ) -> Result<FirstArticleInspection> {
         if !self.tenant_matches(id, tenant_id).await {
-            return Err(SenseiError::NotFound(format!("First article inspection with id {id} not found")));
+            return Err(SenseiError::NotFound(format!(
+                "First article inspection with id {id} not found"
+            )));
         }
         let mut store = self.first_article_inspections.write().await;
-        let existing = store
-            .get_mut(&id)
-            .ok_or_else(|| SenseiError::NotFound(format!("First article inspection with id {id} not found")))?;
+        let existing = store.get_mut(&id).ok_or_else(|| {
+            SenseiError::NotFound(format!("First article inspection with id {id} not found"))
+        })?;
         existing.part_number = fai.part_number;
         existing.part_name = fai.part_name;
         existing.revision = fai.revision;
@@ -1478,24 +1617,33 @@ impl QualityService for InMemoryQualityService {
 
     async fn delete_first_article_inspection(&self, tenant_id: Uuid, id: Uuid) -> Result<()> {
         if !self.tenant_matches(id, tenant_id).await {
-            return Err(SenseiError::NotFound(format!("First article inspection with id {id} not found")));
+            return Err(SenseiError::NotFound(format!(
+                "First article inspection with id {id} not found"
+            )));
         }
         let mut store = self.first_article_inspections.write().await;
-        store
-            .remove(&id)
-            .ok_or_else(|| SenseiError::NotFound(format!("First article inspection with id {id} not found")))?;
+        store.remove(&id).ok_or_else(|| {
+            SenseiError::NotFound(format!("First article inspection with id {id} not found"))
+        })?;
         self.tenant_index.write().await.remove(&id);
         Ok(())
     }
 
-    async fn update_self_inspection(&self, tenant_id: Uuid, id: Uuid, inspection: SelfInspection) -> Result<SelfInspection> {
+    async fn update_self_inspection(
+        &self,
+        tenant_id: Uuid,
+        id: Uuid,
+        inspection: SelfInspection,
+    ) -> Result<SelfInspection> {
         if !self.tenant_matches(id, tenant_id).await {
-            return Err(SenseiError::NotFound(format!("Self inspection with id {id} not found")));
+            return Err(SenseiError::NotFound(format!(
+                "Self inspection with id {id} not found"
+            )));
         }
         let mut store = self.self_inspections.write().await;
-        let existing = store
-            .get_mut(&id)
-            .ok_or_else(|| SenseiError::NotFound(format!("Self inspection with id {id} not found")))?;
+        let existing = store.get_mut(&id).ok_or_else(|| {
+            SenseiError::NotFound(format!("Self inspection with id {id} not found"))
+        })?;
         existing.status = inspection.status;
         existing.result = inspection.result;
         existing.checks = inspection.checks;
@@ -1504,12 +1652,14 @@ impl QualityService for InMemoryQualityService {
 
     async fn delete_self_inspection(&self, tenant_id: Uuid, id: Uuid) -> Result<()> {
         if !self.tenant_matches(id, tenant_id).await {
-            return Err(SenseiError::NotFound(format!("Self inspection with id {id} not found")));
+            return Err(SenseiError::NotFound(format!(
+                "Self inspection with id {id} not found"
+            )));
         }
         let mut store = self.self_inspections.write().await;
-        store
-            .remove(&id)
-            .ok_or_else(|| SenseiError::NotFound(format!("Self inspection with id {id} not found")))?;
+        store.remove(&id).ok_or_else(|| {
+            SenseiError::NotFound(format!("Self inspection with id {id} not found"))
+        })?;
         self.tenant_index.write().await.remove(&id);
         Ok(())
     }
@@ -1518,7 +1668,9 @@ impl QualityService for InMemoryQualityService {
 
     async fn update_audit(&self, tenant_id: Uuid, id: Uuid, audit: Audit) -> Result<Audit> {
         if !self.tenant_matches(id, tenant_id).await {
-            return Err(SenseiError::NotFound(format!("Audit with id {id} not found")));
+            return Err(SenseiError::NotFound(format!(
+                "Audit with id {id} not found"
+            )));
         }
         let mut store = self.audits.write().await;
         let existing = store
@@ -1536,7 +1688,9 @@ impl QualityService for InMemoryQualityService {
 
     async fn delete_audit(&self, tenant_id: Uuid, id: Uuid) -> Result<()> {
         if !self.tenant_matches(id, tenant_id).await {
-            return Err(SenseiError::NotFound(format!("Audit with id {id} not found")));
+            return Err(SenseiError::NotFound(format!(
+                "Audit with id {id} not found"
+            )));
         }
         let mut store = self.audits.write().await;
         store
@@ -1548,14 +1702,21 @@ impl QualityService for InMemoryQualityService {
 
     // ── New: Supplier Scorecard/SCAR Update/Delete ───────────────────────
 
-    async fn update_supplier_scorecard(&self, tenant_id: Uuid, id: Uuid, scorecard: SupplierScorecard) -> Result<SupplierScorecard> {
+    async fn update_supplier_scorecard(
+        &self,
+        tenant_id: Uuid,
+        id: Uuid,
+        scorecard: SupplierScorecard,
+    ) -> Result<SupplierScorecard> {
         if !self.tenant_matches(id, tenant_id).await {
-            return Err(SenseiError::NotFound(format!("Supplier scorecard with id {id} not found")));
+            return Err(SenseiError::NotFound(format!(
+                "Supplier scorecard with id {id} not found"
+            )));
         }
         let mut store = self.supplier_scorecards.write().await;
-        let existing = store
-            .get_mut(&id)
-            .ok_or_else(|| SenseiError::NotFound(format!("Supplier scorecard with id {id} not found")))?;
+        let existing = store.get_mut(&id).ok_or_else(|| {
+            SenseiError::NotFound(format!("Supplier scorecard with id {id} not found"))
+        })?;
         existing.period_key = scorecard.period_key;
         existing.ppm_score = scorecard.ppm_score;
         existing.otd_score = scorecard.otd_score;
@@ -1570,12 +1731,14 @@ impl QualityService for InMemoryQualityService {
 
     async fn delete_supplier_scorecard(&self, tenant_id: Uuid, id: Uuid) -> Result<()> {
         if !self.tenant_matches(id, tenant_id).await {
-            return Err(SenseiError::NotFound(format!("Supplier scorecard with id {id} not found")));
+            return Err(SenseiError::NotFound(format!(
+                "Supplier scorecard with id {id} not found"
+            )));
         }
         let mut store = self.supplier_scorecards.write().await;
-        store
-            .remove(&id)
-            .ok_or_else(|| SenseiError::NotFound(format!("Supplier scorecard with id {id} not found")))?;
+        store.remove(&id).ok_or_else(|| {
+            SenseiError::NotFound(format!("Supplier scorecard with id {id} not found"))
+        })?;
         self.tenant_index.write().await.remove(&id);
         Ok(())
     }
@@ -1593,7 +1756,9 @@ impl QualityService for InMemoryQualityService {
 
     async fn update_scar(&self, tenant_id: Uuid, id: Uuid, scar: Scar) -> Result<Scar> {
         if !self.tenant_matches(id, tenant_id).await {
-            return Err(SenseiError::NotFound(format!("SCAR with id {id} not found")));
+            return Err(SenseiError::NotFound(format!(
+                "SCAR with id {id} not found"
+            )));
         }
         let mut store = self.scars.write().await;
         let existing = store
@@ -1615,7 +1780,9 @@ impl QualityService for InMemoryQualityService {
 
     async fn delete_scar(&self, tenant_id: Uuid, id: Uuid) -> Result<()> {
         if !self.tenant_matches(id, tenant_id).await {
-            return Err(SenseiError::NotFound(format!("SCAR with id {id} not found")));
+            return Err(SenseiError::NotFound(format!(
+                "SCAR with id {id} not found"
+            )));
         }
         let mut store = self.scars.write().await;
         store
@@ -1638,9 +1805,16 @@ impl QualityService for InMemoryQualityService {
         Ok(doc)
     }
 
-    async fn update_document(&self, tenant_id: Uuid, id: Uuid, doc: QmsDocument) -> Result<QmsDocument> {
+    async fn update_document(
+        &self,
+        tenant_id: Uuid,
+        id: Uuid,
+        doc: QmsDocument,
+    ) -> Result<QmsDocument> {
         if !self.tenant_matches(id, tenant_id).await {
-            return Err(SenseiError::NotFound(format!("Document with id {id} not found")));
+            return Err(SenseiError::NotFound(format!(
+                "Document with id {id} not found"
+            )));
         }
         let mut store = self.documents.write().await;
         let existing = store
@@ -1655,7 +1829,9 @@ impl QualityService for InMemoryQualityService {
 
     async fn delete_document(&self, tenant_id: Uuid, id: Uuid) -> Result<()> {
         if !self.tenant_matches(id, tenant_id).await {
-            return Err(SenseiError::NotFound(format!("Document with id {id} not found")));
+            return Err(SenseiError::NotFound(format!(
+                "Document with id {id} not found"
+            )));
         }
         let mut store = self.documents.write().await;
         store
@@ -1679,7 +1855,9 @@ impl QualityService for InMemoryQualityService {
 
     async fn delete_msa_study(&self, tenant_id: Uuid, id: Uuid) -> Result<()> {
         if !self.tenant_matches(id, tenant_id).await {
-            return Err(SenseiError::NotFound(format!("MSA study with id {id} not found")));
+            return Err(SenseiError::NotFound(format!(
+                "MSA study with id {id} not found"
+            )));
         }
         let mut store = self.msa_studies.write().await;
         store
@@ -1691,31 +1869,44 @@ impl QualityService for InMemoryQualityService {
 
     // ── New: Process Capability Study Create/Delete ──────────────────────
 
-    async fn create_process_capability_study(&self, tenant_id: Uuid, mut study: ProcessCapabilityStudy) -> Result<ProcessCapabilityStudy> {
+    async fn create_process_capability_study(
+        &self,
+        tenant_id: Uuid,
+        mut study: ProcessCapabilityStudy,
+    ) -> Result<ProcessCapabilityStudy> {
         study.id = Uuid::new_v4();
         let now = Utc::now();
         study.created_at = now;
         let id = study.id;
         self.record_tenant(id, tenant_id).await;
-        self.process_capability_studies.write().await.insert(id, study.clone());
+        self.process_capability_studies
+            .write()
+            .await
+            .insert(id, study.clone());
         Ok(study)
     }
 
     async fn delete_process_capability_study(&self, tenant_id: Uuid, id: Uuid) -> Result<()> {
         if !self.tenant_matches(id, tenant_id).await {
-            return Err(SenseiError::NotFound(format!("Process capability study with id {id} not found")));
+            return Err(SenseiError::NotFound(format!(
+                "Process capability study with id {id} not found"
+            )));
         }
         let mut store = self.process_capability_studies.write().await;
-        store
-            .remove(&id)
-            .ok_or_else(|| SenseiError::NotFound(format!("Process capability study with id {id} not found")))?;
+        store.remove(&id).ok_or_else(|| {
+            SenseiError::NotFound(format!("Process capability study with id {id} not found"))
+        })?;
         self.tenant_index.write().await.remove(&id);
         Ok(())
     }
 
     // ── New: Control Plan Create/Update/Delete ───────────────────────────
 
-    async fn create_control_plan(&self, tenant_id: Uuid, mut cp: ControlPlan) -> Result<ControlPlan> {
+    async fn create_control_plan(
+        &self,
+        tenant_id: Uuid,
+        mut cp: ControlPlan,
+    ) -> Result<ControlPlan> {
         cp.id = Uuid::new_v4();
         let now = Utc::now();
         cp.created_at = now;
@@ -1725,9 +1916,16 @@ impl QualityService for InMemoryQualityService {
         Ok(cp)
     }
 
-    async fn update_control_plan(&self, tenant_id: Uuid, id: Uuid, cp: ControlPlan) -> Result<ControlPlan> {
+    async fn update_control_plan(
+        &self,
+        tenant_id: Uuid,
+        id: Uuid,
+        cp: ControlPlan,
+    ) -> Result<ControlPlan> {
         if !self.tenant_matches(id, tenant_id).await {
-            return Err(SenseiError::NotFound(format!("Control plan with id {id} not found")));
+            return Err(SenseiError::NotFound(format!(
+                "Control plan with id {id} not found"
+            )));
         }
         let mut store = self.control_plans.write().await;
         let existing = store
@@ -1741,7 +1939,9 @@ impl QualityService for InMemoryQualityService {
 
     async fn delete_control_plan(&self, tenant_id: Uuid, id: Uuid) -> Result<()> {
         if !self.tenant_matches(id, tenant_id).await {
-            return Err(SenseiError::NotFound(format!("Control plan with id {id} not found")));
+            return Err(SenseiError::NotFound(format!(
+                "Control plan with id {id} not found"
+            )));
         }
         let mut store = self.control_plans.write().await;
         store
@@ -1765,7 +1965,9 @@ impl QualityService for InMemoryQualityService {
 
     async fn delete_pfmea(&self, tenant_id: Uuid, id: Uuid) -> Result<()> {
         if !self.tenant_matches(id, tenant_id).await {
-            return Err(SenseiError::NotFound(format!("PFMEA with id {id} not found")));
+            return Err(SenseiError::NotFound(format!(
+                "PFMEA with id {id} not found"
+            )));
         }
         let mut store = self.pfmeas.write().await;
         store
@@ -1777,7 +1979,11 @@ impl QualityService for InMemoryQualityService {
 
     // ── New: NPI Project Create/Update/Delete ────────────────────────────
 
-    async fn create_npi_project(&self, tenant_id: Uuid, mut project: NpiProject) -> Result<NpiProject> {
+    async fn create_npi_project(
+        &self,
+        tenant_id: Uuid,
+        mut project: NpiProject,
+    ) -> Result<NpiProject> {
         project.id = Uuid::new_v4();
         let now = Utc::now();
         project.created_at = now;
@@ -1788,9 +1994,16 @@ impl QualityService for InMemoryQualityService {
         Ok(project)
     }
 
-    async fn update_npi_project(&self, tenant_id: Uuid, id: Uuid, project: NpiProject) -> Result<NpiProject> {
+    async fn update_npi_project(
+        &self,
+        tenant_id: Uuid,
+        id: Uuid,
+        project: NpiProject,
+    ) -> Result<NpiProject> {
         if !self.tenant_matches(id, tenant_id).await {
-            return Err(SenseiError::NotFound(format!("NPI project with id {id} not found")));
+            return Err(SenseiError::NotFound(format!(
+                "NPI project with id {id} not found"
+            )));
         }
         let mut store = self.npi_projects.write().await;
         let existing = store
@@ -1806,7 +2019,9 @@ impl QualityService for InMemoryQualityService {
 
     async fn delete_npi_project(&self, tenant_id: Uuid, id: Uuid) -> Result<()> {
         if !self.tenant_matches(id, tenant_id).await {
-            return Err(SenseiError::NotFound(format!("NPI project with id {id} not found")));
+            return Err(SenseiError::NotFound(format!(
+                "NPI project with id {id} not found"
+            )));
         }
         let mut store = self.npi_projects.write().await;
         store
@@ -1830,7 +2045,9 @@ impl QualityService for InMemoryQualityService {
 
     async fn update_gauge(&self, tenant_id: Uuid, id: Uuid, gauge: Gauge) -> Result<Gauge> {
         if !self.tenant_matches(id, tenant_id).await {
-            return Err(SenseiError::NotFound(format!("Gauge with id {id} not found")));
+            return Err(SenseiError::NotFound(format!(
+                "Gauge with id {id} not found"
+            )));
         }
         let mut store = self.gauges.write().await;
         let existing = store
@@ -1846,7 +2063,9 @@ impl QualityService for InMemoryQualityService {
 
     async fn delete_gauge(&self, tenant_id: Uuid, id: Uuid) -> Result<()> {
         if !self.tenant_matches(id, tenant_id).await {
-            return Err(SenseiError::NotFound(format!("Gauge with id {id} not found")));
+            return Err(SenseiError::NotFound(format!(
+                "Gauge with id {id} not found"
+            )));
         }
         let mut store = self.gauges.write().await;
         store
@@ -1858,7 +2077,11 @@ impl QualityService for InMemoryQualityService {
 
     // ── New: Complaint Create/Update/Delete ──────────────────────────────
 
-    async fn create_complaint(&self, tenant_id: Uuid, mut complaint: CustomerComplaint) -> Result<CustomerComplaint> {
+    async fn create_complaint(
+        &self,
+        tenant_id: Uuid,
+        mut complaint: CustomerComplaint,
+    ) -> Result<CustomerComplaint> {
         complaint.id = Uuid::new_v4();
         let now = Utc::now();
         complaint.created_at = now;
@@ -1869,9 +2092,16 @@ impl QualityService for InMemoryQualityService {
         Ok(complaint)
     }
 
-    async fn update_complaint(&self, tenant_id: Uuid, id: Uuid, complaint: CustomerComplaint) -> Result<CustomerComplaint> {
+    async fn update_complaint(
+        &self,
+        tenant_id: Uuid,
+        id: Uuid,
+        complaint: CustomerComplaint,
+    ) -> Result<CustomerComplaint> {
         if !self.tenant_matches(id, tenant_id).await {
-            return Err(SenseiError::NotFound(format!("Complaint with id {id} not found")));
+            return Err(SenseiError::NotFound(format!(
+                "Complaint with id {id} not found"
+            )));
         }
         let mut store = self.complaints.write().await;
         let existing = store
@@ -1887,7 +2117,9 @@ impl QualityService for InMemoryQualityService {
 
     async fn delete_complaint(&self, tenant_id: Uuid, id: Uuid) -> Result<()> {
         if !self.tenant_matches(id, tenant_id).await {
-            return Err(SenseiError::NotFound(format!("Complaint with id {id} not found")));
+            return Err(SenseiError::NotFound(format!(
+                "Complaint with id {id} not found"
+            )));
         }
         let mut store = self.complaints.write().await;
         store
@@ -1899,19 +2131,33 @@ impl QualityService for InMemoryQualityService {
 
     // ── New: 8D Report Create/Update/Delete ──────────────────────────────
 
-    async fn create_eight_d_report(&self, tenant_id: Uuid, mut report: EightDReport) -> Result<EightDReport> {
+    async fn create_eight_d_report(
+        &self,
+        tenant_id: Uuid,
+        mut report: EightDReport,
+    ) -> Result<EightDReport> {
         report.id = Uuid::new_v4();
         let now = Utc::now();
         report.created_at = now;
         let id = report.id;
         self.record_tenant(id, tenant_id).await;
-        self.eight_d_reports.write().await.insert(id, report.clone());
+        self.eight_d_reports
+            .write()
+            .await
+            .insert(id, report.clone());
         Ok(report)
     }
 
-    async fn update_eight_d_report(&self, tenant_id: Uuid, id: Uuid, report: EightDReport) -> Result<EightDReport> {
+    async fn update_eight_d_report(
+        &self,
+        tenant_id: Uuid,
+        id: Uuid,
+        report: EightDReport,
+    ) -> Result<EightDReport> {
         if !self.tenant_matches(id, tenant_id).await {
-            return Err(SenseiError::NotFound(format!("8D report with id {id} not found")));
+            return Err(SenseiError::NotFound(format!(
+                "8D report with id {id} not found"
+            )));
         }
         let mut store = self.eight_d_reports.write().await;
         let existing = store
@@ -1931,7 +2177,9 @@ impl QualityService for InMemoryQualityService {
 
     async fn delete_eight_d_report(&self, tenant_id: Uuid, id: Uuid) -> Result<()> {
         if !self.tenant_matches(id, tenant_id).await {
-            return Err(SenseiError::NotFound(format!("8D report with id {id} not found")));
+            return Err(SenseiError::NotFound(format!(
+                "8D report with id {id} not found"
+            )));
         }
         let mut store = self.eight_d_reports.write().await;
         store
@@ -1943,24 +2191,38 @@ impl QualityService for InMemoryQualityService {
 
     // ── New: Management Review Create/Update/Delete ──────────────────────
 
-    async fn create_management_review(&self, tenant_id: Uuid, mut review: ManagementReview) -> Result<ManagementReview> {
+    async fn create_management_review(
+        &self,
+        tenant_id: Uuid,
+        mut review: ManagementReview,
+    ) -> Result<ManagementReview> {
         review.id = Uuid::new_v4();
         let now = Utc::now();
         review.created_at = now;
         let id = review.id;
         self.record_tenant(id, tenant_id).await;
-        self.management_reviews.write().await.insert(id, review.clone());
+        self.management_reviews
+            .write()
+            .await
+            .insert(id, review.clone());
         Ok(review)
     }
 
-    async fn update_management_review(&self, tenant_id: Uuid, id: Uuid, review: ManagementReview) -> Result<ManagementReview> {
+    async fn update_management_review(
+        &self,
+        tenant_id: Uuid,
+        id: Uuid,
+        review: ManagementReview,
+    ) -> Result<ManagementReview> {
         if !self.tenant_matches(id, tenant_id).await {
-            return Err(SenseiError::NotFound(format!("Management review with id {id} not found")));
+            return Err(SenseiError::NotFound(format!(
+                "Management review with id {id} not found"
+            )));
         }
         let mut store = self.management_reviews.write().await;
-        let existing = store
-            .get_mut(&id)
-            .ok_or_else(|| SenseiError::NotFound(format!("Management review with id {id} not found")))?;
+        let existing = store.get_mut(&id).ok_or_else(|| {
+            SenseiError::NotFound(format!("Management review with id {id} not found"))
+        })?;
         existing.title = review.title;
         existing.notes = review.notes;
         existing.status = review.status;
@@ -1970,12 +2232,14 @@ impl QualityService for InMemoryQualityService {
 
     async fn delete_management_review(&self, tenant_id: Uuid, id: Uuid) -> Result<()> {
         if !self.tenant_matches(id, tenant_id).await {
-            return Err(SenseiError::NotFound(format!("Management review with id {id} not found")));
+            return Err(SenseiError::NotFound(format!(
+                "Management review with id {id} not found"
+            )));
         }
         let mut store = self.management_reviews.write().await;
-        store
-            .remove(&id)
-            .ok_or_else(|| SenseiError::NotFound(format!("Management review with id {id} not found")))?;
+        store.remove(&id).ok_or_else(|| {
+            SenseiError::NotFound(format!("Management review with id {id} not found"))
+        })?;
         self.tenant_index.write().await.remove(&id);
         Ok(())
     }
@@ -1984,7 +2248,9 @@ impl QualityService for InMemoryQualityService {
 
     async fn get_scar(&self, tenant_id: Uuid, id: Uuid) -> Result<Scar> {
         if !self.tenant_matches(id, tenant_id).await {
-            return Err(SenseiError::NotFound(format!("SCAR with id {id} not found")));
+            return Err(SenseiError::NotFound(format!(
+                "SCAR with id {id} not found"
+            )));
         }
         let store = self.scars.read().await;
         store
@@ -1995,7 +2261,9 @@ impl QualityService for InMemoryQualityService {
 
     async fn get_document(&self, tenant_id: Uuid, id: Uuid) -> Result<QmsDocument> {
         if !self.tenant_matches(id, tenant_id).await {
-            return Err(SenseiError::NotFound(format!("Document with id {id} not found")));
+            return Err(SenseiError::NotFound(format!(
+                "Document with id {id} not found"
+            )));
         }
         let store = self.documents.read().await;
         store
@@ -2004,20 +2272,27 @@ impl QualityService for InMemoryQualityService {
             .ok_or_else(|| SenseiError::NotFound(format!("Document with id {id} not found")))
     }
 
-    async fn get_first_article_inspection(&self, tenant_id: Uuid, id: Uuid) -> Result<FirstArticleInspection> {
+    async fn get_first_article_inspection(
+        &self,
+        tenant_id: Uuid,
+        id: Uuid,
+    ) -> Result<FirstArticleInspection> {
         if !self.tenant_matches(id, tenant_id).await {
-            return Err(SenseiError::NotFound(format!("First article inspection with id {id} not found")));
+            return Err(SenseiError::NotFound(format!(
+                "First article inspection with id {id} not found"
+            )));
         }
         let store = self.first_article_inspections.read().await;
-        store
-            .get(&id)
-            .cloned()
-            .ok_or_else(|| SenseiError::NotFound(format!("First article inspection with id {id} not found")))
+        store.get(&id).cloned().ok_or_else(|| {
+            SenseiError::NotFound(format!("First article inspection with id {id} not found"))
+        })
     }
 
     async fn get_self_inspection(&self, tenant_id: Uuid, id: Uuid) -> Result<SelfInspection> {
         if !self.tenant_matches(id, tenant_id).await {
-            return Err(SenseiError::NotFound(format!("Self-inspection with id {id} not found")));
+            return Err(SenseiError::NotFound(format!(
+                "Self-inspection with id {id} not found"
+            )));
         }
         let store = self.self_inspections.read().await;
         store
@@ -2028,7 +2303,9 @@ impl QualityService for InMemoryQualityService {
 
     async fn get_msa_study(&self, tenant_id: Uuid, id: Uuid) -> Result<MsaStudy> {
         if !self.tenant_matches(id, tenant_id).await {
-            return Err(SenseiError::NotFound(format!("MSA study with id {id} not found")));
+            return Err(SenseiError::NotFound(format!(
+                "MSA study with id {id} not found"
+            )));
         }
         let store = self.msa_studies.read().await;
         store
@@ -2037,20 +2314,27 @@ impl QualityService for InMemoryQualityService {
             .ok_or_else(|| SenseiError::NotFound(format!("MSA study with id {id} not found")))
     }
 
-    async fn get_process_capability_study(&self, tenant_id: Uuid, id: Uuid) -> Result<ProcessCapabilityStudy> {
+    async fn get_process_capability_study(
+        &self,
+        tenant_id: Uuid,
+        id: Uuid,
+    ) -> Result<ProcessCapabilityStudy> {
         if !self.tenant_matches(id, tenant_id).await {
-            return Err(SenseiError::NotFound(format!("Process capability study with id {id} not found")));
+            return Err(SenseiError::NotFound(format!(
+                "Process capability study with id {id} not found"
+            )));
         }
         let store = self.process_capability_studies.read().await;
-        store
-            .get(&id)
-            .cloned()
-            .ok_or_else(|| SenseiError::NotFound(format!("Process capability study with id {id} not found")))
+        store.get(&id).cloned().ok_or_else(|| {
+            SenseiError::NotFound(format!("Process capability study with id {id} not found"))
+        })
     }
 
     async fn get_control_plan(&self, tenant_id: Uuid, id: Uuid) -> Result<ControlPlan> {
         if !self.tenant_matches(id, tenant_id).await {
-            return Err(SenseiError::NotFound(format!("Control plan with id {id} not found")));
+            return Err(SenseiError::NotFound(format!(
+                "Control plan with id {id} not found"
+            )));
         }
         let store = self.control_plans.read().await;
         store
@@ -2061,7 +2345,9 @@ impl QualityService for InMemoryQualityService {
 
     async fn get_pfmea(&self, tenant_id: Uuid, id: Uuid) -> Result<PfmeaLite> {
         if !self.tenant_matches(id, tenant_id).await {
-            return Err(SenseiError::NotFound(format!("PFMEA with id {id} not found")));
+            return Err(SenseiError::NotFound(format!(
+                "PFMEA with id {id} not found"
+            )));
         }
         let store = self.pfmeas.read().await;
         store
@@ -2072,7 +2358,9 @@ impl QualityService for InMemoryQualityService {
 
     async fn get_gauge(&self, tenant_id: Uuid, id: Uuid) -> Result<Gauge> {
         if !self.tenant_matches(id, tenant_id).await {
-            return Err(SenseiError::NotFound(format!("Gauge with id {id} not found")));
+            return Err(SenseiError::NotFound(format!(
+                "Gauge with id {id} not found"
+            )));
         }
         let store = self.gauges.read().await;
         store
@@ -2083,7 +2371,9 @@ impl QualityService for InMemoryQualityService {
 
     async fn get_complaint(&self, tenant_id: Uuid, id: Uuid) -> Result<CustomerComplaint> {
         if !self.tenant_matches(id, tenant_id).await {
-            return Err(SenseiError::NotFound(format!("Complaint with id {id} not found")));
+            return Err(SenseiError::NotFound(format!(
+                "Complaint with id {id} not found"
+            )));
         }
         let store = self.complaints.read().await;
         store
@@ -2094,7 +2384,9 @@ impl QualityService for InMemoryQualityService {
 
     async fn get_eight_d_report(&self, tenant_id: Uuid, id: Uuid) -> Result<EightDReport> {
         if !self.tenant_matches(id, tenant_id).await {
-            return Err(SenseiError::NotFound(format!("8D report with id {id} not found")));
+            return Err(SenseiError::NotFound(format!(
+                "8D report with id {id} not found"
+            )));
         }
         let store = self.eight_d_reports.read().await;
         store
@@ -2105,13 +2397,14 @@ impl QualityService for InMemoryQualityService {
 
     async fn get_management_review(&self, tenant_id: Uuid, id: Uuid) -> Result<ManagementReview> {
         if !self.tenant_matches(id, tenant_id).await {
-            return Err(SenseiError::NotFound(format!("Management review with id {id} not found")));
+            return Err(SenseiError::NotFound(format!(
+                "Management review with id {id} not found"
+            )));
         }
         let store = self.management_reviews.read().await;
-        store
-            .get(&id)
-            .cloned()
-            .ok_or_else(|| SenseiError::NotFound(format!("Management review with id {id} not found")))
+        store.get(&id).cloned().ok_or_else(|| {
+            SenseiError::NotFound(format!("Management review with id {id} not found"))
+        })
     }
 }
 
@@ -2161,7 +2454,10 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(investigated.status, NcrStatus::UnderInvestigation);
-        assert_eq!(investigated.root_cause.as_deref(), Some("Misaligned fixture"));
+        assert_eq!(
+            investigated.root_cause.as_deref(),
+            Some("Misaligned fixture")
+        );
         assert_eq!(investigated.root_cause_type.as_deref(), Some("Machine"));
         assert_eq!(investigated.analysis_method.as_deref(), Some("5-Why"));
 
@@ -2265,7 +2561,10 @@ mod tests {
         // Set the source on one NCR via update.
         let mut updated = first.clone();
         updated.source = Some("inspection".to_string());
-        service.update_ncr(tenant_id, first.id, updated).await.unwrap();
+        service
+            .update_ncr(tenant_id, first.id, updated)
+            .await
+            .unwrap();
 
         let page = service
             .list_ncrs(tenant_id, Some("open"), None, None, None, None)
@@ -2274,7 +2573,14 @@ mod tests {
         assert_eq!(page.data.len(), 2);
 
         let page = service
-            .list_ncrs(tenant_id, Some("open"), None, Some("inspection"), None, None)
+            .list_ncrs(
+                tenant_id,
+                Some("open"),
+                None,
+                Some("inspection"),
+                None,
+                None,
+            )
             .await
             .unwrap();
         assert_eq!(page.data.len(), 1);
@@ -2338,7 +2644,10 @@ mod tests {
             created_at: Utc::now(),
             updated_at: Utc::now(),
         });
-        service.update_capa(tenant_id, capa.id, with_rca).await.unwrap();
+        service
+            .update_capa(tenant_id, capa.id, with_rca)
+            .await
+            .unwrap();
 
         let verified = service.verify_capa(tenant_id, capa.id).await.unwrap();
         assert_eq!(verified.status, CapaStatusEx::Verification);

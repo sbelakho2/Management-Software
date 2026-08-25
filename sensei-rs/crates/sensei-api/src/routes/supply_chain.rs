@@ -3,14 +3,17 @@
 //! Provides endpoints for RFQ, quotes, sales orders, purchase orders,
 //! inventory management, and stock movements.
 
-use axum::{Json, extract::{Path, Query, State}};
-use serde::Deserialize;
+use axum::{
+    extract::{Path, Query, State},
+    Json,
+};
 use sensei_auth::middleware::AuthenticatedUser;
 use sensei_core::error::Result;
 use sensei_core::pagination::PaginatedResponse;
 use sensei_services::supply_chain::{
-    InventoryItem, PurchaseOrder, Quote, RFQ, SalesOrder, StockMove,
+    InventoryItem, PurchaseOrder, Quote, SalesOrder, StockMove, RFQ,
 };
+use serde::Deserialize;
 use uuid::Uuid;
 
 use crate::state::AppState;
@@ -110,7 +113,12 @@ pub async fn list_rfqs(
     let tenant_id = user.tenant_id;
     let rfqs = state
         .supply_chain_service
-        .list_rfqs(tenant_id, params.status.as_deref(), params.page, params.per_page)
+        .list_rfqs(
+            tenant_id,
+            params.status.as_deref(),
+            params.page,
+            params.per_page,
+        )
         .await?;
     Ok(Json(rfqs))
 }
@@ -136,10 +144,7 @@ pub async fn get_rfq(
     Path(id): Path<Uuid>,
 ) -> Result<Json<RFQ>> {
     let tenant_id = user.tenant_id;
-    let rfq = state
-        .supply_chain_service
-        .get_rfq(tenant_id, id)
-        .await?;
+    let rfq = state.supply_chain_service.get_rfq(tenant_id, id).await?;
     Ok(Json(rfq))
 }
 
@@ -169,7 +174,12 @@ pub async fn list_quotes(
     let tenant_id = user.tenant_id;
     let quotes = state
         .supply_chain_service
-        .list_quotes(tenant_id, params.status.as_deref(), params.page, params.per_page)
+        .list_quotes(
+            tenant_id,
+            params.status.as_deref(),
+            params.page,
+            params.per_page,
+        )
         .await?;
     Ok(Json(quotes))
 }
@@ -195,10 +205,7 @@ pub async fn get_quote(
     Path(id): Path<Uuid>,
 ) -> Result<Json<Quote>> {
     let tenant_id = user.tenant_id;
-    let quote = state
-        .supply_chain_service
-        .get_quote(tenant_id, id)
-        .await?;
+    let quote = state.supply_chain_service.get_quote(tenant_id, id).await?;
     Ok(Json(quote))
 }
 
@@ -241,7 +248,12 @@ pub async fn list_sales_orders(
     let tenant_id = user.tenant_id;
     let orders = state
         .supply_chain_service
-        .list_sales_orders(tenant_id, params.status.as_deref(), params.page, params.per_page)
+        .list_sales_orders(
+            tenant_id,
+            params.status.as_deref(),
+            params.page,
+            params.per_page,
+        )
         .await?;
     Ok(Json(orders))
 }
@@ -300,7 +312,12 @@ pub async fn list_purchase_orders(
     let tenant_id = user.tenant_id;
     let orders = state
         .supply_chain_service
-        .list_purchase_orders(tenant_id, params.status.as_deref(), params.page, params.per_page)
+        .list_purchase_orders(
+            tenant_id,
+            params.status.as_deref(),
+            params.page,
+            params.per_page,
+        )
         .await?;
     Ok(Json(orders))
 }
@@ -359,7 +376,12 @@ pub async fn list_inventory(
     let tenant_id = user.tenant_id;
     let items = state
         .supply_chain_service
-        .list_inventory(tenant_id, params.location.as_deref(), params.page, params.per_page)
+        .list_inventory(
+            tenant_id,
+            params.location.as_deref(),
+            params.page,
+            params.per_page,
+        )
         .await?;
     Ok(Json(items))
 }
@@ -387,7 +409,13 @@ pub async fn adjust_inventory(
     let tenant_id = user.tenant_id;
     let item = state
         .supply_chain_service
-        .adjust_inventory(tenant_id, req.product_id, &req.location, req.quantity_change, &req.reason)
+        .adjust_inventory(
+            tenant_id,
+            req.product_id,
+            &req.location,
+            req.quantity_change,
+            &req.reason,
+        )
         .await?;
     Ok(Json(item))
 }
@@ -446,10 +474,7 @@ pub async fn delete_rfq(
     Path(id): Path<Uuid>,
 ) -> Result<Json<()>> {
     let tenant_id = user.tenant_id;
-    state
-        .supply_chain_service
-        .delete_rfq(tenant_id, id)
-        .await?;
+    state.supply_chain_service.delete_rfq(tenant_id, id).await?;
     Ok(Json(()))
 }
 
@@ -460,10 +485,7 @@ pub async fn submit_rfq(
     Path(id): Path<Uuid>,
 ) -> Result<Json<RFQ>> {
     let tenant_id = user.tenant_id;
-    let rfq = state
-        .supply_chain_service
-        .submit_rfq(tenant_id, id)
-        .await?;
+    let rfq = state.supply_chain_service.submit_rfq(tenant_id, id).await?;
     Ok(Json(rfq))
 }
 
@@ -474,10 +496,7 @@ pub async fn cancel_rfq(
     Path(id): Path<Uuid>,
 ) -> Result<Json<RFQ>> {
     let tenant_id = user.tenant_id;
-    let rfq = state
-        .supply_chain_service
-        .cancel_rfq(tenant_id, id)
-        .await?;
+    let rfq = state.supply_chain_service.cancel_rfq(tenant_id, id).await?;
     Ok(Json(rfq))
 }
 

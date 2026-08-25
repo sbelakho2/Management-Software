@@ -135,7 +135,14 @@ pub fn calculate_capability(
             total_defect_pct: 0.0,
         };
         unsafe {
-            sensei_stats_capability(data.as_ptr(), data.len(), lsl, usl, subgroup_size, &mut result);
+            sensei_stats_capability(
+                data.as_ptr(),
+                data.len(),
+                lsl,
+                usl,
+                subgroup_size,
+                &mut result,
+            );
         }
         result
     }
@@ -339,7 +346,7 @@ pub fn normal_cdf(x: f64) -> f64 {
     let abs_z = z.abs();
     let t = 1.0 / (1.0 + p * abs_z);
     let erf_approx =
-         1.0 - (((((a5 * t + a4) * t) + a3) * t + a2) * t + a1) * t * (-abs_z * abs_z).exp();
+        1.0 - (((((a5 * t + a4) * t) + a3) * t + a2) * t + a1) * t * (-abs_z * abs_z).exp();
 
     if z >= 0.0 {
         0.5 * (1.0 + erf_approx)
@@ -364,7 +371,7 @@ pub fn normal_quantile(p: f64) -> f64 {
         -3.969683028665376e+01,
         2.209460984245205e+02,
         -2.759285104469687e+02,
-        1.383577518672690e+02,
+        138.357751867269,
         -3.066479806614716e+01,
         2.506628277459239e+00,
     ];
@@ -393,7 +400,7 @@ pub fn normal_quantile(p: f64) -> f64 {
     let p_low = 0.02425;
     let p_high = 1.0 - p_low;
 
-    let x = if p < p_low {
+    if p < p_low {
         let q = (-2.0 * p.ln()).sqrt();
         (((((c[0] * q + c[1]) * q + c[2]) * q + c[3]) * q + c[4]) * q + c[5])
             / ((((d[0] * q + d[1]) * q + d[2]) * q + d[3]) * q + 1.0)
@@ -406,9 +413,7 @@ pub fn normal_quantile(p: f64) -> f64 {
         let q = (-2.0 * (1.0 - p).ln()).sqrt();
         -(((((c[0] * q + c[1]) * q + c[2]) * q + c[3]) * q + c[4]) * q + c[5])
             / ((((d[0] * q + d[1]) * q + d[2]) * q + d[3]) * q + 1.0)
-    };
-
-    x
+    }
 }
 
 // ──────────────────────────────────────────────
@@ -416,7 +421,10 @@ pub fn normal_quantile(p: f64) -> f64 {
 // ──────────────────────────────────────────────
 
 /// Estimate within-group standard deviation using moving range.
-#[allow(dead_code)]
+///
+/// Only used by the pure-Rust capability path (`SENSEI_NO_ZIG` builds); the
+/// Zig-linked build computes this natively.
+#[cfg(no_zig)]
 fn estimate_within_std_dev(data: &[f64], subgroup_size: usize) -> f64 {
     if data.len() < 2 {
         return 0.0;

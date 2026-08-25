@@ -8,13 +8,13 @@
 
 use async_trait::async_trait;
 use sensei_core::error::{Result, SenseiError};
-use sensei_core::types::{EntityId, TenantId, Timestamp, new_id, now};
+use sensei_core::types::{new_id, now, EntityId, TenantId, Timestamp};
 use uuid::Uuid;
 
 use super::models::{
     ArtifactStatus, ArtifactType, CertificationCheckResult, GateDecision, GateReview, LabSample,
-    LabTestMethod, LabTestRun, ManagementReview, ManagementReviewAction, NpiArtifact, NpiStage,
-    NpiProject, StageRequirements, TraceabilityLink, TraceabilityMatrix, TransitionBlockReason,
+    LabTestMethod, LabTestRun, ManagementReview, ManagementReviewAction, NpiArtifact, NpiProject,
+    NpiStage, StageRequirements, TraceabilityLink, TraceabilityMatrix, TransitionBlockReason,
     TransitionResult,
 };
 
@@ -173,10 +173,7 @@ pub trait TraceabilityService: Send + Sync {
     ) -> Result<TraceabilityLink>;
 
     /// List links for a matrix or globally.
-    async fn list_links(
-        &self,
-        matrix_id: Option<EntityId>,
-    ) -> Result<Vec<TraceabilityLink>>;
+    async fn list_links(&self, matrix_id: Option<EntityId>) -> Result<Vec<TraceabilityLink>>;
 }
 
 // ---------------------------------------------------------------------------
@@ -303,7 +300,8 @@ pub struct InMemoryStageGatesService {
     reviews: tokio::sync::RwLock<Vec<ManagementReview>>,
     review_actions: tokio::sync::RwLock<Vec<ManagementReviewAction>>,
     /// User certifications: maps user_id → list of certification entries.
-    certifications: tokio::sync::RwLock<std::collections::HashMap<Uuid, Vec<UserCertificationEntry>>>,
+    certifications:
+        tokio::sync::RwLock<std::collections::HashMap<Uuid, Vec<UserCertificationEntry>>>,
 }
 
 impl InMemoryStageGatesService {
@@ -324,11 +322,7 @@ impl InMemoryStageGatesService {
     }
 
     /// Register a certification for a user.
-    pub async fn register_user_certification(
-        &self,
-        user_id: Uuid,
-        entry: UserCertificationEntry,
-    ) {
+    pub async fn register_user_certification(&self, user_id: Uuid, entry: UserCertificationEntry) {
         self.certifications
             .write()
             .await
@@ -361,10 +355,7 @@ impl InMemoryStageGatesService {
                     ArtifactType::ProcessCapabilityStudy,
                 ],
                 optional_artifacts: vec![ArtifactType::SupplierQuotes],
-                required_approvers: vec![
-                    "Project Manager".into(),
-                    "Engineering Manager".into(),
-                ],
+                required_approvers: vec!["Project Manager".into(), "Engineering Manager".into()],
                 minimum_approval_count: 2,
             },
             StageRequirements {
@@ -375,10 +366,7 @@ impl InMemoryStageGatesService {
                     ArtifactType::DesignValidation,
                 ],
                 optional_artifacts: vec![ArtifactType::SupplierQuotes],
-                required_approvers: vec![
-                    "Project Manager".into(),
-                    "Quality Manager".into(),
-                ],
+                required_approvers: vec!["Project Manager".into(), "Quality Manager".into()],
                 minimum_approval_count: 2,
             },
             StageRequirements {
@@ -636,10 +624,7 @@ impl NpiStageGateService for InMemoryStageGatesService {
         Ok(project.clone())
     }
 
-    async fn get_project_artifacts(
-        &self,
-        project_id: EntityId,
-    ) -> Result<Vec<NpiArtifact>> {
+    async fn get_project_artifacts(&self, project_id: EntityId) -> Result<Vec<NpiArtifact>> {
         let artifacts = self.artifacts.read().await;
         Ok(artifacts
             .iter()
@@ -747,7 +732,9 @@ impl NpiStageGateService for InMemoryStageGatesService {
             .find(|p| p.id == project_id)
             .ok_or_else(|| SenseiError::NotFound(format!("Project {project_id} not found")))?;
 
-        if project.current_stage == NpiStage::Cancelled || project.current_stage == NpiStage::Completed {
+        if project.current_stage == NpiStage::Cancelled
+            || project.current_stage == NpiStage::Completed
+        {
             return Ok(TransitionResult {
                 success: false,
                 from_stage: project.current_stage,
@@ -764,11 +751,8 @@ impl NpiStageGateService for InMemoryStageGatesService {
             .ok_or_else(|| SenseiError::Validation("No next stage available".into()))?;
 
         let artifacts = self.artifacts.read().await;
-        let stage_artifacts = Self::_get_artifacts_for_stage(
-            &artifacts,
-            project_id,
-            project.current_stage,
-        );
+        let stage_artifacts =
+            Self::_get_artifacts_for_stage(&artifacts, project_id, project.current_stage);
 
         let mut blocked_reasons = Vec::new();
         let mut missing_artifacts = Vec::new();
@@ -866,7 +850,8 @@ impl NpiStageGateService for InMemoryStageGatesService {
             .find(|p| p.id == project_id)
             .ok_or_else(|| SenseiError::NotFound(format!("Project {project_id} not found")))?;
 
-        if project.current_stage == NpiStage::Intake || project.current_stage == NpiStage::Cancelled {
+        if project.current_stage == NpiStage::Intake || project.current_stage == NpiStage::Cancelled
+        {
             return Err(SenseiError::Validation(
                 "Cannot rollback from Intake or Cancelled stage".into(),
             ));
@@ -930,10 +915,7 @@ impl NpiStageGateService for InMemoryStageGatesService {
         Ok(review)
     }
 
-    async fn get_project_gate_reviews(
-        &self,
-        project_id: EntityId,
-    ) -> Result<Vec<GateReview>> {
+    async fn get_project_gate_reviews(&self, project_id: EntityId) -> Result<Vec<GateReview>> {
         let reviews = self.gate_reviews.read().await;
         Ok(reviews
             .iter()
@@ -950,11 +932,8 @@ impl NpiStageGateService for InMemoryStageGatesService {
             .ok_or_else(|| SenseiError::NotFound(format!("Project {project_id} not found")))?;
 
         let artifacts = self.artifacts.read().await;
-        let stage_artifacts = Self::_get_artifacts_for_stage(
-            &artifacts,
-            project_id,
-            project.current_stage,
-        );
+        let stage_artifacts =
+            Self::_get_artifacts_for_stage(&artifacts, project_id, project.current_stage);
 
         if stage_artifacts.is_empty() {
             return Ok(100.0);
@@ -983,10 +962,7 @@ impl NpiStageGateService for InMemoryStageGatesService {
             .collect();
 
         let total_artifacts = project_artifacts.len();
-        let completed = project_artifacts
-            .iter()
-            .filter(|a| a.is_complete())
-            .count();
+        let completed = project_artifacts.iter().filter(|a| a.is_complete()).count();
         let approved = project_artifacts
             .iter()
             .filter(|a| a.status == ArtifactStatus::Approved)
@@ -1090,10 +1066,7 @@ impl TraceabilityService for InMemoryStageGatesService {
         Ok(link)
     }
 
-    async fn list_links(
-        &self,
-        matrix_id: Option<EntityId>,
-    ) -> Result<Vec<TraceabilityLink>> {
+    async fn list_links(&self, matrix_id: Option<EntityId>) -> Result<Vec<TraceabilityLink>> {
         let links = self.links.read().await;
         Ok(match matrix_id {
             Some(mid) => links

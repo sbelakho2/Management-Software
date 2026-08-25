@@ -49,6 +49,12 @@ fn tenant_model_to_domain(m: TenantModel) -> Result<Tenant> {
 impl TenantsService for DatabaseTenantsService {
     async fn create_tenant(&self, tenant: Tenant) -> Result<Tenant> {
         let now = Utc::now();
+        // Preserve a caller-supplied id; only generate one when absent.
+        let id = if tenant.id.is_nil() {
+            uuid::Uuid::new_v4()
+        } else {
+            tenant.id
+        };
         let features_json = serde_json::to_value(&tenant.features)
             .map_err(|e| SenseiError::Serialization(e.to_string()))?;
 
@@ -59,7 +65,7 @@ impl TenantsService for DatabaseTenantsService {
             RETURNING id, name, slug, is_active, features, created_at, updated_at
             "#,
         )
-        .bind(tenant.id)
+        .bind(id)
         .bind(&tenant.name)
         .bind(&tenant.slug)
         .bind(tenant.is_active)
@@ -70,7 +76,9 @@ impl TenantsService for DatabaseTenantsService {
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to create tenant: {e}")))?;
 
-        tenant_model_to_domain(model)
+        let mut created = tenant_model_to_domain(model)?;
+        created.id = id;
+        Ok(created)
     }
 
     async fn get_tenant(&self, id: TenantId) -> Result<Tenant> {

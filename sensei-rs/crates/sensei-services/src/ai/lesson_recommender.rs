@@ -106,7 +106,7 @@ impl TextVectorizer {
         }
 
         let mut freq_vec: Vec<(String, usize)> = doc_freq.into_iter().collect();
-        freq_vec.sort_by(|a, b| b.1.cmp(&a.1));
+        freq_vec.sort_by_key(|a| std::cmp::Reverse(a.1));
         freq_vec.truncate(self.max_features);
 
         self.vocab.clear();
@@ -314,7 +314,11 @@ impl LessonRecommender {
             .collect();
 
         // Sort by score descending and take top-k
-        scored.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        scored.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         scored.truncate(top_k);
         scored
     }
@@ -357,8 +361,10 @@ impl LessonRecommender {
                 self.calculate_content_similarity(lesson, user_completions, all_lessons);
             score += content_sim * 0.20;
             if content_sim > 0.6 {
-                explanations
-                    .insert("similar".into(), "Similar to lessons you've completed".into());
+                explanations.insert(
+                    "similar".into(),
+                    "Similar to lessons you've completed".into(),
+                );
             }
         }
 
@@ -380,10 +386,7 @@ impl LessonRecommender {
         if let Some(rating) = lesson.average_rating {
             if rating >= 4.5 {
                 score += 0.05;
-                explanations.insert(
-                    "popular".into(),
-                    format!("Highly rated ({:.1}★)", rating),
-                );
+                explanations.insert("popular".into(), format!("Highly rated ({:.1}★)", rating));
             }
         }
 
@@ -555,16 +558,12 @@ impl LessonRecommender {
                 .collect();
 
             // Get recommendations
-            let recommendations = self.recommend(
-                user,
-                &train_comps,
-                lessons,
-                5,
-                true,
-            );
+            let recommendations = self.recommend(user, &train_comps, lessons, 5, true);
 
-            let recommended_ids: HashSet<&str> =
-                recommendations.iter().map(|r| r.lesson_id.as_str()).collect();
+            let recommended_ids: HashSet<&str> = recommendations
+                .iter()
+                .map(|r| r.lesson_id.as_str())
+                .collect();
 
             if recommended_ids.contains(test_lesson_id.as_str()) {
                 precisions.push(1.0);
@@ -622,9 +621,7 @@ pub fn generate_recommendations_for_all_users(
 
     let mut all_recommendations = HashMap::new();
     for user in users {
-        let user_comps = user_completions_map
-            .remove(&user.id)
-            .unwrap_or_default();
+        let user_comps = user_completions_map.remove(&user.id).unwrap_or_default();
         let recs = recommender.recommend(user, &user_comps, lessons, top_k, true);
         all_recommendations.insert(user.id.clone(), recs);
     }
@@ -640,7 +637,13 @@ pub fn generate_recommendations_for_all_users(
 mod tests {
     use super::*;
 
-    fn make_lesson(id: &str, title: &str, tags: &[&str], skills: &[&str], mandatory: bool) -> Lesson {
+    fn make_lesson(
+        id: &str,
+        title: &str,
+        tags: &[&str],
+        skills: &[&str],
+        mandatory: bool,
+    ) -> Lesson {
         Lesson {
             id: id.into(),
             title: title.into(),
@@ -725,7 +728,7 @@ mod tests {
         vec.fit(&docs);
         let embeddings = vec.transform(&docs);
         assert_eq!(embeddings.len(), 3);
-        assert!(vec.vocab.len() > 0);
+        assert!(!vec.vocab.is_empty());
     }
 
     #[test]
@@ -758,7 +761,10 @@ mod tests {
 
         recommender.train(&lessons, &completions, &users);
 
-        let embeddings = recommender.lesson_embeddings.as_ref().expect("embeddings exist");
+        let embeddings = recommender
+            .lesson_embeddings
+            .as_ref()
+            .expect("embeddings exist");
         assert_eq!(embeddings.len(), lessons.len());
         for (i, emb) in embeddings.iter().enumerate() {
             let norm: f64 = emb.iter().map(|v| v * v).sum();
@@ -822,13 +828,8 @@ mod tests {
         }];
         recommender.train(&lessons, &[], &users);
 
-        let all_recs = generate_recommendations_for_all_users(
-            &recommender,
-            &users,
-            &[],
-            &lessons,
-            5,
-        );
+        let all_recs =
+            generate_recommendations_for_all_users(&recommender, &users, &[], &lessons, 5);
         assert!(all_recs.contains_key("u1"));
     }
 }

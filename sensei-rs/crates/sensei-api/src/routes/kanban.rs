@@ -3,20 +3,23 @@
 //! Provides endpoints for managing Kanban boards, columns, and cards,
 //! including card moves and Kanban metrics.
 
-use axum::{Json, extract::{Path, Query, State}};
+use axum::{
+    extract::{Path, Query, State},
+    Json,
+};
 use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
 use sensei_auth::middleware::AuthenticatedUser;
-use sensei_core::error::{Result, SenseiError};
 use sensei_core::domain::events::{
     KanbanCardCreatedEvent, KanbanCardDeletedEvent, KanbanCardMovedEvent,
 };
+use sensei_core::error::{Result, SenseiError};
 use sensei_core::pagination::PaginatedResponse;
 use sensei_core::types::new_id;
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::state::AppState;
-use crate::stores::{KanbanBoard, KanbanColumn, KanbanCard};
+use crate::stores::{KanbanBoard, KanbanCard, KanbanColumn};
 
 // ── Query / Request DTOs ───────────────────────────────────────────────────
 
@@ -123,7 +126,7 @@ pub async fn list_boards(
         .filter(|b| b.tenant_id == tenant_id)
         .cloned()
         .collect();
-    boards.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
+    boards.sort_by_key(|a| std::cmp::Reverse(a.updated_at));
     let result = PaginatedResponse::new(boards, params.page, params.per_page);
     Ok(Json(result))
 }
@@ -436,7 +439,9 @@ pub async fn update_card(
                 .columns
                 .iter()
                 .position(|c| c.id == target_cid)
-                .ok_or_else(|| SenseiError::NotFound(format!("Target column {target_cid} not found")))?;
+                .ok_or_else(|| {
+                    SenseiError::NotFound(format!("Target column {target_cid} not found"))
+                })?;
 
             let old_column_name = board.columns[src_idx].name.clone();
             let target_col_name = board.columns[tgt_idx].name.clone();
@@ -460,7 +465,8 @@ pub async fn update_card(
             // Track completion: entering a terminal ("done") column stamps
             // completed_at; leaving one clears it.
             let target_name_lower = board.columns[tgt_idx].name.to_lowercase();
-            let target_is_done = target_name_lower == "done" || target_name_lower.starts_with("done");
+            let target_is_done =
+                target_name_lower == "done" || target_name_lower.starts_with("done");
             if target_is_done {
                 if moved.completed_at.is_none() {
                     moved.completed_at = Some(now);
@@ -574,7 +580,11 @@ pub async fn move_card(
 
         // A missing destination column is an explicit error naming the
         // column, not a misleading "card not found".
-        let Some(tgt_idx) = board.columns.iter().position(|c| c.id == req.target_column_id) else {
+        let Some(tgt_idx) = board
+            .columns
+            .iter()
+            .position(|c| c.id == req.target_column_id)
+        else {
             return Err(SenseiError::NotFound(format!(
                 "Target column {} not found on board {}",
                 req.target_column_id, board.id

@@ -14,9 +14,7 @@ use async_nats::jetstream::kv::Store;
 use async_nats::jetstream::Context;
 use async_trait::async_trait;
 use sensei_services::export::pdf::{A3Data, PdfExportService, QuoteData};
-use sensei_services::storage::file_storage::{
-    FileStorageService, InMemoryStorageService,
-};
+use sensei_services::storage::file_storage::{FileStorageService, InMemoryStorageService};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -137,15 +135,10 @@ impl PdfWorker {
     }
 
     /// Update progress for a given task in the KV store.
-    async fn update_progress(
-        &self,
-        task_id: &str,
-        progress: &PdfProgress,
-    ) -> Result<()> {
+    async fn update_progress(&self, task_id: &str, progress: &PdfProgress) -> Result<()> {
         let store = self.kv_store().await?;
         let key = format!("pdf.{}", task_id);
-        let value = serde_json::to_vec(progress)
-            .map_err(WorkerError::Serialization)?;
+        let value = serde_json::to_vec(progress).map_err(WorkerError::Serialization)?;
 
         store
             .put(key, value.into())
@@ -171,20 +164,16 @@ impl PdfWorker {
         let pdf = self.pdf.clone();
 
         // Rendering is CPU-bound; run it on a blocking thread.
-        let pdf_bytes = tokio::task::spawn_blocking(move || {
-            match kind {
-                PdfKind::A3 => {
-                    let a3: A3Data = serde_json::from_value(data).map_err(|e| {
-                        format!("A3 PDF data is missing or malformed: {e}")
-                    })?;
-                    pdf.generate_a3_report(&a3).map_err(|e| e.to_string())
-                }
-                PdfKind::Quote => {
-                    let quote: QuoteData = serde_json::from_value(data).map_err(|e| {
-                        format!("Quote PDF data is missing or malformed: {e}")
-                    })?;
-                    pdf.generate_quote(&quote).map_err(|e| e.to_string())
-                }
+        let pdf_bytes = tokio::task::spawn_blocking(move || match kind {
+            PdfKind::A3 => {
+                let a3: A3Data = serde_json::from_value(data)
+                    .map_err(|e| format!("A3 PDF data is missing or malformed: {e}"))?;
+                pdf.generate_a3_report(&a3).map_err(|e| e.to_string())
+            }
+            PdfKind::Quote => {
+                let quote: QuoteData = serde_json::from_value(data)
+                    .map_err(|e| format!("Quote PDF data is missing or malformed: {e}"))?;
+                pdf.generate_quote(&quote).map_err(|e| e.to_string())
             }
         })
         .await
@@ -231,20 +220,22 @@ impl TaskConsumer for PdfWorker {
     }
 
     async fn process(&self, payload: &[u8], metadata: &TaskMetadata) -> Result<()> {
-        let pdf_payload: PdfTaskPayload = serde_json::from_slice(payload)
-            .map_err(|e| {
-                error!(
-                    task_id = %metadata.task_id,
-                    error = %e,
-                    "Failed to deserialize PDF task payload"
-                );
-                WorkerError::Serialization(e)
-            })?;
+        let pdf_payload: PdfTaskPayload = serde_json::from_slice(payload).map_err(|e| {
+            error!(
+                task_id = %metadata.task_id,
+                error = %e,
+                "Failed to deserialize PDF task payload"
+            );
+            WorkerError::Serialization(e)
+        })?;
 
         let task_id_str = metadata.task_id.to_string();
 
         // Mark as pending.
-        if let Err(e) = self.update_progress(&task_id_str, &PdfProgress::Pending).await {
+        if let Err(e) = self
+            .update_progress(&task_id_str, &PdfProgress::Pending)
+            .await
+        {
             warn!(error = %e, "Failed to update KV progress");
         }
 
@@ -255,16 +246,15 @@ impl TaskConsumer for PdfWorker {
             .and_then(|v| v.as_str())
             .and_then(|s| Uuid::parse_str(s).ok());
 
-        let result = self.generate_pdf(&pdf_payload, &task_id_str, tenant_id).await;
+        let result = self
+            .generate_pdf(&pdf_payload, &task_id_str, tenant_id)
+            .await;
 
         match result {
             Ok(storage_key) => {
-                self.update_progress(
-                    &task_id_str,
-                    &PdfProgress::Completed { storage_key },
-                )
-                .await
-                .unwrap_or_else(|e| warn!(error = %e, "Failed to update KV progress"));
+                self.update_progress(&task_id_str, &PdfProgress::Completed { storage_key })
+                    .await
+                    .unwrap_or_else(|e| warn!(error = %e, "Failed to update KV progress"));
 
                 info!(
                     task_id = %metadata.task_id,

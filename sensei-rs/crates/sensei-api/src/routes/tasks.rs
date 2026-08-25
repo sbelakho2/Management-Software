@@ -3,16 +3,19 @@
 //! Provides endpoints for managing tasks, including CRUD, status transitions,
 //! assignment, and statistics.
 
-use axum::{Json, extract::{Path, Query, State}};
+use axum::{
+    extract::{Path, Query, State},
+    Json,
+};
 use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
 use sensei_auth::middleware::AuthenticatedUser;
-use sensei_core::error::{Result, SenseiError};
 use sensei_core::domain::events::{
     DomainEvent, TaskAssignedEvent, TaskCreatedEvent, TaskStatusChangedEvent, TaskUpdatedEvent,
 };
+use sensei_core::error::{Result, SenseiError};
 use sensei_core::pagination::PaginatedResponse;
 use sensei_core::types::new_id;
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::state::AppState;
@@ -111,7 +114,9 @@ fn parse_priority(s: &str) -> std::result::Result<TaskPriority, SenseiError> {
         "critical" => Ok(TaskPriority::Critical),
         other => Err(SenseiError::InvalidValue {
             field: "priority".to_string(),
-            detail: format!("Unknown priority '{other}'. Valid values: low, medium, high, critical"),
+            detail: format!(
+                "Unknown priority '{other}'. Valid values: low, medium, high, critical"
+            ),
         }),
     }
 }
@@ -174,7 +179,7 @@ pub async fn list_tasks(
         })
         .cloned()
         .collect();
-    tasks.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
+    tasks.sort_by_key(|a| std::cmp::Reverse(a.updated_at));
     let result = PaginatedResponse::new(tasks, params.page, params.per_page);
     Ok(Json(result))
 }
@@ -187,11 +192,14 @@ pub async fn create_task(
 ) -> Result<Json<Task>> {
     let tenant_id = user.tenant_id;
     let now = Utc::now();
-    let due_date = req.due_date
+    let due_date = req
+        .due_date
         .as_deref()
-        .map(|d| DateTime::parse_from_rfc3339(d)
-            .map_err(|e| SenseiError::Validation(format!("Invalid due_date: {e}")))
-            .map(|dt| dt.with_timezone(&Utc)))
+        .map(|d| {
+            DateTime::parse_from_rfc3339(d)
+                .map_err(|e| SenseiError::Validation(format!("Invalid due_date: {e}")))
+                .map(|dt| dt.with_timezone(&Utc))
+        })
         .transpose()?;
 
     let priority = parse_priority(&req.priority)?;
@@ -296,9 +304,11 @@ pub async fn update_task(
     }
     if let Some(due) = req.due_date {
         task.due_date = due
-            .map(|d| DateTime::parse_from_rfc3339(&d)
-                .map_err(|e| SenseiError::Validation(format!("Invalid due_date: {e}")))
-                .map(|dt| dt.with_timezone(&Utc)))
+            .map(|d| {
+                DateTime::parse_from_rfc3339(&d)
+                    .map_err(|e| SenseiError::Validation(format!("Invalid due_date: {e}")))
+                    .map(|dt| dt.with_timezone(&Utc))
+            })
             .transpose()?;
         changed = true;
     }
@@ -383,9 +393,7 @@ pub async fn update_task_status(
             .get_mut(&sm_instance_id)
             .filter(|i| i.tenant_id == tenant_id)
             .ok_or_else(|| {
-                SenseiError::NotFound(format!(
-                    "State machine instance {sm_instance_id} not found"
-                ))
+                SenseiError::NotFound(format!("State machine instance {sm_instance_id} not found"))
             })?;
 
         // Look up the definition to find a matching transition
@@ -436,10 +444,7 @@ pub async fn update_task_status(
                 }
 
                 // Check allowed roles against the user's REAL roles.
-                let target_state_def = definition
-                    .states
-                    .iter()
-                    .find(|s| s.name == t.to_state);
+                let target_state_def = definition.states.iter().find(|s| s.name == t.to_state);
                 if let Some(target_def) = target_state_def {
                     if !target_def.allowed_roles.is_empty()
                         && !user.has_any_role(
@@ -574,7 +579,8 @@ pub async fn get_task_stats(
 
     // Count by status
     let mut status_map: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
-    let mut priority_map: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+    let mut priority_map: std::collections::HashMap<String, usize> =
+        std::collections::HashMap::new();
     let mut overdue = 0usize;
     let mut unassigned = 0usize;
 
@@ -635,15 +641,11 @@ fn evaluate_conditions(
                     }
                 }
                 Some("field_match") => {
-                    if let (Some(field), Some(expected)) = (
-                        map.get("field").and_then(|v| v.as_str()),
-                        map.get("value"),
-                    ) {
+                    if let (Some(field), Some(expected)) =
+                        (map.get("field").and_then(|v| v.as_str()), map.get("value"))
+                    {
                         let actual = context.get(field);
-                        match actual {
-                            Some(val) if val == expected => true,
-                            _ => false,
-                        }
+                        matches!(actual, Some(val) if val == expected)
                     } else {
                         true
                     }
@@ -656,7 +658,8 @@ fn evaluate_conditions(
         }
         serde_json::Value::Array(arr) => {
             // AND semantics: all conditions must pass
-            arr.iter().all(|c| evaluate_conditions(c, context, user_roles))
+            arr.iter()
+                .all(|c| evaluate_conditions(c, context, user_roles))
         }
         _ => true, // No conditions = always allowed
     }
@@ -666,11 +669,7 @@ fn evaluate_conditions(
 ///
 /// Hooks can be arbitrary JSON actions such as sending notifications,
 /// updating related entities, or calling external services.
-async fn execute_on_transition_hook(
-    state: &AppState,
-    hook: &serde_json::Value,
-    task: &Task,
-) {
+async fn execute_on_transition_hook(state: &AppState, hook: &serde_json::Value, task: &Task) {
     let Some(map) = hook.as_object() else {
         tracing::warn!("Invalid on_transition hook format");
         return;
@@ -698,15 +697,15 @@ async fn execute_on_transition_hook(
                 .to_string();
             if let Err(e) = state
                 .notification_service
-                .notify(
-                    task.tenant_id,
-                    target_user,
-                    &title,
-                    &body,
-                    "info",
-                    Some("task"),
-                    Some(task.id),
-                )
+                .notify(sensei_services::notifications::NewNotification {
+                    tenant_id: task.tenant_id,
+                    user_id: target_user,
+                    title,
+                    body,
+                    notification_type: "info".to_string(),
+                    reference_type: Some("task".to_string()),
+                    reference_id: Some(task.id),
+                })
                 .await
             {
                 tracing::warn!(
@@ -718,15 +717,14 @@ async fn execute_on_transition_hook(
         }
         "webhook" => {
             if let Some(url) = map.get("url").and_then(|v| v.as_str()) {
-                let payload = map
-                    .get("payload")
-                    .cloned()
-                    .unwrap_or_else(|| serde_json::json!({
+                let payload = map.get("payload").cloned().unwrap_or_else(|| {
+                    serde_json::json!({
                         "task_id": task.id,
                         "title": task.title,
                         "status": task.status.to_string(),
                         "priority": task.priority.to_string(),
-                    }));
+                    })
+                });
                 let result = reqwest::Client::new()
                     .post(url)
                     .json(&payload)

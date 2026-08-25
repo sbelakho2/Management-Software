@@ -8,7 +8,6 @@ use serde_json::Value;
 
 mod common;
 
-
 /// Work order payload with all required `WorkOrder` fields (the shared
 /// fixture omits id/tenant_id/wo_number/quantity_completed/assigned_to/
 /// created_at/updated_at, which the entity requires).
@@ -37,7 +36,7 @@ async fn test_create_work_order() {
     let json: Value = app.json_body(&mut resp).await;
     assert_eq!(json["product_name"], "Test Product");
     assert_eq!(json["quantity"], 100);
-    assert!(json["id"].as_str().unwrap_or("").len() > 0);
+    assert!(!json["id"].as_str().unwrap_or("").is_empty());
 }
 
 #[tokio::test]
@@ -56,7 +55,7 @@ async fn test_list_work_orders() {
     assert_eq!(resp.status(), StatusCode::OK);
 
     let json: Value = app.json_body(&mut resp).await;
-    assert!(json["data"].as_array().unwrap_or(&vec![]).len() >= 1);
+    assert!(!json["data"].as_array().unwrap_or(&vec![]).is_empty());
 }
 
 #[tokio::test]

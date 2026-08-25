@@ -30,12 +30,10 @@ pub use chatbot_database::DatabaseChatbotService;
 
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
-use sensei_core::domain::events::{
-    AnomalyDetectedEvent, ModelRetrainedEvent,
-};
+use sensei_core::domain::events::{AnomalyDetectedEvent, ModelRetrainedEvent};
 use sensei_core::error::{Result, SenseiError};
 use sensei_event_bus::bus::EventBus;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -171,12 +169,7 @@ impl InMemoryAiService {
     /// accuracy and dataset size; without any recorded outcomes retraining
     /// fails honestly with an `insufficient_data` error instead of inventing
     /// metrics.
-    pub async fn submit_training_outcomes(
-        &self,
-        model_type: &str,
-        correct: u64,
-        total: u64,
-    ) {
+    pub async fn submit_training_outcomes(&self, model_type: &str, correct: u64, total: u64) {
         let mut outcomes = self.training_outcomes.write().await;
         let entry = outcomes.entry(model_type.to_string()).or_insert((0, 0));
         entry.0 += correct;
@@ -216,7 +209,9 @@ impl AiService for InMemoryAiService {
                     anomaly_score: 0.72,
                     predicted_failure: "quality_defect".to_string(),
                     confidence: 0.85,
-                    recommended_action: "Review recent inspection results and escalate if pattern persists.".to_string(),
+                    recommended_action:
+                        "Review recent inspection results and escalate if pattern persists."
+                            .to_string(),
                     detected_at: now,
                 },
                 AnomalyPrediction {
@@ -225,21 +220,22 @@ impl AiService for InMemoryAiService {
                     anomaly_score: 0.34,
                     predicted_failure: "documentation_gap".to_string(),
                     confidence: 0.62,
-                    recommended_action: "Verify that all required fields and attachments are present.".to_string(),
+                    recommended_action:
+                        "Verify that all required fields and attachments are present.".to_string(),
                     detected_at: now,
                 },
             ],
-            "work_order" => vec![
-                AnomalyPrediction {
-                    entity_type: entity_type.to_string(),
-                    entity_id,
-                    anomaly_score: 0.58,
-                    predicted_failure: "schedule_delay".to_string(),
-                    confidence: 0.78,
-                    recommended_action: "Re-allocate resources to meet deadline. Consider overtime approval.".to_string(),
-                    detected_at: now,
-                },
-            ],
+            "work_order" => vec![AnomalyPrediction {
+                entity_type: entity_type.to_string(),
+                entity_id,
+                anomaly_score: 0.58,
+                predicted_failure: "schedule_delay".to_string(),
+                confidence: 0.78,
+                recommended_action:
+                    "Re-allocate resources to meet deadline. Consider overtime approval."
+                        .to_string(),
+                detected_at: now,
+            }],
             "equipment" => vec![
                 AnomalyPrediction {
                     entity_type: entity_type.to_string(),
@@ -247,7 +243,9 @@ impl AiService for InMemoryAiService {
                     anomaly_score: 0.81,
                     predicted_failure: "equipment_breakdown".to_string(),
                     confidence: 0.91,
-                    recommended_action: "Schedule immediate inspection. Vibration pattern indicates bearing wear.".to_string(),
+                    recommended_action:
+                        "Schedule immediate inspection. Vibration pattern indicates bearing wear."
+                            .to_string(),
                     detected_at: now,
                 },
                 AnomalyPrediction {

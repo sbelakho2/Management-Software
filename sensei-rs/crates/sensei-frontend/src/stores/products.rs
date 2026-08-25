@@ -64,7 +64,11 @@ impl ProductsStore {
     }
 
     /// Create a new product.
-    pub async fn create_product(&self, client: &ApiClient, data: &serde_json::Value) -> Result<ProductDetailDto, ApiError> {
+    pub async fn create_product(
+        &self,
+        client: &ApiClient,
+        data: &serde_json::Value,
+    ) -> Result<ProductDetailDto, ApiError> {
         let product = ProductsApi::create_product(client, data).await?;
         // Refetch the list
         self.fetch_products(client).await;
@@ -72,7 +76,12 @@ impl ProductsStore {
     }
 
     /// Update an existing product.
-    pub async fn update_product(&self, client: &ApiClient, id: &str, data: &serde_json::Value) -> Result<ProductDetailDto, ApiError> {
+    pub async fn update_product(
+        &self,
+        client: &ApiClient,
+        id: &str,
+        data: &serde_json::Value,
+    ) -> Result<ProductDetailDto, ApiError> {
         let product = ProductsApi::update_product(client, id, data).await?;
         self.current_product.set(Some(product.clone()));
         self.fetch_products(client).await;

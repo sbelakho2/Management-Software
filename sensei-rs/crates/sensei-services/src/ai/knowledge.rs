@@ -396,10 +396,7 @@ impl KnowledgeBase {
             .collect();
 
         // Sort by score descending
-        scored.sort_by(|a, b| {
-            b.0.partial_cmp(&a.0)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        });
+        scored.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
 
         scored.into_iter().map(|(_, s)| s).collect()
     }
@@ -434,11 +431,7 @@ impl KnowledgeBase {
             .filter_map(|pattern| {
                 let mut score = 0.0f64;
 
-                if pattern
-                    .title
-                    .to_lowercase()
-                    .contains(&query_lower)
-                {
+                if pattern.title.to_lowercase().contains(&query_lower) {
                     score += 0.5;
                 }
                 if pattern
@@ -462,10 +455,7 @@ impl KnowledgeBase {
             })
             .collect();
 
-        scored.sort_by(|a, b| {
-            b.0.partial_cmp(&a.0)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        });
+        scored.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
 
         scored.into_iter().map(|(_, p)| p).collect()
     }
@@ -584,7 +574,14 @@ mod tests {
         let kb = KnowledgeBase::new();
         let results = kb.search_sources("mistake proofing");
         assert!(!results.is_empty());
-        assert!(results.iter().any(|s| s.content.contains("mistake proofing")));
+        // The Poka-Yoke source matches by title and tags (its content
+        // describes the mechanisms without the literal phrase).
+        assert!(results.iter().any(|s| {
+            s.title.to_lowercase().contains("mistake proofing")
+                || s.tags
+                    .iter()
+                    .any(|t| t.to_lowercase().contains("mistake proofing"))
+        }));
     }
 
     #[test]

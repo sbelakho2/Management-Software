@@ -108,7 +108,10 @@ impl PdfPreviewStore {
         let vid = version_id
             .map(|v| v.to_string())
             .or_else(|| {
-                doc.versions.iter().find(|v| v.is_current).map(|v| v.id.clone())
+                doc.versions
+                    .iter()
+                    .find(|v| v.is_current)
+                    .map(|v| v.id.clone())
             })
             .or_else(|| doc.versions.first().map(|v| v.id.clone()));
 
@@ -182,7 +185,7 @@ impl PdfPreviewStore {
     // -----------------------------------------------------------------------
 
     pub fn set_zoom(&self, zoom: f64) {
-        self.zoom.set(zoom.max(0.25).min(5.0));
+        self.zoom.set(zoom.clamp(0.25, 5.0));
     }
 
     pub fn zoom_in(&self) {

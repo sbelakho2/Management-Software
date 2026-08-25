@@ -3,13 +3,16 @@
 //! Provides endpoints for managing skill/training matrix entries and
 //! identifying skill gaps across the organization.
 
-use axum::{Json, extract::{Path, Query, State}};
+use axum::{
+    extract::{Path, Query, State},
+    Json,
+};
 use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
 use sensei_auth::middleware::AuthenticatedUser;
 use sensei_core::error::{Result, SenseiError};
 use sensei_core::pagination::PaginatedResponse;
 use sensei_core::types::new_id;
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::state::AppState;
@@ -66,12 +69,22 @@ pub async fn list_matrix_entries(
     let mut entries: Vec<TrainingMatrixEntry> = store
         .values()
         .filter(|e| e.tenant_id == user.tenant_id)
-        .filter(|e| params.employee_id.map_or(true, |emp| e.employee_id == emp))
-        .filter(|e| params.skill_category.as_ref().map_or(true, |cat| e.skill_category == *cat))
-        .filter(|e| params.proficiency_level.as_ref().map_or(true, |lvl| e.proficiency_level == *lvl))
+        .filter(|e| params.employee_id.is_none_or(|emp| e.employee_id == emp))
+        .filter(|e| {
+            params
+                .skill_category
+                .as_ref()
+                .is_none_or(|cat| e.skill_category == *cat)
+        })
+        .filter(|e| {
+            params
+                .proficiency_level
+                .as_ref()
+                .is_none_or(|lvl| e.proficiency_level == *lvl)
+        })
         .cloned()
         .collect();
-    entries.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
+    entries.sort_by_key(|a| std::cmp::Reverse(a.updated_at));
     let result = PaginatedResponse::new(entries, params.page, params.per_page);
     Ok(Json(result))
 }

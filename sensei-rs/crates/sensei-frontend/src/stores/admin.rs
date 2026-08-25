@@ -3,9 +3,9 @@
 //!
 //! Port of [`frontend/src/stores/admin.ts`](frontend/src/stores/admin.ts).
 
+use crate::api::client::{ApiClient, ApiError};
 use leptos::prelude::*;
 use std::collections::HashSet;
-use crate::api::client::{ApiClient, ApiError};
 
 // ---------------------------------------------------------------------------
 // Re-exported domain types
@@ -121,7 +121,7 @@ pub struct AuditLogEntry {
     pub extra_data: Option<serde_json::Value>,
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct AdminStats {
     pub total_gates: i32,
     pub active_gates: i32,
@@ -135,25 +135,6 @@ pub struct AdminStats {
     pub active_learning_cadences: i32,
     pub total_feature_flags: i32,
     pub enabled_features: i32,
-}
-
-impl Default for AdminStats {
-    fn default() -> Self {
-        Self {
-            total_gates: 0,
-            active_gates: 0,
-            total_approvals: 0,
-            active_approvals: 0,
-            total_templates: 0,
-            default_templates: 0,
-            total_roles: 0,
-            total_users: 0,
-            total_learning_cadences: 0,
-            active_learning_cadences: 0,
-            total_feature_flags: 0,
-            enabled_features: 0,
-        }
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -245,7 +226,10 @@ impl AdminStore {
         self.start_op("fetchGates");
         match client.get::<serde_json::Value>("/admin/gates").await {
             Ok(data) => {
-                if let Some(items) = data.get("items").and_then(|v| serde_json::from_value(v.clone()).ok()) {
+                if let Some(items) = data
+                    .get("items")
+                    .and_then(|v| serde_json::from_value(v.clone()).ok())
+                {
                     self.gates.set(items);
                 }
                 let now = std::time::SystemTime::now()
@@ -259,7 +243,7 @@ impl AdminStore {
         self.end_op("fetchGates");
     }
 
-    pub async fn fetch_gate_by_id(&self, client: &ApiClient, id: &str) -> Result<Gate, ()> {
+    pub async fn fetch_gate_by_id(&self, client: &ApiClient, id: &str) -> Result<Gate, ApiError> {
         self.start_op("fetchGateById");
         let result = client.get::<Gate>(&format!("/admin/gates/{id}")).await;
         match result {
@@ -276,14 +260,21 @@ impl AdminStore {
                 }
                 self.error.set(Some(e.to_string()));
                 self.end_op("fetchGateById");
-                Err(())
+                Err(e)
             }
         }
     }
 
-    pub async fn create_gate(&self, client: &ApiClient, gate_data: serde_json::Value) -> Result<Gate, ()> {
+    pub async fn create_gate(
+        &self,
+        client: &ApiClient,
+        gate_data: serde_json::Value,
+    ) -> Result<Gate, ApiError> {
         self.start_op("createGate");
-        match client.post::<Gate, serde_json::Value>("/admin/gates", &gate_data).await {
+        match client
+            .post::<Gate, serde_json::Value>("/admin/gates", &gate_data)
+            .await
+        {
             Ok(new_gate) => {
                 self.gates.update(|gates| gates.push(new_gate.clone()));
                 self.end_op("createGate");
@@ -292,14 +283,22 @@ impl AdminStore {
             Err(e) => {
                 self.error.set(Some(e.to_string()));
                 self.end_op("createGate");
-                Err(())
+                Err(e)
             }
         }
     }
 
-    pub async fn update_gate(&self, client: &ApiClient, id: &str, updates: serde_json::Value) -> Result<Gate, ()> {
+    pub async fn update_gate(
+        &self,
+        client: &ApiClient,
+        id: &str,
+        updates: serde_json::Value,
+    ) -> Result<Gate, ApiError> {
         self.start_op("updateGate");
-        match client.put::<Gate, serde_json::Value>(&format!("/admin/gates/{id}"), &updates).await {
+        match client
+            .put::<Gate, serde_json::Value>(&format!("/admin/gates/{id}"), &updates)
+            .await
+        {
             Ok(updated) => {
                 self.gates.update(|gates| {
                     if let Some(pos) = gates.iter().position(|g| g.id == id) {
@@ -312,14 +311,17 @@ impl AdminStore {
             Err(e) => {
                 self.error.set(Some(e.to_string()));
                 self.end_op("updateGate");
-                Err(())
+                Err(e)
             }
         }
     }
 
-    pub async fn delete_gate(&self, client: &ApiClient, id: &str) -> Result<(), ()> {
+    pub async fn delete_gate(&self, client: &ApiClient, id: &str) -> Result<(), ApiError> {
         self.start_op("deleteGate");
-        match client.delete::<serde_json::Value>(&format!("/admin/gates/{id}")).await {
+        match client
+            .delete::<serde_json::Value>(&format!("/admin/gates/{id}"))
+            .await
+        {
             Ok(_) => {
                 self.gates.update(|gates| gates.retain(|g| g.id != id));
                 self.end_op("deleteGate");
@@ -328,7 +330,7 @@ impl AdminStore {
             Err(e) => {
                 self.error.set(Some(e.to_string()));
                 self.end_op("deleteGate");
-                Err(())
+                Err(e)
             }
         }
     }
@@ -336,16 +338,27 @@ impl AdminStore {
     pub async fn toggle_gate_status(&self, client: &ApiClient, id: &str) {
         let gate_opt = self.gates.get().into_iter().find(|g| g.id == id);
         if let Some(gate) = gate_opt {
-            let new_status = if gate.status == "active" { "inactive" } else { "active" };
+            let new_status = if gate.status == "active" {
+                "inactive"
+            } else {
+                "active"
+            };
             let updates = serde_json::json!({ "status": new_status });
             let _ = self.update_gate(client, id, updates).await;
         }
     }
 
-    pub async fn reorder_gates(&self, client: &ApiClient, gate_ids: Vec<String>) -> Result<(), ()> {
+    pub async fn reorder_gates(
+        &self,
+        client: &ApiClient,
+        gate_ids: Vec<String>,
+    ) -> Result<(), ApiError> {
         self.start_op("reorderGates");
         let body = serde_json::json!({ "gate_ids": gate_ids });
-        match client.post::<serde_json::Value, serde_json::Value>("/admin/gates/reorder", &body).await {
+        match client
+            .post::<serde_json::Value, serde_json::Value>("/admin/gates/reorder", &body)
+            .await
+        {
             Ok(_) => {
                 self.gates.update(|gates| {
                     for (index, gid) in gate_ids.iter().enumerate() {
@@ -360,7 +373,7 @@ impl AdminStore {
             Err(e) => {
                 self.error.set(Some(e.to_string()));
                 self.end_op("reorderGates");
-                Err(())
+                Err(e)
             }
         }
     }
@@ -373,7 +386,10 @@ impl AdminStore {
         self.start_op("fetchApprovals");
         match client.get::<serde_json::Value>("/admin/approvals").await {
             Ok(data) => {
-                if let Some(items) = data.get("items").and_then(|v| serde_json::from_value(v.clone()).ok()) {
+                if let Some(items) = data
+                    .get("items")
+                    .and_then(|v| serde_json::from_value(v.clone()).ok())
+                {
                     self.approvals.set(items);
                 }
             }
@@ -382,9 +398,16 @@ impl AdminStore {
         self.end_op("fetchApprovals");
     }
 
-    pub async fn create_approval(&self, client: &ApiClient, approval_data: serde_json::Value) -> Result<ApprovalWorkflow, ()> {
+    pub async fn create_approval(
+        &self,
+        client: &ApiClient,
+        approval_data: serde_json::Value,
+    ) -> Result<ApprovalWorkflow, ApiError> {
         self.start_op("createApproval");
-        match client.post::<ApprovalWorkflow, serde_json::Value>("/admin/approvals", &approval_data).await {
+        match client
+            .post::<ApprovalWorkflow, serde_json::Value>("/admin/approvals", &approval_data)
+            .await
+        {
             Ok(new) => {
                 self.approvals.update(|a| a.push(new.clone()));
                 self.end_op("createApproval");
@@ -393,14 +416,22 @@ impl AdminStore {
             Err(e) => {
                 self.error.set(Some(e.to_string()));
                 self.end_op("createApproval");
-                Err(())
+                Err(e)
             }
         }
     }
 
-    pub async fn update_approval(&self, client: &ApiClient, id: &str, updates: serde_json::Value) -> Result<ApprovalWorkflow, ()> {
+    pub async fn update_approval(
+        &self,
+        client: &ApiClient,
+        id: &str,
+        updates: serde_json::Value,
+    ) -> Result<ApprovalWorkflow, ApiError> {
         self.start_op("updateApproval");
-        match client.put::<ApprovalWorkflow, serde_json::Value>(&format!("/admin/approvals/{id}"), &updates).await {
+        match client
+            .put::<ApprovalWorkflow, serde_json::Value>(&format!("/admin/approvals/{id}"), &updates)
+            .await
+        {
             Ok(updated) => {
                 self.approvals.update(|a| {
                     if let Some(pos) = a.iter().position(|x| x.id == id) {
@@ -413,14 +444,17 @@ impl AdminStore {
             Err(e) => {
                 self.error.set(Some(e.to_string()));
                 self.end_op("updateApproval");
-                Err(())
+                Err(e)
             }
         }
     }
 
-    pub async fn delete_approval(&self, client: &ApiClient, id: &str) -> Result<(), ()> {
+    pub async fn delete_approval(&self, client: &ApiClient, id: &str) -> Result<(), ApiError> {
         self.start_op("deleteApproval");
-        match client.delete::<serde_json::Value>(&format!("/admin/approvals/{id}")).await {
+        match client
+            .delete::<serde_json::Value>(&format!("/admin/approvals/{id}"))
+            .await
+        {
             Ok(_) => {
                 self.approvals.update(|a| a.retain(|x| x.id != id));
                 self.end_op("deleteApproval");
@@ -429,7 +463,7 @@ impl AdminStore {
             Err(e) => {
                 self.error.set(Some(e.to_string()));
                 self.end_op("deleteApproval");
-                Err(())
+                Err(e)
             }
         }
     }
@@ -450,7 +484,10 @@ impl AdminStore {
         self.start_op("fetchTemplates");
         match client.get::<serde_json::Value>("/admin/templates").await {
             Ok(data) => {
-                if let Some(items) = data.get("items").and_then(|v| serde_json::from_value(v.clone()).ok()) {
+                if let Some(items) = data
+                    .get("items")
+                    .and_then(|v| serde_json::from_value(v.clone()).ok())
+                {
                     self.templates.set(items);
                 }
             }
@@ -459,9 +496,16 @@ impl AdminStore {
         self.end_op("fetchTemplates");
     }
 
-    pub async fn create_template(&self, client: &ApiClient, template_data: serde_json::Value) -> Result<Template, ()> {
+    pub async fn create_template(
+        &self,
+        client: &ApiClient,
+        template_data: serde_json::Value,
+    ) -> Result<Template, ApiError> {
         self.start_op("createTemplate");
-        match client.post::<Template, serde_json::Value>("/admin/templates", &template_data).await {
+        match client
+            .post::<Template, serde_json::Value>("/admin/templates", &template_data)
+            .await
+        {
             Ok(new) => {
                 self.templates.update(|t| t.push(new.clone()));
                 self.end_op("createTemplate");
@@ -470,14 +514,22 @@ impl AdminStore {
             Err(e) => {
                 self.error.set(Some(e.to_string()));
                 self.end_op("createTemplate");
-                Err(())
+                Err(e)
             }
         }
     }
 
-    pub async fn update_template(&self, client: &ApiClient, id: &str, updates: serde_json::Value) -> Result<Template, ()> {
+    pub async fn update_template(
+        &self,
+        client: &ApiClient,
+        id: &str,
+        updates: serde_json::Value,
+    ) -> Result<Template, ApiError> {
         self.start_op("updateTemplate");
-        match client.put::<Template, serde_json::Value>(&format!("/admin/templates/{id}"), &updates).await {
+        match client
+            .put::<Template, serde_json::Value>(&format!("/admin/templates/{id}"), &updates)
+            .await
+        {
             Ok(updated) => {
                 self.templates.update(|t| {
                     if let Some(pos) = t.iter().position(|x| x.id == id) {
@@ -490,14 +542,17 @@ impl AdminStore {
             Err(e) => {
                 self.error.set(Some(e.to_string()));
                 self.end_op("updateTemplate");
-                Err(())
+                Err(e)
             }
         }
     }
 
-    pub async fn delete_template(&self, client: &ApiClient, id: &str) -> Result<(), ()> {
+    pub async fn delete_template(&self, client: &ApiClient, id: &str) -> Result<(), ApiError> {
         self.start_op("deleteTemplate");
-        match client.delete::<serde_json::Value>(&format!("/admin/templates/{id}")).await {
+        match client
+            .delete::<serde_json::Value>(&format!("/admin/templates/{id}"))
+            .await
+        {
             Ok(_) => {
                 self.templates.update(|t| t.retain(|x| x.id != id));
                 self.end_op("deleteTemplate");
@@ -506,7 +561,7 @@ impl AdminStore {
             Err(e) => {
                 self.error.set(Some(e.to_string()));
                 self.end_op("deleteTemplate");
-                Err(())
+                Err(e)
             }
         }
     }
@@ -514,13 +569,19 @@ impl AdminStore {
     pub async fn set_default_template(&self, client: &ApiClient, id: &str) {
         let template_type = {
             let templates = self.templates.get();
-            templates.into_iter().find(|t| t.id == id).map(|t| t.template_type.clone())
+            templates
+                .into_iter()
+                .find(|t| t.id == id)
+                .map(|t| t.template_type.clone())
         };
         if let Some(typ) = template_type {
-            match client.put::<serde_json::Value, serde_json::Value>(
-                &format!("/admin/templates/{id}"),
-                &serde_json::json!({ "is_default": true }),
-            ).await {
+            match client
+                .put::<serde_json::Value, serde_json::Value>(
+                    &format!("/admin/templates/{id}"),
+                    &serde_json::json!({ "is_default": true }),
+                )
+                .await
+            {
                 Ok(_) => {
                     self.templates.update(|t| {
                         for template in t.iter_mut() {
@@ -545,7 +606,10 @@ impl AdminStore {
         self.start_op("fetchRoles");
         match client.get::<serde_json::Value>("/admin/roles").await {
             Ok(data) => {
-                if let Some(items) = data.get("items").and_then(|v| serde_json::from_value(v.clone()).ok()) {
+                if let Some(items) = data
+                    .get("items")
+                    .and_then(|v| serde_json::from_value(v.clone()).ok())
+                {
                     self.roles.set(items);
                 }
             }
@@ -554,10 +618,18 @@ impl AdminStore {
         self.end_op("fetchRoles");
     }
 
-    pub async fn update_role_permissions(&self, client: &ApiClient, id: &str, permissions: Vec<String>) -> Result<Role, ()> {
+    pub async fn update_role_permissions(
+        &self,
+        client: &ApiClient,
+        id: &str,
+        permissions: Vec<String>,
+    ) -> Result<Role, ApiError> {
         self.start_op("updateRolePermissions");
         let body = serde_json::json!({ "permissions": permissions });
-        match client.put::<Role, serde_json::Value>(&format!("/admin/roles/{id}"), &body).await {
+        match client
+            .put::<Role, serde_json::Value>(&format!("/admin/roles/{id}"), &body)
+            .await
+        {
             Ok(updated) => {
                 self.roles.update(|r| {
                     if let Some(pos) = r.iter().position(|x| x.id == id) {
@@ -570,7 +642,7 @@ impl AdminStore {
             Err(e) => {
                 self.error.set(Some(e.to_string()));
                 self.end_op("updateRolePermissions");
-                Err(())
+                Err(e)
             }
         }
     }
@@ -581,9 +653,15 @@ impl AdminStore {
 
     pub async fn fetch_learning_cadences(&self, client: &ApiClient) {
         self.start_op("fetchLearningCadences");
-        match client.get::<serde_json::Value>("/admin/learning-cadences").await {
+        match client
+            .get::<serde_json::Value>("/admin/learning-cadences")
+            .await
+        {
             Ok(data) => {
-                if let Some(items) = data.get("items").and_then(|v| serde_json::from_value(v.clone()).ok()) {
+                if let Some(items) = data
+                    .get("items")
+                    .and_then(|v| serde_json::from_value(v.clone()).ok())
+                {
                     self.learning_cadences.set(items);
                 }
             }
@@ -592,9 +670,16 @@ impl AdminStore {
         self.end_op("fetchLearningCadences");
     }
 
-    pub async fn create_learning_cadence(&self, client: &ApiClient, cadence_data: serde_json::Value) -> Result<LearningCadence, ()> {
+    pub async fn create_learning_cadence(
+        &self,
+        client: &ApiClient,
+        cadence_data: serde_json::Value,
+    ) -> Result<LearningCadence, ApiError> {
         self.start_op("createLearningCadence");
-        match client.post::<LearningCadence, serde_json::Value>("/admin/learning-cadences", &cadence_data).await {
+        match client
+            .post::<LearningCadence, serde_json::Value>("/admin/learning-cadences", &cadence_data)
+            .await
+        {
             Ok(new) => {
                 self.learning_cadences.update(|c| c.push(new.clone()));
                 self.end_op("createLearningCadence");
@@ -603,14 +688,25 @@ impl AdminStore {
             Err(e) => {
                 self.error.set(Some(e.to_string()));
                 self.end_op("createLearningCadence");
-                Err(())
+                Err(e)
             }
         }
     }
 
-    pub async fn update_learning_cadence(&self, client: &ApiClient, id: &str, updates: serde_json::Value) -> Result<LearningCadence, ()> {
+    pub async fn update_learning_cadence(
+        &self,
+        client: &ApiClient,
+        id: &str,
+        updates: serde_json::Value,
+    ) -> Result<LearningCadence, ApiError> {
         self.start_op("updateLearningCadence");
-        match client.put::<LearningCadence, serde_json::Value>(&format!("/admin/learning-cadences/{id}"), &updates).await {
+        match client
+            .put::<LearningCadence, serde_json::Value>(
+                &format!("/admin/learning-cadences/{id}"),
+                &updates,
+            )
+            .await
+        {
             Ok(updated) => {
                 self.learning_cadences.update(|c| {
                     if let Some(pos) = c.iter().position(|x| x.id == id) {
@@ -623,14 +719,21 @@ impl AdminStore {
             Err(e) => {
                 self.error.set(Some(e.to_string()));
                 self.end_op("updateLearningCadence");
-                Err(())
+                Err(e)
             }
         }
     }
 
-    pub async fn delete_learning_cadence(&self, client: &ApiClient, id: &str) -> Result<(), ()> {
+    pub async fn delete_learning_cadence(
+        &self,
+        client: &ApiClient,
+        id: &str,
+    ) -> Result<(), ApiError> {
         self.start_op("deleteLearningCadence");
-        match client.delete::<serde_json::Value>(&format!("/admin/learning-cadences/{id}")).await {
+        match client
+            .delete::<serde_json::Value>(&format!("/admin/learning-cadences/{id}"))
+            .await
+        {
             Ok(_) => {
                 self.learning_cadences.update(|c| c.retain(|x| x.id != id));
                 self.end_op("deleteLearningCadence");
@@ -639,13 +742,17 @@ impl AdminStore {
             Err(e) => {
                 self.error.set(Some(e.to_string()));
                 self.end_op("deleteLearningCadence");
-                Err(())
+                Err(e)
             }
         }
     }
 
     pub async fn toggle_learning_cadence_status(&self, client: &ApiClient, id: &str) {
-        let cadence_opt = self.learning_cadences.get().into_iter().find(|c| c.id == id);
+        let cadence_opt = self
+            .learning_cadences
+            .get()
+            .into_iter()
+            .find(|c| c.id == id);
         if let Some(cadence) = cadence_opt {
             let updates = serde_json::json!({ "is_active": !cadence.is_active });
             let _ = self.update_learning_cadence(client, id, updates).await;
@@ -658,9 +765,15 @@ impl AdminStore {
 
     pub async fn fetch_feature_flags(&self, client: &ApiClient) {
         self.start_op("fetchFeatureFlags");
-        match client.get::<serde_json::Value>("/admin/feature-flags").await {
+        match client
+            .get::<serde_json::Value>("/admin/feature-flags")
+            .await
+        {
             Ok(data) => {
-                if let Some(items) = data.get("items").and_then(|v| serde_json::from_value(v.clone()).ok()) {
+                if let Some(items) = data
+                    .get("items")
+                    .and_then(|v| serde_json::from_value(v.clone()).ok())
+                {
                     self.feature_flags.set(items);
                 }
             }
@@ -669,9 +782,17 @@ impl AdminStore {
         self.end_op("fetchFeatureFlags");
     }
 
-    pub async fn update_feature_flag(&self, client: &ApiClient, id: &str, updates: serde_json::Value) -> Result<FeatureFlag, ()> {
+    pub async fn update_feature_flag(
+        &self,
+        client: &ApiClient,
+        id: &str,
+        updates: serde_json::Value,
+    ) -> Result<FeatureFlag, ApiError> {
         self.start_op("updateFeatureFlag");
-        match client.put::<FeatureFlag, serde_json::Value>(&format!("/admin/feature-flags/{id}"), &updates).await {
+        match client
+            .put::<FeatureFlag, serde_json::Value>(&format!("/admin/feature-flags/{id}"), &updates)
+            .await
+        {
             Ok(updated) => {
                 self.feature_flags.update(|f| {
                     if let Some(pos) = f.iter().position(|x| x.id == id) {
@@ -684,7 +805,7 @@ impl AdminStore {
             Err(e) => {
                 self.error.set(Some(e.to_string()));
                 self.end_op("updateFeatureFlag");
-                Err(())
+                Err(e)
             }
         }
     }
@@ -710,7 +831,10 @@ impl AdminStore {
         self.start_op("fetchAuditLogs");
         match client.get::<serde_json::Value>("/audit-logs").await {
             Ok(data) => {
-                if let Some(items) = data.get("items").and_then(|v| serde_json::from_value(v.clone()).ok()) {
+                if let Some(items) = data
+                    .get("items")
+                    .and_then(|v| serde_json::from_value(v.clone()).ok())
+                {
                     self.audit_logs.set(items);
                 }
             }

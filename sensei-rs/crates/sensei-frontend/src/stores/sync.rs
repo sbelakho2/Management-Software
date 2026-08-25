@@ -4,7 +4,6 @@
 
 use leptos::prelude::*;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 
 /// A pending operation awaiting sync.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -101,7 +100,8 @@ impl SyncStore {
 
     /// Add an optimistically created entity.
     pub fn add_optimistic_entity(&self, entity: OptimisticEntity) {
-        self.optimistic_entities.update(|entities| entities.push(entity));
+        self.optimistic_entities
+            .update(|entities| entities.push(entity));
     }
 
     /// Update an optimistically created entity by ID.
@@ -125,7 +125,6 @@ impl SyncStore {
             .get()
             .into_iter()
             .find(|e| e.id == id)
-            .map(|e| e.clone())
     }
 
     // ── Sync state ───────────────────────────────────────────────────────────

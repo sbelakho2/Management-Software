@@ -3,27 +3,26 @@
 //! Provides endpoints for managing user-saved view configurations,
 //! including CRUD operations, RBAC-based sharing, and compound sorting.
 
-use axum::{Json, extract::{Path, Query, State}};
+use axum::{
+    extract::{Path, Query, State},
+    Json,
+};
 use chrono::Utc;
-use serde::Deserialize;
 use sensei_auth::middleware::AuthenticatedUser;
 use sensei_core::domain::events::{
-    SavedViewCreatedEvent, SavedViewUpdatedEvent, SavedViewDeletedEvent,
+    SavedViewCreatedEvent, SavedViewDeletedEvent, SavedViewUpdatedEvent,
 };
 use sensei_core::error::{Result, SenseiError};
 use sensei_core::pagination::PaginatedResponse;
 use sensei_core::types::new_id;
+use serde::Deserialize;
 use uuid::Uuid;
 
 use crate::state::AppState;
 use crate::stores::{SavedView, SortConfig, ViewVisibility};
 
 /// Validate that every shared user exists in the requesting tenant.
-async fn validate_shared_users(
-    state: &AppState,
-    tenant_id: Uuid,
-    user_ids: &[Uuid],
-) -> Result<()> {
+async fn validate_shared_users(state: &AppState, tenant_id: Uuid, user_ids: &[Uuid]) -> Result<()> {
     if user_ids.is_empty() {
         return Ok(());
     }
@@ -139,7 +138,10 @@ pub async fn create_saved_view(
     if is_default {
         let mut store = state.saved_views.write().await;
         for view in store.values_mut() {
-            if view.tenant_id == tenant_id && view.user_id == user_id && view.entity_type == req.entity_type {
+            if view.tenant_id == tenant_id
+                && view.user_id == user_id
+                && view.entity_type == req.entity_type
+            {
                 view.is_default = false;
             }
         }
@@ -207,16 +209,34 @@ pub async fn get_saved_view(
     Ok(Json(view.clone()))
 }
 
-/// Update a saved view.
+/// Request body for updating a saved view (partial update).
+#[derive(Debug, Deserialize)]
+pub struct UpdateSavedViewRequest {
+    pub name: Option<String>,
+    pub entity_type: Option<String>,
+    pub filters: Option<serde_json::Value>,
+    #[serde(default)]
+    pub sort_config: Option<Vec<SortConfig>>,
+    pub columns: Option<Vec<String>>,
+    pub is_default: Option<bool>,
+    #[serde(default)]
+    pub visibility: Option<ViewVisibility>,
+    #[serde(default)]
+    pub shared_with: Option<Vec<Uuid>>,
+}
+
+/// Update a saved view (partial update semantics).
 pub async fn update_saved_view(
     user: AuthenticatedUser,
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
-    Json(req): Json<SavedViewRequest>,
+    Json(req): Json<UpdateSavedViewRequest>,
 ) -> Result<Json<SavedView>> {
     let tenant_id = user.tenant_id;
     let user_id = user.user_id;
-    validate_shared_users(&state, tenant_id, &req.shared_with).await?;
+    if let Some(shared) = &req.shared_with {
+        validate_shared_users(&state, tenant_id, shared).await?;
+    }
     let now = Utc::now();
     let is_default = req.is_default.unwrap_or(false);
 
@@ -224,13 +244,18 @@ pub async fn update_saved_view(
 
     // If marking as default, unmark other defaults for the same entity type first
     if is_default {
+        let entity_type = req
+            .entity_type
+            .clone()
+            .or_else(|| store.get(&id).map(|v| v.entity_type.clone()))
+            .unwrap_or_default();
         let keys_to_unmark: Vec<Uuid> = store
             .iter()
             .filter(|(k, v)| {
                 **k != id
                     && v.tenant_id == tenant_id
                     && v.user_id == user_id
-                    && v.entity_type == req.entity_type
+                    && v.entity_type == entity_type
                     && v.is_default
             })
             .map(|(k, _)| *k)
@@ -247,18 +272,30 @@ pub async fn update_saved_view(
         .filter(|v| v.tenant_id == tenant_id && v.user_id == user_id)
         .ok_or_else(|| SenseiError::NotFound(format!("Saved view {id} not found")))?;
 
-    let _old_name = view.name.clone();
-    let _old_visibility = view.visibility.clone();
-    let _old_entity_type = view.entity_type.clone();
-
-    view.name = req.name.clone();
-    view.entity_type = req.entity_type.clone();
-    view.filters = req.filters;
-    view.sort_config = req.sort_config;
-    view.columns = req.columns;
-    view.is_default = is_default;
-    view.visibility = req.visibility.clone();
-    view.shared_with = req.shared_with;
+    if let Some(name) = &req.name {
+        view.name = name.clone();
+    }
+    if let Some(entity_type) = &req.entity_type {
+        view.entity_type = entity_type.clone();
+    }
+    if let Some(filters) = req.filters {
+        view.filters = filters;
+    }
+    if let Some(sort_config) = req.sort_config {
+        view.sort_config = sort_config;
+    }
+    if let Some(columns) = req.columns {
+        view.columns = columns;
+    }
+    if let Some(is_default) = req.is_default {
+        view.is_default = is_default;
+    }
+    if let Some(visibility) = &req.visibility {
+        view.visibility = visibility.clone();
+    }
+    if let Some(shared_with) = &req.shared_with {
+        view.shared_with = shared_with.clone();
+    }
     view.updated_at = now;
 
     let updated = view.clone();

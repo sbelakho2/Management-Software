@@ -10,10 +10,10 @@ use axum::{
     Json,
 };
 use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
 use sensei_auth::middleware::AuthenticatedUser;
 use sensei_core::error::{Result, SenseiError};
 use sensei_core::pagination::{PaginatedResponse, PaginationParams};
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::state::AppState;
@@ -295,12 +295,11 @@ pub async fn generate_work_packets(
     let tenant_id = user.tenant_id;
 
     // The RFQ must exist and own the requested line items.
-    let rfq = state.supply_chain_service.get_rfq(tenant_id, rfq_id).await?;
-    let known_item_ids: Vec<Uuid> = rfq
-        .items
-        .iter()
-        .filter_map(|i| i.line_item_id)
-        .collect();
+    let rfq = state
+        .supply_chain_service
+        .get_rfq(tenant_id, rfq_id)
+        .await?;
+    let known_item_ids: Vec<Uuid> = rfq.items.iter().filter_map(|i| i.line_item_id).collect();
     for item_id in &req.line_items {
         if !known_item_ids.contains(item_id) {
             return Err(SenseiError::Validation(format!(
@@ -367,7 +366,11 @@ pub async fn list_work_packets(
         .map(WorkPacketResponse::from)
         .collect();
 
-    Ok(Json(PaginatedResponse::new(packets, params.page, params.per_page)))
+    Ok(Json(PaginatedResponse::new(
+        packets,
+        params.page,
+        params.per_page,
+    )))
 }
 
 /// Update a work packet.
@@ -381,9 +384,9 @@ pub async fn update_work_packet(
     Json(req): Json<UpdateWorkPacketRequest>,
 ) -> Result<Json<WorkPacketResponse>> {
     let mut store = state.work_packets.write().await;
-    let packet = store.get_mut(&packet_id).ok_or_else(|| {
-        SenseiError::NotFound(format!("Work packet {packet_id} not found"))
-    })?;
+    let packet = store
+        .get_mut(&packet_id)
+        .ok_or_else(|| SenseiError::NotFound(format!("Work packet {packet_id} not found")))?;
 
     if packet.tenant_id != user.tenant_id {
         return Err(SenseiError::Forbidden(
@@ -409,8 +412,7 @@ pub async fn update_work_packet(
 ///
 /// Kept local because the API crate does not depend on a base64 crate.
 fn base64_decode(input: &str) -> std::result::Result<Vec<u8>, String> {
-    const TABLE: &[u8; 64] =
-        b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    const TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     let mut out = Vec::with_capacity(input.len() / 4 * 3 + 3);
     let bytes = input.as_bytes();
     let mut i = 0;
@@ -424,7 +426,7 @@ fn base64_decode(input: &str) -> std::result::Result<Vec<u8>, String> {
                 vals[k] = TABLE
                     .iter()
                     .position(|&c| c == bytes[i + k])
-                    .ok_or_else(|| format!("invalid base64 character in input"))?
+                    .ok_or_else(|| "invalid base64 character in input".to_string())?
                     as u32;
             }
         }
@@ -456,7 +458,10 @@ pub async fn ingest_rfq_documents(
 
     let tenant_id = user.tenant_id;
     // The RFQ must exist before documents can be ingested against it.
-    let _ = state.supply_chain_service.get_rfq(tenant_id, rfq_id).await?;
+    let _ = state
+        .supply_chain_service
+        .get_rfq(tenant_id, rfq_id)
+        .await?;
 
     let now = Utc::now();
     let documents_ingested = req.documents.len();
@@ -585,7 +590,10 @@ pub async fn build_quote_cost(
         .await
         .insert(cost_build.id, cost_build.clone());
 
-    Ok((StatusCode::CREATED, Json(CostBuildResponse::from(cost_build))))
+    Ok((
+        StatusCode::CREATED,
+        Json(CostBuildResponse::from(cost_build)),
+    ))
 }
 
 /// Convert a quote to an NPI (New Product Introduction) project.
@@ -600,7 +608,10 @@ pub async fn convert_quote_to_npi(
     use sensei_services::quality::{NpiProject, NpiStage};
 
     let tenant_id = user.tenant_id;
-    let quote = state.supply_chain_service.get_quote(tenant_id, quote_id).await?;
+    let quote = state
+        .supply_chain_service
+        .get_quote(tenant_id, quote_id)
+        .await?;
 
     let now = Utc::now();
     let npi_project = NpiProject {
@@ -659,7 +670,10 @@ pub async fn convert_quote_to_npi(
         .await
         .insert(conversion.id, conversion.clone());
 
-    Ok((StatusCode::CREATED, Json(NpiConversionResponse::from(conversion))))
+    Ok((
+        StatusCode::CREATED,
+        Json(NpiConversionResponse::from(conversion)),
+    ))
 }
 
 /// Get AI-suggested clarifications for an RFQ.
@@ -674,14 +688,18 @@ pub async fn suggest_clarifications(
     Path(rfq_id): Path<Uuid>,
 ) -> Result<Json<ClarificationResponse>> {
     let tenant_id = user.tenant_id;
-    let rfq = state.supply_chain_service.get_rfq(tenant_id, rfq_id).await?;
+    let rfq = state
+        .supply_chain_service
+        .get_rfq(tenant_id, rfq_id)
+        .await?;
 
     let mut clarifications = Vec::new();
 
     // No line items → ask for the product list and its specifications.
     if rfq.items.is_empty() {
         clarifications.push(ClarificationItem {
-            question: "No line items are listed. Which products/quantities should this RFQ cover?".to_string(),
+            question: "No line items are listed. Which products/quantities should this RFQ cover?"
+                .to_string(),
             context: "Line Items".to_string(),
         });
     }
@@ -705,10 +723,7 @@ pub async fn suggest_clarifications(
         }
         if item.unit_of_measure.trim().is_empty() {
             clarifications.push(ClarificationItem {
-                question: format!(
-                    "What unit of measure applies to {}?",
-                    item.product_name
-                ),
+                question: format!("What unit of measure applies to {}?", item.product_name),
                 context: line_label.clone(),
             });
         }
@@ -717,7 +732,8 @@ pub async fn suggest_clarifications(
     // RFQ-level requirements are only in the notes; when absent, ask.
     if rfq.notes.trim().is_empty() {
         clarifications.push(ClarificationItem {
-            question: "Are there any special packaging, labeling, or delivery requirements?".to_string(),
+            question: "Are there any special packaging, labeling, or delivery requirements?"
+                .to_string(),
             context: "RFQ General Requirements".to_string(),
         });
         clarifications.push(ClarificationItem {
@@ -749,7 +765,10 @@ pub async fn retrieve_quote_memory(
     let tenant_id = user.tenant_id;
 
     // The RFQ must exist; its products define the similarity target.
-    let rfq = state.supply_chain_service.get_rfq(tenant_id, rfq_id).await?;
+    let rfq = state
+        .supply_chain_service
+        .get_rfq(tenant_id, rfq_id)
+        .await?;
 
     let rfq_product_ids: Vec<Uuid> = rfq.items.iter().map(|i| i.product_id).collect();
     let has_product_basis = !rfq_product_ids.is_empty();
@@ -844,10 +863,7 @@ pub async fn retrieve_quote_memory(
         let max = margins.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
         (
             (avg * 100.0).round() / 100.0,
-            vec![
-                (min * 100.0).round() / 100.0,
-                (max * 100.0).round() / 100.0,
-            ],
+            vec![(min * 100.0).round() / 100.0, (max * 100.0).round() / 100.0],
         )
     };
 

@@ -18,7 +18,7 @@ async fn test_create_kanban_board() {
     assert_eq!(resp.status(), StatusCode::OK);
 
     let json: Value = app.json_body(&mut resp).await;
-    assert!(json["id"].as_str().unwrap_or("").len() > 0);
+    assert!(!json["id"].as_str().unwrap_or("").is_empty());
     assert_eq!(json["name"], "Production Board");
 }
 
@@ -36,7 +36,7 @@ async fn test_list_kanban_boards() {
     assert_eq!(resp.status(), StatusCode::OK);
 
     let json: Value = app.json_body(&mut resp).await;
-    assert!(json["data"].as_array().unwrap_or(&vec![]).len() >= 1);
+    assert!(!json["data"].as_array().unwrap_or(&vec![]).is_empty());
 }
 
 #[tokio::test]
@@ -86,7 +86,11 @@ async fn test_update_kanban_board() {
         "name": "Updated Board",
         "description": "Updated description",
     });
-    let req = app.put_authenticated(&format!("/api/v1/kanban/boards/{}", board_id), &token, update_body);
+    let req = app.put_authenticated(
+        &format!("/api/v1/kanban/boards/{}", board_id),
+        &token,
+        update_body,
+    );
     let mut resp = app.send_request(req).await;
     assert_eq!(resp.status(), StatusCode::OK);
 
@@ -137,7 +141,7 @@ async fn test_add_column_to_board() {
     assert_eq!(resp.status(), StatusCode::OK);
 
     let json: Value = app.json_body(&mut resp).await;
-    assert!(json["id"].as_str().unwrap_or("").len() > 0);
+    assert!(!json["id"].as_str().unwrap_or("").is_empty());
 }
 
 #[tokio::test]
@@ -163,7 +167,7 @@ async fn board_with_columns(
     wip_limit: i32,
 ) -> (String, String, String) {
     let body = common::fixtures::kanban_board_payload(name);
-    let req = app.post_authenticated("/api/v1/kanban/boards", &token, body);
+    let req = app.post_authenticated("/api/v1/kanban/boards", token, body);
     let mut resp = app.send_request(req).await;
     let board: Value = app.json_body(&mut resp).await;
     let board_id = board["id"].as_str().unwrap().to_string();
@@ -175,7 +179,7 @@ async fn board_with_columns(
     });
     let req = app.post_authenticated(
         &format!("/api/v1/kanban/boards/{}/columns", board_id),
-        &token,
+        token,
         todo_body,
     );
     let mut resp = app.send_request(req).await;
@@ -189,7 +193,7 @@ async fn board_with_columns(
     });
     let req = app.post_authenticated(
         &format!("/api/v1/kanban/boards/{}/columns", board_id),
-        &token,
+        token,
         done_body,
     );
     let mut resp = app.send_request(req).await;
@@ -215,7 +219,7 @@ async fn add_card_to_column(
     });
     let req = app.post_authenticated(
         &format!("/api/v1/kanban/columns/{}/cards", column_id),
-        &token,
+        token,
         card_body,
     );
     let mut resp = app.send_request(req).await;
@@ -313,8 +317,7 @@ async fn test_move_card_sets_completed_at_and_metrics() {
     let app = common::TestApp::new().await;
     let token = app.login_as_admin().await;
 
-    let (board_id, todo_col, done_col) =
-        board_with_columns(&app, &token, "Cycle Board", 10).await;
+    let (board_id, todo_col, done_col) = board_with_columns(&app, &token, "Cycle Board", 10).await;
     let card = add_card_to_column(&app, &token, &todo_col, "Cycler").await;
     let card_id = card["id"].as_str().unwrap().to_string();
 

@@ -115,7 +115,10 @@ impl OpsApi {
         client.get(&format!("/api/v1/ops/andons/{}", id)).await
     }
 
-    pub async fn raise_andon(client: &ApiClient, req: &RaiseAndonRequest) -> Result<AndonDto, ApiError> {
+    pub async fn raise_andon(
+        client: &ApiClient,
+        req: &RaiseAndonRequest,
+    ) -> Result<AndonDto, ApiError> {
         client.post("/api/v1/ops/andons", req).await
     }
 
@@ -128,7 +131,10 @@ impl OpsApi {
         client.get(&format!("/api/v1/ops/projects/{}", id)).await
     }
 
-    pub async fn create_project(client: &ApiClient, req: &CreateProjectRequest) -> Result<ProjectDto, ApiError> {
+    pub async fn create_project(
+        client: &ApiClient,
+        req: &CreateProjectRequest,
+    ) -> Result<ProjectDto, ApiError> {
         client.post("/api/v1/ops/projects", req).await
     }
 
@@ -154,7 +160,10 @@ impl OpsApi {
         client.get(&format!("/api/v1/ops/risks/{}", id)).await
     }
 
-    pub async fn create_risk(client: &ApiClient, req: &CreateRiskRequest) -> Result<RiskDto, ApiError> {
+    pub async fn create_risk(
+        client: &ApiClient,
+        req: &CreateRiskRequest,
+    ) -> Result<RiskDto, ApiError> {
         client.post("/api/v1/ops/risks", req).await
     }
 }

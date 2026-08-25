@@ -20,7 +20,12 @@ extern "C" {
         dst_h: usize,
         channels: usize,
     ) -> *mut u8;
-    fn sensei_image_sobel_edge_detect(gray: *const u8, width: usize, height: usize, output: *mut u8);
+    fn sensei_image_sobel_edge_detect(
+        gray: *const u8,
+        width: usize,
+        height: usize,
+        output: *mut u8,
+    );
     fn sensei_image_free(ptr: *mut u8, size: usize);
 }
 
@@ -62,7 +67,7 @@ pub fn rgb_to_grayscale(pixels: &mut [u8], width: usize, height: usize) -> Resul
                 let r = pixels[base] as f32;
                 let g = pixels[base + 1] as f32;
                 let b = pixels[base + 2] as f32;
-                let y = (r * coeff_r + g * coeff_g + b * coeff_b).min(255.0) as u8;
+                let y = (r * coeff_r + g * coeff_g + b * coeff_b).min(255.0).round() as u8;
                 pixels[dst_idx + k] = y;
             }
             src_idx += 4;
@@ -75,7 +80,7 @@ pub fn rgb_to_grayscale(pixels: &mut [u8], width: usize, height: usize) -> Resul
             let r = pixels[base] as f32;
             let g = pixels[base + 1] as f32;
             let b = pixels[base + 2] as f32;
-            let y = (r * coeff_r + g * coeff_g + b * coeff_b).min(255.0) as u8;
+            let y = (r * coeff_r + g * coeff_g + b * coeff_b).min(255.0).round() as u8;
             pixels[dst_idx] = y;
             src_idx += 1;
             dst_idx += 1;
@@ -117,14 +122,8 @@ pub fn resize_bilinear(
     #[cfg(not(no_zig))]
     {
         unsafe {
-            let ptr = sensei_image_resize_bilinear(
-                src.as_ptr(),
-                src_w,
-                src_h,
-                dst_w,
-                dst_h,
-                channels,
-            );
+            let ptr =
+                sensei_image_resize_bilinear(src.as_ptr(), src_w, src_h, dst_w, dst_h, channels);
             if ptr.is_null() {
                 return Err(SenseiError::Internal(
                     "Zig resize_bilinear returned null".into(),
@@ -246,11 +245,12 @@ mod tests {
         rgb_to_grayscale(&mut pixels, 2, 2).unwrap();
 
         // Red:   Y = 0.299*255 ≈ 76
-        // Green: Y = 0.587*255 ≈ 149.685 → truncates to 149
+        // Green: Y = 0.587*255 ≈ 149.685 → 150 (rounded, matching the
+        //        Zig implementation's @round semantics)
         // Blue:  Y = 0.114*255 ≈ 29
         // White: Y = 255
         assert_eq!(pixels[0], 76);
-        assert_eq!(pixels[1], 149);
+        assert_eq!(pixels[1], 150);
         assert_eq!(pixels[2], 29);
         assert_eq!(pixels[3], 255);
     }
@@ -274,10 +274,10 @@ mod tests {
         let output = sobel_edge_detect(&gray, 4, 4).unwrap();
 
         // All interior pixels should be 0 (uniform image → no edges)
-        assert_eq!(output[1 * 4 + 1], 0);
-        assert_eq!(output[1 * 4 + 2], 0);
-        assert_eq!(output[2 * 4 + 1], 0);
-        assert_eq!(output[2 * 4 + 2], 0);
+        assert_eq!(output[4 + 1], 0);
+        assert_eq!(output[4 + 2], 0);
+        assert_eq!(output[8 + 1], 0);
+        assert_eq!(output[8 + 2], 0);
         // Borders should be 0
         assert_eq!(output[0], 0);
     }

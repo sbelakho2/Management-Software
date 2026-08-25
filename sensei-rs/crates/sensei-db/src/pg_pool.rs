@@ -77,9 +77,8 @@ pub fn get_pool() -> Option<Arc<PgPool>> {
 
 /// Check if the database pool is initialized and the connection is alive.
 pub async fn health_check() -> Result<bool> {
-    let pool = get_pool().ok_or_else(|| {
-        SenseiError::DatabaseConnection("Pool not initialized".to_string())
-    })?;
+    let pool = get_pool()
+        .ok_or_else(|| SenseiError::DatabaseConnection("Pool not initialized".to_string()))?;
 
     sqlx::query("SELECT 1")
         .execute(&*pool)
@@ -97,9 +96,8 @@ where
     F: for<'a> FnOnce(&mut sqlx::Transaction<'a, sqlx::Postgres>) -> Result<T> + Send,
     T: Send,
 {
-    let pool = get_pool().ok_or_else(|| {
-        SenseiError::DatabaseConnection("Pool not initialized".to_string())
-    })?;
+    let pool = get_pool()
+        .ok_or_else(|| SenseiError::DatabaseConnection("Pool not initialized".to_string()))?;
 
     let mut tx = pool
         .begin()

@@ -69,10 +69,7 @@ async fn test_get_work_request_not_found() {
     let token = app.login_as_admin().await;
 
     let id = Uuid::nil().to_string();
-    let req = app.get_authenticated(
-        &format!("/api/v1/maintenance/work-requests/{}", id),
-        &token,
-    );
+    let req = app.get_authenticated(&format!("/api/v1/maintenance/work-requests/{}", id), &token);
     let resp = app.send_request(req).await;
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 }

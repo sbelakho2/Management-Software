@@ -81,7 +81,10 @@ async fn test_export_work_order_csv() {
     let tenant_id = Uuid::new_v4();
 
     let req = app.get_authenticated(
-        &format!("/api/v1/export/work-order?format=csv&tenant_id={}", tenant_id),
+        &format!(
+            "/api/v1/export/work-order?format=csv&tenant_id={}",
+            tenant_id
+        ),
         &token,
     );
     let resp = app.send_request(req).await;
@@ -109,7 +112,10 @@ async fn test_export_unknown_entity() {
     let tenant_id = Uuid::new_v4();
 
     let req = app.get_authenticated(
-        &format!("/api/v1/export/unknown-entity?format=csv&tenant_id={}", tenant_id),
+        &format!(
+            "/api/v1/export/unknown-entity?format=csv&tenant_id={}",
+            tenant_id
+        ),
         &token,
     );
     let resp = app.send_request(req).await;
@@ -121,7 +127,10 @@ async fn test_export_unauthenticated() {
     let app = common::TestApp::new().await;
     let tenant_id = Uuid::new_v4();
 
-    let req = app.get(&format!("/api/v1/export/ncr?format=csv&tenant_id={}", tenant_id));
+    let req = app.get(&format!(
+        "/api/v1/export/ncr?format=csv&tenant_id={}",
+        tenant_id
+    ));
     let resp = app.send_request(req).await;
     assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
 }
@@ -151,7 +160,10 @@ async fn test_export_ignores_query_tenant_id_and_uses_token_tenant() {
     // NOT change what data is returned (no cross-tenant leak).
     let foreign_tenant = Uuid::new_v4();
     let req = app.get_authenticated(
-        &format!("/api/v1/export/ncr?id={}&format=csv&tenant_id={}", ncr_id, foreign_tenant),
+        &format!(
+            "/api/v1/export/ncr?id={}&format=csv&tenant_id={}",
+            ncr_id, foreign_tenant
+        ),
         &token,
     );
     let mut resp = app.send_request(req).await;
@@ -212,10 +224,7 @@ async fn test_export_invalid_date_filter_is_rejected() {
     let app = common::TestApp::new().await;
     let token = app.login_as_admin().await;
 
-    let req = app.get_authenticated(
-        "/api/v1/export/ncr?format=csv&date_from=not-a-date",
-        &token,
-    );
+    let req = app.get_authenticated("/api/v1/export/ncr?format=csv&date_from=not-a-date", &token);
     let resp = app.send_request(req).await;
     assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
 }

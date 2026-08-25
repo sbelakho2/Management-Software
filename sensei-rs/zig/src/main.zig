@@ -257,6 +257,12 @@ export fn sensei_llm_free_string(ptr: [*]u8) void {
     std.heap.page_allocator.free(base[0..total]);
 }
 
+/// Whether the runner holds real (non-randomly-initialised) model weights.
+export fn sensei_llm_has_weights(runner_ptr: *anyopaque) bool {
+    const runner: *llm.LlamaRunner = @ptrCast(@alignCast(runner_ptr));
+    return runner.hasRealWeights();
+}
+
 /// Destroy a LLaMA runner previously created by `sensei_llm_init`.
 export fn sensei_llm_deinit(runner_ptr: *anyopaque) void {
     const runner: *llm.LlamaRunner = @ptrCast(@alignCast(runner_ptr));

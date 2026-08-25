@@ -10,32 +10,44 @@ use sensei_auth::refresh_tokens::RefreshTokenStore;
 use sensei_core::config::AppConfig;
 use sensei_core::types::{EntityId, Timestamp};
 use sensei_event_bus::EventBus;
-use sensei_services::accounts::{AccountsService, DatabaseAccountsService, InMemoryAccountsService};
-use sensei_services::notifications::{EmailService, InMemoryEmailService, LettreEmailService};
-use sensei_services::notifications::service::{
-    DatabaseNotificationService, InMemoryNotificationService, NotificationService,
-};
-use sensei_services::ops::search::{
-    InMemorySearchService, SearchService,
+use sensei_services::accounts::{
+    AccountsService, DatabaseAccountsService, InMemoryAccountsService,
 };
 use sensei_services::ai::chatbot::{ChatbotService, InMemoryChatbotService};
 use sensei_services::ai::DatabaseChatbotService;
 use sensei_services::ai::{AiService, DatabaseAiService, InMemoryAiService};
-use sensei_services::contacts::{ContactsService, DatabaseContactsService, InMemoryContactsService};
-use sensei_services::finance::{DatabaseFinanceService, FinanceService, InMemoryFinanceService};
-use sensei_services::hr::{DatabaseHrService, HrService, InMemoryHrService};
-use sensei_services::maintenance::{DatabaseMaintenanceService, InMemoryMaintenanceService, MaintenanceService};
-use sensei_services::ops::{DatabaseOperationsService, InMemoryOperationsService, OperationsService};
-use sensei_services::products::{DatabaseProductsService, InMemoryProductsService, ProductsService};
-use sensei_services::production::{DatabaseProductionService, InMemoryProductionService, ProductionService};
-use sensei_services::quality::{DatabaseQualityService, InMemoryQualityService, QualityService};
-use sensei_services::supply_chain::{DatabaseSupplyChainService, InMemorySupplyChainService, SupplyChainService};
-use sensei_services::tenants::{DatabaseTenantsService, InMemoryTenantsService, TenantsService};
-use sensei_services::storage::{
-    FileStorageService, InMemoryStorageService, LocalStorageService, S3StorageService,
+use sensei_services::contacts::{
+    ContactsService, DatabaseContactsService, InMemoryContactsService,
 };
 use sensei_services::export::excel::ExcelExportService;
 use sensei_services::export::pdf::PdfExportService;
+use sensei_services::finance::{DatabaseFinanceService, FinanceService, InMemoryFinanceService};
+use sensei_services::hr::{DatabaseHrService, HrService, InMemoryHrService};
+use sensei_services::maintenance::{
+    DatabaseMaintenanceService, InMemoryMaintenanceService, MaintenanceService,
+};
+use sensei_services::notifications::service::{
+    DatabaseNotificationService, InMemoryNotificationService, NotificationService,
+};
+use sensei_services::notifications::{EmailService, InMemoryEmailService, LettreEmailService};
+use sensei_services::ops::search::{InMemorySearchService, SearchService};
+use sensei_services::ops::{
+    DatabaseOperationsService, InMemoryOperationsService, OperationsService,
+};
+use sensei_services::production::{
+    DatabaseProductionService, InMemoryProductionService, ProductionService,
+};
+use sensei_services::products::{
+    DatabaseProductsService, InMemoryProductsService, ProductsService,
+};
+use sensei_services::quality::{DatabaseQualityService, InMemoryQualityService, QualityService};
+use sensei_services::storage::{
+    FileStorageService, InMemoryStorageService, LocalStorageService, S3StorageService,
+};
+use sensei_services::supply_chain::{
+    DatabaseSupplyChainService, InMemorySupplyChainService, SupplyChainService,
+};
+use sensei_services::tenants::{DatabaseTenantsService, InMemoryTenantsService, TenantsService};
 use sensei_services::users::{DatabaseUsersService, UsersService};
 use sqlx::PgPool;
 use std::collections::{HashMap, HashSet};
@@ -88,7 +100,9 @@ struct PmStores<'a> {
 
 impl<'a> PmStores<'a> {
     /// Build [`SearchableEntityProvider`] instances for all PM stores.
-    fn build_providers(&self) -> Vec<Arc<dyn sensei_services::ops::search::SearchableEntityProvider>> {
+    fn build_providers(
+        &self,
+    ) -> Vec<Arc<dyn sensei_services::ops::search::SearchableEntityProvider>> {
         use crate::search_providers::*;
 
         vec![
@@ -189,14 +203,12 @@ pub struct AppState {
     pub oauth2_client: Option<Arc<OAuth2Client>>,
 
     // ── Real-time communication managers ─────────────────────────────
-
     /// WebSocket connection manager for room-based pub/sub.
     pub ws_manager: WebSocketManager,
     /// Server-Sent Events manager for one-way event streaming.
     pub sse_manager: SseManager,
 
     // ── In-memory stores (temporary; replaced by domain services later) ─
-
     /// Kanban boards entity store.
     pub kanban_boards: stores::KanbanBoardStore,
     /// Notifications entity store.
@@ -308,8 +320,7 @@ impl AppState {
             config.auth.access_token_expiry_minutes,
             config.auth.refresh_token_expiry_days,
         );
-        let event_bus: Arc<dyn EventBus> =
-            Arc::new(sensei_event_bus::InMemoryEventBus::new());
+        let event_bus: Arc<dyn EventBus> = Arc::new(sensei_event_bus::InMemoryEventBus::new());
 
         // Initialize email service — use SMTP if credentials are provided,
         // otherwise fall back to in-memory for development/testing.
@@ -319,7 +330,11 @@ impl AppState {
             Arc::new(InMemoryEmailService::new())
         };
 
-        // Initialize file storage service based on configuration.
+        // Initialize file storage service based on configuration. An unknown
+        // backend is a configuration error (fail fast); an S3 initialization
+        // failure is fatal in production (silently switching to in-memory
+        // storage would lose uploaded files), and a development-only
+        // degradation otherwise.
         let storage_service: Arc<dyn FileStorageService> = match config.storage.backend.as_str() {
             "s3" => {
                 match S3StorageService::new(
@@ -331,24 +346,28 @@ impl AppState {
                 ) {
                     Ok(svc) => Arc::new(svc) as Arc<dyn FileStorageService>,
                     Err(e) => {
+                        if config.environment.is_prod() {
+                            panic!(
+                                "Failed to initialize S3 storage: {e} — object storage is \
+                                 required in production (the in-memory storage service is \
+                                 development-only and loses files on restart)"
+                            );
+                        }
                         tracing::warn!(
                             error = %e,
-                            "Failed to initialize S3 storage, falling back to in-memory"
+                            "Failed to initialize S3 storage, using in-memory storage (development mode only)"
                         );
                         Arc::new(InMemoryStorageService::new()) as Arc<dyn FileStorageService>
                     }
                 }
             }
-            "local" => {
-                Arc::new(LocalStorageService::new(&config.storage.local_path))
-                    as Arc<dyn FileStorageService>
-            }
-            _ => {
-                tracing::warn!(
-                    backend = %config.storage.backend,
-                    "Unknown storage backend, falling back to in-memory"
+            "local" => Arc::new(LocalStorageService::new(&config.storage.local_path))
+                as Arc<dyn FileStorageService>,
+            other => {
+                panic!(
+                    "Unknown storage backend '{other}' — valid backends are 's3' and 'local'. \
+                     Check the STORAGE_BACKEND configuration."
                 );
-                Arc::new(InMemoryStorageService::new()) as Arc<dyn FileStorageService>
             }
         };
 
@@ -443,16 +462,15 @@ impl AppState {
 
         let entity_providers = pm_stores.build_providers();
 
-        let search_service: Arc<dyn SearchService> =
-            Arc::new(
-                InMemorySearchService::new(
-                    accounts_service.clone(),
-                    contacts_service.clone(),
-                    products_service.clone(),
-                    users_service.clone(),
-                )
-                .with_entity_providers(entity_providers),
-            ) as Arc<dyn SearchService>;
+        let search_service: Arc<dyn SearchService> = Arc::new(
+            InMemorySearchService::new(
+                accounts_service.clone(),
+                contacts_service.clone(),
+                products_service.clone(),
+                users_service.clone(),
+            )
+            .with_entity_providers(entity_providers),
+        ) as Arc<dyn SearchService>;
 
         Self {
             config: Arc::new(config),
@@ -461,17 +479,24 @@ impl AppState {
             email_service,
             db_pool: None,
             search_service,
-            notification_service: Arc::new(InMemoryNotificationService::new()) as Arc<dyn NotificationService>,
+            notification_service: Arc::new(InMemoryNotificationService::new())
+                as Arc<dyn NotificationService>,
             ai_service: Arc::new(InMemoryAiService::new(None)) as Arc<dyn AiService>,
             chatbot_service: Arc::new(InMemoryChatbotService::new(
                 sensei_services::ai::chatbot::ChatbotConfig::default(),
             )) as Arc<dyn ChatbotService>,
-            finance_service: Arc::new(InMemoryFinanceService::new(Some(event_bus.clone()))) as Arc<dyn FinanceService>,
-            hr_service: Arc::new(InMemoryHrService::new(Some(event_bus.clone()))) as Arc<dyn HrService>,
-            maintenance_service: Arc::new(InMemoryMaintenanceService::new(Some(event_bus.clone()))) as Arc<dyn MaintenanceService>,
-            ops_service: Arc::new(InMemoryOperationsService::new(Some(event_bus.clone()))) as Arc<dyn OperationsService>,
-            production_service: Arc::new(InMemoryProductionService::new(Some(event_bus.clone()))) as Arc<dyn ProductionService>,
-            supply_chain_service: Arc::new(InMemorySupplyChainService::new(Some(event_bus.clone()))) as Arc<dyn SupplyChainService>,
+            finance_service: Arc::new(InMemoryFinanceService::new(Some(event_bus.clone())))
+                as Arc<dyn FinanceService>,
+            hr_service: Arc::new(InMemoryHrService::new(Some(event_bus.clone())))
+                as Arc<dyn HrService>,
+            maintenance_service: Arc::new(InMemoryMaintenanceService::new(Some(event_bus.clone())))
+                as Arc<dyn MaintenanceService>,
+            ops_service: Arc::new(InMemoryOperationsService::new(Some(event_bus.clone())))
+                as Arc<dyn OperationsService>,
+            production_service: Arc::new(InMemoryProductionService::new(Some(event_bus.clone())))
+                as Arc<dyn ProductionService>,
+            supply_chain_service: Arc::new(InMemorySupplyChainService::new(Some(event_bus.clone())))
+                as Arc<dyn SupplyChainService>,
             quality_service: Arc::new(InMemoryQualityService::new(Some(event_bus.clone()))),
             event_bus,
             users_service,
@@ -564,8 +589,7 @@ impl AppState {
             Arc::new(DatabaseTenantsService::new(p.clone())) as Arc<dyn TenantsService>;
         self.finance_service =
             Arc::new(DatabaseFinanceService::new(p.clone())) as Arc<dyn FinanceService>;
-        self.hr_service =
-            Arc::new(DatabaseHrService::new(p.clone())) as Arc<dyn HrService>;
+        self.hr_service = Arc::new(DatabaseHrService::new(p.clone())) as Arc<dyn HrService>;
         self.maintenance_service =
             Arc::new(DatabaseMaintenanceService::new(p.clone())) as Arc<dyn MaintenanceService>;
         self.ops_service =
@@ -590,18 +614,18 @@ impl AppState {
         self.ai_service = db_ai_service.clone();
 
         // Wire the chatbot with the AI service for context-aware responses.
-        self.chatbot_service =
-            Arc::new(DatabaseChatbotService::with_ai_service(
-                p.clone(),
-                sensei_services::ai::chatbot::ChatbotConfig::default(),
-                db_ai_service,
-            )) as Arc<dyn ChatbotService>;
+        self.chatbot_service = Arc::new(DatabaseChatbotService::with_ai_service(
+            p.clone(),
+            sensei_services::ai::chatbot::ChatbotConfig::default(),
+            db_ai_service,
+        )) as Arc<dyn ChatbotService>;
 
         // ── Swap entity stores with database-backed instances ───────────
         use crate::db_stores::EntityStore;
         self.kanban_boards = EntityStore::with_pool("kanban_board", p.clone());
         self.notifications = EntityStore::with_pool("notification", p.clone());
-        self.notification_preferences = EntityStore::with_pool("notification_preferences", p.clone());
+        self.notification_preferences =
+            EntityStore::with_pool("notification_preferences", p.clone());
         self.attachment_meta = EntityStore::with_pool("attachment", p.clone());
         self.attachment_data = EntityStore::with_pool("attachment_data", p.clone());
         self.quote_versions = EntityStore::with_pool("quote_version", p.clone());
@@ -636,7 +660,8 @@ impl AppState {
         self.notification_triggers = EntityStore::with_pool("notification_trigger", p.clone());
         self.standard_work_documents = EntityStore::with_pool("standard_work_document", p.clone());
         self.standard_work_versions = EntityStore::with_pool("standard_work_version", p.clone());
-        self.state_machine_definitions = EntityStore::with_pool("state_machine_definition", p.clone());
+        self.state_machine_definitions =
+            EntityStore::with_pool("state_machine_definition", p.clone());
         self.state_machine_instances = EntityStore::with_pool("state_machine_instance", p.clone());
         self.training_courses = EntityStore::with_pool("training_course", p.clone());
         self.training_enrollments = EntityStore::with_pool("training_enrollment", p.clone());
@@ -656,17 +681,29 @@ impl AppState {
 }
 
 /// Convenience function to create an event bus backed by NATS JetStream
-/// when a NATS URL is configured, falling back to [`InMemoryEventBus`].
+/// when a NATS URL is configured.
 ///
 /// The [`NatsEventBus`] is constructed via [`NatsEventBus::from_config`] so
 /// the stream name and reconnection limits come from the configuration.
 ///
+/// NATS is the production event backbone: in a production environment a
+/// missing or unreachable broker is a fatal configuration error, never a
+/// silent degradation to the in-memory bus (which is not durable and does
+/// not survive restarts). In development the in-memory bus is the explicit
+/// choice when `NATS_URL` is empty.
+///
 /// This is called from [`main`](crate::main) after loading the configuration.
-pub async fn create_event_bus(config: &sensei_core::config::EventBusConfig) -> Arc<dyn EventBus> {
+pub async fn create_event_bus(
+    config: &sensei_core::config::EventBusConfig,
+    environment: &sensei_core::config::Environment,
+) -> Arc<dyn EventBus> {
     use sensei_event_bus::NatsEventBus;
 
     if config.url.is_empty() {
-        tracing::info!("NATS URL not configured, using in-memory event bus");
+        if environment.is_prod() {
+            panic!("NATS_URL is not configured — NATS JetStream is required in production (the in-memory event bus is development-only and non-durable)");
+        }
+        tracing::info!("NATS URL not configured, using in-memory event bus (development mode)");
         return Arc::new(sensei_event_bus::InMemoryEventBus::new());
     }
 
@@ -677,10 +714,18 @@ pub async fn create_event_bus(config: &sensei_core::config::EventBusConfig) -> A
             Arc::new(bus) as Arc<dyn EventBus>
         }
         Err(e) => {
+            if environment.is_prod() {
+                panic!(
+                    "Failed to connect to NATS JetStream at {url}: {e} — the event bus is \
+                     required in production (the in-memory bus is development-only and \
+                     non-durable)",
+                    url = config.url
+                );
+            }
             tracing::warn!(
                 error = %e,
                 url = %config.url,
-                "Failed to connect to NATS, falling back to in-memory event bus"
+                "Failed to connect to NATS, using in-memory event bus (development mode only)"
             );
             Arc::new(sensei_event_bus::InMemoryEventBus::new()) as Arc<dyn EventBus>
         }

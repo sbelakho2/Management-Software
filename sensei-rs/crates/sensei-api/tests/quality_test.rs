@@ -20,7 +20,7 @@ async fn test_create_ncr() {
     assert_eq!(resp.status(), StatusCode::OK);
 
     let json: Value = app.json_body(&mut resp).await;
-    assert!(json["id"].as_str().unwrap_or("").len() > 0);
+    assert!(!json["id"].as_str().unwrap_or("").is_empty());
 }
 
 #[tokio::test]
@@ -37,7 +37,7 @@ async fn test_list_ncrs() {
     assert_eq!(resp.status(), StatusCode::OK);
 
     let json: Value = app.json_body(&mut resp).await;
-    assert!(json["data"].as_array().unwrap_or(&vec![]).len() >= 1);
+    assert!(!json["data"].as_array().unwrap_or(&vec![]).is_empty());
 }
 
 #[tokio::test]
@@ -74,7 +74,11 @@ async fn test_update_ncr() {
     // body: echo the created record back with the description changed.
     let mut update_body = created.clone();
     update_body["description"] = serde_json::json!("Updated NCR description");
-    let req = app.put_authenticated(&format!("/api/v1/quality/ncrs/{}", ncr_id), &token, update_body);
+    let req = app.put_authenticated(
+        &format!("/api/v1/quality/ncrs/{}", ncr_id),
+        &token,
+        update_body,
+    );
     let mut resp = app.send_request(req).await;
     assert_eq!(resp.status(), StatusCode::OK);
     let json: Value = app.json_body(&mut resp).await;
@@ -142,7 +146,7 @@ async fn test_create_capa() {
     assert_eq!(resp.status(), StatusCode::OK);
 
     let json: Value = app.json_body(&mut resp).await;
-    assert!(json["id"].as_str().unwrap_or("").len() > 0);
+    assert!(!json["id"].as_str().unwrap_or("").is_empty());
 }
 
 #[tokio::test]
@@ -159,7 +163,7 @@ async fn test_list_capas() {
     assert_eq!(resp.status(), StatusCode::OK);
 
     let json: Value = app.json_body(&mut resp).await;
-    assert!(json["data"].as_array().unwrap_or(&vec![]).len() >= 1);
+    assert!(!json["data"].as_array().unwrap_or(&vec![]).is_empty());
 }
 
 #[tokio::test]
@@ -216,10 +220,15 @@ async fn test_create_quality_audit() {
     });
     let req = app.post_authenticated("/api/v1/quality/audits", &token, body);
     let mut resp = app.send_request(req).await;
-    assert_eq!(resp.status(), StatusCode::OK, "audit create failed: {}", app.response_text(&mut resp).await);
+    assert_eq!(
+        resp.status(),
+        StatusCode::OK,
+        "audit create failed: {}",
+        app.response_text(&mut resp).await
+    );
 
     let json: Value = app.json_body(&mut resp).await;
-    assert!(json["id"].as_str().unwrap_or("").len() > 0);
+    assert!(!json["id"].as_str().unwrap_or("").is_empty());
 }
 
 #[tokio::test]
@@ -249,7 +258,9 @@ async fn test_get_scar_roundtrip_and_not_found() {
         "title": "Supplier defect",
         "description": "Non-conforming batch received",
         "status": "Open",
-        "severity": "Major",
+        "severity": "MajorNc",
+        "created_at": "2026-01-01T00:00:00Z",
+        "updated_at": "2026-01-01T00:00:00Z",
     });
     let req = app.post_authenticated("/api/v1/quality/scars", &token, body);
     let mut resp = app.send_request(req).await;
@@ -285,6 +296,7 @@ async fn test_get_gauge_roundtrip() {
         "gauge_type": "caliper",
         "status": "UnderCalibration",
         "calibration_frequency_days": 365,
+        "created_at": "2026-01-01T00:00:00Z",
     });
     let req = app.post_authenticated("/api/v1/quality/gauges", &token, body);
     let mut resp = app.send_request(req).await;
@@ -318,10 +330,7 @@ async fn test_list_only_getters_not_found() {
         "eight-d-reports",
         "management-reviews",
     ] {
-        let req = app.get_authenticated(
-            &format!("/api/v1/quality/{}/{}", path, id),
-            &token,
-        );
+        let req = app.get_authenticated(&format!("/api/v1/quality/{}/{}", path, id), &token);
         let resp = app.send_request(req).await;
         assert_eq!(
             resp.status(),

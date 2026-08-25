@@ -15,17 +15,13 @@ use chrono::Utc;
 use sensei_core::domain::events::AnomalyDetectedEvent;
 use sensei_core::error::{Result, SenseiError};
 use sensei_core::types::{new_correlation_id, EventId};
-use sensei_db::models::{
-    AnomalyDetectionModel, PredictionModel,
-};
+use sensei_db::models::{AnomalyDetectionModel, PredictionModel};
 use sensei_event_bus::bus::EventBus;
 use sqlx::PgPool;
 use std::sync::Arc;
 use uuid::Uuid;
 
-use crate::ai::{
-    AiService, AnomalyPrediction, PredictiveMaintenanceResult, QualityPrediction,
-};
+use crate::ai::{AiService, AnomalyPrediction, PredictiveMaintenanceResult, QualityPrediction};
 
 /// PostgreSQL-backed implementation of [`AiService`].
 pub struct DatabaseAiService {
@@ -133,7 +129,10 @@ fn prediction_to_maintenance(p: PredictionModel) -> PredictiveMaintenanceResult 
                 .collect()
         })
         .unwrap_or_else(|| {
-            vec!["Inspect equipment".to_string(), "Schedule maintenance".to_string()]
+            vec![
+                "Inspect equipment".to_string(),
+                "Schedule maintenance".to_string(),
+            ]
         });
 
     PredictiveMaintenanceResult {
@@ -171,7 +170,10 @@ impl AiService for DatabaseAiService {
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to query anomaly detections: {e}")))?;
 
-        Ok(models.into_iter().map(anomaly_model_to_prediction).collect())
+        Ok(models
+            .into_iter()
+            .map(anomaly_model_to_prediction)
+            .collect())
     }
 
     async fn predict_quality(
@@ -225,7 +227,9 @@ impl AiService for DatabaseAiService {
         .bind(equipment_id)
         .fetch_optional(&self.pool)
         .await
-        .map_err(|e| SenseiError::Database(format!("Failed to query maintenance prediction: {e}")))?;
+        .map_err(|e| {
+            SenseiError::Database(format!("Failed to query maintenance prediction: {e}"))
+        })?;
 
         match model {
             Some(m) => Ok(prediction_to_maintenance(m)),
@@ -256,7 +260,7 @@ impl AiService for DatabaseAiService {
         .bind("1.0.0")
         .bind(model_type)
         .bind("development")
-        .bind(0.0 as f64) // accuracy
+        .bind(0.0_f64) // accuracy
         .bind(None::<f64>) // precision
         .bind(None::<f64>) // recall
         .bind(None::<f64>) // f1_score

@@ -61,5 +61,7 @@ pub async fn refresh_token(
 
 /// Logout (invalidate the current session).
 pub async fn logout(client: &ApiClient) -> Result<serde_json::Value, ApiError> {
-    client.post("/api/v1/auth/logout", &serde_json::json!({})).await
+    client
+        .post("/api/v1/auth/logout", &serde_json::json!({}))
+        .await
 }

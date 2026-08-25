@@ -7,7 +7,7 @@ use async_trait::async_trait;
 use sensei_core::domain::entities::Contact;
 use sensei_core::error::{Result, SenseiError};
 use sensei_core::pagination::PaginatedResponse;
-use sensei_core::types::{EntityId, TenantId, now};
+use sensei_core::types::{now, EntityId, TenantId};
 use std::collections::HashMap;
 use tokio::sync::RwLock;
 
@@ -37,7 +37,12 @@ pub trait ContactsService: Send + Sync {
     ) -> Result<PaginatedResponse<Contact>>;
 
     /// Update a contact.
-    async fn update_contact(&self, tenant_id: TenantId, id: EntityId, contact: Contact) -> Result<Contact>;
+    async fn update_contact(
+        &self,
+        tenant_id: TenantId,
+        id: EntityId,
+        contact: Contact,
+    ) -> Result<Contact>;
 
     /// Delete (deactivate) a contact.
     async fn delete_contact(&self, tenant_id: TenantId, id: EntityId) -> Result<()>;
@@ -98,22 +103,28 @@ impl ContactsService for InMemoryContactsService {
         let items: Vec<_> = store
             .values()
             .filter(|c| {
-                c.tenant_id == tenant_id
-                    && account_id.is_none_or(|aid| c.account_id == Some(aid))
+                c.tenant_id == tenant_id && account_id.is_none_or(|aid| c.account_id == Some(aid))
             })
             .cloned()
             .collect();
         Ok(PaginatedResponse::new(items, page, per_page))
     }
 
-    async fn update_contact(&self, tenant_id: TenantId, id: EntityId, contact: Contact) -> Result<Contact> {
+    async fn update_contact(
+        &self,
+        tenant_id: TenantId,
+        id: EntityId,
+        contact: Contact,
+    ) -> Result<Contact> {
         let mut store = self.contacts.write().await;
         let existing = store
             .get_mut(&id)
             .ok_or_else(|| SenseiError::NotFound(format!("Contact {id} not found")))?;
 
         if existing.tenant_id != tenant_id {
-            return Err(SenseiError::Forbidden("Cross-tenant access denied".to_string()));
+            return Err(SenseiError::Forbidden(
+                "Cross-tenant access denied".to_string(),
+            ));
         }
 
         existing.first_name = contact.first_name;
@@ -138,7 +149,9 @@ impl ContactsService for InMemoryContactsService {
             .ok_or_else(|| SenseiError::NotFound(format!("Contact {id} not found")))?;
 
         if existing.tenant_id != tenant_id {
-            return Err(SenseiError::Forbidden("Cross-tenant access denied".to_string()));
+            return Err(SenseiError::Forbidden(
+                "Cross-tenant access denied".to_string(),
+            ));
         }
 
         existing.is_active = false;
@@ -225,7 +238,10 @@ mod tests {
         assert_eq!(filtered.data.len(), 2);
 
         // Pagination.
-        let paged = svc.list_contacts(tid, None, Some(1), Some(2)).await.unwrap();
+        let paged = svc
+            .list_contacts(tid, None, Some(1), Some(2))
+            .await
+            .unwrap();
         assert_eq!(paged.data.len(), 2);
         assert_eq!(paged.total, 3);
     }

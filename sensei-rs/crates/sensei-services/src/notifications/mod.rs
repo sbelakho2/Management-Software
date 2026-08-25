@@ -13,6 +13,6 @@ pub use email::InMemoryEmailService;
 pub use email::LettreEmailService;
 pub use email::SentEmail;
 pub use service::{
-    DatabaseNotificationService, InMemoryNotificationService, Notification,
+    DatabaseNotificationService, InMemoryNotificationService, NewNotification, Notification,
     NotificationPreferences, NotificationService,
 };

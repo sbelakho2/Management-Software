@@ -4,12 +4,15 @@
 //! user management, and logs. Every endpoint requires the `admin` role,
 //! and user-management endpoints are scoped to the requester's tenant.
 
-use axum::{Json, extract::{Path, Query, State}};
+use axum::{
+    extract::{Path, Query, State},
+    Json,
+};
 use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
 use sensei_auth::middleware::AuthenticatedUser;
 use sensei_core::error::{Result, SenseiError};
 use sensei_core::pagination::PaginatedResponse;
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::state::AppState;
@@ -121,7 +124,9 @@ pub async fn get_system_health(
     let event_bus_connected = state.event_bus.is_connected();
 
     // Count active users from the users service
-    let active_users = state.users_service.list_users()
+    let active_users = state
+        .users_service
+        .list_users()
         .await
         .map(|users| users.len())
         .unwrap_or(0);
@@ -147,12 +152,22 @@ pub async fn get_system_health(
             },
             ServiceStatus {
                 name: "Database".to_string(),
-                status: if db_connected { "connected" } else { "disconnected" }.to_string(),
+                status: if db_connected {
+                    "connected"
+                } else {
+                    "disconnected"
+                }
+                .to_string(),
                 last_checked: Utc::now(),
             },
             ServiceStatus {
                 name: "Event Bus".to_string(),
-                status: if event_bus_connected { "connected" } else { "disconnected" }.to_string(),
+                status: if event_bus_connected {
+                    "connected"
+                } else {
+                    "disconnected"
+                }
+                .to_string(),
                 last_checked: Utc::now(),
             },
         ],
@@ -170,21 +185,53 @@ pub async fn get_db_stats(
     // Count entities from in-memory stores
     let mut total_entities = std::collections::HashMap::new();
 
-    total_entities.insert("users".to_string(), state.users_service.list_users()
-        .await
-        .map(|users| users.len())
-        .unwrap_or(0));
+    total_entities.insert(
+        "users".to_string(),
+        state
+            .users_service
+            .list_users()
+            .await
+            .map(|users| users.len())
+            .unwrap_or(0),
+    );
 
-    total_entities.insert("inventory_items".to_string(), state.inventory_items.read().await.len());
-    total_entities.insert("warehouses".to_string(), state.warehouses.read().await.len());
-    total_entities.insert("stock_moves".to_string(), state.stock_moves.read().await.len());
+    total_entities.insert(
+        "inventory_items".to_string(),
+        state.inventory_items.read().await.len(),
+    );
+    total_entities.insert(
+        "warehouses".to_string(),
+        state.warehouses.read().await.len(),
+    );
+    total_entities.insert(
+        "stock_moves".to_string(),
+        state.stock_moves.read().await.len(),
+    );
     total_entities.insert("tasks".to_string(), state.tasks.read().await.len());
-    total_entities.insert("audit_logs".to_string(), state.audit_log_entries.read().await.len());
-    total_entities.insert("kanban_boards".to_string(), state.kanban_boards.read().await.len());
-    total_entities.insert("production_cells".to_string(), state.production_cells.read().await.len());
-    total_entities.insert("work_centers".to_string(), state.work_centers.read().await.len());
-    total_entities.insert("demand_entries".to_string(), state.demand_entries.read().await.len());
-    total_entities.insert("supply_orders".to_string(), state.supply_orders.read().await.len());
+    total_entities.insert(
+        "audit_logs".to_string(),
+        state.audit_log_entries.read().await.len(),
+    );
+    total_entities.insert(
+        "kanban_boards".to_string(),
+        state.kanban_boards.read().await.len(),
+    );
+    total_entities.insert(
+        "production_cells".to_string(),
+        state.production_cells.read().await.len(),
+    );
+    total_entities.insert(
+        "work_centers".to_string(),
+        state.work_centers.read().await.len(),
+    );
+    total_entities.insert(
+        "demand_entries".to_string(),
+        state.demand_entries.read().await.len(),
+    );
+    total_entities.insert(
+        "supply_orders".to_string(),
+        state.supply_orders.read().await.len(),
+    );
 
     let total_tenants = state
         .tenants_service
@@ -217,8 +264,13 @@ pub async fn admin_list_users(
     let mut tenant_users: Vec<User> = users
         .into_iter()
         .filter(|u| u.tenant_id == user.tenant_id)
-        .filter(|u| params.is_active.map_or(true, |active| u.is_active == active))
-        .filter(|u| params.role.as_deref().map_or(true, |r| u.roles.iter().any(|ur| ur == r)))
+        .filter(|u| params.is_active.is_none_or(|active| u.is_active == active))
+        .filter(|u| {
+            params
+                .role
+                .as_deref()
+                .is_none_or(|r| u.roles.iter().any(|ur| ur == r))
+        })
         .collect();
     tenant_users.sort_by(|a, b| a.email.cmp(&b.email));
     let result = PaginatedResponse::new(tenant_users, params.page, params.per_page);
@@ -288,7 +340,7 @@ pub async fn get_system_logs(
         })
         .cloned()
         .collect();
-    entries.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+    entries.sort_by_key(|a| std::cmp::Reverse(a.created_at));
     let result = PaginatedResponse::new(entries, params.page, params.per_page);
     Ok(Json(result))
 }

@@ -3,12 +3,15 @@
 //! Provides endpoints for Andon events, improvement projects, A3 reports,
 //! and risk management.
 
-use axum::{Json, extract::{Path, Query, State}};
-use serde::Deserialize;
+use axum::{
+    extract::{Path, Query, State},
+    Json,
+};
 use sensei_auth::middleware::AuthenticatedUser;
 use sensei_core::error::Result;
 use sensei_core::pagination::PaginatedResponse;
-use sensei_services::ops::{A3, Andon, Project, Risk};
+use sensei_services::ops::{Andon, Project, Risk, A3};
+use serde::Deserialize;
 use uuid::Uuid;
 
 use crate::state::AppState;
@@ -74,7 +77,13 @@ pub async fn list_andons(
     let tenant_id = user.tenant_id;
     let andons = state
         .ops_service
-        .list_andons(tenant_id, params.status.as_deref(), params.work_center_id, params.page, params.per_page)
+        .list_andons(
+            tenant_id,
+            params.status.as_deref(),
+            params.work_center_id,
+            params.page,
+            params.per_page,
+        )
         .await?;
     Ok(Json(andons))
 }
@@ -86,10 +95,7 @@ pub async fn raise_andon(
     Json(req): Json<Andon>,
 ) -> Result<Json<Andon>> {
     let tenant_id = user.tenant_id;
-    let andon = state
-        .ops_service
-        .raise_andon(tenant_id, req)
-        .await?;
+    let andon = state.ops_service.raise_andon(tenant_id, req).await?;
     Ok(Json(andon))
 }
 
@@ -100,10 +106,7 @@ pub async fn get_andon(
     Path(id): Path<Uuid>,
 ) -> Result<Json<Andon>> {
     let tenant_id = user.tenant_id;
-    let andon = state
-        .ops_service
-        .get_andon(tenant_id, id)
-        .await?;
+    let andon = state.ops_service.get_andon(tenant_id, id).await?;
     Ok(Json(andon))
 }
 
@@ -153,7 +156,13 @@ pub async fn list_projects(
     let tenant_id = user.tenant_id;
     let projects = state
         .ops_service
-        .list_projects(tenant_id, params.status.as_deref(), params.category.as_deref(), params.page, params.per_page)
+        .list_projects(
+            tenant_id,
+            params.status.as_deref(),
+            params.category.as_deref(),
+            params.page,
+            params.per_page,
+        )
         .await?;
     Ok(Json(projects))
 }
@@ -165,10 +174,7 @@ pub async fn create_project(
     Json(req): Json<Project>,
 ) -> Result<Json<Project>> {
     let tenant_id = user.tenant_id;
-    let project = state
-        .ops_service
-        .create_project(tenant_id, req)
-        .await?;
+    let project = state.ops_service.create_project(tenant_id, req).await?;
     Ok(Json(project))
 }
 
@@ -179,10 +185,7 @@ pub async fn get_project(
     Path(id): Path<Uuid>,
 ) -> Result<Json<Project>> {
     let tenant_id = user.tenant_id;
-    let project = state
-        .ops_service
-        .get_project(tenant_id, id)
-        .await?;
+    let project = state.ops_service.get_project(tenant_id, id).await?;
     Ok(Json(project))
 }
 
@@ -212,7 +215,12 @@ pub async fn list_a3s(
     let tenant_id = user.tenant_id;
     let a3s = state
         .ops_service
-        .list_a3s(tenant_id, params.status.as_deref(), params.page, params.per_page)
+        .list_a3s(
+            tenant_id,
+            params.status.as_deref(),
+            params.page,
+            params.per_page,
+        )
         .await?;
     Ok(Json(a3s))
 }
@@ -224,10 +232,7 @@ pub async fn create_a3(
     Json(req): Json<A3>,
 ) -> Result<Json<A3>> {
     let tenant_id = user.tenant_id;
-    let a3 = state
-        .ops_service
-        .create_a3(tenant_id, req)
-        .await?;
+    let a3 = state.ops_service.create_a3(tenant_id, req).await?;
     Ok(Json(a3))
 }
 
@@ -238,10 +243,7 @@ pub async fn get_a3(
     Path(id): Path<Uuid>,
 ) -> Result<Json<A3>> {
     let tenant_id = user.tenant_id;
-    let a3 = state
-        .ops_service
-        .get_a3(tenant_id, id)
-        .await?;
+    let a3 = state.ops_service.get_a3(tenant_id, id).await?;
     Ok(Json(a3))
 }
 
@@ -252,10 +254,7 @@ pub async fn close_a3(
     Path(id): Path<Uuid>,
 ) -> Result<Json<A3>> {
     let tenant_id = user.tenant_id;
-    let a3 = state
-        .ops_service
-        .close_a3(tenant_id, id)
-        .await?;
+    let a3 = state.ops_service.close_a3(tenant_id, id).await?;
     Ok(Json(a3))
 }
 
@@ -270,7 +269,13 @@ pub async fn list_risks(
     let tenant_id = user.tenant_id;
     let risks = state
         .ops_service
-        .list_risks(tenant_id, params.status.as_deref(), params.category.as_deref(), params.page, params.per_page)
+        .list_risks(
+            tenant_id,
+            params.status.as_deref(),
+            params.category.as_deref(),
+            params.page,
+            params.per_page,
+        )
         .await?;
     Ok(Json(risks))
 }
@@ -282,10 +287,7 @@ pub async fn create_risk(
     Json(req): Json<Risk>,
 ) -> Result<Json<Risk>> {
     let tenant_id = user.tenant_id;
-    let risk = state
-        .ops_service
-        .create_risk(tenant_id, req)
-        .await?;
+    let risk = state.ops_service.create_risk(tenant_id, req).await?;
     Ok(Json(risk))
 }
 
@@ -296,10 +298,7 @@ pub async fn get_risk(
     Path(id): Path<Uuid>,
 ) -> Result<Json<Risk>> {
     let tenant_id = user.tenant_id;
-    let risk = state
-        .ops_service
-        .get_risk(tenant_id, id)
-        .await?;
+    let risk = state.ops_service.get_risk(tenant_id, id).await?;
     Ok(Json(risk))
 }
 
@@ -313,10 +312,7 @@ pub async fn update_andon(
     Json(req): Json<Andon>,
 ) -> Result<Json<Andon>> {
     let tenant_id = user.tenant_id;
-    let andon = state
-        .ops_service
-        .update_andon(tenant_id, id, req)
-        .await?;
+    let andon = state.ops_service.update_andon(tenant_id, id, req).await?;
     Ok(Json(andon))
 }
 
@@ -327,10 +323,7 @@ pub async fn delete_andon(
     Path(id): Path<Uuid>,
 ) -> Result<Json<()>> {
     let tenant_id = user.tenant_id;
-    state
-        .ops_service
-        .delete_andon(tenant_id, id)
-        .await?;
+    state.ops_service.delete_andon(tenant_id, id).await?;
     Ok(Json(()))
 }
 
@@ -342,10 +335,7 @@ pub async fn update_project(
     Json(req): Json<Project>,
 ) -> Result<Json<Project>> {
     let tenant_id = user.tenant_id;
-    let project = state
-        .ops_service
-        .update_project(tenant_id, id, req)
-        .await?;
+    let project = state.ops_service.update_project(tenant_id, id, req).await?;
     Ok(Json(project))
 }
 
@@ -356,10 +346,7 @@ pub async fn delete_project(
     Path(id): Path<Uuid>,
 ) -> Result<Json<()>> {
     let tenant_id = user.tenant_id;
-    state
-        .ops_service
-        .delete_project(tenant_id, id)
-        .await?;
+    state.ops_service.delete_project(tenant_id, id).await?;
     Ok(Json(()))
 }
 
@@ -371,10 +358,7 @@ pub async fn update_a3(
     Json(req): Json<A3>,
 ) -> Result<Json<A3>> {
     let tenant_id = user.tenant_id;
-    let a3 = state
-        .ops_service
-        .update_a3(tenant_id, id, req)
-        .await?;
+    let a3 = state.ops_service.update_a3(tenant_id, id, req).await?;
     Ok(Json(a3))
 }
 
@@ -385,10 +369,7 @@ pub async fn delete_a3(
     Path(id): Path<Uuid>,
 ) -> Result<Json<()>> {
     let tenant_id = user.tenant_id;
-    state
-        .ops_service
-        .delete_a3(tenant_id, id)
-        .await?;
+    state.ops_service.delete_a3(tenant_id, id).await?;
     Ok(Json(()))
 }
 
@@ -400,10 +381,7 @@ pub async fn update_risk(
     Json(req): Json<Risk>,
 ) -> Result<Json<Risk>> {
     let tenant_id = user.tenant_id;
-    let risk = state
-        .ops_service
-        .update_risk(tenant_id, id, req)
-        .await?;
+    let risk = state.ops_service.update_risk(tenant_id, id, req).await?;
     Ok(Json(risk))
 }
 
@@ -414,10 +392,7 @@ pub async fn delete_risk(
     Path(id): Path<Uuid>,
 ) -> Result<Json<()>> {
     let tenant_id = user.tenant_id;
-    state
-        .ops_service
-        .delete_risk(tenant_id, id)
-        .await?;
+    state.ops_service.delete_risk(tenant_id, id).await?;
     Ok(Json(()))
 }
 
@@ -428,9 +403,6 @@ pub async fn mitigate_risk(
     Path(id): Path<Uuid>,
 ) -> Result<Json<Risk>> {
     let tenant_id = user.tenant_id;
-    let risk = state
-        .ops_service
-        .mitigate_risk(tenant_id, id)
-        .await?;
+    let risk = state.ops_service.mitigate_risk(tenant_id, id).await?;
     Ok(Json(risk))
 }

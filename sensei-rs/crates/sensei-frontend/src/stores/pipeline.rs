@@ -3,9 +3,8 @@
 //! Mirrors the Zustand [`pipeline.ts`](frontend/src/stores/pipeline.ts) store.
 
 use crate::api::client::{ApiClient, ApiError};
-use crate::api::rfq::{RfqApi, RfqDto, RfqStats};
+use crate::api::rfq::{RfqApi, RfqDto};
 use leptos::prelude::*;
-use std::collections::HashMap;
 
 /// Computed pipeline statistics.
 #[derive(Debug, Clone)]
@@ -51,9 +50,9 @@ impl PipelineStore {
         let overdue = rfqs
             .iter()
             .filter(|r| {
-                r.due_date.as_ref().map_or(false, |d| {
-                    *d < chrono::Utc::now().format("%Y-%m-%d").to_string()
-                })
+                r.due_date
+                    .as_ref()
+                    .is_some_and(|d| *d < chrono::Utc::now().format("%Y-%m-%d").to_string())
             })
             .count() as i32;
 
@@ -108,7 +107,7 @@ impl PipelineStore {
             .get::<serde_json::Value>(&format!("/api/v1/rfqs/{}/details", id))
             .await
         {
-            Ok(data) => {
+            Ok(_) => {
                 // Merge details into current RFQ
                 if let Some(current) = self.current_rfq.get() {
                     // Extend with details; current approach: replace with enriched data
@@ -124,14 +123,23 @@ impl PipelineStore {
     }
 
     /// Create a new RFQ.
-    pub async fn create_rfq(&self, client: &ApiClient, data: &serde_json::Value) -> Result<RfqDto, ApiError> {
+    pub async fn create_rfq(
+        &self,
+        client: &ApiClient,
+        data: &serde_json::Value,
+    ) -> Result<RfqDto, ApiError> {
         let rfq: RfqDto = client.post("/api/v1/rfqs", data).await?;
         self.rfqs.update(|r| r.push(rfq.clone()));
         Ok(rfq)
     }
 
     /// Update an existing RFQ.
-    pub async fn update_rfq(&self, client: &ApiClient, id: &str, updates: &serde_json::Value) -> Result<RfqDto, ApiError> {
+    pub async fn update_rfq(
+        &self,
+        client: &ApiClient,
+        id: &str,
+        updates: &serde_json::Value,
+    ) -> Result<RfqDto, ApiError> {
         let rfq: RfqDto = client.put(&format!("/api/v1/rfqs/{}", id), updates).await?;
         self.rfqs.update(|r| {
             if let Some(pos) = r.iter().position(|x| x.id == id) {
@@ -149,7 +157,11 @@ impl PipelineStore {
     }
 
     /// Bulk delete RFQs.
-    pub async fn bulk_delete_rfqs(&self, client: &ApiClient, ids: &[String]) -> Result<(), ApiError> {
+    pub async fn bulk_delete_rfqs(
+        &self,
+        client: &ApiClient,
+        ids: &[String],
+    ) -> Result<(), ApiError> {
         let payload = serde_json::json!({ "ids": ids });
         client
             .post::<serde_json::Value, _>("/api/v1/rfqs/bulk-delete", &payload)
@@ -185,7 +197,12 @@ impl PipelineStore {
     }
 
     /// Set RFQ status.
-    pub async fn set_rfq_status(&self, client: &ApiClient, id: &str, status: &str) -> Result<RfqDto, ApiError> {
+    pub async fn set_rfq_status(
+        &self,
+        client: &ApiClient,
+        id: &str,
+        status: &str,
+    ) -> Result<RfqDto, ApiError> {
         let payload = serde_json::json!({ "status": status });
         let rfq: RfqDto = client
             .put(&format!("/api/v1/rfqs/{}/status", id), &payload)
@@ -199,7 +216,12 @@ impl PipelineStore {
     }
 
     /// Assign an RFQ to a user.
-    pub async fn assign_rfq(&self, client: &ApiClient, id: &str, assignee_id: &str) -> Result<RfqDto, ApiError> {
+    pub async fn assign_rfq(
+        &self,
+        client: &ApiClient,
+        id: &str,
+        assignee_id: &str,
+    ) -> Result<RfqDto, ApiError> {
         let rfq = RfqApi::assign_rfq(client, id, assignee_id).await?;
         self.rfqs.update(|r| {
             if let Some(pos) = r.iter().position(|x| x.id == id) {

@@ -44,12 +44,10 @@ pub fn Avatar(
             _ => "32px", // md default
         }
     };
-    let font_size = move || {
-        match size_for_font.as_deref() {
-            Some("sm") => "10px",
-            Some("lg") => "16px",
-            _ => "14px",
-        }
+    let font_size = move || match size_for_font.as_deref() {
+        Some("sm") => "10px",
+        Some("lg") => "16px",
+        _ => "14px",
     };
 
     let has_src = src.is_some();

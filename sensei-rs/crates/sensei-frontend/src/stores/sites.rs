@@ -59,15 +59,26 @@ impl SitesStore {
     }
 
     /// Create a new site.
-    pub async fn create_site(&self, client: &ApiClient, payload: &serde_json::Value) -> Result<SiteDto, ApiError> {
+    pub async fn create_site(
+        &self,
+        client: &ApiClient,
+        payload: &serde_json::Value,
+    ) -> Result<SiteDto, ApiError> {
         let site: SiteDto = client.post("/api/v1/sites", payload).await?;
         self.sites.update(|s| s.push(site.clone()));
         Ok(site)
     }
 
     /// Update an existing site.
-    pub async fn update_site(&self, client: &ApiClient, id: &str, payload: &serde_json::Value) -> Result<SiteDto, ApiError> {
-        let site: SiteDto = client.put(&format!("/api/v1/sites/{}", id), payload).await?;
+    pub async fn update_site(
+        &self,
+        client: &ApiClient,
+        id: &str,
+        payload: &serde_json::Value,
+    ) -> Result<SiteDto, ApiError> {
+        let site: SiteDto = client
+            .put(&format!("/api/v1/sites/{}", id), payload)
+            .await?;
         self.sites.update(|s| {
             if let Some(pos) = s.iter().position(|x| x.id == id) {
                 s[pos] = site.clone();

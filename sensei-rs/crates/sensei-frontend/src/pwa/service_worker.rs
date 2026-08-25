@@ -107,7 +107,9 @@ pub async fn register_service_worker() -> Result<ServiceWorkerRegistration> {
 
     registration
         .dyn_into::<ServiceWorkerRegistration>()
-        .map_err(|e| ServiceWorkerError::RegistrationFailed(format!("Cannot cast registration: {e:?}")))
+        .map_err(|e| {
+            ServiceWorkerError::RegistrationFailed(format!("Cannot cast registration: {e:?}"))
+        })
 }
 
 /// Get the current service worker registration (waits for it to be ready).
@@ -126,7 +128,9 @@ pub async fn get_registration() -> Result<ServiceWorkerRegistration> {
 
     registration
         .dyn_into::<ServiceWorkerRegistration>()
-        .map_err(|e| ServiceWorkerError::RegistrationFailed(format!("Cannot cast registration: {e:?}")))
+        .map_err(|e| {
+            ServiceWorkerError::RegistrationFailed(format!("Cannot cast registration: {e:?}"))
+        })
 }
 
 /// Unregister the service worker.
@@ -138,9 +142,11 @@ pub async fn unregister_service_worker() -> Result<bool> {
     let result = JsFuture::from(promise)
         .await
         .map_err(|e| ServiceWorkerError::RegistrationFailed(format!("{e:?}")))?;
-    result.as_bool().ok_or(ServiceWorkerError::RegistrationFailed(
-        "unregister returned non-boolean".into(),
-    ))
+    result
+        .as_bool()
+        .ok_or(ServiceWorkerError::RegistrationFailed(
+            "unregister returned non-boolean".into(),
+        ))
 }
 
 /// Post a message to the active service worker.
@@ -152,9 +158,9 @@ pub fn post_message_to_service_worker(message: &JsValue) -> Result<()> {
     // Get the active registration's service worker (via ready promise would be async,
     // so for synchronous access we try to get the controller)
     if let Some(controller) = service_worker.controller() {
-        controller
-            .post_message(message)
-            .map_err(|e| ServiceWorkerError::RegistrationFailed(format!("postMessage failed: {e:?}")))?;
+        controller.post_message(message).map_err(|e| {
+            ServiceWorkerError::RegistrationFailed(format!("postMessage failed: {e:?}"))
+        })?;
         Ok(())
     } else {
         Err(ServiceWorkerError::NoRegistration)
@@ -183,8 +189,12 @@ pub async fn open_cache(name: &str) -> Result<Cache> {
 /// fetch from network and cache the result.
 ///
 /// This is ideal for static assets that rarely change (CSS, JS, fonts, images).
-pub async fn cache_first(request: &web_sys::Request) -> std::result::Result<web_sys::Response, JsValue> {
-    let cache = open_cache(CACHE_NAME).await.map_err(|e| JsValue::from_str(&e.to_string()))?;
+pub async fn cache_first(
+    request: &web_sys::Request,
+) -> std::result::Result<web_sys::Response, JsValue> {
+    let cache = open_cache(CACHE_NAME)
+        .await
+        .map_err(|e| JsValue::from_str(&e.to_string()))?;
 
     // Try cache
     let cache_result = JsFuture::from(cache.match_with_request(request))
@@ -223,7 +233,9 @@ pub async fn cache_first(request: &web_sys::Request) -> std::result::Result<web_
 ///
 /// This is ideal for API responses where freshness is preferred but offline
 /// access is still important.
-pub async fn network_first(request: &web_sys::Request) -> std::result::Result<web_sys::Response, JsValue> {
+pub async fn network_first(
+    request: &web_sys::Request,
+) -> std::result::Result<web_sys::Response, JsValue> {
     // Try network
     let fetch_promise = web_sys::window()
         .ok_or(JsValue::from_str("No window"))?
@@ -239,7 +251,9 @@ pub async fn network_first(request: &web_sys::Request) -> std::result::Result<we
             if response.ok() {
                 let cache = open_cache(CACHE_NAME).await;
                 if let Ok(cache) = cache {
-                    let cloned = response.clone().map_err(|_| JsValue::from_str("Cannot clone"))?;
+                    let cloned = response
+                        .clone()
+                        .map_err(|_| JsValue::from_str("Cannot clone"))?;
                     let _ = cache.put_with_request(request, &cloned);
                 }
             }
@@ -248,13 +262,17 @@ pub async fn network_first(request: &web_sys::Request) -> std::result::Result<we
         }
         Err(_) => {
             // Network failed — fall back to cache
-            let cache = open_cache(CACHE_NAME).await.map_err(|e| JsValue::from_str(&e.to_string()))?;
+            let cache = open_cache(CACHE_NAME)
+                .await
+                .map_err(|e| JsValue::from_str(&e.to_string()))?;
             let cache_result = JsFuture::from(cache.match_with_request(request))
                 .await
                 .map_err(|e| JsValue::from_str(&format!("Cache match failed: {e:?}")))?;
 
             if cache_result.is_null() || cache_result.is_undefined() {
-                Err(JsValue::from_str("Network unavailable and no cached response"))
+                Err(JsValue::from_str(
+                    "Network unavailable and no cached response",
+                ))
             } else {
                 cache_result
                     .dyn_into()
@@ -269,19 +287,28 @@ pub async fn network_first(request: &web_sys::Request) -> std::result::Result<we
 ///
 /// This is ideal for resources that update frequently but don't need to be
 /// instantly fresh (e.g., user avatar, dashboard widgets).
-pub async fn stale_while_revalidate(request: &web_sys::Request) -> std::result::Result<web_sys::Response, JsValue> {
-    let cache = open_cache(CACHE_NAME).await.map_err(|e| JsValue::from_str(&e.to_string()))?;
+pub async fn stale_while_revalidate(
+    request: &web_sys::Request,
+) -> std::result::Result<web_sys::Response, JsValue> {
+    let cache = open_cache(CACHE_NAME)
+        .await
+        .map_err(|e| JsValue::from_str(&e.to_string()))?;
 
     // Return cached response immediately (if available)
     let cached_result = JsFuture::from(cache.match_with_request(request))
         .await
         .map_err(|e| JsValue::from_str(&format!("Cache match failed: {e:?}")))?;
 
-    let cached_response: Option<web_sys::Response> = if cached_result.is_null() || cached_result.is_undefined() {
-        None
-    } else {
-        Some(cached_result.dyn_into().map_err(|_| JsValue::from_str("Expected Response"))?)
-    };
+    let cached_response: Option<web_sys::Response> =
+        if cached_result.is_null() || cached_result.is_undefined() {
+            None
+        } else {
+            Some(
+                cached_result
+                    .dyn_into()
+                    .map_err(|_| JsValue::from_str("Expected Response"))?,
+            )
+        };
 
     // Revalidate: fetch from network in background
     let request_clone = match request.clone() {

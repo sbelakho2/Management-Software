@@ -15,7 +15,6 @@ pub use database::DatabaseSupplyChainService;
 
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
 use sensei_core::domain::events::{
     DomainEvent, GoodsReceiptCreatedEvent, PurchaseOrderCreatedEvent, QuoteApprovedEvent,
     QuoteConvertedEvent, QuoteCreatedEvent, RFQCreatedEvent, RFQStatusChangedEvent,
@@ -24,6 +23,7 @@ use sensei_core::domain::events::{
 use sensei_core::error::{Result, SenseiError};
 use sensei_core::pagination::PaginatedResponse;
 use sensei_event_bus::bus::EventBus;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -270,11 +270,7 @@ pub trait SupplyChainService: Send + Sync {
 
     // ── Inventory ───────────────────────────────────────────────────────
     /// Get inventory for a specific product across all locations.
-    async fn get_inventory(
-        &self,
-        tenant_id: Uuid,
-        product_id: Uuid,
-    ) -> Result<Vec<InventoryItem>>;
+    async fn get_inventory(&self, tenant_id: Uuid, product_id: Uuid) -> Result<Vec<InventoryItem>>;
     /// List inventory with optional location filter and pagination.
     async fn list_inventory(
         &self,
@@ -323,17 +319,32 @@ pub trait SupplyChainService: Send + Sync {
     /// Reject a quote.
     async fn reject_quote(&self, tenant_id: Uuid, id: Uuid) -> Result<Quote>;
     /// Update a sales order.
-    async fn update_sales_order(&self, tenant_id: Uuid, id: Uuid, order: SalesOrder) -> Result<SalesOrder>;
+    async fn update_sales_order(
+        &self,
+        tenant_id: Uuid,
+        id: Uuid,
+        order: SalesOrder,
+    ) -> Result<SalesOrder>;
     /// Delete a sales order.
     async fn delete_sales_order(&self, tenant_id: Uuid, id: Uuid) -> Result<()>;
     /// Update a purchase order.
-    async fn update_purchase_order(&self, tenant_id: Uuid, id: Uuid, po: PurchaseOrder) -> Result<PurchaseOrder>;
+    async fn update_purchase_order(
+        &self,
+        tenant_id: Uuid,
+        id: Uuid,
+        po: PurchaseOrder,
+    ) -> Result<PurchaseOrder>;
     /// Delete a purchase order.
     async fn delete_purchase_order(&self, tenant_id: Uuid, id: Uuid) -> Result<()>;
     /// Receive all line items on a purchase order.
     async fn receive_full_po(&self, tenant_id: Uuid, id: Uuid) -> Result<PurchaseOrder>;
     /// Update an inventory item.
-    async fn update_inventory(&self, tenant_id: Uuid, id: Uuid, item: InventoryItem) -> Result<InventoryItem>;
+    async fn update_inventory(
+        &self,
+        tenant_id: Uuid,
+        id: Uuid,
+        item: InventoryItem,
+    ) -> Result<InventoryItem>;
     /// Delete an inventory item.
     async fn delete_inventory(&self, tenant_id: Uuid, id: Uuid) -> Result<()>;
     /// Delete a stock movement.
@@ -416,7 +427,10 @@ impl InMemorySupplyChainService {
     /// tenant and name. The same name always yields the same id.
     fn location_id(tenant_id: Uuid, location: &str) -> Uuid {
         use uuid::Uuid as U;
-        U::new_v5(&U::NAMESPACE_OID, format!("{tenant_id}:{location}").as_bytes())
+        U::new_v5(
+            &U::NAMESPACE_OID,
+            format!("{tenant_id}:{location}").as_bytes(),
+        )
     }
 
     /// Resolve the destination location for received stock: the product's
@@ -496,7 +510,15 @@ impl SupplyChainService for InMemorySupplyChainService {
         let account_id = rfq.supplier_id;
         let result = rfq.clone();
         self.rfqs.write().await.insert(id, rfq.clone());
-        self.publish_event(RFQCreatedEvent::new(tenant_id, id, rfq_number, account_id, String::new(), String::new())).await;
+        self.publish_event(RFQCreatedEvent::new(
+            tenant_id,
+            id,
+            rfq_number,
+            account_id,
+            String::new(),
+            String::new(),
+        ))
+        .await;
         Ok(result)
     }
 
@@ -524,12 +546,7 @@ impl SupplyChainService for InMemorySupplyChainService {
         Ok(PaginatedResponse::new(items, page, per_page))
     }
 
-    async fn update_rfq_status(
-        &self,
-        tenant_id: Uuid,
-        id: Uuid,
-        status: &str,
-    ) -> Result<RFQ> {
+    async fn update_rfq_status(&self, tenant_id: Uuid, id: Uuid, status: &str) -> Result<RFQ> {
         let mut store = self.rfqs.write().await;
         let rfq = store
             .get_mut(&id)
@@ -538,7 +555,13 @@ impl SupplyChainService for InMemorySupplyChainService {
         rfq.status = status.to_string();
         let result = rfq.clone();
         drop(store);
-        self.publish_event(RFQStatusChangedEvent::new(tenant_id, id, old_status, status.to_string())).await;
+        self.publish_event(RFQStatusChangedEvent::new(
+            tenant_id,
+            id,
+            old_status,
+            status.to_string(),
+        ))
+        .await;
         Ok(result)
     }
 
@@ -563,7 +586,15 @@ impl SupplyChainService for InMemorySupplyChainService {
         let currency = quote.currency.clone();
         let result = quote.clone();
         self.quotes.write().await.insert(id, quote.clone());
-        self.publish_event(QuoteCreatedEvent::new(tenant_id, id, quote_number, rfq_id, total_amount, currency)).await;
+        self.publish_event(QuoteCreatedEvent::new(
+            tenant_id,
+            id,
+            quote_number,
+            rfq_id,
+            total_amount,
+            currency,
+        ))
+        .await;
         Ok(result)
     }
 
@@ -598,7 +629,9 @@ impl SupplyChainService for InMemorySupplyChainService {
             .ok_or_else(|| SenseiError::NotFound(format!("Quote {id} not found")))?;
 
         if quote.status == "approved" {
-            return Err(SenseiError::Validation("Quote is already approved".to_string()));
+            return Err(SenseiError::Validation(
+                "Quote is already approved".to_string(),
+            ));
         }
         if quote.status == "converted" {
             return Err(SenseiError::Validation(
@@ -610,15 +643,17 @@ impl SupplyChainService for InMemorySupplyChainService {
         let total_amount = quote.total_amount;
         let result = quote.clone();
         drop(store);
-        self.publish_event(QuoteApprovedEvent::new(tenant_id, id, Uuid::nil(), total_amount)).await;
+        self.publish_event(QuoteApprovedEvent::new(
+            tenant_id,
+            id,
+            Uuid::nil(),
+            total_amount,
+        ))
+        .await;
         Ok(result)
     }
 
-    async fn convert_quote_to_order(
-        &self,
-        tenant_id: Uuid,
-        quote_id: Uuid,
-    ) -> Result<SalesOrder> {
+    async fn convert_quote_to_order(&self, tenant_id: Uuid, quote_id: Uuid) -> Result<SalesOrder> {
         // Fetch and lock the quote
         let quote = {
             let mut store = self.quotes.write().await;
@@ -672,8 +707,16 @@ impl SupplyChainService for InMemorySupplyChainService {
         };
 
         let sales_order_id = sales_order.id;
-        self.sales_orders.write().await.insert(sales_order_id, sales_order.clone());
-        self.publish_event(QuoteConvertedEvent::new(tenant_id, quote_id, sales_order_id)).await;
+        self.sales_orders
+            .write()
+            .await
+            .insert(sales_order_id, sales_order.clone());
+        self.publish_event(QuoteConvertedEvent::new(
+            tenant_id,
+            quote_id,
+            sales_order_id,
+        ))
+        .await;
         Ok(sales_order)
     }
 
@@ -702,7 +745,15 @@ impl SupplyChainService for InMemorySupplyChainService {
         let currency = order.currency.clone();
         let result = order.clone();
         self.sales_orders.write().await.insert(id, order.clone());
-        self.publish_event(SalesOrderCreatedEvent::new(tenant_id, id, so_number, account_id, total_amount, currency)).await;
+        self.publish_event(SalesOrderCreatedEvent::new(
+            tenant_id,
+            id,
+            so_number,
+            account_id,
+            total_amount,
+            currency,
+        ))
+        .await;
         Ok(result)
     }
 
@@ -769,7 +820,15 @@ impl SupplyChainService for InMemorySupplyChainService {
         let currency = po.currency.clone();
         let result = po.clone();
         self.purchase_orders.write().await.insert(id, po.clone());
-        self.publish_event(PurchaseOrderCreatedEvent::new(tenant_id, id, po_number, supplier_id, total_amount, currency)).await;
+        self.publish_event(PurchaseOrderCreatedEvent::new(
+            tenant_id,
+            id,
+            po_number,
+            supplier_id,
+            total_amount,
+            currency,
+        ))
+        .await;
         Ok(result)
     }
 
@@ -815,9 +874,9 @@ impl SupplyChainService for InMemorySupplyChainService {
         // lock-order inversion is possible with `receive_full_po`.
         let product_name = {
             let mut store = self.purchase_orders.write().await;
-            let po = store
-                .get_mut(&po_id)
-                .ok_or_else(|| SenseiError::NotFound(format!("Purchase order {po_id} not found")))?;
+            let po = store.get_mut(&po_id).ok_or_else(|| {
+                SenseiError::NotFound(format!("Purchase order {po_id} not found"))
+            })?;
 
             // Find and update the matching line item
             let mut found_product_name = String::new();
@@ -890,11 +949,7 @@ impl SupplyChainService for InMemorySupplyChainService {
 
     // ── Inventory ───────────────────────────────────────────────────────
 
-    async fn get_inventory(
-        &self,
-        tenant_id: Uuid,
-        product_id: Uuid,
-    ) -> Result<Vec<InventoryItem>> {
+    async fn get_inventory(&self, tenant_id: Uuid, product_id: Uuid) -> Result<Vec<InventoryItem>> {
         let store = self.inventory.read().await;
         Ok(store
             .values()
@@ -914,8 +969,7 @@ impl SupplyChainService for InMemorySupplyChainService {
         let items: Vec<_> = store
             .values()
             .filter(|item| {
-                item.tenant_id == tenant_id
-                    && location.is_none_or(|loc| item.location == loc)
+                item.tenant_id == tenant_id && location.is_none_or(|loc| item.location == loc)
             })
             .cloned()
             .collect();
@@ -935,9 +989,11 @@ impl SupplyChainService for InMemorySupplyChainService {
 
         // Adjusting stock at a location that has no row is an error — never
         // auto-create an inventory row for an arbitrary location name.
-        let item = store
-            .get_mut(&key)
-            .ok_or_else(|| SenseiError::NotFound(format!("Inventory for product {product_id} at location '{location}' not found")))?;
+        let item = store.get_mut(&key).ok_or_else(|| {
+            SenseiError::NotFound(format!(
+                "Inventory for product {product_id} at location '{location}' not found"
+            ))
+        })?;
         item.quantity_on_hand = (item.quantity_on_hand + quantity_change).max(0);
 
         // Ensure available doesn't go negative
@@ -953,7 +1009,10 @@ impl SupplyChainService for InMemorySupplyChainService {
         tenant_id: Uuid,
         mut stock_move: StockMove,
     ) -> Result<StockMove> {
-        stock_move.id = Uuid::new_v4();
+        // Preserve a caller-supplied id; only generate one when absent.
+        if stock_move.id.is_nil() {
+            stock_move.id = Uuid::new_v4();
+        }
         stock_move.tenant_id = tenant_id;
         stock_move.created_at = Utc::now();
 
@@ -988,13 +1047,7 @@ impl SupplyChainService for InMemorySupplyChainService {
                     None => self.resolve_stock_location(tenant_id, product_id).await,
                 };
                 let _ = self
-                    .apply_inventory_delta(
-                        tenant_id,
-                        product_id,
-                        &product_name,
-                        &loc,
-                        -quantity,
-                    )
+                    .apply_inventory_delta(tenant_id, product_id, &product_name, &loc, -quantity)
                     .await;
             }
             "transfer" => {
@@ -1025,13 +1078,7 @@ impl SupplyChainService for InMemorySupplyChainService {
             "adjustment" => {
                 let loc = from_location.as_deref().unwrap_or(&to_location);
                 let _ = self
-                    .apply_inventory_delta(
-                        tenant_id,
-                        product_id,
-                        &product_name,
-                        loc,
-                        quantity,
-                    )
+                    .apply_inventory_delta(tenant_id, product_id, &product_name, loc, quantity)
                     .await;
             }
             _ => {
@@ -1039,7 +1086,10 @@ impl SupplyChainService for InMemorySupplyChainService {
             }
         }
 
-        self.stock_moves.write().await.insert(id, stock_move.clone());
+        self.stock_moves
+            .write()
+            .await
+            .insert(id, stock_move.clone());
         // Locations are referenced by their stable (tenant, name)-derived ids.
         let from_location_id = from_location
             .as_deref()
@@ -1074,8 +1124,7 @@ impl SupplyChainService for InMemorySupplyChainService {
         let items: Vec<_> = store
             .values()
             .filter(|sm| {
-                sm.tenant_id == tenant_id
-                    && product_id.is_none_or(|pid| sm.product_id == pid)
+                sm.tenant_id == tenant_id && product_id.is_none_or(|pid| sm.product_id == pid)
             })
             .cloned()
             .collect();
@@ -1205,7 +1254,12 @@ impl SupplyChainService for InMemorySupplyChainService {
         Ok(quote.clone())
     }
 
-    async fn update_sales_order(&self, _tenant_id: Uuid, id: Uuid, order: SalesOrder) -> Result<SalesOrder> {
+    async fn update_sales_order(
+        &self,
+        _tenant_id: Uuid,
+        id: Uuid,
+        order: SalesOrder,
+    ) -> Result<SalesOrder> {
         let mut store = self.sales_orders.write().await;
         let existing = store
             .get_mut(&id)
@@ -1230,7 +1284,12 @@ impl SupplyChainService for InMemorySupplyChainService {
         Ok(())
     }
 
-    async fn update_purchase_order(&self, _tenant_id: Uuid, id: Uuid, po: PurchaseOrder) -> Result<PurchaseOrder> {
+    async fn update_purchase_order(
+        &self,
+        _tenant_id: Uuid,
+        id: Uuid,
+        po: PurchaseOrder,
+    ) -> Result<PurchaseOrder> {
         let mut store = self.purchase_orders.write().await;
         let existing = store
             .get_mut(&id)
@@ -1279,11 +1338,7 @@ impl SupplyChainService for InMemorySupplyChainService {
             for line in &mut po.line_items {
                 let to_receive = line.quantity_ordered - line.quantity_received;
                 if to_receive > 0 {
-                    remaining.push((
-                        line.product_id,
-                        line.product_name.clone(),
-                        to_receive,
-                    ));
+                    remaining.push((line.product_id, line.product_name.clone(), to_receive));
                     line.quantity_received += to_receive;
                 }
             }
@@ -1294,14 +1349,8 @@ impl SupplyChainService for InMemorySupplyChainService {
         // Update inventory for the quantities captured before the mutation.
         for (product_id, product_name, qty) in remaining {
             let location = self.resolve_stock_location(tenant_id, product_id).await;
-            self.apply_inventory_delta(
-                tenant_id,
-                product_id,
-                &product_name,
-                &location,
-                qty,
-            )
-            .await;
+            self.apply_inventory_delta(tenant_id, product_id, &product_name, &location, qty)
+                .await;
         }
 
         let store = self.purchase_orders.read().await;
@@ -1311,7 +1360,12 @@ impl SupplyChainService for InMemorySupplyChainService {
             .ok_or_else(|| SenseiError::NotFound(format!("PurchaseOrder {id} not found")))?)
     }
 
-    async fn update_inventory(&self, _tenant_id: Uuid, id: Uuid, item: InventoryItem) -> Result<InventoryItem> {
+    async fn update_inventory(
+        &self,
+        _tenant_id: Uuid,
+        id: Uuid,
+        item: InventoryItem,
+    ) -> Result<InventoryItem> {
         let mut store = self.inventory.write().await;
         // The inventory HashMap is keyed by "tenant_id:product_id:location" (String).
         // Find the entry by matching the item's UUID id.
@@ -1443,7 +1497,10 @@ mod tests {
         assert_eq!(order.line_items[0].product_name, "Premium Widget");
 
         // Verify quote is now converted
-        let converted_quote = service.get_quote(tenant_id, created_quote.id).await.unwrap();
+        let converted_quote = service
+            .get_quote(tenant_id, created_quote.id)
+            .await
+            .unwrap();
         assert_eq!(converted_quote.status, "converted");
     }
 
@@ -1494,10 +1551,7 @@ mod tests {
         assert_eq!(full.line_items[0].quantity_received, 1000);
 
         // Verify inventory was updated
-        let inv = service
-            .get_inventory(tenant_id, product_id)
-            .await
-            .unwrap();
+        let inv = service.get_inventory(tenant_id, product_id).await.unwrap();
         assert!(!inv.is_empty());
         assert_eq!(inv[0].quantity_on_hand, 1000);
     }
@@ -1508,20 +1562,38 @@ mod tests {
         let tenant_id = Uuid::new_v4();
         let product_id = Uuid::new_v4();
 
-        // First ensure inventory exists by doing an adjustment
+        // Seed inventory with a receipt move first (adjust_inventory does
+        // not implicitly create stock records anymore — it must adjust
+        // existing ones).
+        let receipt = StockMove {
+            id: Uuid::new_v4(),
+            tenant_id,
+            product_id,
+            product_name: "Widget".to_string(),
+            quantity: 100,
+            move_type: "receipt".to_string(),
+            from_location: None,
+            to_location: "Warehouse-A".to_string(),
+            reference_type: None,
+            reference_id: None,
+            created_by: Uuid::new_v4(),
+            created_at: Utc::now(),
+        };
+        service.create_stock_move(tenant_id, receipt).await.unwrap();
+
+        // Then adjust it.
         let adjusted = service
             .adjust_inventory(tenant_id, product_id, "Warehouse-A", 100, "initial stock")
             .await
             .unwrap();
-        assert_eq!(adjusted.quantity_on_hand, 100);
-        assert_eq!(adjusted.quantity_available, 100);
+        assert_eq!(adjusted.quantity_on_hand, 200);
 
         // Negative adjustment
         let adjusted = service
             .adjust_inventory(tenant_id, product_id, "Warehouse-A", -20, "usage")
             .await
             .unwrap();
-        assert_eq!(adjusted.quantity_on_hand, 80);
+        assert_eq!(adjusted.quantity_on_hand, 180);
     }
 
     #[tokio::test]
@@ -1545,17 +1617,11 @@ mod tests {
             created_at: Utc::now(),
         };
 
-        let created = service
-            .create_stock_move(tenant_id, sm)
-            .await
-            .unwrap();
+        let created = service.create_stock_move(tenant_id, sm).await.unwrap();
         assert_eq!(created.move_type, "receipt");
 
         // Verify inventory was updated
-        let inv = service
-            .get_inventory(tenant_id, product_id)
-            .await
-            .unwrap();
+        let inv = service.get_inventory(tenant_id, product_id).await.unwrap();
         assert_eq!(inv[0].quantity_on_hand, 200);
         assert_eq!(inv[0].location, "Dock-1");
     }
@@ -1601,10 +1667,7 @@ mod tests {
         service.create_stock_move(tenant_id, sm2).await.unwrap();
 
         // Check source inventory decreased
-        let inv_a = service
-            .get_inventory(tenant_id, product_id)
-            .await
-            .unwrap();
+        let inv_a = service.get_inventory(tenant_id, product_id).await.unwrap();
         let warehouse = inv_a.iter().find(|i| i.location == "Warehouse-A").unwrap();
         assert_eq!(warehouse.quantity_on_hand, 70);
     }

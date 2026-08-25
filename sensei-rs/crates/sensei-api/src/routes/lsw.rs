@@ -3,13 +3,16 @@
 //! Provides endpoints for managing LSW standards, performing audits,
 //! and viewing compliance dashboards.
 
-use axum::{Json, extract::{Path, Query, State}};
+use axum::{
+    extract::{Path, Query, State},
+    Json,
+};
 use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
 use sensei_auth::middleware::AuthenticatedUser;
 use sensei_core::error::{Result, SenseiError};
 use sensei_core::pagination::PaginatedResponse;
 use sensei_core::types::new_id;
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::state::AppState;
@@ -239,7 +242,9 @@ pub async fn delete_lsw_standard(
         .filter(|s| s.tenant_id == tenant_id)
         .is_some();
     if !exists {
-        return Err(SenseiError::NotFound(format!("LSW standard {standard_id} not found")));
+        return Err(SenseiError::NotFound(format!(
+            "LSW standard {standard_id} not found"
+        )));
     }
     store.remove(&standard_id);
     Ok(Json(()))
@@ -307,7 +312,7 @@ pub async fn list_audits(
         .filter(|a| a.standard_id == standard_id && a.tenant_id == tenant_id)
         .cloned()
         .collect();
-    audits.sort_by(|a, b| b.audited_at.cmp(&a.audited_at));
+    audits.sort_by_key(|a| std::cmp::Reverse(a.audited_at));
     let result = PaginatedResponse::new(audits, params.page, params.per_page);
     Ok(Json(result))
 }
@@ -388,7 +393,8 @@ pub async fn get_lsw_dashboard(
     };
 
     // By area breakdown
-    let mut area_map: std::collections::HashMap<String, Vec<f64>> = std::collections::HashMap::new();
+    let mut area_map: std::collections::HashMap<String, Vec<f64>> =
+        std::collections::HashMap::new();
     for audit in &audits {
         area_map
             .entry(audit.area.clone())
@@ -434,14 +440,20 @@ pub async fn get_lsw_dashboard(
         std::collections::BTreeMap::new();
     for audit in &audits {
         let date = audit.audited_at.date_naive();
-        trend_map.entry(date).or_default().push(audit.compliance_rate);
+        trend_map
+            .entry(date)
+            .or_default()
+            .push(audit.compliance_rate);
     }
     let recent_trend: Vec<ComplianceTrendPoint> = trend_map
         .into_iter()
         .map(|(date, rates)| {
             let avg = rates.iter().sum::<f64>() / rates.len() as f64;
             ComplianceTrendPoint {
-                date: date.and_hms_opt(0, 0, 0).map(|d| DateTime::from_naive_utc_and_offset(d, Utc)).unwrap_or_else(|| Utc::now()),
+                date: date
+                    .and_hms_opt(0, 0, 0)
+                    .map(|d| DateTime::from_naive_utc_and_offset(d, Utc))
+                    .unwrap_or_else(Utc::now),
                 compliance_rate: avg,
             }
         })

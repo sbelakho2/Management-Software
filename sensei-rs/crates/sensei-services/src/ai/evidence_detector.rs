@@ -21,11 +21,20 @@ use std::collections::HashMap;
 
 /// Required evidence patterns for A3 reports.
 pub const EVIDENCE_PATTERNS: &[(&str, &str)] = &[
-    ("numerical_data", r"\d+\.?\d*\s*(%|ppm|units|pieces|hours|days)"),
+    (
+        "numerical_data",
+        r"\d+\.?\d*\s*(%|ppm|units|pieces|hours|days)",
+    ),
     ("before_after", r"(before|after|baseline|current|improved)"),
-    ("root_cause_keyword", r"(root cause|5 why|fishbone|ishikawa|pareto)"),
+    (
+        "root_cause_keyword",
+        r"(root cause|5 why|fishbone|ishikawa|pareto)",
+    ),
     ("validation", r"(validate|verify|confirm|test|measure)"),
-    ("action_verb", r"(implement|install|train|modify|replace|update)"),
+    (
+        "action_verb",
+        r"(implement|install|train|modify|replace|update)",
+    ),
 ];
 
 /// Section completeness thresholds (minimum characters).
@@ -115,7 +124,7 @@ impl TfidfVectorizer {
 
         // Sort by frequency and take top max_features
         let mut freq_vec: Vec<(String, usize)> = doc_freq.into_iter().collect();
-        freq_vec.sort_by(|a, b| b.1.cmp(&a.1));
+        freq_vec.sort_by_key(|a| std::cmp::Reverse(a.1));
         freq_vec.truncate(self.max_features);
 
         // Build vocabulary and compute IDF
@@ -352,10 +361,7 @@ impl MissingEvidenceDetector {
     ///
     /// `labeled_reports`: List of (full_text, is_complete) where is_complete means
     /// all evidence categories are present.
-    pub fn train(
-        &mut self,
-        labeled_reports: &[(String, bool)],
-    ) -> TrainingMetrics {
+    pub fn train(&mut self, labeled_reports: &[(String, bool)]) -> TrainingMetrics {
         let n = labeled_reports.len();
         if n == 0 {
             return TrainingMetrics {
@@ -367,7 +373,10 @@ impl MissingEvidenceDetector {
 
         // Extract texts and labels
         let texts: Vec<String> = labeled_reports.iter().map(|(t, _)| t.clone()).collect();
-        let y: Vec<f64> = labeled_reports.iter().map(|(_, l)| if *l { 1.0 } else { 0.0 }).collect();
+        let y: Vec<f64> = labeled_reports
+            .iter()
+            .map(|(_, l)| if *l { 1.0 } else { 0.0 })
+            .collect();
 
         // Train TF-IDF
         let mut tfidf = TfidfVectorizer::new(300);
@@ -412,10 +421,7 @@ impl MissingEvidenceDetector {
     }
 
     /// Detect missing evidence in an A3 report.
-    pub fn detect_missing_evidence(
-        &self,
-        sections: &HashMap<String, String>,
-    ) -> EvidenceResult {
+    pub fn detect_missing_evidence(&self, sections: &HashMap<String, String>) -> EvidenceResult {
         let mut result = EvidenceResult {
             overall_score: 0.0,
             is_complete: true,
@@ -448,7 +454,9 @@ impl MissingEvidenceDetector {
                 score: None,
                 message: "No numerical data found (measurements, metrics, percentages)".into(),
             });
-            result.warnings.push("Add quantitative data to support your analysis".into());
+            result
+                .warnings
+                .push("Add quantitative data to support your analysis".into());
         }
 
         // 3. Check for root cause evidence
@@ -780,6 +788,9 @@ mod tests {
         let low_avg: f64 = low.iter().sum::<f64>() / low.len() as f64;
         let high_avg: f64 = high.iter().sum::<f64>() / high.len() as f64;
         assert!(low_avg > high_avg, "low={low_avg}, high={high_avg}");
-        assert!((low_avg - high_avg).abs() > 0.05, "predictions are constant");
+        assert!(
+            (low_avg - high_avg).abs() > 0.05,
+            "predictions are constant"
+        );
     }
 }

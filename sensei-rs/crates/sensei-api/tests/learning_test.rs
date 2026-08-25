@@ -23,7 +23,7 @@ async fn test_create_learning_module() {
     let mut resp = app.send_request(req).await;
     assert_eq!(resp.status(), StatusCode::OK);
     let json: Value = app.json_body(&mut resp).await;
-    assert!(json["id"].as_str().unwrap_or("").len() > 0);
+    assert!(!json["id"].as_str().unwrap_or("").is_empty());
     assert_eq!(json["title"], "Intro to Lean");
 }
 
@@ -45,7 +45,7 @@ async fn test_list_learning_modules() {
     let mut resp = app.send_request(req).await;
     assert_eq!(resp.status(), StatusCode::OK);
     let json: Value = app.json_body(&mut resp).await;
-    assert!(json["data"].as_array().map_or(false, |a| a.len() >= 1));
+    assert!(json["data"].as_array().is_some_and(|a| !a.is_empty()));
 }
 
 #[tokio::test]
@@ -64,10 +64,7 @@ async fn test_get_learning_module() {
     let created: Value = app.json_body(&mut resp).await;
     let module_id = created["id"].as_str().unwrap();
 
-    let req = app.get_authenticated(
-        &format!("/api/v1/learning/modules/{}", module_id),
-        &token,
-    );
+    let req = app.get_authenticated(&format!("/api/v1/learning/modules/{}", module_id), &token);
     let mut resp = app.send_request(req).await;
     assert_eq!(resp.status(), StatusCode::OK);
     let json: Value = app.json_body(&mut resp).await;
@@ -124,10 +121,7 @@ async fn test_delete_learning_module() {
     let created: Value = app.json_body(&mut resp).await;
     let module_id = created["id"].as_str().unwrap();
 
-    let req = app.delete_authenticated(
-        &format!("/api/v1/learning/modules/{}", module_id),
-        &token,
-    );
+    let req = app.delete_authenticated(&format!("/api/v1/learning/modules/{}", module_id), &token);
     let resp = app.send_request(req).await;
     assert_eq!(resp.status(), StatusCode::OK);
 }

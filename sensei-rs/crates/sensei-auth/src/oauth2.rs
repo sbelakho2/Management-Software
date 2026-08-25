@@ -3,12 +3,12 @@
 //! Supports standard OAuth2 authorization code flow with providers like
 //! Google, Microsoft Azure AD, GitHub, and any OpenID Connect provider.
 
-use oauth2::{
-    AuthUrl, AuthorizationCode, ClientId, ClientSecret, CsrfToken,
-    PkceCodeChallenge, RedirectUrl, Scope, TokenUrl,
-};
 use oauth2::basic::BasicClient;
 use oauth2::url::Url;
+use oauth2::{
+    AuthUrl, AuthorizationCode, ClientId, ClientSecret, CsrfToken, PkceCodeChallenge, RedirectUrl,
+    Scope, TokenUrl,
+};
 use sensei_core::error::{Result, SenseiError};
 
 pub use sensei_core::config::OAuth2ProviderConfig;
@@ -83,7 +83,9 @@ impl OAuth2Client {
         &self,
         code: String,
         pkce_verifier: oauth2::PkceCodeVerifier,
-    ) -> Result<oauth2::StandardTokenResponse<oauth2::EmptyExtraTokenFields, oauth2::basic::BasicTokenType>> {
+    ) -> Result<
+        oauth2::StandardTokenResponse<oauth2::EmptyExtraTokenFields, oauth2::basic::BasicTokenType>,
+    > {
         let token_url = TokenUrl::new(self.config.token_url.clone())
             .map_err(|e| SenseiError::Configuration(format!("Invalid token URL: {e}")))?;
 
@@ -109,7 +111,9 @@ impl OAuth2Client {
     pub async fn refresh_token(
         &self,
         refresh_token: &str,
-    ) -> Result<oauth2::StandardTokenResponse<oauth2::EmptyExtraTokenFields, oauth2::basic::BasicTokenType>> {
+    ) -> Result<
+        oauth2::StandardTokenResponse<oauth2::EmptyExtraTokenFields, oauth2::basic::BasicTokenType>,
+    > {
         let token_url = TokenUrl::new(self.config.token_url.clone())
             .map_err(|e| SenseiError::Configuration(format!("Invalid token URL: {e}")))?;
 

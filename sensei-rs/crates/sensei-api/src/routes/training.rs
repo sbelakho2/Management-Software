@@ -4,17 +4,22 @@
 //! and training dashboards. This module is separate from the
 //! training-matrix module (skill matrix).
 
-use axum::{Json, extract::{Path, Query, State}};
+use axum::{
+    extract::{Path, Query, State},
+    Json,
+};
 use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
 use sensei_auth::middleware::AuthenticatedUser;
 use sensei_core::error::{Result, SenseiError};
 use sensei_core::pagination::PaginatedResponse;
 use sensei_core::types::new_id;
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::state::AppState;
-use crate::stores::{TrainingCategory, TrainingCourse, TrainingEnrollment, TrainingEnrollmentStatus};
+use crate::stores::{
+    TrainingCategory, TrainingCourse, TrainingEnrollment, TrainingEnrollmentStatus,
+};
 
 // ── Query / Request DTOs ───────────────────────────────────────────────────
 
@@ -266,7 +271,9 @@ pub async fn delete_course(
         .filter(|c| c.tenant_id == tenant_id)
         .is_some();
     if !exists {
-        return Err(SenseiError::NotFound(format!("Course {course_id} not found")));
+        return Err(SenseiError::NotFound(format!(
+            "Course {course_id} not found"
+        )));
     }
     store.remove(&course_id);
     Ok(Json(()))
@@ -288,8 +295,13 @@ pub async fn enroll_users(
     // Verify course exists
     {
         let store = state.training_courses.read().await;
-        if !store.values().any(|c| c.id == course_id && c.tenant_id == tenant_id) {
-            return Err(SenseiError::NotFound(format!("Course {course_id} not found")));
+        if !store
+            .values()
+            .any(|c| c.id == course_id && c.tenant_id == tenant_id)
+        {
+            return Err(SenseiError::NotFound(format!(
+                "Course {course_id} not found"
+            )));
         }
     }
 
@@ -358,7 +370,7 @@ pub async fn list_enrollments(
         })
         .cloned()
         .collect();
-    enrollments.sort_by(|a, b| b.enrolled_at.cmp(&a.enrolled_at));
+    enrollments.sort_by_key(|a| std::cmp::Reverse(a.enrolled_at));
     let result = PaginatedResponse::new(enrollments, params.page, params.per_page);
     Ok(Json(result))
 }
@@ -381,7 +393,12 @@ pub async fn update_enrollment_status(
     if let Some(score) = req.score {
         enrollment.score = Some(score);
     }
-    if matches!(enrollment.status, TrainingEnrollmentStatus::Completed | TrainingEnrollmentStatus::Passed | TrainingEnrollmentStatus::Failed) {
+    if matches!(
+        enrollment.status,
+        TrainingEnrollmentStatus::Completed
+            | TrainingEnrollmentStatus::Passed
+            | TrainingEnrollmentStatus::Failed
+    ) {
         enrollment.completed_at = Some(Utc::now());
     }
     Ok(Json(enrollment.clone()))
@@ -409,7 +426,7 @@ pub async fn my_courses(
         })
         .cloned()
         .collect();
-    enrollments.sort_by(|a, b| b.enrolled_at.cmp(&a.enrolled_at));
+    enrollments.sort_by_key(|a| std::cmp::Reverse(a.enrolled_at));
     let result = PaginatedResponse::new(enrollments, params.page, params.per_page);
     Ok(Json(result))
 }
@@ -438,7 +455,12 @@ pub async fn get_training_dashboard(
 
     let completed_count = enrollments
         .iter()
-        .filter(|e| matches!(e.status, TrainingEnrollmentStatus::Completed | TrainingEnrollmentStatus::Passed))
+        .filter(|e| {
+            matches!(
+                e.status,
+                TrainingEnrollmentStatus::Completed | TrainingEnrollmentStatus::Passed
+            )
+        })
         .count();
     let completion_rate = if total_enrollments > 0 {
         (completed_count as f64 / total_enrollments as f64) * 100.0
@@ -452,7 +474,12 @@ pub async fn get_training_dashboard(
         .filter(|e| {
             if let Some(deadline) = e.deadline {
                 deadline < now
-                    && !matches!(e.status, TrainingEnrollmentStatus::Completed | TrainingEnrollmentStatus::Passed | TrainingEnrollmentStatus::Failed)
+                    && !matches!(
+                        e.status,
+                        TrainingEnrollmentStatus::Completed
+                            | TrainingEnrollmentStatus::Passed
+                            | TrainingEnrollmentStatus::Failed
+                    )
             } else {
                 false
             }
@@ -468,7 +495,10 @@ pub async fn get_training_dashboard(
             for role in &course.required_for_roles {
                 let entry = dept_map.entry(role.clone()).or_insert((0, 0));
                 entry.0 += 1;
-                if matches!(enrollment.status, TrainingEnrollmentStatus::Completed | TrainingEnrollmentStatus::Passed) {
+                if matches!(
+                    enrollment.status,
+                    TrainingEnrollmentStatus::Completed | TrainingEnrollmentStatus::Passed
+                ) {
                     entry.1 += 1;
                 }
             }
@@ -498,7 +528,10 @@ pub async fn get_training_dashboard(
         .collect::<std::collections::HashSet<_>>()
         .into_iter()
         .map(|cat| {
-            let cat_courses: Vec<&&TrainingCourse> = courses.iter().filter(|c| std::mem::discriminant(&c.category) == std::mem::discriminant(cat)).collect();
+            let cat_courses: Vec<&&TrainingCourse> = courses
+                .iter()
+                .filter(|c| std::mem::discriminant(&c.category) == std::mem::discriminant(cat))
+                .collect();
             let total_cat_courses = cat_courses.len();
             let cat_enrollments: Vec<&&TrainingEnrollment> = enrollments
                 .iter()
@@ -507,7 +540,12 @@ pub async fn get_training_dashboard(
             let total_cat_enrollments = cat_enrollments.len();
             let completed = cat_enrollments
                 .iter()
-                .filter(|e| matches!(e.status, TrainingEnrollmentStatus::Completed | TrainingEnrollmentStatus::Passed))
+                .filter(|e| {
+                    matches!(
+                        e.status,
+                        TrainingEnrollmentStatus::Completed | TrainingEnrollmentStatus::Passed
+                    )
+                })
                 .count();
             let rate = if total_cat_enrollments > 0 {
                 (completed as f64 / total_cat_enrollments as f64) * 100.0

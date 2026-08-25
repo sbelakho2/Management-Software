@@ -7,19 +7,17 @@
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use sensei_core::error::{Result, SenseiError};
-use sensei_core::types::{EntityId, TenantId, new_id, now};
+use sensei_core::types::{new_id, now, EntityId, TenantId};
 
 use super::models::{
-    Audit, AuditAccessLevel, AuditChangeType, AuditChecklistItem, AuditEntityType,
-    AuditEntry, AuditFieldType, AuditFinding,
-    AuditPackage, AuditStatus, AuditType,
-    CertificationCheckResult, DiffResult, EvidenceRecord, EvidenceType,
-    FieldChange, FindingSeverity, FindingStatus, PackageStatus,
-    RelatedEntity, Timeline, TimelineFilter, TimelineGroup,
+    Audit, AuditAccessLevel, AuditChangeType, AuditChecklistItem, AuditEntityType, AuditEntry,
+    AuditFieldType, AuditFinding, AuditPackage, AuditStatus, AuditType, CertificationCheckResult,
+    DiffResult, EvidenceRecord, EvidenceType, FieldChange, FindingSeverity, FindingStatus,
+    PackageStatus, RelatedEntity, Timeline, TimelineFilter, TimelineGroup,
 };
 
-use ring::digest::{Context, SHA256};
 use hmac::{Hmac, Mac};
+use ring::digest::{Context, SHA256};
 use sha2::Sha256;
 
 // HMAC-SHA256 type alias
@@ -178,18 +176,10 @@ pub trait AuditTrailService: Send + Sync {
     ) -> Result<Timeline>;
 
     /// Get entity history.
-    async fn get_entity_history(
-        &self,
-        entity_id: EntityId,
-        limit: u64,
-    ) -> Result<Vec<AuditEntry>>;
+    async fn get_entity_history(&self, entity_id: EntityId, limit: u64) -> Result<Vec<AuditEntry>>;
 
     /// Get user activity.
-    async fn get_user_activity(
-        &self,
-        user_id: EntityId,
-        limit: u64,
-    ) -> Result<Vec<AuditEntry>>;
+    async fn get_user_activity(&self, user_id: EntityId, limit: u64) -> Result<Vec<AuditEntry>>;
 
     /// Clean up old entries.
     async fn cleanup_old_entries(&self, retention_days: u64) -> Result<u64>;
@@ -286,7 +276,11 @@ pub trait AuditManagementService: Send + Sync {
     ) -> Result<AuditFinding>;
 
     /// List audits due.
-    async fn list_audits_due(&self, tenant_id: TenantId, as_of: Option<DateTime<Utc>>) -> Result<Vec<Audit>>;
+    async fn list_audits_due(
+        &self,
+        tenant_id: TenantId,
+        as_of: Option<DateTime<Utc>>,
+    ) -> Result<Vec<Audit>>;
 }
 
 // ---------------------------------------------------------------------------
@@ -318,7 +312,8 @@ pub struct InMemoryAuditService {
     audits: tokio::sync::RwLock<Vec<Audit>>,
     checklists: tokio::sync::RwLock<Vec<AuditChecklistItem>>,
     findings: tokio::sync::RwLock<Vec<AuditFinding>>,
-    field_metadata: tokio::sync::RwLock<std::collections::HashMap<String, (String, AuditFieldType)>>,
+    field_metadata:
+        tokio::sync::RwLock<std::collections::HashMap<String, (String, AuditFieldType)>>,
     signing_key: Vec<u8>,
     audit_counter: tokio::sync::RwLock<u64>,
     finding_counter: tokio::sync::RwLock<u64>,
@@ -404,7 +399,11 @@ impl AuditEvidenceService for InMemoryAuditService {
 
     async fn list_evidence(&self, audit_id: EntityId) -> Result<Vec<EvidenceRecord>> {
         let evidence = self.evidence.read().await;
-        Ok(evidence.iter().filter(|e| e.audit_id == audit_id).cloned().collect())
+        Ok(evidence
+            .iter()
+            .filter(|e| e.audit_id == audit_id)
+            .cloned()
+            .collect())
     }
 
     async fn verify_evidence_integrity(
@@ -484,7 +483,9 @@ impl AuditEvidenceService for InMemoryAuditService {
             .ok_or_else(|| SenseiError::NotFound(format!("Package {package_id} not found")))?;
 
         if pkg.status != PackageStatus::Draft {
-            return Err(SenseiError::Validation("Package is already sealed or exported".to_string()));
+            return Err(SenseiError::Validation(
+                "Package is already sealed or exported".to_string(),
+            ));
         }
 
         // Compute package hash from sorted evidence IDs
@@ -518,13 +519,19 @@ impl AuditEvidenceService for InMemoryAuditService {
             .ok_or_else(|| SenseiError::NotFound(format!("Package {package_id} not found")))?;
 
         if pkg.status == PackageStatus::Draft {
-            return Err(SenseiError::Validation("Package has not been sealed yet".to_string()));
+            return Err(SenseiError::Validation(
+                "Package has not been sealed yet".to_string(),
+            ));
         }
 
-        let package_hash = pkg.package_hash.as_ref()
+        let package_hash = pkg
+            .package_hash
+            .as_ref()
             .ok_or_else(|| SenseiError::NotFound("Package hash not found".to_string()))?;
 
-        let signature = pkg.signature.as_ref()
+        let signature = pkg
+            .signature
+            .as_ref()
             .ok_or_else(|| SenseiError::NotFound("Package signature not found".to_string()))?;
 
         // Recompute hash
@@ -551,7 +558,11 @@ impl AuditEvidenceService for InMemoryAuditService {
 
     async fn list_packages(&self, audit_id: EntityId) -> Result<Vec<AuditPackage>> {
         let packages = self.packages.read().await;
-        Ok(packages.iter().filter(|p| p.audit_id == audit_id).cloned().collect())
+        Ok(packages
+            .iter()
+            .filter(|p| p.audit_id == audit_id)
+            .cloned()
+            .collect())
     }
 
     async fn export_package(&self, package_id: EntityId) -> Result<serde_json::Value> {
@@ -562,7 +573,9 @@ impl AuditEvidenceService for InMemoryAuditService {
             .ok_or_else(|| SenseiError::NotFound(format!("Package {package_id} not found")))?;
 
         if pkg.status == PackageStatus::Draft {
-            return Err(SenseiError::Validation("Cannot export a draft package".to_string()));
+            return Err(SenseiError::Validation(
+                "Cannot export a draft package".to_string(),
+            ));
         }
 
         let evidence_list = {
@@ -570,13 +583,15 @@ impl AuditEvidenceService for InMemoryAuditService {
             evidence
                 .iter()
                 .filter(|e| pkg.evidence_ids.contains(&e.id))
-                .map(|e| serde_json::json!({
-                    "id": e.id,
-                    "title": e.title,
-                    "evidence_type": format!("{:?}", e.evidence_type),
-                    "content_hash": e.content_hash,
-                    "created_at": e.created_at,
-                }))
+                .map(|e| {
+                    serde_json::json!({
+                        "id": e.id,
+                        "title": e.title,
+                        "evidence_type": format!("{:?}", e.evidence_type),
+                        "content_hash": e.content_hash,
+                        "created_at": e.created_at,
+                    })
+                })
                 .collect::<Vec<_>>()
         };
 
@@ -617,7 +632,8 @@ impl AuditTrailService for InMemoryAuditService {
             for (key, new_val) in new_map {
                 let old_val = old_map.get(key);
                 if old_val != Some(new_val) {
-                    let (label, field_type) = metadata.get(key)
+                    let (label, field_type) = metadata
+                        .get(key)
                         .cloned()
                         .unwrap_or_else(|| (key.clone(), AuditFieldType::Text));
 
@@ -633,7 +649,8 @@ impl AuditTrailService for InMemoryAuditService {
             // Find removed fields
             for (key, old_val) in old_map {
                 if !new_map.contains_key(key) {
-                    let (label, field_type) = metadata.get(key)
+                    let (label, field_type) = metadata
+                        .get(key)
                         .cloned()
                         .unwrap_or_else(|| (key.clone(), AuditFieldType::Text));
 
@@ -698,8 +715,7 @@ impl AuditTrailService for InMemoryAuditService {
 
         let summary = format!(
             "Updated {} — {} field(s) changed",
-            entity_summary,
-            diff.change_count
+            entity_summary, diff.change_count
         );
 
         let entry = self._build_entry(
@@ -728,20 +744,21 @@ impl AuditTrailService for InMemoryAuditService {
         new_status: &str,
         changed_by: Option<EntityId>,
     ) -> Result<AuditEntry> {
-        let field_changes = vec![
-            FieldChange {
-                field_name: "status".to_string(),
-                old_value: Some(old_status.to_string()),
-                new_value: Some(new_status.to_string()),
-                field_type: AuditFieldType::Enum,
-            },
-        ];
+        let field_changes = vec![FieldChange {
+            field_name: "status".to_string(),
+            old_value: Some(old_status.to_string()),
+            new_value: Some(new_status.to_string()),
+            field_type: AuditFieldType::Enum,
+        }];
 
         let entry = self._build_entry(
             entity_id,
             entity_type,
             AuditChangeType::StatusChange,
-            format!("{} status changed: {} → {}", entity_summary, old_status, new_status),
+            format!(
+                "{} status changed: {} → {}",
+                entity_summary, old_status, new_status
+            ),
             field_changes,
             Vec::new(),
             changed_by,
@@ -904,11 +921,7 @@ impl AuditTrailService for InMemoryAuditService {
         })
     }
 
-    async fn get_entity_history(
-        &self,
-        entity_id: EntityId,
-        limit: u64,
-    ) -> Result<Vec<AuditEntry>> {
+    async fn get_entity_history(&self, entity_id: EntityId, limit: u64) -> Result<Vec<AuditEntry>> {
         let entries = self.audit_entries.read().await;
         let mut entity_entries: Vec<AuditEntry> = entries
             .iter()
@@ -922,11 +935,7 @@ impl AuditTrailService for InMemoryAuditService {
         Ok(entity_entries)
     }
 
-    async fn get_user_activity(
-        &self,
-        user_id: EntityId,
-        limit: u64,
-    ) -> Result<Vec<AuditEntry>> {
+    async fn get_user_activity(&self, user_id: EntityId, limit: u64) -> Result<Vec<AuditEntry>> {
         let entries = self.audit_entries.read().await;
         let mut user_entries: Vec<AuditEntry> = entries
             .iter()
@@ -955,7 +964,8 @@ impl AuditTrailService for InMemoryAuditService {
         let entries = self.audit_entries.read().await;
         let audits = self.audits.read().await;
 
-        let mut type_counts: std::collections::HashMap<String, u64> = std::collections::HashMap::new();
+        let mut type_counts: std::collections::HashMap<String, u64> =
+            std::collections::HashMap::new();
         for entry in entries.iter() {
             let key = format!("{:?}", entry.change_type);
             *type_counts.entry(key).or_default() += 1;
@@ -999,7 +1009,8 @@ impl InMemoryAuditService {
     }
 
     fn _group_by_date(&self, entries: &[AuditEntry]) -> Vec<TimelineGroup> {
-        let mut groups: std::collections::BTreeMap<String, Vec<AuditEntry>> = std::collections::BTreeMap::new();
+        let mut groups: std::collections::BTreeMap<String, Vec<AuditEntry>> =
+            std::collections::BTreeMap::new();
 
         for entry in entries {
             let date = entry.occurred_at.date_naive();
@@ -1050,7 +1061,8 @@ pub struct UserCertification {
 /// recording. If no certifications are registered for a user, the gate denies
 /// access by default.
 pub struct InMemoryCertificationGate {
-    certifications: tokio::sync::RwLock<std::collections::HashMap<EntityId, Vec<UserCertification>>>,
+    certifications:
+        tokio::sync::RwLock<std::collections::HashMap<EntityId, Vec<UserCertification>>>,
 }
 
 impl InMemoryCertificationGate {
@@ -1104,7 +1116,9 @@ impl CertificationGate for InMemoryCertificationGate {
                     is_allowed: false,
                     required_skill_ids: Vec::new(),
                     missing_skill_ids: Vec::new(),
-                    message: Some("No user ID provided — cannot verify certifications.".to_string()),
+                    message: Some(
+                        "No user ID provided — cannot verify certifications.".to_string(),
+                    ),
                 });
             }
         };
@@ -1225,9 +1239,10 @@ impl AuditManagementService for InMemoryAuditService {
             .ok_or_else(|| SenseiError::NotFound(format!("Audit {audit_id} not found")))?;
 
         if audit.status != AuditStatus::Scheduled && audit.status != AuditStatus::Planned {
-            return Err(SenseiError::Validation(
-                format!("Cannot start audit {audit_id}: status is {:?}", audit.status),
-            ));
+            return Err(SenseiError::Validation(format!(
+                "Cannot start audit {audit_id}: status is {:?}",
+                audit.status
+            )));
         }
 
         audit.status = AuditStatus::InProgress;
@@ -1245,9 +1260,10 @@ impl AuditManagementService for InMemoryAuditService {
             .ok_or_else(|| SenseiError::NotFound(format!("Audit {audit_id} not found")))?;
 
         if audit.status != AuditStatus::InProgress {
-            return Err(SenseiError::Validation(
-                format!("Cannot complete audit {audit_id}: status is {:?}", audit.status),
-            ));
+            return Err(SenseiError::Validation(format!(
+                "Cannot complete audit {audit_id}: status is {:?}",
+                audit.status
+            )));
         }
 
         audit.status = AuditStatus::Completed;
@@ -1389,7 +1405,11 @@ impl AuditManagementService for InMemoryAuditService {
         Ok(finding.clone())
     }
 
-    async fn list_audits_due(&self, _tenant_id: TenantId, as_of: Option<DateTime<Utc>>) -> Result<Vec<Audit>> {
+    async fn list_audits_due(
+        &self,
+        _tenant_id: TenantId,
+        as_of: Option<DateTime<Utc>>,
+    ) -> Result<Vec<Audit>> {
         let as_of_date = as_of.unwrap_or_else(now);
         let audits = self.audits.read().await;
         Ok(audits

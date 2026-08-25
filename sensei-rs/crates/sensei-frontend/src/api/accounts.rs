@@ -255,12 +255,12 @@ impl AccountsApi {
         client.delete(&path).await
     }
 
-    pub async fn restore_account(
-        client: &ApiClient,
-        id: &str,
-    ) -> Result<CustomerDto, ApiError> {
+    pub async fn restore_account(client: &ApiClient, id: &str) -> Result<CustomerDto, ApiError> {
         client
-            .post(&format!("/api/v1/accounts/{}/restore", id), &serde_json::json!({}))
+            .post(
+                &format!("/api/v1/accounts/{}/restore", id),
+                &serde_json::json!({}),
+            )
             .await
     }
 
@@ -320,7 +320,10 @@ impl AccountsApi {
         data: &CreateContactData,
     ) -> Result<ContactDto, ApiError> {
         client
-            .post(&format!("/api/v1/accounts/{}/contacts", data.account_id), data)
+            .post(
+                &format!("/api/v1/accounts/{}/contacts", data.account_id),
+                data,
+            )
             .await
     }
 }

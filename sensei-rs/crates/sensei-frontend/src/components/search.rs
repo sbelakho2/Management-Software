@@ -3,8 +3,8 @@
 //! Provides [`SearchInput`] — an industrial-styled search field following the
 //! Rams design system. Includes a clear button and optional search callback.
 
-use std::sync::Arc;
 use leptos::prelude::*;
+use std::sync::Arc;
 
 /// Industrial-styled search input with clear button.
 ///

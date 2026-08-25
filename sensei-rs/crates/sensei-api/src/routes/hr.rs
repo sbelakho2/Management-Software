@@ -3,13 +3,16 @@
 //! Provides endpoints for employee management, training records, leave
 //! requests, performance reviews, and timecard tracking.
 
-use axum::{Json, extract::{Path, Query, State}};
+use axum::{
+    extract::{Path, Query, State},
+    Json,
+};
 use chrono::{DateTime, Utc};
-use serde::Deserialize;
 use sensei_auth::middleware::AuthenticatedUser;
 use sensei_core::error::Result;
 use sensei_core::pagination::PaginatedResponse;
 use sensei_services::hr::{Employee, LeaveRequest, PerformanceReview, Timecard, TrainingRecord};
+use serde::Deserialize;
 use uuid::Uuid;
 
 use crate::state::AppState;
@@ -98,7 +101,13 @@ pub async fn list_employees(
     let tenant_id = user.tenant_id;
     let employees = state
         .hr_service
-        .list_employees(tenant_id, params.department.as_deref(), params.status.as_deref(), params.page, params.per_page)
+        .list_employees(
+            tenant_id,
+            params.department.as_deref(),
+            params.status.as_deref(),
+            params.page,
+            params.per_page,
+        )
         .await?;
     Ok(Json(employees))
 }
@@ -110,10 +119,7 @@ pub async fn create_employee(
     Json(req): Json<Employee>,
 ) -> Result<Json<Employee>> {
     let tenant_id = user.tenant_id;
-    let employee = state
-        .hr_service
-        .create_employee(tenant_id, req)
-        .await?;
+    let employee = state.hr_service.create_employee(tenant_id, req).await?;
     Ok(Json(employee))
 }
 
@@ -124,10 +130,7 @@ pub async fn get_employee(
     Path(id): Path<Uuid>,
 ) -> Result<Json<Employee>> {
     let tenant_id = user.tenant_id;
-    let employee = state
-        .hr_service
-        .get_employee(tenant_id, id)
-        .await?;
+    let employee = state.hr_service.get_employee(tenant_id, id).await?;
     Ok(Json(employee))
 }
 
@@ -155,10 +158,7 @@ pub async fn record_training(
     Json(req): Json<TrainingRecord>,
 ) -> Result<Json<TrainingRecord>> {
     let tenant_id = user.tenant_id;
-    let training = state
-        .hr_service
-        .record_training(tenant_id, req)
-        .await?;
+    let training = state.hr_service.record_training(tenant_id, req).await?;
     Ok(Json(training))
 }
 
@@ -230,10 +230,7 @@ pub async fn reject_leave(
     Path(id): Path<Uuid>,
 ) -> Result<Json<LeaveRequest>> {
     let tenant_id = user.tenant_id;
-    let leave = state
-        .hr_service
-        .reject_leave(tenant_id, id)
-        .await?;
+    let leave = state.hr_service.reject_leave(tenant_id, id).await?;
     Ok(Json(leave))
 }
 
@@ -246,7 +243,13 @@ pub async fn list_leave_requests(
     let tenant_id = user.tenant_id;
     let requests = state
         .hr_service
-        .list_leave_requests(tenant_id, params.employee_id, params.status.as_deref(), params.page, params.per_page)
+        .list_leave_requests(
+            tenant_id,
+            params.employee_id,
+            params.status.as_deref(),
+            params.page,
+            params.per_page,
+        )
         .await?;
     Ok(Json(requests))
 }
@@ -260,10 +263,7 @@ pub async fn create_review(
     Json(req): Json<PerformanceReview>,
 ) -> Result<Json<PerformanceReview>> {
     let tenant_id = user.tenant_id;
-    let review = state
-        .hr_service
-        .create_review(tenant_id, req)
-        .await?;
+    let review = state.hr_service.create_review(tenant_id, req).await?;
     Ok(Json(review))
 }
 
@@ -274,10 +274,7 @@ pub async fn complete_review(
     Path(id): Path<Uuid>,
 ) -> Result<Json<PerformanceReview>> {
     let tenant_id = user.tenant_id;
-    let review = state
-        .hr_service
-        .complete_review(tenant_id, id)
-        .await?;
+    let review = state.hr_service.complete_review(tenant_id, id).await?;
     Ok(Json(review))
 }
 
@@ -335,10 +332,7 @@ pub async fn update_employee(
     Json(req): Json<Employee>,
 ) -> Result<Json<Employee>> {
     let tenant_id = user.tenant_id;
-    let employee = state
-        .hr_service
-        .update_employee(tenant_id, id, req)
-        .await?;
+    let employee = state.hr_service.update_employee(tenant_id, id, req).await?;
     Ok(Json(employee))
 }
 
@@ -349,10 +343,7 @@ pub async fn delete_employee(
     Path(id): Path<Uuid>,
 ) -> Result<Json<()>> {
     let tenant_id = user.tenant_id;
-    state
-        .hr_service
-        .delete_employee(tenant_id, id)
-        .await?;
+    state.hr_service.delete_employee(tenant_id, id).await?;
     Ok(Json(()))
 }
 
@@ -364,10 +355,7 @@ pub async fn update_training(
     Json(req): Json<TrainingRecord>,
 ) -> Result<Json<TrainingRecord>> {
     let tenant_id = user.tenant_id;
-    let record = state
-        .hr_service
-        .update_training(tenant_id, id, req)
-        .await?;
+    let record = state.hr_service.update_training(tenant_id, id, req).await?;
     Ok(Json(record))
 }
 
@@ -378,10 +366,7 @@ pub async fn delete_training(
     Path(id): Path<Uuid>,
 ) -> Result<Json<()>> {
     let tenant_id = user.tenant_id;
-    state
-        .hr_service
-        .delete_training(tenant_id, id)
-        .await?;
+    state.hr_service.delete_training(tenant_id, id).await?;
     Ok(Json(()))
 }
 
@@ -393,10 +378,7 @@ pub async fn update_leave(
     Json(req): Json<LeaveRequest>,
 ) -> Result<Json<LeaveRequest>> {
     let tenant_id = user.tenant_id;
-    let leave = state
-        .hr_service
-        .update_leave(tenant_id, id, req)
-        .await?;
+    let leave = state.hr_service.update_leave(tenant_id, id, req).await?;
     Ok(Json(leave))
 }
 
@@ -407,10 +389,7 @@ pub async fn delete_leave(
     Path(id): Path<Uuid>,
 ) -> Result<Json<()>> {
     let tenant_id = user.tenant_id;
-    state
-        .hr_service
-        .delete_leave(tenant_id, id)
-        .await?;
+    state.hr_service.delete_leave(tenant_id, id).await?;
     Ok(Json(()))
 }
 
@@ -422,10 +401,7 @@ pub async fn update_review(
     Json(req): Json<PerformanceReview>,
 ) -> Result<Json<PerformanceReview>> {
     let tenant_id = user.tenant_id;
-    let review = state
-        .hr_service
-        .update_review(tenant_id, id, req)
-        .await?;
+    let review = state.hr_service.update_review(tenant_id, id, req).await?;
     Ok(Json(review))
 }
 
@@ -436,10 +412,7 @@ pub async fn delete_review(
     Path(id): Path<Uuid>,
 ) -> Result<Json<()>> {
     let tenant_id = user.tenant_id;
-    state
-        .hr_service
-        .delete_review(tenant_id, id)
-        .await?;
+    state.hr_service.delete_review(tenant_id, id).await?;
     Ok(Json(()))
 }
 
@@ -451,10 +424,7 @@ pub async fn update_timecard(
     Json(req): Json<Timecard>,
 ) -> Result<Json<Timecard>> {
     let tenant_id = user.tenant_id;
-    let timecard = state
-        .hr_service
-        .update_timecard(tenant_id, id, req)
-        .await?;
+    let timecard = state.hr_service.update_timecard(tenant_id, id, req).await?;
     Ok(Json(timecard))
 }
 
@@ -467,7 +437,14 @@ pub async fn list_timecards(
     let tenant_id = user.tenant_id;
     let timecards = state
         .hr_service
-        .list_timecards(tenant_id, params.employee_id, params.date_from, params.date_to, params.page, params.per_page)
+        .list_timecards(
+            tenant_id,
+            params.employee_id,
+            params.date_from,
+            params.date_to,
+            params.page,
+            params.per_page,
+        )
         .await?;
     Ok(Json(timecards))
 }

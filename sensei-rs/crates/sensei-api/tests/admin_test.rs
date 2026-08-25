@@ -54,7 +54,7 @@ async fn test_admin_list_users() {
     let mut resp = app.send_request(req).await;
     assert_eq!(resp.status(), StatusCode::OK);
     let json: Value = app.json_body(&mut resp).await;
-    assert!(json["data"].as_array().map_or(false, |a| a.len() >= 1));
+    assert!(json["data"].as_array().is_some_and(|a| !a.is_empty()));
 }
 
 #[tokio::test]

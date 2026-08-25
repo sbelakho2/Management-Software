@@ -2,19 +2,19 @@
 //!
 //! Port of [`frontend/src/stores/email-drafting-store.ts`](frontend/src/stores/email-drafting-store.ts).
 
-use leptos::prelude::*;
 use crate::api::client::{ApiClient, ApiError};
+use leptos::prelude::*;
 
 // ---------------------------------------------------------------------------
 // Domain types
 // ---------------------------------------------------------------------------
 
-pub type EmailTone = String;         // "formal" | "friendly" | "professional" | "urgent" | "casual"
-pub type EmailPurpose = String;      // "quote_followup" | "order_confirmation" | "shipping_notification" | ...
-pub type DraftStatus = String;       // "draft" | "review" | "approved" | "sent" | "discarded"
-pub type Language = String;          // "en" | "fr" | "de" | "es" | "ar"
+pub type EmailTone = String; // "formal" | "friendly" | "professional" | "urgent" | "casual"
+pub type EmailPurpose = String; // "quote_followup" | "order_confirmation" | "shipping_notification" | ...
+pub type DraftStatus = String; // "draft" | "review" | "approved" | "sent" | "discarded"
+pub type Language = String; // "en" | "fr" | "de" | "es" | "ar"
 pub type ComplianceCheckType = String; // "gdpr" | "sox" | "iso" | "internal"
-pub type SuggestionType = String;    // "tone" | "clarity" | "completeness" | "compliance"
+pub type SuggestionType = String; // "tone" | "clarity" | "completeness" | "compliance"
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Recipient {
@@ -255,11 +255,18 @@ impl EmailDraftingStore {
     // Draft generation
     // -----------------------------------------------------------------------
 
-    pub async fn generate_draft(&self, client: &ApiClient, request: GenerationRequest) -> Result<GeneratedDraft, ()> {
+    pub async fn generate_draft(
+        &self,
+        client: &ApiClient,
+        request: GenerationRequest,
+    ) -> Result<GeneratedDraft, ApiError> {
         self.is_generating.set(true);
         self.error.set(None);
 
-        match client.post::<GeneratedDraft, GenerationRequest>("/email-drafting/generate", &request).await {
+        match client
+            .post::<GeneratedDraft, GenerationRequest>("/email-drafting/generate", &request)
+            .await
+        {
             Ok(draft) => {
                 self.drafts.update(|d| d.push(draft.clone()));
                 self.current_draft.set(Some(draft.clone()));
@@ -269,7 +276,7 @@ impl EmailDraftingStore {
             Err(e) => {
                 self.error.set(Some(e.to_string()));
                 self.is_generating.set(false);
-                Err(())
+                Err(e)
             }
         }
     }
@@ -295,7 +302,11 @@ impl EmailDraftingStore {
         });
 
         // Also update current_draft if it matches
-        let is_current = self.current_draft.get().map(|d| d.id == id).unwrap_or(false);
+        let is_current = self
+            .current_draft
+            .get()
+            .map(|d| d.id == id)
+            .unwrap_or(false);
         if is_current {
             let drafts = self.drafts.get();
             if let Some(updated) = drafts.into_iter().find(|d| d.id == id) {
@@ -305,41 +316,61 @@ impl EmailDraftingStore {
     }
 
     pub fn approve_draft(&self, id: &str, reviewer_id: &str) {
-        self.update_draft(id, serde_json::json!({
-            "status": "approved",
-            "reviewed_by": reviewer_id,
-        }));
+        self.update_draft(
+            id,
+            serde_json::json!({
+                "status": "approved",
+                "reviewed_by": reviewer_id,
+            }),
+        );
     }
 
     pub fn mark_sent(&self, id: &str) {
-        self.update_draft(id, serde_json::json!({
-            "status": "sent",
-            "sent_at": chrono::Utc::now().to_rfc3339(),
-        }));
+        self.update_draft(
+            id,
+            serde_json::json!({
+                "status": "sent",
+                "sent_at": chrono::Utc::now().to_rfc3339(),
+            }),
+        );
     }
 
     pub fn discard_draft(&self, id: &str, reason: Option<&str>) {
         let mut updates = serde_json::json!({ "status": "discarded" });
         if let Some(r) = reason {
             if let Some(obj) = updates.as_object_mut() {
-                obj.insert("discard_reason".to_string(), serde_json::Value::String(r.to_string()));
+                obj.insert(
+                    "discard_reason".to_string(),
+                    serde_json::Value::String(r.to_string()),
+                );
             }
         }
         self.update_draft(id, updates);
     }
 
-    pub async fn regenerate_draft(&self, client: &ApiClient, id: &str, feedback: Option<&str>) -> Result<GeneratedDraft, ()> {
+    pub async fn regenerate_draft(
+        &self,
+        client: &ApiClient,
+        id: &str,
+        feedback: Option<&str>,
+    ) -> Result<GeneratedDraft, ApiError> {
         self.is_generating.set(true);
         self.error.set(None);
 
         let mut body = serde_json::json!({ "draft_id": id });
         if let Some(fb) = feedback {
             if let Some(obj) = body.as_object_mut() {
-                obj.insert("feedback".to_string(), serde_json::Value::String(fb.to_string()));
+                obj.insert(
+                    "feedback".to_string(),
+                    serde_json::Value::String(fb.to_string()),
+                );
             }
         }
 
-        match client.post::<GeneratedDraft, serde_json::Value>("/email-drafting/regenerate", &body).await {
+        match client
+            .post::<GeneratedDraft, serde_json::Value>("/email-drafting/regenerate", &body)
+            .await
+        {
             Ok(draft) => {
                 self.drafts.update(|d| {
                     if let Some(pos) = d.iter().position(|x| x.id == draft.id) {
@@ -355,7 +386,7 @@ impl EmailDraftingStore {
             Err(e) => {
                 self.error.set(Some(e.to_string()));
                 self.is_generating.set(false);
-                Err(())
+                Err(e)
             }
         }
     }
@@ -369,12 +400,15 @@ impl EmailDraftingStore {
             // Remove if already exists
             r.retain(|x| x.email != recipient.email);
             // Add new
-            r.insert(0, RecentRecipient {
-                email: recipient.email.clone(),
-                name: recipient.name.unwrap_or_default(),
-                last_used: chrono::Utc::now().to_rfc3339(),
-                use_count: 1,
-            });
+            r.insert(
+                0,
+                RecentRecipient {
+                    email: recipient.email.clone(),
+                    name: recipient.name.unwrap_or_default(),
+                    last_used: chrono::Utc::now().to_rfc3339(),
+                    use_count: 1,
+                },
+            );
             // Keep max 50
             if r.len() > 50 {
                 r.pop();
@@ -383,7 +417,8 @@ impl EmailDraftingStore {
     }
 
     pub fn remove_recent_recipient(&self, email: &str) {
-        self.recent_recipients.update(|r| r.retain(|x| x.email != email));
+        self.recent_recipients
+            .update(|r| r.retain(|x| x.email != email));
     }
 
     // -----------------------------------------------------------------------
@@ -419,7 +454,11 @@ impl EmailDraftingStore {
     }
 
     pub fn get_templates_by_purpose(&self, purpose: &str) -> Vec<EmailTemplate> {
-        self.templates.get().into_iter().filter(|t| t.purpose == purpose).collect()
+        self.templates
+            .get()
+            .into_iter()
+            .filter(|t| t.purpose == purpose)
+            .collect()
     }
 }
 

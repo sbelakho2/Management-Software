@@ -2,11 +2,10 @@
 //!
 //! Mirrors the Zustand [`executive.ts`](frontend/src/stores/executive.ts) store.
 
-use crate::api::client::{ApiClient, ApiError};
+use crate::api::client::ApiClient;
 use crate::api::executive::{
-    CeoDashboardResponse, CrossFunctionalKpiResponse, EmployeeRiskRequest,
-    EmployeeRiskResponse, ExecutiveApi, Nl2SqlRequest, Nl2SqlResponse, SqdcpResponse,
-    StrategicDirectivesResponse,
+    CeoDashboardResponse, CrossFunctionalKpiResponse, EmployeeRiskRequest, EmployeeRiskResponse,
+    ExecutiveApi, Nl2SqlRequest, Nl2SqlResponse, SqdcpResponse, StrategicDirectivesResponse,
 };
 use leptos::prelude::*;
 
@@ -66,14 +65,26 @@ impl ExecutiveStore {
     pub async fn run_nl2sql(&self, client: &ApiClient, question: &str) {
         self.nl2sql_loading.set(true);
         self.nl2sql_error.set(None);
-        match ExecutiveApi::nl2sql_query(client, &Nl2SqlRequest { question: question.to_string() }).await {
+        match ExecutiveApi::nl2sql_query(
+            client,
+            &Nl2SqlRequest {
+                question: question.to_string(),
+            },
+        )
+        .await
+        {
             Ok(data) => self.nl2sql_result.set(Some(data)),
             Err(e) => self.nl2sql_error.set(Some(e.to_string())),
         }
         self.nl2sql_loading.set(false);
     }
 
-    pub async fn analyze_risk(&self, client: &ApiClient, employee_name: &str, department: Option<&str>) {
+    pub async fn analyze_risk(
+        &self,
+        client: &ApiClient,
+        employee_name: &str,
+        department: Option<&str>,
+    ) {
         self.risk_loading.set(true);
         self.risk_error.set(None);
         let req = EmployeeRiskRequest {

@@ -3,10 +3,10 @@
 //! Provides endpoints for anomaly detection, quality prediction,
 //! predictive maintenance, and model retraining.
 
-use axum::{Json, extract::State};
-use serde::Deserialize;
+use axum::{extract::State, Json};
 use sensei_auth::middleware::AuthenticatedUser;
 use sensei_core::error::Result;
+use serde::Deserialize;
 use uuid::Uuid;
 
 use crate::state::AppState;

@@ -112,16 +112,24 @@ impl HrApi {
         client.get(&format!("/api/v1/hr/employees/{}", id)).await
     }
 
-    pub async fn create_employee(client: &ApiClient, req: &CreateEmployeeRequest) -> Result<EmployeeDto, ApiError> {
+    pub async fn create_employee(
+        client: &ApiClient,
+        req: &CreateEmployeeRequest,
+    ) -> Result<EmployeeDto, ApiError> {
         client.post("/api/v1/hr/employees", req).await
     }
 
     // ---- Training ----
-    pub async fn list_training_records(client: &ApiClient) -> Result<Vec<TrainingRecordDto>, ApiError> {
+    pub async fn list_training_records(
+        client: &ApiClient,
+    ) -> Result<Vec<TrainingRecordDto>, ApiError> {
         client.get("/api/v1/hr/training").await
     }
 
-    pub async fn record_training(client: &ApiClient, req: &RecordTrainingRequest) -> Result<TrainingRecordDto, ApiError> {
+    pub async fn record_training(
+        client: &ApiClient,
+        req: &RecordTrainingRequest,
+    ) -> Result<TrainingRecordDto, ApiError> {
         client.post("/api/v1/hr/training", req).await
     }
 
@@ -130,7 +138,10 @@ impl HrApi {
         client.get("/api/v1/hr/leave").await
     }
 
-    pub async fn submit_leave(client: &ApiClient, req: &SubmitLeaveRequest) -> Result<LeaveRequestDto, ApiError> {
+    pub async fn submit_leave(
+        client: &ApiClient,
+        req: &SubmitLeaveRequest,
+    ) -> Result<LeaveRequestDto, ApiError> {
         client.post("/api/v1/hr/leave", req).await
     }
 
@@ -139,7 +150,10 @@ impl HrApi {
         client.get("/api/v1/hr/reviews").await
     }
 
-    pub async fn create_review(client: &ApiClient, req: &CreateReviewRequest) -> Result<PerformanceReviewDto, ApiError> {
+    pub async fn create_review(
+        client: &ApiClient,
+        req: &CreateReviewRequest,
+    ) -> Result<PerformanceReviewDto, ApiError> {
         client.post("/api/v1/hr/reviews", req).await
     }
 
@@ -150,7 +164,11 @@ impl HrApi {
 
     pub async fn clock_in(client: &ApiClient, employee_id: &str) -> Result<TimecardDto, ApiError> {
         #[derive(Serialize)]
-        struct Body<'a> { employee_id: &'a str }
-        client.post("/api/v1/hr/timecards/clock-in", &Body { employee_id }).await
+        struct Body<'a> {
+            employee_id: &'a str,
+        }
+        client
+            .post("/api/v1/hr/timecards/clock-in", &Body { employee_id })
+            .await
     }
 }

@@ -21,7 +21,7 @@ use tokio::sync::{mpsc, RwLock};
 use uuid::Uuid;
 
 use crate::ai::chatbot::{
-    ChatMessage, ChatResponse, ChatSamplingParams, ChatbotConfig, ChatbotService, fallback_chat,
+    fallback_chat, ChatMessage, ChatResponse, ChatSamplingParams, ChatbotConfig, ChatbotService,
 };
 
 /// PostgreSQL-backed implementation of [`ChatbotService`].
@@ -101,10 +101,9 @@ impl DatabaseChatbotService {
         let exists = sqlx::query_scalar::<_, i64>(
             "SELECT COUNT(*) FROM chat_conversations WHERE id = $1::uuid AND tenant_id = $2",
         )
-        .bind(
-            Uuid::parse_str(conversation_id)
-                .map_err(|_| SenseiError::Validation(format!("Invalid conversation ID: {conversation_id}")))?,
-        )
+        .bind(Uuid::parse_str(conversation_id).map_err(|_| {
+            SenseiError::Validation(format!("Invalid conversation ID: {conversation_id}"))
+        })?)
         .bind(tenant_id)
         .fetch_one(&self.pool)
         .await
@@ -112,8 +111,9 @@ impl DatabaseChatbotService {
 
         if exists == 0 {
             // Create the conversation.
-            let conv_id = Uuid::parse_str(conversation_id)
-                .map_err(|_| SenseiError::Validation(format!("Invalid conversation ID: {conversation_id}")))?;
+            let conv_id = Uuid::parse_str(conversation_id).map_err(|_| {
+                SenseiError::Validation(format!("Invalid conversation ID: {conversation_id}"))
+            })?;
             let now = Utc::now();
             sqlx::query(
                 r#"
@@ -144,14 +144,10 @@ impl DatabaseChatbotService {
     }
 
     /// Insert a message into the database.
-    async fn insert_message(
-        &self,
-        conversation_id: &str,
-        role: &str,
-        content: &str,
-    ) -> Result<()> {
-        let conv_uuid = Uuid::parse_str(conversation_id)
-            .map_err(|_| SenseiError::Validation(format!("Invalid conversation ID: {conversation_id}")))?;
+    async fn insert_message(&self, conversation_id: &str, role: &str, content: &str) -> Result<()> {
+        let conv_uuid = Uuid::parse_str(conversation_id).map_err(|_| {
+            SenseiError::Validation(format!("Invalid conversation ID: {conversation_id}"))
+        })?;
         let now = Utc::now();
 
         sqlx::query(
@@ -171,14 +167,14 @@ impl DatabaseChatbotService {
         .map_err(|e| SenseiError::Database(format!("Failed to insert message: {e}")))?;
 
         // Update the conversation's updated_at timestamp.
-        sqlx::query(
-            "UPDATE chat_conversations SET updated_at = $1 WHERE id = $2",
-        )
-        .bind(now)
-        .bind(conv_uuid)
-        .execute(&self.pool)
-        .await
-        .map_err(|e| SenseiError::Database(format!("Failed to update conversation timestamp: {e}")))?;
+        sqlx::query("UPDATE chat_conversations SET updated_at = $1 WHERE id = $2")
+            .bind(now)
+            .bind(conv_uuid)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| {
+                SenseiError::Database(format!("Failed to update conversation timestamp: {e}"))
+            })?;
 
         Ok(())
     }
@@ -187,12 +183,10 @@ impl DatabaseChatbotService {
     ///
     /// Returns up to 20 most recent messages for the given conversation,
     /// ordered chronologically.
-    async fn load_conversation_history(
-        &self,
-        conversation_id: &str,
-    ) -> Result<Vec<ChatMessage>> {
-        let conv_uuid = Uuid::parse_str(conversation_id)
-            .map_err(|_| SenseiError::Validation(format!("Invalid conversation ID: {conversation_id}")))?;
+    async fn load_conversation_history(&self, conversation_id: &str) -> Result<Vec<ChatMessage>> {
+        let conv_uuid = Uuid::parse_str(conversation_id).map_err(|_| {
+            SenseiError::Validation(format!("Invalid conversation ID: {conversation_id}"))
+        })?;
 
         let models = sqlx::query_as::<_, ChatMessageModel>(
             r#"
@@ -234,7 +228,7 @@ impl DatabaseChatbotService {
     ) -> (String, bool) {
         // Load conversation history for context
         let history = self.load_conversation_history(conversation_id).await.ok();
-        let has_history = history.as_ref().map_or(false, |h| !h.is_empty());
+        let has_history = history.as_ref().is_some_and(|h| !h.is_empty());
 
         // If an AI service is available, attempt to enrich the response
         // with AI-generated insights based on the user's message.
@@ -249,8 +243,8 @@ impl DatabaseChatbotService {
 
         // Build a context-aware response using conversation history
         if has_history {
-            if let Some(contextual_response) = self
-                .build_contextual_response(message, history.as_deref().unwrap())
+            if let Some(contextual_response) =
+                self.build_contextual_response(message, history.as_deref().unwrap())
             {
                 return (contextual_response, false);
             }
@@ -286,7 +280,11 @@ impl DatabaseChatbotService {
             // when nothing in the message matches a real product.
             let product_id = self.resolve_product_id(tenant_id, message).await?;
             if let Ok(prediction) = ai_service
-                .predict_quality(tenant_id, product_id, serde_json::Value::Object(serde_json::Map::new()))
+                .predict_quality(
+                    tenant_id,
+                    product_id,
+                    serde_json::Value::Object(serde_json::Map::new()),
+                )
                 .await
             {
                 let history_context = history.map_or(String::new(), |h| {
@@ -305,9 +303,13 @@ impl DatabaseChatbotService {
                 );
 
                 if prediction.predicted_defect_rate > 0.05 {
-                    response.push_str("I recommend reviewing the suggested process parameters for improvement. ");
+                    response.push_str(
+                        "I recommend reviewing the suggested process parameters for improvement. ",
+                    );
                 } else {
-                    response.push_str("The process appears to be performing within acceptable limits. ");
+                    response.push_str(
+                        "The process appears to be performing within acceptable limits. ",
+                    );
                 }
 
                 if !history_context.is_empty() {
@@ -528,11 +530,7 @@ impl DatabaseChatbotService {
     ///
     /// Analyzes the conversation history to provide continuity and
     /// references to previous topics discussed.
-    fn build_contextual_response(
-        &self,
-        message: &str,
-        history: &[ChatMessage],
-    ) -> Option<String> {
+    fn build_contextual_response(&self, message: &str, history: &[ChatMessage]) -> Option<String> {
         // Extract topics from recent conversation
         let recent_topics: Vec<&str> = history
             .iter()
@@ -544,7 +542,10 @@ impl DatabaseChatbotService {
             .flat_map(|m| {
                 let lower = m.content.to_lowercase();
                 let mut topics = Vec::new();
-                if lower.contains("quality") || lower.contains("ncr") || lower.contains("inspection") {
+                if lower.contains("quality")
+                    || lower.contains("ncr")
+                    || lower.contains("inspection")
+                {
                     topics.push("quality");
                 }
                 if lower.contains("maintenance") || lower.contains("equipment") {
@@ -595,7 +596,8 @@ impl ChatbotService for DatabaseChatbotService {
             .unwrap_or_else(Self::generate_conversation_id);
 
         // Ensure the conversation exists.
-        self.ensure_conversation(tenant_id, user_id, &conv_id).await?;
+        self.ensure_conversation(tenant_id, user_id, &conv_id)
+            .await?;
 
         // Save the user message.
         self.insert_message(&conv_id, "user", message).await?;
@@ -624,7 +626,8 @@ impl ChatbotService for DatabaseChatbotService {
         };
 
         // Save the assistant message.
-        self.insert_message(&conv_id, "assistant", &response_text).await?;
+        self.insert_message(&conv_id, "assistant", &response_text)
+            .await?;
 
         Ok(ChatResponse {
             message: ChatMessage::assistant(response_text),
@@ -667,8 +670,9 @@ impl ChatbotService for DatabaseChatbotService {
         tenant_id: EntityId,
         conversation_id: &str,
     ) -> Result<Vec<ChatMessage>> {
-        let conv_uuid = Uuid::parse_str(conversation_id)
-            .map_err(|_| SenseiError::Validation(format!("Invalid conversation ID: {conversation_id}")))?;
+        let conv_uuid = Uuid::parse_str(conversation_id).map_err(|_| {
+            SenseiError::Validation(format!("Invalid conversation ID: {conversation_id}"))
+        })?;
 
         // Verify the conversation exists and belongs to this tenant.
         let conv_exists = sqlx::query_scalar::<_, i64>(

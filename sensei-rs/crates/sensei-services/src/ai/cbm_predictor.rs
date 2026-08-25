@@ -151,7 +151,9 @@ impl StandardScaler {
     pub fn fit(&mut self, x: &ndarray::Array2<f64>) -> Result<(), CbmError> {
         let n_samples = x.nrows();
         if n_samples == 0 {
-            return Err(CbmError::InsufficientData("No samples provided for fit".into()));
+            return Err(CbmError::InsufficientData(
+                "No samples provided for fit".into(),
+            ));
         }
         let n_features = x.ncols();
 
@@ -161,7 +163,8 @@ impl StandardScaler {
         for j in 0..n_features {
             let col: Vec<f64> = x.column(j).iter().copied().collect();
             let col_mean = col.iter().sum::<f64>() / n_samples as f64;
-            let variance = col.iter().map(|&v| (v - col_mean).powi(2)).sum::<f64>() / n_samples as f64;
+            let variance =
+                col.iter().map(|&v| (v - col_mean).powi(2)).sum::<f64>() / n_samples as f64;
             mean[j] = col_mean;
             std[j] = variance.sqrt().max(f64::EPSILON);
         }
@@ -196,7 +199,10 @@ impl StandardScaler {
     }
 
     /// Fit and transform in one step.
-    pub fn fit_transform(&mut self, x: &ndarray::Array2<f64>) -> Result<ndarray::Array2<f64>, CbmError> {
+    pub fn fit_transform(
+        &mut self,
+        x: &ndarray::Array2<f64>,
+    ) -> Result<ndarray::Array2<f64>, CbmError> {
         self.fit(x)?;
         self.transform(x)
     }
@@ -220,7 +226,10 @@ impl StandardScaler {
     }
 
     /// Inverse transform (for explainability).
-    pub fn inverse_transform(&self, x: &ndarray::Array2<f64>) -> Result<ndarray::Array2<f64>, CbmError> {
+    pub fn inverse_transform(
+        &self,
+        x: &ndarray::Array2<f64>,
+    ) -> Result<ndarray::Array2<f64>, CbmError> {
         let mean = self
             .mean
             .as_ref()
@@ -383,11 +392,7 @@ impl EnsembleClassifier {
     }
 
     /// Train the ensemble on labeled data.
-    pub fn fit(
-        &mut self,
-        x: &ndarray::Array2<f64>,
-        y: &[f64],
-    ) -> Result<(), CbmError> {
+    pub fn fit(&mut self, x: &ndarray::Array2<f64>, y: &[f64]) -> Result<(), CbmError> {
         use rand::Rng;
 
         let n_samples = x.nrows();
@@ -516,7 +521,10 @@ impl EnsembleClassifier {
     /// Predict binary labels.
     pub fn predict(&self, x: &ndarray::Array2<f64>) -> Result<Vec<f64>, CbmError> {
         let probas = self.predict_proba(x)?;
-        Ok(probas.iter().map(|&p| if p > 0.5 { 1.0 } else { 0.0 }).collect())
+        Ok(probas
+            .iter()
+            .map(|&p| if p > 0.5 { 1.0 } else { 0.0 })
+            .collect())
     }
 
     /// Get feature importances (how often each feature is used by stumps).
@@ -585,11 +593,8 @@ impl ConditionBasedMaintenancePredictor {
         condition_readings: &[ConditionReading],
     ) -> Result<TrainingMetrics, CbmError> {
         // Build training dataset
-        let (x_train, y_train) = self.build_training_data(
-            equipment_list,
-            maintenance_records,
-            condition_readings,
-        )?;
+        let (x_train, y_train) =
+            self.build_training_data(equipment_list, maintenance_records, condition_readings)?;
 
         if x_train.nrows() < 10 {
             return Ok(TrainingMetrics {
@@ -682,15 +687,22 @@ impl ConditionBasedMaintenancePredictor {
         let features = self.extract_features(equipment, recent_readings, maintenance_history);
 
         // ML predictions
-        if let (Some(ref classifier), Some(ref scaler), Some(ref detector)) =
-            (&self.failure_classifier, &self.scaler, &self.anomaly_detector)
-        {
-            let features_arr = ndarray::Array2::from_shape_vec((1, features.len()), features.clone())
-                .unwrap_or_else(|_| ndarray::Array2::zeros((1, features.len())));
+        if let (Some(ref classifier), Some(ref scaler), Some(ref detector)) = (
+            &self.failure_classifier,
+            &self.scaler,
+            &self.anomaly_detector,
+        ) {
+            let features_arr =
+                ndarray::Array2::from_shape_vec((1, features.len()), features.clone())
+                    .unwrap_or_else(|_| ndarray::Array2::zeros((1, features.len())));
             let x_scaled = match scaler.transform(&features_arr) {
                 Ok(x) => x,
                 Err(_) => {
-                    return self.rule_based_assessment(equipment, recent_readings, maintenance_history);
+                    return self.rule_based_assessment(
+                        equipment,
+                        recent_readings,
+                        maintenance_history,
+                    );
                 }
             };
 
@@ -721,11 +733,7 @@ impl ConditionBasedMaintenancePredictor {
                 is_anomaly,
             );
 
-            let ttf = self.estimate_time_to_failure(
-                failure_prob,
-                equipment,
-                maintenance_history,
-            );
+            let ttf = self.estimate_time_to_failure(failure_prob, equipment, maintenance_history);
 
             let reasons = self.explain_prediction(&features, recent_readings);
 
@@ -764,7 +772,10 @@ impl ConditionBasedMaintenancePredictor {
                         issues.push(CriticalIssue {
                             parameter: param.to_string(),
                             value: v,
-                            reason: format!("{} ({:.1}) exceeds critical threshold ({:.1})", param, v, threshold),
+                            reason: format!(
+                                "{} ({:.1}) exceeds critical threshold ({:.1})",
+                                param, v, threshold
+                            ),
                         });
                     }
                 }
@@ -805,7 +816,10 @@ impl ConditionBasedMaintenancePredictor {
                 Some(r) => r,
                 None => continue,
             };
-            let maintenance = eq_maintenance.get(&equipment.id).cloned().unwrap_or_default();
+            let maintenance = eq_maintenance
+                .get(&equipment.id)
+                .cloned()
+                .unwrap_or_default();
 
             if readings.len() < 2 {
                 continue;
@@ -823,8 +837,14 @@ impl ConditionBasedMaintenancePredictor {
 
                 let features = self.extract_raw_features(
                     equipment,
-                    &historical.iter().map(|cr| (*cr).clone()).collect::<Vec<_>>(),
-                    &historical_maint.iter().map(|mr| (*mr).clone()).collect::<Vec<_>>(),
+                    &historical
+                        .iter()
+                        .map(|cr| (*cr).clone())
+                        .collect::<Vec<_>>(),
+                    &historical_maint
+                        .iter()
+                        .map(|mr| (*mr).clone())
+                        .collect::<Vec<_>>(),
                 );
 
                 // Label: was there a failure within next 7 days?
@@ -899,10 +919,7 @@ impl ConditionBasedMaintenancePredictor {
         features.push(t_std);
 
         // Vibration mean and std
-        let vibs: Vec<f64> = recent_readings
-            .iter()
-            .filter_map(|r| r.vibration)
-            .collect();
+        let vibs: Vec<f64> = recent_readings.iter().filter_map(|r| r.vibration).collect();
         let (v_mean, v_std) = compute_mean_std(&vibs);
         features.push(v_mean);
         features.push(v_std);
@@ -953,10 +970,7 @@ impl ConditionBasedMaintenancePredictor {
             let mut dates: Vec<DateTime<Utc>> =
                 maintenance_history.iter().map(|m| m.date).collect();
             dates.sort();
-            let intervals: Vec<i64> = dates
-                .windows(2)
-                .map(|w| (w[1] - w[0]).num_days())
-                .collect();
+            let intervals: Vec<i64> = dates.windows(2).map(|w| (w[1] - w[0]).num_days()).collect();
             if !intervals.is_empty() {
                 intervals.iter().sum::<i64>() as f64 / intervals.len() as f64
             } else {
@@ -985,7 +999,7 @@ impl ConditionBasedMaintenancePredictor {
         let mut rng = rand::rngs::StdRng::seed_from_u64(42);
         indices.shuffle(&mut rng);
 
-        let fold_size = (n + n_folds - 1) / n_folds;
+        let fold_size = n.div_ceil(n_folds);
         let mut scores = Vec::with_capacity(n_folds);
 
         for fold in 0..n_folds {
@@ -1000,9 +1014,8 @@ impl ConditionBasedMaintenancePredictor {
                 .collect();
 
             // Build train/test arrays
-            let (x_train, y_train, x_test) = crate::ai::evaluation::prepare_fold_data(
-                x, y, &train_idx, &test_idx,
-            );
+            let (x_train, y_train, x_test) =
+                crate::ai::evaluation::prepare_fold_data(x, y, &train_idx, &test_idx);
 
             // Train a small ensemble on this fold
             let mut clf = EnsembleClassifier::new(50, 10);
@@ -1105,7 +1118,7 @@ impl ConditionBasedMaintenancePredictor {
             .installation_date
             .map(|d| {
                 let days = (Utc::now() - d).num_days().max(1);
-                (365.0 / days as f64).min(2.0).max(0.5)
+                (365.0 / days as f64).clamp(0.5, 2.0)
             })
             .unwrap_or(1.0);
         Some((base_ttf as f64 * age_factor) as i64)
@@ -1116,13 +1129,22 @@ impl ConditionBasedMaintenancePredictor {
         let mut reasons = Vec::new();
         if features.len() >= 5 {
             if features[0] > 70.0 {
-                reasons.push(format!("High temperature ({:.1}°C) contributes to risk", features[0]));
+                reasons.push(format!(
+                    "High temperature ({:.1}°C) contributes to risk",
+                    features[0]
+                ));
             }
             if features[1] > 8.0 {
-                reasons.push(format!("High vibration ({:.1} mm/s) indicates wear", features[1]));
+                reasons.push(format!(
+                    "High vibration ({:.1} mm/s) indicates wear",
+                    features[1]
+                ));
             }
             if features[12] > 90.0 {
-                reasons.push(format!("Equipment age ({:.0} days) increases risk", features[12]));
+                reasons.push(format!(
+                    "Equipment age ({:.0} days) increases risk",
+                    features[12]
+                ));
             }
             if features[15] > 60.0 {
                 reasons.push(format!(
@@ -1242,7 +1264,13 @@ fn compute_slope(values: &[f64]) -> f64 {
 mod tests {
     use super::*;
 
-    fn make_reading(eq_id: &str, temp: f64, vib: f64, pressure: f64, ts: DateTime<Utc>) -> ConditionReading {
+    fn make_reading(
+        eq_id: &str,
+        temp: f64,
+        vib: f64,
+        pressure: f64,
+        ts: DateTime<Utc>,
+    ) -> ConditionReading {
         ConditionReading {
             equipment_id: eq_id.into(),
             timestamp: ts,
@@ -1278,6 +1306,9 @@ mod tests {
 
     #[test]
     fn test_anomaly_detector() {
+        // Fit on clean data only — fitting on data that already contains the
+        // anomaly inflates the mean/std and masks it (z-score masking).
+        let training = ndarray::array![[0.0, 0.0], [0.1, 0.1], [-0.1, -0.1]];
         let data = ndarray::array![
             [0.0, 0.0],
             [0.1, 0.1],
@@ -1285,7 +1316,7 @@ mod tests {
             [10.0, 10.0], // anomaly
         ];
         let mut detector = AnomalyDetector::new(0.1, 2.0);
-        detector.fit(&data).unwrap();
+        detector.fit(&training).unwrap();
         let anomalies = detector.predict_binary(&data).unwrap();
         assert!(!anomalies[0]); // normal
         assert!(!anomalies[1]); // normal
@@ -1366,12 +1397,11 @@ mod tests {
             ));
         }
 
-        let mut maintenance = Vec::new();
-        maintenance.push(MaintenanceRecord {
+        let maintenance = vec![MaintenanceRecord {
             equipment_id: "eq1".into(),
             date: now - Duration::days(5),
             maintenance_type: "repair".into(),
-        });
+        }];
 
         let metrics = predictor
             .train(&[equipment], &maintenance, &readings)

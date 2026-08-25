@@ -56,6 +56,18 @@ pub struct UserSkillDto {
     pub created_at: Option<String>,
 }
 
+/// Parameters for registering a user certification.
+#[derive(Debug, Clone)]
+pub struct CertificationRegistration<'a> {
+    pub user_id: &'a str,
+    pub skill_id: &'a str,
+    pub proficiency: &'a str,
+    pub issue_date: Option<&'a str>,
+    pub expiry_date: Option<&'a str>,
+    pub certificate_number: Option<&'a str>,
+    pub notes: Option<&'a str>,
+}
+
 /// Reactive store for training and skills data.
 #[derive(Debug, Clone)]
 pub struct TrainingStore {
@@ -100,7 +112,10 @@ impl TrainingStore {
     pub async fn fetch_trainings(&self, client: &ApiClient) {
         self.is_loading.set(true);
         self.error.set(None);
-        match client.get::<Vec<TrainingDto>>("/api/v1/training/courses").await {
+        match client
+            .get::<Vec<TrainingDto>>("/api/v1/training/courses")
+            .await
+        {
             Ok(data) => self.trainings.set(data),
             Err(e) => self.error.set(Some(e.to_string())),
         }
@@ -111,7 +126,10 @@ impl TrainingStore {
     pub async fn fetch_records(&self, client: &ApiClient) {
         self.is_loading.set(true);
         self.error.set(None);
-        match client.get::<Vec<TrainingRecordDto>>("/api/v1/training/records").await {
+        match client
+            .get::<Vec<TrainingRecordDto>>("/api/v1/training/records")
+            .await
+        {
             Ok(data) => self.records.set(data),
             Err(e) => self.error.set(Some(e.to_string())),
         }
@@ -145,8 +163,7 @@ impl TrainingStore {
             "user_id": user_id,
             "notes": notes,
         });
-        let record: TrainingRecordDto =
-            client.post("/api/v1/training/enroll", &payload).await?;
+        let record: TrainingRecordDto = client.post("/api/v1/training/enroll", &payload).await?;
         self.records.update(|r| r.push(record.clone()));
         Ok(record)
     }
@@ -155,25 +172,18 @@ impl TrainingStore {
     pub async fn register_certification(
         &self,
         client: &ApiClient,
-        user_id: &str,
-        skill_id: &str,
-        proficiency: &str,
-        issue_date: Option<&str>,
-        expiry_date: Option<&str>,
-        certificate_number: Option<&str>,
-        notes: Option<&str>,
+        registration: CertificationRegistration<'_>,
     ) -> Result<UserSkillDto, ApiError> {
         let payload = serde_json::json!({
-            "user_id": user_id,
-            "skill_id": skill_id,
-            "proficiency": proficiency,
-            "issue_date": issue_date,
-            "expiry_date": expiry_date,
-            "certificate_number": certificate_number,
-            "notes": notes,
+            "user_id": registration.user_id,
+            "skill_id": registration.skill_id,
+            "proficiency": registration.proficiency,
+            "issue_date": registration.issue_date,
+            "expiry_date": registration.expiry_date,
+            "certificate_number": registration.certificate_number,
+            "notes": registration.notes,
         });
-        let user_skill: UserSkillDto =
-            client.post("/api/v1/training/certify", &payload).await?;
+        let user_skill: UserSkillDto = client.post("/api/v1/training/certify", &payload).await?;
         self.user_skills.update(|s| s.push(user_skill.clone()));
         Ok(user_skill)
     }

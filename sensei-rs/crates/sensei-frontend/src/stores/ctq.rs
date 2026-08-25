@@ -97,15 +97,15 @@ impl CtqStore {
                 let total = data.len() as i32;
                 let on_target = data.iter().filter(|c| c.status == "on_target").count() as i32;
                 let out_of_spec = data.iter().filter(|c| c.status == "out_of_spec").count() as i32;
-                let needing_attention = data.iter().filter(|c| c.status == "attention").count() as i32;
+                let needing_attention =
+                    data.iter().filter(|c| c.status == "attention").count() as i32;
                 let measured_today = data
                     .iter()
                     .filter(|c| {
-                        c.measurements.as_ref().map_or(false, |m| {
+                        c.measurements.as_ref().is_some_and(|m| {
                             m.iter().any(|meas| {
-                                meas.measured_at.starts_with(
-                                    &chrono::Utc::now().format("%Y-%m-%d").to_string(),
-                                )
+                                meas.measured_at
+                                    .starts_with(&chrono::Utc::now().format("%Y-%m-%d").to_string())
                             })
                         })
                     })
@@ -128,7 +128,8 @@ impl CtqStore {
             }
             Err(e) => self.error.set(Some(e.to_string())),
         }
-        self.last_fetched_at.set(Some(chrono::Utc::now().to_rfc3339()));
+        self.last_fetched_at
+            .set(Some(chrono::Utc::now().to_rfc3339()));
         self.is_loading.set(false);
     }
 
@@ -152,14 +153,23 @@ impl CtqStore {
     }
 
     /// Create a new CTQ.
-    pub async fn create_ctq(&self, client: &ApiClient, data: &serde_json::Value) -> Result<CtqDto, ApiError> {
+    pub async fn create_ctq(
+        &self,
+        client: &ApiClient,
+        data: &serde_json::Value,
+    ) -> Result<CtqDto, ApiError> {
         let ctq: CtqDto = client.post("/api/v1/ctq", data).await?;
         self.ctqs.update(|c| c.push(ctq.clone()));
         Ok(ctq)
     }
 
     /// Update an existing CTQ.
-    pub async fn update_ctq(&self, client: &ApiClient, id: &str, updates: &serde_json::Value) -> Result<CtqDto, ApiError> {
+    pub async fn update_ctq(
+        &self,
+        client: &ApiClient,
+        id: &str,
+        updates: &serde_json::Value,
+    ) -> Result<CtqDto, ApiError> {
         let ctq: CtqDto = client.put(&format!("/api/v1/ctq/{}", id), updates).await?;
         self.ctqs.update(|c| {
             if let Some(pos) = c.iter().position(|x| x.id == id) {
@@ -171,7 +181,9 @@ impl CtqStore {
 
     /// Delete a CTQ.
     pub async fn delete_ctq(&self, client: &ApiClient, id: &str) -> Result<(), ApiError> {
-        client.delete::<serde_json::Value>(&format!("/api/v1/ctq/{}", id)).await?;
+        client
+            .delete::<serde_json::Value>(&format!("/api/v1/ctq/{}", id))
+            .await?;
         self.ctqs.update(|c| c.retain(|x| x.id != id));
         Ok(())
     }
@@ -183,25 +195,32 @@ impl CtqStore {
         ctq_id: &str,
         data: &serde_json::Value,
     ) -> Result<CtqMeasurementDto, ApiError> {
-        let measurement: CtqMeasurementDto =
-            client.post(&format!("/api/v1/ctq/{}/measurements", ctq_id), data).await?;
+        let measurement: CtqMeasurementDto = client
+            .post(&format!("/api/v1/ctq/{}/measurements", ctq_id), data)
+            .await?;
         self.ctqs.update(|c| {
             if let Some(ctq) = c.iter_mut().find(|x| x.id == ctq_id) {
-                ctq.measurements.get_or_insert(Vec::new()).push(measurement.clone());
+                ctq.measurements
+                    .get_or_insert(Vec::new())
+                    .push(measurement.clone());
             }
         });
         Ok(measurement)
     }
 
     /// Export CTQs as PDF or Excel.
-    pub async fn export_ctqs(
-        client: &ApiClient,
-        format: &str,
-    ) -> Result<Vec<u8>, ApiError> {
+    pub async fn export_ctqs(client: &ApiClient, format: &str) -> Result<Vec<u8>, ApiError> {
         let client_inner = reqwest::Client::new();
         let url = client.url(&format!("/api/v1/ctq/export?format={}", format));
-        let resp = client_inner.get(&url).send().await.map_err(|e| ApiError::Http(e.to_string()))?;
-        let bytes = resp.bytes().await.map_err(|e| ApiError::Http(e.to_string()))?;
+        let resp = client_inner
+            .get(&url)
+            .send()
+            .await
+            .map_err(|e| ApiError::Http(e.to_string()))?;
+        let bytes = resp
+            .bytes()
+            .await
+            .map_err(|e| ApiError::Http(e.to_string()))?;
         Ok(bytes.to_vec())
     }
 

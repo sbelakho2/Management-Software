@@ -12,7 +12,7 @@ async fn test_list_notifications() {
     let app = common::TestApp::new().await;
     let token = app.login_as_admin().await;
     let req = app.get_authenticated("/api/v1/notifications", &token);
-    let mut resp = app.send_request(req).await;
+    let resp = app.send_request(req).await;
     assert_eq!(resp.status(), StatusCode::OK);
 }
 
@@ -45,7 +45,7 @@ async fn test_get_preferences() {
     let app = common::TestApp::new().await;
     let token = app.login_as_admin().await;
     let req = app.get_authenticated("/api/v1/notifications/preferences", &token);
-    let mut resp = app.send_request(req).await;
+    let resp = app.send_request(req).await;
     assert_eq!(resp.status(), StatusCode::OK);
 }
 

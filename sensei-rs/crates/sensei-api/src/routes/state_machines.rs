@@ -3,22 +3,23 @@
 //! Provides endpoints for managing state machine definitions and
 //! running instances, including state transitions.
 
-use axum::{Json, extract::{Path, Query, State}};
-use chrono::Utc;
-use serde::{Deserialize, Serialize};
-use sensei_auth::middleware::AuthenticatedUser;
-use sensei_core::error::{Result, SenseiError};
-use sensei_core::domain::events::{
-    DomainEvent, StateMachineTransitionedEvent,
+use axum::{
+    extract::{Path, Query, State},
+    Json,
 };
+use chrono::Utc;
+use sensei_auth::middleware::AuthenticatedUser;
+use sensei_core::domain::events::{DomainEvent, StateMachineTransitionedEvent};
+use sensei_core::error::{Result, SenseiError};
 use sensei_core::pagination::PaginatedResponse;
 use sensei_core::types::new_id;
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::state::AppState;
 use crate::stores::{
-    StateDefinition, StateMachineDefinition, StateMachineInstance,
-    StateTransitionRecord, TransitionDefinition,
+    StateDefinition, StateMachineDefinition, StateMachineInstance, StateTransitionRecord,
+    TransitionDefinition,
 };
 
 // ── Internal helpers ───────────────────────────────────────────────────────
@@ -321,7 +322,9 @@ pub async fn delete_state_machine(
         .filter(|d| d.tenant_id == tenant_id)
         .is_some();
     if !exists {
-        return Err(SenseiError::NotFound(format!("State machine {sm_id} not found")));
+        return Err(SenseiError::NotFound(format!(
+            "State machine {sm_id} not found"
+        )));
     }
     store.remove(&sm_id);
     Ok(Json(()))
@@ -345,16 +348,17 @@ pub async fn create_instance(
             .values()
             .find(|d| d.id == sm_id && d.tenant_id == tenant_id)
             .cloned()
-            .ok_or_else(|| SenseiError::NotFound(format!("State machine definition {sm_id} not found")))?
+            .ok_or_else(|| {
+                SenseiError::NotFound(format!("State machine definition {sm_id} not found"))
+            })?
     };
 
     // An entity may only have one instance per definition.
     {
         let store = state.state_machine_instances.read().await;
-        if store
-            .values()
-            .any(|i| i.definition_id == sm_id && i.entity_id == req.entity_id && i.tenant_id == tenant_id)
-        {
+        if store.values().any(|i| {
+            i.definition_id == sm_id && i.entity_id == req.entity_id && i.tenant_id == tenant_id
+        }) {
             return Err(SenseiError::Conflict(format!(
                 "An instance for entity {} already exists in state machine {sm_id}",
                 req.entity_id
@@ -418,7 +422,7 @@ pub async fn list_instances(
         })
         .cloned()
         .collect();
-    instances.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
+    instances.sort_by_key(|a| std::cmp::Reverse(a.updated_at));
     let result = PaginatedResponse::new(instances, params.page, params.per_page);
     Ok(Json(result))
 }
@@ -435,7 +439,9 @@ pub async fn get_instance(
         .values()
         .find(|i| i.id == instance_id && i.tenant_id == tenant_id)
         .cloned()
-        .ok_or_else(|| SenseiError::NotFound(format!("State machine instance {instance_id} not found")))?;
+        .ok_or_else(|| {
+            SenseiError::NotFound(format!("State machine instance {instance_id} not found"))
+        })?;
     Ok(Json(instance))
 }
 
@@ -462,7 +468,9 @@ pub async fn transition_instance(
     let instance = store
         .get_mut(&instance_id)
         .filter(|i| i.tenant_id == tenant_id)
-        .ok_or_else(|| SenseiError::NotFound(format!("State machine instance {instance_id} not found")))?;
+        .ok_or_else(|| {
+            SenseiError::NotFound(format!("State machine instance {instance_id} not found"))
+        })?;
 
     // Look up the definition
     let def_store = state.state_machine_definitions.read().await;
@@ -513,10 +521,7 @@ pub async fn transition_instance(
             }
 
             // ── 4. Check allowed roles on the target state ──────────────
-            let target_state_def = definition
-                .states
-                .iter()
-                .find(|s| s.name == t.to_state);
+            let target_state_def = definition.states.iter().find(|s| s.name == t.to_state);
 
             if let Some(target_def) = target_state_def {
                 if !target_def.allowed_roles.is_empty()
@@ -624,15 +629,11 @@ fn evaluate_conditions(
                 }
                 Some("field_match") => {
                     // Check if a context field matches an expected value
-                    if let (Some(field), Some(expected)) = (
-                        map.get("field").and_then(|v| v.as_str()),
-                        map.get("value"),
-                    ) {
+                    if let (Some(field), Some(expected)) =
+                        (map.get("field").and_then(|v| v.as_str()), map.get("value"))
+                    {
                         let actual = context.get(field);
-                        match actual {
-                            Some(val) if val == expected => true,
-                            _ => false,
-                        }
+                        matches!(actual, Some(val) if val == expected)
                     } else {
                         true
                     }
@@ -645,7 +646,8 @@ fn evaluate_conditions(
         }
         serde_json::Value::Array(arr) => {
             // AND semantics: all conditions must pass
-            arr.iter().all(|c| evaluate_conditions(c, context, user_roles))
+            arr.iter()
+                .all(|c| evaluate_conditions(c, context, user_roles))
         }
         _ => true, // No conditions = always allowed
     }
@@ -694,15 +696,15 @@ async fn execute_on_transition_hook(
                 .to_string();
             if let Err(e) = state
                 .notification_service
-                .notify(
-                    instance.tenant_id,
-                    target_user,
-                    &title,
-                    &body,
-                    "info",
-                    Some("state_machine_instance"),
-                    Some(instance.id),
-                )
+                .notify(sensei_services::notifications::NewNotification {
+                    tenant_id: instance.tenant_id,
+                    user_id: target_user,
+                    title,
+                    body,
+                    notification_type: "info".to_string(),
+                    reference_type: Some("state_machine_instance".to_string()),
+                    reference_id: Some(instance.id),
+                })
                 .await
             {
                 tracing::warn!(
@@ -714,16 +716,15 @@ async fn execute_on_transition_hook(
         }
         "webhook" => {
             if let Some(url) = map.get("url").and_then(|v| v.as_str()) {
-                let payload = map
-                    .get("payload")
-                    .cloned()
-                    .unwrap_or_else(|| serde_json::json!({
+                let payload = map.get("payload").cloned().unwrap_or_else(|| {
+                    serde_json::json!({
                         "instance_id": instance.id,
                         "entity_id": instance.entity_id,
                         "definition_id": definition.id,
                         "state": instance.current_state,
                         "event": map.get("event"),
-                    }));
+                    })
+                });
                 let result = reqwest::Client::new()
                     .post(url)
                     .json(&payload)
@@ -835,9 +836,7 @@ async fn update_linked_entity(
 fn parse_task_status(s: &str) -> Option<crate::stores::TaskStatus> {
     match s {
         "open" | "Open" => Some(crate::stores::TaskStatus::Open),
-        "in_progress" | "InProgress" | "In Progress" => {
-            Some(crate::stores::TaskStatus::InProgress)
-        }
+        "in_progress" | "InProgress" | "In Progress" => Some(crate::stores::TaskStatus::InProgress),
         "in_review" | "InReview" => Some(crate::stores::TaskStatus::InReview),
         "completed" | "Completed" => Some(crate::stores::TaskStatus::Completed),
         "cancelled" | "Cancelled" => Some(crate::stores::TaskStatus::Cancelled),

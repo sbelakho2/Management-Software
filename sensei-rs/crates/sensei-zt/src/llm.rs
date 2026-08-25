@@ -63,6 +63,9 @@ extern "C" {
 
     /// Destroy a LLaMA runner.
     fn sensei_llm_deinit(runner: *mut std::ffi::c_void);
+
+    /// Whether the runner holds real (non-randomly-initialised) model weights.
+    fn sensei_llm_has_weights(runner: *mut std::ffi::c_void) -> bool;
 }
 
 // ══════════════════════════════════════════════
@@ -149,8 +152,10 @@ impl LlamaRunner {
 
     /// Generate a response to the given prompt.
     ///
-    /// When backed by Zig, delegates to [`sensei_llm_generate`].
-    /// Otherwise uses the pattern-matching fallback chatbot.
+    /// Backed by Zig: delegates to [`sensei_llm_generate`] once real model
+    /// weights are loaded. Without weights (or in a `SENSEI_NO_ZIG` build)
+    /// generation fails with a clear error — fabricated pattern-matched
+    /// answers are never presented as AI output.
     pub fn generate(
         &mut self,
         prompt: &str,
@@ -161,10 +166,28 @@ impl LlamaRunner {
     ) -> Result<String, SenseiError> {
         #[cfg(not(no_zig))]
         if self.has_zig {
+            if !self.has_weights() {
+                return Err(SenseiError::Internal(
+                    "The AI model is not loaded — load model weights to enable AI generation."
+                        .to_string(),
+                ));
+            }
             return self.generate_zig(prompt, max_tokens, temperature, top_k, top_p);
         }
 
-        self.generate_fallback(prompt)
+        Err(SenseiError::Internal(
+            "This build does not include the Zig AI runtime (SENSEI_NO_ZIG); AI generation is unavailable."
+                .to_string(),
+        ))
+    }
+
+    /// Whether the Zig runner holds real (non-random) model weights.
+    #[cfg(not(no_zig))]
+    fn has_weights(&self) -> bool {
+        if self.handle.0.is_null() {
+            return false;
+        }
+        unsafe { sensei_llm_has_weights(self.handle.0) }
     }
 
     /// Zig-backed generation.
@@ -191,7 +214,9 @@ impl LlamaRunner {
         };
 
         if ptr.is_null() {
-            return Err(SenseiError::Internal("LLM generation failed".into()));
+            return Err(SenseiError::Internal(
+                "AI generation failed — the model weights may be missing or corrupted.".to_string(),
+            ));
         }
 
         let result = unsafe { std::ffi::CStr::from_ptr(ptr as *const i8) }
@@ -202,30 +227,6 @@ impl LlamaRunner {
         unsafe { sensei_llm_free_string(ptr) };
 
         Ok(result)
-    }
-
-    /// Pure-Rust fallback generation using pattern matching.
-    fn generate_fallback(&self, prompt: &str) -> Result<String, SenseiError> {
-        let lower = prompt.to_lowercase();
-        let response = FALLBACK_RESPONSES
-            .iter()
-            .filter_map(|pattern| {
-                let match_count = pattern
-                    .keywords
-                    .iter()
-                    .filter(|kw| lower.contains(&kw.to_lowercase()))
-                    .count();
-                if match_count > 0 {
-                    Some((match_count, pattern.response))
-                } else {
-                    None
-                }
-            })
-            .max_by_key(|(count, _)| *count)
-            .map(|(_, resp)| resp)
-            .unwrap_or(DEFAULT_FALLBACK_RESPONSE);
-
-        Ok(response.to_string())
     }
 }
 
@@ -245,135 +246,12 @@ impl Drop for LlamaRunner {
 }
 
 // ══════════════════════════════════════════════
-// Software fallback responses
-// ══════════════════════════════════════════════
-
-struct ResponsePattern {
-    keywords: &'static [&'static str],
-    response: &'static str,
-}
-
-const FALLBACK_RESPONSES: &[ResponsePattern] = &[
-    ResponsePattern {
-        keywords: &["hello", "hi", "hey", "greetings"],
-        response: "Hello! I'm Sensei AI, your manufacturing assistant. How can I help you today?",
-    },
-    ResponsePattern {
-        keywords: &["help", "what can you do", "capabilities"],
-        response: "I can help you with quality management, maintenance tracking, production monitoring, supply chain management, and continuous improvement initiatives. Try asking me about a specific topic!",
-    },
-    ResponsePattern {
-        keywords: &["quality", "ncr", "non-conformance", "inspection"],
-        response: "For quality management, I can help with non-conformance reports (NCRs), corrective actions (CAPAs), inspections, audits, and supplier quality. What specific quality topic interests you?",
-    },
-    ResponsePattern {
-        keywords: &["maintenance", "pm", "preventive", "equipment", "work request"],
-        response: "For maintenance, I can assist with work requests, preventive maintenance schedules, equipment tracking, and warranty management. What maintenance task can I help with?",
-    },
-    ResponsePattern {
-        keywords: &["production", "manufacturing", "work order", "schedule"],
-        response: "For production, I can help with work orders, production scheduling, bill of materials (BOM), and material requirements planning (MRP). What production topic would you like to explore?",
-    },
-    ResponsePattern {
-        keywords: &["supply chain", "inventory", "purchase order", "rfq", "supplier"],
-        response: "For supply chain, I can assist with RFQs, purchase orders, inventory management, sales orders, and supplier evaluation. How can I help with your supply chain needs?",
-    },
-    ResponsePattern {
-        keywords: &["finance", "invoice", "payment", "budget", "accounting"],
-        response: "For finance, I can help with invoices, payments, budgets, journal entries, and cost rollups. What financial topic would you like to discuss?",
-    },
-    ResponsePattern {
-        keywords: &["hr", "employee", "training", "leave", "timecard"],
-        response: "For HR, I can assist with employee management, training records, leave requests, timecards, and performance reviews. How can I help with HR matters?",
-    },
-    ResponsePattern {
-        keywords: &["continuous improvement", "kaizen", "lean", "six sigma", "andon"],
-        response: "For continuous improvement, I can help with Andon systems, A3 problem-solving, risk management, and Kaizen projects. What improvement initiative are you working on?",
-    },
-    ResponsePattern {
-        keywords: &["safety", "lockout", "tagout", "loto", "osha"],
-        response: "For safety, I can assist with lockout/tagout (LOTO) procedures, safety audits, and compliance tracking. Safety is our top priority — how can I help?",
-    },
-    ResponsePattern {
-        keywords: &["thanks", "thank you", "appreciate"],
-        response: "You're welcome! I'm here to help. Feel free to ask me anything about manufacturing operations.",
-    },
-    ResponsePattern {
-        keywords: &["bye", "goodbye", "see you"],
-        response: "Goodbye! Feel free to come back anytime you need assistance with your manufacturing operations.",
-    },
-];
-
-const DEFAULT_FALLBACK_RESPONSE: &str =
-    "I'm Sensei AI, your manufacturing operations assistant. I can help with quality, maintenance, production, supply chain, finance, HR, and continuous improvement topics. What would you like to know more about?";
-
-// ══════════════════════════════════════════════
 // Tests
 // ══════════════════════════════════════════════
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_llama_runner_new_fallback() {
-        let config = LlamaConfig {
-            dim: 4,
-            n_layers: 1,
-            n_heads: 2,
-            n_kv_heads: 1,
-            vocab_size: 10,
-            max_seq_len: 8,
-        };
-        let weights = vec![0.0f32; 100];
-        let runner = LlamaRunner::new(config, &weights);
-        assert!(runner.is_ok());
-    }
-
-    #[test]
-    fn test_generate_fallback_hello() {
-        let config = LlamaConfig::default();
-        let weights = vec![0.0f32; 100];
-        let mut runner = LlamaRunner::new(config, &weights).unwrap();
-        let response = runner.generate("hello", 10, 1.0, 10, 0.9).unwrap();
-        assert!(response.contains("Hello!"));
-    }
-
-    #[test]
-    fn test_generate_fallback_quality() {
-        let config = LlamaConfig::default();
-        let weights = vec![0.0f32; 100];
-        let mut runner = LlamaRunner::new(config, &weights).unwrap();
-        let response = runner.generate("need help with quality inspection", 10, 1.0, 10, 0.9).unwrap();
-        assert!(response.contains("quality"));
-    }
-
-    #[test]
-    fn test_generate_fallback_maintenance() {
-        let config = LlamaConfig::default();
-        let weights = vec![0.0f32; 100];
-        let mut runner = LlamaRunner::new(config, &weights).unwrap();
-        let response = runner.generate("maintenance work request", 10, 1.0, 10, 0.9).unwrap();
-        assert!(response.contains("maintenance"));
-    }
-
-    #[test]
-    fn test_generate_fallback_unknown() {
-        let config = LlamaConfig::default();
-        let weights = vec![0.0f32; 100];
-        let mut runner = LlamaRunner::new(config, &weights).unwrap();
-        let response = runner.generate("asdfghjkl", 10, 1.0, 10, 0.9).unwrap();
-        assert!(response.contains("Sensei AI"));
-    }
-
-    #[test]
-    fn test_generate_fallback_bye() {
-        let config = LlamaConfig::default();
-        let weights = vec![0.0f32; 100];
-        let mut runner = LlamaRunner::new(config, &weights).unwrap();
-        let response = runner.generate("goodbye", 10, 1.0, 10, 0.9).unwrap();
-        assert!(response.contains("Goodbye"));
-    }
 
     #[test]
     fn test_llama_config_default() {

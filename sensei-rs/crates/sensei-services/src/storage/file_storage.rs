@@ -112,12 +112,12 @@ impl FileStorageService for LocalStorageService {
         if let Some(parent) = full_path.parent() {
             tokio::fs::create_dir_all(parent)
                 .await
-                .map_err(|e| SenseiError::Io(e))?;
+                .map_err(SenseiError::Io)?;
         }
 
         tokio::fs::write(&full_path, data)
             .await
-            .map_err(|e| SenseiError::Io(e))?;
+            .map_err(SenseiError::Io)?;
 
         // Return the relative path as the storage key.
         Ok(path.to_string())
@@ -125,32 +125,24 @@ impl FileStorageService for LocalStorageService {
 
     async fn retrieve(&self, tenant_id: EntityId, storage_path: &str) -> Result<Vec<u8>> {
         let full_path = self.resolve_path(tenant_id, storage_path);
-        tokio::fs::read(&full_path)
-            .await
-            .map_err(|e| {
-                if e.kind() == std::io::ErrorKind::NotFound {
-                    SenseiError::NotFound(format!(
-                        "File not found at storage path: {storage_path}"
-                    ))
-                } else {
-                    SenseiError::Io(e)
-                }
-            })
+        tokio::fs::read(&full_path).await.map_err(|e| {
+            if e.kind() == std::io::ErrorKind::NotFound {
+                SenseiError::NotFound(format!("File not found at storage path: {storage_path}"))
+            } else {
+                SenseiError::Io(e)
+            }
+        })
     }
 
     async fn delete(&self, tenant_id: EntityId, storage_path: &str) -> Result<()> {
         let full_path = self.resolve_path(tenant_id, storage_path);
-        tokio::fs::remove_file(&full_path)
-            .await
-            .map_err(|e| {
-                if e.kind() == std::io::ErrorKind::NotFound {
-                    SenseiError::NotFound(format!(
-                        "File not found at storage path: {storage_path}"
-                    ))
-                } else {
-                    SenseiError::Io(e)
-                }
-            })
+        tokio::fs::remove_file(&full_path).await.map_err(|e| {
+            if e.kind() == std::io::ErrorKind::NotFound {
+                SenseiError::NotFound(format!("File not found at storage path: {storage_path}"))
+            } else {
+                SenseiError::Io(e)
+            }
+        })
     }
 
     async fn get_presigned_url(
@@ -218,22 +210,16 @@ impl FileStorageService for InMemoryStorageService {
     async fn retrieve(&self, tenant_id: EntityId, storage_path: &str) -> Result<Vec<u8>> {
         let key = Self::key(tenant_id, storage_path);
         let map = self.data.read().await;
-        map.get(&key)
-            .cloned()
-            .ok_or_else(|| {
-                SenseiError::NotFound(format!(
-                    "File not found at storage path: {storage_path}"
-                ))
-            })
+        map.get(&key).cloned().ok_or_else(|| {
+            SenseiError::NotFound(format!("File not found at storage path: {storage_path}"))
+        })
     }
 
     async fn delete(&self, tenant_id: EntityId, storage_path: &str) -> Result<()> {
         let key = Self::key(tenant_id, storage_path);
         let mut map = self.data.write().await;
         map.remove(&key).ok_or_else(|| {
-            SenseiError::NotFound(format!(
-                "File not found at storage path: {storage_path}"
-            ))
+            SenseiError::NotFound(format!("File not found at storage path: {storage_path}"))
         })?;
         Ok(())
     }
@@ -282,9 +268,9 @@ impl S3StorageService {
                 region: region.to_string(),
                 endpoint: ep.to_string(),
             },
-            _ => region
-                .parse()
-                .map_err(|e| SenseiError::Configuration(format!("Invalid S3 region '{region}': {e}")))?,
+            _ => region.parse().map_err(|e| {
+                SenseiError::Configuration(format!("Invalid S3 region '{region}': {e}"))
+            })?,
         };
 
         let credentials = s3::creds::Credentials::new(
@@ -473,10 +459,7 @@ mod tests {
             .await
             .unwrap();
 
-        let url = service
-            .get_presigned_url(tenant, path, 3600)
-            .await
-            .unwrap();
+        let url = service.get_presigned_url(tenant, path, 3600).await.unwrap();
         assert!(url.is_none());
     }
 
@@ -509,12 +492,16 @@ mod tests {
         let mut handles = Vec::new();
         for i in 0..10 {
             let svc = Arc::clone(&service);
-            let tenant = tenant;
             handles.push(tokio::spawn(async move {
                 let data = vec![i as u8; 1024];
-                svc.store(tenant, &format!("concurrent/file_{i}.bin"), &data, "application/octet-stream")
-                    .await
-                    .expect("concurrent store should succeed");
+                svc.store(
+                    tenant,
+                    &format!("concurrent/file_{i}.bin"),
+                    &data,
+                    "application/octet-stream",
+                )
+                .await
+                .expect("concurrent store should succeed");
             }));
         }
 
@@ -582,8 +569,13 @@ mod tests {
         let bucket = std::env::var("S3_BUCKET").unwrap_or_else(|_| "sensei-test".into());
         let region = std::env::var("S3_REGION").unwrap_or_else(|_| "us-east-1".into());
 
-        match S3StorageService::new(&bucket, &region, endpoint.as_deref(), &access_key, &secret_key)
-        {
+        match S3StorageService::new(
+            &bucket,
+            &region,
+            endpoint.as_deref(),
+            &access_key,
+            &secret_key,
+        ) {
             Ok(svc) => Some(svc),
             Err(e) => {
                 eprintln!("Skipping S3 test — cannot connect: {e}");
@@ -635,8 +627,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_trait_object_clone() {
-        let service: Box<dyn FileStorageService> =
-            Box::new(InMemoryStorageService::new());
+        let service: Box<dyn FileStorageService> = Box::new(InMemoryStorageService::new());
         let cloned = service.clone(); // uses clone_box()
         let tenant = test_tenant();
 

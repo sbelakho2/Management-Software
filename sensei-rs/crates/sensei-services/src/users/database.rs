@@ -12,7 +12,7 @@ use sensei_core::types::EntityId;
 use sensei_db::models::UserModel;
 use sqlx::PgPool;
 
-use super::{UsersService, check_password, validate_roles};
+use super::{check_password, validate_roles, UsersService};
 
 /// PostgreSQL-backed implementation of [`UsersService`].
 pub struct DatabaseUsersService {
@@ -122,10 +122,7 @@ impl UsersService for DatabaseUsersService {
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to create user: {e}")))?
         .ok_or_else(|| {
-            SenseiError::AlreadyExists(format!(
-                "User with email '{}' already exists",
-                user.email
-            ))
+            SenseiError::AlreadyExists(format!("User with email '{}' already exists", user.email))
         })?;
 
         Ok(user_model_to_domain(created))
@@ -156,34 +153,34 @@ impl UsersService for DatabaseUsersService {
         // Exact array membership: `$n = ANY(roles)` — no false positives
         // from substring matching ('admin' must not match 'admin2').
         let (count_sql, data_sql): (&str, &str) = match (role, is_active) {
-                (Some(_), Some(_)) => (
-                    "SELECT COUNT(*) FROM users WHERE $1 = ANY(roles) AND is_active = $2",
-                    "SELECT id, tenant_id, email, name, password_hash, roles, \
+            (Some(_), Some(_)) => (
+                "SELECT COUNT(*) FROM users WHERE $1 = ANY(roles) AND is_active = $2",
+                "SELECT id, tenant_id, email, name, password_hash, roles, \
                             is_active, email_verified, last_login_at, created_at, updated_at \
                      FROM users WHERE $1 = ANY(roles) AND is_active = $2 \
                      ORDER BY created_at DESC LIMIT $3 OFFSET $4",
-                ),
-                (Some(_), None) => (
-                    "SELECT COUNT(*) FROM users WHERE $1 = ANY(roles)",
-                    "SELECT id, tenant_id, email, name, password_hash, roles, \
+            ),
+            (Some(_), None) => (
+                "SELECT COUNT(*) FROM users WHERE $1 = ANY(roles)",
+                "SELECT id, tenant_id, email, name, password_hash, roles, \
                             is_active, email_verified, last_login_at, created_at, updated_at \
                      FROM users WHERE $1 = ANY(roles) \
                      ORDER BY created_at DESC LIMIT $2 OFFSET $3",
-                ),
-                (None, Some(_)) => (
-                    "SELECT COUNT(*) FROM users WHERE is_active = $1",
-                    "SELECT id, tenant_id, email, name, password_hash, roles, \
+            ),
+            (None, Some(_)) => (
+                "SELECT COUNT(*) FROM users WHERE is_active = $1",
+                "SELECT id, tenant_id, email, name, password_hash, roles, \
                             is_active, email_verified, last_login_at, created_at, updated_at \
                      FROM users WHERE is_active = $1 \
                      ORDER BY created_at DESC LIMIT $2 OFFSET $3",
-                ),
-                (None, None) => (
-                    "SELECT COUNT(*) FROM users",
-                    "SELECT id, tenant_id, email, name, password_hash, roles, \
+            ),
+            (None, None) => (
+                "SELECT COUNT(*) FROM users",
+                "SELECT id, tenant_id, email, name, password_hash, roles, \
                             is_active, email_verified, last_login_at, created_at, updated_at \
                      FROM users ORDER BY created_at DESC LIMIT $1 OFFSET $2",
-                ),
-            };
+            ),
+        };
 
         let mut count_query = sqlx::query_scalar::<_, i64>(count_sql);
         if let Some(r) = role {
@@ -211,7 +208,7 @@ impl UsersService for DatabaseUsersService {
             .map_err(|e| SenseiError::Database(format!("Failed to list users: {e}")))?;
 
         let data = models.into_iter().map(user_model_to_domain).collect();
-        let total_pages = ((total as usize).max(1) + per_page - 1) / per_page;
+        let total_pages = (total as usize).max(1).div_ceil(per_page);
 
         Ok(PaginatedResponse {
             data,
@@ -253,7 +250,9 @@ impl UsersService for DatabaseUsersService {
 
         match result {
             Ok(Some(model)) => Ok(user_model_to_domain(model)),
-            Ok(None) => Err(SenseiError::NotFound(format!("User with id '{id}' not found"))),
+            Ok(None) => Err(SenseiError::NotFound(format!(
+                "User with id '{id}' not found"
+            ))),
             Err(e) if is_unique_violation(&e) => Err(SenseiError::AlreadyExists(
                 "A user with that email already exists".to_string(),
             )),
@@ -340,7 +339,9 @@ impl UsersService for DatabaseUsersService {
             .await
             .map_err(|e| SenseiError::Database(format!("Failed to set email_verified: {e}")))?;
         if result.rows_affected() == 0 {
-            return Err(SenseiError::NotFound(format!("User with id '{id}' not found")));
+            return Err(SenseiError::NotFound(format!(
+                "User with id '{id}' not found"
+            )));
         }
         Ok(())
     }

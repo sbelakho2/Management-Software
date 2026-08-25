@@ -4,8 +4,8 @@
 //!
 //! Port of [`frontend/src/stores/finance.ts`](frontend/src/stores/finance.ts).
 
-use leptos::prelude::*;
 use crate::api::client::{ApiClient, ApiError};
+use leptos::prelude::*;
 
 // ---------------------------------------------------------------------------
 // Domain types
@@ -287,15 +287,22 @@ impl FinanceStore {
         self.loading.set(false);
     }
 
-    pub async fn create_account(&self, client: &ApiClient, account: serde_json::Value) -> Result<Account, ()> {
-        match client.post::<Account, serde_json::Value>("/finance/accounts", &account).await {
+    pub async fn create_account(
+        &self,
+        client: &ApiClient,
+        account: serde_json::Value,
+    ) -> Result<Account, ApiError> {
+        match client
+            .post::<Account, serde_json::Value>("/finance/accounts", &account)
+            .await
+        {
             Ok(created) => {
                 self.accounts.update(|a| a.push(created.clone()));
                 Ok(created)
             }
             Err(e) => {
                 self.error.set(Some(e.to_string()));
-                Err(())
+                Err(e)
             }
         }
     }
@@ -306,7 +313,10 @@ impl FinanceStore {
 
     pub async fn fetch_journal_entries(&self, client: &ApiClient) {
         self.loading.set(true);
-        match client.get::<Vec<JournalEntry>>("/finance/journal-entries").await {
+        match client
+            .get::<Vec<JournalEntry>>("/finance/journal-entries")
+            .await
+        {
             Ok(items) => self.journal_entries.set(items),
             Err(e) => self.error.set(Some(e.to_string())),
         }
@@ -318,21 +328,31 @@ impl FinanceStore {
     // -----------------------------------------------------------------------
 
     pub async fn fetch_currency_settings(&self, client: &ApiClient) {
-        match client.get::<CurrencyConfig>("/finance/currency-settings").await {
+        match client
+            .get::<CurrencyConfig>("/finance/currency-settings")
+            .await
+        {
             Ok(settings) => self.currency_settings.set(Some(settings)),
             Err(e) => self.error.set(Some(e.to_string())),
         }
     }
 
-    pub async fn update_currency_settings(&self, client: &ApiClient, settings: serde_json::Value) -> Result<CurrencyConfig, ()> {
-        match client.put::<CurrencyConfig, serde_json::Value>("/finance/currency-settings", &settings).await {
+    pub async fn update_currency_settings(
+        &self,
+        client: &ApiClient,
+        settings: serde_json::Value,
+    ) -> Result<CurrencyConfig, ApiError> {
+        match client
+            .put::<CurrencyConfig, serde_json::Value>("/finance/currency-settings", &settings)
+            .await
+        {
             Ok(updated) => {
                 self.currency_settings.set(Some(updated.clone()));
                 Ok(updated)
             }
             Err(e) => {
                 self.error.set(Some(e.to_string()));
-                Err(())
+                Err(e)
             }
         }
     }
@@ -352,15 +372,22 @@ impl FinanceStore {
         }
     }
 
-    pub async fn upsert_fx_rate(&self, client: &ApiClient, rate: serde_json::Value) -> Result<FxRate, ()> {
-        match client.post::<FxRate, serde_json::Value>("/finance/fx-rates", &rate).await {
+    pub async fn upsert_fx_rate(
+        &self,
+        client: &ApiClient,
+        rate: serde_json::Value,
+    ) -> Result<FxRate, ApiError> {
+        match client
+            .post::<FxRate, serde_json::Value>("/finance/fx-rates", &rate)
+            .await
+        {
             Ok(created) => {
                 self.fx_rates.update(|r| r.push(created.clone()));
                 Ok(created)
             }
             Err(e) => {
                 self.error.set(Some(e.to_string()));
-                Err(())
+                Err(e)
             }
         }
     }
@@ -380,15 +407,22 @@ impl FinanceStore {
         }
     }
 
-    pub async fn upsert_standard_cost(&self, client: &ApiClient, payload: serde_json::Value) -> Result<StandardCost, ()> {
-        match client.post::<StandardCost, serde_json::Value>("/finance/standard-costs", &payload).await {
+    pub async fn upsert_standard_cost(
+        &self,
+        client: &ApiClient,
+        payload: serde_json::Value,
+    ) -> Result<StandardCost, ApiError> {
+        match client
+            .post::<StandardCost, serde_json::Value>("/finance/standard-costs", &payload)
+            .await
+        {
             Ok(created) => {
                 self.standard_costs.update(|c| c.push(created.clone()));
                 Ok(created)
             }
             Err(e) => {
                 self.error.set(Some(e.to_string()));
-                Err(())
+                Err(e)
             }
         }
     }
@@ -408,15 +442,22 @@ impl FinanceStore {
         }
     }
 
-    pub async fn create_cost_rollup(&self, client: &ApiClient, payload: serde_json::Value) -> Result<CostRollup, ()> {
-        match client.post::<CostRollup, serde_json::Value>("/finance/cost-rollups", &payload).await {
+    pub async fn create_cost_rollup(
+        &self,
+        client: &ApiClient,
+        payload: serde_json::Value,
+    ) -> Result<CostRollup, ApiError> {
+        match client
+            .post::<CostRollup, serde_json::Value>("/finance/cost-rollups", &payload)
+            .await
+        {
             Ok(created) => {
                 self.cost_rollups.update(|c| c.push(created.clone()));
                 Ok(created)
             }
             Err(e) => {
                 self.error.set(Some(e.to_string()));
-                Err(())
+                Err(e)
             }
         }
     }
@@ -426,21 +467,31 @@ impl FinanceStore {
     // -----------------------------------------------------------------------
 
     pub async fn fetch_tax_jurisdictions(&self, client: &ApiClient) {
-        match client.get::<Vec<TaxJurisdiction>>("/finance/tax-jurisdictions").await {
+        match client
+            .get::<Vec<TaxJurisdiction>>("/finance/tax-jurisdictions")
+            .await
+        {
             Ok(items) => self.tax_jurisdictions.set(items),
             Err(e) => self.error.set(Some(e.to_string())),
         }
     }
 
-    pub async fn create_tax_jurisdiction(&self, client: &ApiClient, payload: serde_json::Value) -> Result<TaxJurisdiction, ()> {
-        match client.post::<TaxJurisdiction, serde_json::Value>("/finance/tax-jurisdictions", &payload).await {
+    pub async fn create_tax_jurisdiction(
+        &self,
+        client: &ApiClient,
+        payload: serde_json::Value,
+    ) -> Result<TaxJurisdiction, ApiError> {
+        match client
+            .post::<TaxJurisdiction, serde_json::Value>("/finance/tax-jurisdictions", &payload)
+            .await
+        {
             Ok(created) => {
                 self.tax_jurisdictions.update(|j| j.push(created.clone()));
                 Ok(created)
             }
             Err(e) => {
                 self.error.set(Some(e.to_string()));
-                Err(())
+                Err(e)
             }
         }
     }
@@ -450,21 +501,33 @@ impl FinanceStore {
     // -----------------------------------------------------------------------
 
     pub async fn fetch_tax_rates(&self, client: &ApiClient, jurisdiction_id: &str) {
-        match client.get::<Vec<TaxRate>>(&format!("/finance/tax-jurisdictions/{jurisdiction_id}/rates")).await {
+        match client
+            .get::<Vec<TaxRate>>(&format!(
+                "/finance/tax-jurisdictions/{jurisdiction_id}/rates"
+            ))
+            .await
+        {
             Ok(items) => self.tax_rates.set(items),
             Err(e) => self.error.set(Some(e.to_string())),
         }
     }
 
-    pub async fn create_tax_rate(&self, client: &ApiClient, payload: serde_json::Value) -> Result<TaxRate, ()> {
-        match client.post::<TaxRate, serde_json::Value>("/finance/tax-rates", &payload).await {
+    pub async fn create_tax_rate(
+        &self,
+        client: &ApiClient,
+        payload: serde_json::Value,
+    ) -> Result<TaxRate, ApiError> {
+        match client
+            .post::<TaxRate, serde_json::Value>("/finance/tax-rates", &payload)
+            .await
+        {
             Ok(created) => {
                 self.tax_rates.update(|r| r.push(created.clone()));
                 Ok(created)
             }
             Err(e) => {
                 self.error.set(Some(e.to_string()));
-                Err(())
+                Err(e)
             }
         }
     }
@@ -484,15 +547,22 @@ impl FinanceStore {
         }
     }
 
-    pub async fn create_tax_transaction(&self, client: &ApiClient, payload: serde_json::Value) -> Result<TaxTransaction, ()> {
-        match client.post::<TaxTransaction, serde_json::Value>("/finance/tax-transactions", &payload).await {
+    pub async fn create_tax_transaction(
+        &self,
+        client: &ApiClient,
+        payload: serde_json::Value,
+    ) -> Result<TaxTransaction, ApiError> {
+        match client
+            .post::<TaxTransaction, serde_json::Value>("/finance/tax-transactions", &payload)
+            .await
+        {
             Ok(created) => {
                 self.tax_transactions.update(|t| t.push(created.clone()));
                 Ok(created)
             }
             Err(e) => {
                 self.error.set(Some(e.to_string()));
-                Err(())
+                Err(e)
             }
         }
     }
@@ -502,28 +572,40 @@ impl FinanceStore {
     // -----------------------------------------------------------------------
 
     pub async fn fetch_dashboard_stats(&self, client: &ApiClient) {
-        match client.get::<FinanceDashboardStats>("/finance/dashboard/stats").await {
+        match client
+            .get::<FinanceDashboardStats>("/finance/dashboard/stats")
+            .await
+        {
             Ok(stats) => self.dashboard_stats.set(Some(stats)),
             Err(e) => self.error.set(Some(e.to_string())),
         }
     }
 
     pub async fn fetch_revenue_by_product(&self, client: &ApiClient) {
-        match client.get::<Vec<RevenueByProduct>>("/finance/dashboard/revenue-by-product").await {
+        match client
+            .get::<Vec<RevenueByProduct>>("/finance/dashboard/revenue-by-product")
+            .await
+        {
             Ok(items) => self.revenue_by_product.set(items),
             Err(e) => self.error.set(Some(e.to_string())),
         }
     }
 
     pub async fn fetch_expense_breakdown(&self, client: &ApiClient) {
-        match client.get::<Vec<ExpenseBreakdown>>("/finance/dashboard/expense-breakdown").await {
+        match client
+            .get::<Vec<ExpenseBreakdown>>("/finance/dashboard/expense-breakdown")
+            .await
+        {
             Ok(items) => self.expense_breakdown.set(items),
             Err(e) => self.error.set(Some(e.to_string())),
         }
     }
 
     pub async fn fetch_pending_approvals(&self, client: &ApiClient) {
-        match client.get::<Vec<PendingApproval>>("/finance/dashboard/pending-approvals").await {
+        match client
+            .get::<Vec<PendingApproval>>("/finance/dashboard/pending-approvals")
+            .await
+        {
             Ok(items) => self.pending_approvals.set(items),
             Err(e) => self.error.set(Some(e.to_string())),
         }
@@ -551,21 +633,36 @@ impl FinanceStore {
         }
     }
 
-    pub async fn create_currency(&self, client: &ApiClient, payload: serde_json::Value) -> Result<Currency, ()> {
-        match client.post::<Currency, serde_json::Value>("/finance/currencies", &payload).await {
+    pub async fn create_currency(
+        &self,
+        client: &ApiClient,
+        payload: serde_json::Value,
+    ) -> Result<Currency, ApiError> {
+        match client
+            .post::<Currency, serde_json::Value>("/finance/currencies", &payload)
+            .await
+        {
             Ok(created) => {
                 self.currencies.update(|c| c.push(created.clone()));
                 Ok(created)
             }
             Err(e) => {
                 self.error.set(Some(e.to_string()));
-                Err(())
+                Err(e)
             }
         }
     }
 
-    pub async fn update_currency(&self, client: &ApiClient, id: &str, payload: serde_json::Value) -> Result<Currency, ()> {
-        match client.put::<Currency, serde_json::Value>(&format!("/finance/currencies/{id}"), &payload).await {
+    pub async fn update_currency(
+        &self,
+        client: &ApiClient,
+        id: &str,
+        payload: serde_json::Value,
+    ) -> Result<Currency, ApiError> {
+        match client
+            .put::<Currency, serde_json::Value>(&format!("/finance/currencies/{id}"), &payload)
+            .await
+        {
             Ok(updated) => {
                 self.currencies.update(|c| {
                     if let Some(pos) = c.iter().position(|x| x.code == id) {
@@ -576,7 +673,7 @@ impl FinanceStore {
             }
             Err(e) => {
                 self.error.set(Some(e.to_string()));
-                Err(())
+                Err(e)
             }
         }
     }
@@ -586,27 +683,48 @@ impl FinanceStore {
     // -----------------------------------------------------------------------
 
     pub async fn fetch_payment_terms(&self, client: &ApiClient) {
-        match client.get::<Vec<PaymentTerm>>("/finance/payment-terms").await {
+        match client
+            .get::<Vec<PaymentTerm>>("/finance/payment-terms")
+            .await
+        {
             Ok(items) => self.payment_terms.set(items),
             Err(e) => self.error.set(Some(e.to_string())),
         }
     }
 
-    pub async fn create_payment_term(&self, client: &ApiClient, payload: serde_json::Value) -> Result<PaymentTerm, ()> {
-        match client.post::<PaymentTerm, serde_json::Value>("/finance/payment-terms", &payload).await {
+    pub async fn create_payment_term(
+        &self,
+        client: &ApiClient,
+        payload: serde_json::Value,
+    ) -> Result<PaymentTerm, ApiError> {
+        match client
+            .post::<PaymentTerm, serde_json::Value>("/finance/payment-terms", &payload)
+            .await
+        {
             Ok(created) => {
                 self.payment_terms.update(|p| p.push(created.clone()));
                 Ok(created)
             }
             Err(e) => {
                 self.error.set(Some(e.to_string()));
-                Err(())
+                Err(e)
             }
         }
     }
 
-    pub async fn update_payment_term(&self, client: &ApiClient, id: &str, payload: serde_json::Value) -> Result<PaymentTerm, ()> {
-        match client.put::<PaymentTerm, serde_json::Value>(&format!("/finance/payment-terms/{id}"), &payload).await {
+    pub async fn update_payment_term(
+        &self,
+        client: &ApiClient,
+        id: &str,
+        payload: serde_json::Value,
+    ) -> Result<PaymentTerm, ApiError> {
+        match client
+            .put::<PaymentTerm, serde_json::Value>(
+                &format!("/finance/payment-terms/{id}"),
+                &payload,
+            )
+            .await
+        {
             Ok(updated) => {
                 self.payment_terms.update(|p| {
                     if let Some(pos) = p.iter().position(|x| x.id == id) {
@@ -617,7 +735,7 @@ impl FinanceStore {
             }
             Err(e) => {
                 self.error.set(Some(e.to_string()));
-                Err(())
+                Err(e)
             }
         }
     }
@@ -627,27 +745,48 @@ impl FinanceStore {
     // -----------------------------------------------------------------------
 
     pub async fn fetch_bank_accounts(&self, client: &ApiClient) {
-        match client.get::<Vec<BankAccount>>("/finance/bank-accounts").await {
+        match client
+            .get::<Vec<BankAccount>>("/finance/bank-accounts")
+            .await
+        {
             Ok(items) => self.bank_accounts.set(items),
             Err(e) => self.error.set(Some(e.to_string())),
         }
     }
 
-    pub async fn create_bank_account(&self, client: &ApiClient, payload: serde_json::Value) -> Result<BankAccount, ()> {
-        match client.post::<BankAccount, serde_json::Value>("/finance/bank-accounts", &payload).await {
+    pub async fn create_bank_account(
+        &self,
+        client: &ApiClient,
+        payload: serde_json::Value,
+    ) -> Result<BankAccount, ApiError> {
+        match client
+            .post::<BankAccount, serde_json::Value>("/finance/bank-accounts", &payload)
+            .await
+        {
             Ok(created) => {
                 self.bank_accounts.update(|b| b.push(created.clone()));
                 Ok(created)
             }
             Err(e) => {
                 self.error.set(Some(e.to_string()));
-                Err(())
+                Err(e)
             }
         }
     }
 
-    pub async fn update_bank_account(&self, client: &ApiClient, id: &str, payload: serde_json::Value) -> Result<BankAccount, ()> {
-        match client.put::<BankAccount, serde_json::Value>(&format!("/finance/bank-accounts/{id}"), &payload).await {
+    pub async fn update_bank_account(
+        &self,
+        client: &ApiClient,
+        id: &str,
+        payload: serde_json::Value,
+    ) -> Result<BankAccount, ApiError> {
+        match client
+            .put::<BankAccount, serde_json::Value>(
+                &format!("/finance/bank-accounts/{id}"),
+                &payload,
+            )
+            .await
+        {
             Ok(updated) => {
                 self.bank_accounts.update(|b| {
                     if let Some(pos) = b.iter().position(|x| x.id == id) {
@@ -658,7 +797,7 @@ impl FinanceStore {
             }
             Err(e) => {
                 self.error.set(Some(e.to_string()));
-                Err(())
+                Err(e)
             }
         }
     }
@@ -668,30 +807,49 @@ impl FinanceStore {
     // -----------------------------------------------------------------------
 
     pub async fn fetch_bank_transactions(&self, client: &ApiClient, bank_account_id: &str) {
-        match client.get::<Vec<BankTransaction>>(&format!("/finance/bank-accounts/{bank_account_id}/transactions")).await {
+        match client
+            .get::<Vec<BankTransaction>>(&format!(
+                "/finance/bank-accounts/{bank_account_id}/transactions"
+            ))
+            .await
+        {
             Ok(items) => self.bank_transactions.set(items),
             Err(e) => self.error.set(Some(e.to_string())),
         }
     }
 
-    pub async fn create_bank_transaction(&self, client: &ApiClient, payload: serde_json::Value) -> Result<BankTransaction, ()> {
-        match client.post::<BankTransaction, serde_json::Value>("/finance/bank-transactions", &payload).await {
+    pub async fn create_bank_transaction(
+        &self,
+        client: &ApiClient,
+        payload: serde_json::Value,
+    ) -> Result<BankTransaction, ApiError> {
+        match client
+            .post::<BankTransaction, serde_json::Value>("/finance/bank-transactions", &payload)
+            .await
+        {
             Ok(created) => {
                 self.bank_transactions.update(|t| t.push(created.clone()));
                 Ok(created)
             }
             Err(e) => {
                 self.error.set(Some(e.to_string()));
-                Err(())
+                Err(e)
             }
         }
     }
 
-    pub async fn reconcile_bank_transaction(&self, client: &ApiClient, id: &str) -> Result<BankTransaction, ()> {
-        match client.post::<BankTransaction, serde_json::Value>(
-            &format!("/finance/bank-transactions/{id}/reconcile"),
-            &serde_json::json!({}),
-        ).await {
+    pub async fn reconcile_bank_transaction(
+        &self,
+        client: &ApiClient,
+        id: &str,
+    ) -> Result<BankTransaction, ApiError> {
+        match client
+            .post::<BankTransaction, serde_json::Value>(
+                &format!("/finance/bank-transactions/{id}/reconcile"),
+                &serde_json::json!({}),
+            )
+            .await
+        {
             Ok(updated) => {
                 self.bank_transactions.update(|t| {
                     if let Some(pos) = t.iter().position(|x| x.id == id) {
@@ -702,7 +860,7 @@ impl FinanceStore {
             }
             Err(e) => {
                 self.error.set(Some(e.to_string()));
-                Err(())
+                Err(e)
             }
         }
     }

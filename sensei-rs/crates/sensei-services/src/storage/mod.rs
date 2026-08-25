@@ -8,8 +8,5 @@
 pub mod file_storage;
 
 pub use file_storage::{
-    FileStorageService,
-    InMemoryStorageService,
-    LocalStorageService,
-    S3StorageService,
+    FileStorageService, InMemoryStorageService, LocalStorageService, S3StorageService,
 };

@@ -4,15 +4,18 @@
 //! equivalents of physical "big room" visual management boards used in
 //! lean management for daily stand-ups and strategic reviews.
 
-use axum::{Json, extract::{Path, Query, State}};
+use axum::{
+    extract::{Path, Query, State},
+    Json,
+};
 use chrono::{DateTime, Utc};
-use serde::Deserialize;
 use sensei_auth::middleware::AuthenticatedUser;
 use sensei_core::domain::events::{
     ObeyaItemAddedEvent, ObeyaItemDeletedEvent, ObeyaItemUpdatedEvent,
 };
 use sensei_core::error::{Result, SenseiError};
 use sensei_core::pagination::PaginatedResponse;
+use serde::Deserialize;
 use uuid::Uuid;
 
 use crate::state::AppState;
@@ -111,14 +114,7 @@ const BOARD_TYPES: &[&str] = &[
 
 /// Supported Obeya item types.
 const ITEM_TYPES: &[&str] = &[
-    "KPI",
-    "Action",
-    "Risk",
-    "Issue",
-    "Project",
-    "Kaizen",
-    "Safety",
-    "Other",
+    "KPI", "Action", "Risk", "Issue", "Project", "Kaizen", "Safety", "Other",
 ];
 
 /// Supported Obeya item statuses.
@@ -372,7 +368,7 @@ pub async fn list_board_items(
         .cloned()
         .collect();
 
-    items.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+    items.sort_by_key(|a| std::cmp::Reverse(a.created_at));
     let total = items.len();
     let page = params.page.unwrap_or(1);
     let per_page = params.per_page.unwrap_or(20).min(100);
@@ -552,12 +548,7 @@ pub async fn delete_board_item(
     board.updated_at = Utc::now();
 
     // ── P1-B5: PUBLISH ObeyaItemDeletedEvent ─────────────────────────
-    let event = ObeyaItemDeletedEvent::new(
-        tenant_id,
-        removed.id,
-        board_id,
-        removed.title,
-    );
+    let event = ObeyaItemDeletedEvent::new(tenant_id, removed.id, board_id, removed.title);
     publish_event(&state, &event).await;
 
     Ok(Json(()))

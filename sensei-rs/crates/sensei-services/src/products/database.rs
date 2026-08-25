@@ -340,7 +340,9 @@ impl ProductsService for DatabaseProductsService {
 
         // Verify tenant ownership.
         if model.model.tenant_id != tenant_id {
-            return Err(SenseiError::Forbidden("Cross-tenant access denied".to_string()));
+            return Err(SenseiError::Forbidden(
+                "Cross-tenant access denied".to_string(),
+            ));
         }
 
         Ok(product_row_to_domain(model))
@@ -372,7 +374,9 @@ impl ProductsService for DatabaseProductsService {
             .bind(tenant_id)
             .fetch_one(&self.pool)
             .await
-            .map_err(|e| SenseiError::Database(format!("Failed to check product existence: {e}")))?;
+            .map_err(|e| {
+                SenseiError::Database(format!("Failed to check product existence: {e}"))
+            })?;
 
             if exists == 0 {
                 return Err(SenseiError::NotFound(format!("Product {id} not found")));

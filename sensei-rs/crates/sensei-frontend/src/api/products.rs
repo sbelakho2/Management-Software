@@ -118,10 +118,7 @@ impl ProductsApi {
         client.get(&path).await
     }
 
-    pub async fn get_product(
-        client: &ApiClient,
-        id: &str,
-    ) -> Result<ProductDetailDto, ApiError> {
+    pub async fn get_product(client: &ApiClient, id: &str) -> Result<ProductDetailDto, ApiError> {
         client.get(&format!("/api/v1/products/{}", id)).await
     }
 
@@ -147,10 +144,7 @@ impl ProductsApi {
         client.delete(&format!("/api/v1/products/{}", id)).await
     }
 
-    pub async fn get_product_stats(
-        client: &ApiClient,
-        id: &str,
-    ) -> Result<ProductStats, ApiError> {
+    pub async fn get_product_stats(client: &ApiClient, id: &str) -> Result<ProductStats, ApiError> {
         client.get(&format!("/api/v1/products/{}/stats", id)).await
     }
 

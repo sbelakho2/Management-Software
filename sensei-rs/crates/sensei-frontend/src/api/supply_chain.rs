@@ -141,10 +141,15 @@ impl SupplyChainApi {
     }
 
     pub async fn get_rfq(client: &ApiClient, id: &str) -> Result<RfqDto, ApiError> {
-        client.get(&format!("/api/v1/supply-chain/rfqs/{}", id)).await
+        client
+            .get(&format!("/api/v1/supply-chain/rfqs/{}", id))
+            .await
     }
 
-    pub async fn create_rfq(client: &ApiClient, req: &CreateRfqRequest) -> Result<RfqDto, ApiError> {
+    pub async fn create_rfq(
+        client: &ApiClient,
+        req: &CreateRfqRequest,
+    ) -> Result<RfqDto, ApiError> {
         client.post("/api/v1/supply-chain/rfqs", req).await
     }
 
@@ -154,7 +159,9 @@ impl SupplyChainApi {
     }
 
     pub async fn get_quote(client: &ApiClient, id: &str) -> Result<QuoteDto, ApiError> {
-        client.get(&format!("/api/v1/supply-chain/quotes/{}", id)).await
+        client
+            .get(&format!("/api/v1/supply-chain/quotes/{}", id))
+            .await
     }
 
     // ---- Sales Orders ----
@@ -163,16 +170,25 @@ impl SupplyChainApi {
     }
 
     pub async fn get_sales_order(client: &ApiClient, id: &str) -> Result<SalesOrderDto, ApiError> {
-        client.get(&format!("/api/v1/supply-chain/sales-orders/{}", id)).await
+        client
+            .get(&format!("/api/v1/supply-chain/sales-orders/{}", id))
+            .await
     }
 
     // ---- Purchase Orders ----
-    pub async fn list_purchase_orders(client: &ApiClient) -> Result<Vec<PurchaseOrderDto>, ApiError> {
+    pub async fn list_purchase_orders(
+        client: &ApiClient,
+    ) -> Result<Vec<PurchaseOrderDto>, ApiError> {
         client.get("/api/v1/supply-chain/purchase-orders").await
     }
 
-    pub async fn get_purchase_order(client: &ApiClient, id: &str) -> Result<PurchaseOrderDto, ApiError> {
-        client.get(&format!("/api/v1/supply-chain/purchase-orders/{}", id)).await
+    pub async fn get_purchase_order(
+        client: &ApiClient,
+        id: &str,
+    ) -> Result<PurchaseOrderDto, ApiError> {
+        client
+            .get(&format!("/api/v1/supply-chain/purchase-orders/{}", id))
+            .await
     }
 
     // ---- Inventory ----
@@ -180,8 +196,13 @@ impl SupplyChainApi {
         client.get("/api/v1/supply-chain/inventory").await
     }
 
-    pub async fn get_inventory_item(client: &ApiClient, id: &str) -> Result<InventoryItemDto, ApiError> {
-        client.get(&format!("/api/v1/supply-chain/inventory/{}", id)).await
+    pub async fn get_inventory_item(
+        client: &ApiClient,
+        id: &str,
+    ) -> Result<InventoryItemDto, ApiError> {
+        client
+            .get(&format!("/api/v1/supply-chain/inventory/{}", id))
+            .await
     }
 
     // ---- Stock Moves ----

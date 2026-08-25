@@ -16,9 +16,9 @@ use axum::{
     response::{IntoResponse, Response},
     Json,
 };
-use serde::Serialize;
 use sensei_auth::jwt::AccessTokenClaims;
 use sensei_auth::middleware::auth_middleware;
+use serde::Serialize;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -91,11 +91,7 @@ async fn sweep_blacklist(state: &AppState) {
 ///
 /// **Must be used with `from_fn_with_state`**, not `from_fn`, because it
 /// requires the [`State`] extractor.
-pub async fn auth_layer(
-    State(state): State<AppState>,
-    mut req: Request,
-    next: Next,
-) -> Response {
+pub async fn auth_layer(State(state): State<AppState>, mut req: Request, next: Next) -> Response {
     // Reject tokens whose jti was blacklisted at logout. The JWT is
     // validated here (cheap, single signature check) to read its `jti` and
     // `exp`; `auth_middleware` re-validates as the authoritative check.

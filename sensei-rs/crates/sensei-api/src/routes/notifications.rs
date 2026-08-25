@@ -3,11 +3,14 @@
 //! Provides endpoints for listing, reading, and managing user notifications
 //! and notification preferences via the [`NotificationService`].
 
-use axum::{Json, extract::{Path, Query, State}};
-use serde::Deserialize;
+use axum::{
+    extract::{Path, Query, State},
+    Json,
+};
 use sensei_auth::middleware::AuthenticatedUser;
 use sensei_core::error::{Result, SenseiError};
 use sensei_services::notifications::service::{Notification, NotificationPreferences};
+use serde::Deserialize;
 use uuid::Uuid;
 
 use crate::state::AppState;
@@ -42,7 +45,7 @@ pub async fn list_notifications(
     State(state): State<AppState>,
     Query(params): Query<ListNotificationsParams>,
 ) -> Result<Json<Vec<Notification>>> {
-    let limit = params.limit.unwrap_or(20).max(1).min(100);
+    let limit = params.limit.unwrap_or(20).clamp(1, 100);
     let offset = params.offset.unwrap_or(0).max(0);
 
     let notes = state

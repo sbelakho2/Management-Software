@@ -80,11 +80,7 @@ pub trait EmailService: Send + Sync {
     ) -> Result<(), SenseiError>;
 
     /// Send a daily digest email with aggregated HTML content.
-    async fn send_daily_digest(
-        &self,
-        email: &str,
-        digest_html: &str,
-    ) -> Result<(), SenseiError>;
+    async fn send_daily_digest(&self, email: &str, digest_html: &str) -> Result<(), SenseiError>;
 }
 
 // ---------------------------------------------------------------------------
@@ -159,11 +155,7 @@ pub fn public_base_url() -> String {
 
 /// Build the HTML content for a password reset email.
 fn build_password_reset_content(token: &str) -> String {
-    let reset_link = format!(
-        "{}/reset-password?token={}",
-        public_base_url(),
-        token
-    );
+    let reset_link = format!("{}/reset-password?token={}", public_base_url(), token);
     format!(
         r#"<h2 style="margin:0 0 16px;font-size:20px;color:#1a73e8;">Password Reset Request</h2>
 <p style="margin:0 0 16px;">We received a request to reset your password for your Sensei OS account.</p>
@@ -184,11 +176,7 @@ fn build_password_reset_content(token: &str) -> String {
 
 /// Build the HTML content for an email verification.
 fn build_verification_content(token: &str) -> String {
-    let verify_link = format!(
-        "{}/verify-email?token={}",
-        public_base_url(),
-        token
-    );
+    let verify_link = format!("{}/verify-email?token={}", public_base_url(), token);
     format!(
         r#"<h2 style="margin:0 0 16px;font-size:20px;color:#1a73e8;">Verify Your Email Address</h2>
 <p style="margin:0 0 16px;">Thank you for creating a Sensei OS account. Please verify your email address to activate your account.</p>
@@ -228,7 +216,7 @@ fn build_welcome_content(name: &str) -> String {
     </tr>
 </table>"#,
         name = name,
-        login_url = format!("{}/login", public_base_url()),
+        login_url = format_args!("{}/login", public_base_url()),
     )
 }
 
@@ -244,11 +232,7 @@ fn build_digest_content(digest_html: &str) -> String {
 
 /// Build the plain text fallback for a password reset email.
 fn build_password_reset_plain(token: &str) -> String {
-    let reset_link = format!(
-        "{}/reset-password?token={}",
-        public_base_url(),
-        token
-    );
+    let reset_link = format!("{}/reset-password?token={}", public_base_url(), token);
     format!(
         "Password Reset Request\n\
          \n\
@@ -264,11 +248,7 @@ fn build_password_reset_plain(token: &str) -> String {
 
 /// Build the plain text fallback for an email verification.
 fn build_verification_plain(token: &str) -> String {
-    let verify_link = format!(
-        "{}/verify-email?token={}",
-        public_base_url(),
-        token
-    );
+    let verify_link = format!("{}/verify-email?token={}", public_base_url(), token);
     format!(
         "Verify Your Email Address\n\
          \n\
@@ -350,18 +330,20 @@ impl LettreEmailService {
         let from_header = format!("{} <{}>", self.from_name, self.from_address);
 
         let email = Message::builder()
-            .from(from_header.parse().map_err(|e: lettre::address::AddressError| {
-                SenseiError::ExternalService(format!("Invalid from address: {e}"))
-            })?)
+            .from(
+                from_header
+                    .parse()
+                    .map_err(|e: lettre::address::AddressError| {
+                        SenseiError::ExternalService(format!("Invalid from address: {e}"))
+                    })?,
+            )
             .to(to.parse().map_err(|e: lettre::address::AddressError| {
                 SenseiError::ExternalService(format!("Invalid recipient address '{to}': {e}"))
             })?)
             .subject(subject.to_string())
             .multipart(
                 lettre::message::MultiPart::alternative()
-                    .singlepart(
-                        lettre::message::SinglePart::plain(plain_body.to_string()),
-                    )
+                    .singlepart(lettre::message::SinglePart::plain(plain_body.to_string()))
                     .singlepart(
                         lettre::message::SinglePart::builder()
                             .header(ContentType::TEXT_HTML)
@@ -370,10 +352,7 @@ impl LettreEmailService {
             )
             .map_err(|e| SenseiError::ExternalService(format!("Failed to build email: {e}")))?;
 
-        let creds = Credentials::new(
-            self.smtp_username.clone(),
-            self.smtp_password.clone(),
-        );
+        let creds = Credentials::new(self.smtp_username.clone(), self.smtp_password.clone());
 
         let transport = if self.use_tls {
             AsyncSmtpTransport::<Tokio1Executor>::starttls_relay(&self.smtp_host)
@@ -463,11 +442,7 @@ impl EmailService for LettreEmailService {
         self.send_email(to, subject, &html, &plain).await
     }
 
-    async fn send_daily_digest(
-        &self,
-        email: &str,
-        digest_html: &str,
-    ) -> Result<(), SenseiError> {
+    async fn send_daily_digest(&self, email: &str, digest_html: &str) -> Result<(), SenseiError> {
         let subject = "Your Daily Digest — Sensei OS";
         let content = build_digest_content(digest_html);
         let html = build_html_email(subject, &content);
@@ -658,11 +633,7 @@ impl EmailService for InMemoryEmailService {
         Ok(())
     }
 
-    async fn send_daily_digest(
-        &self,
-        email: &str,
-        digest_html: &str,
-    ) -> Result<(), SenseiError> {
+    async fn send_daily_digest(&self, email: &str, digest_html: &str) -> Result<(), SenseiError> {
         let subject = "Your Daily Digest — Sensei OS".to_string();
         let content = build_digest_content(digest_html);
         let html = build_html_email(&subject, &content);
@@ -737,9 +708,12 @@ mod tests {
         assert_eq!(sent[3].subject, "Test Subject");
 
         // Send a daily digest
-        svc.send_daily_digest("digest@test.com", "<p>3 new NCRs</p><p>2 completed work orders</p>")
-            .await
-            .unwrap();
+        svc.send_daily_digest(
+            "digest@test.com",
+            "<p>3 new NCRs</p><p>2 completed work orders</p>",
+        )
+        .await
+        .unwrap();
 
         let sent = svc.get_sent_emails().await;
         assert_eq!(sent.len(), 5);
@@ -769,10 +743,15 @@ mod tests {
 
     #[test]
     fn test_password_reset_content_has_absolute_link() {
-        std::env::remove_var("PUBLIC_BASE_URL");
+        // Explicit value: parallel tests mutate PUBLIC_BASE_URL, so the
+        // process default cannot be asserted race-free.
+        std::env::set_var("PUBLIC_BASE_URL", "http://localhost:3000/");
         let content = build_password_reset_content("abc-123");
         assert!(content.contains("http://localhost:3000/reset-password?token=abc-123"));
-        assert!(!content.contains("href=\"/reset-password"), "link must be absolute: {content}");
+        assert!(
+            !content.contains("href=\"/reset-password"),
+            "link must be absolute: {content}"
+        );
         assert!(content.contains("Reset Password"));
         assert!(content.contains("1 hour"));
 
@@ -785,23 +764,32 @@ mod tests {
 
     #[test]
     fn test_verification_content_has_absolute_link() {
-        std::env::remove_var("PUBLIC_BASE_URL");
+        // Explicit value: parallel tests mutate PUBLIC_BASE_URL, so the
+        // process default cannot be asserted race-free.
+        std::env::set_var("PUBLIC_BASE_URL", "http://localhost:3000/");
         let content = build_verification_content("xyz-789");
         assert!(content.contains("http://localhost:3000/verify-email?token=xyz-789"));
-        assert!(!content.contains("href=\"/verify-email"), "link must be absolute: {content}");
+        assert!(
+            !content.contains("href=\"/verify-email"),
+            "link must be absolute: {content}"
+        );
         assert!(content.contains("Verify Email"));
         assert!(content.contains("24 hours"));
     }
 
     #[test]
     fn test_plain_text_fallbacks_use_absolute_links() {
-        std::env::remove_var("PUBLIC_BASE_URL");
+        // Use an explicit base URL: tests run in parallel and mutate the
+        // process environment, so asserting the DEFAULT value would race
+        // with other tests that override PUBLIC_BASE_URL.
+        std::env::set_var("PUBLIC_BASE_URL", "http://localhost:3000/");
         let reset_plain = build_password_reset_plain("tok-1");
         assert!(reset_plain.contains("http://localhost:3000/reset-password?token=tok-1"));
         let verify_plain = build_verification_plain("tok-2");
         assert!(verify_plain.contains("http://localhost:3000/verify-email?token=tok-2"));
         let welcome_plain = build_welcome_plain("Alice");
         assert!(welcome_plain.contains("http://localhost:3000/login"));
+        std::env::remove_var("PUBLIC_BASE_URL");
     }
 
     #[test]

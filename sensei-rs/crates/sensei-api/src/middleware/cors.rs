@@ -10,8 +10,8 @@
 //! only used in development.
 
 use sensei_core::config::AppConfig;
-use tower_http::cors::{Any, CorsLayer};
 use tower_http::cors::AllowOrigin;
+use tower_http::cors::{Any, CorsLayer};
 use tracing::{error, warn};
 
 /// Build a [`CorsLayer`] from the application configuration.

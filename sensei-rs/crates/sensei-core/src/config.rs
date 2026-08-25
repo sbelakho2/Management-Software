@@ -125,8 +125,9 @@ impl DatabaseConfig {
     /// Load database configuration from environment variables.
     pub fn from_env() -> Result<Self, ConfigError> {
         Ok(Self {
-            url: std::env::var("DATABASE_URL")
-                .unwrap_or_else(|_| "postgres://postgres:postgres@localhost:5432/sensei".to_string()),
+            url: std::env::var("DATABASE_URL").unwrap_or_else(|_| {
+                "postgres://postgres:postgres@localhost:5432/sensei".to_string()
+            }),
             max_connections: parse_env_int("DB_MAX_CONNECTIONS", 20u32)?,
             connection_timeout_secs: parse_env_int("DB_CONNECTION_TIMEOUT", 30u64)?,
             auto_migrate: parse_env_bool("DB_AUTO_MIGRATE", true)?,
@@ -167,7 +168,8 @@ impl AuthConfig {
         Ok(Self {
             jwt_secret,
             jwt_issuer: std::env::var("JWT_ISSUER").unwrap_or_else(|_| "sensei".to_string()),
-            jwt_audience: std::env::var("JWT_AUDIENCE").unwrap_or_else(|_| "sensei-api".to_string()),
+            jwt_audience: std::env::var("JWT_AUDIENCE")
+                .unwrap_or_else(|_| "sensei-api".to_string()),
             access_token_expiry_minutes: parse_env_int("JWT_ACCESS_EXPIRY_MINUTES", 15i64)?,
             refresh_token_expiry_days: parse_env_int("JWT_REFRESH_EXPIRY_DAYS", 7i64)?,
             oauth2: OAuth2ProviderConfig::from_env()?,
@@ -256,10 +258,8 @@ impl EventBusConfig {
     /// Load event bus configuration from environment variables.
     pub fn from_env() -> Result<Self, ConfigError> {
         Ok(Self {
-            url: std::env::var("NATS_URL")
-                .unwrap_or_else(|_| "nats://localhost:4222".to_string()),
-            cluster: std::env::var("NATS_CLUSTER")
-                .unwrap_or_else(|_| "sensei".to_string()),
+            url: std::env::var("NATS_URL").unwrap_or_else(|_| "nats://localhost:4222".to_string()),
+            cluster: std::env::var("NATS_CLUSTER").unwrap_or_else(|_| "sensei".to_string()),
             max_reconnect: parse_env_int("NATS_MAX_RECONNECT", 10usize)?,
         })
     }
@@ -366,7 +366,8 @@ impl ObservabilityConfig {
             log_level: std::env::var("SENSEI_LOG")
                 .or_else(|_| std::env::var("LOG_LEVEL"))
                 .unwrap_or_else(|_| "info".to_string()),
-            json_logs: match std::env::var("SENSEI_JSON_LOGS").or_else(|_| std::env::var("JSON_LOGS"))
+            json_logs: match std::env::var("SENSEI_JSON_LOGS")
+                .or_else(|_| std::env::var("JSON_LOGS"))
             {
                 Ok(value) => parse_bool(&value, "JSON_LOGS")?,
                 Err(_) => false,
@@ -519,11 +520,13 @@ where
     T: FromStr<Err = ParseIntError>,
 {
     match std::env::var(var) {
-        Ok(value) => value.parse::<T>().map_err(|source| ConfigError::InvalidInt {
-            var: var.to_string(),
-            value,
-            source,
-        }),
+        Ok(value) => value
+            .parse::<T>()
+            .map_err(|source| ConfigError::InvalidInt {
+                var: var.to_string(),
+                value,
+                source,
+            }),
         Err(_) => Ok(default),
     }
 }
@@ -596,7 +599,10 @@ mod tests {
 
     #[test]
     fn parse_env_int_unset_uses_default() {
-        assert_eq!(parse_env_int("SENSEI_TEST_UNSET_INT_VAR_XYZZY", 5).unwrap(), 5);
+        assert_eq!(
+            parse_env_int("SENSEI_TEST_UNSET_INT_VAR_XYZZY", 5).unwrap(),
+            5
+        );
     }
 
     #[test]

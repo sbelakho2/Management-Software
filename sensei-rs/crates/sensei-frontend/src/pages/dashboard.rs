@@ -4,20 +4,15 @@
 //! and a Module for quick links. Header/nav elements removed since they
 //! are now provided by RootLayout / RackSidebar.
 
-use serde::{Deserialize, Serialize};
 use crate::api::{
-    finance::FinanceApi,
-    hr::HrApi,
-    maintenance::MaintenanceApi,
-    ops::OpsApi,
-    production::ProductionApi,
-    quality::QualityApi,
-    supply_chain::SupplyChainApi,
+    finance::FinanceApi, hr::HrApi, maintenance::MaintenanceApi, ops::OpsApi,
+    production::ProductionApi, quality::QualityApi, supply_chain::SupplyChainApi,
 };
 use crate::components::metric_display::MetricDisplay;
 use crate::components::module::Module;
 use crate::state::AppState;
 use leptos::prelude::*;
+use serde::{Deserialize, Serialize};
 
 /// Dashboard metrics fetched on mount.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -49,58 +44,90 @@ pub fn DashboardPage() -> impl IntoView {
             let client = state.api_client();
             let mut m = DashboardMetrics::default();
 
-                // Quality
-                if let Ok(ncrs) = QualityApi::list_ncrs(&client).await {
-                    m.open_ncrs = ncrs.iter().filter(|n| n.status == "Open" || n.status == "open").count();
-                }
-                if let Ok(capas) = QualityApi::list_capas(&client).await {
-                    m.active_capas = capas.iter().filter(|c| c.status != "Closed" && c.status != "closed").count();
-                }
-
-                // Production
-                if let Ok(wos) = ProductionApi::list_work_orders(&client).await {
-                    m.open_work_orders = wos.iter().filter(|wo| wo.status != "Completed" && wo.status != "completed").count();
-                }
-
-                // Maintenance
-                if let Ok(wrs) = MaintenanceApi::list_work_requests(&client).await {
-                    m.open_work_requests = wrs.iter().filter(|wr| wr.status != "Completed" && wr.status != "completed").count();
-                }
-                if let Ok(pms) = MaintenanceApi::list_pm_schedules(&client).await {
-                    m.overdue_pm_tasks = pms.iter().filter(|pm| pm.status == "Overdue" || pm.status == "overdue").count();
-                }
-
-                // HR
-                if let Ok(emps) = HrApi::list_employees(&client).await {
-                    m.total_employees = emps.len();
-                }
-                if let Ok(leaves) = HrApi::list_leave_requests(&client).await {
-                    m.pending_leave = leaves.iter().filter(|l| l.status == "Pending" || l.status == "pending").count();
-                }
-
-                // Operations
-                if let Ok(andons) = OpsApi::list_andons(&client).await {
-                    m.active_andons = andons.iter().filter(|a| a.status != "Resolved" && a.status != "resolved").count();
-                }
-                if let Ok(projects) = OpsApi::list_projects(&client).await {
-                    m.active_projects = projects.iter().filter(|p| p.status != "Completed" && p.status != "completed" && p.status != "Closed" && p.status != "closed").count();
-                }
-                if let Ok(risks) = OpsApi::list_risks(&client).await {
-                    m.active_risks = risks.iter().filter(|r| r.status != "Mitigated" && r.status != "mitigated").count();
-                }
-
-                // Finance
-                if let Ok(invs) = FinanceApi::list_invoices(&client).await {
-                    m.total_invoices = invs.len();
-                }
-
-                // Supply Chain
-                if let Ok(inv) = SupplyChainApi::list_inventory(&client).await {
-                    m.total_inventory_items = inv.len();
-                }
-
-                m
+            // Quality
+            if let Ok(ncrs) = QualityApi::list_ncrs(&client).await {
+                m.open_ncrs = ncrs
+                    .iter()
+                    .filter(|n| n.status == "Open" || n.status == "open")
+                    .count();
             }
+            if let Ok(capas) = QualityApi::list_capas(&client).await {
+                m.active_capas = capas
+                    .iter()
+                    .filter(|c| c.status != "Closed" && c.status != "closed")
+                    .count();
+            }
+
+            // Production
+            if let Ok(wos) = ProductionApi::list_work_orders(&client).await {
+                m.open_work_orders = wos
+                    .iter()
+                    .filter(|wo| wo.status != "Completed" && wo.status != "completed")
+                    .count();
+            }
+
+            // Maintenance
+            if let Ok(wrs) = MaintenanceApi::list_work_requests(&client).await {
+                m.open_work_requests = wrs
+                    .iter()
+                    .filter(|wr| wr.status != "Completed" && wr.status != "completed")
+                    .count();
+            }
+            if let Ok(pms) = MaintenanceApi::list_pm_schedules(&client).await {
+                m.overdue_pm_tasks = pms
+                    .iter()
+                    .filter(|pm| pm.status == "Overdue" || pm.status == "overdue")
+                    .count();
+            }
+
+            // HR
+            if let Ok(emps) = HrApi::list_employees(&client).await {
+                m.total_employees = emps.len();
+            }
+            if let Ok(leaves) = HrApi::list_leave_requests(&client).await {
+                m.pending_leave = leaves
+                    .iter()
+                    .filter(|l| l.status == "Pending" || l.status == "pending")
+                    .count();
+            }
+
+            // Operations
+            if let Ok(andons) = OpsApi::list_andons(&client).await {
+                m.active_andons = andons
+                    .iter()
+                    .filter(|a| a.status != "Resolved" && a.status != "resolved")
+                    .count();
+            }
+            if let Ok(projects) = OpsApi::list_projects(&client).await {
+                m.active_projects = projects
+                    .iter()
+                    .filter(|p| {
+                        p.status != "Completed"
+                            && p.status != "completed"
+                            && p.status != "Closed"
+                            && p.status != "closed"
+                    })
+                    .count();
+            }
+            if let Ok(risks) = OpsApi::list_risks(&client).await {
+                m.active_risks = risks
+                    .iter()
+                    .filter(|r| r.status != "Mitigated" && r.status != "mitigated")
+                    .count();
+            }
+
+            // Finance
+            if let Ok(invs) = FinanceApi::list_invoices(&client).await {
+                m.total_invoices = invs.len();
+            }
+
+            // Supply Chain
+            if let Ok(inv) = SupplyChainApi::list_inventory(&client).await {
+                m.total_inventory_items = inv.len();
+            }
+
+            m
+        }
     });
 
     view! {

@@ -16,10 +16,10 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use chrono::{DateTime, Utc};
-use serde::Deserialize;
 use sensei_auth::middleware::AuthenticatedUser;
 use sensei_core::error::{Result, SenseiError};
 use sensei_services::export::pdf::{AuditData, CapaData, InspectionData, NcrData, WorkOrderData};
+use serde::Deserialize;
 use uuid::Uuid;
 
 use crate::state::AppState;
@@ -91,13 +91,40 @@ pub async fn export_entity(
 
     match entity_type.as_str() {
         "ncr" => {
-            export_ncr(state, tenant_id, &format, params.id, params.status.as_deref(), date_from, date_to).await
+            export_ncr(
+                state,
+                tenant_id,
+                &format,
+                params.id,
+                params.status.as_deref(),
+                date_from,
+                date_to,
+            )
+            .await
         }
         "capa" => {
-            export_capa(state, tenant_id, &format, params.id, params.status.as_deref(), date_from, date_to).await
+            export_capa(
+                state,
+                tenant_id,
+                &format,
+                params.id,
+                params.status.as_deref(),
+                date_from,
+                date_to,
+            )
+            .await
         }
         "audit" => {
-            export_audit(state, tenant_id, &format, params.id, params.status.as_deref(), date_from, date_to).await
+            export_audit(
+                state,
+                tenant_id,
+                &format,
+                params.id,
+                params.status.as_deref(),
+                date_from,
+                date_to,
+            )
+            .await
         }
         "work-order" => {
             export_work_order(
@@ -134,9 +161,7 @@ pub async fn export_entity(
 ///
 /// `fetch_page(page)` returns the page; the loop stops when a page returns
 /// fewer items than the page size or the response's page count is reached.
-async fn fetch_all_pages<T, F>(
-    mut fetch_page: F,
-) -> Result<Vec<T>>
+async fn fetch_all_pages<T, F>(mut fetch_page: F) -> Result<Vec<T>>
 where
     F: FnMut(usize) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Vec<T>>> + Send>>,
 {
@@ -171,10 +196,7 @@ async fn export_ncr(
     date_to: Option<DateTime<Utc>>,
 ) -> Result<Response> {
     let ncrs = if let Some(ncr_id) = id {
-        let ncr = state
-            .quality_service
-            .get_ncr(tenant_id, ncr_id)
-            .await?;
+        let ncr = state.quality_service.get_ncr(tenant_id, ncr_id).await?;
         vec![ncr]
     } else {
         let status_owned = status.map(|s| s.to_string());
@@ -183,7 +205,14 @@ async fn export_ncr(
             let status = status_owned.clone();
             Box::pin(async move {
                 let page = svc
-                    .list_ncrs(tenant_id, status.as_deref(), None, None, Some(page), Some(EXPORT_PAGE_SIZE))
+                    .list_ncrs(
+                        tenant_id,
+                        status.as_deref(),
+                        None,
+                        None,
+                        Some(page),
+                        Some(EXPORT_PAGE_SIZE),
+                    )
                     .await?;
                 Ok(page.data)
             })
@@ -212,10 +241,7 @@ async fn export_ncr(
                         description: ncr.description,
                         status: ncr.status.as_str().to_string(),
                         severity: nc_severity_str(&ncr.severity).to_string(),
-                        created_by: ncr
-                            .detected_by
-                            .map(|u| u.to_string())
-                            .unwrap_or_default(),
+                        created_by: ncr.detected_by.map(|u| u.to_string()).unwrap_or_default(),
                         created_at: ncr.created_at.to_rfc3339(),
                         department: ncr.department.unwrap_or_default(),
                         corrective_actions,
@@ -262,7 +288,13 @@ async fn export_capa(
             let status = status_owned.clone();
             Box::pin(async move {
                 let page = svc
-                    .list_capas(tenant_id, status.as_deref(), None, Some(page), Some(EXPORT_PAGE_SIZE))
+                    .list_capas(
+                        tenant_id,
+                        status.as_deref(),
+                        None,
+                        Some(page),
+                        Some(EXPORT_PAGE_SIZE),
+                    )
                     .await?;
                 Ok(page.data)
             })
@@ -296,14 +328,8 @@ async fn export_capa(
                         root_cause,
                         action_plan,
                         status: capa_status_str(&capa.status).to_string(),
-                        deadline: capa
-                            .due_date
-                            .map(|d| d.to_rfc3339())
-                            .unwrap_or_default(),
-                        assigned_to: capa
-                            .owner_id
-                            .map(|u| u.to_string())
-                            .unwrap_or_default(),
+                        deadline: capa.due_date.map(|d| d.to_rfc3339()).unwrap_or_default(),
+                        assigned_to: capa.owner_id.map(|u| u.to_string()).unwrap_or_default(),
                     };
                     pdf_svc.generate_capa_report(&data)
                 })
@@ -347,7 +373,13 @@ async fn export_audit(
             let status = status_owned.clone();
             Box::pin(async move {
                 let page = svc
-                    .list_audits(tenant_id, status.as_deref(), None, Some(page), Some(EXPORT_PAGE_SIZE))
+                    .list_audits(
+                        tenant_id,
+                        status.as_deref(),
+                        None,
+                        Some(page),
+                        Some(EXPORT_PAGE_SIZE),
+                    )
                     .await?;
                 Ok(page.data)
             })
@@ -456,7 +488,13 @@ async fn export_work_order(
             let status = status_owned.clone();
             Box::pin(async move {
                 let page = svc
-                    .list_work_orders(tenant_id, status.as_deref(), None, Some(page), Some(EXPORT_PAGE_SIZE))
+                    .list_work_orders(
+                        tenant_id,
+                        status.as_deref(),
+                        None,
+                        Some(page),
+                        Some(EXPORT_PAGE_SIZE),
+                    )
                     .await?;
                 Ok(page.data)
             })
@@ -489,19 +527,14 @@ async fn export_work_order(
                             .or(wo.actual_end)
                             .map(|d| d.to_rfc3339())
                             .unwrap_or_default(),
-                        work_center: wo
-                            .work_center_id
-                            .map(|u| u.to_string())
-                            .unwrap_or_default(),
+                        work_center: wo.work_center_id.map(|u| u.to_string()).unwrap_or_default(),
                         // Estimated hours are not tracked on the work order
                         // entity; derive a duration estimate from the
                         // scheduled window when one exists.
                         estimated_hours: wo
                             .scheduled_start
                             .zip(wo.scheduled_end)
-                            .map(|(s, e)| {
-                                (e - s).num_minutes() as f64 / 60.0
-                            })
+                            .map(|(s, e)| (e - s).num_minutes() as f64 / 60.0)
                             .unwrap_or(0.0),
                     };
                     pdf_svc.generate_work_order(&data)
@@ -576,7 +609,13 @@ async fn export_inspection(
                     c.specification.parse().unwrap_or(0.0),
                     c.result.parse().unwrap_or(0.0),
                     c.is_conforming
-                        .map(|v| if v { "Pass".to_string() } else { "Fail".to_string() })
+                        .map(|v| {
+                            if v {
+                                "Pass".to_string()
+                            } else {
+                                "Fail".to_string()
+                            }
+                        })
                         .unwrap_or_else(|| c.result.clone()),
                 )
             })
@@ -630,8 +669,14 @@ async fn export_inspection(
             .map(|c| {
                 (
                     c.characteristic.clone(),
-                    c.specification.as_deref().and_then(|s| s.parse().ok()).unwrap_or(0.0),
-                    c.actual_value.as_deref().and_then(|s| s.parse().ok()).unwrap_or(0.0),
+                    c.specification
+                        .as_deref()
+                        .and_then(|s| s.parse().ok())
+                        .unwrap_or(0.0),
+                    c.actual_value
+                        .as_deref()
+                        .and_then(|s| s.parse().ok())
+                        .unwrap_or(0.0),
                     c.result.clone(),
                 )
             })

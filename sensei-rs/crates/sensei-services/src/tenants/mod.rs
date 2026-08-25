@@ -6,7 +6,7 @@
 use async_trait::async_trait;
 use sensei_core::domain::entities::Tenant;
 use sensei_core::error::{Result, SenseiError};
-use sensei_core::types::{TenantId, now};
+use sensei_core::types::{now, TenantId};
 use std::collections::HashMap;
 use tokio::sync::RwLock;
 
@@ -60,7 +60,11 @@ impl Default for InMemoryTenantsService {
 #[async_trait]
 impl TenantsService for InMemoryTenantsService {
     async fn create_tenant(&self, mut tenant: Tenant) -> Result<Tenant> {
-        tenant.id = sensei_core::types::new_id();
+        // Preserve a caller-supplied id (callers seed/bootstrap tenants with
+        // a known id); only generate one when absent.
+        if tenant.id.is_nil() {
+            tenant.id = sensei_core::types::new_id();
+        }
         tenant.created_at = now();
         tenant.updated_at = now();
         let id = tenant.id;
@@ -138,9 +142,11 @@ mod tests {
         let svc = make_service();
 
         svc.create_tenant(Tenant::new("Alpha".into(), "alpha".into()))
-            .await.unwrap();
+            .await
+            .unwrap();
         svc.create_tenant(Tenant::new("Beta".into(), "beta".into()))
-            .await.unwrap();
+            .await
+            .unwrap();
 
         let list = svc.list_tenants().await.unwrap();
         assert_eq!(list.len(), 2);

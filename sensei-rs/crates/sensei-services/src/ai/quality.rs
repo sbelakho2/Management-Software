@@ -239,8 +239,7 @@ impl QualityEngine {
             };
         }
 
-        let result =
-            sensei_zt::stats::calculate_capability(&data, lsl, usl, subgroup_size);
+        let result = sensei_zt::stats::calculate_capability(&data, lsl, usl, subgroup_size);
 
         // Calculate sigma level (Z-score for defects)
         // Sigma level = norm_s_inv(1 - total_defect_pct/2,000,000) + 1.5 (shift)
@@ -280,11 +279,7 @@ impl QualityEngine {
     }
 
     /// Create an X̄-R (X-bar R) control chart for a set of measurements.
-    pub fn create_xbar_r_chart(
-        &self,
-        product_key: &str,
-        subgroup_size: usize,
-    ) -> ControlChart {
+    pub fn create_xbar_r_chart(&self, product_key: &str, subgroup_size: usize) -> ControlChart {
         let entries = match self.measurements.get(product_key) {
             Some(e) => e,
             None => {
@@ -413,10 +408,7 @@ impl QualityEngine {
             if in_zone_a >= 2 {
                 violations.push(ControlChartViolation {
                     rule: ZoneRuleViolation::TwoOfThreeInZoneA,
-                    description: format!(
-                        "Points {}-{}: two of three in Zone A (2σ–3σ)",
-                        i, i + 2
-                    ),
+                    description: format!("Points {}-{}: two of three in Zone A (2σ–3σ)", i, i + 2),
                     point_index: i + 1,
                     severity: 0.8,
                 });
@@ -433,10 +425,7 @@ impl QualityEngine {
             if in_zone_b >= 4 {
                 violations.push(ControlChartViolation {
                     rule: ZoneRuleViolation::FourOfFiveInZoneB,
-                    description: format!(
-                        "Points {}-{}: four of five in Zone B (1σ–3σ)",
-                        i, i + 4
-                    ),
+                    description: format!("Points {}-{}: four of five in Zone B (1σ–3σ)", i, i + 4),
                     point_index: i + 2,
                     severity: 0.6,
                 });
@@ -454,7 +443,8 @@ impl QualityEngine {
                     rule: ZoneRuleViolation::EightOnOneSide,
                     description: format!(
                         "Points {}-{}: eight consecutive on one side of center line",
-                        i, i + 7
+                        i,
+                        i + 7
                     ),
                     point_index: i + 4,
                     severity: 0.7,
@@ -475,7 +465,11 @@ impl QualityEngine {
                         "Points {}-{}: six consecutive points {}",
                         i,
                         i + 5,
-                        if increasing { "increasing" } else { "decreasing" }
+                        if increasing {
+                            "increasing"
+                        } else {
+                            "decreasing"
+                        }
                     ),
                     point_index: i + 3,
                     severity: 0.5,
@@ -501,7 +495,8 @@ impl QualityEngine {
                     rule: ZoneRuleViolation::FourteenPointOscillation,
                     description: format!(
                         "Points {}-{}: fourteen consecutive points alternating up and down",
-                        i, i + 13
+                        i,
+                        i + 13
                     ),
                     point_index: i + 7,
                     severity: 0.5,
@@ -544,11 +539,7 @@ impl QualityEngine {
     }
 
     /// Analyze defects from a set of defect data.
-    pub fn analyze_defects(
-        &self,
-        total_units: u64,
-        defects: &[(String, u64)],
-    ) -> DefectAnalysis {
+    pub fn analyze_defects(&self, total_units: u64, defects: &[(String, u64)]) -> DefectAnalysis {
         let mut defects_by_type: HashMap<String, u64> = HashMap::new();
         let mut total_defects = 0u64;
 
@@ -568,7 +559,7 @@ impl QualityEngine {
             .iter()
             .map(|(k, v)| (k.clone(), *v, 0.0))
             .collect();
-        pareto.sort_by(|a, b| b.1.cmp(&a.1));
+        pareto.sort_by_key(|a| std::cmp::Reverse(a.1));
 
         let mut cumulative = 0u64;
         for (_, count, pct) in &mut pareto {
@@ -684,16 +675,23 @@ mod tests {
 
         // Centered, low-variance process
         let data = vec![
-            10.05, 9.95, 10.02, 9.98, 10.01,
-            10.03, 9.97, 10.00, 10.04, 9.96,
+            10.05, 9.95, 10.02, 9.98, 10.01, 10.03, 9.97, 10.00, 10.04, 9.96,
         ];
         for m in create_measurements(&data) {
             engine.record_measurement("product-a:length", m);
         }
 
         let capability = engine.calculate_capability("product-a:length", 9.5, 10.5, 10.0, 5);
-        assert!(capability.cp > 1.0, "Cp should be > 1.0, got {}", capability.cp);
-        assert!(capability.cpk > 0.5, "Cpk should be > 0.5, got {}", capability.cpk);
+        assert!(
+            capability.cp > 1.0,
+            "Cp should be > 1.0, got {}",
+            capability.cp
+        );
+        assert!(
+            capability.cpk > 0.5,
+            "Cpk should be > 0.5, got {}",
+            capability.cpk
+        );
         assert!((capability.mean - 10.0).abs() < 0.05);
     }
 
@@ -721,7 +719,9 @@ mod tests {
         let mut engine = QualityEngine::new(100);
 
         // In-control process
-        let data: Vec<f64> = (0..25).map(|_| 10.0 + rand::random::<f64>() * 0.2 - 0.1).collect();
+        let data: Vec<f64> = (0..25)
+            .map(|_| 10.0 + rand::random::<f64>() * 0.2 - 0.1)
+            .collect();
         for m in create_measurements(&data) {
             engine.record_measurement("product-b:diameter", m);
         }
@@ -740,7 +740,9 @@ mod tests {
         let data = vec![10.0, 10.1, 9.9, 10.0, 10.2, 9.8, 10.0, 15.0, 10.0, 9.9];
         let violations = engine.detect_zone_violations(&data, 10.0, 12.0, 8.0);
         assert!(!violations.is_empty());
-        assert!(violations.iter().any(|v| v.rule == ZoneRuleViolation::PointBeyond3Sigma));
+        assert!(violations
+            .iter()
+            .any(|v| v.rule == ZoneRuleViolation::PointBeyond3Sigma));
     }
 
     #[test]
@@ -750,7 +752,9 @@ mod tests {
         // Eight consecutive points above center
         let data = vec![10.1, 10.2, 10.15, 10.3, 10.25, 10.1, 10.2, 10.15];
         let violations = engine.detect_zone_violations(&data, 10.0, 11.0, 9.0);
-        assert!(violations.iter().any(|v| v.rule == ZoneRuleViolation::EightOnOneSide));
+        assert!(violations
+            .iter()
+            .any(|v| v.rule == ZoneRuleViolation::EightOnOneSide));
     }
 
     #[test]
@@ -760,7 +764,9 @@ mod tests {
         // Six consecutive increasing points
         let data = vec![10.0, 10.1, 10.2, 10.3, 10.4, 10.5];
         let violations = engine.detect_zone_violations(&data, 10.0, 12.0, 8.0);
-        assert!(violations.iter().any(|v| v.rule == ZoneRuleViolation::SixPointTrend));
+        assert!(violations
+            .iter()
+            .any(|v| v.rule == ZoneRuleViolation::SixPointTrend));
     }
 
     #[test]
@@ -783,11 +789,9 @@ mod tests {
         // A monotonic run of the same length must NOT trigger the rule.
         let monotonic: Vec<f64> = (0..14).map(|i| 10.0 + i as f64 * 0.01).collect();
         let violations = engine.detect_zone_violations(&monotonic, 10.0, 11.0, 9.0);
-        assert!(
-            !violations
-                .iter()
-                .any(|v| v.rule == ZoneRuleViolation::FourteenPointOscillation)
-        );
+        assert!(!violations
+            .iter()
+            .any(|v| v.rule == ZoneRuleViolation::FourteenPointOscillation));
     }
 
     #[test]
@@ -817,8 +821,7 @@ mod tests {
         let mut engine = QualityEngine::new(100);
 
         let data = vec![
-            10.05, 9.95, 10.02, 9.98, 10.01,
-            10.03, 9.97, 10.00, 10.04, 9.96,
+            10.05, 9.95, 10.02, 9.98, 10.01, 10.03, 9.97, 10.00, 10.04, 9.96,
         ];
         for m in create_measurements(&data) {
             engine.record_measurement("product-c:thickness", m);
@@ -839,10 +842,7 @@ mod tests {
         }
 
         let summary = engine.get_summary();
-        assert_eq!(
-            summary.get("metrics_tracked").unwrap().as_u64().unwrap(),
-            1
-        );
+        assert_eq!(summary.get("metrics_tracked").unwrap().as_u64().unwrap(), 1);
         assert_eq!(
             summary.get("total_measurements").unwrap().as_u64().unwrap(),
             3
@@ -859,7 +859,9 @@ mod tests {
     #[test]
     fn test_capability_with_large_subgroup() {
         let mut engine = QualityEngine::new(1000);
-        let data: Vec<f64> = (0..100).map(|_| 50.0 + rand::random::<f64>() * 2.0 - 1.0).collect();
+        let data: Vec<f64> = (0..100)
+            .map(|_| 50.0 + rand::random::<f64>() * 2.0 - 1.0)
+            .collect();
         for m in create_measurements(&data) {
             engine.record_measurement("product-d:weight", m);
         }

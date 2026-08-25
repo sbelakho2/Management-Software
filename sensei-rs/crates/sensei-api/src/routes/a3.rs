@@ -3,13 +3,16 @@
 //! Provides endpoints for creating, reviewing, updating, and closing
 //! A3 problem-solving reports following the structured A3 methodology.
 
-use axum::{Json, extract::{Path, Query, State}};
-use serde::Deserialize;
+use axum::{
+    extract::{Path, Query, State},
+    Json,
+};
 use sensei_auth::middleware::AuthenticatedUser;
 use sensei_core::domain::events::{A3ClosedEvent, A3CreatedEvent};
 use sensei_core::error::Result;
 use sensei_core::pagination::PaginatedResponse;
 use sensei_services::ops::A3;
+use serde::Deserialize;
 use uuid::Uuid;
 
 use crate::state::AppState;
@@ -35,7 +38,12 @@ pub async fn list_a3s(
     let tenant_id = user.tenant_id;
     let a3s = state
         .ops_service
-        .list_a3s(tenant_id, params.status.as_deref(), params.page, params.per_page)
+        .list_a3s(
+            tenant_id,
+            params.status.as_deref(),
+            params.page,
+            params.per_page,
+        )
         .await?;
     Ok(Json(a3s))
 }
@@ -47,10 +55,7 @@ pub async fn create_a3(
     Json(req): Json<A3>,
 ) -> Result<Json<A3>> {
     let tenant_id = user.tenant_id;
-    let a3 = state
-        .ops_service
-        .create_a3(tenant_id, req)
-        .await?;
+    let a3 = state.ops_service.create_a3(tenant_id, req).await?;
 
     // Publish A3 created event for notification triggers and downstream
     // consumers, derived from the real entity fields (no hardcoded
@@ -86,10 +91,7 @@ pub async fn get_a3(
     Path(id): Path<Uuid>,
 ) -> Result<Json<A3>> {
     let tenant_id = user.tenant_id;
-    let a3 = state
-        .ops_service
-        .get_a3(tenant_id, id)
-        .await?;
+    let a3 = state.ops_service.get_a3(tenant_id, id).await?;
     Ok(Json(a3))
 }
 
@@ -101,10 +103,7 @@ pub async fn update_a3(
     Json(req): Json<A3>,
 ) -> Result<Json<A3>> {
     let tenant_id = user.tenant_id;
-    let a3 = state
-        .ops_service
-        .update_a3(tenant_id, id, req)
-        .await?;
+    let a3 = state.ops_service.update_a3(tenant_id, id, req).await?;
     Ok(Json(a3))
 }
 
@@ -115,10 +114,7 @@ pub async fn close_a3(
     Path(id): Path<Uuid>,
 ) -> Result<Json<A3>> {
     let tenant_id = user.tenant_id;
-    let a3 = state
-        .ops_service
-        .close_a3(tenant_id, id)
-        .await?;
+    let a3 = state.ops_service.close_a3(tenant_id, id).await?;
 
     // Publish A3 closed event; the outcome is the entity's actual status
     // after closure (e.g. "closed"), never a hardcoded value.

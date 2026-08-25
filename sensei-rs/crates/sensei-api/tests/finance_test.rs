@@ -52,15 +52,22 @@ async fn test_create_and_get_invoice() {
     let invoice_id = json["id"].as_str().unwrap_or("").to_string();
     assert!(!invoice_id.is_empty());
     let inv_num = json["invoice_number"].as_str().unwrap_or("").to_string();
-    assert!(inv_num.starts_with("INV-"), "invoice_number should start with INV-, got {inv_num}");
+    assert!(
+        inv_num.starts_with("INV-"),
+        "invoice_number should start with INV-, got {inv_num}"
+    );
 
     // Get the invoice
-    let req_get = app.get_authenticated(&format!("/api/v1/finance/invoices/{}", invoice_id), &token);
+    let req_get =
+        app.get_authenticated(&format!("/api/v1/finance/invoices/{}", invoice_id), &token);
     let mut resp_get = app.send_request(req_get).await;
     assert_eq!(resp_get.status(), StatusCode::OK);
     let json_get: Value = app.json_body(&mut resp_get).await;
     let inv_num_get = json_get["invoice_number"].as_str().unwrap_or("");
-    assert!(inv_num_get.starts_with("INV-"), "invoice_number should start with INV-, got {inv_num_get}");
+    assert!(
+        inv_num_get.starts_with("INV-"),
+        "invoice_number should start with INV-, got {inv_num_get}"
+    );
 }
 
 #[tokio::test]
@@ -265,12 +272,8 @@ async fn seeded_three_way_app() -> (common::TestApp, Uuid, Uuid, Uuid) {
     let password = "TestAdmin123!";
     let hash = sensei_auth::password::hash_password(password).unwrap();
     let tenant_id = Uuid::new_v4();
-    let users_service = InMemoryUsersService::with_admin(
-        "admin@sensei.test",
-        "Admin User",
-        &hash,
-        tenant_id,
-    );
+    let users_service =
+        InMemoryUsersService::with_admin("admin@sensei.test", "Admin User", &hash, tenant_id);
     let users_service = Arc::new(users_service) as Arc<dyn UsersService>;
     let config = AppConfig::from_env().unwrap();
     let mut state = AppState::new(config, users_service);

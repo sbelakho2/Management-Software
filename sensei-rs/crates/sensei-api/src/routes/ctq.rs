@@ -4,12 +4,15 @@
 //! recording measurements, tracking conformance, and analyzing quality
 //! performance against specification limits.
 
-use axum::{Json, extract::{Path, Query, State}};
+use axum::{
+    extract::{Path, Query, State},
+    Json,
+};
 use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
 use sensei_auth::middleware::AuthenticatedUser;
 use sensei_core::error::{Result, SenseiError};
 use sensei_core::pagination::PaginatedResponse;
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::state::AppState;
@@ -226,7 +229,10 @@ pub async fn create_characteristic(
         updated_at: now,
     };
 
-    get_char_store(&state).write().await.insert(char.id, char.clone());
+    get_char_store(&state)
+        .write()
+        .await
+        .insert(char.id, char.clone());
     Ok(Json(char))
 }
 
@@ -311,7 +317,7 @@ pub async fn list_records(
         .cloned()
         .collect();
 
-    items.sort_by(|a, b| b.recorded_at.cmp(&a.recorded_at));
+    items.sort_by_key(|a| std::cmp::Reverse(a.recorded_at));
     let total = items.len();
     let page = params.page.unwrap_or(1);
     let per_page = params.per_page.unwrap_or(20).min(100);
@@ -349,7 +355,10 @@ pub async fn create_record(
     let recorded_at = parse_dt(req.recorded_at.as_deref()).unwrap_or_else(Utc::now);
 
     // Determine conformance based on specification limits
-    let is_conforming = match (characteristic.specification_limit_lower, characteristic.specification_limit_upper) {
+    let is_conforming = match (
+        characteristic.specification_limit_lower,
+        characteristic.specification_limit_upper,
+    ) {
         (Some(lsl), Some(usl)) => req.value >= lsl && req.value <= usl,
         (Some(lsl), None) => req.value >= lsl,
         (None, Some(usl)) => req.value <= usl,
@@ -416,12 +425,18 @@ pub async fn get_conformance_analysis(
     let (mean, std_dev, min, max) = compute_stats(&values);
 
     // Calculate Cp and Cpk
-    let cp = match (characteristic.specification_limit_lower, characteristic.specification_limit_upper) {
+    let cp = match (
+        characteristic.specification_limit_lower,
+        characteristic.specification_limit_upper,
+    ) {
         (Some(lsl), Some(usl)) if std_dev > 0.0 => (usl - lsl) / (6.0 * std_dev),
         _ => 0.0,
     };
 
-    let cpk = match (characteristic.specification_limit_lower, characteristic.specification_limit_upper) {
+    let cpk = match (
+        characteristic.specification_limit_lower,
+        characteristic.specification_limit_upper,
+    ) {
         (Some(lsl), Some(usl)) if std_dev > 0.0 => {
             let cpu = (usl - mean) / (3.0 * std_dev);
             let cpl = (mean - lsl) / (3.0 * std_dev);

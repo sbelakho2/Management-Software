@@ -111,7 +111,10 @@ pub fn relu_f32_fallback(tensor: &mut [f32]) {
 
 /// Pure-Rust fallback for `softmax_f32` (stable softmax).
 pub fn softmax_f32_fallback(tensor: &mut [f32], dim: usize) {
-    assert!(tensor.len() % dim == 0, "tensor length not divisible by dim");
+    assert!(
+        tensor.len().is_multiple_of(dim),
+        "tensor length not divisible by dim"
+    );
     let batch_count = tensor.len() / dim;
 
     for batch in 0..batch_count {
@@ -148,7 +151,10 @@ pub fn argmax_f32_fallback(tensor: &[f32], _dim: usize) -> usize {
 
 /// Pure-Rust fallback for per-slice argmax.
 pub fn argmax_f32_dim_fallback(tensor: &[f32], dim: usize) -> Vec<usize> {
-    assert!(tensor.len() % dim == 0, "tensor length not divisible by dim");
+    assert!(
+        tensor.len().is_multiple_of(dim),
+        "tensor length not divisible by dim"
+    );
     let batch_count = tensor.len() / dim;
 
     (0..batch_count)
@@ -186,9 +192,7 @@ pub fn matrix_multiply_f32(
 ) -> Result<Vec<f32>, SenseiError> {
     #[cfg(not(no_zig))]
     {
-        let ptr = unsafe {
-            sensei_tensor_matrix_multiply_f32(a.as_ptr(), b.as_ptr(), m, n, k)
-        };
+        let ptr = unsafe { sensei_tensor_matrix_multiply_f32(a.as_ptr(), b.as_ptr(), m, n, k) };
         if ptr.is_null() {
             return Err(SenseiError::Internal(
                 "matrix_multiply_f32: Zig allocation failed".into(),
@@ -274,7 +278,7 @@ pub fn argmax_f32(tensor: &[f32], dim: usize) -> Result<usize, SenseiError> {
 ///
 /// Returns an error when `tensor.len()` is not divisible by `dim`.
 pub fn argmax_f32_dim(tensor: &[f32], dim: usize) -> Result<Vec<usize>, SenseiError> {
-    if dim == 0 || tensor.len() % dim != 0 {
+    if dim == 0 || !tensor.len().is_multiple_of(dim) {
         return Err(SenseiError::Validation(format!(
             "tensor length {} must be divisible by dim {}",
             tensor.len(),
@@ -287,7 +291,9 @@ pub fn argmax_f32_dim(tensor: &[f32], dim: usize) -> Result<Vec<usize>, SenseiEr
         let batch_count = tensor.len() / dim;
         let ptr = unsafe { sensei_tensor_argmax_f32_dim(tensor.as_ptr(), tensor.len(), dim) };
         if ptr.is_null() {
-            return Err(SenseiError::Internal("Zig argmax_f32_dim failed".to_string()));
+            return Err(SenseiError::Internal(
+                "Zig argmax_f32_dim failed".to_string(),
+            ));
         }
         let result = unsafe { std::slice::from_raw_parts(ptr, batch_count) }.to_vec();
         unsafe { sensei_free(ptr as *mut u8, batch_count * std::mem::size_of::<usize>()) };
@@ -383,9 +389,9 @@ impl OnnxModel {
     /// Only compiled when Zig FFI is available.
     #[cfg(not(no_zig))]
     fn run_onnx(&self, inputs: &[TensorInput]) -> Result<Vec<TensorOutput>, SenseiError> {
-        let input = inputs.first().ok_or_else(|| {
-            SenseiError::Validation("at least one input tensor required".into())
-        })?;
+        let input = inputs
+            .first()
+            .ok_or_else(|| SenseiError::Validation("at least one input tensor required".into()))?;
 
         let input_len = input.data.len();
         let mut output = vec![0.0f32; FALLBACK_OUTPUT_DIM];
@@ -412,9 +418,9 @@ impl OnnxModel {
 
     /// Software fallback inference: 2-layer MLP.
     fn run_fallback(&self, inputs: &[TensorInput]) -> Result<Vec<TensorOutput>, SenseiError> {
-        let input = inputs.first().ok_or_else(|| {
-            SenseiError::Validation("at least one input tensor required".into())
-        })?;
+        let input = inputs
+            .first()
+            .ok_or_else(|| SenseiError::Validation("at least one input tensor required".into()))?;
 
         let x = &input.data;
         let input_dim = x.len();
@@ -437,8 +443,7 @@ impl OnnxModel {
             .collect();
         let b2: Vec<f32> = vec![0.01f32; FALLBACK_OUTPUT_DIM];
 
-        let mut output =
-            matrix_multiply_f32_fallback(&hidden, &w2, 1, FALLBACK_OUTPUT_DIM, 8);
+        let mut output = matrix_multiply_f32_fallback(&hidden, &w2, 1, FALLBACK_OUTPUT_DIM, 8);
         for (o, b) in output.iter_mut().zip(b2.iter()) {
             *o += b;
         }

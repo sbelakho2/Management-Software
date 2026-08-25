@@ -11,9 +11,7 @@ use serde_json;
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use super::{
-    Budget, CostRollup, FinanceService, Invoice, InvoiceLineItem, JournalEntry, Payment,
-};
+use super::{Budget, CostRollup, FinanceService, Invoice, InvoiceLineItem, JournalEntry, Payment};
 // ---------------------------------------------------------------------------
 // Row structs
 // ---------------------------------------------------------------------------
@@ -102,10 +100,7 @@ fn invoice_row_to_domain(r: InvoiceRow) -> Result<Invoice> {
             invoice_id = %r.id,
             "Failed to deserialize invoice line items: {e}"
         );
-        SenseiError::Database(format!(
-            "Invoice {} has corrupt line items: {e}",
-            r.id
-        ))
+        SenseiError::Database(format!("Invoice {} has corrupt line items: {e}", r.id))
     })?;
     Ok(Invoice {
         id: r.id,
@@ -208,12 +203,21 @@ impl FinanceService for DatabaseFinanceService {
     async fn create_invoice(&self, tenant_id: Uuid, invoice: Invoice) -> Result<Invoice> {
         let now = Utc::now();
         let id = Uuid::new_v4();
-        let invoice_number = format!("INV-{}-{}", now.format("%Y%m%d"), id.as_simple().encode_lower(&mut Uuid::encode_buffer())[..8].to_string());
+        let invoice_number = format!(
+            "INV-{}-{}",
+            now.format("%Y%m%d"),
+            &id.as_simple().encode_lower(&mut Uuid::encode_buffer())[..8]
+        );
 
-        let subtotal: f64 = invoice.line_items.iter().map(|li| li.quantity as f64 * li.unit_price).sum();
+        let subtotal: f64 = invoice
+            .line_items
+            .iter()
+            .map(|li| li.quantity as f64 * li.unit_price)
+            .sum();
         let tax_amount = subtotal * invoice.tax_percentage / 100.0;
         let total_amount = subtotal + tax_amount;
-        let line_items_json = serde_json::to_value(&invoice.line_items).unwrap_or(serde_json::Value::Array(vec![]));
+        let line_items_json =
+            serde_json::to_value(&invoice.line_items).unwrap_or(serde_json::Value::Array(vec![]));
 
         let row = sqlx::query_as::<_, InvoiceRow>(
             r#"
@@ -258,7 +262,8 @@ impl FinanceService for DatabaseFinanceService {
             FROM invoices WHERE id = $1 AND tenant_id = $2
             "#,
         )
-        .bind(id).bind(tenant_id)
+        .bind(id)
+        .bind(tenant_id)
         .fetch_optional(&self.pool)
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to get invoice: {e}")))?
@@ -268,7 +273,11 @@ impl FinanceService for DatabaseFinanceService {
     }
 
     async fn list_invoices(
-        &self, tenant_id: Uuid, status: Option<&str>, page: Option<usize>, per_page: Option<usize>,
+        &self,
+        tenant_id: Uuid,
+        status: Option<&str>,
+        page: Option<usize>,
+        per_page: Option<usize>,
     ) -> Result<PaginatedResponse<Invoice>> {
         let page = page.unwrap_or(1).max(1);
         let per_page = per_page.unwrap_or(20).clamp(1, 100);
@@ -283,7 +292,10 @@ impl FinanceService for DatabaseFinanceService {
             ORDER BY created_at DESC LIMIT $3 OFFSET $4
             "#,
         )
-        .bind(tenant_id).bind(status).bind(per_page as i64).bind(offset as i64)
+        .bind(tenant_id)
+        .bind(status)
+        .bind(per_page as i64)
+        .bind(offset as i64)
         .fetch_all(&self.pool)
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to list invoices: {e}")))?;
@@ -299,10 +311,21 @@ impl FinanceService for DatabaseFinanceService {
             .into_iter()
             .map(invoice_row_to_domain)
             .collect::<Result<Vec<_>>>()?;
-        Ok(PaginatedResponse { data: items, total: count as usize, page, per_page, total_pages: ((count as usize).max(1) + per_page - 1) / per_page })
+        Ok(PaginatedResponse {
+            data: items,
+            total: count as usize,
+            page,
+            per_page,
+            total_pages: (count as usize).max(1).div_ceil(per_page),
+        })
     }
 
-    async fn mark_invoice_paid(&self, tenant_id: Uuid, id: Uuid, payment_id: Uuid) -> Result<Invoice> {
+    async fn mark_invoice_paid(
+        &self,
+        tenant_id: Uuid,
+        id: Uuid,
+        payment_id: Uuid,
+    ) -> Result<Invoice> {
         let now = Utc::now();
 
         // The payment must exist and belong to this invoice.
@@ -328,14 +351,17 @@ impl FinanceService for DatabaseFinanceService {
             FROM invoices WHERE id = $1 AND tenant_id = $2
             "#,
         )
-        .bind(id).bind(tenant_id)
+        .bind(id)
+        .bind(tenant_id)
         .fetch_optional(&self.pool)
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to get invoice: {e}")))?
         .ok_or_else(|| SenseiError::NotFound(format!("Invoice {id} not found")))?;
 
         if row.status == "paid" {
-            return Err(SenseiError::Validation("Invoice is already paid".to_string()));
+            return Err(SenseiError::Validation(
+                "Invoice is already paid".to_string(),
+            ));
         }
         if row.status == "cancelled" {
             return Err(SenseiError::Validation(
@@ -366,11 +392,15 @@ impl FinanceService for DatabaseFinanceService {
                       total_amount, currency, due_date, paid_at, notes, created_by, created_at
             "#,
         )
-        .bind(now).bind(id).bind(tenant_id)
+        .bind(now)
+        .bind(id)
+        .bind(tenant_id)
         .fetch_optional(&self.pool)
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to mark invoice paid: {e}")))?
-        .ok_or_else(|| SenseiError::NotFound(format!("Invoice {id} not found or cannot be marked paid")))?;
+        .ok_or_else(|| {
+            SenseiError::NotFound(format!("Invoice {id} not found or cannot be marked paid"))
+        })?;
 
         invoice_row_to_domain(row)
     }
@@ -379,8 +409,18 @@ impl FinanceService for DatabaseFinanceService {
 
     async fn record_payment(&self, tenant_id: Uuid, payment: Payment) -> Result<Payment> {
         let now = Utc::now();
-        let id = Uuid::new_v4();
-        let payment_number = format!("PAY-{}-{}", now.format("%Y%m%d"), id.as_simple().encode_lower(&mut Uuid::encode_buffer())[..8].to_string());
+        // Preserve a caller-supplied id (callers reference it when marking
+        // the invoice paid); only generate one when the caller left it nil.
+        let id = if payment.id.is_nil() {
+            Uuid::new_v4()
+        } else {
+            payment.id
+        };
+        let payment_number = format!(
+            "PAY-{}-{}",
+            now.format("%Y%m%d"),
+            &id.as_simple().encode_lower(&mut Uuid::encode_buffer())[..8]
+        );
 
         let row = sqlx::query_as::<_, PaymentRow>(
             r#"
@@ -400,7 +440,11 @@ impl FinanceService for DatabaseFinanceService {
     }
 
     async fn list_payments(
-        &self, tenant_id: Uuid, invoice_id: Option<Uuid>, page: Option<usize>, per_page: Option<usize>,
+        &self,
+        tenant_id: Uuid,
+        invoice_id: Option<Uuid>,
+        page: Option<usize>,
+        per_page: Option<usize>,
     ) -> Result<PaginatedResponse<Payment>> {
         let page = page.unwrap_or(1).max(1);
         let per_page = per_page.unwrap_or(20).clamp(1, 100);
@@ -426,7 +470,13 @@ impl FinanceService for DatabaseFinanceService {
         .map_err(|e| SenseiError::Database(format!("Failed to count payments: {e}")))?;
 
         let items = items.into_iter().map(payment_row_to_domain).collect();
-        Ok(PaginatedResponse { data: items, total: count as usize, page, per_page, total_pages: ((count as usize).max(1) + per_page - 1) / per_page })
+        Ok(PaginatedResponse {
+            data: items,
+            total: count as usize,
+            page,
+            per_page,
+            total_pages: (count as usize).max(1).div_ceil(per_page),
+        })
     }
 
     // ── Budget ──────────────────────────────────────────────────────────
@@ -463,7 +513,12 @@ impl FinanceService for DatabaseFinanceService {
     }
 
     async fn list_budgets(
-        &self, tenant_id: Uuid, fiscal_year: Option<i32>, department: Option<&str>, page: Option<usize>, per_page: Option<usize>,
+        &self,
+        tenant_id: Uuid,
+        fiscal_year: Option<i32>,
+        department: Option<&str>,
+        page: Option<usize>,
+        per_page: Option<usize>,
     ) -> Result<PaginatedResponse<Budget>> {
         let page = page.unwrap_or(1).max(1);
         let per_page = per_page.unwrap_or(20).clamp(1, 100);
@@ -489,7 +544,13 @@ impl FinanceService for DatabaseFinanceService {
         .map_err(|e| SenseiError::Database(format!("Failed to count budgets: {e}")))?;
 
         let items = items.into_iter().map(budget_row_to_domain).collect();
-        Ok(PaginatedResponse { data: items, total: count as usize, page, per_page, total_pages: ((count as usize).max(1) + per_page - 1) / per_page })
+        Ok(PaginatedResponse {
+            data: items,
+            total: count as usize,
+            page,
+            per_page,
+            total_pages: (count as usize).max(1).div_ceil(per_page),
+        })
     }
 
     async fn allocate_budget(&self, tenant_id: Uuid, id: Uuid, amount: f64) -> Result<Budget> {
@@ -511,10 +572,18 @@ impl FinanceService for DatabaseFinanceService {
 
     // ── Journal Entries ─────────────────────────────────────────────────
 
-    async fn post_journal_entry(&self, tenant_id: Uuid, entry: JournalEntry) -> Result<JournalEntry> {
+    async fn post_journal_entry(
+        &self,
+        tenant_id: Uuid,
+        entry: JournalEntry,
+    ) -> Result<JournalEntry> {
         let now = Utc::now();
         let id = Uuid::new_v4();
-        let entry_number = format!("JE-{}-{}", now.format("%Y%m%d"), id.as_simple().encode_lower(&mut Uuid::encode_buffer())[..8].to_string());
+        let entry_number = format!(
+            "JE-{}-{}",
+            now.format("%Y%m%d"),
+            &id.as_simple().encode_lower(&mut Uuid::encode_buffer())[..8]
+        );
 
         let row = sqlx::query_as::<_, JournalEntryRow>(
             r#"
@@ -534,7 +603,11 @@ impl FinanceService for DatabaseFinanceService {
     }
 
     async fn list_journal_entries(
-        &self, tenant_id: Uuid, account: Option<&str>, page: Option<usize>, per_page: Option<usize>,
+        &self,
+        tenant_id: Uuid,
+        account: Option<&str>,
+        page: Option<usize>,
+        per_page: Option<usize>,
     ) -> Result<PaginatedResponse<JournalEntry>> {
         let page = page.unwrap_or(1).max(1);
         let per_page = per_page.unwrap_or(20).clamp(1, 100);
@@ -560,14 +633,25 @@ impl FinanceService for DatabaseFinanceService {
         .map_err(|e| SenseiError::Database(format!("Failed to count journal entries: {e}")))?;
 
         let items = items.into_iter().map(journal_row_to_domain).collect();
-        Ok(PaginatedResponse { data: items, total: count as usize, page, per_page, total_pages: ((count as usize).max(1) + per_page - 1) / per_page })
+        Ok(PaginatedResponse {
+            data: items,
+            total: count as usize,
+            page,
+            per_page,
+            total_pages: (count as usize).max(1).div_ceil(per_page),
+        })
     }
 
     // ── Invoice Mutations ──────────────────────────────────────────────
 
     async fn update_invoice(&self, tenant_id: Uuid, id: Uuid, invoice: Invoice) -> Result<Invoice> {
-        let line_items_json = serde_json::to_value(&invoice.line_items).unwrap_or(serde_json::Value::Array(vec![]));
-        let subtotal: f64 = invoice.line_items.iter().map(|li| li.quantity as f64 * li.unit_price).sum();
+        let line_items_json =
+            serde_json::to_value(&invoice.line_items).unwrap_or(serde_json::Value::Array(vec![]));
+        let subtotal: f64 = invoice
+            .line_items
+            .iter()
+            .map(|li| li.quantity as f64 * li.unit_price)
+            .sum();
         let tax_amount = subtotal * invoice.tax_percentage / 100.0;
         let total_amount = subtotal + tax_amount;
 
@@ -582,10 +666,18 @@ impl FinanceService for DatabaseFinanceService {
                       total_amount, currency, due_date, paid_at, notes, created_by, created_at
             "#,
         )
-        .bind(invoice.customer_id).bind(&invoice.customer_name).bind(&line_items_json)
-        .bind(subtotal).bind(invoice.tax_percentage).bind(tax_amount).bind(total_amount)
-        .bind(&invoice.currency).bind(invoice.due_date).bind(&invoice.notes)
-        .bind(id).bind(tenant_id)
+        .bind(invoice.customer_id)
+        .bind(&invoice.customer_name)
+        .bind(&line_items_json)
+        .bind(subtotal)
+        .bind(invoice.tax_percentage)
+        .bind(tax_amount)
+        .bind(total_amount)
+        .bind(&invoice.currency)
+        .bind(invoice.due_date)
+        .bind(&invoice.notes)
+        .bind(id)
+        .bind(tenant_id)
         .fetch_optional(&self.pool)
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to update invoice: {e}")))?
@@ -596,7 +688,8 @@ impl FinanceService for DatabaseFinanceService {
 
     async fn delete_invoice(&self, tenant_id: Uuid, id: Uuid) -> Result<()> {
         let result = sqlx::query("DELETE FROM invoices WHERE id = $1 AND tenant_id = $2")
-            .bind(id).bind(tenant_id)
+            .bind(id)
+            .bind(tenant_id)
             .execute(&self.pool)
             .await
             .map_err(|e| SenseiError::Database(format!("Failed to delete invoice: {e}")))?;
@@ -629,7 +722,8 @@ impl FinanceService for DatabaseFinanceService {
 
     async fn delete_payment(&self, tenant_id: Uuid, id: Uuid) -> Result<()> {
         let result = sqlx::query("DELETE FROM payments WHERE id = $1 AND tenant_id = $2")
-            .bind(id).bind(tenant_id)
+            .bind(id)
+            .bind(tenant_id)
             .execute(&self.pool)
             .await
             .map_err(|e| SenseiError::Database(format!("Failed to delete payment: {e}")))?;
@@ -662,7 +756,8 @@ impl FinanceService for DatabaseFinanceService {
 
     async fn delete_budget(&self, tenant_id: Uuid, id: Uuid) -> Result<()> {
         let result = sqlx::query("DELETE FROM budgets WHERE id = $1 AND tenant_id = $2")
-            .bind(id).bind(tenant_id)
+            .bind(id)
+            .bind(tenant_id)
             .execute(&self.pool)
             .await
             .map_err(|e| SenseiError::Database(format!("Failed to delete budget: {e}")))?;
@@ -675,7 +770,12 @@ impl FinanceService for DatabaseFinanceService {
 
     // ── Journal Entry Mutations ────────────────────────────────────────
 
-    async fn update_journal_entry(&self, tenant_id: Uuid, id: Uuid, entry: JournalEntry) -> Result<JournalEntry> {
+    async fn update_journal_entry(
+        &self,
+        tenant_id: Uuid,
+        id: Uuid,
+        entry: JournalEntry,
+    ) -> Result<JournalEntry> {
         let row = sqlx::query_as::<_, JournalEntryRow>(
             r#"
             UPDATE journal_entries SET description=$1, debit_account=$2, credit_account=$3, amount=$4, currency=$5, entry_date=$6
@@ -696,13 +796,16 @@ impl FinanceService for DatabaseFinanceService {
 
     async fn delete_journal_entry(&self, tenant_id: Uuid, id: Uuid) -> Result<()> {
         let result = sqlx::query("DELETE FROM journal_entries WHERE id = $1 AND tenant_id = $2")
-            .bind(id).bind(tenant_id)
+            .bind(id)
+            .bind(tenant_id)
             .execute(&self.pool)
             .await
             .map_err(|e| SenseiError::Database(format!("Failed to delete journal entry: {e}")))?;
 
         if result.rows_affected() == 0 {
-            return Err(SenseiError::NotFound(format!("Journal entry {id} not found")));
+            return Err(SenseiError::NotFound(format!(
+                "Journal entry {id} not found"
+            )));
         }
         Ok(())
     }
@@ -720,8 +823,10 @@ impl FinanceService for DatabaseFinanceService {
                JOIN products p ON p.id = b.component_product_id
                WHERE b.parent_product_id = $1 AND b.tenant_id = $2 AND b.is_active = TRUE"#,
         )
-        .bind(product_id).bind(tenant_id)
-        .fetch_one(&self.pool).await
+        .bind(product_id)
+        .bind(tenant_id)
+        .fetch_one(&self.pool)
+        .await
         .map_err(|e| SenseiError::Database(format!("Failed to compute material cost: {e}")))?;
 
         // Labor cost: Σ(routing standard_time × work_center standard_rate).
@@ -733,8 +838,10 @@ impl FinanceService for DatabaseFinanceService {
                JOIN work_centers wc ON wc.id = r.work_center_id
                WHERE r.product_id = $1 AND r.tenant_id = $2 AND r.is_active = TRUE"#,
         )
-        .bind(product_id).bind(tenant_id)
-        .fetch_one(&self.pool).await
+        .bind(product_id)
+        .bind(tenant_id)
+        .fetch_one(&self.pool)
+        .await
         .map_err(|e| SenseiError::Database(format!("Failed to compute labor cost: {e}")))?;
 
         // Round both to cents before applying overhead so sums stay exact.
@@ -749,13 +856,14 @@ impl FinanceService for DatabaseFinanceService {
         let overhead_cost = overhead_cents as f64 / 100.0;
         let total_cost = material_cost + labor_cost + overhead_cost;
 
-        let product_name: String = sqlx::query_scalar(
-            r#"SELECT name FROM products WHERE id = $1 AND tenant_id = $2"#,
-        )
-        .bind(product_id).bind(tenant_id)
-        .fetch_optional(&self.pool).await
-        .map_err(|e| SenseiError::Database(format!("Failed to get product name: {e}")))?
-        .unwrap_or_else(|| "Unknown Product".to_string());
+        let product_name: String =
+            sqlx::query_scalar(r#"SELECT name FROM products WHERE id = $1 AND tenant_id = $2"#)
+                .bind(product_id)
+                .bind(tenant_id)
+                .fetch_optional(&self.pool)
+                .await
+                .map_err(|e| SenseiError::Database(format!("Failed to get product name: {e}")))?
+                .unwrap_or_else(|| "Unknown Product".to_string());
 
         let row = sqlx::query_as::<_, CostRollupRow>(
             r#"
@@ -806,11 +914,15 @@ impl FinanceService for DatabaseFinanceService {
         let po_exists: bool = sqlx::query_scalar(
             "SELECT EXISTS(SELECT 1 FROM purchase_orders WHERE id = $1 AND tenant_id = $2)",
         )
-        .bind(po_id).bind(tenant_id)
-        .fetch_one(&self.pool).await
+        .bind(po_id)
+        .bind(tenant_id)
+        .fetch_one(&self.pool)
+        .await
         .map_err(|e| SenseiError::Database(format!("Failed to look up PO: {e}")))?;
         if !po_exists {
-            return Err(SenseiError::NotFound(format!("Purchase order {po_id} not found")));
+            return Err(SenseiError::NotFound(format!(
+                "Purchase order {po_id} not found"
+            )));
         }
 
         // 2. Every receipt must exist and belong to the PO.
@@ -818,8 +930,11 @@ impl FinanceService for DatabaseFinanceService {
             "SELECT COUNT(*) FROM goods_receipts \
              WHERE tenant_id = $1 AND purchase_order_id = $2 AND id = ANY($3)",
         )
-        .bind(tenant_id).bind(po_id).bind(&receipt_ids)
-        .fetch_one(&self.pool).await
+        .bind(tenant_id)
+        .bind(po_id)
+        .bind(&receipt_ids)
+        .fetch_one(&self.pool)
+        .await
         .map_err(|e| SenseiError::Database(format!("Failed to validate receipts: {e}")))?;
         if matched_receipts != receipt_ids.len() as i64 {
             return Err(SenseiError::Validation(format!(
@@ -838,8 +953,10 @@ impl FinanceService for DatabaseFinanceService {
             "SELECT product_id, quantity, quantity_received \
              FROM purchase_order_items WHERE purchase_order_id = $1 AND tenant_id = $2",
         )
-        .bind(po_id).bind(tenant_id)
-        .fetch_all(&self.pool).await
+        .bind(po_id)
+        .bind(tenant_id)
+        .fetch_all(&self.pool)
+        .await
         .map_err(|e| SenseiError::Database(format!("Failed to load PO lines: {e}")))?;
 
         let mut po_qty: HashMap<Uuid, f64> = HashMap::new();
@@ -902,7 +1019,10 @@ impl FinanceService for DatabaseFinanceService {
             });
         }
 
-        let verdict = if lines.is_empty() || lines.iter().any(|l| l.status != ThreeWayLineStatus::Matched)
+        let verdict = if lines.is_empty()
+            || lines
+                .iter()
+                .any(|l| l.status != ThreeWayLineStatus::Matched)
         {
             ThreeWayVerdict::Mismatch
         } else {

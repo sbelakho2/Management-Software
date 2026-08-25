@@ -3,12 +3,15 @@
 //! Provides endpoints for viewing audit trail entries, filtering by entity,
 //! and retrieving audit statistics.
 
-use axum::{Json, extract::{Path, Query, State}};
+use axum::{
+    extract::{Path, Query, State},
+    Json,
+};
 use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
 use sensei_auth::middleware::AuthenticatedUser;
 use sensei_core::error::{Result, SenseiError};
 use sensei_core::pagination::PaginatedResponse;
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::state::AppState;
@@ -105,7 +108,7 @@ pub async fn list_audit_logs(
         .filter(|e| date_to.is_none_or(|dt| e.created_at <= dt))
         .cloned()
         .collect();
-    entries.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+    entries.sort_by_key(|a| std::cmp::Reverse(a.created_at));
     let result = PaginatedResponse::new(entries, params.page, params.per_page);
     Ok(Json(result))
 }
@@ -137,13 +140,11 @@ pub async fn get_entity_audit_trail(
     let mut entries: Vec<AuditLogEntry> = store
         .values()
         .filter(|e| {
-            e.tenant_id == tenant_id
-                && e.entity_type == entity_type
-                && e.entity_id == entity_id
+            e.tenant_id == tenant_id && e.entity_type == entity_type && e.entity_id == entity_id
         })
         .cloned()
         .collect();
-    entries.sort_by(|a, b| a.created_at.cmp(&b.created_at));
+    entries.sort_by_key(|a| a.created_at);
     Ok(Json(entries))
 }
 
@@ -161,7 +162,8 @@ pub async fn get_audit_log_stats(
 
     let total_entries = entries.len();
 
-    let mut entity_type_map: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+    let mut entity_type_map: std::collections::HashMap<String, usize> =
+        std::collections::HashMap::new();
     let mut action_map: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
     let mut unique_users: std::collections::HashSet<Uuid> = std::collections::HashSet::new();
 
@@ -169,7 +171,9 @@ pub async fn get_audit_log_stats(
     let mut newest: Option<DateTime<Utc>> = None;
 
     for entry in &entries {
-        *entity_type_map.entry(entry.entity_type.clone()).or_insert(0) += 1;
+        *entity_type_map
+            .entry(entry.entity_type.clone())
+            .or_insert(0) += 1;
         *action_map.entry(entry.action.clone()).or_insert(0) += 1;
         unique_users.insert(entry.user_id);
 

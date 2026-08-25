@@ -120,8 +120,8 @@ mod tests {
     #[test]
     fn test_arena_alloc() {
         let arena = ArenaAllocator::new(1024);
-        let ptr = arena.allocate(64).expect("should allocate");
-        assert!(!ptr.as_ptr().is_null());
+        // `allocate` returns a non-null pointer by construction (NonNull).
+        let _ptr = arena.allocate(64).expect("should allocate");
         assert_eq!(arena.used(), 64);
     }
 

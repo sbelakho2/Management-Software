@@ -36,7 +36,7 @@ async fn test_production_create_work_order() {
     let mut resp = app.send_request(req).await;
     assert_eq!(resp.status(), StatusCode::OK);
     let json: Value = app.json_body(&mut resp).await;
-    assert!(json["id"].as_str().unwrap_or("").len() > 0);
+    assert!(!json["id"].as_str().unwrap_or("").is_empty());
 }
 
 #[tokio::test]
@@ -44,7 +44,7 @@ async fn test_production_list_work_orders() {
     let app = common::TestApp::new().await;
     let token = app.login_as_admin().await;
     let req = app.get_authenticated("/api/v1/production/work-orders", &token);
-    let mut resp = app.send_request(req).await;
+    let resp = app.send_request(req).await;
     assert_eq!(resp.status(), StatusCode::OK);
 }
 
@@ -69,7 +69,7 @@ async fn test_production_create_order() {
         "created_at": "2026-06-01T00:00:00Z",
     });
     let req = app.post_authenticated("/api/v1/production/orders", &token, body);
-    let mut resp = app.send_request(req).await;
+    let resp = app.send_request(req).await;
     assert_eq!(resp.status(), StatusCode::OK);
 }
 
@@ -78,7 +78,7 @@ async fn test_production_list_orders() {
     let app = common::TestApp::new().await;
     let token = app.login_as_admin().await;
     let req = app.get_authenticated("/api/v1/production/orders", &token);
-    let mut resp = app.send_request(req).await;
+    let resp = app.send_request(req).await;
     assert_eq!(resp.status(), StatusCode::OK);
 }
 
@@ -90,6 +90,6 @@ async fn test_production_run_mrp() {
         "product_id": uuid::Uuid::new_v4().to_string(),
     });
     let req = app.post_authenticated("/api/v1/production/mrp", &token, body);
-    let mut resp = app.send_request(req).await;
+    let resp = app.send_request(req).await;
     assert_eq!(resp.status(), StatusCode::OK);
 }

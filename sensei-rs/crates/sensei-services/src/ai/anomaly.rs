@@ -110,10 +110,50 @@ pub struct SentimentResult {
 /// A learned sequence pattern.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SequencePattern {
+    /// Baseline event sequence (the first learned sequence for the family).
     pub events: Vec<EventType>,
+    /// Aggregate duration statistics across all transitions (API/state
+    /// compatibility; the checks below use per-transition stats).
     pub expected_duration_mean: f64,
     pub expected_duration_std: f64,
     pub frequency: usize,
+    /// Per-transition duration statistics, accumulated across learn calls
+    /// so anomalous batches cannot overwrite the healthy baseline.
+    pub transition_stats: std::collections::HashMap<String, TransitionStats>,
+}
+
+/// Accumulated duration statistics for one transition (a → b).
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct TransitionStats {
+    pub count: usize,
+    pub sum: f64,
+    pub sumsq: f64,
+}
+
+impl TransitionStats {
+    fn record(&mut self, duration_minutes: f64) {
+        self.count += 1;
+        self.sum += duration_minutes;
+        self.sumsq += duration_minutes * duration_minutes;
+    }
+
+    fn mean(&self) -> f64 {
+        if self.count == 0 {
+            0.0
+        } else {
+            self.sum / self.count as f64
+        }
+    }
+
+    fn std_dev(&self) -> f64 {
+        if self.count <= 1 {
+            0.0
+        } else {
+            let n = self.count as f64;
+            let variance = (self.sumsq - self.sum * self.sum / n) / (n - 1.0);
+            variance.max(0.0).sqrt()
+        }
+    }
 }
 
 /// A timing anomaly.
@@ -183,10 +223,7 @@ impl Default for AlertConfig {
 impl AlertConfig {
     /// Get the threshold for a specific anomaly type.
     pub fn get_threshold(&self, anomaly_type: AnomalyType) -> f64 {
-        self.thresholds
-            .get(&anomaly_type)
-            .copied()
-            .unwrap_or(0.5)
+        self.thresholds.get(&anomaly_type).copied().unwrap_or(0.5)
     }
 }
 
@@ -211,29 +248,94 @@ pub struct Alert {
 
 /// Positive sentiment keywords.
 const POSITIVE_KEYWORDS: &[&str] = &[
-    "good", "great", "excellent", "satisfied", "happy", "pleased",
-    "impressed", "outstanding", "fantastic", "positive", "improved",
-    "improving", "efficient", "smooth", "successful", "helpful",
-    "responsive", "clear", "effective", "well done", "thank you",
-    "appreciate", "perfect", "amazing", "wonderful",
+    "good",
+    "great",
+    "excellent",
+    "satisfied",
+    "happy",
+    "pleased",
+    "impressed",
+    "outstanding",
+    "fantastic",
+    "positive",
+    "improved",
+    "improving",
+    "efficient",
+    "smooth",
+    "successful",
+    "helpful",
+    "responsive",
+    "clear",
+    "effective",
+    "well done",
+    "thank you",
+    "appreciate",
+    "perfect",
+    "amazing",
+    "wonderful",
 ];
 
 /// Negative sentiment keywords.
 const NEGATIVE_KEYWORDS: &[&str] = &[
-    "bad", "terrible", "unhappy", "dissatisfied", "frustrated",
-    "angry", "upset", "disappointed", "poor", "worst", "horrible",
-    "awful", "negative", "declining", "worse", "failure", "failed",
-    "broken", "useless", "unacceptable", "problem", "issue",
-    "complaint", "slow", "unreliable", "rude", "unhelpful",
-    "damaged", "incorrect", "wrong",
+    "bad",
+    "terrible",
+    "unhappy",
+    "dissatisfied",
+    "frustrated",
+    "angry",
+    "upset",
+    "disappointed",
+    "poor",
+    "worst",
+    "horrible",
+    "awful",
+    "negative",
+    "declining",
+    "worse",
+    "failure",
+    "failed",
+    "broken",
+    "useless",
+    "unacceptable",
+    "problem",
+    "issue",
+    "complaint",
+    "slow",
+    "unreliable",
+    "rude",
+    "unhelpful",
+    "damaged",
+    "incorrect",
+    "wrong",
 ];
 
 /// Negation words that flip sentiment.
 const NEGATION_WORDS: &[&str] = &[
-    "not", "no", "never", "neither", "nor", "nothing", "nowhere",
-    "hardly", "barely", "doesn't", "don't", "didn't", "won't",
-    "wouldn't", "couldn't", "shouldn't", "isn't", "aren't", "wasn't",
-    "weren't", "haven't", "hasn't", "hadn't", "can't", "cannot",
+    "not",
+    "no",
+    "never",
+    "neither",
+    "nor",
+    "nothing",
+    "nowhere",
+    "hardly",
+    "barely",
+    "doesn't",
+    "don't",
+    "didn't",
+    "won't",
+    "wouldn't",
+    "couldn't",
+    "shouldn't",
+    "isn't",
+    "aren't",
+    "wasn't",
+    "weren't",
+    "haven't",
+    "hasn't",
+    "hadn't",
+    "can't",
+    "cannot",
 ];
 
 /// Frustration patterns (compiled as strings for regex-like matching).
@@ -258,16 +360,38 @@ const FRUSTRATION_PATTERNS: &[&str] = &[
 
 /// Urgency indicators.
 const URGENCY_INDICATORS: &[&str] = &[
-    "urgent", "asap", "immediately", "emergency", "critical",
-    "deadline", "overdue", "priority", "important", "time-sensitive",
-    "rush", "expedite", "pressing", "now", "today",
+    "urgent",
+    "asap",
+    "immediately",
+    "emergency",
+    "critical",
+    "deadline",
+    "overdue",
+    "priority",
+    "important",
+    "time-sensitive",
+    "rush",
+    "expedite",
+    "pressing",
+    "now",
+    "today",
 ];
 
 /// Emergency escalation keywords.
 const ESCALATION_KEYWORDS: &[&str] = &[
-    "escalate", "manager", "supervisor", "complaint", "legal",
-    "regulatory", "compliance", "violation", "safety",
-    "shutdown", "stop production", "recall", "lawsuit",
+    "escalate",
+    "manager",
+    "supervisor",
+    "complaint",
+    "legal",
+    "regulatory",
+    "compliance",
+    "violation",
+    "safety",
+    "shutdown",
+    "stop production",
+    "recall",
+    "lawsuit",
 ];
 
 // ---------------------------------------------------------------------------
@@ -310,10 +434,7 @@ impl SentimentAnalyzer {
         // Trim history if needed
         if let Some(history) = self.entity_history.get(entity_id) {
             if history.len() > self.max_history {
-                self.entity_history
-                    .get_mut(entity_id)
-                    .unwrap()
-                    .pop_front();
+                self.entity_history.get_mut(entity_id).unwrap().pop_front();
             }
         }
 
@@ -335,8 +456,8 @@ impl SentimentAnalyzer {
             let before = &lower[..pos];
             let words: Vec<&str> = before.split_whitespace().collect();
             let start = words.len().saturating_sub(5);
-            for i in start..words.len() {
-                let word = words[i].trim_matches(|c: char| !c.is_alphanumeric());
+            for word in words.iter().skip(start) {
+                let word = word.trim_matches(|c: char| !c.is_alphanumeric());
                 if NEGATION_WORDS.contains(&word) {
                     return true;
                 }
@@ -461,12 +582,7 @@ impl SentimentAnalyzer {
             return true;
         }
 
-        let recent_negative: usize = history
-            .iter()
-            .rev()
-            .take(3)
-            .filter(|&&s| s <= -0.3)
-            .count();
+        let recent_negative: usize = history.iter().rev().take(3).filter(|&&s| s <= -0.3).count();
 
         if recent_negative >= 3 {
             self.entity_escalated.insert(entity_id.to_string(), true);
@@ -516,6 +632,8 @@ impl Default for SentimentAnalyzer {
 pub struct SequenceAnalyzer {
     /// Learned patterns keyed by first event type (as string).
     patterns: HashMap<String, SequencePattern>,
+    /// Insertion order of pattern keys (FIFO eviction at capacity).
+    pattern_order: std::collections::VecDeque<String>,
     /// Maximum patterns to track.
     max_patterns: usize,
 }
@@ -525,6 +643,7 @@ impl SequenceAnalyzer {
     pub fn new(max_patterns: usize) -> Self {
         Self {
             patterns: HashMap::new(),
+            pattern_order: std::collections::VecDeque::new(),
             max_patterns,
         }
     }
@@ -539,46 +658,73 @@ impl SequenceAnalyzer {
 
         let event_types: Vec<EventType> = events.iter().map(|e| e.event_type.clone()).collect();
         let key = self.event_type_key(&event_types[0]);
+        let first_key = self.event_type_key(&event_types[0]);
 
-        // Calculate durations between subsequent events
-        let mut durations = Vec::new();
-        for i in 1..events.len() {
-            let dur = (events[i].timestamp - events[i - 1].timestamp)
-                .num_seconds() as f64 / 60.0; // minutes
-            durations.push(dur);
-        }
+        // Compute transition keys up front (borrow of self) before the
+        // mutable entry borrow.
+        let transitions: Vec<(String, f64)> = (1..events.len())
+            .map(|i| {
+                let dur =
+                    (events[i].timestamp - events[i - 1].timestamp).num_seconds() as f64 / 60.0; // minutes
+                let transition = format!(
+                    "{}→{}",
+                    self.event_type_key(&events[i - 1].event_type),
+                    self.event_type_key(&events[i].event_type)
+                );
+                (transition, dur)
+            })
+            .collect();
 
-        let n = durations.len() as f64;
-        let mean = if n > 0.0 {
-            durations.iter().sum::<f64>() / n
-        } else {
-            0.0
-        };
-        let variance = if n > 1.0 {
-            durations.iter().map(|d| (d - mean).powi(2)).sum::<f64>() / (n - 1.0)
-        } else {
-            0.0
-        };
-        let std_dev = variance.sqrt();
-
-        let frequency = self.patterns.get(&key).map_or(0, |p| p.frequency) + 1;
-
-        // Evict LRU pattern if needed
-        if self.patterns.len() >= self.max_patterns {
-            if let Some(oldest_key) = self.patterns.keys().next().cloned() {
-                self.patterns.remove(&oldest_key);
+        // FIFO eviction at capacity (HashMap iteration order is arbitrary).
+        // Evict before inserting a brand-new pattern.
+        if !self.patterns.contains_key(&key) && self.patterns.len() >= self.max_patterns {
+            while let Some(oldest_key) = self.pattern_order.pop_front() {
+                if self.patterns.remove(&oldest_key).is_some() {
+                    break;
+                }
             }
         }
 
-        self.patterns.insert(
-            key,
+        let pattern = self.patterns.entry(key.clone()).or_insert_with(|| {
+            // A new pattern keeps the first-learned sequence as its baseline.
             SequencePattern {
-                events: event_types,
-                expected_duration_mean: mean,
-                expected_duration_std: std_dev,
-                frequency,
-            },
-        );
+                events: event_types.clone(),
+                expected_duration_mean: 0.0,
+                expected_duration_std: 0.0,
+                frequency: 0,
+                transition_stats: std::collections::HashMap::new(),
+            }
+        });
+        pattern.frequency += 1;
+        if !self.pattern_order.contains(&key) {
+            self.pattern_order.push_back(key.clone());
+        }
+
+        // Accumulate per-transition durations: later (possibly anomalous)
+        // batches refine the statistics but never replace the baseline
+        // sequence or erase the healthy samples.
+        let mut overall_sum = 0.0;
+        let mut overall_sumsq = 0.0;
+        let mut overall_count = 0usize;
+        for (transition, dur) in transitions {
+            pattern
+                .transition_stats
+                .entry(transition)
+                .or_default()
+                .record(dur);
+            overall_sum += dur;
+            overall_sumsq += dur * dur;
+            overall_count += 1;
+        }
+        if overall_count > 0 {
+            let n = overall_count as f64;
+            pattern.expected_duration_mean = overall_sum / n;
+            pattern.expected_duration_std = (overall_sumsq - overall_sum * overall_sum / n)
+                .max(0.0)
+                .sqrt()
+                / n.max(1.0);
+        }
+        let _ = first_key;
     }
 
     /// Detect sequence anomalies in a list of events.
@@ -712,29 +858,46 @@ impl SequenceAnalyzer {
         };
 
         for i in 1..events.len() {
-            let duration_minutes = (events[i].timestamp - events[i - 1].timestamp)
-                .num_seconds() as f64 / 60.0;
+            let duration_minutes =
+                (events[i].timestamp - events[i - 1].timestamp).num_seconds() as f64 / 60.0;
 
-            // Check if this duration is anomalous (> 3 std devs from mean)
-            if pattern.expected_duration_std > 0.0 {
-                let deviation = (duration_minutes - pattern.expected_duration_mean).abs()
-                    / pattern.expected_duration_std;
+            let transition = format!(
+                "{}→{}",
+                self.event_type_key(&events[i - 1].event_type),
+                self.event_type_key(&events[i].event_type)
+            );
+            let Some(stats) = pattern.transition_stats.get(&transition) else {
+                continue;
+            };
+            let mean = stats.mean();
+            let std = stats.std_dev();
 
-                if deviation > 3.0 {
-                    let event_a = self.event_type_key(&events[i - 1].event_type);
-                    let event_b = self.event_type_key(&events[i].event_type);
+            // Deviation in standard deviations. With a single learned sample
+            // there is no variance yet: fall back to a relative check (a
+            // duration of several times the observed mean is still clearly
+            // anomalous).
+            let deviation = if std > 0.0 {
+                (duration_minutes - mean).abs() / std
+            } else if mean > 0.0 {
+                (duration_minutes - mean).abs() / mean
+            } else {
+                0.0
+            };
 
-                    anomalies.push(Anomaly {
-                        id: Uuid::new_v4(),
-                        anomaly_type: AnomalyType::Timing,
-                        severity: (deviation / 5.0).min(1.0),
-                        entity_id: events[0].entity_id.clone(),
-                        description: format!(
-                            "Timing anomaly: '{}' → '{}' took {:.1} min (expected {:.1} min, {:.1}σ deviation)",
-                            event_a, event_b, duration_minutes,
-                            pattern.expected_duration_mean, deviation
-                        ),
-                        detected_at: Utc::now(),
+            if deviation > 3.0 {
+                let event_a = self.event_type_key(&events[i - 1].event_type);
+                let event_b = self.event_type_key(&events[i].event_type);
+
+                anomalies.push(Anomaly {
+                    id: Uuid::new_v4(),
+                    anomaly_type: AnomalyType::Timing,
+                    severity: (deviation / 5.0).min(1.0),
+                    entity_id: events[0].entity_id.clone(),
+                    description: format!(
+                        "Timing anomaly: '{}' → '{}' took {:.1} min (expected {:.1} min, {:.1}σ deviation)",
+                        event_a, event_b, duration_minutes, mean, deviation
+                    ),
+                    detected_at: Utc::now(),
                         event_id: Some(events[i].id),
                         timing: Some(TimingAnomaly {
                             event_a,
@@ -744,23 +907,10 @@ impl SequenceAnalyzer {
                             deviation_std: deviation,
                         }),
                     });
-                }
             }
         }
 
         anomalies
-    }
-
-    /// Calculate standard deviation for a set of values.
-    #[allow(dead_code)]
-    fn std_dev(&self, values: &[f64]) -> f64 {
-        let n = values.len() as f64;
-        if n <= 1.0 {
-            return 0.0;
-        }
-        let mean = values.iter().sum::<f64>() / n;
-        let variance = values.iter().map(|v| (v - mean).powi(2)).sum::<f64>() / (n - 1.0);
-        variance.sqrt()
     }
 
     /// Convert an EventType to a simple string key for pattern matching.
@@ -873,8 +1023,7 @@ impl AlertManager {
         };
 
         // Track cooldown
-        self.cooldowns
-            .insert(anomaly.entity_id.clone(), now);
+        self.cooldowns.insert(anomaly.entity_id.clone(), now);
 
         // Track rate limit
         self.recent_alert_timestamps.push_back(now);
@@ -890,11 +1039,7 @@ impl AlertManager {
     pub fn acknowledge_alert(&mut self, alert_id: Uuid) -> Option<Alert> {
         // Step 1: Find and acknowledge (drops mutable borrow of active_alerts)
         let mut found_alert = None;
-        if let Some(alert) = self
-            .active_alerts
-            .iter_mut()
-            .find(|a| a.id == alert_id)
-        {
+        if let Some(alert) = self.active_alerts.iter_mut().find(|a| a.id == alert_id) {
             alert.acknowledged_at = Some(Utc::now());
             found_alert = Some(alert.clone());
         }
@@ -910,11 +1055,7 @@ impl AlertManager {
 
     /// Suppress an alert.
     pub fn suppress_alert(&mut self, alert_id: Uuid) -> Option<&Alert> {
-        if let Some(alert) = self
-            .active_alerts
-            .iter_mut()
-            .find(|a| a.id == alert_id)
-        {
+        if let Some(alert) = self.active_alerts.iter_mut().find(|a| a.id == alert_id) {
             alert.suppressed_at = Some(Utc::now());
             Some(alert)
         } else {
@@ -1044,7 +1185,9 @@ impl AnomalyDetectionEngine {
         if entity_events.len() >= 2 {
             // Learn the observed sequence before scoring it.
             self.sequence_analyzer.learn_pattern(&entity_events);
-            let sequence_anomalies = self.sequence_analyzer.detect_sequence_anomalies(&entity_events);
+            let sequence_anomalies = self
+                .sequence_analyzer
+                .detect_sequence_anomalies(&entity_events);
             for anomaly in &sequence_anomalies {
                 if anomaly.should_alert(self.sensitivity) {
                     if let Some(alert) = self.alert_manager.create_alert(anomaly) {
@@ -1119,8 +1262,9 @@ impl AnomalyDetectionEngine {
             if entity_events.len() < 2 {
                 continue;
             }
-            let sequence_anomalies =
-                self.sequence_analyzer.detect_sequence_anomalies(&entity_events);
+            let sequence_anomalies = self
+                .sequence_analyzer
+                .detect_sequence_anomalies(&entity_events);
             for anomaly in &sequence_anomalies {
                 if anomaly.should_alert(self.sensitivity) {
                     if let Some(alert) = self.alert_manager.create_alert(anomaly) {
@@ -1194,9 +1338,7 @@ impl AnomalyDetectionEngine {
             anomalies.push(Anomaly {
                 id: Uuid::new_v4(),
                 anomaly_type: AnomalyType::Frustration,
-                severity: 0.7f64.min(
-                    result.frustration_patterns.len() as f64 * 0.25,
-                ),
+                severity: 0.7f64.min(result.frustration_patterns.len() as f64 * 0.25),
                 entity_id: event.entity_id.clone(),
                 description: format!(
                     "Frustration detected: {}",
@@ -1215,8 +1357,9 @@ impl AnomalyDetectionEngine {
                 anomaly_type: AnomalyType::Escalation,
                 severity: 0.8,
                 entity_id: event.entity_id.clone(),
-                description: "Entity meets escalation criteria due to persistent negative sentiment"
-                    .to_string(),
+                description:
+                    "Entity meets escalation criteria due to persistent negative sentiment"
+                        .to_string(),
                 detected_at: Utc::now(),
                 event_id: Some(event.id),
                 timing: None,
@@ -1275,9 +1418,11 @@ mod tests {
     #[test]
     fn test_negative_sentiment() {
         let mut analyzer = SentimentAnalyzer::new(100);
+        // Two strongly negative signals ("terrible", "unacceptable") — the
+        // analyzer now distinguishes VeryNegative from Negative.
         let result = analyzer.analyze("This is a terrible and unacceptable problem", "entity-1");
         assert!(result.score < 0.0);
-        assert_eq!(result.level, SentimentLevel::Negative);
+        assert_eq!(result.level, SentimentLevel::VeryNegative);
     }
 
     #[test]
@@ -1291,7 +1436,10 @@ mod tests {
     #[test]
     fn test_urgency_detection() {
         let mut analyzer = SentimentAnalyzer::new(100);
-        let result = analyzer.analyze("URGENT: This is a CRITICAL issue requiring immediate attention!", "entity-1");
+        let result = analyzer.analyze(
+            "URGENT: This is a CRITICAL issue requiring immediate attention!",
+            "entity-1",
+        );
         assert!(result.urgency_score > 0.5);
         assert_eq!(result.urgency_level, UrgencyLevel::High);
     }
@@ -1312,11 +1460,11 @@ mod tests {
         let text = "This is a terrible problem";
 
         // First negative
-        let r1 = analyzer.analyze(text, "entity-escalate");
+        let _r1 = analyzer.analyze(text, "entity-escalate");
         // Second negative
-        let r2 = analyzer.analyze(text, "entity-escalate");
+        let _r2 = analyzer.analyze(text, "entity-escalate");
         // Third negative — should trigger escalation
-        let r3 = analyzer.analyze(text, "entity-escalate");
+        let _r3 = analyzer.analyze(text, "entity-escalate");
 
         // Check escalation after 3 consecutive negatives
         let r4 = analyzer.analyze(text, "entity-escalate");
@@ -1359,10 +1507,7 @@ mod tests {
 
         analyzer.learn_pattern(&events);
         let state = analyzer.export_state();
-        assert_eq!(
-            state.get("pattern_count").unwrap().as_u64().unwrap(),
-            1
-        );
+        assert_eq!(state.get("pattern_count").unwrap().as_u64().unwrap(), 1);
     }
 
     #[test]
@@ -1574,15 +1719,17 @@ mod tests {
             id: Uuid::new_v4(),
             entity_id: "customer-1".to_string(),
             event_type: EventType::Other("support_ticket".to_string()),
-            description: "This is a TERRIBLE experience! URGENT - we need help NOW!"
-                .to_string(),
+            description: "This is a TERRIBLE experience! URGENT - we need help NOW!".to_string(),
             timestamp: Utc::now(),
             metadata: HashMap::new(),
         };
 
         let alerts = engine.process_event(event);
         // Should trigger sentiment and urgency anomalies
-        assert!(!alerts.is_empty(), "Should generate alerts for negative+urgent text");
+        assert!(
+            !alerts.is_empty(),
+            "Should generate alerts for negative+urgent text"
+        );
     }
 
     #[test]
@@ -1636,7 +1783,10 @@ mod tests {
             .unwrap()
             .as_u64()
             .unwrap();
-        assert!(pattern_count >= 1, "expected learned patterns, got {pattern_count}");
+        assert!(
+            pattern_count >= 1,
+            "expected learned patterns, got {pattern_count}"
+        );
 
         // A wildly different sequence for the same event family must produce
         // a sequence-level anomaly once the entity has ≥2 events.

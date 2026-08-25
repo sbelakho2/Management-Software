@@ -109,9 +109,16 @@ impl ExceptionsStore {
     }
 
     /// Acknowledge an exception.
-    pub async fn acknowledge_exception(&self, client: &ApiClient, id: &str) -> Result<ExceptionDto, ApiError> {
+    pub async fn acknowledge_exception(
+        &self,
+        client: &ApiClient,
+        id: &str,
+    ) -> Result<ExceptionDto, ApiError> {
         let exc: ExceptionDto = client
-            .post(&format!("/api/v1/exceptions/{}/acknowledge", id), &serde_json::json!({}))
+            .post(
+                &format!("/api/v1/exceptions/{}/acknowledge", id),
+                &serde_json::json!({}),
+            )
             .await?;
         self.exceptions.update(|excs| {
             if let Some(pos) = excs.iter().position(|x| x.id == id) {
@@ -213,7 +220,10 @@ impl ExceptionsStore {
     pub async fn fetch_stats(&self, client: &ApiClient) {
         self.loading.set(true);
         self.error.set(None);
-        match client.get::<ExceptionStatsDto>("/api/v1/exceptions/stats").await {
+        match client
+            .get::<ExceptionStatsDto>("/api/v1/exceptions/stats")
+            .await
+        {
             Ok(data) => self.stats.set(Some(data)),
             Err(e) => self.error.set(Some(e.to_string())),
         }

@@ -4,8 +4,8 @@
 //! system. No shadows, sharp borders, solid backdrop. Follows the anti-pattern
 //! guidance in [`docs/development/sensei-rams-anti-patterns.md`](../../../../docs/development/sensei-rams-anti-patterns.md).
 
-use std::sync::Arc;
 use leptos::prelude::*;
+use std::sync::Arc;
 use wasm_bindgen::JsCast;
 
 /// Industrial-style modal overlay.
@@ -35,19 +35,21 @@ pub fn Modal(
     /// Modal body content.
     children: Children,
 ) -> impl IntoView {
-    let is_open = move || {
-        open.map(|s| s.get()).unwrap_or(true)
-    };
-    let heading_id = title.as_ref().map(|t| {
-        format!("modal-{}", t.to_lowercase().replace(' ', "-"))
-    }).unwrap_or_default();
+    let is_open = move || open.map(|s| s.get()).unwrap_or(true);
+    let heading_id = title
+        .as_ref()
+        .map(|t| format!("modal-{}", t.to_lowercase().replace(' ', "-")))
+        .unwrap_or_default();
 
     // Clone the Arc<dyn Fn> ref so both handlers can own a reference.
     let on_close = on_close.map(|cb| Arc::clone(&cb));
     let on_close_btn = on_close.clone();
 
     let handle_backdrop = move |ev: web_sys::MouseEvent| {
-        if let Some(el) = ev.target().and_then(|t| t.dyn_into::<web_sys::Element>().ok()) {
+        if let Some(el) = ev
+            .target()
+            .and_then(|t| t.dyn_into::<web_sys::Element>().ok())
+        {
             if el.get_attribute("data-backdrop").as_deref() == Some("true") {
                 if let Some(ref cb) = on_close {
                     cb();

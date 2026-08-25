@@ -7,11 +7,7 @@
 //! Prometheus metric recording is handled by the dedicated
 //! [`metrics_middleware`](super::metrics::metrics_middleware).
 
-use axum::{
-    extract::Request,
-    middleware::Next,
-    response::Response,
-};
+use axum::{extract::Request, middleware::Next, response::Response};
 use std::time::Instant;
 use tracing::{info, Span};
 

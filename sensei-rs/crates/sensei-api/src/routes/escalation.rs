@@ -2,13 +2,16 @@
 //!
 //! Provides CRUD endpoints for alert escalation policies.
 
-use axum::{Json, extract::{Path, Query, State}};
+use axum::{
+    extract::{Path, Query, State},
+    Json,
+};
 use chrono::Utc;
-use serde::Deserialize;
 use sensei_auth::middleware::AuthenticatedUser;
 use sensei_core::error::{Result, SenseiError};
 use sensei_core::pagination::PaginatedResponse;
 use sensei_core::types::new_id;
+use serde::Deserialize;
 use uuid::Uuid;
 
 use crate::state::AppState;
@@ -74,11 +77,16 @@ pub async fn list_policies(
     let mut policies: Vec<EscalationPolicy> = store
         .values()
         .filter(|p| p.tenant_id == user.tenant_id)
-        .filter(|p| params.event_type.as_ref().map_or(true, |t| p.event_type == *t))
-        .filter(|p| params.is_active.map_or(true, |a| p.is_active == a))
+        .filter(|p| {
+            params
+                .event_type
+                .as_ref()
+                .is_none_or(|t| p.event_type == *t)
+        })
+        .filter(|p| params.is_active.is_none_or(|a| p.is_active == a))
         .cloned()
         .collect();
-    policies.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
+    policies.sort_by_key(|a| std::cmp::Reverse(a.updated_at));
     let result = PaginatedResponse::new(policies, params.page, params.per_page);
     Ok(Json(result))
 }
@@ -157,7 +165,9 @@ pub async fn delete_policy(
         .filter(|p| p.tenant_id == user.tenant_id)
         .is_some();
     if !exists {
-        return Err(SenseiError::NotFound(format!("Escalation policy {id} not found")));
+        return Err(SenseiError::NotFound(format!(
+            "Escalation policy {id} not found"
+        )));
     }
     store.remove(&id);
     Ok(Json(()))

@@ -51,8 +51,6 @@ async fn test_detailed_health() {
     let checks = &body["checks"];
     assert_eq!(checks["event_bus_connected"], true);
     assert!(checks["active_sessions"].as_u64().is_some());
-    assert!(
-        checks["memory_usage_mb"].is_null() || checks["memory_usage_mb"].as_f64().is_some()
-    );
+    assert!(checks["memory_usage_mb"].is_null() || checks["memory_usage_mb"].as_f64().is_some());
     assert!(checks["cpu_usage_pct"].is_null() || checks["cpu_usage_pct"].as_f64().is_some());
 }

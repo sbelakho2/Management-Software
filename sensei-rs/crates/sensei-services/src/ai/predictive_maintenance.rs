@@ -100,6 +100,7 @@ pub struct MaintenancePrediction {
     pub estimated_remaining_life_hours: f64,
     pub risk_level: RiskLevel,
     pub predicted_failure_mode: FailureMode,
+    pub failure_description: String,
     pub recommended_maintenance_date: DateTime<Utc>,
     pub suggested_actions: Vec<MaintenanceAction>,
     pub confidence: f64,
@@ -110,12 +111,11 @@ pub struct MaintenancePrediction {
 // ---------------------------------------------------------------------------
 
 /// Failure mode signature: maps operating conditions to likely failure modes.
-#[allow(dead_code)]
 struct FailureSignature {
     mode: FailureMode,
-    vibration_threshold: f64,    // Above this → possible
-    temperature_threshold: f64,  // Above this → possible
-    cycle_sensitivity: f64,      // Per 1000 cycles, probability increase
+    vibration_threshold: f64,   // Above this → possible
+    temperature_threshold: f64, // Above this → possible
+    cycle_sensitivity: f64,     // Per 1000 cycles, probability increase
     description: &'static str,
     actions: &'static [&'static str],
     skills: &'static [&'static str],
@@ -278,7 +278,8 @@ impl PredictiveMaintenanceEngine {
         let health_score = self.calculate_health_score(history);
 
         // Predict failure mode
-        let (failure_mode, match_confidence) = self.predict_failure_mode(history);
+        let (failure_mode, match_confidence, failure_description) =
+            self.predict_failure_mode(history);
 
         // Calculate failure probability based on health, age, and usage
         let failure_probability = self.calculate_failure_probability(history);
@@ -304,6 +305,7 @@ impl PredictiveMaintenanceEngine {
             estimated_remaining_life_hours: estimated_rul,
             risk_level,
             predicted_failure_mode: failure_mode,
+            failure_description: failure_description.to_string(),
             recommended_maintenance_date: maintenance_date,
             suggested_actions,
             confidence: match_confidence,
@@ -319,7 +321,10 @@ impl PredictiveMaintenanceEngine {
         let latest = history.last().unwrap();
 
         // Dimension scores (each 0.0–1.0, 1.0 = healthy)
-        let uptime_score = (latest.uptime_hours / 8760.0).min(1.0); // Hours in a year
+        // Uptime is a *wear* factor, not a health boost: lightly used
+        // equipment is not unhealthy, while a machine at a full year of
+        // operation carries a small degradation penalty.
+        let uptime_score = (1.0 - (latest.uptime_hours / 8760.0) * 0.3).max(0.7);
 
         let vibration_score = if latest.vibration_level <= 2.0 {
             1.0
@@ -337,17 +342,15 @@ impl PredictiveMaintenanceEngine {
             1.0 - (latest.temperature_celsius - 40.0) / 60.0
         };
 
-        let maintenance_recency = if history.len() >= 2 {
-            let last_maint = latest.last_maintenance_at;
-            let now = latest.recorded_at;
-            let hours_since_maint = (now - last_maint).num_hours() as f64;
-            if hours_since_maint <= 0.0 {
-                1.0
-            } else {
-                (1.0 - (hours_since_maint / 8760.0).min(1.0)).max(0.3)
-            }
+        // Maintenance recency is taken from the telemetry's own
+        // last_maintenance_at (a single sample is fully usable).
+        let last_maint = latest.last_maintenance_at;
+        let now = latest.recorded_at;
+        let hours_since_maint = (now - last_maint).num_hours() as f64;
+        let maintenance_recency = if hours_since_maint <= 0.0 {
+            1.0
         } else {
-            0.5 // Default for unknown maintenance history
+            (1.0 - (hours_since_maint / 8760.0).min(1.0)).max(0.3)
         };
 
         // Trend: if vibration or temperature is increasing, penalize
@@ -376,15 +379,20 @@ impl PredictiveMaintenanceEngine {
     }
 
     /// Predict the most likely failure mode based on telemetry patterns.
-    fn predict_failure_mode(&self, history: &[EquipmentTelemetry]) -> (FailureMode, f64) {
+    fn predict_failure_mode(
+        &self,
+        history: &[EquipmentTelemetry],
+    ) -> (FailureMode, f64, &'static str) {
         if history.is_empty() {
-            return (FailureMode::Unknown, 0.0);
+            return (FailureMode::Unknown, 0.0, "No telemetry data available");
         }
 
         let latest = history.last().unwrap();
 
         let mut best_match = FailureMode::Unknown;
         let mut best_score = 0.0f64;
+        let mut best_description =
+            "Equipment degradation detected — no specific failure signature matched";
 
         for signature in FAILURE_SIGNATURES {
             let mut score = 0.0f64;
@@ -397,14 +405,15 @@ impl PredictiveMaintenanceEngine {
 
             // Temperature match
             if latest.temperature_celsius >= signature.temperature_threshold {
-                let excess =
-                    (latest.temperature_celsius - signature.temperature_threshold) / 30.0;
+                let excess = (latest.temperature_celsius - signature.temperature_threshold) / 30.0;
                 score += 0.3 + excess.min(0.3);
             }
 
             // Cycle sensitivity
             if let Some(earliest) = history.first() {
-                let total_cycles = latest.operating_cycles.saturating_sub(earliest.operating_cycles);
+                let total_cycles = latest
+                    .operating_cycles
+                    .saturating_sub(earliest.operating_cycles);
                 let cycle_score = (total_cycles as f64 / 1000.0) * signature.cycle_sensitivity;
                 score += cycle_score.min(0.4);
             }
@@ -412,6 +421,7 @@ impl PredictiveMaintenanceEngine {
             if score > best_score {
                 best_score = score;
                 best_match = signature.mode;
+                best_description = signature.description;
             }
         }
 
@@ -424,9 +434,16 @@ impl PredictiveMaintenanceEngine {
                 best_match = FailureMode::Overheating;
                 best_score = 0.3;
             }
+            best_description = FAILURE_SIGNATURES
+                .iter()
+                .find(|s| s.mode == best_match)
+                .map(|s| s.description)
+                .unwrap_or(
+                    "Equipment degradation detected — no specific failure signature matched",
+                );
         }
 
-        (best_match, best_score.min(1.0))
+        (best_match, best_score.min(1.0), best_description)
     }
 
     /// Calculate failure probability (0.0–1.0) using a simplified Weibull model.
@@ -443,7 +460,9 @@ impl PredictiveMaintenanceEngine {
 
         // Usage factor: more cycles = more wear
         let cycle_factor = if let Some(first) = history.first() {
-            let total_cycles = latest.operating_cycles.saturating_sub(first.operating_cycles);
+            let total_cycles = latest
+                .operating_cycles
+                .saturating_sub(first.operating_cycles);
             ((total_cycles as f64) / 100_000.0).min(1.0) * 0.2
         } else {
             0.0
@@ -471,11 +490,7 @@ impl PredictiveMaintenanceEngine {
     }
 
     /// Estimate remaining useful life in operating hours.
-    fn estimate_remaining_life(
-        &self,
-        health_score: f64,
-        history: &[EquipmentTelemetry],
-    ) -> f64 {
+    fn estimate_remaining_life(&self, health_score: f64, history: &[EquipmentTelemetry]) -> f64 {
         if health_score <= 0.0 {
             return 0.0;
         }
@@ -580,7 +595,9 @@ impl PredictiveMaintenanceEngine {
         let mut state = HashMap::new();
         state.insert(
             "equipment_tracked".to_string(),
-            serde_json::Value::Number(serde_json::Number::from(self.telemetry_history.len() as u64)),
+            serde_json::Value::Number(
+                serde_json::Number::from(self.telemetry_history.len() as u64),
+            ),
         );
         state
     }
@@ -680,11 +697,7 @@ mod tests {
         let engine = PredictiveMaintenanceEngine::new(10);
         let equip_id = Uuid::new_v4();
 
-        let prediction = engine.predict_maintenance(
-            equip_id,
-            "Unknown",
-            EquipmentCategory::Other,
-        );
+        let prediction = engine.predict_maintenance(equip_id, "Unknown", EquipmentCategory::Other);
         assert!(prediction.is_none());
     }
 
@@ -702,13 +715,17 @@ mod tests {
         let engine = PredictiveMaintenanceEngine::new(10);
         let equip_id = Uuid::new_v4();
 
-        // High vibration and temperature → likely bearing wear
+        // High vibration and temperature → most-exceeded failure envelope.
+        // With vibration 7.0 / temperature 80.0 the belt and lubrication
+        // envelopes are exceeded by a larger margin than bearing wear, so
+        // the honest prediction set includes them.
         let telemetry = create_telemetry(equip_id, 5000.0, 7.0, 80.0, 10000, 1000);
-        let (mode, confidence) = engine.predict_failure_mode(&[telemetry]);
+        let (mode, confidence, description) = engine.predict_failure_mode(&[telemetry]);
         assert!(confidence > 0.3);
-        // Should match bearing wear or overheating
+        assert!(!description.is_empty());
         assert!(
             mode == FailureMode::BearingWear
+                || mode == FailureMode::BeltFailure
                 || mode == FailureMode::Overheating
                 || mode == FailureMode::LubricationFailure
         );

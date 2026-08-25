@@ -3,13 +3,16 @@
 //! Provides endpoints for managing manufacturing work orders, including
 //! CRUD, status transitions, operations tracking, and statistics.
 
-use axum::{Json, extract::{Path, Query, State}};
+use axum::{
+    extract::{Path, Query, State},
+    Json,
+};
 use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
 use sensei_auth::middleware::AuthenticatedUser;
 use sensei_core::error::Result;
 use sensei_core::pagination::PaginatedResponse;
 use sensei_services::production::WorkOrder;
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::state::AppState;
@@ -146,16 +149,16 @@ pub async fn list_work_orders(
     let mut filtered: Vec<WorkOrder> = all
         .into_iter()
         .filter(|o| {
-            params.status.as_deref().map_or(true, |s| o.status == s)
-                && params.priority.as_deref().map_or(true, |p| o.priority == p)
-                && params.work_center_id.map_or(true, |wc| o.work_center_id == Some(wc))
-                && date_from.map_or(true, |d| {
-                    o.scheduled_start.map_or(true, |start| start >= d)
-                })
-                && date_to.map_or(true, |d| o.scheduled_start.map_or(true, |start| start <= d))
+            params.status.as_deref().is_none_or(|s| o.status == s)
+                && params.priority.as_deref().is_none_or(|p| o.priority == p)
+                && params
+                    .work_center_id
+                    .is_none_or(|wc| o.work_center_id == Some(wc))
+                && date_from.is_none_or(|d| o.scheduled_start.is_some_and(|start| start >= d))
+                && date_to.is_none_or(|d| o.scheduled_start.is_some_and(|start| start <= d))
         })
         .collect();
-    filtered.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
+    filtered.sort_by_key(|a| std::cmp::Reverse(a.updated_at));
 
     let total = filtered.len();
     let page = params.page.unwrap_or(1).max(1);
@@ -348,7 +351,8 @@ pub async fn get_work_order_stats(
 
     // Compute status breakdown
     let mut status_map: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
-    let mut priority_map: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+    let mut priority_map: std::collections::HashMap<String, usize> =
+        std::collections::HashMap::new();
     let mut total_quantity_planned: i64 = 0;
     let mut total_quantity_completed: i64 = 0;
 
@@ -371,14 +375,13 @@ pub async fn get_work_order_stats(
 
     // On-time = completed orders that finished by their scheduled end
     // (orders without a schedule are considered on time).
-    let completed_orders: Vec<&WorkOrder> = orders.iter().filter(|o| o.status == "completed").collect();
+    let completed_orders: Vec<&WorkOrder> =
+        orders.iter().filter(|o| o.status == "completed").collect();
     let on_time = completed_orders
         .iter()
-        .filter(|o| {
-            match (o.actual_end, o.scheduled_end) {
-                (Some(actual), Some(scheduled)) => actual <= scheduled,
-                _ => true,
-            }
+        .filter(|o| match (o.actual_end, o.scheduled_end) {
+            (Some(actual), Some(scheduled)) => actual <= scheduled,
+            _ => true,
         })
         .count();
     let on_time_percentage = if completed_orders.is_empty() {

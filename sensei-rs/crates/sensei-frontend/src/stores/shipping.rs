@@ -2,15 +2,15 @@
 //!
 //! Port of [`frontend/src/stores/shipping.ts`](frontend/src/stores/shipping.ts).
 
+use crate::api::client::{ApiClient, ApiError};
 use leptos::prelude::*;
 use std::collections::HashSet;
-use crate::api::client::{ApiClient, ApiError};
 
 // ---------------------------------------------------------------------------
 // Domain types
 // ---------------------------------------------------------------------------
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct ShippingStats {
     pub total_shipments: i32,
     pub pending_shipments: i32,
@@ -20,21 +20,6 @@ pub struct ShippingStats {
     pub open_pick_lists: i32,
     pub in_progress_picks: i32,
     pub completed_picks: i32,
-}
-
-impl Default for ShippingStats {
-    fn default() -> Self {
-        Self {
-            total_shipments: 0,
-            pending_shipments: 0,
-            in_transit: 0,
-            delivered: 0,
-            total_pick_lists: 0,
-            open_pick_lists: 0,
-            in_progress_picks: 0,
-            completed_picks: 0,
-        }
-    }
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -152,7 +137,10 @@ impl ShippingStore {
         };
         match client.get::<serde_json::Value>(&path).await {
             Ok(data) => {
-                if let Some(items) = data.get("items").and_then(|v| serde_json::from_value(v.clone()).ok()) {
+                if let Some(items) = data
+                    .get("items")
+                    .and_then(|v| serde_json::from_value(v.clone()).ok())
+                {
                     self.shipments.set(items);
                 }
             }
@@ -163,7 +151,10 @@ impl ShippingStore {
 
     pub async fn fetch_shipment(&self, client: &ApiClient, id: &str) {
         self.start_op("fetchShipment");
-        match client.get::<Shipment>(&format!("/shipping/shipments/{id}")).await {
+        match client
+            .get::<Shipment>(&format!("/shipping/shipments/{id}"))
+            .await
+        {
             Ok(shipment) => {
                 self.current_shipment.set(Some(shipment));
             }
@@ -172,9 +163,16 @@ impl ShippingStore {
         self.end_op("fetchShipment");
     }
 
-    pub async fn create_shipment(&self, client: &ApiClient, payload: serde_json::Value) -> Result<Shipment, ()> {
+    pub async fn create_shipment(
+        &self,
+        client: &ApiClient,
+        payload: serde_json::Value,
+    ) -> Result<Shipment, ApiError> {
         self.start_op("createShipment");
-        match client.post::<Shipment, serde_json::Value>("/shipping/shipments", &payload).await {
+        match client
+            .post::<Shipment, serde_json::Value>("/shipping/shipments", &payload)
+            .await
+        {
             Ok(shipment) => {
                 self.shipments.update(|s| s.push(shipment.clone()));
                 self.end_op("createShipment");
@@ -183,14 +181,22 @@ impl ShippingStore {
             Err(e) => {
                 self.error.set(Some(e.to_string()));
                 self.end_op("createShipment");
-                Err(())
+                Err(e)
             }
         }
     }
 
-    pub async fn update_shipment(&self, client: &ApiClient, id: &str, payload: serde_json::Value) -> Result<Shipment, ()> {
+    pub async fn update_shipment(
+        &self,
+        client: &ApiClient,
+        id: &str,
+        payload: serde_json::Value,
+    ) -> Result<Shipment, ApiError> {
         self.start_op("updateShipment");
-        match client.put::<Shipment, serde_json::Value>(&format!("/shipping/shipments/{id}"), &payload).await {
+        match client
+            .put::<Shipment, serde_json::Value>(&format!("/shipping/shipments/{id}"), &payload)
+            .await
+        {
             Ok(updated) => {
                 self.shipments.update(|s| {
                     if let Some(pos) = s.iter().position(|x| x.id == id) {
@@ -204,18 +210,35 @@ impl ShippingStore {
             Err(e) => {
                 self.error.set(Some(e.to_string()));
                 self.end_op("updateShipment");
-                Err(())
+                Err(e)
             }
         }
     }
 
-    pub async fn update_shipment_status(&self, client: &ApiClient, id: &str, status: &str) -> Result<Shipment, ()> {
-        self.update_shipment(client, id, serde_json::json!({ "status": status })).await
+    pub async fn update_shipment_status(
+        &self,
+        client: &ApiClient,
+        id: &str,
+        status: &str,
+    ) -> Result<Shipment, ApiError> {
+        self.update_shipment(client, id, serde_json::json!({ "status": status }))
+            .await
     }
 
-    pub async fn add_shipment_line(&self, client: &ApiClient, shipment_id: &str, line: serde_json::Value) -> Result<ShipmentLine, ()> {
+    pub async fn add_shipment_line(
+        &self,
+        client: &ApiClient,
+        shipment_id: &str,
+        line: serde_json::Value,
+    ) -> Result<ShipmentLine, ApiError> {
         self.start_op("addShipmentLine");
-        match client.post::<ShipmentLine, serde_json::Value>(&format!("/shipping/shipments/{shipment_id}/lines"), &line).await {
+        match client
+            .post::<ShipmentLine, serde_json::Value>(
+                &format!("/shipping/shipments/{shipment_id}/lines"),
+                &line,
+            )
+            .await
+        {
             Ok(new_line) => {
                 self.shipments.update(|s| {
                     if let Some(shipment) = s.iter_mut().find(|x| x.id == shipment_id) {
@@ -228,7 +251,7 @@ impl ShippingStore {
             Err(e) => {
                 self.error.set(Some(e.to_string()));
                 self.end_op("addShipmentLine");
-                Err(())
+                Err(e)
             }
         }
     }
@@ -245,7 +268,10 @@ impl ShippingStore {
         };
         match client.get::<serde_json::Value>(&path).await {
             Ok(data) => {
-                if let Some(items) = data.get("items").and_then(|v| serde_json::from_value(v.clone()).ok()) {
+                if let Some(items) = data
+                    .get("items")
+                    .and_then(|v| serde_json::from_value(v.clone()).ok())
+                {
                     self.pick_lists.set(items);
                 }
             }
@@ -256,7 +282,10 @@ impl ShippingStore {
 
     pub async fn fetch_pick_list(&self, client: &ApiClient, id: &str) {
         self.start_op("fetchPickList");
-        match client.get::<PickList>(&format!("/shipping/pick-lists/{id}")).await {
+        match client
+            .get::<PickList>(&format!("/shipping/pick-lists/{id}"))
+            .await
+        {
             Ok(pl) => {
                 self.current_pick_list.set(Some(pl));
             }
@@ -265,9 +294,16 @@ impl ShippingStore {
         self.end_op("fetchPickList");
     }
 
-    pub async fn create_pick_list(&self, client: &ApiClient, payload: serde_json::Value) -> Result<PickList, ()> {
+    pub async fn create_pick_list(
+        &self,
+        client: &ApiClient,
+        payload: serde_json::Value,
+    ) -> Result<PickList, ApiError> {
         self.start_op("createPickList");
-        match client.post::<PickList, serde_json::Value>("/shipping/pick-lists", &payload).await {
+        match client
+            .post::<PickList, serde_json::Value>("/shipping/pick-lists", &payload)
+            .await
+        {
             Ok(pl) => {
                 self.pick_lists.update(|p| p.push(pl.clone()));
                 self.end_op("createPickList");
@@ -276,14 +312,22 @@ impl ShippingStore {
             Err(e) => {
                 self.error.set(Some(e.to_string()));
                 self.end_op("createPickList");
-                Err(())
+                Err(e)
             }
         }
     }
 
-    pub async fn update_pick_list(&self, client: &ApiClient, id: &str, payload: serde_json::Value) -> Result<PickList, ()> {
+    pub async fn update_pick_list(
+        &self,
+        client: &ApiClient,
+        id: &str,
+        payload: serde_json::Value,
+    ) -> Result<PickList, ApiError> {
         self.start_op("updatePickList");
-        match client.put::<PickList, serde_json::Value>(&format!("/shipping/pick-lists/{id}"), &payload).await {
+        match client
+            .put::<PickList, serde_json::Value>(&format!("/shipping/pick-lists/{id}"), &payload)
+            .await
+        {
             Ok(updated) => {
                 self.pick_lists.update(|p| {
                     if let Some(pos) = p.iter().position(|x| x.id == id) {
@@ -297,25 +341,40 @@ impl ShippingStore {
             Err(e) => {
                 self.error.set(Some(e.to_string()));
                 self.end_op("updatePickList");
-                Err(())
+                Err(e)
             }
         }
     }
 
-    pub async fn start_picking(&self, client: &ApiClient, id: &str) -> Result<PickList, ()> {
-        self.update_pick_list(client, id, serde_json::json!({ "status": "in_progress" })).await
+    pub async fn start_picking(&self, client: &ApiClient, id: &str) -> Result<PickList, ApiError> {
+        self.update_pick_list(client, id, serde_json::json!({ "status": "in_progress" }))
+            .await
     }
 
-    pub async fn complete_picking(&self, client: &ApiClient, id: &str) -> Result<PickList, ()> {
-        self.update_pick_list(client, id, serde_json::json!({ "status": "completed" })).await
+    pub async fn complete_picking(
+        &self,
+        client: &ApiClient,
+        id: &str,
+    ) -> Result<PickList, ApiError> {
+        self.update_pick_list(client, id, serde_json::json!({ "status": "completed" }))
+            .await
     }
 
-    pub async fn update_pick_line(&self, client: &ApiClient, pick_list_id: &str, line_id: &str, quantity_picked: f64) -> Result<PickListLine, ()> {
+    pub async fn update_pick_line(
+        &self,
+        client: &ApiClient,
+        pick_list_id: &str,
+        line_id: &str,
+        quantity_picked: f64,
+    ) -> Result<PickListLine, ApiError> {
         self.start_op("updatePickLine");
-        match client.put::<PickListLine, serde_json::Value>(
-            &format!("/shipping/pick-lists/{pick_list_id}/lines/{line_id}"),
-            &serde_json::json!({ "quantity_picked": quantity_picked }),
-        ).await {
+        match client
+            .put::<PickListLine, serde_json::Value>(
+                &format!("/shipping/pick-lists/{pick_list_id}/lines/{line_id}"),
+                &serde_json::json!({ "quantity_picked": quantity_picked }),
+            )
+            .await
+        {
             Ok(updated) => {
                 self.pick_lists.update(|p| {
                     if let Some(pl) = p.iter_mut().find(|x| x.id == pick_list_id) {
@@ -330,7 +389,7 @@ impl ShippingStore {
             Err(e) => {
                 self.error.set(Some(e.to_string()));
                 self.end_op("updatePickLine");
-                Err(())
+                Err(e)
             }
         }
     }

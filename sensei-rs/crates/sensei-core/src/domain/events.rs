@@ -4,7 +4,7 @@
 //! They are published to the event bus and can trigger side effects such as
 //! notifications, integrations, or state transitions.
 
-use crate::types::{CorrelationId, EventId, Timestamp, new_correlation_id, now};
+use crate::types::{new_correlation_id, now, CorrelationId, EventId, Timestamp};
 use serde::{Deserialize, Serialize};
 use std::any::Any;
 use uuid::Uuid;
@@ -905,12 +905,7 @@ pub struct PMScheduleTriggeredEvent {
 
 impl PMScheduleTriggeredEvent {
     /// Create a new [`PMScheduleTriggeredEvent`].
-    pub fn new(
-        tenant_id: Uuid,
-        schedule_id: Uuid,
-        asset_id: Uuid,
-        next_due: String,
-    ) -> Self {
+    pub fn new(tenant_id: Uuid, schedule_id: Uuid, asset_id: Uuid, next_due: String) -> Self {
         Self {
             metadata: EventMetadata::new("production.pm.triggered", tenant_id),
             schedule_id,
@@ -1743,12 +1738,7 @@ pub struct RFQStatusChangedEvent {
 
 impl RFQStatusChangedEvent {
     /// Create a new [`RFQStatusChangedEvent`].
-    pub fn new(
-        tenant_id: Uuid,
-        rfq_id: Uuid,
-        old_status: String,
-        new_status: String,
-    ) -> Self {
+    pub fn new(tenant_id: Uuid, rfq_id: Uuid, old_status: String, new_status: String) -> Self {
         Self {
             metadata: EventMetadata::new("supply-chain.rfq.status-changed", tenant_id),
             rfq_id,
@@ -1871,12 +1861,7 @@ pub struct QuoteApprovedEvent {
 
 impl QuoteApprovedEvent {
     /// Create a new [`QuoteApprovedEvent`].
-    pub fn new(
-        tenant_id: Uuid,
-        quote_id: Uuid,
-        approved_by_id: Uuid,
-        total_amount: f64,
-    ) -> Self {
+    pub fn new(tenant_id: Uuid, quote_id: Uuid, approved_by_id: Uuid, total_amount: f64) -> Self {
         Self {
             metadata: EventMetadata::new("supply-chain.quote.approved", tenant_id),
             quote_id,
@@ -2882,12 +2867,7 @@ pub struct RiskMitigatedEvent {
 
 impl RiskMitigatedEvent {
     /// Create a new [`RiskMitigatedEvent`].
-    pub fn new(
-        tenant_id: Uuid,
-        risk_id: Uuid,
-        mitigation_id: Uuid,
-        effectiveness: String,
-    ) -> Self {
+    pub fn new(tenant_id: Uuid, risk_id: Uuid, mitigation_id: Uuid, effectiveness: String) -> Self {
         Self {
             metadata: EventMetadata::new("operations.risk.mitigated", tenant_id),
             risk_id,
@@ -3487,12 +3467,7 @@ pub struct ObeyaItemDeletedEvent {
 
 impl ObeyaItemDeletedEvent {
     /// Create a new [`ObeyaItemDeletedEvent`].
-    pub fn new(
-        tenant_id: Uuid,
-        item_id: Uuid,
-        board_id: Uuid,
-        title: String,
-    ) -> Self {
+    pub fn new(tenant_id: Uuid, item_id: Uuid, board_id: Uuid, title: String) -> Self {
         Self {
             metadata: EventMetadata::new("operations.obeya.item-deleted", tenant_id),
             item_id,
@@ -3745,12 +3720,7 @@ pub struct TaskAssignedEvent {
 
 impl TaskAssignedEvent {
     /// Create a new [`TaskAssignedEvent`].
-    pub fn new(
-        tenant_id: Uuid,
-        task_id: Uuid,
-        assignee_id: Uuid,
-        assigned_by: Uuid,
-    ) -> Self {
+    pub fn new(tenant_id: Uuid, task_id: Uuid, assignee_id: Uuid, assigned_by: Uuid) -> Self {
         Self {
             metadata: EventMetadata::new("project-management.task.assigned", tenant_id),
             task_id,
@@ -4026,12 +3996,7 @@ pub struct SavedViewDeletedEvent {
 
 impl SavedViewDeletedEvent {
     /// Create a new [`SavedViewDeletedEvent`].
-    pub fn new(
-        tenant_id: Uuid,
-        view_id: Uuid,
-        name: String,
-        deleted_by: Uuid,
-    ) -> Self {
+    pub fn new(tenant_id: Uuid, view_id: Uuid, name: String, deleted_by: Uuid) -> Self {
         Self {
             metadata: EventMetadata::new("saved-view.deleted", tenant_id),
             view_id,

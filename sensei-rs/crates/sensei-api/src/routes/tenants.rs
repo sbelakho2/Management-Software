@@ -2,12 +2,15 @@
 //!
 //! Provides CRUD endpoints for tenant/organization management.
 
-use axum::{Json, extract::{Path, State}};
-use serde::{Deserialize, Serialize};
+use axum::{
+    extract::{Path, State},
+    Json,
+};
 use sensei_auth::middleware::AuthenticatedUser;
 use sensei_core::domain::entities::Tenant;
 use sensei_core::error::{Result, SenseiError};
-use sensei_core::types::{TenantId, now};
+use sensei_core::types::{now, TenantId};
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::state::AppState;
@@ -62,7 +65,9 @@ pub async fn list_tenants(
             .filter(|t| t.id == user.tenant_id)
             .collect()
     };
-    Ok(Json(visible.into_iter().map(TenantResponse::from).collect()))
+    Ok(Json(
+        visible.into_iter().map(TenantResponse::from).collect(),
+    ))
 }
 
 /// Create a new tenant.
@@ -151,18 +156,25 @@ mod tests {
     async fn test_state() -> (AppState, TenantId, EntityId) {
         let hash = hash_password("Test@1234").unwrap();
         let tenant_id = TenantId::new_v4();
-        let users_service = InMemoryUsersService::with_admin(
-            "admin@test.com", "Admin User", &hash, tenant_id,
-        );
+        let users_service =
+            InMemoryUsersService::with_admin("admin@test.com", "Admin User", &hash, tenant_id);
         let users_service = Arc::new(users_service) as Arc<dyn UsersService>;
         let config = AppConfig::from_env().unwrap();
         let state = AppState::new(config, users_service);
-        let admin = state.users_service.find_by_email("admin@test.com").await.unwrap();
+        let admin = state
+            .users_service
+            .find_by_email("admin@test.com")
+            .await
+            .unwrap();
         (state, tenant_id, admin.id)
     }
 
     fn auth_user(tenant_id: TenantId, user_id: EntityId) -> AuthenticatedUser {
-        AuthenticatedUser { user_id, tenant_id, roles: vec!["admin".to_string()] }
+        AuthenticatedUser {
+            user_id,
+            tenant_id,
+            roles: vec!["admin".to_string()],
+        }
     }
 
     #[tokio::test]
@@ -218,7 +230,9 @@ mod tests {
             slug: "list-org".to_string(),
             features: None,
         };
-        let _ = create_tenant(user.clone(), State(state.clone()), Json(req)).await.unwrap();
+        let _ = create_tenant(user.clone(), State(state.clone()), Json(req))
+            .await
+            .unwrap();
         let resp = list_tenants(user, State(state.clone())).await.unwrap();
         assert_eq!(resp.len(), 1);
     }
@@ -240,9 +254,14 @@ mod tests {
             slug: "updated-slug".to_string(),
             features: Some(vec!["hr".to_string()]),
         };
-        let resp = update_tenant(user, State(state.clone()), Path(created.id), Json(update_req))
-            .await
-            .unwrap();
+        let resp = update_tenant(
+            user,
+            State(state.clone()),
+            Path(created.id),
+            Json(update_req),
+        )
+        .await
+        .unwrap();
         assert_eq!(resp.name, "Updated Name");
         assert_eq!(resp.slug, "updated-slug");
         assert!(resp.features.contains(&"hr".to_string()));

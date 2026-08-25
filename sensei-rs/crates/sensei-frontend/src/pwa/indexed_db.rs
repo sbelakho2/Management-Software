@@ -151,16 +151,17 @@ impl IndexedDb {
 
         // Handle onupgradeneeded — create object stores
         let open_req_clone = open_request.clone();
-        let cb =
-            Closure::<dyn FnMut(IdbVersionChangeEvent)>::new(move |_event: IdbVersionChangeEvent| {
+        let cb = Closure::<dyn FnMut(IdbVersionChangeEvent)>::new(
+            move |_event: IdbVersionChangeEvent| {
                 if let Ok(val) = open_req_clone.result() {
                     if let Ok(db) = val.dyn_into::<IdbDatabase>() {
                         Self::run_migrations(&db);
                     }
                 }
-            });
+            },
+        );
         open_request.set_onupgradeneeded(Some(cb.as_ref().unchecked_ref()));
-        let _ = cb.forget(); // Leak intentionally - lives for the lifetime of the open request
+        cb.forget(); // Leak intentionally - lives for the lifetime of the open request
 
         // Wait for the open request to complete
         let _ = JsFuture::from(idb_request_to_promise(&open_request))
@@ -237,22 +238,20 @@ impl IndexedDb {
     async fn await_transaction(&self, transaction: &IdbTransaction) -> Result<()> {
         let tx = transaction.clone();
         let promise = js_sys::Promise::new(&mut |resolve, reject| {
-            let oncomplete_tx = tx.clone();
-            let oncomplete =
-                Closure::<dyn FnMut()>::new(move || {
-                    resolve.call0(&JsValue::null()).ok();
-                });
+            let oncomplete = Closure::<dyn FnMut()>::new(move || {
+                resolve.call0(&JsValue::null()).ok();
+            });
             tx.set_oncomplete(Some(oncomplete.as_ref().unchecked_ref()));
             oncomplete.forget();
 
             let onerror_tx = tx.clone();
             let onerror = Closure::<dyn FnMut()>::new(move || {
-                    let err_val: JsValue = match onerror_tx.error() {
-                        Some(dom_ex) => dom_ex.into(),
-                        None => JsValue::from_str("transaction error"),
-                    };
-                    reject.call1(&JsValue::null(), &err_val).ok();
-                });
+                let err_val: JsValue = match onerror_tx.error() {
+                    Some(dom_ex) => dom_ex.into(),
+                    None => JsValue::from_str("transaction error"),
+                };
+                reject.call1(&JsValue::null(), &err_val).ok();
+            });
             tx.set_onerror(Some(onerror.as_ref().unchecked_ref()));
             onerror.forget();
         });
@@ -320,7 +319,10 @@ impl IndexedDb {
 
     /// Store a pending operation (insert or update by ID).
     pub async fn put_pending_operation(&self, value: &JsValue) -> Result<()> {
-        let (tx, store) = self.transaction_store(StoreNames::PENDING_OPERATIONS, IdbTransactionMode::Readwrite)?;
+        let (tx, store) = self.transaction_store(
+            StoreNames::PENDING_OPERATIONS,
+            IdbTransactionMode::Readwrite,
+        )?;
         let request = self.request_put(&store, value)?;
         self.await_request(&request).await?;
         self.await_transaction(&tx).await
@@ -332,7 +334,10 @@ impl IndexedDb {
         value: &JsValue,
         key: &JsValue,
     ) -> Result<()> {
-        let (tx, store) = self.transaction_store(StoreNames::PENDING_OPERATIONS, IdbTransactionMode::Readwrite)?;
+        let (tx, store) = self.transaction_store(
+            StoreNames::PENDING_OPERATIONS,
+            IdbTransactionMode::Readwrite,
+        )?;
         let request = self.request_put_with_key(&store, value, key)?;
         self.await_request(&request).await?;
         self.await_transaction(&tx).await
@@ -340,7 +345,8 @@ impl IndexedDb {
 
     /// Get a pending operation by its ID.
     pub async fn get_pending_operation(&self, id: &JsValue) -> Result<Option<JsValue>> {
-        let (tx, store) = self.transaction_store(StoreNames::PENDING_OPERATIONS, IdbTransactionMode::Readonly)?;
+        let (tx, store) =
+            self.transaction_store(StoreNames::PENDING_OPERATIONS, IdbTransactionMode::Readonly)?;
         let request = self.request_get(&store, id)?;
         let result = self.await_request(&request).await?;
         self.await_transaction(&tx).await?;
@@ -353,7 +359,8 @@ impl IndexedDb {
 
     /// Get all pending operations.
     pub async fn get_all_pending_operations(&self) -> Result<Vec<JsValue>> {
-        let (tx, store) = self.transaction_store(StoreNames::PENDING_OPERATIONS, IdbTransactionMode::Readonly)?;
+        let (tx, store) =
+            self.transaction_store(StoreNames::PENDING_OPERATIONS, IdbTransactionMode::Readonly)?;
         let request = self.request_get_all(&store)?;
         let result = self.await_request(&request).await?;
         self.await_transaction(&tx).await?;
@@ -362,7 +369,10 @@ impl IndexedDb {
 
     /// Delete a pending operation by ID.
     pub async fn delete_pending_operation(&self, id: &JsValue) -> Result<()> {
-        let (tx, store) = self.transaction_store(StoreNames::PENDING_OPERATIONS, IdbTransactionMode::Readwrite)?;
+        let (tx, store) = self.transaction_store(
+            StoreNames::PENDING_OPERATIONS,
+            IdbTransactionMode::Readwrite,
+        )?;
         let request = self.request_delete(&store, id)?;
         self.await_request(&request).await?;
         self.await_transaction(&tx).await
@@ -370,7 +380,10 @@ impl IndexedDb {
 
     /// Clear all pending operations.
     pub async fn clear_pending_operations(&self) -> Result<()> {
-        let (tx, store) = self.transaction_store(StoreNames::PENDING_OPERATIONS, IdbTransactionMode::Readwrite)?;
+        let (tx, store) = self.transaction_store(
+            StoreNames::PENDING_OPERATIONS,
+            IdbTransactionMode::Readwrite,
+        )?;
         let request = self.request_clear(&store)?;
         self.await_request(&request).await?;
         self.await_transaction(&tx).await
@@ -378,14 +391,17 @@ impl IndexedDb {
 
     /// Count pending operations.
     pub async fn count_pending_operations(&self) -> Result<u32> {
-        let (tx, store) = self.transaction_store(StoreNames::PENDING_OPERATIONS, IdbTransactionMode::Readonly)?;
+        let (tx, store) =
+            self.transaction_store(StoreNames::PENDING_OPERATIONS, IdbTransactionMode::Readonly)?;
         let request = self.request_count(&store)?;
         let result = self.await_request(&request).await?;
         self.await_transaction(&tx).await?;
         result
             .as_f64()
             .map(|n| n as u32)
-            .ok_or(IndexedDbError::RequestFailed("count returned non-number".into()))
+            .ok_or(IndexedDbError::RequestFailed(
+                "count returned non-number".into(),
+            ))
     }
 
     // ── Sync Meta CRUD ──────────────────────────────────────────────────────
@@ -401,7 +417,8 @@ impl IndexedDb {
         js_sys::Reflect::set(&entry, &JsValue::from_str("value"), value)
             .map_err(|_| IndexedDbError::RequestFailed("Cannot set value".into()))?;
 
-        let (tx, store) = self.transaction_store(StoreNames::SYNC_META, IdbTransactionMode::Readwrite)?;
+        let (tx, store) =
+            self.transaction_store(StoreNames::SYNC_META, IdbTransactionMode::Readwrite)?;
         let request = self.request_put(&store, &entry)?;
         self.await_request(&request).await?;
         self.await_transaction(&tx).await
@@ -409,7 +426,8 @@ impl IndexedDb {
 
     /// Get a sync metadata value by key.
     pub async fn get_sync_meta(&self, key: &str) -> Result<Option<JsValue>> {
-        let (tx, store) = self.transaction_store(StoreNames::SYNC_META, IdbTransactionMode::Readonly)?;
+        let (tx, store) =
+            self.transaction_store(StoreNames::SYNC_META, IdbTransactionMode::Readonly)?;
         let request = self.request_get(&store, &JsValue::from_str(key))?;
         let result = self.await_request(&request).await?;
         self.await_transaction(&tx).await?;
@@ -438,7 +456,8 @@ impl IndexedDb {
         )
         .map_err(|_| IndexedDbError::RequestFailed("Cannot set cached_at".into()))?;
 
-        let (tx, store) = self.transaction_store(StoreNames::CACHE, IdbTransactionMode::Readwrite)?;
+        let (tx, store) =
+            self.transaction_store(StoreNames::CACHE, IdbTransactionMode::Readwrite)?;
         let request = self.request_put(&store, &entry)?;
         self.await_request(&request).await?;
         self.await_transaction(&tx).await
@@ -446,7 +465,8 @@ impl IndexedDb {
 
     /// Get a cached API response by URL.
     pub async fn get_cache_entry(&self, url: &str) -> Result<Option<JsValue>> {
-        let (tx, store) = self.transaction_store(StoreNames::CACHE, IdbTransactionMode::Readonly)?;
+        let (tx, store) =
+            self.transaction_store(StoreNames::CACHE, IdbTransactionMode::Readonly)?;
         let request = self.request_get(&store, &JsValue::from_str(url))?;
         let result = self.await_request(&request).await?;
         self.await_transaction(&tx).await?;
@@ -460,7 +480,8 @@ impl IndexedDb {
 
     /// Delete a cache entry by URL.
     pub async fn delete_cache_entry(&self, url: &str) -> Result<()> {
-        let (tx, store) = self.transaction_store(StoreNames::CACHE, IdbTransactionMode::Readwrite)?;
+        let (tx, store) =
+            self.transaction_store(StoreNames::CACHE, IdbTransactionMode::Readwrite)?;
         let request = self.request_delete(&store, &JsValue::from_str(url))?;
         self.await_request(&request).await?;
         self.await_transaction(&tx).await
@@ -468,7 +489,8 @@ impl IndexedDb {
 
     /// Clear all cache entries.
     pub async fn clear_cache(&self) -> Result<()> {
-        let (tx, store) = self.transaction_store(StoreNames::CACHE, IdbTransactionMode::Readwrite)?;
+        let (tx, store) =
+            self.transaction_store(StoreNames::CACHE, IdbTransactionMode::Readwrite)?;
         let request = self.request_clear(&store)?;
         self.await_request(&request).await?;
         self.await_transaction(&tx).await

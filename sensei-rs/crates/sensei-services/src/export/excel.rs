@@ -5,9 +5,9 @@
 //! - Multi-sheet XLSX workbooks from a vec of [`SheetData`].
 //! - CSV strings from any `Serialize`-able data with proper escaping.
 
+use rust_xlsxwriter::*;
 use sensei_core::error::{Result, SenseiError};
 use serde::Serialize;
-use rust_xlsxwriter::*;
 
 // ---------------------------------------------------------------------------
 // Re-exported types
@@ -69,7 +69,9 @@ impl ExcelExportService {
 
             // Write header row with bold format
             for (col, header) in headers.iter().enumerate() {
-                sheet.write_string_with_format(0, col as u16, header, &header_fmt).map_err(map_xlsx_error)?;
+                sheet
+                    .write_string_with_format(0, col as u16, header, &header_fmt)
+                    .map_err(map_xlsx_error)?;
             }
 
             // Write data rows
@@ -77,12 +79,17 @@ impl ExcelExportService {
                 let val = serde_json::to_value(item)?;
                 if let serde_json::Value::Object(map) = val {
                     for (col_idx, header) in headers.iter().enumerate() {
-                        let cell_value = map.get(header).map(|v| match v {
-                            serde_json::Value::Null => String::new(),
-                            serde_json::Value::String(s) => s.clone(),
-                            other => other.to_string(),
-                        }).unwrap_or_default();
-                        sheet.write_string((row_idx + 1) as u32, col_idx as u16, &cell_value).map_err(map_xlsx_error)?;
+                        let cell_value = map
+                            .get(header)
+                            .map(|v| match v {
+                                serde_json::Value::Null => String::new(),
+                                serde_json::Value::String(s) => s.clone(),
+                                other => other.to_string(),
+                            })
+                            .unwrap_or_default();
+                        sheet
+                            .write_string((row_idx + 1) as u32, col_idx as u16, &cell_value)
+                            .map_err(map_xlsx_error)?;
                     }
                 }
             }
@@ -94,20 +101,22 @@ impl ExcelExportService {
                     .map(|item| {
                         let val = serde_json::to_value(item).ok();
                         val.and_then(|v| {
-                            v.get(header)
-                                .map(|v| match v {
-                                    serde_json::Value::Null => 0,
-                                    serde_json::Value::String(s) => s.len(),
-                                    other => other.to_string().len(),
-                                })
-                        }).unwrap_or(0)
+                            v.get(header).map(|v| match v {
+                                serde_json::Value::Null => 0,
+                                serde_json::Value::String(s) => s.len(),
+                                other => other.to_string().len(),
+                            })
+                        })
+                        .unwrap_or(0)
                     })
                     .chain(std::iter::once(header.len()))
                     .max()
                     .unwrap_or(10)
                     .min(50) as f64; // Cap at 50 chars wide
 
-                sheet.set_column_width(col_idx as u16, max_width + 2.0).map_err(map_xlsx_error)?;
+                sheet
+                    .set_column_width(col_idx as u16, max_width + 2.0)
+                    .map_err(map_xlsx_error)?;
             }
         }
 
@@ -129,13 +138,17 @@ impl ExcelExportService {
 
             // Write headers with bold format
             for (col, header) in sheet_data.headers.iter().enumerate() {
-                sheet.write_string_with_format(0, col as u16, header, &header_fmt).map_err(map_xlsx_error)?;
+                sheet
+                    .write_string_with_format(0, col as u16, header, &header_fmt)
+                    .map_err(map_xlsx_error)?;
             }
 
             // Write data rows
             for (row_idx, row) in sheet_data.rows.iter().enumerate() {
                 for (col_idx, value) in row.iter().enumerate() {
-                    sheet.write_string((row_idx + 1) as u32, col_idx as u16, value).map_err(map_xlsx_error)?;
+                    sheet
+                        .write_string((row_idx + 1) as u32, col_idx as u16, value)
+                        .map_err(map_xlsx_error)?;
                 }
             }
 
@@ -144,17 +157,15 @@ impl ExcelExportService {
                 let max_width = sheet_data
                     .rows
                     .iter()
-                    .map(|row| {
-                        row.get(col_idx)
-                            .map(|s| s.len())
-                            .unwrap_or(0)
-                    })
+                    .map(|row| row.get(col_idx).map(|s| s.len()).unwrap_or(0))
                     .chain(std::iter::once(header.len()))
                     .max()
                     .unwrap_or(10)
                     .min(50) as f64;
 
-                sheet.set_column_width(col_idx as u16, max_width + 2.0).map_err(map_xlsx_error)?;
+                sheet
+                    .set_column_width(col_idx as u16, max_width + 2.0)
+                    .map_err(map_xlsx_error)?;
             }
         }
 
@@ -197,11 +208,14 @@ impl ExcelExportService {
                         if i > 0 {
                             output.push(',');
                         }
-                        let cell_value = map.get(header).map(|v| match v {
-                            serde_json::Value::Null => String::new(),
-                            serde_json::Value::String(s) => s.clone(),
-                            other => other.to_string(),
-                        }).unwrap_or_default();
+                        let cell_value = map
+                            .get(header)
+                            .map(|v| match v {
+                                serde_json::Value::Null => String::new(),
+                                serde_json::Value::String(s) => s.clone(),
+                                other => other.to_string(),
+                            })
+                            .unwrap_or_default();
                         output.push_str(&escape_csv(&cell_value));
                     }
                     output.push('\n');

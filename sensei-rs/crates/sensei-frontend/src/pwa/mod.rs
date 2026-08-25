@@ -43,9 +43,10 @@ pub struct PwaState {
 }
 
 /// Describes the state of the service worker registration.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum SwRegistrationState {
     /// Not yet registered.
+    #[default]
     Unregistered,
     /// Registration is in progress.
     Registering,
@@ -53,12 +54,6 @@ pub enum SwRegistrationState {
     Registered,
     /// Registration failed with an error message.
     Failed(String),
-}
-
-impl Default for SwRegistrationState {
-    fn default() -> Self {
-        Self::Unregistered
-    }
 }
 
 impl PwaState {
@@ -121,16 +116,16 @@ pub fn init_pwa() -> PwaState {
     let periodic_sync_supported = sync::SyncService::is_periodic_sync_supported();
     let sw_supported = service_worker::is_service_worker_supported();
 
-    pwa_state
-        .bg_sync_supported
-        .set(bg_sync_supported);
+    pwa_state.bg_sync_supported.set(bg_sync_supported);
     pwa_state
         .periodic_sync_supported
         .set(periodic_sync_supported);
 
     // Register the service worker if supported
     if sw_supported {
-        pwa_state.sw_registration_state.set(SwRegistrationState::Registering);
+        pwa_state
+            .sw_registration_state
+            .set(SwRegistrationState::Registering);
         wasm_bindgen_futures::spawn_local({
             let pwa = pwa_state.clone();
             async move {

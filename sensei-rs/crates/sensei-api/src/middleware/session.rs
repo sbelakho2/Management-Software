@@ -22,8 +22,8 @@ use axum::{
     Json,
 };
 use dashmap::DashMap;
-use serde::Serialize;
 use sensei_auth::middleware::AuthenticatedUser;
+use serde::Serialize;
 use sha2::{Digest, Sha256};
 use std::net::IpAddr;
 use std::sync::Arc;
@@ -219,7 +219,9 @@ pub fn resolve_client_ip(
         }
         // Every XFF entry is trusted (or the header is absent): the request
         // is indistinguishable from the proxy itself.
-        return peer_ip.map(|ip| ip.to_string()).unwrap_or_else(|| "unknown".to_string());
+        return peer_ip
+            .map(|ip| ip.to_string())
+            .unwrap_or_else(|| "unknown".to_string());
     }
 
     match peer_ip {
@@ -431,7 +433,10 @@ mod tests {
     fn test_extract_client_ip_trusted_proxy_uses_rightmost_foreign_xff() {
         // Peer 10.0.0.1 IS trusted: use the rightmost non-trusted XFF entry.
         let trusted = vec![ip("10.0.0.1"), ip("10.0.0.2")];
-        let req = req_with_peer(Some(ip("10.0.0.1")), Some("198.51.100.7, 10.0.0.2, 203.0.113.99"));
+        let req = req_with_peer(
+            Some(ip("10.0.0.1")),
+            Some("198.51.100.7, 10.0.0.2, 203.0.113.99"),
+        );
         assert_eq!(extract_client_ip(&req, &trusted), "203.0.113.99");
     }
 

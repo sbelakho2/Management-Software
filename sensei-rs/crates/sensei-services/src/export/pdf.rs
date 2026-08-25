@@ -228,7 +228,12 @@ impl PdfExportService {
         y = Self::draw_field(&mut ops, y, "Assigned To", &wo.assigned_to);
         y = Self::draw_field(&mut ops, y, "Due Date", &wo.due_date);
         y = Self::draw_field(&mut ops, y, "Work Center", &wo.work_center);
-        let _ = Self::draw_field(&mut ops, y, "Estimated Hours", &format!("{:.1}", wo.estimated_hours));
+        let _ = Self::draw_field(
+            &mut ops,
+            y,
+            "Estimated Hours",
+            &format!("{:.1}", wo.estimated_hours),
+        );
 
         Self::build_pdf("Work Order", ops)
     }
@@ -250,7 +255,12 @@ impl PdfExportService {
         y = Self::draw_field(&mut ops, y, "1. Problem Statement", &a3.problem_statement);
         y = Self::draw_field(&mut ops, y, "2. Current State", &a3.current_state);
         y = Self::draw_field(&mut ops, y, "3. Goal", &a3.goal);
-        y = Self::draw_field(&mut ops, y, "4. Root Cause Analysis", &a3.root_cause_analysis);
+        y = Self::draw_field(
+            &mut ops,
+            y,
+            "4. Root Cause Analysis",
+            &a3.root_cause_analysis,
+        );
         y = Self::draw_field(&mut ops, y, "5. Countermeasures", &a3.countermeasures);
         y = Self::draw_field(&mut ops, y, "6. Check Plan", &a3.check_plan);
         let _ = Self::draw_field(&mut ops, y, "7. Follow Up", &a3.follow_up);
@@ -273,7 +283,11 @@ impl PdfExportService {
         y -= Pt(8.0);
 
         // Line items table
-        y = Self::draw_table_header(&mut ops, y, &["#", "Description", "Qty", "Unit Price", "Total"]);
+        y = Self::draw_table_header(
+            &mut ops,
+            y,
+            &["#", "Description", "Qty", "Unit Price", "Total"],
+        );
         for (i, line) in quote.line_items.iter().enumerate() {
             if y < Pt(60.0) {
                 break;
@@ -317,8 +331,13 @@ impl PdfExportService {
         y -= Pt(8.0);
 
         // Measurements table
-        y = Self::draw_table_header(&mut ops, y, &["#", "Characteristic", "Nominal", "Actual", "Status"]);
-        for (i, (char_name, nominal, actual, status)) in inspection.measurements.iter().enumerate() {
+        y = Self::draw_table_header(
+            &mut ops,
+            y,
+            &["#", "Characteristic", "Nominal", "Actual", "Status"],
+        );
+        for (i, (char_name, nominal, actual, status)) in inspection.measurements.iter().enumerate()
+        {
             if y < Pt(40.0) {
                 break;
             }
@@ -354,8 +373,22 @@ impl PdfExportService {
     /// Draw the report title header at the top of the page.
     fn draw_report_header(ops: &mut Vec<Op>, title: &str) {
         // Company / title bar
-        write_text(ops, Pt(18.0), mm_pt(20.0), mm_pt(282.0), "SENSEI ERP", BuiltinFont::HelveticaBold);
-        write_text(ops, Pt(14.0), mm_pt(20.0), mm_pt(275.0), title, BuiltinFont::HelveticaBold);
+        write_text(
+            ops,
+            Pt(18.0),
+            mm_pt(20.0),
+            mm_pt(282.0),
+            "SENSEI ERP",
+            BuiltinFont::HelveticaBold,
+        );
+        write_text(
+            ops,
+            Pt(14.0),
+            mm_pt(20.0),
+            mm_pt(275.0),
+            title,
+            BuiltinFont::HelveticaBold,
+        );
 
         // Horizontal rule
         draw_hline(ops, mm_pt(20.0), mm_pt(190.0), mm_pt(270.0));
@@ -364,7 +397,14 @@ impl PdfExportService {
     /// Draw a label: value field at the given y-position (in points).
     /// Returns the new y position after the field.
     fn draw_field(ops: &mut Vec<Op>, y: Pt, label: &str, value: &str) -> Pt {
-        write_text(ops, Pt(10.0), mm_pt(20.0), y, label, BuiltinFont::HelveticaBold);
+        write_text(
+            ops,
+            Pt(10.0),
+            mm_pt(20.0),
+            y,
+            label,
+            BuiltinFont::HelveticaBold,
+        );
         write_text(ops, Pt(10.0), mm_pt(65.0), y, value, BuiltinFont::Helvetica);
         y - Pt(14.0)
     }
@@ -424,7 +464,7 @@ fn write_text(ops: &mut Vec<Op>, size: Pt, x: Pt, y: Pt, text: &str, font: Built
     ops.push(Op::SetTextCursor {
         pos: Point { x, y },
     });
-    ops.push(Op::SetFontSizeBuiltinFont { size, font: font.clone() });
+    ops.push(Op::SetFontSizeBuiltinFont { size, font });
     ops.push(Op::StartTextSection);
     ops.push(Op::WriteTextBuiltinFont {
         items: vec![TextItem::Text(text.to_string())],

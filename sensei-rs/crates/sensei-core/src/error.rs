@@ -159,7 +159,9 @@ impl axum::response::IntoResponse for SenseiError {
             SenseiError::Unauthorized(msg) | SenseiError::TokenError(msg) => {
                 (StatusCode::UNAUTHORIZED, msg.clone())
             }
-            SenseiError::TokenExpired => (StatusCode::UNAUTHORIZED, "Token has expired".to_string()),
+            SenseiError::TokenExpired => {
+                (StatusCode::UNAUTHORIZED, "Token has expired".to_string())
+            }
             SenseiError::Forbidden(msg) => (StatusCode::FORBIDDEN, msg.clone()),
             SenseiError::NotFound(msg) => (StatusCode::NOT_FOUND, msg.clone()),
             SenseiError::AlreadyExists(msg) | SenseiError::Conflict(msg) => {
@@ -179,15 +181,12 @@ impl axum::response::IntoResponse for SenseiError {
             | SenseiError::Internal(msg)
             | SenseiError::Serialization(msg)
             | SenseiError::LockError(msg)
-            | SenseiError::ChannelError(msg) => {
-                (StatusCode::INTERNAL_SERVER_ERROR, msg.clone())
-            }
-            SenseiError::HttpError { status, message } => {
-                (StatusCode::from_u16(*status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR), message.clone())
-            }
-            SenseiError::Io(e) => {
-                (StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
-            }
+            | SenseiError::ChannelError(msg) => (StatusCode::INTERNAL_SERVER_ERROR, msg.clone()),
+            SenseiError::HttpError { status, message } => (
+                StatusCode::from_u16(*status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
+                message.clone(),
+            ),
+            SenseiError::Io(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()),
         };
 
         let body = serde_json::json!({
@@ -225,8 +224,12 @@ impl SenseiError {
     /// Convert to an HTTP status code number.
     pub fn http_status(&self) -> u16 {
         match self {
-            SenseiError::Validation(_) | SenseiError::MissingField(_) | SenseiError::InvalidValue { .. } => 400,
-            SenseiError::Unauthorized(_) | SenseiError::TokenError(_) | SenseiError::TokenExpired => 401,
+            SenseiError::Validation(_)
+            | SenseiError::MissingField(_)
+            | SenseiError::InvalidValue { .. } => 400,
+            SenseiError::Unauthorized(_)
+            | SenseiError::TokenError(_)
+            | SenseiError::TokenExpired => 401,
             SenseiError::Forbidden(_) => 403,
             SenseiError::NotFound(_) => 404,
             SenseiError::AlreadyExists(_) | SenseiError::Conflict(_) => 409,

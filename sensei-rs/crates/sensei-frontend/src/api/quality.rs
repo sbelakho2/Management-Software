@@ -159,7 +159,10 @@ impl QualityApi {
         client.get(&format!("/api/v1/quality/ncr/{}", id)).await
     }
 
-    pub async fn create_ncr(client: &ApiClient, req: &CreateNcrRequest) -> Result<NcrDto, ApiError> {
+    pub async fn create_ncr(
+        client: &ApiClient,
+        req: &CreateNcrRequest,
+    ) -> Result<NcrDto, ApiError> {
         client.post("/api/v1/quality/ncr", req).await
     }
 
@@ -172,7 +175,10 @@ impl QualityApi {
         client.get(&format!("/api/v1/quality/capa/{}", id)).await
     }
 
-    pub async fn create_capa(client: &ApiClient, req: &CreateCapaRequest) -> Result<CapaDto, ApiError> {
+    pub async fn create_capa(
+        client: &ApiClient,
+        req: &CreateCapaRequest,
+    ) -> Result<CapaDto, ApiError> {
         client.post("/api/v1/quality/capa", req).await
     }
 
@@ -182,7 +188,9 @@ impl QualityApi {
     }
 
     pub async fn get_inspection(client: &ApiClient, id: &str) -> Result<InspectionDto, ApiError> {
-        client.get(&format!("/api/v1/quality/inspections/{}", id)).await
+        client
+            .get(&format!("/api/v1/quality/inspections/{}", id))
+            .await
     }
 
     // ---- Audits ----

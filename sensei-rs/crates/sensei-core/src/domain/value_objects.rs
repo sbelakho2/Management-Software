@@ -217,7 +217,9 @@ mod tests {
     #[test]
     fn money_from_decimal_rounds_to_nearest_cent() {
         assert_eq!(
-            Money::from_decimal(10.505, CurrencyCode::USD).unwrap().cents,
+            Money::from_decimal(10.505, CurrencyCode::USD)
+                .unwrap()
+                .cents,
             1051
         );
         assert_eq!(
@@ -225,7 +227,9 @@ mod tests {
             1050
         );
         assert_eq!(
-            Money::from_decimal(-3.14159, CurrencyCode::EUR).unwrap().cents,
+            Money::from_decimal(-std::f64::consts::PI, CurrencyCode::EUR)
+                .unwrap()
+                .cents,
             -314
         );
     }

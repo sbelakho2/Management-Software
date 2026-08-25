@@ -5,7 +5,7 @@
 
 use async_trait::async_trait;
 use sensei_core::error::{Result, SenseiError};
-use sensei_core::types::{EntityId, TenantId, Timestamp, new_id, now};
+use sensei_core::types::{new_id, now, EntityId, TenantId, Timestamp};
 use std::collections::HashMap;
 use uuid::Uuid;
 
@@ -111,11 +111,7 @@ pub trait ScarService: Send + Sync {
     async fn add_corrective_action(&self, id: EntityId, action: String) -> Result<Scar>;
 
     /// Verify and close a SCAR.
-    async fn verify_and_close(
-        &self,
-        id: EntityId,
-        verification_notes: String,
-    ) -> Result<Scar>;
+    async fn verify_and_close(&self, id: EntityId, verification_notes: String) -> Result<Scar>;
 }
 
 /// Customer satisfaction service (complaints, surveys, NPS).
@@ -163,7 +159,10 @@ pub trait CustomerSatisfactionService: Send + Sync {
     ) -> Result<EightDReport>;
 
     /// List complaints.
-    async fn list_complaints(&self, _tenant_id: TenantId) -> Result<Vec<super::models::CustomerComplaint>>;
+    async fn list_complaints(
+        &self,
+        _tenant_id: TenantId,
+    ) -> Result<Vec<super::models::CustomerComplaint>>;
 
     /// Create customer survey.
     async fn create_survey(
@@ -279,10 +278,7 @@ impl SupplierService for InMemorySupplierQualityService {
         tier: String,
     ) -> Result<SupplierProfile> {
         let mut suppliers = self.suppliers.write().await;
-        if let Some(existing) = suppliers
-            .iter_mut()
-            .find(|s| s.supplier_id == supplier_id)
-        {
+        if let Some(existing) = suppliers.iter_mut().find(|s| s.supplier_id == supplier_id) {
             existing.name = name;
             existing.tier = tier;
             return Ok(existing.clone());
@@ -528,11 +524,7 @@ impl ScarService for InMemorySupplierQualityService {
         Ok(scar.clone())
     }
 
-    async fn verify_and_close(
-        &self,
-        id: EntityId,
-        verification_notes: String,
-    ) -> Result<Scar> {
+    async fn verify_and_close(&self, id: EntityId, verification_notes: String) -> Result<Scar> {
         let mut scars = self.scars.write().await;
         let scar = scars
             .iter_mut()

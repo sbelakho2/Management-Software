@@ -65,12 +65,8 @@ impl TestApp {
         let hash = hash_password(&password).expect("Failed to hash admin password");
         let tenant_id = TenantId::new_v4();
 
-        let users_service = InMemoryUsersService::with_admin(
-            "admin@sensei.test",
-            "Admin User",
-            &hash,
-            tenant_id,
-        );
+        let users_service =
+            InMemoryUsersService::with_admin("admin@sensei.test", "Admin User", &hash, tenant_id);
         let users_service = Arc::new(users_service) as Arc<dyn UsersService>;
 
         // `AppConfig::from_env()` returns a Result; the environment is
@@ -80,6 +76,22 @@ impl TestApp {
              by pin_test_environment)",
         );
         let state = AppState::new(config, users_service);
+
+        // Seed the admin's tenant record so tenant-scoped lookups (and the
+        // tenants API) work against a consistent world.
+        state
+            .tenants_service
+            .create_tenant(sensei_core::domain::entities::Tenant {
+                id: tenant_id,
+                name: "Test Admin Tenant".to_string(),
+                slug: format!("test-admin-{}", tenant_id.as_simple()),
+                is_active: true,
+                features: Vec::new(),
+                created_at: chrono::Utc::now(),
+                updated_at: chrono::Utc::now(),
+            })
+            .await
+            .expect("Failed to seed admin tenant");
 
         // Get the admin user ID from the service
         let admin = state
@@ -143,11 +155,8 @@ impl TestApp {
     ///
     /// This uses [`tower::ServiceExt::oneshot`] which invokes the full
     /// middleware stack without binding a TCP port.
-    pub async fn send_request(
-        &self,
-        req: Request<Body>,
-    ) -> Response<Body> {
-        let mut router = self.router.clone();
+    pub async fn send_request(&self, req: Request<Body>) -> Response<Body> {
+        let router = self.router.clone();
         router
             .oneshot(req)
             .await

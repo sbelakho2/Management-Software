@@ -2,13 +2,16 @@
 //!
 //! Provides CRUD endpoints for contact person management.
 
-use axum::{Json, extract::{Path, Query, State}};
-use serde::{Deserialize, Serialize};
+use axum::{
+    extract::{Path, Query, State},
+    Json,
+};
 use sensei_auth::middleware::AuthenticatedUser;
 use sensei_core::domain::entities::Contact;
 use sensei_core::error::Result;
 use sensei_core::pagination::PaginatedResponse;
-use sensei_core::types::{EntityId, TenantId, now};
+use sensei_core::types::{now, EntityId, TenantId};
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::state::AppState;
@@ -121,7 +124,10 @@ pub async fn create_contact(
         created_at: now(),
         updated_at: now(),
     };
-    let created = state.contacts_service.create_contact(tenant_id, contact).await?;
+    let created = state
+        .contacts_service
+        .create_contact(tenant_id, contact)
+        .await?;
     Ok(Json(ContactResponse::from(created)))
 }
 
@@ -164,7 +170,10 @@ pub async fn update_contact(
         created_at: existing.created_at,
         updated_at: now(),
     };
-    let updated = state.contacts_service.update_contact(tenant_id, id, contact).await?;
+    let updated = state
+        .contacts_service
+        .update_contact(tenant_id, id, contact)
+        .await?;
     Ok(Json(ContactResponse::from(updated)))
 }
 
@@ -198,18 +207,25 @@ mod tests {
     async fn test_state() -> (AppState, TenantId, EntityId) {
         let hash = hash_password("Test@1234").unwrap();
         let tenant_id = TenantId::new_v4();
-        let users_service = InMemoryUsersService::with_admin(
-            "admin@test.com", "Admin User", &hash, tenant_id,
-        );
+        let users_service =
+            InMemoryUsersService::with_admin("admin@test.com", "Admin User", &hash, tenant_id);
         let users_service = Arc::new(users_service) as Arc<dyn UsersService>;
         let config = AppConfig::from_env().unwrap();
         let state = AppState::new(config, users_service);
-        let admin = state.users_service.find_by_email("admin@test.com").await.unwrap();
+        let admin = state
+            .users_service
+            .find_by_email("admin@test.com")
+            .await
+            .unwrap();
         (state, tenant_id, admin.id)
     }
 
     fn auth_user(tenant_id: TenantId, user_id: EntityId) -> AuthenticatedUser {
-        AuthenticatedUser { user_id, tenant_id, roles: vec!["admin".to_string()] }
+        AuthenticatedUser {
+            user_id,
+            tenant_id,
+            roles: vec!["admin".to_string()],
+        }
     }
 
     #[tokio::test]
@@ -243,10 +259,15 @@ mod tests {
         let (state, tid, uid) = test_state().await;
         let user = auth_user(tid, uid);
         let req = ContactRequest {
-            account_id: None, first_name: "Jane".to_string(),
-            last_name: "Smith".to_string(), email: "jane@test.com".to_string(),
-            phone: None, job_title: None, department: None,
-            is_primary: None, notes: None,
+            account_id: None,
+            first_name: "Jane".to_string(),
+            last_name: "Smith".to_string(),
+            email: "jane@test.com".to_string(),
+            phone: None,
+            job_title: None,
+            department: None,
+            is_primary: None,
+            notes: None,
             is_active: None,
         };
         let created = create_contact(user.clone(), State(state.clone()), Json(req))
@@ -271,15 +292,24 @@ mod tests {
         let (state, tid, uid) = test_state().await;
         let user = auth_user(tid, uid);
         let req = ContactRequest {
-            account_id: None, first_name: "List".to_string(),
-            last_name: "User".to_string(), email: "list@test.com".to_string(),
-            phone: None, job_title: None, department: None,
-            is_primary: None, notes: None,
+            account_id: None,
+            first_name: "List".to_string(),
+            last_name: "User".to_string(),
+            email: "list@test.com".to_string(),
+            phone: None,
+            job_title: None,
+            department: None,
+            is_primary: None,
+            notes: None,
             is_active: None,
         };
-        let _ = create_contact(user.clone(), State(state.clone()), Json(req)).await.unwrap();
+        let _ = create_contact(user.clone(), State(state.clone()), Json(req))
+            .await
+            .unwrap();
         let params = ListContactsParams {
-            account_id: None, page: None, per_page: None,
+            account_id: None,
+            page: None,
+            per_page: None,
         };
         let resp = list_contacts(user, State(state.clone()), Query(params))
             .await
@@ -292,25 +322,40 @@ mod tests {
         let (state, tid, uid) = test_state().await;
         let user = auth_user(tid, uid);
         let req = ContactRequest {
-            account_id: None, first_name: "Old".to_string(),
-            last_name: "Name".to_string(), email: "old@test.com".to_string(),
-            phone: None, job_title: None, department: None,
-            is_primary: None, notes: None,
+            account_id: None,
+            first_name: "Old".to_string(),
+            last_name: "Name".to_string(),
+            email: "old@test.com".to_string(),
+            phone: None,
+            job_title: None,
+            department: None,
+            is_primary: None,
+            notes: None,
             is_active: None,
         };
         let created = create_contact(user.clone(), State(state.clone()), Json(req))
             .await
             .unwrap();
         let update_req = ContactRequest {
-            account_id: None, first_name: "Updated".to_string(),
-            last_name: "Name".to_string(), email: "updated@test.com".to_string(),
-            phone: None, job_title: Some("Manager".to_string()),
-            department: None, is_primary: None, notes: None,
+            account_id: None,
+            first_name: "Updated".to_string(),
+            last_name: "Name".to_string(),
+            email: "updated@test.com".to_string(),
+            phone: None,
+            job_title: Some("Manager".to_string()),
+            department: None,
+            is_primary: None,
+            notes: None,
             is_active: None,
         };
-        let resp = update_contact(user, State(state.clone()), Path(created.id), Json(update_req))
-            .await
-            .unwrap();
+        let resp = update_contact(
+            user,
+            State(state.clone()),
+            Path(created.id),
+            Json(update_req),
+        )
+        .await
+        .unwrap();
         assert_eq!(resp.first_name, "Updated");
         assert_eq!(resp.job_title, Some("Manager".to_string()));
     }
@@ -320,10 +365,15 @@ mod tests {
         let (state, tid, uid) = test_state().await;
         let user = auth_user(tid, uid);
         let req = ContactRequest {
-            account_id: None, first_name: "Del".to_string(),
-            last_name: "User".to_string(), email: "del@test.com".to_string(),
-            phone: None, job_title: None, department: None,
-            is_primary: None, notes: None,
+            account_id: None,
+            first_name: "Del".to_string(),
+            last_name: "User".to_string(),
+            email: "del@test.com".to_string(),
+            phone: None,
+            job_title: None,
+            department: None,
+            is_primary: None,
+            notes: None,
             is_active: None,
         };
         let created = create_contact(user.clone(), State(state.clone()), Json(req))
@@ -345,10 +395,15 @@ mod tests {
         let (state, tid, uid) = test_state().await;
         let user = auth_user(tid, uid);
         let req = ContactRequest {
-            account_id: None, first_name: "Keep".to_string(),
-            last_name: "Active".to_string(), email: "keep@test.com".to_string(),
-            phone: None, job_title: None, department: None,
-            is_primary: None, notes: None,
+            account_id: None,
+            first_name: "Keep".to_string(),
+            last_name: "Active".to_string(),
+            email: "keep@test.com".to_string(),
+            phone: None,
+            job_title: None,
+            department: None,
+            is_primary: None,
+            notes: None,
             is_active: Some(false),
         };
         let created = create_contact(user.clone(), State(state.clone()), Json(req))
@@ -359,29 +414,49 @@ mod tests {
         // Updating without is_active keeps the current value and preserves
         // created_at.
         let update_req = ContactRequest {
-            account_id: None, first_name: "Kept".to_string(),
-            last_name: "Active".to_string(), email: "keep@test.com".to_string(),
-            phone: None, job_title: None, department: None,
-            is_primary: None, notes: None,
+            account_id: None,
+            first_name: "Kept".to_string(),
+            last_name: "Active".to_string(),
+            email: "keep@test.com".to_string(),
+            phone: None,
+            job_title: None,
+            department: None,
+            is_primary: None,
+            notes: None,
             is_active: None,
         };
-        let updated = update_contact(user.clone(), State(state.clone()), Path(created.id), Json(update_req))
-            .await
-            .unwrap();
+        let updated = update_contact(
+            user.clone(),
+            State(state.clone()),
+            Path(created.id),
+            Json(update_req),
+        )
+        .await
+        .unwrap();
         assert_eq!(updated.created_at, created.created_at);
         assert!(!updated.is_active);
 
         // An explicit is_active=true must reactivate the contact.
         let reactivate_req = ContactRequest {
-            account_id: None, first_name: "Kept".to_string(),
-            last_name: "Active".to_string(), email: "keep@test.com".to_string(),
-            phone: None, job_title: None, department: None,
-            is_primary: None, notes: None,
+            account_id: None,
+            first_name: "Kept".to_string(),
+            last_name: "Active".to_string(),
+            email: "keep@test.com".to_string(),
+            phone: None,
+            job_title: None,
+            department: None,
+            is_primary: None,
+            notes: None,
             is_active: Some(true),
         };
-        let reactivated = update_contact(user, State(state.clone()), Path(created.id), Json(reactivate_req))
-            .await
-            .unwrap();
+        let reactivated = update_contact(
+            user,
+            State(state.clone()),
+            Path(created.id),
+            Json(reactivate_req),
+        )
+        .await
+        .unwrap();
         assert!(reactivated.is_active);
     }
 }

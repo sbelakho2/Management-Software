@@ -2,13 +2,16 @@
 //!
 //! Provides CRUD endpoints for product/service catalog management.
 
-use axum::{Json, extract::{Path, Query, State}};
-use serde::{Deserialize, Serialize};
+use axum::{
+    extract::{Path, Query, State},
+    Json,
+};
 use sensei_auth::middleware::AuthenticatedUser;
 use sensei_core::domain::entities::Product;
 use sensei_core::error::Result;
 use sensei_core::pagination::PaginatedResponse;
-use sensei_core::types::{EntityId, TenantId, now};
+use sensei_core::types::{now, EntityId, TenantId};
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::state::AppState;
@@ -141,7 +144,10 @@ pub async fn create_product(
         created_at: now(),
         updated_at: now(),
     };
-    let created = state.products_service.create_product(tenant_id, product).await?;
+    let created = state
+        .products_service
+        .create_product(tenant_id, product)
+        .await?;
     Ok(Json(ProductResponse::from(created)))
 }
 
@@ -186,7 +192,10 @@ pub async fn update_product(
         created_at: existing.created_at,
         updated_at: now(),
     };
-    let updated = state.products_service.update_product(tenant_id, id, product).await?;
+    let updated = state
+        .products_service
+        .update_product(tenant_id, id, product)
+        .await?;
     Ok(Json(ProductResponse::from(updated)))
 }
 
@@ -220,18 +229,25 @@ mod tests {
     async fn test_state() -> (AppState, TenantId, EntityId) {
         let hash = hash_password("Test@1234").unwrap();
         let tenant_id = TenantId::new_v4();
-        let users_service = InMemoryUsersService::with_admin(
-            "admin@test.com", "Admin User", &hash, tenant_id,
-        );
+        let users_service =
+            InMemoryUsersService::with_admin("admin@test.com", "Admin User", &hash, tenant_id);
         let users_service = Arc::new(users_service) as Arc<dyn UsersService>;
         let config = AppConfig::from_env().unwrap();
         let state = AppState::new(config, users_service);
-        let admin = state.users_service.find_by_email("admin@test.com").await.unwrap();
+        let admin = state
+            .users_service
+            .find_by_email("admin@test.com")
+            .await
+            .unwrap();
         (state, tenant_id, admin.id)
     }
 
     fn auth_user(tenant_id: TenantId, user_id: EntityId) -> AuthenticatedUser {
-        AuthenticatedUser { user_id, tenant_id, roles: vec!["admin".to_string()] }
+        AuthenticatedUser {
+            user_id,
+            tenant_id,
+            roles: vec!["admin".to_string()],
+        }
     }
 
     #[tokio::test]
@@ -249,7 +265,8 @@ mod tests {
             selling_price: Some(25.0),
             min_stock_level: Some(5.0),
             max_stock_level: Some(100.0),
-            current_stock: Some(50.0), is_active: None,
+            current_stock: Some(50.0),
+            is_active: None,
             notes: Some("Test product".to_string()),
         };
         let resp = create_product(user, State(state.clone()), Json(req))
@@ -266,12 +283,19 @@ mod tests {
         let (state, tid, uid) = test_state().await;
         let user = auth_user(tid, uid);
         let req = ProductRequest {
-            sku: "SKU-002".to_string(), name: "Get Widget".to_string(),
-            description: None, category: None,
-            product_type: "raw".to_string(), unit_of_measure: "kg".to_string(),
-            standard_cost: None, selling_price: None,
-            min_stock_level: None, max_stock_level: None,
-            current_stock: None, is_active: None, notes: None,
+            sku: "SKU-002".to_string(),
+            name: "Get Widget".to_string(),
+            description: None,
+            category: None,
+            product_type: "raw".to_string(),
+            unit_of_measure: "kg".to_string(),
+            standard_cost: None,
+            selling_price: None,
+            min_stock_level: None,
+            max_stock_level: None,
+            current_stock: None,
+            is_active: None,
+            notes: None,
         };
         let created = create_product(user.clone(), State(state.clone()), Json(req))
             .await
@@ -295,16 +319,28 @@ mod tests {
         let (state, tid, uid) = test_state().await;
         let user = auth_user(tid, uid);
         let req = ProductRequest {
-            sku: "SKU-003".to_string(), name: "List Widget".to_string(),
-            description: None, category: Some("Gadgets".to_string()),
-            product_type: "finished".to_string(), unit_of_measure: "pcs".to_string(),
-            standard_cost: None, selling_price: None,
-            min_stock_level: None, max_stock_level: None,
-            current_stock: None, is_active: None, notes: None,
+            sku: "SKU-003".to_string(),
+            name: "List Widget".to_string(),
+            description: None,
+            category: Some("Gadgets".to_string()),
+            product_type: "finished".to_string(),
+            unit_of_measure: "pcs".to_string(),
+            standard_cost: None,
+            selling_price: None,
+            min_stock_level: None,
+            max_stock_level: None,
+            current_stock: None,
+            is_active: None,
+            notes: None,
         };
-        let _ = create_product(user.clone(), State(state.clone()), Json(req)).await.unwrap();
+        let _ = create_product(user.clone(), State(state.clone()), Json(req))
+            .await
+            .unwrap();
         let params = ListProductsParams {
-            category: None, product_type: None, page: None, per_page: None,
+            category: None,
+            product_type: None,
+            page: None,
+            per_page: None,
         };
         let resp = list_products(user, State(state.clone()), Query(params))
             .await
@@ -317,27 +353,46 @@ mod tests {
         let (state, tid, uid) = test_state().await;
         let user = auth_user(tid, uid);
         let req = ProductRequest {
-            sku: "SKU-004".to_string(), name: "Old Name".to_string(),
-            description: None, category: None,
-            product_type: "finished".to_string(), unit_of_measure: "pcs".to_string(),
-            standard_cost: None, selling_price: None,
-            min_stock_level: None, max_stock_level: None,
-            current_stock: None, is_active: None, notes: None,
+            sku: "SKU-004".to_string(),
+            name: "Old Name".to_string(),
+            description: None,
+            category: None,
+            product_type: "finished".to_string(),
+            unit_of_measure: "pcs".to_string(),
+            standard_cost: None,
+            selling_price: None,
+            min_stock_level: None,
+            max_stock_level: None,
+            current_stock: None,
+            is_active: None,
+            notes: None,
         };
         let created = create_product(user.clone(), State(state.clone()), Json(req))
             .await
             .unwrap();
         let update_req = ProductRequest {
-            sku: "SKU-004".to_string(), name: "Updated Name".to_string(),
-            description: Some("Updated desc".to_string()), category: None,
-            product_type: "finished".to_string(), unit_of_measure: "pcs".to_string(),
-            standard_cost: Some(15.0), selling_price: Some(30.0),
-            min_stock_level: Some(10.0), max_stock_level: Some(200.0),
-            current_stock: Some(75.0), is_active: None, notes: None,
+            sku: "SKU-004".to_string(),
+            name: "Updated Name".to_string(),
+            description: Some("Updated desc".to_string()),
+            category: None,
+            product_type: "finished".to_string(),
+            unit_of_measure: "pcs".to_string(),
+            standard_cost: Some(15.0),
+            selling_price: Some(30.0),
+            min_stock_level: Some(10.0),
+            max_stock_level: Some(200.0),
+            current_stock: Some(75.0),
+            is_active: None,
+            notes: None,
         };
-        let resp = update_product(user, State(state.clone()), Path(created.id), Json(update_req))
-            .await
-            .unwrap();
+        let resp = update_product(
+            user,
+            State(state.clone()),
+            Path(created.id),
+            Json(update_req),
+        )
+        .await
+        .unwrap();
         assert_eq!(resp.name, "Updated Name");
         assert_eq!(resp.standard_cost, Some(15.0));
         assert_eq!(resp.current_stock, 75.0);
@@ -348,12 +403,19 @@ mod tests {
         let (state, tid, uid) = test_state().await;
         let user = auth_user(tid, uid);
         let req = ProductRequest {
-            sku: "SKU-004A".to_string(), name: "Original".to_string(),
-            description: None, category: None,
-            product_type: "finished".to_string(), unit_of_measure: "pcs".to_string(),
-            standard_cost: None, selling_price: None,
-            min_stock_level: None, max_stock_level: None,
-            current_stock: None, is_active: Some(false), notes: None,
+            sku: "SKU-004A".to_string(),
+            name: "Original".to_string(),
+            description: None,
+            category: None,
+            product_type: "finished".to_string(),
+            unit_of_measure: "pcs".to_string(),
+            standard_cost: None,
+            selling_price: None,
+            min_stock_level: None,
+            max_stock_level: None,
+            current_stock: None,
+            is_active: Some(false),
+            notes: None,
         };
         let created = create_product(user.clone(), State(state.clone()), Json(req))
             .await
@@ -361,31 +423,61 @@ mod tests {
         assert!(!created.is_active, "create must honor is_active=false");
 
         let update_req = ProductRequest {
-            sku: "SKU-004A".to_string(), name: "Renamed".to_string(),
-            description: None, category: None,
-            product_type: "finished".to_string(), unit_of_measure: "pcs".to_string(),
-            standard_cost: None, selling_price: None,
-            min_stock_level: None, max_stock_level: None,
-            current_stock: None, is_active: None, notes: None,
+            sku: "SKU-004A".to_string(),
+            name: "Renamed".to_string(),
+            description: None,
+            category: None,
+            product_type: "finished".to_string(),
+            unit_of_measure: "pcs".to_string(),
+            standard_cost: None,
+            selling_price: None,
+            min_stock_level: None,
+            max_stock_level: None,
+            current_stock: None,
+            is_active: None,
+            notes: None,
         };
-        let resp = update_product(user.clone(), State(state.clone()), Path(created.id), Json(update_req))
-            .await
-            .unwrap();
-        assert_eq!(resp.created_at, created.created_at, "created_at must be preserved");
-        assert!(!resp.is_active, "is_active must be preserved when not overridden");
+        let resp = update_product(
+            user.clone(),
+            State(state.clone()),
+            Path(created.id),
+            Json(update_req),
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            resp.created_at, created.created_at,
+            "created_at must be preserved"
+        );
+        assert!(
+            !resp.is_active,
+            "is_active must be preserved when not overridden"
+        );
 
         // Explicit is_active=true in the request must flip it back.
         let reactivate = ProductRequest {
-            sku: "SKU-004A".to_string(), name: "Renamed".to_string(),
-            description: None, category: None,
-            product_type: "finished".to_string(), unit_of_measure: "pcs".to_string(),
-            standard_cost: None, selling_price: None,
-            min_stock_level: None, max_stock_level: None,
-            current_stock: None, is_active: Some(true), notes: None,
+            sku: "SKU-004A".to_string(),
+            name: "Renamed".to_string(),
+            description: None,
+            category: None,
+            product_type: "finished".to_string(),
+            unit_of_measure: "pcs".to_string(),
+            standard_cost: None,
+            selling_price: None,
+            min_stock_level: None,
+            max_stock_level: None,
+            current_stock: None,
+            is_active: Some(true),
+            notes: None,
         };
-        let resp = update_product(user, State(state.clone()), Path(created.id), Json(reactivate))
-            .await
-            .unwrap();
+        let resp = update_product(
+            user,
+            State(state.clone()),
+            Path(created.id),
+            Json(reactivate),
+        )
+        .await
+        .unwrap();
         assert!(resp.is_active);
     }
 
@@ -394,12 +486,19 @@ mod tests {
         let (state, tid, uid) = test_state().await;
         let user = auth_user(tid, uid);
         let req = ProductRequest {
-            sku: "SKU-005".to_string(), name: "Del Widget".to_string(),
-            description: None, category: None,
-            product_type: "finished".to_string(), unit_of_measure: "pcs".to_string(),
-            standard_cost: None, selling_price: None,
-            min_stock_level: None, max_stock_level: None,
-            current_stock: None, is_active: None, notes: None,
+            sku: "SKU-005".to_string(),
+            name: "Del Widget".to_string(),
+            description: None,
+            category: None,
+            product_type: "finished".to_string(),
+            unit_of_measure: "pcs".to_string(),
+            standard_cost: None,
+            selling_price: None,
+            min_stock_level: None,
+            max_stock_level: None,
+            current_stock: None,
+            is_active: None,
+            notes: None,
         };
         let created = create_product(user.clone(), State(state.clone()), Json(req))
             .await

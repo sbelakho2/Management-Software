@@ -4,19 +4,20 @@
 //! inspections (AQL, FAI, self-inspection), audits, supplier quality,
 //! NPI risk management, MSA/SPC studies, and stage-gate reviews.
 
-use axum::{Json, extract::{Path, Query, State}};
+use axum::{
+    extract::{Path, Query, State},
+    Json,
+};
 use chrono::{DateTime, Utc};
-use serde::Deserialize;
 use sensei_auth::middleware::AuthenticatedUser;
 use sensei_core::error::Result;
 use sensei_services::quality::{
-    Audit, AuditFinding, CapaExtended, CapaPriority, CapaType,
-    ControlPlan, CustomerComplaint, EightDReport, FirstArticleInspection,
-    Gauge, ManagementReview, MsaStudy, NcSeverity, NcType,
-    NonConformance, NpiProject, NpiRisk, PfmeaLite,
-    ProcessCapabilityStudy, QmsDocument, RootCauseAnalysis, Scar,
-    SelfInspection, SupplierScorecard, PaginatedResponse,
+    Audit, AuditFinding, CapaExtended, CapaPriority, CapaType, ControlPlan, CustomerComplaint,
+    EightDReport, FirstArticleInspection, Gauge, ManagementReview, MsaStudy, NcSeverity, NcType,
+    NonConformance, NpiProject, NpiRisk, PaginatedResponse, PfmeaLite, ProcessCapabilityStudy,
+    QmsDocument, RootCauseAnalysis, Scar, SelfInspection, SupplierScorecard,
 };
+use serde::Deserialize;
 use uuid::Uuid;
 
 use crate::state::AppState;
@@ -191,7 +192,13 @@ pub async fn list_supplier_scorecards(
     let tenant_id = user.tenant_id;
     let result = state
         .quality_service
-        .list_supplier_scorecards(tenant_id, params.supplier_id, params.period.as_deref(), params.page, params.per_page)
+        .list_supplier_scorecards(
+            tenant_id,
+            params.supplier_id,
+            params.period.as_deref(),
+            params.page,
+            params.per_page,
+        )
         .await?;
     Ok(Json(result))
 }
@@ -203,7 +210,10 @@ pub async fn list_scars(
     Query(pagination): Query<ListPaginationParams>,
 ) -> Result<Json<PaginatedResponse<Scar>>> {
     let tenant_id = user.tenant_id;
-    let result = state.quality_service.list_scars(tenant_id, pagination.page, pagination.per_page).await?;
+    let result = state
+        .quality_service
+        .list_scars(tenant_id, pagination.page, pagination.per_page)
+        .await?;
     Ok(Json(result))
 }
 
@@ -214,7 +224,10 @@ pub async fn list_documents(
     Query(pagination): Query<ListPaginationParams>,
 ) -> Result<Json<PaginatedResponse<QmsDocument>>> {
     let tenant_id = user.tenant_id;
-    let result = state.quality_service.list_documents(tenant_id, pagination.page, pagination.per_page).await?;
+    let result = state
+        .quality_service
+        .list_documents(tenant_id, pagination.page, pagination.per_page)
+        .await?;
     Ok(Json(result))
 }
 
@@ -239,7 +252,10 @@ pub async fn list_self_inspections(
     Query(pagination): Query<ListPaginationParams>,
 ) -> Result<Json<PaginatedResponse<SelfInspection>>> {
     let tenant_id = user.tenant_id;
-    let result = state.quality_service.list_self_inspections(tenant_id, pagination.page, pagination.per_page).await?;
+    let result = state
+        .quality_service
+        .list_self_inspections(tenant_id, pagination.page, pagination.per_page)
+        .await?;
     Ok(Json(result))
 }
 
@@ -250,7 +266,10 @@ pub async fn list_msa_studies(
     Query(pagination): Query<ListPaginationParams>,
 ) -> Result<Json<PaginatedResponse<MsaStudy>>> {
     let tenant_id = user.tenant_id;
-    let result = state.quality_service.list_msa_studies(tenant_id, pagination.page, pagination.per_page).await?;
+    let result = state
+        .quality_service
+        .list_msa_studies(tenant_id, pagination.page, pagination.per_page)
+        .await?;
     Ok(Json(result))
 }
 
@@ -275,7 +294,10 @@ pub async fn list_control_plans(
     Query(pagination): Query<ListPaginationParams>,
 ) -> Result<Json<PaginatedResponse<ControlPlan>>> {
     let tenant_id = user.tenant_id;
-    let result = state.quality_service.list_control_plans(tenant_id, pagination.page, pagination.per_page).await?;
+    let result = state
+        .quality_service
+        .list_control_plans(tenant_id, pagination.page, pagination.per_page)
+        .await?;
     Ok(Json(result))
 }
 
@@ -286,7 +308,10 @@ pub async fn list_pfmeas(
     Query(pagination): Query<ListPaginationParams>,
 ) -> Result<Json<PaginatedResponse<PfmeaLite>>> {
     let tenant_id = user.tenant_id;
-    let result = state.quality_service.list_pfmeas(tenant_id, pagination.page, pagination.per_page).await?;
+    let result = state
+        .quality_service
+        .list_pfmeas(tenant_id, pagination.page, pagination.per_page)
+        .await?;
     Ok(Json(result))
 }
 
@@ -299,7 +324,13 @@ pub async fn list_npi_projects(
     let tenant_id = user.tenant_id;
     let result = state
         .quality_service
-        .list_npi_projects(tenant_id, params.stage.as_deref(), params.status.as_deref(), params.page, params.per_page)
+        .list_npi_projects(
+            tenant_id,
+            params.stage.as_deref(),
+            params.status.as_deref(),
+            params.page,
+            params.per_page,
+        )
         .await?;
     Ok(Json(result))
 }
@@ -326,7 +357,10 @@ pub async fn list_gauges(
     Query(pagination): Query<ListPaginationParams>,
 ) -> Result<Json<PaginatedResponse<Gauge>>> {
     let tenant_id = user.tenant_id;
-    let result = state.quality_service.list_gauges(tenant_id, pagination.page, pagination.per_page).await?;
+    let result = state
+        .quality_service
+        .list_gauges(tenant_id, pagination.page, pagination.per_page)
+        .await?;
     Ok(Json(result))
 }
 
@@ -337,7 +371,10 @@ pub async fn list_complaints(
     Query(pagination): Query<ListPaginationParams>,
 ) -> Result<Json<PaginatedResponse<CustomerComplaint>>> {
     let tenant_id = user.tenant_id;
-    let result = state.quality_service.list_complaints(tenant_id, pagination.page, pagination.per_page).await?;
+    let result = state
+        .quality_service
+        .list_complaints(tenant_id, pagination.page, pagination.per_page)
+        .await?;
     Ok(Json(result))
 }
 
@@ -348,7 +385,10 @@ pub async fn list_eight_d_reports(
     Query(pagination): Query<ListPaginationParams>,
 ) -> Result<Json<PaginatedResponse<EightDReport>>> {
     let tenant_id = user.tenant_id;
-    let result = state.quality_service.list_eight_d_reports(tenant_id, pagination.page, pagination.per_page).await?;
+    let result = state
+        .quality_service
+        .list_eight_d_reports(tenant_id, pagination.page, pagination.per_page)
+        .await?;
     Ok(Json(result))
 }
 
@@ -372,7 +412,10 @@ pub async fn get_document(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<QmsDocument>> {
-    let result = state.quality_service.get_document(user.tenant_id, id).await?;
+    let result = state
+        .quality_service
+        .get_document(user.tenant_id, id)
+        .await?;
     Ok(Json(result))
 }
 
@@ -408,7 +451,10 @@ pub async fn get_msa_study(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<MsaStudy>> {
-    let result = state.quality_service.get_msa_study(user.tenant_id, id).await?;
+    let result = state
+        .quality_service
+        .get_msa_study(user.tenant_id, id)
+        .await?;
     Ok(Json(result))
 }
 
@@ -431,7 +477,10 @@ pub async fn get_control_plan(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ControlPlan>> {
-    let result = state.quality_service.get_control_plan(user.tenant_id, id).await?;
+    let result = state
+        .quality_service
+        .get_control_plan(user.tenant_id, id)
+        .await?;
     Ok(Json(result))
 }
 
@@ -461,7 +510,10 @@ pub async fn get_complaint(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<CustomerComplaint>> {
-    let result = state.quality_service.get_complaint(user.tenant_id, id).await?;
+    let result = state
+        .quality_service
+        .get_complaint(user.tenant_id, id)
+        .await?;
     Ok(Json(result))
 }
 
@@ -471,7 +523,10 @@ pub async fn get_eight_d_report(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<EightDReport>> {
-    let result = state.quality_service.get_eight_d_report(user.tenant_id, id).await?;
+    let result = state
+        .quality_service
+        .get_eight_d_report(user.tenant_id, id)
+        .await?;
     Ok(Json(result))
 }
 
@@ -481,7 +536,10 @@ pub async fn get_management_review(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ManagementReview>> {
-    let result = state.quality_service.get_management_review(user.tenant_id, id).await?;
+    let result = state
+        .quality_service
+        .get_management_review(user.tenant_id, id)
+        .await?;
     Ok(Json(result))
 }
 
@@ -585,7 +643,10 @@ pub async fn investigate_ncr(
     Json(rca): Json<RootCauseAnalysis>,
 ) -> Result<Json<NonConformance>> {
     let tenant_id = user.tenant_id;
-    let result = state.quality_service.investigate_ncr(tenant_id, id, rca).await?;
+    let result = state
+        .quality_service
+        .investigate_ncr(tenant_id, id, rca)
+        .await?;
     Ok(Json(result))
 }
 
@@ -597,7 +658,10 @@ pub async fn disposition_ncr(
     Json(body): Json<DispositionRequest>,
 ) -> Result<Json<NonConformance>> {
     let tenant_id = user.tenant_id;
-    let result = state.quality_service.disposition_ncr(tenant_id, id, body.disposition).await?;
+    let result = state
+        .quality_service
+        .disposition_ncr(tenant_id, id, body.disposition)
+        .await?;
     Ok(Json(result))
 }
 
@@ -647,7 +711,10 @@ pub async fn update_capa(
     Json(capa): Json<CapaExtended>,
 ) -> Result<Json<CapaExtended>> {
     let tenant_id = user.tenant_id;
-    let result = state.quality_service.update_capa(tenant_id, id, capa).await?;
+    let result = state
+        .quality_service
+        .update_capa(tenant_id, id, capa)
+        .await?;
     Ok(Json(result))
 }
 
@@ -695,7 +762,10 @@ pub async fn create_first_article_inspection(
     Json(fai): Json<FirstArticleInspection>,
 ) -> Result<Json<FirstArticleInspection>> {
     let tenant_id = user.tenant_id;
-    let result = state.quality_service.create_first_article_inspection(tenant_id, fai).await?;
+    let result = state
+        .quality_service
+        .create_first_article_inspection(tenant_id, fai)
+        .await?;
     Ok(Json(result))
 }
 
@@ -707,7 +777,10 @@ pub async fn update_first_article_inspection(
     Json(fai): Json<FirstArticleInspection>,
 ) -> Result<Json<FirstArticleInspection>> {
     let tenant_id = user.tenant_id;
-    let result = state.quality_service.update_first_article_inspection(tenant_id, id, fai).await?;
+    let result = state
+        .quality_service
+        .update_first_article_inspection(tenant_id, id, fai)
+        .await?;
     Ok(Json(result))
 }
 
@@ -718,7 +791,10 @@ pub async fn delete_first_article_inspection(
     Path(id): Path<Uuid>,
 ) -> Result<Json<()>> {
     let tenant_id = user.tenant_id;
-    state.quality_service.delete_first_article_inspection(tenant_id, id).await?;
+    state
+        .quality_service
+        .delete_first_article_inspection(tenant_id, id)
+        .await?;
     Ok(Json(()))
 }
 
@@ -729,7 +805,10 @@ pub async fn create_self_inspection(
     Json(inspection): Json<SelfInspection>,
 ) -> Result<Json<SelfInspection>> {
     let tenant_id = user.tenant_id;
-    let result = state.quality_service.create_self_inspection(tenant_id, inspection).await?;
+    let result = state
+        .quality_service
+        .create_self_inspection(tenant_id, inspection)
+        .await?;
     Ok(Json(result))
 }
 
@@ -741,7 +820,10 @@ pub async fn update_self_inspection(
     Json(inspection): Json<SelfInspection>,
 ) -> Result<Json<SelfInspection>> {
     let tenant_id = user.tenant_id;
-    let result = state.quality_service.update_self_inspection(tenant_id, id, inspection).await?;
+    let result = state
+        .quality_service
+        .update_self_inspection(tenant_id, id, inspection)
+        .await?;
     Ok(Json(result))
 }
 
@@ -752,7 +834,10 @@ pub async fn delete_self_inspection(
     Path(id): Path<Uuid>,
 ) -> Result<Json<()>> {
     let tenant_id = user.tenant_id;
-    state.quality_service.delete_self_inspection(tenant_id, id).await?;
+    state
+        .quality_service
+        .delete_self_inspection(tenant_id, id)
+        .await?;
     Ok(Json(()))
 }
 
@@ -779,7 +864,10 @@ pub async fn update_audit(
     Json(audit): Json<Audit>,
 ) -> Result<Json<Audit>> {
     let tenant_id = user.tenant_id;
-    let result = state.quality_service.update_audit(tenant_id, id, audit).await?;
+    let result = state
+        .quality_service
+        .update_audit(tenant_id, id, audit)
+        .await?;
     Ok(Json(result))
 }
 
@@ -805,7 +893,10 @@ pub async fn create_supplier_evaluation(
     Json(scorecard): Json<SupplierScorecard>,
 ) -> Result<Json<SupplierScorecard>> {
     let tenant_id = user.tenant_id;
-    let result = state.quality_service.create_supplier_evaluation(tenant_id, scorecard).await?;
+    let result = state
+        .quality_service
+        .create_supplier_evaluation(tenant_id, scorecard)
+        .await?;
     Ok(Json(result))
 }
 
@@ -817,7 +908,10 @@ pub async fn update_supplier_scorecard(
     Json(scorecard): Json<SupplierScorecard>,
 ) -> Result<Json<SupplierScorecard>> {
     let tenant_id = user.tenant_id;
-    let result = state.quality_service.update_supplier_scorecard(tenant_id, id, scorecard).await?;
+    let result = state
+        .quality_service
+        .update_supplier_scorecard(tenant_id, id, scorecard)
+        .await?;
     Ok(Json(result))
 }
 
@@ -828,7 +922,10 @@ pub async fn delete_supplier_scorecard(
     Path(id): Path<Uuid>,
 ) -> Result<Json<()>> {
     let tenant_id = user.tenant_id;
-    state.quality_service.delete_supplier_scorecard(tenant_id, id).await?;
+    state
+        .quality_service
+        .delete_supplier_scorecard(tenant_id, id)
+        .await?;
     Ok(Json(()))
 }
 
@@ -851,7 +948,10 @@ pub async fn update_scar(
     Json(scar): Json<Scar>,
 ) -> Result<Json<Scar>> {
     let tenant_id = user.tenant_id;
-    let result = state.quality_service.update_scar(tenant_id, id, scar).await?;
+    let result = state
+        .quality_service
+        .update_scar(tenant_id, id, scar)
+        .await?;
     Ok(Json(result))
 }
 
@@ -877,7 +977,10 @@ pub async fn create_document(
     Json(doc): Json<QmsDocument>,
 ) -> Result<Json<QmsDocument>> {
     let tenant_id = user.tenant_id;
-    let result = state.quality_service.create_document(tenant_id, doc).await?;
+    let result = state
+        .quality_service
+        .create_document(tenant_id, doc)
+        .await?;
     Ok(Json(result))
 }
 
@@ -889,7 +992,10 @@ pub async fn update_document(
     Json(doc): Json<QmsDocument>,
 ) -> Result<Json<QmsDocument>> {
     let tenant_id = user.tenant_id;
-    let result = state.quality_service.update_document(tenant_id, id, doc).await?;
+    let result = state
+        .quality_service
+        .update_document(tenant_id, id, doc)
+        .await?;
     Ok(Json(result))
 }
 
@@ -915,7 +1021,10 @@ pub async fn create_msa_study(
     Json(study): Json<MsaStudy>,
 ) -> Result<Json<MsaStudy>> {
     let tenant_id = user.tenant_id;
-    let result = state.quality_service.create_msa_study(tenant_id, study).await?;
+    let result = state
+        .quality_service
+        .create_msa_study(tenant_id, study)
+        .await?;
     Ok(Json(result))
 }
 
@@ -926,7 +1035,10 @@ pub async fn delete_msa_study(
     Path(id): Path<Uuid>,
 ) -> Result<Json<()>> {
     let tenant_id = user.tenant_id;
-    state.quality_service.delete_msa_study(tenant_id, id).await?;
+    state
+        .quality_service
+        .delete_msa_study(tenant_id, id)
+        .await?;
     Ok(Json(()))
 }
 
@@ -941,7 +1053,10 @@ pub async fn create_process_capability_study(
     Json(study): Json<ProcessCapabilityStudy>,
 ) -> Result<Json<ProcessCapabilityStudy>> {
     let tenant_id = user.tenant_id;
-    let result = state.quality_service.create_process_capability_study(tenant_id, study).await?;
+    let result = state
+        .quality_service
+        .create_process_capability_study(tenant_id, study)
+        .await?;
     Ok(Json(result))
 }
 
@@ -952,7 +1067,10 @@ pub async fn delete_process_capability_study(
     Path(id): Path<Uuid>,
 ) -> Result<Json<()>> {
     let tenant_id = user.tenant_id;
-    state.quality_service.delete_process_capability_study(tenant_id, id).await?;
+    state
+        .quality_service
+        .delete_process_capability_study(tenant_id, id)
+        .await?;
     Ok(Json(()))
 }
 
@@ -967,7 +1085,10 @@ pub async fn create_control_plan(
     Json(cp): Json<ControlPlan>,
 ) -> Result<Json<ControlPlan>> {
     let tenant_id = user.tenant_id;
-    let result = state.quality_service.create_control_plan(tenant_id, cp).await?;
+    let result = state
+        .quality_service
+        .create_control_plan(tenant_id, cp)
+        .await?;
     Ok(Json(result))
 }
 
@@ -979,7 +1100,10 @@ pub async fn update_control_plan(
     Json(cp): Json<ControlPlan>,
 ) -> Result<Json<ControlPlan>> {
     let tenant_id = user.tenant_id;
-    let result = state.quality_service.update_control_plan(tenant_id, id, cp).await?;
+    let result = state
+        .quality_service
+        .update_control_plan(tenant_id, id, cp)
+        .await?;
     Ok(Json(result))
 }
 
@@ -990,7 +1114,10 @@ pub async fn delete_control_plan(
     Path(id): Path<Uuid>,
 ) -> Result<Json<()>> {
     let tenant_id = user.tenant_id;
-    state.quality_service.delete_control_plan(tenant_id, id).await?;
+    state
+        .quality_service
+        .delete_control_plan(tenant_id, id)
+        .await?;
     Ok(Json(()))
 }
 
@@ -1031,7 +1158,10 @@ pub async fn create_npi_project(
     Json(project): Json<NpiProject>,
 ) -> Result<Json<NpiProject>> {
     let tenant_id = user.tenant_id;
-    let result = state.quality_service.create_npi_project(tenant_id, project).await?;
+    let result = state
+        .quality_service
+        .create_npi_project(tenant_id, project)
+        .await?;
     Ok(Json(result))
 }
 
@@ -1043,7 +1173,10 @@ pub async fn update_npi_project(
     Json(project): Json<NpiProject>,
 ) -> Result<Json<NpiProject>> {
     let tenant_id = user.tenant_id;
-    let result = state.quality_service.update_npi_project(tenant_id, id, project).await?;
+    let result = state
+        .quality_service
+        .update_npi_project(tenant_id, id, project)
+        .await?;
     Ok(Json(result))
 }
 
@@ -1054,7 +1187,10 @@ pub async fn delete_npi_project(
     Path(id): Path<Uuid>,
 ) -> Result<Json<()>> {
     let tenant_id = user.tenant_id;
-    state.quality_service.delete_npi_project(tenant_id, id).await?;
+    state
+        .quality_service
+        .delete_npi_project(tenant_id, id)
+        .await?;
     Ok(Json(()))
 }
 
@@ -1081,7 +1217,10 @@ pub async fn update_gauge(
     Json(gauge): Json<Gauge>,
 ) -> Result<Json<Gauge>> {
     let tenant_id = user.tenant_id;
-    let result = state.quality_service.update_gauge(tenant_id, id, gauge).await?;
+    let result = state
+        .quality_service
+        .update_gauge(tenant_id, id, gauge)
+        .await?;
     Ok(Json(result))
 }
 
@@ -1107,7 +1246,10 @@ pub async fn create_complaint(
     Json(complaint): Json<CustomerComplaint>,
 ) -> Result<Json<CustomerComplaint>> {
     let tenant_id = user.tenant_id;
-    let result = state.quality_service.create_complaint(tenant_id, complaint).await?;
+    let result = state
+        .quality_service
+        .create_complaint(tenant_id, complaint)
+        .await?;
     Ok(Json(result))
 }
 
@@ -1119,7 +1261,10 @@ pub async fn update_complaint(
     Json(complaint): Json<CustomerComplaint>,
 ) -> Result<Json<CustomerComplaint>> {
     let tenant_id = user.tenant_id;
-    let result = state.quality_service.update_complaint(tenant_id, id, complaint).await?;
+    let result = state
+        .quality_service
+        .update_complaint(tenant_id, id, complaint)
+        .await?;
     Ok(Json(result))
 }
 
@@ -1130,7 +1275,10 @@ pub async fn delete_complaint(
     Path(id): Path<Uuid>,
 ) -> Result<Json<()>> {
     let tenant_id = user.tenant_id;
-    state.quality_service.delete_complaint(tenant_id, id).await?;
+    state
+        .quality_service
+        .delete_complaint(tenant_id, id)
+        .await?;
     Ok(Json(()))
 }
 
@@ -1145,7 +1293,10 @@ pub async fn create_eight_d_report(
     Json(report): Json<EightDReport>,
 ) -> Result<Json<EightDReport>> {
     let tenant_id = user.tenant_id;
-    let result = state.quality_service.create_eight_d_report(tenant_id, report).await?;
+    let result = state
+        .quality_service
+        .create_eight_d_report(tenant_id, report)
+        .await?;
     Ok(Json(result))
 }
 
@@ -1157,7 +1308,10 @@ pub async fn update_eight_d_report(
     Json(report): Json<EightDReport>,
 ) -> Result<Json<EightDReport>> {
     let tenant_id = user.tenant_id;
-    let result = state.quality_service.update_eight_d_report(tenant_id, id, report).await?;
+    let result = state
+        .quality_service
+        .update_eight_d_report(tenant_id, id, report)
+        .await?;
     Ok(Json(result))
 }
 
@@ -1168,7 +1322,10 @@ pub async fn delete_eight_d_report(
     Path(id): Path<Uuid>,
 ) -> Result<Json<()>> {
     let tenant_id = user.tenant_id;
-    state.quality_service.delete_eight_d_report(tenant_id, id).await?;
+    state
+        .quality_service
+        .delete_eight_d_report(tenant_id, id)
+        .await?;
     Ok(Json(()))
 }
 
@@ -1183,7 +1340,10 @@ pub async fn create_management_review(
     Json(review): Json<ManagementReview>,
 ) -> Result<Json<ManagementReview>> {
     let tenant_id = user.tenant_id;
-    let result = state.quality_service.create_management_review(tenant_id, review).await?;
+    let result = state
+        .quality_service
+        .create_management_review(tenant_id, review)
+        .await?;
     Ok(Json(result))
 }
 
@@ -1195,7 +1355,10 @@ pub async fn update_management_review(
     Json(review): Json<ManagementReview>,
 ) -> Result<Json<ManagementReview>> {
     let tenant_id = user.tenant_id;
-    let result = state.quality_service.update_management_review(tenant_id, id, review).await?;
+    let result = state
+        .quality_service
+        .update_management_review(tenant_id, id, review)
+        .await?;
     Ok(Json(result))
 }
 
@@ -1206,7 +1369,10 @@ pub async fn delete_management_review(
     Path(id): Path<Uuid>,
 ) -> Result<Json<()>> {
     let tenant_id = user.tenant_id;
-    state.quality_service.delete_management_review(tenant_id, id).await?;
+    state
+        .quality_service
+        .delete_management_review(tenant_id, id)
+        .await?;
     Ok(Json(()))
 }
 

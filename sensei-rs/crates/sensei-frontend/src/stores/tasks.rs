@@ -58,14 +58,23 @@ impl TasksStore {
     }
 
     /// Create a new task.
-    pub async fn create_task(&self, client: &ApiClient, data: &serde_json::Value) -> Result<TaskDto, ApiError> {
+    pub async fn create_task(
+        &self,
+        client: &ApiClient,
+        data: &serde_json::Value,
+    ) -> Result<TaskDto, ApiError> {
         let task: TaskDto = client.post("/api/v1/tasks", data).await?;
         self.tasks.update(|t| t.push(task.clone()));
         Ok(task)
     }
 
     /// Update an existing task.
-    pub async fn update_task(&self, client: &ApiClient, id: &str, data: &serde_json::Value) -> Result<TaskDto, ApiError> {
+    pub async fn update_task(
+        &self,
+        client: &ApiClient,
+        id: &str,
+        data: &serde_json::Value,
+    ) -> Result<TaskDto, ApiError> {
         let task: TaskDto = client.put(&format!("/api/v1/tasks/{}", id), data).await?;
         self.tasks.update(|t| {
             if let Some(pos) = t.iter().position(|x| x.id == id) {
@@ -77,15 +86,24 @@ impl TasksStore {
 
     /// Delete a task.
     pub async fn delete_task(&self, client: &ApiClient, id: &str) -> Result<(), ApiError> {
-        client.delete::<serde_json::Value>(&format!("/api/v1/tasks/{}", id)).await?;
+        client
+            .delete::<serde_json::Value>(&format!("/api/v1/tasks/{}", id))
+            .await?;
         self.tasks.update(|t| t.retain(|x| x.id != id));
         Ok(())
     }
 
     /// Move a task to a different status.
-    pub async fn move_task(&self, client: &ApiClient, id: &str, status: &str) -> Result<TaskDto, ApiError> {
+    pub async fn move_task(
+        &self,
+        client: &ApiClient,
+        id: &str,
+        status: &str,
+    ) -> Result<TaskDto, ApiError> {
         let payload = serde_json::json!({ "status": status });
-        let task: TaskDto = client.put(&format!("/api/v1/tasks/{}/status", id), &payload).await?;
+        let task: TaskDto = client
+            .put(&format!("/api/v1/tasks/{}/status", id), &payload)
+            .await?;
         self.tasks.update(|t| {
             if let Some(pos) = t.iter().position(|x| x.id == id) {
                 t[pos] = task.clone();

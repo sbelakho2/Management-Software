@@ -749,7 +749,7 @@ pub fn build_router(state: AppState) -> Router {
     let cors_layer = build_cors_layer(&state.config);
 
     // ── Shared instances for middleware infrastructure ──────────────
-    let idempotency_store = Arc::new(IdempotencyStore::new(3600));   // 1 hour TTL
+    let idempotency_store = Arc::new(IdempotencyStore::new(3600)); // 1 hour TTL
     let request_guard_config = Arc::new(RequestGuardConfig {
         max_body_size: state.config.api.body_limit,
         request_timeout_secs: state.config.api.request_timeout_secs,
@@ -764,10 +764,22 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/v1/auth/login", post(routes::auth::login))
         .route("/api/v1/auth/refresh", post(routes::auth::refresh))
         .route("/api/v1/auth/register", post(routes::auth::register))
-        .route("/api/v1/auth/password-reset/request", post(routes::auth::request_password_reset))
-        .route("/api/v1/auth/password-reset/confirm", post(routes::auth::confirm_password_reset))
-        .route("/api/v1/auth/verify-email/request", post(routes::auth::request_email_verification))
-        .route("/api/v1/auth/verify-email/confirm", post(routes::auth::confirm_email_verification))
+        .route(
+            "/api/v1/auth/password-reset/request",
+            post(routes::auth::request_password_reset),
+        )
+        .route(
+            "/api/v1/auth/password-reset/confirm",
+            post(routes::auth::confirm_password_reset),
+        )
+        .route(
+            "/api/v1/auth/verify-email/request",
+            post(routes::auth::request_email_verification),
+        )
+        .route(
+            "/api/v1/auth/verify-email/confirm",
+            post(routes::auth::confirm_email_verification),
+        )
         .route("/metrics", get(routes::metrics::metrics_handler))
         // ── Real-time routes (auth via ?token= query param) ────────────
         .route("/api/v1/ws", get(routes::ws::ws_handler))
@@ -777,337 +789,1256 @@ pub fn build_router(state: AppState) -> Router {
     let protected_routes = Router::new()
         // ── Auth Routes (protected) ─────────────────────────────────
         .route("/api/v1/auth/logout", post(routes::auth::logout))
-        .route("/api/v1/auth/me", get(routes::auth::get_me).put(routes::auth::update_me))
-        .route("/api/v1/auth/me/password", put(routes::auth::change_password))
+        .route(
+            "/api/v1/auth/me",
+            get(routes::auth::get_me).put(routes::auth::update_me),
+        )
+        .route(
+            "/api/v1/auth/me/password",
+            put(routes::auth::change_password),
+        )
         // ── Users Routes ────────────────────────────────────────────
         .route("/api/v1/users", get(routes::users::list_users))
-        .route("/api/v1/users/{id}", get(routes::users::get_user).put(routes::users::update_user).delete(routes::users::deactivate_user))
-        .route("/api/v1/users/{id}/activate", put(routes::users::activate_user))
-        .route("/api/v1/users/{id}/roles", put(routes::users::update_user_roles))
+        .route(
+            "/api/v1/users/{id}",
+            get(routes::users::get_user)
+                .put(routes::users::update_user)
+                .delete(routes::users::deactivate_user),
+        )
+        .route(
+            "/api/v1/users/{id}/activate",
+            put(routes::users::activate_user),
+        )
+        .route(
+            "/api/v1/users/{id}/roles",
+            put(routes::users::update_user_roles),
+        )
         // ── Tenants Routes ──────────────────────────────────────────
-        .route("/api/v1/tenants", get(routes::tenants::list_tenants).post(routes::tenants::create_tenant))
-        .route("/api/v1/tenants/{id}", get(routes::tenants::get_tenant).put(routes::tenants::update_tenant))
+        .route(
+            "/api/v1/tenants",
+            get(routes::tenants::list_tenants).post(routes::tenants::create_tenant),
+        )
+        .route(
+            "/api/v1/tenants/{id}",
+            get(routes::tenants::get_tenant).put(routes::tenants::update_tenant),
+        )
         // ── Accounts Routes ─────────────────────────────────────────
-        .route("/api/v1/accounts", get(routes::accounts::list_accounts).post(routes::accounts::create_account))
-        .route("/api/v1/accounts/{id}", get(routes::accounts::get_account).put(routes::accounts::update_account).delete(routes::accounts::delete_account))
+        .route(
+            "/api/v1/accounts",
+            get(routes::accounts::list_accounts).post(routes::accounts::create_account),
+        )
+        .route(
+            "/api/v1/accounts/{id}",
+            get(routes::accounts::get_account)
+                .put(routes::accounts::update_account)
+                .delete(routes::accounts::delete_account),
+        )
         // ── Contacts Routes ─────────────────────────────────────────
-        .route("/api/v1/contacts", get(routes::contacts::list_contacts).post(routes::contacts::create_contact))
-        .route("/api/v1/contacts/{id}", get(routes::contacts::get_contact).put(routes::contacts::update_contact).delete(routes::contacts::delete_contact))
+        .route(
+            "/api/v1/contacts",
+            get(routes::contacts::list_contacts).post(routes::contacts::create_contact),
+        )
+        .route(
+            "/api/v1/contacts/{id}",
+            get(routes::contacts::get_contact)
+                .put(routes::contacts::update_contact)
+                .delete(routes::contacts::delete_contact),
+        )
         // ── Products Routes ─────────────────────────────────────────
-        .route("/api/v1/products", get(routes::products::list_products).post(routes::products::create_product))
-        .route("/api/v1/products/{id}", get(routes::products::get_product).put(routes::products::update_product).delete(routes::products::delete_product))
+        .route(
+            "/api/v1/products",
+            get(routes::products::list_products).post(routes::products::create_product),
+        )
+        .route(
+            "/api/v1/products/{id}",
+            get(routes::products::get_product)
+                .put(routes::products::update_product)
+                .delete(routes::products::delete_product),
+        )
         // ── AI / ML Routes ────────────────────────────────────────
-        .route("/api/v1/ai/anomalies/detect", post(routes::ai::detect_anomalies))
-        .route("/api/v1/ai/quality/predict", post(routes::ai::predict_quality))
-        .route("/api/v1/ai/maintenance/predict", post(routes::ai::predict_maintenance))
+        .route(
+            "/api/v1/ai/anomalies/detect",
+            post(routes::ai::detect_anomalies),
+        )
+        .route(
+            "/api/v1/ai/quality/predict",
+            post(routes::ai::predict_quality),
+        )
+        .route(
+            "/api/v1/ai/maintenance/predict",
+            post(routes::ai::predict_maintenance),
+        )
         .route("/api/v1/ai/models/retrain", post(routes::ai::retrain_model))
         // ── Chatbot Routes ─────────────────────────────────────────
         .route("/api/v1/chat", post(routes::chatbot::chat))
         .route("/api/v1/chat/stream", post(routes::chatbot::chat_stream))
         // ── Production Routes ─────────────────────────────────────
-        .route("/api/v1/production/work-orders", get(routes::production::list_work_orders).post(routes::production::create_work_order))
-        .route("/api/v1/production/work-orders/{id}", get(routes::production::get_work_order))
-        .route("/api/v1/production/work-orders/{id}/status", put(routes::production::update_work_order_status))
-        .route("/api/v1/production/work-orders/{id}/report", post(routes::production::report_production))
-        .route("/api/v1/production/orders", get(routes::production::list_production_orders).post(routes::production::create_production_order))
-        .route("/api/v1/production/orders/{id}", get(routes::production::get_production_order))
-        .route("/api/v1/production/orders/{id}/complete", post(routes::production::complete_production_order))
-        .route("/api/v1/production/bom", post(routes::production::add_bom_item))
-        .route("/api/v1/production/bom/{product_id}", get(routes::production::get_bom))
+        .route(
+            "/api/v1/production/work-orders",
+            get(routes::production::list_work_orders).post(routes::production::create_work_order),
+        )
+        .route(
+            "/api/v1/production/work-orders/{id}",
+            get(routes::production::get_work_order),
+        )
+        .route(
+            "/api/v1/production/work-orders/{id}/status",
+            put(routes::production::update_work_order_status),
+        )
+        .route(
+            "/api/v1/production/work-orders/{id}/report",
+            post(routes::production::report_production),
+        )
+        .route(
+            "/api/v1/production/orders",
+            get(routes::production::list_production_orders)
+                .post(routes::production::create_production_order),
+        )
+        .route(
+            "/api/v1/production/orders/{id}",
+            get(routes::production::get_production_order),
+        )
+        .route(
+            "/api/v1/production/orders/{id}/complete",
+            post(routes::production::complete_production_order),
+        )
+        .route(
+            "/api/v1/production/bom",
+            post(routes::production::add_bom_item),
+        )
+        .route(
+            "/api/v1/production/bom/{product_id}",
+            get(routes::production::get_bom),
+        )
         .route("/api/v1/production/mrp", post(routes::production::run_mrp))
         // ── Maintenance Routes ────────────────────────────────────
-        .route("/api/v1/maintenance/work-requests", get(routes::maintenance::list_work_requests).post(routes::maintenance::create_work_request))
-        .route("/api/v1/maintenance/work-requests/{id}", get(routes::maintenance::get_work_request).put(routes::maintenance::update_work_request).delete(routes::maintenance::delete_work_request))
-        .route("/api/v1/maintenance/work-requests/{id}/status", put(routes::maintenance::update_work_request_status))
-        .route("/api/v1/maintenance/work-requests/{id}/assign", post(routes::maintenance::assign_work_request))
-        .route("/api/v1/maintenance/pm-schedules", get(routes::maintenance::list_pm_schedules).post(routes::maintenance::create_pm_schedule))
-        .route("/api/v1/maintenance/pm-schedules/{id}", get(routes::maintenance::get_pm_schedule).put(routes::maintenance::update_pm_schedule).delete(routes::maintenance::delete_pm_schedule))
-        .route("/api/v1/maintenance/pm-schedules/{id}/complete", post(routes::maintenance::complete_pm_task))
-        .route("/api/v1/maintenance/pm-schedules/overdue", get(routes::maintenance::get_overdue_pm_tasks))
-        .route("/api/v1/maintenance/equipment", get(routes::maintenance::list_equipment).post(routes::maintenance::register_equipment))
-        .route("/api/v1/maintenance/equipment/{id}", get(routes::maintenance::get_equipment).put(routes::maintenance::update_equipment).delete(routes::maintenance::delete_equipment))
-        .route("/api/v1/maintenance/equipment/{id}/status", put(routes::maintenance::update_equipment_status))
+        .route(
+            "/api/v1/maintenance/work-requests",
+            get(routes::maintenance::list_work_requests)
+                .post(routes::maintenance::create_work_request),
+        )
+        .route(
+            "/api/v1/maintenance/work-requests/{id}",
+            get(routes::maintenance::get_work_request)
+                .put(routes::maintenance::update_work_request)
+                .delete(routes::maintenance::delete_work_request),
+        )
+        .route(
+            "/api/v1/maintenance/work-requests/{id}/status",
+            put(routes::maintenance::update_work_request_status),
+        )
+        .route(
+            "/api/v1/maintenance/work-requests/{id}/assign",
+            post(routes::maintenance::assign_work_request),
+        )
+        .route(
+            "/api/v1/maintenance/pm-schedules",
+            get(routes::maintenance::list_pm_schedules)
+                .post(routes::maintenance::create_pm_schedule),
+        )
+        .route(
+            "/api/v1/maintenance/pm-schedules/{id}",
+            get(routes::maintenance::get_pm_schedule)
+                .put(routes::maintenance::update_pm_schedule)
+                .delete(routes::maintenance::delete_pm_schedule),
+        )
+        .route(
+            "/api/v1/maintenance/pm-schedules/{id}/complete",
+            post(routes::maintenance::complete_pm_task),
+        )
+        .route(
+            "/api/v1/maintenance/pm-schedules/overdue",
+            get(routes::maintenance::get_overdue_pm_tasks),
+        )
+        .route(
+            "/api/v1/maintenance/equipment",
+            get(routes::maintenance::list_equipment).post(routes::maintenance::register_equipment),
+        )
+        .route(
+            "/api/v1/maintenance/equipment/{id}",
+            get(routes::maintenance::get_equipment)
+                .put(routes::maintenance::update_equipment)
+                .delete(routes::maintenance::delete_equipment),
+        )
+        .route(
+            "/api/v1/maintenance/equipment/{id}/status",
+            put(routes::maintenance::update_equipment_status),
+        )
         // ── Finance Routes ────────────────────────────────────────
-        .route("/api/v1/finance/invoices", get(routes::finance::list_invoices).post(routes::finance::create_invoice))
-        .route("/api/v1/finance/invoices/{id}", get(routes::finance::get_invoice).put(routes::finance::update_invoice).delete(routes::finance::delete_invoice))
-        .route("/api/v1/finance/invoices/{id}/paid", post(routes::finance::mark_invoice_paid))
-        .route("/api/v1/finance/payments", get(routes::finance::list_payments).post(routes::finance::record_payment))
-        .route("/api/v1/finance/payments/{id}", put(routes::finance::update_payment).delete(routes::finance::delete_payment))
-        .route("/api/v1/finance/budgets", get(routes::finance::list_budgets).post(routes::finance::create_budget))
-        .route("/api/v1/finance/budgets/{id}", get(routes::finance::get_budget).put(routes::finance::update_budget).delete(routes::finance::delete_budget))
-        .route("/api/v1/finance/budgets/{id}/allocate", post(routes::finance::allocate_budget))
-        .route("/api/v1/finance/journal-entries", get(routes::finance::list_journal_entries).post(routes::finance::post_journal_entry))
-        .route("/api/v1/finance/journal-entries/{id}", put(routes::finance::update_journal_entry).delete(routes::finance::delete_journal_entry))
-        .route("/api/v1/finance/cost-rollup", post(routes::finance::run_cost_rollup))
-        .route("/api/v1/finance/cost-rollup/{product_id}", get(routes::finance::get_cost_rollup))
-        .route("/api/v1/finance/three-way-match", post(routes::finance::match_three_way))
+        .route(
+            "/api/v1/finance/invoices",
+            get(routes::finance::list_invoices).post(routes::finance::create_invoice),
+        )
+        .route(
+            "/api/v1/finance/invoices/{id}",
+            get(routes::finance::get_invoice)
+                .put(routes::finance::update_invoice)
+                .delete(routes::finance::delete_invoice),
+        )
+        .route(
+            "/api/v1/finance/invoices/{id}/paid",
+            post(routes::finance::mark_invoice_paid),
+        )
+        .route(
+            "/api/v1/finance/payments",
+            get(routes::finance::list_payments).post(routes::finance::record_payment),
+        )
+        .route(
+            "/api/v1/finance/payments/{id}",
+            put(routes::finance::update_payment).delete(routes::finance::delete_payment),
+        )
+        .route(
+            "/api/v1/finance/budgets",
+            get(routes::finance::list_budgets).post(routes::finance::create_budget),
+        )
+        .route(
+            "/api/v1/finance/budgets/{id}",
+            get(routes::finance::get_budget)
+                .put(routes::finance::update_budget)
+                .delete(routes::finance::delete_budget),
+        )
+        .route(
+            "/api/v1/finance/budgets/{id}/allocate",
+            post(routes::finance::allocate_budget),
+        )
+        .route(
+            "/api/v1/finance/journal-entries",
+            get(routes::finance::list_journal_entries).post(routes::finance::post_journal_entry),
+        )
+        .route(
+            "/api/v1/finance/journal-entries/{id}",
+            put(routes::finance::update_journal_entry)
+                .delete(routes::finance::delete_journal_entry),
+        )
+        .route(
+            "/api/v1/finance/cost-rollup",
+            post(routes::finance::run_cost_rollup),
+        )
+        .route(
+            "/api/v1/finance/cost-rollup/{product_id}",
+            get(routes::finance::get_cost_rollup),
+        )
+        .route(
+            "/api/v1/finance/three-way-match",
+            post(routes::finance::match_three_way),
+        )
         // ── HR Routes ─────────────────────────────────────────────
-        .route("/api/v1/hr/employees", get(routes::hr::list_employees).post(routes::hr::create_employee))
-        .route("/api/v1/hr/employees/{id}", get(routes::hr::get_employee).put(routes::hr::update_employee).delete(routes::hr::delete_employee))
-        .route("/api/v1/hr/employees/{id}/status", put(routes::hr::update_employee_status))
-        .route("/api/v1/hr/training", get(routes::hr::list_training_records).post(routes::hr::record_training))
-        .route("/api/v1/hr/training/expired", get(routes::hr::get_expired_certifications))
-        .route("/api/v1/hr/training/{id}", put(routes::hr::update_training).delete(routes::hr::delete_training))
-        .route("/api/v1/hr/leave", get(routes::hr::list_leave_requests).post(routes::hr::submit_leave_request))
-        .route("/api/v1/hr/leave/{id}", put(routes::hr::update_leave).delete(routes::hr::delete_leave))
-        .route("/api/v1/hr/leave/{id}/approve", post(routes::hr::approve_leave))
-        .route("/api/v1/hr/leave/{id}/reject", post(routes::hr::reject_leave))
-        .route("/api/v1/hr/reviews", get(routes::hr::list_reviews).post(routes::hr::create_review))
-        .route("/api/v1/hr/reviews/{id}", put(routes::hr::update_review).delete(routes::hr::delete_review))
-        .route("/api/v1/hr/reviews/{id}/complete", post(routes::hr::complete_review))
+        .route(
+            "/api/v1/hr/employees",
+            get(routes::hr::list_employees).post(routes::hr::create_employee),
+        )
+        .route(
+            "/api/v1/hr/employees/{id}",
+            get(routes::hr::get_employee)
+                .put(routes::hr::update_employee)
+                .delete(routes::hr::delete_employee),
+        )
+        .route(
+            "/api/v1/hr/employees/{id}/status",
+            put(routes::hr::update_employee_status),
+        )
+        .route(
+            "/api/v1/hr/training",
+            get(routes::hr::list_training_records).post(routes::hr::record_training),
+        )
+        .route(
+            "/api/v1/hr/training/expired",
+            get(routes::hr::get_expired_certifications),
+        )
+        .route(
+            "/api/v1/hr/training/{id}",
+            put(routes::hr::update_training).delete(routes::hr::delete_training),
+        )
+        .route(
+            "/api/v1/hr/leave",
+            get(routes::hr::list_leave_requests).post(routes::hr::submit_leave_request),
+        )
+        .route(
+            "/api/v1/hr/leave/{id}",
+            put(routes::hr::update_leave).delete(routes::hr::delete_leave),
+        )
+        .route(
+            "/api/v1/hr/leave/{id}/approve",
+            post(routes::hr::approve_leave),
+        )
+        .route(
+            "/api/v1/hr/leave/{id}/reject",
+            post(routes::hr::reject_leave),
+        )
+        .route(
+            "/api/v1/hr/reviews",
+            get(routes::hr::list_reviews).post(routes::hr::create_review),
+        )
+        .route(
+            "/api/v1/hr/reviews/{id}",
+            put(routes::hr::update_review).delete(routes::hr::delete_review),
+        )
+        .route(
+            "/api/v1/hr/reviews/{id}/complete",
+            post(routes::hr::complete_review),
+        )
         .route("/api/v1/hr/timecards", get(routes::hr::list_timecards))
-        .route("/api/v1/hr/timecards/{id}", put(routes::hr::update_timecard))
+        .route(
+            "/api/v1/hr/timecards/{id}",
+            put(routes::hr::update_timecard),
+        )
         .route("/api/v1/hr/timecards/clock-in", post(routes::hr::clock_in))
-        .route("/api/v1/hr/timecards/clock-out", post(routes::hr::clock_out))
+        .route(
+            "/api/v1/hr/timecards/clock-out",
+            post(routes::hr::clock_out),
+        )
         // ── Supply Chain Routes ───────────────────────────────────
-        .route("/api/v1/supply-chain/rfqs", get(routes::supply_chain::list_rfqs).post(routes::supply_chain::create_rfq))
-        .route("/api/v1/supply-chain/rfqs/{id}", get(routes::supply_chain::get_rfq).put(routes::supply_chain::update_rfq).delete(routes::supply_chain::delete_rfq))
-        .route("/api/v1/supply-chain/rfqs/{id}/status", put(routes::supply_chain::update_rfq_status))
-        .route("/api/v1/supply-chain/rfqs/{id}/submit", post(routes::supply_chain::submit_rfq))
-        .route("/api/v1/supply-chain/rfqs/{id}/cancel", post(routes::supply_chain::cancel_rfq))
-        .route("/api/v1/supply-chain/quotes", get(routes::supply_chain::list_quotes).post(routes::supply_chain::create_quote))
-        .route("/api/v1/supply-chain/quotes/{id}", get(routes::supply_chain::get_quote).put(routes::supply_chain::update_quote).delete(routes::supply_chain::delete_quote))
-        .route("/api/v1/supply-chain/quotes/{id}/approve", post(routes::supply_chain::approve_quote))
-        .route("/api/v1/supply-chain/quotes/{id}/submit", post(routes::supply_chain::submit_quote))
-        .route("/api/v1/supply-chain/quotes/{id}/accept", post(routes::supply_chain::accept_quote))
-        .route("/api/v1/supply-chain/quotes/{id}/reject", post(routes::supply_chain::reject_quote))
-        .route("/api/v1/supply-chain/quotes/convert", post(routes::supply_chain::convert_quote_to_order))
-        .route("/api/v1/supply-chain/sales-orders", get(routes::supply_chain::list_sales_orders).post(routes::supply_chain::create_sales_order))
-        .route("/api/v1/supply-chain/sales-orders/{id}", get(routes::supply_chain::get_sales_order).put(routes::supply_chain::update_sales_order).delete(routes::supply_chain::delete_sales_order))
-        .route("/api/v1/supply-chain/sales-orders/{id}/status", put(routes::supply_chain::update_sales_order_status))
-        .route("/api/v1/supply-chain/purchase-orders", get(routes::supply_chain::list_purchase_orders).post(routes::supply_chain::create_purchase_order))
-        .route("/api/v1/supply-chain/purchase-orders/{id}", get(routes::supply_chain::get_purchase_order).put(routes::supply_chain::update_purchase_order).delete(routes::supply_chain::delete_purchase_order))
-        .route("/api/v1/supply-chain/purchase-orders/{id}/receive", post(routes::supply_chain::receive_po_line))
-        .route("/api/v1/supply-chain/purchase-orders/{id}/receive-full", post(routes::supply_chain::receive_full_po))
-        .route("/api/v1/supply-chain/inventory", get(routes::supply_chain::list_inventory))
-        .route("/api/v1/supply-chain/inventory/{id}", get(routes::supply_chain::get_inventory).put(routes::supply_chain::update_inventory).delete(routes::supply_chain::delete_inventory))
-        .route("/api/v1/supply-chain/inventory/adjust", post(routes::supply_chain::adjust_inventory))
-        .route("/api/v1/supply-chain/stock-moves", get(routes::supply_chain::list_stock_moves).post(routes::supply_chain::create_stock_move))
-        .route("/api/v1/supply-chain/stock-moves/{id}", delete(routes::supply_chain::delete_stock_move))
+        .route(
+            "/api/v1/supply-chain/rfqs",
+            get(routes::supply_chain::list_rfqs).post(routes::supply_chain::create_rfq),
+        )
+        .route(
+            "/api/v1/supply-chain/rfqs/{id}",
+            get(routes::supply_chain::get_rfq)
+                .put(routes::supply_chain::update_rfq)
+                .delete(routes::supply_chain::delete_rfq),
+        )
+        .route(
+            "/api/v1/supply-chain/rfqs/{id}/status",
+            put(routes::supply_chain::update_rfq_status),
+        )
+        .route(
+            "/api/v1/supply-chain/rfqs/{id}/submit",
+            post(routes::supply_chain::submit_rfq),
+        )
+        .route(
+            "/api/v1/supply-chain/rfqs/{id}/cancel",
+            post(routes::supply_chain::cancel_rfq),
+        )
+        .route(
+            "/api/v1/supply-chain/quotes",
+            get(routes::supply_chain::list_quotes).post(routes::supply_chain::create_quote),
+        )
+        .route(
+            "/api/v1/supply-chain/quotes/{id}",
+            get(routes::supply_chain::get_quote)
+                .put(routes::supply_chain::update_quote)
+                .delete(routes::supply_chain::delete_quote),
+        )
+        .route(
+            "/api/v1/supply-chain/quotes/{id}/approve",
+            post(routes::supply_chain::approve_quote),
+        )
+        .route(
+            "/api/v1/supply-chain/quotes/{id}/submit",
+            post(routes::supply_chain::submit_quote),
+        )
+        .route(
+            "/api/v1/supply-chain/quotes/{id}/accept",
+            post(routes::supply_chain::accept_quote),
+        )
+        .route(
+            "/api/v1/supply-chain/quotes/{id}/reject",
+            post(routes::supply_chain::reject_quote),
+        )
+        .route(
+            "/api/v1/supply-chain/quotes/convert",
+            post(routes::supply_chain::convert_quote_to_order),
+        )
+        .route(
+            "/api/v1/supply-chain/sales-orders",
+            get(routes::supply_chain::list_sales_orders)
+                .post(routes::supply_chain::create_sales_order),
+        )
+        .route(
+            "/api/v1/supply-chain/sales-orders/{id}",
+            get(routes::supply_chain::get_sales_order)
+                .put(routes::supply_chain::update_sales_order)
+                .delete(routes::supply_chain::delete_sales_order),
+        )
+        .route(
+            "/api/v1/supply-chain/sales-orders/{id}/status",
+            put(routes::supply_chain::update_sales_order_status),
+        )
+        .route(
+            "/api/v1/supply-chain/purchase-orders",
+            get(routes::supply_chain::list_purchase_orders)
+                .post(routes::supply_chain::create_purchase_order),
+        )
+        .route(
+            "/api/v1/supply-chain/purchase-orders/{id}",
+            get(routes::supply_chain::get_purchase_order)
+                .put(routes::supply_chain::update_purchase_order)
+                .delete(routes::supply_chain::delete_purchase_order),
+        )
+        .route(
+            "/api/v1/supply-chain/purchase-orders/{id}/receive",
+            post(routes::supply_chain::receive_po_line),
+        )
+        .route(
+            "/api/v1/supply-chain/purchase-orders/{id}/receive-full",
+            post(routes::supply_chain::receive_full_po),
+        )
+        .route(
+            "/api/v1/supply-chain/inventory",
+            get(routes::supply_chain::list_inventory),
+        )
+        .route(
+            "/api/v1/supply-chain/inventory/{id}",
+            get(routes::supply_chain::get_inventory)
+                .put(routes::supply_chain::update_inventory)
+                .delete(routes::supply_chain::delete_inventory),
+        )
+        .route(
+            "/api/v1/supply-chain/inventory/adjust",
+            post(routes::supply_chain::adjust_inventory),
+        )
+        .route(
+            "/api/v1/supply-chain/stock-moves",
+            get(routes::supply_chain::list_stock_moves)
+                .post(routes::supply_chain::create_stock_move),
+        )
+        .route(
+            "/api/v1/supply-chain/stock-moves/{id}",
+            delete(routes::supply_chain::delete_stock_move),
+        )
         // ── Operations Routes ─────────────────────────────────────
-        .route("/api/v1/ops/andons", get(routes::ops::list_andons).post(routes::ops::raise_andon))
-        .route("/api/v1/ops/andons/{id}", get(routes::ops::get_andon).put(routes::ops::update_andon).delete(routes::ops::delete_andon))
-        .route("/api/v1/ops/andons/{id}/acknowledge", post(routes::ops::acknowledge_andon))
-        .route("/api/v1/ops/andons/{id}/resolve", post(routes::ops::resolve_andon))
-        .route("/api/v1/ops/projects", get(routes::ops::list_projects).post(routes::ops::create_project))
-        .route("/api/v1/ops/projects/{id}", get(routes::ops::get_project).put(routes::ops::update_project).delete(routes::ops::delete_project))
-        .route("/api/v1/ops/projects/{id}/complete", post(routes::ops::complete_project))
-        .route("/api/v1/ops/a3s", get(routes::ops::list_a3s).post(routes::ops::create_a3))
-        .route("/api/v1/ops/a3s/{id}", get(routes::ops::get_a3).put(routes::ops::update_a3).delete(routes::ops::delete_a3))
+        .route(
+            "/api/v1/ops/andons",
+            get(routes::ops::list_andons).post(routes::ops::raise_andon),
+        )
+        .route(
+            "/api/v1/ops/andons/{id}",
+            get(routes::ops::get_andon)
+                .put(routes::ops::update_andon)
+                .delete(routes::ops::delete_andon),
+        )
+        .route(
+            "/api/v1/ops/andons/{id}/acknowledge",
+            post(routes::ops::acknowledge_andon),
+        )
+        .route(
+            "/api/v1/ops/andons/{id}/resolve",
+            post(routes::ops::resolve_andon),
+        )
+        .route(
+            "/api/v1/ops/projects",
+            get(routes::ops::list_projects).post(routes::ops::create_project),
+        )
+        .route(
+            "/api/v1/ops/projects/{id}",
+            get(routes::ops::get_project)
+                .put(routes::ops::update_project)
+                .delete(routes::ops::delete_project),
+        )
+        .route(
+            "/api/v1/ops/projects/{id}/complete",
+            post(routes::ops::complete_project),
+        )
+        .route(
+            "/api/v1/ops/a3s",
+            get(routes::ops::list_a3s).post(routes::ops::create_a3),
+        )
+        .route(
+            "/api/v1/ops/a3s/{id}",
+            get(routes::ops::get_a3)
+                .put(routes::ops::update_a3)
+                .delete(routes::ops::delete_a3),
+        )
         .route("/api/v1/ops/a3s/{id}/close", post(routes::ops::close_a3))
-        .route("/api/v1/ops/risks", get(routes::ops::list_risks).post(routes::ops::create_risk))
-        .route("/api/v1/ops/risks/{id}", get(routes::ops::get_risk).put(routes::ops::update_risk).delete(routes::ops::delete_risk))
-        .route("/api/v1/ops/risks/{id}/mitigate", post(routes::ops::mitigate_risk))
+        .route(
+            "/api/v1/ops/risks",
+            get(routes::ops::list_risks).post(routes::ops::create_risk),
+        )
+        .route(
+            "/api/v1/ops/risks/{id}",
+            get(routes::ops::get_risk)
+                .put(routes::ops::update_risk)
+                .delete(routes::ops::delete_risk),
+        )
+        .route(
+            "/api/v1/ops/risks/{id}/mitigate",
+            post(routes::ops::mitigate_risk),
+        )
         // ── Quality Routes ────────────────────────────────────────
-        .route("/api/v1/quality/ncrs", get(routes::quality::list_ncrs).post(routes::quality::create_ncr))
-        .route("/api/v1/quality/ncrs/{id}", get(routes::quality::get_ncr).put(routes::quality::update_ncr).delete(routes::quality::delete_ncr))
-        .route("/api/v1/quality/ncrs/{id}/investigate", post(routes::quality::investigate_ncr))
-        .route("/api/v1/quality/ncrs/{id}/disposition", post(routes::quality::disposition_ncr))
-        .route("/api/v1/quality/ncrs/{id}/close", post(routes::quality::close_ncr))
-        .route("/api/v1/quality/capas", get(routes::quality::list_capas).post(routes::quality::create_capa))
-        .route("/api/v1/quality/capas/{id}", get(routes::quality::get_capa).put(routes::quality::update_capa).delete(routes::quality::delete_capa))
-        .route("/api/v1/quality/capas/{id}/verify", post(routes::quality::verify_capa))
-        .route("/api/v1/quality/capas/{id}/close", post(routes::quality::close_capa))
-        .route("/api/v1/quality/audits", get(routes::quality::list_audits).post(routes::quality::create_audit))
-        .route("/api/v1/quality/audits/{id}", get(routes::quality::get_audit).put(routes::quality::update_audit).delete(routes::quality::delete_audit))
-        .route("/api/v1/quality/audits/{audit_id}/findings", get(routes::quality::list_audit_findings))
-        .route("/api/v1/quality/supplier-scorecards", get(routes::quality::list_supplier_scorecards).post(routes::quality::create_supplier_evaluation))
-        .route("/api/v1/quality/supplier-scorecards/{id}", put(routes::quality::update_supplier_scorecard).delete(routes::quality::delete_supplier_scorecard))
-        .route("/api/v1/quality/scars", get(routes::quality::list_scars).post(routes::quality::create_scar))
-        .route("/api/v1/quality/scars/{id}", get(routes::quality::get_scar).put(routes::quality::update_scar).delete(routes::quality::delete_scar))
-        .route("/api/v1/quality/documents", get(routes::quality::list_documents).post(routes::quality::create_document))
-        .route("/api/v1/quality/documents/{id}", get(routes::quality::get_document).put(routes::quality::update_document).delete(routes::quality::delete_document))
-        .route("/api/v1/quality/first-article-inspections", get(routes::quality::list_first_article_inspections).post(routes::quality::create_first_article_inspection))
-        .route("/api/v1/quality/first-article-inspections/{id}", get(routes::quality::get_first_article_inspection).put(routes::quality::update_first_article_inspection).delete(routes::quality::delete_first_article_inspection))
-        .route("/api/v1/quality/self-inspections", get(routes::quality::list_self_inspections).post(routes::quality::create_self_inspection))
-        .route("/api/v1/quality/self-inspections/{id}", get(routes::quality::get_self_inspection).put(routes::quality::update_self_inspection).delete(routes::quality::delete_self_inspection))
-        .route("/api/v1/quality/msa-studies", get(routes::quality::list_msa_studies).post(routes::quality::create_msa_study))
-        .route("/api/v1/quality/msa-studies/{id}", get(routes::quality::get_msa_study).delete(routes::quality::delete_msa_study))
-        .route("/api/v1/quality/process-capability-studies", get(routes::quality::list_process_capability_studies).post(routes::quality::create_process_capability_study))
-        .route("/api/v1/quality/process-capability-studies/{id}", get(routes::quality::get_process_capability_study).delete(routes::quality::delete_process_capability_study))
-        .route("/api/v1/quality/control-plans", get(routes::quality::list_control_plans).post(routes::quality::create_control_plan))
-        .route("/api/v1/quality/control-plans/{id}", get(routes::quality::get_control_plan).put(routes::quality::update_control_plan).delete(routes::quality::delete_control_plan))
-        .route("/api/v1/quality/pfmeas", get(routes::quality::list_pfmeas).post(routes::quality::create_pfmea))
-        .route("/api/v1/quality/pfmeas/{id}", get(routes::quality::get_pfmea).delete(routes::quality::delete_pfmea))
-        .route("/api/v1/quality/npi-projects", get(routes::quality::list_npi_projects).post(routes::quality::create_npi_project))
-        .route("/api/v1/quality/npi-projects/{id}", put(routes::quality::update_npi_project).delete(routes::quality::delete_npi_project))
-        .route("/api/v1/quality/npi-projects/{project_id}/risks", get(routes::quality::list_npi_risks))
-        .route("/api/v1/quality/gauges", get(routes::quality::list_gauges).post(routes::quality::create_gauge))
-        .route("/api/v1/quality/gauges/{id}", get(routes::quality::get_gauge).put(routes::quality::update_gauge).delete(routes::quality::delete_gauge))
-        .route("/api/v1/quality/complaints", get(routes::quality::list_complaints).post(routes::quality::create_complaint))
-        .route("/api/v1/quality/complaints/{id}", get(routes::quality::get_complaint).put(routes::quality::update_complaint).delete(routes::quality::delete_complaint))
-        .route("/api/v1/quality/eight-d-reports", get(routes::quality::list_eight_d_reports).post(routes::quality::create_eight_d_report))
-        .route("/api/v1/quality/eight-d-reports/{id}", get(routes::quality::get_eight_d_report).put(routes::quality::update_eight_d_report).delete(routes::quality::delete_eight_d_report))
-        .route("/api/v1/quality/management-reviews", get(routes::quality::list_management_reviews).post(routes::quality::create_management_review))
-        .route("/api/v1/quality/management-reviews/{id}", get(routes::quality::get_management_review).put(routes::quality::update_management_review).delete(routes::quality::delete_management_review))
+        .route(
+            "/api/v1/quality/ncrs",
+            get(routes::quality::list_ncrs).post(routes::quality::create_ncr),
+        )
+        .route(
+            "/api/v1/quality/ncrs/{id}",
+            get(routes::quality::get_ncr)
+                .put(routes::quality::update_ncr)
+                .delete(routes::quality::delete_ncr),
+        )
+        .route(
+            "/api/v1/quality/ncrs/{id}/investigate",
+            post(routes::quality::investigate_ncr),
+        )
+        .route(
+            "/api/v1/quality/ncrs/{id}/disposition",
+            post(routes::quality::disposition_ncr),
+        )
+        .route(
+            "/api/v1/quality/ncrs/{id}/close",
+            post(routes::quality::close_ncr),
+        )
+        .route(
+            "/api/v1/quality/capas",
+            get(routes::quality::list_capas).post(routes::quality::create_capa),
+        )
+        .route(
+            "/api/v1/quality/capas/{id}",
+            get(routes::quality::get_capa)
+                .put(routes::quality::update_capa)
+                .delete(routes::quality::delete_capa),
+        )
+        .route(
+            "/api/v1/quality/capas/{id}/verify",
+            post(routes::quality::verify_capa),
+        )
+        .route(
+            "/api/v1/quality/capas/{id}/close",
+            post(routes::quality::close_capa),
+        )
+        .route(
+            "/api/v1/quality/audits",
+            get(routes::quality::list_audits).post(routes::quality::create_audit),
+        )
+        .route(
+            "/api/v1/quality/audits/{id}",
+            get(routes::quality::get_audit)
+                .put(routes::quality::update_audit)
+                .delete(routes::quality::delete_audit),
+        )
+        .route(
+            "/api/v1/quality/audits/{audit_id}/findings",
+            get(routes::quality::list_audit_findings),
+        )
+        .route(
+            "/api/v1/quality/supplier-scorecards",
+            get(routes::quality::list_supplier_scorecards)
+                .post(routes::quality::create_supplier_evaluation),
+        )
+        .route(
+            "/api/v1/quality/supplier-scorecards/{id}",
+            put(routes::quality::update_supplier_scorecard)
+                .delete(routes::quality::delete_supplier_scorecard),
+        )
+        .route(
+            "/api/v1/quality/scars",
+            get(routes::quality::list_scars).post(routes::quality::create_scar),
+        )
+        .route(
+            "/api/v1/quality/scars/{id}",
+            get(routes::quality::get_scar)
+                .put(routes::quality::update_scar)
+                .delete(routes::quality::delete_scar),
+        )
+        .route(
+            "/api/v1/quality/documents",
+            get(routes::quality::list_documents).post(routes::quality::create_document),
+        )
+        .route(
+            "/api/v1/quality/documents/{id}",
+            get(routes::quality::get_document)
+                .put(routes::quality::update_document)
+                .delete(routes::quality::delete_document),
+        )
+        .route(
+            "/api/v1/quality/first-article-inspections",
+            get(routes::quality::list_first_article_inspections)
+                .post(routes::quality::create_first_article_inspection),
+        )
+        .route(
+            "/api/v1/quality/first-article-inspections/{id}",
+            get(routes::quality::get_first_article_inspection)
+                .put(routes::quality::update_first_article_inspection)
+                .delete(routes::quality::delete_first_article_inspection),
+        )
+        .route(
+            "/api/v1/quality/self-inspections",
+            get(routes::quality::list_self_inspections)
+                .post(routes::quality::create_self_inspection),
+        )
+        .route(
+            "/api/v1/quality/self-inspections/{id}",
+            get(routes::quality::get_self_inspection)
+                .put(routes::quality::update_self_inspection)
+                .delete(routes::quality::delete_self_inspection),
+        )
+        .route(
+            "/api/v1/quality/msa-studies",
+            get(routes::quality::list_msa_studies).post(routes::quality::create_msa_study),
+        )
+        .route(
+            "/api/v1/quality/msa-studies/{id}",
+            get(routes::quality::get_msa_study).delete(routes::quality::delete_msa_study),
+        )
+        .route(
+            "/api/v1/quality/process-capability-studies",
+            get(routes::quality::list_process_capability_studies)
+                .post(routes::quality::create_process_capability_study),
+        )
+        .route(
+            "/api/v1/quality/process-capability-studies/{id}",
+            get(routes::quality::get_process_capability_study)
+                .delete(routes::quality::delete_process_capability_study),
+        )
+        .route(
+            "/api/v1/quality/control-plans",
+            get(routes::quality::list_control_plans).post(routes::quality::create_control_plan),
+        )
+        .route(
+            "/api/v1/quality/control-plans/{id}",
+            get(routes::quality::get_control_plan)
+                .put(routes::quality::update_control_plan)
+                .delete(routes::quality::delete_control_plan),
+        )
+        .route(
+            "/api/v1/quality/pfmeas",
+            get(routes::quality::list_pfmeas).post(routes::quality::create_pfmea),
+        )
+        .route(
+            "/api/v1/quality/pfmeas/{id}",
+            get(routes::quality::get_pfmea).delete(routes::quality::delete_pfmea),
+        )
+        .route(
+            "/api/v1/quality/npi-projects",
+            get(routes::quality::list_npi_projects).post(routes::quality::create_npi_project),
+        )
+        .route(
+            "/api/v1/quality/npi-projects/{id}",
+            put(routes::quality::update_npi_project).delete(routes::quality::delete_npi_project),
+        )
+        .route(
+            "/api/v1/quality/npi-projects/{project_id}/risks",
+            get(routes::quality::list_npi_risks),
+        )
+        .route(
+            "/api/v1/quality/gauges",
+            get(routes::quality::list_gauges).post(routes::quality::create_gauge),
+        )
+        .route(
+            "/api/v1/quality/gauges/{id}",
+            get(routes::quality::get_gauge)
+                .put(routes::quality::update_gauge)
+                .delete(routes::quality::delete_gauge),
+        )
+        .route(
+            "/api/v1/quality/complaints",
+            get(routes::quality::list_complaints).post(routes::quality::create_complaint),
+        )
+        .route(
+            "/api/v1/quality/complaints/{id}",
+            get(routes::quality::get_complaint)
+                .put(routes::quality::update_complaint)
+                .delete(routes::quality::delete_complaint),
+        )
+        .route(
+            "/api/v1/quality/eight-d-reports",
+            get(routes::quality::list_eight_d_reports).post(routes::quality::create_eight_d_report),
+        )
+        .route(
+            "/api/v1/quality/eight-d-reports/{id}",
+            get(routes::quality::get_eight_d_report)
+                .put(routes::quality::update_eight_d_report)
+                .delete(routes::quality::delete_eight_d_report),
+        )
+        .route(
+            "/api/v1/quality/management-reviews",
+            get(routes::quality::list_management_reviews)
+                .post(routes::quality::create_management_review),
+        )
+        .route(
+            "/api/v1/quality/management-reviews/{id}",
+            get(routes::quality::get_management_review)
+                .put(routes::quality::update_management_review)
+                .delete(routes::quality::delete_management_review),
+        )
         // ── Kanban Routes ────────────────────────────────────────────
-        .route("/api/v1/kanban/boards", get(routes::kanban::list_boards).post(routes::kanban::create_board))
-        .route("/api/v1/kanban/boards/{id}", get(routes::kanban::get_board).put(routes::kanban::update_board).delete(routes::kanban::delete_board))
-        .route("/api/v1/kanban/boards/{board_id}/columns", post(routes::kanban::add_column))
-        .route("/api/v1/kanban/columns/{id}", put(routes::kanban::update_column).delete(routes::kanban::delete_column))
-        .route("/api/v1/kanban/columns/{column_id}/cards", post(routes::kanban::add_card))
-        .route("/api/v1/kanban/cards/{id}", put(routes::kanban::update_card).delete(routes::kanban::delete_card))
-        .route("/api/v1/kanban/cards/{id}/move", put(routes::kanban::move_card))
-        .route("/api/v1/kanban/metrics", get(routes::kanban::get_kanban_metrics))
+        .route(
+            "/api/v1/kanban/boards",
+            get(routes::kanban::list_boards).post(routes::kanban::create_board),
+        )
+        .route(
+            "/api/v1/kanban/boards/{id}",
+            get(routes::kanban::get_board)
+                .put(routes::kanban::update_board)
+                .delete(routes::kanban::delete_board),
+        )
+        .route(
+            "/api/v1/kanban/boards/{board_id}/columns",
+            post(routes::kanban::add_column),
+        )
+        .route(
+            "/api/v1/kanban/columns/{id}",
+            put(routes::kanban::update_column).delete(routes::kanban::delete_column),
+        )
+        .route(
+            "/api/v1/kanban/columns/{column_id}/cards",
+            post(routes::kanban::add_card),
+        )
+        .route(
+            "/api/v1/kanban/cards/{id}",
+            put(routes::kanban::update_card).delete(routes::kanban::delete_card),
+        )
+        .route(
+            "/api/v1/kanban/cards/{id}/move",
+            put(routes::kanban::move_card),
+        )
+        .route(
+            "/api/v1/kanban/metrics",
+            get(routes::kanban::get_kanban_metrics),
+        )
         // ── Search Routes ────────────────────────────────────────────
         .route("/api/v1/search", get(routes::search::search))
         // ── Notification Routes ──────────────────────────────────────
-        .route("/api/v1/notifications", get(routes::notifications::list_notifications))
-        .route("/api/v1/notifications/unread-count", get(routes::notifications::unread_count))
-        .route("/api/v1/notifications/{id}/read", post(routes::notifications::mark_notification_read))
-        .route("/api/v1/notifications/read-all", post(routes::notifications::mark_all_read))
-        .route("/api/v1/notifications/preferences", get(routes::notifications::get_preferences).put(routes::notifications::update_preferences))
+        .route(
+            "/api/v1/notifications",
+            get(routes::notifications::list_notifications),
+        )
+        .route(
+            "/api/v1/notifications/unread-count",
+            get(routes::notifications::unread_count),
+        )
+        .route(
+            "/api/v1/notifications/{id}/read",
+            post(routes::notifications::mark_notification_read),
+        )
+        .route(
+            "/api/v1/notifications/read-all",
+            post(routes::notifications::mark_all_read),
+        )
+        .route(
+            "/api/v1/notifications/preferences",
+            get(routes::notifications::get_preferences)
+                .put(routes::notifications::update_preferences),
+        )
         // ── Attachment Routes ────────────────────────────────────────
-        .route("/api/v1/attachments/upload", post(routes::attachments::upload_attachment))
-        .route("/api/v1/attachments/{entity_type}/{entity_id}", get(routes::attachments::list_attachments))
-        .route("/api/v1/attachments/{id}", delete(routes::attachments::delete_attachment))
+        .route(
+            "/api/v1/attachments/upload",
+            post(routes::attachments::upload_attachment),
+        )
+        .route(
+            "/api/v1/attachments/{entity_type}/{entity_id}",
+            get(routes::attachments::list_attachments),
+        )
+        .route(
+            "/api/v1/attachments/{id}",
+            delete(routes::attachments::delete_attachment),
+        )
         // ── RFQ Routes ───────────────────────────────────────────────
-        .route("/api/v1/rfqs", get(routes::rfqs::list_rfqs).post(routes::rfqs::create_rfq))
-        .route("/api/v1/rfqs/{id}", get(routes::rfqs::get_rfq).put(routes::rfqs::update_rfq).delete(routes::rfqs::delete_rfq))
-        .route("/api/v1/rfqs/{rfq_id}/line-items", post(routes::rfqs::add_rfq_line_item))
-        .route("/api/v1/rfqs/{rfq_id}/line-items/{item_id}", put(routes::rfqs::update_rfq_line_item))
+        .route(
+            "/api/v1/rfqs",
+            get(routes::rfqs::list_rfqs).post(routes::rfqs::create_rfq),
+        )
+        .route(
+            "/api/v1/rfqs/{id}",
+            get(routes::rfqs::get_rfq)
+                .put(routes::rfqs::update_rfq)
+                .delete(routes::rfqs::delete_rfq),
+        )
+        .route(
+            "/api/v1/rfqs/{rfq_id}/line-items",
+            post(routes::rfqs::add_rfq_line_item),
+        )
+        .route(
+            "/api/v1/rfqs/{rfq_id}/line-items/{item_id}",
+            put(routes::rfqs::update_rfq_line_item),
+        )
         // ── Quote Routes ─────────────────────────────────────────────
-        .route("/api/v1/quotes", get(routes::quotes::list_quotes).post(routes::quotes::create_quote))
-        .route("/api/v1/quotes/{id}", get(routes::quotes::get_quote).put(routes::quotes::update_quote).delete(routes::quotes::delete_quote))
-        .route("/api/v1/quotes/{quote_id}/versions", post(routes::quotes::create_quote_version).get(routes::quotes::list_quote_versions))
+        .route(
+            "/api/v1/quotes",
+            get(routes::quotes::list_quotes).post(routes::quotes::create_quote),
+        )
+        .route(
+            "/api/v1/quotes/{id}",
+            get(routes::quotes::get_quote)
+                .put(routes::quotes::update_quote)
+                .delete(routes::quotes::delete_quote),
+        )
+        .route(
+            "/api/v1/quotes/{quote_id}/versions",
+            post(routes::quotes::create_quote_version).get(routes::quotes::list_quote_versions),
+        )
         // ── Learning Routes ──────────────────────────────────────────
-        .route("/api/v1/learning/modules", get(routes::learning::list_modules).post(routes::learning::create_module))
-        .route("/api/v1/learning/modules/{id}", get(routes::learning::get_module).put(routes::learning::update_module).delete(routes::learning::delete_module))
+        .route(
+            "/api/v1/learning/modules",
+            get(routes::learning::list_modules).post(routes::learning::create_module),
+        )
+        .route(
+            "/api/v1/learning/modules/{id}",
+            get(routes::learning::get_module)
+                .put(routes::learning::update_module)
+                .delete(routes::learning::delete_module),
+        )
         // ── Opportunity Routes ───────────────────────────────────────
-        .route("/api/v1/opportunities", get(routes::opportunities::list_opportunities).post(routes::opportunities::create_opportunity))
-        .route("/api/v1/opportunities/{id}", get(routes::opportunities::get_opportunity).put(routes::opportunities::update_opportunity).delete(routes::opportunities::delete_opportunity))
+        .route(
+            "/api/v1/opportunities",
+            get(routes::opportunities::list_opportunities)
+                .post(routes::opportunities::create_opportunity),
+        )
+        .route(
+            "/api/v1/opportunities/{id}",
+            get(routes::opportunities::get_opportunity)
+                .put(routes::opportunities::update_opportunity)
+                .delete(routes::opportunities::delete_opportunity),
+        )
         // ── Escalation Policy Routes ─────────────────────────────────
-        .route("/api/v1/escalation-policies", get(routes::escalation::list_policies).post(routes::escalation::create_policy))
-        .route("/api/v1/escalation-policies/{id}", get(routes::escalation::get_policy).put(routes::escalation::update_policy).delete(routes::escalation::delete_policy))
+        .route(
+            "/api/v1/escalation-policies",
+            get(routes::escalation::list_policies).post(routes::escalation::create_policy),
+        )
+        .route(
+            "/api/v1/escalation-policies/{id}",
+            get(routes::escalation::get_policy)
+                .put(routes::escalation::update_policy)
+                .delete(routes::escalation::delete_policy),
+        )
         // ── Training Matrix Routes ────────────────────────────────────
-        .route("/api/v1/training-matrix", get(routes::training_matrix::list_matrix_entries).post(routes::training_matrix::create_matrix_entry))
-        .route("/api/v1/training-matrix/{id}", put(routes::training_matrix::update_matrix_entry))
-        .route("/api/v1/training-matrix/skill-gaps", get(routes::training_matrix::list_skill_gaps))
+        .route(
+            "/api/v1/training-matrix",
+            get(routes::training_matrix::list_matrix_entries)
+                .post(routes::training_matrix::create_matrix_entry),
+        )
+        .route(
+            "/api/v1/training-matrix/{id}",
+            put(routes::training_matrix::update_matrix_entry),
+        )
+        .route(
+            "/api/v1/training-matrix/skill-gaps",
+            get(routes::training_matrix::list_skill_gaps),
+        )
         // ── Knowledge Pack Routes ─────────────────────────────────────
-        .route("/api/v1/export/{entity_type}", get(routes::export::export_entity))
-        .route("/api/v1/knowledge-packs", get(routes::knowledge::list_packs).post(routes::knowledge::create_pack))
-        .route("/api/v1/knowledge-packs/{id}", get(routes::knowledge::get_pack).put(routes::knowledge::update_pack).delete(routes::knowledge::delete_pack))
+        .route(
+            "/api/v1/export/{entity_type}",
+            get(routes::export::export_entity),
+        )
+        .route(
+            "/api/v1/knowledge-packs",
+            get(routes::knowledge::list_packs).post(routes::knowledge::create_pack),
+        )
+        .route(
+            "/api/v1/knowledge-packs/{id}",
+            get(routes::knowledge::get_pack)
+                .put(routes::knowledge::update_pack)
+                .delete(routes::knowledge::delete_pack),
+        )
         // ── Smart Ingestion Routes ────────────────────────────────────
-        .route("/api/v1/smart-ingestion/upload", post(routes::smart_ingestion::upload_document))
-        .route("/api/v1/smart-ingestion/{id}/status", get(routes::smart_ingestion::get_ingestion_status))
-        .route("/api/v1/smart-ingestion/history", get(routes::smart_ingestion::list_ingestion_history))
+        .route(
+            "/api/v1/smart-ingestion/upload",
+            post(routes::smart_ingestion::upload_document),
+        )
+        .route(
+            "/api/v1/smart-ingestion/{id}/status",
+            get(routes::smart_ingestion::get_ingestion_status),
+        )
+        .route(
+            "/api/v1/smart-ingestion/history",
+            get(routes::smart_ingestion::list_ingestion_history),
+        )
         // ── Work Orders Routes ────────────────────────────────────────────
-        .route("/api/v1/work-orders", get(routes::work_orders::list_work_orders).post(routes::work_orders::create_work_order))
-        .route("/api/v1/work-orders/{id}", get(routes::work_orders::get_work_order).put(routes::work_orders::update_work_order).delete(routes::work_orders::delete_work_order))
-        .route("/api/v1/work-orders/{id}/status", put(routes::work_orders::update_work_order_status))
-        .route("/api/v1/work-orders/{id}/operations", get(routes::work_orders::list_work_order_operations))
-        .route("/api/v1/work-orders/stats", get(routes::work_orders::get_work_order_stats))
+        .route(
+            "/api/v1/work-orders",
+            get(routes::work_orders::list_work_orders).post(routes::work_orders::create_work_order),
+        )
+        .route(
+            "/api/v1/work-orders/{id}",
+            get(routes::work_orders::get_work_order)
+                .put(routes::work_orders::update_work_order)
+                .delete(routes::work_orders::delete_work_order),
+        )
+        .route(
+            "/api/v1/work-orders/{id}/status",
+            put(routes::work_orders::update_work_order_status),
+        )
+        .route(
+            "/api/v1/work-orders/{id}/operations",
+            get(routes::work_orders::list_work_order_operations),
+        )
+        .route(
+            "/api/v1/work-orders/stats",
+            get(routes::work_orders::get_work_order_stats),
+        )
         // ── Work Centers Routes ───────────────────────────────────────────
-        .route("/api/v1/work-centers", get(routes::work_centers::list_work_centers).post(routes::work_centers::create_work_center))
-        .route("/api/v1/work-centers/{id}", get(routes::work_centers::get_work_center).put(routes::work_centers::update_work_center).delete(routes::work_centers::deactivate_work_center))
-        .route("/api/v1/work-centers/{id}/capacity", get(routes::work_centers::get_work_center_capacity))
-        .route("/api/v1/work-centers/efficiency-report", get(routes::work_centers::get_efficiency_report))
+        .route(
+            "/api/v1/work-centers",
+            get(routes::work_centers::list_work_centers)
+                .post(routes::work_centers::create_work_center),
+        )
+        .route(
+            "/api/v1/work-centers/{id}",
+            get(routes::work_centers::get_work_center)
+                .put(routes::work_centers::update_work_center)
+                .delete(routes::work_centers::deactivate_work_center),
+        )
+        .route(
+            "/api/v1/work-centers/{id}/capacity",
+            get(routes::work_centers::get_work_center_capacity),
+        )
+        .route(
+            "/api/v1/work-centers/efficiency-report",
+            get(routes::work_centers::get_efficiency_report),
+        )
         // ── Andon Routes ──────────────────────────────────────────────────
-        .route("/api/v1/andon", get(routes::andon::list_andons).post(routes::andon::raise_andon))
-        .route("/api/v1/andon/{id}", get(routes::andon::get_andon).put(routes::andon::update_andon).delete(routes::andon::delete_andon))
-        .route("/api/v1/andon/{id}/acknowledge", post(routes::andon::acknowledge_andon))
-        .route("/api/v1/andon/{id}/resolve", post(routes::andon::resolve_andon))
+        .route(
+            "/api/v1/andon",
+            get(routes::andon::list_andons).post(routes::andon::raise_andon),
+        )
+        .route(
+            "/api/v1/andon/{id}",
+            get(routes::andon::get_andon)
+                .put(routes::andon::update_andon)
+                .delete(routes::andon::delete_andon),
+        )
+        .route(
+            "/api/v1/andon/{id}/acknowledge",
+            post(routes::andon::acknowledge_andon),
+        )
+        .route(
+            "/api/v1/andon/{id}/resolve",
+            post(routes::andon::resolve_andon),
+        )
         // ── A3 Routes ─────────────────────────────────────────────────────
-        .route("/api/v1/a3", get(routes::a3::list_a3s).post(routes::a3::create_a3))
-        .route("/api/v1/a3/{id}", get(routes::a3::get_a3).put(routes::a3::update_a3).delete(routes::a3::delete_a3))
+        .route(
+            "/api/v1/a3",
+            get(routes::a3::list_a3s).post(routes::a3::create_a3),
+        )
+        .route(
+            "/api/v1/a3/{id}",
+            get(routes::a3::get_a3)
+                .put(routes::a3::update_a3)
+                .delete(routes::a3::delete_a3),
+        )
         .route("/api/v1/a3/{id}/close", post(routes::a3::close_a3))
         // ── Obeya Routes ──────────────────────────────────────────────────
-        .route("/api/v1/obeya/boards", get(routes::obeya::list_boards).post(routes::obeya::create_board))
-        .route("/api/v1/obeya/boards/{id}", get(routes::obeya::get_board).put(routes::obeya::update_board).delete(routes::obeya::delete_board))
-        .route("/api/v1/obeya/boards/{board_id}/items", get(routes::obeya::list_board_items).post(routes::obeya::add_board_item))
-        .route("/api/v1/obeya/boards/{board_id}/items/{item_id}", put(routes::obeya::update_board_item).delete(routes::obeya::delete_board_item))
+        .route(
+            "/api/v1/obeya/boards",
+            get(routes::obeya::list_boards).post(routes::obeya::create_board),
+        )
+        .route(
+            "/api/v1/obeya/boards/{id}",
+            get(routes::obeya::get_board)
+                .put(routes::obeya::update_board)
+                .delete(routes::obeya::delete_board),
+        )
+        .route(
+            "/api/v1/obeya/boards/{board_id}/items",
+            get(routes::obeya::list_board_items).post(routes::obeya::add_board_item),
+        )
+        .route(
+            "/api/v1/obeya/boards/{board_id}/items/{item_id}",
+            put(routes::obeya::update_board_item).delete(routes::obeya::delete_board_item),
+        )
         // ── Risk Routes ───────────────────────────────────────────────────
-        .route("/api/v1/risk", get(routes::risk::list_risks).post(routes::risk::create_risk))
-        .route("/api/v1/risk/{id}", get(routes::risk::get_risk).put(routes::risk::update_risk).delete(routes::risk::delete_risk))
-        .route("/api/v1/risk/{id}/mitigate", post(routes::risk::mitigate_risk))
+        .route(
+            "/api/v1/risk",
+            get(routes::risk::list_risks).post(routes::risk::create_risk),
+        )
+        .route(
+            "/api/v1/risk/{id}",
+            get(routes::risk::get_risk)
+                .put(routes::risk::update_risk)
+                .delete(routes::risk::delete_risk),
+        )
+        .route(
+            "/api/v1/risk/{id}/mitigate",
+            post(routes::risk::mitigate_risk),
+        )
         // ── Inventory Routes ─────────────────────────────────────────────
-        .route("/api/v1/inventory/items", get(routes::inventory::list_inventory_items).post(routes::inventory::create_inventory_item))
-        .route("/api/v1/inventory/items/{id}", get(routes::inventory::get_inventory_item).put(routes::inventory::update_inventory_item))
-        .route("/api/v1/inventory/moves", get(routes::inventory::list_stock_moves).post(routes::inventory::create_stock_move))
-        .route("/api/v1/inventory/warehouses", get(routes::inventory::list_warehouses).post(routes::inventory::create_warehouse))
-        .route("/api/v1/inventory/stats", get(routes::inventory::get_inventory_stats))
+        .route(
+            "/api/v1/inventory/items",
+            get(routes::inventory::list_inventory_items)
+                .post(routes::inventory::create_inventory_item),
+        )
+        .route(
+            "/api/v1/inventory/items/{id}",
+            get(routes::inventory::get_inventory_item)
+                .put(routes::inventory::update_inventory_item),
+        )
+        .route(
+            "/api/v1/inventory/moves",
+            get(routes::inventory::list_stock_moves).post(routes::inventory::create_stock_move),
+        )
+        .route(
+            "/api/v1/inventory/warehouses",
+            get(routes::inventory::list_warehouses).post(routes::inventory::create_warehouse),
+        )
+        .route(
+            "/api/v1/inventory/stats",
+            get(routes::inventory::get_inventory_stats),
+        )
         // ── MRP Routes ───────────────────────────────────────────────────
-        .route("/api/v1/mrp/demand", get(routes::mrp::list_demand).post(routes::mrp::create_demand))
+        .route(
+            "/api/v1/mrp/demand",
+            get(routes::mrp::list_demand).post(routes::mrp::create_demand),
+        )
         .route("/api/v1/mrp/supply", get(routes::mrp::list_supply))
         .route("/api/v1/mrp/run", post(routes::mrp::run_mrp))
         .route("/api/v1/mrp/runs", get(routes::mrp::list_mrp_runs))
         .route("/api/v1/mrp/runs/{id}", get(routes::mrp::get_mrp_run))
         // ── Tasks Routes ─────────────────────────────────────────────────
-        .route("/api/v1/tasks", get(routes::tasks::list_tasks).post(routes::tasks::create_task))
-        .route("/api/v1/tasks/{id}", get(routes::tasks::get_task).put(routes::tasks::update_task).delete(routes::tasks::delete_task))
-        .route("/api/v1/tasks/{id}/status", put(routes::tasks::update_task_status))
+        .route(
+            "/api/v1/tasks",
+            get(routes::tasks::list_tasks).post(routes::tasks::create_task),
+        )
+        .route(
+            "/api/v1/tasks/{id}",
+            get(routes::tasks::get_task)
+                .put(routes::tasks::update_task)
+                .delete(routes::tasks::delete_task),
+        )
+        .route(
+            "/api/v1/tasks/{id}/status",
+            put(routes::tasks::update_task_status),
+        )
         .route("/api/v1/tasks/{id}/assign", put(routes::tasks::assign_task))
         .route("/api/v1/tasks/stats", get(routes::tasks::get_task_stats))
         // ── Audit Log Routes ─────────────────────────────────────────────
-        .route("/api/v1/audit-logs", get(routes::audit_logs::list_audit_logs))
-        .route("/api/v1/audit-logs/{id}", get(routes::audit_logs::get_audit_log))
-        .route("/api/v1/audit-logs/entity/{entity_type}/{entity_id}", get(routes::audit_logs::get_entity_audit_trail))
-        .route("/api/v1/audit-logs/stats", get(routes::audit_logs::get_audit_log_stats))
+        .route(
+            "/api/v1/audit-logs",
+            get(routes::audit_logs::list_audit_logs),
+        )
+        .route(
+            "/api/v1/audit-logs/{id}",
+            get(routes::audit_logs::get_audit_log),
+        )
+        .route(
+            "/api/v1/audit-logs/entity/{entity_type}/{entity_id}",
+            get(routes::audit_logs::get_entity_audit_trail),
+        )
+        .route(
+            "/api/v1/audit-logs/stats",
+            get(routes::audit_logs::get_audit_log_stats),
+        )
         // ── Production Cells Routes ──────────────────────────────────────
-        .route("/api/v1/production-cells", get(routes::production_cells::list_production_cells).post(routes::production_cells::create_production_cell))
-        .route("/api/v1/production-cells/{id}", get(routes::production_cells::get_production_cell).put(routes::production_cells::update_production_cell))
-        .route("/api/v1/production-cells/{id}/utilization", get(routes::production_cells::get_cell_utilization))
+        .route(
+            "/api/v1/production-cells",
+            get(routes::production_cells::list_production_cells)
+                .post(routes::production_cells::create_production_cell),
+        )
+        .route(
+            "/api/v1/production-cells/{id}",
+            get(routes::production_cells::get_production_cell)
+                .put(routes::production_cells::update_production_cell),
+        )
+        .route(
+            "/api/v1/production-cells/{id}/utilization",
+            get(routes::production_cells::get_cell_utilization),
+        )
         // ── Saved Views Routes ───────────────────────────────────────────
-        .route("/api/v1/saved-views", get(routes::saved_views::list_saved_views).post(routes::saved_views::create_saved_view))
-        .route("/api/v1/saved-views/{id}", get(routes::saved_views::get_saved_view).put(routes::saved_views::update_saved_view).delete(routes::saved_views::delete_saved_view))
-        .route("/api/v1/saved-views/{id}/share", post(routes::saved_views::share_saved_view))
+        .route(
+            "/api/v1/saved-views",
+            get(routes::saved_views::list_saved_views).post(routes::saved_views::create_saved_view),
+        )
+        .route(
+            "/api/v1/saved-views/{id}",
+            get(routes::saved_views::get_saved_view)
+                .put(routes::saved_views::update_saved_view)
+                .delete(routes::saved_views::delete_saved_view),
+        )
+        .route(
+            "/api/v1/saved-views/{id}/share",
+            post(routes::saved_views::share_saved_view),
+        )
         // ── Quoting Helper Routes ────────────────────────────────────────
-        .route("/api/v1/quoting-helper/rfqs/{rfq_id}/workpackets/generate", post(routes::quoting_helper::generate_work_packets))
-        .route("/api/v1/quoting-helper/rfqs/{rfq_id}/workpackets", get(routes::quoting_helper::list_work_packets))
-        .route("/api/v1/quoting-helper/workpackets/{packet_id}", patch(routes::quoting_helper::update_work_packet))
-        .route("/api/v1/quoting-helper/rfqs/{rfq_id}/ingest", post(routes::quoting_helper::ingest_rfq_documents))
-        .route("/api/v1/quoting-helper/quotes/{quote_id}/cost/build", post(routes::quoting_helper::build_quote_cost))
-        .route("/api/v1/quoting-helper/quotes/{quote_id}/convert-to-npi", post(routes::quoting_helper::convert_quote_to_npi))
-        .route("/api/v1/quoting-helper/ai/clarifications/suggest/{rfq_id}", get(routes::quoting_helper::suggest_clarifications))
-        .route("/api/v1/quoting-helper/ai/quote-memory/retrieve/{rfq_id}", get(routes::quoting_helper::retrieve_quote_memory))
+        .route(
+            "/api/v1/quoting-helper/rfqs/{rfq_id}/workpackets/generate",
+            post(routes::quoting_helper::generate_work_packets),
+        )
+        .route(
+            "/api/v1/quoting-helper/rfqs/{rfq_id}/workpackets",
+            get(routes::quoting_helper::list_work_packets),
+        )
+        .route(
+            "/api/v1/quoting-helper/workpackets/{packet_id}",
+            patch(routes::quoting_helper::update_work_packet),
+        )
+        .route(
+            "/api/v1/quoting-helper/rfqs/{rfq_id}/ingest",
+            post(routes::quoting_helper::ingest_rfq_documents),
+        )
+        .route(
+            "/api/v1/quoting-helper/quotes/{quote_id}/cost/build",
+            post(routes::quoting_helper::build_quote_cost),
+        )
+        .route(
+            "/api/v1/quoting-helper/quotes/{quote_id}/convert-to-npi",
+            post(routes::quoting_helper::convert_quote_to_npi),
+        )
+        .route(
+            "/api/v1/quoting-helper/ai/clarifications/suggest/{rfq_id}",
+            get(routes::quoting_helper::suggest_clarifications),
+        )
+        .route(
+            "/api/v1/quoting-helper/ai/quote-memory/retrieve/{rfq_id}",
+            get(routes::quoting_helper::retrieve_quote_memory),
+        )
         // ── Admin Routes ─────────────────────────────────────────────────
-        .route("/api/v1/admin/system-health", get(routes::admin::get_system_health))
+        .route(
+            "/api/v1/admin/system-health",
+            get(routes::admin::get_system_health),
+        )
         .route("/api/v1/admin/db-stats", get(routes::admin::get_db_stats))
         .route("/api/v1/admin/users", get(routes::admin::admin_list_users))
-        .route("/api/v1/admin/users/{id}/deactivate", post(routes::admin::deactivate_user))
+        .route(
+            "/api/v1/admin/users/{id}/deactivate",
+            post(routes::admin::deactivate_user),
+        )
         .route("/api/v1/admin/logs", get(routes::admin::get_system_logs))
-        .route("/api/v1/admin/config", get(routes::admin::get_system_config))
+        .route(
+            "/api/v1/admin/config",
+            get(routes::admin::get_system_config),
+        )
         // ── CTQ Routes ────────────────────────────────────────────────────
-        .route("/api/v1/ctq/characteristics", get(routes::ctq::list_characteristics).post(routes::ctq::create_characteristic))
-        .route("/api/v1/ctq/characteristics/{id}", get(routes::ctq::get_characteristic).put(routes::ctq::update_characteristic))
-        .route("/api/v1/ctq/characteristics/{id}/records", get(routes::ctq::list_records).post(routes::ctq::create_record))
-        .route("/api/v1/ctq/characteristics/{id}/analysis", get(routes::ctq::get_conformance_analysis))
+        .route(
+            "/api/v1/ctq/characteristics",
+            get(routes::ctq::list_characteristics).post(routes::ctq::create_characteristic),
+        )
+        .route(
+            "/api/v1/ctq/characteristics/{id}",
+            get(routes::ctq::get_characteristic).put(routes::ctq::update_characteristic),
+        )
+        .route(
+            "/api/v1/ctq/characteristics/{id}/records",
+            get(routes::ctq::list_records).post(routes::ctq::create_record),
+        )
+        .route(
+            "/api/v1/ctq/characteristics/{id}/analysis",
+            get(routes::ctq::get_conformance_analysis),
+        )
         // ── KPI Routes ────────────────────────────────────────────────────
-        .route("/api/v1/kpi", get(routes::kpi::list_kpis).post(routes::kpi::create_kpi))
-        .route("/api/v1/kpi/{kpi_id}", get(routes::kpi::get_kpi).put(routes::kpi::update_kpi).delete(routes::kpi::delete_kpi))
-        .route("/api/v1/kpi/{kpi_id}/values", get(routes::kpi::list_kpi_values).post(routes::kpi::record_kpi_value))
-        .route("/api/v1/kpi/{kpi_id}/dashboard", get(routes::kpi::get_kpi_dashboard))
+        .route(
+            "/api/v1/kpi",
+            get(routes::kpi::list_kpis).post(routes::kpi::create_kpi),
+        )
+        .route(
+            "/api/v1/kpi/{kpi_id}",
+            get(routes::kpi::get_kpi)
+                .put(routes::kpi::update_kpi)
+                .delete(routes::kpi::delete_kpi),
+        )
+        .route(
+            "/api/v1/kpi/{kpi_id}/values",
+            get(routes::kpi::list_kpi_values).post(routes::kpi::record_kpi_value),
+        )
+        .route(
+            "/api/v1/kpi/{kpi_id}/dashboard",
+            get(routes::kpi::get_kpi_dashboard),
+        )
         // ── LSW Routes ────────────────────────────────────────────────────
-        .route("/api/v1/lsw/standards", get(routes::lsw::list_lsw_standards).post(routes::lsw::create_lsw_standard))
-        .route("/api/v1/lsw/standards/{standard_id}", get(routes::lsw::get_lsw_standard).put(routes::lsw::update_lsw_standard).delete(routes::lsw::delete_lsw_standard))
-        .route("/api/v1/lsw/standards/{standard_id}/audits", get(routes::lsw::list_audits).post(routes::lsw::perform_audit))
+        .route(
+            "/api/v1/lsw/standards",
+            get(routes::lsw::list_lsw_standards).post(routes::lsw::create_lsw_standard),
+        )
+        .route(
+            "/api/v1/lsw/standards/{standard_id}",
+            get(routes::lsw::get_lsw_standard)
+                .put(routes::lsw::update_lsw_standard)
+                .delete(routes::lsw::delete_lsw_standard),
+        )
+        .route(
+            "/api/v1/lsw/standards/{standard_id}/audits",
+            get(routes::lsw::list_audits).post(routes::lsw::perform_audit),
+        )
         .route("/api/v1/lsw/audits/{audit_id}", get(routes::lsw::get_audit))
         .route("/api/v1/lsw/dashboard", get(routes::lsw::get_lsw_dashboard))
         // ── Notification Trigger Routes ────────────────────────────────────
-        .route("/api/v1/notification-triggers", get(routes::notification_triggers::list_triggers).post(routes::notification_triggers::create_trigger))
-        .route("/api/v1/notification-triggers/{trigger_id}", get(routes::notification_triggers::get_trigger).put(routes::notification_triggers::update_trigger).delete(routes::notification_triggers::delete_trigger))
-        .route("/api/v1/notification-triggers/{trigger_id}/toggle", patch(routes::notification_triggers::toggle_trigger))
-        .route("/api/v1/notification-triggers/{trigger_id}/test", post(routes::notification_triggers::test_trigger))
-        .route("/api/v1/notification-triggers/event-types", get(routes::notification_triggers::list_event_types))
+        .route(
+            "/api/v1/notification-triggers",
+            get(routes::notification_triggers::list_triggers)
+                .post(routes::notification_triggers::create_trigger),
+        )
+        .route(
+            "/api/v1/notification-triggers/{trigger_id}",
+            get(routes::notification_triggers::get_trigger)
+                .put(routes::notification_triggers::update_trigger)
+                .delete(routes::notification_triggers::delete_trigger),
+        )
+        .route(
+            "/api/v1/notification-triggers/{trigger_id}/toggle",
+            patch(routes::notification_triggers::toggle_trigger),
+        )
+        .route(
+            "/api/v1/notification-triggers/{trigger_id}/test",
+            post(routes::notification_triggers::test_trigger),
+        )
+        .route(
+            "/api/v1/notification-triggers/event-types",
+            get(routes::notification_triggers::list_event_types),
+        )
         // ── Standard Work Routes ───────────────────────────────────────────
-        .route("/api/v1/standard-work", get(routes::standard_work::list_standard_work).post(routes::standard_work::create_standard_work))
-        .route("/api/v1/standard-work/{sw_id}", get(routes::standard_work::get_standard_work).put(routes::standard_work::update_standard_work).delete(routes::standard_work::delete_standard_work))
-        .route("/api/v1/standard-work/{sw_id}/versions", get(routes::standard_work::list_versions).post(routes::standard_work::create_version))
-        .route("/api/v1/standard-work/{sw_id}/versions/{version_id}", get(routes::standard_work::get_version))
+        .route(
+            "/api/v1/standard-work",
+            get(routes::standard_work::list_standard_work)
+                .post(routes::standard_work::create_standard_work),
+        )
+        .route(
+            "/api/v1/standard-work/{sw_id}",
+            get(routes::standard_work::get_standard_work)
+                .put(routes::standard_work::update_standard_work)
+                .delete(routes::standard_work::delete_standard_work),
+        )
+        .route(
+            "/api/v1/standard-work/{sw_id}/versions",
+            get(routes::standard_work::list_versions).post(routes::standard_work::create_version),
+        )
+        .route(
+            "/api/v1/standard-work/{sw_id}/versions/{version_id}",
+            get(routes::standard_work::get_version),
+        )
         // ── State Machine Routes ───────────────────────────────────────────
-        .route("/api/v1/state-machines", get(routes::state_machines::list_state_machines).post(routes::state_machines::create_state_machine))
-        .route("/api/v1/state-machines/{sm_id}", get(routes::state_machines::get_state_machine).put(routes::state_machines::update_state_machine).delete(routes::state_machines::delete_state_machine))
-        .route("/api/v1/state-machines/{sm_id}/instances", get(routes::state_machines::list_instances).post(routes::state_machines::create_instance))
-        .route("/api/v1/state-machines/instances/{instance_id}", get(routes::state_machines::get_instance))
-        .route("/api/v1/state-machines/instances/{instance_id}/transition", post(routes::state_machines::transition_instance))
+        .route(
+            "/api/v1/state-machines",
+            get(routes::state_machines::list_state_machines)
+                .post(routes::state_machines::create_state_machine),
+        )
+        .route(
+            "/api/v1/state-machines/{sm_id}",
+            get(routes::state_machines::get_state_machine)
+                .put(routes::state_machines::update_state_machine)
+                .delete(routes::state_machines::delete_state_machine),
+        )
+        .route(
+            "/api/v1/state-machines/{sm_id}/instances",
+            get(routes::state_machines::list_instances)
+                .post(routes::state_machines::create_instance),
+        )
+        .route(
+            "/api/v1/state-machines/instances/{instance_id}",
+            get(routes::state_machines::get_instance),
+        )
+        .route(
+            "/api/v1/state-machines/instances/{instance_id}/transition",
+            post(routes::state_machines::transition_instance),
+        )
         // ── Training Routes ────────────────────────────────────────────────
-        .route("/api/v1/training/courses", get(routes::training::list_courses).post(routes::training::create_course))
-        .route("/api/v1/training/courses/{course_id}", get(routes::training::get_course).put(routes::training::update_course).delete(routes::training::delete_course))
-        .route("/api/v1/training/courses/{course_id}/enroll", post(routes::training::enroll_users))
-        .route("/api/v1/training/courses/{course_id}/enrollments", get(routes::training::list_enrollments))
-        .route("/api/v1/training/enrollments/{enrollment_id}", patch(routes::training::update_enrollment_status))
-        .route("/api/v1/training/my-courses", get(routes::training::my_courses))
-        .route("/api/v1/training/dashboard", get(routes::training::get_training_dashboard))
+        .route(
+            "/api/v1/training/courses",
+            get(routes::training::list_courses).post(routes::training::create_course),
+        )
+        .route(
+            "/api/v1/training/courses/{course_id}",
+            get(routes::training::get_course)
+                .put(routes::training::update_course)
+                .delete(routes::training::delete_course),
+        )
+        .route(
+            "/api/v1/training/courses/{course_id}/enroll",
+            post(routes::training::enroll_users),
+        )
+        .route(
+            "/api/v1/training/courses/{course_id}/enrollments",
+            get(routes::training::list_enrollments),
+        )
+        .route(
+            "/api/v1/training/enrollments/{enrollment_id}",
+            patch(routes::training::update_enrollment_status),
+        )
+        .route(
+            "/api/v1/training/my-courses",
+            get(routes::training::my_courses),
+        )
+        .route(
+            "/api/v1/training/dashboard",
+            get(routes::training::get_training_dashboard),
+        )
         // ── Today Routes ──────────────────────────────────────────────────
         .route("/api/v1/today", get(routes::today::get_today_snapshot))
         // ── Protected-route middleware layers ─────────────────────────────
@@ -1121,7 +2052,10 @@ pub fn build_router(state: AppState) -> Router {
         // - session binding runs after auth (fingerprint checks).
         // - auth is outermost (added last).
         // Audit logging – record state-changing requests (innermost).
-        .route_layer(middleware::from_fn_with_state(state.clone(), audit_middleware))
+        .route_layer(middleware::from_fn_with_state(
+            state.clone(),
+            audit_middleware,
+        ))
         // Idempotency – handle Idempotency-Key for POST/PUT/PATCH.
         .route_layer(middleware::from_fn({
             let store = Arc::clone(&idempotency_store);
@@ -1139,8 +2073,8 @@ pub fn build_router(state: AppState) -> Router {
         .route_layer(middleware::from_fn_with_state(state.clone(), auth_layer));
 
     // ── Determine static files directory ────────────────────────────
-    let static_dir = std::env::var("SENSEI_STATIC_DIR")
-        .unwrap_or_else(|_| "../frontend/public".to_string());
+    let static_dir =
+        std::env::var("SENSEI_STATIC_DIR").unwrap_or_else(|_| "../frontend/public".to_string());
 
     // ── Merge public + protected and apply global layers ───────────
     // Layers are applied bottom-to-top; the LAST layer added runs FIRST
@@ -1167,7 +2101,9 @@ pub fn build_router(state: AppState) -> Router {
         ))
         .layer(CompressionLayer::new())
         // ── Request body limit (streams, so chunked bodies are covered) ──
-        .layer(RequestBodyLimitLayer::new(request_guard_config.max_body_size))
+        .layer(RequestBodyLimitLayer::new(
+            request_guard_config.max_body_size,
+        ))
         // ── Request guard – method restrictions only ─────────────────
         .layer(middleware::from_fn({
             let guard = Arc::clone(&request_guard_config);
@@ -1178,7 +2114,10 @@ pub fn build_router(state: AppState) -> Router {
         }))
         // ── Rate limiting – consumer first, then injector (outer) ───
         .layer(middleware::from_fn(rate_limit_middleware))
-        .layer(middleware::from_fn_with_state(state.clone(), inject_rate_limiter))
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            inject_rate_limiter,
+        ))
         // ── Metrics collection ───────────────────────────────────────
         .layer(middleware::from_fn(metrics_middleware))
         // ── Request identification & logging ─────────────────────────

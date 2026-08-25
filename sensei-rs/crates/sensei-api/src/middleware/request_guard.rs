@@ -100,11 +100,9 @@ pub async fn request_guard_middleware(req: Request, next: Next) -> Response {
 
     // ── Method restriction check ─────────────────────────────────────
     let path = req.uri().path().to_string();
-    if let Err(response) = check_method_restriction(
-        req.method(),
-        &path,
-        &config.method_restrictions,
-    ) {
+    if let Err(response) =
+        check_method_restriction(req.method(), &path, &config.method_restrictions)
+    {
         return response;
     }
 
@@ -154,9 +152,7 @@ mod tests {
         restrictions.insert("/api/admin".to_string(), vec!["GET".into()]);
 
         // Path doesn't match any restricted prefix → allowed.
-        assert!(
-            check_method_restriction(&Method::DELETE, "/api/public", &restrictions).is_ok()
-        );
+        assert!(check_method_restriction(&Method::DELETE, "/api/public", &restrictions).is_ok());
     }
 
     #[test]
@@ -164,9 +160,7 @@ mod tests {
         let mut restrictions = HashMap::new();
         restrictions.insert("/api".to_string(), vec!["get".into()]);
 
-        assert!(
-            check_method_restriction(&Method::GET, "/api/test", &restrictions).is_ok()
-        );
+        assert!(check_method_restriction(&Method::GET, "/api/test", &restrictions).is_ok());
     }
 
     #[test]

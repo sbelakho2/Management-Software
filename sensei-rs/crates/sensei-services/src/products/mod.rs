@@ -7,7 +7,7 @@ use async_trait::async_trait;
 use sensei_core::domain::entities::Product;
 use sensei_core::error::{Result, SenseiError};
 use sensei_core::pagination::PaginatedResponse;
-use sensei_core::types::{EntityId, TenantId, now};
+use sensei_core::types::{now, EntityId, TenantId};
 use std::collections::HashMap;
 use tokio::sync::RwLock;
 
@@ -38,7 +38,12 @@ pub trait ProductsService: Send + Sync {
     ) -> Result<PaginatedResponse<Product>>;
 
     /// Update a product.
-    async fn update_product(&self, tenant_id: TenantId, id: EntityId, product: Product) -> Result<Product>;
+    async fn update_product(
+        &self,
+        tenant_id: TenantId,
+        id: EntityId,
+        product: Product,
+    ) -> Result<Product>;
 
     /// Delete (deactivate) a product.
     async fn delete_product(&self, tenant_id: TenantId, id: EntityId) -> Result<()>;
@@ -109,14 +114,21 @@ impl ProductsService for InMemoryProductsService {
         Ok(PaginatedResponse::new(items, page, per_page))
     }
 
-    async fn update_product(&self, tenant_id: TenantId, id: EntityId, product: Product) -> Result<Product> {
+    async fn update_product(
+        &self,
+        tenant_id: TenantId,
+        id: EntityId,
+        product: Product,
+    ) -> Result<Product> {
         let mut store = self.products.write().await;
         let existing = store
             .get_mut(&id)
             .ok_or_else(|| SenseiError::NotFound(format!("Product {id} not found")))?;
 
         if existing.tenant_id != tenant_id {
-            return Err(SenseiError::Forbidden("Cross-tenant access denied".to_string()));
+            return Err(SenseiError::Forbidden(
+                "Cross-tenant access denied".to_string(),
+            ));
         }
 
         existing.sku = product.sku;
@@ -144,7 +156,9 @@ impl ProductsService for InMemoryProductsService {
             .ok_or_else(|| SenseiError::NotFound(format!("Product {id} not found")))?;
 
         if existing.tenant_id != tenant_id {
-            return Err(SenseiError::Forbidden("Cross-tenant access denied".to_string()));
+            return Err(SenseiError::Forbidden(
+                "Cross-tenant access denied".to_string(),
+            ));
         }
 
         existing.is_active = false;
@@ -176,7 +190,13 @@ mod tests {
     }
 
     fn sample_product(tid: TenantId) -> Product {
-        Product::new(tid, "SKU-001".into(), "Widget".into(), "finished_good".into(), "pcs".into())
+        Product::new(
+            tid,
+            "SKU-001".into(),
+            "Widget".into(),
+            "finished_good".into(),
+            "pcs".into(),
+        )
     }
 
     #[tokio::test]
@@ -225,19 +245,31 @@ mod tests {
         svc.create_product(tid, p3).await.unwrap();
 
         // All products.
-        let all = svc.list_products(tid, None, None, None, None).await.unwrap();
+        let all = svc
+            .list_products(tid, None, None, None, None)
+            .await
+            .unwrap();
         assert_eq!(all.data.len(), 3);
 
         // Filter by category.
-        let electronics = svc.list_products(tid, Some("Electronics"), None, None, None).await.unwrap();
+        let electronics = svc
+            .list_products(tid, Some("Electronics"), None, None, None)
+            .await
+            .unwrap();
         assert_eq!(electronics.data.len(), 2);
 
         // Filter by product_type.
-        let services = svc.list_products(tid, None, Some("service"), None, None).await.unwrap();
+        let services = svc
+            .list_products(tid, None, Some("service"), None, None)
+            .await
+            .unwrap();
         assert_eq!(services.data.len(), 1);
 
         // Pagination.
-        let paged = svc.list_products(tid, None, None, Some(1), Some(2)).await.unwrap();
+        let paged = svc
+            .list_products(tid, None, None, Some(1), Some(2))
+            .await
+            .unwrap();
         assert_eq!(paged.data.len(), 2);
         assert_eq!(paged.total, 3);
     }

@@ -116,7 +116,10 @@ mod tests {
         let password = "TestPassword123!";
         let hash = hash_password(password).unwrap();
 
-        assert_eq!(verify_password(password, &hash).unwrap(), PasswordCheck::Valid);
+        assert_eq!(
+            verify_password(password, &hash).unwrap(),
+            PasswordCheck::Valid
+        );
         assert_eq!(
             verify_password("WrongPassword123!", &hash).unwrap(),
             PasswordCheck::Invalid
@@ -129,7 +132,10 @@ mod tests {
             verify_password("Whatever1!", "not-an-argon2-hash").unwrap(),
             PasswordCheck::Malformed
         );
-        assert_eq!(verify_password("Whatever1!", "").unwrap(), PasswordCheck::Malformed);
+        assert_eq!(
+            verify_password("Whatever1!", "").unwrap(),
+            PasswordCheck::Malformed
+        );
     }
 
     #[test]

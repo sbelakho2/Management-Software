@@ -10,8 +10,8 @@ use axum::{
     response::Response,
 };
 use chrono::Utc;
-use serde::Serialize;
 use sensei_auth::middleware::AuthenticatedUser;
+use serde::Serialize;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
@@ -102,17 +102,10 @@ impl AuditLog {
 /// request extensions when the entry is captured. The handler is timed and
 /// the entry is recorded directly into `state.audit_log` — no
 /// response-extensions indirection.
-pub async fn audit_middleware(
-    State(state): State<AppState>,
-    req: Request,
-    next: Next,
-) -> Response {
+pub async fn audit_middleware(State(state): State<AppState>, req: Request, next: Next) -> Response {
     let method = req.method().clone();
     let path = req.uri().path().to_string();
-    let is_state_changing = matches!(
-        method.as_str(),
-        "POST" | "PUT" | "DELETE" | "PATCH"
-    );
+    let is_state_changing = matches!(method.as_str(), "POST" | "PUT" | "DELETE" | "PATCH");
 
     // Extract authenticated user if present.
     let user_id = req

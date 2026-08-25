@@ -5,7 +5,6 @@
 
 use leptos::prelude::*;
 use std::collections::HashMap;
-use crate::api::client::ApiClient;
 
 // ---------------------------------------------------------------------------
 // Domain types
@@ -153,13 +152,20 @@ fn all_actions() -> Vec<QuickAction> {
             icon: Some("trash-2".to_string()),
             action_type: "delete".to_string(),
             entity_types: vec![
-                "project".to_string(), "story".to_string(), "issue".to_string(),
-                "rfq".to_string(), "quote".to_string(), "customer".to_string(),
+                "project".to_string(),
+                "story".to_string(),
+                "issue".to_string(),
+                "rfq".to_string(),
+                "quote".to_string(),
+                "customer".to_string(),
             ],
             shortcut: Some("mod+shift+d".to_string()),
             requires_confirmation: true,
             confirmation_title: Some("Confirm Delete".to_string()),
-            confirmation_message: Some("Are you sure you want to delete this item? This action cannot be undone.".to_string()),
+            confirmation_message: Some(
+                "Are you sure you want to delete this item? This action cannot be undone."
+                    .to_string(),
+            ),
             group: "overflow".to_string(),
             order: 99,
             permissions: vec!["delete".to_string()],
@@ -216,12 +222,17 @@ pub fn has_permission(permissions: &[String], required: &str) -> bool {
     permissions.iter().any(|p| p == required)
 }
 
-pub fn filter_by_permissions(actions: Vec<QuickAction>, user_permissions: &[String]) -> Vec<QuickAction> {
+pub fn filter_by_permissions(
+    actions: Vec<QuickAction>,
+    user_permissions: &[String],
+) -> Vec<QuickAction> {
     actions
         .into_iter()
         .filter(|a| {
             a.permissions.is_empty()
-                || a.permissions.iter().any(|p| has_permission(user_permissions, p))
+                || a.permissions
+                    .iter()
+                    .any(|p| has_permission(user_permissions, p))
         })
         .collect()
 }
@@ -231,7 +242,9 @@ pub fn get_action_by_id(action_id: &str) -> Option<QuickAction> {
 }
 
 pub fn get_action_by_type(action_type: &str) -> Option<QuickAction> {
-    all_actions().into_iter().find(|a| a.action_type == action_type)
+    all_actions()
+        .into_iter()
+        .find(|a| a.action_type == action_type)
 }
 
 pub fn format_entity_type(entity_type: &str) -> String {
@@ -375,7 +388,7 @@ impl QuickActionsStore {
     pub async fn execute_action(&self, action_id: &str, context_override: Option<ActionContext>) {
         let action = {
             let actions = self.actions.get();
-            actions.into_iter().find(|a| a.id == action_id).map(|a| a.clone()).or(None)
+            actions.into_iter().find(|a| a.id == action_id)
         };
 
         let Some(action) = action else { return };
@@ -433,16 +446,25 @@ impl QuickActionsStore {
     pub fn show_confirmation(&self, action_id: Option<String>, context: Option<ActionContext>) {
         let action = action_id.as_ref().and_then(|id| {
             let actions = self.actions.get();
-            actions.into_iter().find(|a| a.id == *id).map(|a| a.clone()).or(None)
+            actions.into_iter().find(|a| a.id == *id)
         });
 
         self.confirmation.set(ConfirmationState {
             is_visible: true,
-            title: action.as_ref().and_then(|a| a.confirmation_title.clone()).unwrap_or_else(|| "Confirm Action".to_string()),
-            message: action.as_ref().and_then(|a| a.confirmation_message.clone()).unwrap_or_else(|| "Are you sure?".to_string()),
+            title: action
+                .as_ref()
+                .and_then(|a| a.confirmation_title.clone())
+                .unwrap_or_else(|| "Confirm Action".to_string()),
+            message: action
+                .as_ref()
+                .and_then(|a| a.confirmation_message.clone())
+                .unwrap_or_else(|| "Are you sure?".to_string()),
             confirm_text: "Confirm".to_string(),
             cancel_text: "Cancel".to_string(),
-            is_destructive: action.as_ref().map(|a| a.action_type == "delete").unwrap_or(false),
+            is_destructive: action
+                .as_ref()
+                .map(|a| a.action_type == "delete")
+                .unwrap_or(false),
             action_id,
             context,
         });

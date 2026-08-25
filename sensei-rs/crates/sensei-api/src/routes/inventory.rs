@@ -3,13 +3,16 @@
 //! Provides endpoints for managing inventory items, stock moves,
 //! and warehouses.
 
-use axum::{Json, extract::{Path, Query, State}};
+use axum::{
+    extract::{Path, Query, State},
+    Json,
+};
 use chrono::Utc;
-use serde::{Deserialize, Serialize};
 use sensei_auth::middleware::AuthenticatedUser;
 use sensei_core::error::{Result, SenseiError};
 use sensei_core::pagination::PaginatedResponse;
 use sensei_core::types::new_id;
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::state::AppState;
@@ -311,7 +314,7 @@ pub async fn list_stock_moves(
         })
         .cloned()
         .collect();
-    moves.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+    moves.sort_by_key(|a| std::cmp::Reverse(a.created_at));
     let result = PaginatedResponse::new(moves, params.page, params.per_page);
     Ok(Json(result))
 }
@@ -348,7 +351,10 @@ pub async fn create_stock_move(
 
     // Update the inventory item's quantities
     let mut inv_store = state.inventory_items.write().await;
-    if let Some(item) = inv_store.values_mut().find(|i| i.id == req.item_id && i.tenant_id == tenant_id) {
+    if let Some(item) = inv_store
+        .values_mut()
+        .find(|i| i.id == req.item_id && i.tenant_id == tenant_id)
+    {
         match req.move_type.as_str() {
             "receipt" | "adjustment_in" => {
                 item.quantity_on_hand += req.quantity;
@@ -494,7 +500,9 @@ pub async fn get_inventory_stats(
             .filter(|m| {
                 m.tenant_id == tenant_id
                     && m.item_id == item.id
-                    && (m.move_type == "issue" || m.move_type == "adjustment_out" || m.move_type == "transfer_out")
+                    && (m.move_type == "issue"
+                        || m.move_type == "adjustment_out"
+                        || m.move_type == "transfer_out")
             })
             .map(|m| m.quantity)
             .sum();

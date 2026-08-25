@@ -6,8 +6,8 @@
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::Json;
-use serde::{Deserialize, Serialize};
 use sensei_core::error::SenseiError;
+use serde::{Deserialize, Serialize};
 
 /// Standard API error response body.
 #[derive(Debug, Serialize, Deserialize)]
@@ -53,7 +53,9 @@ impl ApiError {
             ApiError::Conflict(_) => StatusCode::CONFLICT,
             ApiError::Unprocessable(_) => StatusCode::UNPROCESSABLE_ENTITY,
             ApiError::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
-            ApiError::Domain(err) => StatusCode::from_u16(err.http_status()).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
+            ApiError::Domain(err) => {
+                StatusCode::from_u16(err.http_status()).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR)
+            }
         }
     }
 
@@ -68,7 +70,9 @@ impl ApiError {
             ApiError::Unprocessable(_) => "unprocessable",
             ApiError::Internal(_) => "internal_error",
             ApiError::Domain(err) => match err {
-                SenseiError::Validation(_) | SenseiError::MissingField(_) | SenseiError::InvalidValue { .. } => "validation_error",
+                SenseiError::Validation(_)
+                | SenseiError::MissingField(_)
+                | SenseiError::InvalidValue { .. } => "validation_error",
                 SenseiError::Unauthorized(_) => "unauthorized",
                 SenseiError::TokenError(_) => "token_error",
                 SenseiError::TokenExpired => "token_expired",
@@ -188,7 +192,10 @@ mod tests {
 
     #[test]
     fn validation_message_field_is_extracted() {
-        assert_eq!(quoted_field("Field 'name' is required"), Some("name".to_string()));
+        assert_eq!(
+            quoted_field("Field 'name' is required"),
+            Some("name".to_string())
+        );
         assert_eq!(quoted_field("Invalid email format"), None);
         assert_eq!(quoted_field(""), None);
     }

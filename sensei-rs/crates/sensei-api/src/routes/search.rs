@@ -4,11 +4,14 @@
 //! delegating to the [`SearchService`] (database-backed or in-memory).
 //! Supports optional entity-type filtering and pagination.
 
-use axum::{Json, extract::{Query, State}};
-use serde::{Deserialize, Serialize};
+use axum::{
+    extract::{Query, State},
+    Json,
+};
 use sensei_auth::middleware::AuthenticatedUser;
 use sensei_core::error::Result;
 use sensei_services::ops::search::SearchResult;
+use serde::{Deserialize, Serialize};
 
 use crate::state::AppState;
 
@@ -54,7 +57,7 @@ pub async fn search(
     Query(params): Query<SearchParams>,
 ) -> Result<Json<SearchResponse>> {
     let query = params.q.trim().to_string();
-    let limit = params.limit.unwrap_or(10).max(1).min(50);
+    let limit = params.limit.unwrap_or(10).clamp(1, 50);
 
     let results = state
         .search_service
@@ -73,7 +76,11 @@ pub async fn search(
         .into_iter()
         .map(|(entity_type, count)| SearchFacet { entity_type, count })
         .collect();
-    facets.sort_by(|a, b| b.count.cmp(&a.count).then_with(|| a.entity_type.cmp(&b.entity_type)));
+    facets.sort_by(|a, b| {
+        b.count
+            .cmp(&a.count)
+            .then_with(|| a.entity_type.cmp(&b.entity_type))
+    });
 
     let results = results.into_iter().take(limit).collect();
 

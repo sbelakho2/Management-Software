@@ -2,14 +2,17 @@
 //!
 //! Provides CRUD endpoints for sales opportunity tracking and pipeline management.
 
-use axum::{Json, extract::{Path, Query, State}};
+use axum::{
+    extract::{Path, Query, State},
+    Json,
+};
 use chrono::{DateTime, Utc};
-use serde::Deserialize;
 use sensei_auth::middleware::AuthenticatedUser;
 use sensei_core::domain::events::OpportunityStageChangedEvent;
 use sensei_core::error::{Result, SenseiError};
 use sensei_core::pagination::PaginatedResponse;
 use sensei_core::types::new_id;
+use serde::Deserialize;
 use uuid::Uuid;
 
 use crate::state::AppState;
@@ -91,11 +94,11 @@ pub async fn list_opportunities(
     let mut ops: Vec<Opportunity> = store
         .values()
         .filter(|o| o.tenant_id == user.tenant_id)
-        .filter(|o| params.stage.as_ref().map_or(true, |s| o.stage == *s))
-        .filter(|o| params.assigned_to.map_or(true, |a| o.assigned_to == Some(a)))
+        .filter(|o| params.stage.as_ref().is_none_or(|s| o.stage == *s))
+        .filter(|o| params.assigned_to.is_none_or(|a| o.assigned_to == Some(a)))
         .cloned()
         .collect();
-    ops.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
+    ops.sort_by_key(|a| std::cmp::Reverse(a.updated_at));
     let result = PaginatedResponse::new(ops, params.page, params.per_page);
     Ok(Json(result))
 }

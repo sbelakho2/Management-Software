@@ -3,7 +3,7 @@
 //! These represent the foundational domain entities. Each entity has an
 //! [`EntityId`](crate::types::EntityId) and timestamp fields for tracking.
 
-use crate::types::{EntityId, TenantId, Timestamp, now, new_id};
+use crate::types::{new_id, now, EntityId, TenantId, Timestamp};
 use serde::{Deserialize, Serialize};
 
 /// A user account in the system.

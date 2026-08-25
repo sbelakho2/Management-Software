@@ -464,7 +464,11 @@ impl ABTest {
     }
 
     pub fn calculate_lift(&self, metric_name: &str) -> f64 {
-        let control = self.control_metrics.get(metric_name).copied().unwrap_or(0.0);
+        let control = self
+            .control_metrics
+            .get(metric_name)
+            .copied()
+            .unwrap_or(0.0);
         let treatment = self
             .treatment_metrics
             .get(metric_name)
@@ -568,7 +572,7 @@ impl FeatureStore {
         let vector = FeatureVector {
             entity_id: entity_id.into(),
             features,
-            timestamp: timestamp.unwrap_or_else(|| Utc::now()),
+            timestamp: timestamp.unwrap_or_else(Utc::now),
         };
         self.ingest(group_name, vec![vector])
     }
@@ -582,19 +586,12 @@ impl FeatureStore {
         let key = format!("{}:{}", group_name, entity_id);
         let vectors = self.feature_vectors.get(&key)?;
         match as_of {
-            Some(ts) => vectors
-                .iter()
-                .filter(|v| v.timestamp <= ts)
-                .last(),
+            Some(ts) => vectors.iter().rfind(|v| v.timestamp <= ts),
             None => vectors.last(),
         }
     }
 
-    pub fn get_feature_history(
-        &self,
-        group_name: &str,
-        entity_id: &str,
-    ) -> Vec<&FeatureVector> {
+    pub fn get_feature_history(&self, group_name: &str, entity_id: &str) -> Vec<&FeatureVector> {
         let key = format!("{}:{}", group_name, entity_id);
         self.feature_vectors
             .get(&key)
@@ -702,10 +699,7 @@ impl ModelRegistryService {
             },
             hyperparameters,
             feature_names,
-            model_path: format!(
-                "models/{}/{}/v{}",
-                registry.name, version_id, new_version
-            ),
+            model_path: format!("models/{}/{}/v{}", registry.name, version_id, new_version),
             description: String::new(),
             tags: Vec::new(),
             algorithm: algorithm.into(),
@@ -718,7 +712,11 @@ impl ModelRegistryService {
         Ok(mv)
     }
 
-    pub fn promote_to_production(&mut self, model_id: &str, version_id: &str) -> Result<(), String> {
+    pub fn promote_to_production(
+        &mut self,
+        model_id: &str,
+        version_id: &str,
+    ) -> Result<(), String> {
         let registry = self
             .registries
             .get_mut(model_id)
@@ -768,11 +766,7 @@ impl ModelRegistryService {
         self.prediction_logs.push(log);
     }
 
-    pub fn get_prediction_logs(
-        &self,
-        model_name: &str,
-        limit: usize,
-    ) -> Vec<&PredictionLog> {
+    pub fn get_prediction_logs(&self, model_name: &str, limit: usize) -> Vec<&PredictionLog> {
         self.prediction_logs
             .iter()
             .filter(|l| l.model_name == model_name)
@@ -786,10 +780,7 @@ impl ModelRegistryService {
     }
 
     pub fn get_active_alerts(&self) -> Vec<&MonitoringAlert> {
-        self.alerts
-            .iter()
-            .filter(|a| !a.acknowledged)
-            .collect()
+        self.alerts.iter().filter(|a| !a.acknowledged).collect()
     }
 
     pub fn acknowledge_alert(&mut self, alert_id: &str) -> bool {
@@ -809,12 +800,11 @@ impl ModelRegistryService {
         );
         state.insert(
             "total_versions".into(),
-            serde_json::json!(
-                self.registries
-                    .values()
-                    .map(|r| r.versions.len())
-                    .sum::<usize>()
-            ),
+            serde_json::json!(self
+                .registries
+                .values()
+                .map(|r| r.versions.len())
+                .sum::<usize>()),
         );
         state.insert(
             "prediction_logs".into(),
@@ -856,7 +846,15 @@ impl DriftDetector {
             reference_stats: HashMap::new(),
         }
     }
+}
 
+impl Default for DriftDetector {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl DriftDetector {
     /// Fit reference distribution from training data.
     pub fn fit(&mut self, feature_name: &str, values: &[f64]) {
         if values.is_empty() {
@@ -957,10 +955,8 @@ impl DriftDetector {
             prev_boundary = boundary;
         }
         // Last bin
-        let ref_pct = proportion_in_range(current_values, prev_boundary, f64::INFINITY)
-            .max(0.001);
-        let cur_pct =
-            proportion_in_range(&current_sorted, prev_boundary, f64::INFINITY).max(0.001);
+        let ref_pct = proportion_in_range(current_values, prev_boundary, f64::INFINITY).max(0.001);
+        let cur_pct = proportion_in_range(&current_sorted, prev_boundary, f64::INFINITY).max(0.001);
         psi += (ref_pct - cur_pct) * (ref_pct / cur_pct).ln();
 
         // Also compute z-score for mean shift
@@ -1030,10 +1026,7 @@ fn proportion_in_range(values: &[f64], lower: f64, upper: f64) -> f64 {
     if values.is_empty() {
         return 0.0;
     }
-    let count = values
-        .iter()
-        .filter(|&&v| v >= lower && v < upper)
-        .count();
+    let count = values.iter().filter(|&&v| v >= lower && v < upper).count();
     count as f64 / values.len() as f64
 }
 
@@ -1149,6 +1142,18 @@ impl AutoMLEngine {
 // Enhanced ML Pipeline Service
 // ---------------------------------------------------------------------------
 
+/// Configuration for a full ML pipeline run.
+#[derive(Debug, Clone)]
+pub struct PipelineRequest {
+    pub pipeline_name: String,
+    pub feature_group_name: String,
+    pub entity_ids: Vec<String>,
+    pub model_name: String,
+    pub model_type: ModelType,
+    pub algorithm: String,
+    pub hyperparameters: HashMap<String, serde_json::Value>,
+}
+
 /// Main entry point for the enhanced ML pipeline.
 #[derive(Debug, Clone)]
 pub struct EnhancedMLPipeline {
@@ -1175,37 +1180,28 @@ impl EnhancedMLPipeline {
     }
 
     /// Run a full ML pipeline: feature engineering → training → evaluation → registration.
-    pub fn run_pipeline(
-        &mut self,
-        pipeline_name: &str,
-        feature_group_name: &str,
-        entity_ids: &[String],
-        model_name: &str,
-        model_type: ModelType,
-        algorithm: &str,
-        _hyperparameters: HashMap<String, serde_json::Value>,
-    ) -> Result<String, String> {
+    pub fn run_pipeline(&mut self, request: PipelineRequest) -> Result<String, String> {
         // 1. Get features
         let feature_group = self
             .feature_store
             .groups()
-            .get(feature_group_name)
-            .ok_or_else(|| format!("Feature group not found: {}", feature_group_name))?;
+            .get(&request.feature_group_name)
+            .ok_or_else(|| format!("Feature group not found: {}", request.feature_group_name))?;
 
         let feature_names = feature_group.feature_names();
         if feature_names.is_empty() {
             return Err(format!(
                 "Feature group '{}' has no features registered",
-                feature_group_name
+                request.feature_group_name
             ));
         }
 
         // 2. Build the feature matrix from the stored vectors.
         let mut rows: Vec<Vec<f64>> = Vec::new();
-        for entity_id in entity_ids {
+        for entity_id in &request.entity_ids {
             let row = self
                 .feature_store
-                .get_features(feature_group_name, entity_id, None)
+                .get_features(&request.feature_group_name, entity_id, None)
                 .map(|v| v.to_array(&feature_names, 0.0))
                 .unwrap_or_else(|| vec![0.0; feature_names.len()]);
             if row.iter().any(|v| v.is_finite()) {
@@ -1215,7 +1211,7 @@ impl EnhancedMLPipeline {
         if rows.len() < 2 {
             return Err(format!(
                 "Insufficient data to train '{}': need at least 2 entities with features, got {}",
-                model_name,
+                request.model_name,
                 rows.len()
             ));
         }
@@ -1238,13 +1234,16 @@ impl EnhancedMLPipeline {
         let mut hyperparameters: HashMap<String, serde_json::Value> = HashMap::new();
         hyperparameters.insert(
             "pipeline".to_string(),
-            serde_json::Value::String(pipeline_name.to_string()),
+            serde_json::Value::String(request.pipeline_name.clone()),
         );
         hyperparameters.insert(
             "feature_group".to_string(),
-            serde_json::Value::String(feature_group_name.to_string()),
+            serde_json::Value::String(request.feature_group_name.clone()),
         );
-        hyperparameters.insert("algorithm".to_string(), serde_json::json!(algorithm));
+        hyperparameters.insert(
+            "algorithm".to_string(),
+            serde_json::json!(request.algorithm),
+        );
 
         let mut metrics = if let Some(target) = target_key {
             let target_idx = feature_names
@@ -1259,18 +1258,14 @@ impl EnhancedMLPipeline {
                 x_train.column_mut(out).assign(&x.column(in_idx));
             }
 
-            train_classifier_with_holdout(&x_train, &y, algorithm, &mut hyperparameters)?
+            train_classifier_with_holdout(&x_train, &y, &request.algorithm, &mut hyperparameters)?
         } else {
             // Statistical path: per-feature parameters.
             let mut params = HashMap::new();
             for (i, name) in feature_names.iter().enumerate() {
                 let col: Vec<f64> = x.column(i).iter().copied().collect();
                 let m = col.iter().sum::<f64>() / col.len() as f64;
-                let var = col
-                    .iter()
-                    .map(|v| (v - m).powi(2))
-                    .sum::<f64>()
-                    / col.len() as f64;
+                let var = col.iter().map(|v| (v - m).powi(2)).sum::<f64>() / col.len() as f64;
                 let sd = var.sqrt();
                 params.insert(
                     name.clone(),
@@ -1308,15 +1303,16 @@ impl EnhancedMLPipeline {
         // 4. Register the model + version with the real computed metrics.
         let registry = if self
             .model_registry
-            .get_registry_by_name(model_name)
+            .get_registry_by_name(&request.model_name)
             .is_none()
         {
-            self.model_registry.register_model(model_name, model_type)
+            self.model_registry
+                .register_model(&request.model_name, request.model_type)
         } else {
             self.model_registry
-                .get_registry_by_name(model_name)
+                .get_registry_by_name(&request.model_name)
                 .cloned()
-                .ok_or_else(|| format!("Model not found: {}", model_name))?
+                .ok_or_else(|| format!("Model not found: {}", request.model_name))?
         };
 
         let model_id = registry.model_id;
@@ -1325,7 +1321,7 @@ impl EnhancedMLPipeline {
             .register_version(
                 &model_id,
                 "1.0".to_string(),
-                algorithm,
+                &request.algorithm,
                 hyperparameters,
                 feature_names.clone(),
             )
@@ -1333,18 +1329,17 @@ impl EnhancedMLPipeline {
 
         // 5. Attach the computed metrics to the registered version.
         metrics.inference_time_ms = Some(0.0);
-        metrics.model_size_mb = Some(
-            serde_json::to_vec(&version).map_or(0.0, |b| b.len() as f64 / 1_048_576.0),
-        );
+        metrics.model_size_mb =
+            Some(serde_json::to_vec(&version).map_or(0.0, |b| b.len() as f64 / 1_048_576.0));
         self.model_registry
             .set_version_metrics(&model_id, &version.version_id, metrics.clone())
             .map_err(|e| format!("Failed to attach metrics: {e}"))?;
 
         Ok(format!(
             "Pipeline '{}' completed. Model: {}, Algorithm: {}, samples: {}, metrics: {:?}",
-            pipeline_name,
-            model_name,
-            algorithm,
+            request.pipeline_name,
+            request.model_name,
+            request.algorithm,
             n_samples,
             metrics.to_map()
         ))
@@ -1373,6 +1368,118 @@ impl EnhancedMLPipeline {
     }
 }
 
+/// Train the CBM ensemble classifier on a deterministic holdout split and
+/// return honest evaluation metrics.
+///
+/// Uses a fixed 70/30 train/test split with a seeded RNG so training is
+/// reproducible. Metrics whose classes are absent in the split are left
+/// `None` rather than fabricated.
+fn train_classifier_with_holdout(
+    x: &ndarray::Array2<f64>,
+    y: &[f64],
+    algorithm: &str,
+    hyperparameters: &mut HashMap<String, serde_json::Value>,
+) -> Result<ModelMetrics, String> {
+    use rand::Rng;
+    use rand::SeedableRng;
+
+    let n = x.nrows();
+    if n < 6 {
+        return Err(format!(
+            "Insufficient labeled data to train classifier: need at least 6 samples, got {n}"
+        ));
+    }
+
+    // Deterministic 70/30 split (seeded by data shape so it is reproducible).
+    let mut rng = rand::rngs::StdRng::seed_from_u64(
+        (x.nrows() as u64) << 32 ^ (x.ncols() as u64) | (algorithm.len() as u64),
+    );
+    let mut idx: Vec<usize> = (0..n).collect();
+    // Deterministic shuffle (Fisher–Yates with the seeded RNG).
+    for i in (1..n).rev() {
+        let j = rng.gen_range(0..=i);
+        idx.swap(i, j);
+    }
+    let split = (n as f64 * 0.7).round().max(1.0) as usize;
+    let (train_idx, test_idx) = idx.split_at(split);
+
+    let rows_for = |ix: &[usize]| {
+        let mut m = ndarray::Array2::<f64>::zeros((ix.len(), x.ncols()));
+        for (out, &i) in ix.iter().enumerate() {
+            m.row_mut(out).assign(&x.row(i));
+        }
+        m
+    };
+    let (x_tr, x_te) = (rows_for(train_idx), rows_for(test_idx));
+    let y_tr: Vec<f64> = train_idx.iter().map(|&i| y[i]).collect();
+    let y_te: Vec<f64> = test_idx.iter().map(|&i| y[i]).collect();
+
+    let mut clf = super::cbm_predictor::EnsembleClassifier::new(24, 4);
+    clf.fit(&x_tr, &y_tr)
+        .map_err(|e| format!("Classifier training failed: {e}"))?;
+    let probas = clf
+        .predict_proba(&x_te)
+        .map_err(|e| format!("Classifier evaluation failed: {e}"))?;
+    let preds: Vec<f64> = probas
+        .iter()
+        .map(|&p| if p > 0.5 { 1.0 } else { 0.0 })
+        .collect();
+
+    let tp = y_te
+        .iter()
+        .zip(&preds)
+        .filter(|(a, p)| **a > 0.5 && **p > 0.5)
+        .count() as f64;
+    let fp = y_te
+        .iter()
+        .zip(&preds)
+        .filter(|(a, p)| **a <= 0.5 && **p > 0.5)
+        .count() as f64;
+    let fn_ = y_te
+        .iter()
+        .zip(&preds)
+        .filter(|(a, p)| **a > 0.5 && **p <= 0.5)
+        .count() as f64;
+    let tn = y_te
+        .iter()
+        .zip(&preds)
+        .filter(|(a, p)| **a <= 0.5 && **p <= 0.5)
+        .count() as f64;
+
+    let accuracy = (tp + tn) / y_te.len() as f64;
+    let precision = if tp + fp > 0.0 { tp / (tp + fp) } else { 0.0 };
+    let recall = if tp + fn_ > 0.0 { tp / (tp + fn_) } else { 0.0 };
+    let f1 = if precision + recall > 0.0 {
+        2.0 * precision * recall / (precision + recall)
+    } else {
+        0.0
+    };
+
+    hyperparameters.insert("supervised".to_string(), serde_json::json!(true));
+    hyperparameters.insert("train_size".to_string(), serde_json::json!(train_idx.len()));
+    hyperparameters.insert("test_size".to_string(), serde_json::json!(test_idx.len()));
+
+    Ok(ModelMetrics {
+        accuracy: Some(accuracy),
+        precision: Some(precision),
+        recall: Some(recall),
+        f1_score: Some(f1),
+        auc_roc: None,
+        mse: None,
+        rmse: None,
+        mae: None,
+        r2: None,
+        mape: None,
+        inference_time_ms: None,
+        model_size_mb: None,
+        custom_metrics: HashMap::from([
+            ("training_samples".to_string(), x.nrows() as f64),
+            ("feature_count".to_string(), x.ncols() as f64),
+            ("supervised".to_string(), 1.0),
+        ]),
+    })
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -1385,9 +1492,10 @@ mod tests {
     fn test_feature_store_register_and_ingest() {
         let mut store = FeatureStore::new();
         let mut group = FeatureGroup::new("sensor_features", "machine_id");
-        group
-            .features
-            .push(FeatureDefinition::new("temperature", FeatureType::Numerical));
+        group.features.push(FeatureDefinition::new(
+            "temperature",
+            FeatureType::Numerical,
+        ));
         group
             .features
             .push(FeatureDefinition::new("vibration", FeatureType::Numerical));
@@ -1442,7 +1550,9 @@ mod tests {
             vec![],
         );
         assert!(v.is_ok());
-        assert!(registry.promote_to_production(&model_id, &v.unwrap().version_id).is_ok());
+        assert!(registry
+            .promote_to_production(&model_id, &v.unwrap().version_id)
+            .is_ok());
     }
 
     #[test]
@@ -1497,7 +1607,11 @@ mod tests {
         );
         param_grid.insert(
             "max_depth".into(),
-            vec![serde_json::json!(5), serde_json::json!(10), serde_json::json!(15)],
+            vec![
+                serde_json::json!(5),
+                serde_json::json!(10),
+                serde_json::json!(15),
+            ],
         );
 
         let experiment = engine
@@ -1536,9 +1650,10 @@ mod tests {
 
         // Setup feature group
         let mut group = FeatureGroup::new("sensor_data", "machine_id");
-        group
-            .features
-            .push(FeatureDefinition::new("temperature", FeatureType::Numerical));
+        group.features.push(FeatureDefinition::new(
+            "temperature",
+            FeatureType::Numerical,
+        ));
         pipeline.feature_store.register_feature_group(group);
 
         // Ingest data for several machines
@@ -1552,15 +1667,15 @@ mod tests {
         }
 
         // Run pipeline
-        let result = pipeline.run_pipeline(
-            "test_pipeline",
-            "sensor_data",
-            &["m1".into(), "m2".into(), "m3".into(), "m4".into()],
-            "quality_model",
-            ModelType::Classification,
-            "RandomForest",
-            HashMap::new(),
-        );
+        let result = pipeline.run_pipeline(PipelineRequest {
+            pipeline_name: "test_pipeline".into(),
+            feature_group_name: "sensor_data".into(),
+            entity_ids: vec!["m1".into(), "m2".into(), "m3".into(), "m4".into()],
+            model_name: "quality_model".into(),
+            model_type: ModelType::Classification,
+            algorithm: "RandomForest".into(),
+            hyperparameters: HashMap::new(),
+        });
         assert!(result.is_ok(), "pipeline failed: {:?}", result);
 
         // The registered version carries the fitted statistical parameters.
@@ -1612,16 +1727,30 @@ mod tests {
     fn test_pipeline_trains_and_registers_model() {
         let mut pipeline = EnhancedMLPipeline::new();
         let mut group = FeatureGroup::new("sensor_data", "sensor");
-        group.features.push(FeatureDefinition::new("temperature", FeatureType::Numerical));
-        group.features.push(FeatureDefinition::new("vibration", FeatureType::Numerical));
-        group.features.push(FeatureDefinition::new("is_defect", FeatureType::Categorical));
+        group.features.push(FeatureDefinition::new(
+            "temperature",
+            FeatureType::Numerical,
+        ));
+        group
+            .features
+            .push(FeatureDefinition::new("vibration", FeatureType::Numerical));
+        group.features.push(FeatureDefinition::new(
+            "is_defect",
+            FeatureType::Categorical,
+        ));
         pipeline.feature_store.register_feature_group(group);
 
         // 6 samples with separable defect labels.
-        for (idx, (temp_driver, defect)) in
-            [(0.0, 1.0), (1.0, 1.0), (2.0, 1.0), (8.0, 0.0), (9.0, 0.0), (10.0, 0.0)]
-                .iter()
-                .enumerate()
+        for (idx, (temp_driver, defect)) in [
+            (0.0, 1.0),
+            (1.0, 1.0),
+            (2.0, 1.0),
+            (8.0, 0.0),
+            (9.0, 0.0),
+            (10.0, 0.0),
+        ]
+        .iter()
+        .enumerate()
         {
             pipeline
                 .feature_store
@@ -1639,15 +1768,22 @@ mod tests {
         }
 
         let result = pipeline
-            .run_pipeline(
-                "train_pipeline",
-                "sensor_data",
-                &["sensor_0".into(), "sensor_1".into(), "sensor_2".into(), "sensor_3".into(), "sensor_4".into(), "sensor_5".into()],
-                "quality_model",
-                ModelType::Classification,
-                "ensemble",
-                HashMap::new(),
-            )
+            .run_pipeline(PipelineRequest {
+                pipeline_name: "train_pipeline".into(),
+                feature_group_name: "sensor_data".into(),
+                entity_ids: vec![
+                    "sensor_0".into(),
+                    "sensor_1".into(),
+                    "sensor_2".into(),
+                    "sensor_3".into(),
+                    "sensor_4".into(),
+                    "sensor_5".into(),
+                ],
+                model_name: "quality_model".into(),
+                model_type: ModelType::Classification,
+                algorithm: "ensemble".into(),
+                hyperparameters: HashMap::new(),
+            })
             .unwrap();
         assert!(result.contains("samples: 6"), "result: {result}");
 
@@ -1656,35 +1792,53 @@ mod tests {
             .get_registry_by_name("quality_model")
             .expect("model should be registered");
         let version = registry.versions.last().expect("version should exist");
-        assert!(version.metrics.accuracy.is_some(), "metrics: {:?}", version.metrics.to_map());
-        assert_eq!(version.metrics.custom_metrics.get("training_samples"), Some(&6.0));
+        assert!(
+            version.metrics.accuracy.is_some(),
+            "metrics: {:?}",
+            version.metrics.to_map()
+        );
+        assert_eq!(
+            version.metrics.custom_metrics.get("training_samples"),
+            Some(&6.0)
+        );
     }
 
     #[test]
     fn test_pipeline_statistical_path_without_labels() {
         let mut pipeline = EnhancedMLPipeline::new();
         let mut group = FeatureGroup::new("temps", "sensor");
-        group.features.push(FeatureDefinition::new("temperature", FeatureType::Numerical));
+        group.features.push(FeatureDefinition::new(
+            "temperature",
+            FeatureType::Numerical,
+        ));
         pipeline.feature_store.register_feature_group(group);
         for i in 0..4 {
             pipeline
                 .feature_store
-                .ingest_features("temps", &format!("t{i}"), HashMap::from([("temperature".to_string(), 10.0 + i as f64)]), None)
+                .ingest_features(
+                    "temps",
+                    &format!("t{i}"),
+                    HashMap::from([("temperature".to_string(), 10.0 + i as f64)]),
+                    None,
+                )
                 .unwrap();
         }
         let result = pipeline
-            .run_pipeline(
-                "stat_pipeline",
-                "temps",
-                &["t0".into(), "t1".into(), "t2".into(), "t3".into()],
-                "stat_model",
-                ModelType::Regression,
-                "statistical",
-                HashMap::new(),
-            )
+            .run_pipeline(PipelineRequest {
+                pipeline_name: "stat_pipeline".into(),
+                feature_group_name: "temps".into(),
+                entity_ids: vec!["t0".into(), "t1".into(), "t2".into(), "t3".into()],
+                model_name: "stat_model".into(),
+                model_type: ModelType::Regression,
+                algorithm: "statistical".into(),
+                hyperparameters: HashMap::new(),
+            })
             .unwrap();
         assert!(result.contains("samples: 4"), "result: {result}");
-        let registry = pipeline.model_registry.get_registry_by_name("stat_model").unwrap();
+        let registry = pipeline
+            .model_registry
+            .get_registry_by_name("stat_model")
+            .unwrap();
         let version = registry.versions.last().unwrap();
         assert!(version.metrics.accuracy.is_none());
         assert_eq!(version.metrics.custom_metrics.get("supervised"), Some(&0.0));
@@ -1701,115 +1855,24 @@ mod tests {
     fn test_pipeline_rejects_insufficient_data() {
         let mut pipeline = EnhancedMLPipeline::new();
         let mut group = FeatureGroup::new("g", "sensor");
-        group.features.push(FeatureDefinition::new("a", FeatureType::Numerical));
+        group
+            .features
+            .push(FeatureDefinition::new("a", FeatureType::Numerical));
         pipeline.feature_store.register_feature_group(group);
         pipeline
             .feature_store
             .ingest_features("g", "e1", HashMap::from([("a".to_string(), 1.0)]), None)
             .unwrap();
-        let result = pipeline.run_pipeline(
-            "p",
-            "g",
-            &["e1".into()],
-            "m",
-            ModelType::Regression,
-            "statistical",
-            HashMap::new(),
-        );
+        let result = pipeline.run_pipeline(PipelineRequest {
+            pipeline_name: "p".into(),
+            feature_group_name: "g".into(),
+            entity_ids: vec!["e1".into()],
+            model_name: "m".into(),
+            model_type: ModelType::Regression,
+            algorithm: "statistical".into(),
+            hyperparameters: HashMap::new(),
+        });
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("Insufficient data"));
     }
-}
-
-/// Train the CBM ensemble classifier on a deterministic holdout split and
-/// return honest evaluation metrics.
-///
-/// Uses a fixed 70/30 train/test split with a seeded RNG so training is
-/// reproducible. Metrics whose classes are absent in the split are left
-/// `None` rather than fabricated.
-fn train_classifier_with_holdout(
-    x: &ndarray::Array2<f64>,
-    y: &[f64],
-    algorithm: &str,
-    hyperparameters: &mut HashMap<String, serde_json::Value>,
-) -> Result<ModelMetrics, String> {
-    use rand::SeedableRng;
-    use rand::Rng;
-
-    let n = x.nrows();
-    if n < 6 {
-        return Err(format!(
-            "Insufficient labeled data to train classifier: need at least 6 samples, got {n}"
-        ));
-    }
-
-    // Deterministic 70/30 split (seeded by data shape so it is reproducible).
-    let mut rng = rand::rngs::StdRng::seed_from_u64(
-        (x.nrows() as u64) << 32 ^ (x.ncols() as u64) | (algorithm.len() as u64),
-    );
-    let mut idx: Vec<usize> = (0..n).collect();
-    // Deterministic shuffle (Fisher–Yates with the seeded RNG).
-    for i in (1..n).rev() {
-        let j = rng.gen_range(0..=i);
-        idx.swap(i, j);
-    }
-    let split = (n as f64 * 0.7).round().max(1.0) as usize;
-    let (train_idx, test_idx) = idx.split_at(split);
-
-    let rows_for = |ix: &[usize]| {
-        let mut m = ndarray::Array2::<f64>::zeros((ix.len(), x.ncols()));
-        for (out, &i) in ix.iter().enumerate() {
-            m.row_mut(out).assign(&x.row(i));
-        }
-        m
-    };
-    let (x_tr, x_te) = (rows_for(train_idx), rows_for(test_idx));
-    let y_tr: Vec<f64> = train_idx.iter().map(|&i| y[i]).collect();
-    let y_te: Vec<f64> = test_idx.iter().map(|&i| y[i]).collect();
-
-    let mut clf = super::cbm_predictor::EnsembleClassifier::new(24, 4);
-    clf.fit(&x_tr, &y_tr)
-        .map_err(|e| format!("Classifier training failed: {e}"))?;
-    let probas = clf
-        .predict_proba(&x_te)
-        .map_err(|e| format!("Classifier evaluation failed: {e}"))?;
-    let preds: Vec<f64> = probas.iter().map(|&p| if p > 0.5 { 1.0 } else { 0.0 }).collect();
-
-    let tp = y_te.iter().zip(&preds).filter(|(a, p)| **a > 0.5 && **p > 0.5).count() as f64;
-    let fp = y_te.iter().zip(&preds).filter(|(a, p)| **a <= 0.5 && **p > 0.5).count() as f64;
-    let fn_ = y_te.iter().zip(&preds).filter(|(a, p)| **a > 0.5 && **p <= 0.5).count() as f64;
-    let tn = y_te.iter().zip(&preds).filter(|(a, p)| **a <= 0.5 && **p <= 0.5).count() as f64;
-
-    let accuracy = (tp + tn) / y_te.len() as f64;
-    let precision = if tp + fp > 0.0 { tp / (tp + fp) } else { 0.0 };
-    let recall = if tp + fn_ > 0.0 { tp / (tp + fn_) } else { 0.0 };
-    let f1 = if precision + recall > 0.0 {
-        2.0 * precision * recall / (precision + recall)
-    } else {
-        0.0
-    };
-
-    hyperparameters.insert("supervised".to_string(), serde_json::json!(true));
-    hyperparameters.insert("train_size".to_string(), serde_json::json!(train_idx.len()));
-    hyperparameters.insert("test_size".to_string(), serde_json::json!(test_idx.len()));
-
-    Ok(ModelMetrics {
-        accuracy: Some(accuracy),
-        precision: Some(precision),
-        recall: Some(recall),
-        f1_score: Some(f1),
-        auc_roc: None,
-        mse: None,
-        rmse: None,
-        mae: None,
-        r2: None,
-        mape: None,
-        inference_time_ms: None,
-        model_size_mb: None,
-        custom_metrics: HashMap::from([
-            ("training_samples".to_string(), x.nrows() as f64),
-            ("feature_count".to_string(), x.ncols() as f64),
-            ("supervised".to_string(), 1.0),
-        ]),
-    })
 }

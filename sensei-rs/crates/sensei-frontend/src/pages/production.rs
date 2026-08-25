@@ -30,14 +30,54 @@ pub fn WorkOrderListPage() -> impl IntoView {
     });
 
     let columns = vec![
-        TableColumn { label: "WO #", key: "work_order_number", sortable: true, width: None },
-        TableColumn { label: "PRODUCT", key: "product_id", sortable: true, width: None },
-        TableColumn { label: "QTY", key: "quantity", sortable: true, width: Some("60px") },
-        TableColumn { label: "COMPLETED", key: "quantity_completed", sortable: true, width: Some("80px") },
-        TableColumn { label: "STATUS", key: "status", sortable: true, width: None },
-        TableColumn { label: "PRIORITY", key: "priority", sortable: true, width: None },
-        TableColumn { label: "DUE DATE", key: "due_date", sortable: true, width: None },
-        TableColumn { label: "ASSIGNED TO", key: "assigned_to", sortable: true, width: None },
+        TableColumn {
+            label: "WO #",
+            key: "work_order_number",
+            sortable: true,
+            width: None,
+        },
+        TableColumn {
+            label: "PRODUCT",
+            key: "product_id",
+            sortable: true,
+            width: None,
+        },
+        TableColumn {
+            label: "QTY",
+            key: "quantity",
+            sortable: true,
+            width: Some("60px"),
+        },
+        TableColumn {
+            label: "COMPLETED",
+            key: "quantity_completed",
+            sortable: true,
+            width: Some("80px"),
+        },
+        TableColumn {
+            label: "STATUS",
+            key: "status",
+            sortable: true,
+            width: None,
+        },
+        TableColumn {
+            label: "PRIORITY",
+            key: "priority",
+            sortable: true,
+            width: None,
+        },
+        TableColumn {
+            label: "DUE DATE",
+            key: "due_date",
+            sortable: true,
+            width: None,
+        },
+        TableColumn {
+            label: "ASSIGNED TO",
+            key: "assigned_to",
+            sortable: true,
+            width: None,
+        },
     ];
 
     view! {
@@ -74,13 +114,48 @@ pub fn ProductionOrderListPage() -> impl IntoView {
     });
 
     let columns = vec![
-        TableColumn { label: "PO #", key: "production_order_number", sortable: true, width: None },
-        TableColumn { label: "PRODUCT", key: "product_id", sortable: true, width: None },
-        TableColumn { label: "PLANNED QTY", key: "planned_quantity", sortable: true, width: Some("90px") },
-        TableColumn { label: "PRODUCED", key: "produced_quantity", sortable: true, width: Some("80px") },
-        TableColumn { label: "STATUS", key: "status", sortable: true, width: None },
-        TableColumn { label: "START DATE", key: "start_date", sortable: true, width: None },
-        TableColumn { label: "END DATE", key: "end_date", sortable: true, width: None },
+        TableColumn {
+            label: "PO #",
+            key: "production_order_number",
+            sortable: true,
+            width: None,
+        },
+        TableColumn {
+            label: "PRODUCT",
+            key: "product_id",
+            sortable: true,
+            width: None,
+        },
+        TableColumn {
+            label: "PLANNED QTY",
+            key: "planned_quantity",
+            sortable: true,
+            width: Some("90px"),
+        },
+        TableColumn {
+            label: "PRODUCED",
+            key: "produced_quantity",
+            sortable: true,
+            width: Some("80px"),
+        },
+        TableColumn {
+            label: "STATUS",
+            key: "status",
+            sortable: true,
+            width: None,
+        },
+        TableColumn {
+            label: "START DATE",
+            key: "start_date",
+            sortable: true,
+            width: None,
+        },
+        TableColumn {
+            label: "END DATE",
+            key: "end_date",
+            sortable: true,
+            width: None,
+        },
     ];
 
     view! {
@@ -123,9 +198,24 @@ pub fn BomListPage() -> impl IntoView {
     });
 
     let columns = vec![
-        TableColumn { label: "COMPONENT ID", key: "component_id", sortable: true, width: None },
-        TableColumn { label: "QUANTITY", key: "quantity", sortable: true, width: Some("80px") },
-        TableColumn { label: "UNIT", key: "unit", sortable: true, width: Some("60px") },
+        TableColumn {
+            label: "COMPONENT ID",
+            key: "component_id",
+            sortable: true,
+            width: None,
+        },
+        TableColumn {
+            label: "QUANTITY",
+            key: "quantity",
+            sortable: true,
+            width: Some("80px"),
+        },
+        TableColumn {
+            label: "UNIT",
+            key: "unit",
+            sortable: true,
+            width: Some("60px"),
+        },
     ];
 
     view! {
@@ -177,12 +267,42 @@ pub fn MrpPage() -> impl IntoView {
     let mrp_results = run.value();
 
     let columns = vec![
-        TableColumn { label: "PERIOD", key: "period", sortable: true, width: None },
-        TableColumn { label: "GROSS REQ.", key: "gross_requirement", sortable: true, width: None },
-        TableColumn { label: "SCHED. RECEIPTS", key: "scheduled_receipts", sortable: true, width: None },
-        TableColumn { label: "ON HAND", key: "projected_on_hand", sortable: true, width: None },
-        TableColumn { label: "NET REQ.", key: "net_requirement", sortable: true, width: None },
-        TableColumn { label: "PLANNED RELEASE", key: "planned_order_release", sortable: true, width: None },
+        TableColumn {
+            label: "PERIOD",
+            key: "period",
+            sortable: true,
+            width: None,
+        },
+        TableColumn {
+            label: "GROSS REQ.",
+            key: "gross_requirement",
+            sortable: true,
+            width: None,
+        },
+        TableColumn {
+            label: "SCHED. RECEIPTS",
+            key: "scheduled_receipts",
+            sortable: true,
+            width: None,
+        },
+        TableColumn {
+            label: "ON HAND",
+            key: "projected_on_hand",
+            sortable: true,
+            width: None,
+        },
+        TableColumn {
+            label: "NET REQ.",
+            key: "net_requirement",
+            sortable: true,
+            width: None,
+        },
+        TableColumn {
+            label: "PLANNED RELEASE",
+            key: "planned_order_release",
+            sortable: true,
+            width: None,
+        },
     ];
 
     view! {

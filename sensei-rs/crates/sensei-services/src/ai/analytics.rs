@@ -23,6 +23,55 @@ pub enum TrendDirection {
     InsufficientData,
 }
 
+impl TrendDirection {
+    /// Invert the direction for metrics where a *lower* value is better
+    /// (defect rates, downtime, costs, lead/cycle times, ...). Non-directional
+    /// states stay unchanged.
+    fn inverted(self) -> TrendDirection {
+        match self {
+            TrendDirection::Improving => TrendDirection::Declining,
+            TrendDirection::Declining => TrendDirection::Improving,
+            other => other,
+        }
+    }
+}
+
+/// Whether a higher measurement counts as an improvement for the KPI.
+///
+/// Matched by metric name (case-insensitive) against the known set of
+/// "lower is better" manufacturing/quality/ops metrics.
+fn higher_is_better(name: &str, _category: KpiCategory) -> bool {
+    const LOWER_IS_BETTER: &[&str] = &[
+        "defect",
+        "defects",
+        "failure",
+        "failures",
+        "scrap",
+        "rework",
+        "downtime",
+        "complaint",
+        "complaints",
+        "lead time",
+        "cycle time",
+        "absenteeism",
+        "error",
+        "errors",
+        "rejection",
+        "rejections",
+        "waste",
+        "overtime",
+        "return rate",
+        "returns",
+        "cost",
+        "costs",
+        "expense",
+        "expenses",
+        "changeover",
+    ];
+    let lower = name.to_lowercase();
+    !LOWER_IS_BETTER.iter().any(|k| lower.contains(k))
+}
+
 /// KPI category for grouping.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum KpiCategory {
@@ -159,37 +208,38 @@ impl AnalyticsEngine {
     }
 
     /// Compute a KPI result for a given name and category.
-    pub fn compute_kpi(
-        &self,
-        name: &str,
-        category: KpiCategory,
-        target: Option<f64>,
-    ) -> KpiResult {
+    pub fn compute_kpi(&self, name: &str, category: KpiCategory, target: Option<f64>) -> KpiResult {
         let key = format!("{}:{:?}", name, category);
         let entries = self.measurements.get(&key);
 
-        let (current_value, previous_value, sample_size, trend, change_pct) =
-            match entries {
-                Some(data) if !data.is_empty() => {
-                    let sorted = self.sort_by_time(data);
-                    let current = sorted.last().unwrap().value;
-                    let prev = if sorted.len() >= 2 {
-                        Some(sorted[sorted.len() - 2].value)
+        let (current_value, previous_value, sample_size, trend, change_pct) = match entries {
+            Some(data) if !data.is_empty() => {
+                let sorted = self.sort_by_time(data);
+                let current = sorted.last().unwrap().value;
+                let prev = if sorted.len() >= 2 {
+                    Some(sorted[sorted.len() - 2].value)
+                } else {
+                    None
+                };
+                let change = prev.map(|p| {
+                    if p != 0.0 {
+                        ((current - p) / p) * 100.0
                     } else {
-                        None
-                    };
-                    let change = prev.map(|p| {
-                        if p != 0.0 {
-                            ((current - p) / p) * 100.0
-                        } else {
-                            0.0
-                        }
-                    });
-                    let trend = self.detect_trend(&sorted);
-                    (current, prev, sorted.len(), trend, change)
-                }
-                _ => (0.0, None, 0, TrendDirection::InsufficientData, None),
-            };
+                        0.0
+                    }
+                });
+                let trend = self.detect_trend(&sorted);
+                // Report the trend relative to the metric's polarity:
+                // an increasing defect rate is a declining trend.
+                let trend = if higher_is_better(name, category) {
+                    trend
+                } else {
+                    trend.inverted()
+                };
+                (current, prev, sorted.len(), trend, change)
+            }
+            _ => (0.0, None, 0, TrendDirection::InsufficientData, None),
+        };
 
         let is_on_target = target.map(|t| {
             if t == 0.0 {
@@ -313,7 +363,7 @@ impl AnalyticsEngine {
 
         let min = sorted[0];
         let max = sorted[count - 1];
-        let median = if count % 2 == 0 {
+        let median = if count.is_multiple_of(2) {
             (sorted[count / 2 - 1] + sorted[count / 2]) / 2.0
         } else {
             sorted[count / 2]
@@ -436,20 +486,15 @@ impl AnalyticsEngine {
     /// Sort measurements by timestamp.
     fn sort_by_time<'a>(&self, data: &'a [KpiMeasurement]) -> Vec<&'a KpiMeasurement> {
         let mut sorted: Vec<&KpiMeasurement> = data.iter().collect();
-        sorted.sort_by(|a, b| a.timestamp.cmp(&b.timestamp));
+        sorted.sort_by_key(|a| a.timestamp);
         sorted
     }
 
     /// Generate a dashboard summary with multiple KPIs.
-    pub fn get_dashboard(
-        &self,
-        kpi_names: &[(&str, KpiCategory)],
-    ) -> Vec<KpiResult> {
+    pub fn get_dashboard(&self, kpi_names: &[(&str, KpiCategory)]) -> Vec<KpiResult> {
         kpi_names
             .iter()
-            .map(|(name, category)| {
-                self.compute_kpi(name, *category, None)
-            })
+            .map(|(name, category)| self.compute_kpi(name, *category, None))
             .collect()
     }
 
@@ -504,12 +549,7 @@ mod tests {
         let mut engine = AnalyticsEngine::new(100);
         let now = Utc::now();
 
-        engine.record_measurement(create_measurement(
-            "OEE",
-            KpiCategory::Overall,
-            0.75,
-            now,
-        ));
+        engine.record_measurement(create_measurement("OEE", KpiCategory::Overall, 0.75, now));
         engine.record_measurement(create_measurement(
             "OEE",
             KpiCategory::Overall,
@@ -641,12 +681,7 @@ mod tests {
         let mut engine = AnalyticsEngine::new(100);
         let now = Utc::now();
 
-        engine.record_measurement(create_measurement(
-            "OEE",
-            KpiCategory::Overall,
-            0.82,
-            now,
-        ));
+        engine.record_measurement(create_measurement("OEE", KpiCategory::Overall, 0.82, now));
         engine.record_measurement(create_measurement(
             "Defect Rate",
             KpiCategory::Quality,

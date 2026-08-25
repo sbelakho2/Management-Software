@@ -18,7 +18,7 @@ async fn test_create_state_machine() {
     let mut resp = app.send_request(req).await;
     assert_eq!(resp.status(), StatusCode::OK);
     let json: Value = app.json_body(&mut resp).await;
-    assert!(json["id"].as_str().unwrap_or("").len() > 0);
+    assert!(!json["id"].as_str().unwrap_or("").is_empty());
     assert_eq!(json["name"], "Order Workflow");
 }
 
@@ -34,7 +34,7 @@ async fn test_list_state_machines() {
     let mut resp = app.send_request(req).await;
     assert_eq!(resp.status(), StatusCode::OK);
     let json: Value = app.json_body(&mut resp).await;
-    assert!(json["data"].as_array().map_or(false, |a| a.len() >= 1));
+    assert!(json["data"].as_array().is_some_and(|a| !a.is_empty()));
 }
 
 #[tokio::test]
@@ -77,11 +77,7 @@ async fn test_update_state_machine() {
     let sm_id = created["id"].as_str().unwrap();
 
     let update = serde_json::json!({"name": "Updated SM"});
-    let req = app.put_authenticated(
-        &format!("/api/v1/state-machines/{}", sm_id),
-        &token,
-        update,
-    );
+    let req = app.put_authenticated(&format!("/api/v1/state-machines/{}", sm_id), &token, update);
     let mut resp = app.send_request(req).await;
     assert_eq!(resp.status(), StatusCode::OK);
     let json: Value = app.json_body(&mut resp).await;
@@ -126,7 +122,7 @@ async fn test_create_instance() {
     let mut resp = app.send_request(req).await;
     assert_eq!(resp.status(), StatusCode::OK);
     let json: Value = app.json_body(&mut resp).await;
-    assert!(json["id"].as_str().unwrap_or("").len() > 0);
+    assert!(!json["id"].as_str().unwrap_or("").is_empty());
 }
 
 #[tokio::test]
@@ -151,7 +147,7 @@ async fn test_list_instances() {
         &format!("/api/v1/state-machines/{}/instances", sm_id),
         &token,
     );
-    let mut resp = app.send_request(req).await;
+    let resp = app.send_request(req).await;
     assert_eq!(resp.status(), StatusCode::OK);
 }
 
@@ -205,13 +201,16 @@ async fn test_create_state_machine_self_loop_rejected() {
     let app = common::TestApp::new().await;
     let token = app.login_as_admin().await;
     let mut body = common::fixtures::state_machine_payload("Self Loop", "Order");
-    body["transitions"].as_array_mut().unwrap().push(serde_json::json!({
-        "from_state": "Draft",
-        "to_state": "Draft",
-        "event": "stay",
-        "conditions": null,
-        "on_transition": null,
-    }));
+    body["transitions"]
+        .as_array_mut()
+        .unwrap()
+        .push(serde_json::json!({
+            "from_state": "Draft",
+            "to_state": "Draft",
+            "event": "stay",
+            "conditions": null,
+            "on_transition": null,
+        }));
     let req = app.post_authenticated("/api/v1/state-machines", &token, body);
     let resp = app.send_request(req).await;
     assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
@@ -234,8 +233,7 @@ async fn test_create_state_machine_undefined_transition_state_rejected() {
     let app = common::TestApp::new().await;
     let token = app.login_as_admin().await;
     let mut body = common::fixtures::state_machine_payload("Bad Transition", "Order");
-    body["transitions"].as_array_mut().unwrap()[0]["to_state"] =
-        serde_json::json!("GhostState");
+    body["transitions"].as_array_mut().unwrap()[0]["to_state"] = serde_json::json!("GhostState");
     let req = app.post_authenticated("/api/v1/state-machines", &token, body);
     let resp = app.send_request(req).await;
     assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
@@ -326,7 +324,7 @@ async fn test_transition_from_terminal_state_rejected() {
             &token,
             serde_json::json!({"event": event}),
         );
-        let mut resp = app.send_request(req).await;
+        let resp = app.send_request(req).await;
         assert_eq!(resp.status(), StatusCode::OK);
     }
 
@@ -347,8 +345,7 @@ async fn test_transition_role_required_returns_403() {
 
     // Definition whose target state requires "admin"…
     let mut body = common::fixtures::state_machine_payload("Role SM", "Order");
-    body["states"].as_array_mut().unwrap()[1]["allowed_roles"] =
-        serde_json::json!(["admin"]);
+    body["states"].as_array_mut().unwrap()[1]["allowed_roles"] = serde_json::json!(["admin"]);
     let req = app.post_authenticated("/api/v1/state-machines", &token, body);
     let mut resp = app.send_request(req).await;
     let created: Value = app.json_body(&mut resp).await;
@@ -416,7 +413,7 @@ async fn test_transition_role_required_condition() {
         &token,
         serde_json::json!({"event": "activate"}),
     );
-    let mut resp = app.send_request(req).await;
+    let resp = app.send_request(req).await;
     assert_eq!(resp.status(), StatusCode::OK);
 
     // A plain user fails the condition (conflict).
@@ -457,13 +454,12 @@ async fn test_transition_send_notification_hook() {
     let token = app.login_as_admin().await;
 
     let mut body = common::fixtures::state_machine_payload("Hook SM", "Order");
-    body["transitions"].as_array_mut().unwrap()[0]["on_transition"] =
-        serde_json::json!({
-            "action": "send_notification",
-            "target_user_id": app.admin_user_id.to_string(),
-            "title": "State machine hook notification",
-            "body": "Transition executed the send_notification hook",
-        });
+    body["transitions"].as_array_mut().unwrap()[0]["on_transition"] = serde_json::json!({
+        "action": "send_notification",
+        "target_user_id": app.admin_user_id.to_string(),
+        "title": "State machine hook notification",
+        "body": "Transition executed the send_notification hook",
+    });
     let req = app.post_authenticated("/api/v1/state-machines", &token, body);
     let mut resp = app.send_request(req).await;
     let created: Value = app.json_body(&mut resp).await;
@@ -484,7 +480,7 @@ async fn test_transition_send_notification_hook() {
         &token,
         serde_json::json!({"event": "activate"}),
     );
-    let mut resp = app.send_request(req).await;
+    let resp = app.send_request(req).await;
     assert_eq!(resp.status(), StatusCode::OK);
 
     // The hook must have created a real notification.

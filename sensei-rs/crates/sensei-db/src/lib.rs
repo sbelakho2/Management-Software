@@ -13,6 +13,6 @@ pub mod migrations;
 pub mod models;
 pub mod pg_pool;
 
-pub use pg_pool::*;
 pub use migrations::*;
 pub use models::*;
+pub use pg_pool::*;

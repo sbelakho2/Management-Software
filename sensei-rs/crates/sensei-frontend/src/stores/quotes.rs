@@ -5,7 +5,6 @@
 use crate::api::client::{ApiClient, ApiError};
 use crate::api::rfq::{QuoteApi, QuoteDto, QuoteStats};
 use leptos::prelude::*;
-use std::collections::HashMap;
 
 /// Reactive store for quotes.
 #[derive(Debug, Clone)]
@@ -52,7 +51,8 @@ impl QuotesStore {
         match QuoteApi::list_quotes(client, None).await {
             Ok(resp) => {
                 self.quotes.set(resp.items.clone());
-                self.last_fetched_at.set(Some(chrono::Utc::now().to_rfc3339()));
+                self.last_fetched_at
+                    .set(Some(chrono::Utc::now().to_rfc3339()));
             }
             Err(e) => self.error.set(Some(e.to_string())),
         }
@@ -79,15 +79,26 @@ impl QuotesStore {
     }
 
     /// Create a new quote.
-    pub async fn create_quote(&self, client: &ApiClient, data: &serde_json::Value) -> Result<QuoteDto, ApiError> {
+    pub async fn create_quote(
+        &self,
+        client: &ApiClient,
+        data: &serde_json::Value,
+    ) -> Result<QuoteDto, ApiError> {
         let quote: QuoteDto = client.post("/api/v1/quotes", data).await?;
         self.quotes.update(|q| q.push(quote.clone()));
         Ok(quote)
     }
 
     /// Update an existing quote.
-    pub async fn update_quote(&self, client: &ApiClient, id: &str, updates: &serde_json::Value) -> Result<QuoteDto, ApiError> {
-        let quote: QuoteDto = client.put(&format!("/api/v1/quotes/{}", id), updates).await?;
+    pub async fn update_quote(
+        &self,
+        client: &ApiClient,
+        id: &str,
+        updates: &serde_json::Value,
+    ) -> Result<QuoteDto, ApiError> {
+        let quote: QuoteDto = client
+            .put(&format!("/api/v1/quotes/{}", id), updates)
+            .await?;
         self.quotes.update(|q| {
             if let Some(pos) = q.iter().position(|x| x.id == id) {
                 q[pos] = quote.clone();
@@ -135,7 +146,12 @@ impl QuotesStore {
     }
 
     /// Approve a quote.
-    pub async fn approve_quote(&self, client: &ApiClient, id: &str, rationale: &str) -> Result<QuoteDto, ApiError> {
+    pub async fn approve_quote(
+        &self,
+        client: &ApiClient,
+        id: &str,
+        rationale: &str,
+    ) -> Result<QuoteDto, ApiError> {
         let quote = QuoteApi::approve_quote(client, id, Some(rationale)).await?;
         self.quotes.update(|q| {
             if let Some(pos) = q.iter().position(|x| x.id == id) {
@@ -146,7 +162,12 @@ impl QuotesStore {
     }
 
     /// Reject a quote.
-    pub async fn reject_quote(&self, client: &ApiClient, id: &str, reason: &str) -> Result<QuoteDto, ApiError> {
+    pub async fn reject_quote(
+        &self,
+        client: &ApiClient,
+        id: &str,
+        reason: &str,
+    ) -> Result<QuoteDto, ApiError> {
         let quote = QuoteApi::reject_quote(client, id, reason).await?;
         self.quotes.update(|q| {
             if let Some(pos) = q.iter().position(|x| x.id == id) {

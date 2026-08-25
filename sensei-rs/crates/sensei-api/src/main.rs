@@ -26,7 +26,7 @@ use sensei_api::state::{create_event_bus, AppState};
 use sensei_core::config::AppConfig;
 use sensei_core::domain::entities::{Tenant, User};
 use sensei_core::error::SenseiError;
-use sensei_core::types::{TenantId, now};
+use sensei_core::types::{now, TenantId};
 use sensei_services::users::{InMemoryUsersService, UsersService};
 use sqlx::postgres::PgPoolOptions;
 use tracing::info;
@@ -36,7 +36,9 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilte
 ///
 /// Returns `None` if no OTLP endpoint is configured, allowing the application
 /// to fall back to local-only logging and metrics.
-async fn init_otel_tracer(config: &sensei_core::config::ObservabilityConfig) -> Option<sdktrace::SdkTracerProvider> {
+async fn init_otel_tracer(
+    config: &sensei_core::config::ObservabilityConfig,
+) -> Option<sdktrace::SdkTracerProvider> {
     let otlp_endpoint = config.otlp_endpoint.as_ref()?;
 
     info!("Initializing OpenTelemetry, exporting to {otlp_endpoint}");
@@ -197,12 +199,12 @@ async fn seed_user(
 async fn seed_bootstrap_users(state: &AppState) {
     ensure_bootstrap_tenant(state).await;
 
-    let admin_email = std::env::var("SENSEI_ADMIN_EMAIL")
-        .unwrap_or_else(|_| "admin@sensei.com".to_string());
-    let admin_password = std::env::var("SENSEI_ADMIN_PASSWORD")
-        .unwrap_or_else(|_| "Admin123!".to_string());
-    let admin_name = std::env::var("SENSEI_ADMIN_NAME")
-        .unwrap_or_else(|_| "Admin User".to_string());
+    let admin_email =
+        std::env::var("SENSEI_ADMIN_EMAIL").unwrap_or_else(|_| "admin@sensei.com".to_string());
+    let admin_password =
+        std::env::var("SENSEI_ADMIN_PASSWORD").unwrap_or_else(|_| "Admin123!".to_string());
+    let admin_name =
+        std::env::var("SENSEI_ADMIN_NAME").unwrap_or_else(|_| "Admin User".to_string());
 
     if let Err(e) = seed_user(
         state,
@@ -231,9 +233,7 @@ async fn seed_bootstrap_users(state: &AppState) {
 
     if state.config.environment.is_prod() {
         if ceo_password.is_empty() {
-            tracing::error!(
-                "SENSEI_CEO_PASSWORD must be set in production (CEO seed account)"
-            );
+            tracing::error!("SENSEI_CEO_PASSWORD must be set in production (CEO seed account)");
             std::process::exit(1);
         }
         if ceo_password == "1234" {
@@ -296,9 +296,7 @@ async fn main() {
                 .with_target(true)
                 .boxed()
         } else {
-            tracing_subscriber::fmt::layer()
-                .with_target(true)
-                .boxed()
+            tracing_subscriber::fmt::layer().with_target(true).boxed()
         };
 
     let subscriber_base = tracing_subscriber::registry()
@@ -306,9 +304,7 @@ async fn main() {
         .with(env_filter);
 
     if otel_provider.is_some() {
-        subscriber_base
-            .with(tracing_opentelemetry::layer())
-            .init();
+        subscriber_base.with(tracing_opentelemetry::layer()).init();
     } else {
         subscriber_base.init();
     }
@@ -320,8 +316,9 @@ async fn main() {
     let users_service: Arc<dyn UsersService> =
         Arc::new(InMemoryUsersService::new()) as Arc<dyn UsersService>;
 
-    // Try NATS JetStream event bus if configured, fall back to in-memory
-    let event_bus = create_event_bus(&config.event_bus).await;
+    // NATS JetStream event bus (required in production; in-memory is an
+    // explicit development mode when NATS_URL is empty).
+    let event_bus = create_event_bus(&config.event_bus, &config.environment).await;
     let mut state = AppState::new(config.clone(), users_service).with_event_bus(event_bus);
 
     // ── Connect to PostgreSQL if DATABASE_URL is set ──────────────

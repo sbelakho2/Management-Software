@@ -96,11 +96,7 @@ impl ModelEvaluator {
         business_costs: Option<&HashMap<String, f64>>,
     ) -> EvaluationResults {
         let n = y_true.len();
-        assert_eq!(
-            y_pred.len(),
-            n,
-            "y_true and y_pred must have same length"
-        );
+        assert_eq!(y_pred.len(), n, "y_true and y_pred must have same length");
 
         // Confusion matrix
         let cm = compute_confusion_matrix(y_true, y_pred);
@@ -126,12 +122,9 @@ impl ModelEvaluator {
              macro avg    {:.3}      {:.3}     {:.3}     {:>6}\n\
              weighted avg {:.3}      {:.3}     {:.3}     {:>6}\n",
             precision_score(tn, fn_), // precision for class 0 = TN/(TN+FN)
-           recall_score(tn, fp),    // recall for class 0 = TN/(TN+FP)
-           f1_score(
-               precision_score(tn, fn_),
-               recall_score(tn, fp)
-           ),
-           tn + fn_,
+            recall_score(tn, fp),     // recall for class 0 = TN/(TN+FP)
+            f1_score(precision_score(tn, fn_), recall_score(tn, fp)),
+            tn + fn_,
             precision,
             recall,
             f1,
@@ -147,15 +140,13 @@ impl ModelEvaluator {
             recall * (tp + fn_) as f64 / n as f64
                 + recall_score(tn, fp) * (tn + fp) as f64 / n as f64,
             f1 * (tp + fp) as f64 / n as f64
-                + f1_score(precision_score(tn, fn_), recall_score(tn, fp))
-                    * (tn + fn_) as f64
+                + f1_score(precision_score(tn, fn_), recall_score(tn, fp)) * (tn + fn_) as f64
                     / n as f64,
             n,
         );
 
         // Calibration
-        let calibration_score =
-            y_pred_proba.map(|proba| evaluate_calibration(y_true, proba, 10));
+        let calibration_score = y_pred_proba.map(|proba| evaluate_calibration(y_true, proba, 10));
 
         // Fairness metrics
         let fairness_metrics = if let Some(attrs) = protected_attributes {
@@ -196,7 +187,10 @@ impl ModelEvaluator {
         metrics.insert("rmse".into(), mse_val.sqrt());
         metrics.insert("mae".into(), mean_absolute_error(y_true, y_pred));
         metrics.insert("r2".into(), r2_score(y_true, y_pred));
-        metrics.insert("mape".into(), mean_absolute_percentage_error(y_true, y_pred));
+        metrics.insert(
+            "mape".into(),
+            mean_absolute_percentage_error(y_true, y_pred),
+        );
         metrics
     }
 }
@@ -264,6 +258,14 @@ pub fn f1_score(precision: f64, recall: f64) -> f64 {
 
 /// Compute ROC AUC score using the trapezoidal rule.
 pub fn roc_auc_score(y_true: &[f64], y_score: &[f64]) -> f64 {
+    let n_pos = y_true.iter().filter(|&&v| v > 0.5).count();
+    let n_neg = y_true.len() - n_pos;
+    if n_pos == 0 || n_neg == 0 {
+        return 0.5;
+    }
+
+    // Wilcoxon–Mann–Whitney U statistic: rank scores ascending (ties share
+    // the average rank) and sum the ranks of the positive class.
     let mut pairs: Vec<(f64, f64)> = y_true
         .iter()
         .zip(y_score.iter())
@@ -271,45 +273,26 @@ pub fn roc_auc_score(y_true: &[f64], y_score: &[f64]) -> f64 {
         .collect();
     pairs.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
 
-    let n_pos = y_true.iter().filter(|&&v| v > 0.5).count();
-    let n_neg = y_true.len() - n_pos;
-    if n_pos == 0 || n_neg == 0 {
-        return 0.5;
+    let n = pairs.len();
+    let mut rank_sum_pos = 0.0f64;
+    let mut i = 0usize;
+    while i < n {
+        let mut j = i;
+        while j + 1 < n && (pairs[j + 1].0 - pairs[i].0).abs() <= f64::EPSILON {
+            j += 1;
+        }
+        let avg_rank = ((i + 1) + (j + 1)) as f64 / 2.0;
+        for (_, label) in &pairs[i..=j] {
+            if *label > 0.5 {
+                rank_sum_pos += avg_rank;
+            }
+        }
+        i = j + 1;
     }
 
-    let mut prev_score = pairs[0].0;
-    let mut tp = 0usize;
-    let mut fp = 0usize;
-    let mut prev_tp = 0usize;
-    let mut prev_fp = 0usize;
-    let mut auc = 0.0;
-
-    for &(score, label) in &pairs {
-        if (score - prev_score).abs() > f64::EPSILON {
-            // Add trapezoid area
-            let tpr = tp as f64 / n_pos as f64;
-            let fpr = fp as f64 / n_neg as f64;
-            let prev_tpr = prev_tp as f64 / n_pos as f64;
-            let prev_fpr = prev_fp as f64 / n_neg as f64;
-            auc += (fpr - prev_fpr) * (tpr + prev_tpr) / 2.0;
-            prev_tp = tp;
-            prev_fp = fp;
-            prev_score = score;
-        }
-        if label > 0.5 {
-            tp += 1;
-        } else {
-            fp += 1;
-        }
-    }
-    // Final trapezoid
-    let tpr = tp as f64 / n_pos as f64;
-    let fpr = fp as f64 / n_neg as f64;
-    let prev_tpr = prev_tp as f64 / n_pos as f64;
-    let prev_fpr = prev_fp as f64 / n_neg as f64;
-    auc += (fpr - prev_fpr) * (tpr + prev_tpr) / 2.0;
-
-    auc
+    let auc =
+        (rank_sum_pos - n_pos as f64 * (n_pos as f64 + 1.0) / 2.0) / (n_pos as f64 * n_neg as f64);
+    auc.clamp(0.0, 1.0)
 }
 
 /// Mean Squared Error.
@@ -353,7 +336,8 @@ pub fn r2_score(y_true: &[f64], y_pred: &[f64]) -> f64 {
 /// Mean Absolute Percentage Error.
 pub fn mean_absolute_percentage_error(y_true: &[f64], y_pred: &[f64]) -> f64 {
     let n = y_true.len() as f64;
-    y_true.iter()
+    y_true
+        .iter()
         .zip(y_pred.iter())
         .map(|(&t, &p)| {
             if t.abs() < f64::EPSILON {
@@ -384,7 +368,7 @@ pub fn evaluate_calibration(y_true: &[f64], y_pred_proba: &[f64], n_bins: usize)
     pairs.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
 
     let mut ece = 0.0;
-    let bin_size = (n + n_bins - 1) / n_bins;
+    let bin_size = n.div_ceil(n_bins);
 
     for bin in 0..n_bins {
         let start = bin * bin_size;
@@ -465,10 +449,7 @@ pub fn evaluate_fairness(
         } else {
             0.0
         };
-        metrics.insert(
-            format!("{}_fpr_difference", attr_name),
-            (fpr0 - fpr1).abs(),
-        );
+        metrics.insert(format!("{}_fpr_difference", attr_name), (fpr0 - fpr1).abs());
 
         let tpr0 = if cm0[1][0] + cm0[1][1] > 0 {
             cm0[1][1] as f64 / (cm0[1][0] + cm0[1][1]) as f64
@@ -480,10 +461,7 @@ pub fn evaluate_fairness(
         } else {
             0.0
         };
-        metrics.insert(
-            format!("{}_tpr_difference", attr_name),
-            (tpr0 - tpr1).abs(),
-        );
+        metrics.insert(format!("{}_tpr_difference", attr_name), (tpr0 - tpr1).abs());
     }
 
     metrics
@@ -542,7 +520,12 @@ pub fn train_test_split(
     y: &ndarray::Array1<f64>,
     test_size: f64,
     seed: u64,
-) -> (ndarray::Array2<f64>, ndarray::Array2<f64>, ndarray::Array1<f64>, ndarray::Array1<f64>) {
+) -> (
+    ndarray::Array2<f64>,
+    ndarray::Array2<f64>,
+    ndarray::Array1<f64>,
+    ndarray::Array1<f64>,
+) {
     use rand::seq::SliceRandom;
     use rand::SeedableRng;
 
@@ -626,7 +609,7 @@ pub fn cross_val_score_classification(
     let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
     indices.shuffle(&mut rng);
 
-    let fold_size = (n + n_folds - 1) / n_folds;
+    let fold_size = n.div_ceil(n_folds);
     let mut scores = Vec::with_capacity(n_folds);
 
     for fold in 0..n_folds {
@@ -754,7 +737,7 @@ mod tests {
             [6.0, 7.0],
         ];
         let y = vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0];
-        let scores = cross_val_score_classification(&x, &y, 3, 42, |x_tr, y_tr, x_te| {
+        let scores = cross_val_score_classification(&x, &y, 3, 42, |_x_tr, y_tr, x_te| {
             // Simple baseline: predict majority class
             let majority = if y_tr.iter().filter(|&&v| v > 0.5).count() > y_tr.len() / 2 {
                 1.0

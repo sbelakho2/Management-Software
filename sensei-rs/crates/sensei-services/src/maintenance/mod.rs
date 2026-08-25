@@ -17,12 +17,12 @@ pub use database::DatabaseMaintenanceService;
 
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
 use sensei_core::domain::events::{DomainEvent, PMScheduleTriggeredEvent};
 use sensei_core::error::{Result, SenseiError};
 use sensei_core::pagination::PaginatedResponse;
-use sensei_core::types::{TenantId, new_id, now};
+use sensei_core::types::{new_id, now, TenantId};
 use sensei_event_bus::bus::EventBus;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -171,11 +171,7 @@ pub trait MaintenanceService: Send + Sync {
     ) -> Result<PMSchedule>;
 
     /// Get a PM schedule by ID.
-    async fn get_pm_schedule(
-        &self,
-        tenant_id: TenantId,
-        id: Uuid,
-    ) -> Result<PMSchedule>;
+    async fn get_pm_schedule(&self, tenant_id: TenantId, id: Uuid) -> Result<PMSchedule>;
 
     /// List PM schedules, optionally filtered by equipment, with pagination.
     async fn list_pm_schedules(
@@ -187,17 +183,10 @@ pub trait MaintenanceService: Send + Sync {
     ) -> Result<PaginatedResponse<PMSchedule>>;
 
     /// Mark a PM task as completed, updating its next_due date.
-    async fn complete_pm_task(
-        &self,
-        tenant_id: TenantId,
-        schedule_id: Uuid,
-    ) -> Result<PMSchedule>;
+    async fn complete_pm_task(&self, tenant_id: TenantId, schedule_id: Uuid) -> Result<PMSchedule>;
 
     /// Get all PM schedules that are past their next_due date.
-    async fn get_overdue_pm_tasks(
-        &self,
-        tenant_id: TenantId,
-    ) -> Result<Vec<PMSchedule>>;
+    async fn get_overdue_pm_tasks(&self, tenant_id: TenantId) -> Result<Vec<PMSchedule>>;
 
     // ── Equipment ──────────────────────────────────────────────────────
 
@@ -209,11 +198,7 @@ pub trait MaintenanceService: Send + Sync {
     ) -> Result<EquipmentRecord>;
 
     /// Get an equipment record by ID.
-    async fn get_equipment(
-        &self,
-        tenant_id: TenantId,
-        id: Uuid,
-    ) -> Result<EquipmentRecord>;
+    async fn get_equipment(&self, tenant_id: TenantId, id: Uuid) -> Result<EquipmentRecord>;
 
     /// List equipment, optionally filtered by type and/or status, with pagination.
     async fn list_equipment(
@@ -304,7 +289,10 @@ impl InMemoryMaintenanceService {
         format!("EQ-{}-{:04}", Utc::now().format("%Y%m%d"), counter)
     }
 
-    fn compute_next_due(last_performed: Option<DateTime<Utc>>, frequency_days: i32) -> DateTime<Utc> {
+    fn compute_next_due(
+        last_performed: Option<DateTime<Utc>>,
+        frequency_days: i32,
+    ) -> DateTime<Utc> {
         let base = last_performed.unwrap_or_else(Utc::now);
         base + chrono::Duration::days(frequency_days as i64)
     }
@@ -437,11 +425,7 @@ impl MaintenanceService for InMemoryMaintenanceService {
         Ok(schedule)
     }
 
-    async fn get_pm_schedule(
-        &self,
-        _tenant_id: TenantId,
-        id: Uuid,
-    ) -> Result<PMSchedule> {
+    async fn get_pm_schedule(&self, _tenant_id: TenantId, id: Uuid) -> Result<PMSchedule> {
         self.pm_schedules
             .read()
             .await
@@ -466,11 +450,7 @@ impl MaintenanceService for InMemoryMaintenanceService {
         Ok(PaginatedResponse::new(items, page, per_page))
     }
 
-    async fn complete_pm_task(
-        &self,
-        tenant_id: TenantId,
-        schedule_id: Uuid,
-    ) -> Result<PMSchedule> {
+    async fn complete_pm_task(&self, tenant_id: TenantId, schedule_id: Uuid) -> Result<PMSchedule> {
         let mut schedules = self.pm_schedules.write().await;
         let schedule = schedules
             .get_mut(&schedule_id)
@@ -492,10 +472,7 @@ impl MaintenanceService for InMemoryMaintenanceService {
         Ok(result)
     }
 
-    async fn get_overdue_pm_tasks(
-        &self,
-        _tenant_id: TenantId,
-    ) -> Result<Vec<PMSchedule>> {
+    async fn get_overdue_pm_tasks(&self, _tenant_id: TenantId) -> Result<Vec<PMSchedule>> {
         let schedules = self.pm_schedules.read().await;
         let now_ts = now();
         Ok(schedules
@@ -529,11 +506,7 @@ impl MaintenanceService for InMemoryMaintenanceService {
         Ok(equipment)
     }
 
-    async fn get_equipment(
-        &self,
-        _tenant_id: TenantId,
-        id: Uuid,
-    ) -> Result<EquipmentRecord> {
+    async fn get_equipment(&self, _tenant_id: TenantId, id: Uuid) -> Result<EquipmentRecord> {
         self.equipment
             .read()
             .await
@@ -689,7 +662,10 @@ mod tests {
         let created = service.create_work_request(tenant_id, req).await.unwrap();
         assert_ne!(created.id, Uuid::nil(), "should assign a real UUID");
 
-        let fetched = service.get_work_request(tenant_id, created.id).await.unwrap();
+        let fetched = service
+            .get_work_request(tenant_id, created.id)
+            .await
+            .unwrap();
         assert_eq!(fetched.title, "Replace hydraulic hose");
     }
 
@@ -705,7 +681,11 @@ mod tests {
                 equipment_id: Uuid::new_v4(),
                 title: format!("Request {}", i),
                 description: "Test".to_string(),
-                priority: if i == 0 { "critical".to_string() } else { "low".to_string() },
+                priority: if i == 0 {
+                    "critical".to_string()
+                } else {
+                    "low".to_string()
+                },
                 status: "submitted".to_string(),
                 requested_by: Uuid::new_v4(),
                 assigned_to: None,
@@ -803,7 +783,10 @@ mod tests {
             is_active: true,
         };
 
-        let created = service.create_pm_schedule(tenant_id, schedule).await.unwrap();
+        let created = service
+            .create_pm_schedule(tenant_id, schedule)
+            .await
+            .unwrap();
         assert!(
             created.next_due > Utc::now() - chrono::Duration::hours(1),
             "next_due should be computed"
@@ -840,11 +823,11 @@ mod tests {
             is_active: true,
         };
 
-        let created = service.create_pm_schedule(tenant_id, schedule).await.unwrap();
-        assert!(
-            created.next_due < Utc::now(),
-            "should be overdue"
-        );
+        let created = service
+            .create_pm_schedule(tenant_id, schedule)
+            .await
+            .unwrap();
+        assert!(created.next_due < Utc::now(), "should be overdue");
 
         let overdue = service.get_overdue_pm_tasks(tenant_id).await.unwrap();
         assert!(!overdue.is_empty(), "should find overdue tasks");
@@ -884,6 +867,13 @@ mod tests {
         assert_eq!(updated.status, "under_maintenance");
         assert!(updated.last_maintenance.is_some());
 
+        // While under maintenance, the status filter matches it.
+        let under_maint = service
+            .list_equipment(tenant_id, None, Some("under_maintenance"), None, None)
+            .await
+            .unwrap();
+        assert_eq!(under_maint.data.len(), 1);
+
         // Returning to operational records when maintenance completed.
         let operational = service
             .update_equipment_status(tenant_id, registered.id, "operational")
@@ -898,11 +888,12 @@ mod tests {
             .unwrap();
         assert_eq!(machines.data.len(), 1);
 
+        // No equipment is under maintenance anymore.
         let under_maint = service
             .list_equipment(tenant_id, None, Some("under_maintenance"), None, None)
             .await
             .unwrap();
-        assert_eq!(under_maint.data.len(), 1);
+        assert_eq!(under_maint.data.len(), 0);
     }
 
     #[tokio::test]
@@ -911,6 +902,9 @@ mod tests {
         let tenant_id = Uuid::new_v4();
 
         let result = service.get_equipment(tenant_id, Uuid::new_v4()).await;
-        assert!(result.is_err(), "should return error for non-existent equipment");
+        assert!(
+            result.is_err(),
+            "should return error for non-existent equipment"
+        );
     }
 }

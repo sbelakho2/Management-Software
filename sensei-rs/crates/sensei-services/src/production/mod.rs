@@ -15,7 +15,6 @@ pub use database::DatabaseProductionService;
 
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
 use sensei_core::domain::events::{
     DomainEvent, DowntimeRecordedEvent, MRPRunCompleted, ProductionOrderCompletedEvent,
     ProductionOrderStartedEvent, WorkOrderCreatedEvent, WorkOrderStatusChangedEvent,
@@ -23,6 +22,7 @@ use sensei_core::domain::events::{
 use sensei_core::error::{Result, SenseiError};
 use sensei_core::pagination::PaginatedResponse;
 use sensei_event_bus::bus::EventBus;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -179,7 +179,12 @@ pub trait ProductionService: Send + Sync {
     /// Identity fields (`id`, `tenant_id`, `wo_number`, `created_at`) are
     /// preserved from the stored record; all other fields are taken from the
     /// supplied value.
-    async fn update_work_order(&self, tenant_id: Uuid, id: Uuid, wo: WorkOrder) -> Result<WorkOrder>;
+    async fn update_work_order(
+        &self,
+        tenant_id: Uuid,
+        id: Uuid,
+        wo: WorkOrder,
+    ) -> Result<WorkOrder>;
     /// Report production completion for a work order.
     async fn report_production(
         &self,
@@ -213,11 +218,8 @@ pub trait ProductionService: Send + Sync {
         per_page: Option<usize>,
     ) -> Result<PaginatedResponse<ProductionOrder>>;
     /// Complete a production order.
-    async fn complete_production_order(
-        &self,
-        tenant_id: Uuid,
-        id: Uuid,
-    ) -> Result<ProductionOrder>;
+    async fn complete_production_order(&self, tenant_id: Uuid, id: Uuid)
+        -> Result<ProductionOrder>;
 
     // ── BOM ─────────────────────────────────────────────────────────────
     /// Add a BOM item.
@@ -279,7 +281,10 @@ impl InMemoryProductionService {
 
     /// Seed the current on-hand inventory quantity for a product (MRP input).
     pub async fn seed_inventory_on_hand(&self, product_id: Uuid, quantity: i64) {
-        self.inventory_on_hand.write().await.insert(product_id, quantity);
+        self.inventory_on_hand
+            .write()
+            .await
+            .insert(product_id, quantity);
     }
 
     /// Publish a domain event via the optional event bus.
@@ -345,11 +350,7 @@ impl Default for InMemoryProductionService {
 impl ProductionService for InMemoryProductionService {
     // ── Work Orders ─────────────────────────────────────────────────────
 
-    async fn create_work_order(
-        &self,
-        tenant_id: Uuid,
-        mut wo: WorkOrder,
-    ) -> Result<WorkOrder> {
+    async fn create_work_order(&self, tenant_id: Uuid, mut wo: WorkOrder) -> Result<WorkOrder> {
         let mut counter = self.wo_counter.write().await;
         *counter += 1;
         let wo_number = Self::generate_wo_number(*counter);
@@ -374,7 +375,9 @@ impl ProductionService for InMemoryProductionService {
             id,
             wo.product_id,
             wo.priority.clone(),
-            wo.work_center_id.map(|id| id.to_string()).unwrap_or_default(),
+            wo.work_center_id
+                .map(|id| id.to_string())
+                .unwrap_or_default(),
         ))
         .await;
 
@@ -452,7 +455,12 @@ impl ProductionService for InMemoryProductionService {
         Ok(wo_cloned)
     }
 
-    async fn update_work_order(&self, tenant_id: Uuid, id: Uuid, mut wo: WorkOrder) -> Result<WorkOrder> {
+    async fn update_work_order(
+        &self,
+        tenant_id: Uuid,
+        id: Uuid,
+        mut wo: WorkOrder,
+    ) -> Result<WorkOrder> {
         let mut store = self.work_orders.write().await;
         let existing = store
             .get(&id)
@@ -493,10 +501,11 @@ impl ProductionService for InMemoryProductionService {
         work_order_id: Uuid,
         quantity_completed: i64,
         quantity_scrapped: i64,
-    ) -> Result<WorkOrder> {        let mut store = self.work_orders.write().await;
-        let wo = store
-            .get_mut(&work_order_id)
-            .ok_or_else(|| SenseiError::NotFound(format!("Work order {work_order_id} not found")))?;
+    ) -> Result<WorkOrder> {
+        let mut store = self.work_orders.write().await;
+        let wo = store.get_mut(&work_order_id).ok_or_else(|| {
+            SenseiError::NotFound(format!("Work order {work_order_id} not found"))
+        })?;
 
         wo.quantity_completed += quantity_completed;
         wo.updated_at = Utc::now();
@@ -516,7 +525,10 @@ impl ProductionService for InMemoryProductionService {
                 wo_cloned.work_center_id.unwrap_or(Uuid::default()),
                 quantity_scrapped as f64,
                 "production_scrap".to_string(),
-                format!("{} completed, {} scrapped", quantity_completed, quantity_scrapped),
+                format!(
+                    "{} completed, {} scrapped",
+                    quantity_completed, quantity_scrapped
+                ),
             ))
             .await;
         }
@@ -532,17 +544,19 @@ impl ProductionService for InMemoryProductionService {
         // First verify the work order exists
         {
             let wo_store = self.work_orders.read().await;
-            wo_store
-                .get(&work_order_id)
-                .ok_or_else(|| SenseiError::NotFound(format!("Work order {work_order_id} not found")))?;
+            wo_store.get(&work_order_id).ok_or_else(|| {
+                SenseiError::NotFound(format!("Work order {work_order_id} not found"))
+            })?;
         }
 
         let ops_store = self.wo_operations.read().await;
-        let ops: Vec<WorkOrderOperation> = ops_store
+        let mut ops: Vec<WorkOrderOperation> = ops_store
             .values()
             .filter(|op| op.work_order_id == work_order_id)
             .cloned()
             .collect();
+        // Deterministic ordering: operations are returned in sequence order.
+        ops.sort_by_key(|op| op.operation_number);
         Ok(ops)
     }
 
@@ -567,14 +581,20 @@ impl ProductionService for InMemoryProductionService {
         order.created_at = Utc::now();
 
         let id = order.id;
-        self.production_orders.write().await.insert(id, order.clone());
+        self.production_orders
+            .write()
+            .await
+            .insert(id, order.clone());
 
         self.publish_event(ProductionOrderStartedEvent::new(
             tenant_id,
             id,
             order.product_id,
             order.quantity_planned,
-            order.work_center_id.map(|id| id.to_string()).unwrap_or_default(),
+            order
+                .work_center_id
+                .map(|id| id.to_string())
+                .unwrap_or_default(),
         ))
         .await;
 
@@ -599,10 +619,7 @@ impl ProductionService for InMemoryProductionService {
         let store = self.production_orders.read().await;
         let items: Vec<_> = store
             .values()
-            .filter(|po| {
-                po.tenant_id == tenant_id
-                    && status.is_none_or(|s| po.status == s)
-            })
+            .filter(|po| po.tenant_id == tenant_id && status.is_none_or(|s| po.status == s))
             .cloned()
             .collect();
         Ok(PaginatedResponse::new(items, page, per_page))

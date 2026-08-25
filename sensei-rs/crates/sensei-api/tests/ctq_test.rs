@@ -19,7 +19,7 @@ async fn test_create_characteristic() {
     let mut resp = app.send_request(req).await;
     assert_eq!(resp.status(), StatusCode::OK);
     let json: Value = app.json_body(&mut resp).await;
-    assert!(json["id"].as_str().unwrap_or("").len() > 0);
+    assert!(!json["id"].as_str().unwrap_or("").is_empty());
     assert_eq!(json["name"], "Diameter");
 }
 
@@ -35,7 +35,7 @@ async fn test_list_characteristics() {
     let mut resp = app.send_request(req).await;
     assert_eq!(resp.status(), StatusCode::OK);
     let json: Value = app.json_body(&mut resp).await;
-    assert!(json["data"].as_array().map_or(false, |a| a.len() >= 1));
+    assert!(json["data"].as_array().is_some_and(|a| !a.is_empty()));
 }
 
 #[tokio::test]
@@ -48,10 +48,7 @@ async fn test_get_characteristic() {
     let created: Value = app.json_body(&mut resp).await;
     let char_id = created["id"].as_str().unwrap();
 
-    let req = app.get_authenticated(
-        &format!("/api/v1/ctq/characteristics/{}", char_id),
-        &token,
-    );
+    let req = app.get_authenticated(&format!("/api/v1/ctq/characteristics/{}", char_id), &token);
     let mut resp = app.send_request(req).await;
     assert_eq!(resp.status(), StatusCode::OK);
     let json: Value = app.json_body(&mut resp).await;
@@ -141,7 +138,7 @@ async fn test_list_records() {
     let mut resp = app.send_request(req).await;
     assert_eq!(resp.status(), StatusCode::OK);
     let json: Value = app.json_body(&mut resp).await;
-    assert!(json["data"].as_array().map_or(false, |a| a.len() >= 1));
+    assert!(json["data"].as_array().is_some_and(|a| !a.is_empty()));
 }
 
 #[tokio::test]
@@ -222,7 +219,10 @@ async fn test_list_records_invalid_date_filter_rejected() {
     // Invalid date parameters are a client error (400), not a silent
     // no-filter.
     let req = app.get_authenticated(
-        &format!("/api/v1/ctq/characteristics/{}/records?date_from=not-a-date", char_id),
+        &format!(
+            "/api/v1/ctq/characteristics/{}/records?date_from=not-a-date",
+            char_id
+        ),
         &token,
     );
     let resp = app.send_request(req).await;

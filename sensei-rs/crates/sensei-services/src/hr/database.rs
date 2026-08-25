@@ -110,54 +110,92 @@ struct TimecardRow {
 
 fn emp_row_to_domain(r: EmployeeRow) -> Employee {
     Employee {
-        id: r.id, tenant_id: r.tenant_id, employee_code: r.employee_code,
-        user_id: r.user_id, full_name: r.full_name, email: r.email,
-        department: r.department, job_title: r.job_title, employment_type: r.employment_type,
-        status: r.status, hire_date: r.hire_date, termination_date: r.termination_date,
-        supervisor_id: r.supervisor_id, created_at: r.created_at,
+        id: r.id,
+        tenant_id: r.tenant_id,
+        employee_code: r.employee_code,
+        user_id: r.user_id,
+        full_name: r.full_name,
+        email: r.email,
+        department: r.department,
+        job_title: r.job_title,
+        employment_type: r.employment_type,
+        status: r.status,
+        hire_date: r.hire_date,
+        termination_date: r.termination_date,
+        supervisor_id: r.supervisor_id,
+        created_at: r.created_at,
     }
 }
 
 fn tr_row_to_domain(r: TrainingRecordRow) -> TrainingRecord {
     TrainingRecord {
-        id: r.id, tenant_id: r.tenant_id, employee_id: r.employee_id,
-        course_name: r.course_name, provider: r.provider, credits: r.credits,
-        completed_at: r.completed_at, expires_at: r.expires_at, certificate_url: r.certificate_url,
+        id: r.id,
+        tenant_id: r.tenant_id,
+        employee_id: r.employee_id,
+        course_name: r.course_name,
+        provider: r.provider,
+        credits: r.credits,
+        completed_at: r.completed_at,
+        expires_at: r.expires_at,
+        certificate_url: r.certificate_url,
     }
 }
 
 fn lr_row_to_domain(r: LeaveRequestRow) -> LeaveRequest {
     LeaveRequest {
-        id: r.id, tenant_id: r.tenant_id, employee_id: r.employee_id,
-        leave_type: r.leave_type, start_date: r.start_date, end_date: r.end_date,
-        total_days: r.total_days, status: r.status, reason: r.reason,
-        approved_by: r.approved_by, created_at: r.created_at,
+        id: r.id,
+        tenant_id: r.tenant_id,
+        employee_id: r.employee_id,
+        leave_type: r.leave_type,
+        start_date: r.start_date,
+        end_date: r.end_date,
+        total_days: r.total_days,
+        status: r.status,
+        reason: r.reason,
+        approved_by: r.approved_by,
+        created_at: r.created_at,
     }
 }
 
 fn pr_row_to_domain(r: PerformanceReviewRow) -> PerformanceReview {
     PerformanceReview {
-        id: r.id, tenant_id: r.tenant_id, employee_id: r.employee_id,
-        reviewer_id: r.reviewer_id, review_period: r.review_period,
-        overall_rating: r.overall_rating, strengths: r.strengths,
-        areas_for_improvement: r.areas_for_improvement, goals: r.goals,
-        status: r.status, created_at: r.created_at, completed_at: r.completed_at,
+        id: r.id,
+        tenant_id: r.tenant_id,
+        employee_id: r.employee_id,
+        reviewer_id: r.reviewer_id,
+        review_period: r.review_period,
+        overall_rating: r.overall_rating,
+        strengths: r.strengths,
+        areas_for_improvement: r.areas_for_improvement,
+        goals: r.goals,
+        status: r.status,
+        created_at: r.created_at,
+        completed_at: r.completed_at,
     }
 }
 
 fn tc_row_to_domain(r: TimecardRow) -> Timecard {
     Timecard {
-        id: r.id, tenant_id: r.tenant_id, employee_id: r.employee_id,
-        date: r.date, clock_in: r.clock_in, clock_out: r.clock_out,
-        total_hours: r.total_hours, overtime_hours: r.overtime_hours,
-        status: r.status, approved_by: r.approved_by,
+        id: r.id,
+        tenant_id: r.tenant_id,
+        employee_id: r.employee_id,
+        date: r.date,
+        clock_in: r.clock_in,
+        clock_out: r.clock_out,
+        total_hours: r.total_hours,
+        overtime_hours: r.overtime_hours,
+        status: r.status,
+        approved_by: r.approved_by,
     }
 }
 
 fn paginate<T>(items: Vec<T>, count: i64, page: usize, per_page: usize) -> PaginatedResponse<T> {
     PaginatedResponse {
-        data: items, total: count as usize, page, per_page,
-        total_pages: ((count as usize).max(1) + per_page - 1) / per_page,
+        data: items,
+        total: count as usize,
+        page,
+        per_page,
+        total_pages: (count as usize).max(1).div_ceil(per_page),
     }
 }
 
@@ -168,7 +206,11 @@ impl HrService for DatabaseHrService {
     async fn create_employee(&self, tenant_id: Uuid, employee: Employee) -> Result<Employee> {
         let now = Utc::now();
         let id = Uuid::new_v4();
-        let employee_code = format!("EMP-{}-{}", now.format("%Y%m%d"), id.as_simple().encode_lower(&mut Uuid::encode_buffer())[..8].to_string());
+        let employee_code = format!(
+            "EMP-{}-{}",
+            now.format("%Y%m%d"),
+            &id.as_simple().encode_lower(&mut Uuid::encode_buffer())[..8]
+        );
 
         let row = sqlx::query_as::<_, EmployeeRow>(
             r#"
@@ -201,7 +243,14 @@ impl HrService for DatabaseHrService {
         Ok(emp_row_to_domain(row))
     }
 
-    async fn list_employees(&self, tenant_id: Uuid, department: Option<&str>, status: Option<&str>, page: Option<usize>, per_page: Option<usize>) -> Result<PaginatedResponse<Employee>> {
+    async fn list_employees(
+        &self,
+        tenant_id: Uuid,
+        department: Option<&str>,
+        status: Option<&str>,
+        page: Option<usize>,
+        per_page: Option<usize>,
+    ) -> Result<PaginatedResponse<Employee>> {
         let page = page.unwrap_or(1).max(1);
         let per_page = per_page.unwrap_or(20).clamp(1, 100);
         let offset = (page - 1) * per_page;
@@ -223,10 +272,20 @@ impl HrService for DatabaseHrService {
         .fetch_one(&self.pool).await
         .map_err(|e| SenseiError::Database(format!("Failed to count employees: {e}")))?;
 
-        Ok(paginate(items.into_iter().map(emp_row_to_domain).collect(), count, page, per_page))
+        Ok(paginate(
+            items.into_iter().map(emp_row_to_domain).collect(),
+            count,
+            page,
+            per_page,
+        ))
     }
 
-    async fn update_employee_status(&self, tenant_id: Uuid, id: Uuid, status: &str) -> Result<Employee> {
+    async fn update_employee_status(
+        &self,
+        tenant_id: Uuid,
+        id: Uuid,
+        status: &str,
+    ) -> Result<Employee> {
         let now = Utc::now();
         let row = sqlx::query_as::<_, EmployeeRow>(
             r#"UPDATE employees SET status = $1, termination_date = CASE WHEN $1 = 'terminated' THEN $3 ELSE termination_date END
@@ -242,7 +301,12 @@ impl HrService for DatabaseHrService {
         Ok(emp_row_to_domain(row))
     }
 
-    async fn update_employee(&self, tenant_id: Uuid, id: Uuid, employee: Employee) -> Result<Employee> {
+    async fn update_employee(
+        &self,
+        tenant_id: Uuid,
+        id: Uuid,
+        employee: Employee,
+    ) -> Result<Employee> {
         let row = sqlx::query_as::<_, EmployeeRow>(
             r#"UPDATE employees SET full_name=$1, email=$2, department=$3, job_title=$4, employment_type=$5, supervisor_id=$6
                WHERE id=$7 AND tenant_id=$8
@@ -261,15 +325,24 @@ impl HrService for DatabaseHrService {
 
     async fn delete_employee(&self, tenant_id: Uuid, id: Uuid) -> Result<()> {
         let result = sqlx::query("DELETE FROM employees WHERE id = $1 AND tenant_id = $2")
-            .bind(id).bind(tenant_id).execute(&self.pool)
-            .await.map_err(|e| SenseiError::Database(format!("Failed to delete employee: {e}")))?;
-        if result.rows_affected() == 0 { return Err(SenseiError::NotFound(format!("Employee {id} not found"))); }
+            .bind(id)
+            .bind(tenant_id)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to delete employee: {e}")))?;
+        if result.rows_affected() == 0 {
+            return Err(SenseiError::NotFound(format!("Employee {id} not found")));
+        }
         Ok(())
     }
 
     // ── Training ────────────────────────────────────────────────────────
 
-    async fn record_training(&self, tenant_id: Uuid, record: TrainingRecord) -> Result<TrainingRecord> {
+    async fn record_training(
+        &self,
+        tenant_id: Uuid,
+        record: TrainingRecord,
+    ) -> Result<TrainingRecord> {
         let id = Uuid::new_v4();
         let row = sqlx::query_as::<_, TrainingRecordRow>(
             r#"INSERT INTO training_records (id, tenant_id, employee_id, course_name, provider, credits, completed_at, expires_at, certificate_url)
@@ -285,7 +358,13 @@ impl HrService for DatabaseHrService {
         Ok(tr_row_to_domain(row))
     }
 
-    async fn list_training_records(&self, tenant_id: Uuid, employee_id: Uuid, page: Option<usize>, per_page: Option<usize>) -> Result<PaginatedResponse<TrainingRecord>> {
+    async fn list_training_records(
+        &self,
+        tenant_id: Uuid,
+        employee_id: Uuid,
+        page: Option<usize>,
+        per_page: Option<usize>,
+    ) -> Result<PaginatedResponse<TrainingRecord>> {
         let page = page.unwrap_or(1).max(1);
         let per_page = per_page.unwrap_or(20).clamp(1, 100);
         let offset = (page - 1) * per_page;
@@ -298,11 +377,21 @@ impl HrService for DatabaseHrService {
         .fetch_all(&self.pool)
         .await.map_err(|e| SenseiError::Database(format!("Failed to list training records: {e}")))?;
 
-        let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM training_records WHERE employee_id = $1 AND tenant_id = $2")
-            .bind(employee_id).bind(tenant_id).fetch_one(&self.pool).await
-            .map_err(|e| SenseiError::Database(format!("Failed to count training records: {e}")))?;
+        let count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM training_records WHERE employee_id = $1 AND tenant_id = $2",
+        )
+        .bind(employee_id)
+        .bind(tenant_id)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|e| SenseiError::Database(format!("Failed to count training records: {e}")))?;
 
-        Ok(paginate(items.into_iter().map(tr_row_to_domain).collect(), count, page, per_page))
+        Ok(paginate(
+            items.into_iter().map(tr_row_to_domain).collect(),
+            count,
+            page,
+            per_page,
+        ))
     }
 
     async fn get_expired_certifications(&self, tenant_id: Uuid) -> Result<Vec<TrainingRecord>> {
@@ -316,7 +405,12 @@ impl HrService for DatabaseHrService {
         Ok(rows.into_iter().map(tr_row_to_domain).collect())
     }
 
-    async fn update_training(&self, tenant_id: Uuid, id: Uuid, record: TrainingRecord) -> Result<TrainingRecord> {
+    async fn update_training(
+        &self,
+        tenant_id: Uuid,
+        id: Uuid,
+        record: TrainingRecord,
+    ) -> Result<TrainingRecord> {
         let row = sqlx::query_as::<_, TrainingRecordRow>(
             r#"UPDATE training_records SET course_name=$1, provider=$2, credits=$3, expires_at=$4, certificate_url=$5
                WHERE id=$6 AND tenant_id=$7
@@ -333,15 +427,26 @@ impl HrService for DatabaseHrService {
 
     async fn delete_training(&self, tenant_id: Uuid, id: Uuid) -> Result<()> {
         let result = sqlx::query("DELETE FROM training_records WHERE id = $1 AND tenant_id = $2")
-            .bind(id).bind(tenant_id).execute(&self.pool)
-            .await.map_err(|e| SenseiError::Database(format!("Failed to delete training: {e}")))?;
-        if result.rows_affected() == 0 { return Err(SenseiError::NotFound(format!("Training record {id} not found"))); }
+            .bind(id)
+            .bind(tenant_id)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to delete training: {e}")))?;
+        if result.rows_affected() == 0 {
+            return Err(SenseiError::NotFound(format!(
+                "Training record {id} not found"
+            )));
+        }
         Ok(())
     }
 
     // ── Leave ───────────────────────────────────────────────────────────
 
-    async fn submit_leave_request(&self, tenant_id: Uuid, leave: LeaveRequest) -> Result<LeaveRequest> {
+    async fn submit_leave_request(
+        &self,
+        tenant_id: Uuid,
+        leave: LeaveRequest,
+    ) -> Result<LeaveRequest> {
         let now = Utc::now();
         let id = Uuid::new_v4();
         let duration = leave.end_date.signed_duration_since(leave.start_date);
@@ -360,16 +465,25 @@ impl HrService for DatabaseHrService {
         Ok(lr_row_to_domain(row))
     }
 
-    async fn approve_leave(&self, tenant_id: Uuid, id: Uuid, approved_by: Uuid) -> Result<LeaveRequest> {
+    async fn approve_leave(
+        &self,
+        tenant_id: Uuid,
+        id: Uuid,
+        approved_by: Uuid,
+    ) -> Result<LeaveRequest> {
         // NotFound when the request is missing; Validation when it is not pending.
         let exists: bool = sqlx::query_scalar(
             "SELECT EXISTS(SELECT 1 FROM leave_requests WHERE id = $1 AND tenant_id = $2)",
         )
-        .bind(id).bind(tenant_id)
-        .fetch_one(&self.pool).await
+        .bind(id)
+        .bind(tenant_id)
+        .fetch_one(&self.pool)
+        .await
         .map_err(|e| SenseiError::Database(format!("Failed to check leave request: {e}")))?;
         if !exists {
-            return Err(SenseiError::NotFound(format!("Leave request {id} not found")));
+            return Err(SenseiError::NotFound(format!(
+                "Leave request {id} not found"
+            )));
         }
 
         let row = sqlx::query_as::<_, LeaveRequestRow>(
@@ -379,9 +493,9 @@ impl HrService for DatabaseHrService {
         .bind(approved_by).bind(id).bind(tenant_id)
         .fetch_optional(&self.pool)
         .await.map_err(|e| SenseiError::Database(format!("Failed to approve leave: {e}")))?
-        .ok_or_else(|| SenseiError::Validation(format!(
-            "Cannot approve a leave request that is not pending"
-        )))?;
+        .ok_or_else(|| {
+            SenseiError::Validation("Cannot approve a leave request that is not pending".to_string())
+        })?;
 
         Ok(lr_row_to_domain(row))
     }
@@ -391,11 +505,15 @@ impl HrService for DatabaseHrService {
         let exists: bool = sqlx::query_scalar(
             "SELECT EXISTS(SELECT 1 FROM leave_requests WHERE id = $1 AND tenant_id = $2)",
         )
-        .bind(id).bind(tenant_id)
-        .fetch_one(&self.pool).await
+        .bind(id)
+        .bind(tenant_id)
+        .fetch_one(&self.pool)
+        .await
         .map_err(|e| SenseiError::Database(format!("Failed to check leave request: {e}")))?;
         if !exists {
-            return Err(SenseiError::NotFound(format!("Leave request {id} not found")));
+            return Err(SenseiError::NotFound(format!(
+                "Leave request {id} not found"
+            )));
         }
 
         let row = sqlx::query_as::<_, LeaveRequestRow>(
@@ -405,14 +523,21 @@ impl HrService for DatabaseHrService {
         .bind(id).bind(tenant_id)
         .fetch_optional(&self.pool)
         .await.map_err(|e| SenseiError::Database(format!("Failed to reject leave: {e}")))?
-        .ok_or_else(|| SenseiError::Validation(format!(
-            "Cannot reject a leave request that is not pending"
-        )))?;
+        .ok_or_else(|| {
+            SenseiError::Validation("Cannot reject a leave request that is not pending".to_string())
+        })?;
 
         Ok(lr_row_to_domain(row))
     }
 
-    async fn list_leave_requests(&self, tenant_id: Uuid, employee_id: Option<Uuid>, status: Option<&str>, page: Option<usize>, per_page: Option<usize>) -> Result<PaginatedResponse<LeaveRequest>> {
+    async fn list_leave_requests(
+        &self,
+        tenant_id: Uuid,
+        employee_id: Option<Uuid>,
+        status: Option<&str>,
+        page: Option<usize>,
+        per_page: Option<usize>,
+    ) -> Result<PaginatedResponse<LeaveRequest>> {
         let page = page.unwrap_or(1).max(1);
         let per_page = per_page.unwrap_or(20).clamp(1, 100);
         let offset = (page - 1) * per_page;
@@ -432,10 +557,20 @@ impl HrService for DatabaseHrService {
         .bind(tenant_id).bind(employee_id).bind(status).fetch_one(&self.pool).await
         .map_err(|e| SenseiError::Database(format!("Failed to count leave requests: {e}")))?;
 
-        Ok(paginate(items.into_iter().map(lr_row_to_domain).collect(), count, page, per_page))
+        Ok(paginate(
+            items.into_iter().map(lr_row_to_domain).collect(),
+            count,
+            page,
+            per_page,
+        ))
     }
 
-    async fn update_leave(&self, tenant_id: Uuid, id: Uuid, leave: LeaveRequest) -> Result<LeaveRequest> {
+    async fn update_leave(
+        &self,
+        tenant_id: Uuid,
+        id: Uuid,
+        leave: LeaveRequest,
+    ) -> Result<LeaveRequest> {
         let row = sqlx::query_as::<_, LeaveRequestRow>(
             r#"UPDATE leave_requests SET leave_type=$1, start_date=$2, end_date=$3, reason=$4
                WHERE id=$5 AND tenant_id=$6
@@ -452,15 +587,26 @@ impl HrService for DatabaseHrService {
 
     async fn delete_leave(&self, tenant_id: Uuid, id: Uuid) -> Result<()> {
         let result = sqlx::query("DELETE FROM leave_requests WHERE id = $1 AND tenant_id = $2")
-            .bind(id).bind(tenant_id).execute(&self.pool)
-            .await.map_err(|e| SenseiError::Database(format!("Failed to delete leave: {e}")))?;
-        if result.rows_affected() == 0 { return Err(SenseiError::NotFound(format!("Leave request {id} not found"))); }
+            .bind(id)
+            .bind(tenant_id)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to delete leave: {e}")))?;
+        if result.rows_affected() == 0 {
+            return Err(SenseiError::NotFound(format!(
+                "Leave request {id} not found"
+            )));
+        }
         Ok(())
     }
 
     // ── Performance Reviews ─────────────────────────────────────────────
 
-    async fn create_review(&self, tenant_id: Uuid, review: PerformanceReview) -> Result<PerformanceReview> {
+    async fn create_review(
+        &self,
+        tenant_id: Uuid,
+        review: PerformanceReview,
+    ) -> Result<PerformanceReview> {
         let now = Utc::now();
         let id = Uuid::new_v4();
 
@@ -492,7 +638,13 @@ impl HrService for DatabaseHrService {
         Ok(pr_row_to_domain(row))
     }
 
-    async fn list_reviews(&self, tenant_id: Uuid, employee_id: Option<Uuid>, page: Option<usize>, per_page: Option<usize>) -> Result<PaginatedResponse<PerformanceReview>> {
+    async fn list_reviews(
+        &self,
+        tenant_id: Uuid,
+        employee_id: Option<Uuid>,
+        page: Option<usize>,
+        per_page: Option<usize>,
+    ) -> Result<PaginatedResponse<PerformanceReview>> {
         let page = page.unwrap_or(1).max(1);
         let per_page = per_page.unwrap_or(20).clamp(1, 100);
         let offset = (page - 1) * per_page;
@@ -512,10 +664,20 @@ impl HrService for DatabaseHrService {
         .bind(tenant_id).bind(employee_id).fetch_one(&self.pool).await
         .map_err(|e| SenseiError::Database(format!("Failed to count reviews: {e}")))?;
 
-        Ok(paginate(items.into_iter().map(pr_row_to_domain).collect(), count, page, per_page))
+        Ok(paginate(
+            items.into_iter().map(pr_row_to_domain).collect(),
+            count,
+            page,
+            per_page,
+        ))
     }
 
-    async fn update_review(&self, tenant_id: Uuid, id: Uuid, review: PerformanceReview) -> Result<PerformanceReview> {
+    async fn update_review(
+        &self,
+        tenant_id: Uuid,
+        id: Uuid,
+        review: PerformanceReview,
+    ) -> Result<PerformanceReview> {
         let row = sqlx::query_as::<_, PerformanceReviewRow>(
             r#"UPDATE performance_reviews SET overall_rating=$1, strengths=$2, areas_for_improvement=$3, goals=$4, review_period=$5
                WHERE id=$6 AND tenant_id=$7
@@ -531,10 +693,16 @@ impl HrService for DatabaseHrService {
     }
 
     async fn delete_review(&self, tenant_id: Uuid, id: Uuid) -> Result<()> {
-        let result = sqlx::query("DELETE FROM performance_reviews WHERE id = $1 AND tenant_id = $2")
-            .bind(id).bind(tenant_id).execute(&self.pool)
-            .await.map_err(|e| SenseiError::Database(format!("Failed to delete review: {e}")))?;
-        if result.rows_affected() == 0 { return Err(SenseiError::NotFound(format!("Review {id} not found"))); }
+        let result =
+            sqlx::query("DELETE FROM performance_reviews WHERE id = $1 AND tenant_id = $2")
+                .bind(id)
+                .bind(tenant_id)
+                .execute(&self.pool)
+                .await
+                .map_err(|e| SenseiError::Database(format!("Failed to delete review: {e}")))?;
+        if result.rows_affected() == 0 {
+            return Err(SenseiError::NotFound(format!("Review {id} not found")));
+        }
         Ok(())
     }
 
@@ -556,7 +724,12 @@ impl HrService for DatabaseHrService {
         Ok(tc_row_to_domain(row))
     }
 
-    async fn clock_out(&self, tenant_id: Uuid, _employee_id: Uuid, timecard_id: Uuid) -> Result<Timecard> {
+    async fn clock_out(
+        &self,
+        tenant_id: Uuid,
+        _employee_id: Uuid,
+        timecard_id: Uuid,
+    ) -> Result<Timecard> {
         let now = Utc::now();
 
         let row = sqlx::query_as::<_, TimecardRow>(
@@ -574,7 +747,15 @@ impl HrService for DatabaseHrService {
         Ok(tc_row_to_domain(row))
     }
 
-    async fn list_timecards(&self, tenant_id: Uuid, employee_id: Uuid, date_from: Option<chrono::DateTime<Utc>>, date_to: Option<chrono::DateTime<Utc>>, page: Option<usize>, per_page: Option<usize>) -> Result<PaginatedResponse<Timecard>> {
+    async fn list_timecards(
+        &self,
+        tenant_id: Uuid,
+        employee_id: Uuid,
+        date_from: Option<chrono::DateTime<Utc>>,
+        date_to: Option<chrono::DateTime<Utc>>,
+        page: Option<usize>,
+        per_page: Option<usize>,
+    ) -> Result<PaginatedResponse<Timecard>> {
         let page = page.unwrap_or(1).max(1);
         let per_page = per_page.unwrap_or(20).clamp(1, 100);
         let offset = (page - 1) * per_page;
@@ -597,10 +778,20 @@ impl HrService for DatabaseHrService {
         .fetch_one(&self.pool).await
         .map_err(|e| SenseiError::Database(format!("Failed to count timecards: {e}")))?;
 
-        Ok(paginate(items.into_iter().map(tc_row_to_domain).collect(), count, page, per_page))
+        Ok(paginate(
+            items.into_iter().map(tc_row_to_domain).collect(),
+            count,
+            page,
+            per_page,
+        ))
     }
 
-    async fn update_timecard(&self, tenant_id: Uuid, id: Uuid, timecard: Timecard) -> Result<Timecard> {
+    async fn update_timecard(
+        &self,
+        tenant_id: Uuid,
+        id: Uuid,
+        timecard: Timecard,
+    ) -> Result<Timecard> {
         let row = sqlx::query_as::<_, TimecardRow>(
             r#"UPDATE timecards SET clock_in=$1, clock_out=$2, total_hours=$3, overtime_hours=$4, status=$5, approved_by=$6
                WHERE id=$7 AND tenant_id=$8

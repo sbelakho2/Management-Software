@@ -5,12 +5,7 @@
 //! well-formed (`^[A-Za-z0-9._-]{1,128}$`); otherwise a new UUID is
 //! generated so that downstream systems can rely on the header shape.
 
-use axum::{
-    extract::Request,
-    http::header::HeaderName,
-    middleware::Next,
-    response::Response,
-};
+use axum::{extract::Request, http::header::HeaderName, middleware::Next, response::Response};
 use tracing::warn;
 use uuid::Uuid;
 
@@ -26,9 +21,9 @@ const MAX_REQUEST_ID_LEN: usize = 128;
 pub fn is_valid_request_id(value: &str) -> bool {
     !value.is_empty()
         && value.len() <= MAX_REQUEST_ID_LEN
-        && value.bytes().all(|b| {
-            b.is_ascii_alphanumeric() || b == b'.' || b == b'_' || b == b'-'
-        })
+        && value
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'.' || b == b'_' || b == b'-')
 }
 
 /// Middleware that attaches a unique request ID to each request.
@@ -41,14 +36,15 @@ pub async fn request_id_middleware(mut req: Request, next: Next) -> Response {
         .map(|s| s.to_string())
         .unwrap_or_else(|| Uuid::new_v4().to_string());
 
-    req.extensions_mut()
-        .insert(RequestId(request_id.clone()));
+    req.extensions_mut().insert(RequestId(request_id.clone()));
 
     let mut response = next.run(req).await;
     // The request ID is always a valid header value: either a validated
     // client string (ASCII alphanumerics + `._-`) or a UUID.
     if let Ok(header_value) = axum::http::HeaderValue::try_from(&request_id[..]) {
-        response.headers_mut().insert(&REQUEST_ID_HEADER, header_value);
+        response
+            .headers_mut()
+            .insert(&REQUEST_ID_HEADER, header_value);
     } else {
         warn!(
             request_id = %request_id,

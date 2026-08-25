@@ -135,7 +135,9 @@ async fn cleanup_task(buckets: Arc<DashMap<String, RateLimitState>>, window: Dur
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     loop {
         interval.tick().await;
-        let cutoff = Instant::now().checked_sub(window.max(Duration::from_secs(1))).unwrap_or(Instant::now());
+        let cutoff = Instant::now()
+            .checked_sub(window.max(Duration::from_secs(1)))
+            .unwrap_or(Instant::now());
         buckets.retain(|_, state| {
             state
                 .timestamps
@@ -160,9 +162,9 @@ fn extract_client_ip(req: &Request) -> String {
     }
 
     // Fall back to the connection's remote address.
-    if let Some(connect_info) =
-        req.extensions()
-            .get::<axum::extract::connect_info::ConnectInfo<std::net::SocketAddr>>()
+    if let Some(connect_info) = req
+        .extensions()
+        .get::<axum::extract::connect_info::ConnectInfo<std::net::SocketAddr>>()
     {
         return connect_info.0.ip().to_string();
     }
@@ -203,10 +205,9 @@ pub async fn rate_limit_middleware(mut req: Request, next: Next) -> Response {
             };
             let mut response = (StatusCode::TOO_MANY_REQUESTS, Json(body)).into_response();
             if let Ok(val) = axum::http::HeaderValue::from_str(&retry_after.to_string()) {
-                response.headers_mut().insert(
-                    axum::http::header::RETRY_AFTER,
-                    val,
-                );
+                response
+                    .headers_mut()
+                    .insert(axum::http::header::RETRY_AFTER, val);
             }
             response
         }
@@ -255,8 +256,8 @@ mod tests {
     #[tokio::test]
     async fn test_rate_limiter_window_resets() {
         let limiter = RateLimiter::new(1, 0); // 0-second window = instant expiry
-        // A zero-length window is pruned on every access, so every request
-        // starts a fresh window and is always allowed.
+                                              // A zero-length window is pruned on every access, so every request
+                                              // starts a fresh window and is always allowed.
         assert!(limiter.check("client-1").is_ok());
         assert!(limiter.check("client-1").is_ok());
     }
@@ -281,9 +282,7 @@ mod tests {
 
     #[test]
     fn test_extract_client_ip_fallback() {
-        let req = Request::builder()
-            .body(axum::body::Body::empty())
-            .unwrap();
+        let req = Request::builder().body(axum::body::Body::empty()).unwrap();
         // No connect info, no x-forwarded-for → "unknown"
         assert_eq!(extract_client_ip(&req), "unknown");
     }
