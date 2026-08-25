@@ -7,6 +7,13 @@
 //! These are used by [`InMemorySearchService`] to extend search coverage
 //! beyond the four domain-service-backed types (accounts, contacts, products,
 //! users) to all PM entity types (tasks, kanban boards, obeya boards, etc.).
+//!
+//! # Boundedness
+//!
+//! Iteration is in-memory only and bounded by the size of the wrapped
+//! entity store: every entity is scanned once per query, then all results
+//! are sorted and truncated by the search service. No external indexes are
+//! consulted.
 
 use async_trait::async_trait;
 use serde::de::DeserializeOwned;
@@ -57,19 +64,25 @@ fn best_score(query: &str, fields: &[&str]) -> f32 {
 // Provider that wraps an EntityStore<T> and a closure to extract search fields
 // ---------------------------------------------------------------------------
 
+/// Extracts the searchable text fields of an entity: `(title, fields)`.
+type FieldExtractor<T> = Box<dyn Fn(&T) -> (String, Vec<String>) + Send + Sync>;
+
+/// Extracts the `tenant_id` of an entity for cross-tenant filtering.
+type TenantIdExtractor<T> = Box<dyn Fn(&T) -> Uuid + Send + Sync>;
+
 /// Generic provider that wraps an [`EntityStore<T>`] with a field extractor.
 struct EntityStoreProvider<T> {
     entity_type: &'static str,
     store: EntityStore<T>,
     /// Given a reference to the entity, returns (title, [searchable_text_fields]).
-    extractor: Box<dyn Fn(&T) -> (String, Vec<String>) + Send + Sync>,
+    extractor: FieldExtractor<T>,
     /// Extracts the tenant_id from an entity for cross-tenant filtering.
-    tenant_id_extractor: Box<dyn Fn(&T) -> Uuid + Send + Sync>,
+    tenant_id_extractor: TenantIdExtractor<T>,
 }
 
 #[async_trait]
-impl<T: Serialize + DeserializeOwned + Clone + Send + Sync + 'static> SearchableEntityProvider
-    for EntityStoreProvider<T>
+impl<T: Serialize + DeserializeOwned + Clone + PartialEq + Send + Sync + 'static>
+    SearchableEntityProvider for EntityStoreProvider<T>
 {
     async fn search_entities(
         &self,
@@ -193,6 +206,35 @@ pub fn knowledge_pack_search_provider(
     })
 }
 
+/// Stable snake_case label for a [`TrainingCategory`] (mirrors the JSON
+/// representation used by the API instead of a debug-format string).
+fn training_category_str(category: &TrainingCategory) -> String {
+    match category {
+        TrainingCategory::Safety => "safety",
+        TrainingCategory::Quality => "quality",
+        TrainingCategory::Technical => "technical",
+        TrainingCategory::Leadership => "leadership",
+        TrainingCategory::Compliance => "compliance",
+        TrainingCategory::Onboarding => "onboarding",
+    }
+    .to_string()
+}
+
+/// Stable snake_case label for a [`KpiCategory`].
+fn kpi_category_str(category: &KpiCategory) -> String {
+    match category {
+        KpiCategory::Quality => "quality",
+        KpiCategory::Production => "production",
+        KpiCategory::Maintenance => "maintenance",
+        KpiCategory::Inventory => "inventory",
+        KpiCategory::Safety => "safety",
+        KpiCategory::Cost => "cost",
+        KpiCategory::Delivery => "delivery",
+        KpiCategory::People => "people",
+    }
+    .to_string()
+}
+
 /// Create a [`SearchableEntityProvider`] for training courses.
 pub fn training_course_search_provider(
     store: TrainingCourseStore,
@@ -205,7 +247,7 @@ pub fn training_course_search_provider(
             let fields = vec![
                 c.title.clone(),
                 desc,
-                format!("{:?}", c.category),
+                training_category_str(&c.category),
                 c.required_for_roles.join(" "),
             ];
             (c.title.clone(), fields)
@@ -241,10 +283,7 @@ pub fn state_machine_instance_search_provider(
         entity_type: "state_machine_instance",
         store: store.clone(),
         extractor: Box::new(|smi: &StateMachineInstance| {
-            let fields = vec![
-                smi.current_state.clone(),
-                format!("{:?}", smi.definition_id),
-            ];
+            let fields = vec![smi.current_state.clone(), smi.definition_id.to_string()];
             (smi.current_state.clone(), fields)
         }),
         tenant_id_extractor: Box::new(|smi: &StateMachineInstance| smi.tenant_id),
@@ -334,7 +373,7 @@ pub fn kpi_definition_search_provider(
             let fields = vec![
                 kpi.name.clone(),
                 desc,
-                format!("{:?}", kpi.category),
+                kpi_category_str(&kpi.category),
                 kpi.unit.clone(),
                 kpi.formula.clone().unwrap_or_default(),
             ];
@@ -358,5 +397,101 @@ pub fn notification_trigger_search_provider(
         }),
         tenant_id_extractor: Box::new(|nt: &NotificationTrigger| nt.tenant_id),
     })
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde::Deserialize;
+
+    #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+    struct TestEntity {
+        id: Uuid,
+        tenant_id: Uuid,
+        title: String,
+        body: String,
+    }
+
+    /// The provider reports the correct `entity_type_name` and filters by
+    /// tenant: entities of other tenants are never returned, and only
+    /// matching entities with the expected result type appear.
+    #[tokio::test]
+    async fn search_filters_by_tenant_and_returns_entity_type() {
+        let store: EntityStore<TestEntity> = EntityStore::new("test_entity");
+        let tenant_a = Uuid::new_v4();
+        let tenant_b = Uuid::new_v4();
+        let match_id = Uuid::new_v4();
+
+        let make = |id: Uuid, tenant_id: Uuid, title: &str, body: &str| TestEntity {
+            id,
+            tenant_id,
+            title: title.to_string(),
+            body: body.to_string(),
+        };
+        {
+            let mut guard = store.write().await;
+            guard.insert(match_id, make(match_id, tenant_a, "Alpha", "Widget quality issue"));
+            guard.insert(
+                Uuid::new_v4(),
+                make(Uuid::new_v4(), tenant_a, "Beta", "Unrelated text"),
+            );
+            guard.insert(
+                Uuid::new_v4(),
+                make(Uuid::new_v4(), tenant_b, "Gamma", "Widget quality issue in other tenant"),
+            );
+        }
+
+        let provider = Arc::new(EntityStoreProvider {
+            entity_type: "test_entity",
+            store,
+            extractor: Box::new(|e: &TestEntity| {
+                (e.title.clone(), vec![e.title.clone(), e.body.clone()])
+            }),
+            tenant_id_extractor: Box::new(|e: &TestEntity| e.tenant_id),
+        });
+
+        assert_eq!(provider.entity_type_name(), "test_entity");
+
+        let results = provider.search_entities(tenant_a, "quality").await.unwrap();
+        assert_eq!(results.len(), 1, "only tenant A's matching entity is returned");
+        assert_eq!(results[0].result_type, "test_entity");
+        assert_eq!(results[0].result_id, match_id);
+        assert!(results[0].relevance > 0.0);
+    }
+
+    #[tokio::test]
+    async fn search_scores_above_zero_for_substring() {
+        let store: EntityStore<TestEntity> = EntityStore::new("test_entity");
+        let tenant = Uuid::new_v4();
+        {
+            let mut guard = store.write().await;
+            guard.insert(
+                Uuid::new_v4(),
+                TestEntity {
+                    id: Uuid::new_v4(),
+                    tenant_id: tenant,
+                    title: "Pump PM schedule".to_string(),
+                    body: String::new(),
+                },
+            );
+        }
+
+        let provider = Arc::new(EntityStoreProvider {
+            entity_type: "test_entity",
+            store,
+            extractor: Box::new(|e: &TestEntity| {
+                (e.title.clone(), vec![e.title.clone(), e.body.clone()])
+            }),
+            tenant_id_extractor: Box::new(|e: &TestEntity| e.tenant_id),
+        });
+
+        let results = provider.search_entities(tenant, "pump").await.unwrap();
+        assert_eq!(results.len(), 1);
+        assert!(results[0].relevance > 0.0);
+    }
 }
 

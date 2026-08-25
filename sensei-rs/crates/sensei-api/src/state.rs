@@ -4,7 +4,9 @@
 //! shared services to route handlers.
 
 use sensei_auth::jwt::JwtService;
+use sensei_auth::oauth2::OAuth2Client;
 use sensei_auth::rbac::RbacService;
+use sensei_auth::refresh_tokens::RefreshTokenStore;
 use sensei_core::config::AppConfig;
 use sensei_core::types::{EntityId, Timestamp};
 use sensei_event_bus::EventBus;
@@ -14,7 +16,7 @@ use sensei_services::notifications::service::{
     DatabaseNotificationService, InMemoryNotificationService, NotificationService,
 };
 use sensei_services::ops::search::{
-    DatabaseSearchService, InMemorySearchService, SearchService,
+    InMemorySearchService, SearchService,
 };
 use sensei_services::ai::chatbot::{ChatbotService, InMemoryChatbotService};
 use sensei_services::ai::DatabaseChatbotService;
@@ -42,6 +44,7 @@ use tokio::sync::RwLock;
 
 use crate::middleware::audit::AuditLog;
 use crate::middleware::rate_limiter::RateLimiter;
+use crate::middleware::session::SessionStore;
 use crate::services::{sse::SseManager, ws::WebSocketManager};
 use crate::stores;
 
@@ -87,7 +90,6 @@ impl<'a> PmStores<'a> {
     /// Build [`SearchableEntityProvider`] instances for all PM stores.
     fn build_providers(&self) -> Vec<Arc<dyn sensei_services::ops::search::SearchableEntityProvider>> {
         use crate::search_providers::*;
-        use std::sync::Arc;
 
         vec![
             task_search_provider(self.tasks.clone()),
@@ -118,6 +120,11 @@ pub struct AppState {
     /// Database connection pool (optional - initialized on demand).
     pub db_pool: Option<Arc<PgPool>>,
     /// Full-text search service across entities.
+    ///
+    /// Always an [`InMemorySearchService`] (in both in-memory and DB mode):
+    /// it searches the shared entity stores and domain services, which
+    /// become DB-backed in DB mode, so search stays consistent with the
+    /// data the routes serve.
     pub search_service: Arc<dyn SearchService>,
     /// In-app notification service with persistence.
     pub notification_service: Arc<dyn NotificationService>,
@@ -169,6 +176,17 @@ pub struct AppState {
     pub rate_limiter: RateLimiter,
     /// Audit log for recording state-changing requests.
     pub audit_log: AuditLog,
+    /// Session fingerprint store for binding tokens to clients.
+    ///
+    /// Auth routes register fingerprints here on login/refresh; the session
+    /// binding middleware verifies them on every authenticated request.
+    pub session_store: SessionStore,
+    /// Refresh-token store with rotation and reuse detection.
+    ///
+    /// Backed by PostgreSQL when a pool is configured, in-memory otherwise.
+    pub refresh_token_store: Arc<RefreshTokenStore>,
+    /// OAuth2 client (present when `config.auth.oauth2` is configured).
+    pub oauth2_client: Option<Arc<OAuth2Client>>,
 
     // ── Real-time communication managers ─────────────────────────────
 
@@ -343,6 +361,26 @@ impl AppState {
         let products_service: Arc<dyn ProductsService> =
             Arc::new(InMemoryProductsService::new()) as Arc<dyn ProductsService>;
 
+        // ── Refresh-token store (in-memory until a DB pool is attached) ──
+        // `new(None)` spawns the expired-token cleanup task itself.
+        let refresh_token_store = Arc::new(RefreshTokenStore::new(None));
+
+        // ── OAuth2 client (optional) ─────────────────────────────────────
+        let oauth2_client = match config.auth.oauth2.as_ref() {
+            Some(provider_config) => match OAuth2Client::from_config(provider_config) {
+                Ok(client) => Some(Arc::new(client)),
+                Err(e) => {
+                    tracing::warn!(
+                        error = %e,
+                        provider = %provider_config.provider,
+                        "Failed to build OAuth2 client; OAuth2 login disabled"
+                    );
+                    None
+                }
+            },
+            None => None,
+        };
+
         // ── Create in-memory entity stores (referenced by both the search service and routes) ──
         let kanban_boards = stores::new_store!("kanban_board");
         let notifications = stores::new_store!("notification");
@@ -449,6 +487,9 @@ impl AppState {
             email_verification_tokens: Arc::new(RwLock::new(HashMap::new())),
             rate_limiter: RateLimiter::new(100, 60), // 100 requests per 60 seconds
             audit_log: AuditLog::new(10_000),        // Keep last 10 000 entries
+            session_store: SessionStore::new(86_400), // 24 hour fingerprint TTL
+            refresh_token_store,
+            oauth2_client,
             // ── Real-time communication managers ──────────────────────
             ws_manager: WebSocketManager::new(),
             sse_manager: SseManager::new(),
@@ -504,6 +545,11 @@ impl AppState {
     /// Entity stores are also replaced with database-backed instances that persist
     /// mutations to the `entity_store` table.
     /// The email service is preserved as-is (no DB needed).
+    ///
+    /// The search service is deliberately **not** swapped: the
+    /// [`InMemorySearchService`] searches the shared stores and domain
+    /// services above (now DB-backed), keeping search results consistent
+    /// with route data in both modes.
     pub fn with_db_pool(mut self, pool: Arc<PgPool>) -> Self {
         let p = (*pool).clone();
 
@@ -530,8 +576,11 @@ impl AppState {
             Arc::new(DatabaseSupplyChainService::new(p.clone())) as Arc<dyn SupplyChainService>;
         self.quality_service =
             Arc::new(DatabaseQualityService::new(p.clone())) as Arc<dyn QualityService>;
-        self.search_service =
-            Arc::new(DatabaseSearchService::new(p.clone())) as Arc<dyn SearchService>;
+        // ── Search unification ──────────────────────────────────────────
+        // The InMemorySearchService is kept in BOTH modes: it searches the
+        // shared entity stores and the domain services above (which become
+        // DB-backed in this mode), so search results stay consistent with
+        // the data the routes serve. No DatabaseSearchService swap here.
         self.notification_service =
             Arc::new(DatabaseNotificationService::new(p.clone())) as Arc<dyn NotificationService>;
         self.users_service =
@@ -590,7 +639,10 @@ impl AppState {
         self.state_machine_definitions = EntityStore::with_pool("state_machine_definition", p.clone());
         self.state_machine_instances = EntityStore::with_pool("state_machine_instance", p.clone());
         self.training_courses = EntityStore::with_pool("training_course", p.clone());
-        self.training_enrollments = EntityStore::with_pool("training_enrollment", p);
+        self.training_enrollments = EntityStore::with_pool("training_enrollment", p.clone());
+
+        // Refresh tokens persist to the database when a pool is available.
+        self.refresh_token_store = Arc::new(RefreshTokenStore::new(Some(p)));
 
         self.db_pool = Some(pool);
         self
@@ -606,6 +658,9 @@ impl AppState {
 /// Convenience function to create an event bus backed by NATS JetStream
 /// when a NATS URL is configured, falling back to [`InMemoryEventBus`].
 ///
+/// The [`NatsEventBus`] is constructed via [`NatsEventBus::from_config`] so
+/// the stream name and reconnection limits come from the configuration.
+///
 /// This is called from [`main`](crate::main) after loading the configuration.
 pub async fn create_event_bus(config: &sensei_core::config::EventBusConfig) -> Arc<dyn EventBus> {
     use sensei_event_bus::NatsEventBus;
@@ -615,7 +670,7 @@ pub async fn create_event_bus(config: &sensei_core::config::EventBusConfig) -> A
         return Arc::new(sensei_event_bus::InMemoryEventBus::new());
     }
 
-    let bus = NatsEventBus::new("sensei");
+    let bus = NatsEventBus::from_config(config);
     match bus.connect(&config.url).await {
         Ok(()) => {
             tracing::info!(url = %config.url, "Connected to NATS JetStream event bus");

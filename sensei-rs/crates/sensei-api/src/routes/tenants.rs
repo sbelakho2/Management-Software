@@ -6,7 +6,7 @@ use axum::{Json, extract::{Path, State}};
 use serde::{Deserialize, Serialize};
 use sensei_auth::middleware::AuthenticatedUser;
 use sensei_core::domain::entities::Tenant;
-use sensei_core::error::Result;
+use sensei_core::error::{Result, SenseiError};
 use sensei_core::types::{TenantId, now};
 use uuid::Uuid;
 
@@ -47,20 +47,37 @@ impl From<Tenant> for TenantResponse {
 }
 
 /// List all tenants.
+///
+/// Admins see every tenant; other users only see their own tenant.
 pub async fn list_tenants(
-    _user: AuthenticatedUser,
+    user: AuthenticatedUser,
     State(state): State<AppState>,
 ) -> Result<Json<Vec<TenantResponse>>> {
     let tenants = state.tenants_service.list_tenants().await?;
-    Ok(Json(tenants.into_iter().map(TenantResponse::from).collect()))
+    let visible = if user.has_role("admin") {
+        tenants
+    } else {
+        tenants
+            .into_iter()
+            .filter(|t| t.id == user.tenant_id)
+            .collect()
+    };
+    Ok(Json(visible.into_iter().map(TenantResponse::from).collect()))
 }
 
 /// Create a new tenant.
+///
+/// Admin-only: provisioning a tenant is a platform-level operation.
 pub async fn create_tenant(
-    _user: AuthenticatedUser,
+    user: AuthenticatedUser,
     State(state): State<AppState>,
     Json(req): Json<TenantRequest>,
 ) -> Result<Json<TenantResponse>> {
+    if !user.has_role("admin") {
+        return Err(SenseiError::Forbidden(
+            "Only admins can create tenants".to_string(),
+        ));
+    }
     let tenant = Tenant {
         id: TenantId::default(),
         name: req.name,
@@ -75,29 +92,43 @@ pub async fn create_tenant(
 }
 
 /// Get a tenant by ID.
+///
+/// Non-admin users can only read their own tenant.
 pub async fn get_tenant(
-    _user: AuthenticatedUser,
+    user: AuthenticatedUser,
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<TenantResponse>> {
+    if !user.has_role("admin") && id != user.tenant_id {
+        return Err(SenseiError::NotFound(format!("Tenant {id} not found")));
+    }
     let tenant = state.tenants_service.get_tenant(id).await?;
     Ok(Json(TenantResponse::from(tenant)))
 }
 
 /// Update a tenant.
+///
+/// The tenant id always comes from the path — the request body cannot change
+/// it. Non-admin users can only update their own tenant.
 pub async fn update_tenant(
-    _user: AuthenticatedUser,
+    user: AuthenticatedUser,
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
     Json(req): Json<TenantRequest>,
 ) -> Result<Json<TenantResponse>> {
+    if !user.has_role("admin") && id != user.tenant_id {
+        return Err(SenseiError::NotFound(format!("Tenant {id} not found")));
+    }
+    // Preserve the stored id and active flag; only the editable fields are
+    // taken from the request.
+    let existing = state.tenants_service.get_tenant(id).await?;
     let tenant = Tenant {
         id,
         name: req.name,
         slug: req.slug,
-        is_active: true,
+        is_active: existing.is_active,
         features: req.features.unwrap_or_default(),
-        created_at: now(),
+        created_at: existing.created_at,
         updated_at: now(),
     };
     let updated = state.tenants_service.update_tenant(id, tenant).await?;

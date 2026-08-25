@@ -20,7 +20,9 @@ use std::sync::Arc;
 use tokio::sync::{mpsc, RwLock};
 use uuid::Uuid;
 
-use crate::ai::chatbot::{fallback_chat, ChatMessage, ChatResponse, ChatbotConfig, ChatbotService};
+use crate::ai::chatbot::{
+    ChatMessage, ChatResponse, ChatSamplingParams, ChatbotConfig, ChatbotService, fallback_chat,
+};
 
 /// PostgreSQL-backed implementation of [`ChatbotService`].
 ///
@@ -260,8 +262,11 @@ impl DatabaseChatbotService {
 
     /// Attempt to generate an AI-enriched response using the AI service.
     ///
-    /// Examines the user's message for domain-specific keywords and queries
-    /// the AI service for relevant predictions/anomalies to enrich the response.
+    /// Examines the user's message for domain-specific keywords, resolves the
+    /// referenced entity (product / equipment / NCR / work order) by name or
+    /// number in the database, and queries the AI service for relevant
+    /// predictions. Enrichment is skipped when no entity can be resolved, so
+    /// the tenant id is never passed as a fake product/equipment/entity id.
     async fn try_ai_enriched_response(
         &self,
         ai_service: &Arc<dyn crate::ai::AiService>,
@@ -277,10 +282,11 @@ impl DatabaseChatbotService {
             || lower.contains("ncr")
             || lower.contains("inspection")
         {
-            // Try to get quality insights from AI service
-            // Use a synthetic product ID derived from the tenant for demo purposes
+            // Resolve the product the user is asking about; skip enrichment
+            // when nothing in the message matches a real product.
+            let product_id = self.resolve_product_id(tenant_id, message).await?;
             if let Ok(prediction) = ai_service
-                .predict_quality(tenant_id, tenant_id, serde_json::Value::Object(serde_json::Map::new()))
+                .predict_quality(tenant_id, product_id, serde_json::Value::Object(serde_json::Map::new()))
                 .await
             {
                 let history_context = history.map_or(String::new(), |h| {
@@ -320,8 +326,10 @@ impl DatabaseChatbotService {
             || lower.contains("failure")
             || lower.contains("predict")
         {
+            // Resolve the equipment by name/number; skip when unknown.
+            let equipment_id = self.resolve_equipment_id(tenant_id, message).await?;
             if let Ok(maintenance) = ai_service
-                .predict_maintenance(tenant_id, tenant_id)
+                .predict_maintenance(tenant_id, equipment_id)
                 .await
             {
                 let risk_emoji = match maintenance.risk_level.as_str() {
@@ -357,8 +365,11 @@ impl DatabaseChatbotService {
             || lower.contains("abnormal")
             || lower.contains("detect")
         {
+            // Determine the entity type the user is referring to and resolve a
+            // real entity id; skip enrichment when nothing matches.
+            let (entity_type, entity_id) = self.resolve_anomaly_entity(tenant_id, message).await?;
             if let Ok(anomalies) = ai_service
-                .detect_anomalies(tenant_id, "general", tenant_id)
+                .detect_anomalies(tenant_id, &entity_type, entity_id)
                 .await
             {
                 if !anomalies.is_empty() {
@@ -383,6 +394,131 @@ impl DatabaseChatbotService {
                     ));
                 }
             }
+        }
+
+        None
+    }
+
+    /// Extract candidate lookup tokens from a message (bounded, non-trivial).
+    fn lookup_tokens(message: &str) -> Vec<String> {
+        message
+            .split(|c: char| !c.is_alphanumeric())
+            .filter(|t| t.len() >= 3)
+            .map(|t| t.to_lowercase())
+            .take(5)
+            .collect()
+    }
+
+    /// Resolve a product id referenced in the message by product number or
+    /// name. Returns `None` when nothing matches.
+    async fn resolve_product_id(&self, tenant_id: EntityId, message: &str) -> Option<Uuid> {
+        let tokens = Self::lookup_tokens(message);
+        if tokens.is_empty() {
+            return None;
+        }
+        let patterns: Vec<String> = tokens.iter().map(|t| format!("{t}%")).collect();
+        sqlx::query_scalar::<_, Uuid>(
+            "SELECT id FROM products \
+             WHERE tenant_id = $1 AND (product_number ILIKE ANY($2) OR name ILIKE ANY($2)) \
+             ORDER BY created_at LIMIT 1",
+        )
+        .bind(tenant_id)
+        .bind(&patterns)
+        .fetch_optional(&self.pool)
+        .await
+        .ok()
+        .flatten()
+    }
+
+    /// Resolve an equipment id referenced in the message by equipment number
+    /// or name. Returns `None` when nothing matches.
+    async fn resolve_equipment_id(&self, tenant_id: EntityId, message: &str) -> Option<Uuid> {
+        let tokens = Self::lookup_tokens(message);
+        if tokens.is_empty() {
+            return None;
+        }
+        let patterns: Vec<String> = tokens.iter().map(|t| format!("{t}%")).collect();
+        sqlx::query_scalar::<_, Uuid>(
+            "SELECT id FROM equipment \
+             WHERE tenant_id = $1 AND (equipment_number ILIKE ANY($2) OR name ILIKE ANY($2)) \
+             ORDER BY created_at LIMIT 1",
+        )
+        .bind(tenant_id)
+        .bind(&patterns)
+        .fetch_optional(&self.pool)
+        .await
+        .ok()
+        .flatten()
+    }
+
+    /// Resolve the (entity_type, entity_id) for an anomaly query by looking up
+    /// the referenced entity by its number/name. Returns `None` when the
+    /// message does not clearly reference a known entity.
+    async fn resolve_anomaly_entity(
+        &self,
+        tenant_id: EntityId,
+        message: &str,
+    ) -> Option<(String, Uuid)> {
+        let tokens = Self::lookup_tokens(message);
+        if tokens.is_empty() {
+            return None;
+        }
+        let patterns: Vec<String> = tokens.iter().map(|t| format!("{t}%")).collect();
+
+        // Explicit UUIDs are resolved directly.
+        for token in &tokens {
+            if let Ok(id) = Uuid::parse_str(token) {
+                return Some(("entity".to_string(), id));
+            }
+        }
+
+        // NCR: match nc_number or title in the JSONB quality_ncrs rows.
+        if message.to_lowercase().contains("ncr") {
+            if let Ok(Some(id)) = sqlx::query_scalar::<_, Uuid>(
+                "SELECT id FROM quality_ncrs \
+                 WHERE tenant_id = $1 \
+                   AND (data->>'nc_number' ILIKE ANY($2) OR data->>'title' ILIKE ANY($2)) \
+                 ORDER BY created_at DESC LIMIT 1",
+            )
+            .bind(tenant_id)
+            .bind(&patterns)
+            .fetch_optional(&self.pool)
+            .await
+            {
+                return Some(("ncr".to_string(), id));
+            }
+            return None;
+        }
+
+        // Work orders.
+        if message.to_lowercase().contains("work order") || message.to_lowercase().contains("wo ") {
+            if let Ok(Some(id)) = sqlx::query_scalar::<_, Uuid>(
+                "SELECT id FROM work_orders \
+                 WHERE tenant_id = $1 AND work_order_number ILIKE ANY($2) \
+                 ORDER BY created_at DESC LIMIT 1",
+            )
+            .bind(tenant_id)
+            .bind(&patterns)
+            .fetch_optional(&self.pool)
+            .await
+            {
+                return Some(("work_order".to_string(), id));
+            }
+            return None;
+        }
+
+        // Equipment (matches "equipment", "machine", "asset" queries).
+        if let Ok(Some(id)) = sqlx::query_scalar::<_, Uuid>(
+            "SELECT id FROM equipment \
+             WHERE tenant_id = $1 AND (equipment_number ILIKE ANY($2) OR name ILIKE ANY($2)) \
+             ORDER BY created_at LIMIT 1",
+        )
+        .bind(tenant_id)
+        .bind(&patterns)
+        .fetch_optional(&self.pool)
+        .await
+        {
+            return Some(("equipment".to_string(), id));
         }
 
         None
@@ -452,6 +588,7 @@ impl ChatbotService for DatabaseChatbotService {
         user_id: EntityId,
         message: &str,
         conversation_id: Option<&str>,
+        sampling: Option<ChatSamplingParams>,
     ) -> Result<ChatResponse> {
         let conv_id = conversation_id
             .map(|s| s.to_string())
@@ -469,6 +606,23 @@ impl ChatbotService for DatabaseChatbotService {
             .generate_context_aware_response(tenant_id, message, &conv_id)
             .await;
 
+        // Bound the response length with the effective token budget (an
+        // approximation: one whitespace-delimited word ≈ one token). A
+        // per-request sampling override takes precedence over the config.
+        let max_tokens = sampling
+            .as_ref()
+            .map(|s| s.max_tokens_or(self.config.max_tokens))
+            .unwrap_or(self.config.max_tokens);
+        let response_text = if max_tokens > 0 {
+            response_text
+                .split_whitespace()
+                .take(max_tokens)
+                .collect::<Vec<_>>()
+                .join(" ")
+        } else {
+            response_text
+        };
+
         // Save the assistant message.
         self.insert_message(&conv_id, "assistant", &response_text).await?;
 
@@ -485,12 +639,13 @@ impl ChatbotService for DatabaseChatbotService {
         user_id: EntityId,
         message: &str,
         conversation_id: Option<&str>,
+        sampling: Option<ChatSamplingParams>,
     ) -> Result<mpsc::Receiver<Result<String>>> {
         let (tx, rx) = mpsc::channel(64);
 
         // Perform the chat to persist messages.
         let response = self
-            .chat(tenant_id, user_id, message, conversation_id)
+            .chat(tenant_id, user_id, message, conversation_id, sampling)
             .await?;
 
         let response_text = response.message.content;

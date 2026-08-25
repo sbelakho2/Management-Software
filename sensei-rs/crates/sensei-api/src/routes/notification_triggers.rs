@@ -36,6 +36,10 @@ pub struct CreateTriggerRequest {
     pub action: NotificationAction,
     pub channels: Vec<NotificationChannel>,
     pub cooldown_minutes: Option<i32>,
+    /// Roles whose users receive the notification when this trigger fires.
+    /// Empty means the trigger never notifies anyone.
+    #[serde(default)]
+    pub target_roles: Vec<String>,
 }
 
 /// Request body for updating a notification trigger (partial).
@@ -49,6 +53,7 @@ pub struct UpdateTriggerRequest {
     pub channels: Option<Vec<NotificationChannel>>,
     pub cooldown_minutes: Option<i32>,
     pub is_active: Option<bool>,
+    pub target_roles: Option<Vec<String>>,
 }
 
 /// Request body for testing a trigger.
@@ -71,6 +76,8 @@ pub struct EventTypeDescriptor {
 pub struct TriggerTestResult {
     pub trigger_id: Uuid,
     pub condition_matched: bool,
+    /// Names of the rules (triggers) whose condition matched the payload.
+    pub matched_rules: Vec<String>,
     pub actions_executed: Vec<String>,
     pub channels_notified: Vec<NotificationChannel>,
 }
@@ -128,6 +135,7 @@ pub async fn create_trigger(
         channels: req.channels,
         cooldown_minutes: req.cooldown_minutes,
         is_active: true,
+        target_roles: req.target_roles,
         last_triggered_at: None,
         created_by: user.user_id,
         created_at: now,
@@ -185,11 +193,16 @@ pub async fn update_trigger(
     if let Some(channels) = req.channels {
         trigger.channels = channels;
     }
+    // `None` keeps the current value; `Some(x)` sets it (including clearing
+    // the cooldown when `Some(None)` semantics are expressed by omitting).
     if let Some(cooldown) = req.cooldown_minutes {
         trigger.cooldown_minutes = Some(cooldown);
     }
     if let Some(active) = req.is_active {
         trigger.is_active = active;
+    }
+    if let Some(target_roles) = req.target_roles {
+        trigger.target_roles = target_roles;
     }
     trigger.updated_at = Utc::now();
     Ok(Json(trigger.clone()))
@@ -238,7 +251,11 @@ pub async fn toggle_trigger(
 /// - If condition is a JSON object, all key/value pairs must be present
 ///   in the payload with matching values.
 /// - If condition is a JSON array, at least one element must match (OR logic).
-fn evaluate_condition(condition: &serde_json::Value, payload: &serde_json::Value) -> bool {
+/// - `false` never matches.
+///
+/// Public to the crate so the notification-trigger worker applies exactly
+/// the same semantics as the test endpoint.
+pub(crate) fn evaluate_condition(condition: &serde_json::Value, payload: &serde_json::Value) -> bool {
     match condition {
         serde_json::Value::Null => true,
         serde_json::Value::Bool(b) => *b,
@@ -271,8 +288,15 @@ pub async fn test_trigger(
         .cloned()
         .ok_or_else(|| SenseiError::NotFound(format!("Notification trigger {trigger_id} not found")))?;
 
-    // Evaluate the trigger condition against the provided event payload.
+    // Evaluate the trigger condition against the provided event payload
+    // using the real condition evaluator.
     let condition_matched = evaluate_condition(&trigger.condition, &req.event_payload);
+
+    let matched_rules = if condition_matched {
+        vec![trigger.name.clone()]
+    } else {
+        vec![]
+    };
 
     let actions_executed = if condition_matched {
         let template_name = trigger.action.template.as_deref().unwrap_or("default");
@@ -287,6 +311,7 @@ pub async fn test_trigger(
     let result = TriggerTestResult {
         trigger_id,
         condition_matched,
+        matched_rules,
         actions_executed,
         channels_notified: trigger.channels.clone(),
     };
@@ -294,121 +319,90 @@ pub async fn test_trigger(
 }
 
 /// List available event types for notification triggers.
+///
+/// The catalog is the exact set of `event_type()` strings implemented by
+/// the domain events in `sensei-core/src/domain/events.rs` — every entry
+/// here matches a real event the bus can deliver. Kept in sync manually;
+/// a test below instantiates key events and asserts catalog membership.
 pub async fn list_event_types(
     _user: AuthenticatedUser,
     State(_state): State<AppState>,
 ) -> Result<Json<Vec<EventTypeDescriptor>>> {
     let event_types = vec![
-        // ── ERP / existing domains ──────────────────────────────────────
-        EventTypeDescriptor {
-            event_type: "work_order.status_change".to_string(),
-            description: "Work order status transition",
-        },
-        EventTypeDescriptor {
-            event_type: "quality.defect_recorded".to_string(),
-            description: "Quality defect or NCR recorded",
-        },
-        EventTypeDescriptor {
-            event_type: "andon.raised".to_string(),
-            description: "Andon cord pulled / issue raised",
-        },
-        EventTypeDescriptor {
-            event_type: "maintenance.work_request".to_string(),
-            description: "Maintenance work request created",
-        },
-        EventTypeDescriptor {
-            event_type: "inventory.low_stock".to_string(),
-            description: "Inventory item below reorder point",
-        },
-        EventTypeDescriptor {
-            event_type: "production.production_report".to_string(),
-            description: "Production output reported",
-        },
-        EventTypeDescriptor {
-            event_type: "quality.capa_opened".to_string(),
-            description: "CAPA investigation opened",
-        },
-        EventTypeDescriptor {
-            event_type: "training.certification_expiring".to_string(),
-            description: "Training certification nearing expiry",
-        },
-        EventTypeDescriptor {
-            event_type: "audit.compliance_breach".to_string(),
-            description: "Audit compliance rate below threshold",
-        },
-        EventTypeDescriptor {
-            event_type: "kpi.threshold_breach".to_string(),
-            description: "KPI value exceeds upper or lower limit",
-        },
-        // ── PM / Operations domain events ─────────────────────────────
-        EventTypeDescriptor {
-            event_type: "operations.a3.created".to_string(),
-            description: "A3 problem-solving report created",
-        },
-        EventTypeDescriptor {
-            event_type: "operations.a3.closed".to_string(),
-            description: "A3 problem-solving report closed",
-        },
-        EventTypeDescriptor {
-            event_type: "risk.created".to_string(),
-            description: "Risk identified and recorded",
-        },
-        EventTypeDescriptor {
-            event_type: "risk.mitigated".to_string(),
-            description: "Risk mitigation action completed",
-        },
-        EventTypeDescriptor {
-            event_type: "project.created".to_string(),
-            description: "New improvement project created",
-        },
-        EventTypeDescriptor {
-            event_type: "sprint.completed".to_string(),
-            description: "Sprint / iteration completed",
-        },
-        EventTypeDescriptor {
-            event_type: "issue.created".to_string(),
-            description: "New issue or bug reported",
-        },
-        // ── PM / Kanban domain events ────────────────────────────────
-        EventTypeDescriptor {
-            event_type: "kanban.card_moved".to_string(),
-            description: "Kanban card moved to a different column",
-        },
-        EventTypeDescriptor {
-            event_type: "kanban.card_created".to_string(),
-            description: "New Kanban card created",
-        },
-        // ── PM / Task domain events ──────────────────────────────────
-        EventTypeDescriptor {
-            event_type: "task.created".to_string(),
-            description: "New task created",
-        },
-        EventTypeDescriptor {
-            event_type: "task.updated".to_string(),
-            description: "Task details updated",
-        },
-        EventTypeDescriptor {
-            event_type: "task.status_changed".to_string(),
-            description: "Task status transition occurred",
-        },
-        EventTypeDescriptor {
-            event_type: "task.assigned".to_string(),
-            description: "Task assigned to a user",
-        },
-        // ── PM / Obeya domain events ─────────────────────────────────
-        EventTypeDescriptor {
-            event_type: "obeya.item_added".to_string(),
-            description: "New item added to Obeya board",
-        },
-        EventTypeDescriptor {
-            event_type: "obeya.item_updated".to_string(),
-            description: "Obeya board item updated",
-        },
-        // ── PM / State Machine events ────────────────────────────────
-        EventTypeDescriptor {
-            event_type: "state_machine.transitioned".to_string(),
-            description: "State machine instance transitioned",
-        },
+        // ── AI ─────────────────────────────────────────────────────────
+        EventTypeDescriptor { event_type: "ai.anomaly.detected".to_string(), description: "An anomaly was detected by the AI service" },
+        EventTypeDescriptor { event_type: "ai.model.retrained".to_string(), description: "An AI/ML model was retrained" },
+        // ── CRM ────────────────────────────────────────────────────────
+        EventTypeDescriptor { event_type: "crm.application.received".to_string(), description: "A customer application was received" },
+        EventTypeDescriptor { event_type: "crm.opportunity.stage-changed".to_string(), description: "An opportunity moved to a new stage" },
+        // ── Finance ─────────────────────────────────────────────────────
+        EventTypeDescriptor { event_type: "finance.cost-rollup.completed".to_string(), description: "A product cost roll-up computation finished" },
+        EventTypeDescriptor { event_type: "finance.invoice.created".to_string(), description: "An invoice (AP or AR) was created" },
+        EventTypeDescriptor { event_type: "finance.journal.posted".to_string(), description: "A journal entry was posted to the ledger" },
+        EventTypeDescriptor { event_type: "finance.payment.processed".to_string(), description: "A payment (AR or AP) was processed" },
+        // ── HR ──────────────────────────────────────────────────────────
+        EventTypeDescriptor { event_type: "hr.certification.expired".to_string(), description: "An employee certification expired" },
+        EventTypeDescriptor { event_type: "hr.employee.onboarded".to_string(), description: "A new employee completed onboarding" },
+        EventTypeDescriptor { event_type: "hr.leave.approved".to_string(), description: "A leave request was approved" },
+        EventTypeDescriptor { event_type: "hr.leave.created".to_string(), description: "A leave request was created" },
+        EventTypeDescriptor { event_type: "hr.performance.completed".to_string(), description: "A performance review was completed" },
+        EventTypeDescriptor { event_type: "hr.timecard.submitted".to_string(), description: "A timecard event was submitted" },
+        EventTypeDescriptor { event_type: "hr.training.completed".to_string(), description: "An employee completed a training course" },
+        // ── Identity ────────────────────────────────────────────────────
+        EventTypeDescriptor { event_type: "identity.user.created".to_string(), description: "A user account was created" },
+        // ── Operations / Continuous Improvement ──────────────────────────
+        EventTypeDescriptor { event_type: "operations.a3.created".to_string(), description: "An A3 problem-solving report was created" },
+        EventTypeDescriptor { event_type: "operations.a3.closed".to_string(), description: "An A3 problem-solving report was closed" },
+        EventTypeDescriptor { event_type: "operations.andon.acknowledged".to_string(), description: "An Andon signal was acknowledged" },
+        EventTypeDescriptor { event_type: "operations.andon.created".to_string(), description: "An Andon signal was raised" },
+        EventTypeDescriptor { event_type: "operations.andon.resolved".to_string(), description: "An Andon signal was resolved" },
+        EventTypeDescriptor { event_type: "operations.issue.created".to_string(), description: "A new issue or bug was reported" },
+        EventTypeDescriptor { event_type: "operations.kanban.created".to_string(), description: "A Kanban card was created" },
+        EventTypeDescriptor { event_type: "operations.kanban.deleted".to_string(), description: "A Kanban card was deleted" },
+        EventTypeDescriptor { event_type: "operations.kanban.moved".to_string(), description: "A Kanban card was moved to another column" },
+        EventTypeDescriptor { event_type: "operations.obeya.item-added".to_string(), description: "An item was added to an Obeya board" },
+        EventTypeDescriptor { event_type: "operations.obeya.item-deleted".to_string(), description: "An item was deleted from an Obeya board" },
+        EventTypeDescriptor { event_type: "operations.obeya.item-updated".to_string(), description: "An Obeya board item was updated" },
+        EventTypeDescriptor { event_type: "operations.project.created".to_string(), description: "A new improvement project was created" },
+        EventTypeDescriptor { event_type: "operations.risk.created".to_string(), description: "A risk was identified and recorded" },
+        EventTypeDescriptor { event_type: "operations.risk.mitigated".to_string(), description: "A risk mitigation action completed" },
+        EventTypeDescriptor { event_type: "operations.sprint.completed".to_string(), description: "A sprint / iteration completed" },
+        // ── Production ───────────────────────────────────────────────────
+        EventTypeDescriptor { event_type: "production.downtime.recorded".to_string(), description: "Equipment downtime was recorded" },
+        EventTypeDescriptor { event_type: "production.mrp.completed".to_string(), description: "An MRP explosion run completed" },
+        EventTypeDescriptor { event_type: "production.order.completed".to_string(), description: "A production order was completed" },
+        EventTypeDescriptor { event_type: "production.order.started".to_string(), description: "A production order started on the shop floor" },
+        EventTypeDescriptor { event_type: "production.pm.triggered".to_string(), description: "A preventive maintenance schedule triggered a work order" },
+        EventTypeDescriptor { event_type: "production.work-order.created".to_string(), description: "A maintenance/production work order was created" },
+        EventTypeDescriptor { event_type: "production.work-order.status-changed".to_string(), description: "A work order status changed" },
+        // ── Project Management ───────────────────────────────────────────
+        EventTypeDescriptor { event_type: "project-management.task.assigned".to_string(), description: "A task was assigned to a user" },
+        EventTypeDescriptor { event_type: "project-management.task.created".to_string(), description: "A new task was created" },
+        EventTypeDescriptor { event_type: "project-management.task.status-changed".to_string(), description: "A task status transition occurred" },
+        EventTypeDescriptor { event_type: "project-management.task.updated".to_string(), description: "Task details were updated" },
+        // ── Quality ──────────────────────────────────────────────────────
+        EventTypeDescriptor { event_type: "quality.audit.finding".to_string(), description: "An audit finding was recorded" },
+        EventTypeDescriptor { event_type: "quality.capa.closed".to_string(), description: "A CAPA was closed" },
+        EventTypeDescriptor { event_type: "quality.capa.created".to_string(), description: "A CAPA was created" },
+        EventTypeDescriptor { event_type: "quality.inspection.completed".to_string(), description: "An inspection was completed" },
+        EventTypeDescriptor { event_type: "quality.ncr.created".to_string(), description: "A non-conformance report (NCR) was created" },
+        EventTypeDescriptor { event_type: "quality.supplier.evaluated".to_string(), description: "A supplier was evaluated or scored" },
+        // ── Saved Views ──────────────────────────────────────────────────
+        EventTypeDescriptor { event_type: "saved-view.created".to_string(), description: "A saved view was created" },
+        EventTypeDescriptor { event_type: "saved-view.deleted".to_string(), description: "A saved view was deleted" },
+        EventTypeDescriptor { event_type: "saved-view.updated".to_string(), description: "A saved view was updated" },
+        // ── State Machines ───────────────────────────────────────────────
+        EventTypeDescriptor { event_type: "state-machine.instance.transitioned".to_string(), description: "A state machine instance transitioned" },
+        // ── Supply Chain ─────────────────────────────────────────────────
+        EventTypeDescriptor { event_type: "supply-chain.goods-receipt.created".to_string(), description: "A goods receipt was created" },
+        EventTypeDescriptor { event_type: "supply-chain.purchase-order.created".to_string(), description: "A purchase order was created" },
+        EventTypeDescriptor { event_type: "supply-chain.quote.approved".to_string(), description: "A quote was approved" },
+        EventTypeDescriptor { event_type: "supply-chain.quote.converted".to_string(), description: "A quote was converted to a sales order" },
+        EventTypeDescriptor { event_type: "supply-chain.quote.created".to_string(), description: "A quote was created" },
+        EventTypeDescriptor { event_type: "supply-chain.rfq.created".to_string(), description: "A Request for Quote was created" },
+        EventTypeDescriptor { event_type: "supply-chain.rfq.status-changed".to_string(), description: "An RFQ status changed" },
+        EventTypeDescriptor { event_type: "supply-chain.sales-order.created".to_string(), description: "A sales order was created" },
+        EventTypeDescriptor { event_type: "supply-chain.stock-move.created".to_string(), description: "A stock move was created" },
     ];
     Ok(Json(event_types))
 }

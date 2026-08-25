@@ -3,6 +3,7 @@
 //! Provides real-time communication infrastructure including WebSocket
 //! connection management and Server-Sent Events (SSE) broadcasting.
 
+pub mod notification_trigger_worker;
 pub mod sse;
 pub mod ws;
 

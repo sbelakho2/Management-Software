@@ -41,50 +41,10 @@ export fn sensei_simd_i16_scale(v: [*]i16, len: usize, factor: f32) void {
     simd.i16_scale(v[0..len], factor);
 }
 
-// ──────────────────────────────────────────────
-// Arena allocator
-// ──────────────────────────────────────────────
-
-var global_arena: allocator_module.ArenaAllocator = undefined;
-var global_arena_initialized: bool = false;
-
-export fn sensei_arena_init(capacity: usize) void {
-    global_arena = allocator_module.ArenaAllocator.init(capacity);
-    global_arena_initialized = true;
-}
-
-export fn sensei_arena_alloc(size: usize) ?*anyopaque {
-    if (!global_arena_initialized) return null;
-    const block = global_arena.alloc(size) orelse return null;
-    return @ptrCast(block.ptr);
-}
-
-export fn sensei_arena_reset() void {
-    if (global_arena_initialized) {
-        global_arena.reset();
-    }
-}
-
-// ──────────────────────────────────────────────
-// IPC — named channel send/recv
-// ──────────────────────────────────────────────
-
-var global_ipc = ipc.ChannelMap.init(std.heap.page_allocator);
-
-export fn sensei_ipc_send(channel: [*:0]const u8, data: [*]const u8, len: usize) i32 {
-    const slice = data[0..len];
-    const chan = channel[0..std.mem.len(channel)];
-    global_ipc.send(chan, slice) catch return -1;
-    return 0;
-}
-
-export fn sensei_ipc_recv(channel: [*:0]const u8, out: [*]u8, cap: usize) i32 {
-    const chan = channel[0..std.mem.len(channel)];
-    const msg = global_ipc.recv(chan) orelse return -1;
-    const copy_len = @min(msg.len, cap);
-    @memcpy(out[0..copy_len], msg[0..copy_len]);
-    return @intCast(copy_len);
-}
+// NOTE: The arena allocator and IPC channel exports were removed: the Rust
+// side (sensei-zt) uses pure-Rust implementations for both (allocator.rs and
+// ipc.rs), and keeping half-wired Zig exports created asymmetric behaviour.
+// The `allocator` and `ipc` modules remain importable for direct Zig users.
 
 // ──────────────────────────────────────────────
 // Benchmarking helper (called from Rust benchmarks)
@@ -126,7 +86,7 @@ export fn sensei_tensor_softmax_f32(tensor: [*]f32, len: usize, dim: usize) void
 
 /// Argmax (global) — returns the index of the maximum value in the tensor.
 export fn sensei_tensor_argmax_f32(tensor: [*]const f32, len: usize, dim: usize) usize {
-    return onnx.argmaxF32(tensor[0..len], dim);
+    return onnx.argmaxF32(tensor[0..len], dim) orelse 0;
 }
 
 /// Argmax per-slice — returns a pointer to an array of indices,
@@ -238,7 +198,10 @@ export fn sensei_llm_init(
     const tokenizer = if (tokenizer_ptr) |t| t.* else llm.Tokenizer.init(allocator);
 
     const runner = allocator.create(llm.LlamaRunner) catch return null;
-    runner.* = llm.LlamaRunner.init(config, weights, tokenizer, allocator);
+    runner.* = llm.LlamaRunner.init(config, weights, tokenizer, allocator) catch {
+        allocator.destroy(runner);
+        return null;
+    };
     global_llm_runner = runner;
     return @ptrCast(runner);
 }
@@ -267,19 +230,31 @@ export fn sensei_llm_generate(
     const prompt = prompt_ptr[0..prompt_len];
 
     const result = runner.generate(prompt, max_tokens, temperature, top_k, top_p, std.heap.page_allocator) catch return null;
-    // Ensure null-terminated
-    const null_term = std.heap.page_allocator.alloc(u8, result.len + 1) catch return null;
-    @memcpy(null_term[0..result.len], result);
-    null_term[result.len] = 0;
-    std.heap.page_allocator.free(result);
-    return null_term.ptr;
+    defer std.heap.page_allocator.free(result);
+
+    // Allocation layout: [len: usize][bytes][0]. The length is stored before
+    // the data so `sensei_llm_free_string` frees exactly the allocated block
+    // instead of walking to a NUL terminator.
+    const header_size = @sizeOf(usize);
+    const total = header_size + result.len + 1;
+    const buf = std.heap.page_allocator.alloc(u8, total) catch return null;
+    const len_ptr: *usize = @ptrCast(@alignCast(buf.ptr));
+    len_ptr.* = result.len;
+    @memcpy(buf[header_size .. header_size + result.len], result);
+    buf[header_size + result.len] = 0;
+    return (buf.ptr + header_size);
 }
 
 /// Free a string previously returned by `sensei_llm_generate`.
+///
+/// Reads the length stored in the allocation header and frees exactly that
+/// block — no NUL-terminator walk, no off-by-one.
 export fn sensei_llm_free_string(ptr: [*]u8) void {
-    var len: usize = 0;
-    while (ptr[len] != 0) : (len += 1) {}
-    std.heap.page_allocator.free(ptr[0 .. len + 1]);
+    const header_size = @sizeOf(usize);
+    const base = ptr - header_size;
+    const len_ptr: *const usize = @ptrCast(@alignCast(base));
+    const total = header_size + len_ptr.* + 1;
+    std.heap.page_allocator.free(base[0..total]);
 }
 
 /// Destroy a LLaMA runner previously created by `sensei_llm_init`.
@@ -291,16 +266,6 @@ export fn sensei_llm_deinit(runner_ptr: *anyopaque) void {
     if (global_llm_runner == runner) {
         global_llm_runner = null;
     }
-}
-
-/// Software fallback chatbot: takes a prompt string and returns a response.
-/// Returns a pointer to a null-terminated UTF-8 string, or null on error.
-/// Caller must free with `sensei_llm_free_string`.
-export fn sensei_llm_fallback_chat(prompt_ptr: [*]const u8, prompt_len: usize) ?[*]u8 {
-    const prompt = prompt_ptr[0..prompt_len];
-    const response = llm.fallbackChat(prompt);
-    const null_term = std.heap.page_allocator.dupe(u8, response) catch return null;
-    return null_term.ptr;
 }
 
 // ══════════════════════════════════════════════

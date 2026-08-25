@@ -10,26 +10,8 @@ use oauth2::{
 use oauth2::basic::BasicClient;
 use oauth2::url::Url;
 use sensei_core::error::{Result, SenseiError};
-use serde::{Deserialize, Serialize};
 
-/// Configuration for an OAuth2 provider.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct OAuth2ProviderConfig {
-    /// Provider name (e.g., "google", "azure", "github").
-    pub provider: String,
-    /// Authorization endpoint URL.
-    pub auth_url: String,
-    /// Token endpoint URL.
-    pub token_url: String,
-    /// Client ID.
-    pub client_id: String,
-    /// Client secret.
-    pub client_secret: String,
-    /// Redirect URL after authentication.
-    pub redirect_url: String,
-    /// Scopes to request.
-    pub scopes: Vec<String>,
-}
+pub use sensei_core::config::OAuth2ProviderConfig;
 
 /// The OAuth2 client for interacting with providers.
 ///
@@ -43,6 +25,19 @@ impl OAuth2Client {
     /// Create a new [`OAuth2Client`] from the given configuration.
     pub fn new(config: OAuth2ProviderConfig) -> Self {
         Self { config }
+    }
+
+    /// Create a new [`OAuth2Client`] from a configuration, validating that
+    /// the authorization, token, and redirect URLs are well-formed.
+    pub fn from_config(config: &OAuth2ProviderConfig) -> Result<Self> {
+        AuthUrl::new(config.auth_url.clone())
+            .map_err(|e| SenseiError::Configuration(format!("Invalid auth URL: {e}")))?;
+        TokenUrl::new(config.token_url.clone())
+            .map_err(|e| SenseiError::Configuration(format!("Invalid token URL: {e}")))?;
+        RedirectUrl::new(config.redirect_url.clone())
+            .map_err(|e| SenseiError::Configuration(format!("Invalid redirect URL: {e}")))?;
+
+        Ok(Self::new(config.clone()))
     }
 
     /// Generate the authorization URL for the OAuth2 flow.

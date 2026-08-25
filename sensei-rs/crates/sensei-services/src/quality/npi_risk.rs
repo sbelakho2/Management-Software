@@ -286,13 +286,11 @@ pub struct InMemoryNpiRiskRegisterService {
 
 impl InMemoryNpiRiskRegisterService {
     pub fn new() -> Self {
-        let svc = Self {
+        Self {
             risks: tokio::sync::RwLock::new(Vec::new()),
-            templates: tokio::sync::RwLock::new(Vec::new()),
+            templates: tokio::sync::RwLock::new(Self::default_templates()),
             _risk_counter: std::sync::atomic::AtomicU64::new(0),
-        };
-        svc._init_default_templates();
-        svc
+        }
     }
 
     fn _next_risk_number(&self) -> String {
@@ -302,50 +300,51 @@ impl InMemoryNpiRiskRegisterService {
         format!("RISK-{}-{:04}", chrono::Utc::now().format("%Y%m%d"), n)
     }
 
-    fn _init_default_templates(&self) {
-        let mut templates = self.templates.blocking_write();
-        templates.push(RiskTemplate {
-            id: new_id(),
-            name: "Design Complexity Risk".into(),
-            description: "Risk related to product design complexity and new technology".into(),
-            category: NpiRiskCategory::DesignComplexity,
-            phase: RiskPhase::Intake,
-            default_severity: 5,
-            default_occurrence: 4,
-            default_detection: 4,
-            suggested_mitigations: vec![
-                "Conduct DFM review early".into(),
-                "Engage supplier for design input".into(),
-            ],
-        });
-        templates.push(RiskTemplate {
-            id: new_id(),
-            name: "Supplier Capability Risk".into(),
-            description: "Risk that supplier cannot meet quality or delivery requirements".into(),
-            category: NpiRiskCategory::SupplierCapability,
-            phase: RiskPhase::Dfm,
-            default_severity: 7,
-            default_occurrence: 3,
-            default_detection: 5,
-            suggested_mitigations: vec![
-                "Conduct supplier audit".into(),
-                "Request PPAP submission".into(),
-            ],
-        });
-        templates.push(RiskTemplate {
-            id: new_id(),
-            name: "Schedule Risk".into(),
-            description: "Risk of missing key project milestones".into(),
-            category: NpiRiskCategory::ScheduleRisk,
-            phase: RiskPhase::Intake,
-            default_severity: 6,
-            default_occurrence: 4,
-            default_detection: 3,
-            suggested_mitigations: vec![
-                "Create detailed project plan with buffer".into(),
-                "Weekly status reviews".into(),
-            ],
-        });
+    fn default_templates() -> Vec<RiskTemplate> {
+        vec![
+            RiskTemplate {
+                id: new_id(),
+                name: "Design Complexity Risk".into(),
+                description: "Risk related to product design complexity and new technology".into(),
+                category: NpiRiskCategory::DesignComplexity,
+                phase: RiskPhase::Intake,
+                default_severity: 5,
+                default_occurrence: 4,
+                default_detection: 4,
+                suggested_mitigations: vec![
+                    "Conduct DFM review early".into(),
+                    "Engage supplier for design input".into(),
+                ],
+            },
+            RiskTemplate {
+                id: new_id(),
+                name: "Supplier Capability Risk".into(),
+                description: "Risk that supplier cannot meet quality or delivery requirements".into(),
+                category: NpiRiskCategory::SupplierCapability,
+                phase: RiskPhase::Dfm,
+                default_severity: 7,
+                default_occurrence: 3,
+                default_detection: 5,
+                suggested_mitigations: vec![
+                    "Conduct supplier audit".into(),
+                    "Request PPAP submission".into(),
+                ],
+            },
+            RiskTemplate {
+                id: new_id(),
+                name: "Schedule Risk".into(),
+                description: "Risk of missing key project milestones".into(),
+                category: NpiRiskCategory::ScheduleRisk,
+                phase: RiskPhase::Intake,
+                default_severity: 6,
+                default_occurrence: 4,
+                default_detection: 3,
+                suggested_mitigations: vec![
+                    "Create detailed project plan with buffer".into(),
+                    "Weekly status reviews".into(),
+                ],
+            },
+        ]
     }
 }
 
@@ -851,14 +850,12 @@ pub struct InMemoryChangeControlService {
 
 impl InMemoryChangeControlService {
     pub fn new() -> Self {
-        let svc = Self {
+        Self {
             changes: tokio::sync::RwLock::new(Vec::new()),
-            policies: tokio::sync::RwLock::new(Vec::new()),
+            policies: tokio::sync::RwLock::new(Self::default_policies()),
             snapshots: tokio::sync::RwLock::new(Vec::new()),
             _change_counter: std::sync::atomic::AtomicU64::new(0),
-        };
-        svc._setup_default_policies();
-        svc
+        }
     }
 
     fn _next_change_number(&self) -> String {
@@ -868,63 +865,62 @@ impl InMemoryChangeControlService {
         format!("CR-{}-{:04}", chrono::Utc::now().format("%Y%m%d"), n)
     }
 
-    fn _setup_default_policies(&self) {
-        let mut policies = self.policies.blocking_write();
-        policies.push(ApprovalPolicy {
-            id: new_id(),
-            change_type: ChangeType::Workflow,
-            required_approvers: 2,
-            required_roles: vec!["Quality Manager".into(), "Production Manager".into()],
-            auto_approve_threshold: Some(ChangeRisk::Low),
-            escalation_delay_hours: 48,
-        });
-        policies.push(ApprovalPolicy {
-            id: new_id(),
-            change_type: ChangeType::Parameter,
-            required_approvers: 3,
-            required_roles: vec![
-                "Quality Manager".into(),
-                "Engineering Manager".into(),
-                "Customer Representative".into(),
-            ],
-            auto_approve_threshold: None,
-            escalation_delay_hours: 24,
-        });
-        policies.push(ApprovalPolicy {
-            id: new_id(),
-            change_type: ChangeType::Integration,
-            required_approvers: 2,
-            required_roles: vec!["Purchasing Manager".into(), "Quality Manager".into()],
-            auto_approve_threshold: Some(ChangeRisk::Medium),
-            escalation_delay_hours: 72,
-        });
-        policies.push(ApprovalPolicy {
-            id: new_id(),
-            change_type: ChangeType::Configuration,
-            required_approvers: 4,
-            required_roles: vec![
-                "Engineering Manager".into(),
-                "Quality Manager".into(),
-                "Production Manager".into(),
-                "Customer Representative".into(),
-            ],
-            auto_approve_threshold: None,
-            escalation_delay_hours: 24,
-        });
+    fn default_policies() -> Vec<ApprovalPolicy> {
+        vec![
+            ApprovalPolicy {
+                id: new_id(),
+                change_type: ChangeType::Workflow,
+                required_approvers: 2,
+                required_roles: vec!["Quality Manager".into(), "Production Manager".into()],
+                auto_approve_threshold: Some(ChangeRisk::Low),
+                escalation_delay_hours: 48,
+            },
+            ApprovalPolicy {
+                id: new_id(),
+                change_type: ChangeType::Parameter,
+                required_approvers: 3,
+                required_roles: vec![
+                    "Quality Manager".into(),
+                    "Engineering Manager".into(),
+                    "Customer Representative".into(),
+                ],
+                auto_approve_threshold: None,
+                escalation_delay_hours: 24,
+            },
+            ApprovalPolicy {
+                id: new_id(),
+                change_type: ChangeType::Integration,
+                required_approvers: 2,
+                required_roles: vec!["Purchasing Manager".into(), "Quality Manager".into()],
+                auto_approve_threshold: Some(ChangeRisk::Medium),
+                escalation_delay_hours: 72,
+            },
+            ApprovalPolicy {
+                id: new_id(),
+                change_type: ChangeType::Configuration,
+                required_approvers: 4,
+                required_roles: vec![
+                    "Engineering Manager".into(),
+                    "Quality Manager".into(),
+                    "Production Manager".into(),
+                    "Customer Representative".into(),
+                ],
+                auto_approve_threshold: None,
+                escalation_delay_hours: 24,
+            },
+        ]
     }
 
     fn _add_audit_entry(
         audit_trail: &mut Vec<ChangeAuditEntry>,
+        change_request_id: Uuid,
         action: String,
         details: String,
         performed_by: Option<Uuid>,
     ) {
         audit_trail.push(ChangeAuditEntry {
             id: new_id(),
-            change_request_id: audit_trail
-                .first()
-                .map(|e| e.change_request_id)
-                .unwrap_or_default(),
+            change_request_id,
             action,
             details,
             performed_by,
@@ -1040,6 +1036,7 @@ impl ChangeControlService for InMemoryChangeControlService {
         change.updated_at = now();
         Self::_add_audit_entry(
             &mut change.audit_trail,
+            id,
             "cancelled".into(),
             "Change request cancelled".into(),
             None,
@@ -1063,6 +1060,7 @@ impl ChangeControlService for InMemoryChangeControlService {
         change.updated_at = now();
         Self::_add_audit_entry(
             &mut change.audit_trail,
+            id,
             "submitted_for_review".into(),
             "Submitted for review".into(),
             None,
@@ -1138,6 +1136,7 @@ impl ChangeControlService for InMemoryChangeControlService {
         change.updated_at = now();
         Self::_add_audit_entry(
             &mut change.audit_trail,
+            id,
             "approved".into(),
             format!("Approved by {approver_id}"),
             Some(approver_id),
@@ -1176,6 +1175,7 @@ impl ChangeControlService for InMemoryChangeControlService {
         change.updated_at = now();
         Self::_add_audit_entry(
             &mut change.audit_trail,
+            id,
             "rejected".into(),
             format!("Rejected by {approver_id}"),
             Some(approver_id),
@@ -1204,6 +1204,7 @@ impl ChangeControlService for InMemoryChangeControlService {
         change.updated_at = now();
         Self::_add_audit_entry(
             &mut change.audit_trail,
+            id,
             "scheduled".into(),
             format!("Scheduled for {}", scheduled_for),
             None,
@@ -1228,6 +1229,7 @@ impl ChangeControlService for InMemoryChangeControlService {
         change.updated_at = now();
         Self::_add_audit_entry(
             &mut change.audit_trail,
+            id,
             "applied".into(),
             "Change implemented".into(),
             None,
@@ -1252,6 +1254,7 @@ impl ChangeControlService for InMemoryChangeControlService {
         change.updated_at = now();
         Self::_add_audit_entry(
             &mut change.audit_trail,
+            id,
             "rolled_back".into(),
             "Change rolled back".into(),
             None,
@@ -1331,6 +1334,7 @@ impl ChangeControlService for InMemoryChangeControlService {
         change.updated_at = now();
         Self::_add_audit_entry(
             &mut change.audit_trail,
+            snapshot.change_request_id,
             "snapshot_restored".into(),
             format!("Restored snapshot {snapshot_id}"),
             None,

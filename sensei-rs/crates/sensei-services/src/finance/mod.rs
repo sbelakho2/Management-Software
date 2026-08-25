@@ -60,6 +60,9 @@ pub struct InvoiceLineItem {
     pub quantity: i64,
     pub unit_price: f64,
     pub total: f64,
+    /// Product this line refers to, when known (used by AP 3-way matching).
+    #[serde(default)]
+    pub product_id: Option<Uuid>,
 }
 
 /// A payment applied to an invoice.
@@ -117,6 +120,48 @@ pub struct CostRollup {
     pub overhead_cost: f64,
     pub total_cost: f64,
     pub rollup_date: DateTime<Utc>,
+}
+
+/// Per-line verdict of an AP 3-way match (PO vs receipts vs invoice).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ThreeWayLineStatus {
+    /// Received quantity covers the invoiced quantity and does not exceed the PO.
+    Matched,
+    /// Received quantity is below the invoiced quantity.
+    UnderDelivered,
+    /// Received quantity exceeds the PO quantity or the invoiced quantity.
+    OverDelivered,
+    /// The invoice line cannot be tied to a product (no product reference).
+    Unmatched,
+}
+
+/// Overall verdict of a 3-way match.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ThreeWayVerdict {
+    /// Every invoice line matched and quantities are consistent.
+    Matched,
+    /// At least one line is under/over-delivered or unmatched.
+    Mismatch,
+}
+
+/// Per-product comparison between PO quantity, received quantity, and
+/// invoiced quantity.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ThreeWayLineResult {
+    pub product_id: Uuid,
+    pub po_quantity: f64,
+    pub received_quantity: f64,
+    pub invoiced_quantity: f64,
+    pub status: ThreeWayLineStatus,
+}
+
+/// Result of matching a purchase order against goods receipts and an invoice.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ThreeWayMatchResult {
+    pub po_id: Uuid,
+    pub invoice_id: Uuid,
+    pub lines: Vec<ThreeWayLineResult>,
+    pub verdict: ThreeWayVerdict,
 }
 
 // ---------------------------------------------------------------------------
@@ -255,6 +300,20 @@ pub trait FinanceService: Send + Sync {
         tenant_id: Uuid,
         product_id: Uuid,
     ) -> Result<CostRollup>;
+
+    // ── AP 3-Way Matching ───────────────────────────────────────────────
+    /// Match a purchase order, its goods receipts, and a supplier invoice.
+    ///
+    /// Verifies the PO exists, that every receipt belongs to the PO, that
+    /// received quantities per product cover the invoiced quantities, and
+    /// that totals are consistent. Returns per-line and overall verdicts.
+    async fn match_three_way(
+        &self,
+        tenant_id: Uuid,
+        po_id: Uuid,
+        receipt_ids: Vec<Uuid>,
+        invoice_id: Uuid,
+    ) -> Result<ThreeWayMatchResult>;
 }
 
 // ---------------------------------------------------------------------------
@@ -271,11 +330,56 @@ pub struct InMemoryFinanceService {
     payments: RwLock<HashMap<Uuid, Payment>>,
     budgets: RwLock<HashMap<Uuid, Budget>>,
     journal_entries: RwLock<HashMap<Uuid, JournalEntry>>,
+    /// Cost rollups keyed by product id (latest rollup per product).
     cost_rollups: RwLock<HashMap<Uuid, CostRollup>>,
     inv_counter: RwLock<u64>,
     pay_counter: RwLock<u64>,
     je_counter: RwLock<u64>,
     event_bus: Option<Arc<dyn EventBus>>,
+    // Costing inputs (seeded for tests/demos; the DB implementation reads
+    // the real BOM / routing tables).
+    bom: RwLock<HashMap<Uuid, Vec<BomEntry>>>,
+    standard_costs: RwLock<HashMap<Uuid, f64>>,
+    routings: RwLock<HashMap<Uuid, Vec<RoutingEntry>>>,
+    product_names: RwLock<HashMap<Uuid, String>>,
+    // AP 3-way match inputs (seeded for tests/demos).
+    purchase_orders: RwLock<HashMap<Uuid, PoLite>>,
+    receipts: RwLock<HashMap<Uuid, ReceiptLite>>,
+}
+
+/// A BOM line seeded into the in-memory finance service.
+#[derive(Debug, Clone)]
+pub struct BomEntry {
+    /// The component product id (cost is looked up via `standard_cost`).
+    pub component_product_id: Uuid,
+    /// Quantity of the component per unit of the parent product.
+    pub quantity: f64,
+}
+
+/// A routing step seeded into the in-memory finance service.
+#[derive(Debug, Clone)]
+pub struct RoutingEntry {
+    /// Standard time in hours for the operation.
+    pub standard_time_hours: f64,
+    /// Hourly rate of the work center (currency units per hour).
+    pub hourly_rate: f64,
+}
+
+/// A purchase order seeded into the in-memory finance service.
+#[derive(Debug, Clone)]
+pub struct PoLite {
+    pub id: Uuid,
+    pub tenant_id: Uuid,
+    pub lines: Vec<(Uuid, f64)>,
+}
+
+/// A goods receipt seeded into the in-memory finance service.
+#[derive(Debug, Clone)]
+pub struct ReceiptLite {
+    pub id: Uuid,
+    pub tenant_id: Uuid,
+    pub po_id: Uuid,
+    pub lines: Vec<(Uuid, f64)>,
 }
 
 impl InMemoryFinanceService {
@@ -291,7 +395,76 @@ impl InMemoryFinanceService {
             pay_counter: RwLock::new(0),
             je_counter: RwLock::new(0),
             event_bus,
+            bom: RwLock::new(HashMap::new()),
+            standard_costs: RwLock::new(HashMap::new()),
+            routings: RwLock::new(HashMap::new()),
+            product_names: RwLock::new(HashMap::new()),
+            purchase_orders: RwLock::new(HashMap::new()),
+            receipts: RwLock::new(HashMap::new()),
         }
+    }
+
+    /// Seed a BOM line for cost rollups.
+    pub async fn seed_bom(
+        &self,
+        parent_product_id: Uuid,
+        component_product_id: Uuid,
+        quantity: f64,
+    ) {
+        self.bom
+            .write()
+            .await
+            .entry(parent_product_id)
+            .or_default()
+            .push(BomEntry {
+                component_product_id,
+                quantity,
+            });
+    }
+
+    /// Seed a product's standard cost for cost rollups.
+    pub async fn seed_standard_cost(&self, product_id: Uuid, cost: f64) {
+        self.standard_costs.write().await.insert(product_id, cost);
+    }
+
+    /// Seed a routing step (standard time × hourly rate) for labor costing.
+    pub async fn seed_routing(&self, product_id: Uuid, standard_time_hours: f64, hourly_rate: f64) {
+        self.routings
+            .write()
+            .await
+            .entry(product_id)
+            .or_default()
+            .push(RoutingEntry {
+                standard_time_hours,
+                hourly_rate,
+            });
+    }
+
+    /// Seed a product display name for cost rollups.
+    pub async fn seed_product_name(&self, product_id: Uuid, name: impl Into<String>) {
+        self.product_names.write().await.insert(product_id, name.into());
+    }
+
+    /// Seed a purchase order for AP 3-way matching.
+    pub async fn seed_purchase_order(&self, tenant_id: Uuid, id: Uuid, lines: Vec<(Uuid, f64)>) {
+        self.purchase_orders
+            .write()
+            .await
+            .insert(id, PoLite { id, tenant_id, lines });
+    }
+
+    /// Seed a goods receipt for AP 3-way matching.
+    pub async fn seed_goods_receipt(
+        &self,
+        tenant_id: Uuid,
+        id: Uuid,
+        po_id: Uuid,
+        lines: Vec<(Uuid, f64)>,
+    ) {
+        self.receipts
+            .write()
+            .await
+            .insert(id, ReceiptLite { id, tenant_id, po_id, lines });
     }
 
     async fn publish_event(&self, event: impl DomainEvent + 'static) {
@@ -313,6 +486,18 @@ impl InMemoryFinanceService {
     fn generate_entry_number(counter: u64) -> String {
         format!("JE-{}-{:04}", Utc::now().format("%Y%m%d"), counter)
     }
+}
+
+/// Overhead percentage applied on top of (material + labor) cost.
+///
+/// Configurable via the `FINANCE_OVERHEAD_PCT` environment variable
+/// (defaults to 15%). Invalid or non-finite values fall back to the default.
+pub fn overhead_percentage() -> f64 {
+    std::env::var("FINANCE_OVERHEAD_PCT")
+        .ok()
+        .and_then(|v| v.parse::<f64>().ok())
+        .filter(|v| v.is_finite() && *v >= 0.0)
+        .unwrap_or(15.0)
 }
 
 impl Default for InMemoryFinanceService {
@@ -401,15 +586,18 @@ impl FinanceService for InMemoryFinanceService {
 
     async fn mark_invoice_paid(
         &self,
-        _tenant_id: Uuid,
+        tenant_id: Uuid,
         id: Uuid,
-        _payment_id: Uuid,
+        payment_id: Uuid,
     ) -> Result<Invoice> {
         let mut store = self.invoices.write().await;
         let inv = store
             .get_mut(&id)
             .ok_or_else(|| SenseiError::NotFound(format!("Invoice {id} not found")))?;
 
+        if inv.tenant_id != tenant_id {
+            return Err(SenseiError::NotFound(format!("Invoice {id} not found")));
+        }
         if inv.status == "paid" {
             return Err(SenseiError::Validation(
                 "Invoice is already paid".to_string(),
@@ -419,6 +607,34 @@ impl FinanceService for InMemoryFinanceService {
             return Err(SenseiError::Validation(
                 "Cannot mark a cancelled invoice as paid".to_string(),
             ));
+        }
+
+        // Validate the payment being applied belongs to this invoice.
+        let payments = self.payments.read().await;
+        let payment = payments.get(&payment_id).ok_or_else(|| {
+            SenseiError::NotFound(format!("Payment {payment_id} not found"))
+        })?;
+        if payment.invoice_id != id {
+            return Err(SenseiError::Validation(format!(
+                "Payment {payment_id} does not belong to invoice {id}"
+            )));
+        }
+
+        // Cumulative payments must cover the invoice total (with a small
+        // epsilon for floating-point rounding).
+        const EPSILON: f64 = 0.01;
+        let cumulative: f64 = payments
+            .values()
+            .filter(|p| p.invoice_id == id)
+            .map(|p| p.amount)
+            .sum();
+        drop(payments);
+
+        if cumulative + EPSILON < inv.total_amount {
+            return Err(SenseiError::Validation(format!(
+                "Cumulative payments ({cumulative:.2}) do not cover invoice total ({:.2})",
+                inv.total_amount
+            )));
         }
 
         inv.status = "paid".to_string();
@@ -602,23 +818,67 @@ impl FinanceService for InMemoryFinanceService {
         tenant_id: Uuid,
         product_id: Uuid,
     ) -> Result<CostRollup> {
-        // Generate a realistic synthetic cost rollup
+        // Real rollup from seeded BOM/routing data, summed in integer cents.
+        let bom = self.bom.read().await;
+        let costs = self.standard_costs.read().await;
+        let mut material_cents: i64 = 0;
+        for entry in bom.get(&product_id).into_iter().flatten() {
+            let unit_cost = costs.get(&entry.component_product_id).copied().unwrap_or(0.0);
+            let line = sensei_core::domain::value_objects::Money::from_decimal(
+                entry.quantity * unit_cost,
+                sensei_core::domain::value_objects::CurrencyCode::USD,
+            )
+            .map_err(|e| SenseiError::Internal(format!("Invalid cost value in BOM: {e}")))?;
+            material_cents += line.cents;
+        }
+        drop(bom);
+        drop(costs);
+
+        let routings = self.routings.read().await;
+        let mut labor_cents: i64 = 0;
+        for step in routings.get(&product_id).into_iter().flatten() {
+            let labor = sensei_core::domain::value_objects::Money::from_decimal(
+                step.standard_time_hours * step.hourly_rate,
+                sensei_core::domain::value_objects::CurrencyCode::USD,
+            )
+            .map_err(|e| SenseiError::Internal(format!("Invalid labor rate: {e}")))?;
+            labor_cents += labor.cents;
+        }
+        drop(routings);
+
+        let overhead_pct = overhead_percentage();
+        let overhead_cents = ((material_cents + labor_cents) as f64 * overhead_pct / 100.0).round() as i64;
+
+        let material_cost = material_cents as f64 / 100.0;
+        let labor_cost = labor_cents as f64 / 100.0;
+        let overhead_cost = overhead_cents as f64 / 100.0;
+        let total_cost = material_cost + labor_cost + overhead_cost;
+
+        let product_names = self.product_names.read().await;
+        let product_name = product_names
+            .get(&product_id)
+            .cloned()
+            .unwrap_or_else(|| "Unknown Product".to_string());
+        drop(product_names);
+
         let rollup = CostRollup {
             id: Uuid::new_v4(),
             tenant_id,
             product_id,
-            product_name: format!("Product-{}", &product_id.to_string()[..8]),
-            material_cost: 1250.75,
-            labor_cost: 875.50,
-            overhead_cost: 340.25,
-            total_cost: 1250.75 + 875.50 + 340.25,
+            product_name,
+            material_cost,
+            labor_cost,
+            overhead_cost,
+            total_cost,
             rollup_date: Utc::now(),
         };
 
+        // Key by product so `get_cost_rollup` deterministically returns the
+        // most recent rollup for the product.
         self.cost_rollups
             .write()
             .await
-            .insert(rollup.id, rollup.clone());
+            .insert(product_id, rollup.clone());
         self.publish_event(CostRollupCompleted::new(
             tenant_id,
             product_id,
@@ -636,14 +896,134 @@ impl FinanceService for InMemoryFinanceService {
     ) -> Result<CostRollup> {
         let store = self.cost_rollups.read().await;
         store
-            .values()
-            .find(|cr| cr.product_id == product_id)
+            .get(&product_id)
             .cloned()
             .ok_or_else(|| {
                 SenseiError::NotFound(format!(
                     "Cost rollup for product {product_id} not found"
                 ))
             })
+    }
+
+    // ── AP 3-Way Matching ───────────────────────────────────────────────
+
+    async fn match_three_way(
+        &self,
+        tenant_id: Uuid,
+        po_id: Uuid,
+        receipt_ids: Vec<Uuid>,
+        invoice_id: Uuid,
+    ) -> Result<ThreeWayMatchResult> {
+        let pos = self.purchase_orders.read().await;
+        let po = pos
+            .get(&po_id)
+            .ok_or_else(|| SenseiError::NotFound(format!("Purchase order {po_id} not found")))?;
+        if po.tenant_id != tenant_id {
+            return Err(SenseiError::NotFound(format!("Purchase order {po_id} not found")));
+        }
+
+        let receipts = self.receipts.read().await;
+        for rid in &receipt_ids {
+            let r = receipts
+                .get(rid)
+                .ok_or_else(|| SenseiError::NotFound(format!("Goods receipt {rid} not found")))?;
+            if r.tenant_id != tenant_id || r.po_id != po_id {
+                return Err(SenseiError::Validation(format!(
+                    "Goods receipt {rid} does not belong to purchase order {po_id}"
+                )));
+            }
+        }
+
+        // Received quantity per product across all provided receipts.
+        let mut received: HashMap<Uuid, f64> = HashMap::new();
+        for rid in &receipt_ids {
+            if let Some(r) = receipts.get(rid) {
+                for (product_id, qty) in &r.lines {
+                    *received.entry(*product_id).or_default() += qty;
+                }
+            }
+        }
+
+        let invoices = self.invoices.read().await;
+        let invoice = invoices
+            .get(&invoice_id)
+            .ok_or_else(|| SenseiError::NotFound(format!("Invoice {invoice_id} not found")))?;
+        if invoice.tenant_id != tenant_id {
+            return Err(SenseiError::NotFound(format!("Invoice {invoice_id} not found")));
+        }
+
+        // Invoiced quantity per product.
+        let mut invoiced: HashMap<Uuid, f64> = HashMap::new();
+        let mut unmatched: Vec<Uuid> = Vec::new();
+        for line in &invoice.line_items {
+            match line.product_id {
+                Some(pid) => *invoiced.entry(pid).or_default() += line.quantity as f64,
+                None => unmatched.push(Uuid::nil()),
+            }
+        }
+
+        // PO quantity per product.
+        let mut po_qty: HashMap<Uuid, f64> = HashMap::new();
+        for (product_id, qty) in &po.lines {
+            *po_qty.entry(*product_id).or_default() += qty;
+        }
+        drop(pos);
+        drop(receipts);
+        drop(invoices);
+
+        let mut products: Vec<Uuid> = po_qty
+            .keys()
+            .chain(invoiced.keys())
+            .copied()
+            .collect::<std::collections::HashSet<_>>()
+            .into_iter()
+            .collect();
+        products.sort();
+
+        let mut lines = Vec::new();
+        for pid in products {
+            let pq = po_qty.get(&pid).copied().unwrap_or(0.0);
+            let rq = received.get(&pid).copied().unwrap_or(0.0);
+            let iq = invoiced.get(&pid).copied().unwrap_or(0.0);
+            let status = if rq + 1e-9 < iq {
+                ThreeWayLineStatus::UnderDelivered
+            } else if rq > pq + 1e-9 || rq > iq + 1e-9 {
+                ThreeWayLineStatus::OverDelivered
+            } else {
+                ThreeWayLineStatus::Matched
+            };
+            lines.push(ThreeWayLineResult {
+                product_id: pid,
+                po_quantity: pq,
+                received_quantity: rq,
+                invoiced_quantity: iq,
+                status,
+            });
+        }
+
+        // Invoice lines without a product reference are reported as unmatched.
+        if !unmatched.is_empty() {
+            lines.push(ThreeWayLineResult {
+                product_id: Uuid::nil(),
+                po_quantity: 0.0,
+                received_quantity: 0.0,
+                invoiced_quantity: unmatched.len() as f64,
+                status: ThreeWayLineStatus::Unmatched,
+            });
+        }
+
+        let verdict = if lines.is_empty() || lines.iter().any(|l| l.status != ThreeWayLineStatus::Matched) {
+            ThreeWayVerdict::Mismatch
+        } else {
+            ThreeWayVerdict::Matched
+        };
+
+        Ok(ThreeWayMatchResult {
+            po_id,
+            invoice_id,
+            lines,
+            verdict,
+        })
     }
 
     // ── Invoice Mutations ──────────────────────────────────────────────
@@ -787,12 +1167,14 @@ mod tests {
                     quantity: 10,
                     unit_price: 25.0,
                     total: 0.0,
+                    product_id: None,
                 },
                 InvoiceLineItem {
                     description: "Widget B".to_string(),
                     quantity: 5,
                     unit_price: 50.0,
                     total: 0.0,
+                    product_id: None,
                 },
             ],
             subtotal: 0.0,
@@ -853,12 +1235,94 @@ mod tests {
         };
 
         let created = service.create_invoice(tenant_id, invoice).await.unwrap();
+
+        // Insufficient payment must be rejected.
+        let payment_id = Uuid::new_v4();
+        let small = Payment {
+            id: payment_id,
+            tenant_id,
+            payment_number: String::new(),
+            invoice_id: created.id,
+            amount: 50.0,
+            currency: "USD".to_string(),
+            payment_method: "bank_transfer".to_string(),
+            reference: "PARTIAL".to_string(),
+            received_at: Utc::now(),
+            created_by: Uuid::new_v4(),
+        };
+        service.record_payment(tenant_id, small).await.unwrap();
+        let err = service
+            .mark_invoice_paid(tenant_id, created.id, payment_id)
+            .await
+            .unwrap_err();
+        assert!(matches!(err, SenseiError::Validation(_)));
+
+        // Covering the balance lets the invoice be marked paid.
+        let full = Payment {
+            id: Uuid::new_v4(),
+            tenant_id,
+            payment_number: String::new(),
+            invoice_id: created.id,
+            amount: 50.0,
+            currency: "USD".to_string(),
+            payment_method: "bank_transfer".to_string(),
+            reference: "BALANCE".to_string(),
+            received_at: Utc::now(),
+            created_by: Uuid::new_v4(),
+        };
+        let full_id = full.id;
+        service.record_payment(tenant_id, full).await.unwrap();
         let paid = service
-            .mark_invoice_paid(tenant_id, created.id, Uuid::new_v4())
+            .mark_invoice_paid(tenant_id, created.id, full_id)
             .await
             .unwrap();
         assert_eq!(paid.status, "paid");
         assert!(paid.paid_at.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_mark_invoice_paid_rejects_unrelated_payment() {
+        let service = InMemoryFinanceService::default();
+        let tenant_id = Uuid::new_v4();
+        let invoice = Invoice {
+            id: Uuid::nil(),
+            tenant_id,
+            invoice_number: String::new(),
+            customer_id: Uuid::new_v4(),
+            customer_name: "Test".to_string(),
+            status: String::new(),
+            line_items: vec![],
+            subtotal: 0.0,
+            tax_percentage: 0.0,
+            tax_amount: 0.0,
+            total_amount: 0.0,
+            currency: "USD".to_string(),
+            due_date: Utc::now() + chrono::Duration::days(30),
+            paid_at: None,
+            notes: String::new(),
+            created_by: Uuid::new_v4(),
+            created_at: Utc::now(),
+        };
+        let created = service.create_invoice(tenant_id, invoice).await.unwrap();
+        let other = Payment {
+            id: Uuid::new_v4(),
+            tenant_id,
+            payment_number: String::new(),
+            invoice_id: Uuid::new_v4(),
+            amount: 100.0,
+            currency: "USD".to_string(),
+            payment_method: "cash".to_string(),
+            reference: "WRONG-INVOICE".to_string(),
+            received_at: Utc::now(),
+            created_by: Uuid::new_v4(),
+        };
+        let other_id = other.id;
+        service.record_payment(tenant_id, other).await.unwrap();
+        let err = service
+            .mark_invoice_paid(tenant_id, created.id, other_id)
+            .await
+            .unwrap_err();
+        assert!(matches!(err, SenseiError::Validation(_)));
     }
 
     #[tokio::test]
@@ -948,15 +1412,133 @@ mod tests {
         let tenant_id = Uuid::new_v4();
         let product_id = Uuid::new_v4();
 
+        // No cost data → honest zero-cost rollup (not hardcoded values).
+        let zero = service
+            .run_cost_rollup(tenant_id, product_id)
+            .await
+            .expect("should run cost rollup");
+        assert_eq!(zero.product_id, product_id);
+        assert_eq!(zero.material_cost, 0.0);
+        assert_eq!(zero.labor_cost, 0.0);
+        assert_eq!(zero.overhead_cost, 0.0);
+
+        // Seed BOM: 2× component A @ $10.00, 1× component B @ $25.50.
+        let comp_a = Uuid::new_v4();
+        let comp_b = Uuid::new_v4();
+        service.seed_bom(product_id, comp_a, 2.0).await;
+        service.seed_bom(product_id, comp_b, 1.0).await;
+        service.seed_standard_cost(comp_a, 10.0).await;
+        service.seed_standard_cost(comp_b, 25.5).await;
+        // Seed routing: 2h @ $40/h → $80 labor.
+        service.seed_routing(product_id, 2.0, 40.0).await;
+        service.seed_product_name(product_id, "Widget").await;
+
         let rollup = service
             .run_cost_rollup(tenant_id, product_id)
             .await
             .expect("should run cost rollup");
-        assert_eq!(rollup.product_id, product_id);
-        assert!(rollup.total_cost > 0.0);
+        assert_eq!(rollup.product_name, "Widget");
+        // material = 2*10.00 + 1*25.50 = 45.50
+        assert_eq!(rollup.material_cost, 45.50);
+        // labor = 2h * 40 = 80.00
+        assert_eq!(rollup.labor_cost, 80.00);
+        // overhead = 15% of (45.50 + 80.00) = 18.825 → 18.83 (rounded to cents)
+        assert_eq!(rollup.overhead_cost, 18.83);
         assert_eq!(
             rollup.total_cost,
             rollup.material_cost + rollup.labor_cost + rollup.overhead_cost
         );
+
+        let fetched = service
+            .get_cost_rollup(tenant_id, product_id)
+            .await
+            .unwrap();
+        assert_eq!(fetched.id, rollup.id);
+    }
+
+    #[tokio::test]
+    async fn test_three_way_match() {
+        let service = InMemoryFinanceService::default();
+        let tenant_id = Uuid::new_v4();
+        let po_id = Uuid::new_v4();
+        let receipt_id = Uuid::new_v4();
+        let invoice_id = Uuid::new_v4();
+        let p1 = Uuid::new_v4();
+        let p2 = Uuid::new_v4();
+
+        service
+            .seed_purchase_order(tenant_id, po_id, vec![(p1, 100.0), (p2, 50.0)])
+            .await;
+        service
+            .seed_goods_receipt(tenant_id, receipt_id, po_id, vec![(p1, 100.0), (p2, 50.0)])
+            .await;
+
+        let invoice = Invoice {
+            id: invoice_id,
+            tenant_id,
+            invoice_number: "SUP-1".to_string(),
+            customer_id: Uuid::new_v4(),
+            customer_name: "Supplier".to_string(),
+            status: "draft".to_string(),
+            line_items: vec![
+                InvoiceLineItem {
+                    description: "Part 1".to_string(),
+                    quantity: 100,
+                    unit_price: 5.0,
+                    total: 500.0,
+                    product_id: Some(p1),
+                },
+                InvoiceLineItem {
+                    description: "Part 2".to_string(),
+                    quantity: 50,
+                    unit_price: 2.0,
+                    total: 100.0,
+                    product_id: Some(p2),
+                },
+            ],
+            subtotal: 600.0,
+            tax_percentage: 0.0,
+            tax_amount: 0.0,
+            total_amount: 600.0,
+            currency: "USD".to_string(),
+            due_date: Utc::now() + chrono::Duration::days(30),
+            paid_at: None,
+            notes: String::new(),
+            created_by: Uuid::new_v4(),
+            created_at: Utc::now(),
+        };
+        service.invoices.write().await.insert(invoice_id, invoice);
+
+        let result = service
+            .match_three_way(tenant_id, po_id, vec![receipt_id], invoice_id)
+            .await
+            .unwrap();
+        assert_eq!(result.verdict, ThreeWayVerdict::Matched);
+        assert!(result.lines.iter().all(|l| l.status == ThreeWayLineStatus::Matched));
+
+        // Short delivery on p2 → UnderDelivered + overall Mismatch.
+        let short_receipt = Uuid::new_v4();
+        service
+            .seed_goods_receipt(tenant_id, short_receipt, po_id, vec![(p1, 100.0), (p2, 40.0)])
+            .await;
+        let result = service
+            .match_three_way(tenant_id, po_id, vec![short_receipt], invoice_id)
+            .await
+            .unwrap();
+        assert_eq!(result.verdict, ThreeWayVerdict::Mismatch);
+        let p2_line = result.lines.iter().find(|l| l.product_id == p2).unwrap();
+        assert_eq!(p2_line.status, ThreeWayLineStatus::UnderDelivered);
+
+        // A receipt for a different PO must be rejected.
+        let other_po = Uuid::new_v4();
+        let foreign_receipt = Uuid::new_v4();
+        service
+            .seed_goods_receipt(tenant_id, foreign_receipt, other_po, vec![(p1, 1.0)])
+            .await;
+        let err = service
+            .match_three_way(tenant_id, po_id, vec![foreign_receipt], invoice_id)
+            .await
+            .unwrap_err();
+        assert!(matches!(err, SenseiError::Validation(_)));
     }
 }

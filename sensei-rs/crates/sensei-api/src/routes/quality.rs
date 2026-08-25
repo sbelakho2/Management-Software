@@ -353,6 +353,139 @@ pub async fn list_eight_d_reports(
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// Getters for list-only entities (tenant-scoped; 404 on missing/foreign)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/// Get a specific SCAR by ID.
+pub async fn get_scar(
+    user: AuthenticatedUser,
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<Scar>> {
+    let result = state.quality_service.get_scar(user.tenant_id, id).await?;
+    Ok(Json(result))
+}
+
+/// Get a specific QMS document by ID.
+pub async fn get_document(
+    user: AuthenticatedUser,
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<QmsDocument>> {
+    let result = state.quality_service.get_document(user.tenant_id, id).await?;
+    Ok(Json(result))
+}
+
+/// Get a specific first article inspection by ID.
+pub async fn get_first_article_inspection(
+    user: AuthenticatedUser,
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<FirstArticleInspection>> {
+    let result = state
+        .quality_service
+        .get_first_article_inspection(user.tenant_id, id)
+        .await?;
+    Ok(Json(result))
+}
+
+/// Get a specific self-inspection by ID.
+pub async fn get_self_inspection(
+    user: AuthenticatedUser,
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<SelfInspection>> {
+    let result = state
+        .quality_service
+        .get_self_inspection(user.tenant_id, id)
+        .await?;
+    Ok(Json(result))
+}
+
+/// Get a specific MSA study by ID.
+pub async fn get_msa_study(
+    user: AuthenticatedUser,
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<MsaStudy>> {
+    let result = state.quality_service.get_msa_study(user.tenant_id, id).await?;
+    Ok(Json(result))
+}
+
+/// Get a specific process capability study by ID.
+pub async fn get_process_capability_study(
+    user: AuthenticatedUser,
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<ProcessCapabilityStudy>> {
+    let result = state
+        .quality_service
+        .get_process_capability_study(user.tenant_id, id)
+        .await?;
+    Ok(Json(result))
+}
+
+/// Get a specific control plan by ID.
+pub async fn get_control_plan(
+    user: AuthenticatedUser,
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<ControlPlan>> {
+    let result = state.quality_service.get_control_plan(user.tenant_id, id).await?;
+    Ok(Json(result))
+}
+
+/// Get a specific PFMEA by ID.
+pub async fn get_pfmea(
+    user: AuthenticatedUser,
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<PfmeaLite>> {
+    let result = state.quality_service.get_pfmea(user.tenant_id, id).await?;
+    Ok(Json(result))
+}
+
+/// Get a specific gauge by ID.
+pub async fn get_gauge(
+    user: AuthenticatedUser,
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<Gauge>> {
+    let result = state.quality_service.get_gauge(user.tenant_id, id).await?;
+    Ok(Json(result))
+}
+
+/// Get a specific customer complaint by ID.
+pub async fn get_complaint(
+    user: AuthenticatedUser,
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<CustomerComplaint>> {
+    let result = state.quality_service.get_complaint(user.tenant_id, id).await?;
+    Ok(Json(result))
+}
+
+/// Get a specific 8D report by ID.
+pub async fn get_eight_d_report(
+    user: AuthenticatedUser,
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<EightDReport>> {
+    let result = state.quality_service.get_eight_d_report(user.tenant_id, id).await?;
+    Ok(Json(result))
+}
+
+/// Get a specific management review by ID.
+pub async fn get_management_review(
+    user: AuthenticatedUser,
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<ManagementReview>> {
+    let result = state.quality_service.get_management_review(user.tenant_id, id).await?;
+    Ok(Json(result))
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // Request Body Types
 // ═══════════════════════════════════════════════════════════════════════════════
 

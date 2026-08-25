@@ -95,12 +95,17 @@ async fn test_retrain_model() {
         "model_type": "anomaly",
     });
 
+    // UPDATED BEHAVIOR: retraining honestly fails with insufficient_data
+    // when no labelled training outcomes were recorded for the model type.
+    // The previous behavior fabricated a success response.
     let req = app.post_authenticated("/api/v1/ai/models/retrain", &token, body);
     let mut resp = app.send_request(req).await;
-    assert_eq!(resp.status(), StatusCode::OK);
-    let json: Value = app.json_body(&mut resp).await;
-    assert_eq!(json["message"], "Model retrained successfully");
-    assert_eq!(json["model_type"], "anomaly");
+    assert_eq!(resp.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    let text = app.response_text(&mut resp).await;
+    assert!(
+        text.contains("insufficient_data"),
+        "retraining without labelled data must report insufficient_data, got: {text}"
+    );
 }
 
 #[tokio::test]

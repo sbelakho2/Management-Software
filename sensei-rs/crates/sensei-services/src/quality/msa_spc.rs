@@ -450,7 +450,7 @@ impl ProcessCapabilityService for InMemoryMsaSpcService {
         let n = values.len() as f64;
         let mean: f64 = values.iter().sum::<f64>() / n;
 
-        // Sample standard deviation
+        // Within-sample (subgroup) standard deviation — Cp/Cpk basis.
         let variance: f64 = values
             .iter()
             .map(|v| (v - mean).powi(2))
@@ -458,23 +458,32 @@ impl ProcessCapabilityService for InMemoryMsaSpcService {
             / (n - 1.0);
         let std_dev = variance.sqrt();
 
+        // Overall (population) standard deviation — Pp/Ppk basis. With
+        // individual measurements this is the exact overall dispersion.
+        let overall_variance: f64 = values
+            .iter()
+            .map(|v| (v - mean).powi(2))
+            .sum::<f64>()
+            / n;
+        let overall_std_dev = overall_variance.sqrt();
+
         let tolerance = study.usl - study.lsl;
 
-        // Cp = (USL - LSL) / (6 * sigma)
+        // Cp = (USL - LSL) / (6 * sigma_within)
         let cp = if std_dev > 0.0 {
             tolerance / (6.0 * std_dev)
         } else {
             0.0
         };
 
-        // Cpu = (USL - mean) / (3 * sigma)
+        // Cpu = (USL - mean) / (3 * sigma_within)
         let cpu = if std_dev > 0.0 {
             (study.usl - mean) / (3.0 * std_dev)
         } else {
             0.0
         };
 
-        // Cpl = (mean - LSL) / (3 * sigma)
+        // Cpl = (mean - LSL) / (3 * sigma_within)
         let cpl = if std_dev > 0.0 {
             (mean - study.lsl) / (3.0 * std_dev)
         } else {
@@ -483,6 +492,24 @@ impl ProcessCapabilityService for InMemoryMsaSpcService {
 
         // Cpk = min(Cpu, Cpl)
         let cpk = cpu.min(cpl);
+
+        // Pp / Ppk use the overall standard deviation.
+        let pp = if overall_std_dev > 0.0 {
+            tolerance / (6.0 * overall_std_dev)
+        } else {
+            0.0
+        };
+        let ppu = if overall_std_dev > 0.0 {
+            (study.usl - mean) / (3.0 * overall_std_dev)
+        } else {
+            0.0
+        };
+        let ppl = if overall_std_dev > 0.0 {
+            (mean - study.lsl) / (3.0 * overall_std_dev)
+        } else {
+            0.0
+        };
+        let ppk = ppu.min(ppl);
 
         let is_capable = ProcessCapabilityResult::determine_capability(cpk);
 
@@ -495,8 +522,8 @@ impl ProcessCapabilityService for InMemoryMsaSpcService {
             cpk,
             cpu,
             cpl,
-            pp: Some(cp),  // Pp ~ Cp for initial calculation
-            ppk: Some(cpk), // Ppk ~ Cpk for initial calculation
+            pp: Some(pp),
+            ppk: Some(ppk),
             sample_size: n as u32,
             is_capable,
             created_at: now(),

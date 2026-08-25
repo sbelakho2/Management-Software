@@ -157,7 +157,7 @@ async fn test_list_audits() {
         &format!("/api/v1/lsw/standards/{}/audits", std_id),
         &token,
     );
-    let mut resp = app.send_request(req).await;
+    let resp = app.send_request(req).await;
     assert_eq!(resp.status(), StatusCode::OK);
 }
 
@@ -170,4 +170,42 @@ async fn test_lsw_dashboard() {
     assert_eq!(resp.status(), StatusCode::OK);
     let json: Value = app.json_body(&mut resp).await;
     assert!(json.as_object().unwrap().contains_key("total_standards"));
+}
+
+#[tokio::test]
+async fn test_lsw_dashboard_reports_zero_without_audits() {
+    let app = common::TestApp::new().await;
+    let token = app.login_as_admin().await;
+
+    // A dashboard over a tenant with no audits must report 0.0 compliance
+    // (no evidence) instead of a fabricated 100%.
+    let req = app.get_authenticated("/api/v1/lsw/dashboard", &token);
+    let mut resp = app.send_request(req).await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    let json: Value = app.json_body(&mut resp).await;
+    assert_eq!(json["total_audits"], 0);
+    assert_eq!(json["overall_compliance_rate"], 0.0);
+}
+
+#[tokio::test]
+async fn test_perform_audit_with_empty_results_reports_zero_compliance() {
+    let app = common::TestApp::new().await;
+    let token = app.login_as_admin().await;
+    let body = common::fixtures::lsw_standard_payload("Empty Audit Std", "Assembly");
+    let req = app.post_authenticated("/api/v1/lsw/standards", &token, body);
+    let mut resp = app.send_request(req).await;
+    let created: Value = app.json_body(&mut resp).await;
+    let std_id = created["id"].as_str().unwrap().to_string();
+
+    // An audit with no results carries no compliance evidence.
+    let audit = serde_json::json!({ "results": [] });
+    let req = app.post_authenticated(
+        &format!("/api/v1/lsw/standards/{}/audits", std_id),
+        &token,
+        audit,
+    );
+    let mut resp = app.send_request(req).await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    let json: Value = app.json_body(&mut resp).await;
+    assert_eq!(json["compliance_rate"], 0.0);
 }

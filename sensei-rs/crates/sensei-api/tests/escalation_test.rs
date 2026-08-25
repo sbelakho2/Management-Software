@@ -94,3 +94,51 @@ async fn test_delete_escalation_policy() {
     let resp = app.send_request(req).await;
     assert_eq!(resp.status(), StatusCode::OK);
 }
+
+#[tokio::test]
+async fn test_create_policy_rejects_invalid_rules() {
+    let app = common::TestApp::new().await;
+    let token = app.login_as_admin().await;
+
+    // A rule must escalate after a positive delay.
+    let bad_delay = serde_json::json!({
+        "name": "Bad Delay",
+        "description": "Invalid escalation delay",
+        "event_type": "andon.raised",
+        "is_active": true,
+        "rules": [
+            {
+                "id": uuid::Uuid::new_v4().to_string(),
+                "priority": 1,
+                "condition": "unacknowledged",
+                "notify_user_ids": [],
+                "notify_role": "supervisor",
+                "escalate_after_seconds": 0,
+            }
+        ],
+    });
+    let req = app.post_authenticated("/api/v1/escalation-policies", &token, bad_delay);
+    let resp = app.send_request(req).await;
+    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+
+    // A rule must name at least one notification target.
+    let no_target = serde_json::json!({
+        "name": "No Target",
+        "description": "Rule without targets",
+        "event_type": "andon.raised",
+        "is_active": true,
+        "rules": [
+            {
+                "id": uuid::Uuid::new_v4().to_string(),
+                "priority": 1,
+                "condition": "unacknowledged",
+                "notify_user_ids": [],
+                "notify_role": null,
+                "escalate_after_seconds": 300,
+            }
+        ],
+    });
+    let req = app.post_authenticated("/api/v1/escalation-policies", &token, no_target);
+    let resp = app.send_request(req).await;
+    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+}

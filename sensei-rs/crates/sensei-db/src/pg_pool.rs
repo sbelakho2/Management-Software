@@ -16,7 +16,9 @@ static POOL: OnceCell<Arc<PgPool>> = OnceCell::const_new();
 
 /// Initialize the global database connection pool.
 ///
-/// Should be called once at application startup.
+/// Should be called once at application startup. Safe to call concurrently:
+/// the second caller wins the race, logs an informational message, and
+/// returns the existing pool (its own freshly built pool is dropped).
 ///
 /// # Arguments
 /// * `config` - Database configuration including URL and pool sizing.
@@ -24,9 +26,8 @@ static POOL: OnceCell<Arc<PgPool>> = OnceCell::const_new();
 /// # Errors
 /// Returns [`SenseiError::DatabaseConnection`] if the pool cannot be created.
 pub async fn init_pool(config: &DatabaseConfig) -> Result<Arc<PgPool>> {
-    // Attempt to initialize the pool; return errors instead of panicking
-    if POOL.get().is_some() {
-        return Ok(Arc::clone(POOL.get().unwrap()));
+    if let Some(pool) = POOL.get() {
+        return Ok(Arc::clone(pool));
     }
 
     info!(
@@ -53,13 +54,18 @@ pub async fn init_pool(config: &DatabaseConfig) -> Result<Arc<PgPool>> {
     info!("Database connection pool established");
     let pool = Arc::new(pool);
 
-    // OnceCell::set returns Err if already initialized (race guard)
-    POOL.set(pool.clone())
-        .unwrap_or_else(|_| {
-            warn!("Database pool was initialized concurrently");
-        });
-
-    Ok(pool)
+    match POOL.set(Arc::clone(&pool)) {
+        Ok(()) => Ok(pool),
+        Err(existing) => {
+            // Another task initialized the pool concurrently; reuse it.
+            info!("Database pool was initialized concurrently; reusing existing pool");
+            let existing = match existing {
+                tokio::sync::SetError::AlreadyInitializedError(pool)
+                | tokio::sync::SetError::InitializingError(pool) => pool,
+            };
+            Ok(existing)
+        }
+    }
 }
 
 /// Get a reference to the global database pool.

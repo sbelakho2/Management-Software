@@ -96,6 +96,101 @@ pub struct TransitionResult {
     pub message: String,
 }
 
+// ── Definition validation ───────────────────────────────────────────────────
+
+/// Validate a state machine definition before it is stored.
+///
+/// Rules:
+/// - `initial_state` must reference an existing state;
+/// - state names must be unique;
+/// - every transition must reference defined `from_state`/`to_state` states;
+/// - self-loop transitions are rejected unless explicitly allowed;
+/// - unknown condition types and hook actions are rejected at definition time.
+fn validate_definition(def: &StateMachineDefinition) -> Result<()> {
+    let state_names: std::collections::HashSet<&str> =
+        def.states.iter().map(|s| s.name.as_str()).collect();
+
+    if !state_names.contains(def.initial_state.as_str()) {
+        return Err(SenseiError::Validation(format!(
+            "initial_state '{}' does not exist in states: {}",
+            def.initial_state,
+            state_names.iter().copied().collect::<Vec<_>>().join(", ")
+        )));
+    }
+    if state_names.len() != def.states.len() {
+        return Err(SenseiError::Validation(
+            "Duplicate state names in states definition".to_string(),
+        ));
+    }
+
+    for t in &def.transitions {
+        if !state_names.contains(t.from_state.as_str()) {
+            return Err(SenseiError::Validation(format!(
+                "Transition '{}' references undefined from_state '{}'",
+                t.event, t.from_state
+            )));
+        }
+        if !state_names.contains(t.to_state.as_str()) {
+            return Err(SenseiError::Validation(format!(
+                "Transition '{}' references undefined to_state '{}'",
+                t.event, t.to_state
+            )));
+        }
+        if t.from_state == t.to_state {
+            return Err(SenseiError::Validation(format!(
+                "Transition '{}' is a self-loop ({}) which is not allowed",
+                t.event, t.from_state
+            )));
+        }
+        if let Some(conditions) = &t.conditions {
+            validate_conditions_definition(conditions)?;
+        }
+        if let Some(hook) = &t.on_transition {
+            validate_hook_definition(hook)?;
+        }
+    }
+    Ok(())
+}
+
+/// Validate a conditions expression at definition time.
+fn validate_conditions_definition(conditions: &serde_json::Value) -> Result<()> {
+    match conditions {
+        serde_json::Value::Object(map) => match map.get("type").and_then(|v| v.as_str()) {
+            Some("always") | Some("role_required") | Some("field_match") | None => Ok(()),
+            Some(other) => Err(SenseiError::Validation(format!(
+                "Unknown condition type '{other}'. Supported: always, role_required, field_match"
+            ))),
+        },
+        serde_json::Value::Array(arr) => {
+            for c in arr {
+                validate_conditions_definition(c)?;
+            }
+            Ok(())
+        }
+        _ => Err(SenseiError::Validation(
+            "Invalid conditions format: expected an object or array of rules".to_string(),
+        )),
+    }
+}
+
+/// Validate an `on_transition` hook at definition time.
+fn validate_hook_definition(hook: &serde_json::Value) -> Result<()> {
+    match hook {
+        serde_json::Value::Object(map) => match map.get("action").and_then(|v| v.as_str()) {
+            Some("send_notification") | Some("webhook") | Some("update_entity") => Ok(()),
+            Some(other) => Err(SenseiError::Validation(format!(
+                "Unknown on_transition action '{other}'. Supported: send_notification, webhook, update_entity"
+            ))),
+            None => Err(SenseiError::Validation(
+                "on_transition hook missing required 'action' field".to_string(),
+            )),
+        },
+        _ => Err(SenseiError::Validation(
+            "Invalid on_transition hook format: expected a JSON object".to_string(),
+        )),
+    }
+}
+
 // ── Definition Handlers ────────────────────────────────────────────────────
 
 /// List state machine definitions.
@@ -152,6 +247,7 @@ pub async fn create_state_machine(
         created_at: now,
         updated_at: now,
     };
+    validate_definition(&def)?;
     let mut store = state.state_machine_definitions.write().await;
     store.insert(def.id, def.clone());
     Ok(Json(def))
@@ -207,6 +303,7 @@ pub async fn update_state_machine(
     if let Some(active) = req.is_active {
         def.is_active = active;
     }
+    validate_definition(def)?;
     def.updated_at = Utc::now();
     Ok(Json(def.clone()))
 }
@@ -251,14 +348,38 @@ pub async fn create_instance(
             .ok_or_else(|| SenseiError::NotFound(format!("State machine definition {sm_id} not found")))?
     };
 
+    // An entity may only have one instance per definition.
+    {
+        let store = state.state_machine_instances.read().await;
+        if store
+            .values()
+            .any(|i| i.definition_id == sm_id && i.entity_id == req.entity_id && i.tenant_id == tenant_id)
+        {
+            return Err(SenseiError::Conflict(format!(
+                "An instance for entity {} already exists in state machine {sm_id}",
+                req.entity_id
+            )));
+        }
+    }
+
     let now = Utc::now();
+    let initial_state = definition.initial_state.clone();
     let instance = StateMachineInstance {
         id: new_id(),
         definition_id: sm_id,
         tenant_id,
         entity_id: req.entity_id,
-        current_state: definition.initial_state.clone(),
-        state_history: Vec::new(),
+        current_state: initial_state.clone(),
+        // Record the initial state in the history so the instance's full
+        // lifecycle is traceable.
+        state_history: vec![StateTransitionRecord {
+            from_state: initial_state.clone(),
+            to_state: initial_state,
+            event: "initialized".to_string(),
+            triggered_by: user.user_id,
+            triggered_at: now,
+            metadata: None,
+        }],
         created_by: user.user_id,
         created_at: now,
         updated_at: now,
@@ -383,7 +504,7 @@ pub async fn transition_instance(
                     "tenant_id": tenant_id,
                     "instance_id": instance_id,
                 });
-                if !evaluate_conditions(conditions, &context) {
+                if !evaluate_conditions(conditions, &context, &user.roles) {
                     return Err(SenseiError::Conflict(format!(
                         "Conditions not met for transition from '{}' via '{}'",
                         t.from_state, t.event
@@ -398,29 +519,41 @@ pub async fn transition_instance(
                 .find(|s| s.name == t.to_state);
 
             if let Some(target_def) = target_state_def {
-                if !target_def.allowed_roles.is_empty() {
-                    // In production, check user.roles against target_def.allowed_roles.
-                    // For now, log a warning if the user might not have the required role.
-                    tracing::info!(
-                        target_state = %t.to_state,
-                        allowed_roles = ?target_def.allowed_roles,
-                        "Transition requires role check"
-                    );
-                    // Placeholder: In production, check actual user roles.
-                    // If the user lacks the required role, return:
-                    // return Err(SenseiError::Forbidden(...));
+                if !target_def.allowed_roles.is_empty()
+                    && !user.has_any_role(
+                        &target_def
+                            .allowed_roles
+                            .iter()
+                            .map(String::as_str)
+                            .collect::<Vec<_>>(),
+                    )
+                {
+                    return Err(SenseiError::Forbidden(format!(
+                        "User lacks required role for state '{}'. Required: {:?}",
+                        t.to_state, target_def.allowed_roles
+                    )));
                 }
             }
 
             // ── 5. Execute on_transition hook ──────────────────────────
             if let Some(ref on_transition) = t.on_transition {
-                execute_on_transition_hook(on_transition, &instance, &definition);
+                execute_on_transition_hook(
+                    &state,
+                    on_transition,
+                    instance,
+                    &definition,
+                    user.user_id,
+                )
+                .await;
             }
 
-            // ── 6. Record the transition ───────────────────────────────
+            // ── 6. Record the transition (old state captured before the
+            // mutation so history and events always carry the real
+            // from_state) ───────────────────────────────────────────────
+            let old_state = instance.current_state.clone();
             let now = Utc::now();
             let record = StateTransitionRecord {
-                from_state: instance.current_state.clone(),
+                from_state: old_state.clone(),
                 to_state: t.to_state.clone(),
                 event: req.event.clone(),
                 triggered_by: user.user_id,
@@ -439,7 +572,7 @@ pub async fn transition_instance(
                     instance_id,
                     definition.id,
                     instance.entity_id,
-                    instance.current_state.clone(),
+                    old_state,
                     t.to_state.clone(),
                     req.event.clone(),
                     user.user_id,
@@ -473,20 +606,20 @@ pub async fn transition_instance(
 ///
 /// The conditions value is expected to be a JSON object or array of rules.
 /// Returns `true` if the conditions are met or no conditions are specified.
-fn evaluate_conditions(conditions: &serde_json::Value, _context: &serde_json::Value) -> bool {
+fn evaluate_conditions(
+    conditions: &serde_json::Value,
+    context: &serde_json::Value,
+    user_roles: &[String],
+) -> bool {
     match conditions {
         serde_json::Value::Object(map) => {
             match map.get("type").and_then(|v| v.as_str()) {
                 Some("always") | None => true,
                 Some("role_required") => {
-                    // Check if user has the required role
-                    if let Some(role) = map.get("role").and_then(|v| v.as_str()) {
-                        // In production, check if the user's roles include this role.
-                        // For now, allow all role_required conditions.
-                        tracing::info!(required_role = %role, "Role-required condition evaluated");
-                        true
-                    } else {
-                        true
+                    // The user must hold the required role.
+                    match map.get("role").and_then(|v| v.as_str()) {
+                        Some(role) => user_roles.iter().any(|r| r == role),
+                        None => true,
                     }
                 }
                 Some("field_match") => {
@@ -495,7 +628,7 @@ fn evaluate_conditions(conditions: &serde_json::Value, _context: &serde_json::Va
                         map.get("field").and_then(|v| v.as_str()),
                         map.get("value"),
                     ) {
-                        let actual = _context.get(field);
+                        let actual = context.get(field);
                         match actual {
                             Some(val) if val == expected => true,
                             _ => false,
@@ -512,7 +645,7 @@ fn evaluate_conditions(conditions: &serde_json::Value, _context: &serde_json::Va
         }
         serde_json::Value::Array(arr) => {
             // AND semantics: all conditions must pass
-            arr.iter().all(|c| evaluate_conditions(c, _context))
+            arr.iter().all(|c| evaluate_conditions(c, context, user_roles))
         }
         _ => true, // No conditions = always allowed
     }
@@ -520,47 +653,195 @@ fn evaluate_conditions(conditions: &serde_json::Value, _context: &serde_json::Va
 
 /// Execute an `on_transition` hook defined on a transition.
 ///
-/// Hooks are JSON action descriptors that can trigger side effects such as
-/// sending notifications, updating related entities, or calling webhooks.
-fn execute_on_transition_hook(
+/// Hooks are JSON action descriptors that trigger real side effects:
+/// - `send_notification` — creates an in-app notification for a target user;
+/// - `webhook` — fires an HTTP POST to the configured URL (best-effort);
+/// - `update_entity` — applies a status field update on the linked entity.
+async fn execute_on_transition_hook(
+    state: &AppState,
     hook: &serde_json::Value,
     instance: &StateMachineInstance,
-    _definition: &StateMachineDefinition,
+    definition: &StateMachineDefinition,
+    triggered_by: Uuid,
 ) {
-    match hook {
-        serde_json::Value::Object(map) => {
-            if let Some(action) = map.get("action").and_then(|v| v.as_str()) {
-                tracing::info!(
-                    action = %action,
-                    instance_id = %instance.id,
-                    current_state = %instance.current_state,
-                    "Executing on_transition hook"
-                );
+    let Some(map) = hook.as_object() else {
+        tracing::warn!("Invalid on_transition hook format — expected JSON object");
+        return;
+    };
+    let Some(action) = map.get("action").and_then(|v| v.as_str()) else {
+        return;
+    };
 
-                match action {
-                    "send_notification" => {
-                        // In production: dispatch a notification to relevant users.
-                        // The hook payload may contain templates and target users.
-                        tracing::info!("Hook would send notification for instance {}", instance.id);
-                    }
-                    "update_entity" => {
-                        // In production: update the entity associated with this instance.
-                        tracing::info!("Hook would update entity {} for instance {}", instance.entity_id, instance.id);
-                    }
-                    "webhook" => {
-                        // In production: call an external webhook URL.
-                        if let Some(url) = map.get("url").and_then(|v| v.as_str()) {
-                            tracing::info!("Hook would call webhook at {}", url);
+    match action {
+        "send_notification" => {
+            let target_user = map
+                .get("target_user_id")
+                .and_then(|v| v.as_str())
+                .and_then(|s| Uuid::parse_str(s).ok())
+                .unwrap_or(triggered_by);
+            let title = map
+                .get("title")
+                .and_then(|v| v.as_str())
+                .unwrap_or("State machine transition")
+                .to_string();
+            let body = map
+                .get("body")
+                .and_then(|v| v.as_str())
+                .unwrap_or(&format!(
+                    "Entity {} transitioned to '{}'",
+                    instance.entity_id, instance.current_state
+                ))
+                .to_string();
+            if let Err(e) = state
+                .notification_service
+                .notify(
+                    instance.tenant_id,
+                    target_user,
+                    &title,
+                    &body,
+                    "info",
+                    Some("state_machine_instance"),
+                    Some(instance.id),
+                )
+                .await
+            {
+                tracing::warn!(
+                    error = %e,
+                    instance_id = %instance.id,
+                    "send_notification hook failed"
+                );
+            }
+        }
+        "webhook" => {
+            if let Some(url) = map.get("url").and_then(|v| v.as_str()) {
+                let payload = map
+                    .get("payload")
+                    .cloned()
+                    .unwrap_or_else(|| serde_json::json!({
+                        "instance_id": instance.id,
+                        "entity_id": instance.entity_id,
+                        "definition_id": definition.id,
+                        "state": instance.current_state,
+                        "event": map.get("event"),
+                    }));
+                let result = reqwest::Client::new()
+                    .post(url)
+                    .json(&payload)
+                    .timeout(std::time::Duration::from_secs(5))
+                    .send()
+                    .await;
+                if let Err(e) = result {
+                    tracing::warn!(
+                        error = %e,
+                        url = %url,
+                        instance_id = %instance.id,
+                        "webhook hook failed"
+                    );
+                }
+            }
+        }
+        "update_entity" => {
+            update_linked_entity(state, instance, definition, map, triggered_by).await;
+        }
+        other => {
+            tracing::warn!(action = %other, "Unknown on_transition action");
+        }
+    }
+}
+
+/// Apply a simple status update on the entity linked to an instance.
+///
+/// Supported entity types map to their entity stores; the hook payload can
+/// override the target field (default `"status"`) and value (default: the
+/// instance's current state). Unknown entity types are logged and skipped —
+/// the transition itself is not rolled back.
+async fn update_linked_entity(
+    state: &AppState,
+    instance: &StateMachineInstance,
+    definition: &StateMachineDefinition,
+    hook: &serde_json::Map<String, serde_json::Value>,
+    _triggered_by: Uuid,
+) {
+    let field = hook
+        .get("field")
+        .and_then(|v| v.as_str())
+        .unwrap_or("status")
+        .to_string();
+    let value = hook
+        .get("value")
+        .cloned()
+        .unwrap_or_else(|| serde_json::Value::String(instance.current_state.clone()));
+    let entity_id = instance.entity_id;
+    let tenant_id = instance.tenant_id;
+
+    match definition.entity_type.as_str() {
+        "task" => {
+            let mut store = state.tasks.write().await;
+            if let Some(t) = store.get_mut(&entity_id) {
+                if t.tenant_id == tenant_id && field == "status" {
+                    if let Some(s) = value.as_str() {
+                        if let Some(status) = parse_task_status(s) {
+                            t.status = status;
+                            t.updated_at = chrono::Utc::now();
                         }
-                    }
-                    other => {
-                        tracing::warn!(action = %other, "Unknown on_transition action");
                     }
                 }
             }
         }
-        _ => {
-            tracing::warn!("Invalid on_transition hook format — expected JSON object");
+        "obeya_board" => {
+            let mut store = state.obeya_boards.write().await;
+            if let Some(b) = store.get_mut(&entity_id) {
+                if b.tenant_id == tenant_id && field == "status" {
+                    if let Some(s) = value.as_str() {
+                        b.is_active = s != "Archived" && s != "Closed";
+                        b.updated_at = chrono::Utc::now();
+                    }
+                }
+            }
         }
+        "work_center" => {
+            let mut store = state.work_centers.write().await;
+            if let Some(wc) = store.get_mut(&entity_id) {
+                if wc.tenant_id == tenant_id && field == "status" {
+                    if let Some(s) = value.as_str() {
+                        wc.is_active = s != "Inactive" && s != "Decommissioned";
+                        wc.updated_at = chrono::Utc::now();
+                    }
+                }
+            }
+        }
+        "production_cell" => {
+            let mut store = state.production_cells.write().await;
+            if let Some(c) = store.get_mut(&entity_id) {
+                if c.tenant_id == tenant_id && field == "status" {
+                    if let Some(s) = value.as_str() {
+                        c.is_active = s != "Inactive" && s != "Decommissioned";
+                        c.updated_at = chrono::Utc::now();
+                    }
+                }
+            }
+        }
+        other => {
+            tracing::warn!(
+                entity_type = %other,
+                instance_id = %instance.id,
+                "update_entity hook: no store registered for entity type"
+            );
+        }
+    }
+}
+
+/// Parse a task status string into the typed [`TaskStatus`] value.
+fn parse_task_status(s: &str) -> Option<crate::stores::TaskStatus> {
+    match s {
+        "open" | "Open" => Some(crate::stores::TaskStatus::Open),
+        "in_progress" | "InProgress" | "In Progress" => {
+            Some(crate::stores::TaskStatus::InProgress)
+        }
+        "in_review" | "InReview" => Some(crate::stores::TaskStatus::InReview),
+        "completed" | "Completed" => Some(crate::stores::TaskStatus::Completed),
+        "cancelled" | "Cancelled" => Some(crate::stores::TaskStatus::Cancelled),
+        "blocked" | "Blocked" => Some(crate::stores::TaskStatus::Blocked),
+        _ => None,
     }
 }

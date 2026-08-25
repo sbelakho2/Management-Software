@@ -14,6 +14,19 @@ use uuid::Uuid;
 use crate::state::AppState;
 use crate::stores::AuditLogEntry;
 
+/// Parse an RFC 3339 date filter; invalid values are rejected with a 400
+/// instead of silently disabling the filter.
+fn parse_date_filter(name: &str, value: Option<&str>) -> Result<Option<DateTime<Utc>>> {
+    match value {
+        Some(raw) => DateTime::parse_from_rfc3339(raw)
+            .map(|dt| Some(dt.with_timezone(&Utc)))
+            .map_err(|e| {
+                SenseiError::Validation(format!("Invalid {name} (expected RFC 3339): {e}"))
+            }),
+        None => Ok(None),
+    }
+}
+
 // ── Query / Request DTOs ───────────────────────────────────────────────────
 
 /// Query parameters for listing audit logs.
@@ -61,6 +74,9 @@ pub async fn list_audit_logs(
 ) -> Result<Json<PaginatedResponse<AuditLogEntry>>> {
     let tenant_id = user.tenant_id;
     let store = state.audit_log_entries.read().await;
+    let date_from = parse_date_filter("date_from", params.date_from.as_deref())?;
+    let date_to = parse_date_filter("date_to", params.date_to.as_deref())?;
+
     let mut entries: Vec<AuditLogEntry> = store
         .values()
         .filter(|e| e.tenant_id == tenant_id)
@@ -85,28 +101,8 @@ pub async fn list_audit_logs(
                 true
             }
         })
-        .filter(|e| {
-            if let Some(ref date_from) = params.date_from {
-                if let Ok(df) = DateTime::parse_from_rfc3339(date_from) {
-                    e.created_at >= df.with_timezone(&Utc)
-                } else {
-                    true
-                }
-            } else {
-                true
-            }
-        })
-        .filter(|e| {
-            if let Some(ref date_to) = params.date_to {
-                if let Ok(dt) = DateTime::parse_from_rfc3339(date_to) {
-                    e.created_at <= dt.with_timezone(&Utc)
-                } else {
-                    true
-                }
-            } else {
-                true
-            }
-        })
+        .filter(|e| date_from.is_none_or(|df| e.created_at >= df))
+        .filter(|e| date_to.is_none_or(|dt| e.created_at <= dt))
         .cloned()
         .collect();
     entries.sort_by(|a, b| b.created_at.cmp(&a.created_at));

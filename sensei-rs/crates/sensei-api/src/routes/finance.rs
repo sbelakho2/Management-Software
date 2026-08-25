@@ -66,6 +66,17 @@ pub struct CostRollupRequest {
     pub product_id: Uuid,
 }
 
+/// Request body for the AP 3-way match.
+#[derive(Debug, Deserialize)]
+pub struct ThreeWayMatchRequest {
+    /// The purchase order to match against.
+    pub po_id: Uuid,
+    /// Goods receipts belonging to the PO.
+    pub receipt_ids: Vec<Uuid>,
+    /// The supplier invoice to match.
+    pub invoice_id: Uuid,
+}
+
 // ── Invoices ───────────────────────────────────────────────────────────────
 
 /// List all invoices with optional filters.
@@ -388,4 +399,24 @@ pub async fn get_cost_rollup(
         .get_cost_rollup(tenant_id, product_id)
         .await?;
     Ok(Json(rollup))
+}
+
+// ── AP 3-Way Matching ─────────────────────────────────────────────────────
+
+/// Match a purchase order against its goods receipts and a supplier invoice.
+///
+/// Delegates the whole comparison to the finance service, which verifies
+/// ownership and computes per-line verdicts; service `Validation` errors
+/// surface as 400 responses.
+pub async fn match_three_way(
+    user: AuthenticatedUser,
+    State(state): State<AppState>,
+    Json(req): Json<ThreeWayMatchRequest>,
+) -> Result<Json<sensei_services::finance::ThreeWayMatchResult>> {
+    let tenant_id = user.tenant_id;
+    let result = state
+        .finance_service
+        .match_three_way(tenant_id, req.po_id, req.receipt_ids, req.invoice_id)
+        .await?;
+    Ok(Json(result))
 }

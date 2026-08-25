@@ -9,6 +9,10 @@ use chrono::Utc;
 use serde::Serialize;
 use sensei_auth::middleware::AuthenticatedUser;
 use sensei_core::error::Result;
+use sensei_services::ops::{A3, Andon, Project, Risk};
+use sensei_services::production::WorkOrder;
+use sensei_services::quality::{CapaExtended, CapaStatusEx, NcrStatus, NonConformance};
+use uuid::Uuid;
 
 use crate::state::AppState;
 
@@ -50,6 +54,146 @@ pub struct OperationsSummary {
 
 // ── Handlers ───────────────────────────────────────────────────────────────
 
+/// Page through every work order in the tenant.
+async fn fetch_all_work_orders(state: &AppState, tenant_id: Uuid) -> Result<Vec<WorkOrder>> {
+    const PER_PAGE: usize = 100;
+    let mut all = Vec::new();
+    let mut page = 1usize;
+    loop {
+        let res = state
+            .production_service
+            .list_work_orders(tenant_id, None, None, Some(page), Some(PER_PAGE))
+            .await?;
+        let fetched = res.data.len();
+        all.extend(res.data);
+        if fetched < PER_PAGE {
+            break;
+        }
+        page += 1;
+    }
+    Ok(all)
+}
+
+/// Page through every Andon in the tenant.
+async fn fetch_all_andons(state: &AppState, tenant_id: Uuid) -> Result<Vec<Andon>> {
+    const PER_PAGE: usize = 100;
+    let mut all = Vec::new();
+    let mut page = 1usize;
+    loop {
+        let res = state
+            .ops_service
+            .list_andons(tenant_id, None, None, Some(page), Some(PER_PAGE))
+            .await?;
+        let fetched = res.data.len();
+        all.extend(res.data);
+        if fetched < PER_PAGE {
+            break;
+        }
+        page += 1;
+    }
+    Ok(all)
+}
+
+/// Page through every NCR in the tenant.
+async fn fetch_all_ncrs(state: &AppState, tenant_id: Uuid) -> Result<Vec<NonConformance>> {
+    const PER_PAGE: usize = 100;
+    let mut all = Vec::new();
+    let mut page = 1usize;
+    loop {
+        let res = state
+            .quality_service
+            .list_ncrs(tenant_id, None, None, None, Some(page), Some(PER_PAGE))
+            .await?;
+        let fetched = res.data.len();
+        all.extend(res.data);
+        if fetched < PER_PAGE {
+            break;
+        }
+        page += 1;
+    }
+    Ok(all)
+}
+
+/// Page through every CAPA in the tenant.
+async fn fetch_all_capas(state: &AppState, tenant_id: Uuid) -> Result<Vec<CapaExtended>> {
+    const PER_PAGE: usize = 100;
+    let mut all = Vec::new();
+    let mut page = 1usize;
+    loop {
+        let res = state
+            .quality_service
+            .list_capas(tenant_id, None, None, Some(page), Some(PER_PAGE))
+            .await?;
+        let fetched = res.data.len();
+        all.extend(res.data);
+        if fetched < PER_PAGE {
+            break;
+        }
+        page += 1;
+    }
+    Ok(all)
+}
+
+/// Page through every risk in the tenant.
+async fn fetch_all_risks(state: &AppState, tenant_id: Uuid) -> Result<Vec<Risk>> {
+    const PER_PAGE: usize = 100;
+    let mut all = Vec::new();
+    let mut page = 1usize;
+    loop {
+        let res = state
+            .ops_service
+            .list_risks(tenant_id, None, None, Some(page), Some(PER_PAGE))
+            .await?;
+        let fetched = res.data.len();
+        all.extend(res.data);
+        if fetched < PER_PAGE {
+            break;
+        }
+        page += 1;
+    }
+    Ok(all)
+}
+
+/// Page through every A3 in the tenant.
+async fn fetch_all_a3s(state: &AppState, tenant_id: Uuid) -> Result<Vec<A3>> {
+    const PER_PAGE: usize = 100;
+    let mut all = Vec::new();
+    let mut page = 1usize;
+    loop {
+        let res = state
+            .ops_service
+            .list_a3s(tenant_id, None, Some(page), Some(PER_PAGE))
+            .await?;
+        let fetched = res.data.len();
+        all.extend(res.data);
+        if fetched < PER_PAGE {
+            break;
+        }
+        page += 1;
+    }
+    Ok(all)
+}
+
+/// Page through every project in the tenant.
+async fn fetch_all_projects(state: &AppState, tenant_id: Uuid) -> Result<Vec<Project>> {
+    const PER_PAGE: usize = 100;
+    let mut all = Vec::new();
+    let mut page = 1usize;
+    loop {
+        let res = state
+            .ops_service
+            .list_projects(tenant_id, None, None, Some(page), Some(PER_PAGE))
+            .await?;
+        let fetched = res.data.len();
+        all.extend(res.data);
+        if fetched < PER_PAGE {
+            break;
+        }
+        page += 1;
+    }
+    Ok(all)
+}
+
 /// Get the aggregated "Today" dashboard snapshot.
 ///
 /// Aggregates data from work orders, quality (Andon, NCR, CAPA),
@@ -64,29 +208,24 @@ pub async fn get_today_snapshot(
     let date_str = today.to_string();
 
     // ── Work Orders ──────────────────────────────────────────────────
-    let all_work_orders = state
-        .production_service
-        .list_work_orders(tenant_id, None, None, Some(1), Some(10_000))
-        .await?;
+    let all_work_orders = fetch_all_work_orders(&state, tenant_id).await?;
 
     let work_order_summary = {
-        let orders = &all_work_orders.data;
-        let total_active = orders
+        let total_active = all_work_orders
             .iter()
             .filter(|o| o.status != "Cancelled" && o.status != "Completed")
             .count();
-        let completed_today = orders
+        let completed_today = all_work_orders
+            .iter()
+            .filter(|o| o.status == "Completed" && o.updated_at.date_naive() == today)
+            .count();
+        let in_progress = all_work_orders
             .iter()
             .filter(|o| {
-                o.status == "Completed"
-                    && o.updated_at.date_naive() == today
+                o.status == "InProgress" || o.status == "In Progress" || o.status == "in_progress"
             })
             .count();
-        let in_progress = orders
-            .iter()
-            .filter(|o| o.status == "InProgress" || o.status == "In Progress")
-            .count();
-        let overdue = orders
+        let overdue = all_work_orders
             .iter()
             .filter(|o| {
                 o.status != "Completed"
@@ -104,62 +243,44 @@ pub async fn get_today_snapshot(
     };
 
     // ── Quality (Andon events) ───────────────────────────────────────
-    let all_andons = state
-        .ops_service
-        .list_andons(tenant_id, None, None, Some(1), Some(10_000))
-        .await?;
-
+    let all_andons = fetch_all_andons(&state, tenant_id).await?;
     let active_andons = all_andons
-        .data
         .iter()
-        .filter(|a| a.status == "Active" || a.status == "Open")
+        .filter(|a| a.status == "Active" || a.status == "Open" || a.status == "active")
         .count();
 
     // ── Quality (NCRs via quality_service) ───────────────────────────
-    // List NCRs with minimal filters to count open records.
-    let all_ncrs = state
-        .quality_service
-        .list_ncrs(tenant_id, None, None, None, Some(1), Some(10_000))
-        .await?;
-    let open_ncrs = all_ncrs.data.len();
+    // "Open" means not closed/cancelled — page through everything and
+    // count the records that are still active.
+    let all_ncrs = fetch_all_ncrs(&state, tenant_id).await?;
+    let open_ncrs = all_ncrs
+        .iter()
+        .filter(|n| n.status != NcrStatus::Closed && n.status != NcrStatus::Cancelled)
+        .count();
 
-    // List CAPAs with minimal filters to count open records.
-    let all_capas = state
-        .quality_service
-        .list_capas(tenant_id, None, None, Some(1), Some(10_000))
-        .await?;
-    let open_capas = all_capas.data.len();
+    // CAPAs: open excludes Closed/Rejected/Cancelled.
+    let all_capas = fetch_all_capas(&state, tenant_id).await?;
+    let open_capas = all_capas
+        .iter()
+        .filter(|c| {
+            c.status != CapaStatusEx::Closed
+                && c.status != CapaStatusEx::Rejected
+                && c.status != CapaStatusEx::Cancelled
+        })
+        .count();
 
     // ── Operations (Risks, A3s, Projects) ────────────────────────────
-    let all_risks = state
-        .ops_service
-        .list_risks(tenant_id, None, None, Some(1), Some(10_000))
-        .await?;
-
+    let all_risks = fetch_all_risks(&state, tenant_id).await?;
     let open_risks = all_risks
-        .data
         .iter()
         .filter(|r| r.status == "Open" || r.status == "Active")
         .count();
 
-    let all_a3s = state
-        .ops_service
-        .list_a3s(tenant_id, None, Some(1), Some(10_000))
-        .await?;
+    let all_a3s = fetch_all_a3s(&state, tenant_id).await?;
+    let open_a3s = all_a3s.iter().filter(|a| a.status != "Closed").count();
 
-    let open_a3s = all_a3s
-        .data
-        .iter()
-        .filter(|a| a.status != "Closed")
-        .count();
-
-    let all_projects = state
-        .ops_service
-        .list_projects(tenant_id, None, None, Some(1), Some(10_000))
-        .await?;
-
+    let all_projects = fetch_all_projects(&state, tenant_id).await?;
     let active_projects = all_projects
-        .data
         .iter()
         .filter(|p| p.status != "Completed" && p.status != "Cancelled")
         .count();

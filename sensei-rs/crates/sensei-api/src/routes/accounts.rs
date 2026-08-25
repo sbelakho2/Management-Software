@@ -37,6 +37,8 @@ pub struct AccountRequest {
     pub country: Option<String>,
     pub account_type: String,
     pub notes: Option<String>,
+    /// Active flag; `None` on update keeps the current value.
+    pub is_active: Option<bool>,
 }
 
 /// Account response.
@@ -133,7 +135,7 @@ pub async fn create_account(
         postal_code: req.postal_code,
         country: req.country,
         account_type: req.account_type,
-        is_active: true,
+        is_active: req.is_active.unwrap_or(true),
         notes: req.notes,
         created_at: now(),
         updated_at: now(),
@@ -154,6 +156,9 @@ pub async fn get_account(
 }
 
 /// Update an account.
+///
+/// Preserves the original `created_at` and keeps the current `is_active`
+/// unless the request explicitly provides a new value.
 pub async fn update_account(
     user: AuthenticatedUser,
     State(state): State<AppState>,
@@ -161,6 +166,7 @@ pub async fn update_account(
     Json(req): Json<AccountRequest>,
 ) -> Result<Json<AccountResponse>> {
     let tenant_id = user.tenant_id;
+    let existing = state.accounts_service.get_account(tenant_id, id).await?;
     let account = Account {
         id,
         tenant_id,
@@ -175,9 +181,9 @@ pub async fn update_account(
         postal_code: req.postal_code,
         country: req.country,
         account_type: req.account_type,
-        is_active: true,
+        is_active: req.is_active.unwrap_or(existing.is_active),
         notes: req.notes,
-        created_at: now(),
+        created_at: existing.created_at,
         updated_at: now(),
     };
     let updated = state.accounts_service.update_account(tenant_id, id, account).await?;
@@ -245,6 +251,7 @@ mod tests {
             country: Some("US".to_string()),
             account_type: "customer".to_string(),
             notes: Some("Test account".to_string()),
+            is_active: None,
         };
         let resp = create_account(user, State(state.clone()), Json(req))
             .await
@@ -265,6 +272,7 @@ mod tests {
             state: None, postal_code: None, country: None,
             account_type: "supplier".to_string(),
             notes: None,
+            is_active: None,
         };
         let created = create_account(user.clone(), State(state.clone()), Json(req))
             .await
@@ -294,6 +302,7 @@ mod tests {
             state: None, postal_code: None, country: None,
             account_type: "customer".to_string(),
             notes: None,
+            is_active: None,
         };
         let _ = create_account(user.clone(), State(state.clone()), Json(req)).await.unwrap();
         let params = ListAccountsParams {
@@ -316,6 +325,7 @@ mod tests {
             state: None, postal_code: None, country: None,
             account_type: "customer".to_string(),
             notes: None,
+            is_active: None,
         };
         let created = create_account(user.clone(), State(state.clone()), Json(req))
             .await
@@ -327,6 +337,7 @@ mod tests {
             state: None, postal_code: None, country: None,
             account_type: "customer".to_string(),
             notes: None,
+            is_active: None,
         };
         let resp = update_account(user, State(state.clone()), Path(created.id), Json(update_req))
             .await
@@ -345,6 +356,7 @@ mod tests {
             state: None, postal_code: None, country: None,
             account_type: "customer".to_string(),
             notes: None,
+            is_active: None,
         };
         let created = create_account(user.clone(), State(state.clone()), Json(req))
             .await
@@ -358,5 +370,56 @@ mod tests {
             .await
             .unwrap();
         assert!(!get_resp.is_active);
+    }
+
+    #[tokio::test]
+    async fn test_update_account_preserves_created_at_and_honors_is_active() {
+        let (state, tid, uid) = test_state().await;
+        let user = auth_user(tid, uid);
+        let req = AccountRequest {
+            name: "Preserve Corp".to_string(),
+            tax_id: None, email: None, phone: None,
+            address_line1: None, address_line2: None, city: None,
+            state: None, postal_code: None, country: None,
+            account_type: "customer".to_string(),
+            notes: None,
+            is_active: Some(false),
+        };
+        let created = create_account(user.clone(), State(state.clone()), Json(req))
+            .await
+            .unwrap();
+        assert!(!created.is_active);
+
+        // Updating without is_active keeps the current value (false) and
+        // preserves created_at.
+        let update_req = AccountRequest {
+            name: "Preserved Name".to_string(),
+            tax_id: None, email: None, phone: None,
+            address_line1: None, address_line2: None, city: None,
+            state: None, postal_code: None, country: None,
+            account_type: "customer".to_string(),
+            notes: None,
+            is_active: None,
+        };
+        let updated = update_account(user.clone(), State(state.clone()), Path(created.id), Json(update_req))
+            .await
+            .unwrap();
+        assert_eq!(updated.created_at, created.created_at);
+        assert!(!updated.is_active);
+
+        // An explicit is_active=true must reactivate it.
+        let reactivate_req = AccountRequest {
+            name: "Preserved Name".to_string(),
+            tax_id: None, email: None, phone: None,
+            address_line1: None, address_line2: None, city: None,
+            state: None, postal_code: None, country: None,
+            account_type: "customer".to_string(),
+            notes: None,
+            is_active: Some(true),
+        };
+        let reactivated = update_account(user, State(state.clone()), Path(created.id), Json(reactivate_req))
+            .await
+            .unwrap();
+        assert!(reactivated.is_active);
     }
 }

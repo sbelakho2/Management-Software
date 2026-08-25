@@ -4,6 +4,7 @@
 //! refresh tokens with configurable expiration.
 
 use chrono::{Duration, Utc};
+use jsonwebtoken::errors::ErrorKind;
 use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation};
 use serde::{Deserialize, Serialize};
 use sensei_core::error::{Result, SenseiError};
@@ -16,6 +17,8 @@ pub struct AccessTokenClaims {
     pub sub: Uuid,
     /// Tenant ID.
     pub tenant_id: Uuid,
+    /// Unique token ID (for revocation and replay detection).
+    pub jti: Uuid,
     /// Issuer.
     pub iss: String,
     /// Audience.
@@ -39,8 +42,12 @@ pub struct RefreshTokenClaims {
     pub sub: Uuid,
     /// Tenant ID.
     pub tenant_id: Uuid,
+    /// Unique token ID (for revocation and replay detection).
+    pub jti: Uuid,
     /// Issuer.
     pub iss: String,
+    /// Audience.
+    pub aud: String,
     /// Expiration timestamp (Unix epoch seconds).
     pub exp: usize,
     /// Issued at timestamp (Unix epoch seconds).
@@ -94,6 +101,7 @@ impl JwtService {
         let claims = AccessTokenClaims {
             sub: user_id,
             tenant_id,
+            jti: Uuid::new_v4(),
             iss: self.issuer.clone(),
             aud: self.audience.clone(),
             exp: exp.timestamp() as usize,
@@ -107,19 +115,30 @@ impl JwtService {
             .map_err(|e| SenseiError::TokenError(format!("Failed to encode JWT: {e}")))
     }
 
-    /// Issue a refresh token for the given user.
-    pub fn issue_refresh_token(&self, user_id: Uuid, tenant_id: Uuid) -> Result<String> {
+    /// Issue a refresh token for the given user within an explicit token family.
+    ///
+    /// The `family_id` must come from an existing family (e.g. created at
+    /// registration) so that refresh-token rotation can be tracked across
+    /// the whole family. A fresh family must be created by the caller.
+    pub fn issue_refresh_token(
+        &self,
+        user_id: Uuid,
+        tenant_id: Uuid,
+        family_id: Uuid,
+    ) -> Result<String> {
         let now = Utc::now();
         let exp = now + Duration::days(self.refresh_expiry_days);
 
         let claims = RefreshTokenClaims {
             sub: user_id,
             tenant_id,
+            jti: Uuid::new_v4(),
             iss: self.issuer.clone(),
+            aud: self.audience.clone(),
             exp: exp.timestamp() as usize,
             iat: now.timestamp() as usize,
             token_type: "refresh".to_string(),
-            family_id: Uuid::new_v4(),
+            family_id,
         };
 
         encode(&Header::default(), &claims, &self.encoding_key)
@@ -131,10 +150,12 @@ impl JwtService {
         let mut validation = Validation::default();
         validation.set_issuer(&[&self.issuer]);
         validation.set_audience(&[&self.audience]);
-        validation.sub = None; // Allow any subject
+        // Require the `sub` claim; the typed `Uuid` field also enforces that
+        // the subject is a valid UUID.
+        validation.required_spec_claims.insert("sub".to_string());
 
         let token_data = decode::<AccessTokenClaims>(token, &self.decoding_key, &validation)
-            .map_err(|e| SenseiError::TokenError(format!("Invalid token: {e}")))?;
+            .map_err(|e| map_decode_error(e, "Invalid token"))?;
 
         if token_data.claims.token_type != "access" {
             return Err(SenseiError::TokenError("Invalid token type".to_string()));
@@ -147,10 +168,11 @@ impl JwtService {
     pub fn validate_refresh_token(&self, token: &str) -> Result<RefreshTokenClaims> {
         let mut validation = Validation::default();
         validation.set_issuer(&[&self.issuer]);
-        validation.sub = None;
+        validation.set_audience(&[&self.audience]);
+        validation.required_spec_claims.insert("sub".to_string());
 
         let token_data = decode::<RefreshTokenClaims>(token, &self.decoding_key, &validation)
-            .map_err(|e| SenseiError::TokenError(format!("Invalid refresh token: {e}")))?;
+            .map_err(|e| map_decode_error(e, "Invalid refresh token"))?;
 
         if token_data.claims.token_type != "refresh" {
             return Err(SenseiError::TokenError("Invalid token type".to_string()));
@@ -160,6 +182,14 @@ impl JwtService {
     }
 }
 
+/// Map a JWT decode error to a [`SenseiError`], detecting expired signatures
+/// by error kind rather than by string matching.
+fn map_decode_error(err: jsonwebtoken::errors::Error, context: &str) -> SenseiError {
+    match err.kind() {
+        ErrorKind::ExpiredSignature => SenseiError::TokenExpired,
+        _ => SenseiError::TokenError(format!("{context}: {err}")),
+    }
+}
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -190,6 +220,7 @@ mod tests {
         assert_eq!(claims.tenant_id, tenant_id);
         assert_eq!(claims.roles, roles);
         assert_eq!(claims.token_type, "access");
+        assert!(!claims.jti.is_nil());
     }
 
     #[test]
@@ -197,13 +228,61 @@ mod tests {
         let svc = make_service();
         let user_id = Uuid::new_v4();
         let tenant_id = Uuid::new_v4();
+        let family_id = Uuid::new_v4();
 
-        let token = svc.issue_refresh_token(user_id, tenant_id).unwrap();
+        let token = svc
+            .issue_refresh_token(user_id, tenant_id, family_id)
+            .unwrap();
         let claims = svc.validate_refresh_token(&token).unwrap();
 
         assert_eq!(claims.sub, user_id);
         assert_eq!(claims.tenant_id, tenant_id);
         assert_eq!(claims.token_type, "refresh");
+        assert_eq!(claims.family_id, family_id);
+        assert!(!claims.jti.is_nil());
+    }
+
+    #[test]
+    fn test_refresh_token_checks_audience() {
+        let svc = make_service();
+        let claims = RefreshTokenClaims {
+            sub: Uuid::new_v4(),
+            tenant_id: Uuid::new_v4(),
+            jti: Uuid::new_v4(),
+            iss: "sensei-test".to_string(),
+            aud: "some-other-audience".to_string(),
+            exp: (Utc::now() + Duration::days(7)).timestamp() as usize,
+            iat: Utc::now().timestamp() as usize,
+            token_type: "refresh".to_string(),
+            family_id: Uuid::new_v4(),
+        };
+        let token = encode(&Header::default(), &claims, &svc.encoding_key).unwrap();
+        assert!(matches!(
+            svc.validate_refresh_token(&token),
+            Err(SenseiError::TokenError(_))
+        ));
+    }
+
+    #[test]
+    fn test_expired_token_returns_token_expired() {
+        let svc = make_service();
+        let claims = AccessTokenClaims {
+            sub: Uuid::new_v4(),
+            tenant_id: Uuid::new_v4(),
+            jti: Uuid::new_v4(),
+            iss: "sensei-test".to_string(),
+            aud: "sensei-test-api".to_string(),
+            exp: (Utc::now() - Duration::minutes(5)).timestamp() as usize,
+            iat: (Utc::now() - Duration::minutes(20)).timestamp() as usize,
+            nbf: (Utc::now() - Duration::minutes(20)).timestamp() as usize,
+            roles: vec![],
+            token_type: "access".to_string(),
+        };
+        let token = encode(&Header::default(), &claims, &svc.encoding_key).unwrap();
+        assert!(matches!(
+            svc.validate_access_token(&token),
+            Err(SenseiError::TokenExpired)
+        ));
     }
 
     #[test]

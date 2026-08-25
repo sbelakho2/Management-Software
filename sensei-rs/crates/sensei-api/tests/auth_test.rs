@@ -41,8 +41,26 @@ async fn test_login_invalid_password() {
 #[tokio::test]
 async fn test_login_nonexistent_user() {
     let app = common::TestApp::new().await;
+    // UPDATED BEHAVIOR: an unknown email must return the same 401 as a
+    // wrong password. The previous 404 leaked which emails are registered
+    // (user enumeration vector); both cases now share one response.
     let (status, _) = login(&app, "nobody@sensei.test", "SomePass123!").await;
-    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn test_login_unknown_email_matches_wrong_password_response() {
+    let app = common::TestApp::new().await;
+
+    let (status_unknown, body_unknown) =
+        login(&app, "nobody@sensei.test", "SomePass123!").await;
+    let (status_wrong, body_wrong) = login(&app, "admin@sensei.test", "SomePass123!").await;
+
+    // Same status code and same message: the endpoint cannot be used to
+    // enumerate registered accounts.
+    assert_eq!(status_unknown, StatusCode::UNAUTHORIZED);
+    assert_eq!(status_wrong, StatusCode::UNAUTHORIZED);
+    assert_eq!(body_unknown["message"], body_wrong["message"]);
 }
 
 #[tokio::test]
@@ -146,6 +164,52 @@ async fn test_logout_success() {
 }
 
 #[tokio::test]
+async fn test_logout_blacklists_access_token() {
+    let app = common::TestApp::new().await;
+    let token = app.login_as_admin().await;
+
+    // Logout must invalidate the presented access token.
+    let req = app.post_authenticated("/api/v1/auth/logout", &token, serde_json::json!({}));
+    let resp = app.send_request(req).await;
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    // Reusing the logged-out token is rejected by the auth middleware.
+    let req = app.get_authenticated("/api/v1/auth/me", &token);
+    let resp = app.send_request(req).await;
+    assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn test_refresh_token_rotation_and_reuse_detection() {
+    let app = common::TestApp::new().await;
+
+    // Login to obtain a refresh token.
+    let (_, login_body) = login(&app, "admin@sensei.test", &app.admin_password).await;
+    let refresh_token = login_body["refresh_token"].as_str().unwrap().to_string();
+
+    // First refresh succeeds and rotates the token.
+    let body = serde_json::json!({ "refresh_token": refresh_token });
+    let req = app.post("/api/v1/auth/refresh", body);
+    let mut resp = app.send_request(req).await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    let json: Value = app.json_body(&mut resp).await;
+    let rotated_token = json["refresh_token"].as_str().unwrap().to_string();
+    assert!(!rotated_token.is_empty());
+
+    // Presenting the already-rotated token again is reuse: rejected, and
+    // the whole family is revoked so even the rotated token stops working.
+    let reuse_body = serde_json::json!({ "refresh_token": refresh_token });
+    let req = app.post("/api/v1/auth/refresh", reuse_body);
+    let resp = app.send_request(req).await;
+    assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+
+    let after_reuse_body = serde_json::json!({ "refresh_token": rotated_token });
+    let req = app.post("/api/v1/auth/refresh", after_reuse_body);
+    let resp = app.send_request(req).await;
+    assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
 async fn test_get_me() {
     let app = common::TestApp::new().await;
     let token = app.login_as_admin().await;
@@ -217,7 +281,7 @@ async fn test_change_password_wrong_old() {
 async fn test_request_password_reset() {
     let app = common::TestApp::new().await;
 
-    let body = serde_json::json!({ "email": "admin@sensei.test" });
+    let body = serde_json::json!({ "email": "reset-a@sensei.test" });
     let req = app.post("/api/v1/auth/password-reset/request", body);
     let mut resp = app.send_request(req).await;
     assert_eq!(resp.status(), StatusCode::OK);
@@ -241,11 +305,40 @@ async fn test_request_password_reset_nonexistent() {
 }
 
 #[tokio::test]
+async fn test_password_reset_request_rate_limited_per_email() {
+    let app = common::TestApp::new().await;
+
+    // The first three requests for the same email are allowed…
+    for _ in 0..3 {
+        let body = serde_json::json!({ "email": "ratelimit@sensei.test" });
+        let req = app.post("/api/v1/auth/password-reset/request", body);
+        let resp = app.send_request(req).await;
+        assert_eq!(resp.status(), StatusCode::OK);
+    }
+
+    // …the fourth is rate-limited (429).
+    let body = serde_json::json!({ "email": "ratelimit@sensei.test" });
+    let req = app.post("/api/v1/auth/password-reset/request", body);
+    let resp = app.send_request(req).await;
+    assert_eq!(resp.status(), StatusCode::TOO_MANY_REQUESTS);
+}
+
+#[tokio::test]
 async fn test_confirm_password_reset() {
     let app = common::TestApp::new().await;
 
-    // Request reset to generate a token
-    let body = serde_json::json!({ "email": "admin@sensei.test" });
+    // Register a user so the email exists and a reset token is generated.
+    let reg_body = serde_json::json!({
+        "email": "reset-e2e@sensei.test",
+        "password": "StrongPass123!",
+        "name": "Reset User",
+    });
+    let req = app.post("/api/v1/auth/register", reg_body);
+    let resp = app.send_request(req).await;
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    // Request reset for that email (generates a token).
+    let body = serde_json::json!({ "email": "reset-e2e@sensei.test" });
     let req = app.post("/api/v1/auth/password-reset/request", body);
     let _resp = app.send_request(req).await;
 
@@ -284,7 +377,7 @@ async fn test_confirm_password_reset_invalid_token() {
 async fn test_request_email_verification() {
     let app = common::TestApp::new().await;
 
-    let body = serde_json::json!({ "email": "admin@sensei.test" });
+    let body = serde_json::json!({ "email": "verify-a@sensei.test" });
     let req = app.post("/api/v1/auth/verify-email/request", body);
     let mut resp = app.send_request(req).await;
     assert_eq!(resp.status(), StatusCode::OK);
@@ -297,8 +390,19 @@ async fn test_request_email_verification() {
 async fn test_confirm_email_verification() {
     let app = common::TestApp::new().await;
 
-    // Request verification
-    let body = serde_json::json!({ "email": "admin@sensei.test" });
+    // Register a user so the email exists and a verification token is
+    // generated.
+    let reg_body = serde_json::json!({
+        "email": "verify-e2e@sensei.test",
+        "password": "StrongPass123!",
+        "name": "Verify User",
+    });
+    let req = app.post("/api/v1/auth/register", reg_body);
+    let resp = app.send_request(req).await;
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    // Request verification for that email (generates a token).
+    let body = serde_json::json!({ "email": "verify-e2e@sensei.test" });
     let req = app.post("/api/v1/auth/verify-email/request", body);
     let _resp = app.send_request(req).await;
 
@@ -315,6 +419,21 @@ async fn test_confirm_email_verification() {
 
     let json: Value = app.json_body(&mut resp).await;
     assert_eq!(json["message"], "Email verified successfully");
+
+    // The user must actually be marked verified in the users service.
+    let verified = app
+        .state
+        .users_service
+        .find_by_email("verify-e2e@sensei.test")
+        .await
+        .expect("verified user should exist");
+    assert!(
+        app.state
+            .users_service
+            .is_email_verified(verified.id)
+            .await
+            .expect("verification lookup should work")
+    );
 }
 
 #[tokio::test]

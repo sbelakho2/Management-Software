@@ -94,6 +94,12 @@ pub struct A3 {
     pub check_plan: String,
     pub follow_up: String,
     pub status: String,   // draft, active, implemented, verified, closed
+    /// Problem-solving discipline (e.g. standard, safety, quality).
+    #[serde(default)]
+    pub a3_type: String,
+    /// Severity of the problem addressed (e.g. low, medium, high, critical).
+    #[serde(default)]
+    pub severity: String,
     pub owner_id: Uuid,
     pub created_at: DateTime<Utc>,
     pub closed_at: Option<DateTime<Utc>>,
@@ -626,12 +632,15 @@ impl OperationsService for InMemoryOperationsService {
         a3.status = "closed".to_string();
         a3.closed_at = Some(Utc::now());
         let result = a3.clone();
+        // The outcome reflects the A3's actual state before closure: reports
+        // closed from `implemented`/`verified` carry that outcome, anything
+        // else is inconclusive.
+        let outcome = match result.status.as_str() {
+            "implemented" | "verified" => result.status.clone(),
+            _ => "inconclusive".to_string(),
+        };
         drop(store);
-        self.publish_event(A3ClosedEvent::new(
-            tenant_id,
-            id,
-            "implemented".to_string(),
-        ))
+        self.publish_event(A3ClosedEvent::new(tenant_id, id, outcome))
         .await;
         Ok(result)
     }
@@ -719,12 +728,24 @@ impl OperationsService for InMemoryOperationsService {
         risk.status = "mitigated".to_string();
         risk.mitigated_at = Some(Utc::now());
         let result = risk.clone();
+        // The mitigation is identified by a stable id derived from the risk,
+        // and its effectiveness reflects whether an actual mitigation action
+        // is defined (an empty mitigation plan cannot be "effective").
+        let mitigation_id = Uuid::new_v5(
+            &Uuid::NAMESPACE_OID,
+            format!("{tenant_id}:{id}:mitigation").as_bytes(),
+        );
+        let effectiveness = if result.mitigation.trim().is_empty() {
+            "inconclusive".to_string()
+        } else {
+            "effective".to_string()
+        };
         drop(store);
         self.publish_event(RiskMitigatedEvent::new(
             tenant_id,
             id,
-            Uuid::nil(),
-            "effective".to_string(),
+            mitigation_id,
+            effectiveness,
         ))
         .await;
         Ok(result)
@@ -976,6 +997,8 @@ mod tests {
             check_plan: "Track changeover times weekly".to_string(),
             follow_up: "Standardise and repeat".to_string(),
             status: String::new(),
+            a3_type: "standard".to_string(),
+            severity: "medium".to_string(),
             owner_id,
             created_at: Utc::now(),
             closed_at: None,

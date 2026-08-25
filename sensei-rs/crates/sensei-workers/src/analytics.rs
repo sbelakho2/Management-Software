@@ -60,13 +60,12 @@ pub struct KpiValue {
 
 /// In-memory cache for computed snapshots and KPIs.
 ///
-/// Prevents redundant recomputation within a short time window.
-/// In production this would be backed by Redis or the database.
+/// Prevents redundant recomputation within the configured TTL window.
+/// Entries older than the TTL are treated as expired and recomputed.
 #[derive(Debug)]
 pub struct AnalyticsCache {
-    snapshots: Arc<RwLock<HashMap<String, AnalyticsSnapshot>>>,
-    kpis: Arc<RwLock<HashMap<String, Vec<KpiValue>>>>,
-    #[allow(dead_code)]
+    snapshots: Arc<RwLock<HashMap<String, (std::time::Instant, AnalyticsSnapshot)>>>,
+    kpis: Arc<RwLock<HashMap<String, (std::time::Instant, Vec<KpiValue>)>>>,
     ttl: Duration,
 }
 
@@ -83,37 +82,48 @@ impl AnalyticsCache {
     /// Get a cached snapshot, if present and not expired.
     pub async fn get_snapshot(&self, key: &str) -> Option<AnalyticsSnapshot> {
         let cache = self.snapshots.read().await;
-        cache.get(key).cloned()
+        match cache.get(key) {
+            Some((inserted_at, snapshot)) if inserted_at.elapsed() < self.ttl => {
+                Some(snapshot.clone())
+            }
+            _ => None,
+        }
     }
 
     /// Store a snapshot in the cache.
     pub async fn put_snapshot(&self, key: String, snapshot: AnalyticsSnapshot) {
         let mut cache = self.snapshots.write().await;
-        cache.insert(key, snapshot);
+        cache.insert(key, (std::time::Instant::now(), snapshot));
     }
 
-    /// Get cached KPIs for a domain.
+    /// Get cached KPIs for a domain, if present and not expired.
     pub async fn get_kpis(&self, key: &str) -> Option<Vec<KpiValue>> {
         let cache = self.kpis.read().await;
-        cache.get(key).cloned()
+        match cache.get(key) {
+            Some((inserted_at, kpis)) if inserted_at.elapsed() < self.ttl => Some(kpis.clone()),
+            _ => None,
+        }
     }
 
     /// Store KPIs in the cache.
     pub async fn put_kpis(&self, key: String, kpis: Vec<KpiValue>) {
         let mut cache = self.kpis.write().await;
-        cache.insert(key, kpis);
+        cache.insert(key, (std::time::Instant::now(), kpis));
     }
 }
 
 /// Worker that processes analytics-related tasks.
 ///
 /// Queries real aggregate data from the database when a pool is configured.
-/// Without a pool, returns empty results with a warning (graceful degradation).
+/// Query failures are logged and recorded (never silently swallowed with a
+/// default value); without a pool, results are empty with a warning.
 pub struct AnalyticsWorker {
-    /// In-memory cache for analytics results.
+    /// In-memory cache for analytics results (5 min TTL).
     cache: Arc<AnalyticsCache>,
     /// Optional database pool for querying real data.
     pool: Option<Arc<PgPool>>,
+    /// Recorded query failures: query label → error message.
+    failures: Arc<RwLock<HashMap<String, String>>>,
 }
 
 impl AnalyticsWorker {
@@ -122,6 +132,7 @@ impl AnalyticsWorker {
         Self {
             cache: Arc::new(AnalyticsCache::new(Duration::from_secs(300))),
             pool: None,
+            failures: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
@@ -130,6 +141,7 @@ impl AnalyticsWorker {
         Self {
             cache,
             pool: None,
+            failures: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
@@ -138,6 +150,63 @@ impl AnalyticsWorker {
         Self {
             cache: Arc::new(AnalyticsCache::new(Duration::from_secs(300))),
             pool: Some(pool),
+            failures: Arc::new(RwLock::new(HashMap::new())),
+        }
+    }
+
+    /// Record a failed analytics query and return the error.
+    async fn query_failed(&self, label: &str, e: sqlx::Error) -> WorkerError {
+        let msg = e.to_string();
+        error!(query = %label, error = %msg, "Analytics query failed");
+        self.failures
+            .write()
+            .await
+            .insert(label.to_string(), msg.clone());
+        WorkerError::Processing(format!("Analytics query '{label}' failed: {msg}"))
+    }
+
+    /// Fetch a scalar i64 aggregate, recording failures instead of defaulting.
+    async fn fetch_count(&self, pool: &PgPool, label: &str, sql: &str, date: &str) -> Result<i64> {
+        match sqlx::query_scalar::<_, i64>(sql)
+            .bind(date)
+            .fetch_one(pool)
+            .await
+        {
+            Ok(v) => Ok(v),
+            Err(e) => Err(self.query_failed(label, e).await),
+        }
+    }
+
+    /// Fetch an optional f64 aggregate, recording failures instead of defaulting.
+    async fn fetch_optional_f64(
+        &self,
+        pool: &PgPool,
+        label: &str,
+        sql: &str,
+        date: &str,
+    ) -> Result<Option<f64>> {
+        match sqlx::query_scalar::<_, f64>(sql)
+            .bind(date)
+            .fetch_optional(pool)
+            .await
+        {
+            Ok(row) => Ok(row),
+            Err(e) => Err(self.query_failed(label, e).await),
+        }
+    }
+
+    /// Convert a `NULL` aggregate into `0.0` as a last resort.
+    ///
+    /// A `NULL` result means the aggregate ran over zero rows (e.g. `AVG`
+    /// over an empty day). The value is logged as missing rather than
+    /// silently defaulted.
+    fn null_aggregate_to_zero(label: &str, value: Option<f64>) -> f64 {
+        match value {
+            Some(v) => v,
+            None => {
+                warn!(metric = %label, "No data for metric — recording 0.0");
+                0.0
+            }
         }
     }
 
@@ -210,88 +279,118 @@ impl AnalyticsWorker {
     }
 
     /// Query production metrics from the database.
+    ///
+    /// `work_orders` has no dedicated completion timestamp: `status`
+    /// transitions to `'completed'` via `UPDATE`, so `updated_at` is the
+    /// completion timestamp, `created_at` the start, and `scheduled_end`
+    /// the plan deadline.
     async fn query_production_metrics(
         &self,
         pool: &PgPool,
         date: &str,
     ) -> Result<serde_json::Value> {
-        let work_orders_completed: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM work_orders \
-             WHERE status = 'completed' AND DATE(completed_at) = $1",
-        )
-        .bind(date)
-        .fetch_one(pool)
-        .await
-        .unwrap_or(0);
+        let work_orders_completed = self
+            .fetch_count(
+                pool,
+                "production.work_orders_completed",
+                "SELECT COUNT(*) FROM work_orders \
+                 WHERE status = 'completed' AND DATE(updated_at) = $1",
+                date,
+            )
+            .await?;
 
-        let avg_cycle_time: Option<f64> = sqlx::query_scalar(
-            "SELECT AVG(EXTRACT(EPOCH FROM (completed_at - started_at)) / 60.0) \
-             FROM work_orders \
-             WHERE status = 'completed' AND DATE(completed_at) = $1",
-        )
-        .bind(date)
-        .fetch_optional(pool)
-        .await
-        .ok()
-        .flatten()
-        .flatten();
+        let avg_cycle_time = self
+            .fetch_optional_f64(
+                pool,
+                "production.cycle_time",
+                "SELECT AVG(EXTRACT(EPOCH FROM (updated_at - created_at)) / 60.0) \
+                 FROM work_orders \
+                 WHERE status = 'completed' AND DATE(updated_at) = $1",
+                date,
+            )
+            .await?;
 
-        let on_time_count: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM work_orders \
-             WHERE status = 'completed' AND DATE(completed_at) = $1 \
-             AND completed_at <= due_date",
-        )
-        .bind(date)
-        .fetch_one(pool)
-        .await
-        .unwrap_or(0);
+        let on_time_count = self
+            .fetch_count(
+                pool,
+                "production.on_time",
+                "SELECT COUNT(*) FROM work_orders \
+                 WHERE status = 'completed' AND DATE(updated_at) = $1 \
+                 AND updated_at <= scheduled_end",
+                date,
+            )
+            .await?;
 
-        let total_completed = work_orders_completed.max(1);
-        let on_time_rate = on_time_count as f64 / total_completed as f64;
+        let on_time_rate = if work_orders_completed == 0 {
+            warn!(
+                date = %date,
+                "No completed work orders for date — recording on-time delivery rate 0.0"
+            );
+            0.0
+        } else {
+            on_time_count as f64 / work_orders_completed as f64
+        };
 
         Ok(serde_json::json!({
             "work_orders_completed": work_orders_completed,
-            "cycle_time_avg_minutes": avg_cycle_time.unwrap_or(0.0),
+            "cycle_time_avg_minutes": Self::null_aggregate_to_zero("production.cycle_time", avg_cycle_time),
             "on_time_delivery_rate": on_time_rate,
         }))
     }
 
     /// Query quality metrics from the database.
+    ///
+    /// Quality state lives in the `ncr_reports` and `capas` tables with
+    /// plain `status` columns (there is no JSONB-backed `quality_ncrs` /
+    /// `quality_capas` pair in the schema).
     async fn query_quality_metrics(
         &self,
         pool: &PgPool,
         date: &str,
     ) -> Result<serde_json::Value> {
-        let ncrs_opened: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM quality_ncrs WHERE DATE(created_at) = $1",
-        )
-        .bind(date)
-        .fetch_one(pool)
-        .await
-        .unwrap_or(0);
+        let ncrs_opened = self
+            .fetch_count(
+                pool,
+                "quality.ncrs_opened",
+                "SELECT COUNT(*) FROM ncr_reports WHERE DATE(created_at) = $1",
+                date,
+            )
+            .await?;
 
-        let ncrs_closed: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM quality_ncrs \
-             WHERE status = 'closed' AND DATE(updated_at) = $1",
-        )
-        .bind(date)
-        .fetch_one(pool)
-        .await
-        .unwrap_or(0);
+        let ncrs_closed = self
+            .fetch_count(
+                pool,
+                "quality.ncrs_closed",
+                "SELECT COUNT(*) FROM ncr_reports \
+                 WHERE status = 'closed' AND DATE(updated_at) = $1",
+                date,
+            )
+            .await?;
 
         let open_ncr_count: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM quality_ncrs WHERE status IN ('open', 'in_progress')",
+            "SELECT COUNT(*) FROM ncr_reports \
+             WHERE status IN ('open', 'under_investigation', 'action_defined', 'in_progress')",
         )
         .fetch_one(pool)
         .await
-        .unwrap_or(0);
+        .map_err(|e| {
+            let msg = e.to_string();
+            error!(query = "quality.open_ncr_count", error = %msg, "Analytics query failed");
+            WorkerError::Processing(format!("Analytics query 'quality.open_ncr_count' failed: {msg}"))
+        })?;
 
         let capa_open: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM quality_capas WHERE status IN ('open', 'in_progress')",
+            "SELECT COUNT(*) FROM capas \
+             WHERE status IN ('open', 'analysis_in_progress', 'approved', \
+                              'implementation_in_progress', 'verification_in_progress')",
         )
         .fetch_one(pool)
         .await
-        .unwrap_or(0);
+        .map_err(|e| {
+            let msg = e.to_string();
+            error!(query = "quality.capa_open", error = %msg, "Analytics query failed");
+            WorkerError::Processing(format!("Analytics query 'quality.capa_open' failed: {msg}"))
+        })?;
 
         Ok(serde_json::json!({
             "ncrs_opened": ncrs_opened,
@@ -302,83 +401,107 @@ impl AnalyticsWorker {
     }
 
     /// Query finance metrics from the database.
+    ///
+    /// `invoices` has no `paid_at` column: `invoice_date` is the issuance
+    /// date and `updated_at` the payment-status transition timestamp.
     async fn query_finance_metrics(
         &self,
         pool: &PgPool,
         date: &str,
     ) -> Result<serde_json::Value> {
-        let invoices_issued: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM finance_invoices WHERE DATE(created_at) = $1",
-        )
-        .bind(date)
-        .fetch_one(pool)
-        .await
-        .unwrap_or(0);
+        let invoices_issued = self
+            .fetch_count(
+                pool,
+                "finance.invoices_issued",
+                "SELECT COUNT(*) FROM invoices WHERE DATE(invoice_date) = $1",
+                date,
+            )
+            .await?;
 
-        let total_revenue: Option<f64> = sqlx::query_scalar(
-            "SELECT SUM(total_amount) FROM finance_invoices \
-             WHERE status = 'paid' AND DATE(paid_at) = $1",
-        )
-        .bind(date)
-        .fetch_optional(pool)
-        .await
-        .ok()
-        .flatten()
-        .flatten();
+        let total_revenue = self
+            .fetch_optional_f64(
+                pool,
+                "finance.total_revenue",
+                "SELECT SUM(total_amount) FROM invoices \
+                 WHERE status = 'paid' AND DATE(updated_at) = $1",
+                date,
+            )
+            .await?;
 
         let outstanding_ar: Option<f64> = sqlx::query_scalar(
-            "SELECT SUM(total_amount) FROM finance_invoices \
+            "SELECT SUM(total_amount) FROM invoices \
              WHERE status IN ('sent', 'overdue')",
         )
         .fetch_optional(pool)
         .await
-        .ok()
-        .flatten()
-        .flatten();
+        .map_err(|e| {
+            let msg = e.to_string();
+            error!(query = "finance.outstanding_ar", error = %msg, "Analytics query failed");
+            WorkerError::Processing(format!("Analytics query 'finance.outstanding_ar' failed: {msg}"))
+        })?;
 
         Ok(serde_json::json!({
             "invoices_issued": invoices_issued,
-            "total_revenue": total_revenue.unwrap_or(0.0),
-            "outstanding_ar": outstanding_ar.unwrap_or(0.0),
+            "total_revenue": Self::null_aggregate_to_zero("finance.total_revenue", total_revenue),
+            "outstanding_ar": Self::null_aggregate_to_zero("finance.outstanding_ar", outstanding_ar),
         }))
     }
 
     /// Query inventory metrics from the database.
+    ///
+    /// `inventory_items` has no `reorder_point` column — the reorder level
+    /// lives on `products` — and `stock_moves.move_type` uses
+    /// `('receipt', 'issue', 'transfer', 'adjustment')` (no `'delivery'`).
     async fn query_inventory_metrics(
         &self,
         pool: &PgPool,
         _date: &str,
     ) -> Result<serde_json::Value> {
-        let total_items: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM inventory_items",
-        )
-        .fetch_one(pool)
-        .await
-        .unwrap_or(0);
+        let total_items: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM inventory_items")
+            .fetch_one(pool)
+            .await
+            .map_err(|e| {
+                let msg = e.to_string();
+                error!(query = "inventory.total_items", error = %msg, "Analytics query failed");
+                WorkerError::Processing(format!("Analytics query 'inventory.total_items' failed: {msg}"))
+            })?;
 
         let low_stock_items: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM inventory_items WHERE quantity_on_hand <= reorder_point",
+            "SELECT COUNT(*) FROM inventory_items ii \
+             JOIN products p ON p.id = ii.product_id \
+             WHERE ii.quantity_on_hand <= COALESCE(p.reorder_point, 0)",
         )
         .fetch_one(pool)
         .await
-        .unwrap_or(0);
+        .map_err(|e| {
+            let msg = e.to_string();
+            error!(query = "inventory.low_stock", error = %msg, "Analytics query failed");
+            WorkerError::Processing(format!("Analytics query 'inventory.low_stock' failed: {msg}"))
+        })?;
 
+        // Turnover: units moved out over the trailing 30 days divided by the
+        // average on-hand quantity (real stock_moves data).
         let inventory_turnover: Option<f64> = sqlx::query_scalar(
-            "SELECT CASE WHEN AVG(quantity_on_hand) > 0 \
-             THEN SUM(quantity_consumed) / AVG(quantity_on_hand) \
-             ELSE 0 END \
-             FROM inventory_summary_last_30_days()",
+            "SELECT CASE WHEN COALESCE(SUM(ii.quantity_on_hand), 0) > 0 \
+             THEN COALESCE(SUM(sm.quantity) FILTER (WHERE sm.move_type IN ('issue', 'transfer')), 0) \
+                  / SUM(ii.quantity_on_hand) \
+             ELSE 0.0 END \
+             FROM inventory_items ii \
+             LEFT JOIN stock_moves sm ON sm.product_id = ii.product_id \
+              AND sm.moved_at > NOW() - INTERVAL '30 days'",
         )
         .fetch_optional(pool)
         .await
-        .ok()
-        .flatten()
-        .flatten();
+        .map_err(|e| {
+            let msg = e.to_string();
+            error!(query = "inventory.turnover", error = %msg, "Analytics query failed");
+            WorkerError::Processing(format!("Analytics query 'inventory.turnover' failed: {msg}"))
+        })?;
 
         Ok(serde_json::json!({
             "total_items": total_items,
             "low_stock_items": low_stock_items,
-            "inventory_turnover": inventory_turnover.unwrap_or(0.0),
+            "inventory_turnover": Self::null_aggregate_to_zero("inventory.turnover", inventory_turnover),
         }))
     }
 
@@ -412,7 +535,11 @@ impl AnalyticsWorker {
             )
             .fetch_one(pool.as_ref())
             .await
-            .unwrap_or(0.0);
+            .map_err(|e| {
+                let msg = e.to_string();
+                error!(query = "kpi.storage_utilization", error = %msg, "Analytics query failed");
+                WorkerError::Processing(format!("Analytics query 'kpi.storage_utilization' failed: {msg}"))
+            })?;
 
             let picking_accuracy: f64 = sqlx::query_scalar(
                 "SELECT CASE WHEN COUNT(*) > 0 \
@@ -423,7 +550,11 @@ impl AnalyticsWorker {
             .bind(&date)
             .fetch_one(pool.as_ref())
             .await
-            .unwrap_or(0.0);
+            .map_err(|e| {
+                let msg = e.to_string();
+                error!(query = "kpi.picking_accuracy", error = %msg, "Analytics query failed");
+                WorkerError::Processing(format!("Analytics query 'kpi.picking_accuracy' failed: {msg}"))
+            })?;
 
             let order_cycle_time: f64 = sqlx::query_scalar(
                 "SELECT COALESCE(AVG(EXTRACT(EPOCH FROM (completed_at - created_at)) / 3600.0), 0.0) \
@@ -432,7 +563,11 @@ impl AnalyticsWorker {
             .bind(&date)
             .fetch_one(pool.as_ref())
             .await
-            .unwrap_or(0.0);
+            .map_err(|e| {
+                let msg = e.to_string();
+                error!(query = "kpi.order_cycle_time", error = %msg, "Analytics query failed");
+                WorkerError::Processing(format!("Analytics query 'kpi.order_cycle_time' failed: {msg}"))
+            })?;
 
             let dock_to_stock_time: f64 = sqlx::query_scalar(
                 "SELECT COALESCE(AVG(EXTRACT(EPOCH FROM (putaway_at - received_at)) / 3600.0), 0.0) \
@@ -441,7 +576,11 @@ impl AnalyticsWorker {
             .bind(&date)
             .fetch_one(pool.as_ref())
             .await
-            .unwrap_or(0.0);
+            .map_err(|e| {
+                let msg = e.to_string();
+                error!(query = "kpi.dock_to_stock_time", error = %msg, "Analytics query failed");
+                WorkerError::Processing(format!("Analytics query 'kpi.dock_to_stock_time' failed: {msg}"))
+            })?;
 
             let inventory_accuracy: f64 = sqlx::query_scalar(
                 "SELECT CASE WHEN COUNT(*) > 0 \
@@ -453,7 +592,11 @@ impl AnalyticsWorker {
             .bind(&date)
             .fetch_one(pool.as_ref())
             .await
-            .unwrap_or(0.0);
+            .map_err(|e| {
+                let msg = e.to_string();
+                error!(query = "kpi.inventory_accuracy", error = %msg, "Analytics query failed");
+                WorkerError::Processing(format!("Analytics query 'kpi.inventory_accuracy' failed: {msg}"))
+            })?;
 
             vec![
                 KpiValue {

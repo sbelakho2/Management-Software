@@ -18,6 +18,31 @@ use uuid::Uuid;
 use crate::state::AppState;
 use crate::stores::{SavedView, SortConfig, ViewVisibility};
 
+/// Validate that every shared user exists in the requesting tenant.
+async fn validate_shared_users(
+    state: &AppState,
+    tenant_id: Uuid,
+    user_ids: &[Uuid],
+) -> Result<()> {
+    if user_ids.is_empty() {
+        return Ok(());
+    }
+    let users = state.users_service.list_users().await?;
+    let tenant_user_ids: std::collections::HashSet<Uuid> = users
+        .iter()
+        .filter(|u| u.tenant_id == tenant_id)
+        .map(|u| u.id)
+        .collect();
+    for id in user_ids {
+        if !tenant_user_ids.contains(id) {
+            return Err(SenseiError::Validation(format!(
+                "User {id} does not exist in this tenant"
+            )));
+        }
+    }
+    Ok(())
+}
+
 // ── Request DTOs ───────────────────────────────────────────────────────────
 
 /// Query parameters for listing saved views.
@@ -106,6 +131,7 @@ pub async fn create_saved_view(
 ) -> Result<Json<SavedView>> {
     let tenant_id = user.tenant_id;
     let user_id = user.user_id;
+    validate_shared_users(&state, tenant_id, &req.shared_with).await?;
     let now = Utc::now();
     let is_default = req.is_default.unwrap_or(false);
 
@@ -131,6 +157,8 @@ pub async fn create_saved_view(
         is_default,
         visibility: req.visibility.clone(),
         shared_with: req.shared_with,
+        view_count: 0,
+        last_used_at: None,
         created_at: now,
         updated_at: now,
     };
@@ -154,6 +182,8 @@ pub async fn create_saved_view(
 }
 
 /// Get a saved view by ID.
+///
+/// Records usage: increments `view_count` and refreshes `last_used_at`.
 pub async fn get_saved_view(
     user: AuthenticatedUser,
     State(state): State<AppState>,
@@ -161,9 +191,9 @@ pub async fn get_saved_view(
 ) -> Result<Json<SavedView>> {
     let tenant_id = user.tenant_id;
     let user_id = user.user_id;
-    let store = state.saved_views.read().await;
+    let mut store = state.saved_views.write().await;
     let view = store
-        .values()
+        .values_mut()
         .find(|v| {
             v.id == id
                 && v.tenant_id == tenant_id
@@ -171,9 +201,10 @@ pub async fn get_saved_view(
                     || v.shared_with.contains(&user_id)
                     || v.visibility != ViewVisibility::Private)
         })
-        .cloned()
         .ok_or_else(|| SenseiError::NotFound(format!("Saved view {id} not found")))?;
-    Ok(Json(view))
+    view.view_count = view.view_count.saturating_add(1);
+    view.last_used_at = Some(Utc::now());
+    Ok(Json(view.clone()))
 }
 
 /// Update a saved view.
@@ -185,6 +216,7 @@ pub async fn update_saved_view(
 ) -> Result<Json<SavedView>> {
     let tenant_id = user.tenant_id;
     let user_id = user.user_id;
+    validate_shared_users(&state, tenant_id, &req.shared_with).await?;
     let now = Utc::now();
     let is_default = req.is_default.unwrap_or(false);
 
@@ -289,6 +321,7 @@ pub async fn share_saved_view(
 ) -> Result<Json<SavedView>> {
     let tenant_id = user.tenant_id;
     let user_id = user.user_id;
+    validate_shared_users(&state, tenant_id, &req.user_ids).await?;
 
     let mut store = state.saved_views.write().await;
     let view = store

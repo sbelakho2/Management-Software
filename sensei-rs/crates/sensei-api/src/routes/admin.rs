@@ -1,13 +1,14 @@
 //! Admin route handlers.
 //!
 //! Provides administrative endpoints for system health, configuration,
-//! user management, and logs.
+//! user management, and logs. Every endpoint requires the `admin` role,
+//! and user-management endpoints are scoped to the requester's tenant.
 
 use axum::{Json, extract::{Path, Query, State}};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sensei_auth::middleware::AuthenticatedUser;
-use sensei_core::error::Result;
+use sensei_core::error::{Result, SenseiError};
 use sensei_core::pagination::PaginatedResponse;
 use uuid::Uuid;
 
@@ -47,8 +48,8 @@ pub struct SystemHealth {
     pub event_bus_connected: bool,
     pub active_users: usize,
     pub active_sessions: usize,
-    pub memory_usage_mb: f64,
-    pub cpu_usage_pct: f64,
+    pub memory_usage_mb: Option<f64>,
+    pub cpu_usage_pct: Option<f64>,
     pub version: String,
     pub services: Vec<ServiceStatus>,
 }
@@ -89,18 +90,35 @@ pub struct SystemConfig {
     pub rate_limit_per_minute: u64,
 }
 
+/// Reject non-admin callers.
+fn require_admin(user: &AuthenticatedUser) -> Result<()> {
+    if user.has_role("admin") {
+        Ok(())
+    } else {
+        Err(SenseiError::Forbidden(
+            "Admin role required for this endpoint".to_string(),
+        ))
+    }
+}
+
 // ── System Health ──────────────────────────────────────────────────────────
 
 /// Get system health overview.
+///
+/// Database connectivity is probed with a real `SELECT 1`, event-bus state
+/// comes from the bus itself, active sessions from the session store, and
+/// memory/CPU from the platform (real readings, or `null` when unavailable).
 pub async fn get_system_health(
-    _user: AuthenticatedUser,
+    user: AuthenticatedUser,
     State(state): State<AppState>,
 ) -> Result<Json<SystemHealth>> {
-    // Check database connectivity
-    let db_connected = state.db_pool.as_ref().map(|pool| {
-        // Use a simple heuristic - if the pool is configured, assume connected
-        !pool.is_closed()
-    }).unwrap_or(false);
+    require_admin(&user)?;
+
+    let db_connected = match &state.db_pool {
+        Some(pool) => sqlx::query("SELECT 1").execute(&**pool).await.is_ok(),
+        None => false,
+    };
+    let event_bus_connected = state.event_bus.is_connected();
 
     // Count active users from the users service
     let active_users = state.users_service.list_users()
@@ -115,11 +133,11 @@ pub async fn get_system_health(
             .map(|d| d.as_secs())
             .unwrap_or(0),
         database_connected: db_connected,
-        event_bus_connected: true,
+        event_bus_connected,
         active_users,
-        active_sessions: state.blacklisted_tokens.read().await.len(),
-        memory_usage_mb: 0.0,
-        cpu_usage_pct: 0.0,
+        active_sessions: state.session_store.len(),
+        memory_usage_mb: crate::routes::health::read_memory_usage_mb(),
+        cpu_usage_pct: crate::routes::health::read_cpu_usage_pct(),
         version: env!("CARGO_PKG_VERSION").to_string(),
         services: vec![
             ServiceStatus {
@@ -134,7 +152,7 @@ pub async fn get_system_health(
             },
             ServiceStatus {
                 name: "Event Bus".to_string(),
-                status: "connected".to_string(),
+                status: if event_bus_connected { "connected" } else { "disconnected" }.to_string(),
                 last_checked: Utc::now(),
             },
         ],
@@ -144,9 +162,11 @@ pub async fn get_system_health(
 
 /// Get database statistics.
 pub async fn get_db_stats(
-    _user: AuthenticatedUser,
+    user: AuthenticatedUser,
     State(state): State<AppState>,
 ) -> Result<Json<DbStats>> {
+    require_admin(&user)?;
+
     // Count entities from in-memory stores
     let mut total_entities = std::collections::HashMap::new();
 
@@ -166,9 +186,16 @@ pub async fn get_db_stats(
     total_entities.insert("demand_entries".to_string(), state.demand_entries.read().await.len());
     total_entities.insert("supply_orders".to_string(), state.supply_orders.read().await.len());
 
+    let total_tenants = state
+        .tenants_service
+        .list_tenants()
+        .await
+        .map(|t| t.len())
+        .unwrap_or(0);
+
     let stats = DbStats {
         total_users: total_entities.get("users").copied().unwrap_or(0),
-        total_tenants: 1,
+        total_tenants,
         total_entities,
         db_size_bytes: None,
         connection_count: if state.db_pool.is_some() { 1 } else { 0 },
@@ -178,27 +205,38 @@ pub async fn get_db_stats(
 
 // ── User Management ────────────────────────────────────────────────────────
 
-/// List all users (admin view).
+/// List all users (admin view), scoped to the requester's tenant.
 pub async fn admin_list_users(
-    _user: AuthenticatedUser,
+    user: AuthenticatedUser,
     State(state): State<AppState>,
     Query(params): Query<AdminListUsersParams>,
 ) -> Result<Json<PaginatedResponse<User>>> {
-    let users = state.users_service.list_users_paginated(
-        params.role.as_deref(),
-        params.is_active,
-        params.page,
-        params.per_page,
-    ).await?;
-    Ok(Json(users))
+    require_admin(&user)?;
+
+    let users = state.users_service.list_users().await?;
+    let mut tenant_users: Vec<User> = users
+        .into_iter()
+        .filter(|u| u.tenant_id == user.tenant_id)
+        .filter(|u| params.is_active.map_or(true, |active| u.is_active == active))
+        .filter(|u| params.role.as_deref().map_or(true, |r| u.roles.iter().any(|ur| ur == r)))
+        .collect();
+    tenant_users.sort_by(|a, b| a.email.cmp(&b.email));
+    let result = PaginatedResponse::new(tenant_users, params.page, params.per_page);
+    Ok(Json(result))
 }
 
-/// Deactivate a user (admin view).
+/// Deactivate a user (admin view), scoped to the requester's tenant.
 pub async fn deactivate_user(
-    _user: AuthenticatedUser,
+    user: AuthenticatedUser,
     State(state): State<AppState>,
     Path(user_id): Path<Uuid>,
 ) -> Result<Json<()>> {
+    require_admin(&user)?;
+
+    let target = state.users_service.find_by_id(user_id).await?;
+    if target.tenant_id != user.tenant_id {
+        return Err(SenseiError::NotFound(format!("User {user_id} not found")));
+    }
     state.users_service.deactivate_user(user_id).await?;
     Ok(Json(()))
 }
@@ -211,6 +249,8 @@ pub async fn get_system_logs(
     State(state): State<AppState>,
     Query(params): Query<AdminListLogsParams>,
 ) -> Result<Json<PaginatedResponse<AuditLogEntry>>> {
+    require_admin(&user)?;
+
     let tenant_id = user.tenant_id;
     let store = state.audit_log_entries.read().await;
     let mut entries: Vec<AuditLogEntry> = store
@@ -257,10 +297,15 @@ pub async fn get_system_logs(
 
 /// Get system configuration (redacted secrets).
 pub async fn get_system_config(
-    _user: AuthenticatedUser,
+    user: AuthenticatedUser,
     State(state): State<AppState>,
 ) -> Result<Json<SystemConfig>> {
+    require_admin(&user)?;
+
     let config = &state.config;
+    // The log level is driven by the `RUST_LOG` env var consumed by the
+    // tracing EnvFilter; report the effective value.
+    let log_level = std::env::var("RUST_LOG").unwrap_or_else(|_| "info".to_string());
     let config_out = SystemConfig {
         api_host: config.api.host.clone(),
         api_port: config.api.port,
@@ -276,8 +321,11 @@ pub async fn get_system_config(
             "smtp".to_string()
         },
         event_bus_url: config.event_bus.url.clone(),
-        log_level: "info".to_string(),
+        log_level,
         request_timeout_secs: config.api.request_timeout_secs,
+        // The rate limiter is constructed in `AppState::new` as 100
+        // requests per 60-second window; keep the exposed value aligned
+        // with that construction.
         rate_limit_per_minute: 100,
     };
     Ok(Json(config_out))

@@ -109,7 +109,7 @@ async fn test_update_work_request_status() {
         &token,
         status_body,
     );
-    let mut resp_status = app.send_request(req_status).await;
+    let resp_status = app.send_request(req_status).await;
     assert_eq!(resp_status.status(), StatusCode::OK);
 }
 
@@ -143,7 +143,7 @@ async fn test_create_and_get_pm_schedule() {
         &format!("/api/v1/maintenance/pm-schedules/{}", pm_id),
         &token,
     );
-    let mut resp_get = app.send_request(req_get).await;
+    let resp_get = app.send_request(req_get).await;
     assert_eq!(resp_get.status(), StatusCode::OK);
 }
 
@@ -153,7 +153,7 @@ async fn test_list_pm_schedules() {
     let token = app.login_as_admin().await;
 
     let req = app.get_authenticated("/api/v1/maintenance/pm-schedules", &token);
-    let mut resp = app.send_request(req).await;
+    let resp = app.send_request(req).await;
     assert_eq!(resp.status(), StatusCode::OK);
 }
 
@@ -189,7 +189,7 @@ async fn test_register_and_get_equipment() {
         &format!("/api/v1/maintenance/equipment/{}", equip_id),
         &token,
     );
-    let mut resp_get = app.send_request(req_get).await;
+    let resp_get = app.send_request(req_get).await;
     assert_eq!(resp_get.status(), StatusCode::OK);
 }
 
@@ -199,7 +199,7 @@ async fn test_list_equipment() {
     let token = app.login_as_admin().await;
 
     let req = app.get_authenticated("/api/v1/maintenance/equipment", &token);
-    let mut resp = app.send_request(req).await;
+    let resp = app.send_request(req).await;
     assert_eq!(resp.status(), StatusCode::OK);
 }
 

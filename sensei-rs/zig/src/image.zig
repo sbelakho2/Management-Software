@@ -52,7 +52,7 @@ pub fn rgbToGrayscale(pixels: []u8, width: usize, height: usize) void {
             const g = @as(f32, @floatFromInt(pixels[px + 1]));
             const b = @as(f32, @floatFromInt(pixels[px + 2]));
             const y = r * coeff_r + g * coeff_g + b * coeff_b;
-            pixels[out + k] = @intFromFloat(@min(y, 255.0));
+            pixels[out + k] = @intFromFloat(@round(@min(y, 255.0)));
         }
     }
 
@@ -66,7 +66,7 @@ pub fn rgbToGrayscale(pixels: []u8, width: usize, height: usize) void {
         const g = @as(f32, @floatFromInt(pixels[base + 1]));
         const b = @as(f32, @floatFromInt(pixels[base + 2]));
         const y = r * coeff_r + g * coeff_g + b * coeff_b;
-        pixels[out] = @intFromFloat(@min(y, 255.0));
+        pixels[out] = @intFromFloat(@round(@min(y, 255.0)));
     }
 }
 

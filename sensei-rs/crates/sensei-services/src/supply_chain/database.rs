@@ -26,6 +26,72 @@ impl DatabaseSupplyChainService {
     pub fn new(pool: PgPool) -> Self {
         Self { pool }
     }
+
+    /// Apply a signed quantity delta to an inventory row at `location`,
+    /// creating the row when it does not exist (receipts create stock).
+    async fn apply_inventory_delta(
+        &self,
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        tenant_id: Uuid,
+        product_id: Uuid,
+        location: &str,
+        delta: i64,
+    ) -> Result<()> {
+        // The unique index on (tenant, product, location, lot_number) treats
+        // NULL lot numbers as distinct, so update-then-insert is used instead
+        // of ON CONFLICT.
+        let updated = sqlx::query(
+            "UPDATE inventory_items \
+             SET quantity_on_hand = GREATEST(quantity_on_hand + $1::double precision, 0), \
+                 quantity_available = GREATEST(quantity_on_hand + $1::double precision - quantity_reserved, 0) \
+             WHERE tenant_id = $2 AND product_id = $3 AND location = $4 AND lot_number IS NULL",
+        )
+        .bind(delta)
+        .bind(tenant_id)
+        .bind(product_id)
+        .bind(location)
+        .execute(&mut **tx)
+        .await
+        .map_err(|e| SenseiError::Database(format!("Failed to update inventory: {e}")))?;
+
+        if updated.rows_affected() == 0 {
+            sqlx::query(
+                "INSERT INTO inventory_items \
+                 (id, tenant_id, product_id, location, quantity_on_hand, quantity_reserved, quantity_available, lot_number) \
+                 VALUES ($1, $2, $3, $4, $5, 0, $5, NULL)",
+            )
+            .bind(Uuid::new_v4())
+            .bind(tenant_id)
+            .bind(product_id)
+            .bind(location)
+            .bind(delta.max(0))
+            .execute(&mut **tx)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to create inventory row: {e}")))?;
+        }
+        Ok(())
+    }
+
+    /// Resolve the receiving location: the product's first known inventory
+    /// location, or the warehouse default (`main`) when none exists.
+    async fn resolve_stock_location(
+        &self,
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        tenant_id: Uuid,
+        product_id: Uuid,
+    ) -> Result<String> {
+        let location: Option<String> = sqlx::query_scalar(
+            "SELECT location FROM inventory_items \
+             WHERE tenant_id = $1 AND product_id = $2 \
+             ORDER BY created_at LIMIT 1",
+        )
+        .bind(tenant_id)
+        .bind(product_id)
+        .fetch_optional(&mut **tx)
+        .await
+        .map_err(|e| SenseiError::Database(format!("Failed to resolve stock location: {e}")))?;
+        Ok(location.unwrap_or_else(|| "main".to_string()))
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -386,29 +452,108 @@ impl SupplyChainService for DatabaseSupplyChainService {
     }
 
     async fn receive_po_line(&self, tenant_id: Uuid, po_id: Uuid, product_id: Uuid, quantity_received: i64) -> Result<PurchaseOrder> {
-        let mut po = self.get_purchase_order(tenant_id, po_id).await?;
-        for item in &mut po.line_items {
+        if quantity_received <= 0 {
+            return Err(SenseiError::Validation(
+                "Received quantity must be positive".to_string(),
+            ));
+        }
+        let mut tx = self.pool.begin().await
+            .map_err(|e| SenseiError::Database(format!("Failed to begin transaction: {e}")))?;
+
+        // Load the PO's JSONB line items and supplier, then update them.
+        let row: PurchaseOrderRow = sqlx::query_as(
+            r#"SELECT id, tenant_id, po_number, supplier_id, supplier_name, status,
+                      line_items, total_amount, currency, expected_delivery, created_by, created_at
+               FROM purchase_orders WHERE id=$1 AND tenant_id=$2 FOR UPDATE"#,
+        )
+        .bind(po_id).bind(tenant_id)
+        .fetch_optional(&mut *tx).await
+        .map_err(|e| SenseiError::Database(format!("Failed to get PO: {e}")))?
+        .ok_or_else(|| SenseiError::NotFound(format!("Purchase order {po_id} not found")))?;
+
+        let mut items: Vec<POItem> = serde_json::from_value(row.line_items).map_err(|e| {
+            tracing::error!(po_id = %po_id, "Failed to deserialize PO line items: {e}");
+            SenseiError::Database(format!("Purchase order {po_id} has corrupt line items: {e}"))
+        })?;
+
+        let mut found = false;
+        for item in &mut items {
             if item.product_id == product_id {
+                let remaining = item.quantity_ordered - item.quantity_received;
+                if quantity_received > remaining {
+                    return Err(SenseiError::Validation(format!(
+                        "Receiving {quantity_received} units of product {product_id} \
+                         exceeds the remaining {remaining} units on PO {po_id}"
+                    )));
+                }
                 item.quantity_received += quantity_received;
+                found = true;
+                break;
             }
         }
-        let all_received = po.line_items.iter().all(|i| i.quantity_received >= i.quantity_ordered);
-        let li_json = serde_json::to_value(&po.line_items).unwrap_or(serde_json::Value::Array(vec![]));
+        if !found {
+            return Err(SenseiError::NotFound(format!(
+                "Product {product_id} not found in purchase order {po_id}"
+            )));
+        }
+        let all_received = items.iter().all(|i| i.quantity_received >= i.quantity_ordered);
         let new_status = if all_received { "received" } else { "partially_received" };
+        let li_json = serde_json::to_value(&items).map_err(|e| {
+            SenseiError::Database(format!("Failed to serialize PO line items: {e}"))
+        })?;
 
-        let row = sqlx::query_as::<_, PurchaseOrderRow>(
-            r#"UPDATE purchase_orders SET line_items=$1, status=$2 WHERE id=$3 AND tenant_id=$4
-               RETURNING id, tenant_id, po_number, supplier_id, supplier_name, status, line_items, total_amount, currency, expected_delivery, created_by, created_at"#,
-        ).bind(&li_json).bind(new_status).bind(po_id).bind(tenant_id).fetch_one(&self.pool).await
+        sqlx::query("UPDATE purchase_orders SET line_items=$1, status=$2, updated_at=NOW() WHERE id=$3 AND tenant_id=$4")
+            .bind(&li_json).bind(new_status).bind(po_id).bind(tenant_id)
+            .execute(&mut *tx).await
             .map_err(|e| SenseiError::Database(format!("Failed to receive PO line: {e}")))?;
-        Ok(po_row_to_domain(row))
+
+        // Update inventory at the product's first known location.
+        let location = self.resolve_stock_location(&mut tx, tenant_id, product_id).await?;
+        self.apply_inventory_delta(&mut tx, tenant_id, product_id, &location, quantity_received).await?;
+
+        // Record the stock move and goods receipt inside the same transaction.
+        sqlx::query(
+            "INSERT INTO stock_moves (id, tenant_id, product_id, from_location, to_location, quantity, move_type, reference_type, reference_id, moved_at, created_at) \
+             VALUES ($1,$2,$3,NULL,$4,$5,'receipt','purchase_order',$6,NOW(),NOW())",
+        )
+        .bind(Uuid::new_v4()).bind(tenant_id).bind(product_id).bind(&location)
+        .bind(quantity_received).bind(po_id)
+        .execute(&mut *tx).await
+        .map_err(|e| SenseiError::Database(format!("Failed to record stock move: {e}")))?;
+
+        sqlx::query(
+            "INSERT INTO goods_receipts (id, tenant_id, receipt_number, purchase_order_id, supplier_id, status, receipt_date, created_at, updated_at) \
+             VALUES ($1,$2,$3,$4,$5,'fully_received',NOW(),NOW(),NOW())",
+        )
+        .bind(Uuid::new_v4()).bind(tenant_id)
+        .bind(format!("GR-{}-{}", Utc::now().format("%Y%m%d"), Uuid::new_v4().as_simple()))
+        .bind(po_id).bind(row.supplier_id)
+        .execute(&mut *tx).await
+        .map_err(|e| SenseiError::Database(format!("Failed to record goods receipt: {e}")))?;
+
+        let updated: PurchaseOrderRow = sqlx::query_as(
+            r#"SELECT id, tenant_id, po_number, supplier_id, supplier_name, status,
+                      line_items, total_amount, currency, expected_delivery, created_by, created_at
+               FROM purchase_orders WHERE id=$1 AND tenant_id=$2"#,
+        )
+        .bind(po_id).bind(tenant_id)
+        .fetch_one(&mut *tx).await
+        .map_err(|e| SenseiError::Database(format!("Failed to reload PO: {e}")))?;
+
+        tx.commit().await
+            .map_err(|e| SenseiError::Database(format!("Failed to commit receipt: {e}")))?;
+
+        Ok(po_row_to_domain(updated))
     }
 
     // ── Inventory ───────────────────────────────────────────────────────
 
     async fn get_inventory(&self, tenant_id: Uuid, product_id: Uuid) -> Result<Vec<InventoryItem>> {
         let rows = sqlx::query_as::<_, InventoryRow>(
-            "SELECT id, tenant_id, product_id, product_name, quantity_on_hand, quantity_reserved, quantity_available, location, lot_number, reorder_point, reorder_quantity FROM inventory_items WHERE product_id=$1 AND tenant_id=$2",
+            "SELECT id, tenant_id, product_id, product_name, \
+                    quantity_on_hand::bigint, quantity_reserved::bigint, quantity_available::bigint, \
+                    location, lot_number, reorder_point::bigint, reorder_quantity::bigint \
+             FROM inventory_items WHERE product_id=$1 AND tenant_id=$2",
         ).bind(product_id).bind(tenant_id).fetch_all(&self.pool).await
             .map_err(|e| SenseiError::Database(format!("Failed to get inventory: {e}")))?;
         Ok(rows.into_iter().map(inv_row_to_domain).collect())
@@ -417,7 +562,10 @@ impl SupplyChainService for DatabaseSupplyChainService {
     async fn list_inventory(&self, tenant_id: Uuid, location: Option<&str>, page: Option<usize>, per_page: Option<usize>) -> Result<PaginatedResponse<InventoryItem>> {
         let page = page.unwrap_or(1).max(1); let per_page = per_page.unwrap_or(20).clamp(1, 100); let offset = (page - 1) * per_page;
         let items: Vec<InventoryRow> = sqlx::query_as(
-            r#"SELECT id, tenant_id, product_id, product_name, quantity_on_hand, quantity_reserved, quantity_available, location, lot_number, reorder_point, reorder_quantity FROM inventory_items
+            r#"SELECT id, tenant_id, product_id, product_name,
+                      quantity_on_hand::bigint, quantity_reserved::bigint, quantity_available::bigint,
+                      location, lot_number, reorder_point::bigint, reorder_quantity::bigint
+               FROM inventory_items
                WHERE tenant_id=$1 AND ($2::text IS NULL OR location=$2) ORDER BY product_name LIMIT $3 OFFSET $4"#,
         ).bind(tenant_id).bind(location).bind(per_page as i64).bind(offset as i64).fetch_all(&self.pool).await
             .map_err(|e| SenseiError::Database(format!("Failed to list inventory: {e}")))?;
@@ -427,10 +575,15 @@ impl SupplyChainService for DatabaseSupplyChainService {
     }
 
     async fn adjust_inventory(&self, tenant_id: Uuid, product_id: Uuid, location: &str, quantity_change: i64, _reason: &str) -> Result<InventoryItem> {
+        // Adjusting stock at a location that has no row is an error — never
+        // auto-create an inventory row for an arbitrary location name.
         let row = sqlx::query_as::<_, InventoryRow>(
-            r#"UPDATE inventory_items SET quantity_on_hand = quantity_on_hand + $1, quantity_available = quantity_available + $1
+            r#"UPDATE inventory_items SET quantity_on_hand = GREATEST(quantity_on_hand + $1::double precision, 0),
+                                           quantity_available = GREATEST(quantity_on_hand + $1::double precision - quantity_reserved, 0)
                WHERE product_id=$2 AND tenant_id=$3 AND location=$4
-               RETURNING id, tenant_id, product_id, product_name, quantity_on_hand, quantity_reserved, quantity_available, location, lot_number, reorder_point, reorder_quantity"#,
+               RETURNING id, tenant_id, product_id, product_name,
+                         quantity_on_hand::bigint, quantity_reserved::bigint, quantity_available::bigint,
+                         location, lot_number, reorder_point::bigint, reorder_quantity::bigint"#,
         ).bind(quantity_change).bind(product_id).bind(tenant_id).bind(location)
             .fetch_optional(&self.pool).await
             .map_err(|e| SenseiError::Database(format!("Failed to adjust inventory: {e}")))?
@@ -442,6 +595,8 @@ impl SupplyChainService for DatabaseSupplyChainService {
 
     async fn create_stock_move(&self, tenant_id: Uuid, stock_move: StockMove) -> Result<StockMove> {
         let now = Utc::now(); let id = Uuid::new_v4();
+        let mut tx = self.pool.begin().await
+            .map_err(|e| SenseiError::Database(format!("Failed to begin transaction: {e}")))?;
 
         let row = sqlx::query_as::<_, StockMoveRow>(
             r#"INSERT INTO stock_moves (id, tenant_id, product_id, product_name, quantity, move_type, from_location, to_location, reference_type, reference_id, created_by, created_at)
@@ -451,15 +606,57 @@ impl SupplyChainService for DatabaseSupplyChainService {
             .bind(stock_move.quantity).bind(&stock_move.move_type).bind(&stock_move.from_location)
             .bind(&stock_move.to_location).bind(&stock_move.reference_type).bind(stock_move.reference_id)
             .bind(stock_move.created_by).bind(now)
-            .fetch_one(&self.pool).await.map_err(|e| SenseiError::Database(format!("Failed to create stock move: {e}")))?;
+            .fetch_one(&mut *tx).await.map_err(|e| SenseiError::Database(format!("Failed to create stock move: {e}")))?;
 
-        if stock_move.move_type == "receipt" || stock_move.move_type == "delivery" || stock_move.move_type == "adjustment" {
-            let _ = sqlx::query(
-                r#"UPDATE inventory_items SET quantity_on_hand = quantity_on_hand + $1, quantity_available = quantity_available + $1
-                   WHERE product_id=$2 AND tenant_id=$3 AND location=$4"#,
-            ).bind(stock_move.quantity).bind(stock_move.product_id).bind(tenant_id).bind(&stock_move.to_location)
-                .execute(&self.pool).await;
+        // Apply the inventory effect inside the same transaction, honouring
+        // the move semantics: receipts credit the destination, issues/debits
+        // the source, transfers move between both, adjustments apply to the
+        // named location.
+        let from_location = stock_move
+            .from_location
+            .as_deref()
+            .map(str::to_string);
+        let to_location = stock_move.to_location.clone();
+
+        match stock_move.move_type.as_str() {
+            "receipt" => {
+                let location = match to_location.as_str() {
+                    "" => self.resolve_stock_location(&mut tx, tenant_id, stock_move.product_id).await?,
+                    l => l.to_string(),
+                };
+                self.apply_inventory_delta(&mut tx, tenant_id, stock_move.product_id, &location, stock_move.quantity).await?;
+            }
+            "delivery" | "issue" => {
+                let location = match from_location {
+                    Some(l) if !l.is_empty() => l,
+                    _ => self.resolve_stock_location(&mut tx, tenant_id, stock_move.product_id).await?,
+                };
+                self.apply_inventory_delta(&mut tx, tenant_id, stock_move.product_id, &location, -stock_move.quantity).await?;
+            }
+            "transfer" => {
+                if let Some(from) = from_location {
+                    if !from.is_empty() {
+                        self.apply_inventory_delta(&mut tx, tenant_id, stock_move.product_id, &from, -stock_move.quantity).await?;
+                    }
+                }
+                let to = match to_location.as_str() {
+                    "" => self.resolve_stock_location(&mut tx, tenant_id, stock_move.product_id).await?,
+                    l => l.to_string(),
+                };
+                self.apply_inventory_delta(&mut tx, tenant_id, stock_move.product_id, &to, stock_move.quantity).await?;
+            }
+            "adjustment" => {
+                let location = match from_location {
+                    Some(l) if !l.is_empty() => l,
+                    _ => to_location,
+                };
+                self.apply_inventory_delta(&mut tx, tenant_id, stock_move.product_id, &location, stock_move.quantity).await?;
+            }
+            _ => {}
         }
+
+        tx.commit().await
+            .map_err(|e| SenseiError::Database(format!("Failed to commit stock move: {e}")))?;
 
         Ok(sm_row_to_domain(row))
     }
@@ -582,15 +779,76 @@ impl SupplyChainService for DatabaseSupplyChainService {
     }
 
     async fn receive_full_po(&self, tenant_id: Uuid, id: Uuid) -> Result<PurchaseOrder> {
-        let mut po = self.get_purchase_order(tenant_id, id).await?;
-        for item in &mut po.line_items { item.quantity_received = item.quantity_ordered; }
-        let li_json = serde_json::to_value(&po.line_items).unwrap_or(serde_json::Value::Array(vec![]));
-        let row = sqlx::query_as::<_, PurchaseOrderRow>(
-            r#"UPDATE purchase_orders SET line_items=$1, status='received' WHERE id=$2 AND tenant_id=$3
-               RETURNING id, tenant_id, po_number, supplier_id, supplier_name, status, line_items, total_amount, currency, expected_delivery, created_by, created_at"#,
-        ).bind(&li_json).bind(id).bind(tenant_id).fetch_one(&self.pool).await
+        let mut tx = self.pool.begin().await
+            .map_err(|e| SenseiError::Database(format!("Failed to begin transaction: {e}")))?;
+
+        let row: PurchaseOrderRow = sqlx::query_as(
+            r#"SELECT id, tenant_id, po_number, supplier_id, supplier_name, status,
+                      line_items, total_amount, currency, expected_delivery, created_by, created_at
+               FROM purchase_orders WHERE id=$1 AND tenant_id=$2 FOR UPDATE"#,
+        )
+        .bind(id).bind(tenant_id)
+        .fetch_optional(&mut *tx).await
+        .map_err(|e| SenseiError::Database(format!("Failed to get PO: {e}")))?
+        .ok_or_else(|| SenseiError::NotFound(format!("Purchase order {id} not found")))?;
+
+        if row.status == "received" || row.status == "cancelled" {
+            return Err(SenseiError::Validation(format!(
+                "Cannot receive PO with status: {}",
+                row.status
+            )));
+        }
+
+        let mut items: Vec<POItem> = serde_json::from_value(row.line_items).map_err(|e| {
+            tracing::error!(po_id = %id, "Failed to deserialize PO line items: {e}");
+            SenseiError::Database(format!("Purchase order {id} has corrupt line items: {e}"))
+        })?;
+
+        // Capture the remaining quantity per line BEFORE marking them received.
+        let mut remaining: Vec<(Uuid, String, i64)> = Vec::new();
+        for item in &mut items {
+            let to_receive = item.quantity_ordered - item.quantity_received;
+            if to_receive > 0 {
+                remaining.push((item.product_id, item.product_name.clone(), to_receive));
+                item.quantity_received += to_receive;
+            }
+        }
+
+        let li_json = serde_json::to_value(&items).map_err(|e| {
+            SenseiError::Database(format!("Failed to serialize PO line items: {e}"))
+        })?;
+        sqlx::query("UPDATE purchase_orders SET line_items=$1, status='received', updated_at=NOW() WHERE id=$2 AND tenant_id=$3")
+            .bind(&li_json).bind(id).bind(tenant_id)
+            .execute(&mut *tx).await
             .map_err(|e| SenseiError::Database(format!("Failed to receive full PO: {e}")))?;
-        Ok(po_row_to_domain(row))
+
+        // Update inventory for the quantities captured before the mutation.
+        for (product_id, _product_name, qty) in &remaining {
+            let location = self.resolve_stock_location(&mut tx, tenant_id, *product_id).await?;
+            self.apply_inventory_delta(&mut tx, tenant_id, *product_id, &location, *qty).await?;
+            sqlx::query(
+                "INSERT INTO stock_moves (id, tenant_id, product_id, from_location, to_location, quantity, move_type, reference_type, reference_id, moved_at, created_at) \
+                 VALUES ($1,$2,$3,NULL,$4,$5,'receipt','purchase_order',$6,NOW(),NOW())",
+            )
+            .bind(Uuid::new_v4()).bind(tenant_id).bind(product_id).bind(&location)
+            .bind(qty).bind(id)
+            .execute(&mut *tx).await
+            .map_err(|e| SenseiError::Database(format!("Failed to record stock move: {e}")))?;
+        }
+
+        let updated: PurchaseOrderRow = sqlx::query_as(
+            r#"SELECT id, tenant_id, po_number, supplier_id, supplier_name, status,
+                      line_items, total_amount, currency, expected_delivery, created_by, created_at
+               FROM purchase_orders WHERE id=$1 AND tenant_id=$2"#,
+        )
+        .bind(id).bind(tenant_id)
+        .fetch_one(&mut *tx).await
+        .map_err(|e| SenseiError::Database(format!("Failed to reload PO: {e}")))?;
+
+        tx.commit().await
+            .map_err(|e| SenseiError::Database(format!("Failed to commit full receipt: {e}")))?;
+
+        Ok(po_row_to_domain(updated))
     }
 
     // ── Inventory Mutations ─────────────────────────────────────────────
@@ -598,7 +856,9 @@ impl SupplyChainService for DatabaseSupplyChainService {
     async fn update_inventory(&self, tenant_id: Uuid, id: Uuid, item: InventoryItem) -> Result<InventoryItem> {
         let row = sqlx::query_as::<_, InventoryRow>(
             r#"UPDATE inventory_items SET product_name=$1, reorder_point=$2, reorder_quantity=$3 WHERE id=$4 AND tenant_id=$5
-               RETURNING id, tenant_id, product_id, product_name, quantity_on_hand, quantity_reserved, quantity_available, location, lot_number, reorder_point, reorder_quantity"#,
+               RETURNING id, tenant_id, product_id, product_name,
+                         quantity_on_hand::bigint, quantity_reserved::bigint, quantity_available::bigint,
+                         location, lot_number, reorder_point::bigint, reorder_quantity::bigint"#,
         ).bind(&item.product_name).bind(item.reorder_point).bind(item.reorder_quantity).bind(id).bind(tenant_id)
             .fetch_optional(&self.pool).await.map_err(|e| SenseiError::Database(format!("Failed to update inventory: {e}")))?
             .ok_or_else(|| SenseiError::NotFound(format!("Inventory item {id} not found")))?;

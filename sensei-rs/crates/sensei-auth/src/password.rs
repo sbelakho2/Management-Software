@@ -27,6 +27,17 @@ pub fn hash_password(password: &str) -> Result<String> {
     Ok(hash.to_string())
 }
 
+/// Result of a password verification attempt.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PasswordCheck {
+    /// The password matches the stored hash.
+    Valid,
+    /// The password does not match the stored hash.
+    Invalid,
+    /// The stored hash is unparseable (corrupt or not an Argon2 PHC string).
+    Malformed,
+}
+
 /// Verify a plaintext password against a stored hash.
 ///
 /// # Arguments
@@ -34,15 +45,22 @@ pub fn hash_password(password: &str) -> Result<String> {
 /// * `hash` - The stored PHC-formatted hash string.
 ///
 /// # Returns
-/// `true` if the password matches the hash, `false` otherwise.
-pub fn verify_password(password: &str, hash: &str) -> Result<bool> {
-    let parsed_hash = PasswordHash::new(hash)
-        .map_err(|e| SenseiError::Internal(format!("Invalid password hash format: {e}")))?;
+/// * [`PasswordCheck::Valid`] if the password matches the hash.
+/// * [`PasswordCheck::Invalid`] if the password does not match.
+/// * [`PasswordCheck::Malformed`] if the stored hash cannot be parsed —
+///   this is distinct from a wrong password so callers can treat corrupt
+///   hashes differently (e.g. force a password reset).
+pub fn verify_password(password: &str, hash: &str) -> Result<PasswordCheck> {
+    let parsed_hash = match PasswordHash::new(hash) {
+        Ok(h) => h,
+        Err(_) => return Ok(PasswordCheck::Malformed),
+    };
 
     let argon2 = Argon2::default();
-    Ok(argon2
-        .verify_password(password.as_bytes(), &parsed_hash)
-        .is_ok())
+    match argon2.verify_password(password.as_bytes(), &parsed_hash) {
+        Ok(()) => Ok(PasswordCheck::Valid),
+        Err(_) => Ok(PasswordCheck::Invalid),
+    }
 }
 
 /// Check if a password meets the minimum complexity requirements.
@@ -98,8 +116,20 @@ mod tests {
         let password = "TestPassword123!";
         let hash = hash_password(password).unwrap();
 
-        assert!(verify_password(password, &hash).unwrap());
-        assert!(!verify_password("WrongPassword123!", &hash).unwrap());
+        assert_eq!(verify_password(password, &hash).unwrap(), PasswordCheck::Valid);
+        assert_eq!(
+            verify_password("WrongPassword123!", &hash).unwrap(),
+            PasswordCheck::Invalid
+        );
+    }
+
+    #[test]
+    fn test_verify_malformed_hash() {
+        assert_eq!(
+            verify_password("Whatever1!", "not-an-argon2-hash").unwrap(),
+            PasswordCheck::Malformed
+        );
+        assert_eq!(verify_password("Whatever1!", "").unwrap(), PasswordCheck::Malformed);
     }
 
     #[test]

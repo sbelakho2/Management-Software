@@ -28,7 +28,7 @@ tokio-stream = { version = "0.1", features = ["sync"] }
 # HTTP / Web
 axum = { version = "0.8", features = ["multipart", "ws"] }
 tower = "0.5"
-tower-http = { version = "0.6", features = ["cors", "compression-gzip", "trace", "request-id", "timeout", "fs"] }
+tower-http = { version = "0.6", features = ["cors", "compression-gzip", "trace", "request-id", "timeout", "fs", "limit"] }
 
 # Serialization
 serde = { version = "1", features = ["derive"] }

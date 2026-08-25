@@ -8,7 +8,7 @@ use sensei_core::domain::entities::User;
 use sensei_core::error::{Result, SenseiError};
 use sensei_core::pagination::PaginatedResponse;
 use sensei_core::types::{EntityId, TenantId, now};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use tokio::sync::RwLock;
 
 mod database;
@@ -56,6 +56,39 @@ pub trait UsersService: Send + Sync {
 
     /// Update a user's roles.
     async fn update_user_roles(&self, id: EntityId, roles: Vec<String>) -> Result<User>;
+
+    /// Whether the user's email address has been verified.
+    async fn is_email_verified(&self, id: EntityId) -> Result<bool>;
+
+    /// Set the email-verified flag for a user.
+    async fn set_email_verified(&self, id: EntityId, verified: bool) -> Result<()>;
+}
+
+/// Shared password-verification semantics used by every [`UsersService`] impl.
+///
+/// Maps the auth contract onto service errors:
+/// - `Valid` → the user is returned.
+/// - `Invalid` → 401 Unauthorized.
+/// - `Malformed` → the stored hash is corrupt; log and surface as a 500.
+pub(crate) async fn check_password(user: &User, password: &str) -> Result<()> {
+    use sensei_auth::password::{PasswordCheck, verify_password};
+    match verify_password(password, &user.password_hash)
+        .map_err(|e| SenseiError::Internal(format!("Password verification failed: {e}")))?
+    {
+        PasswordCheck::Valid => Ok(()),
+        PasswordCheck::Invalid => Err(SenseiError::Unauthorized(
+            "Invalid email or password".to_string(),
+        )),
+        PasswordCheck::Malformed => {
+            tracing::error!(
+                user_id = %user.id,
+                "Stored password hash for user is malformed; password reset required"
+            );
+            Err(SenseiError::Internal(
+                "Stored password hash is malformed".to_string(),
+            ))
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -64,10 +97,12 @@ pub trait UsersService: Send + Sync {
 
 /// In-memory implementation of [`UsersService`].
 ///
-/// Stores users in a `HashMap<String, User>` behind an `RwLock`.
-/// Suitable for development, testing, and demo environments.
+/// Stores users in a `HashMap<EntityId, User>` behind an `RwLock` so that
+/// email renames do not leave stale map keys. Email verification state is
+/// tracked in a separate `HashSet` of verified user ids.
 pub struct InMemoryUsersService {
-    users: RwLock<HashMap<String, User>>,
+    users: RwLock<HashMap<EntityId, User>>,
+    verified_emails: RwLock<HashSet<EntityId>>,
 }
 
 impl InMemoryUsersService {
@@ -75,6 +110,7 @@ impl InMemoryUsersService {
     pub fn new() -> Self {
         Self {
             users: RwLock::new(HashMap::new()),
+            verified_emails: RwLock::new(HashSet::new()),
         }
     }
 
@@ -87,10 +123,11 @@ impl InMemoryUsersService {
     ) -> Self {
         let mut users = HashMap::new();
         let email: String = email.into();
-        let user = User::new(tenant_id, email.clone(), name.into(), password_hash.into());
-        users.insert(email.clone(), user);
+        let user = User::new(tenant_id, email, name.into(), password_hash.into());
+        users.insert(user.id, user);
         Self {
             users: RwLock::new(users),
+            verified_emails: RwLock::new(HashSet::new()),
         }
     }
 }
@@ -105,45 +142,49 @@ impl Default for InMemoryUsersService {
 impl UsersService for InMemoryUsersService {
     async fn find_by_email(&self, email: &str) -> Result<User> {
         let users = self.users.read().await;
-        users.get(email).cloned().ok_or_else(|| {
-            SenseiError::NotFound(format!("User with email '{email}' not found"))
-        })
+        users
+            .values()
+            .find(|u| u.email.eq_ignore_ascii_case(email))
+            .cloned()
+            .ok_or_else(|| {
+                SenseiError::NotFound(format!("User with email '{email}' not found"))
+            })
     }
 
     async fn find_by_id(&self, id: EntityId) -> Result<User> {
         let users = self.users.read().await;
         users
-            .values()
-            .find(|u| u.id == id)
+            .get(&id)
             .cloned()
             .ok_or_else(|| SenseiError::NotFound(format!("User with id '{id}' not found")))
     }
 
     async fn create_user(&self, user: User) -> Result<User> {
         let mut users = self.users.write().await;
-        if users.contains_key(&user.email) {
+        if users
+            .values()
+            .any(|u| u.email.eq_ignore_ascii_case(&user.email))
+        {
             return Err(SenseiError::AlreadyExists(format!(
                 "User with email '{}' already exists",
                 user.email
             )));
         }
-        let email = user.email.clone();
-        users.insert(email, user.clone());
+        users.insert(user.id, user.clone());
+        // New users are not email-verified by default.
         Ok(user)
     }
 
     async fn list_users(&self) -> Result<Vec<User>> {
         let users = self.users.read().await;
-        Ok(users.values().cloned().collect())
+        let mut all: Vec<User> = users.values().cloned().collect();
+        all.sort_by_key(|u| u.created_at);
+        Ok(all)
     }
 
     async fn verify_password(&self, email: &str, password: &str) -> Result<User> {
         let user = self.find_by_email(email).await?;
-        let valid = sensei_auth::password::verify_password(password, &user.password_hash)
-            .map_err(|e| SenseiError::Internal(format!("Password verification failed: {e}")))?;
-        if !valid {
-            return Err(SenseiError::Unauthorized("Invalid email or password".to_string()));
-        }
+        check_password(&user, password).await?;
         Ok(user)
     }
 
@@ -168,11 +209,24 @@ impl UsersService for InMemoryUsersService {
 
     async fn update_user(&self, id: EntityId, updated: User) -> Result<User> {
         let mut users = self.users.write().await;
-        let user = users
-            .values_mut()
-            .find(|u| u.id == id)
-            .ok_or_else(|| SenseiError::NotFound(format!("User with id '{id}' not found")))?;
+        if !users.contains_key(&id) {
+            return Err(SenseiError::NotFound(format!("User with id '{id}' not found")));
+        }
+        // Check email uniqueness before taking the mutable borrow so the
+        // immutable scan does not overlap the `get_mut` borrow.
+        if users
+            .values()
+            .any(|u| u.id != id && u.email.eq_ignore_ascii_case(&updated.email))
+        {
+            return Err(SenseiError::AlreadyExists(format!(
+                "User with email '{}' already exists",
+                updated.email
+            )));
+        }
 
+        let user = users
+            .get_mut(&id)
+            .expect("user presence checked above");
         user.name = updated.name;
         user.email = updated.email;
         user.password_hash = updated.password_hash;
@@ -183,8 +237,7 @@ impl UsersService for InMemoryUsersService {
     async fn deactivate_user(&self, id: EntityId) -> Result<User> {
         let mut users = self.users.write().await;
         let user = users
-            .values_mut()
-            .find(|u| u.id == id)
+            .get_mut(&id)
             .ok_or_else(|| SenseiError::NotFound(format!("User with id '{id}' not found")))?;
         user.is_active = false;
         user.updated_at = now();
@@ -194,8 +247,7 @@ impl UsersService for InMemoryUsersService {
     async fn activate_user(&self, id: EntityId) -> Result<User> {
         let mut users = self.users.write().await;
         let user = users
-            .values_mut()
-            .find(|u| u.id == id)
+            .get_mut(&id)
             .ok_or_else(|| SenseiError::NotFound(format!("User with id '{id}' not found")))?;
         user.is_active = true;
         user.updated_at = now();
@@ -203,13 +255,122 @@ impl UsersService for InMemoryUsersService {
     }
 
     async fn update_user_roles(&self, id: EntityId, roles: Vec<String>) -> Result<User> {
+        validate_roles(&roles)?;
         let mut users = self.users.write().await;
         let user = users
-            .values_mut()
-            .find(|u| u.id == id)
+            .get_mut(&id)
             .ok_or_else(|| SenseiError::NotFound(format!("User with id '{id}' not found")))?;
         user.roles = roles;
         user.updated_at = now();
         Ok(user.clone())
+    }
+
+    async fn is_email_verified(&self, id: EntityId) -> Result<bool> {
+        let verified = self.verified_emails.read().await;
+        Ok(verified.contains(&id))
+    }
+
+    async fn set_email_verified(&self, id: EntityId, verified: bool) -> Result<()> {
+        let users = self.users.read().await;
+        if !users.contains_key(&id) {
+            return Err(SenseiError::NotFound(format!("User with id '{id}' not found")));
+        }
+        drop(users);
+        let mut verified_set = self.verified_emails.write().await;
+        if verified {
+            verified_set.insert(id);
+        } else {
+            verified_set.remove(&id);
+        }
+        Ok(())
+    }
+}
+
+/// Validate role names against the RBAC default role definitions.
+///
+/// Returns a [`SenseiError::Validation`] when any role is unknown, so typos
+/// and role-name drift are caught at the service boundary.
+pub(crate) fn validate_roles(roles: &[String]) -> Result<()> {
+    let rbac = sensei_auth::rbac::RbacService::new();
+    for role in roles {
+        if !rbac.role_exists(role) {
+            return Err(SenseiError::Validation(format!(
+                "Unknown role '{role}'"
+            )));
+        }
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn user(email: &str) -> User {
+        let mut u = User::new(
+            EntityId::new_v4(),
+            email.to_string(),
+            "Test User".to_string(),
+            "hash".to_string(),
+        );
+        u.id = EntityId::new_v4();
+        u
+    }
+
+    #[tokio::test]
+    async fn rename_email_keeps_find_by_email_working() {
+        let svc = InMemoryUsersService::new();
+        let created = svc.create_user(user("old@example.com")).await.unwrap();
+        let mut renamed = created.clone();
+        renamed.email = "new@example.com".to_string();
+
+        let updated = svc.update_user(created.id, renamed).await.unwrap();
+        assert_eq!(updated.email, "new@example.com");
+
+        assert!(svc.find_by_email("old@example.com").await.is_err());
+        let found = svc.find_by_email("new@example.com").await.unwrap();
+        assert_eq!(found.id, created.id);
+        assert_eq!(svc.find_by_id(created.id).await.unwrap().email, "new@example.com");
+    }
+
+    #[tokio::test]
+    async fn email_uniqueness_is_enforced() {
+        let svc = InMemoryUsersService::new();
+        let a = svc.create_user(user("a@example.com")).await.unwrap();
+        let mut b = user("b@example.com");
+        b.email = "a@example.com".to_string();
+        assert!(matches!(
+            svc.create_user(b).await,
+            Err(SenseiError::AlreadyExists(_))
+        ));
+        let _ = a;
+    }
+
+    #[tokio::test]
+    async fn email_verified_defaults_false_and_settable() {
+        let svc = InMemoryUsersService::new();
+        let created = svc.create_user(user("v@example.com")).await.unwrap();
+        assert!(!svc.is_email_verified(created.id).await.unwrap());
+        svc.set_email_verified(created.id, true).await.unwrap();
+        assert!(svc.is_email_verified(created.id).await.unwrap());
+        svc.set_email_verified(created.id, false).await.unwrap();
+        assert!(!svc.is_email_verified(created.id).await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn update_user_roles_validates_against_rbac_defaults() {
+        let svc = InMemoryUsersService::new();
+        let created = svc.create_user(user("roles@example.com")).await.unwrap();
+        let updated = svc
+            .update_user_roles(created.id, vec!["admin".to_string()])
+            .await
+            .unwrap();
+        assert_eq!(updated.roles, vec!["admin".to_string()]);
+
+        let err = svc
+            .update_user_roles(created.id, vec!["not_a_real_role".to_string()])
+            .await
+            .unwrap_err();
+        assert!(matches!(err, SenseiError::Validation(_)));
     }
 }

@@ -96,6 +96,85 @@ fn parse_dt(s: Option<&str>) -> Option<DateTime<Utc>> {
     s.and_then(|s| s.parse::<DateTime<Utc>>().ok())
 }
 
+/// Supported Obeya board types (visual management board categories).
+const BOARD_TYPES: &[&str] = &[
+    "Production",
+    "Quality",
+    "Safety",
+    "Delivery",
+    "Cost",
+    "People",
+    "Maintenance",
+    "Engineering",
+    "Management",
+];
+
+/// Supported Obeya item types.
+const ITEM_TYPES: &[&str] = &[
+    "KPI",
+    "Action",
+    "Risk",
+    "Issue",
+    "Project",
+    "Kaizen",
+    "Safety",
+    "Other",
+];
+
+/// Supported Obeya item statuses.
+const ITEM_STATUSES: &[&str] = &[
+    "Open",
+    "InProgress",
+    "InReview",
+    "Blocked",
+    "Completed",
+    "Closed",
+    "Cancelled",
+];
+
+/// Supported Obeya item priorities.
+const ITEM_PRIORITIES: &[&str] = &["Low", "Medium", "High", "Critical", "Urgent"];
+
+fn validate_board_type(board_type: &str) -> Result<()> {
+    if !BOARD_TYPES.contains(&board_type) {
+        return Err(SenseiError::Validation(format!(
+            "Invalid board_type '{board_type}'. Valid values: {}",
+            BOARD_TYPES.join(", ")
+        )));
+    }
+    Ok(())
+}
+
+fn validate_item_type(item_type: &str) -> Result<()> {
+    if !ITEM_TYPES.contains(&item_type) {
+        return Err(SenseiError::Validation(format!(
+            "Invalid item_type '{item_type}'. Valid values: {}",
+            ITEM_TYPES.join(", ")
+        )));
+    }
+    Ok(())
+}
+
+fn validate_item_status(status: &str) -> Result<()> {
+    if !ITEM_STATUSES.contains(&status) {
+        return Err(SenseiError::Validation(format!(
+            "Invalid status '{status}'. Valid values: {}",
+            ITEM_STATUSES.join(", ")
+        )));
+    }
+    Ok(())
+}
+
+fn validate_item_priority(priority: &str) -> Result<()> {
+    if !ITEM_PRIORITIES.contains(&priority) {
+        return Err(SenseiError::Validation(format!(
+            "Invalid priority '{priority}'. Valid values: {}",
+            ITEM_PRIORITIES.join(", ")
+        )));
+    }
+    Ok(())
+}
+
 /// Publish a domain event via the event bus, logging warnings on failure.
 async fn publish_event(state: &AppState, event: &dyn sensei_core::domain::events::DomainEvent) {
     if let Err(e) = state.event_bus.publish(event).await {
@@ -174,6 +253,7 @@ pub async fn create_board(
     State(state): State<AppState>,
     Json(req): Json<CreateBoardRequest>,
 ) -> Result<Json<ObeyaBoard>> {
+    validate_board_type(&req.board_type)?;
     let tenant_id = user.tenant_id;
     let now = Utc::now();
     let board = ObeyaBoard {
@@ -219,6 +299,7 @@ pub async fn update_board(
         board.description = description;
     }
     if let Some(board_type) = req.board_type {
+        validate_board_type(&board_type)?;
         board.board_type = board_type;
     }
     if let Some(department) = req.department {
@@ -316,6 +397,9 @@ pub async fn add_board_item(
     Path(board_id): Path<Uuid>,
     Json(req): Json<CreateItemRequest>,
 ) -> Result<Json<ObeyaItem>> {
+    validate_item_type(&req.item_type)?;
+    let priority = req.priority.unwrap_or_else(|| "Medium".to_string());
+    validate_item_priority(&priority)?;
     let tenant_id = user.tenant_id;
     let now = Utc::now();
     let item = ObeyaItem {
@@ -325,7 +409,7 @@ pub async fn add_board_item(
         description: req.description.unwrap_or_default(),
         item_type: req.item_type,
         status: "Open".to_string(),
-        priority: req.priority.unwrap_or_else(|| "Medium".to_string()),
+        priority,
         owner_id: req.owner_id,
         target_date: parse_dt(req.target_date.as_deref()),
         completed_at: None,
@@ -394,18 +478,24 @@ pub async fn update_board_item(
         item.description = description;
     }
     if let Some(item_type) = req.item_type {
+        validate_item_type(&item_type)?;
         item.item_type = item_type;
     }
     if let Some(status) = req.status {
+        validate_item_status(&status)?;
+        let was_terminal = item.status == "Completed" || item.status == "Closed";
         item.status = status;
-        // If transitioning to a completed state, record the completion time
-        if item.status == "Completed" || item.status == "Closed" {
-            if old_status != "Completed" && old_status != "Closed" {
-                item.completed_at = Some(now);
-            }
+        let is_terminal = item.status == "Completed" || item.status == "Closed";
+        // Record completion exactly once when entering a terminal state, and
+        // clear it when the item is reopened.
+        match (was_terminal, is_terminal) {
+            (false, true) => item.completed_at = Some(now),
+            (true, false) => item.completed_at = None,
+            _ => {}
         }
     }
     if let Some(priority) = req.priority {
+        validate_item_priority(&priority)?;
         item.priority = priority;
     }
     if let Some(owner_id) = req.owner_id {

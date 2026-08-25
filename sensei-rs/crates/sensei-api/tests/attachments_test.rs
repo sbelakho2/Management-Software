@@ -3,7 +3,6 @@
 //! Covers: upload, list, delete.
 
 use axum::http::StatusCode;
-use serde_json::Value;
 
 mod common;
 
@@ -20,7 +19,7 @@ async fn test_upload_attachment() {
         "entity_id": uuid::Uuid::new_v4().to_string(),
     });
     let req = app.post_authenticated("/api/v1/attachments/upload", &token, body);
-    let mut resp = app.send_request(req).await;
+    let resp = app.send_request(req).await;
     // May accept JSON or require multipart; either way endpoint responds
     let status = resp.status();
     assert!(status == StatusCode::OK || status == StatusCode::UNSUPPORTED_MEDIA_TYPE || status == StatusCode::BAD_REQUEST);
@@ -35,7 +34,7 @@ async fn test_list_attachments() {
         &format!("/api/v1/attachments/work_order/{}", entity_id),
         &token,
     );
-    let mut resp = app.send_request(req).await;
+    let resp = app.send_request(req).await;
     assert_eq!(resp.status(), StatusCode::OK);
 }
 

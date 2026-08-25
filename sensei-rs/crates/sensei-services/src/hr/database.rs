@@ -361,6 +361,17 @@ impl HrService for DatabaseHrService {
     }
 
     async fn approve_leave(&self, tenant_id: Uuid, id: Uuid, approved_by: Uuid) -> Result<LeaveRequest> {
+        // NotFound when the request is missing; Validation when it is not pending.
+        let exists: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM leave_requests WHERE id = $1 AND tenant_id = $2)",
+        )
+        .bind(id).bind(tenant_id)
+        .fetch_one(&self.pool).await
+        .map_err(|e| SenseiError::Database(format!("Failed to check leave request: {e}")))?;
+        if !exists {
+            return Err(SenseiError::NotFound(format!("Leave request {id} not found")));
+        }
+
         let row = sqlx::query_as::<_, LeaveRequestRow>(
             r#"UPDATE leave_requests SET status='approved', approved_by=$1 WHERE id=$2 AND tenant_id=$3 AND status='pending'
                RETURNING id, tenant_id, employee_id, leave_type, start_date, end_date, total_days, status, reason, approved_by, created_at"#,
@@ -368,12 +379,25 @@ impl HrService for DatabaseHrService {
         .bind(approved_by).bind(id).bind(tenant_id)
         .fetch_optional(&self.pool)
         .await.map_err(|e| SenseiError::Database(format!("Failed to approve leave: {e}")))?
-        .ok_or_else(|| SenseiError::NotFound(format!("Leave request {id} not found or not pending")))?;
+        .ok_or_else(|| SenseiError::Validation(format!(
+            "Cannot approve a leave request that is not pending"
+        )))?;
 
         Ok(lr_row_to_domain(row))
     }
 
     async fn reject_leave(&self, tenant_id: Uuid, id: Uuid) -> Result<LeaveRequest> {
+        // NotFound when the request is missing; Validation when it is not pending.
+        let exists: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM leave_requests WHERE id = $1 AND tenant_id = $2)",
+        )
+        .bind(id).bind(tenant_id)
+        .fetch_one(&self.pool).await
+        .map_err(|e| SenseiError::Database(format!("Failed to check leave request: {e}")))?;
+        if !exists {
+            return Err(SenseiError::NotFound(format!("Leave request {id} not found")));
+        }
+
         let row = sqlx::query_as::<_, LeaveRequestRow>(
             r#"UPDATE leave_requests SET status='rejected' WHERE id=$1 AND tenant_id=$2 AND status='pending'
                RETURNING id, tenant_id, employee_id, leave_type, start_date, end_date, total_days, status, reason, approved_by, created_at"#,
@@ -381,7 +405,9 @@ impl HrService for DatabaseHrService {
         .bind(id).bind(tenant_id)
         .fetch_optional(&self.pool)
         .await.map_err(|e| SenseiError::Database(format!("Failed to reject leave: {e}")))?
-        .ok_or_else(|| SenseiError::NotFound(format!("Leave request {id} not found or not pending")))?;
+        .ok_or_else(|| SenseiError::Validation(format!(
+            "Cannot reject a leave request that is not pending"
+        )))?;
 
         Ok(lr_row_to_domain(row))
     }

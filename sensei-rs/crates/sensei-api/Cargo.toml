@@ -37,6 +37,7 @@ opentelemetry_sdk.workspace = true
 opentelemetry-otlp.workspace = true
 tracing-opentelemetry.workspace = true
 async-trait.workspace = true
+reqwest.workspace = true
 
 [dev-dependencies]
 reqwest.workspace = true

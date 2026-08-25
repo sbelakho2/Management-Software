@@ -79,6 +79,47 @@ pub struct InspectionData {
     pub result: String,
 }
 
+/// Input data for an A3 problem-solving report PDF.
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+pub struct A3Data {
+    pub id: String,
+    pub title: String,
+    pub problem_statement: String,
+    pub current_state: String,
+    pub goal: String,
+    pub root_cause_analysis: String,
+    pub countermeasures: String,
+    pub check_plan: String,
+    pub follow_up: String,
+    pub owner: String,
+    pub status: String,
+    pub created_at: String,
+}
+
+/// A single line item in a quote PDF.
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+pub struct QuoteLineData {
+    pub description: String,
+    pub quantity: String,
+    pub unit_price: String,
+    pub total: String,
+}
+
+/// Input data for a Quote PDF.
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+pub struct QuoteData {
+    pub id: String,
+    pub quote_number: String,
+    pub customer_name: String,
+    pub date: String,
+    pub valid_until: String,
+    pub currency: String,
+    pub line_items: Vec<QuoteLineData>,
+    pub subtotal: String,
+    pub tax: String,
+    pub total: String,
+}
+
 // ---------------------------------------------------------------------------
 // Service
 // ---------------------------------------------------------------------------
@@ -190,6 +231,74 @@ impl PdfExportService {
         let _ = Self::draw_field(&mut ops, y, "Estimated Hours", &format!("{:.1}", wo.estimated_hours));
 
         Self::build_pdf("Work Order", ops)
+    }
+
+    /// Generate a PDF for an A3 problem-solving report.
+    pub fn generate_a3_report(&self, a3: &A3Data) -> Result<Vec<u8>> {
+        let mut ops: Vec<Op> = Vec::new();
+
+        Self::draw_report_header(&mut ops, "A3 PROBLEM-SOLVING REPORT");
+
+        let mut y = mm_pt(260.0);
+        y = Self::draw_field(&mut ops, y, "A3 ID", &a3.id);
+        y = Self::draw_field(&mut ops, y, "Title", &a3.title);
+        y = Self::draw_field(&mut ops, y, "Owner", &a3.owner);
+        y = Self::draw_field(&mut ops, y, "Status", &a3.status);
+        y = Self::draw_field(&mut ops, y, "Created At", &a3.created_at);
+        y -= Pt(8.0);
+
+        y = Self::draw_field(&mut ops, y, "1. Problem Statement", &a3.problem_statement);
+        y = Self::draw_field(&mut ops, y, "2. Current State", &a3.current_state);
+        y = Self::draw_field(&mut ops, y, "3. Goal", &a3.goal);
+        y = Self::draw_field(&mut ops, y, "4. Root Cause Analysis", &a3.root_cause_analysis);
+        y = Self::draw_field(&mut ops, y, "5. Countermeasures", &a3.countermeasures);
+        y = Self::draw_field(&mut ops, y, "6. Check Plan", &a3.check_plan);
+        let _ = Self::draw_field(&mut ops, y, "7. Follow Up", &a3.follow_up);
+
+        Self::build_pdf("A3 Report", ops)
+    }
+
+    /// Generate a PDF for a customer quotation.
+    pub fn generate_quote(&self, quote: &QuoteData) -> Result<Vec<u8>> {
+        let mut ops: Vec<Op> = Vec::new();
+
+        Self::draw_report_header(&mut ops, "QUOTATION");
+
+        let mut y = mm_pt(260.0);
+        y = Self::draw_field(&mut ops, y, "Quote ID", &quote.id);
+        y = Self::draw_field(&mut ops, y, "Quote Number", &quote.quote_number);
+        y = Self::draw_field(&mut ops, y, "Customer", &quote.customer_name);
+        y = Self::draw_field(&mut ops, y, "Date", &quote.date);
+        y = Self::draw_field(&mut ops, y, "Valid Until", &quote.valid_until);
+        y -= Pt(8.0);
+
+        // Line items table
+        y = Self::draw_table_header(&mut ops, y, &["#", "Description", "Qty", "Unit Price", "Total"]);
+        for (i, line) in quote.line_items.iter().enumerate() {
+            if y < Pt(60.0) {
+                break;
+            }
+            y = Self::draw_table_row(
+                &mut ops,
+                y,
+                &[
+                    &(i + 1).to_string(),
+                    &line.description,
+                    &line.quantity,
+                    &line.unit_price,
+                    &line.total,
+                ],
+            );
+        }
+        y -= Pt(8.0);
+        draw_hline(&mut ops, mm_pt(20.0), mm_pt(170.0), y + Pt(3.0));
+        y -= Pt(4.0);
+
+        y = Self::draw_field(&mut ops, y, "Subtotal", &quote.subtotal);
+        y = Self::draw_field(&mut ops, y, "Tax", &quote.tax);
+        let _ = Self::draw_field(&mut ops, y, "TOTAL", &quote.total);
+
+        Self::build_pdf("Quotation", ops)
     }
 
     /// Generate a PDF for an Inspection Report.

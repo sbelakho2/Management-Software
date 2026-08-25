@@ -265,13 +265,14 @@ pub async fn perform_audit(
             .ok_or_else(|| SenseiError::NotFound(format!("LSW standard {standard_id} not found")))?
     };
 
-    // Calculate compliance rate
+    // Calculate compliance rate. An audit with no results carries no
+    // evidence of compliance, so it reports 0.0 rather than a fake 100%.
     let total_items = req.results.len();
     let passed_items = req.results.iter().filter(|r| r.passed).count();
     let compliance_rate = if total_items > 0 {
         (passed_items as f64 / total_items as f64) * 100.0
     } else {
-        100.0
+        0.0
     };
 
     let now = Utc::now();
@@ -378,10 +379,12 @@ pub async fn get_lsw_dashboard(
         .collect();
 
     let total_audits = audits.len();
+    // With no audits there is no compliance evidence: report 0.0, not a
+    // fabricated 100%.
     let overall_compliance_rate = if total_audits > 0 {
         audits.iter().map(|a| a.compliance_rate).sum::<f64>() / total_audits as f64
     } else {
-        100.0
+        0.0
     };
 
     // By area breakdown

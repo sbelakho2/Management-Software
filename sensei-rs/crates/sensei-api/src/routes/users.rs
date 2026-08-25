@@ -71,49 +71,75 @@ pub struct MessageResponse {
 }
 
 /// List all users (paginated, with optional role filter).
+///
+/// Admin-only. Non-admin requests are rejected with 403.
 pub async fn list_users(
-    _user: AuthenticatedUser,
+    user: AuthenticatedUser,
     State(state): State<AppState>,
     Query(params): Query<ListUsersParams>,
 ) -> Result<Json<PaginatedResponse<UserResponse>>> {
-    let result = state
-        .users_service
-        .list_users_paginated(
-            params.role.as_deref(),
-            params.is_active,
-            params.page,
-            params.per_page,
-        )
-        .await?;
+    if !user.has_role("admin") {
+        return Err(SenseiError::Forbidden(
+            "Only admins can list users".to_string(),
+        ));
+    }
+    let all = state.users_service.list_users().await?;
+    let mut filtered: Vec<User> = all
+        .into_iter()
+        .filter(|u| u.tenant_id == user.tenant_id)
+        .filter(|u| params.role.as_ref().map_or(true, |r| u.roles.iter().any(|ur| ur == r)))
+        .filter(|u| params.is_active.map_or(true, |a| u.is_active == a))
+        .collect();
+    filtered.sort_by(|a, b| a.created_at.cmp(&b.created_at));
 
-    let data: Vec<UserResponse> = result.data.into_iter().map(UserResponse::from).collect();
+    let total = filtered.len();
+    let page = params.page.unwrap_or(1).max(1);
+    let per_page = params.per_page.unwrap_or(20).clamp(1, 100);
+    let start = (page.saturating_sub(1)) * per_page;
+    let data: Vec<UserResponse> = filtered
+        .into_iter()
+        .skip(start)
+        .take(per_page)
+        .map(UserResponse::from)
+        .collect();
+
     Ok(Json(PaginatedResponse {
         data,
-        total: result.total,
-        page: result.page,
-        per_page: result.per_page,
-        total_pages: result.total_pages,
+        total,
+        page,
+        per_page,
+        total_pages: total.div_ceil(per_page),
     }))
 }
 
 /// Get a user by ID.
+///
+/// Non-admin users can only read users in their own tenant.
 pub async fn get_user(
-    _user: AuthenticatedUser,
+    user: AuthenticatedUser,
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<UserResponse>> {
     let u = state.users_service.find_by_id(id).await?;
+    if !user.has_role("admin") && u.tenant_id != user.tenant_id {
+        return Err(SenseiError::NotFound(format!("User {id} not found")));
+    }
     Ok(Json(UserResponse::from(u)))
 }
 
 /// Update a user (admin).
+///
+/// Non-admin users can only update users in their own tenant.
 pub async fn update_user(
-    _user: AuthenticatedUser,
+    user: AuthenticatedUser,
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
     Json(req): Json<UpdateUserRequest>,
 ) -> Result<Json<UserResponse>> {
     let mut existing = state.users_service.find_by_id(id).await?;
+    if !user.has_role("admin") && existing.tenant_id != user.tenant_id {
+        return Err(SenseiError::NotFound(format!("User {id} not found")));
+    }
 
     if let Some(name) = req.name {
         existing.name = name;
@@ -137,31 +163,46 @@ pub async fn update_user(
 
 /// Deactivate a user (soft delete, admin only).
 pub async fn deactivate_user(
-    _user: AuthenticatedUser,
+    user: AuthenticatedUser,
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<UserResponse>> {
+    if !user.has_role("admin") {
+        return Err(SenseiError::Forbidden(
+            "Only admins can deactivate users".to_string(),
+        ));
+    }
     let updated = state.users_service.deactivate_user(id).await?;
     Ok(Json(UserResponse::from(updated)))
 }
 
 /// Reactivate a user (admin only).
 pub async fn activate_user(
-    _user: AuthenticatedUser,
+    user: AuthenticatedUser,
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<UserResponse>> {
+    if !user.has_role("admin") {
+        return Err(SenseiError::Forbidden(
+            "Only admins can activate users".to_string(),
+        ));
+    }
     let updated = state.users_service.activate_user(id).await?;
     Ok(Json(UserResponse::from(updated)))
 }
 
 /// Update a user's roles (admin only).
 pub async fn update_user_roles(
-    _user: AuthenticatedUser,
+    user: AuthenticatedUser,
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
     Json(req): Json<UpdateRolesRequest>,
 ) -> Result<Json<UserResponse>> {
+    if !user.has_role("admin") {
+        return Err(SenseiError::Forbidden(
+            "Only admins can update user roles".to_string(),
+        ));
+    }
     let updated = state.users_service.update_user_roles(id, req.roles).await?;
     Ok(Json(UserResponse::from(updated)))
 }
@@ -310,11 +351,11 @@ mod tests {
         let (state, tenant_id, user_id) = test_state().await;
         let user = admin_user(tenant_id, user_id);
         let req = UpdateRolesRequest {
-            roles: vec!["admin".to_string(), "manager".to_string()],
+            roles: vec!["admin".to_string(), "quality_manager".to_string()],
         };
         let resp = update_user_roles(user, State(state.clone()), Path(user_id), Json(req))
             .await
             .unwrap();
-        assert!(resp.roles.contains(&"manager".to_string()));
+        assert!(resp.roles.contains(&"quality_manager".to_string()));
     }
 }

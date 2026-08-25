@@ -15,7 +15,11 @@ use futures::stream::Stream;
 use serde::Deserialize;
 use sensei_auth::middleware::AuthenticatedUser;
 use sensei_core::error::Result;
+use sensei_services::ai::chatbot::ChatSamplingParams;
 use std::convert::Infallible;
+use std::pin::Pin;
+use std::task::{Context, Poll};
+use tokio::task::JoinHandle;
 use tokio_stream::wrappers::BroadcastStream;
 use tokio_stream::StreamExt;
 use tracing::error;
@@ -37,6 +41,25 @@ pub struct ChatRequest {
     pub top_k: Option<u32>,
     /// Top-p (nucleus) sampling parameter (optional).
     pub top_p: Option<f32>,
+}
+
+impl ChatRequest {
+    /// The per-request sampling overrides, if any were provided.
+    fn sampling_params(&self) -> Option<ChatSamplingParams> {
+        if self.max_tokens.is_none()
+            && self.temperature.is_none()
+            && self.top_k.is_none()
+            && self.top_p.is_none()
+        {
+            return None;
+        }
+        Some(ChatSamplingParams {
+            max_tokens: self.max_tokens,
+            temperature: self.temperature,
+            top_k: self.top_k,
+            top_p: self.top_p,
+        })
+    }
 }
 
 /// Response body for a chat message.
@@ -65,6 +88,7 @@ pub async fn chat(
             user.user_id,
             &req.message,
             req.conversation_id.as_deref(),
+            req.sampling_params(),
         )
         .await
         .map_err(|e| {
@@ -79,10 +103,37 @@ pub async fn chat(
     }))
 }
 
+/// Stream wrapper that aborts a background task when the stream is dropped.
+///
+/// The chat generation task is aborted as soon as the client disconnects
+/// (the HTTP response body — and therefore this stream — is dropped), so a
+/// disconnected client never leaves a generation task running.
+struct AbortOnDrop<S> {
+    inner: S,
+    task: Option<JoinHandle<()>>,
+}
+
+impl<S> Drop for AbortOnDrop<S> {
+    fn drop(&mut self) {
+        if let Some(task) = self.task.take() {
+            task.abort();
+        }
+    }
+}
+
+impl<S: Stream + Unpin> Stream for AbortOnDrop<S> {
+    type Item = S::Item;
+
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        Pin::new(&mut self.inner).poll_next(cx)
+    }
+}
+
 /// Handle a streaming chat message via Server-Sent Events.
 ///
 /// Returns an SSE stream where each event contains a token (or chunk) of the
-/// response. The stream ends when the receiver is dropped.
+/// response. The background generation task is aborted when the client
+/// disconnects.
 pub async fn chat_stream(
     user: AuthenticatedUser,
     State(state): State<AppState>,
@@ -99,18 +150,22 @@ pub async fn chat_stream(
 
     // Spawn a background task to run the streaming chat
     let channel_clone = channel.clone();
-    tokio::spawn(async move {
+    let sampling = req.sampling_params();
+    let task = tokio::spawn(async move {
         match chatbot_service
             .stream_chat(
                 user.tenant_id,
                 user.user_id,
                 &req.message,
                 req.conversation_id.as_deref(),
+                sampling,
             )
             .await
         {
             Ok(mut token_rx) => {
-                // Forward tokens from the chat service to the SSE channel
+                // Forward tokens from the chat service to the SSE channel.
+                // The select on the broadcast receiver lets us stop early
+                // if the subscriber side disappears.
                 while let Some(token_result) = token_rx.recv().await {
                     match token_result {
                         Ok(token) => {
@@ -147,5 +202,11 @@ pub async fn chat_stream(
         }
     });
 
-    Ok(Sse::new(event_stream))
+    // Dropping this stream (client disconnect) aborts the generation task.
+    let abort_on_drop = AbortOnDrop {
+        inner: event_stream,
+        task: Some(task),
+    };
+
+    Ok(Sse::new(abort_on_drop))
 }

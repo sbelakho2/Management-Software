@@ -330,6 +330,11 @@ pub async fn add_card(
         }
     }
 
+    // A card created directly in a terminal ("done") column is born
+    // completed.
+    let col_name_lower = column.name.to_lowercase();
+    let is_done_column = col_name_lower == "done" || col_name_lower.starts_with("done");
+
     let card = KanbanCard {
         id: new_id(),
         column_id,
@@ -343,6 +348,7 @@ pub async fn add_card(
         created_by: user.user_id,
         created_at: now,
         updated_at: now,
+        completed_at: if is_done_column { Some(now) } else { None },
     };
 
     // Store the card in the column
@@ -385,14 +391,25 @@ pub async fn update_card(
 
     // ── P1-B1: Pre-check WIP limit if moving to a different column ──
     // This uses immutable access only, before any mutable iteration.
+    // When the target column is the card's current column, the card itself
+    // must be excluded from the count (editing an at-limit card is allowed).
     if let Some(target_cid) = req.column_id {
         for board in store.values().filter(|b| b.tenant_id == tenant_id) {
+            let card_current_col = board
+                .columns
+                .iter()
+                .find(|c| c.cards.iter().any(|card| card.id == id))
+                .map(|c| c.id);
             if let Some(target_col) = board.columns.iter().find(|c| c.id == target_cid) {
                 if let Some(limit) = target_col.wip_limit {
-                    if target_col.cards.len() as i32 >= limit {
+                    let mut count = target_col.cards.len();
+                    if card_current_col == Some(target_cid) {
+                        count = count.saturating_sub(1);
+                    }
+                    if count as i32 >= limit {
                         return Err(SenseiError::Conflict(format!(
                             "Target column '{}' has a WIP limit of {} and already has {} cards",
-                            target_col.name, limit, target_col.cards.len()
+                            target_col.name, limit, count
                         )));
                     }
                 }
@@ -439,6 +456,18 @@ pub async fn update_card(
             moved.column_id = target_cid;
             moved.due_date = req.due_date;
             moved.updated_at = now;
+
+            // Track completion: entering a terminal ("done") column stamps
+            // completed_at; leaving one clears it.
+            let target_name_lower = board.columns[tgt_idx].name.to_lowercase();
+            let target_is_done = target_name_lower == "done" || target_name_lower.starts_with("done");
+            if target_is_done {
+                if moved.completed_at.is_none() {
+                    moved.completed_at = Some(now);
+                }
+            } else {
+                moved.completed_at = None;
+            }
 
             board.columns[src_idx].updated_at = now;
             board.columns[tgt_idx].cards.push(moved.clone());
@@ -519,7 +548,8 @@ pub async fn delete_card(
 
 /// Move a card between columns.
 ///
-/// Enforces WIP limits on the destination column and publishes
+/// Enforces WIP limits on the destination column, tracks completion when
+/// the card enters a terminal ("done") column, and publishes
 /// [`KanbanCardMovedEvent`] on success.
 pub async fn move_card(
     user: AuthenticatedUser,
@@ -532,19 +562,6 @@ pub async fn move_card(
     let mut store = state.kanban_boards.write().await;
 
     for board in store.values_mut().filter(|b| b.tenant_id == tenant_id) {
-        // ── P1-B1: ENFORCE WIP limit on destination column ────────────
-        if let Some(target_col) = board.columns.iter().find(|c| c.id == req.target_column_id) {
-            let target_card_count = target_col.cards.len();
-            if let Some(limit) = target_col.wip_limit {
-                if target_card_count as i32 >= limit {
-                    return Err(SenseiError::Conflict(format!(
-                        "Target column '{}' has a WIP limit of {} and already has {} cards",
-                        target_col.name, limit, target_card_count
-                    )));
-                }
-            }
-        }
-
         // Use indexed access to avoid nested mutable borrow conflicts
         let src_idx = match board
             .columns
@@ -554,10 +571,28 @@ pub async fn move_card(
             Some(idx) => idx,
             None => continue,
         };
-        let tgt_idx = match board.columns.iter().position(|c| c.id == req.target_column_id) {
-            Some(idx) => idx,
-            None => continue,
+
+        // A missing destination column is an explicit error naming the
+        // column, not a misleading "card not found".
+        let Some(tgt_idx) = board.columns.iter().position(|c| c.id == req.target_column_id) else {
+            return Err(SenseiError::NotFound(format!(
+                "Target column {} not found on board {}",
+                req.target_column_id, board.id
+            )));
         };
+
+        // ── P1-B1: ENFORCE WIP limit on destination column ────────────
+        // The card being moved is still in the source column, so the
+        // destination count does not include it.
+        if let Some(limit) = board.columns[tgt_idx].wip_limit {
+            let target_card_count = board.columns[tgt_idx].cards.len();
+            if target_card_count as i32 >= limit {
+                return Err(SenseiError::Conflict(format!(
+                    "Target column '{}' has a WIP limit of {} and already has {} cards",
+                    board.columns[tgt_idx].name, limit, target_card_count
+                )));
+            }
+        }
 
         let from_column_name = board.columns[src_idx].name.clone();
         let to_column_name = board.columns[tgt_idx].name.clone();
@@ -571,6 +606,19 @@ pub async fn move_card(
         card.column_id = req.target_column_id;
         card.position = req.position;
         card.updated_at = now;
+
+        // Track completion: entering a terminal ("done") column stamps
+        // completed_at; leaving one clears it.
+        let target_name_lower = board.columns[tgt_idx].name.to_lowercase();
+        let target_is_done = target_name_lower == "done" || target_name_lower.starts_with("done");
+        if target_is_done {
+            if card.completed_at.is_none() {
+                card.completed_at = Some(now);
+            }
+        } else {
+            card.completed_at = None;
+        }
+
         board.columns[src_idx].updated_at = now;
 
         board.columns[tgt_idx].cards.push(card.clone());
@@ -647,8 +695,10 @@ pub async fn get_kanban_metrics(
             }
 
             // ── P1-B4: Check ALL columns for WIP breaches ────────────
+            // Consistent with enforcement (>=): a column at its limit is
+            // breached because no further card can be added.
             if let Some(limit) = col.wip_limit {
-                if card_count > limit as usize {
+                if card_count as i32 >= limit {
                     wip_limit_breached.push(WipBreach {
                         board_name: board.name.clone(),
                         column_name: col.name.clone(),
@@ -661,13 +711,15 @@ pub async fn get_kanban_metrics(
             // ── P1-B3: Improved cycle time calculation ────────────────
             // Check for "done" columns using exact name matching on
             // known terminal statuses, then calculate per-card cycle time
+            // as completed_at - created_at.
             let col_is_done = col_name_lower == "done"
                 || col_name_lower == "completed"
                 || col_name_lower.starts_with("done");
 
             if col_is_done {
                 for card in &col.cards {
-                    let cycle = (card.updated_at - card.created_at).num_minutes() as f64 / 60.0;
+                    let end = card.completed_at.unwrap_or(card.updated_at);
+                    let cycle = (end - card.created_at).num_minutes() as f64 / 60.0;
                     if cycle > 0.0 {
                         all_cycle_times.push(cycle);
                     }
@@ -683,17 +735,17 @@ pub async fn get_kanban_metrics(
         all_cycle_times.iter().sum::<f64>() / all_cycle_times.len() as f64
     };
 
-    // ── P1-B4: Throughput — count cards in "done" columns, last 30 days
+    // ── P1-B4: Throughput — count completed cards (completed_at within
+    // the last 30 days), regardless of which board/column they sit in.
     let thirty_days_ago = Utc::now() - chrono::Duration::days(30);
     let throughput = boards
         .iter()
         .flat_map(|b| b.columns.iter())
-        .filter(|col| {
-            let name = col.name.to_lowercase();
-            name == "done" || name == "completed" || name.starts_with("done")
-        })
         .flat_map(|col| col.cards.iter())
-        .filter(|card| card.created_at >= thirty_days_ago)
+        .filter(|card| {
+            card.completed_at
+                .is_some_and(|completed_at| completed_at >= thirty_days_ago)
+        })
         .count();
 
     let metrics = KanbanMetrics {

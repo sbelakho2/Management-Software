@@ -50,6 +50,9 @@ pub struct UpdateWorkRequestStatusRequest {
 /// Request body for assigning a work request.
 #[derive(Debug, Deserialize)]
 pub struct AssignWorkRequestRequest {
+    /// The technician to assign the request to. Must match the
+    /// authenticated user; client-supplied ids for other users are
+    /// rejected.
     pub assigned_to: Uuid,
 }
 
@@ -119,12 +122,22 @@ pub async fn update_work_request_status(
 }
 
 /// Assign a work request to a technician.
+///
+/// Only the authenticated user may be assigned; a client-supplied
+/// `assigned_to` that differs from the token user is rejected so the
+/// handler never trusts the client for the actor identity.
 pub async fn assign_work_request(
     user: AuthenticatedUser,
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
     Json(req): Json<AssignWorkRequestRequest>,
 ) -> Result<Json<MaintenanceWorkRequest>> {
+    use sensei_core::error::SenseiError;
+    if req.assigned_to != user.user_id {
+        return Err(SenseiError::Forbidden(
+            "Work requests can only be assigned to yourself".to_string(),
+        ));
+    }
     let tenant_id = user.tenant_id;
     let request = state
         .maintenance_service

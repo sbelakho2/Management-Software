@@ -3,6 +3,16 @@
 //! Starts the Axum HTTP server with the configured middleware stack,
 //! routes, and shared application state. Initializes OpenTelemetry
 //! tracing, Prometheus metrics, and structured (JSON) logging.
+//!
+//! # Fail-fast rules (production)
+//!
+//! * `AppConfig::from_env()` errors abort startup with a clear message.
+//! * A missing `DATABASE_URL`, a failed connection, or failed migrations
+//!   abort startup instead of silently degrading to in-memory mode.
+//! * The CEO seed account requires an explicit non-default password.
+//!
+//! In development, database failures are logged and the server continues
+//! with in-memory stores.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -14,7 +24,9 @@ use sensei_api::router::build_router;
 use sensei_api::routes::metrics::init_metrics;
 use sensei_api::state::{create_event_bus, AppState};
 use sensei_core::config::AppConfig;
-use sensei_core::types::TenantId;
+use sensei_core::domain::entities::{Tenant, User};
+use sensei_core::error::SenseiError;
+use sensei_core::types::{TenantId, now};
 use sensei_services::users::{InMemoryUsersService, UsersService};
 use sqlx::postgres::PgPoolOptions;
 use tracing::info;
@@ -86,10 +98,182 @@ async fn shutdown_signal() {
     }
 }
 
+/// The bootstrap tenant for seeded admin/CEO accounts.
+///
+/// `Uuid::nil()` matches the legacy in-memory seeding behavior; in database
+/// mode a `tenants` row is ensured first because the `users.tenant_id`
+/// column references it.
+fn bootstrap_tenant_id() -> TenantId {
+    TenantId::nil()
+}
+
+/// Ensure the bootstrap tenant exists (the `users` table has an FK on
+/// `tenants(id)`), creating it when missing.
+async fn ensure_bootstrap_tenant(state: &AppState) {
+    let tenant_id = bootstrap_tenant_id();
+    match state.tenants_service.get_tenant(tenant_id).await {
+        Ok(_) => {}
+        Err(SenseiError::NotFound(_)) => {
+            let timestamp = now();
+            let tenant = Tenant {
+                id: tenant_id,
+                name: "Sensei".to_string(),
+                slug: "sensei".to_string(),
+                is_active: true,
+                features: Vec::new(),
+                created_at: timestamp,
+                updated_at: timestamp,
+            };
+            if let Err(e) = state.tenants_service.create_tenant(tenant).await {
+                tracing::error!(
+                    error = %e,
+                    "Failed to create bootstrap tenant; seeding admin/CEO users may fail"
+                );
+            }
+        }
+        Err(e) => {
+            tracing::error!(error = %e, "Failed to look up bootstrap tenant");
+        }
+    }
+}
+
+/// Seed a user through the users service if it does not exist yet.
+///
+/// Idempotent: `find_by_email` → create only when missing. In production a
+/// failure to seed a *required* account aborts startup.
+async fn seed_user(
+    state: &AppState,
+    email: &str,
+    password: &str,
+    name: &str,
+    roles: &[&str],
+    required_in_prod: bool,
+) -> Result<User, SenseiError> {
+    match state.users_service.find_by_email(email).await {
+        Ok(existing) => {
+            info!(email, "Seed account already exists");
+            Ok(existing)
+        }
+        Err(SenseiError::NotFound(_)) => {
+            let password_hash = sensei_auth::password::hash_password(password).map_err(|e| {
+                SenseiError::Internal(format!("Failed to hash seed password for {email}: {e}"))
+            })?;
+            let mut user = User::new(
+                bootstrap_tenant_id(),
+                email.to_string(),
+                name.to_string(),
+                password_hash,
+            );
+            user.roles = roles.iter().map(|r| r.to_string()).collect();
+
+            match state.users_service.create_user(user).await {
+                Ok(created) => {
+                    info!(email, roles = ?roles, "Seeded user");
+                    Ok(created)
+                }
+                Err(e) => {
+                    tracing::error!(email, error = %e, "Failed to seed user");
+                    if required_in_prod {
+                        return Err(e);
+                    }
+                    Err(e)
+                }
+            }
+        }
+        Err(e) => {
+            tracing::error!(email, error = %e, "Failed to look up seed user");
+            if required_in_prod {
+                return Err(e);
+            }
+            Err(e)
+        }
+    }
+}
+
+/// Seed the admin and CEO bootstrap accounts.
+///
+/// Runs *after* `with_db_pool`, so in database mode the accounts are seeded
+/// through the DB-backed users service.
+async fn seed_bootstrap_users(state: &AppState) {
+    ensure_bootstrap_tenant(state).await;
+
+    let admin_email = std::env::var("SENSEI_ADMIN_EMAIL")
+        .unwrap_or_else(|_| "admin@sensei.com".to_string());
+    let admin_password = std::env::var("SENSEI_ADMIN_PASSWORD")
+        .unwrap_or_else(|_| "Admin123!".to_string());
+    let admin_name = std::env::var("SENSEI_ADMIN_NAME")
+        .unwrap_or_else(|_| "Admin User".to_string());
+
+    if let Err(e) = seed_user(
+        state,
+        &admin_email,
+        &admin_password,
+        &admin_name,
+        &["admin", "user"],
+        false,
+    )
+    .await
+    {
+        tracing::warn!(error = %e, "Admin seed failed (continuing)");
+    }
+
+    // ── CEO seed account ────────────────────────────────────────────
+    let ceo_email =
+        std::env::var("SENSEI_CEO_EMAIL").unwrap_or_else(|_| "ceo@starz.com".to_string());
+    let ceo_password = std::env::var("SENSEI_CEO_PASSWORD").unwrap_or_else(|_| {
+        if state.config.environment.is_prod() {
+            // The default would be checked below; make the error explicit.
+            String::new()
+        } else {
+            "1234".to_string()
+        }
+    });
+
+    if state.config.environment.is_prod() {
+        if ceo_password.is_empty() {
+            tracing::error!(
+                "SENSEI_CEO_PASSWORD must be set in production (CEO seed account)"
+            );
+            std::process::exit(1);
+        }
+        if ceo_password == "1234" {
+            tracing::error!(
+                "SENSEI_CEO_PASSWORD must not be the insecure default '1234' in production"
+            );
+            std::process::exit(1);
+        }
+    } else if ceo_password == "1234" {
+        tracing::warn!(
+            "CEO seed account uses the default password '1234' — set SENSEI_CEO_PASSWORD \
+             to secure it (development only)"
+        );
+    }
+
+    if let Err(e) = seed_user(
+        state,
+        &ceo_email,
+        &ceo_password,
+        "CEO",
+        &["ceo", "user"],
+        true,
+    )
+    .await
+    {
+        tracing::error!(error = %e, "Failed to seed required CEO account");
+        std::process::exit(1);
+    }
+}
+
 #[tokio::main]
 async fn main() {
     // ── Load configuration ────────────────────────────────────────
-    let config = AppConfig::from_env().expect("Failed to load configuration");
+    let config = match AppConfig::from_env() {
+        Ok(config) => config,
+        Err(e) => {
+            eprintln!("FATAL: Failed to load configuration: {e}");
+            std::process::exit(1);
+        }
+    };
     info!(
         environment = %config.environment,
         service_name = %config.observability.service_name,
@@ -104,10 +288,6 @@ async fn main() {
         .unwrap_or_else(|_| EnvFilter::new(&config.observability.log_level));
 
     // Build the fmt layer with optional JSON formatting
-    // Note: `with_current_span()` is only available on the JSON Layer variant
-    // (it requires Layer<S, JsonFields, Format<Json, T>, W> type params), so:
-    // - JSON branch: call .json() first to get JSON layer, then with_current_span, then with_target
-    // - Non-JSON: just with_target, no with_current_span (keeps default Full format)
     let fmt_layer: Box<dyn Layer<tracing_subscriber::Registry> + Send + Sync> =
         if config.observability.json_logs {
             tracing_subscriber::fmt::layer()
@@ -121,11 +301,6 @@ async fn main() {
                 .boxed()
         };
 
-    // Compose and initialise subscriber:
-    // - fmt_layer is a `Box<dyn Layer<Registry>>`, so add it directly to Registry
-    // - env_filter is a concrete type that adapts to any inner subscriber
-    // - OpenTelemetry layer is added conditionally (the concrete type changes,
-    //   so we init inside each branch to avoid type mismatch)
     let subscriber_base = tracing_subscriber::registry()
         .with(fmt_layer)
         .with(env_filter);
@@ -141,105 +316,112 @@ async fn main() {
     // ── Initialize metrics ────────────────────────────────────────
     init_metrics();
 
-    // ── Seed admin user ──────────────────────────────────────────
-    let admin_email = std::env::var("SENSEI_ADMIN_EMAIL")
-        .unwrap_or_else(|_| "admin@sensei.com".to_string());
-    let admin_password = std::env::var("SENSEI_ADMIN_PASSWORD")
-        .unwrap_or_else(|_| "Admin123!".to_string());
-    let admin_name = "Admin User".to_string();
+    // ── Build application state (in-memory users; seeded below) ───
+    let users_service: Arc<dyn UsersService> =
+        Arc::new(InMemoryUsersService::new()) as Arc<dyn UsersService>;
 
-    let admin_password_hash = sensei_auth::password::hash_password(&admin_password)
-        .expect("Failed to hash admin password");
-
-    let default_tenant_id = TenantId::nil();
-    let users_service = Arc::new(
-        InMemoryUsersService::with_admin(
-            &admin_email,
-            &admin_name,
-            &admin_password_hash,
-            default_tenant_id,
-        ),
-    );
-
-    info!(
-        admin_email = %admin_email,
-        "Seeded admin user"
-    );
-
-    // ── Seed CEO user ────────────────────────────────────────────
-    {
-        let ceo_email = "ceo@starz.com";
-        let ceo_password = "1234";
-        let ceo_name = "CEO";
-
-        let ceo_password_hash = sensei_auth::password::hash_password(ceo_password)
-            .expect("Failed to hash CEO password");
-
-        let mut ceo_user = sensei_core::domain::entities::User::new(
-            default_tenant_id,
-            ceo_email.to_string(),
-            ceo_name.to_string(),
-            ceo_password_hash,
-        );
-        ceo_user.roles = vec!["ceo".to_string(), "user".to_string()];
-
-        users_service
-            .create_user(ceo_user)
-            .await
-            .expect("Failed to seed CEO user");
-
-        info!(
-            ceo_email = ceo_email,
-            "Seeded CEO user"
-        );
-    }
-
-    // ── Build application state ───────────────────────────────────
     // Try NATS JetStream event bus if configured, fall back to in-memory
     let event_bus = create_event_bus(&config.event_bus).await;
     let mut state = AppState::new(config.clone(), users_service).with_event_bus(event_bus);
 
     // ── Connect to PostgreSQL if DATABASE_URL is set ──────────────
-    if let Ok(database_url) = std::env::var("DATABASE_URL") {
+    let database_url = std::env::var("DATABASE_URL").unwrap_or_default();
+    if database_url.is_empty() {
+        if config.environment.is_prod() {
+            tracing::error!(
+                "DATABASE_URL is not set — refusing to start in production without a database"
+            );
+            std::process::exit(1);
+        }
+        info!("DATABASE_URL not set — running in IN-MEMORY mode (data lost on restart)");
+    } else {
         info!(
             database_url = %database_url,
             max_connections = config.database.max_connections,
             "Connecting to PostgreSQL database"
         );
 
-        match PgPoolOptions::new()
+        let connect_result = PgPoolOptions::new()
             .max_connections(config.database.max_connections)
             .acquire_timeout(std::time::Duration::from_secs(
                 config.database.connection_timeout_secs,
             ))
             .connect(&database_url)
-            .await
-        {
+            .await;
+
+        let pool = match connect_result {
             Ok(pool) => {
                 info!("PostgreSQL connection pool established successfully");
-
-                // Run database migrations (including entity_store table)
-                if let Err(e) = sensei_db::migrations::run_migrations(&pool).await {
-                    tracing::error!("Failed to run database migrations: {e}");
-                    // Continue anyway — stores will fall back to in-memory gracefully
-                }
-
-                state = state.with_db_pool(Arc::new(pool));
-                info!("Running in DATABASE mode — all services use PostgreSQL");
+                pool
             }
             Err(e) => {
+                if config.environment.is_prod() {
+                    tracing::error!(error = %e, "Failed to connect to PostgreSQL in production");
+                    std::process::exit(1);
+                }
                 tracing::error!(
                     error = %e,
                     "Failed to connect to PostgreSQL — falling back to in-memory mode"
                 );
+                seed_bootstrap_users(&state).await;
+                build_and_serve(state, otel_provider, config).await;
+                return;
             }
+        };
+
+        // Run database migrations (including entity_store table)
+        if let Err(e) = sensei_db::migrations::run_migrations(&pool).await {
+            if config.environment.is_prod() {
+                tracing::error!(
+                    error = %e,
+                    "Failed to run database migrations in production"
+                );
+                std::process::exit(1);
+            }
+            tracing::error!(
+                error = %e,
+                "Failed to run database migrations — falling back to in-memory mode"
+            );
+            seed_bootstrap_users(&state).await;
+            build_and_serve(state, otel_provider, config).await;
+            return;
         }
-    } else {
-        info!("DATABASE_URL not set — running in IN-MEMORY mode (data lost on restart)");
+
+        state = state.with_db_pool(Arc::new(pool));
+        info!("Running in DATABASE mode — all services use PostgreSQL");
     }
 
+    // ── Seed admin & CEO bootstrap accounts (DB-backed in DB mode) ──
+    seed_bootstrap_users(&state).await;
+
+    // ── Build router & serve ──────────────────────────────────────
+    build_and_serve(state, otel_provider, config).await;
+}
+
+/// Build the router, bind the listener, and serve with graceful shutdown.
+///
+/// `ConnectInfo` is enabled so middleware can see the immediate peer
+/// address (used for trusted-proxy decisions in session binding and secure
+/// headers).
+async fn build_and_serve(
+    state: AppState,
+    otel_provider: Option<sdktrace::SdkTracerProvider>,
+    config: AppConfig,
+) {
+    // ── Notification-trigger worker ───────────────────────────────────
+    // Subscribes to all domain events and fires matching notification
+    // triggers. With an in-memory bus (no NATS URL) it only sees events
+    // published inside this process — still useful, but worth logging.
+    if config.event_bus.url.is_empty() {
+        info!(
+            "Notification-trigger worker started on in-memory event bus \
+             (only in-process events will be processed)"
+        );
+    }
+    sensei_api::services::notification_trigger_worker::spawn(state.clone());
+
     // ── Build router ──────────────────────────────────────────────
-    let app = build_router(state);
+    let app = build_router(state.clone());
 
     // ── Start server ──────────────────────────────────────────────
     let addr = format!("{}:{}", config.api.host, config.api.port);
@@ -247,16 +429,33 @@ async fn main() {
 
     let listener = tokio::net::TcpListener::bind(&addr)
         .await
-        .expect("Failed to bind to address");
+        .unwrap_or_else(|e| {
+            eprintln!("FATAL: Failed to bind to {addr}: {e}");
+            std::process::exit(1);
+        });
 
-    // Serve with graceful shutdown
-    axum::serve(listener, app)
-        .with_graceful_shutdown(shutdown_signal())
-        .await
-        .expect("Server failed");
+    // Serve with graceful shutdown and connect-info (peer IP) support.
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+    )
+    .with_graceful_shutdown(shutdown_signal())
+    .await
+    .unwrap_or_else(|e| {
+        eprintln!("FATAL: Server error: {e}");
+        std::process::exit(1);
+    });
 
-    // ── Graceful shutdown for OTel ────────────────────────────────
+    // ── Graceful shutdown ─────────────────────────────────────────
     info!("Shutting down...");
+
+    // Disconnect the event bus (NATS flush/disconnect, in-memory clear).
+    if let Err(e) = state.event_bus.disconnect().await {
+        tracing::error!(error = %e, "Error disconnecting event bus");
+    } else {
+        info!("Event bus disconnected");
+    }
+
     if let Some(provider) = otel_provider {
         if let Err(e) = provider.shutdown() {
             tracing::error!("Error shutting down OTel tracer provider: {e}");

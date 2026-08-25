@@ -477,6 +477,7 @@ impl Default for AnalyticsEngine {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chrono::Duration;
 
     fn create_measurement(
         name: &str,

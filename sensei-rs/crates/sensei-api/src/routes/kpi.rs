@@ -15,6 +15,23 @@ use uuid::Uuid;
 use crate::state::AppState;
 use crate::stores::{KpiCategory, KpiDefinition, KpiDirection, KpiValue};
 
+/// Stable snake-case name for a [`KpiCategory`] variant.
+///
+/// Used for filter comparisons so `Quality` never matches `Quality` by
+/// discriminant coincidence but by its serialized name.
+fn category_as_str(category: &KpiCategory) -> &'static str {
+    match category {
+        KpiCategory::Quality => "quality",
+        KpiCategory::Production => "production",
+        KpiCategory::Maintenance => "maintenance",
+        KpiCategory::Inventory => "inventory",
+        KpiCategory::Safety => "safety",
+        KpiCategory::Cost => "cost",
+        KpiCategory::Delivery => "delivery",
+        KpiCategory::People => "people",
+    }
+}
+
 // ── Query / Request DTOs ───────────────────────────────────────────────────
 
 /// Query parameters for listing KPI definitions.
@@ -42,18 +59,21 @@ pub struct CreateKpiRequest {
 }
 
 /// Request body for updating a KPI definition (partial).
+///
+/// Optional fields use `Option<Option<T>>`: `None` leaves the current value
+/// untouched, `Some(None)` clears it, and `Some(Some(v))` sets it.
 #[derive(Debug, Deserialize)]
 pub struct UpdateKpiRequest {
     pub name: Option<String>,
-    pub description: Option<String>,
+    pub description: Option<Option<String>>,
     pub category: Option<KpiCategory>,
     pub unit: Option<String>,
-    pub target: Option<f64>,
-    pub lower_limit: Option<f64>,
-    pub upper_limit: Option<f64>,
+    pub target: Option<Option<f64>>,
+    pub lower_limit: Option<Option<f64>>,
+    pub upper_limit: Option<Option<f64>>,
     pub direction: Option<KpiDirection>,
-    pub formula: Option<String>,
-    pub owner_role: Option<String>,
+    pub formula: Option<Option<String>>,
+    pub owner_role: Option<Option<String>>,
     pub is_active: Option<bool>,
 }
 
@@ -110,7 +130,7 @@ pub async fn list_kpis(
         .filter(|k| k.tenant_id == tenant_id)
         .filter(|k| {
             if let Some(ref cat) = params.category {
-                std::mem::discriminant(cat) == std::mem::discriminant(&k.category)
+                category_as_str(cat) == category_as_str(&k.category)
             } else {
                 true
             }
@@ -193,7 +213,7 @@ pub async fn update_kpi(
         kpi.name = name;
     }
     if let Some(desc) = req.description {
-        kpi.description = Some(desc);
+        kpi.description = desc;
     }
     if let Some(cat) = req.category {
         kpi.category = cat;
@@ -202,22 +222,22 @@ pub async fn update_kpi(
         kpi.unit = unit;
     }
     if let Some(target) = req.target {
-        kpi.target = Some(target);
+        kpi.target = target;
     }
     if let Some(ll) = req.lower_limit {
-        kpi.lower_limit = Some(ll);
+        kpi.lower_limit = ll;
     }
     if let Some(ul) = req.upper_limit {
-        kpi.upper_limit = Some(ul);
+        kpi.upper_limit = ul;
     }
     if let Some(dir) = req.direction {
         kpi.direction = dir;
     }
     if let Some(formula) = req.formula {
-        kpi.formula = Some(formula);
+        kpi.formula = formula;
     }
     if let Some(role) = req.owner_role {
-        kpi.owner_role = Some(role);
+        kpi.owner_role = role;
     }
     if let Some(active) = req.is_active {
         kpi.is_active = active;

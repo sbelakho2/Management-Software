@@ -483,6 +483,32 @@ impl QualityEngine {
             }
         }
 
+        // Rule 6: Fourteen consecutive points alternating up and down
+        // (systematic oscillation — over-control or two alternating sources).
+        for i in 0..data.len().saturating_sub(13) {
+            let window = &data[i..=i + 13];
+            let mut alternates = true;
+            for j in 0..window.len() - 2 {
+                let dir0 = window[j + 1] > window[j];
+                let dir1 = window[j + 2] > window[j + 1];
+                if dir0 == dir1 {
+                    alternates = false;
+                    break;
+                }
+            }
+            if alternates {
+                violations.push(ControlChartViolation {
+                    rule: ZoneRuleViolation::FourteenPointOscillation,
+                    description: format!(
+                        "Points {}-{}: fourteen consecutive points alternating up and down",
+                        i, i + 13
+                    ),
+                    point_index: i + 7,
+                    severity: 0.5,
+                });
+            }
+        }
+
         violations
     }
 
@@ -735,6 +761,33 @@ mod tests {
         let data = vec![10.0, 10.1, 10.2, 10.3, 10.4, 10.5];
         let violations = engine.detect_zone_violations(&data, 10.0, 12.0, 8.0);
         assert!(violations.iter().any(|v| v.rule == ZoneRuleViolation::SixPointTrend));
+    }
+
+    #[test]
+    fn test_detect_fourteen_point_oscillation() {
+        let engine = QualityEngine::new(100);
+
+        // Fourteen consecutive alternating points (up, down, up, down, ...).
+        let mut data = Vec::new();
+        for i in 0..14 {
+            data.push(10.0 + if i % 2 == 0 { 0.05 } else { -0.05 });
+        }
+        let violations = engine.detect_zone_violations(&data, 10.0, 11.0, 9.0);
+        assert!(
+            violations
+                .iter()
+                .any(|v| v.rule == ZoneRuleViolation::FourteenPointOscillation),
+            "expected 14-point oscillation violation, got: {violations:?}"
+        );
+
+        // A monotonic run of the same length must NOT trigger the rule.
+        let monotonic: Vec<f64> = (0..14).map(|i| 10.0 + i as f64 * 0.01).collect();
+        let violations = engine.detect_zone_violations(&monotonic, 10.0, 11.0, 9.0);
+        assert!(
+            !violations
+                .iter()
+                .any(|v| v.rule == ZoneRuleViolation::FourteenPointOscillation)
+        );
     }
 
     #[test]

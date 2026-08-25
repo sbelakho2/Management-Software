@@ -32,8 +32,25 @@ pub struct User {
 }
 
 impl User {
-    /// Create a new [`User`].
+    /// Create a new [`User`] with the default `"user"` role.
     pub fn new(tenant_id: TenantId, email: String, name: String, password_hash: String) -> Self {
+        Self::with_roles(
+            tenant_id,
+            email,
+            name,
+            password_hash,
+            vec!["user".to_string()],
+        )
+    }
+
+    /// Create a new [`User`] with explicit roles.
+    pub fn with_roles(
+        tenant_id: TenantId,
+        email: String,
+        name: String,
+        password_hash: String,
+        roles: Vec<String>,
+    ) -> Self {
         let now = now();
         Self {
             id: new_id(),
@@ -41,7 +58,7 @@ impl User {
             email,
             name,
             password_hash,
-            roles: vec!["user".to_string()],
+            roles,
             is_active: true,
             last_login_at: None,
             created_at: now,

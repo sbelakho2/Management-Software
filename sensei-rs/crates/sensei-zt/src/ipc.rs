@@ -20,40 +20,27 @@ static CHANNELS: Lazy<Mutex<HashMap<String, Vec<Vec<u8>>>>> =
 /// When the Zig library is linked, this delegates to the native
 /// shared-memory implementation. Otherwise it uses an in-memory
 /// `HashMap` (single-process only).
-pub fn channel_send(channel: &str, data: &[u8]) -> Result<(), IpcError> {
-    #[cfg(not(no_zig))]
-    {
-        let c_channel = std::ffi::CString::new(channel).map_err(|_| IpcError::InvalidChannel)?;
-        let ret = unsafe {
-            extern "C" {
-                fn sensei_ipc_send(channel: *const std::os::raw::c_char, data: *const u8, len: usize) -> i32;
-            }
-            sensei_ipc_send(c_channel.as_ptr(), data.as_ptr(), data.len())
-        };
-        if ret != 0 {
-            return Err(IpcError::SendFailed(ret));
-        }
-        Ok(())
-    }
+// NOTE: The Zig exports `sensei_ipc_send` / `sensei_ipc_recv` exist for
+// direct C ABI consumers, but this Rust wrapper deliberately uses the
+// in-memory channel implementation for BOTH directions. Wiring only the
+// send direction to Zig while receiving from the in-memory map would
+// create an asymmetric pair of channels (messages would be sent to one
+// store and read from another). A cross-process shared-memory transport
+// would need to implement both directions against the same store.
 
-    #[cfg(no_zig)]
-    {
-        let mut channels = CHANNELS.lock().map_err(|_| IpcError::LockPoisoned)?;
-        channels.entry(channel.to_string()).or_default().push(data.to_vec());
-        Ok(())
-    }
+pub fn channel_send(channel: &str, data: &[u8]) -> Result<(), IpcError> {
+    let mut channels = CHANNELS.lock().map_err(|_| IpcError::LockPoisoned)?;
+    channels
+        .entry(channel.to_string())
+        .or_default()
+        .push(data.to_vec());
+    Ok(())
 }
 
 /// Receive a payload from a named channel (non-blocking).
 ///
 /// Returns `None` if no message is available.
 pub fn channel_recv(channel: &str) -> Result<Option<Vec<u8>>, IpcError> {
-    #[cfg(not(no_zig))]
-    {
-        // For now, fall back to in-memory even with Zig linked
-        // (actual shared-memory impl requires OS-specific setup)
-    }
-
     let mut channels = CHANNELS.lock().map_err(|_| IpcError::LockPoisoned)?;
     Ok(channels.get_mut(channel).and_then(|msgs| msgs.pop()))
 }

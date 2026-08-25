@@ -64,6 +64,10 @@ pub enum SenseiError {
     #[error("Token error: {0}")]
     TokenError(String),
 
+    /// A token has expired.
+    #[error("Token has expired")]
+    TokenExpired,
+
     // ── Event Bus Errors ─────────────────────────────────────────────
     /// An event bus operation failed.
     #[error("Event bus error: {0}")]
@@ -155,12 +159,13 @@ impl axum::response::IntoResponse for SenseiError {
             SenseiError::Unauthorized(msg) | SenseiError::TokenError(msg) => {
                 (StatusCode::UNAUTHORIZED, msg.clone())
             }
+            SenseiError::TokenExpired => (StatusCode::UNAUTHORIZED, "Token has expired".to_string()),
             SenseiError::Forbidden(msg) => (StatusCode::FORBIDDEN, msg.clone()),
             SenseiError::NotFound(msg) => (StatusCode::NOT_FOUND, msg.clone()),
             SenseiError::AlreadyExists(msg) | SenseiError::Conflict(msg) => {
                 (StatusCode::CONFLICT, msg.clone())
             }
-            SenseiError::Timeout(msg) => (StatusCode::GATEWAY_TIMEOUT, msg.clone()),
+            SenseiError::Timeout(msg) => (StatusCode::REQUEST_TIMEOUT, msg.clone()),
 
             // 5xx Server Errors
             SenseiError::Database(msg)
@@ -205,6 +210,7 @@ impl SenseiError {
                 | SenseiError::Unauthorized(_)
                 | SenseiError::Forbidden(_)
                 | SenseiError::TokenError(_)
+                | SenseiError::TokenExpired
                 | SenseiError::NotFound(_)
                 | SenseiError::AlreadyExists(_)
                 | SenseiError::Conflict(_)
@@ -220,18 +226,18 @@ impl SenseiError {
     pub fn http_status(&self) -> u16 {
         match self {
             SenseiError::Validation(_) | SenseiError::MissingField(_) | SenseiError::InvalidValue { .. } => 400,
-            SenseiError::Unauthorized(_) | SenseiError::TokenError(_) => 401,
+            SenseiError::Unauthorized(_) | SenseiError::TokenError(_) | SenseiError::TokenExpired => 401,
             SenseiError::Forbidden(_) => 403,
             SenseiError::NotFound(_) => 404,
             SenseiError::AlreadyExists(_) | SenseiError::Conflict(_) => 409,
             SenseiError::Timeout(_) => 408,
+            SenseiError::HttpError { status, .. } => *status,
             SenseiError::Database(_)
             | SenseiError::DatabaseConnection(_)
             | SenseiError::EventBus(_)
             | SenseiError::PublishError(_)
             | SenseiError::SubscribeError(_)
             | SenseiError::ExternalService(_)
-            | SenseiError::HttpError { .. }
             | SenseiError::Configuration(_)
             | SenseiError::MissingEnvVar(_)
             | SenseiError::Internal(_)

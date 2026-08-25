@@ -129,6 +129,22 @@ pub struct WorkOrderOperation {
     pub created_at: DateTime<Utc>,
 }
 
+/// A routing step used to generate work order operations.
+///
+/// Mirrors one row of the `routings` table: an operation performed at a work
+/// center with standard setup/run times (in minutes).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RoutingStep {
+    /// Work center where the operation is performed.
+    pub work_center_id: Option<Uuid>,
+    /// Human-readable operation description.
+    pub description: String,
+    /// Standard setup time in minutes.
+    pub setup_time_minutes: i32,
+    /// Standard run time in minutes.
+    pub run_time_minutes: i32,
+}
+
 // ---------------------------------------------------------------------------
 // Trait
 // ---------------------------------------------------------------------------
@@ -158,6 +174,12 @@ pub trait ProductionService: Send + Sync {
         id: Uuid,
         status: &str,
     ) -> Result<WorkOrder>;
+    /// Update a work order's editable fields.
+    ///
+    /// Identity fields (`id`, `tenant_id`, `wo_number`, `created_at`) are
+    /// preserved from the stored record; all other fields are taken from the
+    /// supplied value.
+    async fn update_work_order(&self, tenant_id: Uuid, id: Uuid, wo: WorkOrder) -> Result<WorkOrder>;
     /// Report production completion for a work order.
     async fn report_production(
         &self,
@@ -224,6 +246,10 @@ pub struct InMemoryProductionService {
     mrp_records: RwLock<HashMap<Uuid, MRPRecord>>,
     /// Work order operations keyed by operation ID.
     wo_operations: RwLock<HashMap<Uuid, WorkOrderOperation>>,
+    /// Routings per product (used to generate work order operations).
+    routings: RwLock<HashMap<Uuid, Vec<RoutingStep>>>,
+    /// Current on-hand inventory per product (MRP input).
+    inventory_on_hand: RwLock<HashMap<Uuid, i64>>,
     wo_counter: RwLock<u64>,
     po_counter: RwLock<u64>,
     event_bus: Option<Arc<dyn EventBus>>,
@@ -238,10 +264,22 @@ impl InMemoryProductionService {
             bom_items: RwLock::new(HashMap::new()),
             mrp_records: RwLock::new(HashMap::new()),
             wo_operations: RwLock::new(HashMap::new()),
+            routings: RwLock::new(HashMap::new()),
+            inventory_on_hand: RwLock::new(HashMap::new()),
             wo_counter: RwLock::new(0),
             po_counter: RwLock::new(0),
             event_bus,
         }
+    }
+
+    /// Seed the routing for a product (work order operation generation source).
+    pub async fn seed_routing(&self, product_id: Uuid, steps: Vec<RoutingStep>) {
+        self.routings.write().await.insert(product_id, steps);
+    }
+
+    /// Seed the current on-hand inventory quantity for a product (MRP input).
+    pub async fn seed_inventory_on_hand(&self, product_id: Uuid, quantity: i64) {
+        self.inventory_on_hand.write().await.insert(product_id, quantity);
     }
 
     /// Publish a domain event via the optional event bus.
@@ -259,6 +297,41 @@ impl InMemoryProductionService {
 
     fn generate_po_number(counter: u64) -> String {
         format!("PO-{}-{:04}", Utc::now().format("%Y%m%d"), counter)
+    }
+
+    /// Generate the work order operations from the product's routing.
+    ///
+    /// Each routing step becomes one operation row (in sequence order).
+    /// No-ops when the product has no routing configured.
+    async fn generate_operations(&self, work_order: &WorkOrder) {
+        let product_id = work_order.product_id;
+        let steps = {
+            let routings = self.routings.read().await;
+            routings.get(&product_id).cloned()
+        };
+        let Some(steps) = steps else { return };
+        if steps.is_empty() {
+            return;
+        }
+
+        let now = Utc::now();
+        let mut ops_store = self.wo_operations.write().await;
+        for (idx, step) in steps.into_iter().enumerate() {
+            let op = WorkOrderOperation {
+                id: Uuid::new_v4(),
+                work_order_id: work_order.id,
+                operation_number: (idx + 1) as i32,
+                description: step.description,
+                work_center_id: step.work_center_id,
+                setup_time_minutes: Some(step.setup_time_minutes),
+                run_time_minutes: Some(step.run_time_minutes),
+                status: "pending".to_string(),
+                started_at: None,
+                completed_at: None,
+                created_at: now,
+            };
+            ops_store.insert(op.id, op);
+        }
     }
 }
 
@@ -292,6 +365,9 @@ impl ProductionService for InMemoryProductionService {
 
         let id = wo.id;
         self.work_orders.write().await.insert(id, wo.clone());
+
+        // Generate the operations from the product's routing (when configured).
+        self.generate_operations(&wo).await;
 
         self.publish_event(WorkOrderCreatedEvent::new(
             tenant_id,
@@ -376,14 +452,48 @@ impl ProductionService for InMemoryProductionService {
         Ok(wo_cloned)
     }
 
+    async fn update_work_order(&self, tenant_id: Uuid, id: Uuid, mut wo: WorkOrder) -> Result<WorkOrder> {
+        let mut store = self.work_orders.write().await;
+        let existing = store
+            .get(&id)
+            .filter(|w| w.tenant_id == tenant_id)
+            .cloned()
+            .ok_or_else(|| SenseiError::NotFound(format!("Work order {id} not found")))?;
+
+        wo.id = existing.id;
+        wo.tenant_id = existing.tenant_id;
+        wo.wo_number = existing.wo_number;
+        wo.created_at = existing.created_at;
+        wo.updated_at = Utc::now();
+        // Progress is owned by the reporting flow; a partial edit must not
+        // reset already-completed quantities.
+        if wo.quantity_completed == 0 && existing.quantity_completed > 0 {
+            wo.quantity_completed = existing.quantity_completed;
+        }
+
+        store.insert(id, wo.clone());
+        drop(store);
+
+        self.publish_event(WorkOrderStatusChangedEvent::new(
+            tenant_id,
+            id,
+            wo.wo_number.clone(),
+            existing.status,
+            wo.status.clone(),
+            Uuid::default(),
+        ))
+        .await;
+
+        Ok(wo)
+    }
+
     async fn report_production(
         &self,
         tenant_id: Uuid,
         work_order_id: Uuid,
         quantity_completed: i64,
         quantity_scrapped: i64,
-    ) -> Result<WorkOrder> {
-        let mut store = self.work_orders.write().await;
+    ) -> Result<WorkOrder> {        let mut store = self.work_orders.write().await;
         let wo = store
             .get_mut(&work_order_id)
             .ok_or_else(|| SenseiError::NotFound(format!("Work order {work_order_id} not found")))?;
@@ -588,11 +698,16 @@ impl ProductionService for InMemoryProductionService {
                 .sum()
         };
 
-        // Projected on-hand: estimate from inventory-like logic
-        let projected_on_hand = (scheduled_receipts - gross_requirement).max(0);
+        // Projected on-hand: current inventory + scheduled receipts − gross
+        // requirement (never negative).
+        let on_hand = {
+            let inv = self.inventory_on_hand.read().await;
+            inv.get(&product_id).copied().unwrap_or(0)
+        };
+        let projected_on_hand = (on_hand + scheduled_receipts - gross_requirement).max(0);
 
-        // Net requirement: what we still need to order
-        let net_requirement = (gross_requirement - scheduled_receipts).max(0);
+        // Net requirement: what we still need to order.
+        let net_requirement = (gross_requirement - scheduled_receipts - on_hand).max(0);
 
         // Planned order release equals net requirement
         let planned_order_release = net_requirement;
@@ -817,5 +932,148 @@ mod tests {
             .expect("should run MRP");
         assert!(!mrp_records.is_empty());
         assert_eq!(mrp_records[0].product_id, product_id);
+    }
+
+    #[tokio::test]
+    async fn test_mrp_uses_real_on_hand_inventory() {
+        let service = InMemoryProductionService::default();
+        let tenant_id = Uuid::new_v4();
+        let product_id = Uuid::new_v4();
+
+        // 30 units already on hand.
+        service.seed_inventory_on_hand(product_id, 30).await;
+
+        // Active work order demands 100 units.
+        let wo = WorkOrder {
+            id: Uuid::nil(),
+            tenant_id,
+            wo_number: String::new(),
+            product_id,
+            product_name: "Widget".to_string(),
+            quantity: 100,
+            quantity_completed: 0,
+            status: String::new(),
+            work_center_id: None,
+            priority: "normal".to_string(),
+            scheduled_start: None,
+            scheduled_end: None,
+            actual_start: None,
+            actual_end: None,
+            assigned_to: Vec::new(),
+            notes: String::new(),
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        };
+        service.create_work_order(tenant_id, wo).await.unwrap();
+
+        let records = service.run_mrp(tenant_id, product_id).await.unwrap();
+        let record = &records[0];
+
+        // projected = on_hand + receipts − gross = 30 + 0 − 100 → 0 (clamped).
+        assert_eq!(record.gross_requirement, 100);
+        assert_eq!(record.projected_on_hand, 0);
+        // net = gross − receipts − on_hand = 100 − 0 − 30 = 70.
+        assert_eq!(record.net_requirement, 70);
+        assert_eq!(record.planned_order_release, 70);
+
+        // With enough stock the net requirement drops to zero.
+        service.seed_inventory_on_hand(product_id, 150).await;
+        let records = service.run_mrp(tenant_id, product_id).await.unwrap();
+        assert_eq!(records[0].projected_on_hand, 50);
+        assert_eq!(records[0].net_requirement, 0);
+    }
+
+    #[tokio::test]
+    async fn test_create_work_order_generates_operations_from_routing() {
+        let service = InMemoryProductionService::default();
+        let tenant_id = Uuid::new_v4();
+        let product_id = Uuid::new_v4();
+        let wc_a = Uuid::new_v4();
+        let wc_b = Uuid::new_v4();
+
+        service
+            .seed_routing(
+                product_id,
+                vec![
+                    RoutingStep {
+                        work_center_id: Some(wc_a),
+                        description: "Cut material".to_string(),
+                        setup_time_minutes: 10,
+                        run_time_minutes: 5,
+                    },
+                    RoutingStep {
+                        work_center_id: Some(wc_b),
+                        description: "Assemble".to_string(),
+                        setup_time_minutes: 20,
+                        run_time_minutes: 15,
+                    },
+                ],
+            )
+            .await;
+
+        let wo = WorkOrder {
+            id: Uuid::nil(),
+            tenant_id,
+            wo_number: String::new(),
+            product_id,
+            product_name: "Widget".to_string(),
+            quantity: 10,
+            quantity_completed: 0,
+            status: String::new(),
+            work_center_id: None,
+            priority: "normal".to_string(),
+            scheduled_start: None,
+            scheduled_end: None,
+            actual_start: None,
+            actual_end: None,
+            assigned_to: Vec::new(),
+            notes: String::new(),
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        };
+        let created = service.create_work_order(tenant_id, wo).await.unwrap();
+
+        let ops = service
+            .list_work_order_operations(tenant_id, created.id)
+            .await
+            .unwrap();
+        assert_eq!(ops.len(), 2);
+        assert_eq!(ops[0].operation_number, 1);
+        assert_eq!(ops[0].description, "Cut material");
+        assert_eq!(ops[0].work_center_id, Some(wc_a));
+        assert_eq!(ops[0].run_time_minutes, Some(5));
+        assert_eq!(ops[1].operation_number, 2);
+        assert_eq!(ops[1].description, "Assemble");
+        assert_eq!(ops[1].setup_time_minutes, Some(20));
+        assert_eq!(ops[1].status, "pending");
+
+        // Products without a routing get no operations.
+        let other = Uuid::new_v4();
+        let wo2 = WorkOrder {
+            id: Uuid::nil(),
+            tenant_id,
+            wo_number: String::new(),
+            product_id: other,
+            product_name: "Plain".to_string(),
+            quantity: 1,
+            quantity_completed: 0,
+            status: String::new(),
+            work_center_id: None,
+            priority: "normal".to_string(),
+            scheduled_start: None,
+            scheduled_end: None,
+            actual_start: None,
+            actual_end: None,
+            assigned_to: Vec::new(),
+            notes: String::new(),
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        };
+        let created2 = service.create_work_order(tenant_id, wo2).await.unwrap();
+        let ops = service
+            .list_work_order_operations(tenant_id, created2.id)
+            .await
+            .unwrap();
+        assert!(ops.is_empty());
     }
 }

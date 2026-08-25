@@ -27,12 +27,22 @@ pub struct SearchParams {
     pub entity_type: Option<String>,
 }
 
+/// A facet bucket: entity type + number of matching results.
+#[derive(Debug, Serialize)]
+pub struct SearchFacet {
+    pub entity_type: String,
+    pub count: usize,
+}
+
 /// Unified search response.
 #[derive(Debug, Serialize)]
 pub struct SearchResponse {
     pub results: Vec<SearchResult>,
     pub total: usize,
     pub query: String,
+    /// Facet counts grouped by result type, computed from the full result
+    /// set (before the `limit` truncation).
+    pub facets: Vec<SearchFacet>,
 }
 
 // ── Handlers ─────────────────────────────────────────────────────────────────
@@ -46,17 +56,31 @@ pub async fn search(
     let query = params.q.trim().to_string();
     let limit = params.limit.unwrap_or(10).max(1).min(50);
 
-    let mut results = state
+    let results = state
         .search_service
         .search(user.tenant_id, &query, params.entity_type.as_deref())
         .await?;
 
     let total = results.len();
-    results.truncate(limit);
+
+    // Facets group the full result set by entity type, ordered by count
+    // descending.
+    let mut facet_map: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+    for result in &results {
+        *facet_map.entry(result.result_type.clone()).or_insert(0) += 1;
+    }
+    let mut facets: Vec<SearchFacet> = facet_map
+        .into_iter()
+        .map(|(entity_type, count)| SearchFacet { entity_type, count })
+        .collect();
+    facets.sort_by(|a, b| b.count.cmp(&a.count).then_with(|| a.entity_type.cmp(&b.entity_type)));
+
+    let results = results.into_iter().take(limit).collect();
 
     Ok(Json(SearchResponse {
         results,
         total,
         query,
+        facets,
     }))
 }

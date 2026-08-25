@@ -105,15 +105,35 @@ fn parse_dt(s: Option<&str>) -> Option<DateTime<Utc>> {
     s.and_then(|s| s.parse::<DateTime<Utc>>().ok())
 }
 
+/// Parse an RFC 3339 date filter; invalid values are rejected with a 400
+/// instead of silently disabling the filter.
+fn parse_date_filter(name: &str, value: Option<&str>) -> Result<Option<DateTime<Utc>>> {
+    match value {
+        Some(raw) => DateTime::parse_from_rfc3339(raw)
+            .map(|dt| Some(dt.with_timezone(&Utc)))
+            .map_err(|e| {
+                SenseiError::Validation(format!("Invalid {name} (expected RFC 3339): {e}"))
+            }),
+        None => Ok(None),
+    }
+}
+
 /// Compute basic statistics for a set of values.
+///
+/// Uses the sample variance (n-1 denominator) so the standard deviation is
+/// an unbiased estimator of the population spread.
 fn compute_stats(values: &[f64]) -> (f64, f64, f64, f64) {
-    let n = values.len() as f64;
-    if n == 0.0 {
+    let n = values.len();
+    if n == 0 {
         return (0.0, 0.0, 0.0, 0.0);
     }
     let sum: f64 = values.iter().sum();
-    let mean = sum / n;
-    let variance = values.iter().map(|v| (v - mean).powi(2)).sum::<f64>() / n;
+    let mean = sum / n as f64;
+    let variance = if n > 1 {
+        values.iter().map(|v| (v - mean).powi(2)).sum::<f64>() / (n - 1) as f64
+    } else {
+        0.0
+    };
     let std_dev = variance.sqrt();
     let min = values.iter().cloned().fold(f64::INFINITY, f64::min);
     let max = values.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
@@ -271,6 +291,10 @@ pub async fn list_records(
     let store = get_record_store(&state);
     let map = store.read().await;
 
+    // Invalid date parameters are a client error, not a silent no-filter.
+    let date_from = parse_date_filter("date_from", params.date_from.as_deref())?;
+    let date_to = parse_date_filter("date_to", params.date_to.as_deref())?;
+
     let mut items: Vec<CtqRecord> = map
         .values()
         .filter(|r| r.characteristic_id == characteristic_id && r.tenant_id == tenant_id)
@@ -282,14 +306,8 @@ pub async fn list_records(
             Some(lot) => r.lot_id.as_deref() == Some(lot.as_str()),
             None => true,
         })
-        .filter(|r| match &params.date_from {
-            Some(from) => parse_dt(Some(from)).map_or(true, |d| r.recorded_at >= d),
-            None => true,
-        })
-        .filter(|r| match &params.date_to {
-            Some(to) => parse_dt(Some(to)).map_or(true, |d| r.recorded_at <= d),
-            None => true,
-        })
+        .filter(|r| date_from.is_none_or(|d| r.recorded_at >= d))
+        .filter(|r| date_to.is_none_or(|d| r.recorded_at <= d))
         .cloned()
         .collect();
 

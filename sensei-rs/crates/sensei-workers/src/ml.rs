@@ -144,7 +144,7 @@ impl ModelParameters {
 #[derive(Debug, Clone)]
 pub struct ModelDefinition {
     /// Unique model name.
-    pub name: &'static str,
+    pub name: String,
     /// Current status.
     pub status: ModelStatus,
     /// Version string.
@@ -157,53 +157,143 @@ pub struct ModelDefinition {
 
 /// Registry of available models with their metadata.
 ///
-/// Backed by an in-memory store; in production this would be persisted to
-/// the database and integrated with an MLflow-compatible model registry.
+/// When a database pool is available the registry is persisted to the
+/// `model_registry` table (migration 031); otherwise it falls back to an
+/// in-memory store seeded with the three default models.
 pub struct ModelRegistry {
     models: Arc<RwLock<HashMap<String, ModelDefinition>>>,
+    /// Optional database pool used for persistence.
+    pool: Option<Arc<PgPool>>,
+}
+
+/// Database row for the `model_registry` table (migration 031).
+#[derive(Debug, Clone, sqlx::FromRow)]
+struct ModelRegistryRow {
+    model_name: String,
+    version: String,
+    status: serde_json::Value,
+    parameters: Option<serde_json::Value>,
+    baseline_histogram: Option<serde_json::Value>,
 }
 
 impl ModelRegistry {
-    /// Create a new registry with default model definitions.
+    /// Create a new registry with default model definitions (in-memory only).
     pub fn new() -> Self {
-        let mut models = HashMap::new();
-
-        models.insert(
-            "quality_defect_prediction".to_string(),
-            ModelDefinition {
-                name: "quality_defect_prediction",
-                status: ModelStatus::Healthy,
-                version: "1.2.0".to_string(),
-                parameters: None,
-                baseline_histogram: None,
-            },
-        );
-
-        models.insert(
-            "demand_forecasting".to_string(),
-            ModelDefinition {
-                name: "demand_forecasting",
-                status: ModelStatus::Healthy,
-                version: "2.0.1".to_string(),
-                parameters: None,
-                baseline_histogram: None,
-            },
-        );
-
-        models.insert(
-            "maintenance_prediction".to_string(),
-            ModelDefinition {
-                name: "maintenance_prediction",
-                status: ModelStatus::Healthy,
-                version: "1.0.3".to_string(),
-                parameters: None,
-                baseline_histogram: None,
-            },
-        );
-
         Self {
-            models: Arc::new(RwLock::new(models)),
+            models: Arc::new(RwLock::new(default_model_definitions())),
+            pool: None,
         }
+    }
+
+    /// Create a registry backed by the `model_registry` table.
+    ///
+    /// Loads persisted definitions, seeding the three default models when the
+    /// table is empty (first run).
+    pub async fn with_pool(pool: Arc<PgPool>) -> Result<Self> {
+        let registry = Self {
+            models: Arc::new(RwLock::new(default_model_definitions())),
+            pool: Some(pool),
+        };
+        registry.load_from_db().await?;
+        Ok(registry)
+    }
+
+    /// Load all persisted model definitions from the database.
+    async fn load_from_db(&self) -> Result<()> {
+        let Some(pool) = &self.pool else {
+            return Ok(());
+        };
+
+        let rows: Vec<ModelRegistryRow> = sqlx::query_as(
+            "SELECT model_name, version, status, parameters, baseline_histogram \
+             FROM model_registry",
+        )
+        .fetch_all(pool.as_ref())
+        .await
+        .map_err(|e| {
+            WorkerError::Processing(format!("Failed to load model registry: {e}"))
+        })?;
+
+        let mut models = self.models.write().await;
+        for row in rows {
+            let status: ModelStatus = serde_json::from_value(row.status).unwrap_or_else(|_| {
+                warn!(
+                    model = %row.model_name,
+                    "Corrupt status JSONB in model_registry — falling back to Healthy"
+                );
+                ModelStatus::Healthy
+            });
+            let parameters: Option<ModelParameters> = row
+                .parameters
+                .and_then(|v| serde_json::from_value(v).ok());
+            let baseline_histogram: Option<Vec<f64>> = row
+                .baseline_histogram
+                .and_then(|v| serde_json::from_value(v).ok());
+            models.insert(
+                row.model_name.clone(),
+                ModelDefinition {
+                    name: row.model_name.clone(),
+                    status,
+                    version: row.version,
+                    parameters,
+                    baseline_histogram,
+                },
+            );
+        }
+
+        // Seed the default models on first run (empty table).
+        if models.is_empty() {
+            for (name, def) in default_model_definitions() {
+                models.insert(name, def);
+            }
+            let seeds = models.clone();
+            drop(models);
+            for (name, def) in seeds {
+                self.persist(&name, &def).await?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Persist a model definition to the database (no-op without a pool).
+    async fn persist(&self, name: &str, def: &ModelDefinition) -> Result<()> {
+        let Some(pool) = &self.pool else {
+            return Ok(());
+        };
+        let status = serde_json::to_value(&def.status)
+            .map_err(WorkerError::Serialization)?;
+        let parameters = def
+            .parameters
+            .as_ref()
+            .map(|p| serde_json::to_value(p))
+            .transpose()
+            .map_err(WorkerError::Serialization)?;
+        let baseline = def
+            .baseline_histogram
+            .as_ref()
+            .map(|b| serde_json::to_value(b))
+            .transpose()
+            .map_err(WorkerError::Serialization)?;
+
+        sqlx::query(
+            "INSERT INTO model_registry (model_name, version, status, parameters, baseline_histogram, trained_at, updated_at) \
+             VALUES ($1, $2, $3, $4, $5, NOW(), NOW()) \
+             ON CONFLICT (model_name) DO UPDATE SET \
+               version = EXCLUDED.version, status = EXCLUDED.status, \
+               parameters = EXCLUDED.parameters, baseline_histogram = EXCLUDED.baseline_histogram, \
+               trained_at = NOW(), updated_at = NOW()",
+        )
+        .bind(name)
+        .bind(&def.version)
+        .bind(&status)
+        .bind(&parameters)
+        .bind(&baseline)
+        .execute(pool.as_ref())
+        .await
+        .map_err(|e| {
+            WorkerError::Processing(format!("Failed to persist model '{name}': {e}"))
+        })?;
+        Ok(())
     }
 
     /// Get all model names.
@@ -222,7 +312,12 @@ impl ModelRegistry {
     pub async fn update_status(&self, name: &str, status: ModelStatus) {
         let mut models = self.models.write().await;
         if let Some(def) = models.get_mut(name) {
-            def.status = status;
+            def.status = status.clone();
+            let snapshot = def.clone();
+            drop(models);
+            if let Err(e) = self.persist(name, &snapshot).await {
+                warn!(model = %name, error = %e, "Failed to persist model status");
+            }
         }
     }
 
@@ -237,8 +332,53 @@ impl ModelRegistry {
         if let Some(def) = models.get_mut(name) {
             def.parameters = Some(parameters);
             def.baseline_histogram = Some(baseline);
+            let snapshot = def.clone();
+            drop(models);
+            if let Err(e) = self.persist(name, &snapshot).await {
+                warn!(model = %name, error = %e, "Failed to persist model parameters");
+            }
         }
     }
+}
+
+/// The three default model definitions seeded on first run.
+fn default_model_definitions() -> HashMap<String, ModelDefinition> {
+    let mut models = HashMap::new();
+
+    models.insert(
+        "quality_defect_prediction".to_string(),
+        ModelDefinition {
+            name: "quality_defect_prediction".to_string(),
+            status: ModelStatus::Healthy,
+            version: "1.2.0".to_string(),
+            parameters: None,
+            baseline_histogram: None,
+        },
+    );
+
+    models.insert(
+        "demand_forecasting".to_string(),
+        ModelDefinition {
+            name: "demand_forecasting".to_string(),
+            status: ModelStatus::Healthy,
+            version: "2.0.1".to_string(),
+            parameters: None,
+            baseline_histogram: None,
+        },
+    );
+
+    models.insert(
+        "maintenance_prediction".to_string(),
+        ModelDefinition {
+            name: "maintenance_prediction".to_string(),
+            status: ModelStatus::Healthy,
+            version: "1.0.3".to_string(),
+            parameters: None,
+            baseline_histogram: None,
+        },
+    );
+
+    models
 }
 
 impl Default for ModelRegistry {
@@ -293,10 +433,12 @@ impl MlWorker {
             Some(pool) => {
                 let data = match model_name {
                     "quality_defect_prediction" => {
-                        // Query defect rates from quality inspections.
+                        // Scrap ratio per completed production order: a real
+                        // quality signal from the production_orders table.
                         let rows = sqlx::query_scalar::<_, f64>(
-                            "SELECT COALESCE(defect_rate, 0.0) FROM quality_inspections \
-                             WHERE created_at > NOW() - INTERVAL '90 days' \
+                            "SELECT COALESCE(quantity_scrapped::float / NULLIF(quantity_planned, 0), 0.0) \
+                             FROM production_orders \
+                             WHERE status = 'completed' AND quantity_planned > 0 \
                              ORDER BY created_at DESC LIMIT 10000",
                         )
                         .fetch_all(pool.as_ref())
@@ -309,11 +451,14 @@ impl MlWorker {
                         rows
                     }
                     "demand_forecasting" => {
-                        // Query daily order quantities.
+                        // Order quantities from the real so_line_items table
+                        // (sales_orders has no line_items JSONB column).
                         let rows = sqlx::query_scalar::<_, f64>(
-                            "SELECT COALESCE(daily_quantity, 0.0) FROM production_daily_summary \
-                             WHERE date > NOW() - INTERVAL '180 days' \
-                             ORDER BY date DESC LIMIT 10000",
+                            "SELECT COALESCE(li.quantity, 0.0) \
+                             FROM so_line_items li \
+                             JOIN sales_orders so ON so.id = li.so_id \
+                             WHERE so.tenant_id IS NOT NULL \
+                             ORDER BY so.created_at DESC LIMIT 10000",
                         )
                         .fetch_all(pool.as_ref())
                         .await
@@ -325,12 +470,17 @@ impl MlWorker {
                         rows
                     }
                     "maintenance_prediction" => {
-                        // Query equipment operating hours between failures.
+                        // Hours since the last performed PM (or installation)
+                        // per equipment — real equipment/pm_schedules data.
                         let rows = sqlx::query_scalar::<_, f64>(
-                            "SELECT COALESCE(hours_since_last_pm, 0.0) \
-                             FROM maintenance_equipment_summary \
-                             WHERE last_maintenance > NOW() - INTERVAL '365 days' \
-                             ORDER BY last_maintenance DESC LIMIT 10000",
+                            "SELECT COALESCE(EXTRACT(EPOCH FROM (NOW() - COALESCE(pm.last_performed_at, e.install_date))) / 3600.0, 0.0) \
+                             FROM equipment e \
+                             LEFT JOIN LATERAL ( \
+                               SELECT last_performed_at FROM pm_schedules \
+                               WHERE equipment_id = e.id AND last_performed_at IS NOT NULL \
+                               ORDER BY last_performed_at DESC LIMIT 1 \
+                             ) pm ON TRUE \
+                             ORDER BY e.created_at DESC LIMIT 10000",
                         )
                         .fetch_all(pool.as_ref())
                         .await
@@ -731,7 +881,13 @@ impl TaskConsumer for MlWorker {
                         model = %model_name,
                         "Drift detected — triggering retrain"
                     );
-                    let _ = self.train_model(model_name).await?;
+                    let trained = self.train_model(model_name).await?;
+                    info!(
+                        task_id = %metadata.task_id,
+                        model = %model_name,
+                        status = ?trained,
+                        "Retrain after drift completed"
+                    );
                 }
 
                 info!(

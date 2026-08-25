@@ -131,3 +131,26 @@ async fn test_close_a3() {
     let resp = app.send_request(req).await;
     assert_eq!(resp.status(), StatusCode::OK);
 }
+
+#[tokio::test]
+async fn test_delete_a3() {
+    let app = common::TestApp::new().await;
+    let token = app.login_as_admin().await;
+
+    // Create
+    let body = common::fixtures::a3_payload("Delete A3", "Problem to delete");
+    let req = app.post_authenticated("/api/v1/a3", &token, body);
+    let mut resp = app.send_request(req).await;
+    let created: Value = app.json_body(&mut resp).await;
+    let a3_id = created["id"].as_str().unwrap().to_string();
+
+    // Delete
+    let req = app.delete_authenticated(&format!("/api/v1/a3/{}", a3_id), &token);
+    let resp = app.send_request(req).await;
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    // The deleted A3 is gone.
+    let req = app.get_authenticated(&format!("/api/v1/a3/{}", a3_id), &token);
+    let resp = app.send_request(req).await;
+    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+}

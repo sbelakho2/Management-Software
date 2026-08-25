@@ -402,14 +402,17 @@ impl SearchService for InMemorySearchService {
         &self,
         entity_type: &str,
         entity_id: Uuid,
-        _tenant_id: EntityId,
+        tenant_id: EntityId,
     ) -> Result<()> {
         let mut index = self
             .indexed_entities
             .write()
             .map_err(|e| SenseiError::Internal(format!("Search index lock poisoned: {e}")))?;
 
-        index.retain(|e| !(e.entity_type == entity_type && e.entity_id == entity_id));
+        // Only the tenant that owns the entry may remove it.
+        index.retain(|e| {
+            !(e.entity_type == entity_type && e.entity_id == entity_id && e.tenant_id == tenant_id)
+        });
 
         Ok(())
     }
@@ -517,13 +520,15 @@ impl SearchService for DatabaseSearchService {
         &self,
         entity_type: &str,
         entity_id: Uuid,
-        _tenant_id: EntityId,
+        tenant_id: EntityId,
     ) -> Result<()> {
+        // Only the tenant that owns the entry may remove it.
         sqlx::query(
-            "DELETE FROM search_index WHERE entity_type = $1 AND entity_id = $2",
+            "DELETE FROM search_index WHERE entity_type = $1 AND entity_id = $2 AND tenant_id = $3",
         )
         .bind(entity_type)
         .bind(entity_id)
+        .bind(tenant_id)
         .execute(&self.pool)
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to remove from index: {e}")))?;

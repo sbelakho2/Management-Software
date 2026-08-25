@@ -86,10 +86,34 @@ fn get_store(state: &AppState) -> &WorkCenterStore {
     &state.work_centers
 }
 
-fn next_number() -> String {
-    use std::sync::atomic::{AtomicU32, Ordering};
-    static COUNTER: AtomicU32 = AtomicU32::new(1);
-    format!("WC-{:05}", COUNTER.fetch_add(1, Ordering::Relaxed))
+/// Default hours per shift used for utilization math (hours_per_shift is
+/// not a field on [`WorkCenter`]).
+const DEFAULT_HOURS_PER_SHIFT: f64 = 8.0;
+
+/// Compute the next work center number within the tenant's own store.
+///
+/// Numbering is per tenant: the highest existing `WC-xxxxx` suffix in the
+/// tenant's work centers plus one. There is no global counter, so tenants
+/// never share or race on sequence state.
+fn next_number(store_map: &std::collections::HashMap<Uuid, WorkCenter>, tenant_id: Uuid) -> String {
+    let max_suffix = store_map
+        .values()
+        .filter(|wc| wc.tenant_id == tenant_id)
+        .filter_map(|wc| wc.work_center_number.strip_prefix("WC-"))
+        .filter_map(|s| s.parse::<u32>().ok())
+        .max()
+        .unwrap_or(0);
+    format!("WC-{:05}", max_suffix + 1)
+}
+
+/// Validate that an efficiency value is a percentage in [0, 100].
+fn validate_efficiency(efficiency: f64) -> Result<()> {
+    if !(0.0..=100.0).contains(&efficiency) {
+        return Err(SenseiError::Validation(format!(
+            "Invalid efficiency {efficiency}: must be a percentage between 0 and 100"
+        )));
+    }
+    Ok(())
 }
 
 // ── Handlers ───────────────────────────────────────────────────────────────
@@ -164,12 +188,15 @@ pub async fn create_work_center(
     State(state): State<AppState>,
     Json(req): Json<CreateWorkCenterRequest>,
 ) -> Result<Json<WorkCenter>> {
+    validate_efficiency(req.efficiency)?;
     let tenant_id = user.tenant_id;
     let now = Utc::now();
+    let store = get_store(&state);
+    let mut map = store.write().await;
     let wc = WorkCenter {
         id: Uuid::new_v4(),
         tenant_id,
-        work_center_number: next_number(),
+        work_center_number: next_number(&map, tenant_id),
         name: req.name,
         description: req.description.unwrap_or_default(),
         work_center_type: req.work_center_type,
@@ -187,8 +214,7 @@ pub async fn create_work_center(
         updated_at: now,
     };
 
-    let store = get_store(&state);
-    store.write().await.insert(wc.id, wc.clone());
+    map.insert(wc.id, wc.clone());
     Ok(Json(wc))
 }
 
@@ -233,6 +259,7 @@ pub async fn update_work_center(
         wc.shifts_per_day = shifts;
     }
     if let Some(efficiency) = req.efficiency {
+        validate_efficiency(efficiency)?;
         wc.efficiency = efficiency;
     }
     if let Some(hours) = req.available_hours_per_day {
@@ -285,10 +312,15 @@ pub async fn get_work_center_capacity(
         .filter(|wc| wc.tenant_id == tenant_id)
         .ok_or_else(|| SenseiError::NotFound(id.to_string()))?;
 
+    // Efficiency is a percentage (0-100). Effective capacity is the rated
+    // capacity discounted by efficiency; utilization compares the scheduled
+    // hours against the hours actually available per day
+    // (shifts × hours per shift).
     let total_capacity_per_day = wc.capacity_per_shift as f64 * wc.shifts_per_day as f64;
-    let effective_capacity_per_day = total_capacity_per_day * wc.efficiency / 100.0;
-    let utilization_percentage = if wc.available_hours_per_day > 0.0 {
-        (wc.available_hours_per_day / (wc.shifts_per_day as f64 * 8.0)) * 100.0
+    let effective_capacity_per_day = total_capacity_per_day * (wc.efficiency / 100.0);
+    let available_hours = wc.shifts_per_day as f64 * DEFAULT_HOURS_PER_SHIFT;
+    let utilization_percentage = if available_hours > 0.0 {
+        (wc.available_hours_per_day / available_hours) * 100.0
     } else {
         0.0
     };
@@ -314,8 +346,9 @@ pub async fn get_efficiency_report(
         .filter(|wc| wc.tenant_id == tenant_id && wc.is_active)
         .map(|wc| {
             let _capacity = wc.capacity_per_shift as f64 * wc.shifts_per_day as f64;
-            let utilization = if wc.available_hours_per_day > 0.0 {
-                (wc.available_hours_per_day / (wc.shifts_per_day as f64 * 8.0)) * 100.0
+            let available_hours = wc.shifts_per_day as f64 * DEFAULT_HOURS_PER_SHIFT;
+            let utilization = if available_hours > 0.0 {
+                (wc.available_hours_per_day / available_hours) * 100.0
             } else {
                 0.0
             };

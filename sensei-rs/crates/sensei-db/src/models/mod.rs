@@ -73,7 +73,8 @@ pub struct TenantModel {
 /// Database representation of a user.
 ///
 /// Users are scoped to a tenant and identified by email within that tenant.
-/// Passwords are hashed using Argon2. Roles are stored as a PostgreSQL text array.
+/// Passwords are hashed using Argon2. Roles are stored as a PostgreSQL text
+/// array and map directly to `Vec<String>`.
 #[derive(Debug, Clone, sqlx::FromRow, Serialize, Deserialize)]
 pub struct UserModel {
     /// Primary key (UUID).
@@ -86,10 +87,12 @@ pub struct UserModel {
     pub name: String,
     /// Password hash (Argon2).
     pub password_hash: String,
-    /// Comma-separated role names.
-    pub roles: String,
+    /// Role names (PostgreSQL `TEXT[]`).
+    pub roles: Vec<String>,
     /// Whether the account is active.
     pub is_active: bool,
+    /// Whether the account's email address has been verified.
+    pub email_verified: bool,
     /// Last login timestamp.
     pub last_login_at: Option<DateTime<Utc>>,
     /// Record creation timestamp.

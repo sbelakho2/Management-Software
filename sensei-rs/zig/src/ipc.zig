@@ -32,15 +32,23 @@ pub const ChannelMap = struct {
     }
 
     /// Receive a payload from a named channel (non-blocking).
-    pub fn recv(self: *ChannelMap, name: []const u8) ?[]const u8 {
+    ///
+    /// Returns an owned copy of the payload (the internal queue entry is
+    /// freed before returning, so the caller must free the returned slice
+    /// with the page allocator). `null` when the channel is empty.
+    pub fn recv(self: *ChannelMap, name: []const u8) ?[]u8 {
         const gpa = std.heap.page_allocator;
         const entry = self.channels.getEntry(name) orelse return null;
         var queue = &entry.value_ptr.*;
         if (queue.pop()) |m| {
             var msg = m;
-            const result = msg.items;
+            // Copy the payload out before freeing the queue entry.
+            const owned = gpa.dupe(u8, msg.items) catch {
+                msg.deinit(gpa);
+                return null;
+            };
             msg.deinit(gpa);
-            return result;
+            return owned;
         }
         return null;
     }
@@ -66,7 +74,11 @@ test "ChannelMap send/recv" {
 
     try map.send("test", "hello");
     const msg = map.recv("test") orelse @panic("should have message");
+    defer std.heap.page_allocator.free(msg);
     try std.testing.expectEqualSlices(u8, "hello", msg);
+
+    // Channel is now empty.
+    try std.testing.expectEqual(@as(?[]u8, null), map.recv("test"));
 }
 
 test "ChannelMap no message" {

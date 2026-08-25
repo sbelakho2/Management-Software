@@ -52,13 +52,25 @@ pub async fn create_a3(
         .create_a3(tenant_id, req)
         .await?;
 
-    // Publish A3 created event for notification triggers and downstream consumers.
+    // Publish A3 created event for notification triggers and downstream
+    // consumers, derived from the real entity fields (no hardcoded
+    // "standard"/"medium" values).
+    let a3_type = if a3.a3_type.is_empty() {
+        "standard"
+    } else {
+        a3.a3_type.as_str()
+    };
+    let severity = if a3.severity.is_empty() {
+        "medium"
+    } else {
+        a3.severity.as_str()
+    };
     let event = A3CreatedEvent::new(
         tenant_id,
         a3.id,
-        "standard".to_string(),
+        a3_type.to_string(),
         a3.title.clone(),
-        "medium".to_string(),
+        severity.to_string(),
     );
     if let Err(e) = state.event_bus.publish(&event).await {
         tracing::warn!("Failed to publish A3CreatedEvent: {e}");
@@ -108,11 +120,28 @@ pub async fn close_a3(
         .close_a3(tenant_id, id)
         .await?;
 
-    // Publish A3 closed event for notification triggers and downstream consumers.
-    let event = A3ClosedEvent::new(tenant_id, id, "Closed".to_string());
+    // Publish A3 closed event; the outcome is the entity's actual status
+    // after closure (e.g. "closed"), never a hardcoded value.
+    let outcome = if a3.status.is_empty() {
+        "closed"
+    } else {
+        a3.status.as_str()
+    };
+    let event = A3ClosedEvent::new(tenant_id, id, outcome.to_string());
     if let Err(e) = state.event_bus.publish(&event).await {
         tracing::warn!("Failed to publish A3ClosedEvent: {e}");
     }
 
     Ok(Json(a3))
+}
+
+/// Delete an A3 report.
+pub async fn delete_a3(
+    user: AuthenticatedUser,
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<()>> {
+    let tenant_id = user.tenant_id;
+    state.ops_service.delete_a3(tenant_id, id).await?;
+    Ok(Json(()))
 }

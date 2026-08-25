@@ -185,11 +185,6 @@ fn cosine_similarity(a: &[f64], b: &[f64]) -> f64 {
     }
 }
 
-/// Compute cosine similarity between a vector and a matrix.
-fn cosine_similarity_matrix(vec: &[f64], matrix: &[Vec<f64>]) -> Vec<f64> {
-    matrix.iter().map(|row| cosine_similarity(vec, row)).collect()
-}
-
 // ---------------------------------------------------------------------------
 // Lesson Recommender
 // ---------------------------------------------------------------------------
@@ -244,20 +239,16 @@ impl LessonRecommender {
             };
         }
 
-        // Build lesson content embeddings (TF-IDF)
+        // Build lesson content embeddings (TF-IDF). The vectorizer must be
+        // fit on the lesson corpus BEFORE transforming, otherwise every
+        // embedding would be a zero vector.
         let lesson_texts: Vec<String> = lessons
             .iter()
-            .map(|l| {
-                format!(
-                    "{} {} {}",
-                    l.title,
-                    l.description,
-                    l.tags.join(" ")
-                )
-            })
+            .map(|l| format!("{} {} {}", l.title, l.description, l.tags.join(" ")))
             .collect();
 
-        let vectorizer = TextVectorizer::new(500);
+        let mut vectorizer = TextVectorizer::new(500);
+        vectorizer.fit(&lesson_texts);
         let embeddings = vectorizer.transform(&lesson_texts);
         self.vectorizer = Some(vectorizer);
         self.lesson_embeddings = Some(embeddings);
@@ -731,9 +722,48 @@ mod tests {
             "deep neural networks".into(),
         ];
         let mut vec = TextVectorizer::new(10);
-        let embeddings = vec.fit_transform(&docs);
+        vec.fit(&docs);
+        let embeddings = vec.transform(&docs);
         assert_eq!(embeddings.len(), 3);
         assert!(vec.vocab.len() > 0);
+    }
+
+    #[test]
+    fn test_train_produces_nonzero_embeddings() {
+        // Regression test: training must fit the vectorizer before
+        // transforming, otherwise all embeddings are zero vectors.
+        let mut recommender = LessonRecommender::new();
+        let lessons = vec![
+            make_lesson("l1", "Python Basics", &["python"], &["python"], false),
+            make_lesson("l2", "SQL Fundamentals", &["sql"], &["sql"], false),
+            make_lesson(
+                "l3",
+                "Machine Learning",
+                &["ml", "python"],
+                &["ml", "python"],
+                false,
+            ),
+        ];
+        let users = vec![User {
+            id: "u1".into(),
+            role: "engineer".into(),
+            skills: vec!["python".into()],
+        }];
+        let completions = vec![LessonCompletion {
+            user_id: "u1".into(),
+            lesson_id: "l1".into(),
+            completed: true,
+            rating: Some(5.0),
+        }];
+
+        recommender.train(&lessons, &completions, &users);
+
+        let embeddings = recommender.lesson_embeddings.as_ref().expect("embeddings exist");
+        assert_eq!(embeddings.len(), lessons.len());
+        for (i, emb) in embeddings.iter().enumerate() {
+            let norm: f64 = emb.iter().map(|v| v * v).sum();
+            assert!(norm > 0.0, "lesson {i} embedding is a zero vector");
+        }
     }
 
     #[test]

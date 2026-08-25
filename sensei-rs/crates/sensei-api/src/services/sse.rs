@@ -5,9 +5,11 @@
 //! formatted messages.
 
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
 use tokio::sync::{broadcast, RwLock};
+use tracing::debug;
 
 /// Capacity of the broadcast channel for each SSE channel.
 const CHANNEL_CAPACITY: usize = 256;
@@ -20,6 +22,9 @@ const CHANNEL_CAPACITY: usize = 256;
 pub struct SseManager {
     /// Per-channel broadcast senders keyed by channel name.
     clients: Arc<RwLock<HashMap<String, broadcast::Sender<String>>>>,
+    /// Total number of publishes dropped because every subscriber lagged or
+    /// disconnected (slow clients). Logged at debug level.
+    dropped_publishes: Arc<AtomicU64>,
 }
 
 impl SseManager {
@@ -27,7 +32,14 @@ impl SseManager {
     pub fn new() -> Self {
         Self {
             clients: Arc::new(RwLock::new(HashMap::new())),
+            dropped_publishes: Arc::new(AtomicU64::new(0)),
         }
+    }
+
+    /// Number of publishes dropped due to lagging/disconnected subscribers
+    /// (diagnostics).
+    pub fn dropped_publish_count(&self) -> u64 {
+        self.dropped_publishes.load(Ordering::Relaxed)
     }
 
     /// Subscribe to a named channel.
@@ -72,11 +84,23 @@ impl SseManager {
     /// data: {data}
     ///
     /// ```
+    /// Drops (all subscribers lagging or disconnected) are counted and
+    /// logged at debug level so a slow client never blocks publishing.
     pub async fn publish(&self, channel: &str, event: &str, data: &str) {
         let clients = self.clients.read().await;
         if let Some(tx) = clients.get(channel) {
             let message = format!("event: {event}\ndata: {data}\n\n");
-            let _ = tx.send(message);
+            match tx.send(message) {
+                Ok(0) => {
+                    self.dropped_publishes.fetch_add(1, Ordering::Relaxed);
+                    debug!(channel, "SSE publish sent to 0 subscribers (empty channel)");
+                }
+                Ok(_) => {}
+                Err(e) => {
+                    self.dropped_publishes.fetch_add(1, Ordering::Relaxed);
+                    debug!(channel, dropped_total = self.dropped_publish_count(), "SSE publish dropped: {e}");
+                }
+            }
         }
     }
 }

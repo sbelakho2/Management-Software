@@ -50,23 +50,17 @@ pub struct ListRisksParams {
     pub per_page: Option<usize>,
 }
 
-/// Request body for acknowledging an Andon.
-#[derive(Debug, Deserialize)]
-pub struct AcknowledgeAndonRequest {
-    pub acknowledged_by: Uuid,
-}
-
-/// Request body for resolving an Andon.
-#[derive(Debug, Deserialize)]
-pub struct ResolveAndonRequest {
-    pub resolved_by: Uuid,
-    pub resolution: String,
-}
-
 /// Request body for completing a project.
 #[derive(Debug, Deserialize)]
 pub struct CompleteProjectRequest {
     pub savings_realized: f64,
+}
+
+/// Request body for resolving an Andon (resolution notes only — the actor
+/// is always taken from the authenticated token).
+#[derive(Debug, Deserialize)]
+pub struct ResolveAndonRequest {
+    pub resolution: String,
 }
 
 // ── Andon ──────────────────────────────────────────────────────────────────
@@ -114,21 +108,26 @@ pub async fn get_andon(
 }
 
 /// Acknowledge an Andon event.
+///
+/// The acknowledging user is derived from the authenticated token — the
+/// client cannot spoof who acknowledged the signal.
 pub async fn acknowledge_andon(
     user: AuthenticatedUser,
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
-    Json(req): Json<AcknowledgeAndonRequest>,
 ) -> Result<Json<Andon>> {
     let tenant_id = user.tenant_id;
     let andon = state
         .ops_service
-        .acknowledge_andon(tenant_id, id, req.acknowledged_by)
+        .acknowledge_andon(tenant_id, id, user.user_id)
         .await?;
     Ok(Json(andon))
 }
 
 /// Resolve an Andon event.
+///
+/// The resolving user is derived from the authenticated token — the client
+/// cannot spoof who resolved the signal.
 pub async fn resolve_andon(
     user: AuthenticatedUser,
     State(state): State<AppState>,
@@ -138,7 +137,7 @@ pub async fn resolve_andon(
     let tenant_id = user.tenant_id;
     let andon = state
         .ops_service
-        .resolve_andon(tenant_id, id, req.resolved_by, &req.resolution)
+        .resolve_andon(tenant_id, id, user.user_id, &req.resolution)
         .await?;
     Ok(Json(andon))
 }

@@ -14,7 +14,6 @@ use uuid::Uuid;
 use super::{
     Budget, CostRollup, FinanceService, Invoice, InvoiceLineItem, JournalEntry, Payment,
 };
-
 // ---------------------------------------------------------------------------
 // Row structs
 // ---------------------------------------------------------------------------
@@ -97,9 +96,18 @@ struct CostRollupRow {
 // Mapping helpers
 // ---------------------------------------------------------------------------
 
-fn invoice_row_to_domain(r: InvoiceRow) -> Invoice {
-    let line_items: Vec<InvoiceLineItem> = serde_json::from_value(r.line_items).unwrap_or_default();
-    Invoice {
+fn invoice_row_to_domain(r: InvoiceRow) -> Result<Invoice> {
+    let line_items: Vec<InvoiceLineItem> = serde_json::from_value(r.line_items).map_err(|e| {
+        tracing::error!(
+            invoice_id = %r.id,
+            "Failed to deserialize invoice line items: {e}"
+        );
+        SenseiError::Database(format!(
+            "Invoice {} has corrupt line items: {e}",
+            r.id
+        ))
+    })?;
+    Ok(Invoice {
         id: r.id,
         tenant_id: r.tenant_id,
         invoice_number: r.invoice_number,
@@ -117,7 +125,7 @@ fn invoice_row_to_domain(r: InvoiceRow) -> Invoice {
         notes: r.notes,
         created_by: r.created_by,
         created_at: r.created_at,
-    }
+    })
 }
 
 fn payment_row_to_domain(r: PaymentRow) -> Payment {
@@ -238,7 +246,7 @@ impl FinanceService for DatabaseFinanceService {
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to create invoice: {e}")))?;
 
-        Ok(invoice_row_to_domain(row))
+        invoice_row_to_domain(row)
     }
 
     async fn get_invoice(&self, tenant_id: Uuid, id: Uuid) -> Result<Invoice> {
@@ -256,7 +264,7 @@ impl FinanceService for DatabaseFinanceService {
         .map_err(|e| SenseiError::Database(format!("Failed to get invoice: {e}")))?
         .ok_or_else(|| SenseiError::NotFound(format!("Invoice {id} not found")))?;
 
-        Ok(invoice_row_to_domain(row))
+        invoice_row_to_domain(row)
     }
 
     async fn list_invoices(
@@ -287,12 +295,68 @@ impl FinanceService for DatabaseFinanceService {
         .fetch_one(&self.pool).await
         .map_err(|e| SenseiError::Database(format!("Failed to count invoices: {e}")))?;
 
-        let items = items.into_iter().map(invoice_row_to_domain).collect();
+        let items = items
+            .into_iter()
+            .map(invoice_row_to_domain)
+            .collect::<Result<Vec<_>>>()?;
         Ok(PaginatedResponse { data: items, total: count as usize, page, per_page, total_pages: ((count as usize).max(1) + per_page - 1) / per_page })
     }
 
-    async fn mark_invoice_paid(&self, tenant_id: Uuid, id: Uuid, _payment_id: Uuid) -> Result<Invoice> {
+    async fn mark_invoice_paid(&self, tenant_id: Uuid, id: Uuid, payment_id: Uuid) -> Result<Invoice> {
         let now = Utc::now();
+
+        // The payment must exist and belong to this invoice.
+        let payment_ok: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM payments WHERE id = $1 AND invoice_id = $2 AND tenant_id = $3)",
+        )
+        .bind(payment_id).bind(id).bind(tenant_id)
+        .fetch_one(&self.pool).await
+        .map_err(|e| SenseiError::Database(format!("Failed to validate payment: {e}")))?;
+        if !payment_ok {
+            return Err(SenseiError::Validation(format!(
+                "Payment {payment_id} does not belong to invoice {id}"
+            )));
+        }
+
+        // Cumulative payments must cover the invoice total (small epsilon).
+        const EPSILON: f64 = 0.01;
+        let row: InvoiceRow = sqlx::query_as::<_, InvoiceRow>(
+            r#"
+            SELECT id, tenant_id, invoice_number, customer_id, customer_name,
+                   status, line_items, subtotal, tax_percentage, tax_amount,
+                   total_amount, currency, due_date, paid_at, notes, created_by, created_at
+            FROM invoices WHERE id = $1 AND tenant_id = $2
+            "#,
+        )
+        .bind(id).bind(tenant_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| SenseiError::Database(format!("Failed to get invoice: {e}")))?
+        .ok_or_else(|| SenseiError::NotFound(format!("Invoice {id} not found")))?;
+
+        if row.status == "paid" {
+            return Err(SenseiError::Validation("Invoice is already paid".to_string()));
+        }
+        if row.status == "cancelled" {
+            return Err(SenseiError::Validation(
+                "Cannot mark a cancelled invoice as paid".to_string(),
+            ));
+        }
+
+        let cumulative: f64 = sqlx::query_scalar(
+            "SELECT COALESCE(SUM(amount), 0.0) FROM payments WHERE invoice_id = $1 AND tenant_id = $2",
+        )
+        .bind(id).bind(tenant_id)
+        .fetch_one(&self.pool).await
+        .map_err(|e| SenseiError::Database(format!("Failed to sum payments: {e}")))?;
+
+        if cumulative + EPSILON < row.total_amount {
+            return Err(SenseiError::Validation(format!(
+                "Cumulative payments ({cumulative:.2}) do not cover invoice total ({:.2})",
+                row.total_amount
+            )));
+        }
+
         let row = sqlx::query_as::<_, InvoiceRow>(
             r#"
             UPDATE invoices SET status = 'paid', paid_at = $1
@@ -308,7 +372,7 @@ impl FinanceService for DatabaseFinanceService {
         .map_err(|e| SenseiError::Database(format!("Failed to mark invoice paid: {e}")))?
         .ok_or_else(|| SenseiError::NotFound(format!("Invoice {id} not found or cannot be marked paid")))?;
 
-        Ok(invoice_row_to_domain(row))
+        invoice_row_to_domain(row)
     }
 
     // ── Payments ────────────────────────────────────────────────────────
@@ -527,7 +591,7 @@ impl FinanceService for DatabaseFinanceService {
         .map_err(|e| SenseiError::Database(format!("Failed to update invoice: {e}")))?
         .ok_or_else(|| SenseiError::NotFound(format!("Invoice {id} not found")))?;
 
-        Ok(invoice_row_to_domain(row))
+        invoice_row_to_domain(row)
     }
 
     async fn delete_invoice(&self, tenant_id: Uuid, id: Uuid) -> Result<()> {
@@ -649,15 +713,40 @@ impl FinanceService for DatabaseFinanceService {
         let now = Utc::now();
         let id = Uuid::new_v4();
 
+        // Material cost: Σ(bom_items.quantity × component standard_cost).
         let material_cost: f64 = sqlx::query_scalar(
-            r#"SELECT COALESCE(SUM(bi.quantity_required * 10.0), 0.0) FROM bom_items bi WHERE bi.parent_product_id = $1 AND bi.tenant_id = $2"#,
+            r#"SELECT COALESCE(SUM(b.quantity * COALESCE(p.standard_cost, 0)), 0.0)
+               FROM bom_items b
+               JOIN products p ON p.id = b.component_product_id
+               WHERE b.parent_product_id = $1 AND b.tenant_id = $2 AND b.is_active = TRUE"#,
         )
         .bind(product_id).bind(tenant_id)
         .fetch_one(&self.pool).await
         .map_err(|e| SenseiError::Database(format!("Failed to compute material cost: {e}")))?;
 
-        let labor_cost = 0.0_f64;
-        let overhead_cost = 0.0_f64;
+        // Labor cost: Σ(routing standard_time × work_center standard_rate).
+        // Work centers carry no rate until one is configured; when no rate is
+        // available the labor contribution is honestly zero.
+        let labor_cost: f64 = sqlx::query_scalar(
+            r#"SELECT COALESCE(SUM(r.standard_time * COALESCE(wc.standard_rate, 0)), 0.0)
+               FROM routings r
+               JOIN work_centers wc ON wc.id = r.work_center_id
+               WHERE r.product_id = $1 AND r.tenant_id = $2 AND r.is_active = TRUE"#,
+        )
+        .bind(product_id).bind(tenant_id)
+        .fetch_one(&self.pool).await
+        .map_err(|e| SenseiError::Database(format!("Failed to compute labor cost: {e}")))?;
+
+        // Round both to cents before applying overhead so sums stay exact.
+        let material_cents = (material_cost * 100.0).round() as i64;
+        let labor_cents = (labor_cost * 100.0).round() as i64;
+        let overhead_pct = super::overhead_percentage();
+        let overhead_cents =
+            ((material_cents + labor_cents) as f64 * overhead_pct / 100.0).round() as i64;
+
+        let material_cost = material_cents as f64 / 100.0;
+        let labor_cost = labor_cents as f64 / 100.0;
+        let overhead_cost = overhead_cents as f64 / 100.0;
         let total_cost = material_cost + labor_cost + overhead_cost;
 
         let product_name: String = sqlx::query_scalar(
@@ -699,5 +788,132 @@ impl FinanceService for DatabaseFinanceService {
         .ok_or_else(|| SenseiError::NotFound(format!("Cost rollup for product {product_id} not found")))?;
 
         Ok(cost_rollup_row_to_domain(row))
+    }
+
+    // ── AP 3-Way Matching ───────────────────────────────────────────────
+
+    async fn match_three_way(
+        &self,
+        tenant_id: Uuid,
+        po_id: Uuid,
+        receipt_ids: Vec<Uuid>,
+        invoice_id: Uuid,
+    ) -> Result<super::ThreeWayMatchResult> {
+        use super::{ThreeWayLineResult, ThreeWayLineStatus, ThreeWayVerdict};
+        use std::collections::HashMap;
+
+        // 1. PO must exist.
+        let po_exists: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM purchase_orders WHERE id = $1 AND tenant_id = $2)",
+        )
+        .bind(po_id).bind(tenant_id)
+        .fetch_one(&self.pool).await
+        .map_err(|e| SenseiError::Database(format!("Failed to look up PO: {e}")))?;
+        if !po_exists {
+            return Err(SenseiError::NotFound(format!("Purchase order {po_id} not found")));
+        }
+
+        // 2. Every receipt must exist and belong to the PO.
+        let matched_receipts: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM goods_receipts \
+             WHERE tenant_id = $1 AND purchase_order_id = $2 AND id = ANY($3)",
+        )
+        .bind(tenant_id).bind(po_id).bind(&receipt_ids)
+        .fetch_one(&self.pool).await
+        .map_err(|e| SenseiError::Database(format!("Failed to validate receipts: {e}")))?;
+        if matched_receipts != receipt_ids.len() as i64 {
+            return Err(SenseiError::Validation(format!(
+                "One or more receipts do not belong to purchase order {po_id}"
+            )));
+        }
+
+        // 3. PO lines with ordered and received quantities per product.
+        #[derive(sqlx::FromRow)]
+        struct PoLineRow {
+            product_id: Uuid,
+            quantity: f64,
+            quantity_received: f64,
+        }
+        let po_lines: Vec<PoLineRow> = sqlx::query_as(
+            "SELECT product_id, quantity, quantity_received \
+             FROM purchase_order_items WHERE purchase_order_id = $1 AND tenant_id = $2",
+        )
+        .bind(po_id).bind(tenant_id)
+        .fetch_all(&self.pool).await
+        .map_err(|e| SenseiError::Database(format!("Failed to load PO lines: {e}")))?;
+
+        let mut po_qty: HashMap<Uuid, f64> = HashMap::new();
+        let mut received_qty: HashMap<Uuid, f64> = HashMap::new();
+        for line in &po_lines {
+            *po_qty.entry(line.product_id).or_default() += line.quantity;
+            // quantity_received is the accumulated received quantity against
+            // the PO line (goods_receipts has no per-line detail table).
+            *received_qty.entry(line.product_id).or_default() += line.quantity_received;
+        }
+
+        // 4. Invoice lines grouped by product.
+        let invoice = self.get_invoice(tenant_id, invoice_id).await?;
+        let mut invoiced_qty: HashMap<Uuid, f64> = HashMap::new();
+        let mut unmatched_lines = 0usize;
+        for line in &invoice.line_items {
+            match line.product_id {
+                Some(pid) => *invoiced_qty.entry(pid).or_default() += line.quantity as f64,
+                None => unmatched_lines += 1,
+            }
+        }
+
+        // 5. Per-product comparison.
+        let mut products: Vec<Uuid> = po_qty
+            .keys()
+            .chain(invoiced_qty.keys())
+            .copied()
+            .collect::<std::collections::HashSet<_>>()
+            .into_iter()
+            .collect();
+        products.sort();
+
+        let mut lines = Vec::with_capacity(products.len());
+        for pid in products {
+            let pq = po_qty.get(&pid).copied().unwrap_or(0.0);
+            let rq = received_qty.get(&pid).copied().unwrap_or(0.0);
+            let iq = invoiced_qty.get(&pid).copied().unwrap_or(0.0);
+            let status = if rq + 1e-9 < iq {
+                ThreeWayLineStatus::UnderDelivered
+            } else if rq > pq + 1e-9 || rq > iq + 1e-9 {
+                ThreeWayLineStatus::OverDelivered
+            } else {
+                ThreeWayLineStatus::Matched
+            };
+            lines.push(ThreeWayLineResult {
+                product_id: pid,
+                po_quantity: pq,
+                received_quantity: rq,
+                invoiced_quantity: iq,
+                status,
+            });
+        }
+        if unmatched_lines > 0 {
+            lines.push(ThreeWayLineResult {
+                product_id: Uuid::nil(),
+                po_quantity: 0.0,
+                received_quantity: 0.0,
+                invoiced_quantity: unmatched_lines as f64,
+                status: ThreeWayLineStatus::Unmatched,
+            });
+        }
+
+        let verdict = if lines.is_empty() || lines.iter().any(|l| l.status != ThreeWayLineStatus::Matched)
+        {
+            ThreeWayVerdict::Mismatch
+        } else {
+            ThreeWayVerdict::Matched
+        };
+
+        Ok(super::ThreeWayMatchResult {
+            po_id,
+            invoice_id,
+            lines,
+            verdict,
+        })
     }
 }

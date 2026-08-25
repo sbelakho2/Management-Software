@@ -228,3 +228,92 @@ async fn test_training_dashboard() {
     let json: Value = app.json_body(&mut resp).await;
     assert!(json["total_courses"].as_u64().unwrap_or(0) >= 1);
 }
+
+#[tokio::test]
+async fn test_enroll_users_dedup() {
+    let app = common::TestApp::new().await;
+    let token = app.login_as_admin().await;
+    let body = common::fixtures::training_course_payload("Dedup Course", "Safety");
+    let req = app.post_authenticated("/api/v1/training/courses", &token, body);
+    let mut resp = app.send_request(req).await;
+    let created: Value = app.json_body(&mut resp).await;
+    let course_id = created["id"].as_str().unwrap().to_string();
+
+    // Enroll the admin once.
+    let enroll = serde_json::json!({"user_ids": [app.admin_user_id.to_string()]});
+    let req = app.post_authenticated(
+        &format!("/api/v1/training/courses/{}/enroll", course_id),
+        &token,
+        enroll,
+    );
+    let mut resp = app.send_request(req).await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    let json: Value = app.json_body(&mut resp).await;
+    assert_eq!(json.as_array().unwrap().len(), 1);
+
+    // Enrolling again (same user, plus a new one) must skip the duplicate.
+    let other_id = app
+        .create_user_with_roles("newbie@sensei.test", "TestPass123!", &["user"])
+        .await;
+    let enroll = serde_json::json!({
+        "user_ids": [app.admin_user_id.to_string(), other_id.to_string()],
+    });
+    let req = app.post_authenticated(
+        &format!("/api/v1/training/courses/{}/enroll", course_id),
+        &token,
+        enroll,
+    );
+    let mut resp = app.send_request(req).await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    let json: Value = app.json_body(&mut resp).await;
+    let new_enrollments = json.as_array().unwrap();
+    assert_eq!(new_enrollments.len(), 1, "only the new user is enrolled");
+    assert_eq!(new_enrollments[0]["user_id"], other_id.to_string());
+
+    // Listing shows exactly two enrollments, no duplicates.
+    let req = app.get_authenticated(
+        &format!("/api/v1/training/courses/{}/enrollments", course_id),
+        &token,
+    );
+    let mut resp = app.send_request(req).await;
+    let json: Value = app.json_body(&mut resp).await;
+    assert_eq!(json["total"], 2);
+}
+
+#[tokio::test]
+async fn test_training_dashboard_by_department_counts() {
+    let app = common::TestApp::new().await;
+    let token = app.login_as_admin().await;
+    let mut body = common::fixtures::training_course_payload("Role Course", "Technical");
+    body["required_for_roles"] = serde_json::json!(["operator"]);
+    let req = app.post_authenticated("/api/v1/training/courses", &token, body);
+    let mut resp = app.send_request(req).await;
+    let created: Value = app.json_body(&mut resp).await;
+    let course_id = created["id"].as_str().unwrap().to_string();
+
+    // Two enrollments for the "operator" role.
+    let other_id = app
+        .create_user_with_roles("op1@sensei.test", "TestPass123!", &["user"])
+        .await;
+    let enroll = serde_json::json!({
+        "user_ids": [app.admin_user_id.to_string(), other_id.to_string()],
+    });
+    let req = app.post_authenticated(
+        &format!("/api/v1/training/courses/{}/enroll", course_id),
+        &token,
+        enroll,
+    );
+    let _ = app.send_request(req).await;
+
+    let req = app.get_authenticated("/api/v1/training/dashboard", &token);
+    let mut resp = app.send_request(req).await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    let json: Value = app.json_body(&mut resp).await;
+    let by_dept = json["by_department"].as_array().unwrap();
+    let operator = by_dept
+        .iter()
+        .find(|d| d["role"] == "operator")
+        .expect("operator role must appear in by_department");
+    assert_eq!(operator["total_enrollments"], 2);
+    assert_eq!(operator["completed"], 0);
+}

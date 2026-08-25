@@ -85,10 +85,10 @@ pub trait AuditEvidenceService: Send + Sync {
 #[allow(clippy::too_many_arguments)]
 pub trait AuditTrailService: Send + Sync {
     /// Register field metadata for automatic diff generation.
-    fn register_field(&self, field_name: &str, label: &str, field_type: AuditFieldType);
+    async fn register_field(&self, field_name: &str, label: &str, field_type: AuditFieldType);
 
     /// Calculate diff between old and new values.
-    fn calculate_diff(
+    async fn calculate_diff(
         &self,
         old_values: &serde_json::Value,
         new_values: &serde_json::Value,
@@ -326,7 +326,30 @@ pub struct InMemoryAuditService {
 
 impl InMemoryAuditService {
     /// Create a new empty service with an optional signing key.
+    ///
+    /// When no key is passed explicitly, the `AUDIT_SIGNING_KEY` environment
+    /// variable is used. The built-in development default is only accepted in
+    /// development builds; in release builds it logs a prominent warning so
+    /// deployments cannot silently rely on a public key.
     pub fn new(signing_key: Option<Vec<u8>>) -> Self {
+        let signing_key = match signing_key {
+            Some(k) => k,
+            None => match std::env::var("AUDIT_SIGNING_KEY") {
+                Ok(k) if !k.is_empty() => k.into_bytes(),
+                _ => {
+                    let dev_default = b"default-signing-key-change-in-production".to_vec();
+                    if cfg!(debug_assertions) {
+                        tracing::warn!("Using built-in development audit signing key");
+                    } else {
+                        tracing::error!(
+                            "AUDIT_SIGNING_KEY is not set; audit package signatures are signed \
+                             with the well-known development key. Set AUDIT_SIGNING_KEY in production."
+                        );
+                    }
+                    dev_default
+                }
+            },
+        };
         Self {
             evidence: tokio::sync::RwLock::new(Vec::new()),
             packages: tokio::sync::RwLock::new(Vec::new()),
@@ -335,7 +358,7 @@ impl InMemoryAuditService {
             checklists: tokio::sync::RwLock::new(Vec::new()),
             findings: tokio::sync::RwLock::new(Vec::new()),
             field_metadata: tokio::sync::RwLock::new(std::collections::HashMap::new()),
-            signing_key: signing_key.unwrap_or_else(|| b"default-signing-key-change-in-production".to_vec()),
+            signing_key,
             audit_counter: tokio::sync::RwLock::new(0),
             finding_counter: tokio::sync::RwLock::new(0),
         }
@@ -576,17 +599,17 @@ impl AuditEvidenceService for InMemoryAuditService {
 
 #[async_trait]
 impl AuditTrailService for InMemoryAuditService {
-    fn register_field(&self, field_name: &str, label: &str, field_type: AuditFieldType) {
-        let mut metadata = self.field_metadata.blocking_write();
+    async fn register_field(&self, field_name: &str, label: &str, field_type: AuditFieldType) {
+        let mut metadata = self.field_metadata.write().await;
         metadata.insert(field_name.to_string(), (label.to_string(), field_type));
     }
 
-    fn calculate_diff(
+    async fn calculate_diff(
         &self,
         old_values: &serde_json::Value,
         new_values: &serde_json::Value,
     ) -> DiffResult {
-        let metadata = self.field_metadata.blocking_read();
+        let metadata = self.field_metadata.read().await;
         let mut field_changes = Vec::new();
 
         if let (Some(old_map), Some(new_map)) = (old_values.as_object(), new_values.as_object()) {
@@ -668,7 +691,7 @@ impl AuditTrailService for InMemoryAuditService {
         changed_by: Option<EntityId>,
         metadata: Option<serde_json::Value>,
     ) -> Result<AuditEntry> {
-        let diff = self.calculate_diff(old_values, new_values);
+        let diff = self.calculate_diff(old_values, new_values).await;
         if !diff.has_changes {
             return Err(SenseiError::Validation("No changes detected".to_string()));
         }

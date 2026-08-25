@@ -136,18 +136,25 @@ impl RbacService {
     }
 
     /// Check if a permission string matches a resource:action pair.
+    ///
+    /// Permissions are `{resource}:{action}` pairs where the action may
+    /// itself be dotted (e.g. `quality:ncr:create` has resource `quality`
+    /// and action `ncr:create`). Matching rules:
+    ///
+    /// - `*:*` matches everything (admin).
+    /// - A wildcard resource (`*`) or action (`*`) matches any value in its
+    ///   position.
+    /// - Both components must otherwise match exactly.
     fn matches(permission: &str, resource: &str, action: &str) -> bool {
-        let parts: Vec<&str> = permission.splitn(2, ':').collect();
-        if parts.len() != 2 {
-            return false;
+        if permission == "*:*" {
+            return true;
         }
 
-        let perm_resource = parts[0];
-        let perm_action = parts[1];
+        let Some((perm_resource, perm_action)) = permission.split_once(':') else {
+            return false;
+        };
 
-        // Wildcard resource matches everything
         let resource_match = perm_resource == "*" || perm_resource == resource;
-        // Wildcard action matches all actions on this resource
         let action_match = perm_action == "*" || perm_action == action;
 
         resource_match && action_match
@@ -158,7 +165,7 @@ impl RbacService {
         let mut perms = HashSet::new();
         for role_name in roles {
             if let Some(role_perms) = self.roles.get(role_name.as_str()) {
-                perms.extend(role_perms.clone());
+                perms.extend(role_perms.iter().cloned());
             }
         }
         perms.into_iter().collect()
@@ -216,11 +223,50 @@ mod tests {
     #[test]
     fn test_wildcard_matching() {
         assert!(RbacService::matches("*:*", "anything", "anything"));
+        assert!(RbacService::matches("*:*", "quality", "ncr:create"));
         assert!(RbacService::matches("quality:*", "quality", "read"));
         assert!(RbacService::matches("quality:*", "quality", "delete"));
         assert!(!RbacService::matches("quality:*", "production", "read"));
         assert!(RbacService::matches("*:read", "quality", "read"));
         assert!(RbacService::matches("*:read", "production", "read"));
         assert!(!RbacService::matches("*:read", "quality", "write"));
+    }
+
+    #[test]
+    fn test_wildcard_action_matches_dotted_action() {
+        // "quality:*" must match the dotted action "ncr:create".
+        assert!(RbacService::matches("quality:*", "quality", "ncr:create"));
+        assert!(RbacService::matches("quality:*", "quality", "ncr:update"));
+        assert!(RbacService::matches("*:*", "quality", "ncr:create"));
+        assert!(!RbacService::matches("production:*", "quality", "ncr:create"));
+    }
+
+    #[test]
+    fn test_exact_match() {
+        assert!(RbacService::matches("quality:ncr:create", "quality", "ncr:create"));
+        assert!(RbacService::matches("users:read", "users", "read"));
+        assert!(!RbacService::matches("quality:ncr:read", "quality", "ncr:create"));
+        assert!(!RbacService::matches("quality:ncr:create", "production", "ncr:create"));
+    }
+
+    #[test]
+    fn test_malformed_permission_never_matches() {
+        assert!(!RbacService::matches("no-colon", "quality", "ncr:create"));
+        assert!(!RbacService::matches("", "quality", "ncr:create"));
+        assert!(!RbacService::matches("a:b:c:extra", "quality", "ncr:create"));
+    }
+
+    #[test]
+    fn test_has_permission_with_dotted_actions() {
+        let rbac = RbacService::new();
+        let operator = vec!["operator".to_string()];
+        assert!(rbac.has_permission(
+            &operator,
+            &Permission("production:work-order:update-status".to_string())
+        ));
+        assert!(!rbac.has_permission(
+            &operator,
+            &Permission("production:work-order:delete".to_string())
+        ));
     }
 }

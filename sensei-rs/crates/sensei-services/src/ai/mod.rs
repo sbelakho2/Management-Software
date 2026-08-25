@@ -34,7 +34,7 @@ use serde::{Deserialize, Serialize};
 use sensei_core::domain::events::{
     AnomalyDetectedEvent, ModelRetrainedEvent,
 };
-use sensei_core::error::Result;
+use sensei_core::error::{Result, SenseiError};
 use sensei_event_bus::bus::EventBus;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -148,6 +148,9 @@ pub struct InMemoryAiService {
     anomaly_predictions: RwLock<HashMap<Uuid, Vec<AnomalyPrediction>>>,
     quality_predictions: RwLock<HashMap<Uuid, QualityPrediction>>,
     maintenance_predictions: RwLock<HashMap<Uuid, PredictiveMaintenanceResult>>,
+    /// Training outcomes per model type: (correct, total) pairs recorded by
+    /// [`InMemoryAiService::submit_training_outcomes`].
+    training_outcomes: RwLock<HashMap<String, (u64, u64)>>,
     event_bus: Option<Arc<dyn EventBus>>,
 }
 
@@ -158,8 +161,26 @@ impl InMemoryAiService {
             anomaly_predictions: RwLock::new(HashMap::new()),
             quality_predictions: RwLock::new(HashMap::new()),
             maintenance_predictions: RwLock::new(HashMap::new()),
+            training_outcomes: RwLock::new(HashMap::new()),
             event_bus,
         }
+    }
+
+    /// Record labelled training outcomes (correct predictions out of total
+    /// samples) for a model type. `retrain_model` reports these as the
+    /// accuracy and dataset size; without any recorded outcomes retraining
+    /// fails honestly with an `insufficient_data` error instead of inventing
+    /// metrics.
+    pub async fn submit_training_outcomes(
+        &self,
+        model_type: &str,
+        correct: u64,
+        total: u64,
+    ) {
+        let mut outcomes = self.training_outcomes.write().await;
+        let entry = outcomes.entry(model_type.to_string()).or_insert((0, 0));
+        entry.0 += correct;
+        entry.1 += total;
     }
 }
 
@@ -347,18 +368,28 @@ impl AiService for InMemoryAiService {
         Ok(prediction)
     }
 
-    async fn retrain_model(&self, _tenant_id: Uuid, model_type: &str) -> Result<()> {
-        // Simulate model retraining. In production this would call an ML pipeline.
-        // For now, generate a realistic retrained event.
-        let (accuracy, dataset_size) = match model_type {
-            "anomaly_detection" => (0.942, 15_000_i64),
-            "quality_prediction" => (0.915, 22_000_i64),
-            "predictive_maintenance" => (0.873, 8_500_i64),
-            _ => (0.890, 10_000_i64),
+    async fn retrain_model(&self, tenant_id: Uuid, model_type: &str) -> Result<()> {
+        // Honest retraining: report the accuracy and dataset size recorded via
+        // `submit_training_outcomes`. When no labelled data has been supplied
+        // for this model type, retraining fails with an explicit
+        // `insufficient_data` error instead of fabricating metrics.
+        let (correct, total) = {
+            let outcomes = self.training_outcomes.read().await;
+            outcomes.get(model_type).copied().unwrap_or((0, 0))
         };
 
+        if total == 0 {
+            return Err(SenseiError::Internal(format!(
+                "insufficient_data: no training outcomes recorded for model type '{model_type}'. \
+                 Call submit_training_outcomes with labelled data before retraining."
+            )));
+        }
+
+        let accuracy = correct as f64 / total as f64;
+        let dataset_size = total as i64;
+
         let event = ModelRetrainedEvent::new(
-            _tenant_id,
+            tenant_id,
             model_type.to_string(),
             format!("v{}", chrono::Utc::now().format("%Y%m%d.%H%M")),
             accuracy,
@@ -461,11 +492,24 @@ mod tests {
         let service = InMemoryAiService::default();
         let tenant_id = Uuid::new_v4();
 
-        // Should not panic or error
+        // Without recorded training outcomes retraining must fail honestly.
+        let err = service
+            .retrain_model(tenant_id, "anomaly_detection")
+            .await
+            .expect_err("retrain without data must fail");
+        assert!(
+            err.to_string().contains("insufficient_data"),
+            "unexpected error: {err}"
+        );
+
+        // With labelled outcomes the reported accuracy is real.
+        service
+            .submit_training_outcomes("anomaly_detection", 900, 1000)
+            .await;
         service
             .retrain_model(tenant_id, "anomaly_detection")
             .await
-            .expect("retrain should succeed");
+            .expect("retrain with data should succeed");
     }
 
     #[tokio::test]

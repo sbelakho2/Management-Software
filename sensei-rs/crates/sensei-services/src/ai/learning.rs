@@ -390,7 +390,7 @@ impl RetrainingManager {
 
         // 3. Performance degradation
         if let Some(degradation) = self.calculate_degradation(model_name) {
-            if degradation >= self.config.performance_degradation_threshold {
+            if self.severity_meets_threshold(degradation) {
                 reasons.push(format!(
                     "Performance degraded by {:.1}%",
                     degradation * 100.0
@@ -398,24 +398,64 @@ impl RetrainingManager {
             }
         }
 
+        // 4. Distribution drift (PSI)
+        if let Some(psi) = self.check_drift(model_name) {
+            if self.severity_meets_threshold(psi * 0.2) {
+                reasons.push(format!(
+                    "Drift detected (PSI = {psi:.3})"
+                ));
+            }
+        }
+
         reasons
     }
 
-    /// Check for drift based on accuracy changes.
-    #[allow(dead_code)]
-    fn check_drift(&self, _model_name: &str) -> Option<f64> {
-        // Simplified drift detection: check if recent accuracy is significantly
-        // lower than historical average.
-        let _history = self.performance_history.get(_model_name)?;
+    /// Check for drift based on the recent vs historical accuracy
+    /// distribution using the Population Stability Index (PSI).
+    ///
+    /// Returns `Some(psi)` when there is enough history; `None` otherwise.
+    /// A PSI above 0.25 indicates a significant distribution shift.
+    pub fn check_drift(&self, model_name: &str) -> Option<f64> {
+        let history = self.performance_history.get(model_name)?;
+        if history.len() < 6 {
+            return None; // Not enough data points to compare distributions
+        }
 
-        // In a full implementation, this would use statistical tests (e.g.,
-        // Kolmogorov-Smirnov, Population Stability Index). For now, we use
-        // the degradation calculation.
-        None
+        // Recent window (last 3 snapshots) vs historical baseline (before that).
+        let recent: Vec<f64> = history.iter().rev().take(3).map(|(_, acc)| *acc).collect();
+        let historical: Vec<f64> = history
+            .iter()
+            .rev()
+            .skip(3)
+            .take(20)
+            .map(|(_, acc)| *acc)
+            .collect();
+
+        if recent.len() < 3 || historical.len() < 3 {
+            return None;
+        }
+
+        // PSI over 10 fixed-width bins across [0, 1].
+        const BINS: usize = 10;
+        const EPSILON: f64 = 1e-4;
+        let mut psi = 0.0_f64;
+        for bin in 0..BINS {
+            let lo = bin as f64 / BINS as f64;
+            let hi = (bin + 1) as f64 / BINS as f64;
+            let in_bin = |v: &f64| *v >= lo && (*v < hi || (bin == BINS - 1 && *v <= hi));
+            let expected = historical.iter().filter(|v| in_bin(v)).count() as f64
+                / historical.len() as f64;
+            let actual = recent.iter().filter(|v| in_bin(v)).count() as f64 / recent.len() as f64;
+
+            let expected_s = (expected + EPSILON).max(EPSILON);
+            let actual_s = (actual + EPSILON).max(EPSILON);
+            psi += (actual_s - expected_s) * (actual_s / expected_s).ln();
+        }
+
+        Some(psi)
     }
 
     /// Check if a severity level meets the threshold for action.
-    #[allow(dead_code)]
     fn severity_meets_threshold(&self, severity: f64) -> bool {
         severity >= self.config.performance_degradation_threshold
     }
@@ -918,7 +958,7 @@ mod tests {
 
     #[test]
     fn test_retraining_needed_never_trained() {
-        let manager = RetrainingManager::default();
+        let mut manager = RetrainingManager::default();
         manager.register_model("model_1", LearningMode::Batch, 0.9);
         let reasons = manager.check_retraining_needed("model_1");
         assert!(reasons.iter().any(|r| r.contains("never been trained")));
@@ -979,6 +1019,39 @@ mod tests {
 
         let state = manager.get_model_state("model_1").unwrap();
         assert!(!state.is_training);
+    }
+
+    #[test]
+    fn test_drift_detection_psi() {
+        let config = RetrainingConfig {
+            cooldown_hours: 0,
+            ..RetrainingConfig::default()
+        };
+        let mut manager = RetrainingManager::new(config);
+        manager.register_model("drift_model", LearningMode::Incremental, 0.90);
+
+        // Stable historical performance around 0.9.
+        for i in 0..8 {
+            let job = manager
+                .trigger_retraining("drift_model", RetrainingTrigger::Manual, 100)
+                .expect("should start retraining");
+            let acc = 0.88 + (i % 3) as f64 * 0.01;
+            manager.complete_retraining(job.id, acc);
+        }
+        // No drift yet: recent accuracy is in the same band.
+        assert!(manager.check_drift("drift_model").is_some());
+        let reasons = manager.check_retraining_needed("drift_model");
+        assert!(!reasons.iter().any(|r| r.contains("Drift")));
+
+        // Now collapse accuracy → a different band.
+        for _ in 0..3 {
+            let job = manager
+                .trigger_retraining("drift_model", RetrainingTrigger::Manual, 100)
+                .expect("should start retraining");
+            manager.complete_retraining(job.id, 0.45);
+        }
+        let reasons = manager.check_retraining_needed("drift_model");
+        assert!(reasons.iter().any(|r| r.contains("Drift")), "reasons: {reasons:?}");
     }
 
     // -- ContinuousLearningService Integration Tests -------------------------

@@ -2,12 +2,14 @@
 //!
 //! Validates incoming requests against configurable constraints:
 //!
-//! 1. **Body size** — rejects requests whose `Content-Length` exceeds a
-//!    configurable maximum.
-//! 2. **Method restriction** — blocks specific HTTP methods on matching
+//! 1. **Method restriction** — blocks specific HTTP methods on matching
 //!    path prefixes (e.g., forbid `DELETE` on `/api/admin/readonly`).
-//! 3. **Request timeout** — returns `408 Request Timeout` if the inner
-//!    handler takes longer than the configured limit.
+//!
+//! Request body limits are enforced by the router-level
+//! [`RequestBodyLimitLayer`](tower_http::limit::RequestBodyLimitLayer)
+//! (which also covers chunked bodies, unlike a `Content-Length` check), and
+//! request timeouts are enforced by the single global
+//! [`TimeoutLayer`](tower_http::timeout::TimeoutLayer).
 
 use axum::{
     extract::Request,
@@ -19,9 +21,6 @@ use axum::{
 use serde::Serialize;
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::time::Duration;
-use tokio::time::timeout;
-use tracing::warn;
 
 /// Internal error body for guard rejections.
 #[derive(Serialize)]
@@ -33,49 +32,24 @@ struct GuardError {
 /// Configuration for the request guard middleware.
 #[derive(Clone, Debug)]
 pub struct RequestGuardConfig {
-    /// Maximum allowed request body size in bytes (default: 10 MB).
-    pub max_body_size: u64,
     /// Per-path-prefix method restrictions.
     pub method_restrictions: Arc<HashMap<String, Vec<String>>>,
-    /// Maximum time (seconds) allowed for the inner handler to complete.
+    /// Maximum allowed request body size in bytes (used to configure the
+    /// router-level `RequestBodyLimitLayer`).
+    pub max_body_size: usize,
+    /// Maximum time (seconds) allowed for the inner handler to complete
+    /// (used to configure the router-level `TimeoutLayer`).
     pub request_timeout_secs: u64,
 }
 
 impl Default for RequestGuardConfig {
     fn default() -> Self {
         Self {
-            max_body_size: 10 * 1024 * 1024, // 10 MB
             method_restrictions: Arc::new(HashMap::new()),
-            request_timeout_secs: 60,
+            max_body_size: 10 * 1024 * 1024, // 10 MB
+            request_timeout_secs: 30,
         }
     }
-}
-
-/// Check whether the request body exceeds the configured maximum size.
-///
-/// Returns `Ok(())` if the body is within limits (or the `Content-Length`
-/// header is absent), and `Err(Response)` with a `413 Payload Too Large`
-/// error otherwise.
-#[allow(clippy::result_large_err)]
-fn check_body_size(req: &Request, max: u64) -> Result<(), Response> {
-    if let Some(content_length) = req
-        .headers()
-        .get(axum::http::header::CONTENT_LENGTH)
-        .and_then(|v| v.to_str().ok())
-        .and_then(|s| s.parse::<u64>().ok())
-    {
-        if content_length > max {
-            let body = GuardError {
-                error: "payload_too_large".to_string(),
-                message: format!(
-                    "Request body of {} bytes exceeds the maximum of {} bytes",
-                    content_length, max
-                ),
-            };
-            return Err((StatusCode::PAYLOAD_TOO_LARGE, Json(body)).into_response());
-        }
-    }
-    Ok(())
 }
 
 /// Check whether the request method is allowed for the given path.
@@ -112,21 +86,19 @@ fn check_method_restriction(
 /// Axum middleware that validates incoming requests against the
 /// [`RequestGuardConfig`].
 ///
+/// Enforces per-prefix method restrictions only. Body-size and timeout
+/// enforcement live in dedicated router-level layers (see the module docs).
+///
 /// The [`RequestGuardConfig`] must be injected into request extensions
 /// before this middleware runs.
 pub async fn request_guard_middleware(req: Request, next: Next) -> Response {
-    // ── 1. Body size check ──────────────────────────────────────────
     let config = req
         .extensions()
         .get::<RequestGuardConfig>()
         .cloned()
         .unwrap_or_default();
 
-    if let Err(response) = check_body_size(&req, config.max_body_size) {
-        return response;
-    }
-
-    // ── 2. Method restriction check ─────────────────────────────────
+    // ── Method restriction check ─────────────────────────────────────
     let path = req.uri().path().to_string();
     if let Err(response) = check_method_restriction(
         req.method(),
@@ -136,27 +108,7 @@ pub async fn request_guard_middleware(req: Request, next: Next) -> Response {
         return response;
     }
 
-    // ── 3. Request timeout ──────────────────────────────────────────
-    let timeout_dur = Duration::from_secs(config.request_timeout_secs);
-
-    match timeout(timeout_dur, next.run(req)).await {
-        Ok(response) => response,
-        Err(_elapsed) => {
-            warn!(
-                path = %path,
-                timeout_secs = config.request_timeout_secs,
-                "Request timed out"
-            );
-            let body = GuardError {
-                error: "request_timeout".to_string(),
-                message: format!(
-                    "Request timed out after {} seconds",
-                    config.request_timeout_secs
-                ),
-            };
-            (StatusCode::REQUEST_TIMEOUT, Json(body)).into_response()
-        }
-    }
+    next.run(req).await
 }
 
 // ---------------------------------------------------------------------------
@@ -168,45 +120,6 @@ mod tests {
     use super::*;
     use axum::http::Method;
     use std::collections::HashMap;
-
-    #[test]
-    fn test_check_body_size_within_limit() {
-        let req = Request::builder()
-            .header("content-length", "100")
-            .body(axum::body::Body::empty())
-            .unwrap();
-        assert!(check_body_size(&req, 200).is_ok());
-    }
-
-    #[test]
-    fn test_check_body_size_exceeds_limit() {
-        let req = Request::builder()
-            .header("content-length", "300")
-            .body(axum::body::Body::empty())
-            .unwrap();
-        let result = check_body_size(&req, 200);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_check_body_size_no_content_length() {
-        let req = Request::builder()
-            .body(axum::body::Body::empty())
-            .unwrap();
-        // No content-length header → skip check → Ok.
-        assert!(check_body_size(&req, 200).is_ok());
-    }
-
-    #[test]
-    fn test_check_body_size_zero_limit() {
-        let req = Request::builder()
-            .header("content-length", "1")
-            .body(axum::body::Body::empty())
-            .unwrap();
-        // Max body size of 0 → any body exceeds it.
-        let result = check_body_size(&req, 0);
-        assert!(result.is_err());
-    }
 
     #[test]
     fn test_check_method_restriction_allowed() {
@@ -260,7 +173,7 @@ mod tests {
     fn test_request_guard_config_default() {
         let config = RequestGuardConfig::default();
         assert_eq!(config.max_body_size, 10 * 1024 * 1024); // 10 MB
-        assert_eq!(config.request_timeout_secs, 60);
+        assert_eq!(config.request_timeout_secs, 30);
         assert!(config.method_restrictions.is_empty());
     }
 

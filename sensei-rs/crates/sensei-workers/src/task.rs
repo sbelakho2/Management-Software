@@ -117,6 +117,10 @@ impl TaskEnvelope {
     }
 }
 
+/// Subject used for tasks that exhausted their retry budget or failed
+/// permanently. A worker consuming this subject can surface the failures.
+pub const DLQ_SUBJECT: &str = "sensei.tasks.dead";
+
 /// A consumer that processes tasks of a specific type.
 ///
 /// Implementations must be [`Send`] + [`Sync`] so they can be shared across
@@ -183,7 +187,9 @@ impl TaskDispatcher {
 
         let cfg = Config {
             name: self.stream_name.clone(),
-            subjects: vec!["sensei.tasks.>".to_string()],
+            // The DLQ subject is listed explicitly so dead-lettered tasks are
+            // retained by the same stream (and can be consumed/monitored).
+            subjects: vec!["sensei.tasks.>".to_string(), DLQ_SUBJECT.to_string()],
             max_messages: 10_000_000,
             max_message_size: 1_048_576, // 1 MB
             ..Default::default()
@@ -232,6 +238,7 @@ impl TaskDispatcher {
 
             // Clone the Arc so the spawned task gets an owned reference.
             let consumer_arc = Arc::clone(consumer);
+            let js = self.js.clone();
 
             let handle = tokio::spawn(async move {
                 loop {
@@ -250,8 +257,17 @@ impl TaskDispatcher {
                                         }
                                     };
 
-                                    let payload_bytes = serde_json::to_vec(&envelope.payload)
-                                        .unwrap_or_default();
+                                    // Re-serialise the payload for the consumer.
+                                    let payload_bytes = match serde_json::to_vec(&envelope.payload) {
+                                        Ok(bytes) => bytes,
+                                        Err(e) => {
+                                            error!(consumer = %consumer_name, error = %e,
+                                                task_id = %envelope.metadata.task_id,
+                                                "Failed to serialize task payload — acking and skipping");
+                                            let _ = msg.ack().await;
+                                            continue;
+                                        }
+                                    };
 
                                     // Dispatch to consumer
                                     match consumer_arc.process(&payload_bytes, &envelope.metadata).await {
@@ -265,23 +281,60 @@ impl TaskDispatcher {
                                                 warn!(error = %e, "Failed to ack message");
                                             }
                                         }
-                                        Err(WorkerError::RetryLater(ref msg)) if envelope.metadata.can_retry() => {
-                                            warn!(
+                                        Err(WorkerError::RetryLater(ref err_msg)) if envelope.metadata.can_retry() => {
+                                            // Explicit retry with a real retry counter: publish a
+                                            // fresh envelope with retry_count + 1, then ack the
+                                            // original so it is not redelivered.
+                                            let mut retried = envelope.clone();
+                                            retried.metadata.retry_count += 1;
+                                            match retried.to_bytes() {
+                                                Ok(body) => {
+                                                    if let Err(e) = js.publish(subject, body.into()).await {
+                                                        error!(consumer = %consumer_name, error = %e,
+                                                            task_id = %envelope.metadata.task_id,
+                                                            "Failed to republish task for retry — acking original");
+                                                        let _ = msg.ack().await;
+                                                    } else {
+                                                        warn!(
+                                                            consumer = %consumer_name,
+                                                            task_id = %envelope.metadata.task_id,
+                                                            retry = retried.metadata.retry_count,
+                                                            error = %err_msg,
+                                                            "Task failed transiently — scheduled retry"
+                                                        );
+                                                        let _ = msg.ack().await;
+                                                    }
+                                                }
+                                                Err(e) => {
+                                                    error!(consumer = %consumer_name, error = %e,
+                                                        task_id = %envelope.metadata.task_id,
+                                                        "Failed to serialize retry envelope — acking original");
+                                                    let _ = msg.ack().await;
+                                                }
+                                            }
+                                        }
+                                        Err(WorkerError::RetryLater(ref err_msg)) => {
+                                            // Retry budget exhausted → dead-letter.
+                                            error!(
                                                 consumer = %consumer_name,
                                                 task_id = %envelope.metadata.task_id,
-                                                retry = envelope.metadata.retry_count,
-                                                error = %msg,
-                                                "Task failed transiently — will be redelivered"
+                                                retries = envelope.metadata.retry_count,
+                                                error = %err_msg,
+                                                "Task exceeded max retries — dead-lettering"
                                             );
-                                            // Do NOT ack → message is redelivered by JetStream
+                                            let _ = js.publish(DLQ_SUBJECT, msg.payload.clone()).await;
+                                            if let Err(ack_err) = msg.ack().await {
+                                                warn!(error = %ack_err, "Failed to ack message after retry exhaustion");
+                                            }
                                         }
                                         Err(e) => {
                                             error!(
                                                 consumer = %consumer_name,
                                                 task_id = %envelope.metadata.task_id,
                                                 error = %e,
-                                                "Task failed permanently"
+                                                "Task failed permanently — dead-lettering"
                                             );
+                                            let _ = js.publish(DLQ_SUBJECT, msg.payload.clone()).await;
                                             // Ack so it doesn't stay in the stream
                                             if let Err(ack_err) = msg.ack().await {
                                                 warn!(error = %ack_err, "Failed to ack message after permanent failure");

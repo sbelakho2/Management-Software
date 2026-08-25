@@ -147,7 +147,12 @@ pub fn reluF32(tensor: []f32) void {
 ///
 /// `tensor` is a flat array. `dim` is the number of elements
 /// in the softmax dimension (i.e. the number of classes).
+///
+/// When a slice's exponent sum is zero or non-finite (e.g. all inputs are
+/// -inf), the slice is replaced with a uniform distribution so the output
+/// is always a valid probability vector.
 pub fn softmaxF32(tensor: []f32, dim: usize) void {
+    if (dim == 0) return;
     std.debug.assert(tensor.len % dim == 0);
     const batch_count = tensor.len / dim;
 
@@ -169,6 +174,16 @@ pub fn softmaxF32(tensor: []f32, dim: usize) void {
             sum += x.*;
         }
 
+        // Guard against zero / non-finite sums (all -inf, NaN inputs):
+        // fall back to a uniform distribution rather than dividing by zero.
+        if (!std.math.isFinite(sum) or sum <= 0.0) {
+            const uniform = 1.0 / @as(f32, @floatFromInt(dim));
+            for (slice) |*x| {
+                x.* = uniform;
+            }
+            continue;
+        }
+
         // Normalize
         const inv_sum = 1.0 / sum;
         for (slice) |*x| {
@@ -181,10 +196,14 @@ pub fn softmaxF32(tensor: []f32, dim: usize) void {
 ///
 /// `tensor` is a flat array. `dim` is the number of elements
 /// per slice along the softmax/argmax dimension.
-pub fn argmaxF32(tensor: []const f32, dim: usize) usize {
+///
+/// Returns `null` when `tensor` is empty.
+pub fn argmaxF32(tensor: []const f32, dim: usize) ?usize {
+    std.debug.assert(dim > 0);
     std.debug.assert(tensor.len % dim == 0);
-    // Treat the entire tensor as one batch → find the global argmax
+    if (tensor.len == 0) return null;
 
+    // Treat the entire tensor as one batch → find the global argmax
     var max_idx: usize = 0;
     var max_val: f32 = tensor[0];
 
@@ -204,6 +223,7 @@ pub fn argmaxF32(tensor: []const f32, dim: usize) usize {
 /// Returns the index within each `dim`-sized slice. The slices are
 /// contiguous. The returned index is relative to each slice.
 pub fn argmaxF32Dim(tensor: []const f32, dim: usize) ![]usize {
+    std.debug.assert(dim > 0);
     std.debug.assert(tensor.len % dim == 0);
     const batch_count = tensor.len / dim;
 
@@ -1009,7 +1029,26 @@ test "softmaxF32 multi-batch" {
 test "argmaxF32" {
     const v = [_]f32{ 0.1, 0.5, 0.3, 0.7, 0.2 };
     const idx = argmaxF32(&v, 5);
-    try testing.expectEqual(@as(usize, 3), idx); // 0.7 at index 3
+    try testing.expectEqual(@as(usize, 3), idx.?); // 0.7 at index 3
+}
+
+test "argmaxF32 empty tensor returns null" {
+    const v = [_]f32{};
+    const idx = argmaxF32(&v, 1);
+    try testing.expectEqual(@as(?usize, null), idx);
+}
+
+test "softmaxF32 zero-sum slice becomes uniform" {
+    // All -inf inputs produce exp(-inf) = 0 → zero sum. The guard must emit
+    // a uniform distribution instead of dividing by zero (NaN).
+    var v = [_]f32{ -std.math.inf(f32), -std.math.inf(f32), -std.math.inf(f32) };
+    softmaxF32(&v, 3);
+    var sum: f32 = 0.0;
+    for (&v) |x| {
+        try testing.expect(std.math.isFinite(x));
+        sum += x;
+    }
+    try testing.expectApproxEqAbs(@as(f32, 1.0), sum, 1e-5);
 }
 
 test "argmaxF32Dim" {

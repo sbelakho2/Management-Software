@@ -102,12 +102,96 @@ async fn test_update_user_roles() {
     let token = app.login_as_admin().await;
     let user_id = app.admin_user_id;
 
-    let body = serde_json::json!({ "roles": ["admin", "manager"] });
+    let body = serde_json::json!({ "roles": ["admin", "quality_manager"] });
     let req = app.put_authenticated(&format!("/api/v1/users/{}/roles", user_id), &token, body);
     let mut resp = app.send_request(req).await;
     assert_eq!(resp.status(), StatusCode::OK);
 
     let json: Value = app.json_body(&mut resp).await;
     let roles: Vec<String> = serde_json::from_value(json["roles"].clone()).unwrap();
-    assert!(roles.contains(&"manager".to_string()));
+    assert!(roles.contains(&"quality_manager".to_string()));
+}
+
+#[tokio::test]
+async fn test_user_routes_require_admin() {
+    let app = common::TestApp::new().await;
+    let token = app.login_as_admin().await;
+
+    // A plain user (no admin role) in the same tenant.
+    let _ = app
+        .create_user_with_roles("plain@sensei.test", "TestPass123!", &["user"])
+        .await;
+    let login = serde_json::json!({
+        "email": "plain@sensei.test",
+        "password": "TestPass123!",
+    });
+    let req = app.post("/api/v1/auth/login", login);
+    let mut resp = app.send_request(req).await;
+    let login_body: Value = app.json_body(&mut resp).await;
+    let plain_token = login_body["access_token"].as_str().unwrap().to_string();
+
+    // list / roles / deactivate / activate → 403 for non-admins.
+    let req = app.get_authenticated("/api/v1/users", &plain_token);
+    let resp = app.send_request(req).await;
+    assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+
+    let req = app.put_authenticated(
+        &format!("/api/v1/users/{}/roles", app.admin_user_id),
+        &plain_token,
+        serde_json::json!({"roles": ["user"]}),
+    );
+    let resp = app.send_request(req).await;
+    assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+
+    let req = app.put_authenticated(
+        &format!("/api/v1/users/{}/activate", app.admin_user_id),
+        &plain_token,
+        serde_json::json!({}),
+    );
+    let resp = app.send_request(req).await;
+    assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+
+    // get/update are tenant-scoped, not admin-scoped: the plain user can
+    // read their own record.
+    let req = app.get_authenticated(
+        &format!("/api/v1/users/{}", app.admin_user_id),
+        &plain_token,
+    );
+    let mut resp = app.send_request(req).await;
+    assert_eq!(resp.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn test_admin_list_users_scoped_to_tenant() {
+    let app = common::TestApp::new().await;
+    let token = app.login_as_admin().await;
+
+    // Two users in the admin's tenant.
+    let _ = app
+        .create_user_with_roles("a@sensei.test", "TestPass123!", &["user"])
+        .await;
+    let _ = app
+        .create_user_with_roles("b@sensei.test", "TestPass123!", &["user"])
+        .await;
+
+    let req = app.get_authenticated("/api/v1/users", &token);
+    let mut resp = app.send_request(req).await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    let json: Value = app.json_body(&mut resp).await;
+    let emails: Vec<&str> = json["data"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|u| u["email"].as_str().unwrap())
+        .collect();
+    assert_eq!(json["total"], 3);
+    assert!(emails.contains(&"admin@sensei.test"));
+    assert!(emails.contains(&"a@sensei.test"));
+    assert!(emails.contains(&"b@sensei.test"));
+
+    // Role filter works.
+    let req = app.get_authenticated("/api/v1/users?role=user", &token);
+    let mut resp = app.send_request(req).await;
+    let json: Value = app.json_body(&mut resp).await;
+    assert_eq!(json["total"], 2);
 }

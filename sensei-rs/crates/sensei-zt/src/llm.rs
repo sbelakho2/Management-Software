@@ -11,7 +11,6 @@
 //! - When `no_zig` **is** set, pure-Rust fallback implementations are used.
 
 use sensei_core::error::SenseiError;
-use std::collections::HashMap;
 
 // ──────────────────────────────────────────────
 // Safe pointer wrapper for Send/Sync
@@ -37,7 +36,6 @@ unsafe impl Sync for LlamaHandle {}
 // ──────────────────────────────────────────────
 
 #[cfg(not(no_zig))]
-#[allow(dead_code)]
 extern "C" {
     /// Initialise the LLaMA runner.
     /// Returns an opaque handle, or null on failure.
@@ -65,9 +63,6 @@ extern "C" {
 
     /// Destroy a LLaMA runner.
     fn sensei_llm_deinit(runner: *mut std::ffi::c_void);
-
-    /// Software fallback chatbot (always available).
-    fn sensei_llm_fallback_chat(prompt: *const u8, prompt_len: usize) -> *mut u8;
 }
 
 // ══════════════════════════════════════════════
@@ -110,18 +105,11 @@ impl Default for LlamaConfig {
 // ══════════════════════════════════════════════
 
 /// A LLaMA model runner, backed by Zig FFI or pure-Rust fallback.
-#[allow(dead_code)]
 pub struct LlamaRunner {
     /// Opaque handle to the Zig-allocated LlamaRunner (null when using fallback).
     handle: LlamaHandle,
-    /// Configuration.
-    config: LlamaConfig,
     /// Whether this runner is backed by Zig.
     has_zig: bool,
-    /// Tokenizer vocabulary (for fallback).
-    vocab: HashMap<String, u32>,
-    /// Id-to-token mapping (for fallback).
-    id_to_token: HashMap<u32, String>,
 }
 
 impl LlamaRunner {
@@ -147,32 +135,15 @@ impl LlamaRunner {
             if !handle.is_null() {
                 return Ok(LlamaRunner {
                     handle: LlamaHandle(handle),
-                    config,
                     has_zig: true,
-                    vocab: HashMap::new(),
-                    id_to_token: HashMap::new(),
                 });
             }
         }
 
         // Fallback: create a pure-Rust runner with minimal vocab
-        let mut vocab = HashMap::new();
-        let mut id_to_token = HashMap::new();
-
-        // Add special tokens
-        vocab.insert("<PAD>".to_string(), 0);
-        id_to_token.insert(0, "<PAD>".to_string());
-        vocab.insert("<BOS>".to_string(), 1);
-        id_to_token.insert(1, "<BOS>".to_string());
-        vocab.insert("<EOS>".to_string(), 2);
-        id_to_token.insert(2, "<EOS>".to_string());
-
         Ok(LlamaRunner {
             handle: LlamaHandle(std::ptr::null_mut()),
-            config,
             has_zig: false,
-            vocab,
-            id_to_token,
         })
     }
 

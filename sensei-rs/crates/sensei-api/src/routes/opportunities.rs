@@ -6,6 +6,7 @@ use axum::{Json, extract::{Path, Query, State}};
 use chrono::{DateTime, Utc};
 use serde::Deserialize;
 use sensei_auth::middleware::AuthenticatedUser;
+use sensei_core::domain::events::OpportunityStageChangedEvent;
 use sensei_core::error::{Result, SenseiError};
 use sensei_core::pagination::PaginatedResponse;
 use sensei_core::types::new_id;
@@ -13,6 +14,43 @@ use uuid::Uuid;
 
 use crate::state::AppState;
 use crate::stores::Opportunity;
+
+/// The known sales pipeline stages, in order.
+const PIPELINE_STAGES: &[&str] = &[
+    "Prospecting",
+    "Qualification",
+    "Proposal",
+    "Negotiation",
+    "Closed Won",
+    "Closed Lost",
+];
+
+/// Validate the pipeline stage against the known pipeline.
+fn validate_stage(stage: &str) -> Result<()> {
+    if !PIPELINE_STAGES.contains(&stage) {
+        return Err(SenseiError::Validation(format!(
+            "Invalid stage '{stage}'. Valid pipeline stages: {}",
+            PIPELINE_STAGES.join(", ")
+        )));
+    }
+    Ok(())
+}
+
+/// Validate the win probability is a percentage in [0, 100].
+fn validate_probability(probability: f64) -> Result<()> {
+    if !(0.0..=100.0).contains(&probability) {
+        return Err(SenseiError::Validation(format!(
+            "Invalid probability {probability}: must be a percentage between 0 and 100"
+        )));
+    }
+    Ok(())
+}
+
+/// Validate the fields shared by create and update requests.
+fn validate_opportunity(req: &OpportunityRequest) -> Result<()> {
+    validate_stage(&req.stage)?;
+    validate_probability(req.probability)
+}
 
 // ── Query / Request DTOs ───────────────────────────────────────────────────
 
@@ -68,6 +106,7 @@ pub async fn create_opportunity(
     State(state): State<AppState>,
     Json(req): Json<OpportunityRequest>,
 ) -> Result<Json<Opportunity>> {
+    validate_opportunity(&req)?;
     let now = Utc::now();
     let opportunity = Opportunity {
         id: new_id(),
@@ -114,11 +153,13 @@ pub async fn update_opportunity(
     Path(id): Path<Uuid>,
     Json(req): Json<OpportunityRequest>,
 ) -> Result<Json<Opportunity>> {
+    validate_opportunity(&req)?;
     let mut store = state.opportunities.write().await;
     let opp = store
         .get_mut(&id)
         .filter(|o| o.tenant_id == user.tenant_id)
         .ok_or_else(|| SenseiError::NotFound(format!("Opportunity {id} not found")))?;
+    let old_stage = opp.stage.clone();
     opp.title = req.title;
     opp.description = req.description;
     opp.customer_id = req.customer_id;
@@ -131,6 +172,19 @@ pub async fn update_opportunity(
     opp.assigned_to = req.assigned_to;
     opp.notes = req.notes;
     opp.updated_at = Utc::now();
+
+    if old_stage != opp.stage {
+        let event = OpportunityStageChangedEvent::new(
+            user.tenant_id,
+            opp.id,
+            old_stage,
+            opp.stage.clone(),
+            opp.expected_value,
+        );
+        if let Err(e) = state.event_bus.publish(&event).await {
+            tracing::warn!(error = %e, "Failed to publish OpportunityStageChangedEvent");
+        }
+    }
     Ok(Json(opp.clone()))
 }
 

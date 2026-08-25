@@ -171,3 +171,60 @@ async fn test_conformance_analysis() {
     let json: Value = app.json_body(&mut resp).await;
     assert_eq!(json["total_measurements"], 1);
 }
+
+#[tokio::test]
+async fn test_conformance_analysis_uses_sample_variance() {
+    let app = common::TestApp::new().await;
+    let token = app.login_as_admin().await;
+    let body = common::fixtures::ctq_characteristic_payload("Variance CTQ", "Dimension");
+    let req = app.post_authenticated("/api/v1/ctq/characteristics", &token, body);
+    let mut resp = app.send_request(req).await;
+    let created: Value = app.json_body(&mut resp).await;
+    let char_id = created["id"].as_str().unwrap().to_string();
+
+    // Values 10 and 14: mean 12, population variance 4 (std 2), sample
+    // variance 8 (std ≈ 2.8284). The analysis must use the sample (n-1)
+    // denominator.
+    for value in [10.0, 14.0] {
+        let record = serde_json::json!({"value": value});
+        let req = app.post_authenticated(
+            &format!("/api/v1/ctq/characteristics/{}/records", char_id),
+            &token,
+            record,
+        );
+        let resp = app.send_request(req).await;
+        assert_eq!(resp.status(), StatusCode::OK);
+    }
+
+    let req = app.get_authenticated(
+        &format!("/api/v1/ctq/characteristics/{}/analysis", char_id),
+        &token,
+    );
+    let mut resp = app.send_request(req).await;
+    let json: Value = app.json_body(&mut resp).await;
+    let std_dev = json["std_dev"].as_f64().unwrap();
+    assert!(
+        (std_dev - 8.0_f64.sqrt()).abs() < 1e-9,
+        "std_dev must use the sample (n-1) variance, got {std_dev}"
+    );
+}
+
+#[tokio::test]
+async fn test_list_records_invalid_date_filter_rejected() {
+    let app = common::TestApp::new().await;
+    let token = app.login_as_admin().await;
+    let body = common::fixtures::ctq_characteristic_payload("Date Filter CTQ", "Dimension");
+    let req = app.post_authenticated("/api/v1/ctq/characteristics", &token, body);
+    let mut resp = app.send_request(req).await;
+    let created: Value = app.json_body(&mut resp).await;
+    let char_id = created["id"].as_str().unwrap().to_string();
+
+    // Invalid date parameters are a client error (400), not a silent
+    // no-filter.
+    let req = app.get_authenticated(
+        &format!("/api/v1/ctq/characteristics/{}/records?date_from=not-a-date", char_id),
+        &token,
+    );
+    let resp = app.send_request(req).await;
+    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+}

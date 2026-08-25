@@ -2,15 +2,20 @@
 //!
 //! # Endpoint
 //!
-//! `GET /api/v1/export/{entity_type}?format=pdf|csv|xlsx&id=...&tenant_id=...`
+//! `GET /api/v1/export/{entity_type}?format=pdf|csv|xlsx&id=...&date_from=...&date_to=...`
 //!
 //! Supported entity types: `ncr`, `capa`, `audit`, `work-order`, `inspection`.
+//!
+//! The tenant is always taken from the authenticated token; a client-supplied
+//! `tenant_id` query parameter is ignored so exports can never cross tenant
+//! boundaries.
 
 use axum::{
     extract::{Path, Query, State},
     http::{header, StatusCode},
     response::{IntoResponse, Response},
 };
+use chrono::{DateTime, Utc};
 use serde::Deserialize;
 use sensei_auth::middleware::AuthenticatedUser;
 use sensei_core::error::{Result, SenseiError};
@@ -19,6 +24,9 @@ use uuid::Uuid;
 
 use crate::state::AppState;
 
+/// Page size used when fetching every page of a list for export.
+const EXPORT_PAGE_SIZE: usize = 500;
+
 /// Query parameters for export requests.
 #[derive(Debug, Deserialize)]
 pub struct ExportParams {
@@ -26,22 +34,43 @@ pub struct ExportParams {
     pub format: String,
     /// Optional entity ID (fetches single entity).
     pub id: Option<Uuid>,
-    /// Tenant ID for multi-tenant isolation.
-    pub tenant_id: Uuid,
     /// Optional status filter.
     pub status: Option<String>,
-    /// Optional date range start.
+    /// Optional date range start (RFC 3339).
     pub date_from: Option<String>,
-    /// Optional date range end.
+    /// Optional date range end (RFC 3339).
     pub date_to: Option<String>,
+}
+
+/// Parse an optional RFC 3339 date filter; invalid values are rejected with
+/// a 400 instead of silently disabling the filter.
+fn parse_date_filter(name: &str, value: Option<&str>) -> Result<Option<DateTime<Utc>>> {
+    match value {
+        Some(raw) => DateTime::parse_from_rfc3339(raw)
+            .map(|dt| Some(dt.with_timezone(&Utc)))
+            .map_err(|e| {
+                SenseiError::Validation(format!("Invalid {name} (expected RFC 3339): {e}"))
+            }),
+        None => Ok(None),
+    }
+}
+
+/// Filter records by the optional created-at date range.
+fn within_date_range(
+    created_at: DateTime<Utc>,
+    date_from: Option<DateTime<Utc>>,
+    date_to: Option<DateTime<Utc>>,
+) -> bool {
+    date_from.is_none_or(|from| created_at >= from) && date_to.is_none_or(|to| created_at <= to)
 }
 
 /// Export an entity as PDF, CSV, or XLSX.
 ///
 /// Fetches data from the appropriate domain service (quality, production, etc.)
-/// and generates the requested output format.
+/// and generates the requested output format. The tenant comes from the
+/// authenticated token only.
 pub async fn export_entity(
-    _user: AuthenticatedUser,
+    user: AuthenticatedUser,
     State(state): State<AppState>,
     Path(entity_type): Path<String>,
     Query(params): Query<ExportParams>,
@@ -54,15 +83,21 @@ pub async fn export_entity(
         )));
     }
 
-    let tenant_id = params.tenant_id;
+    // Parse (and validate) the date filters once, before dispatching.
+    let date_from = parse_date_filter("date_from", params.date_from.as_deref())?;
+    let date_to = parse_date_filter("date_to", params.date_to.as_deref())?;
+
+    let tenant_id = user.tenant_id;
 
     match entity_type.as_str() {
-        "ncr" => export_ncr(state, tenant_id, &format, params.id, params.status.as_deref()).await,
+        "ncr" => {
+            export_ncr(state, tenant_id, &format, params.id, params.status.as_deref(), date_from, date_to).await
+        }
         "capa" => {
-            export_capa(state, tenant_id, &format, params.id, params.status.as_deref()).await
+            export_capa(state, tenant_id, &format, params.id, params.status.as_deref(), date_from, date_to).await
         }
         "audit" => {
-            export_audit(state, tenant_id, &format, params.id, params.status.as_deref()).await
+            export_audit(state, tenant_id, &format, params.id, params.status.as_deref(), date_from, date_to).await
         }
         "work-order" => {
             export_work_order(
@@ -71,6 +106,8 @@ pub async fn export_entity(
                 &format,
                 params.id,
                 params.status.as_deref(),
+                date_from,
+                date_to,
             )
             .await
         }
@@ -81,6 +118,8 @@ pub async fn export_entity(
                 &format,
                 params.id,
                 params.status.as_deref(),
+                date_from,
+                date_to,
             )
             .await
         }
@@ -88,6 +127,35 @@ pub async fn export_entity(
             "Unknown entity type: '{other}'. Supported: ncr, capa, audit, work-order, inspection"
         ))),
     }
+}
+
+/// Fetch every page of a paginated service result (page size 500) so
+/// exports cover the full dataset, not just the first page.
+///
+/// `fetch_page(page)` returns the page; the loop stops when a page returns
+/// fewer items than the page size or the response's page count is reached.
+async fn fetch_all_pages<T, F>(
+    mut fetch_page: F,
+) -> Result<Vec<T>>
+where
+    F: FnMut(usize) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Vec<T>>> + Send>>,
+{
+    let mut all = Vec::new();
+    let mut page = 1usize;
+    loop {
+        let items = fetch_page(page).await?;
+        let count = items.len();
+        all.extend(items);
+        if count < EXPORT_PAGE_SIZE {
+            break;
+        }
+        page += 1;
+        if page > 10_000 {
+            // Safety valve: never loop unbounded on a pathological store.
+            break;
+        }
+    }
+    Ok(all)
 }
 
 // ── Entity-specific export logic ─────────────────────────────────────────
@@ -99,6 +167,8 @@ async fn export_ncr(
     format: &str,
     id: Option<Uuid>,
     status: Option<&str>,
+    date_from: Option<DateTime<Utc>>,
+    date_to: Option<DateTime<Utc>>,
 ) -> Result<Response> {
     let ncrs = if let Some(ncr_id) = id {
         let ncr = state
@@ -107,11 +177,21 @@ async fn export_ncr(
             .await?;
         vec![ncr]
     } else {
-        let page = state
-            .quality_service
-            .list_ncrs(tenant_id, status, None, None, Some(1), Some(1000))
-            .await?;
-        page.data
+        let status_owned = status.map(|s| s.to_string());
+        fetch_all_pages(|page| {
+            let svc = state.quality_service.clone();
+            let status = status_owned.clone();
+            Box::pin(async move {
+                let page = svc
+                    .list_ncrs(tenant_id, status.as_deref(), None, None, Some(page), Some(EXPORT_PAGE_SIZE))
+                    .await?;
+                Ok(page.data)
+            })
+        })
+        .await?
+        .into_iter()
+        .filter(|ncr| within_date_range(ncr.created_at, date_from, date_to))
+        .collect::<Vec<_>>()
     };
 
     match format {
@@ -120,19 +200,25 @@ async fn export_ncr(
                 .into_iter()
                 .map(|ncr| {
                     let pdf_svc = &state.pdf_service;
+                    let corrective_actions: Vec<String> = ncr
+                        .disposition
+                        .iter()
+                        .cloned()
+                        .chain(ncr.root_cause.iter().cloned())
+                        .collect();
                     let data = NcrData {
                         id: ncr.id.to_string(),
                         title: ncr.title,
                         description: ncr.description,
-                        status: format!("{:?}", ncr.nc_type),
-                        severity: format!("{:?}", ncr.severity),
+                        status: ncr.status.as_str().to_string(),
+                        severity: nc_severity_str(&ncr.severity).to_string(),
                         created_by: ncr
                             .detected_by
                             .map(|u| u.to_string())
                             .unwrap_or_default(),
                         created_at: ncr.created_at.to_rfc3339(),
                         department: ncr.department.unwrap_or_default(),
-                        corrective_actions: vec![],
+                        corrective_actions,
                     };
                     pdf_svc.generate_ncr_report(&data)
                 })
@@ -163,16 +249,28 @@ async fn export_capa(
     format: &str,
     id: Option<Uuid>,
     status: Option<&str>,
+    date_from: Option<DateTime<Utc>>,
+    date_to: Option<DateTime<Utc>>,
 ) -> Result<Response> {
     let capas = if let Some(capa_id) = id {
         let capa = state.quality_service.get_capa(tenant_id, capa_id).await?;
         vec![capa]
     } else {
-        let page = state
-            .quality_service
-            .list_capas(tenant_id, status, None, Some(1), Some(1000))
-            .await?;
-        page.data
+        let status_owned = status.map(|s| s.to_string());
+        fetch_all_pages(|page| {
+            let svc = state.quality_service.clone();
+            let status = status_owned.clone();
+            Box::pin(async move {
+                let page = svc
+                    .list_capas(tenant_id, status.as_deref(), None, Some(page), Some(EXPORT_PAGE_SIZE))
+                    .await?;
+                Ok(page.data)
+            })
+        })
+        .await?
+        .into_iter()
+        .filter(|capa| within_date_range(capa.created_at, date_from, date_to))
+        .collect::<Vec<_>>()
     };
 
     match format {
@@ -197,7 +295,7 @@ async fn export_capa(
                         description: capa.description,
                         root_cause,
                         action_plan,
-                        status: format!("{:?}", capa.status),
+                        status: capa_status_str(&capa.status).to_string(),
                         deadline: capa
                             .due_date
                             .map(|d| d.to_rfc3339())
@@ -236,16 +334,28 @@ async fn export_audit(
     format: &str,
     id: Option<Uuid>,
     status: Option<&str>,
+    date_from: Option<DateTime<Utc>>,
+    date_to: Option<DateTime<Utc>>,
 ) -> Result<Response> {
     let audits = if let Some(audit_id) = id {
         let audit = state.quality_service.get_audit(tenant_id, audit_id).await?;
         vec![audit]
     } else {
-        let page = state
-            .quality_service
-            .list_audits(tenant_id, status, None, Some(1), Some(1000))
-            .await?;
-        page.data
+        let status_owned = status.map(|s| s.to_string());
+        fetch_all_pages(|page| {
+            let svc = state.quality_service.clone();
+            let status = status_owned.clone();
+            Box::pin(async move {
+                let page = svc
+                    .list_audits(tenant_id, status.as_deref(), None, Some(page), Some(EXPORT_PAGE_SIZE))
+                    .await?;
+                Ok(page.data)
+            })
+        })
+        .await?
+        .into_iter()
+        .filter(|audit| within_date_range(audit.created_at, date_from, date_to))
+        .collect::<Vec<_>>()
     };
 
     match format {
@@ -268,22 +378,38 @@ async fn export_audit(
                         })
                         .collect();
 
+                    // Real audit score: conforming checklist items / total.
+                    let total_items = audit.checklist_items.len();
+                    let conforming = audit
+                        .checklist_items
+                        .iter()
+                        .filter(|i| i.is_conforming == Some(true))
+                        .count();
+                    let score = if total_items > 0 {
+                        (conforming as f64 / total_items as f64) * 100.0
+                    } else {
+                        0.0
+                    };
+
                     let data = AuditData {
                         id: audit.id.to_string(),
                         title: audit.title,
                         auditor: audit
                             .auditor_id
+                            .or(audit.lead_auditor_id)
                             .map(|u| u.to_string())
                             .unwrap_or_default(),
-                        auditee: String::new(),
+                        auditee: audit.area.clone(),
                         date: audit
                             .scheduled_date
+                            .or(audit.start_date)
+                            .or(audit.completion_date)
                             .map(|d| d.to_rfc3339())
                             .unwrap_or_default(),
                         scope: audit.scope,
                         findings,
-                        score: 0.0,
-                        status: format!("{:?}", audit.status),
+                        score,
+                        status: audit_status_str(&audit.status).to_string(),
                     };
                     pdf_svc.generate_audit_report(&data)
                 })
@@ -314,6 +440,8 @@ async fn export_work_order(
     format: &str,
     id: Option<Uuid>,
     status: Option<&str>,
+    date_from: Option<DateTime<Utc>>,
+    date_to: Option<DateTime<Utc>>,
 ) -> Result<Response> {
     let orders = if let Some(wo_id) = id {
         let wo = state
@@ -322,11 +450,21 @@ async fn export_work_order(
             .await?;
         vec![wo]
     } else {
-        let page = state
-            .production_service
-            .list_work_orders(tenant_id, status, None, Some(1), Some(1000))
-            .await?;
-        page.data
+        let status_owned = status.map(|s| s.to_string());
+        fetch_all_pages(|page| {
+            let svc = state.production_service.clone();
+            let status = status_owned.clone();
+            Box::pin(async move {
+                let page = svc
+                    .list_work_orders(tenant_id, status.as_deref(), None, Some(page), Some(EXPORT_PAGE_SIZE))
+                    .await?;
+                Ok(page.data)
+            })
+        })
+        .await?
+        .into_iter()
+        .filter(|wo| within_date_range(wo.created_at, date_from, date_to))
+        .collect::<Vec<_>>()
     };
 
     match format {
@@ -348,13 +486,23 @@ async fn export_work_order(
                             .unwrap_or_default(),
                         due_date: wo
                             .scheduled_end
+                            .or(wo.actual_end)
                             .map(|d| d.to_rfc3339())
                             .unwrap_or_default(),
                         work_center: wo
                             .work_center_id
                             .map(|u| u.to_string())
                             .unwrap_or_default(),
-                        estimated_hours: 0.0,
+                        // Estimated hours are not tracked on the work order
+                        // entity; derive a duration estimate from the
+                        // scheduled window when one exists.
+                        estimated_hours: wo
+                            .scheduled_start
+                            .zip(wo.scheduled_end)
+                            .map(|(s, e)| {
+                                (e - s).num_minutes() as f64 / 60.0
+                            })
+                            .unwrap_or(0.0),
                     };
                     pdf_svc.generate_work_order(&data)
                 })
@@ -387,25 +535,36 @@ async fn export_inspection(
     tenant_id: Uuid,
     format: &str,
     id: Option<Uuid>,
-    _status: Option<&str>,
+    status: Option<&str>,
+    date_from: Option<DateTime<Utc>>,
+    date_to: Option<DateTime<Utc>>,
 ) -> Result<Response> {
     // Collect inspections from the quality service.
     // We gather both first article inspections and self-inspections.
     let mut inspection_rows: Vec<serde_json::Value> = Vec::new();
     let mut pdf_data_items: Vec<InspectionData> = Vec::new();
 
-    // Fetch first article inspections
-    let fai_page = state
-        .quality_service
-        .list_first_article_inspections(tenant_id, Some(1), Some(10_000))
-        .await?;
+    // Fetch first article inspections (paged)
+    let fai_items = fetch_all_pages(|page| {
+        let svc = state.quality_service.clone();
+        Box::pin(async move {
+            let page = svc
+                .list_first_article_inspections(tenant_id, Some(page), Some(EXPORT_PAGE_SIZE))
+                .await?;
+            Ok(page.data)
+        })
+    })
+    .await?;
 
-    for fai in &fai_page.data {
+    for fai in &fai_items {
         // If a specific ID was requested, filter to that inspection only
         if let Some(filter_id) = id {
             if fai.id != filter_id {
                 continue;
             }
+        }
+        if !within_date_range(fai.created_at, date_from, date_to) {
+            continue;
         }
 
         let measurements: Vec<(String, f64, f64, String)> = fai
@@ -443,17 +602,26 @@ async fn export_inspection(
         }));
     }
 
-    // Fetch self-inspections
-    let si_page = state
-        .quality_service
-        .list_self_inspections(tenant_id, Some(1), Some(10_000))
-        .await?;
+    // Fetch self-inspections (paged)
+    let si_items = fetch_all_pages(|page| {
+        let svc = state.quality_service.clone();
+        Box::pin(async move {
+            let page = svc
+                .list_self_inspections(tenant_id, Some(page), Some(EXPORT_PAGE_SIZE))
+                .await?;
+            Ok(page.data)
+        })
+    })
+    .await?;
 
-    for si in &si_page.data {
+    for si in &si_items {
         if let Some(filter_id) = id {
             if si.id != filter_id {
                 continue;
             }
+        }
+        if !within_date_range(si.created_at, date_from, date_to) {
+            continue;
         }
 
         let measurements: Vec<(String, f64, f64, String)> = si
@@ -487,6 +655,8 @@ async fn export_inspection(
             "type": "self_inspection",
         }));
     }
+
+    let _ = status;
 
     match format {
         "pdf" => {
@@ -539,6 +709,45 @@ async fn export_inspection(
             let csv = excel_svc.generate_csv(&inspection_rows)?;
             Ok(build_csv_response(csv))
         }
+    }
+}
+
+// ── Display helpers (replace Debug formatting leaks) ──────────────────────
+
+fn nc_severity_str(severity: &sensei_services::quality::NcSeverity) -> &'static str {
+    match severity {
+        sensei_services::quality::NcSeverity::Low => "low",
+        sensei_services::quality::NcSeverity::Medium => "medium",
+        sensei_services::quality::NcSeverity::High => "high",
+        sensei_services::quality::NcSeverity::Critical => "critical",
+    }
+}
+
+fn capa_status_str(status: &sensei_services::quality::CapaStatusEx) -> &'static str {
+    match status {
+        sensei_services::quality::CapaStatusEx::Draft => "draft",
+        sensei_services::quality::CapaStatusEx::PendingApproval => "pending_approval",
+        sensei_services::quality::CapaStatusEx::Open => "open",
+        sensei_services::quality::CapaStatusEx::RootCauseAnalysis => "root_cause_analysis",
+        sensei_services::quality::CapaStatusEx::ActionPlanning => "action_planning",
+        sensei_services::quality::CapaStatusEx::Implementing => "implementing",
+        sensei_services::quality::CapaStatusEx::Verification => "verification",
+        sensei_services::quality::CapaStatusEx::EffectivenessCheck => "effectiveness_check",
+        sensei_services::quality::CapaStatusEx::PendingClosure => "pending_closure",
+        sensei_services::quality::CapaStatusEx::Closed => "closed",
+        sensei_services::quality::CapaStatusEx::Rejected => "rejected",
+        sensei_services::quality::CapaStatusEx::Cancelled => "cancelled",
+    }
+}
+
+fn audit_status_str(status: &sensei_services::quality::AuditStatus) -> &'static str {
+    match status {
+        sensei_services::quality::AuditStatus::Planned => "planned",
+        sensei_services::quality::AuditStatus::Scheduled => "scheduled",
+        sensei_services::quality::AuditStatus::InProgress => "in_progress",
+        sensei_services::quality::AuditStatus::Completed => "completed",
+        sensei_services::quality::AuditStatus::Closed => "closed",
+        sensei_services::quality::AuditStatus::Cancelled => "cancelled",
     }
 }
 

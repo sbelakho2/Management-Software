@@ -2,18 +2,41 @@
 //!
 //! Assembles the Axum router with all routes, middleware layers, and
 //! shared application state.
+//!
+//! # Middleware execution order
+//!
+//! Layers are applied bottom-to-top; the **last** layer added runs **first**
+//! (outermost). Global stack, outermost → innermost:
+//!
+//! `secure_headers → cors → request_id → logging → trace → metrics →
+//! inject_rate_limiter → rate_limit_middleware → request_guard →
+//! request_body_limit → compression → timeout → router`
+//!
+//! Note that `inject_rate_limiter` is **outer** to `rate_limit_middleware`
+//! so the `RateLimiter` is in the request extensions before the limiter
+//! runs.
+//!
+//! Protected-route stack (via `route_layer`), outermost → innermost:
+//!
+//! `auth → session_binding → idempotency → audit → handler`
+//!
+//! So authentication runs first (making `AuthenticatedUser` available to
+//! session binding, idempotency key scoping, and audit recording), and the
+//! audit middleware runs closest to the handler so it can time it.
 
 use axum::{
     extract::Request,
+    http::StatusCode,
     middleware,
     middleware::Next,
-    response::{Html, Response},
+    response::{Html, IntoResponse, Json, Response},
     routing::{delete, get, patch, post, put},
     Router,
 };
 use std::sync::Arc;
 use std::time::Duration;
 use tower_http::compression::CompressionLayer;
+use tower_http::limit::RequestBodyLimitLayer;
 use tower_http::services::ServeDir;
 use tower_http::timeout::TimeoutLayer;
 use tower_http::trace::TraceLayer;
@@ -28,12 +51,15 @@ use crate::middleware::rate_limiter::rate_limit_middleware;
 use crate::middleware::request_guard::{request_guard_middleware, RequestGuardConfig};
 use crate::middleware::request_id::request_id_middleware;
 use crate::middleware::secure_headers::secure_headers_middleware;
-use crate::middleware::session::{session_binding_middleware, SessionStore};
+use crate::middleware::session::session_binding_middleware;
 use crate::routes;
 use crate::state::AppState;
 
 /// Wrapper middleware that injects the [`RateLimiter`] from `AppState` into
 /// request extensions so [`rate_limit_middleware`] can find it.
+///
+/// Must run **before** [`rate_limit_middleware`] (i.e. be added *after* it),
+/// which is why this layer is outer to the limiter in [`build_router`].
 async fn inject_rate_limiter(
     axum::extract::State(state): axum::extract::State<AppState>,
     req: Request,
@@ -44,16 +70,20 @@ async fn inject_rate_limiter(
     next.run(req).await
 }
 
-/// Wrapper middleware that injects the [`AuditLog`] from `AppState` into
-/// request extensions so [`audit_middleware`] can find it.
-async fn inject_audit_log(
-    axum::extract::State(state): axum::extract::State<AppState>,
-    req: Request,
-    next: Next,
-) -> Response {
-    let mut req = req;
-    req.extensions_mut().insert(state.audit_log.clone());
-    next.run(req).await
+/// Catch-all handler for unmatched `/api/*` paths.
+///
+/// Registered before the [`ServeDir`] fallback so unknown API endpoints
+/// return a structured JSON 404 instead of falling through to the static
+/// frontend (which would serve the SPA HTML for API requests).
+async fn api_not_found() -> Response {
+    (
+        StatusCode::NOT_FOUND,
+        Json(serde_json::json!({
+            "error": "not_found",
+            "message": "Unknown API endpoint",
+        })),
+    )
+        .into_response()
 }
 
 /// Landing-page handler for `GET /`.
@@ -716,13 +746,12 @@ static ROOT_HTML: &str = r##"<!DOCTYPE html>
 /// # Returns
 /// A configured [`Router`] ready to be served.
 pub fn build_router(state: AppState) -> Router {
-    let cors_layer = build_cors_layer(&state.config.api);
+    let cors_layer = build_cors_layer(&state.config);
 
     // ── Shared instances for middleware infrastructure ──────────────
     let idempotency_store = Arc::new(IdempotencyStore::new(3600));   // 1 hour TTL
-    let session_store = Arc::new(SessionStore::new(86_400));         // 24 hour TTL
     let request_guard_config = Arc::new(RequestGuardConfig {
-        max_body_size: 10 * 1024 * 1024, // 10 MB
+        max_body_size: state.config.api.body_limit,
         request_timeout_secs: state.config.api.request_timeout_secs,
         ..Default::default()
     });
@@ -811,6 +840,7 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/v1/finance/journal-entries/{id}", put(routes::finance::update_journal_entry).delete(routes::finance::delete_journal_entry))
         .route("/api/v1/finance/cost-rollup", post(routes::finance::run_cost_rollup))
         .route("/api/v1/finance/cost-rollup/{product_id}", get(routes::finance::get_cost_rollup))
+        .route("/api/v1/finance/three-way-match", post(routes::finance::match_three_way))
         // ── HR Routes ─────────────────────────────────────────────
         .route("/api/v1/hr/employees", get(routes::hr::list_employees).post(routes::hr::create_employee))
         .route("/api/v1/hr/employees/{id}", get(routes::hr::get_employee).put(routes::hr::update_employee).delete(routes::hr::delete_employee))
@@ -884,32 +914,32 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/v1/quality/supplier-scorecards", get(routes::quality::list_supplier_scorecards).post(routes::quality::create_supplier_evaluation))
         .route("/api/v1/quality/supplier-scorecards/{id}", put(routes::quality::update_supplier_scorecard).delete(routes::quality::delete_supplier_scorecard))
         .route("/api/v1/quality/scars", get(routes::quality::list_scars).post(routes::quality::create_scar))
-        .route("/api/v1/quality/scars/{id}", put(routes::quality::update_scar).delete(routes::quality::delete_scar))
+        .route("/api/v1/quality/scars/{id}", get(routes::quality::get_scar).put(routes::quality::update_scar).delete(routes::quality::delete_scar))
         .route("/api/v1/quality/documents", get(routes::quality::list_documents).post(routes::quality::create_document))
-        .route("/api/v1/quality/documents/{id}", put(routes::quality::update_document).delete(routes::quality::delete_document))
+        .route("/api/v1/quality/documents/{id}", get(routes::quality::get_document).put(routes::quality::update_document).delete(routes::quality::delete_document))
         .route("/api/v1/quality/first-article-inspections", get(routes::quality::list_first_article_inspections).post(routes::quality::create_first_article_inspection))
-        .route("/api/v1/quality/first-article-inspections/{id}", put(routes::quality::update_first_article_inspection).delete(routes::quality::delete_first_article_inspection))
+        .route("/api/v1/quality/first-article-inspections/{id}", get(routes::quality::get_first_article_inspection).put(routes::quality::update_first_article_inspection).delete(routes::quality::delete_first_article_inspection))
         .route("/api/v1/quality/self-inspections", get(routes::quality::list_self_inspections).post(routes::quality::create_self_inspection))
-        .route("/api/v1/quality/self-inspections/{id}", put(routes::quality::update_self_inspection).delete(routes::quality::delete_self_inspection))
+        .route("/api/v1/quality/self-inspections/{id}", get(routes::quality::get_self_inspection).put(routes::quality::update_self_inspection).delete(routes::quality::delete_self_inspection))
         .route("/api/v1/quality/msa-studies", get(routes::quality::list_msa_studies).post(routes::quality::create_msa_study))
-        .route("/api/v1/quality/msa-studies/{id}", delete(routes::quality::delete_msa_study))
+        .route("/api/v1/quality/msa-studies/{id}", get(routes::quality::get_msa_study).delete(routes::quality::delete_msa_study))
         .route("/api/v1/quality/process-capability-studies", get(routes::quality::list_process_capability_studies).post(routes::quality::create_process_capability_study))
-        .route("/api/v1/quality/process-capability-studies/{id}", delete(routes::quality::delete_process_capability_study))
+        .route("/api/v1/quality/process-capability-studies/{id}", get(routes::quality::get_process_capability_study).delete(routes::quality::delete_process_capability_study))
         .route("/api/v1/quality/control-plans", get(routes::quality::list_control_plans).post(routes::quality::create_control_plan))
-        .route("/api/v1/quality/control-plans/{id}", put(routes::quality::update_control_plan).delete(routes::quality::delete_control_plan))
+        .route("/api/v1/quality/control-plans/{id}", get(routes::quality::get_control_plan).put(routes::quality::update_control_plan).delete(routes::quality::delete_control_plan))
         .route("/api/v1/quality/pfmeas", get(routes::quality::list_pfmeas).post(routes::quality::create_pfmea))
-        .route("/api/v1/quality/pfmeas/{id}", delete(routes::quality::delete_pfmea))
+        .route("/api/v1/quality/pfmeas/{id}", get(routes::quality::get_pfmea).delete(routes::quality::delete_pfmea))
         .route("/api/v1/quality/npi-projects", get(routes::quality::list_npi_projects).post(routes::quality::create_npi_project))
         .route("/api/v1/quality/npi-projects/{id}", put(routes::quality::update_npi_project).delete(routes::quality::delete_npi_project))
         .route("/api/v1/quality/npi-projects/{project_id}/risks", get(routes::quality::list_npi_risks))
         .route("/api/v1/quality/gauges", get(routes::quality::list_gauges).post(routes::quality::create_gauge))
-        .route("/api/v1/quality/gauges/{id}", put(routes::quality::update_gauge).delete(routes::quality::delete_gauge))
+        .route("/api/v1/quality/gauges/{id}", get(routes::quality::get_gauge).put(routes::quality::update_gauge).delete(routes::quality::delete_gauge))
         .route("/api/v1/quality/complaints", get(routes::quality::list_complaints).post(routes::quality::create_complaint))
-        .route("/api/v1/quality/complaints/{id}", put(routes::quality::update_complaint).delete(routes::quality::delete_complaint))
+        .route("/api/v1/quality/complaints/{id}", get(routes::quality::get_complaint).put(routes::quality::update_complaint).delete(routes::quality::delete_complaint))
         .route("/api/v1/quality/eight-d-reports", get(routes::quality::list_eight_d_reports).post(routes::quality::create_eight_d_report))
-        .route("/api/v1/quality/eight-d-reports/{id}", put(routes::quality::update_eight_d_report).delete(routes::quality::delete_eight_d_report))
+        .route("/api/v1/quality/eight-d-reports/{id}", get(routes::quality::get_eight_d_report).put(routes::quality::update_eight_d_report).delete(routes::quality::delete_eight_d_report))
         .route("/api/v1/quality/management-reviews", get(routes::quality::list_management_reviews).post(routes::quality::create_management_review))
-        .route("/api/v1/quality/management-reviews/{id}", put(routes::quality::update_management_review).delete(routes::quality::delete_management_review))
+        .route("/api/v1/quality/management-reviews/{id}", get(routes::quality::get_management_review).put(routes::quality::update_management_review).delete(routes::quality::delete_management_review))
         // ── Kanban Routes ────────────────────────────────────────────
         .route("/api/v1/kanban/boards", get(routes::kanban::list_boards).post(routes::kanban::create_board))
         .route("/api/v1/kanban/boards/{id}", get(routes::kanban::get_board).put(routes::kanban::update_board).delete(routes::kanban::delete_board))
@@ -979,7 +1009,7 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/v1/andon/{id}/resolve", post(routes::andon::resolve_andon))
         // ── A3 Routes ─────────────────────────────────────────────────────
         .route("/api/v1/a3", get(routes::a3::list_a3s).post(routes::a3::create_a3))
-        .route("/api/v1/a3/{id}", get(routes::a3::get_a3).put(routes::a3::update_a3))
+        .route("/api/v1/a3/{id}", get(routes::a3::get_a3).put(routes::a3::update_a3).delete(routes::a3::delete_a3))
         .route("/api/v1/a3/{id}/close", post(routes::a3::close_a3))
         // ── Obeya Routes ──────────────────────────────────────────────────
         .route("/api/v1/obeya/boards", get(routes::obeya::list_boards).post(routes::obeya::create_board))
@@ -1011,6 +1041,7 @@ pub fn build_router(state: AppState) -> Router {
         // ── Audit Log Routes ─────────────────────────────────────────────
         .route("/api/v1/audit-logs", get(routes::audit_logs::list_audit_logs))
         .route("/api/v1/audit-logs/{id}", get(routes::audit_logs::get_audit_log))
+        .route("/api/v1/audit-logs/entity/{entity_type}/{entity_id}", get(routes::audit_logs::get_entity_audit_trail))
         .route("/api/v1/audit-logs/stats", get(routes::audit_logs::get_audit_log_stats))
         // ── Production Cells Routes ──────────────────────────────────────
         .route("/api/v1/production-cells", get(routes::production_cells::list_production_cells).post(routes::production_cells::create_production_cell))
@@ -1079,17 +1110,18 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/v1/training/dashboard", get(routes::training::get_training_dashboard))
         // ── Today Routes ──────────────────────────────────────────────────
         .route("/api/v1/today", get(routes::today::get_today_snapshot))
-        // ── Protected-route middleware layers (innermost → outermost)
-        // Authentication (innermost – runs first for the route handler).
-        .route_layer(middleware::from_fn_with_state(state.clone(), auth_layer))
-        // Session binding – enforce fingerprint checks for authenticated users.
-        .route_layer(middleware::from_fn({
-            let store = Arc::clone(&session_store);
-            move |mut req: Request, next: Next| {
-                req.extensions_mut().insert((*store).clone());
-                async move { session_binding_middleware(req, next).await }
-            }
-        }))
+        // ── Protected-route middleware layers ─────────────────────────────
+        // route_layer is applied bottom-to-top too: the LAST layer added
+        // runs FIRST (outermost). Layers are therefore added innermost-first
+        // so the execution order is:
+        //   auth → session → idempotency → audit → handler
+        // - audit is innermost (added first): it runs after auth, so it can
+        //   read AuthenticatedUser, and it times the handler itself.
+        // - idempotency runs after auth (user-scoped cache keys).
+        // - session binding runs after auth (fingerprint checks).
+        // - auth is outermost (added last).
+        // Audit logging – record state-changing requests (innermost).
+        .route_layer(middleware::from_fn_with_state(state.clone(), audit_middleware))
         // Idempotency – handle Idempotency-Key for POST/PUT/PATCH.
         .route_layer(middleware::from_fn({
             let store = Arc::clone(&idempotency_store);
@@ -1098,35 +1130,45 @@ pub fn build_router(state: AppState) -> Router {
                 async move { idempotency_middleware(req, next).await }
             }
         }))
-        // Audit logging – record state-changing requests.
-        .route_layer(middleware::from_fn_with_state(state.clone(), inject_audit_log))
-        .route_layer(middleware::from_fn(audit_middleware));
+        // Session binding – enforce fingerprint checks for authenticated users.
+        .route_layer(middleware::from_fn_with_state(
+            state.clone(),
+            session_binding_middleware,
+        ))
+        // Authentication (outermost – runs first for the route handler).
+        .route_layer(middleware::from_fn_with_state(state.clone(), auth_layer));
 
     // ── Determine static files directory ────────────────────────────
     let static_dir = std::env::var("SENSEI_STATIC_DIR")
         .unwrap_or_else(|_| "../frontend/public".to_string());
 
     // ── Merge public + protected and apply global layers ───────────
-    // Note: Layers are applied bottom-to-top; the LAST layer added runs
-    // FIRST (outermost). The order below is outer → inner (top-to-bottom).
+    // Layers are applied bottom-to-top; the LAST layer added runs FIRST
+    // (outermost). The execution order is documented at the top of this
+    // file. The critical invariant for rate limiting is that
+    // `inject_rate_limiter` is OUTER to `rate_limit_middleware` (added
+    // after it) so the limiter always finds its instance.
     Router::new()
+        .route("/", get(root_handler))
         .merge(public_routes)
         .merge(protected_routes)
+        // ── Unmatched /api/* paths → structured JSON 404 ────────────
+        // Registered before the ServeDir fallback so API 404s never fall
+        // through to the static frontend.
+        .route("/api/{*rest}", get(api_not_found))
         // ── Serve WASM frontend static files as fallback ────────────
         .fallback_service(ServeDir::new(static_dir))
-        // ── Outer layers (execute first, wrap everything) ────────────
-        .layer(middleware::from_fn(secure_headers_middleware))
-        .layer(cors_layer)
-        // ── Request identification & logging ─────────────────────────
-        .layer(middleware::from_fn(request_id_middleware))
-        .layer(middleware::from_fn(logging_middleware))
-        .layer(TraceLayer::new_for_http())
-        // ── Metrics collection (after auth/rate-limiting, before routes) ─
-        .layer(middleware::from_fn(metrics_middleware))
-        // ── Infrastructure – inject state-dependent services ─────────
-        .layer(middleware::from_fn_with_state(state.clone(), inject_rate_limiter))
-        .layer(middleware::from_fn(rate_limit_middleware))
-        // ── Request guard – body size, method restrictions, timeout ──
+        // ── Innermost layers (added first, run last) ─────────────────
+        // Single global request timeout (Timeout is 408 via
+        // TimeoutLayer::with_status_code).
+        .layer(TimeoutLayer::with_status_code(
+            axum::http::StatusCode::REQUEST_TIMEOUT,
+            Duration::from_secs(state.config.api.request_timeout_secs),
+        ))
+        .layer(CompressionLayer::new())
+        // ── Request body limit (streams, so chunked bodies are covered) ──
+        .layer(RequestBodyLimitLayer::new(request_guard_config.max_body_size))
+        // ── Request guard – method restrictions only ─────────────────
         .layer(middleware::from_fn({
             let guard = Arc::clone(&request_guard_config);
             move |mut req: Request, next: Next| {
@@ -1134,11 +1176,20 @@ pub fn build_router(state: AppState) -> Router {
                 async move { request_guard_middleware(req, next).await }
             }
         }))
-        // ── Standard layers ──────────────────────────────────────────
-        .layer(CompressionLayer::new())
-        .layer(TimeoutLayer::with_status_code(
-            axum::http::StatusCode::REQUEST_TIMEOUT,
-            Duration::from_secs(state.config.api.request_timeout_secs),
+        // ── Rate limiting – consumer first, then injector (outer) ───
+        .layer(middleware::from_fn(rate_limit_middleware))
+        .layer(middleware::from_fn_with_state(state.clone(), inject_rate_limiter))
+        // ── Metrics collection ───────────────────────────────────────
+        .layer(middleware::from_fn(metrics_middleware))
+        // ── Request identification & logging ─────────────────────────
+        .layer(TraceLayer::new_for_http())
+        .layer(middleware::from_fn(logging_middleware))
+        .layer(middleware::from_fn(request_id_middleware))
+        // ── CORS & security headers (outermost) ──────────────────────
+        .layer(cors_layer)
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            secure_headers_middleware,
         ))
         .with_state(state)
 }

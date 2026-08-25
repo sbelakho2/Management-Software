@@ -136,9 +136,34 @@ fn build_html_email(subject: &str, content: &str) -> String {
     )
 }
 
+/// Environment variable that controls the absolute base URL used in email
+/// links. Defaults to `http://localhost:3000` for local development.
+pub const PUBLIC_BASE_URL_ENV: &str = "PUBLIC_BASE_URL";
+
+/// Default public base URL used when `PUBLIC_BASE_URL` is not set.
+pub const DEFAULT_PUBLIC_BASE_URL: &str = "http://localhost:3000";
+
+/// Resolve the absolute public base URL for email links.
+///
+/// Reads the `PUBLIC_BASE_URL` environment variable; a missing or empty
+/// value falls back to [`DEFAULT_PUBLIC_BASE_URL`]. The result is trimmed of
+/// trailing slashes so callers can join paths safely.
+pub fn public_base_url() -> String {
+    std::env::var(PUBLIC_BASE_URL_ENV)
+        .ok()
+        .filter(|v| !v.trim().is_empty())
+        .unwrap_or_else(|| DEFAULT_PUBLIC_BASE_URL.to_string())
+        .trim_end_matches('/')
+        .to_string()
+}
+
 /// Build the HTML content for a password reset email.
 fn build_password_reset_content(token: &str) -> String {
-    let reset_link = format!("/reset-password?token={}", token);
+    let reset_link = format!(
+        "{}/reset-password?token={}",
+        public_base_url(),
+        token
+    );
     format!(
         r#"<h2 style="margin:0 0 16px;font-size:20px;color:#1a73e8;">Password Reset Request</h2>
 <p style="margin:0 0 16px;">We received a request to reset your password for your Sensei OS account.</p>
@@ -159,7 +184,11 @@ fn build_password_reset_content(token: &str) -> String {
 
 /// Build the HTML content for an email verification.
 fn build_verification_content(token: &str) -> String {
-    let verify_link = format!("/verify-email?token={}", token);
+    let verify_link = format!(
+        "{}/verify-email?token={}",
+        public_base_url(),
+        token
+    );
     format!(
         r#"<h2 style="margin:0 0 16px;font-size:20px;color:#1a73e8;">Verify Your Email Address</h2>
 <p style="margin:0 0 16px;">Thank you for creating a Sensei OS account. Please verify your email address to activate your account.</p>
@@ -194,11 +223,12 @@ fn build_welcome_content(name: &str) -> String {
 <table role="presentation" cellpadding="0" cellspacing="0" style="margin:24px 0;">
     <tr>
         <td style="border-radius:4px;background-color:#1a73e8;padding:12px 32px;">
-            <a href="/login" style="color:#ffffff;font-size:16px;font-weight:600;text-decoration:none;display:inline-block;">Log In Now</a>
+            <a href="{login_url}" style="color:#ffffff;font-size:16px;font-weight:600;text-decoration:none;display:inline-block;">Log In Now</a>
         </td>
     </tr>
 </table>"#,
-        name = name
+        name = name,
+        login_url = format!("{}/login", public_base_url()),
     )
 }
 
@@ -214,7 +244,11 @@ fn build_digest_content(digest_html: &str) -> String {
 
 /// Build the plain text fallback for a password reset email.
 fn build_password_reset_plain(token: &str) -> String {
-    let reset_link = format!("/reset-password?token={}", token);
+    let reset_link = format!(
+        "{}/reset-password?token={}",
+        public_base_url(),
+        token
+    );
     format!(
         "Password Reset Request\n\
          \n\
@@ -230,7 +264,11 @@ fn build_password_reset_plain(token: &str) -> String {
 
 /// Build the plain text fallback for an email verification.
 fn build_verification_plain(token: &str) -> String {
-    let verify_link = format!("/verify-email?token={}", token);
+    let verify_link = format!(
+        "{}/verify-email?token={}",
+        public_base_url(),
+        token
+    );
     format!(
         "Verify Your Email Address\n\
          \n\
@@ -246,13 +284,15 @@ fn build_verification_plain(token: &str) -> String {
 
 /// Build the plain text fallback for a welcome email.
 fn build_welcome_plain(name: &str) -> String {
+    let login_url = format!("{}/login", public_base_url());
     format!(
         "Welcome to Sensei OS, {name}!\n\
          \n\
          Your account has been successfully created.\n\
          \n\
-         Log in to get started: https://app.sensei.local/login\n",
-        name = name
+         Log in to get started: {login_url}\n",
+        name = name,
+        login_url = login_url,
     )
 }
 
@@ -728,19 +768,40 @@ mod tests {
     }
 
     #[test]
-    fn test_password_reset_content_has_link() {
+    fn test_password_reset_content_has_absolute_link() {
+        std::env::remove_var("PUBLIC_BASE_URL");
         let content = build_password_reset_content("abc-123");
-        assert!(content.contains("/reset-password?token=abc-123"));
+        assert!(content.contains("http://localhost:3000/reset-password?token=abc-123"));
+        assert!(!content.contains("href=\"/reset-password"), "link must be absolute: {content}");
         assert!(content.contains("Reset Password"));
         assert!(content.contains("1 hour"));
+
+        // The env override is honoured and trailing slashes are trimmed.
+        std::env::set_var("PUBLIC_BASE_URL", "https://sensei.example.com/");
+        let content = build_password_reset_content("abc-123");
+        assert!(content.contains("https://sensei.example.com/reset-password?token=abc-123"));
+        std::env::remove_var("PUBLIC_BASE_URL");
     }
 
     #[test]
-    fn test_verification_content_has_link() {
+    fn test_verification_content_has_absolute_link() {
+        std::env::remove_var("PUBLIC_BASE_URL");
         let content = build_verification_content("xyz-789");
-        assert!(content.contains("/verify-email?token=xyz-789"));
+        assert!(content.contains("http://localhost:3000/verify-email?token=xyz-789"));
+        assert!(!content.contains("href=\"/verify-email"), "link must be absolute: {content}");
         assert!(content.contains("Verify Email"));
         assert!(content.contains("24 hours"));
+    }
+
+    #[test]
+    fn test_plain_text_fallbacks_use_absolute_links() {
+        std::env::remove_var("PUBLIC_BASE_URL");
+        let reset_plain = build_password_reset_plain("tok-1");
+        assert!(reset_plain.contains("http://localhost:3000/reset-password?token=tok-1"));
+        let verify_plain = build_verification_plain("tok-2");
+        assert!(verify_plain.contains("http://localhost:3000/verify-email?token=tok-2"));
+        let welcome_plain = build_welcome_plain("Alice");
+        assert!(welcome_plain.contains("http://localhost:3000/login"));
     }
 
     #[test]

@@ -12,10 +12,25 @@ use axum::{
 use sensei_api::{build_router, AppState};
 use sensei_auth::password::hash_password;
 use sensei_core::config::AppConfig;
+use sensei_core::domain::entities::User;
 use sensei_core::types::{EntityId, TenantId};
 use sensei_services::users::{InMemoryUsersService, UsersService};
 use std::sync::Arc;
 use tower::ServiceExt;
+
+/// Pin environment variables that influence [`AppConfig::from_env`] to safe,
+/// deterministic values.
+///
+/// Tests run in parallel within one process, so every caller must set the
+/// *same* values to avoid races.
+pub fn pin_test_environment() {
+    std::env::set_var("SENSEI_ENV", "development");
+    std::env::set_var("JWT_SECRET", "sensei-api-test-secret");
+    std::env::set_var("JWT_ISSUER", "sensei-test");
+    std::env::set_var("JWT_AUDIENCE", "sensei-test-api");
+    std::env::remove_var("DATABASE_URL");
+    std::env::remove_var("NATS_URL");
+}
 
 /// A test application server wrapping the Axum router.
 ///
@@ -45,6 +60,7 @@ impl TestApp {
     /// - Tenant: a new random UUID
     /// - Roles: `["admin", "user"]`
     pub async fn new() -> Self {
+        pin_test_environment();
         let password = "TestAdmin123!".to_string();
         let hash = hash_password(&password).expect("Failed to hash admin password");
         let tenant_id = TenantId::new_v4();
@@ -57,7 +73,12 @@ impl TestApp {
         );
         let users_service = Arc::new(users_service) as Arc<dyn UsersService>;
 
-        let config = AppConfig::from_env().expect("Failed to load test configuration");
+        // `AppConfig::from_env()` returns a Result; the environment is
+        // pinned above, so a failure here is a real test-environment bug.
+        let config = AppConfig::from_env().expect(
+            "Failed to load test configuration (SENSEI_ENV/JWT_SECRET are pinned \
+             by pin_test_environment)",
+        );
         let state = AppState::new(config, users_service);
 
         // Get the admin user ID from the service
@@ -91,6 +112,31 @@ impl TestApp {
             admin_tenant_id: TenantId::nil(),
             admin_user_id: EntityId::nil(),
         }
+    }
+
+    /// Create a user with the given roles directly through the users service.
+    ///
+    /// Returns the new user's ID. The user shares the app's admin tenant.
+    pub async fn create_user_with_roles(
+        &self,
+        email: &str,
+        password: &str,
+        roles: &[&str],
+    ) -> EntityId {
+        let hash = hash_password(password).expect("Failed to hash test password");
+        let mut user = User::new(
+            self.admin_tenant_id,
+            email.to_string(),
+            "Test User".to_string(),
+            hash,
+        );
+        user.roles = roles.iter().map(|r| r.to_string()).collect();
+        self.state
+            .users_service
+            .create_user(user)
+            .await
+            .expect("Failed to create test user")
+            .id
     }
 
     /// Send an HTTP request through the router and return the response.

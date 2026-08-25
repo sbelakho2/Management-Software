@@ -407,6 +407,32 @@ pub trait QualityService: Send + Sync {
     async fn update_management_review(&self, tenant_id: Uuid, id: Uuid, review: ManagementReview) -> Result<ManagementReview>;
     /// Delete a management review.
     async fn delete_management_review(&self, tenant_id: Uuid, id: Uuid) -> Result<()>;
+
+    // ── Getters for list-only entities (tenant-scoped, 404 on missing/foreign) ──
+    /// Get a SCAR by ID.
+    async fn get_scar(&self, tenant_id: Uuid, id: Uuid) -> Result<Scar>;
+    /// Get a QMS document by ID.
+    async fn get_document(&self, tenant_id: Uuid, id: Uuid) -> Result<QmsDocument>;
+    /// Get a first article inspection by ID.
+    async fn get_first_article_inspection(&self, tenant_id: Uuid, id: Uuid) -> Result<FirstArticleInspection>;
+    /// Get a self-inspection by ID.
+    async fn get_self_inspection(&self, tenant_id: Uuid, id: Uuid) -> Result<SelfInspection>;
+    /// Get an MSA study by ID.
+    async fn get_msa_study(&self, tenant_id: Uuid, id: Uuid) -> Result<MsaStudy>;
+    /// Get a process capability study by ID.
+    async fn get_process_capability_study(&self, tenant_id: Uuid, id: Uuid) -> Result<ProcessCapabilityStudy>;
+    /// Get a control plan by ID.
+    async fn get_control_plan(&self, tenant_id: Uuid, id: Uuid) -> Result<ControlPlan>;
+    /// Get a PFMEA by ID.
+    async fn get_pfmea(&self, tenant_id: Uuid, id: Uuid) -> Result<PfmeaLite>;
+    /// Get a gauge by ID.
+    async fn get_gauge(&self, tenant_id: Uuid, id: Uuid) -> Result<Gauge>;
+    /// Get a customer complaint by ID.
+    async fn get_complaint(&self, tenant_id: Uuid, id: Uuid) -> Result<CustomerComplaint>;
+    /// Get an 8D report by ID.
+    async fn get_eight_d_report(&self, tenant_id: Uuid, id: Uuid) -> Result<EightDReport>;
+    /// Get a management review by ID.
+    async fn get_management_review(&self, tenant_id: Uuid, id: Uuid) -> Result<ManagementReview>;
 }
 
 // ---------------------------------------------------------------------------
@@ -543,11 +569,9 @@ impl QualityService for InMemoryQualityService {
                 if !belongs_to_tenant {
                     return false;
                 }
-                // Note: NonConformance model has no `status` or `source` field,
-                // so those filters cannot be applied at the model level.
-                // They are accepted in the API contract for forward-compatibility.
-                let _ = (status, source);
-                severity.is_none_or(|s| format!("{:?}", ncr.severity).to_lowercase() == s.to_lowercase())
+                status.is_none_or(|s| enum_name_matches(s, ncr.status.as_str()))
+                    && severity.is_none_or(|s| enum_name_matches(s, &format!("{:?}", ncr.severity)))
+                    && source.is_none_or(|s| ncr.source.as_deref().is_some_and(|src| src.eq_ignore_ascii_case(s)))
             })
             .cloned()
             .collect();
@@ -590,6 +614,13 @@ impl QualityService for InMemoryQualityService {
             department,
             location,
             is_recurrence,
+            status: NcrStatus::Open,
+            source: None,
+            root_cause: None,
+            root_cause_type: None,
+            analysis_method: None,
+            disposition: None,
+            closed_at: None,
             created_at: now,
             updated_at: now,
         };
@@ -661,10 +692,10 @@ impl QualityService for InMemoryQualityService {
                 if !belongs_to_tenant {
                     return false;
                 }
-                let status_match = status.is_none_or(|s| format!("{:?}", capa.status).to_lowercase() == s.to_lowercase());
+                let status_match = status.is_none_or(|s| enum_name_matches(s, &format!("{:?}", capa.status)));
                 // The API exposes `nc_type` but the model uses `capa_type`.
                 // Filter by capa_type when nc_type is provided.
-                let type_match = nc_type.is_none_or(|t| format!("{:?}", capa.capa_type).to_lowercase() == t.to_lowercase());
+                let type_match = nc_type.is_none_or(|t| enum_name_matches(t, &format!("{:?}", capa.capa_type)));
                 status_match && type_match
             })
             .cloned()
@@ -845,8 +876,8 @@ impl QualityService for InMemoryQualityService {
                 if !belongs_to_tenant {
                     return false;
                 }
-                status.is_none_or(|s| format!("{:?}", audit.status).to_lowercase() == s.to_lowercase())
-                    && audit_type.is_none_or(|t| format!("{:?}", audit.audit_type).to_lowercase() == t.to_lowercase())
+                status.is_none_or(|s| enum_name_matches(s, &format!("{:?}", audit.status)))
+                    && audit_type.is_none_or(|t| enum_name_matches(t, &format!("{:?}", audit.audit_type)))
             })
             .cloned()
             .collect();
@@ -1080,7 +1111,7 @@ impl QualityService for InMemoryQualityService {
                     return false;
                 }
                 // Filter by stage if provided
-                let stage_match = stage.is_none_or(|s| format!("{:?}", proj.current_stage).to_lowercase() == s.to_lowercase());
+                let stage_match = stage.is_none_or(|s| enum_name_matches(s, &format!("{:?}", proj.current_stage)));
                 // Filter by health_status when status is provided
                 let status_match = status.is_none_or(|s| proj.health_status.to_lowercase() == s.to_lowercase());
                 stage_match && status_match
@@ -1211,6 +1242,13 @@ impl QualityService for InMemoryQualityService {
         existing.department = ncr.department;
         existing.location = ncr.location;
         existing.is_recurrence = ncr.is_recurrence;
+        existing.status = ncr.status;
+        existing.source = ncr.source;
+        existing.root_cause = ncr.root_cause;
+        existing.root_cause_type = ncr.root_cause_type;
+        existing.analysis_method = ncr.analysis_method;
+        existing.disposition = ncr.disposition;
+        existing.closed_at = ncr.closed_at;
         existing.updated_at = Utc::now();
         Ok(existing.clone())
     }
@@ -1227,7 +1265,7 @@ impl QualityService for InMemoryQualityService {
         Ok(())
     }
 
-    async fn investigate_ncr(&self, tenant_id: Uuid, id: Uuid, _rca: RootCauseAnalysis) -> Result<NonConformance> {
+    async fn investigate_ncr(&self, tenant_id: Uuid, id: Uuid, rca: RootCauseAnalysis) -> Result<NonConformance> {
         if !self.tenant_matches(id, tenant_id).await {
             return Err(SenseiError::NotFound(format!("NCR with id {id} not found")));
         }
@@ -1235,18 +1273,50 @@ impl QualityService for InMemoryQualityService {
         let existing = store
             .get_mut(&id)
             .ok_or_else(|| SenseiError::NotFound(format!("NCR with id {id} not found")))?;
+        if existing.status == NcrStatus::Closed {
+            return Err(SenseiError::Validation(
+                "Cannot investigate a closed NCR".to_string(),
+            ));
+        }
+        if existing.status == NcrStatus::Cancelled {
+            return Err(SenseiError::Validation(
+                "Cannot investigate a cancelled NCR".to_string(),
+            ));
+        }
+        existing.root_cause = Some(rca.description);
+        existing.root_cause_type = Some(rca.root_cause_type);
+        existing.analysis_method = Some(rca.analysis_method);
+        existing.status = NcrStatus::UnderInvestigation;
         existing.updated_at = Utc::now();
         Ok(existing.clone())
     }
 
-    async fn disposition_ncr(&self, tenant_id: Uuid, id: Uuid, _disposition: String) -> Result<NonConformance> {
+    async fn disposition_ncr(&self, tenant_id: Uuid, id: Uuid, disposition: String) -> Result<NonConformance> {
         if !self.tenant_matches(id, tenant_id).await {
             return Err(SenseiError::NotFound(format!("NCR with id {id} not found")));
+        }
+        if disposition.trim().is_empty() {
+            return Err(SenseiError::Validation(
+                "Disposition cannot be empty".to_string(),
+            ));
         }
         let mut store = self.ncrs.write().await;
         let existing = store
             .get_mut(&id)
             .ok_or_else(|| SenseiError::NotFound(format!("NCR with id {id} not found")))?;
+        if existing.status == NcrStatus::Closed {
+            return Err(SenseiError::Validation(
+                "Cannot dispose a closed NCR".to_string(),
+            ));
+        }
+        if existing.status == NcrStatus::Cancelled {
+            return Err(SenseiError::Validation(
+                "Cannot dispose a cancelled NCR".to_string(),
+            ));
+        }
+        existing.disposition = Some(disposition);
+        // Disposition defines the action path for the non-conforming material.
+        existing.status = NcrStatus::ActionDefined;
         existing.updated_at = Utc::now();
         Ok(existing.clone())
     }
@@ -1259,6 +1329,32 @@ impl QualityService for InMemoryQualityService {
         let existing = store
             .get_mut(&id)
             .ok_or_else(|| SenseiError::NotFound(format!("NCR with id {id} not found")))?;
+        if existing.status == NcrStatus::Closed {
+            return Err(SenseiError::Validation(
+                "NCR is already closed".to_string(),
+            ));
+        }
+        if existing.status == NcrStatus::Cancelled {
+            return Err(SenseiError::Validation(
+                "Cannot close a cancelled NCR".to_string(),
+            ));
+        }
+        // Closing requires the investigation and disposition to be complete.
+        let mut missing = Vec::new();
+        if existing.root_cause.is_none() {
+            missing.push("root cause analysis");
+        }
+        if existing.disposition.is_none() {
+            missing.push("disposition");
+        }
+        if !missing.is_empty() {
+            return Err(SenseiError::Validation(format!(
+                "Cannot close NCR {id}: missing {}",
+                missing.join(", ")
+            )));
+        }
+        existing.status = NcrStatus::Closed;
+        existing.closed_at = Some(Utc::now());
         existing.updated_at = Utc::now();
         Ok(existing.clone())
     }
@@ -1304,6 +1400,43 @@ impl QualityService for InMemoryQualityService {
         let existing = store
             .get_mut(&id)
             .ok_or_else(|| SenseiError::NotFound(format!("CAPA with id {id} not found")))?;
+        if existing.status == CapaStatusEx::Closed {
+            return Err(SenseiError::Validation(
+                "Cannot verify a closed CAPA".to_string(),
+            ));
+        }
+        if existing.status == CapaStatusEx::Cancelled || existing.status == CapaStatusEx::Rejected {
+            return Err(SenseiError::Validation(
+                "Cannot verify a cancelled/rejected CAPA".to_string(),
+            ));
+        }
+        // Verification requires at least one defined action and an RCA.
+        if existing.root_cause_analyses.is_empty() {
+            return Err(SenseiError::Validation(
+                "Cannot verify CAPA without a root cause analysis".to_string(),
+            ));
+        }
+        if existing.actions.is_empty() {
+            return Err(SenseiError::Validation(
+                "Cannot verify CAPA without corrective actions".to_string(),
+            ));
+        }
+        existing.status = CapaStatusEx::Verification;
+        // Record the verification as an effectiveness check so the result is
+        // traceable (who/when verified is captured by checked_by/checked_at
+        // when the caller provides it).
+        existing.effectiveness_checks.push(EffectivenessCheck {
+            id: Uuid::new_v4(),
+            capa_id: id,
+            check_method: "verification_review".to_string(),
+            results: "Corrective actions verified against the defined plan".to_string(),
+            is_effective: true,
+            checked_by: None,
+            checked_at: Some(Utc::now()),
+            follow_up_needed: false,
+            follow_up_actions: Vec::new(),
+            created_at: Utc::now(),
+        });
         existing.updated_at = Utc::now();
         Ok(existing.clone())
     }
@@ -1845,5 +1978,376 @@ impl QualityService for InMemoryQualityService {
             .ok_or_else(|| SenseiError::NotFound(format!("Management review with id {id} not found")))?;
         self.tenant_index.write().await.remove(&id);
         Ok(())
+    }
+
+    // ── Getters for list-only entities ──────────────────────────────────
+
+    async fn get_scar(&self, tenant_id: Uuid, id: Uuid) -> Result<Scar> {
+        if !self.tenant_matches(id, tenant_id).await {
+            return Err(SenseiError::NotFound(format!("SCAR with id {id} not found")));
+        }
+        let store = self.scars.read().await;
+        store
+            .get(&id)
+            .cloned()
+            .ok_or_else(|| SenseiError::NotFound(format!("SCAR with id {id} not found")))
+    }
+
+    async fn get_document(&self, tenant_id: Uuid, id: Uuid) -> Result<QmsDocument> {
+        if !self.tenant_matches(id, tenant_id).await {
+            return Err(SenseiError::NotFound(format!("Document with id {id} not found")));
+        }
+        let store = self.documents.read().await;
+        store
+            .get(&id)
+            .cloned()
+            .ok_or_else(|| SenseiError::NotFound(format!("Document with id {id} not found")))
+    }
+
+    async fn get_first_article_inspection(&self, tenant_id: Uuid, id: Uuid) -> Result<FirstArticleInspection> {
+        if !self.tenant_matches(id, tenant_id).await {
+            return Err(SenseiError::NotFound(format!("First article inspection with id {id} not found")));
+        }
+        let store = self.first_article_inspections.read().await;
+        store
+            .get(&id)
+            .cloned()
+            .ok_or_else(|| SenseiError::NotFound(format!("First article inspection with id {id} not found")))
+    }
+
+    async fn get_self_inspection(&self, tenant_id: Uuid, id: Uuid) -> Result<SelfInspection> {
+        if !self.tenant_matches(id, tenant_id).await {
+            return Err(SenseiError::NotFound(format!("Self-inspection with id {id} not found")));
+        }
+        let store = self.self_inspections.read().await;
+        store
+            .get(&id)
+            .cloned()
+            .ok_or_else(|| SenseiError::NotFound(format!("Self-inspection with id {id} not found")))
+    }
+
+    async fn get_msa_study(&self, tenant_id: Uuid, id: Uuid) -> Result<MsaStudy> {
+        if !self.tenant_matches(id, tenant_id).await {
+            return Err(SenseiError::NotFound(format!("MSA study with id {id} not found")));
+        }
+        let store = self.msa_studies.read().await;
+        store
+            .get(&id)
+            .cloned()
+            .ok_or_else(|| SenseiError::NotFound(format!("MSA study with id {id} not found")))
+    }
+
+    async fn get_process_capability_study(&self, tenant_id: Uuid, id: Uuid) -> Result<ProcessCapabilityStudy> {
+        if !self.tenant_matches(id, tenant_id).await {
+            return Err(SenseiError::NotFound(format!("Process capability study with id {id} not found")));
+        }
+        let store = self.process_capability_studies.read().await;
+        store
+            .get(&id)
+            .cloned()
+            .ok_or_else(|| SenseiError::NotFound(format!("Process capability study with id {id} not found")))
+    }
+
+    async fn get_control_plan(&self, tenant_id: Uuid, id: Uuid) -> Result<ControlPlan> {
+        if !self.tenant_matches(id, tenant_id).await {
+            return Err(SenseiError::NotFound(format!("Control plan with id {id} not found")));
+        }
+        let store = self.control_plans.read().await;
+        store
+            .get(&id)
+            .cloned()
+            .ok_or_else(|| SenseiError::NotFound(format!("Control plan with id {id} not found")))
+    }
+
+    async fn get_pfmea(&self, tenant_id: Uuid, id: Uuid) -> Result<PfmeaLite> {
+        if !self.tenant_matches(id, tenant_id).await {
+            return Err(SenseiError::NotFound(format!("PFMEA with id {id} not found")));
+        }
+        let store = self.pfmeas.read().await;
+        store
+            .get(&id)
+            .cloned()
+            .ok_or_else(|| SenseiError::NotFound(format!("PFMEA with id {id} not found")))
+    }
+
+    async fn get_gauge(&self, tenant_id: Uuid, id: Uuid) -> Result<Gauge> {
+        if !self.tenant_matches(id, tenant_id).await {
+            return Err(SenseiError::NotFound(format!("Gauge with id {id} not found")));
+        }
+        let store = self.gauges.read().await;
+        store
+            .get(&id)
+            .cloned()
+            .ok_or_else(|| SenseiError::NotFound(format!("Gauge with id {id} not found")))
+    }
+
+    async fn get_complaint(&self, tenant_id: Uuid, id: Uuid) -> Result<CustomerComplaint> {
+        if !self.tenant_matches(id, tenant_id).await {
+            return Err(SenseiError::NotFound(format!("Complaint with id {id} not found")));
+        }
+        let store = self.complaints.read().await;
+        store
+            .get(&id)
+            .cloned()
+            .ok_or_else(|| SenseiError::NotFound(format!("Complaint with id {id} not found")))
+    }
+
+    async fn get_eight_d_report(&self, tenant_id: Uuid, id: Uuid) -> Result<EightDReport> {
+        if !self.tenant_matches(id, tenant_id).await {
+            return Err(SenseiError::NotFound(format!("8D report with id {id} not found")));
+        }
+        let store = self.eight_d_reports.read().await;
+        store
+            .get(&id)
+            .cloned()
+            .ok_or_else(|| SenseiError::NotFound(format!("8D report with id {id} not found")))
+    }
+
+    async fn get_management_review(&self, tenant_id: Uuid, id: Uuid) -> Result<ManagementReview> {
+        if !self.tenant_matches(id, tenant_id).await {
+            return Err(SenseiError::NotFound(format!("Management review with id {id} not found")));
+        }
+        let store = self.management_reviews.read().await;
+        store
+            .get(&id)
+            .cloned()
+            .ok_or_else(|| SenseiError::NotFound(format!("Management review with id {id} not found")))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_ncr_workflow_investigate_disposition_close() {
+        let service = InMemoryQualityService::default();
+        let tenant_id = Uuid::new_v4();
+
+        let ncr = service
+            .create_ncr(
+                tenant_id,
+                "Defect rate too high".to_string(),
+                "PPM rose on line 3".to_string(),
+                NcType::Product,
+                NcSeverity::High,
+                None,
+                None,
+                Some("PPM-01".to_string()),
+                None,
+                Some("Quality".to_string()),
+                Some("Line 3".to_string()),
+                false,
+            )
+            .await
+            .unwrap();
+        assert_eq!(ncr.status, NcrStatus::Open);
+
+        // Investigate: RCA fields + Open → UnderInvestigation.
+        let rca = RootCauseAnalysis {
+            id: Uuid::new_v4(),
+            capa_id: Uuid::nil(),
+            description: "Misaligned fixture".to_string(),
+            root_cause_type: "Machine".to_string(),
+            analysis_method: "5-Why".to_string(),
+            contributors: vec![],
+            evidence: vec![],
+            verified_by: None,
+            verified_at: None,
+            created_at: Utc::now(),
+        };
+        let investigated = service
+            .investigate_ncr(tenant_id, ncr.id, rca)
+            .await
+            .unwrap();
+        assert_eq!(investigated.status, NcrStatus::UnderInvestigation);
+        assert_eq!(investigated.root_cause.as_deref(), Some("Misaligned fixture"));
+        assert_eq!(investigated.root_cause_type.as_deref(), Some("Machine"));
+        assert_eq!(investigated.analysis_method.as_deref(), Some("5-Why"));
+
+        // Disposition: ActionDefined.
+        let disposed = service
+            .disposition_ncr(tenant_id, ncr.id, "Rework and verify".to_string())
+            .await
+            .unwrap();
+        assert_eq!(disposed.status, NcrStatus::ActionDefined);
+        assert_eq!(disposed.disposition.as_deref(), Some("Rework and verify"));
+
+        // Closing without completeness is rejected.
+        let fresh = service
+            .create_ncr(
+                tenant_id,
+                "Incomplete".to_string(),
+                "no data".to_string(),
+                NcType::Process,
+                NcSeverity::Low,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                false,
+            )
+            .await
+            .unwrap();
+        let err = service.close_ncr(tenant_id, fresh.id).await.unwrap_err();
+        assert!(matches!(err, SenseiError::Validation(_)));
+
+        // Complete lifecycle closes with closed_at set.
+        let closed = service.close_ncr(tenant_id, ncr.id).await.unwrap();
+        assert_eq!(closed.status, NcrStatus::Closed);
+        assert!(closed.closed_at.is_some());
+
+        // Closed NCRs reject further investigation.
+        let err = service
+            .investigate_ncr(
+                tenant_id,
+                ncr.id,
+                RootCauseAnalysis {
+                    id: Uuid::new_v4(),
+                    capa_id: Uuid::nil(),
+                    description: "x".to_string(),
+                    root_cause_type: "y".to_string(),
+                    analysis_method: "z".to_string(),
+                    contributors: vec![],
+                    evidence: vec![],
+                    verified_by: None,
+                    verified_at: None,
+                    created_at: Utc::now(),
+                },
+            )
+            .await
+            .unwrap_err();
+        assert!(matches!(err, SenseiError::Validation(_)));
+    }
+
+    #[tokio::test]
+    async fn test_list_ncrs_filters_by_status_and_source() {
+        let service = InMemoryQualityService::default();
+        let tenant_id = Uuid::new_v4();
+
+        let first = service
+            .create_ncr(
+                tenant_id,
+                "A".to_string(),
+                "d".to_string(),
+                NcType::Product,
+                NcSeverity::Medium,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                false,
+            )
+            .await
+            .unwrap();
+        service
+            .create_ncr(
+                tenant_id,
+                "B".to_string(),
+                "d".to_string(),
+                NcType::Process,
+                NcSeverity::Low,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                false,
+            )
+            .await
+            .unwrap();
+
+        // Set the source on one NCR via update.
+        let mut updated = first.clone();
+        updated.source = Some("inspection".to_string());
+        service.update_ncr(tenant_id, first.id, updated).await.unwrap();
+
+        let page = service
+            .list_ncrs(tenant_id, Some("open"), None, None, None, None)
+            .await
+            .unwrap();
+        assert_eq!(page.data.len(), 2);
+
+        let page = service
+            .list_ncrs(tenant_id, Some("open"), None, Some("inspection"), None, None)
+            .await
+            .unwrap();
+        assert_eq!(page.data.len(), 1);
+        assert_eq!(page.data[0].id, first.id);
+
+        let page = service
+            .list_ncrs(tenant_id, None, Some("critical"), None, None, None)
+            .await
+            .unwrap();
+        assert!(page.data.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_verify_capa_records_effectiveness() {
+        let service = InMemoryQualityService::default();
+        let tenant_id = Uuid::new_v4();
+
+        // Verification without RCA/actions is rejected.
+        let capa = service
+            .create_capa(
+                tenant_id,
+                "Fix calibration".to_string(),
+                "desc".to_string(),
+                vec![],
+                CapaType::Corrective,
+                CapaPriority::High,
+                None,
+                None,
+            )
+            .await
+            .unwrap();
+        let err = service.verify_capa(tenant_id, capa.id).await.unwrap_err();
+        assert!(matches!(err, SenseiError::Validation(_)));
+
+        // Seed an RCA and an action, then verify.
+        let mut with_rca = capa.clone();
+        with_rca.root_cause_analyses.push(RootCauseAnalysis {
+            id: Uuid::new_v4(),
+            capa_id: capa.id,
+            description: "Calibration drift".to_string(),
+            root_cause_type: "Machine".to_string(),
+            analysis_method: "Fishbone".to_string(),
+            contributors: vec![],
+            evidence: vec![],
+            verified_by: None,
+            verified_at: None,
+            created_at: Utc::now(),
+        });
+        with_rca.actions.push(CorrectiveAction {
+            id: Uuid::new_v4(),
+            capa_id: capa.id,
+            description: "Recalibrate".to_string(),
+            action_type: "corrective".to_string(),
+            owner_id: None,
+            status: ActionStatus::Verified,
+            due_date: None,
+            completed_at: None,
+            verified_by: None,
+            verified_at: None,
+            verification_notes: None,
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        });
+        service.update_capa(tenant_id, capa.id, with_rca).await.unwrap();
+
+        let verified = service.verify_capa(tenant_id, capa.id).await.unwrap();
+        assert_eq!(verified.status, CapaStatusEx::Verification);
+        assert!(
+            verified
+                .effectiveness_checks
+                .iter()
+                .any(|ec| ec.is_effective),
+            "verification must record an effectiveness check"
+        );
     }
 }

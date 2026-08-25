@@ -704,7 +704,7 @@ mod tests {
     #[test]
     fn test_cache_management() {
         let mut service = ModelExplainabilityService::new(3);
-        let mut importance = HashMap::new();
+        let mut importance: HashMap<String, f64> = HashMap::new();
         importance.insert("f1".into(), 1.0);
 
         for i in 0..5 {

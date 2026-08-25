@@ -4,7 +4,7 @@
 //! CRUD, versioning, and version history.
 
 use axum::{Json, extract::{Path, Query, State}};
-use chrono::{DateTime, Utc};
+use chrono::Utc;
 use serde::Deserialize;
 use sensei_auth::middleware::AuthenticatedUser;
 use sensei_core::error::{Result, SenseiError};
@@ -61,8 +61,13 @@ pub struct UpdateStandardWorkRequest {
     pub tools_required: Option<Vec<String>>,
     pub materials_required: Option<Vec<String>>,
     pub attachments: Option<Vec<Uuid>>,
-    pub approved_by: Option<Uuid>,
-    pub approved_at: Option<DateTime<Utc>>,
+}
+
+/// Request body for approving a standard work document.
+#[derive(Debug, Deserialize)]
+pub struct ApproveStandardWorkRequest {
+    /// Optional comment/notes recorded with the approval.
+    pub notes: Option<String>,
 }
 
 /// Request body for creating a new version of a standard work document.
@@ -217,12 +222,68 @@ pub async fn update_standard_work(
     if let Some(atts) = req.attachments {
         doc.attachments = atts;
     }
-    if let Some(approved_by) = req.approved_by {
-        doc.approved_by = Some(approved_by);
+    // approved_by / approved_at are intentionally NOT settable via PUT —
+    // they are owned by the approve/reject endpoints.
+    doc.updated_at = Utc::now();
+    Ok(Json(doc.clone()))
+}
+
+/// Approve a standard work document.
+///
+/// Transitions the document from `Draft` to `Published`, recording the
+/// approving user (from the token) and the approval timestamp. Only draft
+/// documents can be approved.
+pub async fn approve_standard_work(
+    user: AuthenticatedUser,
+    State(state): State<AppState>,
+    Path(sw_id): Path<Uuid>,
+    Json(_req): Json<ApproveStandardWorkRequest>,
+) -> Result<Json<StandardWorkDocument>> {
+    let tenant_id = user.tenant_id;
+    let mut store = state.standard_work_documents.write().await;
+    let doc = store
+        .get_mut(&sw_id)
+        .filter(|d| d.tenant_id == tenant_id)
+        .ok_or_else(|| SenseiError::NotFound(format!("Standard work {sw_id} not found")))?;
+    if doc.status != SwStatus::Draft {
+        return Err(SenseiError::Conflict(format!(
+            "Cannot approve a document in state {:?}; only Draft documents can be approved",
+            doc.status
+        )));
     }
-    if let Some(approved_at) = req.approved_at {
-        doc.approved_at = Some(approved_at);
+    doc.status = SwStatus::Published;
+    doc.approved_by = Some(user.user_id);
+    doc.approved_at = Some(Utc::now());
+    doc.updated_at = Utc::now();
+    Ok(Json(doc.clone()))
+}
+
+/// Reject a standard work document.
+///
+/// Declines the draft for approval: the document returns to `Draft` with the
+/// approval fields cleared. (The data model has no dedicated `Rejected`
+/// state, so a rejected document remains editable as a draft.)
+pub async fn reject_standard_work(
+    _user: AuthenticatedUser,
+    State(state): State<AppState>,
+    Path(sw_id): Path<Uuid>,
+) -> Result<Json<StandardWorkDocument>> {
+    let tenant_id = _user.tenant_id;
+    let mut store = state.standard_work_documents.write().await;
+    let doc = store
+        .get_mut(&sw_id)
+        .filter(|d| d.tenant_id == tenant_id)
+        .ok_or_else(|| SenseiError::NotFound(format!("Standard work {sw_id} not found")))?;
+    if doc.status != SwStatus::Draft {
+        return Err(SenseiError::Conflict(format!(
+            "Cannot reject a document in state {:?}; only Draft documents can be rejected",
+            doc.status
+        )));
     }
+    // The document stays a draft but the approval is cleared; `approved_by`
+    // staying None is the observable rejection signal.
+    doc.approved_by = None;
+    doc.approved_at = None;
     doc.updated_at = Utc::now();
     Ok(Json(doc.clone()))
 }
@@ -317,17 +378,175 @@ pub async fn create_version(
 }
 
 /// Get a specific version of a standard work document.
+///
+/// The version must belong to the requested document; a version owned by a
+/// different document is rejected with 404.
 pub async fn get_version(
     user: AuthenticatedUser,
     State(state): State<AppState>,
-    Path((_sw_id, version_id)): Path<(Uuid, Uuid)>,
+    Path((sw_id, version_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<StandardWorkVersion>> {
     let tenant_id = user.tenant_id;
     let store = state.standard_work_versions.read().await;
     let version = store
         .values()
-        .find(|v| v.id == version_id && v.tenant_id == tenant_id)
+        .find(|v| v.id == version_id && v.document_id == sw_id && v.tenant_id == tenant_id)
         .cloned()
         .ok_or_else(|| SenseiError::NotFound(format!("Version {version_id} not found")))?;
     Ok(Json(version))
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sensei_auth::password::hash_password;
+    use sensei_core::config::AppConfig;
+    use sensei_core::types::TenantId;
+    use sensei_services::users::{InMemoryUsersService, UsersService};
+    use std::sync::Arc;
+
+    async fn test_state() -> (AppState, TenantId, Uuid) {
+        let hash = hash_password("Test@1234").unwrap();
+        let tenant_id = TenantId::new_v4();
+        let users_service = InMemoryUsersService::with_admin(
+            "admin@test.com", "Admin User", &hash, tenant_id,
+        );
+        let users_service = Arc::new(users_service) as Arc<dyn UsersService>;
+        let config = AppConfig::from_env().unwrap();
+        let state = AppState::new(config, users_service);
+        let admin = state.users_service.find_by_email("admin@test.com").await.unwrap();
+        (state, tenant_id, admin.id)
+    }
+
+    fn auth_user(tenant_id: TenantId, user_id: Uuid) -> AuthenticatedUser {
+        AuthenticatedUser { user_id, tenant_id, roles: vec!["admin".to_string()] }
+    }
+
+    fn doc_payload() -> CreateStandardWorkRequest {
+        CreateStandardWorkRequest {
+            title: "Doc".to_string(),
+            document_number: "SW-001".to_string(),
+            area: "Assembly".to_string(),
+            process: "Process A".to_string(),
+            steps: Vec::new(),
+            required_skills: Vec::new(),
+            cycle_time_seconds: None,
+            takt_time_seconds: None,
+            quality_checks: Vec::new(),
+            safety_notes: Vec::new(),
+            tools_required: Vec::new(),
+            materials_required: Vec::new(),
+            attachments: Vec::new(),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_approve_publishes_and_records_approver() {
+        let (state, tid, uid) = test_state().await;
+        let user = auth_user(tid, uid);
+        let created = create_standard_work(
+            user.clone(),
+            State(state.clone()),
+            Json(doc_payload()),
+        )
+        .await
+        .unwrap();
+        assert_eq!(created.status, SwStatus::Draft);
+
+        let approved = approve_standard_work(
+            user.clone(),
+            State(state.clone()),
+            Path(created.id),
+            Json(ApproveStandardWorkRequest { notes: None }),
+        )
+        .await
+        .unwrap();
+        assert_eq!(approved.status, SwStatus::Published);
+        assert_eq!(approved.approved_by, Some(uid));
+        assert!(approved.approved_at.is_some());
+
+        // Approving again is a conflict (already published).
+        let err = approve_standard_work(
+            user.clone(),
+            State(state.clone()),
+            Path(created.id),
+            Json(ApproveStandardWorkRequest { notes: None }),
+        )
+        .await
+        .unwrap_err();
+        assert!(matches!(err, SenseiError::Conflict(_)));
+    }
+
+    #[tokio::test]
+    async fn test_reject_clears_approval() {
+        let (state, tid, uid) = test_state().await;
+        let user = auth_user(tid, uid);
+        let created = create_standard_work(
+            user.clone(),
+            State(state.clone()),
+            Json(doc_payload()),
+        )
+        .await
+        .unwrap();
+
+        let rejected = reject_standard_work(user.clone(), State(state.clone()), Path(created.id))
+            .await
+            .unwrap();
+        assert_eq!(rejected.status, SwStatus::Draft);
+        assert!(rejected.approved_by.is_none());
+        assert!(rejected.approved_at.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_get_version_scoped_by_document() {
+        let (state, tid, uid) = test_state().await;
+        let user = auth_user(tid, uid);
+        let doc_a = create_standard_work(
+            user.clone(),
+            State(state.clone()),
+            Json(doc_payload()),
+        )
+        .await
+        .unwrap();
+        let doc_b = create_standard_work(
+            user.clone(),
+            State(state.clone()),
+            Json(doc_payload()),
+        )
+        .await
+        .unwrap();
+
+        let version = create_version(
+            user.clone(),
+            State(state.clone()),
+            Path(doc_a.id),
+            Json(CreateVersionRequest { change_notes: None }),
+        )
+        .await
+        .unwrap();
+
+        // Version of doc A under doc B → 404.
+        let err = get_version(
+            user.clone(),
+            State(state.clone()),
+            Path((doc_b.id, version.id)),
+        )
+        .await
+        .unwrap_err();
+        assert!(matches!(err, SenseiError::NotFound(_)));
+
+        // Under doc A → OK.
+        let found = get_version(
+            user.clone(),
+            State(state.clone()),
+            Path((doc_a.id, version.id)),
+        )
+        .await
+        .unwrap();
+        assert_eq!(found.id, version.id);
+    }
 }

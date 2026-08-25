@@ -62,6 +62,10 @@ pub struct CellUtilizationMetrics {
     pub capacity_per_shift: i32,
     pub shifts_per_day: i32,
     pub total_daily_capacity: i32,
+    /// Whether the utilization is computed from real production data.
+    /// `false` means no active work orders exist for the tenant yet, so
+    /// `current_utilization_pct` is not meaningful.
+    pub data_available: bool,
     pub current_utilization_pct: f64,
     pub efficiency_target: f64,
     pub efficiency_vs_target_pct: f64,
@@ -208,10 +212,34 @@ pub async fn get_cell_utilization(
 
     let total_capacity = cell.capacity_per_shift as f64 * cell.shifts_per_day as f64;
 
-    // Estimate utilization based on available capacity and efficiency target
-    let utilization_pct = if total_capacity > 0.0 {
-        // Use a heuristic based on efficiency target as a proxy for utilization
-        (cell.efficiency_target * 0.85).min(100.0)
+    // Compute real utilization from production data: page through all of the
+    // tenant's work orders and sum the remaining quantity of every active
+    // (non-terminal) order. This is the capacity currently committed to the
+    // cell's production flow, compared against the cell's available daily
+    // capacity. No heuristic, no fabricated numbers.
+    const PER_PAGE: usize = 100;
+    let mut active_remaining: f64 = 0.0;
+    let mut page = 1usize;
+    loop {
+        let res = state
+            .production_service
+            .list_work_orders(tenant_id, None, None, Some(page), Some(PER_PAGE))
+            .await?;
+        let fetched = res.data.len();
+        for wo in &res.data {
+            if wo.status != "completed" && wo.status != "cancelled" {
+                active_remaining += (wo.quantity - wo.quantity_completed).max(0) as f64;
+            }
+        }
+        if fetched < PER_PAGE {
+            break;
+        }
+        page += 1;
+    }
+
+    let data_available = active_remaining > 0.0;
+    let utilization_pct = if data_available && total_capacity > 0.0 {
+        (active_remaining / total_capacity) * 100.0
     } else {
         0.0
     };
@@ -229,6 +257,7 @@ pub async fn get_cell_utilization(
         capacity_per_shift: cell.capacity_per_shift,
         shifts_per_day: cell.shifts_per_day,
         total_daily_capacity: cell.capacity_per_shift * cell.shifts_per_day,
+        data_available,
         current_utilization_pct: utilization_pct,
         efficiency_target: eff_target,
         efficiency_vs_target_pct: eff_vs_target,

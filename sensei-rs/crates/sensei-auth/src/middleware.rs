@@ -28,6 +28,18 @@ pub struct AuthenticatedUser {
     pub roles: Vec<String>,
 }
 
+impl AuthenticatedUser {
+    /// Returns `true` if the user has the given role.
+    pub fn has_role(&self, role: &str) -> bool {
+        self.roles.iter().any(|r| r == role)
+    }
+
+    /// Returns `true` if the user has any of the given roles.
+    pub fn has_any_role(&self, roles: &[&str]) -> bool {
+        roles.iter().any(|role| self.has_role(role))
+    }
+}
+
 /// Error response for auth failures.
 #[derive(Debug, Serialize)]
 pub struct AuthErrorResponse {
@@ -48,6 +60,10 @@ pub async fn auth_middleware(
         .get::<JwtService>()
         .cloned()
         .ok_or_else(|| {
+            tracing::error!(
+                "Auth middleware: JwtService not registered in request extensions; \
+                 the application failed to configure JWT authentication"
+            );
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(AuthErrorResponse {
@@ -85,18 +101,18 @@ pub async fn auth_middleware(
             Ok(next.run(req).await)
         }
         Err(e) => {
-            let (status, msg) = match &e {
-                SenseiError::TokenError(msg) if msg.contains("expired") => {
-                    (StatusCode::UNAUTHORIZED, "Token has expired")
-                }
-                _ => (StatusCode::UNAUTHORIZED, "Invalid token"),
+            let message = match &e {
+                // A dedicated variant, mapped by the JWT layer from
+                // `ErrorKind::ExpiredSignature` — never string matching.
+                SenseiError::TokenExpired => "Token has expired",
+                _ => "Invalid token",
             };
 
             Err((
-                status,
+                StatusCode::UNAUTHORIZED,
                 Json(AuthErrorResponse {
                     error: "invalid_token".to_string(),
-                    message: msg.to_string(),
+                    message: message.to_string(),
                 }),
             ))
         }

@@ -38,7 +38,7 @@ async fn test_list_accounts() {
     let _ = app.send_request(req).await;
 
     let req = app.get_authenticated("/api/v1/accounts", &token);
-    let mut resp = app.send_request(req).await;
+    let resp = app.send_request(req).await;
     assert_eq!(resp.status(), StatusCode::OK);
 }
 

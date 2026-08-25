@@ -43,6 +43,16 @@ pub struct RfqLineItemRequest {
 
 // ── Handlers ─────────────────────────────────────────────────────────────────
 
+/// Generate an RFQ number: `RFQ-YYYYMMDD-{8 hex chars}`.
+fn generate_rfq_number() -> String {
+    let date = chrono::Utc::now().format("%Y%m%d");
+    let suffix: String = Uuid::new_v4()
+        .as_simple()
+        .encode_lower(&mut Uuid::encode_buffer())[..8]
+        .to_string();
+    format!("RFQ-{date}-{suffix}")
+}
+
 /// List all RFQs with optional filters.
 pub async fn list_rfqs(
     user: AuthenticatedUser,
@@ -67,7 +77,7 @@ pub async fn create_rfq(
     let rfq = RFQ {
         id: Uuid::new_v4(),
         tenant_id,
-        rfq_number: String::new(),
+        rfq_number: generate_rfq_number(),
         supplier_id: req.supplier_id,
         supplier_name: req.supplier_name,
         status: "draft".to_string(),
@@ -127,6 +137,7 @@ pub async fn add_rfq_line_item(
 ) -> Result<Json<RFQItem>> {
     let tenant_id = user.tenant_id;
     let item = RFQItem {
+        line_item_id: Some(Uuid::new_v4()),
         product_id: req.product_id,
         product_name: req.product_name,
         quantity: req.quantity,
@@ -141,6 +152,9 @@ pub async fn add_rfq_line_item(
 }
 
 /// Update a line item within an RFQ.
+///
+/// The path `{item_id}` refers to the line item's stable `line_item_id`,
+/// not the product id.
 pub async fn update_rfq_line_item(
     user: AuthenticatedUser,
     State(state): State<AppState>,
@@ -152,10 +166,10 @@ pub async fn update_rfq_line_item(
     let item = rfq
         .items
         .iter_mut()
-        .find(|i| i.product_id == item_id)
+        .find(|i| i.line_item_id == Some(item_id))
         .ok_or_else(|| {
             sensei_core::error::SenseiError::NotFound(format!(
-                "Line item for product {item_id} not found in RFQ {rfq_id}"
+                "Line item {item_id} not found in RFQ {rfq_id}"
             ))
         })?;
     item.product_name = req.product_name;

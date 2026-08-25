@@ -6,6 +6,7 @@
 use async_trait::async_trait;
 use sensei_core::error::{Result, SenseiError};
 use sensei_core::types::{EntityId, TenantId, Timestamp, new_id, now};
+use std::collections::HashMap;
 use uuid::Uuid;
 
 use super::models::{
@@ -198,6 +199,9 @@ pub struct InMemorySupplierQualityService {
     complaints: tokio::sync::RwLock<Vec<super::models::CustomerComplaint>>,
     surveys: tokio::sync::RwLock<Vec<super::models::CustomerSurvey>>,
     _8d_reports: tokio::sync::RwLock<Vec<EightDReport>>,
+    /// Per-(tenant, day) sequence counters for SCAR and complaint numbers.
+    scar_counters: tokio::sync::RwLock<HashMap<(Uuid, String), u64>>,
+    complaint_counters: tokio::sync::RwLock<HashMap<(Uuid, String), u64>>,
 }
 
 impl InMemorySupplierQualityService {
@@ -210,15 +214,27 @@ impl InMemorySupplierQualityService {
             complaints: tokio::sync::RwLock::new(Vec::new()),
             surveys: tokio::sync::RwLock::new(Vec::new()),
             _8d_reports: tokio::sync::RwLock::new(Vec::new()),
+            scar_counters: tokio::sync::RwLock::new(HashMap::new()),
+            complaint_counters: tokio::sync::RwLock::new(HashMap::new()),
         }
     }
 
-    fn _next_scar_number(&self) -> String {
-        format!("SCAR-{}", chrono::Utc::now().format("%Y%m%d-%04d"))
+    /// Next per-tenant daily SCAR sequence number (e.g. `SCAR-20260824-0001`).
+    async fn _next_scar_number(&self, tenant_id: Uuid) -> String {
+        let day = chrono::Utc::now().format("%Y%m%d").to_string();
+        let mut counters = self.scar_counters.write().await;
+        let seq = counters.entry((tenant_id, day.clone())).or_insert(0);
+        *seq += 1;
+        format!("SCAR-{day}-{seq:04}")
     }
 
-    fn _next_complaint_number(&self) -> String {
-        format!("CMP-{}", chrono::Utc::now().format("%Y%m%d-%04d"))
+    /// Next per-tenant daily complaint sequence number.
+    async fn _next_complaint_number(&self, tenant_id: Uuid) -> String {
+        let day = chrono::Utc::now().format("%Y%m%d").to_string();
+        let mut counters = self.complaint_counters.write().await;
+        let seq = counters.entry((tenant_id, day.clone())).or_insert(0);
+        *seq += 1;
+        format!("CMP-{day}-{seq:04}")
     }
 
     fn _get_or_create_stats<'a>(
@@ -423,7 +439,7 @@ impl SupplierService for InMemorySupplierQualityService {
 impl ScarService for InMemorySupplierQualityService {
     async fn create_scar(
         &self,
-        _tenant_id: TenantId,
+        tenant_id: TenantId,
         supplier_id: String,
         title: String,
         description: String,
@@ -432,7 +448,7 @@ impl ScarService for InMemorySupplierQualityService {
     ) -> Result<Scar> {
         let scar = Scar {
             id: new_id(),
-            scar_number: self._next_scar_number(),
+            scar_number: self._next_scar_number(tenant_id).await,
             supplier_id,
             title,
             description,
@@ -533,7 +549,7 @@ impl ScarService for InMemorySupplierQualityService {
 impl CustomerSatisfactionService for InMemorySupplierQualityService {
     async fn create_complaint(
         &self,
-        _tenant_id: TenantId,
+        tenant_id: TenantId,
         customer_id: Uuid,
         description: String,
         severity: FindingSeverity,
@@ -541,7 +557,7 @@ impl CustomerSatisfactionService for InMemorySupplierQualityService {
     ) -> Result<super::models::CustomerComplaint> {
         let complaint = super::models::CustomerComplaint {
             id: new_id(),
-            complaint_number: self._next_complaint_number(),
+            complaint_number: self._next_complaint_number(tenant_id).await,
             customer_id,
             product_id,
             description,

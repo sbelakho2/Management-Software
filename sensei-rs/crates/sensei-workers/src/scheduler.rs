@@ -116,10 +116,8 @@ impl CronSchedule {
                     .date_naive()
                     .and_hms_opt(*hour, *minute, 0)
                     .unwrap_or_else(|| {
-                        // Fallback: should not happen with validated input
-                        now.date_naive()
-                            .and_hms_opt(0, 0, 0)
-                            .unwrap()
+                        // Fallback: should not happen with validated input.
+                        now.date_naive().and_time(chrono::NaiveTime::MIN)
                     });
                 let target = today_target
                     .and_local_timezone(chrono::Utc)
@@ -173,7 +171,7 @@ impl TaskScheduler {
     }
 
     /// Add a scheduled task.
-    pub fn add_task(&mut self, cron: &str, task_type: TaskType, payload: serde_json::Value) {
+    pub async fn add_task(&mut self, cron: &str, task_type: TaskType, payload: serde_json::Value) {
         let task = ScheduledTask {
             cron_expression: cron.to_string(),
             task_type,
@@ -184,7 +182,7 @@ impl TaskScheduler {
             task_type = ?task.task_type,
             "Added scheduled task"
         );
-        self.tasks.blocking_write().push(task);
+        self.tasks.write().await.push(task);
     }
 
     /// Start the scheduler loop.
@@ -297,31 +295,37 @@ impl TaskScheduler {
 impl TaskScheduler {
     /// Create a new [`TaskScheduler`] pre-populated with the standard Celery
     /// Beat replacement schedules.
-    pub fn with_default_schedule(js: Context) -> Self {
+    pub async fn with_default_schedule(js: Context) -> Self {
         let mut scheduler = Self::new(js);
 
         // daily_analytics_snapshot → daily at 02:00 UTC
-        scheduler.add_task(
-            "daily@02:00",
-            TaskType::DailyAnalyticsSnapshot,
-            serde_json::json!({
-                "domains": ["production", "quality", "finance", "inventory"]
-            }),
-        );
+        scheduler
+            .add_task(
+                "daily@02:00",
+                TaskType::DailyAnalyticsSnapshot,
+                serde_json::json!({
+                    "domains": ["production", "quality", "finance", "inventory"]
+                }),
+            )
+            .await;
 
         // compute_warehouse_kpis → every 4 hours
-        scheduler.add_task(
-            "every@4hours",
-            TaskType::ComputeWarehouseKpis,
-            serde_json::json!({}),
-        );
+        scheduler
+            .add_task(
+                "every@4hours",
+                TaskType::ComputeWarehouseKpis,
+                serde_json::json!({}),
+            )
+            .await;
 
         // scheduled_retrain_all → daily at 03:00 UTC
-        scheduler.add_task(
-            "daily@03:00",
-            TaskType::ScheduledRetrainAll,
-            serde_json::json!({}),
-        );
+        scheduler
+            .add_task(
+                "daily@03:00",
+                TaskType::ScheduledRetrainAll,
+                serde_json::json!({}),
+            )
+            .await;
 
         scheduler
     }

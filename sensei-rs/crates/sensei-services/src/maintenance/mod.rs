@@ -101,8 +101,12 @@ pub struct EquipmentRecord {
     pub status: String,
     /// Date the equipment was installed.
     pub install_date: DateTime<Utc>,
-    /// Last maintenance date.
+    /// Last maintenance date (set when entering `under_maintenance`).
     pub last_maintenance: Option<DateTime<Utc>>,
+    /// When the most recent maintenance work was completed (set when
+    /// transitioning back to `operational`).
+    #[serde(default)]
+    pub maintenance_completed_at: Option<DateTime<Utc>>,
     /// Overall Equipment Effectiveness percentage.
     pub oee_percentage: f64,
 }
@@ -570,6 +574,9 @@ impl MaintenanceService for InMemoryMaintenanceService {
         eq.status = status.to_string();
         if status == "under_maintenance" {
             eq.last_maintenance = Some(now());
+        } else if status == "operational" {
+            // Coming back from maintenance records when the work completed.
+            eq.maintenance_completed_at = Some(now());
         }
 
         Ok(eq.clone())
@@ -858,6 +865,7 @@ mod tests {
             status: "operational".to_string(),
             install_date: Utc::now(),
             last_maintenance: None,
+            maintenance_completed_at: None,
             oee_percentage: 85.3,
         };
 
@@ -875,6 +883,13 @@ mod tests {
             .unwrap();
         assert_eq!(updated.status, "under_maintenance");
         assert!(updated.last_maintenance.is_some());
+
+        // Returning to operational records when maintenance completed.
+        let operational = service
+            .update_equipment_status(tenant_id, registered.id, "operational")
+            .await
+            .unwrap();
+        assert!(operational.maintenance_completed_at.is_some());
 
         // List with filter
         let machines = service

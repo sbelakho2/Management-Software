@@ -3,17 +3,30 @@
 //! Provides login, token refresh, logout, registration, password management,
 //! profile management, and email verification endpoints.
 
-use axum::{Json, extract::State};
+use axum::{
+    Json,
+    extract::{ConnectInfo, FromRequestParts, State},
+    http::{HeaderMap, header},
+    http::request::Parts,
+};
+use dashmap::DashMap;
+use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
+use sensei_auth::jwt::{AccessTokenClaims, RefreshTokenClaims};
 use sensei_auth::middleware::AuthenticatedUser;
-use sensei_auth::password::{hash_password, validate_password_strength};
+use sensei_auth::password::{PasswordCheck, hash_password, validate_password_strength, verify_password};
+use sensei_auth::refresh_tokens::TokenReuseDetected;
 use sensei_core::domain::entities::User;
 use sensei_core::error::{Result, SenseiError};
 use sensei_core::types::{EntityId, now, new_id};
+use std::collections::VecDeque;
+use std::net::SocketAddr;
+use std::time::{Duration as StdDuration, Instant};
 use uuid::Uuid;
 
+use crate::middleware::session::session_fingerprint;
 use crate::state::{AppState, PasswordResetToken, EmailVerificationToken};
-use chrono::Duration;
+use chrono::{Duration, Utc};
 
 /// Login request body.
 #[derive(Debug, Deserialize)]
@@ -137,19 +150,101 @@ impl From<User> for UserProfileResponse {
     }
 }
 
-/// Handle user login.
-pub async fn login(
-    State(state): State<AppState>,
-    Json(req): Json<LoginRequest>,
-) -> Result<Json<LoginResponse>> {
-    let user = state
-        .users_service
-        .verify_password(&req.email, &req.password)
-        .await?;
+/// Extractor yielding the peer socket address when the router provides
+/// connect-info (absent in tests and for servers without
+/// `into_make_service_with_connect_info`).
+#[derive(Debug, Clone, Copy)]
+pub struct OptionalPeer(pub Option<SocketAddr>);
 
+impl<S> FromRequestParts<S> for OptionalPeer
+where
+    S: Send + Sync,
+{
+    type Rejection = std::convert::Infallible;
+
+    async fn from_request_parts(
+        parts: &mut Parts,
+        _state: &S,
+    ) -> std::result::Result<Self, Self::Rejection> {
+        let peer = parts
+            .extensions
+            .get::<ConnectInfo<SocketAddr>>()
+            .map(|ci| ci.0);
+        Ok(Self(peer))
+    }
+}
+
+/// Max password-reset / email-verification requests per email per hour.
+const EMAIL_REQUEST_RATE_LIMIT_PER_HOUR: usize = 3;
+/// How long a rate-limit bucket retains timestamps.
+const EMAIL_RATE_WINDOW: StdDuration = StdDuration::from_secs(3600);
+
+/// Per-email request timestamps for the auth request endpoints.
+static EMAIL_REQUEST_RATE_LIMITS: Lazy<DashMap<String, VecDeque<Instant>>> =
+    Lazy::new(DashMap::new);
+
+/// Clear the per-email rate-limit buckets (tests only).
+#[cfg(test)]
+fn reset_email_rate_limits() {
+    EMAIL_REQUEST_RATE_LIMITS.clear();
+}
+
+/// Enforce a per-email rate limit for auth request endpoints.
+///
+/// Returns `true` when the request is allowed. The bucket is pruned of
+/// timestamps older than the sliding window before counting.
+fn allow_email_request(email: &str) -> bool {
+    let now = Instant::now();
+    let key = email.trim().to_lowercase();
+    let mut bucket = EMAIL_REQUEST_RATE_LIMITS.entry(key).or_default();
+
+    while bucket
+        .front()
+        .is_some_and(|t| now.duration_since(*t) >= EMAIL_RATE_WINDOW)
+    {
+        bucket.pop_front();
+    }
+
+    if bucket.len() >= EMAIL_REQUEST_RATE_LIMIT_PER_HOUR {
+        return false;
+    }
+    bucket.push_back(now);
+    true
+}
+
+/// Compute the session fingerprint for the current client, reusing the same
+/// logic as the session-binding middleware so login/refresh register the
+/// exact fingerprint later requests are verified against.
+fn fingerprint_for_request(
+    peer: Option<SocketAddr>,
+    headers: &HeaderMap,
+    state: &AppState,
+) -> String {
+    let user_agent = headers
+        .get(header::USER_AGENT)
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.to_string());
+    let xff = headers
+        .get("x-forwarded-for")
+        .and_then(|v| v.to_str().ok());
+    session_fingerprint(
+        peer.map(|p| p.ip()),
+        xff,
+        user_agent.as_deref(),
+        &state.config.security.trusted_proxies,
+    )
+}
+
+/// Issue a fresh token pair for a user, storing the refresh token in the
+/// refresh-token store so rotation and reuse detection can be enforced.
+async fn issue_token_pair(
+    state: &AppState,
+    user: &User,
+    family_id: Uuid,
+) -> Result<LoginResponse> {
     let user_id = user.id;
     let tenant_id = user.tenant_id;
-    let roles = user.roles;
+    let roles = user.roles.clone();
 
     let access_token = state
         .jwt_service
@@ -158,44 +253,136 @@ pub async fn login(
 
     let refresh_token = state
         .jwt_service
-        .issue_refresh_token(user_id, tenant_id)
+        .issue_refresh_token(user_id, tenant_id, family_id)
         .map_err(|e| SenseiError::TokenError(e.to_string()))?;
 
-    Ok(Json(LoginResponse {
+    let expires_at = Utc::now() + Duration::days(state.config.auth.refresh_token_expiry_days);
+    state
+        .refresh_token_store
+        .store(&refresh_token, family_id, user_id, expires_at)
+        .await
+        .map_err(|e| SenseiError::Internal(format!("Failed to store refresh token: {e}")))?;
+
+    Ok(LoginResponse {
         access_token,
         token_type: "Bearer".to_string(),
         refresh_token,
         user_id,
         roles,
-    }))
+    })
+}
+
+/// Extract the bearer access token from the request headers.
+fn bearer_access_token(headers: &HeaderMap) -> Option<&str> {
+    headers
+        .get(header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.strip_prefix("Bearer "))
+}
+
+/// Decode an access token from the request headers (returns the claims).
+fn access_token_claims(state: &AppState, headers: &HeaderMap) -> Option<AccessTokenClaims> {
+    let token = bearer_access_token(headers)?;
+    state.jwt_service.validate_access_token(token).ok()
+}
+
+/// Handle user login.
+///
+/// Unknown emails and wrong passwords both produce the same `401` so the
+/// endpoint cannot be used to enumerate registered accounts.
+pub async fn login(
+    State(state): State<AppState>,
+    OptionalPeer(peer): OptionalPeer,
+    headers: HeaderMap,
+    Json(req): Json<LoginRequest>,
+) -> Result<Json<LoginResponse>> {
+    // Unknown emails surface as NotFound from the users service; both that
+    // and a wrong password must produce the same 401 so the endpoint cannot
+    // be used to enumerate registered accounts.
+    let user = state
+        .users_service
+        .verify_password(&req.email, &req.password)
+        .await
+        .map_err(|e| match e {
+            SenseiError::NotFound(_) | SenseiError::Unauthorized(_) => {
+                SenseiError::Unauthorized("Invalid email or password".to_string())
+            }
+            other => other,
+        })?;
+
+    let family_id = new_id();
+    let response = issue_token_pair(&state, &user, family_id).await?;
+
+    // Bind the session to this client's fingerprint.
+    let fingerprint = fingerprint_for_request(peer, &headers, &state);
+    state
+        .session_store
+        .register(&user.id.to_string(), fingerprint);
+
+    Ok(Json(response))
 }
 
 /// Handle token refresh.
+///
+/// Rotates the refresh token within its family, revoking the whole family on
+/// reuse (a stolen/replayed token). A user lookup failure rejects the
+/// request instead of silently downgrading to a default role set.
 pub async fn refresh(
     State(state): State<AppState>,
+    OptionalPeer(peer): OptionalPeer,
+    headers: HeaderMap,
     Json(req): Json<RefreshRequest>,
 ) -> Result<Json<LoginResponse>> {
-    let claims = state
+    let claims: RefreshTokenClaims = state
         .jwt_service
         .validate_refresh_token(&req.refresh_token)
         .map_err(|_| SenseiError::Unauthorized("Invalid or expired refresh token".to_string()))?;
 
-    let roles = state
+    let family_id = claims.family_id;
+    let new_expires = Utc::now() + Duration::days(state.config.auth.refresh_token_expiry_days);
+    let new_refresh_token = state
+        .jwt_service
+        .issue_refresh_token(claims.sub, claims.tenant_id, family_id)
+        .map_err(|e| SenseiError::TokenError(e.to_string()))?;
+
+    match state
+        .refresh_token_store
+        .validate_and_rotate(&req.refresh_token, &new_refresh_token, new_expires)
+        .await
+    {
+        Ok((_family, _user)) => {}
+        Err(TokenReuseDetected::ReuseDetected) => {
+            // A rotated token presented again means it was stolen: kill the
+            // whole family so neither the thief nor the victim can continue.
+            let _ = state.refresh_token_store.revoke_family(family_id).await;
+            return Err(SenseiError::Unauthorized("Token reuse detected".to_string()));
+        }
+        Err(TokenReuseDetected::Invalid) | Err(TokenReuseDetected::Database(_)) => {
+            return Err(SenseiError::Unauthorized(
+                "Invalid or expired refresh token".to_string(),
+            ));
+        }
+    }
+
+    // Reload the user from the service; a missing user rejects the request
+    // (the token must not silently grant a default role set).
+    let user = state
         .users_service
         .find_by_id(claims.sub)
         .await
-        .map(|u| u.roles)
-        .unwrap_or_else(|_| vec!["user".to_string()]);
+        .map_err(|_| SenseiError::Unauthorized("Invalid or expired refresh token".to_string()))?;
 
+    let roles = user.roles;
     let access_token = state
         .jwt_service
         .issue_access_token(claims.sub, claims.tenant_id, roles.clone())
         .map_err(|e| SenseiError::TokenError(e.to_string()))?;
 
-    let new_refresh_token = state
-        .jwt_service
-        .issue_refresh_token(claims.sub, claims.tenant_id)
-        .map_err(|e| SenseiError::TokenError(e.to_string()))?;
+    // Re-bind the session to the current client fingerprint.
+    let fingerprint = fingerprint_for_request(peer, &headers, &state);
+    state
+        .session_store
+        .register(&claims.sub.to_string(), fingerprint);
 
     Ok(Json(LoginResponse {
         access_token,
@@ -209,6 +396,8 @@ pub async fn refresh(
 /// Register a new user account.
 pub async fn register(
     State(state): State<AppState>,
+    OptionalPeer(peer): OptionalPeer,
+    headers: HeaderMap,
     Json(req): Json<RegisterRequest>,
 ) -> Result<Json<LoginResponse>> {
     // Validate password strength
@@ -230,37 +419,36 @@ pub async fn register(
     let user = User::new(tenant_id, req.email.clone(), req.name, password_hash);
     let user = state.users_service.create_user(user).await?;
 
-    let user_id = user.id;
-    let roles = user.roles.clone();
+    let family_id = new_id();
+    let response = issue_token_pair(&state, &user, family_id).await?;
 
-    let access_token = state
-        .jwt_service
-        .issue_access_token(user_id, tenant_id, roles.clone())
-        .map_err(|e| SenseiError::TokenError(e.to_string()))?;
+    // Bind the session to this client's fingerprint.
+    let fingerprint = fingerprint_for_request(peer, &headers, &state);
+    state
+        .session_store
+        .register(&user.id.to_string(), fingerprint);
 
-    let refresh_token = state
-        .jwt_service
-        .issue_refresh_token(user_id, tenant_id)
-        .map_err(|e| SenseiError::TokenError(e.to_string()))?;
-
-    Ok(Json(LoginResponse {
-        access_token,
-        token_type: "Bearer".to_string(),
-        refresh_token,
-        user_id,
-        roles,
-    }))
+    Ok(Json(response))
 }
 
-/// Logout — blacklist the current access token.
+/// Logout — blacklist the presented access token's `jti`.
+///
+/// The token's `jti` (plus its expiry timestamp) is stored in the
+/// blacklist; the auth middleware rejects any later request presenting the
+/// same token. The session binding is removed so the client must
+/// re-authenticate.
 pub async fn logout(
-    _user: AuthenticatedUser,
-    _state: State<AppState>,
+    user: AuthenticatedUser,
+    State(state): State<AppState>,
+    headers: HeaderMap,
 ) -> Result<Json<MessageResponse>> {
-    // The access token is already validated by the auth middleware.
-    // In a production system we would extract the token's jti from the
-    // request and store it in the blacklisted_tokens set.
-    // For now, a simple acknowledgment is provided.
+    if let Some(claims) = access_token_claims(&state, &headers) {
+        let entry = format!("{}:{}", claims.jti, claims.exp);
+        state.blacklisted_tokens.write().await.insert(entry);
+    }
+
+    // Drop the session binding: the client must log in again.
+    state.session_store.remove(&user.user_id.to_string());
 
     Ok(Json(MessageResponse {
         message: "Logged out successfully".to_string(),
@@ -313,20 +501,26 @@ pub async fn change_password(
 ) -> Result<Json<MessageResponse>> {
     // Verify old password
     let profile = state.users_service.find_by_id(user.user_id).await?;
-    let valid = sensei_auth::password::verify_password(&req.old_password, &profile.password_hash)
-        .map_err(|e| SenseiError::Internal(format!("Password verification failed: {e}")))?;
-    if !valid {
-        return Err(SenseiError::Unauthorized("Current password is incorrect".to_string()));
+    match verify_password(&req.old_password, &profile.password_hash)
+        .map_err(|e| SenseiError::Internal(format!("Password verification failed: {e}")))?
+    {
+        PasswordCheck::Valid => {}
+        PasswordCheck::Invalid => {
+            return Err(SenseiError::Unauthorized(
+                "Current password is incorrect".to_string(),
+            ));
+        }
+        PasswordCheck::Malformed => {
+            return Err(SenseiError::Internal(
+                "Stored password hash is malformed".to_string(),
+            ));
+        }
     }
 
     // Validate and hash new password
     validate_password_strength(&req.new_password)?;
     let new_hash = hash_password(&req.new_password)?;
 
-    // Update user — we need a way to set password hash. Since the service
-    // doesn't expose a dedicated change_password method, we'll update the
-    // user in-place via the users service internal store.
-    // For this we use the existing update mechanism.
     let mut updated = profile.clone();
     updated.password_hash = new_hash;
     updated.updated_at = now();
@@ -338,10 +532,19 @@ pub async fn change_password(
 }
 
 /// Request a password reset (generates a token and sends email).
+///
+/// Rate-limited per email (max 3/hour) to prevent mailbox flooding.
 pub async fn request_password_reset(
     State(state): State<AppState>,
     Json(req): Json<PasswordResetRequest>,
 ) -> Result<Json<MessageResponse>> {
+    if !allow_email_request(&req.email) {
+        return Err(SenseiError::HttpError {
+            status: 429,
+            message: "Too many password reset requests for this email. Try again later.".to_string(),
+        });
+    }
+
     // Check if the email exists (don't reveal to caller)
     if let Ok(user) = state.users_service.find_by_email(&req.email).await {
         let tenant_id = user.tenant_id;
@@ -350,11 +553,12 @@ pub async fn request_password_reset(
             user_id: user.id,
             expires_at: now() + Duration::hours(1),
         };
-        state
-            .password_reset_tokens
-            .write()
-            .await
-            .insert(token.clone(), reset_token);
+        {
+            let mut tokens = state.password_reset_tokens.write().await;
+            // Lazily sweep expired tokens so the map cannot grow unbounded.
+            tokens.retain(|_, t| t.expires_at > now());
+            tokens.insert(token.clone(), reset_token);
+        }
 
         // Send the password reset email
         if let Err(e) = state
@@ -406,34 +610,52 @@ pub async fn confirm_password_reset(
 }
 
 /// Request email verification (generates a token and sends email).
+///
+/// Rate-limited per email (max 3/hour) to prevent mailbox flooding.
 pub async fn request_email_verification(
     State(state): State<AppState>,
     Json(req): Json<VerifyEmailRequest>,
 ) -> Result<Json<MessageResponse>> {
-    if let Ok(user) = state.users_service.find_by_email(&req.email).await {
-        let tenant_id = user.tenant_id;
-        let token = Uuid::new_v4().to_string();
-        let verification_token = EmailVerificationToken {
-            user_id: user.id,
-            expires_at: now() + Duration::hours(24),
-        };
-        state
-            .email_verification_tokens
-            .write()
-            .await
-            .insert(token.clone(), verification_token);
+    if !allow_email_request(&req.email) {
+        return Err(SenseiError::HttpError {
+            status: 429,
+            message: "Too many verification requests for this email. Try again later.".to_string(),
+        });
+    }
 
-        // Send the email verification link
-        if let Err(e) = state
-            .email_service
-            .send_email_verification(&req.email, &token, tenant_id)
+    if let Ok(user) = state.users_service.find_by_email(&req.email).await {
+        // Already verified users get no new token.
+        if !state
+            .users_service
+            .is_email_verified(user.id)
             .await
+            .unwrap_or(false)
         {
-            tracing::error!(
-                email = %req.email,
-                error = %e,
-                "Failed to send email verification"
-            );
+            let tenant_id = user.tenant_id;
+            let token = Uuid::new_v4().to_string();
+            let verification_token = EmailVerificationToken {
+                user_id: user.id,
+                expires_at: now() + Duration::hours(24),
+            };
+            {
+                let mut tokens = state.email_verification_tokens.write().await;
+                // Lazily sweep expired tokens so the map cannot grow unbounded.
+                tokens.retain(|_, t| t.expires_at > now());
+                tokens.insert(token.clone(), verification_token);
+            }
+
+            // Send the email verification link
+            if let Err(e) = state
+                .email_service
+                .send_email_verification(&req.email, &token, tenant_id)
+                .await
+            {
+                tracing::error!(
+                    email = %req.email,
+                    error = %e,
+                    "Failed to send email verification"
+                );
+            }
         }
     }
 
@@ -443,6 +665,9 @@ pub async fn request_email_verification(
 }
 
 /// Confirm email verification with a token.
+///
+/// Marks the user's email as verified in the users service (no more
+/// acknowledge-only behavior).
 pub async fn confirm_email_verification(
     State(state): State<AppState>,
     Json(req): Json<VerifyEmailConfirmRequest>,
@@ -456,9 +681,10 @@ pub async fn confirm_email_verification(
         return Err(SenseiError::Unauthorized("Verification token has expired".to_string()));
     }
 
-    // In a real system we would mark the user's email as verified.
-    // For now, the in-memory service doesn't have an email_verified field,
-    // but we acknowledge the verification.
+    state
+        .users_service
+        .set_email_verified(stored.user_id, true)
+        .await?;
 
     Ok(Json(MessageResponse {
         message: "Email verified successfully".to_string(),
@@ -510,6 +736,12 @@ mod tests {
         }
     }
 
+    /// Client extractors for a default "client" (no UA, no XFF).
+    fn empty_client() -> (OptionalPeer, HeaderMap) {
+        // A fixed loopback peer keeps fingerprints deterministic.
+        (OptionalPeer(Some(SocketAddr::from(([127, 0, 0, 1], 9999)))), HeaderMap::new())
+    }
+
     #[tokio::test]
     async fn test_login_success() {
         let (state, password, _, _) = test_state().await;
@@ -517,11 +749,25 @@ mod tests {
             email: "admin@test.com".to_string(),
             password: password.clone(),
         };
-        let resp = login(State(state.clone()), Json(req)).await.unwrap();
+        let (peer, headers) = empty_client();
+        let resp = login(State(state.clone()), peer, headers, Json(req)).await.unwrap();
         assert_eq!(resp.token_type, "Bearer");
         assert!(!resp.access_token.is_empty());
         assert!(!resp.refresh_token.is_empty());
         assert!(resp.roles.contains(&"user".to_string()));
+
+        // The refresh token must be registered for rotation.
+        let user = state.users_service.find_by_email("admin@test.com").await.unwrap();
+        let fp = state.session_store.verify(
+            &user.id.to_string(),
+            &session_fingerprint(
+                Some(SocketAddr::from(([127, 0, 0, 1], 9999)).ip()),
+                None,
+                None,
+                &state.config.security.trusted_proxies,
+            ),
+        );
+        assert_eq!(fp, crate::middleware::session::SessionResult::Matches);
     }
 
     #[tokio::test]
@@ -531,7 +777,8 @@ mod tests {
             email: "admin@test.com".to_string(),
             password: "WrongPassword1!".to_string(),
         };
-        let result = login(State(state.clone()), Json(req)).await;
+        let (peer, headers) = empty_client();
+        let result = login(State(state.clone()), peer, headers, Json(req)).await;
         assert!(result.is_err());
     }
 
@@ -542,8 +789,33 @@ mod tests {
             email: "nonexistent@test.com".to_string(),
             password: "SomePass1!".to_string(),
         };
-        let result = login(State(state.clone()), Json(req)).await;
+        let (peer, headers) = empty_client();
+        let result = login(State(state.clone()), peer, headers, Json(req)).await;
         assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_login_unknown_email_and_wrong_password_are_indistinguishable() {
+        let (state, _, _, _) = test_state().await;
+        let (peer, headers) = empty_client();
+
+        let unknown = LoginRequest {
+            email: "nobody@test.com".to_string(),
+            password: "SomePass1!".to_string(),
+        };
+        let wrong = LoginRequest {
+            email: "admin@test.com".to_string(),
+            password: "SomePass1!".to_string(),
+        };
+
+        let unknown_err = login(State(state.clone()), peer, headers.clone(), Json(unknown)).await.unwrap_err();
+        let wrong_err = login(State(state.clone()), peer, headers, Json(wrong)).await.unwrap_err();
+
+        // Both must produce the same 401 class with the same message so the
+        // endpoint cannot be used to enumerate accounts.
+        assert_eq!(unknown_err.http_status(), 401);
+        assert_eq!(wrong_err.http_status(), 401);
+        assert_eq!(unknown_err.to_string(), wrong_err.to_string());
     }
 
     #[tokio::test]
@@ -554,7 +826,8 @@ mod tests {
             password: "StrongPass1!".to_string(),
             name: "New User".to_string(),
         };
-        let resp = register(State(state.clone()), Json(req)).await.unwrap();
+        let (peer, headers) = empty_client();
+        let resp = register(State(state.clone()), peer, headers, Json(req)).await.unwrap();
         assert_eq!(resp.token_type, "Bearer");
         assert!(!resp.access_token.is_empty());
     }
@@ -567,7 +840,8 @@ mod tests {
             password: "StrongPass1!".to_string(),
             name: "Duplicate".to_string(),
         };
-        let result = register(State(state.clone()), Json(req)).await;
+        let (peer, headers) = empty_client();
+        let result = register(State(state.clone()), peer, headers, Json(req)).await;
         assert!(result.is_err());
     }
 
@@ -579,7 +853,8 @@ mod tests {
             password: "short".to_string(),
             name: "Weak".to_string(),
         };
-        let result = register(State(state.clone()), Json(req)).await;
+        let (peer, headers) = empty_client();
+        let result = register(State(state.clone()), peer, headers, Json(req)).await;
         assert!(result.is_err());
     }
 
@@ -591,15 +866,50 @@ mod tests {
             email: "admin@test.com".to_string(),
             password: password.clone(),
         };
-        let login_resp = login(State(state.clone()), Json(login_req)).await.unwrap();
+        let (peer, headers) = empty_client();
+        let login_resp = login(State(state.clone()), peer.clone(), headers.clone(), Json(login_req)).await.unwrap();
 
         // Refresh the token
         let refresh_req = RefreshRequest {
             refresh_token: login_resp.refresh_token.clone(),
         };
-        let resp = refresh(State(state.clone()), Json(refresh_req)).await.unwrap();
+        let resp = refresh(State(state.clone()), peer, headers, Json(refresh_req)).await.unwrap();
         assert_eq!(resp.token_type, "Bearer");
         assert!(!resp.access_token.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_refresh_token_rotates_and_rejects_reuse() {
+        let (state, password, _, _) = test_state().await;
+        let login_req = LoginRequest {
+            email: "admin@test.com".to_string(),
+            password: password.clone(),
+        };
+        let (peer, headers) = empty_client();
+        let login_resp = login(State(state.clone()), peer.clone(), headers.clone(), Json(login_req)).await.unwrap();
+
+        let refresh_req = RefreshRequest {
+            refresh_token: login_resp.refresh_token.clone(),
+        };
+        let first = refresh(State(state.clone()), peer.clone(), headers.clone(), Json(refresh_req)).await.unwrap();
+
+        // The old token has been rotated: presenting it again is reuse.
+        let reuse = RefreshRequest {
+            refresh_token: login_resp.refresh_token.clone(),
+        };
+        let err = refresh(State(state.clone()), peer.clone(), headers.clone(), Json(reuse)).await.unwrap_err();
+        assert!(err.to_string().contains("reuse"), "got: {err}");
+
+        // Reuse detection revokes the WHOLE family, so the rotated-in token
+        // must also be dead (neither the thief nor the victim can continue).
+        let second = RefreshRequest {
+            refresh_token: first.refresh_token.clone(),
+        };
+        let err2 = refresh(State(state.clone()), peer, headers, Json(second)).await.unwrap_err();
+        assert!(
+            err2.to_string().contains("Invalid or expired"),
+            "family was not revoked after reuse detection: got: {err2}"
+        );
     }
 
     #[tokio::test]
@@ -608,16 +918,41 @@ mod tests {
         let req = RefreshRequest {
             refresh_token: "totally-invalid-token".to_string(),
         };
-        let result = refresh(State(state.clone()), Json(req)).await;
+        let (peer, headers) = empty_client();
+        let result = refresh(State(state.clone()), peer, headers, Json(req)).await;
         assert!(result.is_err());
     }
 
     #[tokio::test]
-    async fn test_logout() {
-        let (state, _, tenant_id, user_id) = test_state().await;
+    async fn test_logout_blacklists_token() {
+        let (state, password, tenant_id, user_id) = test_state().await;
+        let login_req = LoginRequest {
+            email: "admin@test.com".to_string(),
+            password: password.clone(),
+        };
+        let (peer, headers) = empty_client();
+        let login_resp = login(State(state.clone()), peer, headers.clone(), Json(login_req)).await.unwrap();
+
+        // The access token must be presented on logout to extract its jti.
+        let mut logout_headers = HeaderMap::new();
+        logout_headers.insert(
+            header::AUTHORIZATION,
+            format!("Bearer {}", login_resp.access_token).parse().unwrap(),
+        );
         let user = admin_user(tenant_id, user_id);
-        let resp = logout(user, State(state.clone())).await.unwrap();
-        assert_eq!(resp.message, "Logged out successfully");
+        let _ = logout(user, State(state.clone()), logout_headers).await.unwrap();
+
+        assert!(!state.blacklisted_tokens.read().await.is_empty());
+
+        // The blacklisted token must be rejected by the middleware.
+        let req = axum::http::Request::builder()
+            .uri("/api/v1/auth/me")
+            .header("Authorization", format!("Bearer {}", login_resp.access_token))
+            .body(axum::body::Body::empty())
+            .unwrap();
+        let router = crate::router::build_router(state.clone());
+        let resp = tower::ServiceExt::oneshot(router, req).await.unwrap();
+        assert_eq!(resp.status(), axum::http::StatusCode::UNAUTHORIZED);
     }
 
     #[tokio::test]
@@ -651,7 +986,8 @@ mod tests {
             password: "StrongPass1!".to_string(),
             name: "Other".to_string(),
         };
-        let _ = register(State(state.clone()), Json(reg_req)).await.unwrap();
+        let (peer, headers) = empty_client();
+        let _ = register(State(state.clone()), peer, headers, Json(reg_req)).await.unwrap();
 
         // Try to update admin's email to the other user's email
         let user = admin_user(tenant_id, user_id);
@@ -689,6 +1025,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_request_password_reset() {
+        reset_email_rate_limits();
         let (state, _, _, _) = test_state().await;
         let req = PasswordResetRequest {
             email: "admin@test.com".to_string(),
@@ -709,9 +1046,27 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_confirm_password_reset() {
+    async fn test_password_reset_rate_limited_per_email() {
+        reset_email_rate_limits();
         let (state, _, _, _) = test_state().await;
-        // Request reset first to generate a token
+        for _ in 0..3 {
+            let req = PasswordResetRequest {
+                email: "rate@test.com".to_string(),
+            };
+            let _ = request_password_reset(State(state.clone()), Json(req)).await.unwrap();
+        }
+        let req = PasswordResetRequest {
+            email: "rate@test.com".to_string(),
+        };
+        let err = request_password_reset(State(state.clone()), Json(req)).await.unwrap_err();
+        assert_eq!(err.http_status(), 429);
+    }
+
+    #[tokio::test]
+    async fn test_confirm_password_reset() {
+        reset_email_rate_limits();
+        let (state, _, _, _) = test_state().await;
+        // Request reset first to generate a token for an existing email.
         let req = PasswordResetRequest {
             email: "admin@test.com".to_string(),
         };
@@ -743,6 +1098,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_request_email_verification() {
+        reset_email_rate_limits();
         let (state, _, _, _) = test_state().await;
         let req = VerifyEmailRequest {
             email: "admin@test.com".to_string(),
@@ -753,8 +1109,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_confirm_email_verification() {
+        reset_email_rate_limits();
         let (state, _, _, _) = test_state().await;
-        // Request verification first
+        // Request verification first for an existing email.
         let req = VerifyEmailRequest {
             email: "admin@test.com".to_string(),
         };
@@ -768,6 +1125,10 @@ mod tests {
         let confirm_req = VerifyEmailConfirmRequest { token };
         let resp = confirm_email_verification(State(state.clone()), Json(confirm_req)).await.unwrap();
         assert_eq!(resp.message, "Email verified successfully");
+
+        // The user must now actually be marked verified.
+        let user = state.users_service.find_by_email("admin@test.com").await.unwrap();
+        assert!(state.users_service.is_email_verified(user.id).await.unwrap());
     }
 
     #[tokio::test]

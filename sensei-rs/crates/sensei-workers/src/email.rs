@@ -107,9 +107,11 @@ impl Default for SmtpConfig {
 
 /// Worker that processes email-send tasks.
 ///
-/// Uses `lettre::AsyncSmtpTransport` to deliver emails via SMTP. If SMTP
-/// configuration is not available (env vars not set), the worker logs a
-/// warning and gracefully skips sending.
+/// Uses `lettre::AsyncSmtpTransport` to deliver emails via SMTP. SMTP
+/// availability is validated at startup: when the SMTP configuration is
+/// missing, the worker logs a prominent error once and every email task
+/// fails permanently (so the dispatcher dead-letters it instead of silently
+/// dropping the email).
 pub struct EmailWorker {
     /// SMTP configuration.
     pub config: SmtpConfig,
@@ -120,8 +122,8 @@ pub struct EmailWorker {
 impl EmailWorker {
     /// Create a new [`EmailWorker`] by reading SMTP config from environment.
     ///
-    /// If SMTP env vars are not set, the worker operates in graceful-degradation
-    /// mode (logs warnings instead of sending).
+    /// If SMTP env vars are not set, the worker logs a prominent startup
+    /// error; email tasks then fail permanently and are dead-lettered.
     pub fn new() -> Self {
         let config = SmtpConfig::from_env();
         match config {
@@ -129,16 +131,29 @@ impl EmailWorker {
                 smtp_available: true,
                 config: cfg,
             },
-            None => Self {
-                smtp_available: false,
-                config: SmtpConfig::default(),
-            },
+            None => {
+                error!(
+                    "SMTP is NOT configured (SMTP_HOST is unset). Every email task will fail \
+                     permanently and be dead-lettered. Set SMTP_HOST, SMTP_PORT, SMTP_USER, \
+                     SMTP_PASS, SMTP_FROM to enable email delivery."
+                );
+                Self {
+                    smtp_available: false,
+                    config: SmtpConfig::default(),
+                }
+            }
         }
     }
 
     /// Create an [`EmailWorker`] with a custom SMTP config.
     pub fn with_config(config: SmtpConfig) -> Self {
         let smtp_available = !config.host.is_empty();
+        if !smtp_available {
+            error!(
+                "SMTP is NOT configured (empty SMTP host). Every email task will fail \
+                 permanently and be dead-lettered."
+            );
+        }
         Self {
             smtp_available,
             config,
@@ -181,15 +196,14 @@ impl EmailWorker {
             ));
         }
 
-        // Graceful degradation: if SMTP is not configured, skip sending.
+        // No graceful degradation: when SMTP is not configured the task fails
+        // permanently so the dispatcher dead-letters it and the operator can
+        // see the failure instead of silently losing the email.
         if !self.smtp_available {
-            warn!(
-                to = ?payload.to,
-                subject = %payload.subject,
-                "SMTP not configured — skipping email delivery. \
-                 Set SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS to enable."
-            );
-            return Ok(());
+            return Err(WorkerError::Processing(
+                "SMTP is not configured (SMTP_HOST is unset) — email delivery is unavailable"
+                    .to_string(),
+            ));
         }
 
         // Build the From mailbox.
@@ -390,7 +404,7 @@ mod tests {
     }
 
     #[test]
-    fn test_graceful_degradation_without_smtp() {
+    fn test_missing_smtp_is_a_permanent_failure() {
         let worker = EmailWorker::with_config(SmtpConfig::default());
         assert!(!worker.smtp_available);
 
@@ -406,7 +420,11 @@ mod tests {
 
         let rt = tokio::runtime::Runtime::new().unwrap();
         let result = rt.block_on(worker.send_email(&payload));
-        // Should succeed with graceful degradation (Ok, but no email sent).
-        assert!(result.is_ok());
+        // Missing SMTP must fail permanently (→ DLQ), never silently skip.
+        assert!(result.is_err());
+        assert!(
+            !matches!(result, Err(WorkerError::RetryLater(_))),
+            "missing SMTP is a permanent misconfiguration, not a transient failure"
+        );
     }
 }

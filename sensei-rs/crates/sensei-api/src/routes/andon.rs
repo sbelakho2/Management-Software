@@ -27,13 +27,17 @@ pub struct ListAndonsParams {
 /// Request body for acknowledging an Andon.
 #[derive(Debug, Deserialize)]
 pub struct AcknowledgeAndonRequest {
-    pub acknowledged_by: Uuid,
+    /// Ignored: the actor is always the authenticated user. Kept as
+    /// `Option` so legacy clients sending it do not break.
+    pub acknowledged_by: Option<Uuid>,
 }
 
 /// Request body for resolving an Andon.
 #[derive(Debug, Deserialize)]
 pub struct ResolveAndonRequest {
-    pub resolved_by: Uuid,
+    /// Ignored: the actor is always the authenticated user. Kept as
+    /// `Option` so legacy clients sending it do not break.
+    pub resolved_by: Option<Uuid>,
     pub resolution: String,
 }
 
@@ -82,21 +86,27 @@ pub async fn get_andon(
 }
 
 /// Acknowledge an Andon event (assign a responder).
+///
+/// The actor is taken from the authenticated token; client-supplied actor
+/// ids are never trusted.
 pub async fn acknowledge_andon(
     user: AuthenticatedUser,
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
-    Json(req): Json<AcknowledgeAndonRequest>,
+    _req: Json<AcknowledgeAndonRequest>,
 ) -> Result<Json<Andon>> {
     let tenant_id = user.tenant_id;
     let andon = state
         .ops_service
-        .acknowledge_andon(tenant_id, id, req.acknowledged_by)
+        .acknowledge_andon(tenant_id, id, user.user_id)
         .await?;
     Ok(Json(andon))
 }
 
 /// Resolve an Andon event with a resolution description.
+///
+/// The actor is taken from the authenticated token; client-supplied actor
+/// ids are never trusted.
 pub async fn resolve_andon(
     user: AuthenticatedUser,
     State(state): State<AppState>,
@@ -106,7 +116,7 @@ pub async fn resolve_andon(
     let tenant_id = user.tenant_id;
     let andon = state
         .ops_service
-        .resolve_andon(tenant_id, id, req.resolved_by, &req.resolution)
+        .resolve_andon(tenant_id, id, user.user_id, &req.resolution)
         .await?;
     Ok(Json(andon))
 }

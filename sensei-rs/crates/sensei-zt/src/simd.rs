@@ -17,17 +17,21 @@ extern "C" {
 /// Compute the dot product of two `f32` slices.
 ///
 /// Uses Zig SIMD when available; falls back to a scalar loop.
-pub fn f32_dot_product(a: &[f32], b: &[f32]) -> f32 {
-    assert_eq!(a.len(), b.len(), "slice lengths must match");
+///
+/// Returns an error when the slice lengths differ (no panics).
+pub fn f32_dot_product(a: &[f32], b: &[f32]) -> Result<f32, &'static str> {
+    if a.len() != b.len() {
+        return Err("slice lengths must match for dot product");
+    }
 
     #[cfg(not(no_zig))]
     {
-        unsafe { sensei_simd_f32_dot_product(a.as_ptr(), b.as_ptr(), a.len()) }
+        Ok(unsafe { sensei_simd_f32_dot_product(a.as_ptr(), b.as_ptr(), a.len()) })
     }
 
     #[cfg(no_zig)]
     {
-        a.iter().zip(b.iter()).map(|(x, y)| x * y).sum()
+        Ok(a.iter().zip(b.iter()).map(|(x, y)| x * y).sum())
     }
 }
 
@@ -72,8 +76,15 @@ mod tests {
     fn test_dot_product() {
         let a = vec![1.0, 2.0, 3.0];
         let b = vec![4.0, 5.0, 6.0];
-        let result = f32_dot_product(&a, &b);
+        let result = f32_dot_product(&a, &b).unwrap();
         assert!((result - 32.0).abs() < 1e-5);
+    }
+
+    #[test]
+    fn test_dot_product_mismatched_lengths_returns_error() {
+        let a = vec![1.0, 2.0, 3.0];
+        let b = vec![4.0, 5.0];
+        assert!(f32_dot_product(&a, &b).is_err());
     }
 
     #[test]

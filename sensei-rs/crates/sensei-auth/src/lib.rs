@@ -12,3 +12,4 @@ pub mod middleware;
 pub mod oauth2;
 pub mod password;
 pub mod rbac;
+pub mod refresh_tokens;

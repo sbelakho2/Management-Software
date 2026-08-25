@@ -985,6 +985,11 @@ pub struct AnomalyDetectionEngine {
     max_anomalies: usize,
     /// Current alert sensitivity.
     sensitivity: AlertSensitivity,
+    /// Recent events seen by the engine, used for pattern learning and
+    /// multi-event sequence checks.
+    event_history: VecDeque<ProcessEvent>,
+    /// Maximum events retained in the history window.
+    max_history: usize,
 }
 
 impl AnomalyDetectionEngine {
@@ -997,10 +1002,16 @@ impl AnomalyDetectionEngine {
             anomalies: Vec::new(),
             max_anomalies: 1000,
             sensitivity: AlertSensitivity::Medium,
+            event_history: VecDeque::new(),
+            max_history: 500,
         }
     }
 
     /// Process a single event through all analysis stages.
+    ///
+    /// The event is appended to the engine's history window; once at least two
+    /// events exist for an entity, sequence patterns are learned and
+    /// multi-event sequence checks run against that entity's recent history.
     ///
     /// Returns a list of alerts triggered by this event.
     pub fn process_event(&mut self, event: ProcessEvent) -> Vec<Alert> {
@@ -1017,17 +1028,32 @@ impl AnomalyDetectionEngine {
         }
         self.anomalies.extend(sentiment_anomalies);
 
-        // 2. Sequence analysis (if we have enough events in history)
-        let _event_clone = event.clone();
-        let sequence_anomalies = self.sequence_analyzer.detect_sequence_anomalies(&[event]);
-        for anomaly in &sequence_anomalies {
-            if anomaly.should_alert(self.sensitivity) {
-                if let Some(alert) = self.alert_manager.create_alert(anomaly) {
-                    alerts.push(alert);
+        // 2. Append to the history window (bounded).
+        self.event_history.push_back(event.clone());
+        while self.event_history.len() > self.max_history {
+            self.event_history.pop_front();
+        }
+
+        // 3. Sequence analysis — only meaningful once an entity has ≥2 events.
+        let entity_events: Vec<ProcessEvent> = self
+            .event_history
+            .iter()
+            .filter(|e| e.entity_id == event.entity_id)
+            .cloned()
+            .collect();
+        if entity_events.len() >= 2 {
+            // Learn the observed sequence before scoring it.
+            self.sequence_analyzer.learn_pattern(&entity_events);
+            let sequence_anomalies = self.sequence_analyzer.detect_sequence_anomalies(&entity_events);
+            for anomaly in &sequence_anomalies {
+                if anomaly.should_alert(self.sensitivity) {
+                    if let Some(alert) = self.alert_manager.create_alert(anomaly) {
+                        alerts.push(alert);
+                    }
                 }
             }
+            self.anomalies.extend(sequence_anomalies);
         }
-        self.anomalies.extend(sequence_anomalies);
 
         // Trim anomalies
         if self.anomalies.len() > self.max_anomalies {
@@ -1039,12 +1065,78 @@ impl AnomalyDetectionEngine {
     }
 
     /// Process multiple events.
+    ///
+    /// Appends the whole batch to the history window, learns patterns from the
+    /// batch, then runs multi-event sequence checks for every entity that has
+    /// at least two events (combining the batch with prior history).
     pub fn process_events(&mut self, events: &[ProcessEvent]) -> Vec<Alert> {
         let mut all_alerts = Vec::new();
-        for event in events {
-            // Learn patterns from event groups (simple approach: learn single events)
-            all_alerts.extend(self.process_event(event.clone()));
+
+        if events.is_empty() {
+            return all_alerts;
         }
+
+        // Learn from the batch itself (≥2 events) so multi-event checks have a
+        // baseline even on the very first call.
+        if events.len() >= 2 {
+            self.sequence_analyzer.learn_pattern(events);
+        }
+
+        for event in events {
+            // Per-event sentiment analysis + alert creation.
+            let sentiment_anomalies = self.analyze_sentiment_anomaly(event);
+            for anomaly in &sentiment_anomalies {
+                if anomaly.should_alert(self.sensitivity) {
+                    if let Some(alert) = self.alert_manager.create_alert(anomaly) {
+                        all_alerts.push(alert);
+                    }
+                }
+            }
+            self.anomalies.extend(sentiment_anomalies);
+
+            // Append to the history window (bounded).
+            self.event_history.push_back(event.clone());
+            while self.event_history.len() > self.max_history {
+                self.event_history.pop_front();
+            }
+        }
+
+        // Multi-event sequence checks per entity (history + batch).
+        let mut entity_ids: Vec<String> = events
+            .iter()
+            .map(|e| e.entity_id.clone())
+            .collect::<std::collections::HashSet<_>>()
+            .into_iter()
+            .collect();
+        entity_ids.sort();
+        for entity_id in entity_ids {
+            let entity_events: Vec<ProcessEvent> = self
+                .event_history
+                .iter()
+                .filter(|e| e.entity_id == entity_id)
+                .cloned()
+                .collect();
+            if entity_events.len() < 2 {
+                continue;
+            }
+            let sequence_anomalies =
+                self.sequence_analyzer.detect_sequence_anomalies(&entity_events);
+            for anomaly in &sequence_anomalies {
+                if anomaly.should_alert(self.sensitivity) {
+                    if let Some(alert) = self.alert_manager.create_alert(anomaly) {
+                        all_alerts.push(alert);
+                    }
+                }
+            }
+            self.anomalies.extend(sequence_anomalies);
+        }
+
+        // Trim anomalies
+        if self.anomalies.len() > self.max_anomalies {
+            let excess = self.anomalies.len() - self.max_anomalies;
+            self.anomalies.drain(..excess);
+        }
+
         all_alerts
     }
 
@@ -1498,6 +1590,80 @@ mod tests {
         let mut engine = AnomalyDetectionEngine::new();
         let alerts = engine.process_events(&[]);
         assert!(alerts.is_empty());
+    }
+
+    #[test]
+    fn test_engine_learns_patterns_and_detects_sequence_anomalies() {
+        let mut engine = AnomalyDetectionEngine::new();
+        let now = Utc::now();
+
+        // Feed a healthy quote lifecycle twice so the pattern is learned.
+        for entity in ["quote-ok-1", "quote-ok-2"] {
+            let events = vec![
+                ProcessEvent {
+                    id: Uuid::new_v4(),
+                    entity_id: entity.to_string(),
+                    event_type: EventType::QuoteCreated,
+                    description: "created".to_string(),
+                    timestamp: now,
+                    metadata: HashMap::new(),
+                },
+                ProcessEvent {
+                    id: Uuid::new_v4(),
+                    entity_id: entity.to_string(),
+                    event_type: EventType::QuoteSent,
+                    description: "sent".to_string(),
+                    timestamp: now + Duration::minutes(30),
+                    metadata: HashMap::new(),
+                },
+                ProcessEvent {
+                    id: Uuid::new_v4(),
+                    entity_id: entity.to_string(),
+                    event_type: EventType::QuoteAccepted,
+                    description: "accepted".to_string(),
+                    timestamp: now + Duration::minutes(120),
+                    metadata: HashMap::new(),
+                },
+            ];
+            engine.process_events(&events);
+        }
+
+        // The engine must have learned patterns from the batch.
+        let pattern_count = engine
+            .sequence_analyzer
+            .export_state()
+            .get("pattern_count")
+            .unwrap()
+            .as_u64()
+            .unwrap();
+        assert!(pattern_count >= 1, "expected learned patterns, got {pattern_count}");
+
+        // A wildly different sequence for the same event family must produce
+        // a sequence-level anomaly once the entity has ≥2 events.
+        let before = engine.anomalies.len();
+        let bad_events = vec![
+            ProcessEvent {
+                id: Uuid::new_v4(),
+                entity_id: "quote-bad-1".to_string(),
+                event_type: EventType::QuoteCreated,
+                description: "created".to_string(),
+                timestamp: now,
+                metadata: HashMap::new(),
+            },
+            ProcessEvent {
+                id: Uuid::new_v4(),
+                entity_id: "quote-bad-1".to_string(),
+                event_type: EventType::QuoteRejected,
+                description: "rejected out of order".to_string(),
+                timestamp: now + Duration::minutes(5),
+                metadata: HashMap::new(),
+            },
+        ];
+        engine.process_events(&bad_events);
+        assert!(
+            engine.anomalies.len() > before,
+            "sequence anomalies should be recorded after a deviating multi-event sequence"
+        );
     }
 
     #[test]

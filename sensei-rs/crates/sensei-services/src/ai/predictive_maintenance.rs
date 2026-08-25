@@ -14,7 +14,6 @@
 //! - **Failure Mode Classification**: Pattern-based matching against known failure modes.
 
 use chrono::{DateTime, Duration, Utc};
-use rand::Rng;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use uuid::Uuid;
@@ -456,9 +455,18 @@ impl PredictiveMaintenanceEngine {
 
         let probability = (base_rate * 0.4 + age_factor + cycle_factor + maint_factor).min(1.0);
 
-        // Add some randomization to simulate model uncertainty
-        let mut rng = rand::thread_rng();
-        let noise = rng.gen_range(-0.05..0.05);
+        // Deterministic uncertainty band seeded from the equipment id so
+        // repeated calls for the same equipment return identical probabilities.
+        let entity_seed = history
+            .last()
+            .map(|h| {
+                let mut hasher = std::collections::hash_map::DefaultHasher::new();
+                use std::hash::{Hash, Hasher};
+                h.equipment_id.hash(&mut hasher);
+                hasher.finish()
+            })
+            .unwrap_or(0);
+        let noise = ((entity_seed % 1000) as f64 / 1000.0 - 0.5) * 0.1;
         (probability + noise).clamp(0.0, 1.0)
     }
 

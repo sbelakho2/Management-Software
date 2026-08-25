@@ -38,20 +38,47 @@ pub const Tokenizer = struct {
 
     /// Initialise an empty tokenizer with BOS=1, EOS=2, PAD=0.
     pub fn init(allocator: std.mem.Allocator) Tokenizer {
-        var vocab = std.StringHashMap(u32).init(allocator);
-        var id_to_token = std.AutoHashMap(u32, []const u8).init(allocator);
+        return initAlloc(allocator) catch return initEmpty(allocator);
+    }
 
-        // Reserve special tokens
-        vocab.put("<PAD>", PAD) catch {};
-        id_to_token.put(PAD, "<PAD>") catch {};
-        vocab.put("<BOS>", BOS) catch {};
-        id_to_token.put(BOS, "<BOS>") catch {};
-        vocab.put("<EOS>", EOS) catch {};
-        id_to_token.put(EOS, "<EOS>") catch {};
+    /// Allocating initialiser; returns an error when special-token strings
+    /// cannot be allocated.
+    fn initAlloc(allocator: std.mem.Allocator) !Tokenizer {
+        var vocab = std.StringHashMap(u32).init(allocator);
+        errdefer vocab.deinit();
+        var id_to_token = std.AutoHashMap(u32, []const u8).init(allocator);
+        errdefer id_to_token.deinit();
+
+        // Reserve special tokens (owned copies so deinit can free them all).
+        const pad = try allocator.dupe(u8, "<PAD>");
+        errdefer allocator.free(pad);
+        try vocab.put(pad, PAD);
+        try id_to_token.put(PAD, pad);
+        const bos = try allocator.dupe(u8, "<BOS>");
+        errdefer allocator.free(bos);
+        try vocab.put(bos, BOS);
+        try id_to_token.put(BOS, bos);
+        const eos = try allocator.dupe(u8, "<EOS>");
+        errdefer allocator.free(eos);
+        try vocab.put(eos, EOS);
+        try id_to_token.put(EOS, eos);
 
         return Tokenizer{
             .vocab = vocab,
             .id_to_token = id_to_token,
+            .allocator = allocator,
+            .bos_id = BOS,
+            .eos_id = EOS,
+            .pad_id = PAD,
+        };
+    }
+
+    /// Empty fallback initialiser (used when allocation of the special-token
+    /// strings fails).
+    fn initEmpty(allocator: std.mem.Allocator) Tokenizer {
+        return Tokenizer{
+            .vocab = std.StringHashMap(u32).init(allocator),
+            .id_to_token = std.AutoHashMap(u32, []const u8).init(allocator),
             .allocator = allocator,
             .bos_id = BOS,
             .eos_id = EOS,
@@ -78,7 +105,11 @@ pub const Tokenizer = struct {
         const next_id = @as(u32, @intCast(self.vocab.count()));
         const owned = try self.allocator.dupe(u8, text);
         try self.vocab.put(owned, next_id);
-        try self.id_to_token.put(next_id, owned);
+        self.id_to_token.put(next_id, owned) catch |err| {
+            _ = self.vocab.remove(owned);
+            self.allocator.free(owned);
+            return err;
+        };
         return next_id;
     }
 
@@ -627,11 +658,12 @@ pub fn fallbackChat(input: []const u8) []const u8 {
     if (best_match) |idx| {
         // Template expansion: if the response contains {input}, replace it
         const response = FALLBACK_RESPONSES[idx].response;
-        if (std.mem.indexOf(u8, response, "{input}")) |pos| {
-            var result = std.heap.page_allocator.alloc(u8, response.len - 7 + input.len) catch return response;
+        const placeholder = "{input}";
+        if (std.mem.indexOf(u8, response, placeholder)) |pos| {
+            var result = std.heap.page_allocator.alloc(u8, response.len - placeholder.len + input.len) catch return response;
             @memcpy(result[0..pos], response[0..pos]);
             @memcpy(result[pos .. pos + input.len], input);
-            @memcpy(result[pos + input.len ..], response[pos + 7 ..]);
+            @memcpy(result[pos + input.len ..], response[pos + placeholder.len ..]);
             return result;
         }
         return response;
@@ -653,19 +685,24 @@ pub const LlamaRunner = struct {
     val_cache: []f32,
     allocator: std.mem.Allocator,
 
-    pub fn init(config: TransformerConfig, weights: []const f32, tokenizer: Tokenizer, allocator: std.mem.Allocator) LlamaRunner {
+    pub fn init(config: TransformerConfig, weights: []const f32, tokenizer: Tokenizer, allocator: std.mem.Allocator) !LlamaRunner {
         const kv_dim = config.n_kv_heads * (config.dim / config.n_heads);
         const cache_size = config.max_seq_len * kv_dim * config.n_layers;
 
-        const key_cache = allocator.alloc(f32, cache_size) catch @panic("OOM for key cache");
-        const val_cache = allocator.alloc(f32, cache_size) catch @panic("OOM for val cache");
+        const key_cache = try allocator.alloc(f32, cache_size);
+        errdefer allocator.free(key_cache);
+        const val_cache = try allocator.alloc(f32, cache_size);
+        errdefer allocator.free(val_cache);
+        const weights_copy = try allocator.dupe(f32, weights);
+        errdefer allocator.free(weights_copy);
+
         @memset(key_cache, 0.0);
         @memset(val_cache, 0.0);
 
         return LlamaRunner{
             .config = config,
             .tokenizer = tokenizer,
-            .transformer_weights = allocator.dupe(f32, weights) catch @panic("OOM for weights"),
+            .transformer_weights = weights_copy,
             .key_cache = key_cache,
             .val_cache = val_cache,
             .allocator = allocator,
@@ -681,26 +718,29 @@ pub const LlamaRunner = struct {
 
     /// Generate a response to the given prompt.
     ///
-    /// When real weights are available, runs the full transformer pipeline.
+    /// When real weights are available (matching the expected transformer
+    /// layout), runs the full transformer pipeline with a KV cache and
+    /// temperature/top-k/top-p sampling until EOS or `max_tokens`.
     /// Otherwise, uses the software fallback pattern-matching chatbot.
     ///
     /// Returns the generated text.
     pub fn generate(self: *LlamaRunner, prompt: []const u8, max_tokens: usize, temperature: f32, top_k: u32, top_p: f32, allocator: std.mem.Allocator) ![]u8 {
-        _ = temperature;
-        _ = top_k;
-        _ = top_p;
-
         // Check if we have real weights (not random initialised)
         if (!self.hasRealWeights()) {
             return fallbackResponse(self, prompt, allocator);
         }
+
+        const dim = self.config.dim;
+        const n_heads = self.config.n_heads;
+        const n_kv_heads = self.config.n_kv_heads;
+        const head_dim = dim / n_heads;
+        const kv_dim = n_kv_heads * head_dim;
 
         // Tokenize prompt
         const prompt_tokens = try self.tokenizer.encode(prompt, allocator);
         defer allocator.free(prompt_tokens);
 
         // Allocate buffers for generation
-        const dim = self.config.dim;
         const x = try allocator.alloc(f32, dim);
         defer allocator.free(x);
         const xb = try allocator.alloc(f32, dim);
@@ -709,75 +749,178 @@ pub const LlamaRunner = struct {
         defer allocator.free(xb2);
         const q = try allocator.alloc(f32, dim);
         defer allocator.free(q);
-        const kv_dim = self.config.n_kv_heads * (dim / self.config.n_heads);
         const k = try allocator.alloc(f32, kv_dim);
         defer allocator.free(k);
         const v = try allocator.alloc(f32, kv_dim);
         defer allocator.free(v);
         const att = try allocator.alloc(f32, self.config.max_seq_len);
         defer allocator.free(att);
+        const logits = try allocator.alloc(f32, self.config.vocab_size);
+        defer allocator.free(logits);
 
-        // Generate tokens
-        var output_tokens = std.ArrayList(u32){};
-        defer output_tokens.deinit(allocator);
-
-        // Add prompt tokens
-        try output_tokens.appendSlice(allocator, prompt_tokens);
-
-        // Seed RNG
         var prng = std.Random.DefaultPrng.init(@as(u64, @truncate(@as(u128, @bitCast(std.time.nanoTimestamp())))));
         var rng = prng.random();
 
-        // Generate loop
+        var output_tokens = std.ArrayList(u32){};
+        defer output_tokens.deinit(allocator);
+
+        // Prompt processing: embed each prompt token and run the forward
+        // pass, populating the KV cache at each position.
         var pos: usize = 0;
-        while (pos < max_tokens) : (pos += 1) {
-            // For now, just echo back tokens with a simple approach
-            // In production, this would run the full transformer pipeline
-            // For demonstration, sample from random logits
-            const logits = try allocator.alloc(f32, self.config.vocab_size);
-            defer allocator.free(logits);
+        for (prompt_tokens) |tok| {
+            if (pos >= self.config.max_seq_len) break;
+            self.embedToken(tok, x);
+            try self.forwardAllLayers(x, xb, xb2, q, k, v, self.key_cache, self.val_cache, att, pos);
+            pos += 1;
+        }
 
-            // Generate random-ish logits biased toward known tokens
-            for (logits, 0..) |*l, i| {
-                l.* = rng.float(f32) * 2.0 - 1.0;
-                // Boost known token IDs slightly
-                if (self.tokenizer.id_to_token.contains(@intCast(i))) {
-                    l.* += 0.5;
-                }
-            }
+        // Generation loop: sample from the final logits, embed, forward.
+        var generated: usize = 0;
+        while (generated < max_tokens and pos < self.config.max_seq_len) : (generated += 1) {
+            self.computeLogits(x, logits);
 
-            // Sample next token
-            const next = Sampler.sampleGreedy(logits);
+            // Mask out the EOS-adjacent special tokens during sampling is not
+            // required; the sampler handles the distribution.
+            const next = if (temperature > 0.0 or top_k > 0 or top_p > 0.0)
+                Sampler.sample(logits, temperature, top_k, top_p, &rng)
+            else
+                Sampler.sampleGreedy(logits);
 
-            // Check for EOS
             if (next == self.tokenizer.eos_id) break;
 
             try output_tokens.append(allocator, next);
-
-            // Safety limit
-            if (output_tokens.items.len > max_tokens + prompt_tokens.len) break;
+            self.embedToken(next, x);
+            try self.forwardAllLayers(x, xb, xb2, q, k, v, self.key_cache, self.val_cache, att, pos);
+            pos += 1;
         }
 
         // Decode
         return self.tokenizer.decode(output_tokens.items, allocator);
     }
 
+    /// Embed a token id into `x` from the final embedding matrix.
+    fn embedToken(self: *LlamaRunner, token: u32, x: []f32) void {
+        const dim = self.config.dim;
+        const offset = self.embeddingOffset();
+        const idx = @min(token, @as(u32, @intCast(self.config.vocab_size - 1)));
+        const start = offset + @as(usize, idx) * dim;
+        @memcpy(x, self.transformer_weights[start .. start + dim]);
+    }
+
+    /// Compute the output logits for the current hidden state `x`.
+    fn computeLogits(self: *LlamaRunner, x: []const f32, logits: []f32) void {
+        const dim = self.config.dim;
+        // Output RMS norm.
+        const norm_offset = self.outputNormOffset();
+        const norm_weights = self.transformer_weights[norm_offset .. norm_offset + dim];
+        const x_copy = std.heap.page_allocator.alloc(f32, dim) catch return;
+        defer std.heap.page_allocator.free(x_copy);
+        @memcpy(x_copy, x);
+        rmsNorm(x_copy, norm_weights, 1e-6);
+
+        // Final projection: logits = x_copy × embedding^T.
+        const embed_offset = self.embeddingOffset();
+        const vocab = self.config.vocab_size;
+        for (0..vocab) |v| {
+            const row = self.transformer_weights[embed_offset + v * dim .. embed_offset + v * dim + dim];
+            var score: f32 = 0.0;
+            for (x_copy, row) |a, b| {
+                score += a * b;
+            }
+            logits[v] = score;
+        }
+    }
+
+    /// Run all transformer layers for the token at `start_pos`.
+    fn forwardAllLayers(
+        self: *LlamaRunner,
+        x: []f32,
+        xb: []f32,
+        xb2: []f32,
+        q: []f32,
+        k: []f32,
+        v: []f32,
+        key_cache: []f32,
+        val_cache: []f32,
+        att: []f32,
+        start_pos: usize,
+    ) !void {
+        const dim = self.config.dim;
+        const n_heads = self.config.n_heads;
+        const n_kv_heads = self.config.n_kv_heads;
+        const head_dim = dim / n_heads;
+        const kv_dim = n_kv_heads * head_dim;
+
+        var layer: usize = 0;
+        while (layer < self.config.n_layers) : (layer += 1) {
+            const offset = self.layerOffset(layer);
+            const layer_weights = self.transformer_weights[offset .. offset + self.layerWeightLen()];
+
+            var block = TransformerBlock{
+                .rms_att_weight = layer_weights[0..dim],
+                .rms_ffn_weight = layer_weights[dim .. 2 * dim],
+                .wq = layer_weights[2 * dim .. 2 * dim + dim * dim],
+                .wk = layer_weights[2 * dim + dim * dim .. 2 * dim + dim * dim + dim * kv_dim],
+                .wv = layer_weights[2 * dim + dim * dim + dim * kv_dim .. 2 * dim + dim * dim + 2 * dim * kv_dim],
+                .wo = layer_weights[2 * dim + dim * dim + 2 * dim * kv_dim .. 2 * dim + 2 * dim * dim + 2 * dim * kv_dim],
+                .w1 = layer_weights[2 * dim + 2 * dim * dim + 2 * dim * kv_dim .. 2 * dim + 3 * dim * dim + 2 * dim * kv_dim],
+                .w2 = layer_weights[2 * dim + 3 * dim * dim + 2 * dim * kv_dim .. 2 * dim + 4 * dim * dim + 2 * dim * kv_dim],
+                .w3 = layer_weights[2 * dim + 4 * dim * dim + 2 * dim * kv_dim .. 2 * dim + 5 * dim * dim + 2 * dim * kv_dim],
+            };
+
+            const layer_key_cache = key_cache[layer * self.config.max_seq_len * kv_dim .. (layer + 1) * self.config.max_seq_len * kv_dim];
+            const layer_val_cache = val_cache[layer * self.config.max_seq_len * kv_dim .. (layer + 1) * self.config.max_seq_len * kv_dim];
+
+            try block.forward(x, xb, xb2, q, k, v, layer_key_cache, layer_val_cache, att, start_pos, &self.config, std.heap.page_allocator);
+        }
+    }
+
+    /// Number of weight elements per transformer layer.
+    fn layerWeightLen(self: *const LlamaRunner) usize {
+        const dim = self.config.dim;
+        const kv_dim = self.config.n_kv_heads * (dim / self.config.n_heads);
+        // rms_att + rms_ffn + wq + wk + wv + wo + w1 + w2 + w3
+        return 2 * dim + dim * dim * 5 + 2 * dim * kv_dim;
+    }
+
+    /// Byte offset of a layer's weights within the flat weight buffer.
+    fn layerOffset(self: *const LlamaRunner, layer: usize) usize {
+        return layer * self.layerWeightLen();
+    }
+
+    /// Offset of the output RMS norm weights.
+    fn outputNormOffset(self: *const LlamaRunner) usize {
+        return self.config.n_layers * self.layerWeightLen();
+    }
+
+    /// Offset of the token embedding matrix (vocab × dim).
+    fn embeddingOffset(self: *const LlamaRunner) usize {
+        return self.outputNormOffset() + self.config.dim;
+    }
+
+    /// Expected total number of weight elements for this config.
+    fn expectedWeightLen(self: *const LlamaRunner) usize {
+        return self.embeddingOffset() + self.config.vocab_size * self.config.dim;
+    }
+
     /// Check if weights look like real model weights (not random).
+    ///
+    /// Real weights must match the expected transformer layout exactly and
+    /// have a non-trivial magnitude distribution. Random uniform [-1, 1]
+    /// weights have mean abs ≈ 0.5 and are treated as "no real weights".
     fn hasRealWeights(self: *const LlamaRunner) bool {
-        // Real model weights typically have non-trivial magnitude distributions.
-        // For now, we consider random/flat weights as "no real weights".
-        // A real model would have weights where mean abs != 0.5
+        if (self.transformer_weights.len != self.expectedWeightLen()) return false;
         if (self.transformer_weights.len < 100) return false;
 
         var sum_abs: f64 = 0.0;
-        for (self.transformer_weights[0..@min(self.transformer_weights.len, 1000)]) |w| {
+        const sample_end = @min(self.transformer_weights.len, 1000);
+        for (self.transformer_weights[0..sample_end]) |w| {
             sum_abs += @abs(w);
         }
-        const mean_abs = sum_abs / @as(f64, @floatFromInt(@min(self.transformer_weights.len, 1000)));
+        const mean_abs = sum_abs / @as(f64, @floatFromInt(sample_end));
 
-        // Random uniform [-1, 1] has mean abs ~0.5
-        // Real weights typically have mean abs > 0.05 (not near-zero)
-        return mean_abs > 0.05;
+        // Real weights typically have mean abs < 0.3 and are not near-zero.
+        return mean_abs > 0.02 and mean_abs < 0.5;
     }
 
     /// Fallback pattern-matching response generation.
@@ -1004,7 +1147,8 @@ test "LlamaRunner init and deinit" {
     const weights = [_]f32{0.0} ** 100;
     const tokenizer = Tokenizer.init(std.heap.page_allocator);
 
-    var runner = LlamaRunner.init(config, &weights, tokenizer, std.heap.page_allocator);
+    // The tokenizer is moved into the runner, which owns and frees it.
+    var runner = try LlamaRunner.init(config, &weights, tokenizer, std.heap.page_allocator);
     defer runner.deinit();
 
     // Should use fallback (weights are flat/zero)
@@ -1025,10 +1169,10 @@ test "LlamaRunner fallback response" {
     };
 
     const weights = [_]f32{0.0} ** 100;
-    var tokenizer = Tokenizer.init(std.heap.page_allocator);
-    defer tokenizer.deinit();
+    const tokenizer = Tokenizer.init(std.heap.page_allocator);
 
-    var runner = LlamaRunner.init(config, &weights, tokenizer, std.heap.page_allocator);
+    // The tokenizer is moved into the runner, which owns and frees it.
+    var runner = try LlamaRunner.init(config, &weights, tokenizer, std.heap.page_allocator);
     defer runner.deinit();
 
     const response = try runner.generate("help me with maintenance", 10, 1.0, 10, 0.9, std.heap.page_allocator);

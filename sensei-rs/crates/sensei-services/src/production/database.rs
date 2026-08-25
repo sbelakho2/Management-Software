@@ -8,6 +8,7 @@ use chrono::Utc;
 use sensei_core::error::{Result, SenseiError};
 use sensei_core::pagination::PaginatedResponse;
 use sqlx::PgPool;
+use std::collections::HashMap;
 use uuid::Uuid;
 
 use super::{BOMItem, MRPRecord, ProductionOrder, ProductionService, WorkOrder, WorkOrderOperation};
@@ -170,6 +171,102 @@ impl DatabaseProductionService {
     pub fn new(pool: PgPool) -> Self {
         Self { pool }
     }
+
+        /// Generate `work_order_operations` rows from the product's routing.
+        ///
+        /// Each active routing step becomes one operation in sequence order. The
+        /// `work_order_operations.station_id` is NOT NULL, so each step's work
+        /// center is resolved to its first station (falling back to any station
+        /// of the tenant); steps whose work center has no station are skipped
+        /// rather than failed.
+        async fn generate_operations(
+            &self,
+            tenant_id: Uuid,
+            work_order_id: Uuid,
+            product_id: Uuid,
+        ) -> Result<()> {
+            #[derive(sqlx::FromRow)]
+            struct RoutingStepRow {
+                sequence: i32,
+                work_center_id: Option<Uuid>,
+                operation: String,
+                standard_time: f64,
+                setup_time: f64,
+            }
+            let steps: Vec<RoutingStepRow> = sqlx::query_as(
+                "SELECT sequence, work_center_id, operation, standard_time, setup_time \
+                 FROM routings WHERE product_id = $1 AND tenant_id = $2 AND is_active = TRUE \
+                 ORDER BY sequence",
+            )
+            .bind(product_id)
+            .bind(tenant_id)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to load routings: {e}")))?;
+
+            if steps.is_empty() {
+                return Ok(());
+            }
+
+            // Resolve station ids: prefer the work center's own station, then any
+            // station of the tenant. Steps with no resolvable station are skipped.
+            let mut station_for_wc: HashMap<Uuid, Uuid> = HashMap::new();
+            for step in &steps {
+                if let Some(wc_id) = step.work_center_id {
+                    if station_for_wc.contains_key(&wc_id) {
+                        continue;
+                    }
+                    let station: Option<Uuid> = sqlx::query_scalar(
+                        "SELECT id FROM stations WHERE tenant_id = $1 AND work_center_id = $2 \
+                         ORDER BY created_at LIMIT 1",
+                    )
+                    .bind(tenant_id)
+                    .bind(wc_id)
+                    .fetch_optional(&self.pool)
+                    .await
+                    .map_err(|e| SenseiError::Database(format!("Failed to resolve station: {e}")))?;
+                    if let Some(st) = station {
+                        station_for_wc.insert(wc_id, st);
+                    }
+                }
+            }
+            let fallback_station: Option<Uuid> = sqlx::query_scalar(
+                "SELECT id FROM stations WHERE tenant_id = $1 ORDER BY created_at LIMIT 1",
+            )
+            .bind(tenant_id)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to resolve fallback station: {e}")))?;
+
+            let now = Utc::now();
+            for step in &steps {
+                let station_id = step
+                    .work_center_id
+                    .and_then(|wc| station_for_wc.get(&wc).copied())
+                    .or(fallback_station);
+                let Some(station_id) = station_id else { continue };
+                sqlx::query(
+                    "INSERT INTO work_order_operations \
+                     (id, tenant_id, work_order_id, sequence, station_id, operation, status, \
+                      standard_time, setup_time, created_at, updated_at) \
+                     VALUES ($1,$2,$3,$4,$5,$6,'pending',$7,$8,$9,$9)",
+                )
+                .bind(Uuid::new_v4())
+                .bind(tenant_id)
+                .bind(work_order_id)
+                .bind(step.sequence)
+                .bind(station_id)
+                .bind(&step.operation)
+                .bind(step.standard_time)
+                .bind(step.setup_time)
+                .bind(now)
+                .execute(&self.pool)
+                .await
+                .map_err(|e| SenseiError::Database(format!("Failed to create work order operation: {e}")))?;
+            }
+
+            Ok(())
+        }
 }
 
 #[async_trait]
@@ -229,9 +326,11 @@ impl ProductionService for DatabaseProductionService {
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to create work order: {e}")))?;
 
+        // Generate the operations from the product's routing (when configured).
+        self.generate_operations(tenant_id, id, wo.product_id).await?;
+
         Ok(wo_row_to_domain(row))
     }
-
     async fn get_work_order(&self, tenant_id: Uuid, id: Uuid) -> Result<WorkOrder> {
         let row = sqlx::query_as::<_, WorkOrderRow>(
             r#"
@@ -342,6 +441,55 @@ impl ProductionService for DatabaseProductionService {
         .fetch_optional(&self.pool)
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to update work order status: {e}")))?
+        .ok_or_else(|| SenseiError::NotFound(format!("Work order {id} not found")))?;
+
+        Ok(wo_row_to_domain(row))
+    }
+
+    async fn update_work_order(&self, tenant_id: Uuid, id: Uuid, wo: WorkOrder) -> Result<WorkOrder> {
+        let now = Utc::now();
+
+        // Identity fields come from the stored record; the caller-supplied
+        // values for them are never trusted.
+        let row = sqlx::query_as::<_, WorkOrderRow>(
+            r#"
+            UPDATE work_orders
+            SET product_id = $1,
+                product_name = $2,
+                quantity = $3,
+                quantity_completed = CASE WHEN $4 = 0 AND quantity_completed > 0 THEN quantity_completed ELSE $4 END,
+                status = $5,
+                work_center_id = $6,
+                priority = $7,
+                scheduled_start = $8,
+                scheduled_end = $9,
+                assigned_to = $10,
+                notes = $11,
+                updated_at = $12
+            WHERE id = $13 AND tenant_id = $14
+            RETURNING id, tenant_id, wo_number, product_id, product_name,
+                      quantity, quantity_completed, status, work_center_id, priority,
+                      scheduled_start, scheduled_end, actual_start, actual_end,
+                      assigned_to, notes, created_at, updated_at
+            "#,
+        )
+        .bind(wo.product_id)
+        .bind(wo.product_name)
+        .bind(wo.quantity)
+        .bind(wo.quantity_completed)
+        .bind(wo.status)
+        .bind(wo.work_center_id)
+        .bind(wo.priority)
+        .bind(wo.scheduled_start)
+        .bind(wo.scheduled_end)
+        .bind(&wo.assigned_to)
+        .bind(wo.notes)
+        .bind(now)
+        .bind(id)
+        .bind(tenant_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| SenseiError::Database(format!("Failed to update work order: {e}")))?
         .ok_or_else(|| SenseiError::NotFound(format!("Work order {id} not found")))?;
 
         Ok(wo_row_to_domain(row))
@@ -650,8 +798,23 @@ impl ProductionService for DatabaseProductionService {
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to compute MRP scheduled receipts: {e}")))?;
 
-        let projected_on_hand = 0_i64;
-        let net_requirement = (gross_requirement - scheduled_receipts - projected_on_hand).max(0);
+        // Projected on-hand: real current inventory + scheduled receipts −
+        // gross requirement (never negative), matching the in-memory impl.
+        let on_hand: i64 = sqlx::query_scalar(
+            r#"
+            SELECT COALESCE(SUM(quantity_on_hand::bigint), 0)
+            FROM inventory_items
+            WHERE product_id = $1 AND tenant_id = $2
+            "#,
+        )
+        .bind(product_id)
+        .bind(tenant_id)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|e| SenseiError::Database(format!("Failed to compute MRP on-hand: {e}")))?;
+
+        let projected_on_hand = (on_hand + scheduled_receipts - gross_requirement).max(0);
+        let net_requirement = (gross_requirement - scheduled_receipts - on_hand).max(0);
         let planned_order_release = net_requirement;
 
         let id = Uuid::new_v4();
@@ -708,9 +871,9 @@ impl ProductionService for DatabaseProductionService {
 
         let rows = sqlx::query_as::<_, WorkOrderOperationRow>(
             r#"
-            SELECT id, tenant_id, work_order_id, sequence, station_id, operation,
-                   status, standard_time, actual_time, setup_time, actual_setup_time,
-                   started_at, completed_at, operator_id, notes, created_at, updated_at
+            SELECT id, work_order_id, sequence, station_id, operation,
+                   status, standard_time, setup_time,
+                   started_at, completed_at, created_at
             FROM work_order_operations
             WHERE work_order_id = $1 AND tenant_id = $2
             ORDER BY sequence
@@ -738,24 +901,19 @@ impl ProductionService for DatabaseProductionService {
     }
 }
 
-/// Database row for work order operations.
+/// Database row for work order operations (columns actually mapped to the
+/// domain [`WorkOrderOperation`]).
 #[derive(Debug, Clone, sqlx::FromRow)]
 struct WorkOrderOperationRow {
     id: Uuid,
-    tenant_id: Uuid,
     work_order_id: Uuid,
     sequence: i32,
     station_id: Uuid,
     operation: String,
     status: String,
     standard_time: f64,
-    actual_time: Option<f64>,
     setup_time: f64,
-    actual_setup_time: Option<f64>,
     started_at: Option<chrono::DateTime<Utc>>,
     completed_at: Option<chrono::DateTime<Utc>>,
-    operator_id: Option<Uuid>,
-    notes: Option<String>,
     created_at: chrono::DateTime<Utc>,
-    updated_at: chrono::DateTime<Utc>,
 }

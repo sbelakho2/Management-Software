@@ -22,6 +22,50 @@ async fn test_create_work_center() {
     assert_eq!(json["name"], "Assembly Line 1");
     assert_eq!(json["work_center_type"], "Assembly");
     assert!(json["id"].as_str().unwrap_or("").len() > 0);
+    // Per-tenant numbering: first work center in this tenant is WC-00001.
+    assert_eq!(json["work_center_number"], "WC-00001");
+}
+
+#[tokio::test]
+async fn test_work_center_numbering_is_per_tenant_sequential() {
+    let app = common::TestApp::new().await;
+    let token = app.login_as_admin().await;
+
+    for _ in 0..3 {
+        let body = common::fixtures::work_center_payload("Seq WC", "Assembly");
+        let req = app.post_authenticated("/api/v1/work-centers", &token, body);
+        let mut resp = app.send_request(req).await;
+        assert_eq!(resp.status(), StatusCode::OK);
+    }
+
+    let req = app.get_authenticated("/api/v1/work-centers", &token);
+    let mut resp = app.send_request(req).await;
+    let json: Value = app.json_body(&mut resp).await;
+    let numbers: Vec<String> = json["data"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|wc| wc["work_center_number"].as_str().unwrap().to_string())
+        .collect();
+    assert_eq!(numbers.len(), 3);
+    // Numbers are unique and sequential within the tenant.
+    let mut unique = numbers.clone();
+    unique.sort();
+    unique.dedup();
+    assert_eq!(unique.len(), 3, "work center numbers must be unique per tenant");
+    assert_eq!(unique, vec!["WC-00001", "WC-00002", "WC-00003"]);
+}
+
+#[tokio::test]
+async fn test_create_work_center_invalid_efficiency() {
+    let app = common::TestApp::new().await;
+    let token = app.login_as_admin().await;
+    let mut body = common::fixtures::work_center_payload("Bad Eff WC", "Assembly");
+    body["efficiency"] = serde_json::json!(0.85);
+    let req = app.post_authenticated("/api/v1/work-centers", &token, body);
+    let resp = app.send_request(req).await;
+    // Efficiency is a percentage 0-100; 0.85 is out of contract.
+    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
 }
 
 #[tokio::test]
@@ -143,8 +187,12 @@ async fn test_get_work_center_capacity() {
     let mut resp = app.send_request(req).await;
     assert_eq!(resp.status(), StatusCode::OK);
 
+    // The endpoint reports the computed capacity fields, not raw inputs.
+    // capacity_per_shift=8, shifts=2, efficiency=85, hours=16.
     let json: Value = app.json_body(&mut resp).await;
-    assert!(json["capacity_per_shift"].as_i64().is_some());
+    assert_eq!(json["total_capacity_per_day"], 16.0);
+    assert_eq!(json["effective_capacity_per_day"], 13.6);
+    assert_eq!(json["utilization_percentage"], 100.0);
 }
 
 #[tokio::test]

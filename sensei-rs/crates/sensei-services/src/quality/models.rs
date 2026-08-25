@@ -112,6 +112,51 @@ pub enum LinkType {
     SupplierScar,
 }
 
+/// Lifecycle status of a non-conformance report.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum NcrStatus {
+    /// NCR created, investigation not started.
+    #[default]
+    Open,
+    /// Root cause analysis in progress or completed.
+    UnderInvestigation,
+    /// Disposition decided; corrective/preventive actions defined.
+    ActionDefined,
+    /// Corrective actions are being implemented.
+    InProgress,
+    /// NCR closed after disposition and completeness validation.
+    Closed,
+    /// NCR cancelled / withdrawn.
+    Cancelled,
+}
+
+impl NcrStatus {
+    /// Snake-case name used by API filters and JSON payloads.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            NcrStatus::Open => "open",
+            NcrStatus::UnderInvestigation => "under_investigation",
+            NcrStatus::ActionDefined => "action_defined",
+            NcrStatus::InProgress => "in_progress",
+            NcrStatus::Closed => "closed",
+            NcrStatus::Cancelled => "cancelled",
+        }
+    }
+}
+
+/// Case- and separator-insensitive comparison between an API filter value and
+/// an enum's canonical name (accepts `under_investigation`, `UnderInvestigation`,
+/// `UNDERINVESTIGATION`, ...).
+pub fn enum_name_matches(filter: &str, canonical: &str) -> bool {
+    fn normalize(s: &str) -> String {
+        s.chars()
+            .filter(|c| *c != '_' && !c.is_whitespace())
+            .flat_map(char::to_lowercase)
+            .collect()
+    }
+    normalize(filter) == normalize(canonical)
+}
+
 /// A non-conformance record.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NonConformance {
@@ -128,6 +173,28 @@ pub struct NonConformance {
     pub department: Option<String>,
     pub location: Option<String>,
     pub is_recurrence: bool,
+    /// Lifecycle status (defaults to `Open` for rows written before this
+    /// field existed).
+    #[serde(default)]
+    pub status: NcrStatus,
+    /// Originating source (e.g. inspection, audit, customer complaint).
+    #[serde(default)]
+    pub source: Option<String>,
+    /// Root cause determined during investigation.
+    #[serde(default)]
+    pub root_cause: Option<String>,
+    /// Root cause category (e.g. machine, method, material).
+    #[serde(default)]
+    pub root_cause_type: Option<String>,
+    /// Analysis method used (5-Why, Fishbone, etc.).
+    #[serde(default)]
+    pub analysis_method: Option<String>,
+    /// Disposition decided for the non-conforming material.
+    #[serde(default)]
+    pub disposition: Option<String>,
+    /// When the NCR was closed.
+    #[serde(default)]
+    pub closed_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }

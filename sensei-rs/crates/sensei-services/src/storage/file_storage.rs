@@ -310,6 +310,20 @@ impl S3StorageService {
     }
 }
 
+/// Map a rust-s3 error onto a [`SenseiError`].
+///
+/// 404 responses (which S3 reports as `NoSuchKey`) are mapped to
+/// [`SenseiError::NotFound`] based on the HTTP status code rather than by
+/// string-matching the error message.
+fn map_s3_error(context: &str, e: &s3::error::S3Error, storage_path: &str) -> SenseiError {
+    match e {
+        s3::error::S3Error::HttpFailWithBody(404, _) => {
+            SenseiError::NotFound(format!("File not found at storage path: {storage_path}"))
+        }
+        _ => SenseiError::ExternalService(format!("{context}: {e}")),
+    }
+}
+
 impl std::fmt::Debug for S3StorageService {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("S3StorageService")
@@ -358,15 +372,7 @@ impl FileStorageService for S3StorageService {
             .bucket
             .get_object(&s3_path)
             .await
-            .map_err(|e| {
-                if e.to_string().contains("404") || e.to_string().contains("NoSuchKey") {
-                    SenseiError::NotFound(format!(
-                        "File not found at storage path: {storage_path}"
-                    ))
-                } else {
-                    SenseiError::ExternalService(format!("S3 download failed: {e}"))
-                }
-            })?;
+            .map_err(|e| map_s3_error("S3 download failed", &e, storage_path))?;
 
         Ok(response.bytes().to_vec())
     }
@@ -377,15 +383,7 @@ impl FileStorageService for S3StorageService {
         self.bucket
             .delete_object(&s3_path)
             .await
-            .map_err(|e| {
-                if e.to_string().contains("404") || e.to_string().contains("NoSuchKey") {
-                    SenseiError::NotFound(format!(
-                        "File not found at storage path: {storage_path}"
-                    ))
-                } else {
-                    SenseiError::ExternalService(format!("S3 delete failed: {e}"))
-                }
-            })?;
+            .map_err(|e| map_s3_error("S3 delete failed", &e, storage_path))?;
 
         Ok(())
     }

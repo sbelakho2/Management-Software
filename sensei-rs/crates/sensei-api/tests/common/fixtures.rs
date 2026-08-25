@@ -49,7 +49,8 @@ pub fn work_center_payload(name: &str, wc_type: &str) -> Value {
         "work_center_type": wc_type,
         "capacity_per_shift": 8,
         "shifts_per_day": 2,
-        "efficiency": 0.85,
+        // Efficiency is a percentage (0-100), not a fraction.
+        "efficiency": 85.0,
         "available_hours_per_day": 16.0,
         "is_active": true,
     })
@@ -189,9 +190,11 @@ pub fn ncr_payload(title: &str) -> Value {
     serde_json::json!({
         "title": title,
         "description": format!("NCR: {}", title),
-        "severity": "Major",
+        "nc_type": "Product",
+        "severity": "High",
         "source": "Inspection",
         "status": "Open",
+        "is_recurrence": false,
     })
 }
 
@@ -200,6 +203,9 @@ pub fn capa_payload(title: &str) -> Value {
     serde_json::json!({
         "title": title,
         "description": format!("CAPA: {}", title),
+        "nc_ids": [uuid::Uuid::new_v4().to_string()],
+        "capa_type": "Corrective",
+        "priority": "High",
         "severity": "Critical",
         "source": "Audit",
         "status": "Open",
@@ -365,5 +371,11 @@ pub fn standard_work_payload(title: &str, area: &str, process: &str) -> Value {
                 "duration_seconds": 60,
             }
         ],
+        "required_skills": ["Assembly"],
+        "quality_checks": [],
+        "safety_notes": [],
+        "tools_required": [],
+        "materials_required": [],
+        "attachments": [],
     })
 }

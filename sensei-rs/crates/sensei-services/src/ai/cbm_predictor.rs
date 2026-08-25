@@ -424,7 +424,9 @@ impl EnsembleClassifier {
             let min_v = col_vals.iter().cloned().fold(f64::MAX, f64::min);
             let max_v = col_vals.iter().cloned().fold(f64::MIN, f64::max);
 
-            for _ in 0..10 {
+            // Search `max_depth` random threshold candidates per stump; a
+            // larger depth explores more of the feature range per stump.
+            for _ in 0..self.max_depth.max(1) {
                 let threshold = rng.gen_range(min_v..=max_v);
 
                 let mut left_true = 0usize;

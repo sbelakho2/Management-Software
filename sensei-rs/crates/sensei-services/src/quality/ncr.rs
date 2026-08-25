@@ -16,7 +16,7 @@ use uuid::Uuid;
 use super::models::{
     ActionStatus, CapaConfig, CapaCreationResult, CapaExtended, CapaPriority, CapaStatusEx,
     CapaType, ClosureCheckResult, ClosureGate, ClosureGateType, CorrectiveAction,
-    EffectivenessCheck, EntityLink, LinkType, NcSeverity, NcType, NonConformance,
+    EffectivenessCheck, EntityLink, LinkType, NcSeverity, NcrStatus, NcType, NonConformance,
     RecurrenceCheckResult, RootCauseAnalysis,
     DEFAULT_CLOSURE_GATES,
 };
@@ -295,6 +295,13 @@ impl NcrService for InMemoryCapaWorkflowService {
             department,
             location,
             is_recurrence: false,
+            status: NcrStatus::Open,
+            source: None,
+            root_cause: None,
+            root_cause_type: None,
+            analysis_method: None,
+            disposition: None,
+            closed_at: None,
             created_at: now(),
             updated_at: now(),
         };

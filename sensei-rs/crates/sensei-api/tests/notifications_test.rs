@@ -53,12 +53,33 @@ async fn test_get_preferences() {
 async fn test_update_preferences() {
     let app = common::TestApp::new().await;
     let token = app.login_as_admin().await;
+
+    // The preferences DTO uses email_notifications/push_notifications/
+    // in_app_notifications (not email_enabled/in_app_enabled) — send the
+    // real field names and assert the values actually change.
     let update = serde_json::json!({
-        "email_enabled": true,
-        "in_app_enabled": true,
+        "email_notifications": false,
+        "push_notifications": true,
+        "in_app_notifications": false,
         "digest_frequency": "daily",
     });
     let req = app.put_authenticated("/api/v1/notifications/preferences", &token, update);
     let mut resp = app.send_request(req).await;
     assert_eq!(resp.status(), StatusCode::OK);
+
+    let json: Value = app.json_body(&mut resp).await;
+    assert_eq!(json["email_notifications"], false);
+    assert_eq!(json["push_notifications"], true);
+    assert_eq!(json["in_app_notifications"], false);
+    assert_eq!(json["digest_frequency"], "daily");
+
+    // Fetching again must return the persisted values.
+    let req = app.get_authenticated("/api/v1/notifications/preferences", &token);
+    let mut resp = app.send_request(req).await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    let json: Value = app.json_body(&mut resp).await;
+    assert_eq!(json["email_notifications"], false);
+    assert_eq!(json["push_notifications"], true);
+    assert_eq!(json["in_app_notifications"], false);
+    assert_eq!(json["digest_frequency"], "daily");
 }

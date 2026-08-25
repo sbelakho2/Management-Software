@@ -80,10 +80,12 @@ pub async fn ws_handler(
 /// Handle an established WebSocket connection.
 ///
 /// 1. Registers the user connection for direct messaging.
-/// 2. Joins the tenant-wide room automatically.
+/// 2. Joins the tenant-wide room automatically and KEEPS the receiver so
+///    tenant broadcasts actually reach the client.
 /// 3. Loops reading incoming messages; handles `{"type":"join","room":"..."}`
-///    to dynamically join additional rooms.
-/// 4. Forwards user-directed messages from the broadcast channel to the client.
+///    to dynamically join additional rooms (validated).
+/// 4. Forwards user-directed and tenant messages from the broadcast channels
+///    to the client, plus periodic heartbeat pings.
 /// 5. On disconnect or error, cleans up all state.
 async fn handle_socket(
     socket: WebSocket,
@@ -97,8 +99,9 @@ async fn handle_socket(
     // Register the user connection for direct messages.
     let mut user_rx = ws_manager.register_connection(user_id).await;
 
-    // Automatically join the tenant room.
-    let _tenant_rx = ws_manager.join_room(&tenant_room).await;
+    // Join the tenant room and KEEP the receiver — dropping it would
+    // silently unsubscribe this client from tenant broadcasts.
+    let mut tenant_rx = ws_manager.join_room(&tenant_room).await;
 
     info!(
         user_id = %user_id,
@@ -109,13 +112,14 @@ async fn handle_socket(
     // Split the socket into sender and receiver halves.
     let (mut ws_sender, mut ws_receiver) = socket.split();
 
-    // Create an mpsc channel so the main loop can send messages (e.g. pongs)
-    // through the ws_sender without directly owning it (it's owned by the
-    // spawned task below).
+    // Create an mpsc channel so the main loop can send messages (e.g. pongs
+    // and join errors) through the ws_sender without directly owning it
+    // (it's owned by the spawned task below).
     let (outgoing_tx, mut outgoing_rx) = tokio::sync::mpsc::channel::<Message>(256);
 
-    // Spawn a task that drains the outgoing queue and the user-directed
-    // broadcast channel, sending everything through the WebSocket sender.
+    // Spawn a task that drains the outgoing queue, the user-directed
+    // broadcast channel, and the tenant broadcast channel, sending
+    // everything through the WebSocket sender.
     let send_task = tokio::spawn(async move {
         loop {
             tokio::select! {
@@ -136,9 +140,129 @@ async fn handle_socket(
                         Err(_) => break,
                     }
                 }
+                // Tenant-wide messages from the broadcast channel.
+                result = tenant_rx.recv() => {
+                    match result {
+                        Ok(text) => {
+                            if ws_sender.send(Message::Text(text.into())).await.is_err() {
+                                break;
+                            }
+                        }
+                        Err(_) => break,
+                    }
+                }
             }
         }
     });
+
+    // Heartbeat: ping the client every 30 seconds to keep the connection
+    // alive and detect dead peers.
+    let heartbeat_tx = outgoing_tx.clone();
+    let heartbeat_task = tokio::spawn(async move {
+        let mut interval = tokio::time::interval(Duration::from_secs(30));
+        loop {
+            interval.tick().await;
+            if heartbeat_tx
+                .send(Message::Ping(axum::body::Bytes::new()))
+                .await
+                .is_err()
+            {
+                break;
+            }
+        }
+    });
+
+    /// Validate that a client may join the given room.
+    ///
+    /// Allowed patterns:
+    /// - `tenant:{own_tenant_id}` — only your own tenant room;
+    /// - `user:{own_user_id}` — only your own direct-message room;
+    /// - `entity:{type}:{id}` — the entity must belong to the client's
+    ///   tenant when it exists in an entity store (unknown entities are
+    ///   allowed through — they may live in a service-owned store).
+    async fn validate_room(
+        state: &AppState,
+        room: &str,
+        user_id: Uuid,
+        tenant_id: Uuid,
+    ) -> std::result::Result<(), String> {
+        let parts: Vec<&str> = room.splitn(3, ':').collect();
+        match parts.as_slice() {
+            ["tenant", id] => {
+                let id = id
+                    .parse::<Uuid>()
+                    .map_err(|_| format!("Invalid tenant room '{room}'"))?;
+                if id != tenant_id {
+                    return Err(format!("Cannot join another tenant's room '{room}'"));
+                }
+                Ok(())
+            }
+            ["user", id] => {
+                let id = id
+                    .parse::<Uuid>()
+                    .map_err(|_| format!("Invalid user room '{room}'"))?;
+                if id != user_id {
+                    return Err(format!("Cannot join another user's room '{room}'"));
+                }
+                Ok(())
+            }
+            ["entity", _entity_type, id] => {
+                // Room format is `entity:{type}:{id}`; the entity type is a
+                // free-form label, so only the id is validated.
+                let entity_id = id
+                    .parse::<Uuid>()
+                    .map_err(|_| format!("Invalid entity room '{room}'"))?;
+                match entity_belongs_to_tenant(state, entity_id, tenant_id).await {
+                    Some(true) | None => Ok(()),
+                    Some(false) => Err(format!("Cannot join a foreign entity's room '{room}'")),
+                }
+            }
+            _ => Err(format!("Room '{room}' is not a valid joinable room")),
+        }
+    }
+
+    /// Look up an entity across the tenant-scoped entity stores and report
+    /// whether it belongs to `tenant_id`. Returns `None` when the entity is
+    /// not found in any store.
+    async fn entity_belongs_to_tenant(
+        state: &AppState,
+        entity_id: Uuid,
+        tenant_id: Uuid,
+    ) -> Option<bool> {
+        // Each store is checked only for membership + tenant ownership.
+        macro_rules! check_store {
+            ($store:expr) => {
+                {
+                    let map = $store.read().await;
+                    if let Some(entity) = map.get(&entity_id) {
+                        return Some(entity.tenant_id == tenant_id);
+                    }
+                }
+            };
+        }
+        check_store!(state.tasks);
+        check_store!(state.work_centers);
+        check_store!(state.production_cells);
+        check_store!(state.obeya_boards);
+        check_store!(state.kanban_boards);
+        check_store!(state.standard_work_documents);
+        check_store!(state.opportunities);
+        check_store!(state.knowledge_packs);
+        check_store!(state.training_courses);
+        check_store!(state.ctq_characteristics);
+        check_store!(state.inventory_items);
+        check_store!(state.warehouses);
+        check_store!(state.escalation_policies);
+        check_store!(state.learning_modules);
+        check_store!(state.lsw_standards);
+        check_store!(state.kpi_definitions);
+        check_store!(state.state_machine_instances);
+        check_store!(state.notification_triggers);
+        check_store!(state.saved_views);
+        check_store!(state.work_packets);
+        check_store!(state.cost_builds);
+        None
+    }
 
     // Track rooms the client has joined (beyond the automatic tenant room).
     let mut joined_rooms: Vec<String> = vec![tenant_room.clone()];
@@ -152,18 +276,32 @@ async fn handle_socket(
                     if join_msg.msg_type == "join" {
                         let room = join_msg.room;
                         if !joined_rooms.contains(&room) {
-                            ws_manager.join_room(&room).await;
-                            joined_rooms.push(room.clone());
-                            info!(
-                                user_id = %user_id,
-                                room = %room,
-                                "Client joined room"
-                            );
+                            match validate_room(&state, &room, user_id, tenant_id).await {
+                                Ok(()) => {
+                                    ws_manager.join_room(&room).await;
+                                    joined_rooms.push(room.clone());
+                                    info!(
+                                        user_id = %user_id,
+                                        room = %room,
+                                        "Client joined room"
+                                    );
+                                }
+                                Err(err) => {
+                                    warn!(user_id = %user_id, room = %room, error = %err, "Room join rejected");
+                                    let _ = outgoing_tx
+                                        .send(Message::Text(
+                                            format!(
+                                                "{{ \"type\": \"error\", \"message\": {err:?} }}"
+                                            )
+                                            .into(),
+                                        ))
+                                        .await;
+                                }
+                            }
                         }
                     }
                 }
                 // All other text messages are silently ignored by the server.
-                // They can be extended to support custom message types later.
             }
             Ok(Message::Close(_)) => {
                 info!(user_id = %user_id, "WebSocket client disconnected (close frame)");
@@ -192,8 +330,9 @@ async fn handle_socket(
         }
     }
 
-    // Cleanup: abort the send task.
+    // Cleanup: abort the send task and the heartbeat.
     send_task.abort();
+    heartbeat_task.abort();
 
     // Unregister the user connection.
     ws_manager.unregister_connection(user_id).await;

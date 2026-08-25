@@ -154,7 +154,7 @@ async fn test_record_and_list_training() {
         &format!("/api/v1/hr/training?employee_id={}", emp_id),
         &token,
     );
-    let mut resp_list = app.send_request(req_list).await;
+    let resp_list = app.send_request(req_list).await;
     assert_eq!(resp_list.status(), StatusCode::OK);
 }
 
@@ -195,7 +195,7 @@ async fn test_submit_and_list_leave() {
         &token,
         approve_body,
     );
-    let mut resp_approve = app.send_request(req_approve).await;
+    let resp_approve = app.send_request(req_approve).await;
     assert_eq!(resp_approve.status(), StatusCode::OK);
 }
 
@@ -234,7 +234,7 @@ async fn test_create_and_list_reviews() {
         &format!("/api/v1/hr/reviews?employee_id={}", emp_id),
         &token,
     );
-    let mut resp_list = app.send_request(req_list).await;
+    let resp_list = app.send_request(req_list).await;
     assert_eq!(resp_list.status(), StatusCode::OK);
 }
 
@@ -262,7 +262,7 @@ async fn test_clock_in_and_out() {
         "timecard_id": timecard_id,
     });
     let req_out = app.post_authenticated("/api/v1/hr/timecards/clock-out", &token, clock_out_body);
-    let mut resp_out = app.send_request(req_out).await;
+    let resp_out = app.send_request(req_out).await;
     assert_eq!(resp_out.status(), StatusCode::OK);
 }
 

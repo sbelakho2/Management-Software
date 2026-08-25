@@ -11,9 +11,11 @@
 //! - `"user:{user_id}"` — direct messages to a user
 
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
 use tokio::sync::{broadcast, RwLock};
+use tracing::debug;
 use uuid::Uuid;
 
 /// Capacity of the broadcast channel for each room / connection.
@@ -26,6 +28,10 @@ pub struct WebSocketManager {
     rooms: Arc<RwLock<HashMap<String, broadcast::Sender<String>>>>,
     /// Per-user broadcast senders for direct messaging.
     connections: Arc<RwLock<HashMap<Uuid, broadcast::Sender<String>>>>,
+    /// Total number of broadcast sends dropped because every receiver
+    /// lagged or disconnected (slow clients). Logged at debug level so the
+    /// fire-and-forget pub/sub never disrupts fast clients.
+    dropped_sends: Arc<AtomicU64>,
 }
 
 impl WebSocketManager {
@@ -34,7 +40,14 @@ impl WebSocketManager {
         Self {
             rooms: Arc::new(RwLock::new(HashMap::new())),
             connections: Arc::new(RwLock::new(HashMap::new())),
+            dropped_sends: Arc::new(AtomicU64::new(0)),
         }
+    }
+
+    /// Number of broadcast sends dropped due to lagging/disconnected
+    /// receivers (diagnostics).
+    pub fn dropped_send_count(&self) -> u64 {
+        self.dropped_sends.load(Ordering::Relaxed)
     }
 
     /// Join (or create) a room and return a receiver for its messages.
@@ -82,11 +95,23 @@ impl WebSocketManager {
     /// Broadcast a message to all subscribers in a room.
     ///
     /// Errors (e.g., no receivers or all receivers lagging) are silently
-    /// ignored so a single slow client does not disrupt the room.
+    /// ignored so a single slow client does not disrupt the room; drops are
+    /// counted and logged at debug level.
     pub async fn broadcast_to_room(&self, room: &str, message: &str) {
         let rooms = self.rooms.read().await;
         if let Some(tx) = rooms.get(room) {
-            let _ = tx.send(message.to_string());
+            match tx.send(message.to_string()) {
+                Ok(receiver_count) => {
+                    if receiver_count == 0 {
+                        self.dropped_sends.fetch_add(1, Ordering::Relaxed);
+                        debug!(room, "WS broadcast sent to 0 receivers (empty room)");
+                    }
+                }
+                Err(e) => {
+                    self.dropped_sends.fetch_add(1, Ordering::Relaxed);
+                    debug!(room, dropped_total = self.dropped_send_count(), "WS broadcast dropped: {e}");
+                }
+            }
         }
     }
 
@@ -96,7 +121,14 @@ impl WebSocketManager {
     pub async fn send_to_user(&self, user_id: Uuid, message: &str) -> bool {
         let connections = self.connections.read().await;
         if let Some(tx) = connections.get(&user_id) {
-            tx.send(message.to_string()).is_ok()
+            match tx.send(message.to_string()) {
+                Ok(_) => true,
+                Err(e) => {
+                    self.dropped_sends.fetch_add(1, Ordering::Relaxed);
+                    debug!(user_id = %user_id, dropped_total = self.dropped_send_count(), "WS user message dropped: {e}");
+                    false
+                }
+            }
         } else {
             false
         }

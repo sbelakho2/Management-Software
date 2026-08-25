@@ -7,6 +7,7 @@ description = "NATS JetStream pull-based task consumer system replacing Celery w
 
 [dependencies]
 sensei-event-bus = { path = "../sensei-event-bus" }
+sensei-services = { path = "../sensei-services" }
 async-nats.workspace = true
 bytes.workspace = true
 tokio = { workspace = true, features = ["full"] }
@@ -19,5 +20,4 @@ chrono.workspace = true
 thiserror.workspace = true
 futures.workspace = true
 lettre.workspace = true
-printpdf.workspace = true
 sqlx = { workspace = true, features = ["runtime-tokio", "postgres", "uuid", "chrono", "json"] }

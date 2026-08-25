@@ -16,4 +16,3 @@ tracing.workspace = true
 uuid.workspace = true
 chrono.workspace = true
 once_cell.workspace = true
-rust_decimal = { version = "1", features = ["db-tokio-postgres"] }

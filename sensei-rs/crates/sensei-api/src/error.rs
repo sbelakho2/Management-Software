@@ -6,11 +6,11 @@
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::Json;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use sensei_core::error::SenseiError;
 
 /// Standard API error response body.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct ApiErrorResponse {
     /// Error code for programmatic handling.
     pub error: String,
@@ -70,6 +70,8 @@ impl ApiError {
             ApiError::Domain(err) => match err {
                 SenseiError::Validation(_) | SenseiError::MissingField(_) | SenseiError::InvalidValue { .. } => "validation_error",
                 SenseiError::Unauthorized(_) => "unauthorized",
+                SenseiError::TokenError(_) => "token_error",
+                SenseiError::TokenExpired => "token_expired",
                 SenseiError::Forbidden(_) => "forbidden",
                 SenseiError::NotFound(_) => "not_found",
                 SenseiError::AlreadyExists(_) => "already_exists",
@@ -91,6 +93,36 @@ impl ApiError {
             ApiError::Domain(err) => err.to_string(),
         }
     }
+
+    /// Structured `details` payload for the error body.
+    ///
+    /// Populated when the underlying error carries structured information:
+    /// `InvalidValue` exposes the offending field, and `Validation` messages
+    /// that mention a quoted field name expose it as best-effort.
+    fn details(&self) -> Option<serde_json::Value> {
+        match self {
+            ApiError::Domain(SenseiError::InvalidValue { field, detail }) => {
+                Some(serde_json::json!({ "field": field, "detail": detail }))
+            }
+            ApiError::Domain(SenseiError::Validation(msg)) => {
+                Some(serde_json::json!({ "field": quoted_field(msg) }))
+            }
+            ApiError::Domain(SenseiError::MissingField(msg)) => {
+                Some(serde_json::json!({ "field": quoted_field(msg) }))
+            }
+            _ => None,
+        }
+    }
+}
+
+/// Best-effort extraction of a quoted field name from a validation message,
+/// e.g. `"Field 'name' is required"` → `Some("name")`.
+fn quoted_field(msg: &str) -> Option<String> {
+    msg.split('\'')
+        .nth(1)
+        .map(str::trim)
+        .filter(|f| !f.is_empty())
+        .map(str::to_string)
 }
 
 impl IntoResponse for ApiError {
@@ -99,7 +131,7 @@ impl IntoResponse for ApiError {
         let body = ApiErrorResponse {
             error: self.error_code(),
             message: self.message(),
-            details: None,
+            details: self.details(),
         };
 
         (status, Json(body)).into_response()
@@ -115,4 +147,49 @@ impl From<SenseiError> for ApiError {
 /// Convenience function to create a 500 error from any error type.
 pub fn internal_error<E: std::fmt::Display>(err: E) -> ApiError {
     ApiError::Internal(err.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn token_expired_maps_to_401_token_expired() {
+        let err = ApiError::Domain(SenseiError::TokenExpired);
+        assert_eq!(err.status_code(), StatusCode::UNAUTHORIZED);
+        assert_eq!(err.error_code(), "token_expired");
+        let response = err.into_response();
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[test]
+    fn token_error_maps_to_token_error_code() {
+        let err = ApiError::Domain(SenseiError::TokenError("bad token".to_string()));
+        assert_eq!(err.status_code(), StatusCode::UNAUTHORIZED);
+        assert_eq!(err.error_code(), "token_error");
+    }
+
+    #[tokio::test]
+    async fn invalid_value_exposes_field_in_details() {
+        let err = ApiError::Domain(SenseiError::InvalidValue {
+            field: "quantity".to_string(),
+            detail: "must be positive".to_string(),
+        });
+        let response = err.into_response();
+        let bytes = axum::body::to_bytes(response.into_body(), 1024)
+            .await
+            .expect("body readable");
+        let body: ApiErrorResponse = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(body.error, "validation_error");
+        let details = body.details.expect("details populated");
+        assert_eq!(details["field"], "quantity");
+        assert_eq!(details["detail"], "must be positive");
+    }
+
+    #[test]
+    fn validation_message_field_is_extracted() {
+        assert_eq!(quoted_field("Field 'name' is required"), Some("name".to_string()));
+        assert_eq!(quoted_field("Invalid email format"), None);
+        assert_eq!(quoted_field(""), None);
+    }
 }

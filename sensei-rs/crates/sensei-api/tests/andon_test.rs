@@ -87,8 +87,6 @@ async fn test_acknowledge_andon() {
     let created: Value = app.json_body(&mut resp).await;
     let andon_id = created["id"].as_str().unwrap().to_string();
 
-    // Use the admin user's ID from the create response or a known UUID
-    let admin_id = serde_json::json!({"id": created["raised_by"]}).to_string();
     // Acknowledge
     let req = app.post_authenticated(
         &format!("/api/v1/andon/{}/acknowledge", andon_id),

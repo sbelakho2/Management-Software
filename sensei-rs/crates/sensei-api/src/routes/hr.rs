@@ -82,7 +82,9 @@ pub struct ClockOutRequest {
 /// Request body for approving leave.
 #[derive(Debug, Deserialize)]
 pub struct ApproveLeaveRequest {
-    pub approved_by: Uuid,
+    /// Ignored: the approver is always the authenticated user. Kept as
+    /// `Option` so legacy clients sending it do not break.
+    pub approved_by: Option<Uuid>,
 }
 
 // ── Employees ──────────────────────────────────────────────────────────────
@@ -204,16 +206,19 @@ pub async fn submit_leave_request(
 }
 
 /// Approve a leave request.
+///
+/// The approver is taken from the authenticated token; client-supplied
+/// actor ids are never trusted.
 pub async fn approve_leave(
     user: AuthenticatedUser,
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
-    Json(req): Json<ApproveLeaveRequest>,
+    _req: Json<ApproveLeaveRequest>,
 ) -> Result<Json<LeaveRequest>> {
     let tenant_id = user.tenant_id;
     let leave = state
         .hr_service
-        .approve_leave(tenant_id, id, req.approved_by)
+        .approve_leave(tenant_id, id, user.user_id)
         .await?;
     Ok(Json(leave))
 }

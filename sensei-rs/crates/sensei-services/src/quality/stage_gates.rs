@@ -291,7 +291,6 @@ pub struct UserCertificationEntry {
 
 /// Combined in-memory Stage Gates, Traceability, Certification, Lab, and
 /// Management Review service.
-#[allow(dead_code)]
 pub struct InMemoryStageGatesService {
     projects: tokio::sync::RwLock<Vec<NpiProject>>,
     artifacts: tokio::sync::RwLock<Vec<NpiArtifact>>,
@@ -420,8 +419,8 @@ impl InMemoryStageGatesService {
     }
 
     /// Create default artifacts for each stage of a new project.
-    fn _create_default_artifacts(&self, project_id: Uuid, stages: &[NpiStage]) {
-        let mut artifacts = self.artifacts.blocking_write();
+    async fn _create_default_artifacts(&self, project_id: Uuid, stages: &[NpiStage]) {
+        let mut artifacts = self.artifacts.write().await;
         let requirements = self.stage_requirements();
 
         for req in &requirements {
@@ -579,7 +578,8 @@ impl NpiStageGateService for InMemoryStageGatesService {
                 NpiStage::Pilot,
                 NpiStage::Sop,
             ],
-        );
+        )
+        .await;
 
         Ok(project)
     }
@@ -1240,11 +1240,24 @@ impl LabManagementService for InMemoryStageGatesService {
         value: Option<f64>,
         technician_id: Option<Uuid>,
     ) -> Result<LabTestRun> {
-        let mut samples = self.lab_samples.write().await;
-        let _sample = samples
-            .iter_mut()
-            .find(|s| s.id == sample_id)
-            .ok_or_else(|| SenseiError::NotFound(format!("Lab sample {sample_id} not found")))?;
+        // Verify the sample exists before recording the run.
+        {
+            let samples = self.lab_samples.read().await;
+            if !samples.iter().any(|s| s.id == sample_id) {
+                return Err(SenseiError::NotFound(format!(
+                    "Lab sample {sample_id} not found"
+                )));
+            }
+        }
+        // Verify the method exists.
+        {
+            let methods = self.lab_methods.read().await;
+            if !methods.iter().any(|m| m.id == method_id) {
+                return Err(SenseiError::NotFound(format!(
+                    "Lab test method {method_id} not found"
+                )));
+            }
+        }
 
         let test_run = LabTestRun {
             id: new_id(),
@@ -1257,8 +1270,7 @@ impl LabManagementService for InMemoryStageGatesService {
             tested_at: now(),
             created_at: now(),
         };
-        // Note: test_runs is stored separately; the model uses a Vec<LabTestRun>
-        // Consider adding a separate storage for test runs if needed
+        self.lab_test_runs.write().await.push(test_run.clone());
         Ok(test_run)
     }
 }

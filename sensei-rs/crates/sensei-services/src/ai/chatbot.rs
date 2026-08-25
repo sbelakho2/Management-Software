@@ -120,6 +120,44 @@ pub struct ChatResponse {
     pub is_fallback: bool,
 }
 
+/// Per-request sampling parameters that override the service defaults.
+///
+/// `None` fields fall back to the service configuration; providing a field
+/// (even `0` for temperature/top-k) overrides it.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ChatSamplingParams {
+    /// Maximum number of tokens to generate.
+    pub max_tokens: Option<usize>,
+    /// Sampling temperature (0.0 = greedy).
+    pub temperature: Option<f32>,
+    /// Top-k sampling parameter (0 = disabled).
+    pub top_k: Option<u32>,
+    /// Top-p (nucleus) sampling parameter.
+    pub top_p: Option<f32>,
+}
+
+impl ChatSamplingParams {
+    /// Effective max tokens for a request (request override or config).
+    pub fn max_tokens_or(&self, config: usize) -> usize {
+        self.max_tokens.unwrap_or(config)
+    }
+
+    /// Effective temperature for a request (request override or config).
+    pub fn temperature_or(&self, config: f32) -> f32 {
+        self.temperature.unwrap_or(config)
+    }
+
+    /// Effective top-k for a request (request override or config).
+    pub fn top_k_or(&self, config: u32) -> u32 {
+        self.top_k.unwrap_or(config)
+    }
+
+    /// Effective top-p for a request (request override or config).
+    pub fn top_p_or(&self, config: f32) -> f32 {
+        self.top_p.unwrap_or(config)
+    }
+}
+
 // ──────────────────────────────────────────────
 // Trait
 // ──────────────────────────────────────────────
@@ -137,24 +175,30 @@ pub trait ChatbotService: Send + Sync {
     /// `message` is the user's input text.
     /// `conversation_id` optionally specifies an existing conversation
     /// to continue. If `None`, a new conversation is started.
+    /// `sampling` optionally overrides the configured sampling parameters
+    /// (max tokens, temperature, top-k, top-p) for this request.
     async fn chat(
         &self,
         tenant_id: EntityId,
         user_id: EntityId,
         message: &str,
         conversation_id: Option<&str>,
+        sampling: Option<ChatSamplingParams>,
     ) -> Result<ChatResponse>;
 
     /// Stream a chat response token by token.
     ///
     /// Returns a [`mpsc::Receiver`] that yields result strings, each
     /// representing one token (or a chunk of the response).
+    /// `sampling` optionally overrides the configured sampling parameters
+    /// for this request.
     async fn stream_chat(
         &self,
         tenant_id: EntityId,
         user_id: EntityId,
         message: &str,
         conversation_id: Option<&str>,
+        sampling: Option<ChatSamplingParams>,
     ) -> Result<mpsc::Receiver<Result<String>>>;
 
     /// Retrieve the full conversation history.
@@ -270,6 +314,7 @@ impl ChatbotService for SenseiChatbotService {
         _user_id: EntityId,
         message: &str,
         conversation_id: Option<&str>,
+        sampling: Option<ChatSamplingParams>,
     ) -> Result<ChatResponse> {
         let conv_id = conversation_id
             .map(|s| s.to_string())
@@ -284,16 +329,17 @@ impl ChatbotService for SenseiChatbotService {
         // Build prompt
         let prompt = self.build_prompt(message, &history);
 
+        // Per-request sampling overrides the configured defaults.
+        let sampling = sampling.unwrap_or_default();
+        let max_tokens = sampling.max_tokens_or(self.config.max_tokens);
+        let temperature = sampling.temperature_or(self.config.temperature);
+        let top_k = sampling.top_k_or(self.config.top_k);
+        let top_p = sampling.top_p_or(self.config.top_p);
+
         // Generate response
         let mut runner_guard = self.runner.lock().await;
         let (response, is_fallback) = if let Some(ref mut runner) = *runner_guard {
-            match runner.generate(
-                &prompt,
-                self.config.max_tokens,
-                self.config.temperature,
-                self.config.top_k,
-                self.config.top_p,
-            ) {
+            match runner.generate(&prompt, max_tokens, temperature, top_k, top_p) {
                 Ok(resp) => (resp, false),
                 Err(e) => {
                     tracing::warn!("LLaMA generation failed: {e}. Falling back.");
@@ -325,6 +371,7 @@ impl ChatbotService for SenseiChatbotService {
         user_id: EntityId,
         message: &str,
         conversation_id: Option<&str>,
+        sampling: Option<ChatSamplingParams>,
     ) -> Result<mpsc::Receiver<Result<String>>> {
         let (tx, rx) = mpsc::channel::<Result<String>>(64);
 
@@ -337,7 +384,7 @@ impl ChatbotService for SenseiChatbotService {
         tokio::spawn(async move {
             // Get the full response first
             let response = this
-                .chat(tenant_id, user_id, &message, Some(&conv_id))
+                .chat(tenant_id, user_id, &message, Some(&conv_id), sampling)
                 .await;
 
             match response {
@@ -423,6 +470,7 @@ impl ChatbotService for InMemoryChatbotService {
         _user_id: EntityId,
         message: &str,
         conversation_id: Option<&str>,
+        _sampling: Option<ChatSamplingParams>,
     ) -> Result<ChatResponse> {
         let conv_id = conversation_id
             .map(|s| s.to_string())
@@ -451,6 +499,7 @@ impl ChatbotService for InMemoryChatbotService {
         user_id: EntityId,
         message: &str,
         conversation_id: Option<&str>,
+        sampling: Option<ChatSamplingParams>,
     ) -> Result<mpsc::Receiver<Result<String>>> {
         let (tx, rx) = mpsc::channel(64);
 
@@ -462,7 +511,7 @@ impl ChatbotService for InMemoryChatbotService {
 
         tokio::spawn(async move {
             let response = this
-                .chat(tenant_id, user_id, &message, Some(&conv_id))
+                .chat(tenant_id, user_id, &message, Some(&conv_id), sampling)
                 .await;
 
             match response {
@@ -614,7 +663,7 @@ mod tests {
         let user_id = EntityId::new_v4();
 
         let response = service
-            .chat(tenant_id, user_id, "hello", None)
+            .chat(tenant_id, user_id, "hello", None, None)
             .await
             .expect("chat should succeed");
 
@@ -631,7 +680,7 @@ mod tests {
         let conv_id = "test-conv-123";
 
         let response = service
-            .chat(tenant_id, user_id, "hello", Some(conv_id))
+            .chat(tenant_id, user_id, "hello", Some(conv_id), None)
             .await
             .expect("chat should succeed");
 
@@ -648,11 +697,11 @@ mod tests {
 
         // Send two messages
         service
-            .chat(tenant_id, user_id, "hello", Some(conv_id))
+            .chat(tenant_id, user_id, "hello", Some(conv_id), None)
             .await
             .expect("first chat");
         service
-            .chat(tenant_id, user_id, "help with quality", Some(conv_id))
+            .chat(tenant_id, user_id, "help with quality", Some(conv_id), None)
             .await
             .expect("second chat");
 
@@ -688,7 +737,7 @@ mod tests {
         let user_id = EntityId::new_v4();
 
         let mut rx = service
-            .stream_chat(tenant_id, user_id, "hello", None)
+            .stream_chat(tenant_id, user_id, "hello", None, None)
             .await
             .expect("stream chat should succeed");
 
@@ -710,7 +759,7 @@ mod tests {
         let user_id = EntityId::new_v4();
 
         let response = service
-            .chat(tenant_id, user_id, "I need help with quality inspection", None)
+            .chat(tenant_id, user_id, "I need help with quality inspection", None, None)
             .await
             .expect("chat should succeed");
 

@@ -275,6 +275,9 @@ pub async fn delete_course(
 // ── Enrollment Handlers ────────────────────────────────────────────────────
 
 /// Enroll one or more users in a course.
+///
+/// Users who are already enrolled in the course are skipped (no duplicate
+/// enrollments are created).
 pub async fn enroll_users(
     user: AuthenticatedUser,
     State(state): State<AppState>,
@@ -290,11 +293,24 @@ pub async fn enroll_users(
         }
     }
 
+    // Collect user ids that are already enrolled in this course.
+    let already_enrolled: std::collections::HashSet<Uuid> = {
+        let store = state.training_enrollments.read().await;
+        store
+            .values()
+            .filter(|e| e.course_id == course_id && e.tenant_id == tenant_id)
+            .map(|e| e.user_id)
+            .collect()
+    };
+
     let now = Utc::now();
     let mut enrollments = Vec::new();
     let mut enrollment_store = state.training_enrollments.write().await;
 
     for uid in req.user_ids {
+        if already_enrolled.contains(&uid) {
+            continue;
+        }
         let enrollment = TrainingEnrollment {
             id: new_id(),
             course_id,
@@ -443,19 +459,15 @@ pub async fn get_training_dashboard(
         })
         .count();
 
-    // By department/role
+    // By department/role: count actual enrollments whose course requires the
+    // role, so `total_enrollments` and `completed` are measured consistently.
     let mut dept_map: std::collections::HashMap<String, (usize, usize)> =
         std::collections::HashMap::new();
-    for course in &courses {
-        for role in &course.required_for_roles {
-            let entry = dept_map.entry(role.clone()).or_insert((0, 0));
-            entry.0 += 1; // total courses requiring this role
-        }
-    }
     for enrollment in &enrollments {
         if let Some(course) = courses.iter().find(|c| c.id == enrollment.course_id) {
             for role in &course.required_for_roles {
                 let entry = dept_map.entry(role.clone()).or_insert((0, 0));
+                entry.0 += 1;
                 if matches!(enrollment.status, TrainingEnrollmentStatus::Completed | TrainingEnrollmentStatus::Passed) {
                     entry.1 += 1;
                 }
@@ -479,23 +491,7 @@ pub async fn get_training_dashboard(
         })
         .collect();
 
-    // By category
-    let mut cat_map: std::collections::HashMap<String, (usize, usize, usize)> =
-        std::collections::HashMap::new();
-    for course in &courses {
-        let key = format!("{:?}", course.category);
-        let entry = cat_map.entry(key.clone()).or_insert((0, 0, 0));
-        entry.0 += 1; // courses
-        let course_enrollments: Vec<&&TrainingEnrollment> = enrollments
-            .iter()
-            .filter(|e| e.course_id == course.id)
-            .collect();
-        entry.1 += course_enrollments.len(); // enrollments
-        entry.2 += course_enrollments
-            .iter()
-            .filter(|e| matches!(e.status, TrainingEnrollmentStatus::Completed | TrainingEnrollmentStatus::Passed))
-            .count();
-    }
+    // By category: per-category course/enrollment/completion counts.
     let by_category: Vec<CategoryTrainingSummary> = courses
         .iter()
         .map(|c| &c.category)

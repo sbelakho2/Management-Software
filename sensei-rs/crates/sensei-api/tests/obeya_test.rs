@@ -176,3 +176,173 @@ async fn test_list_board_items() {
     let json: Value = app.json_body(&mut resp).await;
     assert!(json["data"].as_array().unwrap_or(&vec![]).len() >= 1);
 }
+
+#[tokio::test]
+async fn test_update_board_item() {
+    let app = common::TestApp::new().await;
+    let token = app.login_as_admin().await;
+
+    let body = common::fixtures::obeya_board_payload("Board Item Update", "Production");
+    let req = app.post_authenticated("/api/v1/obeya/boards", &token, body);
+    let mut resp = app.send_request(req).await;
+    let created: Value = app.json_body(&mut resp).await;
+    let board_id = created["id"].as_str().unwrap().to_string();
+
+    let item_body = serde_json::json!({
+        "title": "Complete action",
+        "description": "Finish this action item",
+        "item_type": "Action",
+        "priority": "High",
+    });
+    let req = app.post_authenticated(
+        &format!("/api/v1/obeya/boards/{}/items", board_id),
+        &token,
+        item_body,
+    );
+    let mut resp = app.send_request(req).await;
+    let item: Value = app.json_body(&mut resp).await;
+    let item_id = item["id"].as_str().unwrap().to_string();
+
+    // Update fields + move to Completed — completed_at must be set.
+    let update = serde_json::json!({
+        "title": "Completed action",
+        "status": "Completed",
+        "priority": "Critical",
+    });
+    let req = app.put_authenticated(
+        &format!("/api/v1/obeya/boards/{}/items/{}", board_id, item_id),
+        &token,
+        update,
+    );
+    let mut resp = app.send_request(req).await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    let json: Value = app.json_body(&mut resp).await;
+    assert_eq!(json["title"], "Completed action");
+    assert_eq!(json["status"], "Completed");
+    assert_eq!(json["priority"], "Critical");
+    assert!(json["completed_at"].is_string());
+
+    // A second update while already Completed must keep completed_at (set once).
+    let req = app.put_authenticated(
+        &format!("/api/v1/obeya/boards/{}/items/{}", board_id, item_id),
+        &token,
+        serde_json::json!({"title": "Still completed"}),
+    );
+    let mut resp = app.send_request(req).await;
+    let json: Value = app.json_body(&mut resp).await;
+    assert_eq!(json["status"], "Completed");
+    assert!(json["completed_at"].is_string());
+}
+
+#[tokio::test]
+async fn test_update_board_item_invalid_status() {
+    let app = common::TestApp::new().await;
+    let token = app.login_as_admin().await;
+
+    let body = common::fixtures::obeya_board_payload("Board Item Invalid", "Production");
+    let req = app.post_authenticated("/api/v1/obeya/boards", &token, body);
+    let mut resp = app.send_request(req).await;
+    let created: Value = app.json_body(&mut resp).await;
+    let board_id = created["id"].as_str().unwrap().to_string();
+
+    let item_body = serde_json::json!({
+        "title": "Item",
+        "item_type": "KPI",
+    });
+    let req = app.post_authenticated(
+        &format!("/api/v1/obeya/boards/{}/items", board_id),
+        &token,
+        item_body,
+    );
+    let mut resp = app.send_request(req).await;
+    let item: Value = app.json_body(&mut resp).await;
+    let item_id = item["id"].as_str().unwrap().to_string();
+
+    let req = app.put_authenticated(
+        &format!("/api/v1/obeya/boards/{}/items/{}", board_id, item_id),
+        &token,
+        serde_json::json!({"status": "NotARealStatus"}),
+    );
+    let resp = app.send_request(req).await;
+    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn test_add_board_item_invalid_type() {
+    let app = common::TestApp::new().await;
+    let token = app.login_as_admin().await;
+
+    let body = common::fixtures::obeya_board_payload("Board Item Invalid Type", "Production");
+    let req = app.post_authenticated("/api/v1/obeya/boards", &token, body);
+    let mut resp = app.send_request(req).await;
+    let created: Value = app.json_body(&mut resp).await;
+    let board_id = created["id"].as_str().unwrap().to_string();
+
+    let item_body = serde_json::json!({
+        "title": "Bad item",
+        "item_type": "NotAType",
+    });
+    let req = app.post_authenticated(
+        &format!("/api/v1/obeya/boards/{}/items", board_id),
+        &token,
+        item_body,
+    );
+    let resp = app.send_request(req).await;
+    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn test_delete_board_item() {
+    let app = common::TestApp::new().await;
+    let token = app.login_as_admin().await;
+
+    let body = common::fixtures::obeya_board_payload("Board Item Delete", "Quality");
+    let req = app.post_authenticated("/api/v1/obeya/boards", &token, body);
+    let mut resp = app.send_request(req).await;
+    let created: Value = app.json_body(&mut resp).await;
+    let board_id = created["id"].as_str().unwrap().to_string();
+
+    let item_body = serde_json::json!({
+        "title": "Remove me",
+        "item_type": "Issue",
+    });
+    let req = app.post_authenticated(
+        &format!("/api/v1/obeya/boards/{}/items", board_id),
+        &token,
+        item_body,
+    );
+    let mut resp = app.send_request(req).await;
+    let item: Value = app.json_body(&mut resp).await;
+    let item_id = item["id"].as_str().unwrap().to_string();
+
+    let req = app.delete_authenticated(
+        &format!("/api/v1/obeya/boards/{}/items/{}", board_id, item_id),
+        &token,
+    );
+    let resp = app.send_request(req).await;
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    // The item must be gone from the board.
+    let req = app.get_authenticated(
+        &format!("/api/v1/obeya/boards/{}/items", board_id),
+        &token,
+    );
+    let mut resp = app.send_request(req).await;
+    let json: Value = app.json_body(&mut resp).await;
+    let items = json["data"].as_array().unwrap();
+    assert!(!items.iter().any(|i| i["id"] == item_id));
+}
+
+#[tokio::test]
+async fn test_create_board_invalid_type() {
+    let app = common::TestApp::new().await;
+    let token = app.login_as_admin().await;
+
+    let body = serde_json::json!({
+        "name": "Bad Board",
+        "board_type": "NotAType",
+    });
+    let req = app.post_authenticated("/api/v1/obeya/boards", &token, body);
+    let resp = app.send_request(req).await;
+    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+}

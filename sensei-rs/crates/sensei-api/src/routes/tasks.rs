@@ -265,25 +265,34 @@ pub async fn update_task(
         .ok_or_else(|| SenseiError::NotFound(format!("Task {id} not found")))?;
 
     let old_priority = task.priority.to_string();
+    let mut changed = false;
 
     if let Some(title) = req.title {
         task.title = title;
+        changed = true;
     }
     if let Some(desc) = req.description {
         task.description = desc;
+        changed = true;
     }
     if let Some(priority) = req.priority {
         let parsed = parse_priority(&priority)?;
-        task.priority = parsed;
+        if task.priority != parsed {
+            task.priority = parsed;
+            changed = true;
+        }
     }
     if let Some(cat) = req.category {
         task.category = cat;
+        changed = true;
     }
     if let Some(tags) = req.tags {
         task.tags = tags;
+        changed = true;
     }
     if let Some(aid) = req.assignee_id {
         task.assignee_id = aid;
+        changed = true;
     }
     if let Some(due) = req.due_date {
         task.due_date = due
@@ -291,25 +300,33 @@ pub async fn update_task(
                 .map_err(|e| SenseiError::Validation(format!("Invalid due_date: {e}")))
                 .map(|dt| dt.with_timezone(&Utc)))
             .transpose()?;
+        changed = true;
     }
     if let Some(eh) = req.estimated_hours {
         task.estimated_hours = eh;
+        changed = true;
     }
     if let Some(ah) = req.actual_hours {
         task.actual_hours = ah;
+        changed = true;
     }
     task.updated_at = Utc::now();
     let updated = task.clone();
 
-    // Publish TaskUpdatedEvent if priority changed
-    let new_priority = updated.priority.to_string();
-    if old_priority != new_priority {
+    // Publish TaskUpdatedEvent on ANY field update, not just priority.
+    if changed {
+        let new_priority = updated.priority.to_string();
+        let old_priority = if old_priority != new_priority {
+            Some(old_priority)
+        } else {
+            None
+        };
         publish_event(
             &state,
             &TaskUpdatedEvent::new(
                 tenant_id,
                 id,
-                Some(old_priority),
+                old_priority,
                 Some(new_priority),
                 user.user_id,
             ),
@@ -403,14 +420,14 @@ pub async fn update_task_status(
                     }
                 }
 
-                // Evaluate conditions if present
+                // Evaluate conditions if present (real role checks included)
                 if let Some(ref conditions) = t.conditions {
                     let context = serde_json::json!({
                         "user_id": user.user_id,
                         "tenant_id": tenant_id,
                         "task_id": id,
                     });
-                    if !evaluate_conditions(conditions, &context) {
+                    if !evaluate_conditions(conditions, &context, &user.roles) {
                         return Err(SenseiError::Conflict(format!(
                             "Conditions not met for transitioning to '{}'",
                             t.to_state
@@ -418,38 +435,40 @@ pub async fn update_task_status(
                     }
                 }
 
-                // Check allowed roles
+                // Check allowed roles against the user's REAL roles.
                 let target_state_def = definition
                     .states
                     .iter()
                     .find(|s| s.name == t.to_state);
                 if let Some(target_def) = target_state_def {
-                    if !target_def.allowed_roles.is_empty() {
-                        // For now, we check a basic role mapping.
-                        // In production, this would check the user's actual roles.
-                        let user_roles = vec!["admin".to_string()]; // Placeholder
-                        if !target_def
-                            .allowed_roles
-                            .iter()
-                            .any(|r| user_roles.contains(r))
-                        {
-                            return Err(SenseiError::Forbidden(format!(
-                                "User lacks required role for state '{}'. Required: {:?}",
-                                t.to_state, target_def.allowed_roles
-                            )));
-                        }
+                    if !target_def.allowed_roles.is_empty()
+                        && !user.has_any_role(
+                            &target_def
+                                .allowed_roles
+                                .iter()
+                                .map(String::as_str)
+                                .collect::<Vec<_>>(),
+                        )
+                    {
+                        return Err(SenseiError::Forbidden(format!(
+                            "User lacks required role for state '{}'. Required: {:?}",
+                            t.to_state, target_def.allowed_roles
+                        )));
                     }
                 }
 
                 // Execute on_transition hooks if present
                 if let Some(ref on_transition) = t.on_transition {
-                    execute_on_transition_hook(on_transition, &task);
+                    execute_on_transition_hook(&state, on_transition, task).await;
                 }
 
-                // Record the transition
+                // Record the transition — capture the OLD state before the
+                // instance is mutated so the history and the published event
+                // both carry the real from_state.
+                let old_sm_state = instance.current_state.clone();
                 let now = Utc::now();
                 let record = crate::stores::StateTransitionRecord {
-                    from_state: instance.current_state.clone(),
+                    from_state: old_sm_state.clone(),
                     to_state: t.to_state.clone(),
                     event: event_name.clone(),
                     triggered_by: user.user_id,
@@ -472,7 +491,7 @@ pub async fn update_task_status(
                         sm_instance_id,
                         definition.id,
                         instance.entity_id,
-                        instance.current_state.clone(),
+                        old_sm_state,
                         t.to_state.clone(),
                         event_name,
                         user.user_id,
@@ -599,18 +618,35 @@ pub async fn get_task_stats(
 ///
 /// The conditions value is expected to be a JSON object or array of rules.
 /// Returns `true` if the conditions are met or no conditions are specified.
-fn evaluate_conditions(conditions: &serde_json::Value, _context: &serde_json::Value) -> bool {
-    // Simple conditions evaluator.
-    // Supports: { "type": "role_required", "role": "..." }
-    //           { "type": "always" } — always passes
+fn evaluate_conditions(
+    conditions: &serde_json::Value,
+    context: &serde_json::Value,
+    user_roles: &[String],
+) -> bool {
     match conditions {
         serde_json::Value::Object(map) => {
             match map.get("type").and_then(|v| v.as_str()) {
                 Some("always") | None => true,
                 Some("role_required") => {
-                    // Check if user has the required role — for now, allow
-                    // In production this would check _context against the role.
-                    true
+                    // The user must hold the required role.
+                    match map.get("role").and_then(|v| v.as_str()) {
+                        Some(role) => user_roles.iter().any(|r| r == role),
+                        None => true,
+                    }
+                }
+                Some("field_match") => {
+                    if let (Some(field), Some(expected)) = (
+                        map.get("field").and_then(|v| v.as_str()),
+                        map.get("value"),
+                    ) {
+                        let actual = context.get(field);
+                        match actual {
+                            Some(val) if val == expected => true,
+                            _ => false,
+                        }
+                    } else {
+                        true
+                    }
                 }
                 Some(other) => {
                     tracing::warn!("Unknown condition type: {other}");
@@ -620,7 +656,7 @@ fn evaluate_conditions(conditions: &serde_json::Value, _context: &serde_json::Va
         }
         serde_json::Value::Array(arr) => {
             // AND semantics: all conditions must pass
-            arr.iter().all(|c| evaluate_conditions(c, _context))
+            arr.iter().all(|c| evaluate_conditions(c, context, user_roles))
         }
         _ => true, // No conditions = always allowed
     }
@@ -630,20 +666,85 @@ fn evaluate_conditions(conditions: &serde_json::Value, _context: &serde_json::Va
 ///
 /// Hooks can be arbitrary JSON actions such as sending notifications,
 /// updating related entities, or calling external services.
-fn execute_on_transition_hook(hook: &serde_json::Value, _task: &Task) {
-    match hook {
-        serde_json::Value::Object(map) => {
-            if let Some(action) = map.get("action").and_then(|v| v.as_str()) {
-                tracing::info!(action = %action, task_id = %_task.id, "Executing on_transition hook");
-                // In production, dispatch the action to the appropriate service.
-                // Supported actions could include:
-                // - "send_notification": Send a notification to the assignee
-                // - "update_related": Update related entities (e.g., sprint, project)
-                // - "webhook": Call an external webhook URL
+async fn execute_on_transition_hook(
+    state: &AppState,
+    hook: &serde_json::Value,
+    task: &Task,
+) {
+    let Some(map) = hook.as_object() else {
+        tracing::warn!("Invalid on_transition hook format");
+        return;
+    };
+    let Some(action) = map.get("action").and_then(|v| v.as_str()) else {
+        return;
+    };
+
+    match action {
+        "send_notification" => {
+            let target_user = map
+                .get("target_user_id")
+                .and_then(|v| v.as_str())
+                .and_then(|s| Uuid::parse_str(s).ok())
+                .unwrap_or(task.assignee_id.unwrap_or(task.created_by));
+            let title = map
+                .get("title")
+                .and_then(|v| v.as_str())
+                .unwrap_or("Task status changed")
+                .to_string();
+            let body = map
+                .get("body")
+                .and_then(|v| v.as_str())
+                .unwrap_or(&format!("Task '{}' is now {}", task.title, task.status))
+                .to_string();
+            if let Err(e) = state
+                .notification_service
+                .notify(
+                    task.tenant_id,
+                    target_user,
+                    &title,
+                    &body,
+                    "info",
+                    Some("task"),
+                    Some(task.id),
+                )
+                .await
+            {
+                tracing::warn!(
+                    error = %e,
+                    task_id = %task.id,
+                    "send_notification hook failed"
+                );
             }
         }
-        _ => {
-            tracing::warn!("Invalid on_transition hook format");
+        "webhook" => {
+            if let Some(url) = map.get("url").and_then(|v| v.as_str()) {
+                let payload = map
+                    .get("payload")
+                    .cloned()
+                    .unwrap_or_else(|| serde_json::json!({
+                        "task_id": task.id,
+                        "title": task.title,
+                        "status": task.status.to_string(),
+                        "priority": task.priority.to_string(),
+                    }));
+                let result = reqwest::Client::new()
+                    .post(url)
+                    .json(&payload)
+                    .timeout(std::time::Duration::from_secs(5))
+                    .send()
+                    .await;
+                if let Err(e) = result {
+                    tracing::warn!(
+                        error = %e,
+                        url = %url,
+                        task_id = %task.id,
+                        "webhook hook failed"
+                    );
+                }
+            }
+        }
+        other => {
+            tracing::warn!(action = %other, "Unknown on_transition action");
         }
     }
 }

@@ -56,13 +56,19 @@ impl EventHeaders {
 }
 
 /// Subject/topic names used for NATS event routing.
+///
+/// Every constant maps to a real event type defined in
+/// `sensei_core::domain::events`. All subjects carry the `sensei.` prefix
+/// required by the JetStream stream (`sensei.>`).
 pub mod subjects {
     /// Quality domain events.
     pub mod quality {
         pub const NCR_CREATED: &str = "sensei.quality.ncr.created";
-        pub const NCR_UPDATED: &str = "sensei.quality.ncr.updated";
         pub const CAPA_CREATED: &str = "sensei.quality.capa.created";
         pub const CAPA_CLOSED: &str = "sensei.quality.capa.closed";
+        pub const INSPECTION_COMPLETED: &str = "sensei.quality.inspection.completed";
+        pub const AUDIT_FINDING: &str = "sensei.quality.audit.finding";
+        pub const SUPPLIER_EVALUATED: &str = "sensei.quality.supplier.evaluated";
     }
 
     /// Production domain events.
@@ -74,14 +80,12 @@ pub mod subjects {
     /// Identity domain events.
     pub mod identity {
         pub const USER_CREATED: &str = "sensei.identity.user.created";
-        pub const USER_UPDATED: &str = "sensei.identity.user.updated";
-        pub const USER_DELETED: &str = "sensei.identity.user.deleted";
     }
 
     /// Finance domain events.
     pub mod finance {
         pub const INVOICE_CREATED: &str = "sensei.finance.invoice.created";
-        pub const PAYMENT_RECEIVED: &str = "sensei.finance.payment.received";
+        pub const PAYMENT_PROCESSED: &str = "sensei.finance.payment.processed";
     }
 
     /// Wildcard subscription patterns.

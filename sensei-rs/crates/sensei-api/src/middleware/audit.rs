@@ -5,7 +5,7 @@
 //! compliance and observability.
 
 use axum::{
-    extract::Request,
+    extract::{Request, State},
     middleware::Next,
     response::Response,
 };
@@ -14,7 +14,8 @@ use serde::Serialize;
 use sensei_auth::middleware::AuthenticatedUser;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tracing::warn;
+
+use crate::state::AppState;
 
 /// A single audit log entry.
 #[derive(Debug, Clone, Serialize)]
@@ -96,10 +97,16 @@ impl AuditLog {
 /// Axum middleware that records audit entries for state-changing requests
 /// (POST, PUT, DELETE, PATCH).
 ///
-/// The [`AuditLog`] instance must be placed in request extensions before
-/// this middleware runs (typically in the router setup via
-/// `from_fn_with_state`).
-pub async fn audit_middleware(req: Request, next: Next) -> Response {
+/// Runs **after** authentication (see the protected-route middleware order
+/// in `router.rs`), so the [`AuthenticatedUser`] is already present in the
+/// request extensions when the entry is captured. The handler is timed and
+/// the entry is recorded directly into `state.audit_log` — no
+/// response-extensions indirection.
+pub async fn audit_middleware(
+    State(state): State<AppState>,
+    req: Request,
+    next: Next,
+) -> Response {
     let method = req.method().clone();
     let path = req.uri().path().to_string();
     let is_state_changing = matches!(
@@ -130,12 +137,8 @@ pub async fn audit_middleware(req: Request, next: Next) -> Response {
             duration_ms,
         };
 
-        // Try to persist the entry – failures are non-fatal.
-        if let Some(audit_log) = response.extensions().get::<AuditLog>() {
-            audit_log.record(entry).await;
-        } else {
-            warn!("AuditLog not found in response extensions; audit entry dropped");
-        }
+        // Record directly into the shared audit log; failures are non-fatal.
+        state.audit_log.record(entry).await;
     }
 
     response

@@ -98,6 +98,27 @@ fn not_found(entity: &str, id: Uuid) -> SenseiError {
     SenseiError::NotFound(format!("{} {id} not found", entity))
 }
 
+/// Fetch a single tenant-scoped JSONB entity by ID (404 when missing or
+/// owned by another tenant).
+async fn get_by_id<T: serde::de::DeserializeOwned>(
+    pool: &PgPool,
+    table: &str,
+    tenant_id: Uuid,
+    id: Uuid,
+    entity_name: &str,
+) -> Result<T> {
+    let query = format!("SELECT id, tenant_id, data, created_at FROM {table} WHERE id=$1 AND tenant_id=$2");
+    let row = sqlx::query_as::<_, JsonbRowNoUpdate>(&query)
+        .bind(id)
+        .bind(tenant_id)
+        .fetch_optional(pool)
+        .await
+        .map_err(|e| db_err(&format!("get_{entity_name}"), e))?
+        .ok_or_else(|| not_found(entity_name, id))?;
+    serde_json::from_value(row.data)
+        .map_err(|e| SenseiError::Database(format!("Failed to deserialize {entity_name}: {e}")))
+}
+
 // ---------------------------------------------------------------------------
 // QualityService implementation
 // ---------------------------------------------------------------------------
@@ -107,21 +128,29 @@ fn not_found(entity: &str, id: Uuid) -> SenseiError {
 impl QualityService for DatabaseQualityService {
     // ── NCRs ──────────────────────────────────────────────────────────────
 
-    async fn list_ncrs(&self, tenant_id: Uuid, _status: Option<&str>, severity: Option<&str>, _source: Option<&str>, page: Option<usize>, per_page: Option<usize>) -> Result<PaginatedResponse<NonConformance>> {
+    async fn list_ncrs(&self, tenant_id: Uuid, status: Option<&str>, severity: Option<&str>, source: Option<&str>, page: Option<usize>, per_page: Option<usize>) -> Result<PaginatedResponse<NonConformance>> {
         let page = page.unwrap_or(1).max(1); let pp = per_page.unwrap_or(20).clamp(1, 100); let off = (page - 1) * pp;
         let rows: Vec<JsonbRow> = sqlx::query_as(
             "SELECT id, tenant_id, data, created_at, updated_at FROM quality_ncrs WHERE tenant_id=$1 ORDER BY created_at DESC LIMIT $2 OFFSET $3",
         ).bind(tenant_id).bind(pp as i64).bind(off as i64).fetch_all(&self.pool).await.map_err(|e| db_err("list_ncrs", e))?;
         let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM quality_ncrs WHERE tenant_id=$1").bind(tenant_id).fetch_one(&self.pool).await.map_err(|e| db_err("count_ncrs", e))?;
-        let items: Vec<NonConformance> = rows.into_iter().filter_map(|r| serde_json::from_value::<NonConformance>(r.data).ok())
-            .filter(|ncr| severity.is_none_or(|s| format!("{:?}", ncr.severity).to_lowercase() == s.to_lowercase())).collect();
+        let items: Vec<NonConformance> = rows.into_iter()
+            .map(|r| serde_json::from_value::<NonConformance>(r.data).map_err(|e| SenseiError::Database(format!("Failed to deserialize NCR: {e}"))))
+            .collect::<Result<Vec<_>>>()?
+            .into_iter()
+            .filter(|ncr| {
+                status.is_none_or(|s| enum_name_matches(s, ncr.status.as_str()))
+                    && severity.is_none_or(|s| enum_name_matches(s, &format!("{:?}", ncr.severity)))
+                    && source.is_none_or(|s| ncr.source.as_deref().is_some_and(|src| src.eq_ignore_ascii_case(s)))
+            })
+            .collect();
         Ok(paginate(items, count, page, pp))
     }
 
     async fn create_ncr(&self, tenant_id: Uuid, title: String, description: String, nc_type: NcType, severity: NcSeverity, product_id: Option<Uuid>, process_id: Option<Uuid>, defect_code: Option<String>, detected_by: Option<Uuid>, department: Option<String>, location: Option<String>, is_recurrence: bool) -> Result<NonConformance> {
         let now = Utc::now(); let (id, nc_number) = gen_number("NCR");
-        let ncr = NonConformance { id, nc_number, title, description, nc_type, severity, product_id, process_id, defect_code, detected_by, department, location, is_recurrence, created_at: now, updated_at: now };
-        let data = serde_json::to_value(&ncr).unwrap_or(serde_json::Value::Null);
+        let ncr = NonConformance { id, nc_number, title, description, nc_type, severity, product_id, process_id, defect_code, detected_by, department, location, is_recurrence, status: NcrStatus::Open, source: None, root_cause: None, root_cause_type: None, analysis_method: None, disposition: None, closed_at: None, created_at: now, updated_at: now };
+        let data = serde_json::to_value(&ncr).map_err(|e| SenseiError::Database(format!("Failed to serialize NCR: {e}")))?;
         sqlx::query("INSERT INTO quality_ncrs (id, tenant_id, data, created_at, updated_at) VALUES ($1,$2,$3,$4,$5)")
             .bind(id).bind(tenant_id).bind(&data).bind(now).bind(now).execute(&self.pool).await.map_err(|e| db_err("create_ncr", e))?;
         Ok(ncr)
@@ -150,8 +179,11 @@ impl QualityService for DatabaseQualityService {
         let rows: Vec<JsonbRow> = sqlx::query_as("SELECT id, tenant_id, data, created_at, updated_at FROM quality_capas WHERE tenant_id=$1 ORDER BY created_at DESC LIMIT $2 OFFSET $3")
             .bind(tenant_id).bind(pp as i64).bind(off as i64).fetch_all(&self.pool).await.map_err(|e| db_err("list_capas", e))?;
         let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM quality_capas WHERE tenant_id=$1").bind(tenant_id).fetch_one(&self.pool).await.map_err(|e| db_err("count_capas", e))?;
-        let items: Vec<CapaExtended> = rows.into_iter().filter_map(|r| serde_json::from_value::<CapaExtended>(r.data).ok())
-            .filter(|capa| status.is_none_or(|s| format!("{:?}", capa.status).to_lowercase() == s.to_lowercase()) && nc_type.is_none_or(|t| format!("{:?}", capa.capa_type).to_lowercase() == t.to_lowercase())).collect();
+        let items: Vec<CapaExtended> = rows.into_iter()
+            .map(|r| serde_json::from_value::<CapaExtended>(r.data).map_err(|e| SenseiError::Database(format!("Failed to deserialize CAPA: {e}"))))
+            .collect::<Result<Vec<_>>>()?
+            .into_iter()
+            .filter(|capa| status.is_none_or(|s| enum_name_matches(s, &format!("{:?}", capa.status))) && nc_type.is_none_or(|t| enum_name_matches(t, &format!("{:?}", capa.capa_type)))).collect();
         Ok(paginate(items, count, page, pp))
     }
 
@@ -225,8 +257,11 @@ impl QualityService for DatabaseQualityService {
         let rows: Vec<JsonbRow> = sqlx::query_as("SELECT id, tenant_id, data, created_at, updated_at FROM quality_audits WHERE tenant_id=$1 ORDER BY created_at DESC LIMIT $2 OFFSET $3")
             .bind(tenant_id).bind(pp as i64).bind(off as i64).fetch_all(&self.pool).await.map_err(|e| db_err("list_audits", e))?;
         let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM quality_audits WHERE tenant_id=$1").bind(tenant_id).fetch_one(&self.pool).await.map_err(|e| db_err("count_audits", e))?;
-        let items: Vec<Audit> = rows.into_iter().filter_map(|r| serde_json::from_value(r.data).ok())
-            .filter(|a: &Audit| status.is_none_or(|s| format!("{:?}", a.status).to_lowercase() == s.to_lowercase()) && audit_type.is_none_or(|t| format!("{:?}", a.audit_type).to_lowercase() == t.to_lowercase())).collect();
+        let items: Vec<Audit> = rows.into_iter()
+            .map(|r| serde_json::from_value::<Audit>(r.data).map_err(|e| SenseiError::Database(format!("Failed to deserialize audit: {e}"))))
+            .collect::<Result<Vec<_>>>()?
+            .into_iter()
+            .filter(|a: &Audit| status.is_none_or(|s| enum_name_matches(s, &format!("{:?}", a.status))) && audit_type.is_none_or(|t| enum_name_matches(t, &format!("{:?}", a.audit_type)))).collect();
         Ok(paginate(items, count, page, pp))
     }
 
@@ -332,8 +367,11 @@ impl QualityService for DatabaseQualityService {
         let rows: Vec<JsonbRow> = sqlx::query_as("SELECT id, tenant_id, data, created_at, updated_at FROM quality_npi_projects WHERE tenant_id=$1 ORDER BY created_at DESC LIMIT $2 OFFSET $3")
             .bind(tenant_id).bind(pp as i64).bind(off as i64).fetch_all(&self.pool).await.map_err(|e| db_err("list_npi", e))?;
         let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM quality_npi_projects WHERE tenant_id=$1").bind(tenant_id).fetch_one(&self.pool).await.map_err(|e| db_err("count_npi", e))?;
-        let items: Vec<NpiProject> = rows.into_iter().filter_map(|r| serde_json::from_value(r.data).ok())
-            .filter(|p: &NpiProject| stage.is_none_or(|s| format!("{:?}", p.current_stage).to_lowercase() == s.to_lowercase()) && status.is_none_or(|s| p.health_status.to_lowercase() == s.to_lowercase())).collect();
+        let items: Vec<NpiProject> = rows.into_iter()
+            .map(|r| serde_json::from_value::<NpiProject>(r.data).map_err(|e| SenseiError::Database(format!("Failed to deserialize NPI project: {e}"))))
+            .collect::<Result<Vec<_>>>()?
+            .into_iter()
+            .filter(|p: &NpiProject| stage.is_none_or(|s| enum_name_matches(s, &format!("{:?}", p.current_stage))) && status.is_none_or(|s| p.health_status.to_lowercase() == s.to_lowercase())).collect();
         Ok(paginate(items, count, page, pp))
     }
 
@@ -397,19 +435,50 @@ impl QualityService for DatabaseQualityService {
         Ok(())
     }
 
-    async fn investigate_ncr(&self, tenant_id: Uuid, id: Uuid, _rca: RootCauseAnalysis) -> Result<NonConformance> {
+    async fn investigate_ncr(&self, tenant_id: Uuid, id: Uuid, rca: RootCauseAnalysis) -> Result<NonConformance> {
         let mut ncr = self.get_ncr(tenant_id, id).await?;
+        if ncr.status == NcrStatus::Closed {
+            return Err(SenseiError::Validation(
+                "Cannot investigate a closed NCR".to_string(),
+            ));
+        }
+        if ncr.status == NcrStatus::Cancelled {
+            return Err(SenseiError::Validation(
+                "Cannot investigate a cancelled NCR".to_string(),
+            ));
+        }
+        ncr.root_cause = Some(rca.description);
+        ncr.root_cause_type = Some(rca.root_cause_type);
+        ncr.analysis_method = Some(rca.analysis_method);
+        ncr.status = NcrStatus::UnderInvestigation;
         ncr.updated_at = Utc::now();
-        let data = serde_json::to_value(&ncr).unwrap_or(serde_json::Value::Null);
+        let data = serde_json::to_value(&ncr).map_err(|e| SenseiError::Database(format!("Failed to serialize NCR: {e}")))?;
         sqlx::query("UPDATE quality_ncrs SET data=$1, updated_at=$2 WHERE id=$3 AND tenant_id=$4")
             .bind(&data).bind(ncr.updated_at).bind(id).bind(tenant_id).execute(&self.pool).await.map_err(|e| db_err("investigate_ncr", e))?;
         Ok(ncr)
     }
 
-    async fn disposition_ncr(&self, tenant_id: Uuid, id: Uuid, _disposition: String) -> Result<NonConformance> {
+    async fn disposition_ncr(&self, tenant_id: Uuid, id: Uuid, disposition: String) -> Result<NonConformance> {
+        if disposition.trim().is_empty() {
+            return Err(SenseiError::Validation(
+                "Disposition cannot be empty".to_string(),
+            ));
+        }
         let mut ncr = self.get_ncr(tenant_id, id).await?;
+        if ncr.status == NcrStatus::Closed {
+            return Err(SenseiError::Validation(
+                "Cannot dispose a closed NCR".to_string(),
+            ));
+        }
+        if ncr.status == NcrStatus::Cancelled {
+            return Err(SenseiError::Validation(
+                "Cannot dispose a cancelled NCR".to_string(),
+            ));
+        }
+        ncr.disposition = Some(disposition);
+        ncr.status = NcrStatus::ActionDefined;
         ncr.updated_at = Utc::now();
-        let data = serde_json::to_value(&ncr).unwrap_or(serde_json::Value::Null);
+        let data = serde_json::to_value(&ncr).map_err(|e| SenseiError::Database(format!("Failed to serialize NCR: {e}")))?;
         sqlx::query("UPDATE quality_ncrs SET data=$1, updated_at=$2 WHERE id=$3 AND tenant_id=$4")
             .bind(&data).bind(ncr.updated_at).bind(id).bind(tenant_id).execute(&self.pool).await.map_err(|e| db_err("disposition_ncr", e))?;
         Ok(ncr)
@@ -417,8 +486,33 @@ impl QualityService for DatabaseQualityService {
 
     async fn close_ncr(&self, tenant_id: Uuid, id: Uuid) -> Result<NonConformance> {
         let mut ncr = self.get_ncr(tenant_id, id).await?;
+        if ncr.status == NcrStatus::Closed {
+            return Err(SenseiError::Validation(
+                "NCR is already closed".to_string(),
+            ));
+        }
+        if ncr.status == NcrStatus::Cancelled {
+            return Err(SenseiError::Validation(
+                "Cannot close a cancelled NCR".to_string(),
+            ));
+        }
+        let mut missing = Vec::new();
+        if ncr.root_cause.is_none() {
+            missing.push("root cause analysis");
+        }
+        if ncr.disposition.is_none() {
+            missing.push("disposition");
+        }
+        if !missing.is_empty() {
+            return Err(SenseiError::Validation(format!(
+                "Cannot close NCR {id}: missing {}",
+                missing.join(", ")
+            )));
+        }
+        ncr.status = NcrStatus::Closed;
+        ncr.closed_at = Some(Utc::now());
         ncr.updated_at = Utc::now();
-        let data = serde_json::to_value(&ncr).unwrap_or(serde_json::Value::Null);
+        let data = serde_json::to_value(&ncr).map_err(|e| SenseiError::Database(format!("Failed to serialize NCR: {e}")))?;
         sqlx::query("UPDATE quality_ncrs SET data=$1, updated_at=$2 WHERE id=$3 AND tenant_id=$4")
             .bind(&data).bind(ncr.updated_at).bind(id).bind(tenant_id).execute(&self.pool).await.map_err(|e| db_err("close_ncr", e))?;
         Ok(ncr)
@@ -441,7 +535,47 @@ impl QualityService for DatabaseQualityService {
     }
 
     async fn verify_capa(&self, tenant_id: Uuid, id: Uuid) -> Result<CapaExtended> {
-        self.update_capa_status(tenant_id, id, CapaStatusEx::EffectivenessCheck).await
+        let mut capa = self.get_capa(tenant_id, id).await?;
+        if capa.status == CapaStatusEx::Closed {
+            return Err(SenseiError::Validation(
+                "Cannot verify a closed CAPA".to_string(),
+            ));
+        }
+        if capa.status == CapaStatusEx::Cancelled || capa.status == CapaStatusEx::Rejected {
+            return Err(SenseiError::Validation(
+                "Cannot verify a cancelled/rejected CAPA".to_string(),
+            ));
+        }
+        if capa.root_cause_analyses.is_empty() {
+            return Err(SenseiError::Validation(
+                "Cannot verify CAPA without a root cause analysis".to_string(),
+            ));
+        }
+        if capa.actions.is_empty() {
+            return Err(SenseiError::Validation(
+                "Cannot verify CAPA without corrective actions".to_string(),
+            ));
+        }
+        capa.status = CapaStatusEx::Verification;
+        // Record the verification as an effectiveness check so the result is
+        // traceable, mirroring the in-memory implementation.
+        capa.effectiveness_checks.push(EffectivenessCheck {
+            id: Uuid::new_v4(),
+            capa_id: id,
+            check_method: "verification_review".to_string(),
+            results: "Corrective actions verified against the defined plan".to_string(),
+            is_effective: true,
+            checked_by: None,
+            checked_at: Some(Utc::now()),
+            follow_up_needed: false,
+            follow_up_actions: Vec::new(),
+            created_at: Utc::now(),
+        });
+        capa.updated_at = Utc::now();
+        let data = serde_json::to_value(&capa).map_err(|e| SenseiError::Database(format!("Failed to serialize CAPA: {e}")))?;
+        sqlx::query("UPDATE quality_capas SET data=$1, updated_at=$2 WHERE id=$3 AND tenant_id=$4")
+            .bind(&data).bind(capa.updated_at).bind(id).bind(tenant_id).execute(&self.pool).await.map_err(|e| db_err("verify_capa", e))?;
+        Ok(capa)
     }
 
     async fn close_capa(&self, tenant_id: Uuid, id: Uuid) -> Result<CapaExtended> {
@@ -743,5 +877,55 @@ impl QualityService for DatabaseQualityService {
         let r = sqlx::query("DELETE FROM quality_management_reviews WHERE id=$1 AND tenant_id=$2").bind(id).bind(tenant_id).execute(&self.pool).await.map_err(|e| db_err("delete_review", e))?;
         if r.rows_affected() == 0 { return Err(not_found("Management Review", id)); }
         Ok(())
+    }
+
+    // ── Getters for list-only entities ──────────────────────────────────
+
+    async fn get_scar(&self, tenant_id: Uuid, id: Uuid) -> Result<Scar> {
+        get_by_id::<Scar>(&self.pool, "quality_scars", tenant_id, id, "SCAR").await
+    }
+
+    async fn get_document(&self, tenant_id: Uuid, id: Uuid) -> Result<QmsDocument> {
+        get_by_id::<QmsDocument>(&self.pool, "quality_documents", tenant_id, id, "Document").await
+    }
+
+    async fn get_first_article_inspection(&self, tenant_id: Uuid, id: Uuid) -> Result<FirstArticleInspection> {
+        get_by_id::<FirstArticleInspection>(&self.pool, "quality_first_article_inspections", tenant_id, id, "First article inspection").await
+    }
+
+    async fn get_self_inspection(&self, tenant_id: Uuid, id: Uuid) -> Result<SelfInspection> {
+        get_by_id::<SelfInspection>(&self.pool, "quality_self_inspections", tenant_id, id, "Self-inspection").await
+    }
+
+    async fn get_msa_study(&self, tenant_id: Uuid, id: Uuid) -> Result<MsaStudy> {
+        get_by_id::<MsaStudy>(&self.pool, "quality_msa_studies", tenant_id, id, "MSA study").await
+    }
+
+    async fn get_process_capability_study(&self, tenant_id: Uuid, id: Uuid) -> Result<ProcessCapabilityStudy> {
+        get_by_id::<ProcessCapabilityStudy>(&self.pool, "quality_process_capability_studies", tenant_id, id, "Process capability study").await
+    }
+
+    async fn get_control_plan(&self, tenant_id: Uuid, id: Uuid) -> Result<ControlPlan> {
+        get_by_id::<ControlPlan>(&self.pool, "quality_control_plans", tenant_id, id, "Control plan").await
+    }
+
+    async fn get_pfmea(&self, tenant_id: Uuid, id: Uuid) -> Result<PfmeaLite> {
+        get_by_id::<PfmeaLite>(&self.pool, "quality_pfmeas", tenant_id, id, "PFMEA").await
+    }
+
+    async fn get_gauge(&self, tenant_id: Uuid, id: Uuid) -> Result<Gauge> {
+        get_by_id::<Gauge>(&self.pool, "quality_gauges", tenant_id, id, "Gauge").await
+    }
+
+    async fn get_complaint(&self, tenant_id: Uuid, id: Uuid) -> Result<CustomerComplaint> {
+        get_by_id::<CustomerComplaint>(&self.pool, "quality_complaints", tenant_id, id, "Complaint").await
+    }
+
+    async fn get_eight_d_report(&self, tenant_id: Uuid, id: Uuid) -> Result<EightDReport> {
+        get_by_id::<EightDReport>(&self.pool, "quality_eight_d_reports", tenant_id, id, "8D report").await
+    }
+
+    async fn get_management_review(&self, tenant_id: Uuid, id: Uuid) -> Result<ManagementReview> {
+        get_by_id::<ManagementReview>(&self.pool, "quality_management_reviews", tenant_id, id, "Management review").await
     }
 }

@@ -258,32 +258,82 @@ impl From<stores::NpiConversion> for NpiConversionResponse {
 
 // ── Handlers ───────────────────────────────────────────────────────────────
 
+/// Deterministic discipline-based hour estimation table.
+///
+/// Each engineering discipline that must review a quoted line item gets a
+/// standard estimate in hours. The values are documented planning standards
+/// used for quoting work packets:
+///
+/// | Discipline            | Hours |
+/// |-----------------------|-------|
+/// | Engineering Review    | 4.5   |
+/// | Mechanical            | 6.0   |
+/// | Electrical            | 5.0   |
+/// | Embedded              | 7.0   |
+/// | Quality               | 3.0   |
+/// | Purchasing            | 2.0   |
+const DISCIPLINE_HOURS: &[(&str, f64)] = &[
+    ("Engineering Review", 4.5),
+    ("Mechanical", 6.0),
+    ("Electrical", 5.0),
+    ("Embedded", 7.0),
+    ("Quality", 3.0),
+    ("Purchasing", 2.0),
+];
+
 /// Generate work packets for an RFQ.
 ///
-/// Creates work packet entries for all relevant engineering disciplines,
-/// returns the generated packet with operations and estimated hours.
+/// Creates one work packet containing the full discipline-based operation
+/// set for every requested line item. The RFQ must exist and every requested
+/// line item must belong to it.
 pub async fn generate_work_packets(
     user: AuthenticatedUser,
     State(state): State<AppState>,
     Path(rfq_id): Path<Uuid>,
     Json(req): Json<GenerateWorkPacketsRequest>,
 ) -> Result<(StatusCode, Json<WorkPacketResponse>)> {
+    let tenant_id = user.tenant_id;
+
+    // The RFQ must exist and own the requested line items.
+    let rfq = state.supply_chain_service.get_rfq(tenant_id, rfq_id).await?;
+    let known_item_ids: Vec<Uuid> = rfq
+        .items
+        .iter()
+        .filter_map(|i| i.line_item_id)
+        .collect();
+    for item_id in &req.line_items {
+        if !known_item_ids.contains(item_id) {
+            return Err(SenseiError::Validation(format!(
+                "Line item {item_id} does not belong to RFQ {rfq_id}"
+            )));
+        }
+    }
+
+    // Build the discipline operations once, then repeat them per line item
+    // so every quoted position is covered by the full review set.
     let now = Utc::now();
+    let mut workpackets: Vec<stores::WorkPacketOperation> = Vec::new();
+    let mut estimated_hours = 0.0;
+    for _line_item in &req.line_items {
+        for (discipline, hours) in DISCIPLINE_HOURS {
+            workpackets.push(stores::WorkPacketOperation {
+                operation: discipline.to_string(),
+                estimated_hours: *hours,
+            });
+            estimated_hours += hours;
+        }
+    }
+
     let packet = stores::WorkPacket {
         id: Uuid::new_v4(),
         rfq_id,
-        tenant_id: user.tenant_id,
+        tenant_id,
         line_items: req.line_items,
         template_id: req.template_id,
         status: "generated".to_string(),
-        workpackets: vec![
-            stores::WorkPacketOperation {
-                operation: "Engineering Review".to_string(),
-                estimated_hours: 4.5,
-            },
-        ],
+        workpackets,
         notes: None,
-        estimated_hours: Some(4.5),
+        estimated_hours: Some(estimated_hours),
         created_by: user.user_id,
         created_at: now,
         updated_at: now,
@@ -355,43 +405,110 @@ pub async fn update_work_packet(
     Ok(Json(WorkPacketResponse::from(packet.clone())))
 }
 
+/// Minimal standard-base64 decoder (RFC 4648, with `=` padding).
+///
+/// Kept local because the API crate does not depend on a base64 crate.
+fn base64_decode(input: &str) -> std::result::Result<Vec<u8>, String> {
+    const TABLE: &[u8; 64] =
+        b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = Vec::with_capacity(input.len() / 4 * 3 + 3);
+    let bytes = input.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        let mut vals = [0u32; 4];
+        let mut pad = 0;
+        for k in 0..4 {
+            if i + k >= bytes.len() || bytes[i + k] == b'=' {
+                pad += 1;
+            } else {
+                vals[k] = TABLE
+                    .iter()
+                    .position(|&c| c == bytes[i + k])
+                    .ok_or_else(|| format!("invalid base64 character in input"))?
+                    as u32;
+            }
+        }
+        let n = (vals[0] << 18) | (vals[1] << 12) | (vals[2] << 6) | vals[3];
+        out.push((n >> 16) as u8);
+        if pad < 2 {
+            out.push((n >> 8) as u8);
+        }
+        if pad < 1 {
+            out.push(n as u8);
+        }
+        i += 4;
+    }
+    Ok(out)
+}
+
 /// Ingest RFQ documents.
 ///
-/// Processes uploaded files through Smart Ingestion to extract technical
-/// metadata. Returns an ingestion job with processing status.
+/// Decodes each base64 document, persists the raw bytes in the ingestion
+/// data store keyed by job id, and completes each job immediately with real
+/// metadata (size, sha256, extracted text statistics).
 pub async fn ingest_rfq_documents(
     user: AuthenticatedUser,
     State(state): State<AppState>,
     Path(rfq_id): Path<Uuid>,
     Json(req): Json<IngestRfqRequest>,
 ) -> Result<(StatusCode, Json<IngestionResponse>)> {
+    use sha2::{Digest, Sha256};
+
+    let tenant_id = user.tenant_id;
+    // The RFQ must exist before documents can be ingested against it.
+    let _ = state.supply_chain_service.get_rfq(tenant_id, rfq_id).await?;
+
     let now = Utc::now();
     let documents_ingested = req.documents.len();
+    let mut job_ids: Vec<Uuid> = Vec::with_capacity(documents_ingested);
 
-    // Create an ingestion job for each document, but return a single
-    // composite response tracking overall ingestion status.
     for doc in &req.documents {
+        let raw = base64_decode(&doc.content).map_err(|e| {
+            SenseiError::Validation(format!(
+                "Invalid base64 content for '{}': {e}",
+                doc.filename
+            ))
+        })?;
+
+        let job_id = Uuid::new_v4();
+        let file_size = raw.len() as i64;
+        let sha256 = format!("{:x}", Sha256::digest(&raw));
+
+        // Text statistics for the two directly text-readable formats.
+        let text_char_count = match doc.doc_type.to_ascii_lowercase().as_str() {
+            "txt" | "csv" | "text" => Some(String::from_utf8_lossy(&raw).chars().count() as u64),
+            _ => None,
+        };
+
         let job = stores::IngestionJob {
-            id: Uuid::new_v4(),
-            tenant_id: user.tenant_id,
+            id: job_id,
+            tenant_id,
             file_name: doc.filename.clone(),
             content_type: doc.doc_type.clone(),
-            file_size: doc.content.len() as i64,
-            status: stores::IngestionStatus::Processing,
+            file_size,
+            status: stores::IngestionStatus::Completed,
             extracted_text: None,
-            extracted_data: None,
+            extracted_data: Some(serde_json::json!({
+                "sha256": sha256,
+                "file_size_bytes": file_size,
+                "text_char_count": text_char_count,
+                "rfq_id": rfq_id,
+                "ingested_via": "quoting_helper",
+            })),
             error_message: None,
             created_by: user.user_id,
             created_at: now,
-            completed_at: None,
+            completed_at: Some(now),
         };
-        state.ingestion_jobs.write().await.insert(job.id, job);
+        state.ingestion_jobs.write().await.insert(job_id, job);
+        state.ingestion_data.write().await.insert(job_id, raw);
+        job_ids.push(job_id);
     }
 
     let response = IngestionResponse {
-        id: Uuid::new_v4(),
+        id: job_ids[0],
         rfq_id,
-        status: "processing".to_string(),
+        status: "completed".to_string(),
         documents_ingested,
         created_at: now,
     };
@@ -473,21 +590,64 @@ pub async fn build_quote_cost(
 
 /// Convert a quote to an NPI (New Product Introduction) project.
 ///
-/// Converts an accepted quote into a formal NPI project, returning the
-/// new project ID and conversion status.
+/// Creates a real [`NpiProject`] through the quality service, populated from
+/// the quote's data, and records the conversion link.
 pub async fn convert_quote_to_npi(
     user: AuthenticatedUser,
     State(state): State<AppState>,
     Path(quote_id): Path<Uuid>,
 ) -> Result<(StatusCode, Json<NpiConversionResponse>)> {
+    use sensei_services::quality::{NpiProject, NpiStage};
+
+    let tenant_id = user.tenant_id;
+    let quote = state.supply_chain_service.get_quote(tenant_id, quote_id).await?;
+
     let now = Utc::now();
-    let npi_project_id = Uuid::new_v4();
+    let npi_project = NpiProject {
+        id: Uuid::new_v4(),
+        name: format!("NPI from quote {}", quote.quote_number),
+        description: format!(
+            "New Product Introduction generated from quote {} for customer {}",
+            quote.quote_number, quote.customer_name
+        ),
+        product_id: quote.line_items.first().map(|li| li.product_id),
+        customer_id: Some(quote.customer_id),
+        rfq_id: quote.rfq_id,
+        quote_id: Some(quote.id),
+        current_stage: NpiStage::Intake,
+        stage_entered_at: now,
+        target_sop_date: None,
+        actual_sop_date: None,
+        project_manager_id: Some(user.user_id),
+        engineering_lead_id: None,
+        quality_lead_id: None,
+        manufacturing_lead_id: None,
+        estimated_annual_volume: quote
+            .line_items
+            .iter()
+            .map(|li| li.quantity.max(0) as u64)
+            .sum(),
+        estimated_unit_cost: 0.0,
+        estimated_investment: 0.0,
+        is_active: true,
+        priority: 0,
+        health_status: "OnTrack".to_string(),
+        health_notes: String::new(),
+        created_at: now,
+        updated_at: now,
+        created_by: user.user_id,
+    };
+
+    let created = state
+        .quality_service
+        .create_npi_project(tenant_id, npi_project)
+        .await?;
 
     let conversion = stores::NpiConversion {
         id: Uuid::new_v4(),
-        npi_project_id,
+        npi_project_id: created.id,
         quote_id,
-        tenant_id: user.tenant_id,
+        tenant_id,
         status: "converted".to_string(),
         converted_at: now,
         created_by: user.user_id,
@@ -504,95 +664,70 @@ pub async fn convert_quote_to_npi(
 
 /// Get AI-suggested clarifications for an RFQ.
 ///
-/// Analyzes the RFQ data and generates context-aware clarification
-/// questions based on the RFQ's line items, products, and pricing.
+/// Only questions for data that is actually missing from the RFQ are
+/// suggested: missing target prices per line item, and RFQ-level details
+/// (packaging/lead time/compliance) when the notes are empty. Questions are
+/// never fabricated for fields the RFQ already carries.
 pub async fn suggest_clarifications(
     user: AuthenticatedUser,
     State(state): State<AppState>,
     Path(rfq_id): Path<Uuid>,
 ) -> Result<Json<ClarificationResponse>> {
     let tenant_id = user.tenant_id;
-
-    // Attempt to fetch the RFQ from the supply chain service
-    let rfq = state
-        .supply_chain_service
-        .get_rfq(tenant_id, rfq_id)
-        .await;
+    let rfq = state.supply_chain_service.get_rfq(tenant_id, rfq_id).await?;
 
     let mut clarifications = Vec::new();
 
-    match rfq {
-        Ok(rfq_data) => {
-            // Generate context-aware questions based on the RFQ's line items
-            for (idx, item) in rfq_data.items.iter().enumerate() {
-                let line_label = if rfq_data.items.len() > 1 {
-                    format!("Line Item {} – {}", idx + 1, item.product_name)
-                } else {
-                    format!("{} – Product Details", item.product_name)
-                };
+    // No line items → ask for the product list and its specifications.
+    if rfq.items.is_empty() {
+        clarifications.push(ClarificationItem {
+            question: "No line items are listed. Which products/quantities should this RFQ cover?".to_string(),
+            context: "Line Items".to_string(),
+        });
+    }
 
-                // Check for missing target price
-                if item.target_price.is_none() {
-                    clarifications.push(ClarificationItem {
-                        question: format!(
-                            "What is the target unit price for {} (qty {})?",
-                            item.product_name, item.quantity
-                        ),
-                        context: line_label.clone(),
-                    });
-                }
+    // Missing target price per line item.
+    for (idx, item) in rfq.items.iter().enumerate() {
+        let line_label = if rfq.items.len() > 1 {
+            format!("Line Item {} – {}", idx + 1, item.product_name)
+        } else {
+            format!("{} – Product Details", item.product_name)
+        };
 
-                // Always ask about material and tolerance for each item
-                clarifications.push(ClarificationItem {
-                    question: format!(
-                        "What material grade and surface finish are specified for {}?",
-                        item.product_name
-                    ),
-                    context: line_label.clone(),
-                });
-
-                clarifications.push(ClarificationItem {
-                    question: format!(
-                        "What are the critical tolerances and dimensional requirements for {}?",
-                        item.product_name
-                    ),
-                    context: line_label,
-                });
-            }
-
-            // Add general RFQ-level questions
-            if rfq_data.notes.is_empty() {
-                clarifications.push(ClarificationItem {
-                    question: "Are there any special packaging, labeling, or delivery requirements?".to_string(),
-                    context: "RFQ General Requirements".to_string(),
-                });
-            }
-
+        if item.target_price.is_none() {
             clarifications.push(ClarificationItem {
-                question: "What is the required lead time for first article samples and production quantities?".to_string(),
-                context: "Delivery Schedule".to_string(),
-            });
-
-            clarifications.push(ClarificationItem {
-                question: "Are there any regulatory or compliance certifications required (e.g., ISO, AS9100, IATF 16949)?".to_string(),
-                context: "Compliance & Certifications".to_string(),
+                question: format!(
+                    "What is the target unit price for {} (qty {})?",
+                    item.product_name, item.quantity
+                ),
+                context: line_label.clone(),
             });
         }
-        Err(_) => {
-            // RFQ not found — return generic clarifications
+        if item.unit_of_measure.trim().is_empty() {
             clarifications.push(ClarificationItem {
-                question: "What material grade is specified for the part?".to_string(),
-                context: "Material Specifications".to_string(),
-            });
-            clarifications.push(ClarificationItem {
-                question: "What are the tolerances for critical dimensions?".to_string(),
-                context: "Dimensional Requirements".to_string(),
-            });
-            clarifications.push(ClarificationItem {
-                question: "What surface finish and treatment requirements apply?".to_string(),
-                context: "Surface Treatment".to_string(),
+                question: format!(
+                    "What unit of measure applies to {}?",
+                    item.product_name
+                ),
+                context: line_label.clone(),
             });
         }
+    }
+
+    // RFQ-level requirements are only in the notes; when absent, ask.
+    if rfq.notes.trim().is_empty() {
+        clarifications.push(ClarificationItem {
+            question: "Are there any special packaging, labeling, or delivery requirements?".to_string(),
+            context: "RFQ General Requirements".to_string(),
+        });
+        clarifications.push(ClarificationItem {
+            question: "What is the required lead time for first article samples and production quantities?".to_string(),
+            context: "Delivery Schedule".to_string(),
+        });
+        clarifications.push(ClarificationItem {
+            question: "Are there any regulatory or compliance certifications required (e.g., ISO, AS9100, IATF 16949)?".to_string(),
+            context: "Compliance & Certifications".to_string(),
+        });
     }
 
     Ok(Json(ClarificationResponse {
@@ -604,8 +739,8 @@ pub async fn suggest_clarifications(
 /// Retrieve AI quote memory for an RFQ.
 ///
 /// Queries historical quotes from the supply chain service to find
-/// similar quotes based on matching products or customers, then
-/// computes aggregate pricing statistics.
+/// similar quotes based on product overlap, then computes aggregate
+/// pricing statistics from the quotes' own pricing fields.
 pub async fn retrieve_quote_memory(
     user: AuthenticatedUser,
     State(state): State<AppState>,
@@ -613,63 +748,64 @@ pub async fn retrieve_quote_memory(
 ) -> Result<Json<QuoteMemoryResponse>> {
     let tenant_id = user.tenant_id;
 
-    // Attempt to fetch the RFQ to find related products
-    let rfq = state
-        .supply_chain_service
-        .get_rfq(tenant_id, rfq_id)
-        .await;
+    // The RFQ must exist; its products define the similarity target.
+    let rfq = state.supply_chain_service.get_rfq(tenant_id, rfq_id).await?;
 
-    let rfq_product_ids: Vec<Uuid> = match &rfq {
-        Ok(r) => r.items.iter().map(|i| i.product_id).collect(),
-        Err(_) => Vec::new(),
-    };
+    let rfq_product_ids: Vec<Uuid> = rfq.items.iter().map(|i| i.product_id).collect();
+    let has_product_basis = !rfq_product_ids.is_empty();
 
-    let rfq_supplier_id = rfq.as_ref().ok().map(|r| r.supplier_id);
-
-    // Fetch historical quotes for this tenant
-    let quotes_page = state
-        .supply_chain_service
-        .list_quotes(tenant_id, None, Some(1), Some(10_000))
-        .await?;
-
-    // Find similar quotes: quotes that share products with the RFQ
+    // Fetch historical quotes for this tenant (page through everything).
     let mut similar_quotes: Vec<SimilarQuote> = Vec::new();
     let mut margins: Vec<f64> = Vec::new();
     let mut notes_parts: Vec<String> = Vec::new();
 
-    for quote in &quotes_page.data {
-        // Skip the quote if it's for the same RFQ (avoid self-reference)
-        if quote.rfq_id == Some(rfq_id) {
-            continue;
-        }
+    let mut page = 1usize;
+    loop {
+        let quotes_page = state
+            .supply_chain_service
+            .list_quotes(tenant_id, None, Some(page), Some(100))
+            .await?;
+        let fetched = quotes_page.data.len();
 
-        // Calculate similarity based on overlapping products
-        let quote_product_ids: Vec<Uuid> = quote.line_items.iter().map(|li| li.product_id).collect();
-        let overlapping: Vec<Uuid> = quote_product_ids
-            .iter()
-            .filter(|pid| rfq_product_ids.contains(pid))
-            .copied()
-            .collect();
+        for quote in &quotes_page.data {
+            // Skip the quote if it's for the same RFQ (avoid self-reference).
+            if quote.rfq_id == Some(rfq_id) {
+                continue;
+            }
 
-        let similarity_score = if !rfq_product_ids.is_empty() {
-            overlapping.len() as f64 / rfq_product_ids.len() as f64
-        } else if rfq_supplier_id.is_some() && quote.customer_id == rfq_supplier_id.unwrap_or_default() {
-            // Fallback: match by supplier/customer
-            0.3
-        } else {
-            0.0
-        };
+            // Similarity is the fraction of the RFQ's products present in the
+            // quote's line items. Without any RFQ products there is no
+            // product-overlap basis, so the quote scores zero (no fabricated
+            // fallback scores).
+            let overlap = if has_product_basis {
+                quote
+                    .line_items
+                    .iter()
+                    .filter(|li| rfq_product_ids.contains(&li.product_id))
+                    .count()
+            } else {
+                0
+            };
+            let similarity_score = if has_product_basis {
+                overlap as f64 / rfq_product_ids.len() as f64
+            } else {
+                0.0
+            };
 
-        if similarity_score > 0.0 {
+            if similarity_score <= 0.0 {
+                continue;
+            }
+
             similar_quotes.push(SimilarQuote {
                 quote_id: quote.id,
                 similarity_score: (similarity_score * 100.0).round() / 100.0,
             });
 
-            // Estimate margin from line items (net_price vs unit_price)
+            // Margin is computed from the quote's own pricing fields
+            // (list price vs. net price), not from the discount field.
             for li in &quote.line_items {
-                if li.unit_price > 0.0 && li.discount_percentage < 100.0 {
-                    let margin_pct = li.discount_percentage;
+                if li.unit_price > 0.0 {
+                    let margin_pct = ((li.unit_price - li.net_price) / li.unit_price) * 100.0;
                     margins.push(margin_pct);
                 }
             }
@@ -684,13 +820,22 @@ pub async fn retrieve_quote_memory(
                 ));
             }
         }
+
+        if fetched < 100 {
+            break;
+        }
+        page += 1;
     }
 
-    // Sort by similarity descending and take top results
-    similar_quotes.sort_by(|a, b| b.similarity_score.partial_cmp(&a.similarity_score).unwrap_or(std::cmp::Ordering::Equal));
+    // Sort by similarity descending and take top results.
+    similar_quotes.sort_by(|a, b| {
+        b.similarity_score
+            .partial_cmp(&a.similarity_score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     similar_quotes.truncate(10);
 
-    // Compute historical pricing statistics
+    // Compute historical pricing statistics from the real margins.
     let (avg_margin, range) = if margins.is_empty() {
         (0.0, vec![0.0, 0.0])
     } else {

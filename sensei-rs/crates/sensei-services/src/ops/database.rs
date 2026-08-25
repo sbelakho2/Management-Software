@@ -84,6 +84,8 @@ struct A3Row {
     countermeasures: String,
     check_plan: String,
     follow_up: String,
+    a3_type: String,
+    severity: String,
     status: String,
     owner_id: Uuid,
     created_at: chrono::DateTime<Utc>,
@@ -142,7 +144,8 @@ fn a3_row_to_domain(r: A3Row) -> A3 {
         title: r.title, background: r.background, current_state: r.current_state,
         goal: r.goal, root_cause_analysis: r.root_cause_analysis,
         countermeasures: r.countermeasures, check_plan: r.check_plan,
-        follow_up: r.follow_up, status: r.status, owner_id: r.owner_id,
+        follow_up: r.follow_up, a3_type: r.a3_type, severity: r.severity,
+        status: r.status, owner_id: r.owner_id,
         created_at: r.created_at, closed_at: r.closed_at,
     }
 }
@@ -344,13 +347,14 @@ impl OperationsService for DatabaseOperationsService {
         let a3_number = format!("A3-{}-{}", now.format("%Y%m%d"), id.as_simple().encode_lower(&mut Uuid::encode_buffer())[..8].to_string());
 
         let row = sqlx::query_as::<_, A3Row>(
-            r#"INSERT INTO a3_reports (id, tenant_id, a3_number, title, background, current_state, goal, root_cause_analysis, countermeasures, check_plan, follow_up, status, owner_id, created_at, closed_at)
-               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'draft',$12,$13,NULL)
-               RETURNING id, tenant_id, a3_number, title, background, current_state, goal, root_cause_analysis, countermeasures, check_plan, follow_up, status, owner_id, created_at, closed_at"#,
+            r#"INSERT INTO a3_reports (id, tenant_id, a3_number, title, background, current_state, goal, root_cause_analysis, countermeasures, check_plan, follow_up, a3_type, severity, status, owner_id, created_at, closed_at)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,'draft',$14,$15,NULL)
+               RETURNING id, tenant_id, a3_number, title, background, current_state, goal, root_cause_analysis, countermeasures, check_plan, follow_up, a3_type, severity, status, owner_id, created_at, closed_at"#,
         )
         .bind(id).bind(tenant_id).bind(&a3_number).bind(&a3.title).bind(&a3.background)
         .bind(&a3.current_state).bind(&a3.goal).bind(&a3.root_cause_analysis)
         .bind(&a3.countermeasures).bind(&a3.check_plan).bind(&a3.follow_up)
+        .bind(&a3.a3_type).bind(&a3.severity)
         .bind(a3.owner_id).bind(now)
         .fetch_one(&self.pool)
         .await.map_err(|e| SenseiError::Database(format!("Failed to create A3: {e}")))?;
@@ -360,7 +364,7 @@ impl OperationsService for DatabaseOperationsService {
 
     async fn get_a3(&self, tenant_id: Uuid, id: Uuid) -> Result<A3> {
         let row = sqlx::query_as::<_, A3Row>(
-            "SELECT id, tenant_id, a3_number, title, background, current_state, goal, root_cause_analysis, countermeasures, check_plan, follow_up, status, owner_id, created_at, closed_at FROM a3_reports WHERE id = $1 AND tenant_id = $2",
+            "SELECT id, tenant_id, a3_number, title, background, current_state, goal, root_cause_analysis, countermeasures, check_plan, follow_up, a3_type, severity, status, owner_id, created_at, closed_at FROM a3_reports WHERE id = $1 AND tenant_id = $2",
         )
         .bind(id).bind(tenant_id)
         .fetch_optional(&self.pool)
@@ -376,7 +380,7 @@ impl OperationsService for DatabaseOperationsService {
         let offset = (page - 1) * per_page;
 
         let items: Vec<A3Row> = sqlx::query_as(
-            r#"SELECT id, tenant_id, a3_number, title, background, current_state, goal, root_cause_analysis, countermeasures, check_plan, follow_up, status, owner_id, created_at, closed_at
+            r#"SELECT id, tenant_id, a3_number, title, background, current_state, goal, root_cause_analysis, countermeasures, check_plan, follow_up, a3_type, severity, status, owner_id, created_at, closed_at
                FROM a3_reports WHERE tenant_id=$1 AND ($2::text IS NULL OR status=$2)
                ORDER BY created_at DESC LIMIT $3 OFFSET $4"#,
         )
@@ -397,7 +401,7 @@ impl OperationsService for DatabaseOperationsService {
         let now = Utc::now();
         let row = sqlx::query_as::<_, A3Row>(
             r#"UPDATE a3_reports SET status='closed', closed_at=$1 WHERE id=$2 AND tenant_id=$3
-               RETURNING id, tenant_id, a3_number, title, background, current_state, goal, root_cause_analysis, countermeasures, check_plan, follow_up, status, owner_id, created_at, closed_at"#,
+               RETURNING id, tenant_id, a3_number, title, background, current_state, goal, root_cause_analysis, countermeasures, check_plan, follow_up, a3_type, severity, status, owner_id, created_at, closed_at"#,
         )
         .bind(now).bind(id).bind(tenant_id)
         .fetch_optional(&self.pool)
@@ -532,12 +536,13 @@ impl OperationsService for DatabaseOperationsService {
 
     async fn update_a3(&self, tenant_id: Uuid, id: Uuid, a3: A3) -> Result<A3> {
         let row = sqlx::query_as::<_, A3Row>(
-            r#"UPDATE a3_reports SET title=$1, background=$2, current_state=$3, goal=$4, root_cause_analysis=$5, countermeasures=$6, check_plan=$7, follow_up=$8
-               WHERE id=$9 AND tenant_id=$10
-               RETURNING id, tenant_id, a3_number, title, background, current_state, goal, root_cause_analysis, countermeasures, check_plan, follow_up, status, owner_id, created_at, closed_at"#,
+            r#"UPDATE a3_reports SET title=$1, background=$2, current_state=$3, goal=$4, root_cause_analysis=$5, countermeasures=$6, check_plan=$7, follow_up=$8, a3_type=$9, severity=$10
+               WHERE id=$11 AND tenant_id=$12
+               RETURNING id, tenant_id, a3_number, title, background, current_state, goal, root_cause_analysis, countermeasures, check_plan, follow_up, a3_type, severity, status, owner_id, created_at, closed_at"#,
         )
         .bind(&a3.title).bind(&a3.background).bind(&a3.current_state).bind(&a3.goal)
         .bind(&a3.root_cause_analysis).bind(&a3.countermeasures).bind(&a3.check_plan).bind(&a3.follow_up)
+        .bind(&a3.a3_type).bind(&a3.severity)
         .bind(id).bind(tenant_id)
         .fetch_optional(&self.pool)
         .await.map_err(|e| SenseiError::Database(format!("Failed to update A3: {e}")))?

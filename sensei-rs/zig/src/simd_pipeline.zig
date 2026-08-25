@@ -1,7 +1,9 @@
 //! SIMD-accelerated numerical pipelines.
 //!
-//! Uses explicit SIMD vectorisation when available, falling back to
-//! scalar loops for portability.
+//! Uses explicit SIMD vectorisation via `std.simd` when the target supports
+//! it (AVX2-class f32x8 on x86_64, NEON f32x4 on aarch64), with a scalar
+//! remainder for tail elements. A scalar fallback is kept only for
+//! architectures without vector support.
 
 const std = @import("std");
 const builtin = @import("builtin");
@@ -19,7 +21,7 @@ pub fn f32_dot_product(a: []const f32, b: []const f32) f32 {
         else => {},
     }
 
-    // Scalar fallback
+    // Scalar fallback (architecture without SIMD support)
     var sum: f32 = 0.0;
     for (a, b) |ai, bi| {
         sum += ai * bi;
@@ -28,18 +30,21 @@ pub fn f32_dot_product(a: []const f32, b: []const f32) f32 {
 }
 
 fn x86_64_dot_product(a: []const f32, b: []const f32) f32 {
-    // Use inline LLVM IR for AVX2 FMA
     @setRuntimeSafety(false);
     const n = a.len;
     var i: usize = 0;
-    var sum: f32 = 0.0;
+    var acc: @Vector(8, f32) = @splat(0.0);
 
-    // Process 8 floats at a time with AVX2
+    // Process 8 floats at a time with f32x8 vectors (AVX/AVX2 class).
     while (i + 8 <= n) : (i += 8) {
-        sum += vectorDotF32x8(a[i..][0..8], b[i..][0..8]);
+        const av: @Vector(8, f32) = a[i..][0..8].*;
+        const bv: @Vector(8, f32) = b[i..][0..8].*;
+        acc += av * bv;
     }
 
-    // Remainder
+    var sum = @reduce(.Add, acc);
+
+    // Scalar remainder.
     while (i < n) : (i += 1) {
         sum += a[i] * b[i];
     }
@@ -47,18 +52,26 @@ fn x86_64_dot_product(a: []const f32, b: []const f32) f32 {
     return sum;
 }
 
-fn vectorDotF32x8(ax: []const f32, bx: []const f32) f32 {
-    // Scalar fallback for the vector operation
-    // (Zig's std.simd or @inline LLVM would be used in production)
-    var s: f32 = 0.0;
-    for (ax, bx) |ai, bi| s += ai * bi;
-    return s;
-}
-
 fn aarch64_dot_product(a: []const f32, b: []const f32) f32 {
     @setRuntimeSafety(false);
-    var sum: f32 = 0.0;
-    for (a, b) |ai, bi| sum += ai * bi;
+    const n = a.len;
+    var i: usize = 0;
+    var acc: @Vector(4, f32) = @splat(0.0);
+
+    // Process 4 floats at a time (NEON f32x4).
+    while (i + 4 <= n) : (i += 4) {
+        const av: @Vector(4, f32) = a[i..][0..4].*;
+        const bv: @Vector(4, f32) = b[i..][0..4].*;
+        acc += av * bv;
+    }
+
+    var sum = @reduce(.Add, acc);
+
+    // Scalar remainder.
+    while (i < n) : (i += 1) {
+        sum += a[i] * b[i];
+    }
+
     return sum;
 }
 
@@ -99,6 +112,20 @@ test "f32_dot_product" {
     const b = [_]f32{ 4.0, 5.0, 6.0 };
     const result = f32_dot_product(&a, &b);
     try testing.expectApproxEqAbs(@as(f32, 32.0), result, 1e-5);
+}
+
+test "f32_dot_product_long" {
+    // Longer than the SIMD width to exercise the vector + remainder paths.
+    var a: [37]f32 = undefined;
+    var b: [37]f32 = undefined;
+    var expected: f32 = 0.0;
+    for (0..a.len) |i| {
+        a[i] = @floatFromInt(i + 1);
+        b[i] = @floatFromInt((i * 3) % 7 + 1);
+        expected += a[i] * b[i];
+    }
+    const result = f32_dot_product(&a, &b);
+    try testing.expectApproxEqAbs(expected, result, 1e-2);
 }
 
 test "f32_normalize" {

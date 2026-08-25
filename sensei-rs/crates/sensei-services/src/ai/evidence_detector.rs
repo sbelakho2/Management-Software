@@ -202,15 +202,16 @@ fn tokenize(text: &str) -> Vec<String> {
 
 /// A simple ensemble classifier for text classification.
 #[derive(Debug, Clone)]
-struct SimpleEnsemble {
+pub struct SimpleEnsemble {
     trees: Vec<SimpleTree>,
 }
 
 #[derive(Debug, Clone)]
 struct SimpleTree {
-    thresholds: Vec<(usize, f64, usize, usize)>, // (feature_idx, threshold, left_count, right_count)
-    left_pred: f64,
-    right_pred: f64,
+    /// (feature_idx, threshold, left_pred, right_pred): a decision stump per
+    /// feature; rows with feature ≤ threshold take `left_pred`, otherwise
+    /// `right_pred`.
+    thresholds: Vec<(usize, f64, f64, f64)>,
 }
 
 impl SimpleEnsemble {
@@ -225,6 +226,10 @@ impl SimpleEnsemble {
         let mut rng = rand::thread_rng();
 
         self.trees.clear();
+        if n_samples == 0 || n_features == 0 {
+            return;
+        }
+        let overall_mean = y.iter().sum::<f64>() / y.len() as f64;
 
         for _ in 0..n_estimators {
             // Bootstrap
@@ -236,10 +241,10 @@ impl SimpleEnsemble {
                 by.push(y[idx]);
             }
 
-            // Build a simple tree: pick random features and thresholds
+            // Build decision stumps on random features.
             let mut thresholds = Vec::new();
             for _ in 0..3 {
-                let feat_idx = rng.gen_range(0..n_features.max(1));
+                let feat_idx = rng.gen_range(0..n_features);
                 let mut vals: Vec<f64> = bx.iter().map(|row| row[feat_idx]).collect();
                 vals.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
                 let threshold = if vals.len() > 1 {
@@ -248,18 +253,37 @@ impl SimpleEnsemble {
                     0.0
                 };
 
-                let left_count = bx.iter().filter(|row| row[feat_idx] <= threshold).count();
-                let right_count = bx.len() - left_count;
-                thresholds.push((feat_idx, threshold, left_count, right_count));
+                let mut left_total = 0usize;
+                let mut left_true = 0usize;
+                let mut right_total = 0usize;
+                let mut right_true = 0usize;
+                for (row, &label) in bx.iter().zip(by.iter()) {
+                    if row[feat_idx] <= threshold {
+                        left_total += 1;
+                        if label > 0.5 {
+                            left_true += 1;
+                        }
+                    } else {
+                        right_total += 1;
+                        if label > 0.5 {
+                            right_true += 1;
+                        }
+                    }
+                }
+                let left_pred = if left_total > 0 {
+                    left_true as f64 / left_total as f64
+                } else {
+                    overall_mean
+                };
+                let right_pred = if right_total > 0 {
+                    right_true as f64 / right_total as f64
+                } else {
+                    overall_mean
+                };
+                thresholds.push((feat_idx, threshold, left_pred, right_pred));
             }
 
-            let left_pred = by.iter().filter(|&&v| v > 0.5).count() as f64 / by.len().max(1) as f64;
-
-            self.trees.push(SimpleTree {
-                thresholds,
-                left_pred,
-                right_pred: left_pred, // simplified
-            });
+            self.trees.push(SimpleTree { thresholds });
         }
     }
 
@@ -269,13 +293,23 @@ impl SimpleEnsemble {
         }
         let n_trees = self.trees.len() as f64;
         x.iter()
-            .map(|_row| {
+            .map(|row| {
                 let sum: f64 = self
                     .trees
                     .iter()
                     .map(|tree| {
-                        // Simple majority vote approximation
-                        tree.left_pred
+                        let stump_sum: f64 = tree
+                            .thresholds
+                            .iter()
+                            .map(|(feat_idx, threshold, left_pred, right_pred)| {
+                                match row.get(*feat_idx) {
+                                    Some(v) if v <= threshold => *left_pred,
+                                    Some(_) => *right_pred,
+                                    None => *left_pred,
+                                }
+                            })
+                            .sum();
+                        stump_sum / tree.thresholds.len().max(1) as f64
                     })
                     .sum();
                 sum / n_trees
@@ -519,10 +553,6 @@ impl MissingEvidenceDetector {
     }
 
     /// Extract rule-based features as a numeric vector.
-    fn extract_rule_features(&self, text: &str) -> Vec<f64> {
-        extract_rule_features(text)
-    }
-
     /// Check completeness of each A3 section.
     fn check_section_completeness(
         &self,
@@ -724,5 +754,32 @@ mod tests {
         let result = detector.detect_missing_evidence(&sections);
         assert!(!result.is_complete);
         assert!(!result.missing_items.is_empty());
+    }
+
+    #[test]
+    fn test_ensemble_predictions_use_features() {
+        // Regression test: predict_proba must be driven by the input
+        // features, not return a constant per-sample probability.
+        let mut clf = SimpleEnsemble::new();
+        // One feature cleanly separates the classes.
+        let x = vec![
+            vec![1.0],
+            vec![2.0],
+            vec![3.0],
+            vec![10.0],
+            vec![11.0],
+            vec![12.0],
+        ];
+        let y = vec![1.0, 1.0, 1.0, 0.0, 0.0, 0.0];
+        clf.fit(&x, &y, 32);
+
+        let low = clf.predict_proba(&[vec![1.5], vec![2.5]]);
+        let high = clf.predict_proba(&[vec![10.5], vec![11.5]]);
+        // Low-feature rows should be predicted positive; high-feature rows
+        // negative — and the two groups must not be identical.
+        let low_avg: f64 = low.iter().sum::<f64>() / low.len() as f64;
+        let high_avg: f64 = high.iter().sum::<f64>() / high.len() as f64;
+        assert!(low_avg > high_avg, "low={low_avg}, high={high_avg}");
+        assert!((low_avg - high_avg).abs() > 0.05, "predictions are constant");
     }
 }

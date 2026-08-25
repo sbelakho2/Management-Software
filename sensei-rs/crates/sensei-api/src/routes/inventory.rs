@@ -182,6 +182,14 @@ pub async fn create_inventory_item(
 ) -> Result<Json<InventoryItem>> {
     let tenant_id = user.tenant_id;
     let now = Utc::now();
+
+    if req.quantity_reserved > req.quantity_on_hand {
+        return Err(SenseiError::Validation(format!(
+            "quantity_reserved ({}) cannot exceed quantity_on_hand ({})",
+            req.quantity_reserved, req.quantity_on_hand
+        )));
+    }
+
     let quantity_available = req.quantity_on_hand - req.quantity_reserved;
     let total_value = req.quantity_on_hand * req.unit_cost;
     let item = InventoryItem {
@@ -252,6 +260,15 @@ pub async fn update_inventory_item(
     if let Some(active) = req.is_active {
         item.is_active = active;
     }
+
+    // Reject inconsistent reservation state after applying the update.
+    if item.quantity_reserved > item.quantity_on_hand {
+        return Err(SenseiError::Validation(format!(
+            "quantity_reserved ({}) cannot exceed quantity_on_hand ({})",
+            item.quantity_reserved, item.quantity_on_hand
+        )));
+    }
+
     item.quantity_available = item.quantity_on_hand - item.quantity_reserved;
     item.total_value = item.quantity_on_hand * item.unit_cost;
     item.updated_at = Utc::now();
@@ -308,6 +325,27 @@ pub async fn create_stock_move(
     let tenant_id = user.tenant_id;
     let now = Utc::now();
 
+    if req.quantity <= 0.0 {
+        return Err(SenseiError::Validation(
+            "Stock move quantity must be greater than 0".to_string(),
+        ));
+    }
+
+    // Transfers reference a warehouse; it must exist and belong to the
+    // tenant before any quantity is adjusted.
+    if req.move_type.starts_with("transfer_") {
+        let warehouses = state.warehouses.read().await;
+        let exists = warehouses
+            .values()
+            .any(|w| w.id == req.warehouse_id && w.tenant_id == tenant_id);
+        if !exists {
+            return Err(SenseiError::Validation(format!(
+                "Warehouse {} does not exist for this tenant",
+                req.warehouse_id
+            )));
+        }
+    }
+
     // Update the inventory item's quantities
     let mut inv_store = state.inventory_items.write().await;
     if let Some(item) = inv_store.values_mut().find(|i| i.id == req.item_id && i.tenant_id == tenant_id) {
@@ -315,10 +353,14 @@ pub async fn create_stock_move(
             "receipt" | "adjustment_in" => {
                 item.quantity_on_hand += req.quantity;
             }
-            "issue" | "adjustment_out" => {
-                item.quantity_on_hand -= req.quantity;
-            }
-            "transfer_out" => {
+            "issue" | "adjustment_out" | "transfer_out" => {
+                // Never allow on-hand to go negative from an outgoing move.
+                if req.quantity > item.quantity_on_hand {
+                    return Err(SenseiError::Validation(format!(
+                        "Insufficient on-hand quantity for item {}: have {}, need {}",
+                        item.sku, item.quantity_on_hand, req.quantity
+                    )));
+                }
                 item.quantity_on_hand -= req.quantity;
             }
             "transfer_in" => {
@@ -334,6 +376,11 @@ pub async fn create_stock_move(
         item.quantity_available = item.quantity_on_hand - item.quantity_reserved;
         item.total_value = item.quantity_on_hand * item.unit_cost;
         item.updated_at = now;
+    } else {
+        return Err(SenseiError::NotFound(format!(
+            "Inventory item {} not found",
+            req.item_id
+        )));
     }
 
     let stock_move = StockMove {
@@ -436,22 +483,29 @@ pub async fn get_inventory_stats(
         })
         .collect();
 
-    // Calculate turnover rate (total issued / average inventory)
+    // Calculate turnover rate per item (total issued / average inventory),
+    // then average across items with data. No hardcoded fallback values:
+    // with no items or no moves the rate is simply 0.0.
     let moves_store = state.stock_moves.read().await;
-    let total_issued: f64 = moves_store
-        .values()
-        .filter(|m| m.tenant_id == tenant_id && (m.move_type == "issue" || m.move_type == "adjustment_out"))
-        .map(|m| m.quantity)
-        .sum();
-    let avg_inventory = if total_items > 0 {
-        total_quantity_on_hand / total_items as f64
-    } else {
-        1.0
-    };
-    let turnover_rate = if avg_inventory > 0.0 {
-        total_issued / avg_inventory
-    } else {
+    let mut turnover_rates: Vec<f64> = Vec::new();
+    for item in &items {
+        let issued: f64 = moves_store
+            .values()
+            .filter(|m| {
+                m.tenant_id == tenant_id
+                    && m.item_id == item.id
+                    && (m.move_type == "issue" || m.move_type == "adjustment_out" || m.move_type == "transfer_out")
+            })
+            .map(|m| m.quantity)
+            .sum();
+        if issued > 0.0 && item.quantity_on_hand > 0.0 {
+            turnover_rates.push(issued / item.quantity_on_hand);
+        }
+    }
+    let turnover_rate = if turnover_rates.is_empty() {
         0.0
+    } else {
+        turnover_rates.iter().sum::<f64>() / turnover_rates.len() as f64
     };
 
     let stats = InventoryStats {

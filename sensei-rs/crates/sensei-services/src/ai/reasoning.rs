@@ -738,8 +738,62 @@ impl SocraticMentor {
     }
 
     /// Generate challenging prompts for a given content, persona, and phase.
+    ///
+    /// Prompts are stored in the history under a key derived from the content
+    /// (used when no session is active). Prefer
+    /// [`SocraticMentor::generate_prompts_for_session`] for session-scoped use.
     pub fn generate_prompts(
         &mut self,
+        content: &str,
+        persona: MentorPersona,
+        phase: A3Phase,
+    ) -> Vec<ChallengingPrompt> {
+        let prompts = self.build_prompts(content, persona, phase);
+
+        // Track in session history (keyed by a synthetic session key derived from content)
+        let session_key = self.extract_key_terms(content).join("_");
+        self.session_history
+            .entry(session_key)
+            .or_default()
+            .extend(prompts.clone());
+
+        self.evict_cache_if_needed();
+
+        prompts
+    }
+
+    /// Generate challenging prompts for an explicit mentoring session.
+    ///
+    /// The prompts are recorded under `session_id` so that
+    /// [`SocraticMentor::end_session`] and
+    /// [`SocraticMentor::get_session_history`] report real per-session stats.
+    pub fn generate_prompts_for_session(
+        &mut self,
+        session_id: &str,
+        content: &str,
+        persona: MentorPersona,
+        phase: A3Phase,
+    ) -> Vec<ChallengingPrompt> {
+        // Auto-register the session if it was never started.
+        if !self.active_sessions.contains_key(session_id) {
+            self.active_sessions
+                .insert(session_id.to_string(), (String::new(), Utc::now()));
+        }
+
+        let prompts = self.build_prompts(content, persona, phase);
+        self.session_history
+            .entry(session_id.to_string())
+            .or_default()
+            .extend(prompts.clone());
+
+        self.evict_cache_if_needed();
+
+        prompts
+    }
+
+    /// Build the prompt list for the given content without touching history.
+    fn build_prompts(
+        &self,
         content: &str,
         persona: MentorPersona,
         phase: A3Phase,
@@ -773,15 +827,6 @@ impl SocraticMentor {
 
             prompts.push(prompt);
         }
-
-        // Track in session history (keyed by a synthetic session key derived from content)
-        let session_key = self.extract_key_terms(content).join("_");
-        self.session_history
-            .entry(session_key)
-            .or_default()
-            .extend(prompts.clone());
-
-        self.evict_cache_if_needed();
 
         prompts
     }
@@ -870,6 +915,9 @@ impl SocraticMentor {
     pub fn start_session(&mut self, session_id: &str, a3_id: &str) {
         self.active_sessions
             .insert(session_id.to_string(), (a3_id.to_string(), Utc::now()));
+        // A new session starts with an empty conversation history so per-session
+        // stats reflect only this session's prompts.
+        self.session_history.remove(session_id);
     }
 
     /// End a mentoring session and return session statistics.
@@ -1246,11 +1294,13 @@ impl SenseiReasoningEngine {
     /// Generate challenging prompts for a session.
     pub fn generate_socratic_prompts(
         &mut self,
+        session_id: &str,
         content: &str,
         persona: MentorPersona,
         phase: A3Phase,
     ) -> Vec<ChallengingPrompt> {
-        self.socratic_mentor.generate_prompts(content, persona, phase)
+        self.socratic_mentor
+            .generate_prompts_for_session(session_id, content, persona, phase)
     }
 
     /// Analyze root cause using 5 Whys.
@@ -1547,8 +1597,10 @@ mod tests {
         };
         engine.register_closed_a3(a3);
 
-        // 2. Generate Socratic prompts
+        // 2. Generate Socratic prompts (session-scoped)
+        engine.start_mentoring_session("test-session", "a3-001");
         let prompts = engine.generate_socratic_prompts(
+            "test-session",
             "Setup time is too long",
             MentorPersona::ProcessImprover,
             A3Phase::CurrentState,
@@ -1565,9 +1617,49 @@ mod tests {
         let waste = engine.classify_waste("Long waiting times during setup");
         assert_eq!(waste, Some(LeanWasteCategory::Waiting));
 
-        // 5. Start and end a session
-        engine.start_mentoring_session("test-session", "a3-001");
+        // 5. End the session — stats must reflect the prompts generated.
         let stats = engine.end_mentoring_session("test-session");
         assert!(stats.contains_key("session_duration_minutes"));
+        assert_eq!(
+            stats.get("prompts_generated").unwrap().as_u64().unwrap(),
+            prompts.len() as u64,
+            "session stats must count the prompts generated in this session"
+        );
+    }
+
+    #[test]
+    fn test_session_prompts_are_keyed_by_session_id() {
+        let mut mentor = SocraticMentor::new(1000);
+        mentor.start_session("session-a", "a3-a");
+        mentor.start_session("session-b", "a3-b");
+
+        mentor.generate_prompts_for_session(
+            "session-a",
+            "defect rate rising",
+            MentorPersona::ProcessImprover,
+            A3Phase::ProblemDefinition,
+        );
+        mentor.generate_prompts_for_session(
+            "session-a",
+            "defect rate rising more",
+            MentorPersona::ProcessImprover,
+            A3Phase::CurrentState,
+        );
+        mentor.generate_prompts_for_session(
+            "session-b",
+            "cost overruns",
+            MentorPersona::Challenger,
+            A3Phase::ProblemDefinition,
+        );
+
+        // Histories must be isolated per session.
+        assert!(!mentor.get_session_history("session-a").is_empty());
+        assert!(!mentor.get_session_history("session-b").is_empty());
+
+        let stats = mentor.end_session("session-a");
+        assert!(
+            stats.get("prompts_generated").unwrap().as_u64().unwrap() > 0,
+            "end_session must report the prompts recorded for session-a"
+        );
     }
 }

@@ -26,8 +26,20 @@ impl DatabaseProductsService {
     }
 }
 
-/// Convert a database [`ProductModel`] into a domain [`Product`].
-fn product_model_to_domain(m: ProductModel) -> Product {
+/// Database row for a product, including the `max_stock_level` and `notes`
+/// columns added by migration 029 (the shared [`ProductModel`] does not
+/// carry them).
+#[derive(Debug, Clone, sqlx::FromRow)]
+struct ProductRow {
+    #[sqlx(flatten)]
+    model: ProductModel,
+    max_stock_level: Option<f64>,
+    notes: Option<String>,
+}
+
+/// Convert a database row into a domain [`Product`].
+fn product_row_to_domain(r: ProductRow) -> Product {
+    let m = r.model;
     Product {
         id: m.id,
         tenant_id: m.tenant_id,
@@ -40,34 +52,12 @@ fn product_model_to_domain(m: ProductModel) -> Product {
         standard_cost: m.standard_cost,
         selling_price: m.list_price,
         min_stock_level: m.reorder_point,
-        max_stock_level: None,
+        max_stock_level: r.max_stock_level,
         current_stock: m.quantity_on_hand,
         is_active: m.is_active,
-        notes: None,
+        notes: r.notes,
         created_at: m.created_at,
         updated_at: m.updated_at,
-    }
-}
-
-/// Convert a domain [`Product`] into a database [`ProductModel`].
-#[allow(dead_code)]
-fn product_to_model(p: Product) -> ProductModel {
-    ProductModel {
-        id: p.id,
-        tenant_id: p.tenant_id,
-        product_number: p.sku,
-        name: p.name,
-        description: p.description,
-        category: p.category,
-        unit_of_measure: p.unit_of_measure,
-        standard_cost: p.standard_cost,
-        list_price: p.selling_price,
-        quantity_on_hand: p.current_stock,
-        reorder_point: p.min_stock_level,
-        is_active: p.is_active,
-        product_type: p.product_type,
-        created_at: p.created_at,
-        updated_at: p.updated_at,
     }
 }
 
@@ -76,15 +66,17 @@ impl ProductsService for DatabaseProductsService {
     async fn create_product(&self, tenant_id: TenantId, product: Product) -> Result<Product> {
         let now = Utc::now();
 
-        let model = sqlx::query_as::<_, ProductModel>(
+        let model = sqlx::query_as::<_, ProductRow>(
             r#"
             INSERT INTO products (id, tenant_id, product_number, name, description, category,
                                   unit_of_measure, standard_cost, list_price, quantity_on_hand,
-                                  reorder_point, is_active, product_type, created_at, updated_at)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+                                  reorder_point, is_active, product_type,
+                                  max_stock_level, notes, created_at, updated_at)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
             RETURNING id, tenant_id, product_number, name, description, category,
                       unit_of_measure, standard_cost, list_price, quantity_on_hand,
-                      reorder_point, is_active, product_type, created_at, updated_at
+                      reorder_point, is_active, product_type,
+                      max_stock_level, notes, created_at, updated_at
             "#,
         )
         .bind(product.id)
@@ -100,21 +92,24 @@ impl ProductsService for DatabaseProductsService {
         .bind(product.min_stock_level)
         .bind(product.is_active)
         .bind(&product.product_type)
+        .bind(product.max_stock_level)
+        .bind(&product.notes)
         .bind(now)
         .bind(now)
         .fetch_one(&self.pool)
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to create product: {e}")))?;
 
-        Ok(product_model_to_domain(model))
+        Ok(product_row_to_domain(model))
     }
 
     async fn get_product(&self, tenant_id: TenantId, id: EntityId) -> Result<Product> {
-        let model = sqlx::query_as::<_, ProductModel>(
+        let model = sqlx::query_as::<_, ProductRow>(
             r#"
             SELECT id, tenant_id, product_number, name, description, category,
                    unit_of_measure, standard_cost, list_price, quantity_on_hand,
-                   reorder_point, is_active, product_type, created_at, updated_at
+                   reorder_point, is_active, product_type,
+                   max_stock_level, notes, created_at, updated_at
             FROM products
             WHERE id = $1 AND tenant_id = $2
             "#,
@@ -126,7 +121,7 @@ impl ProductsService for DatabaseProductsService {
         .map_err(|e| SenseiError::Database(format!("Failed to get product: {e}")))?
         .ok_or_else(|| SenseiError::NotFound(format!("Product {id} not found")))?;
 
-        Ok(product_model_to_domain(model))
+        Ok(product_row_to_domain(model))
     }
 
     async fn list_products(
@@ -203,7 +198,8 @@ impl ProductsService for DatabaseProductsService {
                 r#"
                 SELECT id, tenant_id, product_number, name, description, category,
                        unit_of_measure, standard_cost, list_price, quantity_on_hand,
-                       reorder_point, is_active, product_type, created_at, updated_at
+                       reorder_point, is_active, product_type,
+                       max_stock_level, notes, created_at, updated_at
                 FROM products
                 WHERE tenant_id = $1 AND category = $2 AND product_type = $3
                 ORDER BY created_at DESC
@@ -214,7 +210,8 @@ impl ProductsService for DatabaseProductsService {
                 r#"
                 SELECT id, tenant_id, product_number, name, description, category,
                        unit_of_measure, standard_cost, list_price, quantity_on_hand,
-                       reorder_point, is_active, product_type, created_at, updated_at
+                       reorder_point, is_active, product_type,
+                       max_stock_level, notes, created_at, updated_at
                 FROM products
                 WHERE tenant_id = $1 AND category = $2
                 ORDER BY created_at DESC
@@ -225,7 +222,8 @@ impl ProductsService for DatabaseProductsService {
                 r#"
                 SELECT id, tenant_id, product_number, name, description, category,
                        unit_of_measure, standard_cost, list_price, quantity_on_hand,
-                       reorder_point, is_active, product_type, created_at, updated_at
+                       reorder_point, is_active, product_type,
+                       max_stock_level, notes, created_at, updated_at
                 FROM products
                 WHERE tenant_id = $1 AND product_type = $2
                 ORDER BY created_at DESC
@@ -236,7 +234,8 @@ impl ProductsService for DatabaseProductsService {
                 r#"
                 SELECT id, tenant_id, product_number, name, description, category,
                        unit_of_measure, standard_cost, list_price, quantity_on_hand,
-                       reorder_point, is_active, product_type, created_at, updated_at
+                       reorder_point, is_active, product_type,
+                       max_stock_level, notes, created_at, updated_at
                 FROM products
                 WHERE tenant_id = $1
                 ORDER BY created_at DESC
@@ -245,7 +244,7 @@ impl ProductsService for DatabaseProductsService {
             }
         };
 
-        let models: Vec<ProductModel> = match (use_category_filter, use_type_filter) {
+        let models: Vec<ProductRow> = match (use_category_filter, use_type_filter) {
             (true, true) => {
                 sqlx::query_as(data_sql)
                     .bind(tenant_id)
@@ -285,7 +284,7 @@ impl ProductsService for DatabaseProductsService {
         }
         .map_err(|e| SenseiError::Database(format!("Failed to list products: {e}")))?;
 
-        let data = models.into_iter().map(product_model_to_domain).collect();
+        let data = models.into_iter().map(product_row_to_domain).collect();
 
         Ok(PaginatedResponse {
             data,
@@ -304,17 +303,18 @@ impl ProductsService for DatabaseProductsService {
     ) -> Result<Product> {
         let now = Utc::now();
 
-        let model = sqlx::query_as::<_, ProductModel>(
+        let model = sqlx::query_as::<_, ProductRow>(
             r#"
             UPDATE products
             SET product_number = $3, name = $4, description = $5, category = $6,
                 unit_of_measure = $7, standard_cost = $8, list_price = $9,
                 quantity_on_hand = $10, reorder_point = $11, is_active = $12,
-                product_type = $13, updated_at = $14
+                product_type = $13, max_stock_level = $14, notes = $15, updated_at = $16
             WHERE id = $1 AND tenant_id = $2
             RETURNING id, tenant_id, product_number, name, description, category,
                       unit_of_measure, standard_cost, list_price, quantity_on_hand,
-                      reorder_point, is_active, product_type, created_at, updated_at
+                      reorder_point, is_active, product_type,
+                      max_stock_level, notes, created_at, updated_at
             "#,
         )
         .bind(id)
@@ -330,6 +330,8 @@ impl ProductsService for DatabaseProductsService {
         .bind(product.min_stock_level)
         .bind(product.is_active)
         .bind(&product.product_type)
+        .bind(product.max_stock_level)
+        .bind(&product.notes)
         .bind(now)
         .fetch_optional(&self.pool)
         .await
@@ -337,11 +339,11 @@ impl ProductsService for DatabaseProductsService {
         .ok_or_else(|| SenseiError::NotFound(format!("Product {id} not found")))?;
 
         // Verify tenant ownership.
-        if model.tenant_id != tenant_id {
+        if model.model.tenant_id != tenant_id {
             return Err(SenseiError::Forbidden("Cross-tenant access denied".to_string()));
         }
 
-        Ok(product_model_to_domain(model))
+        Ok(product_row_to_domain(model))
     }
 
     async fn delete_product(&self, tenant_id: TenantId, id: EntityId) -> Result<()> {

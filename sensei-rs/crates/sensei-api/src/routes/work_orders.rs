@@ -91,24 +91,85 @@ pub struct PriorityCount {
 
 // ── Handlers ───────────────────────────────────────────────────────────────
 
+/// Page through every work order in the tenant (the service clamps
+/// per_page, so a single request cannot fetch everything).
+async fn fetch_all_work_orders(
+    production: &dyn sensei_services::production::ProductionService,
+    tenant_id: Uuid,
+) -> Result<Vec<WorkOrder>> {
+    const PER_PAGE: usize = 100;
+    let mut all = Vec::new();
+    let mut page = 1usize;
+    loop {
+        let res = production
+            .list_work_orders(tenant_id, None, None, Some(page), Some(PER_PAGE))
+            .await?;
+        let fetched = res.data.len();
+        all.extend(res.data);
+        if fetched < PER_PAGE {
+            break;
+        }
+        page += 1;
+    }
+    Ok(all)
+}
+
 /// List all work orders with optional filters and pagination.
+///
+/// The service only filters by status and work center; priority and date
+/// filters are applied here on the tenant's full dataset.
 pub async fn list_work_orders(
     user: AuthenticatedUser,
     State(state): State<AppState>,
     Query(params): Query<ListWorkOrdersParams>,
 ) -> Result<Json<PaginatedResponse<WorkOrder>>> {
     let tenant_id = user.tenant_id;
-    let orders = state
-        .production_service
-        .list_work_orders(
-            tenant_id,
-            params.status.as_deref(),
-            params.work_center_id,
-            params.page,
-            params.per_page,
-        )
-        .await?;
-    Ok(Json(orders))
+
+    let date_from = params
+        .date_from
+        .as_deref()
+        .map(|d| DateTime::parse_from_rfc3339(d).map(|dt| dt.with_timezone(&Utc)))
+        .transpose()
+        .map_err(|e| {
+            sensei_core::error::SenseiError::Validation(format!("Invalid date_from: {e}"))
+        })?;
+    let date_to = params
+        .date_to
+        .as_deref()
+        .map(|d| DateTime::parse_from_rfc3339(d).map(|dt| dt.with_timezone(&Utc)))
+        .transpose()
+        .map_err(|e| {
+            sensei_core::error::SenseiError::Validation(format!("Invalid date_to: {e}"))
+        })?;
+
+    let all = fetch_all_work_orders(state.production_service.as_ref(), tenant_id).await?;
+    let mut filtered: Vec<WorkOrder> = all
+        .into_iter()
+        .filter(|o| {
+            params.status.as_deref().map_or(true, |s| o.status == s)
+                && params.priority.as_deref().map_or(true, |p| o.priority == p)
+                && params.work_center_id.map_or(true, |wc| o.work_center_id == Some(wc))
+                && date_from.map_or(true, |d| {
+                    o.scheduled_start.map_or(true, |start| start >= d)
+                })
+                && date_to.map_or(true, |d| o.scheduled_start.map_or(true, |start| start <= d))
+        })
+        .collect();
+    filtered.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
+
+    let total = filtered.len();
+    let page = params.page.unwrap_or(1).max(1);
+    let per_page = params.per_page.unwrap_or(20).clamp(1, 100);
+    let start = (page.saturating_sub(1)) * per_page;
+    let data = filtered.into_iter().skip(start).take(per_page).collect();
+
+    Ok(Json(PaginatedResponse {
+        data,
+        total,
+        page,
+        per_page,
+        total_pages: total.div_ceil(per_page),
+    }))
 }
 
 /// Get a specific work order by ID with full details.
@@ -141,8 +202,8 @@ pub async fn create_work_order(
 
 /// Update a work order's editable fields.
 ///
-/// Uses the existing service to update status if provided, and returns
-/// the updated work order.
+/// Persists the merged record through the production service — the edit is
+/// real, not a status-only round trip.
 pub async fn update_work_order(
     user: AuthenticatedUser,
     State(state): State<AppState>,
@@ -151,14 +212,13 @@ pub async fn update_work_order(
 ) -> Result<Json<WorkOrder>> {
     let tenant_id = user.tenant_id;
 
-    // Fetch the existing work order to verify it exists
-    let existing = state
+    // Fetch the existing work order to verify it exists and merge with it.
+    let mut updated = state
         .production_service
         .get_work_order(tenant_id, id)
         .await?;
 
     // Apply changes from the request
-    let mut updated = existing;
     if let Some(product_id) = req.product_id {
         updated.product_id = product_id;
     }
@@ -181,24 +241,32 @@ pub async fn update_work_order(
         updated.notes = notes;
     }
     if let Some(scheduled_start) = req.scheduled_start {
-        if let Ok(dt) = scheduled_start.parse::<DateTime<Utc>>() {
-            updated.scheduled_start = Some(dt);
-        }
+        updated.scheduled_start = Some(
+            DateTime::parse_from_rfc3339(&scheduled_start)
+                .map_err(|e| {
+                    sensei_core::error::SenseiError::Validation(format!(
+                        "Invalid scheduled_start: {e}"
+                    ))
+                })?
+                .with_timezone(&Utc),
+        );
     }
     if let Some(scheduled_end) = req.scheduled_end {
-        if let Ok(dt) = scheduled_end.parse::<DateTime<Utc>>() {
-            updated.scheduled_end = Some(dt);
-        }
+        updated.scheduled_end = Some(
+            DateTime::parse_from_rfc3339(&scheduled_end)
+                .map_err(|e| {
+                    sensei_core::error::SenseiError::Validation(format!(
+                        "Invalid scheduled_end: {e}"
+                    ))
+                })?
+                .with_timezone(&Utc),
+        );
     }
     updated.updated_at = Utc::now();
 
-    // For now, delegate to the service by updating status if changed
-    // (production_service does not expose a generic update, so we
-    // re-create via the service pattern; full service update will be
-    // added when the service trait is extended).
     let order = state
         .production_service
-        .update_work_order_status(tenant_id, id, &updated.status)
+        .update_work_order(tenant_id, id, updated)
         .await?;
     Ok(Json(order))
 }
@@ -274,12 +342,8 @@ pub async fn get_work_order_stats(
     State(state): State<AppState>,
 ) -> Result<Json<WorkOrderStats>> {
     let tenant_id = user.tenant_id;
-    let all = state
-        .production_service
-        .list_work_orders(tenant_id, None, None, Some(1), Some(10_000))
-        .await?;
+    let orders = fetch_all_work_orders(state.production_service.as_ref(), tenant_id).await?;
 
-    let orders = all.data;
     let total = orders.len();
 
     // Compute status breakdown
@@ -305,11 +369,22 @@ pub async fn get_work_order_stats(
         .map(|(priority, count)| PriorityCount { priority, count })
         .collect();
 
-    let on_time_percentage = if total > 0 {
-        let completed = orders.iter().filter(|o| o.status == "Completed").count();
-        (completed as f64 / total as f64) * 100.0
-    } else {
+    // On-time = completed orders that finished by their scheduled end
+    // (orders without a schedule are considered on time).
+    let completed_orders: Vec<&WorkOrder> = orders.iter().filter(|o| o.status == "completed").collect();
+    let on_time = completed_orders
+        .iter()
+        .filter(|o| {
+            match (o.actual_end, o.scheduled_end) {
+                (Some(actual), Some(scheduled)) => actual <= scheduled,
+                _ => true,
+            }
+        })
+        .count();
+    let on_time_percentage = if completed_orders.is_empty() {
         100.0
+    } else {
+        (on_time as f64 / completed_orders.len() as f64) * 100.0
     };
 
     Ok(Json(WorkOrderStats {

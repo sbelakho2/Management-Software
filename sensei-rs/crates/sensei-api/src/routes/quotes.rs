@@ -40,6 +40,16 @@ pub struct QuoteRequest {
 
 // ── Handlers ─────────────────────────────────────────────────────────────────
 
+/// Generate a quote number: `QTE-YYYYMMDD-{8 hex chars}`.
+fn generate_quote_number() -> String {
+    let date = Utc::now().format("%Y%m%d");
+    let suffix: String = Uuid::new_v4()
+        .as_simple()
+        .encode_lower(&mut Uuid::encode_buffer())[..8]
+        .to_string();
+    format!("QTE-{date}-{suffix}")
+}
+
 /// List all quotes with optional filters.
 pub async fn list_quotes(
     user: AuthenticatedUser,
@@ -64,7 +74,7 @@ pub async fn create_quote(
     let quote = Quote {
         id: Uuid::new_v4(),
         tenant_id,
-        quote_number: String::new(),
+        quote_number: generate_quote_number(),
         rfq_id: req.rfq_id,
         customer_id: req.customer_id,
         customer_name: req.customer_name,
@@ -132,13 +142,13 @@ pub async fn create_quote_version(
     let quote = state.supply_chain_service.get_quote(tenant_id, quote_id).await?;
 
     let mut version_store = state.quote_versions.write().await;
-    let version_number = {
-        let existing: Vec<_> = version_store
-            .values()
-            .filter(|v: &&QuoteVersion| v.quote_id == quote_id && v.tenant_id == tenant_id)
-            .collect();
-        existing.len() as i32 + 1
-    };
+    let version_number = version_store
+        .values()
+        .filter(|v| v.quote_id == quote_id && v.tenant_id == tenant_id)
+        .map(|v| v.version_number)
+        .max()
+        .unwrap_or(0)
+        + 1;
 
     let version = QuoteVersion {
         id: new_id(),

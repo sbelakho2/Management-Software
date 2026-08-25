@@ -20,7 +20,6 @@ use sensei_core::SenseiError;
 // ──────────────────────────────────────────────
 
 #[cfg(not(no_zig))]
-#[allow(dead_code)]
 extern "C" {
     /// Compute C = A × B where A is m×k, B is k×n.
     /// Returns a pointer to the flat f32 result, or null on allocation failure.
@@ -44,6 +43,9 @@ extern "C" {
 
     /// Argmax — returns the index of the maximum value.
     fn sensei_tensor_argmax_f32(tensor: *const f32, len: usize, dim: usize) -> usize;
+
+    /// Argmax per-slice — returns a pointer to `len/dim` indices.
+    fn sensei_tensor_argmax_f32_dim(tensor: *const f32, len: usize, dim: usize) -> *mut usize;
 
     /// Load an ONNX model from a file path.
     /// Returns an opaque pointer to a Zig-allocated Model, or null.
@@ -268,17 +270,28 @@ pub fn argmax_f32(tensor: &[f32], dim: usize) -> Result<usize, SenseiError> {
 
 /// Argmax per-slice — returns indices, one per slice of size `dim`.
 ///
-/// Uses Zig when available; falls back to a scalar loop.
+/// Uses the Zig export when available; falls back to a scalar loop.
 ///
-/// # Panics
-///
-/// Panics if `tensor.len()` is not divisible by `dim`.
+/// Returns an error when `tensor.len()` is not divisible by `dim`.
 pub fn argmax_f32_dim(tensor: &[f32], dim: usize) -> Result<Vec<usize>, SenseiError> {
+    if dim == 0 || tensor.len() % dim != 0 {
+        return Err(SenseiError::Validation(format!(
+            "tensor length {} must be divisible by dim {}",
+            tensor.len(),
+            dim
+        )));
+    }
+
     #[cfg(not(no_zig))]
     {
-        // We don't have a direct FFI export for dim-argmax that returns
-        // a slice, so fall back to Rust for the per-slice version
-        Ok(argmax_f32_dim_fallback(tensor, dim))
+        let batch_count = tensor.len() / dim;
+        let ptr = unsafe { sensei_tensor_argmax_f32_dim(tensor.as_ptr(), tensor.len(), dim) };
+        if ptr.is_null() {
+            return Err(SenseiError::Internal("Zig argmax_f32_dim failed".to_string()));
+        }
+        let result = unsafe { std::slice::from_raw_parts(ptr, batch_count) }.to_vec();
+        unsafe { sensei_free(ptr as *mut u8, batch_count * std::mem::size_of::<usize>()) };
+        Ok(result)
     }
 
     #[cfg(no_zig)]

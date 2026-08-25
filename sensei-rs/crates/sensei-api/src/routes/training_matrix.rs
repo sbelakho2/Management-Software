@@ -130,29 +130,42 @@ pub async fn update_matrix_entry(
     Ok(Json(entry.clone()))
 }
 
+/// Map a proficiency level to the level the employee must reach.
+///
+/// The baseline requirement for any skill is `"beginner"`: employees at
+/// `novice` or `beginner` must reach `beginner`. Everyone at `competent` or
+/// above is already at (or beyond) the requirement, so the required level
+/// stays the same as the current level.
+fn required_level(current: &str) -> &'static str {
+    match current {
+        "novice" | "beginner" => "beginner",
+        "competent" => "competent",
+        "proficient" => "proficient",
+        "expert" => "expert",
+        _ => "beginner",
+    }
+}
+
 /// List skill gaps across the organization.
 ///
-/// A gap exists when an employee's current proficiency level is below
-/// the required level for a skill. Returns all entries where the skill
-/// is not yet at "competent" or higher.
+/// A gap exists when an employee's current proficiency level is below the
+/// required level for a skill (i.e. anyone below `"beginner"`).
 pub async fn list_skill_gaps(
     user: AuthenticatedUser,
     State(state): State<AppState>,
 ) -> Result<Json<Vec<SkillGap>>> {
     let store = state.training_matrix.read().await;
-    let required_levels: [&str; 3] = ["competent", "proficient", "expert"];
 
     let mut gaps: Vec<SkillGap> = store
         .values()
         .filter(|e| e.tenant_id == user.tenant_id)
-        .filter(|e| !required_levels.contains(&e.proficiency_level.as_str()))
+        .filter(|e| {
+            let required = required_level(&e.proficiency_level);
+            e.proficiency_level != required
+        })
         .map(|e| {
             let current_level = e.proficiency_level.clone();
-            let required = match current_level.as_str() {
-                "novice" => "competent",
-                "beginner" => "competent",
-                _ => "competent",
-            };
+            let required = required_level(&current_level);
             SkillGap {
                 employee_id: e.employee_id,
                 employee_name: e.employee_name.clone(),

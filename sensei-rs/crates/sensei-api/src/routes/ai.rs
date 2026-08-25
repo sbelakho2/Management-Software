@@ -7,7 +7,6 @@ use axum::{Json, extract::State};
 use serde::Deserialize;
 use sensei_auth::middleware::AuthenticatedUser;
 use sensei_core::error::Result;
-use sensei_services::ai::AiService;
 use uuid::Uuid;
 
 use crate::state::AppState;

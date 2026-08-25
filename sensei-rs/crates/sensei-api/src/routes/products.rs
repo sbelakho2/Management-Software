@@ -36,6 +36,9 @@ pub struct ProductRequest {
     pub min_stock_level: Option<f64>,
     pub max_stock_level: Option<f64>,
     pub current_stock: Option<f64>,
+    /// Active state (defaults to `true` on create; keeps the stored value
+    /// on update when omitted).
+    pub is_active: Option<bool>,
     pub notes: Option<String>,
 }
 
@@ -133,7 +136,7 @@ pub async fn create_product(
         min_stock_level: req.min_stock_level,
         max_stock_level: req.max_stock_level,
         current_stock: req.current_stock.unwrap_or(0.0),
-        is_active: true,
+        is_active: req.is_active.unwrap_or(true),
         notes: req.notes,
         created_at: now(),
         updated_at: now(),
@@ -161,6 +164,9 @@ pub async fn update_product(
     Json(req): Json<ProductRequest>,
 ) -> Result<Json<ProductResponse>> {
     let tenant_id = user.tenant_id;
+    // Fetch the stored product so creation timestamps and the active flag
+    // (when not overridden) survive the update.
+    let existing = state.products_service.get_product(tenant_id, id).await?;
     let product = Product {
         id,
         tenant_id,
@@ -174,10 +180,10 @@ pub async fn update_product(
         selling_price: req.selling_price,
         min_stock_level: req.min_stock_level,
         max_stock_level: req.max_stock_level,
-        current_stock: req.current_stock.unwrap_or(0.0),
-        is_active: true,
+        current_stock: req.current_stock.unwrap_or(existing.current_stock),
+        is_active: req.is_active.unwrap_or(existing.is_active),
         notes: req.notes,
-        created_at: now(),
+        created_at: existing.created_at,
         updated_at: now(),
     };
     let updated = state.products_service.update_product(tenant_id, id, product).await?;
@@ -243,7 +249,7 @@ mod tests {
             selling_price: Some(25.0),
             min_stock_level: Some(5.0),
             max_stock_level: Some(100.0),
-            current_stock: Some(50.0),
+            current_stock: Some(50.0), is_active: None,
             notes: Some("Test product".to_string()),
         };
         let resp = create_product(user, State(state.clone()), Json(req))
@@ -265,7 +271,7 @@ mod tests {
             product_type: "raw".to_string(), unit_of_measure: "kg".to_string(),
             standard_cost: None, selling_price: None,
             min_stock_level: None, max_stock_level: None,
-            current_stock: None, notes: None,
+            current_stock: None, is_active: None, notes: None,
         };
         let created = create_product(user.clone(), State(state.clone()), Json(req))
             .await
@@ -294,7 +300,7 @@ mod tests {
             product_type: "finished".to_string(), unit_of_measure: "pcs".to_string(),
             standard_cost: None, selling_price: None,
             min_stock_level: None, max_stock_level: None,
-            current_stock: None, notes: None,
+            current_stock: None, is_active: None, notes: None,
         };
         let _ = create_product(user.clone(), State(state.clone()), Json(req)).await.unwrap();
         let params = ListProductsParams {
@@ -316,7 +322,7 @@ mod tests {
             product_type: "finished".to_string(), unit_of_measure: "pcs".to_string(),
             standard_cost: None, selling_price: None,
             min_stock_level: None, max_stock_level: None,
-            current_stock: None, notes: None,
+            current_stock: None, is_active: None, notes: None,
         };
         let created = create_product(user.clone(), State(state.clone()), Json(req))
             .await
@@ -327,7 +333,7 @@ mod tests {
             product_type: "finished".to_string(), unit_of_measure: "pcs".to_string(),
             standard_cost: Some(15.0), selling_price: Some(30.0),
             min_stock_level: Some(10.0), max_stock_level: Some(200.0),
-            current_stock: Some(75.0), notes: None,
+            current_stock: Some(75.0), is_active: None, notes: None,
         };
         let resp = update_product(user, State(state.clone()), Path(created.id), Json(update_req))
             .await
@@ -335,6 +341,52 @@ mod tests {
         assert_eq!(resp.name, "Updated Name");
         assert_eq!(resp.standard_cost, Some(15.0));
         assert_eq!(resp.current_stock, 75.0);
+    }
+
+    #[tokio::test]
+    async fn test_update_product_preserves_created_at_and_is_active() {
+        let (state, tid, uid) = test_state().await;
+        let user = auth_user(tid, uid);
+        let req = ProductRequest {
+            sku: "SKU-004A".to_string(), name: "Original".to_string(),
+            description: None, category: None,
+            product_type: "finished".to_string(), unit_of_measure: "pcs".to_string(),
+            standard_cost: None, selling_price: None,
+            min_stock_level: None, max_stock_level: None,
+            current_stock: None, is_active: Some(false), notes: None,
+        };
+        let created = create_product(user.clone(), State(state.clone()), Json(req))
+            .await
+            .unwrap();
+        assert!(!created.is_active, "create must honor is_active=false");
+
+        let update_req = ProductRequest {
+            sku: "SKU-004A".to_string(), name: "Renamed".to_string(),
+            description: None, category: None,
+            product_type: "finished".to_string(), unit_of_measure: "pcs".to_string(),
+            standard_cost: None, selling_price: None,
+            min_stock_level: None, max_stock_level: None,
+            current_stock: None, is_active: None, notes: None,
+        };
+        let resp = update_product(user.clone(), State(state.clone()), Path(created.id), Json(update_req))
+            .await
+            .unwrap();
+        assert_eq!(resp.created_at, created.created_at, "created_at must be preserved");
+        assert!(!resp.is_active, "is_active must be preserved when not overridden");
+
+        // Explicit is_active=true in the request must flip it back.
+        let reactivate = ProductRequest {
+            sku: "SKU-004A".to_string(), name: "Renamed".to_string(),
+            description: None, category: None,
+            product_type: "finished".to_string(), unit_of_measure: "pcs".to_string(),
+            standard_cost: None, selling_price: None,
+            min_stock_level: None, max_stock_level: None,
+            current_stock: None, is_active: Some(true), notes: None,
+        };
+        let resp = update_product(user, State(state.clone()), Path(created.id), Json(reactivate))
+            .await
+            .unwrap();
+        assert!(resp.is_active);
     }
 
     #[tokio::test]
@@ -347,7 +399,7 @@ mod tests {
             product_type: "finished".to_string(), unit_of_measure: "pcs".to_string(),
             standard_cost: None, selling_price: None,
             min_stock_level: None, max_stock_level: None,
-            current_stock: None, notes: None,
+            current_stock: None, is_active: None, notes: None,
         };
         let created = create_product(user.clone(), State(state.clone()), Json(req))
             .await

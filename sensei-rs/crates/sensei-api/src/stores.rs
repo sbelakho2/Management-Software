@@ -39,8 +39,11 @@ impl PaginationParams {
     pub const MAX_PER_PAGE: usize = 500;
 
     /// Resolve the page number with a default of 1.
+    ///
+    /// Page `0` (and other out-of-range values) is clamped to `1`; negative
+    /// values are impossible because `usize` is unsigned.
     pub fn page(&self) -> usize {
-        self.page.filter(|p| *p > 0).unwrap_or(1)
+        self.page.unwrap_or(1).max(1)
     }
 
     /// Resolve the per-page count, clamped to `[1, MAX_PER_PAGE]`.
@@ -50,16 +53,17 @@ impl PaginationParams {
             .unwrap_or(50)
     }
 
-    /// Compute the SQL `OFFSET` value.
+    /// Compute the SQL `OFFSET` value (saturating, so an enormous page
+    /// number cannot overflow).
     pub fn offset(&self) -> usize {
-        (self.page() - 1) * self.per_page()
+        (self.page() - 1).saturating_mul(self.per_page())
     }
 }
 
 // ── Kanban ────────────────────────────────────────────────────────────────────
 
 /// A Kanban board containing columns and cards.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct KanbanBoard {
     pub id: Uuid,
     pub tenant_id: Uuid,
@@ -72,7 +76,7 @@ pub struct KanbanBoard {
 }
 
 /// A column within a Kanban board.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct KanbanColumn {
     pub id: Uuid,
     pub board_id: Uuid,
@@ -85,7 +89,7 @@ pub struct KanbanColumn {
 }
 
 /// A card within a Kanban column.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct KanbanCard {
     pub id: Uuid,
     pub column_id: Uuid,
@@ -99,6 +103,9 @@ pub struct KanbanCard {
     pub created_by: Uuid,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+    /// Set when the card is moved into a terminal ("done") column.
+    #[serde(default)]
+    pub completed_at: Option<DateTime<Utc>>,
 }
 
 /// Entity store for Kanban boards.
@@ -107,7 +114,7 @@ pub type KanbanBoardStore = EntityStore<KanbanBoard>;
 // ── Notifications ────────────────────────────────────────────────────────────
 
 /// A user notification.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Notification {
     pub id: Uuid,
     pub tenant_id: Uuid,
@@ -122,7 +129,7 @@ pub struct Notification {
 }
 
 /// Notification preferences for a user.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct NotificationPreferences {
     pub id: Uuid,
     pub tenant_id: Uuid,
@@ -145,7 +152,7 @@ pub type NotificationPreferencesStore = EntityStore<NotificationPreferences>;
 // ── Attachments ──────────────────────────────────────────────────────────────
 
 /// A file attachment linked to an entity.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Attachment {
     pub id: Uuid,
     pub tenant_id: Uuid,
@@ -168,7 +175,7 @@ pub type AttachmentDataStore = EntityStore<Vec<u8>>;
 // ── Quote Version ────────────────────────────────────────────────────────────
 
 /// A frozen version snapshot of a Quote.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct QuoteVersion {
     pub id: Uuid,
     pub quote_id: Uuid,
@@ -185,7 +192,7 @@ pub type QuoteVersionStore = EntityStore<QuoteVersion>;
 // ── Learning Module ──────────────────────────────────────────────────────────
 
 /// A learning module / training course.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct LearningModule {
     pub id: Uuid,
     pub tenant_id: Uuid,
@@ -207,7 +214,7 @@ pub type LearningModuleStore = EntityStore<LearningModule>;
 // ── Opportunity ──────────────────────────────────────────────────────────────
 
 /// A sales or business opportunity.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Opportunity {
     pub id: Uuid,
     pub tenant_id: Uuid,
@@ -233,7 +240,7 @@ pub type OpportunityStore = EntityStore<Opportunity>;
 // ── Escalation Policy ─────────────────────────────────────────────────────────
 
 /// A rule within an escalation policy.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct EscalationRule {
     pub id: Uuid,
     pub priority: i32,
@@ -244,7 +251,7 @@ pub struct EscalationRule {
 }
 
 /// An escalation policy with one or more rules.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct EscalationPolicy {
     pub id: Uuid,
     pub tenant_id: Uuid,
@@ -264,7 +271,7 @@ pub type EscalationPolicyStore = EntityStore<EscalationPolicy>;
 // ── Training Matrix ───────────────────────────────────────────────────────────
 
 /// A training matrix entry linking a skill to an employee.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TrainingMatrixEntry {
     pub id: Uuid,
     pub tenant_id: Uuid,
@@ -288,7 +295,7 @@ pub type TrainingMatrixStore = EntityStore<TrainingMatrixEntry>;
 // ── Knowledge Pack ────────────────────────────────────────────────────────────
 
 /// A knowledge pack containing curated content.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct KnowledgePack {
     pub id: Uuid,
     pub tenant_id: Uuid,
@@ -311,7 +318,7 @@ pub type KnowledgePackStore = EntityStore<KnowledgePack>;
 // ── Smart Ingestion ───────────────────────────────────────────────────────────
 
 /// Status of a document ingestion job.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum IngestionStatus {
     Pending,
     Processing,
@@ -320,7 +327,7 @@ pub enum IngestionStatus {
 }
 
 /// An ingestion job tracking document processing.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct IngestionJob {
     pub id: Uuid,
     pub tenant_id: Uuid,
@@ -345,7 +352,7 @@ pub type IngestionDataStore = EntityStore<Vec<u8>>;
 // ── Work Centers ──────────────────────────────────────────────────────────────
 
 /// A work center (production cell / manufacturing unit).
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct WorkCenter {
     pub id: Uuid,
     pub tenant_id: Uuid,
@@ -373,7 +380,7 @@ pub type WorkCenterStore = EntityStore<WorkCenter>;
 // ── Obeya ─────────────────────────────────────────────────────────────────────
 
 /// An Obeya (war room / big room) board for visual management.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ObeyaBoard {
     pub id: Uuid,
     pub tenant_id: Uuid,
@@ -390,7 +397,7 @@ pub struct ObeyaBoard {
 }
 
 /// An item/card on an Obeya board.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ObeyaItem {
     pub id: Uuid,
     pub board_id: Uuid,
@@ -414,7 +421,7 @@ pub type ObeyaBoardStore = EntityStore<ObeyaBoard>;
 // ── CTQ (Critical-To-Quality) ─────────────────────────────────────────────────
 
 /// A CTQ (Critical-To-Quality) characteristic.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CtqCharacteristic {
     pub id: Uuid,
     pub tenant_id: Uuid,
@@ -433,7 +440,7 @@ pub struct CtqCharacteristic {
 }
 
 /// A recorded measurement for a CTQ characteristic.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CtqRecord {
     pub id: Uuid,
     pub characteristic_id: Uuid,
@@ -456,7 +463,7 @@ pub type CtqRecordStore = EntityStore<CtqRecord>;
 // ── Inventory ─────────────────────────────────────────────────────────────────
 
 /// An inventory item / stock keeping unit.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct InventoryItem {
     pub id: Uuid,
     pub tenant_id: Uuid,
@@ -479,7 +486,7 @@ pub struct InventoryItem {
 }
 
 /// A stock move (adjustment, transfer, receipt, issue).
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct StockMove {
     pub id: Uuid,
     pub tenant_id: Uuid,
@@ -495,7 +502,7 @@ pub struct StockMove {
 }
 
 /// A warehouse / storage location.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Warehouse {
     pub id: Uuid,
     pub tenant_id: Uuid,
@@ -520,7 +527,7 @@ pub type WarehouseStore = EntityStore<Warehouse>;
 // ── MRP (Material Requirements Planning) ──────────────────────────────────────
 
 /// A demand entry for MRP.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DemandEntry {
     pub id: Uuid,
     pub tenant_id: Uuid,
@@ -537,7 +544,7 @@ pub struct DemandEntry {
 }
 
 /// A planned supply order from MRP.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SupplyOrder {
     pub id: Uuid,
     pub tenant_id: Uuid,
@@ -548,13 +555,16 @@ pub struct SupplyOrder {
     pub expected_delivery: DateTime<Utc>,
     pub status: String,
     pub notes: String,
+    /// ID of the MRP run that generated this supply order.
+    #[serde(default)]
+    pub run_id: Option<Uuid>,
     pub created_by: Uuid,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
 
 /// An MRP run (net requirements calculation execution).
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct MrpRun {
     pub id: Uuid,
     pub tenant_id: Uuid,
@@ -578,21 +588,16 @@ pub type MrpRunStore = EntityStore<MrpRun>;
 // ── Tasks ─────────────────────────────────────────────────────────────────────
 
 /// The status of a task within its lifecycle.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub enum TaskStatus {
+    #[default]
     Open,
     InProgress,
     InReview,
     Completed,
     Cancelled,
     Blocked,
-}
-
-impl Default for TaskStatus {
-    fn default() -> Self {
-        Self::Open
-    }
 }
 
 impl std::fmt::Display for TaskStatus {
@@ -609,19 +614,14 @@ impl std::fmt::Display for TaskStatus {
 }
 
 /// The priority level of a task.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub enum TaskPriority {
     Low,
+    #[default]
     Medium,
     High,
     Critical,
-}
-
-impl Default for TaskPriority {
-    fn default() -> Self {
-        Self::Medium
-    }
 }
 
 impl std::fmt::Display for TaskPriority {
@@ -636,7 +636,7 @@ impl std::fmt::Display for TaskPriority {
 }
 
 /// A task for tracking work items.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Task {
     pub id: Uuid,
     pub tenant_id: Uuid,
@@ -663,7 +663,7 @@ pub type TaskStore = EntityStore<Task>;
 // ── Audit Logs ────────────────────────────────────────────────────────────────
 
 /// An audit log entry tracking state-changing operations.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AuditLogEntry {
     pub id: Uuid,
     pub tenant_id: Uuid,
@@ -683,7 +683,7 @@ pub type AuditLogEntryStore = EntityStore<AuditLogEntry>;
 // ── Production Cells ──────────────────────────────────────────────────────────
 
 /// A production cell (manufacturing unit).
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ProductionCell {
     pub id: Uuid,
     pub tenant_id: Uuid,
@@ -708,10 +708,11 @@ pub type ProductionCellStore = EntityStore<ProductionCell>;
 // ── Saved Views ───────────────────────────────────────────────────────────────
 
 /// Visibility level for a saved view.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub enum ViewVisibility {
     /// Only the creator can see this view.
+    #[default]
     Private,
     /// All users in the same team can see this view.
     Team,
@@ -719,12 +720,6 @@ pub enum ViewVisibility {
     Dept,
     /// All users in the tenant can see this view.
     Org,
-}
-
-impl Default for ViewVisibility {
-    fn default() -> Self {
-        Self::Private
-    }
 }
 
 impl std::fmt::Display for ViewVisibility {
@@ -739,23 +734,18 @@ impl std::fmt::Display for ViewVisibility {
 }
 
 /// Sort direction for a sort column.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub enum SortDirection {
     /// Ascending order (A-Z, 0-9).
+    #[default]
     Asc,
     /// Descending order (Z-A, 9-0).
     Desc,
 }
 
-impl Default for SortDirection {
-    fn default() -> Self {
-        Self::Asc
-    }
-}
-
 /// A single sort column configuration.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SortConfig {
     /// The field name to sort by.
     pub field: String,
@@ -765,7 +755,7 @@ pub struct SortConfig {
 }
 
 /// A user-saved view configuration.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SavedView {
     pub id: Uuid,
     pub tenant_id: Uuid,
@@ -784,6 +774,12 @@ pub struct SavedView {
     /// Explicit list of user IDs this view is shared with.
     #[serde(default)]
     pub shared_with: Vec<Uuid>,
+    /// Number of times the view has been opened.
+    #[serde(default)]
+    pub view_count: u64,
+    /// Timestamp of the last time the view was opened.
+    #[serde(default)]
+    pub last_used_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -802,7 +798,7 @@ macro_rules! new_store {
 // ── Quoting Helper ──────────────────────────────────────────────────────────
 
 /// A work packet for an RFQ, representing a discipline's work assignment.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct WorkPacket {
     pub id: Uuid,
     pub rfq_id: Uuid,
@@ -819,7 +815,7 @@ pub struct WorkPacket {
 }
 
 /// An operation within a work packet.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct WorkPacketOperation {
     pub operation: String,
     pub estimated_hours: f64,
@@ -829,7 +825,7 @@ pub struct WorkPacketOperation {
 pub type WorkPacketStore = EntityStore<WorkPacket>;
 
 /// A cost build for a quote, capturing rolled-up cost calculations.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CostBuild {
     pub id: Uuid,
     pub quote_id: Uuid,
@@ -850,7 +846,7 @@ pub struct CostBuild {
 pub type CostBuildStore = EntityStore<CostBuild>;
 
 /// An NPI (New Product Introduction) conversion record.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct NpiConversion {
     pub id: Uuid,
     pub npi_project_id: Uuid,
@@ -871,7 +867,7 @@ pub(crate) use new_store;
 // ── KPI (Key Performance Indicators) ─────────────────────────────────────────
 
 /// Category of a KPI.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum KpiCategory {
     Quality,
     Production,
@@ -884,7 +880,7 @@ pub enum KpiCategory {
 }
 
 /// Direction indicating whether higher/lower/target values are better.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum KpiDirection {
     HigherIsBetter,
     LowerIsBetter,
@@ -892,7 +888,7 @@ pub enum KpiDirection {
 }
 
 /// A Key Performance Indicator definition.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct KpiDefinition {
     pub id: Uuid,
     pub tenant_id: Uuid,
@@ -913,7 +909,7 @@ pub struct KpiDefinition {
 }
 
 /// A recorded value for a KPI at a point in time.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct KpiValue {
     pub id: Uuid,
     pub kpi_id: Uuid,
@@ -933,7 +929,7 @@ pub type KpiValueStore = EntityStore<KpiValue>;
 // ── LSW (Layer Standard Work) ────────────────────────────────────────────────
 
 /// Frequency of an LSW standard.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum LswFrequency {
     Hourly,
     Daily,
@@ -942,7 +938,7 @@ pub enum LswFrequency {
 }
 
 /// A checklist item within an LSW standard.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct LswChecklistItem {
     pub id: Uuid,
     pub description: String,
@@ -951,7 +947,7 @@ pub struct LswChecklistItem {
 }
 
 /// An LSW standard (layer standard work definition).
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct LswStandard {
     pub id: Uuid,
     pub tenant_id: Uuid,
@@ -967,7 +963,7 @@ pub struct LswStandard {
 }
 
 /// Result of a single checklist item during an audit.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct LswAuditResult {
     pub item_id: Uuid,
     pub passed: bool,
@@ -976,7 +972,7 @@ pub struct LswAuditResult {
 }
 
 /// An LSW audit (checklist execution).
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct LswAudit {
     pub id: Uuid,
     pub standard_id: Uuid,
@@ -999,7 +995,7 @@ pub type LswAuditStore = EntityStore<LswAudit>;
 // ── Notification Triggers ────────────────────────────────────────────────────
 
 /// A notification channel.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum NotificationChannel {
     InApp,
     Email,
@@ -1008,14 +1004,14 @@ pub enum NotificationChannel {
 }
 
 /// Action to take when a notification trigger fires.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct NotificationAction {
     pub template: Option<String>,
     pub payload: Option<serde_json::Value>,
 }
 
 /// An event-driven notification trigger rule.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct NotificationTrigger {
     pub id: Uuid,
     pub tenant_id: Uuid,
@@ -1027,6 +1023,9 @@ pub struct NotificationTrigger {
     pub channels: Vec<NotificationChannel>,
     pub cooldown_minutes: Option<i32>,
     pub is_active: bool,
+    /// Roles whose users receive the notification when this trigger fires.
+    #[serde(default)]
+    pub target_roles: Vec<String>,
     pub last_triggered_at: Option<DateTime<Utc>>,
     pub created_by: Uuid,
     pub created_at: DateTime<Utc>,
@@ -1039,7 +1038,7 @@ pub type NotificationTriggerStore = EntityStore<NotificationTrigger>;
 // ── Standard Work ────────────────────────────────────────────────────────────
 
 /// Status of a standard work document.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum SwStatus {
     Draft,
     Published,
@@ -1047,7 +1046,7 @@ pub enum SwStatus {
 }
 
 /// A single work step in a standard work document.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct WorkStep {
     pub id: Uuid,
     pub step_number: i32,
@@ -1059,7 +1058,7 @@ pub struct WorkStep {
 }
 
 /// A quality check within a standard work document.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct QualityCheck {
     pub id: Uuid,
     pub description: String,
@@ -1069,7 +1068,7 @@ pub struct QualityCheck {
 }
 
 /// A standard work document.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct StandardWorkDocument {
     pub id: Uuid,
     pub tenant_id: Uuid,
@@ -1096,7 +1095,7 @@ pub struct StandardWorkDocument {
 }
 
 /// A frozen version of a standard work document.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct StandardWorkVersion {
     pub id: Uuid,
     pub document_id: Uuid,
@@ -1117,7 +1116,7 @@ pub type StandardWorkVersionStore = EntityStore<StandardWorkVersion>;
 // ── State Machines ───────────────────────────────────────────────────────────
 
 /// A state definition within a state machine.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct StateDefinition {
     pub name: String,
     pub label: String,
@@ -1126,7 +1125,7 @@ pub struct StateDefinition {
 }
 
 /// A transition definition between states.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TransitionDefinition {
     pub from_state: String,
     pub to_state: String,
@@ -1136,7 +1135,7 @@ pub struct TransitionDefinition {
 }
 
 /// A state machine definition.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct StateMachineDefinition {
     pub id: Uuid,
     pub tenant_id: Uuid,
@@ -1153,7 +1152,7 @@ pub struct StateMachineDefinition {
 }
 
 /// A running instance of a state machine.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct StateMachineInstance {
     pub id: Uuid,
     pub definition_id: Uuid,
@@ -1167,7 +1166,7 @@ pub struct StateMachineInstance {
 }
 
 /// A record of a state transition.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct StateTransitionRecord {
     pub from_state: String,
     pub to_state: String,
@@ -1197,7 +1196,7 @@ pub enum TrainingCategory {
 }
 
 /// Enrollment status for a training course.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum TrainingEnrollmentStatus {
     Enrolled,
     InProgress,
@@ -1208,7 +1207,7 @@ pub enum TrainingEnrollmentStatus {
 }
 
 /// A general training course.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TrainingCourse {
     pub id: Uuid,
     pub tenant_id: Uuid,
@@ -1228,7 +1227,7 @@ pub struct TrainingCourse {
 }
 
 /// A user's enrollment in a training course.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TrainingEnrollment {
     pub id: Uuid,
     pub course_id: Uuid,

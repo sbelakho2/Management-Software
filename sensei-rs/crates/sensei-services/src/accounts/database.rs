@@ -26,13 +26,23 @@ impl DatabaseAccountsService {
     }
 }
 
-/// Convert a database [`AccountModel`] into a domain [`Account`].
-fn account_model_to_domain(m: AccountModel) -> Account {
+/// Database row for an account, including the `tax_id` column added by
+/// migration 027 (the shared [`AccountModel`] does not carry it).
+#[derive(Debug, Clone, sqlx::FromRow)]
+struct AccountRow {
+    #[sqlx(flatten)]
+    model: AccountModel,
+    tax_id: Option<String>,
+}
+
+/// Convert a database row into a domain [`Account`].
+fn account_row_to_domain(r: AccountRow) -> Account {
+    let m = r.model;
     Account {
         id: m.id,
         tenant_id: m.tenant_id,
         name: m.name,
-        tax_id: None,
+        tax_id: r.tax_id,
         email: m.email,
         phone: m.phone,
         address_line1: m.address_line1,
@@ -49,48 +59,20 @@ fn account_model_to_domain(m: AccountModel) -> Account {
     }
 }
 
-/// Convert a domain [`Account`] into a database [`AccountModel`].
-#[allow(dead_code)]
-fn account_to_model(a: Account) -> AccountModel {
-    AccountModel {
-        id: a.id,
-        tenant_id: a.tenant_id,
-        name: a.name,
-        account_type: a.account_type,
-        status: if a.is_active { "active".to_string() } else { "inactive".to_string() },
-        tier: None,
-        industry: None,
-        website: None,
-        phone: a.phone,
-        email: a.email,
-        address_line1: a.address_line1,
-        address_line2: a.address_line2,
-        city: a.city,
-        state: a.state,
-        postal_code: a.postal_code,
-        country: a.country,
-        annual_revenue: None,
-        parent_id: None,
-        notes: a.notes,
-        created_at: a.created_at,
-        updated_at: a.updated_at,
-    }
-}
-
 #[async_trait]
 impl AccountsService for DatabaseAccountsService {
     async fn create_account(&self, tenant_id: TenantId, account: Account) -> Result<Account> {
         let now = Utc::now();
 
-        let model = sqlx::query_as::<_, AccountModel>(
+        let model = sqlx::query_as::<_, AccountRow>(
             r#"
             INSERT INTO accounts (id, tenant_id, name, account_type, status, phone, email,
                                   address_line1, address_line2, city, state, postal_code,
-                                  country, notes, created_at, updated_at)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+                                  country, tax_id, notes, created_at, updated_at)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
             RETURNING id, tenant_id, name, account_type, status, tier, industry, website,
                       phone, email, address_line1, address_line2, city, state, postal_code,
-                      country, annual_revenue, parent_id, notes, created_at, updated_at
+                      country, annual_revenue, parent_id, tax_id, notes, created_at, updated_at
             "#,
         )
         .bind(account.id)
@@ -106,6 +88,7 @@ impl AccountsService for DatabaseAccountsService {
         .bind(&account.state)
         .bind(&account.postal_code)
         .bind(&account.country)
+        .bind(&account.tax_id)
         .bind(&account.notes)
         .bind(now)
         .bind(now)
@@ -113,15 +96,15 @@ impl AccountsService for DatabaseAccountsService {
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to create account: {e}")))?;
 
-        Ok(account_model_to_domain(model))
+        Ok(account_row_to_domain(model))
     }
 
     async fn get_account(&self, tenant_id: TenantId, id: EntityId) -> Result<Account> {
-        let model = sqlx::query_as::<_, AccountModel>(
+        let model = sqlx::query_as::<_, AccountRow>(
             r#"
             SELECT id, tenant_id, name, account_type, status, tier, industry, website,
                    phone, email, address_line1, address_line2, city, state, postal_code,
-                   country, annual_revenue, parent_id, notes, created_at, updated_at
+                   country, annual_revenue, parent_id, tax_id, notes, created_at, updated_at
             FROM accounts
             WHERE id = $1 AND tenant_id = $2
             "#,
@@ -133,7 +116,7 @@ impl AccountsService for DatabaseAccountsService {
         .map_err(|e| SenseiError::Database(format!("Failed to get account: {e}")))?
         .ok_or_else(|| SenseiError::NotFound(format!("Account {id} not found")))?;
 
-        Ok(account_model_to_domain(model))
+        Ok(account_row_to_domain(model))
     }
 
     async fn list_accounts(
@@ -210,7 +193,7 @@ impl AccountsService for DatabaseAccountsService {
                 r#"
                 SELECT id, tenant_id, name, account_type, status, tier, industry, website,
                        phone, email, address_line1, address_line2, city, state, postal_code,
-                       country, annual_revenue, parent_id, notes, created_at, updated_at
+                       country, annual_revenue, parent_id, tax_id, notes, created_at, updated_at
                 FROM accounts
                 WHERE tenant_id = $1 AND account_type = $2 AND status = $3
                 ORDER BY created_at DESC
@@ -221,7 +204,7 @@ impl AccountsService for DatabaseAccountsService {
                 r#"
                 SELECT id, tenant_id, name, account_type, status, tier, industry, website,
                        phone, email, address_line1, address_line2, city, state, postal_code,
-                       country, annual_revenue, parent_id, notes, created_at, updated_at
+                       country, annual_revenue, parent_id, tax_id, notes, created_at, updated_at
                 FROM accounts
                 WHERE tenant_id = $1 AND account_type = $2
                 ORDER BY created_at DESC
@@ -232,7 +215,7 @@ impl AccountsService for DatabaseAccountsService {
                 r#"
                 SELECT id, tenant_id, name, account_type, status, tier, industry, website,
                        phone, email, address_line1, address_line2, city, state, postal_code,
-                       country, annual_revenue, parent_id, notes, created_at, updated_at
+                       country, annual_revenue, parent_id, tax_id, notes, created_at, updated_at
                 FROM accounts
                 WHERE tenant_id = $1 AND status = $2
                 ORDER BY created_at DESC
@@ -243,7 +226,7 @@ impl AccountsService for DatabaseAccountsService {
                 r#"
                 SELECT id, tenant_id, name, account_type, status, tier, industry, website,
                        phone, email, address_line1, address_line2, city, state, postal_code,
-                       country, annual_revenue, parent_id, notes, created_at, updated_at
+                       country, annual_revenue, parent_id, tax_id, notes, created_at, updated_at
                 FROM accounts
                 WHERE tenant_id = $1
                 ORDER BY created_at DESC
@@ -252,7 +235,7 @@ impl AccountsService for DatabaseAccountsService {
             }
         };
 
-        let models: Vec<AccountModel> = match (use_type_filter, use_active_filter) {
+        let models: Vec<AccountRow> = match (use_type_filter, use_active_filter) {
             (true, true) => {
                 sqlx::query_as(data_sql)
                     .bind(tenant_id)
@@ -292,7 +275,7 @@ impl AccountsService for DatabaseAccountsService {
         }
         .map_err(|e| SenseiError::Database(format!("Failed to list accounts: {e}")))?;
 
-        let data = models.into_iter().map(account_model_to_domain).collect();
+        let data = models.into_iter().map(account_row_to_domain).collect();
 
         Ok(PaginatedResponse {
             data,
@@ -312,16 +295,16 @@ impl AccountsService for DatabaseAccountsService {
         let now = Utc::now();
         let status_str = if account.is_active { "active" } else { "inactive" };
 
-        let model = sqlx::query_as::<_, AccountModel>(
+        let model = sqlx::query_as::<_, AccountRow>(
             r#"
             UPDATE accounts
             SET name = $3, account_type = $4, status = $5, phone = $6, email = $7,
                 address_line1 = $8, address_line2 = $9, city = $10, state = $11,
-                postal_code = $12, country = $13, notes = $14, updated_at = $15
+                postal_code = $12, country = $13, tax_id = $14, notes = $15, updated_at = $16
             WHERE id = $1 AND tenant_id = $2
             RETURNING id, tenant_id, name, account_type, status, tier, industry, website,
                       phone, email, address_line1, address_line2, city, state, postal_code,
-                      country, annual_revenue, parent_id, notes, created_at, updated_at
+                      country, annual_revenue, parent_id, tax_id, notes, created_at, updated_at
             "#,
         )
         .bind(id)
@@ -337,6 +320,7 @@ impl AccountsService for DatabaseAccountsService {
         .bind(&account.state)
         .bind(&account.postal_code)
         .bind(&account.country)
+        .bind(&account.tax_id)
         .bind(&account.notes)
         .bind(now)
         .fetch_optional(&self.pool)
@@ -345,11 +329,11 @@ impl AccountsService for DatabaseAccountsService {
         .ok_or_else(|| SenseiError::NotFound(format!("Account {id} not found")))?;
 
         // Verify tenant ownership.
-        if model.tenant_id != tenant_id {
+        if model.model.tenant_id != tenant_id {
             return Err(SenseiError::Forbidden("Cross-tenant access denied".to_string()));
         }
 
-        Ok(account_model_to_domain(model))
+        Ok(account_row_to_domain(model))
     }
 
     async fn delete_account(&self, tenant_id: TenantId, id: EntityId) -> Result<()> {

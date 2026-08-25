@@ -34,8 +34,11 @@ pub type EmailAddress = String;
 pub type Url = String;
 
 /// A monetary amount represented as a 64-bit float.
-/// In production, this should be replaced with a decimal type
-/// or stored as integer cents to avoid floating-point precision issues.
+///
+/// Kept for backward compatibility with existing API contracts.
+/// New code should prefer [`crate::domain::value_objects::Money`],
+/// which stores amounts as integer cents to avoid floating-point
+/// precision issues and rejects non-finite values.
 pub type Amount = f64;
 
 /// A percentage value (0.0 to 100.0).

@@ -29,6 +29,46 @@ pub struct ListAttachmentsParams {
     pub per_page: Option<usize>,
 }
 
+/// Sanitize a file name for storage: keep only `[A-Za-z0-9._-]`, replace
+/// every other character with `_`, and cap the length at 200 characters.
+fn sanitize_file_name(raw: &str) -> String {
+    let cleaned: String = raw
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-') {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    let mut name = cleaned.trim_matches('.').to_string();
+    if name.is_empty() {
+        name = "unnamed".to_string();
+    }
+    name.chars().take(200).collect()
+}
+
+/// Slugify an entity type for safe path construction (lowercase
+/// alphanumerics, `-`, `_`; anything else becomes `_`).
+fn slugify_entity_type(raw: &str) -> String {
+    let slug: String = raw
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || matches!(c, '-' | '_') {
+                c.to_ascii_lowercase()
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    if slug.is_empty() {
+        "generic".to_string()
+    } else {
+        slug.chars().take(100).collect()
+    }
+}
+
 // ── Handlers ─────────────────────────────────────────────────────────────────
 
 /// Upload a file attachment.
@@ -97,6 +137,24 @@ pub async fn upload_attachment(
     if entity_type.is_empty() {
         return Err(SenseiError::Validation("entity_type is required".to_string()));
     }
+
+    // Enforce the per-file size limit from the request body limit config so
+    // an individual file cannot exceed what the API accepts overall.
+    let body_limit = state.config.api.body_limit;
+    if file_data.len() > body_limit {
+        return Err(SenseiError::Validation(format!(
+            "File size {} bytes exceeds the maximum allowed size of {} bytes",
+            file_data.len(),
+            body_limit
+        )));
+    }
+
+    // Sanitize both path components before building the storage path:
+    // filenames keep `[A-Za-z0-9._-]` (capped at 200 chars) and entity
+    // types become lowercase slugs, so malicious inputs cannot escape the
+    // tenant's storage directory.
+    let file_name = sanitize_file_name(&file_name);
+    let entity_type = slugify_entity_type(&entity_type);
 
     let now = Utc::now();
     // The storage service isolates by tenant_id, so the relative path only

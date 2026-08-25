@@ -21,6 +21,19 @@
 //!                     │  (JSONB per entity)  │
 //!                     └─────────────────────┘
 //! ```
+//!
+//! # Persistence model
+//!
+//! A write guard snapshots the store contents once at acquisition. When the
+//! guard is dropped (or [`StoreWriteGuard::persist`] is called), only the
+//! changed keys are written back:
+//!
+//! * **inserted/updated** keys are batched into a single upsert transaction,
+//! * **removed** keys are deleted in the same transaction.
+//!
+//! A per-store persist mutex serializes concurrent persistence (e.g. the
+//! asynchronous drop path racing an explicit `persist()`), so a slow
+//! fire-and-forget write can never reorder a newer write behind it.
 
 use serde::de::DeserializeOwned;
 use serde::Serialize;
@@ -28,9 +41,9 @@ use sqlx::{PgPool, Row};
 use std::collections::{HashMap, HashSet};
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use thiserror::Error;
-use tokio::sync::RwLock;
+use tokio::sync::{Mutex, RwLock};
 use uuid::Uuid;
 
 // ── Error types ─────────────────────────────────────────────────────────────
@@ -59,6 +72,25 @@ struct StoreInner<T> {
     pool: Option<PgPool>,
     entity_type: String,
     db_loaded: bool,
+    /// When the last DB load was attempted, so failed loads are retried at
+    /// most once per second instead of on every access.
+    last_db_load_attempt: Option<Instant>,
+    /// Serializes persistence operations (explicit `persist()` and the
+    /// asynchronous drop path) so only one persist runs at a time.
+    persist_lock: Arc<Mutex<()>>,
+}
+
+impl<T> StoreInner<T> {
+    fn new(entity_type: &str, pool: Option<PgPool>) -> Self {
+        Self {
+            data: HashMap::new(),
+            pool,
+            entity_type: entity_type.to_string(),
+            db_loaded: false,
+            last_db_load_attempt: None,
+            persist_lock: Arc::new(Mutex::new(())),
+        }
+    }
 }
 
 // ── EntityStore ────────────────────────────────────────────────────────────
@@ -73,7 +105,8 @@ struct StoreInner<T> {
 ///
 /// # Type Parameters
 /// * `T` — The entity type. Must implement `Serialize + DeserializeOwned +
-///   Clone + Send + Sync` for database persistence.
+///   Clone + PartialEq + Send + Sync` for database persistence and change
+///   detection.
 ///
 /// # Example
 ///
@@ -109,12 +142,7 @@ impl<T> EntityStore<T> {
     /// Create a new in-memory-only store for the given entity type.
     pub fn new(entity_type: &str) -> Self {
         Self {
-            inner: Arc::new(RwLock::new(StoreInner {
-                data: HashMap::new(),
-                pool: None,
-                entity_type: entity_type.to_string(),
-                db_loaded: false,
-            })),
+            inner: Arc::new(RwLock::new(StoreInner::new(entity_type, None))),
         }
     }
 
@@ -123,21 +151,19 @@ impl<T> EntityStore<T> {
     /// Data will be lazily loaded from the database on first access.
     pub fn with_pool(entity_type: &str, pool: PgPool) -> Self {
         Self {
-            inner: Arc::new(RwLock::new(StoreInner {
-                data: HashMap::new(),
-                pool: Some(pool),
-                entity_type: entity_type.to_string(),
-                db_loaded: false,
-            })),
+            inner: Arc::new(RwLock::new(StoreInner::new(entity_type, Some(pool)))),
         }
     }
 }
 
-impl<T: Serialize + DeserializeOwned + Clone + Send + Sync + 'static> EntityStore<T> {
+impl<T: Serialize + DeserializeOwned + Clone + PartialEq + Send + Sync + 'static>
+    EntityStore<T>
+{
     /// Acquire a read guard.
     ///
     /// On first access when a pool is configured, data is loaded from the
-    /// database before returning the guard.
+    /// database before returning the guard. A failed load is retried on the
+    /// next access, but at most once per second (rate-limited retries).
     pub async fn read(&self) -> StoreReadGuard<'_, T> {
         // Fast path: already loaded or no pool
         {
@@ -162,8 +188,9 @@ impl<T: Serialize + DeserializeOwned + Clone + Send + Sync + 'static> EntityStor
     /// Acquire a write guard.
     ///
     /// On first access when a pool is configured, data is loaded from the
-    /// database before returning the guard. Changes are persisted to the
-    /// database when the guard is dropped.
+    /// database before returning the guard. The guard snapshots the current
+    /// contents; changes are persisted to the database (as a diff) when the
+    /// guard is dropped.
     pub async fn write(&self) -> StoreWriteGuard<'_, T> {
         // Ensure data is loaded from DB if needed, then release the lock
         {
@@ -173,12 +200,15 @@ impl<T: Serialize + DeserializeOwned + Clone + Send + Sync + 'static> EntityStor
             }
         }
 
-        // Re-acquire the write lock and record original keys for change tracking
+        // Re-acquire the write lock and snapshot the current state for
+        // change tracking.
         let inner = self.inner.write().await;
-        let original_keys: HashSet<Uuid> = inner.data.keys().copied().collect();
+        let original_values = inner.data.clone();
         StoreWriteGuard {
             inner,
-            original_keys,
+            original_values,
+            dirty: HashSet::new(),
+            removed: HashSet::new(),
         }
     }
 }
@@ -205,18 +235,25 @@ impl<T> Deref for StoreReadGuard<'_, T> {
 
 /// Write guard that dereferences to `HashMap<Uuid, T>`.
 ///
-/// Obtained from [`EntityStore::write()`]. When dropped, changes are
+/// Obtained from [`EntityStore::write()`]. When dropped, the changed keys
+/// (inserted/updated/removed since the guard was acquired) are
 /// asynchronously persisted to the database (if a pool is configured).
-///
-/// The guard tracks which keys existed when it was created. On drop, it:
-/// 1. Upserts all current entries to the `entity_store` table.
-/// 2. Deletes entries that were removed during the write lock.
-pub struct StoreWriteGuard<'a, T: Serialize + DeserializeOwned + Clone + Send + Sync + 'static> {
+pub struct StoreWriteGuard<
+    'a,
+    T: Serialize + DeserializeOwned + Clone + PartialEq + Send + Sync + 'static,
+> {
     inner: tokio::sync::RwLockWriteGuard<'a, StoreInner<T>>,
-    original_keys: HashSet<Uuid>,
+    /// Snapshot of the store contents when the guard was acquired. Used to
+    /// detect inserted/updated/removed keys without cloning the whole map
+    /// at persist time.
+    original_values: HashMap<Uuid, T>,
+    /// Keys that were inserted or updated since the guard was acquired.
+    dirty: HashSet<Uuid>,
+    /// Keys that were removed since the guard was acquired.
+    removed: HashSet<Uuid>,
 }
 
-impl<T: Serialize + DeserializeOwned + Clone + Send + Sync + 'static> Deref
+impl<T: Serialize + DeserializeOwned + Clone + PartialEq + Send + Sync + 'static> Deref
     for StoreWriteGuard<'_, T>
 {
     type Target = HashMap<Uuid, T>;
@@ -226,7 +263,7 @@ impl<T: Serialize + DeserializeOwned + Clone + Send + Sync + 'static> Deref
     }
 }
 
-impl<T: Serialize + DeserializeOwned + Clone + Send + Sync + 'static> DerefMut
+impl<T: Serialize + DeserializeOwned + Clone + PartialEq + Send + Sync + 'static> DerefMut
     for StoreWriteGuard<'_, T>
 {
     fn deref_mut(&mut self) -> &mut Self::Target {
@@ -236,14 +273,18 @@ impl<T: Serialize + DeserializeOwned + Clone + Send + Sync + 'static> DerefMut
 
 // ── Explicit persistence ────────────────────────────────────────────────────
 
-impl<T: Serialize + DeserializeOwned + Clone + Send + Sync + 'static> StoreWriteGuard<'_, T> {
-    /// Explicitly persist all changes to the database.
+impl<T: Serialize + DeserializeOwned + Clone + PartialEq + Send + Sync + 'static>
+    StoreWriteGuard<'_, T>
+{
+    /// Explicitly persist the pending changes to the database.
     ///
-    /// Returns `StoreError` on failure. On transient failures (DB connection),
-    /// a single retry with a 100ms delay is attempted before giving up.
+    /// Only the dirty (inserted/updated) and removed keys are written, in a
+    /// single transaction. On transient failures (DB connection), a single
+    /// retry with a 100ms delay is attempted before giving up.
     ///
-    /// After a successful persist, the dirty flag is cleared so that the
-    /// `Drop` impl will not re-persist the same data.
+    /// After a successful persist, the dirty/removed sets are cleared and
+    /// the snapshot is refreshed so that the `Drop` impl will not
+    /// re-persist the same data.
     ///
     /// # Errors
     ///
@@ -251,25 +292,30 @@ impl<T: Serialize + DeserializeOwned + Clone + Send + Sync + 'static> StoreWrite
     /// Returns [`StoreError::Database`] if the SQL operation fails after retry.
     /// Returns [`StoreError::Serialization`] if the entity cannot be serialized.
     pub async fn persist(&mut self) -> Result<(), StoreError> {
-        let pool = self.inner.pool.clone()
+        let pool = self
+            .inner
+            .pool
+            .clone()
             .ok_or(StoreError::NotConnected)?;
 
+        self.compute_diff();
+
+        if self.dirty.is_empty() && self.removed.is_empty() {
+            return Ok(());
+        }
+
         let entity_type = self.inner.entity_type.clone();
-        let current_data: HashMap<Uuid, T> = self.inner.data.clone();
-        let current_keys: HashSet<Uuid> = current_data.keys().copied().collect();
-        let removed_ids: Vec<Uuid> = self
-            .original_keys
-            .iter()
-            .filter(|k| !current_keys.contains(k))
-            .copied()
-            .collect();
+        let persist_lock = Arc::clone(&self.inner.persist_lock);
+        let (dirty_values, removed_ids) = self.collect_changes()?;
 
         // Attempt persist with one retry on transient failure
-        let result = persist_changes_inner(&pool, &entity_type, &current_data, &removed_ids).await;
+        let result = {
+            let _guard = persist_lock.lock().await;
+            persist_changes_inner(&pool, &entity_type, &dirty_values, &removed_ids).await
+        };
         match result {
             Ok(()) => {
-                // Update original_keys to reflect current state so Drop is a no-op
-                self.original_keys = current_keys;
+                self.after_persist_success();
                 Ok(())
             }
             Err(e) => {
@@ -280,24 +326,68 @@ impl<T: Serialize + DeserializeOwned + Clone + Send + Sync + 'static> StoreWrite
                 );
                 tokio::time::sleep(Duration::from_millis(100)).await;
                 // Use ? to convert sqlx::Error -> StoreError via #[from]
-                persist_changes_inner(&pool, &entity_type, &current_data, &removed_ids).await?;
-                self.original_keys = current_keys;
+                let _guard = persist_lock.lock().await;
+                persist_changes_inner(&pool, &entity_type, &dirty_values, &removed_ids).await?;
+                self.after_persist_success();
                 Ok(())
             }
         }
+    }
+
+    /// Recompute the dirty/removed sets by diffing the current data against
+    /// the snapshot taken at guard acquisition.
+    fn compute_diff(&mut self) {
+        self.dirty.clear();
+        self.removed.clear();
+        for (id, value) in self.inner.data.iter() {
+            match self.original_values.get(id) {
+                Some(original) if original == value => {}
+                _ => {
+                    // Inserted (not in snapshot) or updated (differs).
+                    self.dirty.insert(*id);
+                }
+            }
+        }
+        for id in self.original_values.keys() {
+            if !self.inner.data.contains_key(id) {
+                self.removed.insert(*id);
+            }
+        }
+    }
+
+    /// Serialize the dirty values and collect the removed ids.
+    fn collect_changes(&self) -> Result<(HashMap<Uuid, T>, Vec<Uuid>), StoreError> {
+        let mut dirty_values = HashMap::with_capacity(self.dirty.len());
+        for id in &self.dirty {
+            if let Some(value) = self.inner.data.get(id) {
+                dirty_values.insert(*id, value.clone());
+            }
+        }
+        let removed_ids: Vec<Uuid> = self.removed.iter().copied().collect();
+        Ok((dirty_values, removed_ids))
+    }
+
+    /// After a successful persist: refresh the snapshot and clear the
+    /// change sets so the `Drop` impl is a no-op.
+    fn after_persist_success(&mut self) {
+        self.original_values = self.inner.data.clone();
+        self.dirty.clear();
+        self.removed.clear();
     }
 }
 
 // ── Drop implementation (last-resort fallback) ──────────────────────────────
 
-impl<T: Serialize + DeserializeOwned + Clone + Send + Sync + 'static> Drop
+impl<T: Serialize + DeserializeOwned + Clone + PartialEq + Send + Sync + 'static> Drop
     for StoreWriteGuard<'_, T>
 {
     /// Last-resort persistence on drop.
     ///
     /// If [`persist()`](StoreWriteGuard::persist) was already called
-    /// successfully, `original_keys` will match `current_keys` and this is a
-    /// no-op. Otherwise, it spawns a fire-and-forget task with error logging.
+    /// successfully, the dirty/removed sets are empty and this is a no-op.
+    /// Otherwise, it spawns a fire-and-forget task that acquires the
+    /// per-store persist lock before writing, so a concurrent explicit
+    /// `persist()` can never be reordered behind this write.
     ///
     /// **Callers should prefer the explicit `persist()` method** and handle
     /// errors properly, rather than relying on `Drop`.
@@ -307,25 +397,29 @@ impl<T: Serialize + DeserializeOwned + Clone + Send + Sync + 'static> Drop
             None => return,
         };
 
-        let entity_type = self.inner.entity_type.clone();
-        let current_data: HashMap<Uuid, T> = self.inner.data.clone();
-        let current_keys: HashSet<Uuid> = current_data.keys().copied().collect();
-
-        // If persist() was already called, original_keys == current_keys
-        // so removed_ids will be empty — skip the spawn entirely.
-        if self.original_keys == current_keys {
+        self.compute_diff();
+        if self.dirty.is_empty() && self.removed.is_empty() {
             return;
         }
 
-        let removed_ids: Vec<Uuid> = self
-            .original_keys
-            .iter()
-            .filter(|k| !current_keys.contains(k))
-            .copied()
-            .collect();
+        let entity_type = self.inner.entity_type.clone();
+        let persist_lock = Arc::clone(&self.inner.persist_lock);
+        let (dirty_values, removed_ids) = match self.collect_changes() {
+            Ok(changes) => changes,
+            Err(e) => {
+                tracing::error!(
+                    entity_type = %entity_type,
+                    error = %e,
+                    "CRITICAL: Failed to prepare data for persistence on StoreWriteGuard drop. Data may be lost!"
+                );
+                return;
+            }
+        };
 
         tokio::spawn(async move {
-            if let Err(e) = persist_changes_inner(&pool, &entity_type, &current_data, &removed_ids).await
+            let _guard = persist_lock.lock().await;
+            if let Err(e) =
+                persist_changes_inner(&pool, &entity_type, &dirty_values, &removed_ids).await
             {
                 tracing::error!(
                     entity_type = %entity_type,
@@ -343,19 +437,28 @@ impl<T: Serialize + DeserializeOwned + Clone + Send + Sync + 'static> Drop
 
 /// Load all entities of a given type from the database into the in-memory map.
 ///
-/// On failure, logs a warning and leaves the map empty (graceful fallback).
+/// `db_loaded` is set to `true` **only on success**, so a failed load is
+/// retried on the next access (rate-limited to at most one attempt per
+/// second). On failure, logs a warning and leaves the map empty.
 async fn load_from_db<T: DeserializeOwned + Clone>(inner: &mut StoreInner<T>) {
     let pool = match inner.pool.as_ref() {
-        Some(p) => p,
+        Some(p) => p.clone(),
         None => return,
     };
 
-    match sqlx::query(
-        "SELECT id, data FROM entity_store WHERE entity_type = $1",
-    )
-    .bind(&inner.entity_type)
-    .fetch_all(pool)
-    .await
+    // Rate-limit retries of failed loads to at most once per second.
+    let now = Instant::now();
+    if let Some(last) = inner.last_db_load_attempt {
+        if now.duration_since(last) < Duration::from_secs(1) {
+            return;
+        }
+    }
+    inner.last_db_load_attempt = Some(now);
+
+    match sqlx::query("SELECT id, data FROM entity_store WHERE entity_type = $1")
+        .bind(&inner.entity_type)
+        .fetch_all(&pool)
+        .await
     {
         Ok(rows) => {
             for row in rows {
@@ -398,63 +501,71 @@ async fn load_from_db<T: DeserializeOwned + Clone>(inner: &mut StoreInner<T>) {
                 count = inner.data.len(),
                 "Loaded entities from database"
             );
+            inner.db_loaded = true;
         }
         Err(e) => {
+            // Keep db_loaded = false so the next read retries (rate-limited
+            // to once per second by last_db_load_attempt).
             tracing::warn!(
                 entity_type = %inner.entity_type,
                 "Failed to load from database (table may not exist yet): {e}"
             );
         }
     }
-    inner.db_loaded = true;
 }
 
 /// Persist changes to the database (inner helper, no retry).
 ///
-/// - Upserts all current entries.
-/// - Deletes entries that were removed.
+/// Runs a **single transaction** containing:
+/// - one batched upsert of all dirty entries,
+/// - one batched delete of all removed entries.
 async fn persist_changes_inner<T: Serialize>(
     pool: &PgPool,
     entity_type: &str,
     data: &HashMap<Uuid, T>,
     removed_ids: &[Uuid],
 ) -> Result<(), sqlx::Error> {
-    // Upsert all current entries
-    for (id, entity) in data {
-        let json = serde_json::to_value(entity)
-            .map_err(|e| {
-                tracing::error!(
-                    entity_type = %entity_type,
-                    id = %id,
-                    "Failed to serialize entity: {e}"
-                );
-                sqlx::Error::Protocol(format!("Serialization error: {e}"))
-            })?;
+    let mut tx = pool.begin().await?;
+
+        if !data.is_empty() {
+            let mut ids = Vec::with_capacity(data.len());
+            let mut values = Vec::with_capacity(data.len());
+            for (id, entity) in data {
+                let json = serde_json::to_value(entity).map_err(|e| {
+                    tracing::error!(
+                        entity_type = %entity_type,
+                        id = %id,
+                        "Failed to serialize entity: {e}"
+                    );
+                    sqlx::Error::Protocol(format!("Serialization error: {e}"))
+                })?;
+                ids.push(*id);
+                values.push(sqlx::types::Json(json));
+            }
 
         sqlx::query(
             r#"INSERT INTO entity_store (entity_type, id, data)
-               VALUES ($1, $2, $3)
+               SELECT $1, u.id, u.data
+               FROM UNNEST($2::uuid[], $3::jsonb[]) AS u(id, data)
                ON CONFLICT (entity_type, id)
-               DO UPDATE SET data = $3, updated_at = NOW()"#,
+               DO UPDATE SET data = EXCLUDED.data, updated_at = NOW()"#,
         )
         .bind(entity_type)
-        .bind(id)
-        .bind(&json)
-        .execute(pool)
+        .bind(&ids)
+        .bind(&values)
+        .execute(&mut *tx)
         .await?;
     }
 
-    // Delete removed entries
-    for id in removed_ids {
-        sqlx::query(
-            "DELETE FROM entity_store WHERE entity_type = $1 AND id = $2",
-        )
-        .bind(entity_type)
-        .bind(id)
-        .execute(pool)
-        .await?;
+    if !removed_ids.is_empty() {
+        sqlx::query("DELETE FROM entity_store WHERE entity_type = $1 AND id = ANY($2)")
+            .bind(entity_type)
+            .bind(removed_ids)
+            .execute(&mut *tx)
+            .await?;
     }
 
+    tx.commit().await?;
     Ok(())
 }
 
@@ -462,14 +573,20 @@ async fn persist_changes_inner<T: Serialize>(
 // DB-level pagination & filtering (bypasses in-memory cache)
 // ═══════════════════════════════════════════════════════════════════════════
 
-impl<T: Serialize + DeserializeOwned + Clone + Send + Sync + 'static> EntityStore<T> {
+impl<T: Serialize + DeserializeOwned + Clone + PartialEq + Send + Sync + 'static>
+    EntityStore<T>
+{
     /// Fetch a page of entities directly from the database, bypassing the
     /// in-memory cache.
     ///
     /// Returns a tuple of `(records, total_count)` where `total_count` is the
-    /// number of matching entities **without** pagination applied.
+    /// number of matching entities **without** pagination applied. Records
+    /// are ordered by `created_at DESC, id` (migration 021 added the
+    /// `created_at` column).
     ///
-    /// When no pool is configured, falls back to in-memory filtering.
+    /// When no pool is configured, falls back to in-memory filtering with
+    /// the same ordering (parsing `created_at` from the serialized entity
+    /// when present, otherwise falling back to the id).
     pub async fn list_paginated(
         &self,
         page: usize,
@@ -480,22 +597,31 @@ impl<T: Serialize + DeserializeOwned + Clone + Send + Sync + 'static> EntityStor
         let pool = match inner.pool.as_ref() {
             Some(p) => p,
             None => {
-                // In-memory fallback: apply pagination to the full map
+                // In-memory fallback: apply pagination to the full map,
+                // ordered by created_at DESC, id (mirroring the DB order).
                 drop(inner);
                 let guard = self.read().await;
                 let total = guard.len() as u64;
-                let items: Vec<(Uuid, T)> = guard
+                let mut items: Vec<(Uuid, T)> = guard
                     .iter()
-                    .skip((page.saturating_sub(1)) * per_page)
-                    .take(per_page)
                     .map(|(k, v)| (*k, v.clone()))
+                    .collect();
+                items.sort_by(|(id_a, a), (id_b, b)| {
+                    let ts_a = created_at_timestamp(a);
+                    let ts_b = created_at_timestamp(b);
+                    ts_b.cmp(&ts_a).then_with(|| id_a.cmp(id_b))
+                });
+                let items = items
+                    .into_iter()
+                    .skip(page.saturating_sub(1).saturating_mul(per_page))
+                    .take(per_page)
                     .collect();
                 return Ok((items, total));
             }
         };
 
         let entity_type = &inner.entity_type;
-        let offset = ((page.saturating_sub(1)) * per_page) as i64;
+        let offset = (page.saturating_sub(1).saturating_mul(per_page)) as i64;
         let limit = per_page as i64;
 
         // Get total count
@@ -506,9 +632,10 @@ impl<T: Serialize + DeserializeOwned + Clone + Send + Sync + 'static> EntityStor
         .fetch_one(pool)
         .await?;
 
-        // Get page of data
+        // Get page of data, newest first.
         let rows = sqlx::query(
-            "SELECT id, data FROM entity_store WHERE entity_type = $1 ORDER BY id LIMIT $2 OFFSET $3",
+            "SELECT id, data FROM entity_store WHERE entity_type = $1 \
+             ORDER BY created_at DESC, id LIMIT $2 OFFSET $3",
         )
         .bind(entity_type)
         .bind(limit)
@@ -549,7 +676,8 @@ impl<T: Serialize + DeserializeOwned + Clone + Send + Sync + 'static> EntityStor
                 let items: Vec<(Uuid, T)> = guard
                     .iter()
                     .filter(|(_, v)| {
-                        serde_json::to_value(v).ok()
+                        serde_json::to_value(v)
+                            .ok()
                             .and_then(|val| val.get(field).cloned())
                             .as_ref()
                             == Some(value)
@@ -562,7 +690,7 @@ impl<T: Serialize + DeserializeOwned + Clone + Send + Sync + 'static> EntityStor
 
         let entity_type = &inner.entity_type;
 
-        // Use JSONB containment: data @> '{"field": value}'
+        // Use JSONB containment: data @> '{"field": value}' (GIN index).
         let filter = serde_json::json!({ field: value });
 
         let rows = sqlx::query(
@@ -584,5 +712,174 @@ impl<T: Serialize + DeserializeOwned + Clone + Send + Sync + 'static> EntityStor
         }
 
         Ok(items)
+    }
+}
+
+/// Extract the `created_at` timestamp (as Unix seconds) from a serialized
+/// entity, used to order in-memory pagination like the DB path.
+fn created_at_timestamp<T: Serialize>(entity: &T) -> i64 {
+    serde_json::to_value(entity)
+        .ok()
+        .and_then(|v| v.get("created_at").cloned())
+        .and_then(|v| v.as_str().map(str::to_string))
+        .and_then(|s| chrono::DateTime::parse_from_rfc3339(&s).ok())
+        .map(|dt| dt.timestamp())
+        .unwrap_or(0)
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Tests
+// ═══════════════════════════════════════════════════════════════════════════
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde::Deserialize;
+
+    #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+    struct TestEntity {
+        name: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        created_at: Option<String>,
+    }
+
+    fn entity(name: &str) -> TestEntity {
+        TestEntity {
+            name: name.to_string(),
+            created_at: None,
+        }
+    }
+
+    /// In-memory mode: persist() reports NotConnected, but the dirty-diff
+    /// computation must track exactly the inserted/updated and removed keys.
+    #[tokio::test]
+    async fn write_guard_tracks_only_dirty_keys() {
+        let store: EntityStore<TestEntity> = EntityStore::new("test_entity");
+        let id_a = Uuid::new_v4();
+        let id_b = Uuid::new_v4();
+        let id_c = Uuid::new_v4();
+
+        // Seed the store with three entities.
+        {
+            let mut guard = store.write().await;
+            guard.insert(id_a, entity("a"));
+            guard.insert(id_b, entity("b"));
+            guard.insert(id_c, entity("c"));
+        }
+
+        {
+            let mut guard = store.write().await;
+            // `a` stays untouched — must NOT appear in the diff.
+            // `b` is updated in place.
+            guard.get_mut(&id_b).unwrap().name = "b-updated".to_string();
+            // `c` is removed.
+            guard.remove(&id_c);
+            // `d` is inserted.
+            let id_d = Uuid::new_v4();
+            guard.insert(id_d, entity("d"));
+
+            guard.compute_diff();
+            assert_eq!(guard.dirty.len(), 2, "only b (updated) and d (inserted) are dirty");
+            assert!(guard.dirty.contains(&id_b));
+            assert!(guard.dirty.contains(&id_d));
+            assert!(!guard.dirty.contains(&id_a), "untouched key must not be persisted");
+            assert_eq!(guard.removed.len(), 1, "only c was removed");
+            assert!(guard.removed.contains(&id_c));
+
+            // No pool configured → persist() fails cleanly and leaves the
+            // diff intact for the drop path.
+            assert!(matches!(
+                guard.persist().await,
+                Err(StoreError::NotConnected)
+            ));
+        }
+    }
+
+    /// After a successful persist the change sets must be cleared so the
+    /// drop path is a no-op. (Exercised via the diff helpers; SQL execution
+    /// requires a live pool.)
+    #[tokio::test]
+    async fn after_persist_success_clears_changes() {
+        let store: EntityStore<TestEntity> = EntityStore::new("test_entity");
+        let id = Uuid::new_v4();
+        {
+            let mut guard = store.write().await;
+            guard.insert(id, entity("x"));
+            guard.compute_diff();
+            assert!(!guard.dirty.is_empty());
+            guard.after_persist_success();
+            assert!(guard.dirty.is_empty());
+            assert!(guard.removed.is_empty());
+        }
+    }
+
+    #[tokio::test]
+    async fn pagination_sorts_newest_first_in_memory() {
+        let store: EntityStore<TestEntity> = EntityStore::new("test_entity");
+        let now = chrono::Utc::now();
+
+        let make = |offset_secs: i64, name: &str| TestEntity {
+            name: name.to_string(),
+            created_at: Some(
+                (now - chrono::Duration::seconds(offset_secs)).to_rfc3339(),
+            ),
+        };
+
+        let id_old = Uuid::new_v4();
+        let id_new = Uuid::new_v4();
+        let id_no_ts = Uuid::new_v4();
+        {
+            let mut guard = store.write().await;
+            guard.insert(id_old, make(100, "old"));
+            guard.insert(id_new, make(10, "new"));
+            guard.insert(id_no_ts, entity("no-timestamp"));
+        }
+
+        let (items, total) = store.list_paginated(1, 10).await.unwrap();
+        assert_eq!(total, 3);
+        assert_eq!(items.len(), 3);
+        // Newest created_at first; entities without created_at sort last.
+        assert_eq!(items[0].0, id_new);
+        assert_eq!(items[1].0, id_old);
+        assert_eq!(items[2].0, id_no_ts);
+    }
+
+    #[tokio::test]
+    async fn pagination_clamps_page_and_per_page() {
+        let store: EntityStore<TestEntity> = EntityStore::new("test_entity");
+        {
+            let mut guard = store.write().await;
+            for i in 0..5 {
+                guard.insert(Uuid::new_v4(), entity(&format!("e{i}")));
+            }
+        }
+
+        // page 0 behaves like page 1.
+        let (items, total) = store.list_paginated(0, 2).await.unwrap();
+        assert_eq!(total, 5);
+        assert_eq!(items.len(), 2);
+
+        // Out-of-range page yields an empty page, not a panic.
+        let (items, _) = store.list_paginated(999, 2).await.unwrap();
+        assert!(items.is_empty());
+    }
+
+    #[tokio::test]
+    async fn list_by_field_filters_in_memory() {
+        let store: EntityStore<TestEntity> = EntityStore::new("test_entity");
+        let id_a = Uuid::new_v4();
+        let id_b = Uuid::new_v4();
+        {
+            let mut guard = store.write().await;
+            guard.insert(id_a, entity("alpha"));
+            guard.insert(id_b, entity("beta"));
+        }
+
+        let found = store
+            .list_by_field("name", &serde_json::json!("alpha"))
+            .await
+            .unwrap();
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].0, id_a);
     }
 }

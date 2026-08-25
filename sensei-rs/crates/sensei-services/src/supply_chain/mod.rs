@@ -51,6 +51,9 @@ pub struct RFQ {
 /// A single line item within an RFQ.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RFQItem {
+    /// Stable identity of the line item (assigned on creation).
+    #[serde(default)]
+    pub line_item_id: Option<Uuid>,
     pub product_id: Uuid,
     pub product_name: String,
     pub quantity: i64,
@@ -406,32 +409,61 @@ impl InMemorySupplyChainService {
         format!("{}:{}:{}", tenant_id, product_id, location)
     }
 
-    async fn ensure_inventory_item(
+    /// Deterministic location id derived from (tenant, location name).
+    ///
+    /// Location names have no dedicated id column in the in-memory store, so
+    /// events referencing locations use a stable v5 UUID derived from the
+    /// tenant and name. The same name always yields the same id.
+    fn location_id(tenant_id: Uuid, location: &str) -> Uuid {
+        use uuid::Uuid as U;
+        U::new_v5(&U::NAMESPACE_OID, format!("{tenant_id}:{location}").as_bytes())
+    }
+
+    /// Resolve the destination location for received stock: the product's
+    /// first existing inventory location, falling back to the warehouse
+    /// default location.
+    async fn resolve_stock_location(&self, tenant_id: Uuid, product_id: Uuid) -> String {
+        let inventory = self.inventory.read().await;
+        inventory
+            .values()
+            .filter(|i| i.tenant_id == tenant_id && i.product_id == product_id)
+            .map(|i| i.location.clone())
+            .next()
+            .unwrap_or_else(|| "default".to_string())
+    }
+
+    /// Upsert an inventory row for (tenant, product, location), applying a
+    /// signed quantity change and never leaving quantities negative.
+    async fn apply_inventory_delta(
         &self,
         tenant_id: Uuid,
         product_id: Uuid,
         product_name: &str,
         location: &str,
+        delta: i64,
     ) -> InventoryItem {
         let key = Self::inventory_key(tenant_id, product_id, location);
         let mut store = self.inventory.write().await;
-        if let Some(item) = store.get(&key) {
-            item.clone()
+        if let Some(existing) = store.get_mut(&key) {
+            existing.quantity_on_hand = (existing.quantity_on_hand + delta).max(0);
+            existing.quantity_available =
+                (existing.quantity_on_hand - existing.quantity_reserved).max(0);
+            existing.clone()
         } else {
             let item = InventoryItem {
                 id: Uuid::new_v4(),
                 tenant_id,
                 product_id,
                 product_name: product_name.to_string(),
-                quantity_on_hand: 0,
+                quantity_on_hand: delta.max(0),
                 quantity_reserved: 0,
-                quantity_available: 0,
+                quantity_available: delta.max(0),
                 location: location.to_string(),
                 lot_number: None,
                 reorder_point: 0,
                 reorder_quantity: 0,
             };
-            store.insert(key.clone(), item.clone());
+            store.insert(key, item.clone());
             item
         }
     }
@@ -772,7 +804,15 @@ impl SupplyChainService for InMemorySupplyChainService {
         product_id: Uuid,
         quantity_received: i64,
     ) -> Result<PurchaseOrder> {
-        // Extract product_name before releasing the PO lock, to avoid borrow issues
+        if quantity_received <= 0 {
+            return Err(SenseiError::Validation(
+                "Received quantity must be positive".to_string(),
+            ));
+        }
+
+        // Ordered critical section: PO lock first, then inventory. The PO
+        // lock is fully released before the inventory lock is taken so no
+        // lock-order inversion is possible with `receive_full_po`.
         let product_name = {
             let mut store = self.purchase_orders.write().await;
             let po = store
@@ -780,27 +820,33 @@ impl SupplyChainService for InMemorySupplyChainService {
                 .ok_or_else(|| SenseiError::NotFound(format!("Purchase order {po_id} not found")))?;
 
             // Find and update the matching line item
-            let mut line_found = false;
             let mut found_product_name = String::new();
             for item in &mut po.line_items {
                 if item.product_id == product_id {
+                    let remaining = item.quantity_ordered - item.quantity_received;
+                    if quantity_received > remaining {
+                        return Err(SenseiError::Validation(format!(
+                            "Receiving {quantity_received} units of product {product_id} \
+                             exceeds the remaining {remaining} units on PO {po_id}"
+                        )));
+                    }
                     item.quantity_received += quantity_received;
                     found_product_name = item.product_name.clone();
-                    line_found = true;
                     break;
                 }
             }
 
-            if !line_found {
+            if found_product_name.is_empty() {
                 return Err(SenseiError::NotFound(format!(
                     "Product {product_id} not found in purchase order {po_id}"
                 )));
             }
 
             // Update PO status based on receipt completeness
-            let all_received = po.line_items.iter().all(|item| {
-                item.quantity_received >= item.quantity_ordered
-            });
+            let all_received = po
+                .line_items
+                .iter()
+                .all(|item| item.quantity_received >= item.quantity_ordered);
             let any_received = po.line_items.iter().any(|item| item.quantity_received > 0);
 
             po.status = if all_received {
@@ -814,32 +860,25 @@ impl SupplyChainService for InMemorySupplyChainService {
             found_product_name
         }; // PO lock is released here
 
-        // Update inventory: add received quantity
-        let mut inv_store = self.inventory.write().await;
-        let key = Self::inventory_key(tenant_id, product_id, "default");
-        if let Some(inv) = inv_store.get_mut(&key) {
-            inv.quantity_on_hand += quantity_received;
-            inv.quantity_available = inv.quantity_on_hand - inv.quantity_reserved;
-        } else {
-            // Create inventory item if it doesn't exist
-            let inv_item = InventoryItem {
-                id: Uuid::new_v4(),
-                tenant_id,
-                product_id,
-                product_name,
-                quantity_on_hand: quantity_received,
-                quantity_reserved: 0,
-                quantity_available: quantity_received,
-                location: "default".to_string(),
-                lot_number: None,
-                reorder_point: 0,
-                reorder_quantity: 0,
-            };
-            inv_store.insert(key, inv_item);
-        }
-        drop(inv_store);
+        // Update inventory at the product's first known location (or the
+        // warehouse default). Receipts create stock, so the row is upserted.
+        let location = self.resolve_stock_location(tenant_id, product_id).await;
+        self.apply_inventory_delta(
+            tenant_id,
+            product_id,
+            &product_name,
+            &location,
+            quantity_received,
+        )
+        .await;
 
-        self.publish_event(GoodsReceiptCreatedEvent::new(tenant_id, Uuid::new_v4(), po_id, quantity_received as f64)).await;
+        self.publish_event(GoodsReceiptCreatedEvent::new(
+            tenant_id,
+            Uuid::new_v4(),
+            po_id,
+            quantity_received as f64,
+        ))
+        .await;
 
         // Re-acquire PO lock to return the updated PO
         let store = self.purchase_orders.read().await;
@@ -894,35 +933,15 @@ impl SupplyChainService for InMemorySupplyChainService {
         let key = Self::inventory_key(tenant_id, product_id, location);
         let mut store = self.inventory.write().await;
 
-        // Auto-create inventory item if it doesn't exist yet
-        if !store.contains_key(&key) {
-            let item = InventoryItem {
-                id: Uuid::new_v4(),
-                tenant_id,
-                product_id,
-                product_name: String::new(),
-                quantity_on_hand: 0,
-                quantity_reserved: 0,
-                quantity_available: 0,
-                location: location.to_string(),
-                lot_number: None,
-                reorder_point: 0,
-                reorder_quantity: 0,
-            };
-            store.insert(key.clone(), item);
-        }
-
-        let item = store.get_mut(&key).unwrap();
-        item.quantity_on_hand += quantity_change;
-        item.quantity_available = item.quantity_on_hand - item.quantity_reserved;
+        // Adjusting stock at a location that has no row is an error — never
+        // auto-create an inventory row for an arbitrary location name.
+        let item = store
+            .get_mut(&key)
+            .ok_or_else(|| SenseiError::NotFound(format!("Inventory for product {product_id} at location '{location}' not found")))?;
+        item.quantity_on_hand = (item.quantity_on_hand + quantity_change).max(0);
 
         // Ensure available doesn't go negative
-        if item.quantity_available < 0 {
-            item.quantity_available = 0;
-        }
-        if item.quantity_on_hand < 0 {
-            item.quantity_on_hand = 0;
-        }
+        item.quantity_available = (item.quantity_on_hand - item.quantity_reserved).max(0);
 
         Ok(item.clone())
     }
@@ -946,101 +965,74 @@ impl SupplyChainService for InMemorySupplyChainService {
         let from_location = stock_move.from_location.clone();
         let to_location = stock_move.to_location.clone();
 
-        // Update inventory based on move type
+        // Update inventory based on move type. Each branch acquires the
+        // inventory lock exactly once (no nested lock acquisition).
         match move_type.as_str() {
             "receipt" => {
                 // Add to destination location
-                let mut inv = self
-                    .ensure_inventory_item(tenant_id, product_id, &product_name, &to_location)
+                let _ = self
+                    .apply_inventory_delta(
+                        tenant_id,
+                        product_id,
+                        &product_name,
+                        &to_location,
+                        quantity,
+                    )
                     .await;
-                let key = Self::inventory_key(tenant_id, product_id, &to_location);
-                let mut store = self.inventory.write().await;
-                if let Some(existing) = store.get_mut(&key) {
-                    existing.quantity_on_hand += quantity;
-                    existing.quantity_available = existing.quantity_on_hand - existing.quantity_reserved;
-                } else {
-                    inv.quantity_on_hand = quantity;
-                    inv.quantity_available = quantity;
-                    store.insert(key, inv);
-                }
             }
             "delivery" => {
-                // Remove from source location (or default)
-                let loc = from_location.as_deref().unwrap_or("default");
-                let key = Self::inventory_key(tenant_id, product_id, loc);
-                let mut store = self.inventory.write().await;
-                if let Some(existing) = store.get_mut(&key) {
-                    existing.quantity_on_hand -= quantity;
-                    if existing.quantity_on_hand < 0 {
-                        existing.quantity_on_hand = 0;
-                    }
-                    existing.quantity_available = existing.quantity_on_hand - existing.quantity_reserved;
-                    if existing.quantity_available < 0 {
-                        existing.quantity_available = 0;
-                    }
-                }
+                // Remove from source location (or the product's first known
+                // location when no explicit source was given).
+                let loc = match from_location {
+                    Some(ref from) => from.clone(),
+                    None => self.resolve_stock_location(tenant_id, product_id).await,
+                };
+                let _ = self
+                    .apply_inventory_delta(
+                        tenant_id,
+                        product_id,
+                        &product_name,
+                        &loc,
+                        -quantity,
+                    )
+                    .await;
             }
             "transfer" => {
-                // Remove from source
+                // Remove from source, then add to destination. Both branches
+                // touch disjoint inventory keys, so the sequential lock
+                // acquisitions cannot deadlock with each other.
                 if let Some(ref from) = from_location {
-                    let from_key = Self::inventory_key(tenant_id, product_id, from);
-                    let mut store = self.inventory.write().await;
-                    if let Some(existing) = store.get_mut(&from_key) {
-                        existing.quantity_on_hand -= quantity;
-                        if existing.quantity_on_hand < 0 {
-                            existing.quantity_on_hand = 0;
-                        }
-                        existing.quantity_available =
-                            existing.quantity_on_hand - existing.quantity_reserved;
-                        if existing.quantity_available < 0 {
-                            existing.quantity_available = 0;
-                        }
-                    }
+                    let _ = self
+                        .apply_inventory_delta(
+                            tenant_id,
+                            product_id,
+                            &product_name,
+                            from,
+                            -quantity,
+                        )
+                        .await;
                 }
-                // Add to destination
-                let mut inv = self
-                    .ensure_inventory_item(tenant_id, product_id, &product_name, &to_location)
+                let _ = self
+                    .apply_inventory_delta(
+                        tenant_id,
+                        product_id,
+                        &product_name,
+                        &to_location,
+                        quantity,
+                    )
                     .await;
-                let to_key = Self::inventory_key(tenant_id, product_id, &to_location);
-                let mut store = self.inventory.write().await;
-                if let Some(existing) = store.get_mut(&to_key) {
-                    existing.quantity_on_hand += quantity;
-                    existing.quantity_available = existing.quantity_on_hand - existing.quantity_reserved;
-                } else {
-                    inv.quantity_on_hand = quantity;
-                    inv.quantity_available = quantity;
-                    store.insert(to_key, inv);
-                }
             }
             "adjustment" => {
                 let loc = from_location.as_deref().unwrap_or(&to_location);
-                let key = Self::inventory_key(tenant_id, product_id, loc);
-                let mut store = self.inventory.write().await;
-                if let Some(existing) = store.get_mut(&key) {
-                    existing.quantity_on_hand += quantity;
-                    if existing.quantity_on_hand < 0 {
-                        existing.quantity_on_hand = 0;
-                    }
-                    existing.quantity_available = existing.quantity_on_hand - existing.quantity_reserved;
-                    if existing.quantity_available < 0 {
-                        existing.quantity_available = 0;
-                    }
-                } else {
-                    let inv = InventoryItem {
-                        id: Uuid::new_v4(),
+                let _ = self
+                    .apply_inventory_delta(
                         tenant_id,
                         product_id,
-                        product_name,
-                        quantity_on_hand: quantity.max(0),
-                        quantity_reserved: 0,
-                        quantity_available: quantity.max(0),
-                        location: loc.to_string(),
-                        lot_number: None,
-                        reorder_point: 0,
-                        reorder_quantity: 0,
-                    };
-                    store.insert(key, inv);
-                }
+                        &product_name,
+                        loc,
+                        quantity,
+                    )
+                    .await;
             }
             _ => {
                 // Unknown move type, just store the move
@@ -1048,10 +1040,26 @@ impl SupplyChainService for InMemorySupplyChainService {
         }
 
         self.stock_moves.write().await.insert(id, stock_move.clone());
+        // Locations are referenced by their stable (tenant, name)-derived ids.
+        let from_location_id = from_location
+            .as_deref()
+            .map(|l| Self::location_id(tenant_id, l))
+            .unwrap_or_else(Uuid::nil);
+        let to_location_id = if to_location.is_empty() {
+            Uuid::nil()
+        } else {
+            Self::location_id(tenant_id, &to_location)
+        };
         self.publish_event(StockMoveCreatedEvent::new(
-            tenant_id, id, product_id, quantity as f64,
-            Uuid::nil(), Uuid::nil(), move_type,
-        )).await;
+            tenant_id,
+            id,
+            product_id,
+            quantity as f64,
+            from_location_id,
+            to_location_id,
+            move_type,
+        ))
+        .await;
         Ok(stock_move)
     }
 
@@ -1247,54 +1255,60 @@ impl SupplyChainService for InMemorySupplyChainService {
     }
 
     async fn receive_full_po(&self, tenant_id: Uuid, id: Uuid) -> Result<PurchaseOrder> {
-        let mut store = self.purchase_orders.write().await;
-        let po = store
-            .get_mut(&id)
-            .ok_or_else(|| SenseiError::NotFound(format!("PurchaseOrder {id} not found")))?;
+        // Capture the remaining quantity per line BEFORE marking lines as
+        // received, then apply inventory deltas for those real quantities.
+        let mut remaining: Vec<(Uuid, String, i64)> = Vec::new();
+        {
+            let mut store = self.purchase_orders.write().await;
+            let po = store
+                .get_mut(&id)
+                .ok_or_else(|| SenseiError::NotFound(format!("PurchaseOrder {id} not found")))?;
 
-        if po.status == "received" || po.status == "cancelled" {
-            return Err(SenseiError::Validation(format!(
-                "Cannot receive PO with status: {}",
-                po.status
-            )));
-        }
-
-        for line in &mut po.line_items {
-            let to_receive = line.quantity_ordered - line.quantity_received;
-            if to_receive > 0 {
-                line.quantity_received += to_receive;
+            if po.tenant_id != tenant_id {
+                return Err(SenseiError::NotFound(format!(
+                    "PurchaseOrder {id} not found"
+                )));
             }
-        }
-
-        po.status = "received".to_string();
-        let result = po.clone();
-        drop(store);
-
-        // Update inventory for received items
-        for line in &result.line_items {
-            let qty = line.quantity_ordered - line.quantity_received;
-            if qty <= 0 {
-                continue;
+            if po.status == "received" || po.status == "cancelled" {
+                return Err(SenseiError::Validation(format!(
+                    "Cannot receive PO with status: {}",
+                    po.status
+                )));
             }
-            let inventory = self.inventory.read().await;
-            let matching: Vec<(String, String)> = inventory
-                .iter()
-                .filter(|(_, i)| i.product_id == line.product_id && i.tenant_id == tenant_id)
-                .map(|(k, i)| (k.clone(), i.location.clone()))
-                .collect();
-            drop(inventory);
 
-            for (key, location) in matching {
-                if let Err(e) = self
-                    .adjust_inventory(tenant_id, line.product_id, &location, qty, &format!("PO receipt {id}"))
-                    .await
-                {
-                    eprintln!("Inventory adjustment warning: {e}");
+            for line in &mut po.line_items {
+                let to_receive = line.quantity_ordered - line.quantity_received;
+                if to_receive > 0 {
+                    remaining.push((
+                        line.product_id,
+                        line.product_name.clone(),
+                        to_receive,
+                    ));
+                    line.quantity_received += to_receive;
                 }
-                let _ = key;
             }
+
+            po.status = "received".to_string();
         }
-        Ok(result)
+
+        // Update inventory for the quantities captured before the mutation.
+        for (product_id, product_name, qty) in remaining {
+            let location = self.resolve_stock_location(tenant_id, product_id).await;
+            self.apply_inventory_delta(
+                tenant_id,
+                product_id,
+                &product_name,
+                &location,
+                qty,
+            )
+            .await;
+        }
+
+        let store = self.purchase_orders.read().await;
+        Ok(store
+            .get(&id)
+            .cloned()
+            .ok_or_else(|| SenseiError::NotFound(format!("PurchaseOrder {id} not found")))?)
     }
 
     async fn update_inventory(&self, _tenant_id: Uuid, id: Uuid, item: InventoryItem) -> Result<InventoryItem> {
@@ -1357,6 +1371,7 @@ mod tests {
             supplier_name: "Acme Corp".to_string(),
             status: String::new(),
             items: vec![RFQItem {
+                line_item_id: Some(Uuid::new_v4()),
                 product_id: Uuid::new_v4(),
                 product_name: "Widget".to_string(),
                 quantity: 100,

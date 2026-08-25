@@ -8,7 +8,6 @@ use chrono::Utc;
 use sensei_core::error::{Result, SenseiError};
 use sensei_core::pagination::PaginatedResponse;
 use sensei_core::types::TenantId;
-use serde_json;
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -54,7 +53,7 @@ struct PmScheduleRow {
     frequency_days: i32,
     last_performed: Option<chrono::DateTime<Utc>>,
     next_due: chrono::DateTime<Utc>,
-    assigned_to: serde_json::Value,
+    assigned_to: Option<Uuid>,
     is_active: bool,
 }
 
@@ -69,6 +68,7 @@ struct EquipmentRow {
     status: String,
     install_date: chrono::DateTime<Utc>,
     last_maintenance: Option<chrono::DateTime<Utc>>,
+    maintenance_completed_at: Option<chrono::DateTime<Utc>>,
     oee_percentage: f64,
 }
 
@@ -86,7 +86,9 @@ fn wr_row_to_domain(r: WorkRequestRow) -> MaintenanceWorkRequest {
 }
 
 fn pm_row_to_domain(r: PmScheduleRow) -> PMSchedule {
-    let assigned_to: Vec<Uuid> = serde_json::from_value(r.assigned_to).unwrap_or_default();
+    // The pm_schedules table stores a single assigned user; the domain model
+    // exposes a list, so a NULL assignment maps to an empty list.
+    let assigned_to: Vec<Uuid> = r.assigned_to.into_iter().collect();
     PMSchedule {
         id: r.id, tenant_id: r.tenant_id, equipment_id: r.equipment_id,
         task_name: r.task_name, frequency_days: r.frequency_days,
@@ -100,6 +102,7 @@ fn eq_row_to_domain(r: EquipmentRow) -> EquipmentRecord {
         id: r.id, tenant_id: r.tenant_id, equipment_code: r.equipment_code,
         name: r.name, equipment_type: r.equipment_type, location: r.location,
         status: r.status, install_date: r.install_date, last_maintenance: r.last_maintenance,
+        maintenance_completed_at: r.maintenance_completed_at,
         oee_percentage: r.oee_percentage,
     }
 }
@@ -203,17 +206,22 @@ impl MaintenanceService for DatabaseMaintenanceService {
 
     async fn create_pm_schedule(&self, tenant_id: TenantId, schedule: PMSchedule) -> Result<PMSchedule> {
         let id = Uuid::new_v4();
-        let assigned_to_json = serde_json::to_value(&schedule.assigned_to).unwrap_or(serde_json::Value::Array(vec![]));
+        let assigned_to = schedule.assigned_to.first().copied();
         let base = schedule.last_performed.unwrap_or_else(Utc::now);
         let next_due = base + chrono::Duration::days(schedule.frequency_days as i64);
 
         let row = sqlx::query_as::<_, PmScheduleRow>(
-            r#"INSERT INTO pm_schedules (id, tenant_id, equipment_id, task_name, frequency_days, last_performed, next_due, assigned_to, is_active)
-               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,TRUE)
-               RETURNING id, tenant_id, equipment_id, task_name, frequency_days, last_performed, next_due, assigned_to, is_active"#,
+            r#"INSERT INTO pm_schedules (id, tenant_id, equipment_id, schedule_number, title, description,
+                                         frequency_type, frequency_value, frequency_unit,
+                                         last_performed_at, next_due_at, assigned_to, is_active)
+               VALUES ($1,$2,$3,$4,$5,'', 'calendar', $6, 'days', $7, $8, $9, TRUE)
+               RETURNING id, tenant_id, equipment_id, title AS "task_name", frequency_value AS "frequency_days",
+                         last_performed_at AS "last_performed", next_due_at AS "next_due", assigned_to, is_active"#,
         )
-        .bind(id).bind(tenant_id).bind(schedule.equipment_id).bind(&schedule.task_name)
-        .bind(schedule.frequency_days).bind(schedule.last_performed).bind(next_due).bind(&assigned_to_json)
+        .bind(id).bind(tenant_id).bind(schedule.equipment_id)
+        .bind(format!("PM-{}-{}", Utc::now().format("%Y%m%d"), id.as_simple().encode_lower(&mut Uuid::encode_buffer())[..8].to_string()))
+        .bind(&schedule.task_name)
+        .bind(schedule.frequency_days).bind(schedule.last_performed).bind(next_due).bind(assigned_to)
         .fetch_one(&self.pool)
         .await.map_err(|e| SenseiError::Database(format!("Failed to create PM schedule: {e}")))?;
 
@@ -222,7 +230,9 @@ impl MaintenanceService for DatabaseMaintenanceService {
 
     async fn get_pm_schedule(&self, tenant_id: TenantId, id: Uuid) -> Result<PMSchedule> {
         let row = sqlx::query_as::<_, PmScheduleRow>(
-            "SELECT id, tenant_id, equipment_id, task_name, frequency_days, last_performed, next_due, assigned_to, is_active FROM pm_schedules WHERE id = $1 AND tenant_id = $2",
+            "SELECT id, tenant_id, equipment_id, title AS \"task_name\", frequency_value AS \"frequency_days\", \
+                    last_performed_at AS \"last_performed\", next_due_at AS \"next_due\", assigned_to, is_active \
+             FROM pm_schedules WHERE id = $1 AND tenant_id = $2",
         )
         .bind(id).bind(tenant_id)
         .fetch_optional(&self.pool)
@@ -238,9 +248,10 @@ impl MaintenanceService for DatabaseMaintenanceService {
         let offset = (page - 1) * per_page;
 
         let items: Vec<PmScheduleRow> = sqlx::query_as(
-            r#"SELECT id, tenant_id, equipment_id, task_name, frequency_days, last_performed, next_due, assigned_to, is_active
+            r#"SELECT id, tenant_id, equipment_id, title AS "task_name", frequency_value AS "frequency_days",
+                      last_performed_at AS "last_performed", next_due_at AS "next_due", assigned_to, is_active
                FROM pm_schedules WHERE tenant_id=$1 AND ($2::uuid IS NULL OR equipment_id=$2)
-               ORDER BY next_due ASC LIMIT $3 OFFSET $4"#,
+               ORDER BY next_due_at ASC LIMIT $3 OFFSET $4"#,
         )
         .bind(tenant_id).bind(equipment_id).bind(per_page as i64).bind(offset as i64)
         .fetch_all(&self.pool)
@@ -259,7 +270,9 @@ impl MaintenanceService for DatabaseMaintenanceService {
         let now = Utc::now();
 
         let existing = sqlx::query_as::<_, PmScheduleRow>(
-            "SELECT id, tenant_id, equipment_id, task_name, frequency_days, last_performed, next_due, assigned_to, is_active FROM pm_schedules WHERE id = $1 AND tenant_id = $2",
+            "SELECT id, tenant_id, equipment_id, title AS \"task_name\", frequency_value AS \"frequency_days\", \
+                    last_performed_at AS \"last_performed\", next_due_at AS \"next_due\", assigned_to, is_active \
+             FROM pm_schedules WHERE id = $1 AND tenant_id = $2",
         )
         .bind(schedule_id).bind(tenant_id)
         .fetch_optional(&self.pool)
@@ -269,8 +282,9 @@ impl MaintenanceService for DatabaseMaintenanceService {
         let next_due = now + chrono::Duration::days(existing.frequency_days as i64);
 
         let row = sqlx::query_as::<_, PmScheduleRow>(
-            r#"UPDATE pm_schedules SET last_performed=$1, next_due=$2 WHERE id=$3 AND tenant_id=$4
-               RETURNING id, tenant_id, equipment_id, task_name, frequency_days, last_performed, next_due, assigned_to, is_active"#,
+            r#"UPDATE pm_schedules SET last_performed_at=$1, next_due_at=$2 WHERE id=$3 AND tenant_id=$4
+               RETURNING id, tenant_id, equipment_id, title AS "task_name", frequency_value AS "frequency_days",
+                         last_performed_at AS "last_performed", next_due_at AS "next_due", assigned_to, is_active"#,
         )
         .bind(now).bind(next_due).bind(schedule_id).bind(tenant_id)
         .fetch_one(&self.pool)
@@ -281,7 +295,9 @@ impl MaintenanceService for DatabaseMaintenanceService {
 
     async fn get_overdue_pm_tasks(&self, tenant_id: TenantId) -> Result<Vec<PMSchedule>> {
         let rows = sqlx::query_as::<_, PmScheduleRow>(
-            "SELECT id, tenant_id, equipment_id, task_name, frequency_days, last_performed, next_due, assigned_to, is_active FROM pm_schedules WHERE tenant_id = $1 AND is_active = TRUE AND next_due < NOW()",
+            "SELECT id, tenant_id, equipment_id, title AS \"task_name\", frequency_value AS \"frequency_days\", \
+                    last_performed_at AS \"last_performed\", next_due_at AS \"next_due\", assigned_to, is_active \
+             FROM pm_schedules WHERE tenant_id = $1 AND is_active = TRUE AND next_due_at < NOW()",
         )
         .bind(tenant_id).fetch_all(&self.pool)
         .await.map_err(|e| SenseiError::Database(format!("Failed to get overdue PM tasks: {e}")))?;
@@ -296,13 +312,16 @@ impl MaintenanceService for DatabaseMaintenanceService {
         let equipment_code = format!("EQ-{}-{}", Utc::now().format("%Y%m%d"), id.as_simple().encode_lower(&mut Uuid::encode_buffer())[..8].to_string());
 
         let row = sqlx::query_as::<_, EquipmentRow>(
-            r#"INSERT INTO equipment_records (id, tenant_id, equipment_code, name, equipment_type, location, status, install_date, last_maintenance, oee_percentage)
-               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
-               RETURNING id, tenant_id, equipment_code, name, equipment_type, location, status, install_date, last_maintenance, oee_percentage"#,
+            r#"INSERT INTO equipment (id, tenant_id, equipment_number, name, equipment_type, location, status,
+                                      install_date, last_maintenance, maintenance_completed_at, oee_percentage)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+               RETURNING id, tenant_id, equipment_number AS "equipment_code", name, equipment_type, location, status,
+                         install_date, last_maintenance, maintenance_completed_at, oee_percentage"#,
         )
         .bind(id).bind(tenant_id).bind(&equipment_code).bind(&equipment.name)
         .bind(&equipment.equipment_type).bind(&equipment.location).bind(&equipment.status)
-        .bind(equipment.install_date).bind(equipment.last_maintenance).bind(equipment.oee_percentage)
+        .bind(equipment.install_date).bind(equipment.last_maintenance).bind(equipment.maintenance_completed_at)
+        .bind(equipment.oee_percentage)
         .fetch_one(&self.pool)
         .await.map_err(|e| SenseiError::Database(format!("Failed to register equipment: {e}")))?;
 
@@ -311,7 +330,9 @@ impl MaintenanceService for DatabaseMaintenanceService {
 
     async fn get_equipment(&self, tenant_id: TenantId, id: Uuid) -> Result<EquipmentRecord> {
         let row = sqlx::query_as::<_, EquipmentRow>(
-            "SELECT id, tenant_id, equipment_code, name, equipment_type, location, status, install_date, last_maintenance, oee_percentage FROM equipment_records WHERE id = $1 AND tenant_id = $2",
+            "SELECT id, tenant_id, equipment_number AS \"equipment_code\", name, equipment_type, location, status, \
+                    install_date, last_maintenance, maintenance_completed_at, oee_percentage \
+             FROM equipment WHERE id = $1 AND tenant_id = $2",
         )
         .bind(id).bind(tenant_id)
         .fetch_optional(&self.pool)
@@ -327,8 +348,9 @@ impl MaintenanceService for DatabaseMaintenanceService {
         let offset = (page - 1) * per_page;
 
         let items: Vec<EquipmentRow> = sqlx::query_as(
-            r#"SELECT id, tenant_id, equipment_code, name, equipment_type, location, status, install_date, last_maintenance, oee_percentage
-               FROM equipment_records WHERE tenant_id=$1 AND ($2::text IS NULL OR equipment_type=$2) AND ($3::text IS NULL OR status=$3)
+            r#"SELECT id, tenant_id, equipment_number AS "equipment_code", name, equipment_type, location, status,
+                      install_date, last_maintenance, maintenance_completed_at, oee_percentage
+               FROM equipment WHERE tenant_id=$1 AND ($2::text IS NULL OR equipment_type=$2) AND ($3::text IS NULL OR status=$3)
                ORDER BY name LIMIT $4 OFFSET $5"#,
         )
         .bind(tenant_id).bind(equipment_type).bind(status).bind(per_page as i64).bind(offset as i64)
@@ -336,7 +358,7 @@ impl MaintenanceService for DatabaseMaintenanceService {
         .await.map_err(|e| SenseiError::Database(format!("Failed to list equipment: {e}")))?;
 
         let count: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM equipment_records WHERE tenant_id=$1 AND ($2::text IS NULL OR equipment_type=$2) AND ($3::text IS NULL OR status=$3)",
+            "SELECT COUNT(*) FROM equipment WHERE tenant_id=$1 AND ($2::text IS NULL OR equipment_type=$2) AND ($3::text IS NULL OR status=$3)",
         )
         .bind(tenant_id).bind(equipment_type).bind(status).fetch_one(&self.pool).await
         .map_err(|e| SenseiError::Database(format!("Failed to count equipment: {e}")))?;
@@ -347,9 +369,12 @@ impl MaintenanceService for DatabaseMaintenanceService {
     async fn update_equipment_status(&self, tenant_id: TenantId, id: Uuid, status: &str) -> Result<EquipmentRecord> {
         let now = Utc::now();
         let row = sqlx::query_as::<_, EquipmentRow>(
-            r#"UPDATE equipment_records SET status=$1, last_maintenance=CASE WHEN $1='operational' THEN $3 ELSE last_maintenance END
+            r#"UPDATE equipment SET status=$1,
+                  last_maintenance = CASE WHEN $1='under_maintenance' THEN $3 ELSE last_maintenance END,
+                  maintenance_completed_at = CASE WHEN $1='operational' THEN $3 ELSE maintenance_completed_at END
                WHERE id=$2 AND tenant_id=$4
-               RETURNING id, tenant_id, equipment_code, name, equipment_type, location, status, install_date, last_maintenance, oee_percentage"#,
+               RETURNING id, tenant_id, equipment_number AS "equipment_code", name, equipment_type, location, status,
+                         install_date, last_maintenance, maintenance_completed_at, oee_percentage"#,
         )
         .bind(status).bind(id).bind(now).bind(tenant_id)
         .fetch_optional(&self.pool)
@@ -383,13 +408,14 @@ impl MaintenanceService for DatabaseMaintenanceService {
     }
 
     async fn update_pm_schedule(&self, tenant_id: TenantId, id: Uuid, schedule: PMSchedule) -> Result<PMSchedule> {
-        let assigned_to_json = serde_json::to_value(&schedule.assigned_to).unwrap_or(serde_json::Value::Array(vec![]));
+        let assigned_to = schedule.assigned_to.first().copied();
         let row = sqlx::query_as::<_, PmScheduleRow>(
-            r#"UPDATE pm_schedules SET task_name=$1, frequency_days=$2, assigned_to=$3, is_active=$4
+            r#"UPDATE pm_schedules SET title=$1, frequency_value=$2, assigned_to=$3, is_active=$4
                WHERE id=$5 AND tenant_id=$6
-               RETURNING id, tenant_id, equipment_id, task_name, frequency_days, last_performed, next_due, assigned_to, is_active"#,
+               RETURNING id, tenant_id, equipment_id, title AS "task_name", frequency_value AS "frequency_days",
+                         last_performed_at AS "last_performed", next_due_at AS "next_due", assigned_to, is_active"#,
         )
-        .bind(&schedule.task_name).bind(schedule.frequency_days).bind(&assigned_to_json).bind(schedule.is_active)
+        .bind(&schedule.task_name).bind(schedule.frequency_days).bind(assigned_to).bind(schedule.is_active)
         .bind(id).bind(tenant_id)
         .fetch_optional(&self.pool)
         .await.map_err(|e| SenseiError::Database(format!("Failed to update PM schedule: {e}")))?
@@ -408,9 +434,10 @@ impl MaintenanceService for DatabaseMaintenanceService {
 
     async fn update_equipment(&self, tenant_id: TenantId, id: Uuid, equipment: EquipmentRecord) -> Result<EquipmentRecord> {
         let row = sqlx::query_as::<_, EquipmentRow>(
-            r#"UPDATE equipment_records SET name=$1, equipment_type=$2, location=$3, oee_percentage=$4
+            r#"UPDATE equipment SET name=$1, equipment_type=$2, location=$3, oee_percentage=$4
                WHERE id=$5 AND tenant_id=$6
-               RETURNING id, tenant_id, equipment_code, name, equipment_type, location, status, install_date, last_maintenance, oee_percentage"#,
+               RETURNING id, tenant_id, equipment_number AS "equipment_code", name, equipment_type, location, status,
+                         install_date, last_maintenance, maintenance_completed_at, oee_percentage"#,
         )
         .bind(&equipment.name).bind(&equipment.equipment_type).bind(&equipment.location).bind(equipment.oee_percentage)
         .bind(id).bind(tenant_id)
@@ -422,7 +449,7 @@ impl MaintenanceService for DatabaseMaintenanceService {
     }
 
     async fn delete_equipment(&self, tenant_id: TenantId, id: Uuid) -> Result<()> {
-        let result = sqlx::query("DELETE FROM equipment_records WHERE id = $1 AND tenant_id = $2")
+        let result = sqlx::query("DELETE FROM equipment WHERE id = $1 AND tenant_id = $2")
             .bind(id).bind(tenant_id).execute(&self.pool)
             .await.map_err(|e| SenseiError::Database(format!("Failed to delete equipment: {e}")))?;
         if result.rows_affected() == 0 { return Err(SenseiError::NotFound(format!("Equipment {id} not found"))); }

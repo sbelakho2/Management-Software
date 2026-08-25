@@ -26,8 +26,20 @@ impl DatabaseContactsService {
     }
 }
 
-/// Convert a database [`ContactModel`] into a domain [`Contact`].
-fn contact_model_to_domain(m: ContactModel) -> Contact {
+/// Database row for a contact, including the `department` and `is_primary`
+/// columns added by migration 028 (the shared [`ContactModel`] does not
+/// carry them).
+#[derive(Debug, Clone, sqlx::FromRow)]
+struct ContactRow {
+    #[sqlx(flatten)]
+    model: ContactModel,
+    department: Option<String>,
+    is_primary: bool,
+}
+
+/// Convert a database row into a domain [`Contact`].
+fn contact_row_to_domain(r: ContactRow) -> Contact {
+    let m = r.model;
     Contact {
         id: m.id,
         tenant_id: m.tenant_id,
@@ -37,32 +49,12 @@ fn contact_model_to_domain(m: ContactModel) -> Contact {
         email: m.email.unwrap_or_default(),
         phone: m.phone,
         job_title: m.job_title,
-        department: None,
-        is_primary: false,
+        department: r.department,
+        is_primary: r.is_primary,
         is_active: m.is_active,
         notes: m.notes,
         created_at: m.created_at,
         updated_at: m.updated_at,
-    }
-}
-
-/// Convert a domain [`Contact`] into a database [`ContactModel`].
-#[allow(dead_code)]
-fn contact_to_model(c: Contact) -> ContactModel {
-    ContactModel {
-        id: c.id,
-        tenant_id: c.tenant_id,
-        first_name: c.first_name,
-        last_name: c.last_name,
-        email: Some(c.email),
-        phone: c.phone,
-        mobile: None,
-        job_title: c.job_title,
-        account_id: c.account_id,
-        notes: c.notes,
-        is_active: c.is_active,
-        created_at: c.created_at,
-        updated_at: c.updated_at,
     }
 }
 
@@ -71,13 +63,15 @@ impl ContactsService for DatabaseContactsService {
     async fn create_contact(&self, tenant_id: TenantId, contact: Contact) -> Result<Contact> {
         let now = Utc::now();
 
-        let model = sqlx::query_as::<_, ContactModel>(
+        let model = sqlx::query_as::<_, ContactRow>(
             r#"
             INSERT INTO contacts (id, tenant_id, first_name, last_name, email, phone,
-                                  job_title, account_id, notes, is_active, created_at, updated_at)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+                                  job_title, account_id, department, is_primary,
+                                  notes, is_active, created_at, updated_at)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
             RETURNING id, tenant_id, first_name, last_name, email, phone, mobile,
-                      job_title, account_id, notes, is_active, created_at, updated_at
+                      job_title, account_id, department, is_primary,
+                      notes, is_active, created_at, updated_at
             "#,
         )
         .bind(contact.id)
@@ -88,6 +82,8 @@ impl ContactsService for DatabaseContactsService {
         .bind(&contact.phone)
         .bind(&contact.job_title)
         .bind(contact.account_id)
+        .bind(&contact.department)
+        .bind(contact.is_primary)
         .bind(&contact.notes)
         .bind(contact.is_active)
         .bind(now)
@@ -96,14 +92,15 @@ impl ContactsService for DatabaseContactsService {
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to create contact: {e}")))?;
 
-        Ok(contact_model_to_domain(model))
+        Ok(contact_row_to_domain(model))
     }
 
     async fn get_contact(&self, tenant_id: TenantId, id: EntityId) -> Result<Contact> {
-        let model = sqlx::query_as::<_, ContactModel>(
+        let model = sqlx::query_as::<_, ContactRow>(
             r#"
             SELECT id, tenant_id, first_name, last_name, email, phone, mobile,
-                   job_title, account_id, notes, is_active, created_at, updated_at
+                   job_title, account_id, department, is_primary,
+                   notes, is_active, created_at, updated_at
             FROM contacts
             WHERE id = $1 AND tenant_id = $2
             "#,
@@ -115,7 +112,7 @@ impl ContactsService for DatabaseContactsService {
         .map_err(|e| SenseiError::Database(format!("Failed to get contact: {e}")))?
         .ok_or_else(|| SenseiError::NotFound(format!("Contact {id} not found")))?;
 
-        Ok(contact_model_to_domain(model))
+        Ok(contact_row_to_domain(model))
     }
 
     async fn list_contacts(
@@ -160,7 +157,8 @@ impl ContactsService for DatabaseContactsService {
         let data_sql = if use_account_filter {
             r#"
             SELECT id, tenant_id, first_name, last_name, email, phone, mobile,
-                   job_title, account_id, notes, is_active, created_at, updated_at
+                   job_title, account_id, department, is_primary,
+                   notes, is_active, created_at, updated_at
             FROM contacts
             WHERE tenant_id = $1 AND account_id = $2
             ORDER BY created_at DESC
@@ -169,7 +167,8 @@ impl ContactsService for DatabaseContactsService {
         } else {
             r#"
             SELECT id, tenant_id, first_name, last_name, email, phone, mobile,
-                   job_title, account_id, notes, is_active, created_at, updated_at
+                   job_title, account_id, department, is_primary,
+                   notes, is_active, created_at, updated_at
             FROM contacts
             WHERE tenant_id = $1
             ORDER BY created_at DESC
@@ -177,7 +176,7 @@ impl ContactsService for DatabaseContactsService {
             "#
         };
 
-        let models: Vec<ContactModel> = if use_account_filter {
+        let models: Vec<ContactRow> = if use_account_filter {
             sqlx::query_as(data_sql)
                 .bind(tenant_id)
                 .bind(account_val)
@@ -195,7 +194,7 @@ impl ContactsService for DatabaseContactsService {
         }
         .map_err(|e| SenseiError::Database(format!("Failed to list contacts: {e}")))?;
 
-        let data = models.into_iter().map(contact_model_to_domain).collect();
+        let data = models.into_iter().map(contact_row_to_domain).collect();
 
         Ok(PaginatedResponse {
             data,
@@ -214,14 +213,16 @@ impl ContactsService for DatabaseContactsService {
     ) -> Result<Contact> {
         let now = Utc::now();
 
-        let model = sqlx::query_as::<_, ContactModel>(
+        let model = sqlx::query_as::<_, ContactRow>(
             r#"
             UPDATE contacts
             SET first_name = $3, last_name = $4, email = $5, phone = $6,
-                job_title = $7, account_id = $8, notes = $9, is_active = $10, updated_at = $11
+                job_title = $7, account_id = $8, department = $9, is_primary = $10,
+                notes = $11, is_active = $12, updated_at = $13
             WHERE id = $1 AND tenant_id = $2
             RETURNING id, tenant_id, first_name, last_name, email, phone, mobile,
-                      job_title, account_id, notes, is_active, created_at, updated_at
+                      job_title, account_id, department, is_primary,
+                      notes, is_active, created_at, updated_at
             "#,
         )
         .bind(id)
@@ -232,6 +233,8 @@ impl ContactsService for DatabaseContactsService {
         .bind(&contact.phone)
         .bind(&contact.job_title)
         .bind(contact.account_id)
+        .bind(&contact.department)
+        .bind(contact.is_primary)
         .bind(&contact.notes)
         .bind(contact.is_active)
         .bind(now)
@@ -241,11 +244,11 @@ impl ContactsService for DatabaseContactsService {
         .ok_or_else(|| SenseiError::NotFound(format!("Contact {id} not found")))?;
 
         // Verify tenant ownership.
-        if model.tenant_id != tenant_id {
+        if model.model.tenant_id != tenant_id {
             return Err(SenseiError::Forbidden("Cross-tenant access denied".to_string()));
         }
 
-        Ok(contact_model_to_domain(model))
+        Ok(contact_row_to_domain(model))
     }
 
     async fn delete_contact(&self, tenant_id: TenantId, id: EntityId) -> Result<()> {

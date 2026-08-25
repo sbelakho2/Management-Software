@@ -3813,6 +3813,11 @@ pub struct StateMachineTransitionedEvent {
 
 impl StateMachineTransitionedEvent {
     /// Create a new [`StateMachineTransitionedEvent`].
+    //
+    // All eight parameters are independent event fields; bundling them into
+    // a parameter object would obscure the event payload at construction
+    // sites, so the limit is allowed here.
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         tenant_id: Uuid,
         instance_id: Uuid,

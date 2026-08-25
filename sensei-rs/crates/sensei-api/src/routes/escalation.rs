@@ -37,6 +37,33 @@ pub struct PolicyRequest {
 
 // ── Handlers ─────────────────────────────────────────────────────────────────
 
+/// Validate an escalation policy's rules before storing them.
+///
+/// Each rule must escalate after a positive delay and must name at least
+/// one notification target (a role or explicit users).
+fn validate_rules(rules: &[EscalationRule]) -> Result<()> {
+    if rules.is_empty() {
+        return Err(SenseiError::Validation(
+            "An escalation policy must define at least one rule".to_string(),
+        ));
+    }
+    for rule in rules {
+        if rule.escalate_after_seconds <= 0 {
+            return Err(SenseiError::Validation(format!(
+                "Rule '{}' has invalid escalate_after_seconds {}: must be greater than 0",
+                rule.condition, rule.escalate_after_seconds
+            )));
+        }
+        if rule.notify_role.is_none() && rule.notify_user_ids.is_empty() {
+            return Err(SenseiError::Validation(format!(
+                "Rule '{}' must notify at least one role or user",
+                rule.condition
+            )));
+        }
+    }
+    Ok(())
+}
+
 /// List all escalation policies with optional filters.
 pub async fn list_policies(
     user: AuthenticatedUser,
@@ -62,6 +89,7 @@ pub async fn create_policy(
     State(state): State<AppState>,
     Json(req): Json<PolicyRequest>,
 ) -> Result<Json<EscalationPolicy>> {
+    validate_rules(&req.rules)?;
     let now = Utc::now();
     let policy = EscalationPolicy {
         id: new_id(),
@@ -102,6 +130,7 @@ pub async fn update_policy(
     Path(id): Path<Uuid>,
     Json(req): Json<PolicyRequest>,
 ) -> Result<Json<EscalationPolicy>> {
+    validate_rules(&req.rules)?;
     let mut store = state.escalation_policies.write().await;
     let policy = store
         .get_mut(&id)

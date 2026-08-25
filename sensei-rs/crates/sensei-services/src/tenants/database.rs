@@ -26,9 +26,15 @@ impl DatabaseTenantsService {
 }
 
 /// Convert a database [`TenantModel`] into a domain [`Tenant`].
-fn tenant_model_to_domain(m: TenantModel) -> Tenant {
-    let features: Vec<String> = serde_json::from_value(m.features).unwrap_or_default();
-    Tenant {
+///
+/// A corrupt JSONB `features` payload is logged and surfaced as a database
+/// error — it is never silently replaced with an empty feature list.
+fn tenant_model_to_domain(m: TenantModel) -> Result<Tenant> {
+    let features: Vec<String> = serde_json::from_value(m.features.clone()).map_err(|e| {
+        tracing::error!(tenant_id = %m.id, "Tenant features JSONB is corrupt: {e}");
+        SenseiError::Database(format!("Tenant {} has corrupt features: {e}", m.id))
+    })?;
+    Ok(Tenant {
         id: m.id,
         name: m.name,
         slug: m.slug,
@@ -36,21 +42,7 @@ fn tenant_model_to_domain(m: TenantModel) -> Tenant {
         features,
         created_at: m.created_at,
         updated_at: m.updated_at,
-    }
-}
-
-/// Convert a domain [`Tenant`] into a database [`TenantModel`].
-#[allow(dead_code)]
-fn tenant_to_model(t: Tenant) -> TenantModel {
-    TenantModel {
-        id: t.id,
-        name: t.name,
-        slug: t.slug,
-        is_active: t.is_active,
-        features: serde_json::to_value(t.features).unwrap_or_default(),
-        created_at: t.created_at,
-        updated_at: t.updated_at,
-    }
+    })
 }
 
 #[async_trait]
@@ -78,7 +70,7 @@ impl TenantsService for DatabaseTenantsService {
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to create tenant: {e}")))?;
 
-        Ok(tenant_model_to_domain(model))
+        tenant_model_to_domain(model)
     }
 
     async fn get_tenant(&self, id: TenantId) -> Result<Tenant> {
@@ -91,7 +83,7 @@ impl TenantsService for DatabaseTenantsService {
         .map_err(|e| SenseiError::Database(format!("Failed to get tenant: {e}")))?
         .ok_or_else(|| SenseiError::NotFound(format!("Tenant {id} not found")))?;
 
-        Ok(tenant_model_to_domain(model))
+        tenant_model_to_domain(model)
     }
 
     async fn list_tenants(&self) -> Result<Vec<Tenant>> {
@@ -102,7 +94,10 @@ impl TenantsService for DatabaseTenantsService {
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to list tenants: {e}")))?;
 
-        Ok(models.into_iter().map(tenant_model_to_domain).collect())
+        models
+            .into_iter()
+            .map(tenant_model_to_domain)
+            .collect::<Result<Vec<_>>>()
     }
 
     async fn update_tenant(&self, id: TenantId, tenant: Tenant) -> Result<Tenant> {
@@ -129,6 +124,6 @@ impl TenantsService for DatabaseTenantsService {
         .map_err(|e| SenseiError::Database(format!("Failed to update tenant: {e}")))?
         .ok_or_else(|| SenseiError::NotFound(format!("Tenant {id} not found")))?;
 
-        Ok(tenant_model_to_domain(model))
+        tenant_model_to_domain(model)
     }
 }
