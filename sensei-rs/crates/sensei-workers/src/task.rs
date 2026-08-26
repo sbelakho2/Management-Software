@@ -647,14 +647,29 @@ async fn dead_letter(
         .publish_with_headers(DLQ_SUBJECT, headers, msg.payload.clone())
         .await
     {
-        Ok(_ack) => {
-            info!(
-                dlq_subject = DLQ_SUBJECT,
-                task_id = metadata.map(|m| m.task_id.to_string()).unwrap_or_default(),
-                "DLQ publish acknowledged — acking original message"
-            );
-            if let Err(e) = msg.ack().await {
-                warn!(error = %e, "Failed to ack original after DLQ publish");
+        Ok(ack) => {
+            // Two-stage publish: ONLY the server acknowledgement makes the
+            // DLQ copy durable. The original is acked only AFTER that.
+            match tokio::time::timeout(std::time::Duration::from_secs(10), ack).await {
+                Ok(Ok(_)) => {
+                    info!(
+                        dlq_subject = DLQ_SUBJECT,
+                        task_id = metadata.map(|m| m.task_id.to_string()).unwrap_or_default(),
+                        "DLQ publish server-acknowledged — acking original message"
+                    );
+                    if let Err(e) = msg.ack().await {
+                        warn!(error = %e, "Failed to ack original after DLQ publish");
+                    }
+                }
+                _ => {
+                    // The DLQ copy is NOT durable: leave the original
+                    // unacked so JetStream redelivers it.
+                    error!(
+                        dlq_subject = DLQ_SUBJECT,
+                        task_id = metadata.map(|m| m.task_id.to_string()).unwrap_or_default(),
+                        "DLQ publish NOT server-acknowledged — original left unacked for redelivery"
+                    );
+                }
             }
         }
         Err(e) => {

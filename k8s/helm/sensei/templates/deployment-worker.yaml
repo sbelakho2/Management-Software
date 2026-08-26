@@ -66,25 +66,27 @@ spec:
           value: {{ .Values.config.storage.bucket | quote }}
         - name: LOG_LEVEL
           value: {{ .Values.config.logLevel | quote }}
-        # Liveness probe — checks worker process is alive
+        # Liveness probe — the worker's own --healthcheck verifies REAL
+        # connectivity (DB + NATS), not process existence (no pgrep in the
+        # runtime image).
         livenessProbe:
           exec:
             command:
-            - pgrep
             - sensei-workers
+            - --healthcheck
           initialDelaySeconds: 30
           periodSeconds: 30
           timeoutSeconds: 10
           failureThreshold: 3
-        # Readiness probe — ensures worker is ready
+        # Readiness probe — DB + NATS must be reachable.
         readinessProbe:
           exec:
             command:
-            - pgrep
             - sensei-workers
+            - --healthcheck
           initialDelaySeconds: 15
           periodSeconds: 15
-          timeoutSeconds: 5
+          timeoutSeconds: 10
           failureThreshold: 3
         resources:
           {{- toYaml .Values.resources.worker | nindent 12 }}

@@ -867,7 +867,17 @@ impl AppState {
 
         // Durable audit logging: writes go to PostgreSQL instead of the
         // dev-mode ring buffer.
-        self.audit_log = self.audit_log.with_pool(Arc::new(p));
+        self.audit_log = self.audit_log.with_pool(Arc::new(p.clone()));
+
+        // ── Search: swap to the SQL-backed implementation ───────────────
+        // The in-memory search service captured Arcs to the ORIGINAL
+        // in-memory account/contact/product/user services at construction;
+        // swapping the state fields alone would leave DB-mode search
+        // pointing at stale in-memory instances. Construct the DB search
+        // AFTER the production repositories are in place.
+        self.search_service = Arc::new(crate::db_search_service::DatabaseSearchService::new(
+            p.clone(),
+        )) as Arc<dyn sensei_services::ops::search::SearchService>;
 
         self.db_pool = Some(pool);
         self

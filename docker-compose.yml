@@ -163,7 +163,7 @@ services:
     environment:
       SENSEI_ENV: ${SENSEI_ENV:-development}
       DATABASE_URL: postgres://${POSTGRES_USER:-sensei}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD not set}@db:5432/${POSTGRES_DB:-sensei}
-      NATS_URL: ${NATS_URL:-nats://nats:4222}
+      NATS_URL: ${NATS_URL:-nats://${NATS_TOKEN:-sensei_dev_token}@nats:4222}
       JWT_SECRET: ${JWT_SECRET:-dev-secret-change-in-production}
       JWT_PREVIOUS_SIGNING_KEY: ${JWT_PREVIOUS_SIGNING_KEY:-}
       JWT_ACCESS_TTL_MINUTES: ${JWT_ACCESS_TTL_MINUTES:-15}
@@ -226,7 +226,7 @@ services:
     environment:
       SENSEI_ENV: ${SENSEI_ENV:-development}
       DATABASE_URL: postgres://${POSTGRES_USER:-sensei}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD not set}@db:5432/${POSTGRES_DB:-sensei}
-      NATS_URL: ${NATS_URL:-nats://nats:4222}
+      NATS_URL: ${NATS_URL:-nats://${NATS_TOKEN:-sensei_dev_token}@nats:4222}
       JWT_SECRET: ${JWT_SECRET:-dev-secret-change-in-production}
       JWT_PREVIOUS_SIGNING_KEY: ${JWT_PREVIOUS_SIGNING_KEY:-}
       REALTIME_TICKET_TTL_SECONDS: ${REALTIME_TICKET_TTL_SECONDS:-300}

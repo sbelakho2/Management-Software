@@ -72,6 +72,31 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/app/target \
     cargo build --release --locked -p sensei-api -p sensei-workers
 
+# ── Stage 1b: Build the Leptos frontend with Trunk ──────────────────────────
+# Exactly ONE frontend builder: Trunk compiles the Leptos WASM app and emits
+# a self-contained static directory. The legacy wasm-pack pipeline was
+# removed; the API serves this output from /app/static.
+FROM rust:1.96.0-slim-bookworm AS frontend-builder
+
+RUN rustup target add wasm32-unknown-unknown \
+    && cargo install --locked trunk
+
+WORKDIR /app
+COPY Cargo.toml Cargo.lock ./
+COPY crates/sensei-frontend/Cargo.toml crates/sensei-frontend/
+COPY crates/sensei-core/Cargo.toml crates/sensei-core/
+COPY crates/sensei-db/Cargo.toml crates/sensei-db/
+COPY crates/sensei-auth/Cargo.toml crates/sensei-auth/
+COPY crates/sensei-event-bus/Cargo.toml crates/sensei-event-bus/
+COPY crates/sensei-services/Cargo.toml crates/sensei-services/
+COPY crates/sensei-zt/Cargo.toml crates/sensei-zt/
+COPY crates/sensei-workers/Cargo.toml crates/sensei-workers/
+COPY crates/ crates/
+
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/app/target \
+    cd crates/sensei-frontend && trunk build --release --dist /frontend-dist
+
 # ── Stage 2: Minimal runtime ──────────────────────────────────────────────
 FROM debian:bookworm-slim
 
@@ -86,7 +111,7 @@ COPY --from=builder /app/target/release/sensei-api /usr/local/bin/sensei-api
 COPY --from=builder /app/target/release/sensei-workers /usr/local/bin/sensei-workers
 
 # Static frontend served by the API at /app/static (STATIC_DIR env).
-COPY --from=builder /app/crates/sensei-frontend/dist /app/static
+COPY --from=frontend-builder /frontend-dist /app/static
 
 # Create a non-root user for security.
 RUN groupadd -r sensei && useradd -r -g sensei -d /home/sensei -s /sbin/nologin sensei && \
