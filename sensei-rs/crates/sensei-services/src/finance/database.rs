@@ -666,6 +666,20 @@ impl FinanceService for DatabaseFinanceService {
     // ── Invoice Mutations ──────────────────────────────────────────────
 
     async fn update_invoice(&self, tenant_id: Uuid, id: Uuid, invoice: Invoice) -> Result<Invoice> {
+        let status: Option<String> =
+            sqlx::query_scalar("SELECT status FROM invoices WHERE id = $1 AND tenant_id = $2")
+                .bind(id)
+                .bind(tenant_id)
+                .fetch_optional(&self.pool)
+                .await
+                .map_err(|e| SenseiError::Database(format!("Failed to read invoice: {e}")))?
+                .ok_or_else(|| SenseiError::NotFound(format!("Invoice {id} not found")))?;
+        if status.as_deref() == Some("paid") || status.as_deref() == Some("cancelled") {
+            return Err(SenseiError::Conflict(
+                "Paid or cancelled invoices are immutable — void the payment instead".to_string(),
+            ));
+        }
+
         let line_items_json =
             serde_json::to_value(&invoice.line_items).unwrap_or(serde_json::Value::Array(vec![]));
         let subtotal: rust_decimal::Decimal = invoice
@@ -708,6 +722,19 @@ impl FinanceService for DatabaseFinanceService {
     }
 
     async fn delete_invoice(&self, tenant_id: Uuid, id: Uuid) -> Result<()> {
+        let status: Option<String> =
+            sqlx::query_scalar("SELECT status FROM invoices WHERE id = $1 AND tenant_id = $2")
+                .bind(id)
+                .bind(tenant_id)
+                .fetch_optional(&self.pool)
+                .await
+                .map_err(|e| SenseiError::Database(format!("Failed to read invoice: {e}")))?
+                .ok_or_else(|| SenseiError::NotFound(format!("Invoice {id} not found")))?;
+        if status.as_deref() == Some("paid") || status.as_deref() == Some("cancelled") {
+            return Err(SenseiError::Conflict(
+                "Paid or cancelled invoices are immutable".to_string(),
+            ));
+        }
         let result = sqlx::query("DELETE FROM invoices WHERE id = $1 AND tenant_id = $2")
             .bind(id)
             .bind(tenant_id)
@@ -724,6 +751,21 @@ impl FinanceService for DatabaseFinanceService {
     // ── Payment Mutations ──────────────────────────────────────────────
 
     async fn update_payment(&self, tenant_id: Uuid, id: Uuid, payment: Payment) -> Result<Payment> {
+        let invoice_status: Option<String> = sqlx::query_scalar(
+            "SELECT i.status FROM payments p JOIN invoices i ON i.id = p.invoice_id \
+             WHERE p.id = $1 AND p.tenant_id = $2",
+        )
+        .bind(id)
+        .bind(tenant_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| SenseiError::Database(format!("Failed to read payment: {e}")))?
+        .ok_or_else(|| SenseiError::NotFound(format!("Payment {id} not found")))?;
+        if invoice_status.as_deref() == Some("paid") {
+            return Err(SenseiError::Conflict(
+                "Completed payments are immutable — reverse them instead of editing".to_string(),
+            ));
+        }
         let row = sqlx::query_as::<_, PaymentRow>(
             r#"
             UPDATE payments SET amount=$1, currency=$2, payment_method=$3, reference=$4
@@ -742,6 +784,21 @@ impl FinanceService for DatabaseFinanceService {
     }
 
     async fn delete_payment(&self, tenant_id: Uuid, id: Uuid) -> Result<()> {
+        let invoice_status: Option<String> = sqlx::query_scalar(
+            "SELECT i.status FROM payments p JOIN invoices i ON i.id = p.invoice_id \
+             WHERE p.id = $1 AND p.tenant_id = $2",
+        )
+        .bind(id)
+        .bind(tenant_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| SenseiError::Database(format!("Failed to read payment: {e}")))?
+        .ok_or_else(|| SenseiError::NotFound(format!("Payment {id} not found")))?;
+        if invoice_status.as_deref() == Some("paid") {
+            return Err(SenseiError::Conflict(
+                "Completed payments are immutable — reverse them instead of deleting".to_string(),
+            ));
+        }
         let result = sqlx::query("DELETE FROM payments WHERE id = $1 AND tenant_id = $2")
             .bind(id)
             .bind(tenant_id)
@@ -797,6 +854,21 @@ impl FinanceService for DatabaseFinanceService {
         id: Uuid,
         entry: JournalEntry,
     ) -> Result<JournalEntry> {
+        let status: Option<String> = sqlx::query_scalar(
+            "SELECT status FROM journal_entries WHERE id = $1 AND tenant_id = $2",
+        )
+        .bind(id)
+        .bind(tenant_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| SenseiError::Database(format!("Failed to read journal entry: {e}")))?
+        .ok_or_else(|| SenseiError::NotFound(format!("Journal entry {id} not found")))?;
+        if status.as_deref() == Some("posted") || status.as_deref() == Some("reversed") {
+            return Err(SenseiError::Conflict(
+                "Posted accounting entries are immutable — reverse them instead of editing"
+                    .to_string(),
+            ));
+        }
         let row = sqlx::query_as::<_, JournalEntryRow>(
             r#"
             UPDATE journal_entries SET description=$1, debit_account=$2, credit_account=$3, amount=$4, currency=$5, entry_date=$6
@@ -816,6 +888,21 @@ impl FinanceService for DatabaseFinanceService {
     }
 
     async fn delete_journal_entry(&self, tenant_id: Uuid, id: Uuid) -> Result<()> {
+        let status: Option<String> = sqlx::query_scalar(
+            "SELECT status FROM journal_entries WHERE id = $1 AND tenant_id = $2",
+        )
+        .bind(id)
+        .bind(tenant_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| SenseiError::Database(format!("Failed to read journal entry: {e}")))?
+        .ok_or_else(|| SenseiError::NotFound(format!("Journal entry {id} not found")))?;
+        if status.as_deref() == Some("posted") || status.as_deref() == Some("reversed") {
+            return Err(SenseiError::Conflict(
+                "Posted accounting entries are immutable — reverse them instead of deleting"
+                    .to_string(),
+            ));
+        }
         let result = sqlx::query("DELETE FROM journal_entries WHERE id = $1 AND tenant_id = $2")
             .bind(id)
             .bind(tenant_id)
@@ -829,6 +916,80 @@ impl FinanceService for DatabaseFinanceService {
             )));
         }
         Ok(())
+    }
+
+    async fn reverse_journal_entry(
+        &self,
+        tenant_id: Uuid,
+        id: Uuid,
+        reversed_by: Uuid,
+    ) -> Result<JournalEntry> {
+        let tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to begin reversal: {e}")))?;
+
+        let original: Option<JournalEntryRow> = sqlx::query_as(
+            "SELECT id, tenant_id, entry_number, description, debit_account, credit_account, \
+                    amount, currency, entry_date, posted_by \
+             FROM journal_entries WHERE id = $1 AND tenant_id = $2 FOR UPDATE",
+        )
+        .bind(id)
+        .bind(tenant_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| SenseiError::Database(format!("Failed to read journal entry: {e}")))?;
+
+        let Some(original) = original else {
+            return Err(SenseiError::NotFound(format!(
+                "Journal entry {id} not found"
+            )));
+        };
+        if original.posted_by == Uuid::nil() {
+            return Err(SenseiError::Conflict(
+                "Only posted entries can be reversed".to_string(),
+            ));
+        }
+
+        // Mirror entry: debit/credit swap + reversal_of linkage.
+        let reversal_id = Uuid::new_v4();
+        let reversal = sqlx::query_as::<_, JournalEntryRow>(
+            "INSERT INTO journal_entries \
+                (id, tenant_id, entry_number, description, debit_account, credit_account, \
+                 amount, currency, entry_date, posted_by, status, posted_at, reversal_of) \
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'posted', NOW(), $11) \
+             RETURNING id, tenant_id, entry_number, description, debit_account, credit_account, \
+                       amount, currency, entry_date, posted_by",
+        )
+        .bind(reversal_id)
+        .bind(tenant_id)
+        .bind(format!("REV-{}", original.entry_number))
+        .bind(format!("Reversal of {}", original.description))
+        .bind(&original.credit_account)
+        .bind(&original.debit_account)
+        .bind(original.amount)
+        .bind(&original.currency)
+        .bind(Utc::now())
+        .bind(reversed_by)
+        .bind(id)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|e| SenseiError::Database(format!("Failed to create reversal: {e}")))?;
+
+        sqlx::query(
+            "UPDATE journal_entries SET status = 'reversed' WHERE id = $1 AND tenant_id = $2",
+        )
+        .bind(id)
+        .bind(tenant_id)
+        .execute(&self.pool)
+        .await
+        .map_err(|e| SenseiError::Database(format!("Failed to mark entry reversed: {e}")))?;
+
+        tx.commit()
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to commit reversal: {e}")))?;
+        Ok(journal_row_to_domain(reversal))
     }
 
     // ── Cost Rollup ─────────────────────────────────────────────────────

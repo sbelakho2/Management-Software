@@ -399,11 +399,31 @@ pub async fn session_binding_middleware(
         }
         Ok(SessionResult::Matches) => {}
         Ok(SessionResult::Unknown) => {
-            // First time seeing this session on this client – register.
-            debug!(user_id = %user_id_str, sid = %sid, "Registering session fingerprint (first sight)");
-            session_store
-                .register(&sid, &user_id_str, user.tenant_id, fingerprint)
-                .await;
+            // A valid-looking token for a session that does not exist must
+            // NOT recreate its own server-side session record. Login is the
+            // only session creator. A development/migration compatibility
+            // switch (SESSION_AUTO_REGISTER=1) keeps the legacy behavior
+            // available where needed.
+            if std::env::var("SESSION_AUTO_REGISTER")
+                .map(|v| v == "1" || v == "true")
+                .unwrap_or(false)
+            {
+                debug!(user_id = %user_id_str, sid = %sid, "Auto-registering session (compat switch)");
+                session_store
+                    .register(&sid, &user_id_str, user.tenant_id, fingerprint)
+                    .await;
+            } else {
+                warn!(
+                    user_id = %user_id_str,
+                    sid = %sid,
+                    "Session not found — rejecting token (re-login required)"
+                );
+                let body = SessionError {
+                    error: "session_unknown".to_string(),
+                    message: "Session expired or was revoked. Please log in again.".to_string(),
+                };
+                return (StatusCode::UNAUTHORIZED, Json(body)).into_response();
+            }
         }
         Ok(SessionResult::Mismatch) => {
             // Revoke the stale binding so the next login re-binds cleanly.

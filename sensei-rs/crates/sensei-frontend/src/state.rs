@@ -8,8 +8,9 @@
 //! [`ApiClient`], plus the `tokens` signal) and are never persisted to
 //! `localStorage`/`sessionStorage`. This eliminates the XSS vector that
 //! would otherwise expose credentials to malicious scripts. On page reload
-//! the user must re-authenticate (or rely on the backend's HttpOnly refresh
-//! cookie once the API agent lands the cookie contract).
+//! the session is RESTORED through the backend's HttpOnly refresh cookie
+//! (`refresh_from_cookie`); only when the cookie session is absent/expired
+//! does the state become `Anonymous`.
 
 use std::sync::Arc;
 
@@ -108,6 +109,18 @@ impl AppState {
 
         // One shared client for the whole application.
         let client = ApiClient::new(&api_base);
+        // Keep the reactive signal and the client in lockstep: changing
+        // api_base reconfigures the client immediately.
+        let base_client = client.clone();
+        let base_client_hook = base_client.clone();
+        let base_hook = api_base_signal;
+        base_client.set_auth_hooks(
+            Some(Arc::new(move |_| {
+                let base = base_hook.get();
+                base_client_hook.set_base_url(&base);
+            })),
+            None,
+        );
 
         // Wire the client's refresh/session-expiry hooks back into reactive
         // state. The hooks capture only signals (Arc-backed), never
@@ -183,8 +196,12 @@ impl AppState {
                             )))
                     }
                     Err(_) => {
-                        // Session restored but profile fetch failed: enter
-                        // with the provisional identity; the UI offers retry.
+                        // Session restored but profile fetch failed: enter a
+                        // DISTINCT "authenticated but profile unavailable"
+                        // state (blank provisional + profile_fetch_failed)
+                        // so the UI offers retry instead of pretending the
+                        // blank identity is the real profile.
+                        self.profile_fetch_failed.set(true);
                         self.auth_state
                             .set(AuthState::Authenticated(self.user.get().unwrap_or(
                                 UserProfile {

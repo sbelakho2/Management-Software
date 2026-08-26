@@ -713,6 +713,7 @@ mod tests {
 
     #[test]
     fn environment_from_env_propagates_invalid_value() {
+        let _guard = ENV_LOCK.lock().unwrap();
         std::env::set_var("SENSEI_ENV", "prodution");
         assert!(matches!(
             Environment::from_env(),
@@ -730,6 +731,7 @@ mod tests {
 
     #[test]
     fn app_config_from_env_fails_on_invalid_environment() {
+        let _guard = ENV_LOCK.lock().unwrap();
         std::env::set_var("SENSEI_ENV", "prodution");
         std::env::set_var("JWT_SECRET", "test-secret");
         std::env::set_var("DATABASE_URL", "");

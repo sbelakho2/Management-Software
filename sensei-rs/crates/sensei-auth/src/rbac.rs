@@ -33,8 +33,11 @@ impl RbacService {
 
     /// Load the default role hierarchy.
     fn load_default_roles(&mut self) {
-        // Admin has all permissions (wildcard)
-        self.add_role("admin", vec!["*:*"]);
+        // Break-glass superuser only (never assigned through the normal
+        // user-management API; see routes/users.rs update_user_roles).
+        self.add_role("platform_superadmin", vec!["*:*"]);
+        // System-level tenant management (bootstrap admin only).
+        self.add_role("platform_admin", vec!["tenants:*", "users:*", "system:*"]);
         // System-level tenant management (bootstrap admin only).
         self.add_role("platform_admin", vec!["tenants:*", "users:*", "system:*"]);
         // Tenant-scoped user administration.
@@ -50,6 +53,176 @@ impl RbacService {
         );
 
         // Quality manager
+        // Quality technician
+        // Production manager
+        // Operator
+        // ── Finance (exact families: read/create/update/void, record/reverse,
+        //    post/reverse, create/allocate/approve) ──────────────────────
+        self.add_role(
+            "finance_manager",
+            vec![
+                "finance:invoice:read",
+                "finance:invoice:create",
+                "finance:invoice:update",
+                "finance:invoice:void",
+                "finance:invoice:approve",
+                "finance:payment:read",
+                "finance:payment:record",
+                "finance:payment:reverse",
+                "finance:payment:void",
+                "finance:journal:read",
+                "finance:journal:post",
+                "finance:journal:reverse",
+                "finance:budget:read",
+                "finance:budget:create",
+                "finance:budget:allocate",
+                "finance:budget:approve",
+                "finance:rollup:run",
+                "finance:match:three-way",
+            ],
+        );
+        self.add_role(
+            "accountant",
+            vec![
+                "finance:invoice:read",
+                "finance:invoice:create",
+                "finance:payment:read",
+                "finance:payment:record",
+                "finance:journal:read",
+                "finance:journal:post",
+                "finance:budget:read",
+            ],
+        );
+        self.add_role(
+            "ap_specialist",
+            vec![
+                "finance:invoice:read",
+                "finance:invoice:approve",
+                "finance:payment:record",
+                "finance:match:three-way",
+            ],
+        );
+        self.add_role(
+            "ar_specialist",
+            vec![
+                "finance:invoice:read",
+                "finance:invoice:create",
+                "finance:payment:record",
+            ],
+        );
+
+        // ── HR ─────────────────────────────────────────────────────────
+        self.add_role(
+            "hr_manager",
+            vec![
+                "hr:employee:read",
+                "hr:employee:manage",
+                "hr:leave:self",
+                "hr:leave:approve",
+                "hr:review:manage",
+                "hr:timecard:self",
+                "hr:timecard:manage",
+                "hr:training:manage",
+            ],
+        );
+        self.add_role(
+            "hr_specialist",
+            vec![
+                "hr:employee:read",
+                "hr:employee:manage",
+                "hr:training:manage",
+                "hr:timecard:manage",
+            ],
+        );
+        self.add_role(
+            "supervisor",
+            vec![
+                "hr:employee:read",
+                "hr:leave:self",
+                "hr:leave:approve",
+                "hr:timecard:self",
+                "hr:timecard:manage",
+            ],
+        );
+
+        // ── Purchasing / supply chain ──────────────────────────────────
+        self.add_role(
+            "purchasing_manager",
+            vec![
+                "purchasing:po:create",
+                "purchasing:po:approve",
+                "purchasing:rfq:manage",
+                "purchasing:supplier:manage",
+                "purchasing:rfq:create",
+                "purchasing:rfq:update",
+                "purchasing:rfq:submit",
+                "purchasing:rfq:cancel",
+                "purchasing:rfq:delete",
+                "purchasing:quote:create",
+                "purchasing:quote:update",
+                "purchasing:quote:approve",
+                "sales:order:create",
+                "sales:order:update",
+                "sales:order:status",
+            ],
+        );
+        self.add_role(
+            "buyer",
+            vec![
+                "purchasing:po:create",
+                "purchasing:rfq:create",
+                "purchasing:rfq:update",
+                "purchasing:rfq:submit",
+                "purchasing:rfq:cancel",
+            ],
+        );
+        self.add_role(
+            "receiving_operator",
+            vec![
+                "purchasing:po:create",
+                "purchasing:po:approve",
+                "inventory:move",
+                "inventory:adjust",
+            ],
+        );
+
+        // ── Inventory / warehouse ──────────────────────────────────────
+        self.add_role(
+            "inventory_manager",
+            vec![
+                "inventory:adjust",
+                "inventory:move",
+                "inventory:warehouse:manage",
+            ],
+        );
+        self.add_role(
+            "warehouse_operator",
+            vec!["inventory:move", "inventory:adjust"],
+        );
+
+        // ── Sales ──────────────────────────────────────────────────────
+        self.add_role(
+            "sales_manager",
+            vec![
+                "sales:order:create",
+                "sales:order:update",
+                "sales:order:status",
+                "purchasing:quote:create",
+                "purchasing:quote:update",
+                "purchasing:quote:approve",
+            ],
+        );
+        self.add_role(
+            "sales_rep",
+            vec![
+                "sales:order:create",
+                "sales:order:update",
+                "purchasing:quote:create",
+                "purchasing:quote:update",
+            ],
+        );
+
+        // ── Quality (complete families incl. the enforcement set) ──────
         self.add_role(
             "quality_manager",
             vec![
@@ -64,12 +237,68 @@ impl RbacService {
                 "quality:capa:close",
                 "quality:audit:read",
                 "quality:audit:create",
+                "quality:audit:update",
+                "quality:audit:delete",
                 "quality:inspection:read",
                 "quality:inspection:create",
+                "quality:inspection:update",
+                "quality:inspection:delete",
+                "quality:inspection:self",
+                "quality:scar:read",
+                "quality:scar:create",
+                "quality:scar:update",
+                "quality:scar:delete",
+                "quality:complaint:read",
+                "quality:complaint:create",
+                "quality:8d:read",
+                "quality:8d:create",
+                "quality:supplier:read",
+                "quality:supplier:manage",
+                "quality:msa:read",
+                "quality:msa:create",
+                "quality:spc:read",
+                "quality:spc:create",
+                "quality:control-plan:read",
+                "quality:control-plan:create",
+                "quality:control-plan:update",
+                "quality:pfmea:read",
+                "quality:pfmea:create",
+                "quality:gauge:read",
+                "quality:gauge:create",
+                "quality:gauge:update",
+                "quality:fai:read",
+                "quality:fai:create",
+                "quality:document:read",
+                "quality:document:create",
+                "quality:review:read",
+                "quality:review:create",
+                "quality:stage-gate:read",
+                "quality:stage-gate:manage",
+                "quality:npi:read",
+                "quality:npi:manage",
             ],
         );
-
-        // Quality technician
+        self.add_role(
+            "quality_engineer",
+            vec![
+                "quality:ncr:create",
+                "quality:ncr:read",
+                "quality:ncr:update",
+                "quality:capa:read",
+                "quality:capa:update",
+                "quality:audit:read",
+                "quality:audit:create",
+                "quality:inspection:read",
+                "quality:inspection:create",
+                "quality:scar:read",
+                "quality:msa:read",
+                "quality:spc:read",
+                "quality:control-plan:read",
+                "quality:pfmea:read",
+                "quality:document:read",
+                "quality:fai:read",
+            ],
+        );
         self.add_role(
             "quality_technician",
             vec![
@@ -79,10 +308,13 @@ impl RbacService {
                 "quality:capa:read",
                 "quality:inspection:read",
                 "quality:inspection:create",
+                "quality:inspection:self",
+                "quality:gauge:read",
+                "quality:msa:read",
             ],
         );
 
-        // Production manager
+        // ── Production ─────────────────────────────────────────────────
         self.add_role(
             "production_manager",
             vec![
@@ -94,8 +326,15 @@ impl RbacService {
                 "production:schedule:update",
             ],
         );
-
-        // Operator
+        self.add_role(
+            "production_supervisor",
+            vec![
+                "production:work-order:read",
+                "production:work-order:update",
+                "production:work-order:update-status",
+                "production:schedule:read",
+            ],
+        );
         self.add_role(
             "operator",
             vec![
@@ -208,10 +447,20 @@ mod tests {
     #[test]
     fn test_admin_has_all_permissions() {
         let rbac = RbacService::new();
+        // The legacy "admin" role is no longer wildcard: only the explicit
+        // break-glass platform_superadmin carries *:*.
         let admin_roles = vec!["admin".to_string()];
+        assert!(!rbac.has_permission(&admin_roles, &Permission("anything:whatever".to_string())));
 
-        assert!(rbac.has_permission(&admin_roles, &Permission("anything:whatever".to_string())));
-        assert!(rbac.has_permission(&admin_roles, &Permission("quality:ncr:delete".to_string())));
+        let superadmin_roles = vec!["platform_superadmin".to_string()];
+        assert!(rbac.has_permission(
+            &superadmin_roles,
+            &Permission("anything:whatever".to_string())
+        ));
+        assert!(rbac.has_permission(
+            &superadmin_roles,
+            &Permission("quality:ncr:delete".to_string())
+        ));
     }
 
     #[test]

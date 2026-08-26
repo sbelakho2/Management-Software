@@ -35,6 +35,12 @@ spec:
         image: "{{ .Values.senseiApi.image.repository }}:{{ .Values.senseiApi.image.tag | default .Chart.AppVersion }}"
         imagePullPolicy: {{ .Values.senseiApi.image.pullPolicy }}
         command: ["/usr/local/bin/sensei-workers"]
+        envFrom:
+        - configMapRef:
+            name: {{ include "sensei.fullname" . }}-config
+        - secretRef:
+            name: {{ include "sensei.fullname" . }}-secret
+            optional: true
         env:
         - name: SENSEI_ENV
           value: {{ .Values.config.environment | quote }}
@@ -44,7 +50,7 @@ spec:
               name: {{ include "sensei.fullname" . }}-secret
               key: DATABASE_URL
         - name: NATS_URL
-          value: "nats://{{ .Release.Name }}-nats:4222"
+          value: {{ include "sensei.nats.url" . | quote }}
         - name: JWT_SECRET
           valueFrom:
             secretKeyRef:

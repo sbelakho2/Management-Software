@@ -9,6 +9,7 @@
 //! - Error handling and response formatting
 //! - Application state management
 
+pub mod attachment_repository;
 pub mod db_search_service;
 pub mod db_stores;
 pub mod error;

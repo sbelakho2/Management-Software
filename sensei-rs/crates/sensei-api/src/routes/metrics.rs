@@ -136,9 +136,13 @@ pub fn init_metrics() {
 ///
 /// Returns all registered metrics in Prometheus text format. Encoding
 /// failures are logged and surfaced as a 500 rather than panicking.
-pub async fn metrics_handler(headers: HeaderMap) -> Response {
+pub async fn metrics_handler(
+    headers: HeaderMap,
+    crate::routes::health::OptionalPeer(peer): crate::routes::health::OptionalPeer,
+    axum::extract::State(state): axum::extract::State<crate::state::AppState>,
+) -> Response {
     use crate::routes::health::internal_access_allowed;
-    if !internal_access_allowed(&headers) {
+    if !internal_access_allowed(&headers, peer, state.config.environment.is_prod()) {
         return (
             StatusCode::FORBIDDEN,
             axum::Json(serde_json::json!({

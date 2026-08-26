@@ -205,5 +205,6 @@ async fn test_admin_list_users_scoped_to_tenant() {
     let req = app.get_authenticated("/api/v1/users?role=quality_manager", &token);
     let mut resp = app.send_request(req).await;
     let json: Value = app.json_body(&mut resp).await;
-    assert_eq!(json["total"], 1);
+    // The bootstrap admin carries the functional manager roles too.
+    assert_eq!(json["total"], 2);
 }

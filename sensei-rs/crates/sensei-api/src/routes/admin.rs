@@ -93,13 +93,28 @@ pub struct SystemConfig {
     pub rate_limit_per_minute: u64,
 }
 
-/// Reject non-admin callers.
+/// Reject callers without administrative authority.
+///
+/// Accepts platform_admin / tenant_admin and every functional manager role
+/// (the bootstrap seed carries them all; the wildcard `admin` role no longer
+/// exists).
 fn require_admin(user: &AuthenticatedUser) -> Result<()> {
-    if user.has_role("admin") {
+    if user.has_any_role(&[
+        "platform_admin",
+        "tenant_admin",
+        "finance_manager",
+        "hr_manager",
+        "purchasing_manager",
+        "inventory_manager",
+        "sales_manager",
+        "quality_manager",
+        "production_manager",
+        "platform_superadmin",
+    ]) {
         Ok(())
     } else {
         Err(SenseiError::Forbidden(
-            "Admin role required for this endpoint".to_string(),
+            "Administrative role required for this endpoint".to_string(),
         ))
     }
 }

@@ -34,12 +34,18 @@ spec:
       - name: sensei-api
         securityContext:
           {{- toYaml .Values.podSecurityContext | nindent 12 }}
-        image: "{{ .Values.senseiApi.image.repository }}:{{ .Values.senseiApi.image.tag }}"
+        image: "{{ .Values.senseiApi.image.repository }}:{{ .Values.senseiApi.image.tag | default .Chart.AppVersion }}"
         imagePullPolicy: {{ .Values.senseiApi.image.pullPolicy }}
         ports:
         - name: http
           containerPort: 8080
           protocol: TCP
+        envFrom:
+        - configMapRef:
+            name: {{ include "sensei.fullname" . }}-config
+        - secretRef:
+            name: {{ include "sensei.fullname" . }}-secret
+            optional: true
         env:
         - name: SENSEI_ENV
           value: {{ .Values.config.environment | quote }}
@@ -49,7 +55,7 @@ spec:
               name: {{ include "sensei.fullname" . }}-secret
               key: DATABASE_URL
         - name: NATS_URL
-          value: "nats://{{ .Release.Name }}-nats:4222"
+          value: {{ include "sensei.nats.url" . | quote }}
         - name: JWT_SECRET
           valueFrom:
             secretKeyRef:

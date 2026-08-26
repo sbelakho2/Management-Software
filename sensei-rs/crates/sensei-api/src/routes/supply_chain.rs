@@ -110,6 +110,8 @@ pub async fn list_rfqs(
     State(state): State<AppState>,
     Query(params): Query<ListRfqsParams>,
 ) -> Result<Json<PaginatedResponse<RFQ>>> {
+    user.require_permission("purchasing:rfq:manage")?;
+
     let tenant_id = user.tenant_id;
     let rfqs = state
         .supply_chain_service
@@ -129,6 +131,10 @@ pub async fn create_rfq(
     State(state): State<AppState>,
     Json(req): Json<RFQ>,
 ) -> Result<Json<RFQ>> {
+    user.require_permission("purchasing:rfq:create")?;
+    let mut req = req;
+    req.created_by = user.user_id;
+
     let tenant_id = user.tenant_id;
     let rfq = state
         .supply_chain_service
@@ -143,6 +149,8 @@ pub async fn get_rfq(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<RFQ>> {
+    user.require_permission("purchasing:rfq:manage")?;
+
     let tenant_id = user.tenant_id;
     let rfq = state.supply_chain_service.get_rfq(tenant_id, id).await?;
     Ok(Json(rfq))
@@ -155,6 +163,8 @@ pub async fn update_rfq_status(
     Path(id): Path<Uuid>,
     Json(req): Json<UpdateRfqStatusRequest>,
 ) -> Result<Json<RFQ>> {
+    user.require_permission("purchasing:rfq:submit")?;
+
     let tenant_id = user.tenant_id;
     let rfq = state
         .supply_chain_service
@@ -171,6 +181,8 @@ pub async fn list_quotes(
     State(state): State<AppState>,
     Query(params): Query<ListQuotesParams>,
 ) -> Result<Json<PaginatedResponse<Quote>>> {
+    user.require_permission("purchasing:quote:create")?;
+
     let tenant_id = user.tenant_id;
     let quotes = state
         .supply_chain_service
@@ -190,6 +202,10 @@ pub async fn create_quote(
     State(state): State<AppState>,
     Json(req): Json<Quote>,
 ) -> Result<Json<Quote>> {
+    user.require_permission("purchasing:quote:create")?;
+    let mut req = req;
+    req.created_by = user.user_id;
+
     let tenant_id = user.tenant_id;
     let quote = state
         .supply_chain_service
@@ -204,6 +220,8 @@ pub async fn get_quote(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<Quote>> {
+    user.require_permission("purchasing:quote:create")?;
+
     let tenant_id = user.tenant_id;
     let quote = state.supply_chain_service.get_quote(tenant_id, id).await?;
     Ok(Json(quote))
@@ -215,6 +233,8 @@ pub async fn approve_quote(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<Quote>> {
+    user.require_permission("purchasing:quote:approve")?;
+
     let tenant_id = user.tenant_id;
     let quote = state
         .supply_chain_service
@@ -229,6 +249,8 @@ pub async fn convert_quote_to_order(
     State(state): State<AppState>,
     Json(req): Json<ConvertQuoteToOrderRequest>,
 ) -> Result<Json<SalesOrder>> {
+    user.require_permission("sales:order:create")?;
+
     let tenant_id = user.tenant_id;
     let order = state
         .supply_chain_service
@@ -245,6 +267,8 @@ pub async fn list_sales_orders(
     State(state): State<AppState>,
     Query(params): Query<ListSalesOrdersParams>,
 ) -> Result<Json<PaginatedResponse<SalesOrder>>> {
+    user.require_permission("sales:order:create")?;
+
     let tenant_id = user.tenant_id;
     let orders = state
         .supply_chain_service
@@ -264,6 +288,10 @@ pub async fn create_sales_order(
     State(state): State<AppState>,
     Json(req): Json<SalesOrder>,
 ) -> Result<Json<SalesOrder>> {
+    user.require_permission("sales:order:create")?;
+    let mut req = req;
+    req.created_by = user.user_id;
+
     let tenant_id = user.tenant_id;
     let order = state
         .supply_chain_service
@@ -278,6 +306,8 @@ pub async fn get_sales_order(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<SalesOrder>> {
+    user.require_permission("sales:order:create")?;
+
     let tenant_id = user.tenant_id;
     let order = state
         .supply_chain_service
@@ -293,6 +323,8 @@ pub async fn update_sales_order_status(
     Path(id): Path<Uuid>,
     Json(req): Json<UpdateSalesOrderStatusRequest>,
 ) -> Result<Json<SalesOrder>> {
+    user.require_permission("sales:order:status")?;
+
     let tenant_id = user.tenant_id;
     let order = state
         .supply_chain_service
@@ -329,6 +361,8 @@ pub async fn create_purchase_order(
     Json(req): Json<PurchaseOrder>,
 ) -> Result<Json<PurchaseOrder>> {
     user.require_permission("purchasing:po:create")?;
+    let mut req = req;
+    req.created_by = user.user_id;
 
     let tenant_id = user.tenant_id;
     let order = state
@@ -467,6 +501,8 @@ pub async fn update_rfq(
     Path(id): Path<Uuid>,
     Json(req): Json<RFQ>,
 ) -> Result<Json<RFQ>> {
+    user.require_permission("purchasing:rfq:update")?;
+
     let tenant_id = user.tenant_id;
     let rfq = state
         .supply_chain_service
@@ -481,6 +517,8 @@ pub async fn delete_rfq(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<()>> {
+    user.require_permission("purchasing:rfq:delete")?;
+
     let tenant_id = user.tenant_id;
     state.supply_chain_service.delete_rfq(tenant_id, id).await?;
     Ok(Json(()))
@@ -492,6 +530,8 @@ pub async fn submit_rfq(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<RFQ>> {
+    user.require_permission("purchasing:rfq:submit")?;
+
     let tenant_id = user.tenant_id;
     let rfq = state.supply_chain_service.submit_rfq(tenant_id, id).await?;
     Ok(Json(rfq))
@@ -503,6 +543,8 @@ pub async fn cancel_rfq(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<RFQ>> {
+    user.require_permission("purchasing:rfq:cancel")?;
+
     let tenant_id = user.tenant_id;
     let rfq = state.supply_chain_service.cancel_rfq(tenant_id, id).await?;
     Ok(Json(rfq))
@@ -515,6 +557,8 @@ pub async fn update_quote(
     Path(id): Path<Uuid>,
     Json(req): Json<Quote>,
 ) -> Result<Json<Quote>> {
+    user.require_permission("purchasing:quote:update")?;
+
     let tenant_id = user.tenant_id;
     let quote = state
         .supply_chain_service
@@ -529,6 +573,8 @@ pub async fn delete_quote(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<()>> {
+    user.require_permission("purchasing:quote:update")?;
+
     let tenant_id = user.tenant_id;
     state
         .supply_chain_service
@@ -543,6 +589,8 @@ pub async fn submit_quote(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<Quote>> {
+    user.require_permission("purchasing:quote:update")?;
+
     let tenant_id = user.tenant_id;
     let quote = state
         .supply_chain_service
@@ -557,6 +605,8 @@ pub async fn accept_quote(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<Quote>> {
+    user.require_permission("purchasing:quote:approve")?;
+
     let tenant_id = user.tenant_id;
     let quote = state
         .supply_chain_service

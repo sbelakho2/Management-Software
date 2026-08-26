@@ -274,6 +274,15 @@ pub trait FinanceService: Send + Sync {
     ) -> Result<JournalEntry>;
     /// Delete a journal entry.
     async fn delete_journal_entry(&self, tenant_id: Uuid, id: Uuid) -> Result<()>;
+    /// Reverse a posted journal entry: creates a mirror entry and marks the
+    /// original `reversed`. Corrections are reversals + replacements, never
+    /// edits of posted accounting history.
+    async fn reverse_journal_entry(
+        &self,
+        tenant_id: Uuid,
+        id: Uuid,
+        reversed_by: Uuid,
+    ) -> Result<JournalEntry>;
 
     // ── Cost Rollup ─────────────────────────────────────────────────────
     /// Run a cost rollup for a product.
@@ -1123,12 +1132,54 @@ impl FinanceService for InMemoryFinanceService {
         Ok(existing.clone())
     }
 
-    async fn delete_journal_entry(&self, _tenant_id: Uuid, id: Uuid) -> Result<()> {
+    async fn delete_journal_entry(&self, tenant_id: Uuid, id: Uuid) -> Result<()> {
         let mut store = self.journal_entries.write().await;
-        store
-            .remove(&id)
+        let entry = store
+            .get(&id)
+            .filter(|e| e.tenant_id == tenant_id)
+            .cloned()
             .ok_or_else(|| SenseiError::NotFound(format!("JournalEntry {id} not found")))?;
+        if entry.posted_by != Uuid::nil() {
+            return Err(SenseiError::Conflict(
+                "Posted accounting entries are immutable — reverse them instead of deleting"
+                    .to_string(),
+            ));
+        }
+        store.remove(&id);
         Ok(())
+    }
+
+    async fn reverse_journal_entry(
+        &self,
+        tenant_id: Uuid,
+        id: Uuid,
+        reversed_by: Uuid,
+    ) -> Result<JournalEntry> {
+        let mut store = self.journal_entries.write().await;
+        let original = store
+            .get(&id)
+            .filter(|e| e.tenant_id == tenant_id)
+            .cloned()
+            .ok_or_else(|| SenseiError::NotFound(format!("JournalEntry {id} not found")))?;
+        if original.posted_by == Uuid::nil() {
+            return Err(SenseiError::Conflict(
+                "Only posted entries can be reversed".to_string(),
+            ));
+        }
+        let reversal = JournalEntry {
+            id: Uuid::new_v4(),
+            tenant_id,
+            entry_number: format!("REV-{}", original.entry_number),
+            description: format!("Reversal of {}", original.description),
+            debit_account: original.credit_account.clone(),
+            credit_account: original.debit_account.clone(),
+            amount: original.amount,
+            currency: original.currency,
+            entry_date: Utc::now(),
+            posted_by: reversed_by,
+        };
+        store.insert(reversal.id, reversal.clone());
+        Ok(reversal)
     }
 }
 

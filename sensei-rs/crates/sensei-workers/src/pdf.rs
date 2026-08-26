@@ -146,6 +146,9 @@ impl PdfWorker {
 
     /// Update progress for a given task in the KV store.
     async fn update_progress(&self, task_id: &str, progress: &PdfProgress) -> Result<()> {
+        // Long jobs must renew the idempotency lease: a five-minute render
+        // must not outlive its lease and be started a second time.
+        let _ = self.idempotency.renew_lease(task_id).await;
         let store = self.kv_store().await?;
         let key = format!("pdf.{}", task_id);
         let value = serde_json::to_vec(progress).map_err(WorkerError::Serialization)?;

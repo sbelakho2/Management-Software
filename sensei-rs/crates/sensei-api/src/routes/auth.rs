@@ -266,36 +266,52 @@ fn wants_cookie(headers: &HeaderMap) -> bool {
         .unwrap_or(false)
 }
 
-/// Set the HttpOnly refresh cookie on the response.
+/// Build the refresh-cookie header value from the config.
 ///
-/// The cookie is scoped to `/api/v1/auth` (only the refresh/logout
-/// endpoints need it) and carries `Secure` in production so it can never
-/// travel over plain HTTP.
-fn set_refresh_cookie(response: &mut axum::response::Response, token: &str) {
-    use axum::http::header::{HeaderValue, SET_COOKIE};
-    let secure = if std::env::var("SENSEI_ENV").unwrap_or_default() == "production" {
+/// One builder for create AND delete so the path attributes always match:
+/// `Path=/api/v1/auth`, `HttpOnly`, `SameSite=Strict`, `Secure` exactly
+/// when the environment is production (the parser accepts both `prod` and
+/// `production`), and `Max-Age` derived from the configured refresh-token
+/// lifetime.
+fn refresh_cookie_header(state: &AppState, token: &str) -> String {
+    let secure = if state.config.environment.is_prod() {
         "; Secure"
     } else {
         ""
     };
-    let cookie = format!(
+    let max_age = state.config.auth.refresh_token_expiry_days * 24 * 60 * 60;
+    format!(
         "{name}={token}; Path=/api/v1/auth; HttpOnly; SameSite=Strict; Max-Age={max_age}{secure}",
         name = REFRESH_COOKIE_NAME,
         token = token,
-        max_age = REFRESH_COOKIE_MAX_AGE_SECS,
+        max_age = max_age,
         secure = secure,
-    );
+    )
+}
+
+/// Set the HttpOnly refresh cookie on the response.
+fn set_refresh_cookie(response: &mut axum::response::Response, state: &AppState, token: &str) {
+    use axum::http::header::{HeaderValue, SET_COOKIE};
+    let cookie = refresh_cookie_header(state, token);
     if let Ok(value) = HeaderValue::from_str(&cookie) {
         response.headers_mut().append(SET_COOKIE, value);
     }
 }
 
 /// Clear the refresh cookie (logout).
-fn clear_refresh_cookie(response: &mut axum::response::Response) {
+fn clear_refresh_cookie(response: &mut axum::response::Response, state: &AppState) {
     use axum::http::header::{HeaderValue, SET_COOKIE};
+    // The deletion cookie MUST carry the same Path as creation or the
+    // browser keeps the original refresh cookie.
+    let secure = if state.config.environment.is_prod() {
+        "; Secure"
+    } else {
+        ""
+    };
     let cookie = format!(
-        "{name}=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0",
-        name = REFRESH_COOKIE_NAME
+        "{name}=; Path=/api/v1/auth; HttpOnly; SameSite=Strict; Max-Age=0{secure}",
+        name = REFRESH_COOKIE_NAME,
+        secure = secure,
     );
     if let Ok(value) = HeaderValue::from_str(&cookie) {
         response.headers_mut().append(SET_COOKIE, value);
@@ -442,7 +458,7 @@ pub async fn login(
             roles: response.roles.clone(),
         };
         let mut resp = Json(cookie_body).into_response();
-        set_refresh_cookie(&mut resp, &refresh_token);
+        set_refresh_cookie(&mut resp, &state, &refresh_token);
         return Ok(resp);
     }
 
@@ -556,7 +572,7 @@ pub async fn refresh(
             roles: response.roles.clone(),
         };
         let mut resp = Json(cookie_body).into_response();
-        set_refresh_cookie(&mut resp, &refresh_token);
+        set_refresh_cookie(&mut resp, &state, &refresh_token);
         return Ok(resp);
     }
     Ok(Json(response).into_response())
@@ -637,7 +653,7 @@ pub async fn register(
             roles: response.roles.clone(),
         };
         let mut resp = Json(cookie_body).into_response();
-        set_refresh_cookie(&mut resp, &refresh_token);
+        set_refresh_cookie(&mut resp, &state, &refresh_token);
         return Ok(resp);
     }
 
@@ -657,7 +673,14 @@ pub async fn logout(
 ) -> Result<axum::response::Response> {
     if let Some(claims) = access_token_claims(&state, &headers) {
         let entry = format!("{}:{}", claims.jti, claims.exp);
-        state.token_blacklist.insert(entry).await;
+        if let Err(e) = state.token_blacklist.insert(entry).await {
+            // Revocation persistence failed: do NOT report success.
+            tracing::error!(error = %e, "Access-token revocation could not be persisted");
+            return Err(SenseiError::Internal(
+                "Unable to complete logout — revocation could not be persisted. Please retry."
+                    .to_string(),
+            ));
+        }
     }
 
     // Revoke the current session binding (this device).
@@ -691,7 +714,7 @@ pub async fn logout(
         message: "Logged out successfully".to_string(),
     })
     .into_response();
-    clear_refresh_cookie(&mut response);
+    clear_refresh_cookie(&mut response, &state);
 
     Ok(response)
 }
@@ -825,10 +848,16 @@ pub async fn request_password_reset(
     if let Some(user) = user {
         let tenant_id = user.tenant_id;
         let token = Uuid::new_v4().to_string();
-        state
+        if let Err(e) = state
             .password_reset_store
             .insert(&token, user.id, tenant_id, now() + Duration::hours(1))
-            .await;
+            .await
+        {
+            tracing::error!(error = %e, "Reset-token persistence failed");
+            return Err(SenseiError::Internal(
+                "Unable to issue a reset token right now. Please retry.".to_string(),
+            ));
+        }
 
         // Send the password reset email
         if let Err(e) = state
@@ -954,10 +983,16 @@ pub async fn request_email_verification(
         if !verified {
             let tenant_id = user.tenant_id;
             let token = Uuid::new_v4().to_string();
-            state
+            if let Err(e) = state
                 .email_verification_store
                 .insert(&token, user.id, user.tenant_id, now() + Duration::hours(24))
-                .await;
+                .await
+            {
+                tracing::error!(error = %e, "Verification-token persistence failed");
+                return Err(SenseiError::Internal(
+                    "Unable to issue a verification token right now. Please retry.".to_string(),
+                ));
+            }
 
             // Send the email verification link
             if let Err(e) = state

@@ -218,8 +218,8 @@ fn task_state_machine_payload() -> Value {
         "initial_state": "open",
         "states": [
             {"name": "open", "label": "Open", "is_terminal": false, "allowed_roles": []},
-            {"name": "in_progress", "label": "In Progress", "is_terminal": false, "allowed_roles": ["admin"]},
-            {"name": "completed", "label": "Completed", "is_terminal": true, "allowed_roles": ["admin"]},
+            {"name": "in_progress", "label": "In Progress", "is_terminal": false, "allowed_roles": ["platform_admin"]},
+            {"name": "completed", "label": "Completed", "is_terminal": true, "allowed_roles": ["platform_admin"]},
         ],
         "transitions": [
             {"from_state": "open", "to_state": "in_progress", "event": "to_in_progress", "conditions": null, "on_transition": null},
@@ -270,7 +270,7 @@ async fn test_sm_linked_task_status_role_enforcement() {
             .state_machine_instance_id = Some(instance_id.parse().unwrap());
     }
 
-    // A plain user cannot move to in_progress (allowed_roles: ["admin"]).
+    // A plain user cannot move to in_progress (allowed_roles: ["platform_admin"]).
     let _ = app
         .create_user_with_roles("worker@sensei.test", "TestPass123!", &["user"])
         .await;

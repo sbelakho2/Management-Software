@@ -117,3 +117,14 @@ MinIO endpoint
 {{- .Values.config.storage.endpoint }}
 {{- end }}
 {{- end }}
+
+{{/*
+NATS URL: includes the auth token when NATS auth is enabled.
+*/}}
+{{- define "sensei.nats.url" -}}
+{{- if .Values.nats.auth.enabled -}}
+nats://{{ .Values.nats.auth.user }}:{{ .Values.nats.auth.password }}@{{ .Release.Name }}-nats:4222
+{{- else -}}
+nats://{{ .Release.Name }}-nats:4222
+{{- end -}}
+{{- end -}}

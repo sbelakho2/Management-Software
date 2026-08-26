@@ -1033,6 +1033,10 @@ pub fn build_router(state: AppState) -> Router {
                 .delete(routes::finance::delete_journal_entry),
         )
         .route(
+            "/api/v1/finance/journal-entries/{id}/reverse",
+            post(routes::finance::reverse_journal_entry),
+        )
+        .route(
             "/api/v1/finance/cost-rollup",
             post(routes::finance::run_cost_rollup),
         )

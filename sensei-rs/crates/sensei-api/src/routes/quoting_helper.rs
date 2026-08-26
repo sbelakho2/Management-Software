@@ -134,7 +134,7 @@ pub struct CostBuildResponse {
     /// Total calculated cost.
     pub total_cost: f64,
     /// Selling price (cost + margin).
-    pub selling_price: f64,
+    pub selling_price: rust_decimal::Decimal,
     /// Profit margin amount.
     pub margin: f64,
     /// Detailed cost breakdown.
@@ -237,7 +237,8 @@ impl From<stores::CostBuild> for CostBuildResponse {
             id: cb.id,
             quote_id: cb.quote_id,
             total_cost: cb.total_cost,
-            selling_price: cb.selling_price,
+            selling_price: rust_decimal::Decimal::from_f64_retain(cb.selling_price)
+                .unwrap_or(rust_decimal::Decimal::ZERO),
             margin: cb.margin,
             breakdown: cb.breakdown,
             created_at: cb.created_at,
@@ -831,9 +832,10 @@ pub async fn retrieve_quote_memory(
             // Margin is computed from the quote's own pricing fields
             // (list price vs. net price), not from the discount field.
             for li in &quote.line_items {
-                if li.unit_price > 0.0 {
-                    let margin_pct = ((li.unit_price - li.net_price) / li.unit_price) * 100.0;
-                    margins.push(margin_pct);
+                if li.unit_price > rust_decimal::Decimal::ZERO {
+                    let margin_pct = ((li.unit_price - li.net_price) / li.unit_price)
+                        * rust_decimal::Decimal::from(100u32);
+                    margins.push(margin_pct.to_string().parse::<f64>().unwrap_or_default());
                 }
             }
 

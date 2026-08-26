@@ -30,6 +30,10 @@ use tracing::{error, info, warn};
 /// Callback type for event handlers.
 pub type EventHandler = Arc<dyn Fn(EventEnvelope) -> Result<()> + Send + Sync>;
 
+/// Core-NATS-style handler: raw payload bytes, no envelope (ephemeral
+/// realtime fanout).
+pub type CoreHandler = Arc<dyn Fn(Vec<u8>) -> std::result::Result<(), EventBusError> + Send + Sync>;
+
 /// The subject prefix applied to every published event.
 pub const SUBJECT_PREFIX: &str = "sensei";
 
@@ -68,6 +72,20 @@ pub trait EventBus: Send + Sync {
 
     /// Check if the bus is connected.
     fn is_connected(&self) -> bool;
+
+    /// Core NATS pub/sub (ephemeral broadcast traffic such as WS/SSE
+    /// fanout). JetStream is reserved for durable jobs/business events —
+    /// realtime fanout must not accumulate durable consumers/history.
+    async fn subscribe_core(
+        &self,
+        subject: &str,
+        group: &str,
+        handler: Arc<dyn Fn(Vec<u8>) -> std::result::Result<(), EventBusError> + Send + Sync>,
+    ) -> Result<()>;
+
+    /// Publish a core-NATS message (fire-and-forget semantics for
+    /// ephemeral fanout).
+    async fn publish_core(&self, subject: &str, payload: &[u8]) -> Result<()>;
 
     /// Perform a real broker round-trip (default: assumed healthy for the
     /// in-memory bus; NATS overrides with a JetStream publish-ack probe).
@@ -286,6 +304,60 @@ impl EventBus for NatsEventBus {
         self.client.try_read().map(|c| c.is_some()).unwrap_or(false)
     }
 
+    async fn subscribe_core(&self, subject: &str, group: &str, handler: CoreHandler) -> Result<()> {
+        let client = self
+            .client
+            .try_read()
+            .ok()
+            .and_then(|c| c.clone())
+            .ok_or(EventBusError::NotConnected)?;
+        // Core NATS queue subscription: ephemeral broadcast traffic (WS/SSE
+        // fanout) — no JetStream consumer, no durable history.
+        let sub_subject = subject.to_string();
+        let sub_group = group.to_string();
+        let h = handler.clone();
+        tokio::spawn(async move {
+            // Supervisor loop: a stream error or termination MUST NOT kill
+            // the fanout permanently — the receive task is recreated until
+            // the manager detaches. Without this, the WebSocket manager
+            // would keep believing it is attached after the task died.
+            loop {
+                let sub = match client
+                    .queue_subscribe(sub_subject.clone(), sub_group.clone())
+                    .await
+                {
+                    Ok(s) => s,
+                    Err(e) => {
+                        tracing::warn!(error = %e, subject = %sub_subject, "Core subscribe failed — retrying");
+                        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                        continue;
+                    }
+                };
+                let mut messages = sub;
+                while let Some(msg) = messages.next().await {
+                    if let Err(e) = h(msg.payload.to_vec()) {
+                        tracing::warn!(error = %e, subject = %sub_subject, "Core fanout handler error");
+                    }
+                }
+                // Stream ended (error or unsubscribe): back off and resubscribe.
+                tracing::warn!(subject = %sub_subject, "Core fanout stream ended — resubscribing");
+                tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+            }
+        });
+        Ok(())
+    }
+
+    async fn publish_core(&self, subject: &str, payload: &[u8]) -> Result<()> {
+        let Some(client) = self.client.try_read().ok().and_then(|c| c.clone()) else {
+            return Err(EventBusError::NotConnected);
+        };
+        client
+            .publish(subject.to_string(), payload.to_vec().into())
+            .await
+            .map_err(|e| EventBusError::PublishFailed(e.to_string()))?;
+        Ok(())
+    }
+
     /// Perform a real broker round-trip: publish to the health subject and
     /// await the JetStream server acknowledgement with a short timeout.
     async fn probe(&self) -> bool {
@@ -326,6 +398,8 @@ impl EventBus for NatsEventBus {
 /// wildcards (`>` matches the remaining tokens, `*` matches exactly one).
 pub struct InMemoryEventBus {
     subscribers: Arc<RwLock<Vec<(String, EventHandler)>>>,
+    /// Core pub/sub handlers (ephemeral fanout, payload bytes).
+    core_subscribers: Arc<RwLock<Vec<(String, CoreHandler)>>>,
 }
 
 impl InMemoryEventBus {
@@ -333,6 +407,7 @@ impl InMemoryEventBus {
     pub fn new() -> Self {
         Self {
             subscribers: Arc::new(RwLock::new(Vec::new())),
+            core_subscribers: Arc::new(RwLock::new(Vec::new())),
         }
     }
 }
@@ -394,6 +469,28 @@ impl EventBus for InMemoryEventBus {
     fn is_connected(&self) -> bool {
         // The in-memory bus is connected from the moment it is created.
         true
+    }
+
+    async fn subscribe_core(
+        &self,
+        subject: &str,
+        _group: &str,
+        handler: CoreHandler,
+    ) -> Result<()> {
+        let subject = normalize_subject(subject);
+        self.core_subscribers.write().await.push((subject, handler));
+        Ok(())
+    }
+
+    async fn publish_core(&self, subject: &str, payload: &[u8]) -> Result<()> {
+        let subject = normalize_subject(subject);
+        let subscribers = self.core_subscribers.read().await;
+        for (pattern, handler) in subscribers.iter() {
+            if subject_matches(pattern, &subject) {
+                let _ = handler(payload.to_vec());
+            }
+        }
+        Ok(())
     }
 
     async fn disconnect(&self) -> Result<()> {

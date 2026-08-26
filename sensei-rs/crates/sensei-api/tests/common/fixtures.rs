@@ -308,9 +308,9 @@ pub fn state_machine_payload(name: &str, entity_type: &str) -> Value {
         "entity_type": entity_type,
         "initial_state": "Draft",
         "states": [
-            {"name": "Draft", "label": "Draft", "is_terminal": false, "allowed_roles": ["admin"]},
-            {"name": "Active", "label": "Active", "is_terminal": false, "allowed_roles": ["admin"]},
-            {"name": "Complete", "label": "Complete", "is_terminal": true, "allowed_roles": ["admin"]},
+            {"name": "Draft", "label": "Draft", "is_terminal": false, "allowed_roles": ["platform_admin"]},
+            {"name": "Active", "label": "Active", "is_terminal": false, "allowed_roles": ["platform_admin"]},
+            {"name": "Complete", "label": "Complete", "is_terminal": true, "allowed_roles": ["platform_admin"]},
         ],
         "transitions": [
             {"from_state": "Draft", "to_state": "Active", "event": "activate", "conditions": null, "on_transition": null},

@@ -53,7 +53,7 @@ pub struct AuthTokens {
 /// single application-wide client.
 #[derive(Clone)]
 pub struct ApiClient {
-    base_url: String,
+    base_url: std::sync::Arc<std::sync::RwLock<String>>,
     http: reqwest::Client,
     token: Arc<RwLock<Option<String>>>,
     refresh_token: Arc<RwLock<Option<String>>>,
@@ -86,7 +86,9 @@ impl ApiClient {
             .build()
             .unwrap_or_default();
         Self {
-            base_url: base_url.trim_end_matches('/').to_string(),
+            base_url: std::sync::Arc::new(std::sync::RwLock::new(
+                base_url.trim_end_matches('/').to_string(),
+            )),
             http,
             token: Arc::new(RwLock::new(None)),
             refresh_token: Arc::new(RwLock::new(None)),
@@ -142,7 +144,19 @@ impl ApiClient {
 
     /// Build the full URL for a path relative to the API base.
     pub fn url(&self, path: &str) -> String {
-        format!("{}{}", self.base_url, path)
+        format!(
+            "{}{}",
+            self.base_url.read().unwrap_or_else(|p| p.into_inner()),
+            path
+        )
+    }
+
+    /// Reconfigure the API base URL at runtime (kept in sync with the
+    /// reactive `api_base` signal).
+    pub fn set_base_url(&self, base_url: &str) {
+        if let Ok(mut guard) = self.base_url.write() {
+            *guard = base_url.trim_end_matches('/').to_string();
+        }
     }
 
     /// Perform a GET request.

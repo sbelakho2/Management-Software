@@ -486,31 +486,43 @@ async fn run_schedule_loops(
                 // takeover can never double-publish the same slot. Without a
                 // pool (dev mode) there is nothing to deduplicate against.
                 if let Some(pool) = &db {
-                    match sqlx::query(
-                        "INSERT INTO scheduler_run_log (task_type, run_key) \
-                         VALUES ($1, $2) ON CONFLICT (task_type, run_key) DO NOTHING",
+                    // Lease-based claim: 'claimed' + lease_until. A crashed
+                    // scheduler leaves an expired 'claimed' slot that the
+                    // next replica can reclaim; only a successful publish
+                    // marks the slot 'published'.
+                    let claimed = sqlx::query(
+                        "INSERT INTO scheduler_run_log (task_type, run_key, state, lease_until, lease_owner) \
+                         VALUES ($1, $2, 'claimed', NOW() + INTERVAL '2 minutes', $3) \
+                         ON CONFLICT (task_type, run_key) DO UPDATE SET \
+                             state = 'claimed', \
+                             lease_until = NOW() + INTERVAL '2 minutes', \
+                             lease_owner = $3 \
+                         WHERE scheduler_run_log.state != 'published' \
+                           AND (scheduler_run_log.state != 'claimed' \
+                                OR scheduler_run_log.lease_until < NOW()) \
+                         RETURNING state",
                     )
                     .bind(&task_type_str)
                     .bind(&run_key)
-                    .execute(pool.as_ref())
-                    .await
-                    {
-                        Ok(result) if result.rows_affected() == 0 => {
+                    .bind(scheduler_owner_id())
+                    .fetch_optional(pool.as_ref())
+                    .await;
+                    match claimed {
+                        Ok(Some(_)) => {}
+                        Ok(None) => {
                             info!(
                                 task_type = %task_type_str,
                                 run_key = %run_key,
-                                "Scheduled slot already executed — skipping publish"
+                                "Scheduled slot claimed by another scheduler or already published — skipping"
                             );
                             continue;
                         }
-                        Ok(_) => {}
                         Err(e) => {
                             error!(
                                 task_type = %task_type_str,
                                 run_key = %run_key,
                                 error = %e,
-                                "Failed to record scheduled slot — skipping publish \
-                                 (a missed slot is safer than a duplicate)"
+                                "Failed to claim scheduled slot — skipping this cycle"
                             );
                             continue;
                         }
@@ -536,6 +548,7 @@ async fn run_schedule_loops(
                                             run_key = %run_key,
                                             "Scheduled task published (server acknowledged)"
                                         );
+                                        mark_slot_published(&db, &task_type_str, &run_key).await;
                                     }
                                     Err(e) => {
                                         error!(
@@ -595,6 +608,28 @@ async fn release_slot(db: &Option<Arc<sqlx::PgPool>>, task_type: &str, run_key: 
                 "Failed to release scheduled slot — the job may be skipped this cycle"
             );
         }
+    }
+}
+
+/// Stable identity for THIS scheduler process (slot lease owner).
+fn scheduler_owner_id() -> uuid::Uuid {
+    static OWNER: std::sync::OnceLock<uuid::Uuid> = std::sync::OnceLock::new();
+    *OWNER.get_or_init(uuid::Uuid::new_v4)
+}
+
+/// Mark a claimed slot as published AFTER the JetStream server
+/// acknowledgement (a crash between claim and publish leaves the slot
+/// reclaimable via its expiring lease).
+async fn mark_slot_published(db: &Option<Arc<sqlx::PgPool>>, task_type: &str, run_key: &str) {
+    if let Some(pool) = db {
+        let _ = sqlx::query(
+            "UPDATE scheduler_run_log SET state = 'published', lease_until = NOW() \
+             WHERE task_type = $1 AND run_key = $2",
+        )
+        .bind(task_type)
+        .bind(run_key)
+        .execute(pool.as_ref())
+        .await;
     }
 }
 

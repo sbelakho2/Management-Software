@@ -27,29 +27,29 @@ impl TokenBlacklist {
     }
 
     /// Record `jti:exp` (the same format the middleware reads).
-    pub async fn insert(&self, entry: String) {
+    pub async fn insert(&self, entry: String) -> Result<(), String> {
         // entry format: "{jti}:{exp_ts}"
         let (jti, exp) = entry
             .split_once(':')
             .map(|(j, e)| (j.to_string(), e.parse::<i64>().unwrap_or(0)))
             .unwrap_or((entry.clone(), 0));
         if let Some(pool) = &self.pool {
-            if let Ok(jti_uuid) = Uuid::parse_str(&jti) {
-                let expires =
-                    chrono::DateTime::from_timestamp(exp, 0).unwrap_or_else(chrono::Utc::now);
-                let _ = sqlx::query(
-                    "INSERT INTO token_blacklist (jti, expires_at) VALUES ($1, $2) \\
-                     ON CONFLICT (jti) DO NOTHING",
-                )
-                .bind(jti_uuid)
-                .bind(expires)
-                .execute(pool)
-                .await;
-                self.sweep().await;
-                return;
-            }
+            let jti_uuid = Uuid::parse_str(&jti).map_err(|e| format!("Invalid jti: {e}"))?;
+            let expires = chrono::DateTime::from_timestamp(exp, 0).unwrap_or_else(chrono::Utc::now);
+            sqlx::query(
+                "INSERT INTO token_blacklist (jti, expires_at) VALUES ($1, $2) \
+                 ON CONFLICT (jti) DO NOTHING",
+            )
+            .bind(jti_uuid)
+            .bind(expires)
+            .execute(pool)
+            .await
+            .map_err(|e| format!("Blacklist insert failed: {e}"))?;
+            self.sweep().await;
+            return Ok(());
         }
         self.memory.write().await.insert(entry);
+        Ok(())
     }
 
     /// Whether the given jti is currently revoked.
@@ -139,17 +139,21 @@ impl TokenStore {
     }
 
     /// Insert a one-time token (raw value hashed with SHA-256).
+    ///
+    /// FAILS LOUDLY: a configured shared-state write failure is returned as
+    /// `Err` so callers never believe a token was issued when it was not
+    /// persisted.
     pub async fn insert(
         &self,
         token: &str,
         user_id: Uuid,
         tenant_id: Uuid,
         expires_at: chrono::DateTime<chrono::Utc>,
-    ) {
+    ) -> Result<(), String> {
         let hash = Self::hash(token);
         if let Some(pool) = &self.pool {
-            let _ = sqlx::query(&format!(
-                "INSERT INTO {} (token_hash, user_id, tenant_id, expires_at) \\
+            sqlx::query(&format!(
+                "INSERT INTO {} (token_hash, user_id, tenant_id, expires_at) \
                  VALUES ($1, $2, $3, $4) ON CONFLICT (token_hash) DO NOTHING",
                 self.table()
             ))
@@ -158,8 +162,9 @@ impl TokenStore {
             .bind(tenant_id)
             .bind(expires_at)
             .execute(pool)
-            .await;
-            return;
+            .await
+            .map_err(|e| format!("Token insert failed: {e}"))?;
+            return Ok(());
         }
         self.memory.write().await.insert(
             hash,
@@ -169,6 +174,7 @@ impl TokenStore {
                 expires_at,
             },
         );
+        Ok(())
     }
 
     /// Consume a one-time token atomically. Returns the record only when the

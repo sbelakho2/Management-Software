@@ -345,7 +345,8 @@ async fn test_transition_role_required_returns_403() {
 
     // Definition whose target state requires "admin"…
     let mut body = common::fixtures::state_machine_payload("Role SM", "Order");
-    body["states"].as_array_mut().unwrap()[1]["allowed_roles"] = serde_json::json!(["admin"]);
+    body["states"].as_array_mut().unwrap()[1]["allowed_roles"] =
+        serde_json::json!(["platform_admin"]);
     let req = app.post_authenticated("/api/v1/state-machines", &token, body);
     let mut resp = app.send_request(req).await;
     let created: Value = app.json_body(&mut resp).await;
@@ -391,7 +392,7 @@ async fn test_transition_role_required_condition() {
     // Transition guarded by {"type":"role_required","role":"admin"}.
     let mut body = common::fixtures::state_machine_payload("Cond SM", "Order");
     body["transitions"].as_array_mut().unwrap()[0]["conditions"] =
-        serde_json::json!({"type": "role_required", "role": "admin"});
+        serde_json::json!({"type": "role_required", "role": "platform_admin"});
     let req = app.post_authenticated("/api/v1/state-machines", &token, body);
     let mut resp = app.send_request(req).await;
     let created: Value = app.json_body(&mut resp).await;

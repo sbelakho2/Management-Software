@@ -17,10 +17,16 @@ async fn login_as_admin(app: &common::TestApp) -> String {
             app.admin_tenant_id,
             app.admin_user_id,
             vec![
-                "admin".to_string(),
                 "user".to_string(),
                 "tenant_admin".to_string(),
                 "platform_admin".to_string(),
+                "finance_manager".to_string(),
+                "hr_manager".to_string(),
+                "purchasing_manager".to_string(),
+                "inventory_manager".to_string(),
+                "sales_manager".to_string(),
+                "quality_manager".to_string(),
+                "production_manager".to_string(),
             ],
         )
         .await

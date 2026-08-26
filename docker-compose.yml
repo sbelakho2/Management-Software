@@ -197,7 +197,7 @@ services:
       minio:
         condition: service_started
     healthcheck:
-      test: ["CMD", "wget", "--spider", "--quiet", "http://localhost:8080/api/v1/health"]
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/health/live"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -221,8 +221,15 @@ services:
     container_name: sensei-rs-workers
     restart: unless-stopped
     profiles: ["dev", "production"]
-    # The image CMD runs the API; the worker needs its own entrypoint.
+    # The image CMD runs the API; the worker needs its own entrypoint and
+    # its own health protocol (DB + NATS probe, not HTTP).
     entrypoint: ["/usr/local/bin/sensei-workers"]
+    healthcheck:
+      test: ["CMD", "sensei-workers", "--healthcheck"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
     environment:
       SENSEI_ENV: ${SENSEI_ENV:-development}
       DATABASE_URL: postgres://${POSTGRES_USER:-sensei}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD not set}@db:5432/${POSTGRES_DB:-sensei}

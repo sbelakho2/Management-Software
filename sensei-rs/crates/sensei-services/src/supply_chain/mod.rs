@@ -58,7 +58,7 @@ pub struct RFQItem {
     pub product_name: String,
     pub quantity: i64,
     pub unit_of_measure: String,
-    pub target_price: Option<f64>,
+    pub target_price: Option<rust_decimal::Decimal>,
 }
 
 /// A quote provided by a supplier or sent to a customer.
@@ -72,7 +72,7 @@ pub struct Quote {
     pub customer_name: String,
     pub status: String, // draft, submitted, approved, rejected, converted, expired
     pub line_items: Vec<QuoteLineItem>,
-    pub total_amount: f64,
+    pub total_amount: rust_decimal::Decimal,
     pub currency: String,
     pub valid_until: DateTime<Utc>,
     pub created_by: Uuid,
@@ -85,9 +85,9 @@ pub struct QuoteLineItem {
     pub product_id: Uuid,
     pub product_name: String,
     pub quantity: i64,
-    pub unit_price: f64,
+    pub unit_price: rust_decimal::Decimal,
     pub discount_percentage: f64,
-    pub net_price: f64,
+    pub net_price: rust_decimal::Decimal,
 }
 
 /// A sales order from a customer.
@@ -100,7 +100,7 @@ pub struct SalesOrder {
     pub customer_name: String,
     pub status: String, // pending, confirmed, in_production, shipped, delivered, cancelled
     pub line_items: Vec<SalesOrderItem>,
-    pub total_amount: f64,
+    pub total_amount: rust_decimal::Decimal,
     pub currency: String,
     pub delivery_date: Option<DateTime<Utc>>,
     pub shipping_address: String,
@@ -114,7 +114,7 @@ pub struct SalesOrderItem {
     pub product_id: Uuid,
     pub product_name: String,
     pub quantity: i64,
-    pub unit_price: f64,
+    pub unit_price: rust_decimal::Decimal,
     pub delivered_quantity: i64,
 }
 
@@ -128,7 +128,7 @@ pub struct PurchaseOrder {
     pub supplier_name: String,
     pub status: String, // draft, sent, confirmed, received, partially_received, cancelled
     pub line_items: Vec<POItem>,
-    pub total_amount: f64,
+    pub total_amount: rust_decimal::Decimal,
     pub currency: String,
     pub expected_delivery: Option<DateTime<Utc>>,
     pub created_by: Uuid,
@@ -142,7 +142,7 @@ pub struct POItem {
     pub product_name: String,
     pub quantity_ordered: i64,
     pub quantity_received: i64,
-    pub unit_price: f64,
+    pub unit_price: rust_decimal::Decimal,
 }
 
 /// An inventory item tracking stock levels at a location.
@@ -591,7 +591,7 @@ impl SupplyChainService for InMemorySupplyChainService {
             id,
             quote_number,
             rfq_id,
-            total_amount,
+            total_amount.to_string().parse::<f64>().unwrap_or_default(),
             currency,
         ))
         .await;
@@ -647,7 +647,7 @@ impl SupplyChainService for InMemorySupplyChainService {
             tenant_id,
             id,
             Uuid::nil(),
-            total_amount,
+            total_amount.to_string().parse::<f64>().unwrap_or_default(),
         ))
         .await;
         Ok(result)
@@ -750,7 +750,7 @@ impl SupplyChainService for InMemorySupplyChainService {
             id,
             so_number,
             account_id,
-            total_amount,
+            total_amount.to_string().parse::<f64>().unwrap_or_default(),
             currency,
         ))
         .await;
@@ -825,7 +825,7 @@ impl SupplyChainService for InMemorySupplyChainService {
             id,
             po_number,
             supplier_id,
-            total_amount,
+            total_amount.to_string().parse::<f64>().unwrap_or_default(),
             currency,
         ))
         .await;
@@ -1430,7 +1430,10 @@ mod tests {
                 product_name: "Widget".to_string(),
                 quantity: 100,
                 unit_of_measure: "pcs".to_string(),
-                target_price: Some(9.99),
+                target_price: Some(
+                    rust_decimal::Decimal::from_f64_retain(9.99)
+                        .unwrap_or(rust_decimal::Decimal::ZERO),
+                ),
             }],
             notes: String::new(),
             created_by: Uuid::new_v4(),
@@ -1465,11 +1468,14 @@ mod tests {
                 product_id: Uuid::new_v4(),
                 product_name: "Premium Widget".to_string(),
                 quantity: 50,
-                unit_price: 19.99,
+                unit_price: rust_decimal::Decimal::from_f64_retain(19.99)
+                    .unwrap_or(rust_decimal::Decimal::ZERO),
                 discount_percentage: 10.0,
-                net_price: 17.99,
+                net_price: rust_decimal::Decimal::from_f64_retain(17.99)
+                    .unwrap_or(rust_decimal::Decimal::ZERO),
             }],
-            total_amount: 899.50,
+            total_amount: rust_decimal::Decimal::from_f64_retain(899.50)
+                .unwrap_or(rust_decimal::Decimal::ZERO),
             currency: "USD".to_string(),
             valid_until: Utc::now() + chrono::Duration::days(30),
             created_by: Uuid::new_v4(),
@@ -1492,7 +1498,10 @@ mod tests {
             .await
             .unwrap();
         assert!(order.order_number.starts_with("SO-"));
-        assert_eq!(order.total_amount, 899.50);
+        assert_eq!(
+            order.total_amount,
+            rust_decimal::Decimal::from_f64_retain(899.50).unwrap()
+        );
         assert_eq!(order.line_items.len(), 1);
         assert_eq!(order.line_items[0].product_name, "Premium Widget");
 
@@ -1522,9 +1531,11 @@ mod tests {
                 product_name: "Raw Material".to_string(),
                 quantity_ordered: 1000,
                 quantity_received: 0,
-                unit_price: 2.50,
+                unit_price: rust_decimal::Decimal::from_f64_retain(2.50)
+                    .unwrap_or(rust_decimal::Decimal::ZERO),
             }],
-            total_amount: 2500.0,
+            total_amount: rust_decimal::Decimal::from_f64_retain(2500.0)
+                .unwrap_or(rust_decimal::Decimal::ZERO),
             currency: "USD".to_string(),
             expected_delivery: Some(Utc::now() + chrono::Duration::days(14)),
             created_by: Uuid::new_v4(),

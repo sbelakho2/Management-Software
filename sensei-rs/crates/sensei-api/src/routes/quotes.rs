@@ -36,7 +36,7 @@ pub struct QuoteRequest {
     pub customer_id: Uuid,
     pub customer_name: String,
     pub line_items: Vec<QuoteLineItem>,
-    pub total_amount: f64,
+    pub total_amount: rust_decimal::Decimal,
     pub currency: String,
     pub valid_until: DateTime<Utc>,
 }

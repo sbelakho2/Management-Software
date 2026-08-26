@@ -177,7 +177,7 @@ async fn create_real_trigger(
         "action": {"template": "notification_template", "payload": null},
         "channels": ["InApp"],
         "cooldown_minutes": 60,
-        "target_roles": ["admin"],
+        "target_roles": ["user"],
         "is_active": true,
     });
     let req = app.post_authenticated("/api/v1/notification-triggers", token, body);

@@ -82,11 +82,11 @@ impl DatabaseSearchService {
     ) -> Result<Vec<SearchResult>> {
         let rows = sqlx::query_as::<_, (Uuid, String, Option<String>, f32)>(
             "SELECT id, name, email, \
-                GREATEST(similarity(name, $2), similarity(COALESCE(email, ''), $2)) \
+                GREATEST(similarity(name, $2), similarity(COALESCE(email, ''), $2)) AS relevance \
              FROM users \
              WHERE tenant_id = $1 \
-               AND (name ILIKE '%' || $2 || '%' OR email ILIKE '%' || $2 || '%') \
-             ORDER BY 3 DESC \
+               AND (name ILIKE '%' || replace(replace($2, '%', '\\%'), '_', '\\_') || '%' OR email ILIKE '%' || replace(replace($2, '%', '\\%'), '_', '\\_') || '%') \
+             ORDER BY relevance DESC \
              LIMIT $3",
         )
         .bind(tenant_id)
@@ -116,11 +116,11 @@ impl DatabaseSearchService {
     ) -> Result<Vec<SearchResult>> {
         let rows = sqlx::query_as::<_, (Uuid, String, Option<String>, f32)>(
             "SELECT id, name, email, \
-                GREATEST(similarity(name, $2), similarity(COALESCE(email, ''), $2)) \
+                GREATEST(similarity(name, $2), similarity(COALESCE(email, ''), $2)) AS relevance \
              FROM accounts \
              WHERE tenant_id = $1 \
-               AND (name ILIKE '%' || $2 || '%' OR email ILIKE '%' || $2 || '%') \
-             ORDER BY 3 DESC \
+               AND (name ILIKE '%' || replace(replace($2, '%', '\\%'), '_', '\\_') || '%' OR email ILIKE '%' || replace(replace($2, '%', '\\%'), '_', '\\_') || '%') \
+             ORDER BY relevance DESC \
              LIMIT $3",
         )
         .bind(tenant_id)
@@ -151,13 +151,13 @@ impl DatabaseSearchService {
         let rows = sqlx::query_as::<_, (Uuid, String, Option<String>, f32)>(
             "SELECT id, (first_name || ' ' || last_name) AS full_name, email, \
                 GREATEST(similarity(first_name || ' ' || last_name, $2), \
-                         similarity(COALESCE(email, ''), $2)) \
+                         similarity(COALESCE(email, ''), $2)) AS relevance \
              FROM contacts \
              WHERE tenant_id = $1 \
-               AND (first_name ILIKE '%' || $2 || '%' \
-                    OR last_name ILIKE '%' || $2 || '%' \
-                    OR email ILIKE '%' || $2 || '%') \
-             ORDER BY 3 DESC \
+               AND (first_name ILIKE '%' || replace(replace($2, '%', '\\%'), '_', '\\_') || '%' \
+                    OR last_name ILIKE '%' || replace(replace($2, '%', '\\%'), '_', '\\_') || '%' \
+                    OR email ILIKE '%' || replace(replace($2, '%', '\\%'), '_', '\\_') || '%') \
+             ORDER BY relevance DESC \
              LIMIT $3",
         )
         .bind(tenant_id)
@@ -187,13 +187,13 @@ impl DatabaseSearchService {
     ) -> Result<Vec<SearchResult>> {
         let rows = sqlx::query_as::<_, (Uuid, String, Option<String>, f32)>(
             "SELECT id, name, sku, \
-                GREATEST(similarity(name, $2), similarity(COALESCE(sku, ''), $2)) \
+                GREATEST(similarity(name, $2), similarity(COALESCE(sku, ''), $2)) AS relevance \
              FROM products \
              WHERE tenant_id = $1 \
-               AND (name ILIKE '%' || $2 || '%' \
-                    OR sku ILIKE '%' || $2 || '%' \
-                    OR product_number ILIKE '%' || $2 || '%') \
-             ORDER BY 3 DESC \
+               AND (name ILIKE '%' || replace(replace($2, '%', '\\%'), '_', '\\_') || '%' \
+                    OR sku ILIKE '%' || replace(replace($2, '%', '\\%'), '_', '\\_') || '%' \
+                    OR product_number ILIKE '%' || replace(replace($2, '%', '\\%'), '_', '\\_') || '%') \
+             ORDER BY relevance DESC \
              LIMIT $3",
         )
         .bind(tenant_id)
@@ -231,13 +231,13 @@ impl DatabaseSearchService {
             "SELECT id, entity_type, data, \
                 GREATEST(similarity(COALESCE(data->>'name', ''), $3), \
                          similarity(COALESCE(data->>'title', ''), $3), \
-                         similarity(COALESCE(data->>'description', ''), $3)) \
+                         similarity(COALESCE(data->>'description', ''), $3)) AS relevance \
              FROM entity_store \
              WHERE tenant_id = $1 AND entity_type = ANY($2) \
-               AND (COALESCE(data->>'name', '') ILIKE '%' || $3 || '%' \
-                    OR COALESCE(data->>'title', '') ILIKE '%' || $3 || '%' \
-                    OR COALESCE(data->>'description', '') ILIKE '%' || $3 || '%') \
-             ORDER BY 4 DESC \
+               AND (COALESCE(data->>'name', '') ILIKE '%' || replace(replace($3, '%', '\\%'), '_', '\\_') || '%' \
+                    OR COALESCE(data->>'title', '') ILIKE '%' || replace(replace($3, '%', '\\%'), '_', '\\_') || '%' \
+                    OR COALESCE(data->>'description', '') ILIKE '%' || replace(replace($3, '%', '\\%'), '_', '\\_') || '%') \
+             ORDER BY relevance DESC \
              LIMIT $4",
         )
         .bind(tenant_id)

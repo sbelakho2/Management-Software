@@ -156,7 +156,9 @@ pub async fn add_rfq_line_item(
         product_name: req.product_name,
         quantity: req.quantity,
         unit_of_measure: req.unit_of_measure,
-        target_price: req.target_price,
+        target_price: req.target_price.map(|p| {
+            rust_decimal::Decimal::from_f64_retain(p).unwrap_or(rust_decimal::Decimal::ZERO)
+        }),
     };
 
     let mut rfq = state
@@ -198,7 +200,9 @@ pub async fn update_rfq_line_item(
     item.product_name = req.product_name;
     item.quantity = req.quantity;
     item.unit_of_measure = req.unit_of_measure;
-    item.target_price = req.target_price;
+    item.target_price = req
+        .target_price
+        .map(|p| rust_decimal::Decimal::from_f64_retain(p).unwrap_or(rust_decimal::Decimal::ZERO));
 
     let updated_item = item.clone();
     state

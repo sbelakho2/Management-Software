@@ -166,10 +166,16 @@ impl InMemoryUsersService {
             name.into(),
             password_hash.into(),
             vec![
-                "admin".to_string(),
                 "user".to_string(),
                 "tenant_admin".to_string(),
                 "platform_admin".to_string(),
+                "finance_manager".to_string(),
+                "hr_manager".to_string(),
+                "purchasing_manager".to_string(),
+                "inventory_manager".to_string(),
+                "sales_manager".to_string(),
+                "quality_manager".to_string(),
+                "production_manager".to_string(),
             ],
         );
         users.insert(user.id, user);
@@ -520,10 +526,14 @@ mod tests {
         let svc = InMemoryUsersService::new();
         let created = svc.create_user(user("roles@example.com")).await.unwrap();
         let updated = svc
-            .update_user_roles(created.tenant_id, created.id, vec!["admin".to_string()])
+            .update_user_roles(
+                created.tenant_id,
+                created.id,
+                vec!["finance_manager".to_string()],
+            )
             .await
             .unwrap();
-        assert_eq!(updated.roles, vec!["admin".to_string()]);
+        assert_eq!(updated.roles, vec!["finance_manager".to_string()]);
 
         let err = svc
             .update_user_roles(

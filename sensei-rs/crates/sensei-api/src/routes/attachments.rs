@@ -466,12 +466,16 @@ async fn upload_inner(
         created_at: now,
     };
 
-    // Store metadata in the attachment store (file data lives in the storage
-    // service; DB-backed store persists on guard drop).
-    {
-        let mut meta = state.attachment_meta.write(user.tenant_id).await;
-        meta.insert(attachment.id, attachment.clone());
-    }
+    // Store metadata in the typed attachment repository (PostgreSQL is the
+    // source of truth — no process-local snapshot caching).
+    state
+        .attachment_repo
+        .put(&attachment)
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, attachment_id = %attachment.id, "Failed to persist attachment metadata");
+            SenseiError::Internal("Failed to persist attachment metadata".to_string())
+        })?;
 
     Ok(Json(UploadedAttachment::from_attachment(
         &attachment,
@@ -531,17 +535,10 @@ pub async fn list_attachments(
     Path((entity_type, entity_id)): Path<(String, Uuid)>,
     Query(params): Query<ListAttachmentsParams>,
 ) -> Result<Json<PaginatedResponse<Attachment>>> {
-    let meta = state.attachment_meta.read(user.tenant_id).await;
-    let mut attachments: Vec<Attachment> = meta
-        .values()
-        .filter(|a| {
-            a.tenant_id == user.tenant_id
-                && a.entity_type == entity_type
-                && a.entity_id == entity_id
-        })
-        .cloned()
-        .collect();
-    attachments.sort_by_key(|a| std::cmp::Reverse(a.created_at));
+    let attachments = state
+        .attachment_repo
+        .list(user.tenant_id, &entity_type, entity_id)
+        .await;
     let result = PaginatedResponse::new(attachments, params.page, params.per_page);
     Ok(Json(result))
 }
@@ -558,13 +555,11 @@ pub async fn download_attachment(
 ) -> Result<axum::response::Response> {
     use axum::http::header::{CONTENT_DISPOSITION, CONTENT_TYPE};
 
-    let attachment = {
-        let meta = state.attachment_meta.read(user.tenant_id).await;
-        meta.get(&id)
-            .filter(|a| a.tenant_id == user.tenant_id)
-            .cloned()
-            .ok_or_else(|| SenseiError::NotFound(format!("Attachment {id} not found")))?
-    };
+    let attachment = state
+        .attachment_repo
+        .get(user.tenant_id, id)
+        .await
+        .ok_or_else(|| SenseiError::NotFound(format!("Attachment {id} not found")))?;
 
     let bytes = state
         .storage_service
@@ -610,14 +605,12 @@ pub async fn delete_attachment(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<()>> {
-    // Read the metadata entry first.
-    let attachment = {
-        let meta = state.attachment_meta.read(user.tenant_id).await;
-        meta.get(&id)
-            .filter(|a| a.tenant_id == user.tenant_id)
-            .cloned()
-            .ok_or_else(|| SenseiError::NotFound(format!("Attachment {id} not found")))?
-    };
+    // Read the metadata entry first (typed repository).
+    let attachment = state
+        .attachment_repo
+        .get(user.tenant_id, id)
+        .await
+        .ok_or_else(|| SenseiError::NotFound(format!("Attachment {id} not found")))?;
 
     // Delete the file from the storage backend (storage_path is the opaque key).
     state
@@ -625,11 +618,15 @@ pub async fn delete_attachment(
         .delete(user.tenant_id, &attachment.storage_path)
         .await?;
 
-    // Remove the metadata entry.
-    {
-        let mut meta = state.attachment_meta.write(user.tenant_id).await;
-        meta.remove(&id);
-    }
+    // Remove the metadata entry (typed repository).
+    state
+        .attachment_repo
+        .delete(user.tenant_id, id)
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, attachment_id = %id, "Failed to delete attachment metadata");
+            SenseiError::Internal("Failed to delete attachment metadata".to_string())
+        })?;
 
     Ok(Json(()))
 }

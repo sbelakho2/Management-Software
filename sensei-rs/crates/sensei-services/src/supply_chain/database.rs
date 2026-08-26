@@ -122,7 +122,7 @@ struct QuoteRow {
     customer_name: String,
     status: String,
     line_items: serde_json::Value,
-    total_amount: f64,
+    total_amount: rust_decimal::Decimal,
     currency: String,
     valid_until: chrono::DateTime<Utc>,
     created_by: Uuid,
@@ -138,7 +138,7 @@ struct SalesOrderRow {
     customer_name: String,
     status: String,
     line_items: serde_json::Value,
-    total_amount: f64,
+    total_amount: rust_decimal::Decimal,
     currency: String,
     delivery_date: Option<chrono::DateTime<Utc>>,
     shipping_address: String,
@@ -155,7 +155,7 @@ struct PurchaseOrderRow {
     supplier_name: String,
     status: String,
     line_items: serde_json::Value,
-    total_amount: f64,
+    total_amount: rust_decimal::Decimal,
     currency: String,
     expected_delivery: Option<chrono::DateTime<Utc>>,
     created_by: Uuid,
@@ -399,7 +399,7 @@ impl SupplyChainService for DatabaseSupplyChainService {
         let quote_number = format!("QTE-{}-{}", now.format("%Y%m%d"), suffix);
         let li_json =
             serde_json::to_value(&quote.line_items).unwrap_or(serde_json::Value::Array(vec![]));
-        let total: f64 = quote.line_items.iter().map(|li| li.net_price).sum();
+        let total: rust_decimal::Decimal = quote.line_items.iter().map(|li| li.net_price).sum();
 
         let row = sqlx::query_as::<_, QuoteRow>(
             r#"INSERT INTO quotes (id, tenant_id, quote_number, rfq_id, customer_id, customer_name, status, line_items, total_amount, currency, valid_until, created_by, created_at)
@@ -506,10 +506,10 @@ impl SupplyChainService for DatabaseSupplyChainService {
         let order_number = format!("SO-{}-{}", now.format("%Y%m%d"), suffix);
         let li_json =
             serde_json::to_value(&order.line_items).unwrap_or(serde_json::Value::Array(vec![]));
-        let total: f64 = order
+        let total: rust_decimal::Decimal = order
             .line_items
             .iter()
-            .map(|li| li.quantity as f64 * li.unit_price)
+            .map(|li| rust_decimal::Decimal::from(li.quantity) * li.unit_price)
             .sum();
 
         let row = sqlx::query_as::<_, SalesOrderRow>(
@@ -583,10 +583,10 @@ impl SupplyChainService for DatabaseSupplyChainService {
         let po_number = format!("PO-{}-{}", now.format("%Y%m%d"), suffix);
         let li_json =
             serde_json::to_value(&po.line_items).unwrap_or(serde_json::Value::Array(vec![]));
-        let total: f64 = po
+        let total: rust_decimal::Decimal = po
             .line_items
             .iter()
-            .map(|li| li.quantity_ordered as f64 * li.unit_price)
+            .map(|li| rust_decimal::Decimal::from(li.quantity_ordered) * li.unit_price)
             .sum();
 
         let row = sqlx::query_as::<_, PurchaseOrderRow>(
@@ -998,7 +998,7 @@ impl SupplyChainService for DatabaseSupplyChainService {
     async fn update_quote(&self, tenant_id: Uuid, id: Uuid, quote: Quote) -> Result<Quote> {
         let li_json =
             serde_json::to_value(&quote.line_items).unwrap_or(serde_json::Value::Array(vec![]));
-        let total: f64 = quote.line_items.iter().map(|li| li.net_price).sum();
+        let total: rust_decimal::Decimal = quote.line_items.iter().map(|li| li.net_price).sum();
         let row = sqlx::query_as::<_, QuoteRow>(
             r#"UPDATE quotes SET customer_id=$1, customer_name=$2, line_items=$3, total_amount=$4, currency=$5, valid_until=$6 WHERE id=$7 AND tenant_id=$8
                RETURNING id, tenant_id, quote_number, rfq_id, customer_id, customer_name, status, line_items, total_amount, currency, valid_until, created_by, created_at"#,
@@ -1052,10 +1052,10 @@ impl SupplyChainService for DatabaseSupplyChainService {
     ) -> Result<SalesOrder> {
         let li_json =
             serde_json::to_value(&order.line_items).unwrap_or(serde_json::Value::Array(vec![]));
-        let total: f64 = order
+        let total: rust_decimal::Decimal = order
             .line_items
             .iter()
-            .map(|li| li.quantity as f64 * li.unit_price)
+            .map(|li| rust_decimal::Decimal::from(li.quantity) * li.unit_price)
             .sum();
         let row = sqlx::query_as::<_, SalesOrderRow>(
             r#"UPDATE sales_orders SET customer_id=$1, customer_name=$2, line_items=$3, total_amount=$4, currency=$5, delivery_date=$6, shipping_address=$7 WHERE id=$8 AND tenant_id=$9
@@ -1089,10 +1089,10 @@ impl SupplyChainService for DatabaseSupplyChainService {
     ) -> Result<PurchaseOrder> {
         let li_json =
             serde_json::to_value(&po.line_items).unwrap_or(serde_json::Value::Array(vec![]));
-        let total: f64 = po
+        let total: rust_decimal::Decimal = po
             .line_items
             .iter()
-            .map(|li| li.quantity_ordered as f64 * li.unit_price)
+            .map(|li| rust_decimal::Decimal::from(li.quantity_ordered) * li.unit_price)
             .sum();
         let row = sqlx::query_as::<_, PurchaseOrderRow>(
             r#"UPDATE purchase_orders SET supplier_id=$1, supplier_name=$2, line_items=$3, total_amount=$4, currency=$5, expected_delivery=$6 WHERE id=$7 AND tenant_id=$8

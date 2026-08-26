@@ -223,7 +223,18 @@ async fn seed_bootstrap_users(state: &AppState) {
         &admin_email,
         &admin_password,
         &admin_name,
-        &["admin", "user", "tenant_admin", "platform_admin"],
+        &[
+            "user",
+            "tenant_admin",
+            "platform_admin",
+            "finance_manager",
+            "hr_manager",
+            "purchasing_manager",
+            "inventory_manager",
+            "sales_manager",
+            "quality_manager",
+            "production_manager",
+        ],
         false,
     )
     .await
@@ -259,6 +270,31 @@ async fn seed_bootstrap_users(state: &AppState) {
     {
         tracing::error!(error = %e, "Failed to seed required CEO account");
         std::process::exit(1);
+    }
+}
+
+/// Extract the host from a postgres URL WITHOUT exposing credentials.
+fn redact_url_host(url: &str) -> Option<String> {
+    let after_scheme = url.split("://").nth(1)?;
+    let host_part = after_scheme.rsplit('@').next_back()?;
+    let host_port = host_part.split('/').next()?;
+    let host = host_port.split(':').next()?;
+    if host.is_empty() {
+        None
+    } else {
+        Some(host.to_string())
+    }
+}
+
+/// Extract the database name from a postgres URL.
+fn redact_url_db(url: &str) -> Option<String> {
+    let after_scheme = url.split("://").nth(1)?;
+    let path = after_scheme.split('/').nth(1)?;
+    let db = path.split('?').next()?;
+    if db.is_empty() {
+        None
+    } else {
+        Some(db.to_string())
     }
 }
 
@@ -342,7 +378,9 @@ async fn main() {
         info!("DATABASE_URL not set — running in IN-MEMORY mode (data lost on restart)");
     } else {
         info!(
-            database_url = %database_url,
+            database_host =
+                redact_url_host(&database_url).unwrap_or_else(|| "(unknown)".to_string()),
+            database_name = redact_url_db(&database_url).unwrap_or_else(|| "(unknown)".to_string()),
             max_connections = config.database.max_connections,
             "Connecting to PostgreSQL database"
         );

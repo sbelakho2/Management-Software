@@ -399,9 +399,20 @@ fn init_storage(config: &AppConfig) -> Arc<dyn FileStorageService> {
                 return Arc::new(storage);
             }
             Err(e) => {
+                if config.environment.is_prod() {
+                    // NO automatic downgrade in production: a PDF generated
+                    // to pod-local disk would be invisible to the API and
+                    // lost when the pod dies.
+                    error!(
+                        error = %e,
+                        bucket = %cfg.s3_bucket,
+                        "Failed to initialize S3 storage in production — refusing to start with local disk"
+                    );
+                    std::process::exit(1);
+                }
                 warn!(
                     error = %e,
-                    "Failed to initialize S3 storage — falling back to local disk"
+                    "Failed to initialize S3 storage — falling back to local disk (development only)"
                 );
             }
         }

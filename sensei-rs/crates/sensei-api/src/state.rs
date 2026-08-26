@@ -55,6 +55,7 @@ use std::sync::Arc;
 use dashmap::DashMap;
 use uuid::Uuid;
 
+use crate::attachment_repository::AttachmentRepository;
 use crate::middleware::audit::AuditLog;
 use crate::middleware::rate_limiter::RateLimiter;
 use crate::middleware::session::SessionStore;
@@ -390,7 +391,12 @@ pub struct AppState {
     pub notifications: stores::NotificationStore,
     /// Notification preferences entity store.
     pub notification_preferences: stores::NotificationPreferencesStore,
-    /// Attachment metadata entity store.
+    /// Attachment metadata: typed PostgreSQL repository (the generic
+    /// EntityStore cache is no longer the authoritative store for
+    /// attachments).
+    pub attachment_repo: AttachmentRepository,
+    /// Attachment metadata entity store (legacy path, retained during
+    /// migration only).
     pub attachment_meta: stores::AttachmentMetaStore,
     /// Attachment binary data entity store.
     pub attachment_data: stores::AttachmentDataStore,
@@ -700,6 +706,7 @@ impl AppState {
             kanban_boards,
             notifications,
             notification_preferences,
+            attachment_repo: AttachmentRepository::new(None),
             attachment_meta,
             attachment_data,
             quote_versions,
@@ -806,6 +813,7 @@ impl AppState {
         self.notification_preferences =
             EntityStore::with_pool("notification_preferences", p.clone());
         self.attachment_meta = EntityStore::with_pool("attachment", p.clone());
+        self.attachment_repo = self.attachment_repo.attach_pool(p.clone());
         self.attachment_data = EntityStore::with_pool("attachment_data", p.clone());
         self.quote_versions = EntityStore::with_pool("quote_version", p.clone());
         self.learning_modules = EntityStore::with_pool("learning_module", p.clone());

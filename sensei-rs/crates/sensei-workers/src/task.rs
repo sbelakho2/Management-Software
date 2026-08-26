@@ -260,31 +260,27 @@ impl IdempotencyGuard {
             return Ok(ClaimOutcome::Proceed);
         };
 
-        let row: String = sqlx::query_scalar(
-            "INSERT INTO processed_tasks (task_id, worker, state, lease_until) \
-             VALUES ($1, $2, 'in_progress', NOW() + INTERVAL '5 minutes') \
+        // One owner per lease: the atomic acquisition returns a row ONLY
+        // when THIS claimant acquired the lease. A worker that encounters a
+        // live lease held by somebody else receives no row -> Busy.
+        let owner = self.owner_id();
+        let row: Option<(uuid::Uuid, String)> = sqlx::query_as(
+            "INSERT INTO processed_tasks (task_id, worker, state, lease_owner, lease_until, attempt_count) \
+             VALUES ($1, $2, 'in_progress', $3, NOW() + INTERVAL '5 minutes', 1) \
              ON CONFLICT (task_id) DO UPDATE SET \
-                 state = CASE \
-                     WHEN processed_tasks.state = 'completed' THEN 'completed' \
-                     WHEN processed_tasks.state = 'in_progress' AND processed_tasks.lease_until < NOW() \
-                         THEN 'in_progress' \
-                     ELSE processed_tasks.state \
-                 END, \
-                 lease_until = CASE \
-                     WHEN processed_tasks.state = 'in_progress' AND processed_tasks.lease_until < NOW() \
-                         THEN NOW() + INTERVAL '5 minutes' \
-                     ELSE processed_tasks.lease_until \
-                 END, \
-                 worker = CASE \
-                     WHEN processed_tasks.state = 'in_progress' AND processed_tasks.lease_until < NOW() \
-                         THEN $2 \
-                     ELSE processed_tasks.worker \
-                 END \
-             RETURNING state",
+                 state = 'in_progress', \
+                 lease_owner = $3, \
+                 lease_until = NOW() + INTERVAL '5 minutes', \
+                 worker = $2, \
+                 attempt_count = processed_tasks.attempt_count + 1 \
+             WHERE processed_tasks.state != 'completed' \
+               AND (processed_tasks.state != 'in_progress' OR processed_tasks.lease_until < NOW()) \
+             RETURNING lease_owner, state",
         )
         .bind(task_id)
         .bind(self.worker)
-        .fetch_one(pool.as_ref())
+        .bind(owner)
+        .fetch_optional(pool.as_ref())
         .await
         .map_err(|e| {
             WorkerError::Processing(format!(
@@ -292,24 +288,69 @@ impl IdempotencyGuard {
             ))
         })?;
 
-        match row.as_str() {
-            "in_progress" => Ok(ClaimOutcome::Proceed),
-            "completed" => Ok(ClaimOutcome::AlreadyCompleted),
-            _ => Ok(ClaimOutcome::Busy),
+        match row {
+            // Only the actual owner of the lease proceeds.
+            Some((lease_owner, state)) if lease_owner == owner => match state.as_str() {
+                "in_progress" => Ok(ClaimOutcome::Proceed),
+                "completed" => Ok(ClaimOutcome::AlreadyCompleted),
+                _ => Ok(ClaimOutcome::Busy),
+            },
+            Some(_) => Ok(ClaimOutcome::Busy),
+            // No row: either already completed or a live lease owned by
+            // another worker. Distinguish via a plain read.
+            None => {
+                let state: Option<String> =
+                    sqlx::query_scalar("SELECT state FROM processed_tasks WHERE task_id = $1")
+                        .bind(task_id)
+                        .fetch_optional(pool.as_ref())
+                        .await
+                        .map_err(|e| {
+                            WorkerError::Processing(format!(
+                                "idempotency probe for task '{task_id}' failed: {e}"
+                            ))
+                        })?;
+                match state.as_deref() {
+                    Some("completed") => Ok(ClaimOutcome::AlreadyCompleted),
+                    _ => Ok(ClaimOutcome::Busy),
+                }
+            }
         }
     }
 
+    /// Renew the lease of a long-running job so a second worker never
+    /// starts the same operation because the first lease expired.
+    pub async fn renew_lease(&self, task_id: &str) -> Result<bool> {
+        let Some(pool) = &self.pool else {
+            return Ok(true);
+        };
+        let owner = self.owner_id();
+        let rows = sqlx::query(
+            "UPDATE processed_tasks SET lease_until = NOW() + INTERVAL '5 minutes' \
+             WHERE task_id = $1 AND state = 'in_progress' AND lease_owner = $2",
+        )
+        .bind(task_id)
+        .bind(owner)
+        .execute(pool.as_ref())
+        .await
+        .map_err(|e| {
+            WorkerError::Processing(format!("lease renewal for task '{task_id}' failed: {e}"))
+        })?;
+        Ok(rows.rows_affected() == 1)
+    }
+
     /// Record that the side effect COMPLETED successfully. Must be called
-    /// after the effect succeeded — never before.
+    /// after the effect succeeded — never before, and only by the lease
+    /// owner.
     pub async fn mark_completed(&self, task_id: &str) -> Result<()> {
         let Some(pool) = &self.pool else {
             return Ok(());
         };
         sqlx::query(
             "UPDATE processed_tasks SET state = 'completed', completed_at = NOW() \
-             WHERE task_id = $1 AND state = 'in_progress'",
+             WHERE task_id = $1 AND state = 'in_progress' AND lease_owner = $2",
         )
         .bind(task_id)
+        .bind(self.owner_id())
         .execute(pool.as_ref())
         .await
         .map_err(|e| {
@@ -318,6 +359,12 @@ impl IdempotencyGuard {
             ))
         })?;
         Ok(())
+    }
+
+    /// Stable owner identity for this worker process (one per process).
+    fn owner_id(&self) -> uuid::Uuid {
+        static OWNER: std::sync::OnceLock<uuid::Uuid> = std::sync::OnceLock::new();
+        *OWNER.get_or_init(uuid::Uuid::new_v4)
     }
 
     /// Record a permanent failure (optional; keeps the row for observability).

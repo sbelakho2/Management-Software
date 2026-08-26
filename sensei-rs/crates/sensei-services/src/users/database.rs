@@ -101,14 +101,14 @@ impl UsersService for DatabaseUsersService {
         let now = Utc::now();
         let model = user_to_model(user.clone(), false);
 
-        let created = sqlx::query_as::<_, UserModel>(
+        let created = sqlx::query_as::<_, UserModel>(&format!(
             "INSERT INTO users (id, tenant_id, email, name, password_hash, roles, \
-                                is_active, email_verified, last_login_at, created_at, updated_at) \
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) \
-             ON CONFLICT (tenant_id, email) DO NOTHING \
-             RETURNING id, tenant_id, email, name, password_hash, roles, \
-                       is_active, email_verified, last_login_at, created_at, updated_at",
-        )
+                                    is_active, email_verified, credential_version, \
+                                    last_login_at, created_at, updated_at) \
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) \
+                 ON CONFLICT (tenant_id, email) DO NOTHING \
+                 RETURNING {USER_COLUMNS}"
+        ))
         .bind(model.id)
         .bind(model.tenant_id)
         .bind(&model.email)
@@ -169,29 +169,25 @@ impl UsersService for DatabaseUsersService {
         let (count_sql, data_sql): (&str, &str) = match (role, is_active) {
             (Some(_), Some(_)) => (
                 "SELECT COUNT(*) FROM users WHERE $1 = ANY(roles) AND is_active = $2",
-                "SELECT id, tenant_id, email, name, password_hash, roles, \
-                            is_active, email_verified, last_login_at, created_at, updated_at \
+                "SELECT {USER_COLUMNS} \
                      FROM users WHERE $1 = ANY(roles) AND is_active = $2 \
                      ORDER BY created_at DESC LIMIT $3 OFFSET $4",
             ),
             (Some(_), None) => (
                 "SELECT COUNT(*) FROM users WHERE $1 = ANY(roles)",
-                "SELECT id, tenant_id, email, name, password_hash, roles, \
-                            is_active, email_verified, last_login_at, created_at, updated_at \
+                "SELECT {USER_COLUMNS} \
                      FROM users WHERE $1 = ANY(roles) \
                      ORDER BY created_at DESC LIMIT $2 OFFSET $3",
             ),
             (None, Some(_)) => (
                 "SELECT COUNT(*) FROM users WHERE is_active = $1",
-                "SELECT id, tenant_id, email, name, password_hash, roles, \
-                            is_active, email_verified, last_login_at, created_at, updated_at \
+                "SELECT {USER_COLUMNS} \
                      FROM users WHERE is_active = $1 \
                      ORDER BY created_at DESC LIMIT $2 OFFSET $3",
             ),
             (None, None) => (
                 "SELECT COUNT(*) FROM users",
-                "SELECT id, tenant_id, email, name, password_hash, roles, \
-                            is_active, email_verified, last_login_at, created_at, updated_at \
+                "SELECT {USER_COLUMNS} \
                      FROM users ORDER BY created_at DESC LIMIT $1 OFFSET $2",
             ),
         };
@@ -368,13 +364,12 @@ impl UsersService for DatabaseUsersService {
     async fn deactivate_user(&self, caller_tenant_id: EntityId, id: EntityId) -> Result<User> {
         let now = Utc::now();
 
-        let model = sqlx::query_as::<_, UserModel>(
+        let model = sqlx::query_as::<_, UserModel>(&format!(
             "UPDATE users \
-             SET is_active = false, updated_at = $2 \
-             WHERE id = $1 AND tenant_id = $3 \
-             RETURNING id, tenant_id, email, name, password_hash, roles, \
-                       is_active, email_verified, last_login_at, created_at, updated_at",
-        )
+                 SET is_active = false, updated_at = $2 \
+                 WHERE id = $1 AND tenant_id = $3 \
+                 RETURNING {USER_COLUMNS}"
+        ))
         .bind(id)
         .bind(now)
         .bind(caller_tenant_id)
@@ -389,13 +384,12 @@ impl UsersService for DatabaseUsersService {
     async fn activate_user(&self, caller_tenant_id: EntityId, id: EntityId) -> Result<User> {
         let now = Utc::now();
 
-        let model = sqlx::query_as::<_, UserModel>(
+        let model = sqlx::query_as::<_, UserModel>(&format!(
             "UPDATE users \
-             SET is_active = true, updated_at = $2 \
-             WHERE id = $1 AND tenant_id = $3 \
-             RETURNING id, tenant_id, email, name, password_hash, roles, \
-                       is_active, email_verified, last_login_at, created_at, updated_at",
-        )
+                 SET is_active = true, updated_at = $2 \
+                 WHERE id = $1 AND tenant_id = $3 \
+                 RETURNING {USER_COLUMNS}"
+        ))
         .bind(id)
         .bind(now)
         .bind(caller_tenant_id)
@@ -416,13 +410,12 @@ impl UsersService for DatabaseUsersService {
         validate_roles(&roles)?;
         let now = Utc::now();
 
-        let model = sqlx::query_as::<_, UserModel>(
+        let model = sqlx::query_as::<_, UserModel>(&format!(
             "UPDATE users \
-             SET roles = $2, updated_at = $3 \
-             WHERE id = $1 AND tenant_id = $4 \
-             RETURNING id, tenant_id, email, name, password_hash, roles, \
-                       is_active, email_verified, last_login_at, created_at, updated_at",
-        )
+                 SET roles = $2, updated_at = $3 \
+                 WHERE id = $1 AND tenant_id = $4 \
+                 RETURNING {USER_COLUMNS}"
+        ))
         .bind(id)
         .bind(&roles)
         .bind(now)

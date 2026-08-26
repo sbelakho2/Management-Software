@@ -148,10 +148,16 @@ pub async fn check_storage(storage: &dyn FileStorageService, tenant_id: Uuid) ->
 ///
 /// Gate for internal-only endpoints (`/health/detailed`, `/metrics`).
 ///
-/// Requires the `X-Internal-Token` header to match `INTERNAL_HEALTH_TOKEN`
-/// (or a loopback peer when no token is configured). These endpoints expose
-/// system/dependency/session internals that must not be public.
-pub fn internal_access_allowed(headers: &HeaderMap) -> bool {
+/// Requires the `X-Internal-Token` header to match `INTERNAL_HEALTH_TOKEN`.
+///
+/// With NO token configured: loopback peers only (when the connection is
+/// verifiable); in production an absent token DENIES these endpoints — use
+/// your internal monitoring network for access.
+pub fn internal_access_allowed(
+    headers: &HeaderMap,
+    peer: Option<std::net::SocketAddr>,
+    environment_is_prod: bool,
+) -> bool {
     let configured = std::env::var("INTERNAL_HEALTH_TOKEN").unwrap_or_default();
     if !configured.is_empty() {
         return headers
@@ -160,15 +166,45 @@ pub fn internal_access_allowed(headers: &HeaderMap) -> bool {
             .map(|v| v == configured)
             .unwrap_or(false);
     }
-    // No token configured: loopback only.
-    true
+    let is_loopback = peer.map(|p| p.ip().is_loopback()).unwrap_or(false);
+    if environment_is_prod {
+        // Production without a token: DENY. Use your internal monitoring
+        // network + INTERNAL_HEALTH_TOKEN for access.
+        false
+    } else {
+        // Development: loopback peers (or requests without peer metadata,
+        // e.g. in-process test calls) are allowed.
+        is_loopback || peer.is_none()
+    }
+}
+
+/// Optional client peer (present when the server runs behind ConnectInfo;
+/// absent in direct in-process test calls). Used by the internal gate so
+/// production deployments get real peer inspection while tests stay simple.
+pub struct OptionalPeer(pub Option<std::net::SocketAddr>);
+
+impl<B: Send + Sync> axum::extract::FromRequestParts<B> for OptionalPeer {
+    type Rejection = std::convert::Infallible;
+
+    async fn from_request_parts(
+        parts: &mut axum::http::request::Parts,
+        _state: &B,
+    ) -> Result<Self, Self::Rejection> {
+        Ok(OptionalPeer(
+            parts
+                .extensions
+                .get::<axum::extract::ConnectInfo<std::net::SocketAddr>>()
+                .map(|c| c.0),
+        ))
+    }
 }
 
 pub async fn detailed(
     headers: HeaderMap,
+    OptionalPeer(peer): OptionalPeer,
     State(state): State<AppState>,
 ) -> Result<Json<serde_json::Value>, SenseiError> {
-    if !internal_access_allowed(&headers) {
+    if !internal_access_allowed(&headers, peer, state.config.environment.is_prod()) {
         return Err(SenseiError::Forbidden(
             "Internal health details require the internal monitoring token".to_string(),
         ));
@@ -296,6 +332,36 @@ pub fn read_cpu_usage_pct() -> Option<f64> {
 
 #[cfg(test)]
 mod tests {
+    use axum::http::HeaderMap;
+
+    #[test]
+    fn gate_allows_no_peer_in_dev() {
+        std::env::remove_var("SENSEI_ENV");
+        assert!(internal_access_allowed(&HeaderMap::new(), None, false));
+    }
+
+    #[test]
+    fn gate_denies_without_token_in_production() {
+        std::env::set_var("SENSEI_ENV", "production");
+        assert!(!internal_access_allowed(&HeaderMap::new(), None, true));
+        assert!(!internal_access_allowed(
+            &HeaderMap::new(),
+            Some("127.0.0.1:1".parse().unwrap()),
+            true
+        ));
+        std::env::remove_var("SENSEI_ENV");
+    }
+
+    #[test]
+    fn gate_token_path() {
+        std::env::set_var("INTERNAL_HEALTH_TOKEN", "tok");
+        let mut h = HeaderMap::new();
+        assert!(!internal_access_allowed(&h, None, false));
+        h.insert("x-internal-token", "tok".parse().unwrap());
+        assert!(internal_access_allowed(&h, None, false));
+        std::env::remove_var("INTERNAL_HEALTH_TOKEN");
+    }
+
     use super::*;
 
     #[tokio::test]

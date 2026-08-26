@@ -36,8 +36,7 @@ use std::time::Duration;
 
 use sensei_core::domain::events::DomainEvent;
 use sensei_core::types::{CorrelationId, EventId, Timestamp};
-use sensei_event_bus::types::EventEnvelope;
-use sensei_event_bus::{EventBus, EventHandler};
+use sensei_event_bus::EventBus;
 use tokio::sync::{broadcast, RwLock};
 use tracing::debug;
 use uuid::Uuid;
@@ -68,7 +67,7 @@ pub struct ConnectionHandle {
 }
 
 /// What a fanout envelope targets.
-#[derive(Debug)]
+#[derive(Debug, serde::Serialize, serde::Deserialize, Clone)]
 enum WsFanoutKind {
     /// A direct message for one user (all their connections).
     User(Uuid),
@@ -77,7 +76,7 @@ enum WsFanoutKind {
 }
 
 /// Event published on the bus to fan out a WS message across replicas.
-#[derive(Debug)]
+#[derive(Debug, serde::Serialize, serde::Deserialize, Clone)]
 struct WsFanoutEvent {
     kind: WsFanoutKind,
     message: String,
@@ -415,11 +414,11 @@ impl WebSocketManager {
             };
 
             let group = (*self.instance_id).clone();
-            let handler = self.make_fanout_handler();
+            let handler = self.make_core_fanout_handler();
             let user_ok = bus
-                .subscribe_with_group("ws.user", &group, handler.clone())
+                .subscribe_core("sensei.ws.user", &group, handler.clone())
                 .await;
-            let room_ok = bus.subscribe_with_group("ws.room", &group, handler).await;
+            let room_ok = bus.subscribe_core("sensei.ws.room", &group, handler).await;
 
             if user_ok.is_ok() && room_ok.is_ok() {
                 self.bus_attached.store(true, Ordering::SeqCst);
@@ -452,13 +451,13 @@ impl WebSocketManager {
         };
 
         let group = (*self.instance_id).clone();
-        let handler = self.make_fanout_handler();
+        let handler = self.make_core_fanout_handler();
         let subscribed = bus
-            .subscribe_with_group("ws.user", &group, handler.clone())
+            .subscribe_core("sensei.ws.user", &group, handler.clone())
             .await
             .is_ok()
             && bus
-                .subscribe_with_group("ws.room", &group, handler)
+                .subscribe_core("sensei.ws.room", &group, handler)
                 .await
                 .is_ok();
 
@@ -480,23 +479,43 @@ impl WebSocketManager {
             return;
         };
         let event = WsFanoutEvent {
-            kind,
+            kind: kind.clone(),
             message: message.to_string(),
             origin: (*self.instance_id).clone(),
         };
-        if let Err(e) = bus.publish(&event).await {
-            debug!(error = %e, "Failed to publish WS fanout event");
+        // Core NATS pub/sub: ephemeral realtime broadcast — never a durable
+        // JetStream consumer/history.
+        let subject = match kind {
+            WsFanoutKind::User(user_id) => format!("sensei.ws.user.{user_id}"),
+            WsFanoutKind::Room(room) => format!("sensei.ws.room.{room}"),
+        };
+        let payload = match serde_json::to_vec(&event) {
+            Ok(p) => p,
+            Err(e) => {
+                debug!(error = %e, "Failed to serialize WS fanout envelope");
+                return;
+            }
+        };
+        if let Err(e) = bus.publish_core(&subject, &payload).await {
+            debug!(error = %e, "Failed to publish WS fanout message");
         }
     }
 
-    /// Build the handler that forwards foreign-replica fanout envelopes to
-    /// this replica's local sockets.
-    fn make_fanout_handler(&self) -> EventHandler {
+    /// Build the CORE-NATS handler that forwards foreign-replica fanout
+    /// envelopes to this replica's local sockets (ephemeral pub/sub, not
+    /// JetStream — realtime fanout must not accumulate durable history).
+    fn make_core_fanout_handler(&self) -> sensei_event_bus::bus::CoreHandler {
         let manager = self.clone();
         let instance_id = (*self.instance_id).clone();
-        Arc::new(move |envelope: EventEnvelope| {
-            let origin = envelope
-                .payload
+        Arc::new(move |payload: Vec<u8>| {
+            let parsed: serde_json::Value = match serde_json::from_slice(&payload) {
+                Ok(v) => v,
+                Err(e) => {
+                    tracing::warn!(error = %e, "Failed to parse core fanout envelope");
+                    return Ok(());
+                }
+            };
+            let origin = parsed
                 .get("origin")
                 .and_then(|v| v.as_str())
                 .unwrap_or_default()
@@ -506,26 +525,30 @@ impl WebSocketManager {
             if origin == instance_id {
                 return Ok(());
             }
-            let message = envelope
-                .payload
+            let message = parsed
                 .get("message")
                 .and_then(|v| v.as_str())
                 .unwrap_or_default()
                 .to_string();
+            let target_user = parsed
+                .get("target_user")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
+            let target_room = parsed
+                .get("target_room")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
 
             let manager = manager.clone();
             tokio::spawn(async move {
-                if let Some(user_id) = envelope
-                    .payload
-                    .get("target_user")
-                    .and_then(|v| v.as_str())
-                    .and_then(|s| Uuid::parse_str(s).ok())
-                {
-                    manager.deliver_to_user_local(user_id, &message).await;
-                } else if let Some(room) =
-                    envelope.payload.get("target_room").and_then(|v| v.as_str())
-                {
-                    manager.deliver_to_room_local(room, &message).await;
+                if let Some(user_id) = target_user {
+                    if let Ok(id) = uuid::Uuid::parse_str(&user_id) {
+                        // Local delivery only: the origin replica already
+                        // published the fanout — never re-publish.
+                        manager.deliver_to_user_local(id, &message).await;
+                    }
+                } else if let Some(room) = target_room {
+                    manager.deliver_to_room_local(&room, &message).await;
                 }
             });
             Ok(())
