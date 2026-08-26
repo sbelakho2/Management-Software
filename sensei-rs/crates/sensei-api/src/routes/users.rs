@@ -81,9 +81,9 @@ pub async fn list_users(
     State(state): State<AppState>,
     Query(params): Query<ListUsersParams>,
 ) -> Result<Json<PaginatedResponse<UserResponse>>> {
-    if !user.has_role("admin") {
+    if !user.has_any_role(&["tenant_admin", "platform_admin", "admin"]) {
         return Err(SenseiError::Forbidden(
-            "Only admins can list users".to_string(),
+            "Only tenant admins can list users".to_string(),
         ));
     }
     let all = state.users_service.list_users().await?;
@@ -163,7 +163,10 @@ pub async fn update_user(
     }
 
     existing.updated_at = sensei_core::types::now();
-    let updated = state.users_service.update_user(id, existing).await?;
+    let updated = state
+        .users_service
+        .update_user(user.tenant_id, id, existing)
+        .await?;
     Ok(Json(UserResponse::from(updated)))
 }
 
@@ -173,12 +176,15 @@ pub async fn deactivate_user(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<UserResponse>> {
-    if !user.has_role("admin") {
+    if !user.has_any_role(&["tenant_admin", "platform_admin", "admin"]) {
         return Err(SenseiError::Forbidden(
-            "Only admins can deactivate users".to_string(),
+            "Only tenant admins can deactivate users".to_string(),
         ));
     }
-    let updated = state.users_service.deactivate_user(id).await?;
+    let updated = state
+        .users_service
+        .deactivate_user(user.tenant_id, id)
+        .await?;
     Ok(Json(UserResponse::from(updated)))
 }
 
@@ -188,12 +194,15 @@ pub async fn activate_user(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<UserResponse>> {
-    if !user.has_role("admin") {
+    if !user.has_any_role(&["tenant_admin", "platform_admin", "admin"]) {
         return Err(SenseiError::Forbidden(
-            "Only admins can activate users".to_string(),
+            "Only tenant admins can activate users".to_string(),
         ));
     }
-    let updated = state.users_service.activate_user(id).await?;
+    let updated = state
+        .users_service
+        .activate_user(user.tenant_id, id)
+        .await?;
     Ok(Json(UserResponse::from(updated)))
 }
 
@@ -204,12 +213,15 @@ pub async fn update_user_roles(
     Path(id): Path<Uuid>,
     Json(req): Json<UpdateRolesRequest>,
 ) -> Result<Json<UserResponse>> {
-    if !user.has_role("admin") {
+    if !user.has_any_role(&["tenant_admin", "platform_admin", "admin"]) {
         return Err(SenseiError::Forbidden(
-            "Only admins can update user roles".to_string(),
+            "Only tenant admins can update user roles".to_string(),
         ));
     }
-    let updated = state.users_service.update_user_roles(id, req.roles).await?;
+    let updated = state
+        .users_service
+        .update_user_roles(user.tenant_id, id, req.roles)
+        .await?;
     Ok(Json(UserResponse::from(updated)))
 }
 

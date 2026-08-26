@@ -57,7 +57,7 @@ pub async fn list_tenants(
     State(state): State<AppState>,
 ) -> Result<Json<Vec<TenantResponse>>> {
     let tenants = state.tenants_service.list_tenants().await?;
-    let visible = if user.has_role("admin") {
+    let visible = if user.has_role("platform_admin") {
         tenants
     } else {
         tenants
@@ -78,9 +78,9 @@ pub async fn create_tenant(
     State(state): State<AppState>,
     Json(req): Json<TenantRequest>,
 ) -> Result<Json<TenantResponse>> {
-    if !user.has_role("admin") {
+    if !user.has_role("platform_admin") {
         return Err(SenseiError::Forbidden(
-            "Only admins can create tenants".to_string(),
+            "Only platform admins can create tenants".to_string(),
         ));
     }
     let tenant = Tenant {
@@ -104,7 +104,7 @@ pub async fn get_tenant(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<TenantResponse>> {
-    if !user.has_role("admin") && id != user.tenant_id {
+    if !user.has_role("platform_admin") && id != user.tenant_id {
         return Err(SenseiError::NotFound(format!("Tenant {id} not found")));
     }
     let tenant = state.tenants_service.get_tenant(id).await?;
@@ -121,7 +121,7 @@ pub async fn update_tenant(
     Path(id): Path<Uuid>,
     Json(req): Json<TenantRequest>,
 ) -> Result<Json<TenantResponse>> {
-    if !user.has_role("admin") && id != user.tenant_id {
+    if !user.has_role("platform_admin") && id != user.tenant_id {
         return Err(SenseiError::NotFound(format!("Tenant {id} not found")));
     }
     // Preserve the stored id and active flag; only the editable fields are
@@ -173,7 +173,7 @@ mod tests {
         AuthenticatedUser {
             user_id,
             tenant_id,
-            roles: vec!["admin".to_string()],
+            roles: vec!["admin".to_string(), "platform_admin".to_string()],
         }
     }
 

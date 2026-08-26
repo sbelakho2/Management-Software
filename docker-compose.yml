@@ -124,7 +124,18 @@ services:
     ports:
       - "${NATS_PORT:-4222}:4222"
       - "${NATS_MONITOR_PORT:-8222}:8222"
-    command: ["-js", "-m", "8222"]  # Enable JetStream + monitoring endpoint
+    # JetStream with durable storage and token authentication. The monitor
+    # port is exposed only in the DEV profile (see docker-compose.prod.yml).
+    command:
+      - "-js"
+      - "-m"
+      - "8222"
+      - "--store_dir"
+      - "/data"
+      - "--auth"
+      - "${NATS_TOKEN:-sensei_dev_token}"
+    volumes:
+      - nats_data:/data
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://localhost:8222/healthz"]
       interval: 10s
@@ -351,6 +362,7 @@ volumes:
   minio_data:
   caddy_data:
   caddy_config:
+  nats_data:
   integration_db_data:
   integration_redis_data:
 

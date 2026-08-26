@@ -35,6 +35,19 @@ impl RbacService {
     fn load_default_roles(&mut self) {
         // Admin has all permissions (wildcard)
         self.add_role("admin", vec!["*:*"]);
+        // System-level tenant management (bootstrap admin only).
+        self.add_role("platform_admin", vec!["tenants:*", "users:*", "system:*"]);
+        // Tenant-scoped user administration.
+        self.add_role(
+            "tenant_admin",
+            vec![
+                "users:list",
+                "users:update",
+                "users:roles",
+                "users:deactivate",
+                "users:activate",
+            ],
+        );
 
         // Quality manager
         self.add_role(

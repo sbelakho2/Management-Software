@@ -45,17 +45,52 @@ pub trait UsersService: Send + Sync {
     /// Verify a plaintext password against the stored hash for the given email.
     async fn verify_password(&self, email: &str, password: &str) -> Result<User>;
 
-    /// Update a user's profile fields.
-    async fn update_user(&self, id: EntityId, user: User) -> Result<User>;
+    /// Authenticate with a single invariant-enforcing operation.
+    ///
+    /// Normalizes the email (trim + lowercase), requires the account to be
+    /// active, and verifies the Argon2 hash. Unknown email and wrong
+    /// password produce the SAME 401 message (no account enumeration); a
+    /// disabled account gets its own explicit message.
+    async fn authenticate(&self, email: &str, password: &str) -> Result<User>;
 
-    /// Deactivate a user (soft delete).
-    async fn deactivate_user(&self, id: EntityId) -> Result<User>;
+    /// Bump the user's credential version (password change/reset) and
+    /// return the updated user.
+    async fn bump_credential_version(&self, id: EntityId) -> Result<User>;
 
-    /// Reactivate a user.
-    async fn activate_user(&self, id: EntityId) -> Result<User>;
+    /// Create a tenant and its initial user in ONE atomic operation.
+    ///
+    /// DB mode: a single transaction (INSERT tenant -> INSERT user); the
+    /// users.tenant_id FK can never dangle. In-memory mode: both inserts
+    /// under one lock.
+    async fn create_tenant_with_initial_user(
+        &self,
+        tenant: sensei_core::domain::entities::Tenant,
+        user: User,
+    ) -> Result<User>;
 
-    /// Update a user's roles.
-    async fn update_user_roles(&self, id: EntityId, roles: Vec<String>) -> Result<User>;
+    /// Update a user's profile fields. `caller_tenant_id` is enforced in
+    /// the repository: a tenant admin can only ever touch users of their
+    /// own tenant, even if a handler forgets to check.
+    async fn update_user(
+        &self,
+        caller_tenant_id: EntityId,
+        id: EntityId,
+        user: User,
+    ) -> Result<User>;
+
+    /// Deactivate a user (soft delete). Tenant-scoped (see [`Self::update_user`]).
+    async fn deactivate_user(&self, caller_tenant_id: EntityId, id: EntityId) -> Result<User>;
+
+    /// Reactivate a user. Tenant-scoped (see [`Self::update_user`]).
+    async fn activate_user(&self, caller_tenant_id: EntityId, id: EntityId) -> Result<User>;
+
+    /// Update a user's roles. Tenant-scoped (see [`Self::update_user`]).
+    async fn update_user_roles(
+        &self,
+        caller_tenant_id: EntityId,
+        id: EntityId,
+        roles: Vec<String>,
+    ) -> Result<User>;
 
     /// Whether the user's email address has been verified.
     async fn is_email_verified(&self, id: EntityId) -> Result<bool>;
@@ -130,7 +165,12 @@ impl InMemoryUsersService {
             email,
             name.into(),
             password_hash.into(),
-            vec!["admin".to_string(), "user".to_string()],
+            vec![
+                "admin".to_string(),
+                "user".to_string(),
+                "tenant_admin".to_string(),
+                "platform_admin".to_string(),
+            ],
         );
         users.insert(user.id, user);
         Self {
@@ -194,6 +234,53 @@ impl UsersService for InMemoryUsersService {
         Ok(user)
     }
 
+    async fn authenticate(&self, email: &str, password: &str) -> Result<User> {
+        let normalized = email.trim().to_lowercase();
+        let user = self
+            .find_by_email(&normalized)
+            .await
+            .map_err(|_| SenseiError::Unauthorized("Invalid email or password".to_string()))?;
+        if !user.is_active {
+            return Err(SenseiError::Unauthorized(
+                "Account is disabled. Contact your administrator.".to_string(),
+            ));
+        }
+        check_password(&user, password).await?;
+        Ok(user)
+    }
+
+    async fn bump_credential_version(&self, id: EntityId) -> Result<User> {
+        let mut users = self.users.write().await;
+        let user = users
+            .get_mut(&id)
+            .ok_or_else(|| SenseiError::NotFound(format!("User with id '{id}' not found")))?;
+        user.credential_version = user.credential_version.saturating_add(1);
+        user.updated_at = now();
+        Ok(user.clone())
+    }
+
+    async fn create_tenant_with_initial_user(
+        &self,
+        tenant: sensei_core::domain::entities::Tenant,
+        user: User,
+    ) -> Result<User> {
+        // Single critical section: both records become visible together.
+        let mut users = self.users.write().await;
+        if users
+            .values()
+            .any(|u| u.email.eq_ignore_ascii_case(&user.email))
+        {
+            return Err(SenseiError::AlreadyExists(format!(
+                "User with email '{}' already exists",
+                user.email
+            )));
+        }
+        let mut user = user;
+        user.tenant_id = tenant.id;
+        users.insert(user.id, user.clone());
+        Ok(user)
+    }
+
     async fn list_users_paginated(
         &self,
         role: Option<&str>,
@@ -213,12 +300,25 @@ impl UsersService for InMemoryUsersService {
         Ok(PaginatedResponse::new(items, page, per_page))
     }
 
-    async fn update_user(&self, id: EntityId, updated: User) -> Result<User> {
+    async fn update_user(
+        &self,
+        caller_tenant_id: EntityId,
+        id: EntityId,
+        updated: User,
+    ) -> Result<User> {
         let mut users = self.users.write().await;
-        if !users.contains_key(&id) {
-            return Err(SenseiError::NotFound(format!(
-                "User with id '{id}' not found"
-            )));
+        match users.get(&id) {
+            None => {
+                return Err(SenseiError::NotFound(format!(
+                    "User with id '{id}' not found"
+                )));
+            }
+            Some(existing) if existing.tenant_id != caller_tenant_id => {
+                return Err(SenseiError::NotFound(format!(
+                    "User with id '{id}' not found"
+                )));
+            }
+            _ => {}
         }
         // Check email uniqueness before taking the mutable borrow so the
         // immutable scan does not overlap the `get_mut` borrow.
@@ -240,32 +340,67 @@ impl UsersService for InMemoryUsersService {
         Ok(user.clone())
     }
 
-    async fn deactivate_user(&self, id: EntityId) -> Result<User> {
+    async fn deactivate_user(&self, caller_tenant_id: EntityId, id: EntityId) -> Result<User> {
         let mut users = self.users.write().await;
-        let user = users
-            .get_mut(&id)
-            .ok_or_else(|| SenseiError::NotFound(format!("User with id '{id}' not found")))?;
+        let user = match users.get(&id) {
+            None => {
+                return Err(SenseiError::NotFound(format!(
+                    "User with id '{id}' not found"
+                )));
+            }
+            Some(existing) if existing.tenant_id != caller_tenant_id => {
+                return Err(SenseiError::NotFound(format!(
+                    "User with id '{id}' not found"
+                )));
+            }
+            Some(_) => users.get_mut(&id).expect("presence checked above"),
+        };
         user.is_active = false;
         user.updated_at = now();
         Ok(user.clone())
     }
 
-    async fn activate_user(&self, id: EntityId) -> Result<User> {
+    async fn activate_user(&self, caller_tenant_id: EntityId, id: EntityId) -> Result<User> {
         let mut users = self.users.write().await;
-        let user = users
-            .get_mut(&id)
-            .ok_or_else(|| SenseiError::NotFound(format!("User with id '{id}' not found")))?;
+        let user = match users.get(&id) {
+            None => {
+                return Err(SenseiError::NotFound(format!(
+                    "User with id '{id}' not found"
+                )));
+            }
+            Some(existing) if existing.tenant_id != caller_tenant_id => {
+                return Err(SenseiError::NotFound(format!(
+                    "User with id '{id}' not found"
+                )));
+            }
+            Some(_) => users.get_mut(&id).expect("presence checked above"),
+        };
         user.is_active = true;
         user.updated_at = now();
         Ok(user.clone())
     }
 
-    async fn update_user_roles(&self, id: EntityId, roles: Vec<String>) -> Result<User> {
+    async fn update_user_roles(
+        &self,
+        caller_tenant_id: EntityId,
+        id: EntityId,
+        roles: Vec<String>,
+    ) -> Result<User> {
         validate_roles(&roles)?;
         let mut users = self.users.write().await;
-        let user = users
-            .get_mut(&id)
-            .ok_or_else(|| SenseiError::NotFound(format!("User with id '{id}' not found")))?;
+        let user = match users.get(&id) {
+            None => {
+                return Err(SenseiError::NotFound(format!(
+                    "User with id '{id}' not found"
+                )));
+            }
+            Some(existing) if existing.tenant_id != caller_tenant_id => {
+                return Err(SenseiError::NotFound(format!(
+                    "User with id '{id}' not found"
+                )));
+            }
+            Some(_) => users.get_mut(&id).expect("presence checked above"),
+        };
         user.roles = roles;
         user.updated_at = now();
         Ok(user.clone())
@@ -330,7 +465,10 @@ mod tests {
         let mut renamed = created.clone();
         renamed.email = "new@example.com".to_string();
 
-        let updated = svc.update_user(created.id, renamed).await.unwrap();
+        let updated = svc
+            .update_user(created.tenant_id, created.id, renamed)
+            .await
+            .unwrap();
         assert_eq!(updated.email, "new@example.com");
 
         assert!(svc.find_by_email("old@example.com").await.is_err());
@@ -371,13 +509,17 @@ mod tests {
         let svc = InMemoryUsersService::new();
         let created = svc.create_user(user("roles@example.com")).await.unwrap();
         let updated = svc
-            .update_user_roles(created.id, vec!["admin".to_string()])
+            .update_user_roles(created.tenant_id, created.id, vec!["admin".to_string()])
             .await
             .unwrap();
         assert_eq!(updated.roles, vec!["admin".to_string()]);
 
         let err = svc
-            .update_user_roles(created.id, vec!["not_a_real_role".to_string()])
+            .update_user_roles(
+                created.tenant_id,
+                created.id,
+                vec!["not_a_real_role".to_string()],
+            )
             .await
             .unwrap_err();
         assert!(matches!(err, SenseiError::Validation(_)));

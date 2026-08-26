@@ -347,10 +347,8 @@ async fn test_confirm_password_reset() {
     let req = app.post("/api/v1/auth/password-reset/request", body);
     let _resp = app.send_request(req).await;
 
-    // Get the token from state
-    let token_map = app.state.password_reset_tokens.read().await;
-    let token = token_map.keys().next().unwrap().clone();
-    drop(token_map);
+    // The token travels in the reset email (the store only keeps hashes).
+    let token = extract_token_from_email(&app, "reset-e2e@sensei.test").await;
 
     // Confirm reset
     let confirm_body = serde_json::json!({
@@ -414,10 +412,9 @@ async fn test_confirm_email_verification() {
     let req = app.post("/api/v1/auth/verify-email/request", body);
     let _resp = app.send_request(req).await;
 
-    // Get the token from state
-    let token_map = app.state.email_verification_tokens.read().await;
-    let token = token_map.keys().next().unwrap().clone();
-    drop(token_map);
+    // The token travels in the verification email (the store only keeps
+    // hashes).
+    let token = extract_token_from_email(&app, "verify-e2e@sensei.test").await;
 
     // Confirm verification
     let confirm_body = serde_json::json!({ "token": token });
@@ -499,4 +496,28 @@ async fn test_protected_endpoint_without_auth() {
             resp.status()
         );
     }
+}
+
+/// Extract the one-time token from the captured email sent to `to`.
+async fn extract_token_from_email(app: &common::TestApp, to: &str) -> String {
+    // Downcast the in-memory capture service (tests never use SMTP).
+    let service = app
+        .state
+        .email_service
+        .as_any()
+        .downcast_ref::<sensei_services::notifications::InMemoryEmailService>()
+        .expect("tests use the in-memory email service");
+    let emails = service.get_sent_emails().await;
+    let email = emails
+        .iter()
+        .find(|e| e.to == to)
+        .expect("expected a captured email");
+    // Tokens appear as `?token=<uuid>` in the email body.
+    email
+        .body
+        .split("token=")
+        .nth(1)
+        .and_then(|s| s.split(|c: char| !c.is_ascii_hexdigit() && c != '-').next())
+        .map(|s| s.to_string())
+        .expect("expected a token in the email body")
 }

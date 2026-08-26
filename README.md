@@ -66,9 +66,8 @@ cargo build --workspace --locked
 # Run the API server
 cargo run -p sensei-api
 
-# Run the NATS workers
-# NOTE: the sensei-workers binary is part of the ongoing worker overhaul —
-# once the binary target lands, run: cargo run -p sensei-workers
+# Run the NATS workers (real binary — see sensei-rs/crates/sensei-workers)
+cargo run -p sensei-workers
 ```
 
 Health endpoints (liveness/readiness): http://localhost:8080/health/live and

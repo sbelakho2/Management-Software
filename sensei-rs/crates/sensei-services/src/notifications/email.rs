@@ -47,6 +47,8 @@ pub enum EmailType {
 /// isolation and return [`SenseiError`] on failure.
 #[async_trait]
 pub trait EmailService: Send + Sync {
+    /// Downcast support for tests (in-memory capture).
+    fn as_any(&self) -> &dyn std::any::Any;
     /// Send a password reset email containing a reset link with the given token.
     async fn send_password_reset(
         &self,
@@ -392,6 +394,10 @@ impl LettreEmailService {
 
 #[async_trait]
 impl EmailService for LettreEmailService {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
     async fn send_password_reset(
         &self,
         email: &str,
@@ -553,6 +559,10 @@ impl Default for InMemoryEmailService {
 
 #[async_trait]
 impl EmailService for InMemoryEmailService {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
     async fn send_password_reset(
         &self,
         email: &str,
@@ -656,6 +666,11 @@ impl EmailService for InMemoryEmailService {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Mutex;
+
+    /// Tests that mutate PUBLIC_BASE_URL must not run concurrently (the
+    /// process environment is shared across parallel test threads).
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
     use super::*;
 
     #[tokio::test]
@@ -743,6 +758,7 @@ mod tests {
 
     #[test]
     fn test_password_reset_content_has_absolute_link() {
+        let _guard = ENV_LOCK.lock().unwrap();
         // Explicit value: parallel tests mutate PUBLIC_BASE_URL, so the
         // process default cannot be asserted race-free.
         std::env::set_var("PUBLIC_BASE_URL", "http://localhost:3000/");
@@ -764,6 +780,7 @@ mod tests {
 
     #[test]
     fn test_verification_content_has_absolute_link() {
+        let _guard = ENV_LOCK.lock().unwrap();
         // Explicit value: parallel tests mutate PUBLIC_BASE_URL, so the
         // process default cannot be asserted race-free.
         std::env::set_var("PUBLIC_BASE_URL", "http://localhost:3000/");
@@ -779,6 +796,7 @@ mod tests {
 
     #[test]
     fn test_plain_text_fallbacks_use_absolute_links() {
+        let _guard = ENV_LOCK.lock().unwrap();
         // Use an explicit base URL: tests run in parallel and mutate the
         // process environment, so asserting the DEFAULT value would race
         // with other tests that override PUBLIC_BASE_URL.

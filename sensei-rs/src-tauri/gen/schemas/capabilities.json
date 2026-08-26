@@ -1,1 +1,1 @@
-{"default":{"identifier":"default","description":"Default capabilities for Sensei MOS","local":true,"windows":["main"],"permissions":["core:default","shell:allow-open","fs:default","http:default","notification:default","store:default"]}}
+{"default":{"identifier":"default","description":"Default capabilities for Sensei MOS","local":true,"windows":["main"],"permissions":["core:default"]}}

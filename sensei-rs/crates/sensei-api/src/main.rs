@@ -201,8 +201,20 @@ async fn seed_bootstrap_users(state: &AppState) {
 
     let admin_email =
         std::env::var("SENSEI_ADMIN_EMAIL").unwrap_or_else(|_| "admin@sensei.com".to_string());
-    let admin_password =
-        std::env::var("SENSEI_ADMIN_PASSWORD").unwrap_or_else(|_| "Admin123!".to_string());
+    let admin_password = match std::env::var("SENSEI_ADMIN_PASSWORD") {
+        Ok(v) if !v.is_empty() => v,
+        _ => {
+            if state.config.environment.is_prod() {
+                tracing::error!(
+                    "SENSEI_ADMIN_PASSWORD must be set in production (admin seed account)"
+                );
+                std::process::exit(1);
+            }
+            let generated = format!("dev-{}", uuid::Uuid::new_v4());
+            println!("ADMIN DEV PASSWORD (first boot only): {generated}");
+            generated
+        }
+    };
     let admin_name =
         std::env::var("SENSEI_ADMIN_NAME").unwrap_or_else(|_| "Admin User".to_string());
 
@@ -211,7 +223,7 @@ async fn seed_bootstrap_users(state: &AppState) {
         &admin_email,
         &admin_password,
         &admin_name,
-        &["admin", "user"],
+        &["admin", "user", "tenant_admin", "platform_admin"],
         false,
     )
     .await
@@ -222,32 +234,18 @@ async fn seed_bootstrap_users(state: &AppState) {
     // ── CEO seed account ────────────────────────────────────────────
     let ceo_email =
         std::env::var("SENSEI_CEO_EMAIL").unwrap_or_else(|_| "ceo@starz.com".to_string());
-    let ceo_password = std::env::var("SENSEI_CEO_PASSWORD").unwrap_or_else(|_| {
-        if state.config.environment.is_prod() {
-            // The default would be checked below; make the error explicit.
-            String::new()
-        } else {
-            "1234".to_string()
+    let ceo_password = match std::env::var("SENSEI_CEO_PASSWORD") {
+        Ok(v) if !v.is_empty() => v,
+        _ => {
+            if state.config.environment.is_prod() {
+                tracing::error!("SENSEI_CEO_PASSWORD must be set in production (CEO seed account)");
+                std::process::exit(1);
+            }
+            let generated = format!("dev-{}", uuid::Uuid::new_v4());
+            println!("CEO DEV PASSWORD (first boot only): {generated}");
+            generated
         }
-    });
-
-    if state.config.environment.is_prod() {
-        if ceo_password.is_empty() {
-            tracing::error!("SENSEI_CEO_PASSWORD must be set in production (CEO seed account)");
-            std::process::exit(1);
-        }
-        if ceo_password == "1234" {
-            tracing::error!(
-                "SENSEI_CEO_PASSWORD must not be the insecure default '1234' in production"
-            );
-            std::process::exit(1);
-        }
-    } else if ceo_password == "1234" {
-        tracing::warn!(
-            "CEO seed account uses the default password '1234' — set SENSEI_CEO_PASSWORD \
-             to secure it (development only)"
-        );
-    }
+    };
 
     if let Err(e) = seed_user(
         state,

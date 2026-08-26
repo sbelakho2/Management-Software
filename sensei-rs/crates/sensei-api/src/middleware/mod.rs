@@ -16,3 +16,4 @@ pub mod request_guard;
 pub mod request_id;
 pub mod secure_headers;
 pub mod session;
+pub mod shared_auth_stores;

@@ -23,6 +23,10 @@ pub struct User {
     pub roles: Vec<String>,
     /// Whether this account is active.
     pub is_active: bool,
+    /// Incremented on every password change/reset. Refresh tokens issued
+    /// under an older version are rejected (forced re-authentication).
+    #[serde(default)]
+    pub credential_version: u64,
     /// When the user last logged in.
     pub last_login_at: Option<Timestamp>,
     /// When this record was created.
@@ -60,6 +64,7 @@ impl User {
             password_hash,
             roles,
             is_active: true,
+            credential_version: 0,
             last_login_at: None,
             created_at: now,
             updated_at: now,

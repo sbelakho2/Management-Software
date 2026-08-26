@@ -20,7 +20,6 @@ use sensei_auth::jwt::AccessTokenClaims;
 use sensei_auth::middleware::auth_middleware;
 use serde::Serialize;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::state::AppState;
 
@@ -52,36 +51,15 @@ fn bearer_token(req: &Request) -> Option<&str> {
 /// The set is bounded by the periodic lazy sweep, so a linear probe is
 /// acceptable.
 async fn is_blacklisted(state: &AppState, claims: &AccessTokenClaims) -> bool {
-    let jti = claims.jti.to_string();
-    let now_ts = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs() as usize)
-        .unwrap_or(0);
-
-    let blacklist = state.blacklisted_tokens.read().await;
-    let jti_prefix = format!("{jti}:");
-    blacklist.iter().any(|entry| {
-        entry
-            .strip_prefix(&jti_prefix)
-            .and_then(|exp| exp.parse::<usize>().ok())
-            .is_some_and(|exp| exp > now_ts)
-    })
+    state
+        .token_blacklist
+        .contains(&claims.jti.to_string())
+        .await
 }
 
 /// Lazily remove blacklist entries whose tokens have expired.
 async fn sweep_blacklist(state: &AppState) {
-    let now_ts = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs() as usize)
-        .unwrap_or(0);
-
-    let mut blacklist = state.blacklisted_tokens.write().await;
-    blacklist.retain(|entry| {
-        entry
-            .split_once(':')
-            .and_then(|(_, exp)| exp.parse::<usize>().ok())
-            .is_some_and(|exp| exp > now_ts)
-    });
+    state.token_blacklist.sweep().await;
 }
 
 /// Axum middleware layer for JWT authentication.

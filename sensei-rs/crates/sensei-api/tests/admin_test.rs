@@ -14,8 +14,14 @@ async fn login_as_admin(app: &common::TestApp) -> String {
     app.state
         .users_service
         .update_user_roles(
+            app.admin_tenant_id,
             app.admin_user_id,
-            vec!["admin".to_string(), "user".to_string()],
+            vec![
+                "admin".to_string(),
+                "user".to_string(),
+                "tenant_admin".to_string(),
+                "platform_admin".to_string(),
+            ],
         )
         .await
         .expect("promoting the test admin should succeed");

@@ -1,0 +1,129 @@
+# =============================================================================
+# docker-compose.prod.yml — Production topology
+#
+# Only the Caddy edge (80/443) is exposed to the host. PostgreSQL, NATS,
+# MinIO and the services are NOT published to host interfaces; secrets come
+# from the environment (.env), never defaults. NATS runs authenticated with
+# a token and durable JetStream storage.
+#
+# Usage:  docker compose -f docker-compose.prod.yml up -d
+# =============================================================================
+name: sensei-prod
+
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER required}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required}
+      POSTGRES_DB: ${POSTGRES_DB:-sensei}
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+      - ./postgres-init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB:-sensei}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  nats:
+    image: nats:2.10-alpine
+    restart: unless-stopped
+    command:
+      - "-js"
+      - "--store_dir"
+      - "/data"
+      - "--auth"
+      - "${NATS_TOKEN:?NATS_TOKEN required}"
+    volumes:
+      - nats-data:/data
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8222/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  minio:
+    image: minio/minio:latest
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?MINIO_ROOT_USER required}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD required}
+    volumes:
+      - minio-data:/data
+
+  sensei-api:
+    build:
+      context: ./sensei-rs
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    profiles: ["production"]
+    environment:
+      SENSEI_ENV: production
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-sensei}
+      NATS_URL: nats://${NATS_TOKEN}@nats:4222
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET required}
+      JWT_PREVIOUS_SIGNING_KEY: ${JWT_PREVIOUS_SIGNING_KEY:-}
+      S3_ENDPOINT: http://minio:9000
+      S3_ACCESS_KEY: ${MINIO_ROOT_USER}
+      S3_SECRET_KEY: ${MINIO_ROOT_PASSWORD}
+      S3_BUCKET: ${S3_BUCKET:-sensei}
+      SENSEI_ADMIN_EMAIL: ${SENSEI_ADMIN_EMAIL:?SENSEI_ADMIN_EMAIL required}
+      SENSEI_ADMIN_PASSWORD: ${SENSEI_ADMIN_PASSWORD:?SENSEI_ADMIN_PASSWORD required}
+      SENSEI_CEO_EMAIL: ${SENSEI_CEO_EMAIL:-ceo@starz.com}
+      SENSEI_CEO_PASSWORD: ${SENSEI_CEO_PASSWORD:?SENSEI_CEO_PASSWORD required}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-https://localhost}
+    depends_on:
+      db:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/health/live"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  sensei-workers:
+    build:
+      context: ./sensei-rs
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    profiles: ["production"]
+    command: ["./sensei-workers"]
+    environment:
+      SENSEI_ENV: production
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-sensei}
+      NATS_URL: nats://${NATS_TOKEN}@nats:4222
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET required}
+      S3_ENDPOINT: http://minio:9000
+      S3_ACCESS_KEY: ${MINIO_ROOT_USER}
+      S3_SECRET_KEY: ${MINIO_ROOT_PASSWORD}
+      S3_BUCKET: ${S3_BUCKET:-sensei}
+    depends_on:
+      db:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+
+  caddy:
+    image: caddy:2.8-alpine
+    restart: unless-stopped
+    profiles: ["production"]
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./caddy/Caddyfile.production:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+    depends_on:
+      - sensei-api
+
+volumes:
+  pg-data:
+  nats-data:
+  minio-data:
+  caddy-data:

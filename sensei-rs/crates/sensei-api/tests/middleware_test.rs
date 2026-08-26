@@ -157,7 +157,8 @@ async fn session_mismatch_returns_401_and_removes_binding() {
     let user_id = app.admin_user_id.to_string();
     app.state
         .session_store
-        .register(&user_id, "attacker-fingerprint".to_string());
+        .register(&user_id, "attacker-fingerprint".to_string())
+        .await;
 
     let req = app.get_authenticated("/api/v1/tasks", &token);
     let resp = app.send_request(req).await;
@@ -167,7 +168,8 @@ async fn session_mismatch_returns_401_and_removes_binding() {
     assert_eq!(
         app.state
             .session_store
-            .verify(&user_id, "attacker-fingerprint"),
+            .verify(&user_id, "attacker-fingerprint")
+            .await,
         sensei_api::middleware::session::SessionResult::Unknown,
         "mismatched binding must be removed"
     );

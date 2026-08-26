@@ -100,7 +100,7 @@ async fn test_retrain_model() {
     // The previous behavior fabricated a success response.
     let req = app.post_authenticated("/api/v1/ai/models/retrain", &token, body);
     let mut resp = app.send_request(req).await;
-    assert_eq!(resp.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
     let text = app.response_text(&mut resp).await;
     assert!(
         text.contains("insufficient_data"),

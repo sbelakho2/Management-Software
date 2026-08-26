@@ -1,5 +1,5 @@
 {
-  "$schema": "https://raw.githubusercontent.com/nicegram/nicegram/refs/heads/dev/tauri.conf.json",
+  "$schema": "https://schema.tauri.app/config/2",
   "productName": "Sensei",
   "version": "0.1.0",
   "identifier": "com.sensei.mos",
@@ -21,7 +21,7 @@
       }
     ],
     "security": {
-      "csp": null
+      "csp": "default-src 'self'; connect-src 'self' http://localhost:8080 ws://localhost:8080; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; font-src 'self' data:"
     }
   },
   "bundle": {

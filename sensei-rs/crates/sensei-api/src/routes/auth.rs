@@ -3,6 +3,7 @@
 //! Provides login, token refresh, logout, registration, password management,
 //! profile management, and email verification endpoints.
 
+use axum::response::IntoResponse as _;
 use axum::{
     extract::{ConnectInfo, FromRequestParts, State},
     http::request::Parts,
@@ -17,9 +18,6 @@ use sensei_auth::password::{
     hash_password, validate_password_strength, verify_password, PasswordCheck,
 };
 use sensei_auth::refresh_tokens::TokenReuseDetected;
-use sensei_core::domain::entities::User;
-use sensei_core::error::{Result, SenseiError};
-use sensei_core::types::{new_id, now, EntityId};
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 use std::net::SocketAddr;
@@ -27,8 +25,11 @@ use std::time::{Duration as StdDuration, Instant};
 use uuid::Uuid;
 
 use crate::middleware::session::session_fingerprint;
-use crate::state::{AppState, EmailVerificationToken, PasswordResetToken};
+use crate::state::AppState;
 use chrono::{Duration, Utc};
+use sensei_core::domain::entities::User;
+use sensei_core::error::{Result, SenseiError};
+use sensei_core::types::{new_id, now, EntityId};
 
 /// Login request body.
 #[derive(Debug, Deserialize)]
@@ -40,7 +41,7 @@ pub struct LoginRequest {
 }
 
 /// Login response body.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct LoginResponse {
     /// JWT access token.
     pub access_token: String,
@@ -70,6 +71,9 @@ pub struct RegisterRequest {
     pub password: String,
     /// User display name.
     pub name: String,
+    /// Optional tenant/workspace name (defaults to the user's display name).
+    #[serde(default)]
+    pub tenant_name: Option<String>,
 }
 
 /// Profile update request body.
@@ -217,6 +221,74 @@ fn allow_email_request(email: &str) -> bool {
 /// Compute the session fingerprint for the current client, reusing the same
 /// logic as the session-binding middleware so login/refresh register the
 /// exact fingerprint later requests are verified against.
+///
+/// Name of the HttpOnly refresh-token cookie.
+pub const REFRESH_COOKIE_NAME: &str = "sensei_refresh";
+/// Lifetime of the refresh cookie (matches the refresh token expiry).
+pub const REFRESH_COOKIE_MAX_AGE_SECS: i64 = 30 * 24 * 60 * 60;
+
+/// The user's current credential version (bumped on password change/reset).
+///
+/// The users service maps `credential_version` onto the `User` entity; the
+/// integration agent wires this through once the field lands.
+fn credential_version_of(user: &User) -> u64 {
+    user.credential_version
+}
+
+/// Whether the client asked for cookie-based refresh persistence.
+///
+/// The legacy HTML frontend sends `X-Use-Cookie: true` on login; the
+/// response then carries the refresh token in an HttpOnly cookie instead of
+/// exposing it to JavaScript.
+fn wants_cookie(headers: &HeaderMap) -> bool {
+    headers
+        .get("x-use-cookie")
+        .and_then(|v| v.to_str().ok())
+        .map(|v| v.eq_ignore_ascii_case("true") || v == "1")
+        .unwrap_or(false)
+}
+
+/// Set the HttpOnly refresh cookie on the response.
+fn set_refresh_cookie(response: &mut axum::response::Response, token: &str) {
+    use axum::http::header::{HeaderValue, SET_COOKIE};
+    let cookie = format!(
+        "{name}={token}; Path=/; HttpOnly; SameSite=Strict; Max-Age={max_age}",
+        name = REFRESH_COOKIE_NAME,
+        token = token,
+        max_age = REFRESH_COOKIE_MAX_AGE_SECS,
+    );
+    if let Ok(value) = HeaderValue::from_str(&cookie) {
+        response.headers_mut().append(SET_COOKIE, value);
+    }
+}
+
+/// Clear the refresh cookie (logout).
+fn clear_refresh_cookie(response: &mut axum::response::Response) {
+    use axum::http::header::{HeaderValue, SET_COOKIE};
+    let cookie = format!(
+        "{name}=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0",
+        name = REFRESH_COOKIE_NAME
+    );
+    if let Ok(value) = HeaderValue::from_str(&cookie) {
+        response.headers_mut().append(SET_COOKIE, value);
+    }
+}
+
+/// Extract the refresh token from the cookie header, if present.
+fn refresh_token_from_cookie(headers: &HeaderMap) -> Option<String> {
+    let cookie_header = headers.get(axum::http::header::COOKIE)?;
+    let raw = cookie_header.to_str().ok()?;
+    for part in raw.split(';') {
+        let part = part.trim();
+        if let Some((name, value)) = part.split_once('=') {
+            if name.trim() == REFRESH_COOKIE_NAME && !value.is_empty() {
+                return Some(value.to_string());
+            }
+        }
+    }
+    None
+}
+
 fn fingerprint_for_request(
     peer: Option<SocketAddr>,
     headers: &HeaderMap,
@@ -247,15 +319,22 @@ async fn issue_token_pair(state: &AppState, user: &User, family_id: Uuid) -> Res
         .issue_access_token(user_id, tenant_id, roles.clone())
         .map_err(|e| SenseiError::TokenError(e.to_string()))?;
 
+    let credential_version = credential_version_of(user);
     let refresh_token = state
         .jwt_service
-        .issue_refresh_token(user_id, tenant_id, family_id)
+        .issue_refresh_token(user_id, tenant_id, family_id, credential_version)
         .map_err(|e| SenseiError::TokenError(e.to_string()))?;
 
     let expires_at = Utc::now() + Duration::days(state.config.auth.refresh_token_expiry_days);
     state
         .refresh_token_store
-        .store(&refresh_token, family_id, user_id, expires_at)
+        .store(
+            &refresh_token,
+            family_id,
+            user_id,
+            credential_version,
+            expires_at,
+        )
         .await
         .map_err(|e| SenseiError::Internal(format!("Failed to store refresh token: {e}")))?;
 
@@ -291,20 +370,14 @@ pub async fn login(
     OptionalPeer(peer): OptionalPeer,
     headers: HeaderMap,
     Json(req): Json<LoginRequest>,
-) -> Result<Json<LoginResponse>> {
-    // Unknown emails surface as NotFound from the users service; both that
-    // and a wrong password must produce the same 401 so the endpoint cannot
-    // be used to enumerate registered accounts.
+) -> Result<axum::response::Response> {
+    // authenticate() is the single invariant: normalized email, active
+    // account, Argon2 hash. Unknown email and wrong password produce the
+    // same 401 so the endpoint cannot enumerate accounts.
     let user = state
         .users_service
-        .verify_password(&req.email, &req.password)
-        .await
-        .map_err(|e| match e {
-            SenseiError::NotFound(_) | SenseiError::Unauthorized(_) => {
-                SenseiError::Unauthorized("Invalid email or password".to_string())
-            }
-            other => other,
-        })?;
+        .authenticate(&req.email, &req.password)
+        .await?;
 
     let family_id = new_id();
     let response = issue_token_pair(&state, &user, family_id).await?;
@@ -313,9 +386,19 @@ pub async fn login(
     let fingerprint = fingerprint_for_request(peer, &headers, &state);
     state
         .session_store
-        .register(&user.id.to_string(), fingerprint);
+        .register(&user.id.to_string(), fingerprint)
+        .await;
 
-    Ok(Json(response))
+    // Optional HttpOnly cookie persistence for the legacy frontend: the
+    // refresh token never touches localStorage or JavaScript.
+    if wants_cookie(&headers) {
+        let refresh_token = response.refresh_token.clone();
+        let mut resp = Json(response).into_response();
+        set_refresh_cookie(&mut resp, &refresh_token);
+        return Ok(resp);
+    }
+
+    Ok(Json(response).into_response())
 }
 
 /// Handle token refresh.
@@ -328,22 +411,37 @@ pub async fn refresh(
     OptionalPeer(peer): OptionalPeer,
     headers: HeaderMap,
     Json(req): Json<RefreshRequest>,
-) -> Result<Json<LoginResponse>> {
+) -> Result<axum::response::Response> {
+    // The refresh token comes from the body (Leptos) or the HttpOnly cookie
+    // (legacy frontend) — never from localStorage.
+    let token = if req.refresh_token.is_empty() {
+        refresh_token_from_cookie(&headers)
+            .ok_or_else(|| SenseiError::Unauthorized("Missing refresh token".to_string()))?
+    } else {
+        req.refresh_token.clone()
+    };
+
     let claims: RefreshTokenClaims = state
         .jwt_service
-        .validate_refresh_token(&req.refresh_token)
+        .validate_refresh_token(&token)
         .map_err(|_| SenseiError::Unauthorized("Invalid or expired refresh token".to_string()))?;
 
     let family_id = claims.family_id;
     let new_expires = Utc::now() + Duration::days(state.config.auth.refresh_token_expiry_days);
     let new_refresh_token = state
         .jwt_service
-        .issue_refresh_token(claims.sub, claims.tenant_id, family_id)
+        .issue_refresh_token(
+            claims.sub,
+            claims.tenant_id,
+            family_id,
+            claims.credential_version,
+        )
         .map_err(|e| SenseiError::TokenError(e.to_string()))?;
 
+    let credential_version = claims.credential_version;
     match state
         .refresh_token_store
-        .validate_and_rotate(&req.refresh_token, &new_refresh_token, new_expires)
+        .validate_and_rotate(&token, &new_refresh_token, credential_version, new_expires)
         .await
     {
         Ok((_family, _user)) => {}
@@ -380,15 +478,23 @@ pub async fn refresh(
     let fingerprint = fingerprint_for_request(peer, &headers, &state);
     state
         .session_store
-        .register(&claims.sub.to_string(), fingerprint);
+        .register(&claims.sub.to_string(), fingerprint)
+        .await;
 
-    Ok(Json(LoginResponse {
+    let response = LoginResponse {
         access_token,
         token_type: "Bearer".to_string(),
         refresh_token: new_refresh_token,
         user_id: claims.sub,
         roles,
-    }))
+    };
+    if wants_cookie(&headers) {
+        let refresh_token = response.refresh_token.clone();
+        let mut resp = Json(response).into_response();
+        set_refresh_cookie(&mut resp, &refresh_token);
+        return Ok(resp);
+    }
+    Ok(Json(response).into_response())
 }
 
 /// Register a new user account.
@@ -397,25 +503,30 @@ pub async fn register(
     OptionalPeer(peer): OptionalPeer,
     headers: HeaderMap,
     Json(req): Json<RegisterRequest>,
-) -> Result<Json<LoginResponse>> {
+) -> Result<axum::response::Response> {
     // Validate password strength
     validate_password_strength(&req.password)?;
 
     // Hash the password
     let password_hash = hash_password(&req.password)?;
 
-    // Check if user already exists
-    if state.users_service.find_by_email(&req.email).await.is_ok() {
-        return Err(SenseiError::AlreadyExists(format!(
-            "User with email '{}' already exists",
-            req.email
-        )));
-    }
-
-    // Create the user — default tenant is a new UUID for self-registration
+    // Registration is atomic: the tenant and its initial user are created
+    // in a single transaction (users.tenant_id is a FK to tenants).
     let tenant_id = new_id();
+    let tenant = sensei_core::domain::entities::Tenant {
+        id: tenant_id,
+        name: req.tenant_name.clone().unwrap_or_else(|| req.name.clone()),
+        slug: format!("tenant-{}", tenant_id.as_simple()),
+        is_active: true,
+        features: Vec::new(),
+        created_at: sensei_core::types::now(),
+        updated_at: sensei_core::types::now(),
+    };
     let user = User::new(tenant_id, req.email.clone(), req.name, password_hash);
-    let user = state.users_service.create_user(user).await?;
+    let user = state
+        .users_service
+        .create_tenant_with_initial_user(tenant, user)
+        .await?;
 
     let family_id = new_id();
     let response = issue_token_pair(&state, &user, family_id).await?;
@@ -424,9 +535,19 @@ pub async fn register(
     let fingerprint = fingerprint_for_request(peer, &headers, &state);
     state
         .session_store
-        .register(&user.id.to_string(), fingerprint);
+        .register(&user.id.to_string(), fingerprint)
+        .await;
 
-    Ok(Json(response))
+    // Optional HttpOnly cookie persistence for the legacy frontend: the
+    // refresh token never touches localStorage or JavaScript.
+    if wants_cookie(&headers) {
+        let refresh_token = response.refresh_token.clone();
+        let mut resp = Json(response).into_response();
+        set_refresh_cookie(&mut resp, &refresh_token);
+        return Ok(resp);
+    }
+
+    Ok(Json(response).into_response())
 }
 
 /// Logout — blacklist the presented access token's `jti`.
@@ -439,18 +560,33 @@ pub async fn logout(
     user: AuthenticatedUser,
     State(state): State<AppState>,
     headers: HeaderMap,
-) -> Result<Json<MessageResponse>> {
+) -> Result<axum::response::Response> {
     if let Some(claims) = access_token_claims(&state, &headers) {
         let entry = format!("{}:{}", claims.jti, claims.exp);
-        state.blacklisted_tokens.write().await.insert(entry);
+        state.token_blacklist.insert(entry).await;
     }
 
     // Drop the session binding: the client must log in again.
-    state.session_store.remove(&user.user_id.to_string());
+    state.session_store.remove(&user.user_id.to_string()).await;
 
-    Ok(Json(MessageResponse {
+    // Revoke the user's refresh families: a logged-out refresh token must
+    // not be able to mint new access tokens.
+    if let Err(e) = state
+        .refresh_token_store
+        .revoke_user_sessions(user.user_id)
+        .await
+    {
+        tracing::warn!(error = ?e, user_id = %user.user_id, "Failed to revoke refresh sessions on logout");
+    }
+
+    // Clear the HttpOnly refresh cookie when the legacy frontend used it.
+    let mut response = Json(MessageResponse {
         message: "Logged out successfully".to_string(),
-    }))
+    })
+    .into_response();
+    clear_refresh_cookie(&mut response);
+
+    Ok(response)
 }
 
 /// Get the current authenticated user's profile.
@@ -487,7 +623,7 @@ pub async fn update_me(
     profile.updated_at = now();
     let updated = state
         .users_service
-        .update_user(user.user_id, profile)
+        .update_user(user.tenant_id, user.user_id, profile)
         .await?;
     Ok(Json(UserProfileResponse::from(updated)))
 }
@@ -522,11 +658,22 @@ pub async fn change_password(
 
     let mut updated = profile.clone();
     updated.password_hash = new_hash;
+    // A password change invalidates every outstanding refresh token and
+    // session: bump the credential version so old tokens fail validation.
+    updated.credential_version = updated.credential_version.saturating_add(1);
     updated.updated_at = now();
     state
         .users_service
-        .update_user(user.user_id, updated)
+        .update_user(user.tenant_id, user.user_id, updated)
         .await?;
+
+    if let Err(e) = state
+        .refresh_token_store
+        .revoke_user_sessions(user.user_id)
+        .await
+    {
+        tracing::warn!(error = ?e, user_id = %user.user_id, "Failed to revoke sessions after password change");
+    }
 
     Ok(Json(MessageResponse {
         message: "Password changed successfully".to_string(),
@@ -565,16 +712,10 @@ pub async fn request_password_reset(
     if let Some(user) = user {
         let tenant_id = user.tenant_id;
         let token = Uuid::new_v4().to_string();
-        let reset_token = PasswordResetToken {
-            user_id: user.id,
-            expires_at: now() + Duration::hours(1),
-        };
-        {
-            let mut tokens = state.password_reset_tokens.write().await;
-            // Lazily sweep expired tokens so the map cannot grow unbounded.
-            tokens.retain(|_, t| t.expires_at > now());
-            tokens.insert(token.clone(), reset_token);
-        }
+        state
+            .password_reset_store
+            .insert(&token, user.id, tenant_id, now() + Duration::hours(1))
+            .await;
 
         // Send the password reset email
         if let Err(e) = state
@@ -601,9 +742,10 @@ pub async fn confirm_password_reset(
     State(state): State<AppState>,
     Json(req): Json<PasswordResetConfirmRequest>,
 ) -> Result<Json<MessageResponse>> {
-    let mut tokens = state.password_reset_tokens.write().await;
-    let stored = tokens
-        .remove(&req.token)
+    let stored = state
+        .password_reset_store
+        .consume(&req.token)
+        .await
         .ok_or_else(|| SenseiError::Unauthorized("Invalid or expired reset token".to_string()))?;
 
     if stored.expires_at < now() {
@@ -616,14 +758,25 @@ pub async fn confirm_password_reset(
     validate_password_strength(&req.new_password)?;
     let new_hash = hash_password(&req.new_password)?;
 
-    // Update user's password
+    // Update user's password and bump the credential version: every
+    // outstanding refresh token and session must die with the old password.
     let mut user = state.users_service.find_by_id(stored.user_id).await?;
+    let caller_tenant = user.tenant_id;
     user.password_hash = new_hash;
+    user.credential_version = user.credential_version.saturating_add(1);
     user.updated_at = now();
     state
         .users_service
-        .update_user(stored.user_id, user)
+        .update_user(caller_tenant, stored.user_id, user)
         .await?;
+
+    if let Err(e) = state
+        .refresh_token_store
+        .revoke_user_sessions(stored.user_id)
+        .await
+    {
+        tracing::warn!(error = ?e, user_id = %stored.user_id, "Failed to revoke sessions after password reset");
+    }
 
     Ok(Json(MessageResponse {
         message: "Password has been reset successfully".to_string(),
@@ -674,16 +827,10 @@ pub async fn request_email_verification(
         if !verified {
             let tenant_id = user.tenant_id;
             let token = Uuid::new_v4().to_string();
-            let verification_token = EmailVerificationToken {
-                user_id: user.id,
-                expires_at: now() + Duration::hours(24),
-            };
-            {
-                let mut tokens = state.email_verification_tokens.write().await;
-                // Lazily sweep expired tokens so the map cannot grow unbounded.
-                tokens.retain(|_, t| t.expires_at > now());
-                tokens.insert(token.clone(), verification_token);
-            }
+            state
+                .email_verification_store
+                .insert(&token, user.id, user.tenant_id, now() + Duration::hours(24))
+                .await;
 
             // Send the email verification link
             if let Err(e) = state
@@ -713,10 +860,13 @@ pub async fn confirm_email_verification(
     State(state): State<AppState>,
     Json(req): Json<VerifyEmailConfirmRequest>,
 ) -> Result<Json<MessageResponse>> {
-    let mut tokens = state.email_verification_tokens.write().await;
-    let stored = tokens.remove(&req.token).ok_or_else(|| {
-        SenseiError::Unauthorized("Invalid or expired verification token".to_string())
-    })?;
+    let stored = state
+        .email_verification_store
+        .consume(&req.token)
+        .await
+        .ok_or_else(|| {
+            SenseiError::Unauthorized("Invalid or expired verification token".to_string())
+        })?;
 
     if stored.expires_at < now() {
         return Err(SenseiError::Unauthorized(
@@ -741,12 +891,21 @@ pub async fn confirm_email_verification(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use axum::body::to_bytes;
     use axum::Json;
     use sensei_auth::password::hash_password;
     use sensei_core::config::AppConfig;
-    use sensei_core::types::{EntityId, TenantId};
+    use sensei_core::types::TenantId;
     use sensei_services::users::{InMemoryUsersService, UsersService};
     use std::sync::Arc;
+
+    /// Parse a handler `Response` body back into a [`LoginResponse`] (the
+    /// login/refresh/register handlers return `Response` so they can attach
+    /// the HttpOnly refresh cookie).
+    async fn unwrap_auth(resp: axum::response::Response) -> LoginResponse {
+        let bytes = to_bytes(resp.into_body(), 1024 * 64).await.unwrap();
+        serde_json::from_slice(&bytes).unwrap()
+    }
 
     /// Helper to build an AppState seeded with a test user.
     async fn test_state() -> (AppState, String, TenantId, EntityId) {
@@ -796,9 +955,12 @@ mod tests {
             password: password.clone(),
         };
         let (peer, headers) = empty_client();
-        let resp = login(State(state.clone()), peer, headers, Json(req))
-            .await
-            .unwrap();
+        let resp = unwrap_auth(
+            login(State(state.clone()), peer, headers, Json(req))
+                .await
+                .unwrap(),
+        )
+        .await;
         assert_eq!(resp.token_type, "Bearer");
         assert!(!resp.access_token.is_empty());
         assert!(!resp.refresh_token.is_empty());
@@ -810,15 +972,18 @@ mod tests {
             .find_by_email("admin@test.com")
             .await
             .unwrap();
-        let fp = state.session_store.verify(
-            &user.id.to_string(),
-            &session_fingerprint(
-                Some(SocketAddr::from(([127, 0, 0, 1], 9999)).ip()),
-                None,
-                None,
-                &state.config.security.trusted_proxies,
-            ),
-        );
+        let fp = state
+            .session_store
+            .verify(
+                &user.id.to_string(),
+                &session_fingerprint(
+                    Some(SocketAddr::from(([127, 0, 0, 1], 9999)).ip()),
+                    None,
+                    None,
+                    &state.config.security.trusted_proxies,
+                ),
+            )
+            .await;
         assert_eq!(fp, crate::middleware::session::SessionResult::Matches);
     }
 
@@ -881,11 +1046,15 @@ mod tests {
             email: "newuser@test.com".to_string(),
             password: "StrongPass1!".to_string(),
             name: "New User".to_string(),
+            tenant_name: None,
         };
         let (peer, headers) = empty_client();
-        let resp = register(State(state.clone()), peer, headers, Json(req))
-            .await
-            .unwrap();
+        let resp = unwrap_auth(
+            register(State(state.clone()), peer, headers, Json(req))
+                .await
+                .unwrap(),
+        )
+        .await;
         assert_eq!(resp.token_type, "Bearer");
         assert!(!resp.access_token.is_empty());
     }
@@ -897,6 +1066,7 @@ mod tests {
             email: "admin@test.com".to_string(),
             password: "StrongPass1!".to_string(),
             name: "Duplicate".to_string(),
+            tenant_name: None,
         };
         let (peer, headers) = empty_client();
         let result = register(State(state.clone()), peer, headers, Json(req)).await;
@@ -910,6 +1080,7 @@ mod tests {
             email: "weak@test.com".to_string(),
             password: "short".to_string(),
             name: "Weak".to_string(),
+            tenant_name: None,
         };
         let (peer, headers) = empty_client();
         let result = register(State(state.clone()), peer, headers, Json(req)).await;
@@ -925,17 +1096,23 @@ mod tests {
             password: password.clone(),
         };
         let (peer, headers) = empty_client();
-        let login_resp = login(State(state.clone()), peer, headers.clone(), Json(login_req))
-            .await
-            .unwrap();
+        let login_resp = unwrap_auth(
+            login(State(state.clone()), peer, headers.clone(), Json(login_req))
+                .await
+                .unwrap(),
+        )
+        .await;
 
         // Refresh the token
         let refresh_req = RefreshRequest {
             refresh_token: login_resp.refresh_token.clone(),
         };
-        let resp = refresh(State(state.clone()), peer, headers, Json(refresh_req))
-            .await
-            .unwrap();
+        let resp = unwrap_auth(
+            refresh(State(state.clone()), peer, headers, Json(refresh_req))
+                .await
+                .unwrap(),
+        )
+        .await;
         assert_eq!(resp.token_type, "Bearer");
         assert!(!resp.access_token.is_empty());
     }
@@ -948,21 +1125,27 @@ mod tests {
             password: password.clone(),
         };
         let (peer, headers) = empty_client();
-        let login_resp = login(State(state.clone()), peer, headers.clone(), Json(login_req))
-            .await
-            .unwrap();
+        let login_resp = unwrap_auth(
+            login(State(state.clone()), peer, headers.clone(), Json(login_req))
+                .await
+                .unwrap(),
+        )
+        .await;
 
         let refresh_req = RefreshRequest {
             refresh_token: login_resp.refresh_token.clone(),
         };
-        let first = refresh(
-            State(state.clone()),
-            peer,
-            headers.clone(),
-            Json(refresh_req),
+        let first = unwrap_auth(
+            refresh(
+                State(state.clone()),
+                peer,
+                headers.clone(),
+                Json(refresh_req),
+            )
+            .await
+            .unwrap(),
         )
-        .await
-        .unwrap();
+        .await;
 
         // The old token has been rotated: presenting it again is reuse.
         let reuse = RefreshRequest {
@@ -1006,9 +1189,12 @@ mod tests {
             password: password.clone(),
         };
         let (peer, headers) = empty_client();
-        let login_resp = login(State(state.clone()), peer, headers.clone(), Json(login_req))
-            .await
-            .unwrap();
+        let login_resp = unwrap_auth(
+            login(State(state.clone()), peer, headers, Json(login_req))
+                .await
+                .unwrap(),
+        )
+        .await;
 
         // The access token must be presented on logout to extract its jti.
         let mut logout_headers = HeaderMap::new();
@@ -1023,7 +1209,7 @@ mod tests {
             .await
             .unwrap();
 
-        assert!(!state.blacklisted_tokens.read().await.is_empty());
+        assert!(!state.token_blacklist.is_empty().await);
 
         // The blacklisted token must be rejected by the middleware.
         let req = axum::http::Request::builder()
@@ -1071,11 +1257,15 @@ mod tests {
             email: "other@test.com".to_string(),
             password: "StrongPass1!".to_string(),
             name: "Other".to_string(),
+            tenant_name: None,
         };
         let (peer, headers) = empty_client();
-        let _ = register(State(state.clone()), peer, headers, Json(reg_req))
-            .await
-            .unwrap();
+        let _ = unwrap_auth(
+            register(State(state.clone()), peer, headers, Json(reg_req))
+                .await
+                .unwrap(),
+        )
+        .await;
 
         // Try to update admin's email to the other user's email
         let user = admin_user(tenant_id, user_id);
@@ -1172,10 +1362,8 @@ mod tests {
             .await
             .unwrap();
 
-        // Get the token from state
-        let token_map = state.password_reset_tokens.read().await;
-        let token = token_map.keys().next().unwrap().clone();
-        drop(token_map);
+        // The token travels in the reset email (the store keeps hashes).
+        let token = token_from_sent_email(&state, "admin@test.com").await;
 
         let confirm_req = PasswordResetConfirmRequest {
             token,
@@ -1223,10 +1411,9 @@ mod tests {
             .await
             .unwrap();
 
-        // Get the token from state
-        let token_map = state.email_verification_tokens.read().await;
-        let token = token_map.keys().next().unwrap().clone();
-        drop(token_map);
+        // The token travels in the verification email (the store keeps
+        // hashes).
+        let token = token_from_sent_email(&state, "admin@test.com").await;
 
         let confirm_req = VerifyEmailConfirmRequest { token };
         let resp = confirm_email_verification(State(state.clone()), Json(confirm_req))
@@ -1255,5 +1442,26 @@ mod tests {
         };
         let result = confirm_email_verification(State(state.clone()), Json(req)).await;
         assert!(result.is_err());
+    }
+
+    /// Extract the one-time token from the captured in-memory email.
+    async fn token_from_sent_email(state: &AppState, to: &str) -> String {
+        let service = state
+            .email_service
+            .as_any()
+            .downcast_ref::<sensei_services::notifications::InMemoryEmailService>()
+            .expect("tests use the in-memory email service");
+        let emails = service.get_sent_emails().await;
+        let email = emails
+            .iter()
+            .find(|e| e.to == to)
+            .expect("expected a captured email");
+        email
+            .body
+            .split("token=")
+            .nth(1)
+            .and_then(|s| s.split(|c: char| !c.is_ascii_hexdigit() && c != '-').next())
+            .map(|s| s.to_string())
+            .expect("expected a token in the email body")
     }
 }

@@ -292,7 +292,10 @@ pub async fn deactivate_user(
     if target.tenant_id != user.tenant_id {
         return Err(SenseiError::NotFound(format!("User {user_id} not found")));
     }
-    state.users_service.deactivate_user(user_id).await?;
+    state
+        .users_service
+        .deactivate_user(user.tenant_id, user_id)
+        .await?;
     Ok(Json(()))
 }
 

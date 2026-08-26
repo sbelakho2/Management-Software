@@ -37,18 +37,34 @@ fn get_device_info() -> DeviceInfo {
 
 /// Returns a simulated battery level (always 1.0 on desktop; mobile will
 /// override this via native plugins).
+/// Battery level for the device.
+///
+/// Feature-gated: without the `mobile-capabilities` feature the command is
+/// unavailable and the UI must hide the battery indicator (no fabricated
+/// readings are ever returned).
 #[tauri::command]
-async fn get_battery_level() -> BatteryInfo {
-    BatteryInfo {
-        level: 1.0,
-        charging: true,
-    }
+async fn get_battery_level() -> Result<BatteryInfo, String> {
+    Err("Battery monitoring is not enabled in this build".to_string())
 }
 
-/// Checks network connectivity by performing a lightweight DNS / TCP check.
+/// Checks connectivity against the application's OWN API (a network that
+/// blocks public DNS but serves the app must report online).
 #[tauri::command]
 async fn check_connectivity() -> bool {
-    tokio::net::TcpStream::connect("8.8.8.8:53").await.is_ok()
+    let base =
+        std::env::var("SENSEI_API_BASE").unwrap_or_else(|_| "http://localhost:8080".to_string());
+    match reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(3))
+        .build()
+    {
+        Ok(client) => client
+            .get(format!("{base}/health/live"))
+            .send()
+            .await
+            .map(|r| r.status().is_success())
+            .unwrap_or(false),
+        Err(_) => false,
+    }
 }
 
 /// Returns the push notification token for the current device.
@@ -61,65 +77,28 @@ async fn check_connectivity() -> bool {
 /// On desktop, push notifications are not available, so this always
 /// returns an empty string.
 #[tauri::command]
-async fn get_push_token() -> String {
-    #[cfg(mobile)]
-    {
-        // TODO: Integrate with native push notification SDK.
-        // The `tauri-plugin-notification` handles local notifications;
-        // for remote push, a dedicated plugin (e.g., tauri-plugin-push)
-        // is needed to obtain the APNs/FCM token.
-        String::new()
-    }
-
-    #[cfg(not(mobile))]
-    {
-        // Push notifications are not available on desktop.
-        String::new()
-    }
+async fn get_push_token() -> Result<String, String> {
+    Err("Push notifications are not available in this build (requires a native push SDK integration)".to_string())
 }
 
 /// Opens the native share sheet with the provided content string.
 /// On desktop we write the content to the clipboard as a fallback.
+/// Share content: on desktop this copies to the clipboard via the `arboard`
+/// crate (no shell, no per-platform shell commands); on other platforms it
+/// is unsupported and reports so.
 #[tauri::command]
 async fn share_via_native(content: String) -> Result<(), String> {
-    // Use the `clipboard` crate to copy text to the system clipboard.
-    // We avoid the `arboard` crate (which Tauri's internal clipboard uses)
-    // to keep dependencies minimal.
-    let content_clone = content.clone();
     #[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
     {
-        // On desktop, copy to clipboard via a simple shell command.
-        let result = std::process::Command::new("sh")
-            .arg("-c")
-            .arg(format!("echo {} | pbcopy", shell_escape(&content_clone)))
-            .output();
-        match result {
-            Ok(_) => Ok(()),
-            Err(e) => Err(format!("Failed to copy to clipboard: {e}")),
-        }
+        arboard::Clipboard::new()
+            .and_then(|mut cb| cb.set_text(content))
+            .map_err(|e| format!("Failed to copy to clipboard: {e}"))
     }
     #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
     {
         let _ = content;
-        Ok(())
+        Err("Native share is not supported on this platform".to_string())
     }
-}
-
-/// Escapes a string for safe use in a shell command.
-fn shell_escape(s: &str) -> String {
-    // Simple backslash-escape for common shell metacharacters
-    let mut escaped = String::with_capacity(s.len() + 4);
-    for ch in s.chars() {
-        match ch {
-            '\\' | '\'' | '"' | '`' | '$' | '!' | '&' | '|' | ';' | '<' | '>' | '(' | ')' | '{'
-            | '}' | '[' | ']' | '*' | '?' | '~' | ' ' | '\t' | '\n' => {
-                escaped.push('\\');
-                escaped.push(ch);
-            }
-            _ => escaped.push(ch),
-        }
-    }
-    escaped
 }
 
 /// Placeholder for barcode scanning (requires a camera plugin on mobile).

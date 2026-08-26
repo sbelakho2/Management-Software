@@ -42,6 +42,7 @@ pub enum TokenReuseDetected {
 struct TokenRecord {
     family_id: Uuid,
     user_id: Uuid,
+    credential_version: u64,
     expires_at: DateTime<Utc>,
     rotated_to_hash: Option<String>,
 }
@@ -80,19 +81,21 @@ impl RefreshTokenStore {
         token: &str,
         family_id: Uuid,
         user_id: Uuid,
+        credential_version: u64,
         expires_at: DateTime<Utc>,
     ) -> Result<(), TokenReuseDetected> {
         let hash = Self::hash_token(token);
         match &self.pool {
             Some(pool) => {
                 sqlx::query(
-                    "INSERT INTO refresh_tokens (id, family_id, user_id, token_hash, expires_at) \
-                     VALUES (gen_random_uuid(), $1, $2, $3, $4) \
+                    "INSERT INTO refresh_tokens (id, family_id, user_id, token_hash, credential_version, expires_at) \
+                     VALUES (gen_random_uuid(), $1, $2, $3, $4, $5) \
                      ON CONFLICT (token_hash) DO NOTHING",
                 )
                 .bind(family_id)
                 .bind(user_id)
                 .bind(&hash)
+                .bind(credential_version as i64)
                 .bind(expires_at)
                 .execute(pool)
                 .await
@@ -105,6 +108,7 @@ impl RefreshTokenStore {
                     TokenRecord {
                         family_id,
                         user_id,
+                        credential_version,
                         expires_at,
                         rotated_to_hash: None,
                     },
@@ -124,6 +128,7 @@ impl RefreshTokenStore {
         &self,
         token: &str,
         new_token: &str,
+        credential_version: u64,
         new_expires_at: DateTime<Utc>,
     ) -> Result<(Uuid, Uuid), TokenReuseDetected> {
         let hash = Self::hash_token(token);
@@ -136,8 +141,8 @@ impl RefreshTokenStore {
                     .await
                     .map_err(|e| TokenReuseDetected::Database(e.to_string()))?;
 
-                let row: Option<(Uuid, Uuid, Option<String>)> = sqlx::query_as(
-                    "SELECT family_id, user_id, rotated_to_hash \
+                let row: Option<(Uuid, Uuid, i64, Option<String>)> = sqlx::query_as(
+                    "SELECT family_id, user_id, credential_version, rotated_to_hash \
                      FROM refresh_tokens WHERE token_hash = $1 FOR UPDATE",
                 )
                 .bind(&hash)
@@ -145,12 +150,25 @@ impl RefreshTokenStore {
                 .await
                 .map_err(|e| TokenReuseDetected::Database(e.to_string()))?;
 
-                let Some((family_id, user_id, rotated_to)) = row else {
+                let Some((family_id, user_id, stored_version, rotated_to)) = row else {
                     return Err(TokenReuseDetected::Invalid);
                 };
 
                 if rotated_to.is_some() {
                     return Err(TokenReuseDetected::ReuseDetected);
+                }
+
+                // A password change/reset bumps the credential version; any
+                // token issued before that is no longer usable.
+                if stored_version as u64 != credential_version {
+                    sqlx::query(
+                        "UPDATE refresh_tokens SET revoked_at = NOW() WHERE family_id = $1",
+                    )
+                    .bind(family_id)
+                    .execute(&mut *tx)
+                    .await
+                    .map_err(|e| TokenReuseDetected::Database(e.to_string()))?;
+                    return Err(TokenReuseDetected::Invalid);
                 }
 
                 sqlx::query("UPDATE refresh_tokens SET rotated_to_hash = $1 WHERE token_hash = $2")
@@ -161,12 +179,13 @@ impl RefreshTokenStore {
                     .map_err(|e| TokenReuseDetected::Database(e.to_string()))?;
 
                 sqlx::query(
-                    "INSERT INTO refresh_tokens (id, family_id, user_id, token_hash, expires_at) \
-                     VALUES (gen_random_uuid(), $1, $2, $3, $4)",
+                    "INSERT INTO refresh_tokens (id, family_id, user_id, token_hash, credential_version, expires_at) \
+                     VALUES (gen_random_uuid(), $1, $2, $3, $4, $5)",
                 )
                 .bind(family_id)
                 .bind(user_id)
                 .bind(&new_hash)
+                .bind(credential_version as i64)
                 .bind(new_expires_at)
                 .execute(&mut *tx)
                 .await
@@ -187,6 +206,9 @@ impl RefreshTokenStore {
                 if record.rotated_to_hash.is_some() {
                     return Err(TokenReuseDetected::ReuseDetected);
                 }
+                if record.credential_version != credential_version {
+                    return Err(TokenReuseDetected::Invalid);
+                }
 
                 let family_id = record.family_id;
                 let user_id = record.user_id;
@@ -196,6 +218,7 @@ impl RefreshTokenStore {
                     TokenRecord {
                         family_id,
                         user_id,
+                        credential_version,
                         expires_at: new_expires_at,
                         rotated_to_hash: None,
                     },
@@ -205,6 +228,27 @@ impl RefreshTokenStore {
                 }
 
                 Ok((family_id, user_id))
+            }
+        }
+    }
+
+    /// Revoke every refresh token belonging to a user (logout-all / password
+    /// change). Tokens in the in-memory store are removed; DB rows are marked
+    /// revoked.
+    pub async fn revoke_user_sessions(&self, user_id: Uuid) -> Result<(), TokenReuseDetected> {
+        match &self.pool {
+            Some(pool) => {
+                sqlx::query("UPDATE refresh_tokens SET revoked_at = NOW() WHERE user_id = $1 AND revoked_at IS NULL")
+                    .bind(user_id)
+                    .execute(pool)
+                    .await
+                    .map_err(|e| TokenReuseDetected::Database(e.to_string()))?;
+                Ok(())
+            }
+            None => {
+                let mut tokens = self.tokens.write().await;
+                tokens.retain(|_, record| record.user_id != user_id);
+                Ok(())
             }
         }
     }
@@ -286,12 +330,12 @@ mod tests {
 
         let token = "first-token";
         store
-            .store(token, family_id, user_id, expires)
+            .store(token, family_id, user_id, 0, expires)
             .await
             .unwrap();
 
         let (got_family, got_user) = store
-            .validate_and_rotate(token, "second-token", expires)
+            .validate_and_rotate(token, "second-token", 0, expires)
             .await
             .unwrap();
         assert_eq!(got_family, family_id);
@@ -299,7 +343,7 @@ mod tests {
 
         // The new token is now valid.
         store
-            .validate_and_rotate("second-token", "third-token", expires)
+            .validate_and_rotate("second-token", "third-token", 0, expires)
             .await
             .unwrap();
     }
@@ -313,18 +357,18 @@ mod tests {
 
         let token = "victim-token";
         store
-            .store(token, family_id, user_id, expires)
+            .store(token, family_id, user_id, 0, expires)
             .await
             .unwrap();
         store
-            .validate_and_rotate(token, "attacker-token", expires)
+            .validate_and_rotate(token, "attacker-token", 0, expires)
             .await
             .unwrap();
 
         // Presenting the already-rotated token again is a theft signal.
         assert!(matches!(
             store
-                .validate_and_rotate(token, "another-token", expires)
+                .validate_and_rotate(token, "another-token", 0, expires)
                 .await,
             Err(TokenReuseDetected::ReuseDetected)
         ));
@@ -336,7 +380,7 @@ mod tests {
         let expires = Utc::now() + chrono::Duration::days(7);
         assert!(matches!(
             store
-                .validate_and_rotate("never-stored", "new-token", expires)
+                .validate_and_rotate("never-stored", "new-token", 0, expires)
                 .await,
             Err(TokenReuseDetected::Invalid)
         ));
@@ -349,14 +393,14 @@ mod tests {
         let expires = Utc::now() + chrono::Duration::days(7);
 
         store
-            .store("token-a", family_id, Uuid::new_v4(), expires)
+            .store("token-a", family_id, Uuid::new_v4(), 0, expires)
             .await
             .unwrap();
         store.revoke("token-a").await.unwrap();
 
         assert!(matches!(
             store
-                .validate_and_rotate("token-a", "token-b", expires)
+                .validate_and_rotate("token-a", "token-b", 0, expires)
                 .await,
             Err(TokenReuseDetected::Invalid)
         ));
@@ -370,18 +414,18 @@ mod tests {
         let expires = Utc::now() + chrono::Duration::days(7);
 
         store
-            .store("token-1", family_id, user_id, expires)
+            .store("token-1", family_id, user_id, 0, expires)
             .await
             .unwrap();
         store
-            .validate_and_rotate("token-1", "token-2", expires)
+            .validate_and_rotate("token-1", "token-2", 0, expires)
             .await
             .unwrap();
         store.revoke_family(family_id).await.unwrap();
 
         assert!(matches!(
             store
-                .validate_and_rotate("token-2", "token-3", expires)
+                .validate_and_rotate("token-2", "token-3", 0, expires)
                 .await,
             Err(TokenReuseDetected::Invalid)
         ));

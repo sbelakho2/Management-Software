@@ -377,7 +377,9 @@ impl AiService for InMemoryAiService {
         };
 
         if total == 0 {
-            return Err(SenseiError::Internal(format!(
+            // A client-visible, honest domain error (not an internal 500):
+            // the caller knows exactly why retraining cannot proceed.
+            return Err(SenseiError::Validation(format!(
                 "insufficient_data: no training outcomes recorded for model type '{model_type}'. \
                  Call submit_training_outcomes with labelled data before retraining."
             )));

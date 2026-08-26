@@ -5,8 +5,9 @@
 
 use chrono::{Duration, Utc};
 use jsonwebtoken::errors::ErrorKind;
-use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation};
+use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, TokenData, Validation};
 use sensei_core::error::{Result, SenseiError};
+use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -56,12 +57,24 @@ pub struct RefreshTokenClaims {
     pub token_type: String,
     /// Token family ID for rotation tracking.
     pub family_id: Uuid,
+    /// Credential version of the user at issue time. A password change or
+    /// reset increments the version; older refresh tokens become invalid.
+    pub credential_version: u64,
 }
 
 /// Service for issuing and validating JWT tokens.
+/// Current signing key identifier (tokens signed with the current key).
+pub const CURRENT_KID: &str = "current";
+/// Previous signing key identifier (tokens signed with the previous key,
+/// still accepted until they expire — key rotation without logout storms).
+pub const PREVIOUS_KID: &str = "previous";
+
 #[derive(Clone)]
 pub struct JwtService {
     encoding_key: EncodingKey,
+    /// Optional previous key: tokens signed with it remain valid until they
+    /// expire (rotation grace period), but new tokens use the current key.
+    previous_decoding_key: Option<DecodingKey>,
     decoding_key: DecodingKey,
     issuer: String,
     audience: String,
@@ -78,9 +91,34 @@ impl JwtService {
         access_expiry_minutes: i64,
         refresh_expiry_days: i64,
     ) -> Self {
+        Self::with_previous_key(
+            secret,
+            None,
+            issuer,
+            audience,
+            access_expiry_minutes,
+            refresh_expiry_days,
+        )
+    }
+
+    /// Create a [`JwtService`] with signing-key rotation support.
+    ///
+    /// `previous_secret` is the previous signing key (e.g. from the previous
+    /// deployment's `JWT_SECRET`): tokens signed with it remain valid until
+    /// they expire, while all new tokens are signed with the current key and
+    /// carry the `kid` header so validators can select the right key.
+    pub fn with_previous_key(
+        current_secret: &str,
+        previous_secret: Option<&str>,
+        issuer: impl Into<String>,
+        audience: impl Into<String>,
+        access_expiry_minutes: i64,
+        refresh_expiry_days: i64,
+    ) -> Self {
         Self {
-            encoding_key: EncodingKey::from_secret(secret.as_bytes()),
-            decoding_key: DecodingKey::from_secret(secret.as_bytes()),
+            encoding_key: EncodingKey::from_secret(current_secret.as_bytes()),
+            decoding_key: DecodingKey::from_secret(current_secret.as_bytes()),
+            previous_decoding_key: previous_secret.map(|s| DecodingKey::from_secret(s.as_bytes())),
             issuer: issuer.into(),
             audience: audience.into(),
             access_expiry_minutes,
@@ -111,7 +149,11 @@ impl JwtService {
             token_type: "access".to_string(),
         };
 
-        encode(&Header::default(), &claims, &self.encoding_key)
+        let header = Header {
+            kid: Some(CURRENT_KID.to_string()),
+            ..Header::default()
+        };
+        encode(&header, &claims, &self.encoding_key)
             .map_err(|e| SenseiError::TokenError(format!("Failed to encode JWT: {e}")))
     }
 
@@ -125,6 +167,7 @@ impl JwtService {
         user_id: Uuid,
         tenant_id: Uuid,
         family_id: Uuid,
+        credential_version: u64,
     ) -> Result<String> {
         let now = Utc::now();
         let exp = now + Duration::days(self.refresh_expiry_days);
@@ -135,6 +178,7 @@ impl JwtService {
             jti: Uuid::new_v4(),
             iss: self.issuer.clone(),
             aud: self.audience.clone(),
+            credential_version,
             exp: exp.timestamp() as usize,
             iat: now.timestamp() as usize,
             token_type: "refresh".to_string(),
@@ -154,7 +198,8 @@ impl JwtService {
         // the subject is a valid UUID.
         validation.required_spec_claims.insert("sub".to_string());
 
-        let token_data = decode::<AccessTokenClaims>(token, &self.decoding_key, &validation)
+        let token_data = self
+            .decode_with_key_rotation::<AccessTokenClaims>(token, &validation)
             .map_err(|e| map_decode_error(e, "Invalid token"))?;
 
         if token_data.claims.token_type != "access" {
@@ -171,7 +216,8 @@ impl JwtService {
         validation.set_audience(&[&self.audience]);
         validation.required_spec_claims.insert("sub".to_string());
 
-        let token_data = decode::<RefreshTokenClaims>(token, &self.decoding_key, &validation)
+        let token_data = self
+            .decode_with_key_rotation::<RefreshTokenClaims>(token, &validation)
             .map_err(|e| map_decode_error(e, "Invalid refresh token"))?;
 
         if token_data.claims.token_type != "refresh" {
@@ -179,6 +225,27 @@ impl JwtService {
         }
 
         Ok(token_data.claims)
+    }
+
+    /// Decode a token honouring signing-key rotation: try the current key
+    /// first, then the previous key (tokens issued before a rotation remain
+    /// valid until they expire).
+    fn decode_with_key_rotation<T: DeserializeOwned>(
+        &self,
+        token: &str,
+        validation: &Validation,
+    ) -> std::result::Result<TokenData<T>, jsonwebtoken::errors::Error> {
+        match decode::<T>(token, &self.decoding_key, validation) {
+            Ok(data) => Ok(data),
+            Err(e) => {
+                if let Some(previous) = &self.previous_decoding_key {
+                    if let Ok(data) = decode::<T>(token, previous, validation) {
+                        return Ok(data);
+                    }
+                }
+                Err(e)
+            }
+        }
     }
 }
 
@@ -231,7 +298,7 @@ mod tests {
         let family_id = Uuid::new_v4();
 
         let token = svc
-            .issue_refresh_token(user_id, tenant_id, family_id)
+            .issue_refresh_token(user_id, tenant_id, family_id, 0)
             .unwrap();
         let claims = svc.validate_refresh_token(&token).unwrap();
 
@@ -252,6 +319,7 @@ mod tests {
             iss: "sensei-test".to_string(),
             aud: "some-other-audience".to_string(),
             exp: (Utc::now() + Duration::days(7)).timestamp() as usize,
+            credential_version: 0,
             iat: Utc::now().timestamp() as usize,
             token_type: "refresh".to_string(),
             family_id: Uuid::new_v4(),

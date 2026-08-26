@@ -50,9 +50,7 @@ use sensei_services::supply_chain::{
 use sensei_services::tenants::{DatabaseTenantsService, InMemoryTenantsService, TenantsService};
 use sensei_services::users::{DatabaseUsersService, UsersService};
 use sqlx::PgPool;
-use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
-use tokio::sync::RwLock;
 
 use dashmap::DashMap;
 use uuid::Uuid;
@@ -60,6 +58,7 @@ use uuid::Uuid;
 use crate::middleware::audit::AuditLog;
 use crate::middleware::rate_limiter::RateLimiter;
 use crate::middleware::session::SessionStore;
+use crate::middleware::shared_auth_stores::{TokenBlacklist, TokenKind, TokenStore};
 use crate::services::{sse::SseManager, ws::WebSocketManager};
 use crate::stores;
 
@@ -355,11 +354,11 @@ pub struct AppState {
     /// Excel/CSV export service.
     pub excel_service: ExcelExportService,
     /// Blacklisted JWT tokens (for logout).
-    pub blacklisted_tokens: Arc<RwLock<HashSet<String>>>,
+    pub token_blacklist: TokenBlacklist,
     /// Password reset tokens.
-    pub password_reset_tokens: Arc<RwLock<HashMap<String, PasswordResetToken>>>,
+    pub password_reset_store: TokenStore,
     /// Email verification tokens.
-    pub email_verification_tokens: Arc<RwLock<HashMap<String, EmailVerificationToken>>>,
+    pub email_verification_store: TokenStore,
     /// Rate limiter for API endpoints.
     pub rate_limiter: RateLimiter,
     /// Audit log for recording state-changing requests.
@@ -489,6 +488,7 @@ impl AppState {
     /// Use [`AppState::with_nats_event_bus`] to attempt a NATS connection,
     /// or call [`AppState::with_event_bus`] to provide a custom implementation.
     pub fn new(config: AppConfig, users_service: Arc<dyn UsersService>) -> Self {
+        let trusted_proxies = config.security.trusted_proxies.clone();
         let jwt_service = JwtService::new(
             &config.auth.jwt_secret,
             &config.auth.jwt_issuer,
@@ -683,11 +683,12 @@ impl AppState {
             pdf_service: PdfExportService::new(),
             excel_service: ExcelExportService::new(),
             tenants_service: Arc::new(InMemoryTenantsService::new()) as Arc<dyn TenantsService>,
-            blacklisted_tokens: Arc::new(RwLock::new(HashSet::new())),
-            password_reset_tokens: Arc::new(RwLock::new(HashMap::new())),
-            email_verification_tokens: Arc::new(RwLock::new(HashMap::new())),
-            rate_limiter: RateLimiter::new(100, 60), // 100 requests per 60 seconds
-            audit_log: AuditLog::new(10_000),        // Keep last 10 000 entries
+            token_blacklist: TokenBlacklist::new(None),
+            password_reset_store: TokenStore::new(TokenKind::PasswordReset, None),
+            email_verification_store: TokenStore::new(TokenKind::EmailVerification, None),
+            rate_limiter: RateLimiter::with_trusted_proxies(100, 60, trusted_proxies), // 100 requests per 60s; XFF only from trusted proxies
+
+            audit_log: AuditLog::new(10_000), // Keep last 10 000 entries
             session_store: SessionStore::new(86_400), // 24 hour fingerprint TTL
             refresh_token_store,
             oauth2_client,
@@ -849,6 +850,16 @@ impl AppState {
 
         // Realtime tickets persist to the database when a pool is available.
         self.realtime_tickets = RealtimeTicketStore::with_pool(Some(Arc::new(p.clone())));
+
+        // Session fingerprints are shared across replicas (multi-replica
+        // logout/session enforcement).
+        self.session_store = self.session_store.attach_pool(p.clone());
+
+        // Access-token revocation + one-time tokens become shared tables.
+        self.token_blacklist = TokenBlacklist::new(Some(p.clone()));
+        self.password_reset_store = TokenStore::new(TokenKind::PasswordReset, Some(p.clone()));
+        self.email_verification_store =
+            TokenStore::new(TokenKind::EmailVerification, Some(p.clone()));
 
         // Durable audit logging: writes go to PostgreSQL instead of the
         // dev-mode ring buffer.

@@ -93,6 +93,9 @@ pub struct UserModel {
     pub is_active: bool,
     /// Whether the account's email address has been verified.
     pub email_verified: bool,
+    /// Incremented on every password change/reset; older refresh tokens
+    /// become invalid.
+    pub credential_version: i64,
     /// Last login timestamp.
     pub last_login_at: Option<DateTime<Utc>>,
     /// Record creation timestamp.

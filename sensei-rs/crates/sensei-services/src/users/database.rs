@@ -39,6 +39,7 @@ fn user_model_to_domain(m: UserModel) -> User {
         password_hash: m.password_hash,
         roles: m.roles,
         is_active: m.is_active,
+        credential_version: m.credential_version.max(0) as u64,
         last_login_at: m.last_login_at,
         created_at: m.created_at,
         updated_at: m.updated_at,
@@ -58,6 +59,7 @@ fn user_to_model(u: User, email_verified: bool) -> UserModel {
         roles: u.roles,
         is_active: u.is_active,
         email_verified,
+        credential_version: u.credential_version as i64,
         last_login_at: u.last_login_at,
         created_at: u.created_at,
         updated_at: u.updated_at,
@@ -65,7 +67,7 @@ fn user_to_model(u: User, email_verified: bool) -> UserModel {
 }
 
 const USER_COLUMNS: &str = "id, tenant_id, email, name, password_hash, roles, \
-                            is_active, email_verified, last_login_at, created_at, updated_at";
+                            is_active, email_verified, credential_version, last_login_at, created_at, updated_at";
 
 #[async_trait]
 impl UsersService for DatabaseUsersService {
@@ -120,7 +122,19 @@ impl UsersService for DatabaseUsersService {
         .bind(now)
         .fetch_optional(&self.pool)
         .await
-        .map_err(|e| SenseiError::Database(format!("Failed to create user: {e}")))?
+        .map_err(|e| {
+            // The global normalized-email index rejects cross-tenant
+            // duplicates even though the tenant-scoped ON CONFLICT does not
+            // fire — surface it as a friendly conflict, not a 500.
+            if is_unique_violation(&e) {
+                SenseiError::AlreadyExists(format!(
+                    "User with email '{}' already exists",
+                    user.email
+                ))
+            } else {
+                SenseiError::Database(format!("Failed to create user: {e}"))
+            }
+        })?
         .ok_or_else(|| {
             SenseiError::AlreadyExists(format!("User with email '{}' already exists", user.email))
         })?;
@@ -225,7 +239,93 @@ impl UsersService for DatabaseUsersService {
         Ok(user)
     }
 
-    async fn update_user(&self, id: EntityId, updated: User) -> Result<User> {
+    async fn authenticate(&self, email: &str, password: &str) -> Result<User> {
+        let normalized = email.trim().to_lowercase();
+        let user = self
+            .find_by_email(&normalized)
+            .await
+            .map_err(|_| SenseiError::Unauthorized("Invalid email or password".to_string()))?;
+        if !user.is_active {
+            return Err(SenseiError::Unauthorized(
+                "Account is disabled. Contact your administrator.".to_string(),
+            ));
+        }
+        check_password(&user, password).await?;
+        Ok(user)
+    }
+
+    async fn bump_credential_version(&self, id: EntityId) -> Result<User> {
+        let model = sqlx::query_as::<_, UserModel>(&format!(
+            "UPDATE users SET credential_version = credential_version + 1, updated_at = NOW() \
+             WHERE id = $1 \
+             RETURNING {USER_COLUMNS}"
+        ))
+        .bind(id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| SenseiError::Database(format!("Failed to bump credential version: {e}")))?
+        .ok_or_else(|| SenseiError::NotFound(format!("User with id '{id}' not found")))?;
+        Ok(user_model_to_domain(model))
+    }
+
+    async fn create_tenant_with_initial_user(
+        &self,
+        tenant: sensei_core::domain::entities::Tenant,
+        user: User,
+    ) -> Result<User> {
+        // One transaction: the users.tenant_id FK can never dangle.
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to begin registration: {e}")))?;
+
+        sqlx::query(
+            "INSERT INTO tenants (id, name, slug, is_active, features, created_at, updated_at) \
+             VALUES ($1, $2, $3, $4, $5::jsonb, NOW(), NOW())",
+        )
+        .bind(tenant.id)
+        .bind(&tenant.name)
+        .bind(&tenant.slug)
+        .bind(tenant.is_active)
+        .bind(serde_json::to_string(&tenant.features).unwrap_or_else(|_| "{}".to_string()))
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| SenseiError::Database(format!("Failed to create tenant: {e}")))?;
+
+        let mut user = user;
+        user.tenant_id = tenant.id;
+        let model = user_to_model(user.clone(), false);
+        sqlx::query(
+            "INSERT INTO users (id, tenant_id, email, name, password_hash, roles, is_active, \
+                                email_verified, credential_version, last_login_at, created_at, updated_at) \
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NULL, NOW(), NOW())",
+        )
+        .bind(model.id)
+        .bind(model.tenant_id)
+        .bind(&model.email)
+        .bind(&model.name)
+        .bind(&model.password_hash)
+        .bind(&model.roles)
+        .bind(model.is_active)
+        .bind(model.email_verified)
+        .bind(model.credential_version)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| SenseiError::Database(format!("Failed to create initial user: {e}")))?;
+
+        tx.commit()
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to commit registration: {e}")))?;
+        Ok(user)
+    }
+
+    async fn update_user(
+        &self,
+        caller_tenant_id: EntityId,
+        id: EntityId,
+        updated: User,
+    ) -> Result<User> {
         let now = Utc::now();
         let verified = self.is_email_verified(id).await.unwrap_or(false);
         let model = user_to_model(updated, verified);
@@ -234,7 +334,7 @@ impl UsersService for DatabaseUsersService {
             "UPDATE users \
              SET name = $2, email = $3, password_hash = $4, roles = $5, \
                  is_active = $6, updated_at = $7 \
-             WHERE id = $1 \
+             WHERE id = $1 AND tenant_id = $8 \
              RETURNING id, tenant_id, email, name, password_hash, roles, \
                        is_active, email_verified, last_login_at, created_at, updated_at",
         )
@@ -245,6 +345,7 @@ impl UsersService for DatabaseUsersService {
         .bind(&model.roles)
         .bind(model.is_active)
         .bind(now)
+        .bind(caller_tenant_id)
         .fetch_optional(&self.pool)
         .await;
 
@@ -260,18 +361,19 @@ impl UsersService for DatabaseUsersService {
         }
     }
 
-    async fn deactivate_user(&self, id: EntityId) -> Result<User> {
+    async fn deactivate_user(&self, caller_tenant_id: EntityId, id: EntityId) -> Result<User> {
         let now = Utc::now();
 
         let model = sqlx::query_as::<_, UserModel>(
             "UPDATE users \
              SET is_active = false, updated_at = $2 \
-             WHERE id = $1 \
+             WHERE id = $1 AND tenant_id = $3 \
              RETURNING id, tenant_id, email, name, password_hash, roles, \
                        is_active, email_verified, last_login_at, created_at, updated_at",
         )
         .bind(id)
         .bind(now)
+        .bind(caller_tenant_id)
         .fetch_optional(&self.pool)
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to deactivate user: {e}")))?
@@ -280,18 +382,19 @@ impl UsersService for DatabaseUsersService {
         Ok(user_model_to_domain(model))
     }
 
-    async fn activate_user(&self, id: EntityId) -> Result<User> {
+    async fn activate_user(&self, caller_tenant_id: EntityId, id: EntityId) -> Result<User> {
         let now = Utc::now();
 
         let model = sqlx::query_as::<_, UserModel>(
             "UPDATE users \
              SET is_active = true, updated_at = $2 \
-             WHERE id = $1 \
+             WHERE id = $1 AND tenant_id = $3 \
              RETURNING id, tenant_id, email, name, password_hash, roles, \
                        is_active, email_verified, last_login_at, created_at, updated_at",
         )
         .bind(id)
         .bind(now)
+        .bind(caller_tenant_id)
         .fetch_optional(&self.pool)
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to activate user: {e}")))?
@@ -300,20 +403,26 @@ impl UsersService for DatabaseUsersService {
         Ok(user_model_to_domain(model))
     }
 
-    async fn update_user_roles(&self, id: EntityId, roles: Vec<String>) -> Result<User> {
+    async fn update_user_roles(
+        &self,
+        caller_tenant_id: EntityId,
+        id: EntityId,
+        roles: Vec<String>,
+    ) -> Result<User> {
         validate_roles(&roles)?;
         let now = Utc::now();
 
         let model = sqlx::query_as::<_, UserModel>(
             "UPDATE users \
              SET roles = $2, updated_at = $3 \
-             WHERE id = $1 \
+             WHERE id = $1 AND tenant_id = $4 \
              RETURNING id, tenant_id, email, name, password_hash, roles, \
                        is_active, email_verified, last_login_at, created_at, updated_at",
         )
         .bind(id)
         .bind(&roles)
         .bind(now)
+        .bind(caller_tenant_id)
         .fetch_optional(&self.pool)
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to update user roles: {e}")))?

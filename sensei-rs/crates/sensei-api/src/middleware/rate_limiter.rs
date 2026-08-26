@@ -43,6 +43,8 @@ struct RateLimitState {
 pub struct RateLimiter {
     max_requests: u32,
     window_duration: Duration,
+    /// Proxies allowed to set forwarding headers (empty = none trusted).
+    trusted_proxies: std::sync::Arc<Vec<std::net::IpAddr>>,
     buckets: Arc<DashMap<String, RateLimitState>>,
 }
 
@@ -67,6 +69,14 @@ impl RateLimiter {
     /// `window` may be sub-second (unit tests exercise sliding-window
     /// boundaries with millisecond windows).
     fn with_window(max_requests: u32, window: Duration) -> Self {
+        Self::with_window_and_proxies(max_requests, window, Vec::new())
+    }
+
+    fn with_window_and_proxies(
+        max_requests: u32,
+        window: Duration,
+        trusted_proxies: Vec<std::net::IpAddr>,
+    ) -> Self {
         let buckets: Arc<DashMap<String, RateLimitState>> = Arc::new(DashMap::new());
 
         // Spawn a background cleanup task that periodically evicts stale entries.
@@ -78,8 +88,23 @@ impl RateLimiter {
         Self {
             max_requests,
             window_duration: window,
+            trusted_proxies: std::sync::Arc::new(trusted_proxies),
             buckets,
         }
+    }
+
+    /// Create a limiter that honours forwarding headers only from the given
+    /// trusted proxies.
+    pub fn with_trusted_proxies(
+        max_requests: u32,
+        window_secs: u64,
+        trusted_proxies: Vec<std::net::IpAddr>,
+    ) -> Self {
+        Self::with_window_and_proxies(
+            max_requests,
+            Duration::from_secs(window_secs),
+            trusted_proxies,
+        )
     }
 
     /// Check whether a request for the given `key` is allowed.
@@ -149,27 +174,11 @@ async fn cleanup_task(buckets: Arc<DashMap<String, RateLimitState>>, window: Dur
 
 /// Extract the client IP from the `X-Forwarded-For` header or fall back
 /// to the socket address.
-fn extract_client_ip(req: &Request) -> String {
-    // Try X-Forwarded-For header first.
-    if let Some(value) = req
-        .headers()
-        .get("x-forwarded-for")
-        .and_then(|v| v.to_str().ok())
-    {
-        if let Some(ip) = value.split(',').next() {
-            return ip.trim().to_string();
-        }
-    }
-
-    // Fall back to the connection's remote address.
-    if let Some(connect_info) = req
-        .extensions()
-        .get::<axum::extract::connect_info::ConnectInfo<std::net::SocketAddr>>()
-    {
-        return connect_info.0.ip().to_string();
-    }
-
-    "unknown".to_string()
+fn extract_client_ip(req: &Request, trusted_proxies: &[std::net::IpAddr]) -> String {
+    // X-Forwarded-For is only honoured when the immediate TCP peer is a
+    // trusted proxy — an untrusted client must not rotate the header to
+    // bypass the limiter.
+    crate::middleware::session::extract_client_ip(req, trusted_proxies)
 }
 
 /// Axum middleware that enforces rate limits per client IP.
@@ -188,7 +197,7 @@ pub async fn rate_limit_middleware(mut req: Request, next: Next) -> Response {
     };
 
     // Determine the client key (IP address).
-    let client_ip = extract_client_ip(&req);
+    let client_ip = extract_client_ip(&req, &rate_limiter.trusted_proxies);
 
     match rate_limiter.check(&client_ip) {
         Ok(()) => {
@@ -272,19 +281,38 @@ mod tests {
     }
 
     #[test]
-    fn test_extract_client_ip_from_header() {
+    fn test_extract_client_ip_from_untrusted_peer_ignores_header() {
+        // No trusted proxies configured: the X-Forwarded-For header must be
+        // IGNORED (an attacker would otherwise rotate it to bypass limits).
         let req = Request::builder()
             .header("x-forwarded-for", "203.0.113.42, 10.0.0.1")
             .body(axum::body::Body::empty())
             .unwrap();
-        assert_eq!(extract_client_ip(&req), "203.0.113.42");
+        assert_eq!(extract_client_ip(&req, &[]), "unknown");
+    }
+
+    #[test]
+    fn test_extract_client_ip_from_trusted_proxy() {
+        // The immediate peer is a trusted proxy: the rightmost untrusted
+        // XFF entry wins.
+        let trusted = vec![std::net::IpAddr::V4(std::net::Ipv4Addr::new(10, 0, 0, 1))];
+        let mut req = Request::builder()
+            .header("x-forwarded-for", "203.0.113.42, 10.0.0.1")
+            .body(axum::body::Body::empty())
+            .unwrap();
+        req.extensions_mut()
+            .insert(axum::extract::ConnectInfo(std::net::SocketAddr::from((
+                [10, 0, 0, 1],
+                1234,
+            ))));
+        assert_eq!(extract_client_ip(&req, &trusted), "203.0.113.42");
     }
 
     #[test]
     fn test_extract_client_ip_fallback() {
         let req = Request::builder().body(axum::body::Body::empty()).unwrap();
         // No connect info, no x-forwarded-for → "unknown"
-        assert_eq!(extract_client_ip(&req), "unknown");
+        assert_eq!(extract_client_ip(&req, &[]), "unknown");
     }
 
     #[tokio::test]

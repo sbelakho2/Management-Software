@@ -143,13 +143,38 @@ pub type Result<T> = std::result::Result<T, SenseiError>;
 ///
 /// Maps each error variant to an appropriate HTTP status code and JSON body.
 #[cfg(feature = "axum")]
+use axum::http::StatusCode;
+#[cfg(feature = "axum")]
+use axum::Json;
+
+#[cfg(feature = "axum")]
+mod axum_support {
+    use axum::http::StatusCode;
+    use axum::Json;
+
+    pub fn internal_error_response(message: &str) -> axum::response::Response {
+        let request_id = uuid::Uuid::new_v4();
+        tracing::error!(
+            request_id = %request_id,
+            error = %message,
+            "Internal error surfaced to client (full detail logged here)"
+        );
+        let body = serde_json::json!({
+            "error": "internal_server_error",
+            "message": "An unexpected error occurred. Please try again later.",
+            "request_id": request_id.to_string(),
+        });
+        (StatusCode::INTERNAL_SERVER_ERROR, Json(body)).into_response()
+    }
+
+    use axum::response::IntoResponse as _;
+}
+
+#[cfg(feature = "axum")]
 impl axum::response::IntoResponse for SenseiError {
     fn into_response(self) -> axum::response::Response {
-        use axum::http::StatusCode;
-        use axum::Json;
-
         let (status, message) = match &self {
-            // 4xx Client Errors
+            // 4xx Client Errors — safe to expose verbatim.
             SenseiError::Validation(msg) | SenseiError::MissingField(msg) => {
                 (StatusCode::BAD_REQUEST, msg.clone())
             }
@@ -169,7 +194,8 @@ impl axum::response::IntoResponse for SenseiError {
             }
             SenseiError::Timeout(msg) => (StatusCode::REQUEST_TIMEOUT, msg.clone()),
 
-            // 5xx Server Errors
+            // 5xx Server Errors — never expose the inner text: it can carry
+            // SQL fragments, hosts, filesystem paths or credential details.
             SenseiError::Database(msg)
             | SenseiError::DatabaseConnection(msg)
             | SenseiError::EventBus(msg)
@@ -181,12 +207,21 @@ impl axum::response::IntoResponse for SenseiError {
             | SenseiError::Internal(msg)
             | SenseiError::Serialization(msg)
             | SenseiError::LockError(msg)
-            | SenseiError::ChannelError(msg) => (StatusCode::INTERNAL_SERVER_ERROR, msg.clone()),
-            SenseiError::HttpError { status, message } => (
-                StatusCode::from_u16(*status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
-                message.clone(),
-            ),
-            SenseiError::Io(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()),
+            | SenseiError::ChannelError(msg) => {
+                return axum_support::internal_error_response(msg);
+            }
+            SenseiError::HttpError { status, message } => {
+                if *status >= 500 {
+                    return axum_support::internal_error_response(message);
+                }
+                (
+                    StatusCode::from_u16(*status).unwrap_or(StatusCode::BAD_REQUEST),
+                    message.clone(),
+                )
+            }
+            SenseiError::Io(e) => {
+                return axum_support::internal_error_response(&e.to_string());
+            }
         };
 
         let body = serde_json::json!({
