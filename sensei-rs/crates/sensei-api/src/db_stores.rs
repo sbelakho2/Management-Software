@@ -87,6 +87,10 @@ pub enum StoreError {
     /// No database pool is configured (store is in-memory only).
     #[error("Store is not connected to a database")]
     NotConnected,
+    /// Optimistic-concurrency conflict: the entity changed in PostgreSQL
+    /// since this guard's snapshot was taken.
+    #[error("Concurrent modification conflict: {0}")]
+    Conflict(String),
 }
 
 impl From<StoreError> for SenseiError {
@@ -95,6 +99,7 @@ impl From<StoreError> for SenseiError {
             StoreError::Database(e) => {
                 SenseiError::Database(format!("Entity store database error: {e}"))
             }
+            StoreError::Conflict(msg) => SenseiError::Conflict(msg),
             StoreError::Serialization(e) => {
                 SenseiError::Internal(format!("Entity store serialization error: {e}"))
             }
@@ -156,6 +161,8 @@ struct StoreInner<T> {
     /// When the last DB load was attempted, so failed loads are retried at
     /// most once per second instead of on every access.
     last_db_load_attempt: Option<Instant>,
+    /// Event bus for cross-replica cache invalidation (core NATS pub/sub).
+    bus: Option<std::sync::Arc<dyn sensei_event_bus::EventBus>>,
     /// Serializes persistence operations (explicit `persist()` and the
     /// best-effort drop path) so only one persist runs at a time.
     persist_lock: Arc<Mutex<()>>,
@@ -169,6 +176,7 @@ impl<T> StoreInner<T> {
             entity_type: entity_type.to_string(),
             loaded_tenants: std::collections::HashMap::new(),
             last_db_load_attempt: None,
+            bus: None,
             persist_lock: Arc::new(Mutex::new(())),
         }
     }
@@ -242,6 +250,86 @@ impl<T> EntityStore<T> {
             inner: Arc::new(RwLock::new(StoreInner::new(entity_type, Some(pool)))),
         }
     }
+
+    /// Subscribe this store to cross-replica invalidation events: a write
+    /// committed by ANY replica evicts the affected rows from THIS
+    /// replica's cache immediately (no waiting for the snapshot TTL).
+    pub fn attach_bus(&self, bus: std::sync::Arc<dyn sensei_event_bus::EventBus>)
+    where
+        T: Send + Sync + 'static,
+    {
+        {
+            let mut inner = match self.inner.try_write() {
+                Ok(g) => g,
+                Err(_) => {
+                    // Lock busy (a persist is in flight): skip attaching the
+                    // bus now; the invalidation subscriber is best-effort.
+                    return;
+                }
+            };
+            inner.bus = Some(bus.clone());
+            let entity_type = inner.entity_type.clone();
+            drop(inner);
+
+            let inner = self.inner.clone();
+            let subject = format!("sensei.estore.invalidate.{entity_type}");
+            let et = entity_type.clone();
+            let handler: sensei_event_bus::bus::CoreHandler =
+                std::sync::Arc::new(move |payload: Vec<u8>| {
+                    let inner = inner.clone();
+                    let et = et.clone();
+                    tokio::spawn(async move {
+                        let parsed: serde_json::Value = match serde_json::from_slice(&payload) {
+                            Ok(v) => v,
+                            Err(_) => return,
+                        };
+                        // Own writes are already reflected in the local map.
+                        if parsed.get("origin").and_then(|v| v.as_str()) == Some(store_origin_id())
+                        {
+                            return;
+                        }
+                        let tenant_id: Uuid = match parsed.get("tenant_id").and_then(|v| v.as_str())
+                        {
+                            Some(s) => match Uuid::parse_str(s) {
+                                Ok(id) => id,
+                                Err(_) => return,
+                            },
+                            None => return,
+                        };
+                        let ids: Vec<Uuid> = parsed
+                            .get("ids")
+                            .and_then(|v| v.as_array())
+                            .map(|arr| {
+                                arr.iter()
+                                    .filter_map(|i| i.as_str())
+                                    .filter_map(|s| Uuid::parse_str(s).ok())
+                                    .collect()
+                            })
+                            .unwrap_or_default();
+                        let mut guard = inner.write().await;
+                        guard.loaded_tenants.remove(&tenant_id);
+                        for id in ids {
+                            guard.data.remove(&StoreKey::new(tenant_id, id));
+                        }
+                        tracing::trace!(
+                            entity_type = %et,
+                            tenant_id = %tenant_id,
+                            "Cross-replica EntityStore cache invalidated"
+                        );
+                    });
+                    Ok(())
+                });
+            tokio::spawn(async move {
+                let _ = bus.subscribe_core(&subject, "entity-stores", handler).await;
+            });
+        }
+    }
+}
+
+/// Stable identity of THIS process for cache-invalidation origin checks.
+fn store_origin_id() -> &'static str {
+    static ORIGIN: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    ORIGIN.get_or_init(|| uuid::Uuid::new_v4().to_string())
 }
 
 impl<T: Serialize + DeserializeOwned + Clone + PartialEq + Send + Sync + 'static> EntityStore<T> {
@@ -433,11 +521,22 @@ impl<T: Serialize + DeserializeOwned + Clone + PartialEq + Send + Sync + 'static
         // Attempt persist with one retry on transient failure
         let result = {
             let _guard = persist_lock.lock().await;
-            persist_changes_inner(&pool, &entity_type, tenant_id, &dirty_values, &removed_ids).await
+            persist_changes_inner(
+                &pool,
+                &entity_type,
+                tenant_id,
+                &dirty_values,
+                &removed_ids,
+                &self.original_values,
+            )
+            .await
         };
         match result {
             Ok(()) => {
                 self.after_persist_success();
+                // Publish cross-replica invalidation so OTHER replicas evict
+                // the affected rows immediately (core NATS, fire-and-forget).
+                self.publish_invalidation().await;
                 Ok(())
             }
             Err(e) => {
@@ -447,14 +546,89 @@ impl<T: Serialize + DeserializeOwned + Clone + PartialEq + Send + Sync + 'static
                     "First persist attempt failed. Retrying after 100ms..."
                 );
                 tokio::time::sleep(Duration::from_millis(100)).await;
-                // Use ? to convert sqlx::Error -> StoreError via #[from]
                 let _guard = persist_lock.lock().await;
-                persist_changes_inner(&pool, &entity_type, tenant_id, &dirty_values, &removed_ids)
-                    .await?;
-                self.after_persist_success();
-                Ok(())
+                match persist_changes_inner(
+                    &pool,
+                    &entity_type,
+                    tenant_id,
+                    &dirty_values,
+                    &removed_ids,
+                    &self.original_values,
+                )
+                .await
+                {
+                    Ok(()) => {
+                        self.after_persist_success();
+                        self.publish_invalidation().await;
+                        Ok(())
+                    }
+                    Err(e) => {
+                        // The database rejected the change: the shared
+                        // in-memory map must NEVER disagree with
+                        // PostgreSQL — roll the local cache back so memory
+                        // stays consistent with the authoritative store.
+                        tracing::error!(
+                            entity_type = %entity_type,
+                            error = %e,
+                            "Persist failed after retry — rolling back the in-memory cache"
+                        );
+                        self.rollback_local_cache().await;
+                        Err(StoreError::Database(e))
+                    }
+                }
             }
         }
+    }
+
+    /// Revert the shared in-memory map to the pre-guard snapshot (called
+    /// ONLY when the database rejected the write, so memory never diverges
+    /// from PostgreSQL).
+    async fn rollback_local_cache(&mut self) {
+        let mut inner = self.inner.write().await;
+        for id in &self.removed {
+            if let Some(original) = self.original_values.get(id) {
+                inner
+                    .data
+                    .insert(StoreKey::new(self.tenant_id, *id), original.clone());
+            }
+        }
+        for (id, original) in self.original_values.iter() {
+            if self.dirty.contains(id) {
+                inner
+                    .data
+                    .insert(StoreKey::new(self.tenant_id, *id), original.clone());
+            }
+        }
+    }
+
+    /// Fire-and-forget cross-replica invalidation (core NATS): every other
+    /// replica evicts the changed rows from its cache immediately.
+    async fn publish_invalidation(&self) {
+        let Some(bus) = self.bus() else {
+            return;
+        };
+        let mut ids: Vec<Uuid> = self.dirty.iter().copied().collect();
+        ids.extend(self.removed.iter().copied());
+        if ids.is_empty() {
+            return;
+        }
+        let payload = serde_json::json!({
+            "origin": store_origin_id(),
+            "tenant_id": self.tenant_id,
+            "ids": ids.iter().map(|id| id.to_string()).collect::<Vec<_>>(),
+        });
+        let subject = format!("sensei.estore.invalidate.{}", self.entity_type);
+        let bytes = match serde_json::to_vec(&payload) {
+            Ok(b) => b,
+            Err(_) => return,
+        };
+        if let Err(e) = bus.publish_core(&subject, &bytes).await {
+            tracing::warn!(error = %e, "Failed to publish EntityStore invalidation");
+        }
+    }
+
+    fn bus(&self) -> Option<std::sync::Arc<dyn sensei_event_bus::EventBus>> {
+        self.inner.try_read().ok().and_then(|g| g.bus.clone())
     }
 
     /// Recompute the dirty/removed sets by diffing the current data against
@@ -574,6 +748,7 @@ impl<T: Serialize + DeserializeOwned + Clone + PartialEq + Send + Sync + 'static
                             tenant_id,
                             &dirty_values,
                             &removed_ids,
+                            &self.original_values,
                         )
                         .await
                     })
@@ -667,8 +842,9 @@ async fn load_from_db<T: DeserializeOwned + Clone>(inner: &mut StoreInner<T>, te
                 let id: Uuid = match row.try_get("id") {
                     Ok(v) => v,
                     Err(e) => {
-                        tracing::warn!(
+                        tracing::error!(
                             entity_type = %inner.entity_type,
+                            tenant_id = %tenant_id,
                             "Failed to read id from row: {e}"
                         );
                         continue;
@@ -677,8 +853,9 @@ async fn load_from_db<T: DeserializeOwned + Clone>(inner: &mut StoreInner<T>, te
                 let data: serde_json::Value = match row.try_get("data") {
                     Ok(v) => v,
                     Err(e) => {
-                        tracing::warn!(
+                        tracing::error!(
                             entity_type = %inner.entity_type,
+                            tenant_id = %tenant_id,
                             id = %id,
                             "Failed to read data from row: {e}"
                         );
@@ -690,10 +867,14 @@ async fn load_from_db<T: DeserializeOwned + Clone>(inner: &mut StoreInner<T>, te
                         inner.data.insert(StoreKey::new(tenant_id, id), entity);
                     }
                     Err(e) => {
-                        tracing::warn!(
+                        // A corrupt row must never silently vanish from the
+                        // snapshot: ERROR + row identity, and the tenant is
+                        // left OUT of loaded_tenants so the load is retried.
+                        tracing::error!(
                             entity_type = %inner.entity_type,
+                            tenant_id = %tenant_id,
                             id = %id,
-                            "Failed to deserialize entity: {e}"
+                            "Failed to deserialize entity — row skipped, load will retry: {e}"
                         );
                     }
                 }
@@ -711,7 +892,7 @@ async fn load_from_db<T: DeserializeOwned + Clone>(inner: &mut StoreInner<T>, te
         Err(e) => {
             // Keep the tenant out of `loaded_tenants` so the next access
             // retries (rate-limited to once per second).
-            tracing::warn!(
+            tracing::error!(
                 entity_type = %inner.entity_type,
                 tenant_id = %tenant_id,
                 "Failed to load from database (table may not exist yet): {e}"
@@ -732,39 +913,74 @@ async fn persist_changes_inner<T: Serialize>(
     tenant_id: Uuid,
     data: &HashMap<Uuid, T>,
     removed_ids: &[Uuid],
+    original_values: &HashMap<Uuid, T>,
 ) -> Result<(), sqlx::Error> {
     let mut tx = pool.begin().await?;
 
-    if !data.is_empty() {
-        let mut ids = Vec::with_capacity(data.len());
-        let mut values = Vec::with_capacity(data.len());
-        for (id, entity) in data {
-            let json = serde_json::to_value(entity).map_err(|e| {
-                tracing::error!(
-                    entity_type = %entity_type,
-                    tenant_id = %tenant_id,
-                    id = %id,
-                    "Failed to serialize entity: {e}"
-                );
-                sqlx::Error::Protocol(format!("Serialization error: {e}"))
-            })?;
-            ids.push(*id);
-            values.push(sqlx::types::Json(json));
-        }
+    let mut conflicts: Vec<Uuid> = Vec::new();
+    for (id, entity) in data {
+        let json = serde_json::to_value(entity).map_err(|e| {
+            tracing::error!(
+                entity_type = %entity_type,
+                tenant_id = %tenant_id,
+                id = %id,
+                "Failed to serialize entity: {e}"
+            );
+            sqlx::Error::Protocol(format!("Serialization error: {e}"))
+        })?;
 
-        sqlx::query(
-            r#"INSERT INTO entity_store (tenant_id, entity_type, id, data)
-               SELECT $1, $2, u.id, u.data
-               FROM UNNEST($3::uuid[], $4::jsonb[]) AS u(id, data)
-               ON CONFLICT (tenant_id, entity_type, id)
-               DO UPDATE SET data = EXCLUDED.data, updated_at = NOW()"#,
-        )
-        .bind(tenant_id)
-        .bind(entity_type)
-        .bind(&ids)
-        .bind(&values)
-        .execute(&mut *tx)
-        .await?;
+        match original_values.get(id) {
+            // Update with optimistic CAS: only succeeds when the row still
+            // matches THIS guard's snapshot — a competing replica's write
+            // fails the condition and is reported as a conflict.
+            Some(prev) => {
+                let prev_json = serde_json::to_value(prev)
+                    .map_err(|e| sqlx::Error::Protocol(format!("Serialization error: {e}")))?;
+                let updated = sqlx::query(
+                    "UPDATE entity_store SET data = $4, updated_at = NOW() \
+                     WHERE tenant_id = $1 AND entity_type = $2 AND id = $3 AND data = $5",
+                )
+                .bind(tenant_id)
+                .bind(entity_type)
+                .bind(id)
+                .bind(&json)
+                .bind(&prev_json)
+                .execute(&mut *tx)
+                .await?;
+                if updated.rows_affected() == 0 {
+                    // Either the row vanished or another replica changed it
+                    // since our snapshot — either way, a lost update.
+                    conflicts.push(*id);
+                }
+            }
+            // Brand-new entity: plain insert.
+            None => {
+                let inserted = sqlx::query(
+                    "INSERT INTO entity_store (tenant_id, entity_type, id, data) \
+                     VALUES ($1, $2, $3, $4) ON CONFLICT (tenant_id, entity_type, id) DO NOTHING",
+                )
+                .bind(tenant_id)
+                .bind(entity_type)
+                .bind(id)
+                .bind(&json)
+                .execute(&mut *tx)
+                .await?;
+                if inserted.rows_affected() == 0 {
+                    // The row appeared between our snapshot and now: the
+                    // INSERT path is only valid for genuinely new entities.
+                    conflicts.push(*id);
+                }
+            }
+        }
+    }
+
+    if !conflicts.is_empty() {
+        let ids: Vec<String> = conflicts.iter().map(|id| id.to_string()).collect();
+        tx.rollback().await?;
+        return Err(sqlx::Error::Protocol(format!(
+            "Concurrent modification conflict for entity ids: {}",
+            ids.join(", ")
+        )));
     }
 
     if !removed_ids.is_empty() {

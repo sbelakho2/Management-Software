@@ -104,6 +104,48 @@ pub struct AdjustInventoryRequest {
 
 // ── RFQs ───────────────────────────────────────────────────────────────────
 
+/// Client input for creating an RFQ: only editable business fields. The
+/// actor, tenant, ids and status are server-generated.
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct CreateRfqRequest {
+    pub supplier_id: Uuid,
+    pub supplier_name: String,
+    pub items: Vec<sensei_services::supply_chain::RFQItem>,
+    pub notes: String,
+}
+
+/// Client input for creating a quote.
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct CreateQuoteRequest {
+    pub rfq_id: Option<Uuid>,
+    pub customer_id: Uuid,
+    pub customer_name: String,
+    pub line_items: Vec<sensei_services::supply_chain::QuoteLineItem>,
+    pub currency: String,
+    pub valid_until: chrono::DateTime<chrono::Utc>,
+}
+
+/// Client input for creating a sales order.
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct CreateSalesOrderRequest {
+    pub customer_id: Uuid,
+    pub customer_name: String,
+    pub line_items: Vec<sensei_services::supply_chain::SalesOrderItem>,
+    pub currency: String,
+    pub delivery_date: Option<chrono::DateTime<chrono::Utc>>,
+    pub shipping_address: String,
+}
+
+/// Client input for creating a purchase order.
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct CreatePurchaseOrderRequest {
+    pub supplier_id: Uuid,
+    pub supplier_name: String,
+    pub line_items: Vec<sensei_services::supply_chain::POItem>,
+    pub currency: String,
+    pub expected_delivery: Option<chrono::DateTime<chrono::Utc>>,
+}
+
 /// List all RFQs with optional filters.
 pub async fn list_rfqs(
     user: AuthenticatedUser,

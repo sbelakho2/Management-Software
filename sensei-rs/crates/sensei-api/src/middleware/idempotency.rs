@@ -416,9 +416,35 @@ fn hash_hex(bytes: &[u8]) -> String {
 /// through under a per-key mutex and the response is cached for future
 /// retries.
 ///
+/// The computed idempotency cache key for the current request, injected
+/// into extensions so handlers can pass it to same-transaction service
+/// paths (business mutation + idempotency completion commit atomically).
+#[derive(Clone)]
+pub struct IdempotencyKey(pub String);
+
+/// Optional handler extractor for the computed idempotency key (absent
+/// when the request carried no `Idempotency-Key` header).
+pub struct OptionalIdempotencyKey(pub Option<String>);
+
+impl<S: Send + Sync> axum::extract::FromRequestParts<S> for OptionalIdempotencyKey {
+    type Rejection = std::convert::Infallible;
+
+    async fn from_request_parts(
+        parts: &mut axum::http::request::Parts,
+        _state: &S,
+    ) -> Result<Self, Self::Rejection> {
+        Ok(OptionalIdempotencyKey(
+            parts
+                .extensions
+                .get::<IdempotencyKey>()
+                .map(|k| k.0.clone()),
+        ))
+    }
+}
+
 /// The [`IdempotencyStore`] must be injected into request extensions before
 /// this middleware runs.
-pub async fn idempotency_middleware(req: Request, next: Next) -> Response {
+pub async fn idempotency_middleware(mut req: Request, next: Next) -> Response {
     let method = req.method().clone();
     let is_idempotent_method = matches!(method.as_str(), "POST" | "PUT" | "PATCH");
 
@@ -454,6 +480,8 @@ pub async fn idempotency_middleware(req: Request, next: Next) -> Response {
         .unwrap_or_else(|| ("anonymous".to_string(), "anonymous".to_string()));
     let path = normalize_path(req.uri().path());
     let cache_key = compute_cache_key(&tenant_id, &user_id, method.as_str(), &path, &key);
+    req.extensions_mut()
+        .insert(IdempotencyKey(cache_key.clone()));
 
     // Capture the request body once so its hash can be compared on retries,
     // then reconstruct the request from the buffered bytes.

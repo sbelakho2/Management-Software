@@ -185,6 +185,81 @@ fn cost_rollup_row_to_domain(r: CostRollupRow) -> CostRollup {
 // ---------------------------------------------------------------------------
 
 /// PostgreSQL-backed implementation of [`FinanceService`].
+/// Write a business-audit row in the SAME transaction as the business
+/// mutation: the financial trail commits atomically with the state change.
+async fn write_business_audit(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    tenant_id: Uuid,
+    actor_id: Uuid,
+    action: &str,
+    entity_type: &str,
+    entity_id: Uuid,
+    metadata: serde_json::Value,
+) -> std::result::Result<(), SenseiError> {
+    sqlx::query(
+        "INSERT INTO business_audit_log \
+                (id, tenant_id, actor_id, action, entity_type, entity_id, metadata) \
+         VALUES ($1, $2, $3, $4, $5, $6, $7)",
+    )
+    .bind(Uuid::new_v4())
+    .bind(tenant_id)
+    .bind(actor_id)
+    .bind(action)
+    .bind(entity_type)
+    .bind(entity_id)
+    .bind(metadata)
+    .execute(&mut **tx)
+    .await
+    .map_err(|e| SenseiError::Database(format!("Failed to write business audit row: {e}")))?;
+    Ok(())
+}
+
+/// Idempotency defense-in-depth inside the business transaction: if the key
+/// was already completed (e.g. by a parallel request that raced the
+/// middleware claim), refuse instead of duplicating the side effect.
+async fn reject_if_idempotency_completed(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    idempotency_key: Option<&str>,
+) -> std::result::Result<(), SenseiError> {
+    let Some(key) = idempotency_key else {
+        return Ok(());
+    };
+    let state: Option<String> =
+        sqlx::query_scalar("SELECT state FROM idempotency_records WHERE key = $1")
+            .bind(key)
+            .fetch_optional(&mut **tx)
+            .await
+            .map_err(|e| {
+                SenseiError::Database(format!("Failed to read idempotency record: {e}"))
+            })?;
+    if state.as_deref() == Some("completed") {
+        return Err(SenseiError::Conflict(
+            "This request was already processed (idempotency key)".to_string(),
+        ));
+    }
+    Ok(())
+}
+
+/// Complete the idempotency record IN the business transaction, so a
+/// retry after a crash can never re-execute the side effect.
+async fn complete_if_idempotent(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    idempotency_key: Option<&str>,
+) -> std::result::Result<(), SenseiError> {
+    let Some(key) = idempotency_key else {
+        return Ok(());
+    };
+    sqlx::query(
+        "UPDATE idempotency_records SET state = 'completed', status = 200 \
+         WHERE key = $1",
+    )
+    .bind(key)
+    .execute(&mut **tx)
+    .await
+    .map_err(|e| SenseiError::Database(format!("Failed to complete idempotency record: {e}")))?;
+    Ok(())
+}
+
 pub struct DatabaseFinanceService {
     pool: PgPool,
 }
@@ -200,7 +275,12 @@ impl DatabaseFinanceService {
 impl FinanceService for DatabaseFinanceService {
     // ── Invoices ────────────────────────────────────────────────────────
 
-    async fn create_invoice(&self, tenant_id: Uuid, invoice: Invoice) -> Result<Invoice> {
+    async fn create_invoice(
+        &self,
+        tenant_id: Uuid,
+        invoice: Invoice,
+        idempotency_key: Option<&str>,
+    ) -> Result<Invoice> {
         let now = Utc::now();
         let id = Uuid::new_v4();
         let invoice_number = format!(
@@ -218,6 +298,13 @@ impl FinanceService for DatabaseFinanceService {
         let total_amount = subtotal + tax_amount;
         let line_items_json =
             serde_json::to_value(&invoice.line_items).unwrap_or(serde_json::Value::Array(vec![]));
+
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to begin invoice tx: {e}")))?;
+        reject_if_idempotency_completed(&mut tx, idempotency_key).await?;
 
         let row = sqlx::query_as::<_, InvoiceRow>(
             r#"
@@ -246,9 +333,24 @@ impl FinanceService for DatabaseFinanceService {
         .bind(&invoice.notes)
         .bind(invoice.created_by)
         .bind(now)
-        .fetch_one(&self.pool)
+        .fetch_one(&mut *tx)
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to create invoice: {e}")))?;
+
+        write_business_audit(
+            &mut tx,
+            tenant_id,
+            invoice.created_by,
+            "invoice.created",
+            "invoice",
+            id,
+            serde_json::json!({ "invoice_number": invoice_number }),
+        )
+        .await?;
+        complete_if_idempotent(&mut tx, idempotency_key).await?;
+        tx.commit()
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to commit invoice tx: {e}")))?;
 
         invoice_row_to_domain(row)
     }
@@ -408,7 +510,12 @@ impl FinanceService for DatabaseFinanceService {
 
     // ── Payments ────────────────────────────────────────────────────────
 
-    async fn record_payment(&self, tenant_id: Uuid, payment: Payment) -> Result<Payment> {
+    async fn record_payment(
+        &self,
+        tenant_id: Uuid,
+        payment: Payment,
+        idempotency_key: Option<&str>,
+    ) -> Result<Payment> {
         let now = Utc::now();
         // Preserve a caller-supplied id (callers reference it when marking
         // the invoice paid); only generate one when the caller left it nil.
@@ -423,6 +530,13 @@ impl FinanceService for DatabaseFinanceService {
             &id.as_simple().encode_lower(&mut Uuid::encode_buffer())[..8]
         );
 
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to begin payment tx: {e}")))?;
+        reject_if_idempotency_completed(&mut tx, idempotency_key).await?;
+
         let row = sqlx::query_as::<_, PaymentRow>(
             r#"
             INSERT INTO payments (id, tenant_id, payment_number, invoice_id, amount, currency, payment_method, reference, received_at, created_by)
@@ -433,9 +547,24 @@ impl FinanceService for DatabaseFinanceService {
         .bind(id).bind(tenant_id).bind(&payment_number)
         .bind(payment.invoice_id).bind(payment.amount).bind(&payment.currency)
         .bind(&payment.payment_method).bind(&payment.reference).bind(now).bind(payment.created_by)
-        .fetch_one(&self.pool)
+        .fetch_one(&mut *tx)
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to record payment: {e}")))?;
+
+        write_business_audit(
+            &mut tx,
+            tenant_id,
+            payment.created_by,
+            "payment.recorded",
+            "payment",
+            id,
+            serde_json::json!({ "payment_number": payment_number, "invoice_id": payment.invoice_id }),
+        )
+        .await?;
+        complete_if_idempotent(&mut tx, idempotency_key).await?;
+        tx.commit()
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to commit payment tx: {e}")))?;
 
         Ok(payment_row_to_domain(row))
     }
@@ -582,6 +711,7 @@ impl FinanceService for DatabaseFinanceService {
         &self,
         tenant_id: Uuid,
         entry: JournalEntry,
+        idempotency_key: Option<&str>,
     ) -> Result<JournalEntry> {
         let now = Utc::now();
         let id = Uuid::new_v4();
@@ -590,6 +720,13 @@ impl FinanceService for DatabaseFinanceService {
             now.format("%Y%m%d"),
             &id.as_simple().encode_lower(&mut Uuid::encode_buffer())[..8]
         );
+
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to begin journal tx: {e}")))?;
+        reject_if_idempotency_completed(&mut tx, idempotency_key).await?;
 
         let row = sqlx::query_as::<_, JournalEntryRow>(
             r#"
@@ -601,9 +738,24 @@ impl FinanceService for DatabaseFinanceService {
         .bind(id).bind(tenant_id).bind(&entry_number).bind(&entry.description)
         .bind(&entry.debit_account).bind(&entry.credit_account).bind(entry.amount)
         .bind(&entry.currency).bind(entry.entry_date).bind(entry.posted_by)
-        .fetch_one(&self.pool)
+        .fetch_one(&mut *tx)
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to post journal entry: {e}")))?;
+
+        write_business_audit(
+            &mut tx,
+            tenant_id,
+            entry.posted_by,
+            "journal.posted",
+            "journal_entry",
+            id,
+            serde_json::json!({ "entry_number": entry_number }),
+        )
+        .await?;
+        complete_if_idempotent(&mut tx, idempotency_key).await?;
+        tx.commit()
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to commit journal tx: {e}")))?;
 
         Ok(journal_row_to_domain(row))
     }
@@ -923,8 +1075,9 @@ impl FinanceService for DatabaseFinanceService {
         tenant_id: Uuid,
         id: Uuid,
         reversed_by: Uuid,
+        idempotency_key: Option<&str>,
     ) -> Result<JournalEntry> {
-        let tx = self
+        let mut tx = self
             .pool
             .begin()
             .await
@@ -986,6 +1139,17 @@ impl FinanceService for DatabaseFinanceService {
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to mark entry reversed: {e}")))?;
 
+        write_business_audit(
+            &mut tx,
+            tenant_id,
+            reversed_by,
+            "journal.reversed",
+            "journal_entry",
+            id,
+            serde_json::json!({ "reversal_id": reversal_id }),
+        )
+        .await?;
+        complete_if_idempotent(&mut tx, idempotency_key).await?;
         tx.commit()
             .await
             .map_err(|e| SenseiError::Database(format!("Failed to commit reversal: {e}")))?;

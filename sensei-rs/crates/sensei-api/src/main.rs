@@ -354,6 +354,9 @@ async fn main() {
     // explicit development mode when NATS_URL is empty).
     let event_bus = create_event_bus(&config.event_bus, &config.environment).await;
     let mut state = AppState::new(config.clone(), users_service).with_event_bus(event_bus);
+    // Cross-replica EntityStore cache invalidation: every replica evicts
+    // changed rows immediately after ANY replica commits a write.
+    state.attach_entity_store_buses(state.event_bus.clone());
 
     // Eagerly (and with supervision) subscribe the realtime fanout BEFORE
     // the HTTP listener starts: a replica must receive cross-replica WS/SSE

@@ -106,6 +106,7 @@ pub async fn list_invoices(
 /// Create a new invoice.
 pub async fn create_invoice(
     user: AuthenticatedUser,
+    idem_key: crate::middleware::idempotency::OptionalIdempotencyKey,
     State(state): State<AppState>,
     Json(req): Json<Invoice>,
 ) -> Result<Json<Invoice>> {
@@ -117,7 +118,7 @@ pub async fn create_invoice(
     invoice.created_by = user.user_id;
     let invoice = state
         .finance_service
-        .create_invoice(tenant_id, invoice)
+        .create_invoice(tenant_id, invoice, idem_key.0.as_deref())
         .await?;
     Ok(Json(invoice))
 }
@@ -190,6 +191,7 @@ pub async fn delete_invoice(
 /// Record a payment.
 pub async fn record_payment(
     user: AuthenticatedUser,
+    idem_key: crate::middleware::idempotency::OptionalIdempotencyKey,
     State(state): State<AppState>,
     Json(req): Json<Payment>,
 ) -> Result<Json<Payment>> {
@@ -200,7 +202,7 @@ pub async fn record_payment(
     payment.created_by = user.user_id;
     let payment = state
         .finance_service
-        .record_payment(tenant_id, payment)
+        .record_payment(tenant_id, payment, idem_key.0.as_deref())
         .await?;
     Ok(Json(payment))
 }
@@ -367,6 +369,7 @@ pub async fn delete_budget(
 /// Post a new journal entry.
 pub async fn post_journal_entry(
     user: AuthenticatedUser,
+    idem_key: crate::middleware::idempotency::OptionalIdempotencyKey,
     State(state): State<AppState>,
     Json(req): Json<JournalEntry>,
 ) -> Result<Json<JournalEntry>> {
@@ -379,7 +382,7 @@ pub async fn post_journal_entry(
     req.posted_by = user.user_id;
     let entry = state
         .finance_service
-        .post_journal_entry(tenant_id, req)
+        .post_journal_entry(tenant_id, req, idem_key.0.as_deref())
         .await?;
     Ok(Json(entry))
 }
@@ -387,6 +390,7 @@ pub async fn post_journal_entry(
 /// Reverse a posted journal entry (correction-by-reversal).
 pub async fn reverse_journal_entry(
     user: AuthenticatedUser,
+    idem_key: crate::middleware::idempotency::OptionalIdempotencyKey,
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<JournalEntry>> {
@@ -395,7 +399,7 @@ pub async fn reverse_journal_entry(
     let tenant_id = user.tenant_id;
     let reversal = state
         .finance_service
-        .reverse_journal_entry(tenant_id, id, user.user_id)
+        .reverse_journal_entry(tenant_id, id, user.user_id, idem_key.0.as_deref())
         .await?;
     Ok(Json(reversal))
 }

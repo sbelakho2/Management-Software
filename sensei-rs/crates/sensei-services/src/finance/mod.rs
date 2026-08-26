@@ -173,8 +173,15 @@ pub struct ThreeWayMatchResult {
 #[async_trait]
 pub trait FinanceService: Send + Sync {
     // ── Invoices ────────────────────────────────────────────────────────
-    /// Create a new invoice.
-    async fn create_invoice(&self, tenant_id: Uuid, invoice: Invoice) -> Result<Invoice>;
+    /// Create a new invoice. When `idempotency_key` is present, the
+    /// business mutation, the idempotency completion AND the business audit
+    /// row commit in ONE transaction.
+    async fn create_invoice(
+        &self,
+        tenant_id: Uuid,
+        invoice: Invoice,
+        idempotency_key: Option<&str>,
+    ) -> Result<Invoice>;
     /// Get an invoice by ID.
     async fn get_invoice(&self, tenant_id: Uuid, id: Uuid) -> Result<Invoice>;
     /// List invoices with optional status filter and pagination.
@@ -195,7 +202,12 @@ pub trait FinanceService: Send + Sync {
 
     // ── Payments ────────────────────────────────────────────────────────
     /// Record a payment against an invoice.
-    async fn record_payment(&self, tenant_id: Uuid, payment: Payment) -> Result<Payment>;
+    async fn record_payment(
+        &self,
+        tenant_id: Uuid,
+        payment: Payment,
+        idempotency_key: Option<&str>,
+    ) -> Result<Payment>;
     /// List payments with optional invoice filter and pagination.
     async fn list_payments(
         &self,
@@ -233,6 +245,7 @@ pub trait FinanceService: Send + Sync {
         &self,
         tenant_id: Uuid,
         entry: JournalEntry,
+        idempotency_key: Option<&str>,
     ) -> Result<JournalEntry>;
     /// Get a journal entry by id.
     async fn get_journal_entry(&self, tenant_id: Uuid, id: Uuid) -> Result<JournalEntry>;
@@ -282,6 +295,7 @@ pub trait FinanceService: Send + Sync {
         tenant_id: Uuid,
         id: Uuid,
         reversed_by: Uuid,
+        idempotency_key: Option<&str>,
     ) -> Result<JournalEntry>;
 
     // ── Cost Rollup ─────────────────────────────────────────────────────
@@ -520,7 +534,12 @@ impl FinanceService for InMemoryFinanceService {
 
     // ── Invoices ────────────────────────────────────────────────────────
 
-    async fn create_invoice(&self, tenant_id: Uuid, mut invoice: Invoice) -> Result<Invoice> {
+    async fn create_invoice(
+        &self,
+        tenant_id: Uuid,
+        mut invoice: Invoice,
+        _idempotency_key: Option<&str>,
+    ) -> Result<Invoice> {
         let mut counter = self.inv_counter.write().await;
         *counter += 1;
         let inv_number = Self::generate_invoice_number(*counter);
@@ -650,7 +669,12 @@ impl FinanceService for InMemoryFinanceService {
 
     // ── Payments ────────────────────────────────────────────────────────
 
-    async fn record_payment(&self, tenant_id: Uuid, mut payment: Payment) -> Result<Payment> {
+    async fn record_payment(
+        &self,
+        tenant_id: Uuid,
+        mut payment: Payment,
+        _idempotency_key: Option<&str>,
+    ) -> Result<Payment> {
         let mut counter = self.pay_counter.write().await;
         *counter += 1;
         let pay_number = Self::generate_payment_number(*counter);
@@ -771,6 +795,7 @@ impl FinanceService for InMemoryFinanceService {
         &self,
         tenant_id: Uuid,
         mut entry: JournalEntry,
+        _idempotency_key: Option<&str>,
     ) -> Result<JournalEntry> {
         let mut counter = self.je_counter.write().await;
         *counter += 1;
@@ -1154,6 +1179,7 @@ impl FinanceService for InMemoryFinanceService {
         tenant_id: Uuid,
         id: Uuid,
         reversed_by: Uuid,
+        _idempotency_key: Option<&str>,
     ) -> Result<JournalEntry> {
         let mut store = self.journal_entries.write().await;
         let original = store
@@ -1232,7 +1258,7 @@ mod tests {
         };
 
         let created = service
-            .create_invoice(tenant_id, invoice)
+            .create_invoice(tenant_id, invoice, None)
             .await
             .expect("should create invoice");
         assert!(created.invoice_number.starts_with("INV-"));
@@ -1283,7 +1309,10 @@ mod tests {
             created_at: Utc::now(),
         };
 
-        let created = service.create_invoice(tenant_id, invoice).await.unwrap();
+        let created = service
+            .create_invoice(tenant_id, invoice, None)
+            .await
+            .unwrap();
 
         // Insufficient payment must be rejected.
         let payment_id = Uuid::new_v4();
@@ -1299,7 +1328,10 @@ mod tests {
             received_at: Utc::now(),
             created_by: Uuid::new_v4(),
         };
-        service.record_payment(tenant_id, small).await.unwrap();
+        service
+            .record_payment(tenant_id, small, None)
+            .await
+            .unwrap();
         let err = service
             .mark_invoice_paid(tenant_id, created.id, payment_id)
             .await
@@ -1320,7 +1352,7 @@ mod tests {
             created_by: Uuid::new_v4(),
         };
         let full_id = full.id;
-        service.record_payment(tenant_id, full).await.unwrap();
+        service.record_payment(tenant_id, full, None).await.unwrap();
         let paid = service
             .mark_invoice_paid(tenant_id, created.id, full_id)
             .await
@@ -1352,7 +1384,10 @@ mod tests {
             created_by: Uuid::new_v4(),
             created_at: Utc::now(),
         };
-        let created = service.create_invoice(tenant_id, invoice).await.unwrap();
+        let created = service
+            .create_invoice(tenant_id, invoice, None)
+            .await
+            .unwrap();
         let other = Payment {
             id: Uuid::new_v4(),
             tenant_id,
@@ -1366,7 +1401,10 @@ mod tests {
             created_by: Uuid::new_v4(),
         };
         let other_id = other.id;
-        service.record_payment(tenant_id, other).await.unwrap();
+        service
+            .record_payment(tenant_id, other, None)
+            .await
+            .unwrap();
         let err = service
             .mark_invoice_paid(tenant_id, created.id, other_id)
             .await
@@ -1393,7 +1431,7 @@ mod tests {
         };
 
         let created = service
-            .record_payment(tenant_id, payment)
+            .record_payment(tenant_id, payment, None)
             .await
             .expect("should record payment");
         assert!(created.payment_number.starts_with("PAY-"));
@@ -1448,7 +1486,7 @@ mod tests {
         };
 
         let posted = service
-            .post_journal_entry(tenant_id, entry)
+            .post_journal_entry(tenant_id, entry, None)
             .await
             .expect("should post journal entry");
         assert!(posted.entry_number.starts_with("JE-"));

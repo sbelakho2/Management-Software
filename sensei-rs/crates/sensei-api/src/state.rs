@@ -900,6 +900,60 @@ impl AppState {
         self.event_bus = event_bus;
         self
     }
+
+    /// Subscribe every DB-backed entity store to cross-replica cache
+    /// invalidation: a write committed by ANY replica evicts the affected
+    /// rows from this replica's cache immediately (core NATS pub/sub).
+    pub fn attach_entity_store_buses(&self, bus: Arc<dyn EventBus>) {
+        macro_rules! attach {
+            ($($field:ident),* $(,)?) => {
+                $( self.$field.attach_bus(bus.clone()); )*
+            };
+        }
+        attach!(
+            kanban_boards,
+            notifications,
+            notification_preferences,
+            attachment_meta,
+            attachment_data,
+            quote_versions,
+            learning_modules,
+            opportunities,
+            escalation_policies,
+            training_matrix,
+            knowledge_packs,
+            ingestion_jobs,
+            ingestion_data,
+            work_centers,
+            obeya_boards,
+            ctq_characteristics,
+            ctq_records,
+            inventory_items,
+            stock_moves,
+            warehouses,
+            demand_entries,
+            supply_orders,
+            mrp_runs,
+            tasks,
+            audit_log_entries,
+            production_cells,
+            saved_views,
+            work_packets,
+            cost_builds,
+            npi_conversions,
+            kpi_definitions,
+            kpi_values,
+            lsw_standards,
+            lsw_audits,
+            notification_triggers,
+            standard_work_documents,
+            standard_work_versions,
+            state_machine_definitions,
+            state_machine_instances,
+            training_courses,
+            training_enrollments,
+        );
+    }
 }
 
 /// Convenience function to create an event bus backed by NATS JetStream
