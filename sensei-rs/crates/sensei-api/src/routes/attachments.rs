@@ -546,6 +546,62 @@ pub async fn list_attachments(
     Ok(Json(result))
 }
 
+/// Download an attachment by ID.
+///
+/// Authenticates the user, resolves the metadata under the user's tenant,
+/// retrieves the bytes from the shared storage backend and streams them with
+/// a server-authoritative content type and a safe `Content-Disposition`.
+pub async fn download_attachment(
+    user: AuthenticatedUser,
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> Result<axum::response::Response> {
+    use axum::http::header::{CONTENT_DISPOSITION, CONTENT_TYPE};
+
+    let attachment = {
+        let meta = state.attachment_meta.read(user.tenant_id).await;
+        meta.get(&id)
+            .filter(|a| a.tenant_id == user.tenant_id)
+            .cloned()
+            .ok_or_else(|| SenseiError::NotFound(format!("Attachment {id} not found")))?
+    };
+
+    let bytes = state
+        .storage_service
+        .retrieve(user.tenant_id, &attachment.storage_path)
+        .await?;
+
+    // Server-authoritative content type (mapped from the stored type —
+    // never trust a browser-supplied MIME for security-sensitive rendering).
+    let content_type = if attachment.content_type.is_empty() {
+        "application/octet-stream".to_string()
+    } else {
+        attachment.content_type.clone()
+    };
+
+    // Safe Content-Disposition: filename is sanitized at upload time and the
+    // header value is percent-encoded.
+    let disposition = format!(
+        "attachment; filename=\"{}\"",
+        attachment.file_name.replace('"', "")
+    );
+
+    let mut response = axum::response::Response::new(axum::body::Body::from(bytes));
+    response.headers_mut().insert(
+        CONTENT_TYPE,
+        content_type
+            .parse()
+            .map_err(|_| SenseiError::Internal("Invalid content type".to_string()))?,
+    );
+    response.headers_mut().insert(
+        CONTENT_DISPOSITION,
+        disposition
+            .parse()
+            .map_err(|_| SenseiError::Internal("Invalid disposition".to_string()))?,
+    );
+    Ok(response)
+}
+
 /// Delete an attachment by ID.
 ///
 /// Removes the file from the storage backend and deletes the metadata entry.

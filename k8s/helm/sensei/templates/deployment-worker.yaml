@@ -34,7 +34,7 @@ spec:
           {{- toYaml .Values.podSecurityContext | nindent 12 }}
         image: "{{ .Values.senseiApi.image.repository }}:{{ .Values.senseiApi.image.tag | default .Chart.AppVersion }}"
         imagePullPolicy: {{ .Values.senseiApi.image.pullPolicy }}
-        command: ["./sensei-workers"]
+        command: ["/usr/local/bin/sensei-workers"]
         env:
         - name: SENSEI_ENV
           value: {{ .Values.config.environment | quote }}

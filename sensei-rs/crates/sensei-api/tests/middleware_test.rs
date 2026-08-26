@@ -153,11 +153,19 @@ async fn session_mismatch_returns_401_and_removes_binding() {
     let app = TestApp::new().await;
     let token = login(&app, "admin@sensei.test", &app.admin_password).await;
 
-    // Plant a fingerprint that cannot match anything the middleware computes.
-    let user_id = app.admin_user_id.to_string();
+    // Plant a fingerprint under the TOKEN's sid that cannot match anything
+    // the middleware computes (the binding is keyed by session id, not
+    // user id — one user may hold many concurrent sessions).
+    let claims = app.state.jwt_service.validate_access_token(&token).unwrap();
+    let sid = claims.sid.to_string();
     app.state
         .session_store
-        .register(&user_id, "attacker-fingerprint".to_string())
+        .register(
+            &sid,
+            &app.admin_user_id.to_string(),
+            app.admin_tenant_id,
+            "attacker-fingerprint".to_string(),
+        )
         .await;
 
     let req = app.get_authenticated("/api/v1/tasks", &token);
@@ -168,8 +176,9 @@ async fn session_mismatch_returns_401_and_removes_binding() {
     assert_eq!(
         app.state
             .session_store
-            .verify(&user_id, "attacker-fingerprint")
-            .await,
+            .verify(&sid, "attacker-fingerprint")
+            .await
+            .unwrap(),
         sensei_api::middleware::session::SessionResult::Unknown,
         "mismatched binding must be removed"
     );

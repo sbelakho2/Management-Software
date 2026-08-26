@@ -41,10 +41,10 @@ pub struct Invoice {
     pub customer_name: String,
     pub status: String, // draft, sent, overdue, paid, cancelled, written_off
     pub line_items: Vec<InvoiceLineItem>,
-    pub subtotal: f64,
-    pub tax_percentage: f64,
-    pub tax_amount: f64,
-    pub total_amount: f64,
+    pub subtotal: rust_decimal::Decimal,
+    pub tax_percentage: rust_decimal::Decimal,
+    pub tax_amount: rust_decimal::Decimal,
+    pub total_amount: rust_decimal::Decimal,
     pub currency: String,
     pub due_date: DateTime<Utc>,
     pub paid_at: Option<DateTime<Utc>>,
@@ -58,8 +58,8 @@ pub struct Invoice {
 pub struct InvoiceLineItem {
     pub description: String,
     pub quantity: i64,
-    pub unit_price: f64,
-    pub total: f64,
+    pub unit_price: rust_decimal::Decimal,
+    pub total: rust_decimal::Decimal,
     /// Product this line refers to, when known (used by AP 3-way matching).
     #[serde(default)]
     pub product_id: Option<Uuid>,
@@ -72,7 +72,7 @@ pub struct Payment {
     pub tenant_id: Uuid,
     pub payment_number: String,
     pub invoice_id: Uuid,
-    pub amount: f64,
+    pub amount: rust_decimal::Decimal,
     pub currency: String,
     pub payment_method: String, // cash, card, bank_transfer, check
     pub reference: String,
@@ -88,9 +88,9 @@ pub struct Budget {
     pub fiscal_year: i32,
     pub department: String,
     pub category: String,
-    pub allocated_amount: f64,
-    pub spent_amount: f64,
-    pub remaining_amount: f64,
+    pub allocated_amount: rust_decimal::Decimal,
+    pub spent_amount: rust_decimal::Decimal,
+    pub remaining_amount: rust_decimal::Decimal,
 }
 
 /// A journal entry in the general ledger.
@@ -102,7 +102,7 @@ pub struct JournalEntry {
     pub description: String,
     pub debit_account: String,
     pub credit_account: String,
-    pub amount: f64,
+    pub amount: rust_decimal::Decimal,
     pub currency: String,
     pub entry_date: DateTime<Utc>,
     pub posted_by: Uuid,
@@ -220,7 +220,12 @@ pub trait FinanceService: Send + Sync {
         per_page: Option<usize>,
     ) -> Result<PaginatedResponse<Budget>>;
     /// Allocate additional funds to a budget.
-    async fn allocate_budget(&self, tenant_id: Uuid, id: Uuid, amount: f64) -> Result<Budget>;
+    async fn allocate_budget(
+        &self,
+        tenant_id: Uuid,
+        id: Uuid,
+        amount: rust_decimal::Decimal,
+    ) -> Result<Budget>;
 
     // ── Journal Entries ─────────────────────────────────────────────────
     /// Post a new journal entry.
@@ -229,6 +234,9 @@ pub trait FinanceService: Send + Sync {
         tenant_id: Uuid,
         entry: JournalEntry,
     ) -> Result<JournalEntry>;
+    /// Get a journal entry by id.
+    async fn get_journal_entry(&self, tenant_id: Uuid, id: Uuid) -> Result<JournalEntry>;
+
     /// List journal entries with optional account filter and pagination.
     async fn list_journal_entries(
         &self,
@@ -492,6 +500,15 @@ impl Default for InMemoryFinanceService {
 
 #[async_trait]
 impl FinanceService for InMemoryFinanceService {
+    async fn get_journal_entry(&self, tenant_id: Uuid, id: Uuid) -> Result<JournalEntry> {
+        let entries = self.journal_entries.read().await;
+        entries
+            .get(&id)
+            .filter(|e| e.tenant_id == tenant_id)
+            .cloned()
+            .ok_or_else(|| SenseiError::NotFound(format!("Journal entry {id} not found")))
+    }
+
     // ── Invoices ────────────────────────────────────────────────────────
 
     async fn create_invoice(&self, tenant_id: Uuid, mut invoice: Invoice) -> Result<Invoice> {
@@ -501,12 +518,12 @@ impl FinanceService for InMemoryFinanceService {
         drop(counter);
 
         // Compute financial totals from line items
-        let subtotal: f64 = invoice
+        let subtotal: rust_decimal::Decimal = invoice
             .line_items
             .iter()
-            .map(|li| li.quantity as f64 * li.unit_price)
+            .map(|li| rust_decimal::Decimal::from(li.quantity) * li.unit_price)
             .sum();
-        let tax_amount = subtotal * invoice.tax_percentage / 100.0;
+        let tax_amount = subtotal * invoice.tax_percentage / rust_decimal::Decimal::from(100u32);
         let total_amount = subtotal + tax_amount;
 
         invoice.id = Uuid::new_v4();
@@ -520,7 +537,7 @@ impl FinanceService for InMemoryFinanceService {
 
         // Update each line item's total
         for li in &mut invoice.line_items {
-            li.total = li.quantity as f64 * li.unit_price;
+            li.total = rust_decimal::Decimal::from(li.quantity) * li.unit_price;
         }
 
         let id = invoice.id;
@@ -529,7 +546,11 @@ impl FinanceService for InMemoryFinanceService {
             tenant_id,
             id,
             "standard".to_string(),
-            invoice.total_amount,
+            invoice
+                .total_amount
+                .to_string()
+                .parse::<f64>()
+                .unwrap_or_default(),
             invoice.currency.clone(),
             invoice.customer_name.clone(),
         ))
@@ -599,15 +620,14 @@ impl FinanceService for InMemoryFinanceService {
 
         // Cumulative payments must cover the invoice total (with a small
         // epsilon for floating-point rounding).
-        const EPSILON: f64 = 0.01;
-        let cumulative: f64 = payments
+        let cumulative: rust_decimal::Decimal = payments
             .values()
             .filter(|p| p.invoice_id == id)
             .map(|p| p.amount)
             .sum();
         drop(payments);
 
-        if cumulative + EPSILON < inv.total_amount {
+        if cumulative + rust_decimal::Decimal::new(1, 2) < inv.total_amount {
             return Err(SenseiError::Validation(format!(
                 "Cumulative payments ({cumulative:.2}) do not cover invoice total ({:.2})",
                 inv.total_amount
@@ -642,7 +662,11 @@ impl FinanceService for InMemoryFinanceService {
             tenant_id,
             id,
             payment.payment_method.clone(),
-            payment.amount,
+            payment
+                .amount
+                .to_string()
+                .parse::<f64>()
+                .unwrap_or_default(),
             payment.currency.clone(),
             payment.created_by,
         ))
@@ -673,7 +697,7 @@ impl FinanceService for InMemoryFinanceService {
     async fn create_budget(&self, tenant_id: Uuid, mut budget: Budget) -> Result<Budget> {
         budget.id = Uuid::new_v4();
         budget.tenant_id = tenant_id;
-        budget.spent_amount = 0.0;
+        budget.spent_amount = rust_decimal::Decimal::ZERO;
         budget.remaining_amount = budget.allocated_amount;
 
         let id = budget.id;
@@ -710,13 +734,18 @@ impl FinanceService for InMemoryFinanceService {
         Ok(PaginatedResponse::new(items, page, per_page))
     }
 
-    async fn allocate_budget(&self, _tenant_id: Uuid, id: Uuid, amount: f64) -> Result<Budget> {
+    async fn allocate_budget(
+        &self,
+        _tenant_id: Uuid,
+        id: Uuid,
+        amount: rust_decimal::Decimal,
+    ) -> Result<Budget> {
         let mut store = self.budgets.write().await;
         let budget = store
             .get_mut(&id)
             .ok_or_else(|| SenseiError::NotFound(format!("Budget {id} not found")))?;
 
-        if amount < 0.0 {
+        if amount < rust_decimal::Decimal::ZERO {
             return Err(SenseiError::Validation(
                 "Allocation amount must be non-negative".to_string(),
             ));
@@ -749,8 +778,8 @@ impl FinanceService for InMemoryFinanceService {
         self.publish_event(JournalEntryPosted::new(
             tenant_id,
             id,
-            entry.amount,
-            entry.amount,
+            entry.amount.to_string().parse::<f64>().unwrap_or_default(),
+            entry.amount.to_string().parse::<f64>().unwrap_or_default(),
             entry.entry_date.format("%Y-%m").to_string(),
         ))
         .await;
@@ -1105,6 +1134,9 @@ impl FinanceService for InMemoryFinanceService {
 
 #[cfg(test)]
 mod tests {
+    fn dec(v: f64) -> rust_decimal::Decimal {
+        rust_decimal::Decimal::from_f64_retain(v).unwrap_or(rust_decimal::Decimal::ZERO)
+    }
     use super::*;
 
     #[tokio::test]
@@ -1124,22 +1156,22 @@ mod tests {
                 InvoiceLineItem {
                     description: "Widget A".to_string(),
                     quantity: 10,
-                    unit_price: 25.0,
-                    total: 0.0,
+                    unit_price: dec(25.0),
+                    total: dec(0.0),
                     product_id: None,
                 },
                 InvoiceLineItem {
                     description: "Widget B".to_string(),
                     quantity: 5,
-                    unit_price: 50.0,
-                    total: 0.0,
+                    unit_price: dec(50.0),
+                    total: dec(0.0),
                     product_id: None,
                 },
             ],
-            subtotal: 0.0,
-            tax_percentage: 10.0,
-            tax_amount: 0.0,
-            total_amount: 0.0,
+            subtotal: dec(0.0),
+            tax_percentage: dec(10.0),
+            tax_amount: dec(0.0),
+            total_amount: dec(0.0),
             currency: "USD".to_string(),
             due_date: Utc::now() + chrono::Duration::days(30),
             paid_at: None,
@@ -1155,11 +1187,11 @@ mod tests {
         assert!(created.invoice_number.starts_with("INV-"));
         assert_eq!(created.status, "draft");
         // 10*25 + 5*50 = 250 + 250 = 500 subtotal
-        assert_eq!(created.subtotal, 500.0);
+        assert_eq!(created.subtotal, dec(500.0));
         // 10% tax = 50.0
-        assert_eq!(created.tax_amount, 50.0);
+        assert_eq!(created.tax_amount, dec(50.0));
         // total = 550.0
-        assert_eq!(created.total_amount, 550.0);
+        assert_eq!(created.total_amount, dec(550.0));
 
         let fetched = service
             .get_invoice(tenant_id, created.id)
@@ -1184,14 +1216,14 @@ mod tests {
             line_items: vec![InvoiceLineItem {
                 description: "Widgets".to_string(),
                 quantity: 2,
-                unit_price: 50.0,
-                total: 100.0,
+                unit_price: dec(50.0),
+                total: dec(100.0),
                 product_id: None,
             }],
-            subtotal: 100.0,
-            tax_percentage: 0.0,
-            tax_amount: 0.0,
-            total_amount: 100.0,
+            subtotal: dec(100.0),
+            tax_percentage: dec(0.0),
+            tax_amount: dec(0.0),
+            total_amount: dec(100.0),
             currency: "USD".to_string(),
             due_date: Utc::now() + chrono::Duration::days(30),
             paid_at: None,
@@ -1209,7 +1241,7 @@ mod tests {
             tenant_id,
             payment_number: String::new(),
             invoice_id: created.id,
-            amount: 50.0,
+            amount: dec(50.0),
             currency: "USD".to_string(),
             payment_method: "bank_transfer".to_string(),
             reference: "PARTIAL".to_string(),
@@ -1229,7 +1261,7 @@ mod tests {
             tenant_id,
             payment_number: String::new(),
             invoice_id: created.id,
-            amount: 50.0,
+            amount: dec(50.0),
             currency: "USD".to_string(),
             payment_method: "bank_transfer".to_string(),
             reference: "BALANCE".to_string(),
@@ -1258,10 +1290,10 @@ mod tests {
             customer_name: "Test".to_string(),
             status: String::new(),
             line_items: vec![],
-            subtotal: 0.0,
-            tax_percentage: 0.0,
-            tax_amount: 0.0,
-            total_amount: 0.0,
+            subtotal: dec(0.0),
+            tax_percentage: dec(0.0),
+            tax_amount: dec(0.0),
+            total_amount: dec(0.0),
             currency: "USD".to_string(),
             due_date: Utc::now() + chrono::Duration::days(30),
             paid_at: None,
@@ -1275,7 +1307,7 @@ mod tests {
             tenant_id,
             payment_number: String::new(),
             invoice_id: Uuid::new_v4(),
-            amount: 100.0,
+            amount: dec(100.0),
             currency: "USD".to_string(),
             payment_method: "cash".to_string(),
             reference: "WRONG-INVOICE".to_string(),
@@ -1301,7 +1333,7 @@ mod tests {
             tenant_id,
             payment_number: String::new(),
             invoice_id: Uuid::new_v4(),
-            amount: 550.0,
+            amount: dec(550.0),
             currency: "USD".to_string(),
             payment_method: "bank_transfer".to_string(),
             reference: "TRX-001".to_string(),
@@ -1314,7 +1346,7 @@ mod tests {
             .await
             .expect("should record payment");
         assert!(created.payment_number.starts_with("PAY-"));
-        assert_eq!(created.amount, 550.0);
+        assert_eq!(created.amount, dec(550.0));
     }
 
     #[tokio::test]
@@ -1328,22 +1360,22 @@ mod tests {
             fiscal_year: 2026,
             department: "Engineering".to_string(),
             category: "Tools".to_string(),
-            allocated_amount: 10000.0,
-            spent_amount: 0.0,
-            remaining_amount: 0.0,
+            allocated_amount: dec(10000.0),
+            spent_amount: dec(0.0),
+            remaining_amount: dec(0.0),
         };
 
         let created = service
             .create_budget(tenant_id, budget)
             .await
             .expect("should create budget");
-        assert_eq!(created.remaining_amount, 10000.0);
+        assert_eq!(created.remaining_amount, dec(10000.0));
 
         let allocated = service
-            .allocate_budget(tenant_id, created.id, 5000.0)
+            .allocate_budget(tenant_id, created.id, dec(5000.0))
             .await
             .unwrap();
-        assert_eq!(allocated.allocated_amount, 15000.0);
+        assert_eq!(allocated.allocated_amount, dec(15000.0));
     }
 
     #[tokio::test]
@@ -1358,7 +1390,7 @@ mod tests {
             description: "Office supplies".to_string(),
             debit_account: "6000".to_string(),
             credit_account: "1100".to_string(),
-            amount: 250.0,
+            amount: dec(250.0),
             currency: "USD".to_string(),
             entry_date: Utc::now(),
             posted_by: Uuid::new_v4(),
@@ -1369,7 +1401,7 @@ mod tests {
             .await
             .expect("should post journal entry");
         assert!(posted.entry_number.starts_with("JE-"));
-        assert_eq!(posted.amount, 250.0);
+        assert_eq!(posted.amount, dec(250.0));
     }
 
     #[tokio::test]
@@ -1450,22 +1482,22 @@ mod tests {
                 InvoiceLineItem {
                     description: "Part 1".to_string(),
                     quantity: 100,
-                    unit_price: 5.0,
-                    total: 500.0,
+                    unit_price: dec(5.0),
+                    total: dec(500.0),
                     product_id: Some(p1),
                 },
                 InvoiceLineItem {
                     description: "Part 2".to_string(),
                     quantity: 50,
-                    unit_price: 2.0,
-                    total: 100.0,
+                    unit_price: dec(2.0),
+                    total: dec(100.0),
                     product_id: Some(p2),
                 },
             ],
-            subtotal: 600.0,
-            tax_percentage: 0.0,
-            tax_amount: 0.0,
-            total_amount: 600.0,
+            subtotal: dec(600.0),
+            tax_percentage: dec(0.0),
+            tax_amount: dec(0.0),
+            total_amount: dec(600.0),
             currency: "USD".to_string(),
             due_date: Utc::now() + chrono::Duration::days(30),
             paid_at: None,

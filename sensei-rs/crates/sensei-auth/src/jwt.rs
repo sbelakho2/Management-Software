@@ -20,6 +20,9 @@ pub struct AccessTokenClaims {
     pub tenant_id: Uuid,
     /// Unique token ID (for revocation and replay detection).
     pub jti: Uuid,
+    /// Session identifier — one user may hold many concurrent sessions
+    /// (laptop, phone, second tab); logout revokes exactly one sid.
+    pub sid: Uuid,
     /// Issuer.
     pub iss: String,
     /// Audience.
@@ -60,6 +63,8 @@ pub struct RefreshTokenClaims {
     /// Credential version of the user at issue time. A password change or
     /// reset increments the version; older refresh tokens become invalid.
     pub credential_version: u64,
+    /// Session identifier (carried through refreshes).
+    pub sid: Uuid,
 }
 
 /// Service for issuing and validating JWT tokens.
@@ -131,6 +136,7 @@ impl JwtService {
         &self,
         user_id: Uuid,
         tenant_id: Uuid,
+        sid: Uuid,
         roles: Vec<String>,
     ) -> Result<String> {
         let now = Utc::now();
@@ -140,6 +146,7 @@ impl JwtService {
             sub: user_id,
             tenant_id,
             jti: Uuid::new_v4(),
+            sid,
             iss: self.issuer.clone(),
             aud: self.audience.clone(),
             exp: exp.timestamp() as usize,
@@ -168,6 +175,7 @@ impl JwtService {
         tenant_id: Uuid,
         family_id: Uuid,
         credential_version: u64,
+        sid: Uuid,
     ) -> Result<String> {
         let now = Utc::now();
         let exp = now + Duration::days(self.refresh_expiry_days);
@@ -176,6 +184,7 @@ impl JwtService {
             sub: user_id,
             tenant_id,
             jti: Uuid::new_v4(),
+            sid,
             iss: self.issuer.clone(),
             aud: self.audience.clone(),
             credential_version,
@@ -279,7 +288,7 @@ mod tests {
         let roles = vec!["admin".to_string(), "quality_manager".to_string()];
 
         let token = svc
-            .issue_access_token(user_id, tenant_id, roles.clone())
+            .issue_access_token(user_id, tenant_id, Uuid::new_v4(), roles.clone())
             .unwrap();
         let claims = svc.validate_access_token(&token).unwrap();
 
@@ -298,7 +307,7 @@ mod tests {
         let family_id = Uuid::new_v4();
 
         let token = svc
-            .issue_refresh_token(user_id, tenant_id, family_id, 0)
+            .issue_refresh_token(user_id, tenant_id, family_id, 0, Uuid::new_v4())
             .unwrap();
         let claims = svc.validate_refresh_token(&token).unwrap();
 
@@ -320,6 +329,7 @@ mod tests {
             aud: "some-other-audience".to_string(),
             exp: (Utc::now() + Duration::days(7)).timestamp() as usize,
             credential_version: 0,
+            sid: Uuid::new_v4(),
             iat: Utc::now().timestamp() as usize,
             token_type: "refresh".to_string(),
             family_id: Uuid::new_v4(),
@@ -343,6 +353,7 @@ mod tests {
             exp: (Utc::now() - Duration::minutes(5)).timestamp() as usize,
             iat: (Utc::now() - Duration::minutes(20)).timestamp() as usize,
             nbf: (Utc::now() - Duration::minutes(20)).timestamp() as usize,
+            sid: Uuid::new_v4(),
             roles: vec![],
             token_type: "access".to_string(),
         };

@@ -26,9 +26,30 @@ pub struct AuthenticatedUser {
     pub tenant_id: Uuid,
     /// The user's assigned roles.
     pub roles: Vec<String>,
+    /// Session identifier from the access-token claims (one user may hold
+    /// many concurrent sessions; logout revokes exactly one sid).
+    pub sid: Option<Uuid>,
 }
 
 impl AuthenticatedUser {
+    /// Require a functional permission (e.g. `"finance:invoice:create"`).
+    ///
+    /// Resolves the user's roles through the central RBAC service — a single
+    /// declarative check used at the route boundary instead of ad-hoc string
+    /// comparisons. The `admin` role carries `*:*`; functional roles carry
+    /// their families.
+    pub fn require_permission(&self, permission: &str) -> Result<(), SenseiError> {
+        let rbac = crate::rbac::RbacService::new();
+        let perm = sensei_core::domain::entities::Permission::new(permission);
+        if rbac.has_permission(&self.roles, &perm) {
+            Ok(())
+        } else {
+            Err(SenseiError::Forbidden(format!(
+                "You do not have permission to perform this action (required: {permission})"
+            )))
+        }
+    }
+
     /// Returns `true` if the user has the given role.
     pub fn has_role(&self, role: &str) -> bool {
         self.roles.iter().any(|r| r == role)
@@ -96,6 +117,7 @@ pub async fn auth_middleware(
                 user_id: claims.sub,
                 tenant_id: claims.tenant_id,
                 roles: claims.roles,
+                sid: Some(claims.sid),
             };
             req.extensions_mut().insert(user);
             Ok(next.run(req).await)

@@ -141,16 +141,46 @@ impl RefreshTokenStore {
                     .await
                     .map_err(|e| TokenReuseDetected::Database(e.to_string()))?;
 
-                let row: Option<(Uuid, Uuid, i64, Option<String>)> = sqlx::query_as(
-                    "SELECT family_id, user_id, credential_version, rotated_to_hash \
-                     FROM refresh_tokens WHERE token_hash = $1 FOR UPDATE",
+                // The authoritative check joins the CURRENT user row:
+                // revoked_at, expiry, active flag and the user's CURRENT
+                // credential version (not the version stored next to this
+                // token — a password change bumps the user's version and
+                // every older token must die, even without a revoke pass).
+                type RefreshRow = (
+                    Uuid,
+                    Uuid,
+                    Option<chrono::DateTime<chrono::Utc>>,
+                    chrono::DateTime<chrono::Utc>,
+                    i64,
+                    i64,
+                    bool,
+                    Option<String>,
+                );
+                let row: Option<RefreshRow> = sqlx::query_as(
+                    "SELECT rt.family_id, rt.user_id, rt.revoked_at, rt.expires_at, \
+                                rt.credential_version, u.credential_version AS user_version, \
+                                u.is_active, rt.rotated_to_hash \
+                         FROM refresh_tokens rt \
+                         JOIN users u ON u.id = rt.user_id \
+                         WHERE rt.token_hash = $1 \
+                         FOR UPDATE OF rt",
                 )
                 .bind(&hash)
                 .fetch_optional(&mut *tx)
                 .await
                 .map_err(|e| TokenReuseDetected::Database(e.to_string()))?;
 
-                let Some((family_id, user_id, stored_version, rotated_to)) = row else {
+                let Some((
+                    family_id,
+                    user_id,
+                    revoked_at,
+                    expires_at,
+                    stored_version,
+                    user_version,
+                    is_active,
+                    rotated_to,
+                )) = row
+                else {
                     return Err(TokenReuseDetected::Invalid);
                 };
 
@@ -158,11 +188,19 @@ impl RefreshTokenStore {
                     return Err(TokenReuseDetected::ReuseDetected);
                 }
 
-                // A password change/reset bumps the credential version; any
-                // token issued before that is no longer usable.
-                if stored_version as u64 != credential_version {
+                // Fail closed on every revocation/expiry/activity signal.
+                if revoked_at.is_some()
+                    || expires_at <= chrono::Utc::now()
+                    || !is_active
+                    // Compare against the user's CURRENT version.
+                    || stored_version as u64 != user_version as u64
+                    // The presented claim must also match the user's version.
+                    || credential_version != user_version as u64
+                {
+                    // Kill the whole family: a stale or stolen token must
+                    // not be able to mint fresh ones.
                     sqlx::query(
-                        "UPDATE refresh_tokens SET revoked_at = NOW() WHERE family_id = $1",
+                        "UPDATE refresh_tokens SET revoked_at = NOW() WHERE family_id = $1 AND revoked_at IS NULL",
                     )
                     .bind(family_id)
                     .execute(&mut *tx)

@@ -9,12 +9,14 @@
 //! configured [`FileStorageService`], and tracks progress in a NATS KV store.
 
 use crate::error::{Result, WorkerError};
-use crate::task::{IdempotencyGuard, TaskConsumer, TaskMetadata, TaskOutcome};
+use crate::task::{ClaimOutcome, IdempotencyGuard, TaskConsumer, TaskMetadata, TaskOutcome};
 use async_nats::jetstream::kv::Store;
 use async_nats::jetstream::Context;
 use async_trait::async_trait;
 use sensei_services::export::pdf::{A3Data, PdfExportService, QuoteData};
-use sensei_services::storage::file_storage::{FileStorageService, InMemoryStorageService};
+use sensei_services::storage::file_storage::FileStorageService;
+#[cfg(test)]
+use sensei_services::storage::file_storage::InMemoryStorageService;
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use std::sync::Arc;
@@ -83,32 +85,29 @@ pub struct PdfWorker {
 }
 
 impl PdfWorker {
-    /// Create a new [`PdfWorker`] with the default in-memory storage backend.
-    pub fn new(js: Context) -> Self {
-        Self::with_pool(js, None)
+    /// TEST-ONLY constructor with ephemeral in-memory storage. Production
+    /// code must use [`Self::with_deps`] — a PDF generated into process
+    /// memory cannot be retrieved by the API or another replica.
+    #[cfg(test)]
+    pub fn in_memory(js: Context) -> Self {
+        Self::with_deps(js, None, Arc::new(InMemoryStorageService::new()))
     }
 
-    /// Create a new [`PdfWorker`] with a database pool for task idempotency.
-    pub fn with_pool(js: Context, pool: Option<Arc<PgPool>>) -> Self {
-        Self {
-            js,
-            kv: Arc::new(RwLock::new(None)),
-            kv_bucket: "sensei_pdf_progress".to_string(),
-            storage: Arc::new(InMemoryStorageService::new()),
-            pdf: PdfExportService::new(),
-            idempotency: IdempotencyGuard::new(pool, "pdf"),
-        }
-    }
-
-    /// Create a new [`PdfWorker`] with an explicit storage backend.
-    pub fn with_storage(js: Context, storage: Arc<dyn FileStorageService>) -> Self {
+    /// Create a [`PdfWorker`] with REAL dependencies: the PostgreSQL pool
+    /// for task idempotency and the shared storage backend so generated
+    /// PDFs are visible to the API and every worker replica.
+    pub fn with_deps(
+        js: Context,
+        pool: Option<Arc<PgPool>>,
+        storage: Arc<dyn FileStorageService>,
+    ) -> Self {
         Self {
             js,
             kv: Arc::new(RwLock::new(None)),
             kv_bucket: "sensei_pdf_progress".to_string(),
             storage,
             pdf: PdfExportService::new(),
-            idempotency: IdempotencyGuard::new(None, "pdf"),
+            idempotency: IdempotencyGuard::new(pool, "pdf"),
         }
     }
 
@@ -245,8 +244,15 @@ impl TaskConsumer for PdfWorker {
         // Idempotency: claim the task_id BEFORE the side effect (PDF
         // generation + storage). A redelivered message is skipped.
         match self.idempotency.try_claim(&task_id_str).await {
-            Ok(true) => {}
-            Ok(false) => {
+            Ok(ClaimOutcome::Proceed) => {}
+            Ok(ClaimOutcome::Busy) => {
+                // Another replica holds a live lease; back off. The
+                // redelivery re-claims once the lease expires.
+                return Err(WorkerError::RetryLater(
+                    "idempotency lease busy; retrying".to_string(),
+                ));
+            }
+            Ok(ClaimOutcome::AlreadyCompleted) => {
                 info!(
                     task_id = %metadata.task_id,
                     "PDF task already processed — skipping (idempotent)"
@@ -281,6 +287,10 @@ impl TaskConsumer for PdfWorker {
 
         match result {
             Ok(storage_key) => {
+                // Idempotency: ONLY now is the side effect durable.
+                if let Err(e) = self.idempotency.mark_completed(&task_id_str).await {
+                    tracing::error!(error = %e, task_id = %metadata.task_id, "Failed to record idempotency completion");
+                }
                 self.update_progress(&task_id_str, &PdfProgress::Completed { storage_key })
                     .await
                     .unwrap_or_else(|e| warn!(error = %e, "Failed to update KV progress"));
@@ -324,15 +334,22 @@ pub struct A3PdfWorker {
 }
 
 impl A3PdfWorker {
-    pub fn new(js: Context) -> Self {
+    /// TEST-ONLY: ephemeral in-memory storage (see [`PdfWorker::in_memory`]).
+    #[cfg(test)]
+    pub fn in_memory(js: Context) -> Self {
         Self {
-            inner: PdfWorker::new(js),
+            inner: PdfWorker::in_memory(js),
         }
     }
 
-    pub fn with_pool(js: Context, pool: Option<Arc<PgPool>>) -> Self {
+    /// Production constructor: shared storage + DB idempotency.
+    pub fn with_deps(
+        js: Context,
+        pool: Option<Arc<PgPool>>,
+        storage: Arc<dyn FileStorageService>,
+    ) -> Self {
         Self {
-            inner: PdfWorker::with_pool(js, pool),
+            inner: PdfWorker::with_deps(js, pool, storage),
         }
     }
 }
@@ -360,15 +377,22 @@ pub struct QuotePdfWorker {
 }
 
 impl QuotePdfWorker {
-    pub fn new(js: Context) -> Self {
+    /// TEST-ONLY: ephemeral in-memory storage (see [`PdfWorker::in_memory`]).
+    #[cfg(test)]
+    pub fn in_memory(js: Context) -> Self {
         Self {
-            inner: PdfWorker::new(js),
+            inner: PdfWorker::in_memory(js),
         }
     }
 
-    pub fn with_pool(js: Context, pool: Option<Arc<PgPool>>) -> Self {
+    /// Production constructor: shared storage + DB idempotency.
+    pub fn with_deps(
+        js: Context,
+        pool: Option<Arc<PgPool>>,
+        storage: Arc<dyn FileStorageService>,
+    ) -> Self {
         Self {
-            inner: PdfWorker::with_pool(js, pool),
+            inner: PdfWorker::with_deps(js, pool, storage),
         }
     }
 }

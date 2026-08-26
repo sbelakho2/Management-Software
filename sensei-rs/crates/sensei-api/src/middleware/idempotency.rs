@@ -531,11 +531,22 @@ pub async fn idempotency_middleware(req: Request, next: Next) -> Response {
             return response;
         }
         Err(e) => {
-            warn!(
+            // FAIL CLOSED: idempotency exists to prevent duplicate side
+            // effects. If the store cannot answer, the mutation must not
+            // run unprotected.
+            tracing::error!(
                 error = %e,
-                "Idempotency store unavailable; executing request without idempotency"
+                "Idempotency store unavailable — refusing to execute the request"
             );
-            return next.run(req).await;
+            return (
+                StatusCode::SERVICE_UNAVAILABLE,
+                Json(IdempotencyError {
+                    error: "idempotency_store_unavailable".to_string(),
+                    message: "The idempotency store is temporarily unavailable. Please retry."
+                        .to_string(),
+                }),
+            )
+                .into_response();
         }
         Ok(Claim::New) => {}
     }

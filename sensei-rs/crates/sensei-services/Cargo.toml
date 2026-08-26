@@ -6,6 +6,7 @@ license.workspace = true
 description = "Domain service implementations for Sensei ERP"
 
 [dependencies]
+rust_decimal.workspace = true
 sensei-core = { path = "../sensei-core" }
 sensei-auth = { path = "../sensei-auth" }
 sensei-db = { path = "../sensei-db" }

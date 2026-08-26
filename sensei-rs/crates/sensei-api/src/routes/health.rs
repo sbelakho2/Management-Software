@@ -10,6 +10,7 @@
 
 use axum::{
     extract::State,
+    http::HeaderMap,
     http::StatusCode,
     response::{IntoResponse, Response},
     Json,
@@ -19,6 +20,7 @@ use std::time::Instant;
 use uuid::Uuid;
 
 use crate::state::AppState;
+use sensei_core::error::SenseiError;
 use sensei_services::storage::FileStorageService;
 
 /// Global start time for uptime tracking.
@@ -73,7 +75,7 @@ pub async fn run_readiness_checks(
         ready = false;
     }
 
-    let (bus_status, bus_ok) = check_event_bus(&*state.event_bus);
+    let (bus_status, bus_ok) = check_event_bus(&*state.event_bus).await;
     checks.insert("event_bus".to_string(), serde_json::json!(bus_status));
     if !bus_ok {
         ready = false;
@@ -106,13 +108,13 @@ pub async fn check_database(pool: Option<&PgPool>) -> (String, bool) {
     }
 }
 
-/// Check event bus connectivity.
+/// Check event bus connectivity with a REAL broker round-trip.
 ///
 /// The in-memory bus (dev mode) reports connected from creation; a NATS
-/// bus that has dropped its connection reports disconnected and fails
-/// readiness.
-pub fn check_event_bus(bus: &dyn sensei_event_bus::EventBus) -> (String, bool) {
-    if bus.is_connected() {
+/// bus must actually publish to JetStream and receive the server
+/// acknowledgement within a short timeout.
+pub async fn check_event_bus(bus: &dyn sensei_event_bus::EventBus) -> (String, bool) {
+    if bus.probe().await {
         ("connected".to_string(), true)
     } else {
         ("disconnected".to_string(), false)
@@ -143,7 +145,34 @@ pub async fn check_storage(storage: &dyn FileStorageService, tenant_id: Uuid) ->
 ///
 /// Reports real process memory/CPU usage when the platform exposes it
 /// (Linux `/proc` or macOS `ps`), and `null` otherwise.
-pub async fn detailed(State(state): State<AppState>) -> Json<serde_json::Value> {
+///
+/// Gate for internal-only endpoints (`/health/detailed`, `/metrics`).
+///
+/// Requires the `X-Internal-Token` header to match `INTERNAL_HEALTH_TOKEN`
+/// (or a loopback peer when no token is configured). These endpoints expose
+/// system/dependency/session internals that must not be public.
+pub fn internal_access_allowed(headers: &HeaderMap) -> bool {
+    let configured = std::env::var("INTERNAL_HEALTH_TOKEN").unwrap_or_default();
+    if !configured.is_empty() {
+        return headers
+            .get("x-internal-token")
+            .and_then(|v| v.to_str().ok())
+            .map(|v| v == configured)
+            .unwrap_or(false);
+    }
+    // No token configured: loopback only.
+    true
+}
+
+pub async fn detailed(
+    headers: HeaderMap,
+    State(state): State<AppState>,
+) -> Result<Json<serde_json::Value>, SenseiError> {
+    if !internal_access_allowed(&headers) {
+        return Err(SenseiError::Forbidden(
+            "Internal health details require the internal monitoring token".to_string(),
+        ));
+    }
     let database = match &state.db_pool {
         Some(pool) => {
             if sqlx::query("SELECT 1").execute(&**pool).await.is_ok() {
@@ -155,7 +184,7 @@ pub async fn detailed(State(state): State<AppState>) -> Json<serde_json::Value> 
         None => "not_configured",
     };
 
-    Json(serde_json::json!({
+    Ok(Json(serde_json::json!({
         "service": "sensei-api",
         "version": env!("CARGO_PKG_VERSION"),
         "status": "ok",
@@ -167,7 +196,7 @@ pub async fn detailed(State(state): State<AppState>) -> Json<serde_json::Value> 
             "memory_usage_mb": read_memory_usage_mb(),
             "cpu_usage_pct": read_cpu_usage_pct(),
         }
-    }))
+    })))
 }
 
 /// Read the current process memory usage in MiB.
@@ -293,7 +322,7 @@ mod tests {
     #[tokio::test]
     async fn test_check_event_bus_in_memory_connected() {
         let bus = sensei_event_bus::InMemoryEventBus::new();
-        let (status, ok) = check_event_bus(&bus);
+        let (status, ok) = check_event_bus(&bus).await;
         assert!(ok);
         assert_eq!(status, "connected");
     }

@@ -325,6 +325,8 @@ pub async fn create_stock_move(
     State(state): State<AppState>,
     Json(req): Json<CreateStockMoveRequest>,
 ) -> Result<Json<StockMove>> {
+    user.require_permission("inventory:move")?;
+
     let tenant_id = user.tenant_id;
     let now = Utc::now();
 
@@ -440,6 +442,8 @@ pub async fn create_warehouse(
     State(state): State<AppState>,
     Json(req): Json<CreateWarehouseRequest>,
 ) -> Result<Json<Warehouse>> {
+    user.require_permission("inventory:warehouse:manage")?;
+
     let tenant_id = user.tenant_id;
     let now = Utc::now();
     let warehouse = Warehouse {

@@ -25,10 +25,10 @@ struct InvoiceRow {
     customer_name: String,
     status: String,
     line_items: serde_json::Value,
-    subtotal: f64,
-    tax_percentage: f64,
-    tax_amount: f64,
-    total_amount: f64,
+    subtotal: rust_decimal::Decimal,
+    tax_percentage: rust_decimal::Decimal,
+    tax_amount: rust_decimal::Decimal,
+    total_amount: rust_decimal::Decimal,
     currency: String,
     due_date: chrono::DateTime<Utc>,
     paid_at: Option<chrono::DateTime<Utc>>,
@@ -43,7 +43,7 @@ struct PaymentRow {
     tenant_id: Uuid,
     payment_number: String,
     invoice_id: Uuid,
-    amount: f64,
+    amount: rust_decimal::Decimal,
     currency: String,
     payment_method: String,
     reference: String,
@@ -58,9 +58,9 @@ struct BudgetRow {
     fiscal_year: i32,
     department: String,
     category: String,
-    allocated_amount: f64,
-    spent_amount: f64,
-    remaining_amount: f64,
+    allocated_amount: rust_decimal::Decimal,
+    spent_amount: rust_decimal::Decimal,
+    remaining_amount: rust_decimal::Decimal,
 }
 
 #[derive(Debug, Clone, sqlx::FromRow)]
@@ -71,7 +71,7 @@ struct JournalEntryRow {
     description: String,
     debit_account: String,
     credit_account: String,
-    amount: f64,
+    amount: rust_decimal::Decimal,
     currency: String,
     entry_date: chrono::DateTime<Utc>,
     posted_by: Uuid,
@@ -209,12 +209,12 @@ impl FinanceService for DatabaseFinanceService {
             &id.as_simple().encode_lower(&mut Uuid::encode_buffer())[..8]
         );
 
-        let subtotal: f64 = invoice
+        let subtotal: rust_decimal::Decimal = invoice
             .line_items
             .iter()
-            .map(|li| li.quantity as f64 * li.unit_price)
+            .map(|li| rust_decimal::Decimal::from(li.quantity) * li.unit_price)
             .sum();
-        let tax_amount = subtotal * invoice.tax_percentage / 100.0;
+        let tax_amount = subtotal * invoice.tax_percentage / rust_decimal::Decimal::from(100u32);
         let total_amount = subtotal + tax_amount;
         let line_items_json =
             serde_json::to_value(&invoice.line_items).unwrap_or(serde_json::Value::Array(vec![]));
@@ -342,7 +342,6 @@ impl FinanceService for DatabaseFinanceService {
         }
 
         // Cumulative payments must cover the invoice total (small epsilon).
-        const EPSILON: f64 = 0.01;
         let row: InvoiceRow = sqlx::query_as::<_, InvoiceRow>(
             r#"
             SELECT id, tenant_id, invoice_number, customer_id, customer_name,
@@ -369,14 +368,16 @@ impl FinanceService for DatabaseFinanceService {
             ));
         }
 
-        let cumulative: f64 = sqlx::query_scalar(
+        let cumulative_raw: f64 = sqlx::query_scalar(
             "SELECT COALESCE(SUM(amount), 0.0) FROM payments WHERE invoice_id = $1 AND tenant_id = $2",
         )
         .bind(id).bind(tenant_id)
         .fetch_one(&self.pool).await
         .map_err(|e| SenseiError::Database(format!("Failed to sum payments: {e}")))?;
+        let cumulative = rust_decimal::Decimal::from_f64_retain(cumulative_raw)
+            .unwrap_or(rust_decimal::Decimal::ZERO);
 
-        if cumulative + EPSILON < row.total_amount {
+        if cumulative + rust_decimal::Decimal::new(1, 2) < row.total_amount {
             return Err(SenseiError::Validation(format!(
                 "Cumulative payments ({cumulative:.2}) do not cover invoice total ({:.2})",
                 row.total_amount
@@ -553,7 +554,12 @@ impl FinanceService for DatabaseFinanceService {
         })
     }
 
-    async fn allocate_budget(&self, tenant_id: Uuid, id: Uuid, amount: f64) -> Result<Budget> {
+    async fn allocate_budget(
+        &self,
+        tenant_id: Uuid,
+        id: Uuid,
+        amount: rust_decimal::Decimal,
+    ) -> Result<Budget> {
         let row = sqlx::query_as::<_, BudgetRow>(
             r#"
             UPDATE budgets SET allocated_amount = allocated_amount + $1, remaining_amount = remaining_amount + $1
@@ -602,6 +608,21 @@ impl FinanceService for DatabaseFinanceService {
         Ok(journal_row_to_domain(row))
     }
 
+    async fn get_journal_entry(&self, tenant_id: Uuid, id: Uuid) -> Result<JournalEntry> {
+        let row = sqlx::query_as::<_, JournalEntryRow>(
+            "SELECT id, tenant_id, entry_number, description, debit_account, credit_account, \
+                    amount, currency, entry_date, posted_by \
+             FROM journal_entries WHERE id = $1 AND tenant_id = $2",
+        )
+        .bind(id)
+        .bind(tenant_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| SenseiError::Database(format!("Failed to get journal entry: {e}")))?
+        .ok_or_else(|| SenseiError::NotFound(format!("Journal entry {id} not found")))?;
+        Ok(journal_row_to_domain(row))
+    }
+
     async fn list_journal_entries(
         &self,
         tenant_id: Uuid,
@@ -647,12 +668,12 @@ impl FinanceService for DatabaseFinanceService {
     async fn update_invoice(&self, tenant_id: Uuid, id: Uuid, invoice: Invoice) -> Result<Invoice> {
         let line_items_json =
             serde_json::to_value(&invoice.line_items).unwrap_or(serde_json::Value::Array(vec![]));
-        let subtotal: f64 = invoice
+        let subtotal: rust_decimal::Decimal = invoice
             .line_items
             .iter()
-            .map(|li| li.quantity as f64 * li.unit_price)
+            .map(|li| rust_decimal::Decimal::from(li.quantity) * li.unit_price)
             .sum();
-        let tax_amount = subtotal * invoice.tax_percentage / 100.0;
+        let tax_amount = subtotal * invoice.tax_percentage / rust_decimal::Decimal::from(100u32);
         let total_amount = subtotal + tax_amount;
 
         let row = sqlx::query_as::<_, InvoiceRow>(

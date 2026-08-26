@@ -524,12 +524,11 @@ impl FileStorageService for S3StorageService {
         } else {
             content_type_hint
         };
-        let mut bytes = Vec::new();
-        tokio::io::copy(&mut data, &mut bytes)
-            .await
-            .map_err(SenseiError::Io)?;
+        // TRUE streaming: rust-s3 reads the AsyncRead in chunks and uploads
+        // via S3 multipart — the file never round-trips through a Vec in
+        // worker/API memory.
         self.bucket
-            .put_object_with_content_type(&s3_path, &bytes, content_type)
+            .put_object_stream_with_content_type(&mut data, &s3_path, content_type)
             .await
             .map_err(|e| SenseiError::ExternalService(format!("S3 upload failed: {e}")))?;
         Ok(StoredObject {

@@ -29,7 +29,7 @@ use crate::state::AppState;
 /// Default HSTS policy.
 const HSTS_HEADER: &str = "max-age=31536000; includeSubDomains";
 /// Default Content-Security-Policy, used when `config.security.csp` is unset.
-const DEFAULT_CSP_HEADER: &str = "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self' ws: wss:; frame-ancestors 'none'";
+const DEFAULT_CSP_HEADER: &str = "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self' ws: wss:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'";
 
 /// Determine whether the request was made over HTTPS.
 ///

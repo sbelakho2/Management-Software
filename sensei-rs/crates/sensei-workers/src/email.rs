@@ -6,7 +6,7 @@
 //! worker logs a warning and gracefully degrades (skips sending).
 
 use crate::error::{Result, WorkerError};
-use crate::task::{IdempotencyGuard, TaskConsumer, TaskMetadata, TaskOutcome};
+use crate::task::{ClaimOutcome, IdempotencyGuard, TaskConsumer, TaskMetadata, TaskOutcome};
 use async_trait::async_trait;
 use lettre::message::header::ContentType;
 use lettre::message::Mailbox;
@@ -348,8 +348,15 @@ impl TaskConsumer for EmailWorker {
         // A redelivered message is skipped, never re-sent.
         let task_id_str = metadata.task_id.to_string();
         match self.idempotency.try_claim(&task_id_str).await {
-            Ok(true) => {}
-            Ok(false) => {
+            Ok(ClaimOutcome::Proceed) => {}
+            Ok(ClaimOutcome::Busy) => {
+                // Another replica holds a live lease; back off. The
+                // redelivery re-claims once the lease expires.
+                return Err(WorkerError::RetryLater(
+                    "idempotency lease busy; retrying".to_string(),
+                ));
+            }
+            Ok(ClaimOutcome::AlreadyCompleted) => {
                 info!(
                     task_id = %metadata.task_id,
                     "Email task already processed — skipping (idempotent)"
@@ -363,23 +370,31 @@ impl TaskConsumer for EmailWorker {
             }
         }
 
-        crate::task::outcome_from_result(self.send_email(&email_payload).await).inspect(|outcome| {
-            if *outcome == TaskOutcome::Completed {
-                info!(
-                    task_id = %metadata.task_id,
-                    to = ?email_payload.to,
-                    subject = %email_payload.subject,
-                    "Email task completed"
-                );
-            } else {
-                error!(
-                    task_id = %metadata.task_id,
-                    to = ?email_payload.to,
-                    subject = %email_payload.subject,
-                    "Email task failed"
-                );
+        let outcome = crate::task::outcome_from_result(self.send_email(&email_payload).await);
+        if outcome
+            .as_ref()
+            .map(|o| *o == TaskOutcome::Completed)
+            .unwrap_or(false)
+        {
+            // Idempotency: ONLY now is the side effect durable.
+            if let Err(e) = self.idempotency.mark_completed(&task_id_str).await {
+                tracing::error!(error = %e, task_id = %metadata.task_id, "Failed to record idempotency completion");
             }
-        })
+            info!(
+                task_id = %metadata.task_id,
+                to = ?email_payload.to,
+                subject = %email_payload.subject,
+                "Email task completed"
+            );
+        } else {
+            error!(
+                task_id = %metadata.task_id,
+                to = ?email_payload.to,
+                subject = %email_payload.subject,
+                "Email task failed"
+            );
+        }
+        outcome
     }
 }
 

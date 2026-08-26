@@ -240,28 +240,51 @@ impl IdempotencyGuard {
         Self { pool, worker }
     }
 
-    /// Try to claim `task_id` for this worker.
+    /// Try to claim `task_id` for this worker with a lease.
     ///
-    /// * `Ok(true)` — the claim was recorded; the caller should proceed.
-    /// * `Ok(false)` — the task was already processed; the caller must skip
-    ///   the side effect and report the task as completed (ack).
+    /// Semantics (lease-based — a retry is NEVER mistaken for a completed
+    /// duplicate):
+    /// * `Ok(ClaimOutcome::Proceed)` — the lease was acquired; execute the
+    ///   side effect, then call [`Self::mark_completed`] on success.
+    /// * `Ok(ClaimOutcome::AlreadyCompleted)` — a previous attempt completed
+    ///   successfully; skip the side effect and ack.
+    /// * `Ok(ClaimOutcome::Busy)` — another replica holds a live lease;
+    ///   retry later (the delivery will back off and re-claim once the
+    ///   lease expires).
     /// * `Err(_)` — the claim could not be verified (database unavailable);
-    ///   the caller must **not** execute the side effect and should retry
-    ///   the task later.
-    pub async fn try_claim(&self, task_id: &str) -> Result<bool> {
+    ///   the caller must **not** execute the side effect and should retry.
+    pub async fn try_claim(&self, task_id: &str) -> Result<ClaimOutcome> {
         let Some(pool) = &self.pool else {
             // Dev mode (no DB): single-process assumption documented in
             // lib.rs — no deduplication needed.
-            return Ok(true);
+            return Ok(ClaimOutcome::Proceed);
         };
 
-        let result = sqlx::query(
-            "INSERT INTO processed_tasks (task_id, worker) \
-             VALUES ($1, $2) ON CONFLICT (task_id) DO NOTHING",
+        let row: String = sqlx::query_scalar(
+            "INSERT INTO processed_tasks (task_id, worker, state, lease_until) \
+             VALUES ($1, $2, 'in_progress', NOW() + INTERVAL '5 minutes') \
+             ON CONFLICT (task_id) DO UPDATE SET \
+                 state = CASE \
+                     WHEN processed_tasks.state = 'completed' THEN 'completed' \
+                     WHEN processed_tasks.state = 'in_progress' AND processed_tasks.lease_until < NOW() \
+                         THEN 'in_progress' \
+                     ELSE processed_tasks.state \
+                 END, \
+                 lease_until = CASE \
+                     WHEN processed_tasks.state = 'in_progress' AND processed_tasks.lease_until < NOW() \
+                         THEN NOW() + INTERVAL '5 minutes' \
+                     ELSE processed_tasks.lease_until \
+                 END, \
+                 worker = CASE \
+                     WHEN processed_tasks.state = 'in_progress' AND processed_tasks.lease_until < NOW() \
+                         THEN $2 \
+                     ELSE processed_tasks.worker \
+                 END \
+             RETURNING state",
         )
         .bind(task_id)
         .bind(self.worker)
-        .execute(pool.as_ref())
+        .fetch_one(pool.as_ref())
         .await
         .map_err(|e| {
             WorkerError::Processing(format!(
@@ -269,8 +292,64 @@ impl IdempotencyGuard {
             ))
         })?;
 
-        Ok(result.rows_affected() == 1)
+        match row.as_str() {
+            "in_progress" => Ok(ClaimOutcome::Proceed),
+            "completed" => Ok(ClaimOutcome::AlreadyCompleted),
+            _ => Ok(ClaimOutcome::Busy),
+        }
     }
+
+    /// Record that the side effect COMPLETED successfully. Must be called
+    /// after the effect succeeded — never before.
+    pub async fn mark_completed(&self, task_id: &str) -> Result<()> {
+        let Some(pool) = &self.pool else {
+            return Ok(());
+        };
+        sqlx::query(
+            "UPDATE processed_tasks SET state = 'completed', completed_at = NOW() \
+             WHERE task_id = $1 AND state = 'in_progress'",
+        )
+        .bind(task_id)
+        .execute(pool.as_ref())
+        .await
+        .map_err(|e| {
+            WorkerError::Processing(format!(
+                "idempotency completion for task '{task_id}' failed: {e}"
+            ))
+        })?;
+        Ok(())
+    }
+
+    /// Record a permanent failure (optional; keeps the row for observability).
+    pub async fn mark_failed(&self, task_id: &str) -> Result<()> {
+        let Some(pool) = &self.pool else {
+            return Ok(());
+        };
+        sqlx::query(
+            "UPDATE processed_tasks SET state = 'failed', failed_at = NOW() \
+             WHERE task_id = $1 AND state = 'in_progress'",
+        )
+        .bind(task_id)
+        .execute(pool.as_ref())
+        .await
+        .map_err(|e| {
+            WorkerError::Processing(format!(
+                "idempotency failure record for task '{task_id}' failed: {e}"
+            ))
+        })?;
+        Ok(())
+    }
+}
+
+/// Result of an idempotency lease claim.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ClaimOutcome {
+    /// Lease acquired — execute the side effect, then mark completed.
+    Proceed,
+    /// A previous attempt completed successfully — skip and ack.
+    AlreadyCompleted,
+    /// Another replica holds a live lease — back off and retry later.
+    Busy,
 }
 
 // ── Dispatcher ───────────────────────────────────────────────────────────────

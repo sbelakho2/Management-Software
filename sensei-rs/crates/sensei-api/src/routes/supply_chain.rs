@@ -328,6 +328,8 @@ pub async fn create_purchase_order(
     State(state): State<AppState>,
     Json(req): Json<PurchaseOrder>,
 ) -> Result<Json<PurchaseOrder>> {
+    user.require_permission("purchasing:po:create")?;
+
     let tenant_id = user.tenant_id;
     let order = state
         .supply_chain_service
@@ -357,6 +359,8 @@ pub async fn receive_po_line(
     Path(po_id): Path<Uuid>,
     Json(req): Json<ReceivePoLineRequest>,
 ) -> Result<Json<PurchaseOrder>> {
+    user.require_permission("purchasing:po:approve")?;
+
     let tenant_id = user.tenant_id;
     let order = state
         .supply_chain_service
@@ -406,6 +410,8 @@ pub async fn adjust_inventory(
     State(state): State<AppState>,
     Json(req): Json<AdjustInventoryRequest>,
 ) -> Result<Json<InventoryItem>> {
+    user.require_permission("inventory:adjust")?;
+
     let tenant_id = user.tenant_id;
     let item = state
         .supply_chain_service
@@ -428,6 +434,8 @@ pub async fn create_stock_move(
     State(state): State<AppState>,
     Json(req): Json<StockMove>,
 ) -> Result<Json<StockMove>> {
+    user.require_permission("inventory:move")?;
+
     let tenant_id = user.tenant_id;
     let stock_move = state
         .supply_chain_service
@@ -607,6 +615,8 @@ pub async fn update_purchase_order(
     Path(id): Path<Uuid>,
     Json(req): Json<PurchaseOrder>,
 ) -> Result<Json<PurchaseOrder>> {
+    user.require_permission("purchasing:po:create")?;
+
     let tenant_id = user.tenant_id;
     let po = state
         .supply_chain_service
@@ -621,6 +631,8 @@ pub async fn delete_purchase_order(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<()>> {
+    user.require_permission("purchasing:po:create")?;
+
     let tenant_id = user.tenant_id;
     state
         .supply_chain_service

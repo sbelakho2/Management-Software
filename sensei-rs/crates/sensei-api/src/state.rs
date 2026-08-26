@@ -855,6 +855,10 @@ impl AppState {
         // logout/session enforcement).
         self.session_store = self.session_store.attach_pool(p.clone());
 
+        // Rate limiting becomes a SHARED sliding-window counter (one
+        // effective limit across all replicas).
+        self.rate_limiter = self.rate_limiter.with_shared_pool(p.clone());
+
         // Access-token revocation + one-time tokens become shared tables.
         self.token_blacklist = TokenBlacklist::new(Some(p.clone()));
         self.password_reset_store = TokenStore::new(TokenKind::PasswordReset, Some(p.clone()));

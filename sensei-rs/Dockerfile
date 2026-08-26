@@ -102,4 +102,4 @@ EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
     CMD curl -fsS http://localhost:8080/health/live > /dev/null || exit 1
 
-ENTRYPOINT ["sensei-api"]
+CMD ["/usr/local/bin/sensei-api"]

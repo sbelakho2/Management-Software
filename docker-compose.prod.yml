@@ -7,6 +7,8 @@
 # a token and durable JetStream storage.
 #
 # Usage:  docker compose -f docker-compose.prod.yml up -d
+#         (all services are active in this production file; no --profile
+#          flag is needed — profiles are a dev-compose concept)
 # =============================================================================
 name: sensei-prod
 
@@ -59,7 +61,6 @@ services:
       context: ./sensei-rs
       dockerfile: Dockerfile
     restart: unless-stopped
-    profiles: ["production"]
     environment:
       SENSEI_ENV: production
       DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-sensei}
@@ -92,8 +93,14 @@ services:
       context: ./sensei-rs
       dockerfile: Dockerfile
     restart: unless-stopped
-    profiles: ["production"]
-    command: ["./sensei-workers"]
+    entrypoint: ["/usr/local/bin/sensei-workers"]
+    # The worker is not an HTTP service: probe DB + NATS connectivity via
+    # its own --healthcheck subcommand (no pgrep, no HTTP).
+    healthcheck:
+      test: ["CMD", "sensei-workers", "--healthcheck"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
     environment:
       SENSEI_ENV: production
       DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-sensei}
@@ -112,7 +119,6 @@ services:
   caddy:
     image: caddy:2.8-alpine
     restart: unless-stopped
-    profiles: ["production"]
     ports:
       - "80:80"
       - "443:443"

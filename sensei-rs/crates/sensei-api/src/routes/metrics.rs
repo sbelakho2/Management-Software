@@ -7,7 +7,7 @@
 //! Registration and encoding failures are logged and skipped; they never
 //! panic the server.
 
-use axum::http::{header, StatusCode};
+use axum::http::{header, HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use once_cell::sync::Lazy;
 use prometheus::{CounterVec, Gauge, HistogramVec, Opts, Registry, TextEncoder};
@@ -136,7 +136,18 @@ pub fn init_metrics() {
 ///
 /// Returns all registered metrics in Prometheus text format. Encoding
 /// failures are logged and surfaced as a 500 rather than panicking.
-pub async fn metrics_handler() -> Response {
+pub async fn metrics_handler(headers: HeaderMap) -> Response {
+    use crate::routes::health::internal_access_allowed;
+    if !internal_access_allowed(&headers) {
+        return (
+            StatusCode::FORBIDDEN,
+            axum::Json(serde_json::json!({
+                "error": "forbidden",
+                "message": "Metrics require the internal monitoring token",
+            })),
+        )
+            .into_response();
+    }
     let encoder = TextEncoder::new();
     let metric_families = METRICS_REGISTRY.gather();
     let mut buffer = String::new();

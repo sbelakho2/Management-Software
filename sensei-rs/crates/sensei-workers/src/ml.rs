@@ -13,7 +13,7 @@
 //! tables; otherwise the model operates on synthetic calibration data with a warning.
 
 use crate::error::{Result, WorkerError};
-use crate::task::{IdempotencyGuard, TaskConsumer, TaskMetadata, TaskOutcome};
+use crate::task::{ClaimOutcome, IdempotencyGuard, TaskConsumer, TaskMetadata, TaskOutcome};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
@@ -398,6 +398,12 @@ pub struct MlWorker {
     idempotency: IdempotencyGuard,
 }
 
+impl Default for MlWorker {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl MlWorker {
     /// Create a new [`MlWorker`] with the default model registry (no DB pool).
     pub fn new() -> Self {
@@ -429,8 +435,11 @@ impl MlWorker {
     /// `Err` → database unavailable, retry later without executing.
     async fn claim(&self, task_id: &str) -> Result<bool> {
         match self.idempotency.try_claim(task_id).await {
-            Ok(true) => Ok(true),
-            Ok(false) => {
+            Ok(ClaimOutcome::Proceed) => Ok(true),
+            Ok(ClaimOutcome::Busy) => Err(WorkerError::RetryLater(
+                "idempotency lease busy; retrying".to_string(),
+            )),
+            Ok(ClaimOutcome::AlreadyCompleted) => {
                 info!(task_id = %task_id, "ML task already processed — skipping (idempotent)");
                 Ok(false)
             }
@@ -832,12 +841,6 @@ impl MlWorker {
     }
 }
 
-impl Default for MlWorker {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 #[async_trait]
 impl TaskConsumer for MlWorker {
     fn subject(&self) -> &'static str {
@@ -860,6 +863,8 @@ impl TaskConsumer for MlWorker {
 
         let task_id_str = metadata.task_id.to_string();
         if !self.claim(&task_id_str).await? {
+            // Idempotency: ONLY now is the side effect durable.
+            self.idempotency.mark_completed(&task_id_str).await?;
             return Ok(TaskOutcome::Completed);
         }
 
@@ -937,7 +942,10 @@ pub struct TrainingWorker {
 }
 
 impl TrainingWorker {
-    pub fn new() -> Self {
+    /// TEST-ONLY constructor (in-memory model state). Production code must
+    /// use [`Self::with_pool`] so models are shared across replicas.
+    #[cfg(test)]
+    pub fn in_memory() -> Self {
         Self {
             inner: MlWorker::new(),
         }
@@ -947,12 +955,6 @@ impl TrainingWorker {
         Self {
             inner: MlWorker::with_pool(pool),
         }
-    }
-}
-
-impl Default for TrainingWorker {
-    fn default() -> Self {
-        Self::new()
     }
 }
 
@@ -977,7 +979,9 @@ pub struct DriftCheckWorker {
 }
 
 impl DriftCheckWorker {
-    pub fn new() -> Self {
+    /// TEST-ONLY constructor. Production code must use [`Self::with_pool`].
+    #[cfg(test)]
+    pub fn in_memory() -> Self {
         Self {
             inner: MlWorker::new(),
         }
@@ -987,12 +991,6 @@ impl DriftCheckWorker {
         Self {
             inner: MlWorker::with_pool(pool),
         }
-    }
-}
-
-impl Default for DriftCheckWorker {
-    fn default() -> Self {
-        Self::new()
     }
 }
 
@@ -1017,7 +1015,9 @@ pub struct ForceRetrainWorker {
 }
 
 impl ForceRetrainWorker {
-    pub fn new() -> Self {
+    /// TEST-ONLY constructor. Production code must use [`Self::with_pool`].
+    #[cfg(test)]
+    pub fn in_memory() -> Self {
         Self {
             inner: MlWorker::new(),
         }
@@ -1027,12 +1027,6 @@ impl ForceRetrainWorker {
         Self {
             inner: MlWorker::with_pool(pool),
         }
-    }
-}
-
-impl Default for ForceRetrainWorker {
-    fn default() -> Self {
-        Self::new()
     }
 }
 
@@ -1057,7 +1051,9 @@ pub struct RetrainAllWorker {
 }
 
 impl RetrainAllWorker {
-    pub fn new() -> Self {
+    /// TEST-ONLY constructor. Production code must use [`Self::with_pool`].
+    #[cfg(test)]
+    pub fn in_memory() -> Self {
         Self {
             inner: MlWorker::new(),
         }
@@ -1067,12 +1063,6 @@ impl RetrainAllWorker {
         Self {
             inner: MlWorker::with_pool(pool),
         }
-    }
-}
-
-impl Default for RetrainAllWorker {
-    fn default() -> Self {
-        Self::new()
     }
 }
 

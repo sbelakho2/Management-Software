@@ -35,7 +35,7 @@ env:
 
 jobs:
   clippy:
-    name: Lint (fmt + clippy, --locked)
+    name: Lint (fmt + clippy + env contract, --locked)
     runs-on: ubuntu-latest
     steps:
       # actions/checkout@v7.0.1
@@ -61,6 +61,8 @@ jobs:
 
       - name: Check formatting
         run: cargo fmt --all -- --check
+      - name: Env contract (orchestration variables documented)
+        run: bash scripts/validate-env-contract.sh
         working-directory: sensei-rs
 
       - name: Run clippy

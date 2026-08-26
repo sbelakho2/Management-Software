@@ -137,6 +137,12 @@ impl std::fmt::Display for StoreKey {
 
 // ── Inner storage ──────────────────────────────────────────────────────────
 
+/// How long a tenant's snapshot is served before the next access reloads
+/// from PostgreSQL. This bounds cross-replica staleness: replica A's local
+/// copy can lag a write on replica B by at most this TTL (then it refreshes
+/// on the next access).
+const SNAPSHOT_TTL: std::time::Duration = std::time::Duration::from_secs(60);
+
 struct StoreInner<T> {
     data: HashMap<StoreKey, T>,
     pool: Option<PgPool>,
@@ -145,7 +151,8 @@ struct StoreInner<T> {
     /// A tenant missing from this set triggers a (rate-limited) load on the
     /// next access, so a failed load is retried instead of serving empty
     /// data.
-    loaded_tenants: HashSet<Uuid>,
+    /// Tenant id -> when its snapshot was last (re)loaded from the DB.
+    loaded_tenants: std::collections::HashMap<Uuid, std::time::Instant>,
     /// When the last DB load was attempted, so failed loads are retried at
     /// most once per second instead of on every access.
     last_db_load_attempt: Option<Instant>,
@@ -160,7 +167,7 @@ impl<T> StoreInner<T> {
             data: HashMap::new(),
             pool,
             entity_type: entity_type.to_string(),
-            loaded_tenants: HashSet::new(),
+            loaded_tenants: std::collections::HashMap::new(),
             last_db_load_attempt: None,
             persist_lock: Arc::new(Mutex::new(())),
         }
@@ -242,9 +249,18 @@ impl<T: Serialize + DeserializeOwned + Clone + PartialEq + Send + Sync + 'static
     /// (rate-limited retry on failure; a no-op without a pool).
     async fn ensure_loaded(&self, tenant_id: Uuid) {
         let mut inner = self.inner.write().await;
-        if inner.pool.is_none() || inner.loaded_tenants.contains(&tenant_id) {
+        if inner.pool.is_none() {
             return;
         }
+        let fresh = inner
+            .loaded_tenants
+            .get(&tenant_id)
+            .is_some_and(|loaded_at| loaded_at.elapsed() < SNAPSHOT_TTL);
+        if fresh {
+            return;
+        }
+        // Stale or never-loaded: refresh the snapshot from PostgreSQL so a
+        // write on another replica becomes visible within SNAPSHOT_TTL.
         load_from_db(&mut inner, tenant_id).await;
     }
 
@@ -688,7 +704,9 @@ async fn load_from_db<T: DeserializeOwned + Clone>(inner: &mut StoreInner<T>, te
                 count = loaded,
                 "Loaded entities from database"
             );
-            inner.loaded_tenants.insert(tenant_id);
+            inner
+                .loaded_tenants
+                .insert(tenant_id, std::time::Instant::now());
         }
         Err(e) => {
             // Keep the tenant out of `loaded_tenants` so the next access
@@ -823,7 +841,7 @@ impl<T: Serialize + DeserializeOwned + Clone + PartialEq + Send + Sync + 'static
 
         // Never return empty/stale data when the tenant's load from the DB
         // failed: surface the failure as a Database error instead.
-        if !inner.loaded_tenants.contains(&tenant_id) {
+        if !inner.loaded_tenants.contains_key(&tenant_id) {
             return Err(SenseiError::Database(format!(
                 "Entity store for {} could not be loaded",
                 inner.entity_type
@@ -918,7 +936,7 @@ impl<T: Serialize + DeserializeOwned + Clone + PartialEq + Send + Sync + 'static
 
         // Never return empty/stale data when the tenant's load from the DB
         // failed: surface the failure as a Database error instead.
-        if !inner.loaded_tenants.contains(&tenant_id) {
+        if !inner.loaded_tenants.contains_key(&tenant_id) {
             return Err(SenseiError::Database(format!(
                 "Entity store for {} could not be loaded",
                 inner.entity_type

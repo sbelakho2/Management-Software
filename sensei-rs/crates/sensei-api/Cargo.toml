@@ -6,6 +6,7 @@ license.workspace = true
 description = "Axum API server for Sensei ERP"
 
 [dependencies]
+rust_decimal.workspace = true
 sensei-core = { path = "../sensei-core", features = ["axum"] }
 sensei-auth = { path = "../sensei-auth" }
 sensei-db = { path = "../sensei-db" }

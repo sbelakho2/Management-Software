@@ -211,6 +211,50 @@ impl ApiClient {
         result
     }
 
+    /// Restore a cookie-backed session: POST /auth/refresh with an empty
+    /// body — the backend reads the HttpOnly refresh cookie. Used on app
+    /// bootstrap after a reload (memory tokens are gone, the cookie is not).
+    pub async fn refresh_from_cookie(&self) -> Result<AuthTokens, ApiError> {
+        let resp = self
+            .send(
+                reqwest::Method::POST,
+                "/api/v1/auth/refresh",
+                Some(serde_json::json!({ "refresh_token": "" })),
+            )
+            .await?;
+        if !resp.status().is_success() {
+            return Err(ApiError::from_response(resp).await);
+        }
+        let body: serde_json::Value = resp
+            .json()
+            .await
+            .map_err(|e| ApiError::json(e.to_string()))?;
+        // Cookie mode omits the refresh token from the body.
+        let tokens = AuthTokens {
+            access_token: body["access_token"]
+                .as_str()
+                .unwrap_or_default()
+                .to_string(),
+            refresh_token: body["refresh_token"]
+                .as_str()
+                .unwrap_or_default()
+                .to_string(),
+            token_type: body["token_type"].as_str().unwrap_or("Bearer").to_string(),
+            expires_in: body["expires_in"].as_u64().unwrap_or(900),
+        };
+        if tokens.access_token.is_empty() {
+            return Err(ApiError::auth("No access token in refresh response"));
+        }
+        *self.token.write().unwrap() = Some(tokens.access_token.clone());
+        if !tokens.refresh_token.is_empty() {
+            *self.refresh_token.write().unwrap() = Some(tokens.refresh_token.clone());
+        }
+        if let Some(cb) = self.hooks.on_tokens_refreshed.lock().unwrap().clone() {
+            cb(tokens.clone());
+        }
+        Ok(tokens)
+    }
+
     /// Perform the actual refresh request and rotate stored tokens.
     async fn do_refresh(&self) -> Result<AuthTokens, ApiError> {
         let refresh_tok = self

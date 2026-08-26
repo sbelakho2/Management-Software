@@ -8,7 +8,7 @@ use axum::{
     Json,
 };
 use sensei_auth::middleware::AuthenticatedUser;
-use sensei_core::error::Result;
+use sensei_core::error::{Result, SenseiError};
 use sensei_core::pagination::PaginatedResponse;
 use sensei_services::finance::{Budget, CostRollup, Invoice, JournalEntry, Payment};
 use serde::Deserialize;
@@ -88,6 +88,8 @@ pub async fn list_invoices(
     State(state): State<AppState>,
     Query(params): Query<ListInvoicesParams>,
 ) -> Result<Json<PaginatedResponse<Invoice>>> {
+    user.require_permission("finance:invoice:read")?;
+
     let tenant_id = user.tenant_id;
     let invoices = state
         .finance_service
@@ -107,8 +109,16 @@ pub async fn create_invoice(
     State(state): State<AppState>,
     Json(req): Json<Invoice>,
 ) -> Result<Json<Invoice>> {
+    user.require_permission("finance:invoice:create")?;
+
     let tenant_id = user.tenant_id;
-    let invoice = state.finance_service.create_invoice(tenant_id, req).await?;
+    // The actor always comes from the token — never from client JSON.
+    let mut invoice = req;
+    invoice.created_by = user.user_id;
+    let invoice = state
+        .finance_service
+        .create_invoice(tenant_id, invoice)
+        .await?;
     Ok(Json(invoice))
 }
 
@@ -118,6 +128,8 @@ pub async fn get_invoice(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<Invoice>> {
+    user.require_permission("finance:invoice:read")?;
+
     let tenant_id = user.tenant_id;
     let invoice = state.finance_service.get_invoice(tenant_id, id).await?;
     Ok(Json(invoice))
@@ -130,6 +142,8 @@ pub async fn mark_invoice_paid(
     Path(id): Path<Uuid>,
     Json(req): Json<MarkInvoicePaidRequest>,
 ) -> Result<Json<Invoice>> {
+    user.require_permission("finance:invoice:approve")?;
+
     let tenant_id = user.tenant_id;
     let invoice = state
         .finance_service
@@ -145,6 +159,8 @@ pub async fn update_invoice(
     Path(id): Path<Uuid>,
     Json(req): Json<Invoice>,
 ) -> Result<Json<Invoice>> {
+    user.require_permission("finance:invoice:create")?;
+
     let tenant_id = user.tenant_id;
     let invoice = state
         .finance_service
@@ -159,6 +175,8 @@ pub async fn delete_invoice(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<()>> {
+    user.require_permission("finance:invoice:create")?;
+
     let tenant_id = user.tenant_id;
     state.finance_service.delete_invoice(tenant_id, id).await?;
     Ok(Json(()))
@@ -172,8 +190,15 @@ pub async fn record_payment(
     State(state): State<AppState>,
     Json(req): Json<Payment>,
 ) -> Result<Json<Payment>> {
+    user.require_permission("finance:payment:record")?;
+
     let tenant_id = user.tenant_id;
-    let payment = state.finance_service.record_payment(tenant_id, req).await?;
+    let mut payment = req;
+    payment.created_by = user.user_id;
+    let payment = state
+        .finance_service
+        .record_payment(tenant_id, payment)
+        .await?;
     Ok(Json(payment))
 }
 
@@ -183,6 +208,8 @@ pub async fn list_payments(
     State(state): State<AppState>,
     Query(params): Query<ListPaymentsParams>,
 ) -> Result<Json<PaginatedResponse<Payment>>> {
+    user.require_permission("finance:invoice:read")?;
+
     let tenant_id = user.tenant_id;
     let payments = state
         .finance_service
@@ -198,6 +225,8 @@ pub async fn update_payment(
     Path(id): Path<Uuid>,
     Json(req): Json<Payment>,
 ) -> Result<Json<Payment>> {
+    user.require_permission("finance:payment:void")?;
+
     let tenant_id = user.tenant_id;
     let payment = state
         .finance_service
@@ -212,6 +241,8 @@ pub async fn delete_payment(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<()>> {
+    user.require_permission("finance:payment:void")?;
+
     let tenant_id = user.tenant_id;
     state.finance_service.delete_payment(tenant_id, id).await?;
     Ok(Json(()))
@@ -225,6 +256,8 @@ pub async fn list_budgets(
     State(state): State<AppState>,
     Query(params): Query<ListBudgetsParams>,
 ) -> Result<Json<PaginatedResponse<Budget>>> {
+    user.require_permission("finance:budget:allocate")?;
+
     let tenant_id = user.tenant_id;
     let budgets = state
         .finance_service
@@ -245,6 +278,8 @@ pub async fn create_budget(
     State(state): State<AppState>,
     Json(req): Json<Budget>,
 ) -> Result<Json<Budget>> {
+    user.require_permission("finance:budget:allocate")?;
+
     let tenant_id = user.tenant_id;
     let budget = state.finance_service.create_budget(tenant_id, req).await?;
     Ok(Json(budget))
@@ -256,6 +291,8 @@ pub async fn get_budget(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<Budget>> {
+    user.require_permission("finance:budget:allocate")?;
+
     let tenant_id = user.tenant_id;
     let budget = state.finance_service.get_budget(tenant_id, id).await?;
     Ok(Json(budget))
@@ -268,10 +305,17 @@ pub async fn allocate_budget(
     Path(id): Path<Uuid>,
     Json(req): Json<AllocateBudgetRequest>,
 ) -> Result<Json<Budget>> {
+    user.require_permission("finance:budget:allocate")?;
+
     let tenant_id = user.tenant_id;
     let budget = state
         .finance_service
-        .allocate_budget(tenant_id, id, req.amount)
+        .allocate_budget(
+            tenant_id,
+            id,
+            rust_decimal::Decimal::from_f64_retain(req.amount)
+                .unwrap_or(rust_decimal::Decimal::ZERO),
+        )
         .await?;
     Ok(Json(budget))
 }
@@ -283,6 +327,8 @@ pub async fn update_budget(
     Path(id): Path<Uuid>,
     Json(req): Json<Budget>,
 ) -> Result<Json<Budget>> {
+    user.require_permission("finance:budget:allocate")?;
+
     let tenant_id = user.tenant_id;
     let budget = state
         .finance_service
@@ -297,6 +343,8 @@ pub async fn delete_budget(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<()>> {
+    user.require_permission("finance:budget:allocate")?;
+
     let tenant_id = user.tenant_id;
     state.finance_service.delete_budget(tenant_id, id).await?;
     Ok(Json(()))
@@ -310,6 +358,8 @@ pub async fn post_journal_entry(
     State(state): State<AppState>,
     Json(req): Json<JournalEntry>,
 ) -> Result<Json<JournalEntry>> {
+    user.require_permission("finance:journal:post")?;
+
     let tenant_id = user.tenant_id;
     let entry = state
         .finance_service
@@ -324,6 +374,8 @@ pub async fn list_journal_entries(
     State(state): State<AppState>,
     Query(params): Query<ListJournalEntriesParams>,
 ) -> Result<Json<PaginatedResponse<JournalEntry>>> {
+    user.require_permission("finance:journal:post")?;
+
     let tenant_id = user.tenant_id;
     let entries = state
         .finance_service
@@ -344,7 +396,20 @@ pub async fn update_journal_entry(
     Path(id): Path<Uuid>,
     Json(req): Json<JournalEntry>,
 ) -> Result<Json<JournalEntry>> {
+    user.require_permission("finance:journal:post")?;
+
     let tenant_id = user.tenant_id;
+    // Posted accounting entries are immutable: corrections must be
+    // reversing entries, not history edits.
+    let existing = state
+        .finance_service
+        .get_journal_entry(tenant_id, id)
+        .await?;
+    if existing.posted_by != uuid::Uuid::nil() {
+        return Err(SenseiError::Conflict(
+            "Posted journal entries are immutable — post a reversing entry instead".to_string(),
+        ));
+    }
     let entry = state
         .finance_service
         .update_journal_entry(tenant_id, id, req)
@@ -358,7 +423,18 @@ pub async fn delete_journal_entry(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<()>> {
+    user.require_permission("finance:journal:post")?;
+
     let tenant_id = user.tenant_id;
+    let existing = state
+        .finance_service
+        .get_journal_entry(tenant_id, id)
+        .await?;
+    if existing.posted_by != uuid::Uuid::nil() {
+        return Err(SenseiError::Conflict(
+            "Posted journal entries are immutable — post a reversing entry instead".to_string(),
+        ));
+    }
     state
         .finance_service
         .delete_journal_entry(tenant_id, id)
@@ -374,6 +450,8 @@ pub async fn run_cost_rollup(
     State(state): State<AppState>,
     Json(req): Json<CostRollupRequest>,
 ) -> Result<Json<CostRollup>> {
+    user.require_permission("finance:rollup:run")?;
+
     let tenant_id = user.tenant_id;
     let rollup = state
         .finance_service
@@ -388,6 +466,8 @@ pub async fn get_cost_rollup(
     State(state): State<AppState>,
     Path(product_id): Path<Uuid>,
 ) -> Result<Json<CostRollup>> {
+    user.require_permission("finance:rollup:run")?;
+
     let tenant_id = user.tenant_id;
     let rollup = state
         .finance_service
@@ -408,6 +488,8 @@ pub async fn match_three_way(
     State(state): State<AppState>,
     Json(req): Json<ThreeWayMatchRequest>,
 ) -> Result<Json<sensei_services::finance::ThreeWayMatchResult>> {
+    user.require_permission("finance:match:three-way")?;
+
     let tenant_id = user.tenant_id;
     let result = state
         .finance_service

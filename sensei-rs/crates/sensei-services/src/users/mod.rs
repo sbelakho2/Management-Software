@@ -332,12 +332,23 @@ impl UsersService for InMemoryUsersService {
             )));
         }
 
-        let user = users.get_mut(&id).expect("user presence checked above");
-        user.name = updated.name;
-        user.email = updated.email;
-        user.password_hash = updated.password_hash;
-        user.updated_at = now();
-        Ok(user.clone())
+        let updated_user = {
+            let user = users.get_mut(&id).expect("user presence checked above");
+            let email_changed = !user.email.eq_ignore_ascii_case(&updated.email);
+            user.name = updated.name;
+            user.email = updated.email;
+            user.password_hash = updated.password_hash;
+            user.credential_version = updated.credential_version;
+            user.is_active = updated.is_active;
+            user.updated_at = now();
+            (user.clone(), email_changed)
+        };
+        if updated_user.1 {
+            // Verification applied to the OLD address — it must not carry
+            // over to the new one.
+            self.verified_emails.write().await.remove(&id);
+        }
+        Ok(updated_user.0)
     }
 
     async fn deactivate_user(&self, caller_tenant_id: EntityId, id: EntityId) -> Result<User> {

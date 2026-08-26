@@ -133,6 +133,11 @@ pub struct Role {
 pub struct Permission(pub String);
 
 impl Permission {
+    /// Construct a permission from its canonical `resource:action` form.
+    pub fn new(value: &str) -> Self {
+        Self(value.to_string())
+    }
+
     /// Parse a permission string into resource and action.
     pub fn parse(&self) -> Option<(&str, &str)> {
         self.0.split_once(':')

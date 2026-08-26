@@ -481,11 +481,11 @@ async fn run_schedule_loops(
                     }
                 }
 
+                let task_type_str = format!("{:?}", task.task_type);
                 // Claim the wall-clock slot (migration 054) so a leadership
                 // takeover can never double-publish the same slot. Without a
                 // pool (dev mode) there is nothing to deduplicate against.
                 if let Some(pool) = &db {
-                    let task_type_str = format!("{:?}", task.task_type);
                     match sqlx::query(
                         "INSERT INTO scheduler_run_log (task_type, run_key) \
                          VALUES ($1, $2) ON CONFLICT (task_type, run_key) DO NOTHING",
@@ -526,21 +526,36 @@ async fn run_schedule_loops(
                         let payload = bytes::Bytes::from(data);
                         match js.publish(subject.to_string(), payload).await {
                             Ok(ack) => {
-                                info!(
-                                    subject = %subject,
-                                    task_type = ?task.task_type,
-                                    run_key = %run_key,
-                                    "Scheduled task published"
-                                );
-                                drop(ack);
+                                // Two-stage publish: only the SERVER ack
+                                // makes the message durably accepted.
+                                match ack.await {
+                                    Ok(_) => {
+                                        info!(
+                                            subject = %subject,
+                                            task_type = ?task.task_type,
+                                            run_key = %run_key,
+                                            "Scheduled task published (server acknowledged)"
+                                        );
+                                    }
+                                    Err(e) => {
+                                        error!(
+                                            subject = %subject,
+                                            task_type = ?task.task_type,
+                                            error = %e,
+                                            "Scheduled task publish NOT acknowledged by server — releasing slot for retry"
+                                        );
+                                        release_slot(&db, &task_type_str, &run_key).await;
+                                    }
+                                }
                             }
                             Err(e) => {
                                 error!(
                                     subject = %subject,
                                     task_type = ?task.task_type,
                                     error = %e,
-                                    "Failed to publish scheduled task"
+                                    "Failed to publish scheduled task — releasing slot for retry"
                                 );
+                                release_slot(&db, &task_type_str, &run_key).await;
                             }
                         }
                     }
@@ -548,8 +563,9 @@ async fn run_schedule_loops(
                         error!(
                             task_type = ?task.task_type,
                             error = %e,
-                            "Failed to serialize scheduled task envelope"
+                            "Failed to serialize scheduled task envelope — releasing slot for retry"
                         );
+                        release_slot(&db, &task_type_str, &run_key).await;
                     }
                 }
             }
@@ -559,6 +575,27 @@ async fn run_schedule_loops(
     }
 
     handles
+}
+
+/// Release a claimed scheduler slot so the next loop iteration can retry
+/// (a failed publication must never permanently suppress a scheduled job).
+async fn release_slot(db: &Option<Arc<sqlx::PgPool>>, task_type: &str, run_key: &str) {
+    if let Some(pool) = db {
+        if let Err(e) =
+            sqlx::query("DELETE FROM scheduler_run_log WHERE task_type = $1 AND run_key = $2")
+                .bind(task_type)
+                .bind(run_key)
+                .execute(pool.as_ref())
+                .await
+        {
+            error!(
+                task_type = %task_type,
+                run_key = %run_key,
+                error = %e,
+                "Failed to release scheduled slot — the job may be skipped this cycle"
+            );
+        }
+    }
 }
 
 /// Default schedule entries matching the Celery Beat tasks.

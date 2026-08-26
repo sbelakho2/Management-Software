@@ -37,18 +37,33 @@ use crate::state::AppState;
 struct SessionFingerprint {
     /// SHA-256 hash of the combined User-Agent + IP.
     fingerprint: String,
+    /// The user this session belongs to (for "logout all devices").
+    owner_user_id: String,
     /// When the fingerprint was last verified (for expiry).
     last_seen: Instant,
 }
 
-/// Thread-safe store that maps user IDs to their session fingerprints.
+/// A security-critical session-store failure (database unavailable).
 ///
-/// With a PostgreSQL pool the binding is shared across ALL API replicas
-/// (multi-replica logout/session enforcement); without one the in-memory
-/// DashMap is the development-only fallback.
+/// Callers MUST fail closed (deny the request) — never assume a token is
+/// valid because the store was unreachable.
+#[derive(Debug, Clone)]
+pub struct SessionStoreError(pub String);
+
+/// Thread-safe store of session bindings, keyed by session id (sid).
+///
+/// One user may hold MANY concurrent sessions (laptop, phone, second tab);
+/// logout revokes exactly one sid, "logout all devices" revokes every sid
+/// for the user. With a PostgreSQL pool the bindings are shared across ALL
+/// API replicas; without one the in-memory DashMap is the development-only
+/// fallback.
+///
+/// Security-critical reads FAIL CLOSED: a database error during a
+/// fingerprint check is reported as an error and the caller must deny
+/// (never assume the token is valid because the store was unreachable).
 #[derive(Clone)]
 pub struct SessionStore {
-    /// Map of user_id (as string) → fingerprint (dev fallback).
+    /// Map of sid → fingerprint (dev fallback).
     store: Arc<DashMap<String, SessionFingerprint>>,
     /// Shared PostgreSQL pool (None in dev/in-memory mode).
     pool: Option<sqlx::PgPool>,
@@ -114,66 +129,76 @@ impl SessionStore {
     ///
     /// Called by the auth routes on login and refresh so that a successful
     /// authentication always re-binds the session to the current client.
-    pub async fn register(&self, user_id: &str, fingerprint: String) {
+    pub async fn register(
+        &self,
+        sid: &str,
+        user_id: &str,
+        tenant_id: uuid::Uuid,
+        fingerprint: String,
+    ) {
         if let Some(pool) = &self.pool {
-            let user_id_uuid = match uuid::Uuid::parse_str(user_id) {
-                Ok(u) => u,
-                Err(_) => return,
-            };
+            let (sid_uuid, user_uuid) =
+                match (uuid::Uuid::parse_str(sid), uuid::Uuid::parse_str(user_id)) {
+                    (Ok(s), Ok(u)) => (s, u),
+                    _ => return,
+                };
             if let Err(e) = sqlx::query(
-                "INSERT INTO sessions (user_id, tenant_id, fingerprint_hash, created_at, last_seen_at) \
-                 VALUES ($1, (SELECT tenant_id FROM users WHERE id = $1), $2, NOW(), NOW()) \
-                 ON CONFLICT (user_id) DO UPDATE SET fingerprint_hash = $2, last_seen_at = NOW()",
+                "INSERT INTO sessions (id, user_id, tenant_id, fingerprint_hash, created_at, last_seen_at) \
+                 VALUES ($1, $2, $3, $4, NOW(), NOW()) \
+                 ON CONFLICT (id) DO UPDATE SET fingerprint_hash = $4, last_seen_at = NOW()",
             )
-            .bind(user_id_uuid)
+            .bind(sid_uuid)
+            .bind(user_uuid)
+            .bind(tenant_id)
             .bind(&fingerprint)
             .execute(pool)
             .await
             {
-                tracing::warn!(error = %e, user_id, "Failed to persist session binding");
+                tracing::warn!(error = %e, sid, "Failed to persist session binding");
             }
         }
         self.store.insert(
-            user_id.to_string(),
+            sid.to_string(),
             SessionFingerprint {
                 fingerprint,
+                owner_user_id: user_id.to_string(),
                 last_seen: Instant::now(),
             },
         );
     }
 
-    /// Verify that the given fingerprint matches the stored one for `user_id`.
-    ///
-    /// * [`SessionResult::Matches`] – the fingerprint matches (and its
-    ///   `last_seen` is refreshed).
-    /// * [`SessionResult::Mismatch`] – the fingerprint differs from the
-    ///   stored binding.
-    /// * [`SessionResult::Unknown`] – no binding is stored yet; the caller
-    ///   decides whether to auto-register.
-    pub async fn verify(&self, user_id: &str, fingerprint: &str) -> SessionResult {
+    /// Verify the fingerprint for a session. FAILS CLOSED: a database error
+    /// is returned as `Err` and the caller must deny the request.
+    pub async fn verify(
+        &self,
+        sid: &str,
+        fingerprint: &str,
+    ) -> Result<SessionResult, SessionStoreError> {
         if let Some(pool) = &self.pool {
-            let user_id_uuid = match uuid::Uuid::parse_str(user_id) {
-                Ok(u) => u,
-                Err(_) => return SessionResult::Unknown,
+            let sid_uuid = match uuid::Uuid::parse_str(sid) {
+                Ok(s) => s,
+                Err(_) => return Ok(SessionResult::Unknown),
             };
-            let stored: Option<String> =
-                sqlx::query_scalar("SELECT fingerprint_hash FROM sessions WHERE user_id = $1")
-                    .bind(user_id_uuid)
+            let stored: Option<(String, Option<chrono::DateTime<chrono::Utc>>)> =
+                sqlx::query_as("SELECT fingerprint_hash, revoked_at FROM sessions WHERE id = $1")
+                    .bind(sid_uuid)
                     .fetch_optional(pool)
                     .await
-                    .unwrap_or(None);
-            return match stored {
-                Some(hash) if hash == fingerprint => SessionResult::Matches,
+                    .map_err(|e| SessionStoreError(e.to_string()))?;
+            return Ok(match stored {
+                // A revoked session can never match.
+                Some((_, Some(_))) => SessionResult::Mismatch,
+                Some((hash, None)) if hash == fingerprint => SessionResult::Matches,
                 Some(_) => SessionResult::Mismatch,
                 None => SessionResult::Unknown,
-            };
+            });
         }
-        match self.store.get(user_id) {
+        Ok(match self.store.get(sid) {
             Some(stored) => {
                 if stored.fingerprint == fingerprint {
                     // Update last_seen.
                     drop(stored); // Release the ref before modifying.
-                    if let Some(mut entry) = self.store.get_mut(user_id) {
+                    if let Some(mut entry) = self.store.get_mut(sid) {
                         entry.last_seen = Instant::now();
                     }
                     SessionResult::Matches
@@ -182,20 +207,33 @@ impl SessionStore {
                 }
             }
             None => SessionResult::Unknown,
-        }
+        })
     }
 
-    /// Remove a session fingerprint (e.g. on logout or on mismatch).
-    pub async fn remove(&self, user_id: &str) {
+    /// Revoke exactly one session (logout this device).
+    pub async fn revoke_session(&self, sid: &str) {
+        if let Some(pool) = &self.pool {
+            if let Ok(sid_uuid) = uuid::Uuid::parse_str(sid) {
+                let _ = sqlx::query("UPDATE sessions SET revoked_at = NOW() WHERE id = $1")
+                    .bind(sid_uuid)
+                    .execute(pool)
+                    .await;
+            }
+        }
+        self.store.remove(sid);
+    }
+
+    /// Revoke every session of a user (logout all devices / password change).
+    pub async fn revoke_all_for_user(&self, user_id: &str) {
         if let Some(pool) = &self.pool {
             if let Ok(user_id_uuid) = uuid::Uuid::parse_str(user_id) {
-                let _ = sqlx::query("DELETE FROM sessions WHERE user_id = $1")
+                let _ = sqlx::query("UPDATE sessions SET revoked_at = NOW() WHERE user_id = $1")
                     .bind(user_id_uuid)
                     .execute(pool)
                     .await;
             }
         }
-        self.store.remove(user_id);
+        self.store.retain(|_, fp| fp.owner_user_id != user_id);
     }
 
     /// Number of active session bindings currently tracked.
@@ -339,16 +377,37 @@ pub async fn session_binding_middleware(
     let fingerprint = compute_fingerprint(&user_agent, &client_ip);
     let user_id_str = user.user_id.to_string();
 
-    match session_store.verify(&user_id_str, &fingerprint).await {
-        SessionResult::Matches => {}
-        SessionResult::Unknown => {
-            // First time seeing this user on this client – register.
-            debug!(user_id = %user_id_str, "Registering session fingerprint (first sight)");
-            session_store.register(&user_id_str, fingerprint).await;
+    // The session id comes from the access-token claims (one user may hold
+    // many concurrent sessions; logout revokes exactly one sid).
+    let sid = req
+        .extensions()
+        .get::<AuthenticatedUser>()
+        .and_then(|u| u.sid)
+        .map(|s| s.to_string())
+        .unwrap_or_default();
+
+    match session_store.verify(&sid, &fingerprint).await {
+        // FAIL CLOSED: the session store is security-critical. If it cannot
+        // answer, the request is denied (503) — never assumed valid.
+        Err(e) => {
+            warn!(error = %e.0, sid = %sid, "Session store unavailable — denying request");
+            let body = SessionError {
+                error: "session_store_unavailable".to_string(),
+                message: "Session validation is temporarily unavailable. Please retry.".to_string(),
+            };
+            return (StatusCode::SERVICE_UNAVAILABLE, Json(body)).into_response();
         }
-        SessionResult::Mismatch => {
-            // Remove the stale binding so the next login re-binds cleanly.
-            session_store.remove(&user_id_str).await;
+        Ok(SessionResult::Matches) => {}
+        Ok(SessionResult::Unknown) => {
+            // First time seeing this session on this client – register.
+            debug!(user_id = %user_id_str, sid = %sid, "Registering session fingerprint (first sight)");
+            session_store
+                .register(&sid, &user_id_str, user.tenant_id, fingerprint)
+                .await;
+        }
+        Ok(SessionResult::Mismatch) => {
+            // Revoke the stale binding so the next login re-binds cleanly.
+            session_store.revoke_session(&sid).await;
             warn!(
                 user_id = %user_id_str,
                 "Session fingerprint mismatch – possible token theft"
@@ -406,13 +465,22 @@ mod tests {
         let store = SessionStore::new(3600);
         let user_id = "user-abc-123";
         let fp = "my-fingerprint-hash";
+        let tenant = uuid::Uuid::new_v4();
 
         // First verify is Unknown (no binding yet).
-        assert_eq!(store.verify(user_id, fp).await, SessionResult::Unknown);
+        assert_eq!(
+            store.verify(user_id, fp).await.unwrap(),
+            SessionResult::Unknown
+        );
 
         // Explicit registration, then verification matches.
-        store.register(user_id, fp.to_string()).await;
-        assert_eq!(store.verify(user_id, fp).await, SessionResult::Matches);
+        store
+            .register(user_id, "user-u", tenant, fp.to_string())
+            .await;
+        assert_eq!(
+            store.verify(user_id, fp).await.unwrap(),
+            SessionResult::Matches
+        );
     }
 
     #[tokio::test]
@@ -421,19 +489,24 @@ mod tests {
         let user_id = "user-abc-123";
 
         store
-            .register(user_id, "first-fingerprint".to_string())
+            .register(
+                user_id,
+                "user-u",
+                uuid::Uuid::new_v4(),
+                "first-fingerprint".to_string(),
+            )
             .await;
 
         // Verify with different fingerprint should fail.
         assert_eq!(
-            store.verify(user_id, "second-fingerprint").await,
+            store.verify(user_id, "second-fingerprint").await.unwrap(),
             SessionResult::Mismatch
         );
 
         // The stored binding is untouched by verify; the middleware removes
         // it explicitly on mismatch.
         assert_eq!(
-            store.verify(user_id, "first-fingerprint").await,
+            store.verify(user_id, "first-fingerprint").await.unwrap(),
             SessionResult::Matches
         );
     }
@@ -444,34 +517,52 @@ mod tests {
         let user_id = "user-to-remove";
         let fp = "some-fingerprint";
 
-        store.register(user_id, fp.to_string()).await;
-        assert_eq!(store.verify(user_id, fp).await, SessionResult::Matches);
-        store.remove(user_id).await;
+        store
+            .register(user_id, "user-u", uuid::Uuid::new_v4(), fp.to_string())
+            .await;
+        assert_eq!(
+            store.verify(user_id, fp).await.unwrap(),
+            SessionResult::Matches
+        );
+        store.revoke_session(user_id).await;
 
         // After removal, verify reports Unknown (no binding stored).
-        assert_eq!(store.verify(user_id, fp).await, SessionResult::Unknown);
+        assert_eq!(
+            store.verify(user_id, fp).await.unwrap(),
+            SessionResult::Unknown
+        );
     }
 
     #[tokio::test]
     async fn test_session_store_multiple_users() {
         let store = SessionStore::new(3600);
 
-        store.register("user-a", "fp-a".to_string()).await;
-        store.register("user-b", "fp-b".to_string()).await;
+        store
+            .register("user-a", "user-x", uuid::Uuid::new_v4(), "fp-a".to_string())
+            .await;
+        store
+            .register("user-b", "user-x", uuid::Uuid::new_v4(), "fp-b".to_string())
+            .await;
 
         // Mismatch should still fail for each independently.
         assert_eq!(
-            store.verify("user-a", "fp-b").await,
+            store.verify("user-a", "fp-b").await.unwrap(),
             SessionResult::Mismatch
         );
         assert_eq!(
-            store.verify("user-b", "fp-a").await,
+            store.verify("user-b", "fp-a").await.unwrap(),
             SessionResult::Mismatch
         );
 
         // Correct match still works.
-        assert_eq!(store.verify("user-a", "fp-a").await, SessionResult::Matches);
-        assert_eq!(store.verify("user-b", "fp-b").await, SessionResult::Matches);
+        assert_eq!(
+            store.verify("user-a", "fp-a").await.unwrap(),
+            SessionResult::Matches
+        );
+        assert_eq!(
+            store.verify("user-b", "fp-b").await.unwrap(),
+            SessionResult::Matches
+        );
     }
 
     fn req_with_peer(peer: Option<IpAddr>, xff: Option<&str>) -> Request {
@@ -534,11 +625,16 @@ mod tests {
     async fn test_session_store_ttl_updates_on_verify() {
         let store = SessionStore::new(3600);
         let user_id = "ttl-test";
-        store.register(user_id, "fp".to_string()).await;
+        store
+            .register(user_id, "user-u", uuid::Uuid::new_v4(), "fp".to_string())
+            .await;
 
         // After verify, last_seen should be updated. We can't check the
         // internal time, but the entry must still exist afterwards.
-        assert_eq!(store.verify(user_id, "fp").await, SessionResult::Matches);
+        assert_eq!(
+            store.verify(user_id, "fp").await.unwrap(),
+            SessionResult::Matches
+        );
     }
 
     #[test]

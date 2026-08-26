@@ -41,54 +41,35 @@ http:// {
     # Automatic HTTPS with Let's Encrypt
     tls {$TLS_EMAIL:admin@starzmorocco.com}
 
-    # Security headers — policy owned by the backend (see top of file).
-    # These headers mirror the backend values exactly; HSTS is NOT set here
-    # (the backend emits it, TLS-aware) and no Access-Control-* headers are
-    # added (backend CORS via CORS_ALLOWED_ORIGINS).
+    # Security headers: the BACKEND (secure_headers.rs) is the single
+    # owner of the browser-security policy. Caddy emits NO security headers
+    # of its own — one policy owner, no divergence.
     header {
-        # Prevent clickjacking (identical to backend value)
-        X-Frame-Options "DENY"
-        # MIME-type sniffing protection (identical to backend value)
-        X-Content-Type-Options "nosniff"
-        # XSS protection: MUST stay "0" — matches the backend policy
-        X-XSS-Protection "0"
-        # Referrer policy (identical to backend value)
-        Referrer-Policy "strict-origin-when-cross-origin"
-        # Permissions policy (identical to backend value)
-        Permissions-Policy "camera=(), microphone=(), geolocation=()"
-        # Content-Security-Policy — identical to the backend's built-in
-        # default. Drop 'unsafe-inline'/'unsafe-eval' together with the
-        # backend once the frontend is consolidated (see note at top).
-        Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self' ws: wss:; frame-ancestors 'none'"
         # Remove server identification
         -Server
     }
 
-    # WebSocket route — proxies /ws/* to Rust API for real-time features
-    route /ws/* {
-        reverse_proxy sensei-api:8080 {
-            # Health checks (liveness/readiness probes provided by the backend)
-            health_uri /health/ready
-            health_interval 30s
-            health_timeout 5s
-            health_status 200
-
-            # Timeouts
-            transport http {
-                read_timeout 60s
-                write_timeout 60s
-                dial_timeout 10s
-            }
-
-            # Header manipulation
-            header_up Host {upstream_hostport}
-            header_up X-Real-IP {remote_host}
-            header_up X-Forwarded-For {remote_host}
-            header_up X-Forwarded-Proto {scheme}
+    # Realtime matcher — WebSocket + SSE must NOT inherit the general
+    # API transport's short read/write timeouts (long-lived connections).
+    @realtime path /api/v1/ws /api/v1/sse
+    reverse_proxy @realtime sensei-api:8080 {
+        transport http {
+            dial_timeout 10s
         }
+        health_uri /health/ready
+        health_interval 30s
+        health_timeout 5s
+        health_status 200
+
+        # Header manipulation
+        header_up Host {upstream_hostport}
+        header_up X-Real-IP {remote_host}
+        header_up X-Forwarded-For {remote_host}
+        header_up X-Forwarded-Proto {scheme}
     }
 
-    # API routes — proxies /api/* to Rust Axum API
+    # API routes — proxies /api/* to Rust Axum API (short timeouts are
+    # fine for REST; long-lived realtime is handled by @realtime above).
     route /api/* {
         reverse_proxy sensei-api:8080 {
             # Health checks

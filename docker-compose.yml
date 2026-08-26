@@ -221,7 +221,8 @@ services:
     container_name: sensei-rs-workers
     restart: unless-stopped
     profiles: ["dev", "production"]
-    command: ["./sensei-workers"]
+    # The image CMD runs the API; the worker needs its own entrypoint.
+    entrypoint: ["/usr/local/bin/sensei-workers"]
     environment:
       SENSEI_ENV: ${SENSEI_ENV:-development}
       DATABASE_URL: postgres://${POSTGRES_USER:-sensei}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD not set}@db:5432/${POSTGRES_DB:-sensei}

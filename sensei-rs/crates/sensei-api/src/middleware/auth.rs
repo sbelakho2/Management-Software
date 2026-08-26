@@ -50,7 +50,7 @@ fn bearer_token(req: &Request) -> Option<&str> {
 /// `exp` has already passed is treated as absent (and will be swept).
 /// The set is bounded by the periodic lazy sweep, so a linear probe is
 /// acceptable.
-async fn is_blacklisted(state: &AppState, claims: &AccessTokenClaims) -> bool {
+async fn is_blacklisted(state: &AppState, claims: &AccessTokenClaims) -> Result<bool, String> {
     state
         .token_blacklist
         .contains(&claims.jti.to_string())
@@ -75,7 +75,16 @@ pub async fn auth_layer(State(state): State<AppState>, mut req: Request, next: N
     // `exp`; `auth_middleware` re-validates as the authoritative check.
     if let Some(token) = bearer_token(&req) {
         if let Ok(claims) = state.jwt_service.validate_access_token(token) {
-            if is_blacklisted(&state, &claims).await {
+            // FAIL CLOSED: if the revocation store cannot answer, the
+            // token is treated as revoked (deny).
+            let blacklisted = match is_blacklisted(&state, &claims).await {
+                Ok(v) => v,
+                Err(e) => {
+                    tracing::error!(error = %e, jti = %claims.jti, "Blacklist check failed — denying");
+                    true
+                }
+            };
+            if blacklisted {
                 let body = BlacklistError {
                     error: "token_blacklisted".to_string(),
                     message: "Token has been invalidated by logout".to_string(),

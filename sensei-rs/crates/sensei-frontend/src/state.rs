@@ -146,19 +146,62 @@ impl AppState {
     /// Resolve the initial authentication state.
     ///
     /// Tokens are in-memory only and cannot survive a reload, so on a fresh
-    /// page load the state transitions `Loading -> Anonymous`. If tokens are
-    /// somehow present (e.g. SSR handoff), a single-flight refresh is
-    /// attempted first.
+    /// page load the state FIRST attempts to restore the session through the
+    /// backend's HttpOnly refresh cookie (`POST /auth/refresh` with an empty
+    /// body — the cookie carries the credential, JavaScript never sees it).
+    /// Only when the cookie session is absent/expired does the state become
+    /// `Anonymous`.
     pub async fn resolve_initial_auth(&self) {
         if !matches!(self.auth_state.get(), AuthState::Loading) {
             return;
         }
         if self.tokens.get().is_some() {
+            // SSR handoff with tokens in memory: normal single-flight refresh.
             if self.refresh_token().await.is_err() {
                 self.clear_tokens();
+                self.auth_state.set(AuthState::Anonymous);
             }
-        } else {
-            self.auth_state.set(AuthState::Anonymous);
+            return;
+        }
+
+        // Cookie-backed restore: the refresh request carries no body token;
+        // the backend reads the HttpOnly cookie instead.
+        match self.client.refresh_from_cookie().await {
+            Ok(tokens) => {
+                self.apply_tokens(tokens);
+                match self.fetch_profile().await {
+                    Ok(_) => {
+                        self.auth_state
+                            .set(AuthState::Authenticated(self.user.get().unwrap_or(
+                                UserProfile {
+                                    id: String::new(),
+                                    email: String::new(),
+                                    name: String::new(),
+                                    roles: Vec::new(),
+                                    is_active: true,
+                                },
+                            )))
+                    }
+                    Err(_) => {
+                        // Session restored but profile fetch failed: enter
+                        // with the provisional identity; the UI offers retry.
+                        self.auth_state
+                            .set(AuthState::Authenticated(self.user.get().unwrap_or(
+                                UserProfile {
+                                    id: String::new(),
+                                    email: String::new(),
+                                    name: String::new(),
+                                    roles: Vec::new(),
+                                    is_active: true,
+                                },
+                            )));
+                    }
+                }
+            }
+            Err(_) => {
+                self.clear_tokens();
+                self.auth_state.set(AuthState::Anonymous);
+            }
         }
     }
 

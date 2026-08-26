@@ -53,20 +53,23 @@ impl TokenBlacklist {
     }
 
     /// Whether the given jti is currently revoked.
-    pub async fn contains(&self, jti: &str) -> bool {
+    ///
+    /// FAILS CLOSED: a database error is returned as `Err` and the caller
+    /// must deny the request (never assume a token is valid because the
+    /// revocation store was unreachable).
+    pub async fn contains(&self, jti: &str) -> Result<bool, String> {
         if let Some(pool) = &self.pool {
-            if let Ok(jti_uuid) = Uuid::parse_str(jti) {
-                let revoked: bool = sqlx::query_scalar(
-                    "SELECT EXISTS(SELECT 1 FROM token_blacklist WHERE jti = $1 AND expires_at > NOW())",
-                )
-                .bind(jti_uuid)
-                .fetch_one(pool)
-                .await
-                .unwrap_or(false);
-                return revoked;
-            }
+            let jti_uuid = Uuid::parse_str(jti).map_err(|e| format!("Invalid jti: {e}"))?;
+            let revoked: bool = sqlx::query_scalar(
+                "SELECT EXISTS(SELECT 1 FROM token_blacklist WHERE jti = $1 AND expires_at > NOW())",
+            )
+            .bind(jti_uuid)
+            .fetch_one(pool)
+            .await
+            .map_err(|e| format!("Blacklist lookup failed: {e}"))?;
+            return Ok(revoked);
         }
-        self.memory.read().await.iter().any(|e| e.starts_with(jti))
+        Ok(self.memory.read().await.iter().any(|e| e.starts_with(jti)))
     }
 
     /// Remove expired entries (called lazily on insert and by the health
@@ -171,31 +174,32 @@ impl TokenStore {
     /// Consume a one-time token atomically. Returns the record only when the
     /// token exists, is unused and not expired; the token is consumed
     /// (deleted) in the same operation.
-    pub async fn consume(&self, token: &str) -> Option<TokenRecord> {
+    pub async fn consume(&self, token: &str) -> Result<Option<TokenRecord>, String> {
         let hash = Self::hash(token);
         if let Some(pool) = &self.pool {
             let row: Option<(Uuid, Uuid, chrono::DateTime<chrono::Utc>)> =
                 sqlx::query_as(&format!(
-                    "DELETE FROM {} WHERE token_hash = $1 AND consumed_at IS NULL \\
-                   AND expires_at > NOW() \\
+                    "DELETE FROM {} WHERE token_hash = $1 AND consumed_at IS NULL \
+                   AND expires_at > NOW() \
                  RETURNING user_id, tenant_id, expires_at",
                     self.table()
                 ))
                 .bind(&hash)
                 .fetch_optional(pool)
                 .await
-                .unwrap_or(None);
-            return row.map(|(user_id, tenant_id, expires_at)| TokenRecord {
+                .map_err(|e| format!("Token consume failed: {e}"))?;
+            return Ok(row.map(|(user_id, tenant_id, expires_at)| TokenRecord {
                 user_id,
                 tenant_id,
                 expires_at,
-            });
+            }));
         }
-        self.memory
+        Ok(self
+            .memory
             .write()
             .await
             .remove(&hash)
-            .filter(|r| r.expires_at > chrono::Utc::now())
+            .filter(|r| r.expires_at > chrono::Utc::now()))
     }
 
     fn hash(token: &str) -> String {

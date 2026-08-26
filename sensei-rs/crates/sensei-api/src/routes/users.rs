@@ -145,7 +145,14 @@ pub async fn update_user(
     Json(req): Json<UpdateUserRequest>,
 ) -> Result<Json<UserResponse>> {
     let mut existing = state.users_service.find_by_id(id).await?;
-    if !user.has_role("admin") && existing.tenant_id != user.tenant_id {
+    // Editing another user requires the users:update permission; editing
+    // yourself is always allowed (self-service profile changes).
+    if id != user.user_id && !user.has_any_role(&["tenant_admin", "platform_admin", "admin"]) {
+        return Err(SenseiError::Forbidden(
+            "You may only edit your own profile. Administrators manage other users.".to_string(),
+        ));
+    }
+    if existing.tenant_id != user.tenant_id {
         return Err(SenseiError::NotFound(format!("User {id} not found")));
     }
 
@@ -206,13 +213,40 @@ pub async fn activate_user(
     Ok(Json(UserResponse::from(updated)))
 }
 
-/// Update a user's roles (admin only).
+/// Update a user's roles (admin only, with a grant ceiling).
+///
+/// The caller may only grant roles at or below their own scope:
+/// - platform_admin may grant tenant_admin + functional roles (and
+///   platform_admin only for break-glass scenarios, never the legacy
+///   wildcard `admin`).
+/// - tenant_admin may grant functional roles only — never platform_admin
+///   and never `admin` (no privilege escalation).
 pub async fn update_user_roles(
     user: AuthenticatedUser,
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
     Json(req): Json<UpdateRolesRequest>,
 ) -> Result<Json<UserResponse>> {
+    let is_platform = user.has_role("platform_admin");
+    let is_tenant_admin = user.has_any_role(&["tenant_admin", "admin"]);
+    if !is_platform && !is_tenant_admin {
+        return Err(SenseiError::Forbidden(
+            "Only tenant admins can update user roles".to_string(),
+        ));
+    }
+    for role in &req.roles {
+        if role == "admin" {
+            // The legacy wildcard role is never assignable via the API.
+            return Err(SenseiError::Forbidden(
+                "The 'admin' role cannot be assigned through the API".to_string(),
+            ));
+        }
+        if role == "platform_admin" && !is_platform {
+            return Err(SenseiError::Forbidden(
+                "Only a platform admin can grant the platform_admin role".to_string(),
+            ));
+        }
+    }
     if !user.has_any_role(&["tenant_admin", "platform_admin", "admin"]) {
         return Err(SenseiError::Forbidden(
             "Only tenant admins can update user roles".to_string(),
@@ -262,6 +296,7 @@ mod tests {
             user_id,
             tenant_id,
             roles: vec!["admin".to_string()],
+            sid: None,
         }
     }
 
@@ -367,8 +402,20 @@ mod tests {
     async fn test_update_user_roles() {
         let (state, tenant_id, user_id) = test_state().await;
         let user = admin_user(tenant_id, user_id);
+        // The legacy wildcard "admin" role is NEVER assignable via the API
+        // (role ceiling) — this must fail closed with 403.
         let req = UpdateRolesRequest {
             roles: vec!["admin".to_string(), "quality_manager".to_string()],
+        };
+        let err = update_user_roles(user, State(state.clone()), Path(user_id), Json(req))
+            .await
+            .unwrap_err();
+        assert!(matches!(err, SenseiError::Forbidden(_)));
+
+        // Granting only functional roles succeeds.
+        let user = admin_user(tenant_id, user_id);
+        let req = UpdateRolesRequest {
+            roles: vec!["quality_manager".to_string()],
         };
         let resp = update_user_roles(user, State(state.clone()), Path(user_id), Json(req))
             .await

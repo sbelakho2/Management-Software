@@ -8,7 +8,7 @@
 //! Queries real aggregate data from the database when a pool is available.
 /// Falls back to empty results with a warning when no pool is configured.
 use crate::error::{Result, WorkerError};
-use crate::task::{IdempotencyGuard, TaskConsumer, TaskMetadata, TaskOutcome};
+use crate::task::{ClaimOutcome, IdempotencyGuard, TaskConsumer, TaskMetadata, TaskOutcome};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
@@ -693,8 +693,15 @@ impl TaskConsumer for AnalyticsWorker {
         // A redelivered message is skipped.
         let task_id_str = metadata.task_id.to_string();
         match self.idempotency.try_claim(&task_id_str).await {
-            Ok(true) => {}
-            Ok(false) => {
+            Ok(ClaimOutcome::Proceed) => {}
+            Ok(ClaimOutcome::Busy) => {
+                // Another replica holds a live lease; back off. The
+                // redelivery re-claims once the lease expires.
+                return Err(WorkerError::RetryLater(
+                    "idempotency lease busy; retrying".to_string(),
+                ));
+            }
+            Ok(ClaimOutcome::AlreadyCompleted) => {
                 info!(
                     task_id = %metadata.task_id,
                     "Analytics task already processed — skipping (idempotent)"
@@ -717,6 +724,7 @@ impl TaskConsumer for AnalyticsWorker {
                     domain_count = snapshot.domains.len(),
                     "Daily analytics snapshot completed"
                 );
+                self.idempotency.mark_completed(&task_id_str).await?;
                 Ok(TaskOutcome::Completed)
             }
             crate::task::TaskType::ComputeWarehouseKpis => {
@@ -726,6 +734,7 @@ impl TaskConsumer for AnalyticsWorker {
                     kpi_count = kpis.len(),
                     "Warehouse KPI computation completed"
                 );
+                self.idempotency.mark_completed(&task_id_str).await?;
                 Ok(TaskOutcome::Completed)
             }
             _ => Err(WorkerError::Processing(format!(
@@ -742,7 +751,10 @@ pub struct SnapshotWorker {
 }
 
 impl SnapshotWorker {
-    pub fn new() -> Self {
+    /// TEST-ONLY constructor: no database (empty/placeholder analytics).
+    /// Production code must use [`Self::with_pool`].
+    #[cfg(test)]
+    pub fn in_memory() -> Self {
         Self {
             inner: AnalyticsWorker::new(),
         }
@@ -752,12 +764,6 @@ impl SnapshotWorker {
         Self {
             inner: AnalyticsWorker::with_pool(pool),
         }
-    }
-}
-
-impl Default for SnapshotWorker {
-    fn default() -> Self {
-        Self::new()
     }
 }
 
@@ -782,7 +788,10 @@ pub struct KpiWorker {
 }
 
 impl KpiWorker {
-    pub fn new() -> Self {
+    /// TEST-ONLY constructor: no database. Production code must use
+    /// [`Self::with_pool`].
+    #[cfg(test)]
+    pub fn in_memory() -> Self {
         Self {
             inner: AnalyticsWorker::new(),
         }
@@ -792,12 +801,6 @@ impl KpiWorker {
         Self {
             inner: AnalyticsWorker::with_pool(pool),
         }
-    }
-}
-
-impl Default for KpiWorker {
-    fn default() -> Self {
-        Self::new()
     }
 }
 

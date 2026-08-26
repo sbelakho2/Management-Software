@@ -32,6 +32,7 @@ use std::any::Any;
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
+use std::time::Duration;
 
 use sensei_core::domain::events::DomainEvent;
 use sensei_core::types::{CorrelationId, EventId, Timestamp};
@@ -392,10 +393,55 @@ impl WebSocketManager {
     /// Subscribed subjects are `ws.user` and `ws.room` (normalized by the
     /// bus to `sensei.ws.user` / `sensei.ws.room`). Each manager instance
     /// uses its own consumer group so every replica receives every message.
+    /// Subscribe the realtime fanout EARLY during server startup and keep
+    /// it alive: a replica must receive cross-replica broadcasts even before
+    /// it has ever broadcast anything itself (a missed subscription window
+    /// would silently drop events for its local clients).
+    ///
+    /// The loop is SUPERVISED: on any subscription error it backs off
+    /// exponentially and re-subscribes — a transient NATS issue can never
+    /// permanently turn realtime off.
+    pub async fn start_fanout_subscription(&self) {
+        let mut delay = Duration::from_secs(1);
+        loop {
+            let Some(bus) = self
+                .event_bus
+                .read()
+                .expect("event bus lock poisoned")
+                .clone()
+            else {
+                tokio::time::sleep(Duration::from_secs(1)).await;
+                continue;
+            };
+
+            let group = (*self.instance_id).clone();
+            let handler = self.make_fanout_handler();
+            let user_ok = bus
+                .subscribe_with_group("ws.user", &group, handler.clone())
+                .await;
+            let room_ok = bus.subscribe_with_group("ws.room", &group, handler).await;
+
+            if user_ok.is_ok() && room_ok.is_ok() {
+                self.bus_attached.store(true, Ordering::SeqCst);
+                tracing::info!(group = %group, "Realtime fanout subscriptions active");
+                return;
+            }
+            tracing::warn!(
+                error = %user_ok.err().or(room_ok.err()).map(|e| e.to_string()).unwrap_or_default(),
+                retry_in_ms = delay.as_millis(),
+                "Realtime fanout subscription failed — retrying"
+            );
+            tokio::time::sleep(delay).await;
+            delay = (delay * 2).min(Duration::from_secs(60));
+        }
+    }
+
     async fn ensure_bus_subscribed(&self) {
         if self.bus_attached.load(Ordering::SeqCst) {
             return;
         }
+        // Safety net for tests that never called start_fanout_subscription:
+        // one best-effort attempt; the eager startup path is authoritative.
         let Some(bus) = self
             .event_bus
             .read()

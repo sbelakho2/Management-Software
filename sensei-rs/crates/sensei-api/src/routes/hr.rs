@@ -98,6 +98,8 @@ pub async fn list_employees(
     State(state): State<AppState>,
     Query(params): Query<ListEmployeesParams>,
 ) -> Result<Json<PaginatedResponse<Employee>>> {
+    user.require_permission("hr:employee:read")?;
+
     let tenant_id = user.tenant_id;
     let employees = state
         .hr_service
@@ -118,6 +120,8 @@ pub async fn create_employee(
     State(state): State<AppState>,
     Json(req): Json<Employee>,
 ) -> Result<Json<Employee>> {
+    user.require_permission("hr:employee:manage")?;
+
     let tenant_id = user.tenant_id;
     let employee = state.hr_service.create_employee(tenant_id, req).await?;
     Ok(Json(employee))
@@ -129,6 +133,8 @@ pub async fn get_employee(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<Employee>> {
+    user.require_permission("hr:employee:read")?;
+
     let tenant_id = user.tenant_id;
     let employee = state.hr_service.get_employee(tenant_id, id).await?;
     Ok(Json(employee))
@@ -141,6 +147,8 @@ pub async fn update_employee_status(
     Path(id): Path<Uuid>,
     Json(req): Json<UpdateEmployeeStatusRequest>,
 ) -> Result<Json<Employee>> {
+    user.require_permission("hr:employee:manage")?;
+
     let tenant_id = user.tenant_id;
     let employee = state
         .hr_service
@@ -157,6 +165,8 @@ pub async fn record_training(
     State(state): State<AppState>,
     Json(req): Json<TrainingRecord>,
 ) -> Result<Json<TrainingRecord>> {
+    user.require_permission("hr:training:manage")?;
+
     let tenant_id = user.tenant_id;
     let training = state.hr_service.record_training(tenant_id, req).await?;
     Ok(Json(training))
@@ -168,6 +178,8 @@ pub async fn list_training_records(
     State(state): State<AppState>,
     Query(params): Query<ListTrainingRecordsParams>,
 ) -> Result<Json<PaginatedResponse<TrainingRecord>>> {
+    user.require_permission("hr:training:manage")?;
+
     let tenant_id = user.tenant_id;
     let records = state
         .hr_service
@@ -181,6 +193,8 @@ pub async fn get_expired_certifications(
     user: AuthenticatedUser,
     State(state): State<AppState>,
 ) -> Result<Json<Vec<TrainingRecord>>> {
+    user.require_permission("hr:training:manage")?;
+
     let tenant_id = user.tenant_id;
     let records = state
         .hr_service
@@ -197,6 +211,8 @@ pub async fn submit_leave_request(
     State(state): State<AppState>,
     Json(req): Json<LeaveRequest>,
 ) -> Result<Json<LeaveRequest>> {
+    user.require_permission("hr:leave:self")?;
+
     let tenant_id = user.tenant_id;
     let leave = state
         .hr_service
@@ -215,6 +231,8 @@ pub async fn approve_leave(
     Path(id): Path<Uuid>,
     _req: Json<ApproveLeaveRequest>,
 ) -> Result<Json<LeaveRequest>> {
+    user.require_permission("hr:leave:approve")?;
+
     let tenant_id = user.tenant_id;
     let leave = state
         .hr_service
@@ -229,6 +247,8 @@ pub async fn reject_leave(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<LeaveRequest>> {
+    user.require_permission("hr:leave:approve")?;
+
     let tenant_id = user.tenant_id;
     let leave = state.hr_service.reject_leave(tenant_id, id).await?;
     Ok(Json(leave))
@@ -240,6 +260,8 @@ pub async fn list_leave_requests(
     State(state): State<AppState>,
     Query(params): Query<ListLeaveRequestsParams>,
 ) -> Result<Json<PaginatedResponse<LeaveRequest>>> {
+    user.require_permission("hr:employee:read")?;
+
     let tenant_id = user.tenant_id;
     let requests = state
         .hr_service
@@ -262,6 +284,8 @@ pub async fn create_review(
     State(state): State<AppState>,
     Json(req): Json<PerformanceReview>,
 ) -> Result<Json<PerformanceReview>> {
+    user.require_permission("hr:review:manage")?;
+
     let tenant_id = user.tenant_id;
     let review = state.hr_service.create_review(tenant_id, req).await?;
     Ok(Json(review))
@@ -273,6 +297,8 @@ pub async fn complete_review(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<PerformanceReview>> {
+    user.require_permission("hr:review:manage")?;
+
     let tenant_id = user.tenant_id;
     let review = state.hr_service.complete_review(tenant_id, id).await?;
     Ok(Json(review))
@@ -284,6 +310,8 @@ pub async fn list_reviews(
     State(state): State<AppState>,
     Query(params): Query<ListReviewsParams>,
 ) -> Result<Json<PaginatedResponse<PerformanceReview>>> {
+    user.require_permission("hr:review:manage")?;
+
     let tenant_id = user.tenant_id;
     let reviews = state
         .hr_service
@@ -300,6 +328,8 @@ pub async fn clock_in(
     State(state): State<AppState>,
     Json(req): Json<ClockInRequest>,
 ) -> Result<Json<Timecard>> {
+    user.require_permission("hr:timecard:self")?;
+
     let tenant_id = user.tenant_id;
     let timecard = state
         .hr_service
@@ -314,6 +344,8 @@ pub async fn clock_out(
     State(state): State<AppState>,
     Json(req): Json<ClockOutRequest>,
 ) -> Result<Json<Timecard>> {
+    user.require_permission("hr:timecard:self")?;
+
     let tenant_id = user.tenant_id;
     let timecard = state
         .hr_service
@@ -331,6 +363,8 @@ pub async fn update_employee(
     Path(id): Path<Uuid>,
     Json(req): Json<Employee>,
 ) -> Result<Json<Employee>> {
+    user.require_permission("hr:employee:manage")?;
+
     let tenant_id = user.tenant_id;
     let employee = state.hr_service.update_employee(tenant_id, id, req).await?;
     Ok(Json(employee))
@@ -342,6 +376,8 @@ pub async fn delete_employee(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<()>> {
+    user.require_permission("hr:employee:manage")?;
+
     let tenant_id = user.tenant_id;
     state.hr_service.delete_employee(tenant_id, id).await?;
     Ok(Json(()))
@@ -354,6 +390,8 @@ pub async fn update_training(
     Path(id): Path<Uuid>,
     Json(req): Json<TrainingRecord>,
 ) -> Result<Json<TrainingRecord>> {
+    user.require_permission("hr:training:manage")?;
+
     let tenant_id = user.tenant_id;
     let record = state.hr_service.update_training(tenant_id, id, req).await?;
     Ok(Json(record))
@@ -365,6 +403,8 @@ pub async fn delete_training(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<()>> {
+    user.require_permission("hr:training:manage")?;
+
     let tenant_id = user.tenant_id;
     state.hr_service.delete_training(tenant_id, id).await?;
     Ok(Json(()))
@@ -377,6 +417,8 @@ pub async fn update_leave(
     Path(id): Path<Uuid>,
     Json(req): Json<LeaveRequest>,
 ) -> Result<Json<LeaveRequest>> {
+    user.require_permission("hr:leave:self")?;
+
     let tenant_id = user.tenant_id;
     let leave = state.hr_service.update_leave(tenant_id, id, req).await?;
     Ok(Json(leave))
@@ -388,6 +430,8 @@ pub async fn delete_leave(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<()>> {
+    user.require_permission("hr:leave:self")?;
+
     let tenant_id = user.tenant_id;
     state.hr_service.delete_leave(tenant_id, id).await?;
     Ok(Json(()))
@@ -400,6 +444,8 @@ pub async fn update_review(
     Path(id): Path<Uuid>,
     Json(req): Json<PerformanceReview>,
 ) -> Result<Json<PerformanceReview>> {
+    user.require_permission("hr:review:manage")?;
+
     let tenant_id = user.tenant_id;
     let review = state.hr_service.update_review(tenant_id, id, req).await?;
     Ok(Json(review))
@@ -411,6 +457,8 @@ pub async fn delete_review(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<()>> {
+    user.require_permission("hr:review:manage")?;
+
     let tenant_id = user.tenant_id;
     state.hr_service.delete_review(tenant_id, id).await?;
     Ok(Json(()))
@@ -423,6 +471,8 @@ pub async fn update_timecard(
     Path(id): Path<Uuid>,
     Json(req): Json<Timecard>,
 ) -> Result<Json<Timecard>> {
+    user.require_permission("hr:timecard:manage")?;
+
     let tenant_id = user.tenant_id;
     let timecard = state.hr_service.update_timecard(tenant_id, id, req).await?;
     Ok(Json(timecard))
@@ -434,6 +484,8 @@ pub async fn list_timecards(
     State(state): State<AppState>,
     Query(params): Query<ListTimecardsParams>,
 ) -> Result<Json<PaginatedResponse<Timecard>>> {
+    user.require_permission("hr:timecard:self")?;
+
     let tenant_id = user.tenant_id;
     let timecards = state
         .hr_service

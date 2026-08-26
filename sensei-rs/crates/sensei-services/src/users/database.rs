@@ -333,10 +333,12 @@ impl UsersService for DatabaseUsersService {
         let result = sqlx::query_as::<_, UserModel>(
             "UPDATE users \
              SET name = $2, email = $3, password_hash = $4, roles = $5, \
-                 is_active = $6, updated_at = $7 \
-             WHERE id = $1 AND tenant_id = $8 \
+                 is_active = $6, credential_version = $7, \
+                 email_verified = CASE WHEN email <> $8 THEN false ELSE email_verified END, \
+                 updated_at = $9 \
+             WHERE id = $1 AND tenant_id = $10 \
              RETURNING id, tenant_id, email, name, password_hash, roles, \
-                       is_active, email_verified, last_login_at, created_at, updated_at",
+                       is_active, email_verified, credential_version, last_login_at, created_at, updated_at",
         )
         .bind(id)
         .bind(&model.name)
@@ -344,6 +346,8 @@ impl UsersService for DatabaseUsersService {
         .bind(&model.password_hash)
         .bind(&model.roles)
         .bind(model.is_active)
+        .bind(model.credential_version)
+        .bind(&model.email)
         .bind(now)
         .bind(caller_tenant_id)
         .fetch_optional(&self.pool)

@@ -74,6 +74,7 @@ pub use task::{
 };
 
 use async_nats::jetstream::Context;
+use sensei_services::storage::FileStorageService;
 use sqlx::PgPool;
 use std::sync::Arc;
 
@@ -81,7 +82,7 @@ use std::sync::Arc;
 /// `sensei-workers` binary). Owns the NATS URL, the optional database pool
 /// (enables task idempotency and scheduler leader election), and the
 /// stream name.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct WorkerContext {
     /// NATS connection URL, e.g. `"nats://localhost:4222"`.
     pub nats_url: String,
@@ -91,17 +92,27 @@ pub struct WorkerContext {
     /// deduplicate via `processed_tasks` and the scheduler uses
     /// `pg_try_advisory_lock` leader election.
     pub db_pool: Option<Arc<PgPool>>,
+    /// Shared file storage (S3/local): generated PDFs must be visible to
+    /// the API and every worker replica, never process-local memory.
+    pub storage: Arc<dyn FileStorageService>,
     /// Advisory-lock key used by the scheduler leader election.
     pub scheduler_lock_key: i64,
 }
 
 impl WorkerContext {
     /// Create a worker context for the given NATS URL.
+    ///
+    /// Storage defaults to a local-disk backend under `./worker-storage`
+    /// (never process memory — generated artifacts must be shared). Attach
+    /// S3 with [`Self::with_storage`] for production.
     pub fn new(nats_url: impl Into<String>) -> Self {
         Self {
             nats_url: nats_url.into(),
             stream_name: "sensei".to_string(),
             db_pool: None,
+            storage: Arc::new(sensei_services::storage::LocalStorageService::new(
+                "./worker-storage",
+            )),
             scheduler_lock_key: DEFAULT_SCHEDULER_LOCK_KEY,
         }
     }
@@ -109,6 +120,12 @@ impl WorkerContext {
     /// Attach a database pool (idempotency + leader election).
     pub fn with_db_pool(mut self, pool: Arc<PgPool>) -> Self {
         self.db_pool = Some(pool);
+        self
+    }
+
+    /// Attach the shared storage backend (S3/local).
+    pub fn with_storage(mut self, storage: Arc<dyn FileStorageService>) -> Self {
+        self.storage = storage;
         self
     }
 
@@ -131,8 +148,16 @@ impl WorkerContext {
         let pool = self.db_pool.clone();
         vec![
             Arc::new(email::EmailWorker::with_pool(pool.clone())),
-            Arc::new(pdf::A3PdfWorker::with_pool(js.clone(), pool.clone())),
-            Arc::new(pdf::QuotePdfWorker::with_pool(js.clone(), pool.clone())),
+            Arc::new(pdf::A3PdfWorker::with_deps(
+                js.clone(),
+                pool.clone(),
+                self.storage.clone(),
+            )),
+            Arc::new(pdf::QuotePdfWorker::with_deps(
+                js.clone(),
+                pool.clone(),
+                self.storage.clone(),
+            )),
             Arc::new(ml::TrainingWorker::with_pool(pool.clone())),
             Arc::new(ml::DriftCheckWorker::with_pool(pool.clone())),
             Arc::new(ml::ForceRetrainWorker::with_pool(pool.clone())),

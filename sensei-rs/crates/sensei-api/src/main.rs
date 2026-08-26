@@ -319,6 +319,17 @@ async fn main() {
     let event_bus = create_event_bus(&config.event_bus, &config.environment).await;
     let mut state = AppState::new(config.clone(), users_service).with_event_bus(event_bus);
 
+    // Eagerly (and with supervision) subscribe the realtime fanout BEFORE
+    // the HTTP listener starts: a replica must receive cross-replica WS/SSE
+    // broadcasts from the very first request, not only after it has
+    // broadcast something itself.
+    {
+        let ws_manager = state.ws_manager.clone();
+        tokio::spawn(async move {
+            ws_manager.start_fanout_subscription().await;
+        });
+    }
+
     // ── Connect to PostgreSQL if DATABASE_URL is set ──────────────
     let database_url = std::env::var("DATABASE_URL").unwrap_or_default();
     if database_url.is_empty() {

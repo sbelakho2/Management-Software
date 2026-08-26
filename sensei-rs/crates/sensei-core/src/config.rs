@@ -591,6 +591,11 @@ fn parse_env_bool(var: &str, default: bool) -> Result<bool, ConfigError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Mutex;
+
+    /// Tests that mutate SENSEI_ENV must not run concurrently (the process
+    /// environment is shared across parallel test threads).
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
 
     #[test]
     fn production_jwt_secret_must_be_present() {
@@ -718,6 +723,7 @@ mod tests {
 
     #[test]
     fn environment_from_env_defaults_to_development_when_unset() {
+        let _guard = ENV_LOCK.lock().unwrap();
         std::env::remove_var("SENSEI_ENV");
         assert_eq!(Environment::from_env().unwrap(), Environment::Development);
     }

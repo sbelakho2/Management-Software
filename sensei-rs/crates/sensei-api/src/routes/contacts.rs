@@ -225,6 +225,7 @@ mod tests {
             user_id,
             tenant_id,
             roles: vec!["admin".to_string()],
+            sid: None,
         }
     }
 

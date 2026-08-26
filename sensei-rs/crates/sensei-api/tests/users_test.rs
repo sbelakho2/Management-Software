@@ -99,11 +99,18 @@ async fn test_update_user_roles() {
     let token = app.login_as_admin().await;
     let user_id = app.admin_user_id;
 
+    // The legacy wildcard "admin" role is not assignable via the API
+    // (privilege-escalation ceiling): the request must be rejected 403.
     let body = serde_json::json!({ "roles": ["admin", "quality_manager"] });
+    let req = app.put_authenticated(&format!("/api/v1/users/{}/roles", user_id), &token, body);
+    let resp = app.send_request(req).await;
+    assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+
+    // Granting only functional roles succeeds.
+    let body = serde_json::json!({ "roles": ["quality_manager"] });
     let req = app.put_authenticated(&format!("/api/v1/users/{}/roles", user_id), &token, body);
     let mut resp = app.send_request(req).await;
     assert_eq!(resp.status(), StatusCode::OK);
-
     let json: Value = app.json_body(&mut resp).await;
     let roles: Vec<String> = serde_json::from_value(json["roles"].clone()).unwrap();
     assert!(roles.contains(&"quality_manager".to_string()));

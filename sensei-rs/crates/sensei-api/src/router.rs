@@ -1538,6 +1538,10 @@ pub fn build_router(state: AppState) -> Router {
             post(routes::attachments::upload_attachment),
         )
         .route(
+            "/api/v1/attachments/{id}/download",
+            get(routes::attachments::download_attachment),
+        )
+        .route(
             "/api/v1/attachments/{entity_type}/{entity_id}",
             get(routes::attachments::list_attachments),
         )
@@ -2095,8 +2099,12 @@ pub fn build_router(state: AppState) -> Router {
         .route_layer(middleware::from_fn_with_state(state.clone(), auth_layer));
 
     // ── Determine static files directory ────────────────────────────
-    let static_dir =
-        std::env::var("SENSEI_STATIC_DIR").unwrap_or_else(|_| "../frontend/public".to_string());
+    // The Leptos/Trunk build output (Docker: /app/static via STATIC_DIR;
+    // dev: the crate dist dir). The legacy HTML frontend was removed —
+    // there is exactly ONE frontend now.
+    let static_dir = std::env::var("SENSEI_STATIC_DIR")
+        .or_else(|_| std::env::var("STATIC_DIR"))
+        .unwrap_or_else(|_| "crates/sensei-frontend/dist".to_string());
 
     // ── Protected streaming routes (auth required, NO timeout) ──────
     // `chat_stream` is a long-lived SSE stream: like the real-time routes

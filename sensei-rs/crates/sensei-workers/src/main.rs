@@ -6,7 +6,7 @@
 //!
 //! # Startup sequence
 //!
-//! 1. Parse `--version` / `--help` (exits before any infrastructure).
+//! 1. Parse `--version` / `--help` / `--healthcheck` (exits before any infrastructure).
 //! 2. Load validated configuration via [`AppConfig::from_env`] — a
 //!    configuration error prints a clear message and exits with status 1.
 //! 3. Initialize structured logging (JSON in production, human-readable in
@@ -34,6 +34,8 @@ use sensei_workers::analytics::{KpiWorker, SnapshotWorker};
 use sensei_workers::email::{EmailWorker, SmtpConfig};
 use sensei_workers::ml::{DriftCheckWorker, ForceRetrainWorker, RetrainAllWorker, TrainingWorker};
 use sensei_workers::pdf::{A3PdfWorker, QuotePdfWorker};
+mod healthcheck;
+
 use sensei_workers::scheduler::TaskScheduler;
 use sensei_workers::task::{TaskConsumer, TaskDispatcher};
 use sqlx::PgPool;
@@ -107,6 +109,11 @@ fn main() {
     if args.iter().any(|a| a == "--help" || a == "-h") {
         print!("{USAGE}");
         return;
+    }
+    if args.iter().any(|a| a == "--healthcheck" || a == "--health") {
+        // Kubernetes exec probe: exits 0 when DB + NATS are reachable.
+        // Verifies REAL connectivity, not process existence.
+        std::process::exit(healthcheck::runtime_healthcheck());
     }
 
     let runtime = tokio::runtime::Builder::new_multi_thread()
@@ -217,7 +224,7 @@ async fn run() {
     let ctx = WorkerContext {
         js: js.clone(),
         pool: pool.clone(),
-        storage,
+        storage: storage.clone(),
         smtp,
     };
     for consumer in build_consumers(&ctx) {
@@ -420,16 +427,27 @@ fn build_consumers(ctx: &WorkerContext) -> Vec<Arc<dyn TaskConsumer>> {
         // Email — sends via SMTP from the shared context config.
         Arc::new(EmailWorker::with_config(ctx.smtp.clone())),
         // PDF generation — A3 reports and quotes (JetStream KV progress tracking).
-        Arc::new(A3PdfWorker::new(ctx.js.clone())),
-        Arc::new(QuotePdfWorker::new(ctx.js.clone())),
-        // ML — model training, drift checks, forced retrains.
-        Arc::new(TrainingWorker::new()),
-        Arc::new(DriftCheckWorker::new()),
-        Arc::new(ForceRetrainWorker::new()),
-        Arc::new(RetrainAllWorker::new()),
-        // Analytics — daily snapshots and warehouse KPIs.
-        Arc::new(SnapshotWorker::new()),
-        Arc::new(KpiWorker::new()),
+        // PDF generation — real storage (shared across replicas), task
+        // idempotency via the pool, and the JetStream KV for progress.
+        Arc::new(A3PdfWorker::with_deps(
+            ctx.js.clone(),
+            ctx.pool.clone(),
+            ctx.storage.clone(),
+        )),
+        Arc::new(QuotePdfWorker::with_deps(
+            ctx.js.clone(),
+            ctx.pool.clone(),
+            ctx.storage.clone(),
+        )),
+        // ML — model training, drift checks, forced retrains. The pool makes
+        // model state shared (never synthetic per-process calibration).
+        Arc::new(TrainingWorker::with_pool(ctx.pool.clone())),
+        Arc::new(DriftCheckWorker::with_pool(ctx.pool.clone())),
+        Arc::new(ForceRetrainWorker::with_pool(ctx.pool.clone())),
+        Arc::new(RetrainAllWorker::with_pool(ctx.pool.clone())),
+        // Analytics — daily snapshots and warehouse KPIs (DB-backed).
+        Arc::new(SnapshotWorker::with_pool(ctx.pool.clone())),
+        Arc::new(KpiWorker::with_pool(ctx.pool.clone())),
     ]
 }
 

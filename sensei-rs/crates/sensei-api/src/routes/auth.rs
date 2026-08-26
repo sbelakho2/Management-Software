@@ -47,11 +47,29 @@ pub struct LoginResponse {
     pub access_token: String,
     /// Token type (always "Bearer").
     pub token_type: String,
-    /// JWT refresh token.
+    /// JWT refresh token. Present in the default (JSON) mode only — in
+    /// cookie mode the refresh token travels exclusively in the HttpOnly
+    /// cookie and is NEVER serialized into JavaScript-readable JSON.
+    #[serde(skip_serializing_if = "String::is_empty")]
     pub refresh_token: String,
+    /// Access-token lifetime in seconds.
+    pub expires_in: i64,
     /// User ID.
     pub user_id: Uuid,
     /// User roles.
+    pub roles: Vec<String>,
+}
+
+/// Cookie-mode login/refresh response body.
+///
+/// The refresh token is NOT included — it exists only in the HttpOnly
+/// cookie, so an XSS cannot exfiltrate it from JavaScript.
+#[derive(Debug, Serialize)]
+pub struct CookieLoginResponse {
+    pub access_token: String,
+    pub token_type: String,
+    pub expires_in: i64,
+    pub user_id: Uuid,
     pub roles: Vec<String>,
 }
 
@@ -249,13 +267,23 @@ fn wants_cookie(headers: &HeaderMap) -> bool {
 }
 
 /// Set the HttpOnly refresh cookie on the response.
+///
+/// The cookie is scoped to `/api/v1/auth` (only the refresh/logout
+/// endpoints need it) and carries `Secure` in production so it can never
+/// travel over plain HTTP.
 fn set_refresh_cookie(response: &mut axum::response::Response, token: &str) {
     use axum::http::header::{HeaderValue, SET_COOKIE};
+    let secure = if std::env::var("SENSEI_ENV").unwrap_or_default() == "production" {
+        "; Secure"
+    } else {
+        ""
+    };
     let cookie = format!(
-        "{name}={token}; Path=/; HttpOnly; SameSite=Strict; Max-Age={max_age}",
+        "{name}={token}; Path=/api/v1/auth; HttpOnly; SameSite=Strict; Max-Age={max_age}{secure}",
         name = REFRESH_COOKIE_NAME,
         token = token,
         max_age = REFRESH_COOKIE_MAX_AGE_SECS,
+        secure = secure,
     );
     if let Ok(value) = HeaderValue::from_str(&cookie) {
         response.headers_mut().append(SET_COOKIE, value);
@@ -309,20 +337,25 @@ fn fingerprint_for_request(
 
 /// Issue a fresh token pair for a user, storing the refresh token in the
 /// refresh-token store so rotation and reuse detection can be enforced.
-async fn issue_token_pair(state: &AppState, user: &User, family_id: Uuid) -> Result<LoginResponse> {
+async fn issue_token_pair(
+    state: &AppState,
+    user: &User,
+    family_id: Uuid,
+    sid: Uuid,
+) -> Result<LoginResponse> {
     let user_id = user.id;
     let tenant_id = user.tenant_id;
     let roles = user.roles.clone();
 
     let access_token = state
         .jwt_service
-        .issue_access_token(user_id, tenant_id, roles.clone())
+        .issue_access_token(user_id, tenant_id, sid, roles.clone())
         .map_err(|e| SenseiError::TokenError(e.to_string()))?;
 
     let credential_version = credential_version_of(user);
     let refresh_token = state
         .jwt_service
-        .issue_refresh_token(user_id, tenant_id, family_id, credential_version)
+        .issue_refresh_token(user_id, tenant_id, family_id, credential_version, sid)
         .map_err(|e| SenseiError::TokenError(e.to_string()))?;
 
     let expires_at = Utc::now() + Duration::days(state.config.auth.refresh_token_expiry_days);
@@ -342,6 +375,7 @@ async fn issue_token_pair(state: &AppState, user: &User, family_id: Uuid) -> Res
         access_token,
         token_type: "Bearer".to_string(),
         refresh_token,
+        expires_in: state.config.auth.access_token_expiry_minutes * 60,
         user_id,
         roles,
     })
@@ -380,20 +414,34 @@ pub async fn login(
         .await?;
 
     let family_id = new_id();
-    let response = issue_token_pair(&state, &user, family_id).await?;
+    let sid = new_id();
+    let response = issue_token_pair(&state, &user, family_id, sid).await?;
 
-    // Bind the session to this client's fingerprint.
+    // Bind this session (sid) to the client's fingerprint.
     let fingerprint = fingerprint_for_request(peer, &headers, &state);
     state
         .session_store
-        .register(&user.id.to_string(), fingerprint)
+        .register(
+            &sid.to_string(),
+            &user.id.to_string(),
+            user.tenant_id,
+            fingerprint,
+        )
         .await;
 
-    // Optional HttpOnly cookie persistence for the legacy frontend: the
-    // refresh token never touches localStorage or JavaScript.
+    // Optional HttpOnly cookie persistence: the refresh token NEVER
+    // touches localStorage or JavaScript — it is not even present in the
+    // JSON response body in cookie mode.
     if wants_cookie(&headers) {
         let refresh_token = response.refresh_token.clone();
-        let mut resp = Json(response).into_response();
+        let cookie_body = CookieLoginResponse {
+            access_token: response.access_token.clone(),
+            token_type: response.token_type.clone(),
+            expires_in: response.expires_in,
+            user_id: response.user_id,
+            roles: response.roles.clone(),
+        };
+        let mut resp = Json(cookie_body).into_response();
         set_refresh_cookie(&mut resp, &refresh_token);
         return Ok(resp);
     }
@@ -427,6 +475,9 @@ pub async fn refresh(
         .map_err(|_| SenseiError::Unauthorized("Invalid or expired refresh token".to_string()))?;
 
     let family_id = claims.family_id;
+    // Every refresh starts a NEW session (the old sid is retired when the
+    // old access token expires); one user may hold many concurrent sessions.
+    let sid = new_id();
     let new_expires = Utc::now() + Duration::days(state.config.auth.refresh_token_expiry_days);
     let new_refresh_token = state
         .jwt_service
@@ -435,6 +486,7 @@ pub async fn refresh(
             claims.tenant_id,
             family_id,
             claims.credential_version,
+            sid,
         )
         .map_err(|e| SenseiError::TokenError(e.to_string()))?;
 
@@ -471,26 +523,39 @@ pub async fn refresh(
     let roles = user.roles;
     let access_token = state
         .jwt_service
-        .issue_access_token(claims.sub, claims.tenant_id, roles.clone())
+        .issue_access_token(claims.sub, claims.tenant_id, sid, roles.clone())
         .map_err(|e| SenseiError::TokenError(e.to_string()))?;
 
-    // Re-bind the session to the current client fingerprint.
+    // Bind the NEW session to the current client fingerprint.
     let fingerprint = fingerprint_for_request(peer, &headers, &state);
     state
         .session_store
-        .register(&claims.sub.to_string(), fingerprint)
+        .register(
+            &sid.to_string(),
+            &claims.sub.to_string(),
+            claims.tenant_id,
+            fingerprint,
+        )
         .await;
 
     let response = LoginResponse {
         access_token,
         token_type: "Bearer".to_string(),
         refresh_token: new_refresh_token,
+        expires_in: state.config.auth.access_token_expiry_minutes * 60,
         user_id: claims.sub,
         roles,
     };
     if wants_cookie(&headers) {
         let refresh_token = response.refresh_token.clone();
-        let mut resp = Json(response).into_response();
+        let cookie_body = CookieLoginResponse {
+            access_token: response.access_token.clone(),
+            token_type: response.token_type.clone(),
+            expires_in: response.expires_in,
+            user_id: response.user_id,
+            roles: response.roles.clone(),
+        };
+        let mut resp = Json(cookie_body).into_response();
         set_refresh_cookie(&mut resp, &refresh_token);
         return Ok(resp);
     }
@@ -504,6 +569,21 @@ pub async fn register(
     headers: HeaderMap,
     Json(req): Json<RegisterRequest>,
 ) -> Result<axum::response::Response> {
+    // Explicit product decision (SELF_REGISTRATION_ENABLED): Sensei is an
+    // enterprise manufacturing platform — public self-registration defaults
+    // OFF in production (platform admins create tenants and invite users).
+    let self_registration = std::env::var("SELF_REGISTRATION_ENABLED")
+        .map(|v| v == "true" || v == "1")
+        .unwrap_or_else(|_| {
+            // Default: allowed in development, disabled in production.
+            !state.config.environment.is_prod()
+        });
+    if !self_registration {
+        return Err(SenseiError::Forbidden(
+            "Self-registration is disabled. Contact a platform administrator to create your tenant.".to_string(),
+        ));
+    }
+
     // Validate password strength
     validate_password_strength(&req.password)?;
 
@@ -529,20 +609,34 @@ pub async fn register(
         .await?;
 
     let family_id = new_id();
-    let response = issue_token_pair(&state, &user, family_id).await?;
+    let sid = new_id();
+    let response = issue_token_pair(&state, &user, family_id, sid).await?;
 
-    // Bind the session to this client's fingerprint.
+    // Bind this session (sid) to the client's fingerprint.
     let fingerprint = fingerprint_for_request(peer, &headers, &state);
     state
         .session_store
-        .register(&user.id.to_string(), fingerprint)
+        .register(
+            &sid.to_string(),
+            &user.id.to_string(),
+            user.tenant_id,
+            fingerprint,
+        )
         .await;
 
-    // Optional HttpOnly cookie persistence for the legacy frontend: the
-    // refresh token never touches localStorage or JavaScript.
+    // Optional HttpOnly cookie persistence: the refresh token NEVER
+    // touches localStorage or JavaScript — it is not even present in the
+    // JSON response body in cookie mode.
     if wants_cookie(&headers) {
         let refresh_token = response.refresh_token.clone();
-        let mut resp = Json(response).into_response();
+        let cookie_body = CookieLoginResponse {
+            access_token: response.access_token.clone(),
+            token_type: response.token_type.clone(),
+            expires_in: response.expires_in,
+            user_id: response.user_id,
+            roles: response.roles.clone(),
+        };
+        let mut resp = Json(cookie_body).into_response();
         set_refresh_cookie(&mut resp, &refresh_token);
         return Ok(resp);
     }
@@ -566,8 +660,21 @@ pub async fn logout(
         state.token_blacklist.insert(entry).await;
     }
 
-    // Drop the session binding: the client must log in again.
-    state.session_store.remove(&user.user_id.to_string()).await;
+    // Revoke the current session binding (this device).
+    if let Some(sid) = user.sid {
+        state.session_store.revoke_session(&sid.to_string()).await;
+    }
+    // `X-Logout-All: true` revokes every device.
+    if headers
+        .get("x-logout-all")
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|v| v.eq_ignore_ascii_case("true"))
+    {
+        state
+            .session_store
+            .revoke_all_for_user(&user.user_id.to_string())
+            .await;
+    }
 
     // Revoke the user's refresh families: a logged-out refresh token must
     // not be able to mint new access tokens.
@@ -674,6 +781,12 @@ pub async fn change_password(
     {
         tracing::warn!(error = ?e, user_id = %user.user_id, "Failed to revoke sessions after password change");
     }
+    // Revoke every session binding (all devices) — the old password must
+    // not keep any session alive.
+    state
+        .session_store
+        .revoke_all_for_user(&user.user_id.to_string())
+        .await;
 
     Ok(Json(MessageResponse {
         message: "Password changed successfully".to_string(),
@@ -742,11 +855,20 @@ pub async fn confirm_password_reset(
     State(state): State<AppState>,
     Json(req): Json<PasswordResetConfirmRequest>,
 ) -> Result<Json<MessageResponse>> {
-    let stored = state
-        .password_reset_store
-        .consume(&req.token)
-        .await
-        .ok_or_else(|| SenseiError::Unauthorized("Invalid or expired reset token".to_string()))?;
+    let stored = match state.password_reset_store.consume(&req.token).await {
+        Ok(Some(record)) => record,
+        Ok(None) => {
+            return Err(SenseiError::Unauthorized(
+                "Invalid or expired reset token".to_string(),
+            ));
+        }
+        Err(e) => {
+            tracing::error!(error = %e, "Reset-token consume failed");
+            return Err(SenseiError::Internal(
+                "Unable to validate the reset token right now".to_string(),
+            ));
+        }
+    };
 
     if stored.expires_at < now() {
         return Err(SenseiError::Unauthorized(
@@ -777,6 +899,11 @@ pub async fn confirm_password_reset(
     {
         tracing::warn!(error = ?e, user_id = %stored.user_id, "Failed to revoke sessions after password reset");
     }
+    // Revoke every session binding (all devices).
+    state
+        .session_store
+        .revoke_all_for_user(&stored.user_id.to_string())
+        .await;
 
     Ok(Json(MessageResponse {
         message: "Password has been reset successfully".to_string(),
@@ -860,13 +987,20 @@ pub async fn confirm_email_verification(
     State(state): State<AppState>,
     Json(req): Json<VerifyEmailConfirmRequest>,
 ) -> Result<Json<MessageResponse>> {
-    let stored = state
-        .email_verification_store
-        .consume(&req.token)
-        .await
-        .ok_or_else(|| {
-            SenseiError::Unauthorized("Invalid or expired verification token".to_string())
-        })?;
+    let stored = match state.email_verification_store.consume(&req.token).await {
+        Ok(Some(record)) => record,
+        Ok(None) => {
+            return Err(SenseiError::Unauthorized(
+                "Invalid or expired verification token".to_string(),
+            ));
+        }
+        Err(e) => {
+            tracing::error!(error = %e, "Verification-token consume failed");
+            return Err(SenseiError::Internal(
+                "Unable to validate the verification token right now".to_string(),
+            ));
+        }
+    };
 
     if stored.expires_at < now() {
         return Err(SenseiError::Unauthorized(
@@ -935,6 +1069,7 @@ mod tests {
             user_id,
             tenant_id,
             roles: vec!["admin".to_string()],
+            sid: None,
         }
     }
 
@@ -966,7 +1101,12 @@ mod tests {
         assert!(!resp.refresh_token.is_empty());
         assert!(resp.roles.contains(&"user".to_string()));
 
-        // The refresh token must be registered for rotation.
+        // The refresh token must be registered for rotation, and the
+        // session binding must exist under the access token's sid.
+        let claims = state
+            .jwt_service
+            .validate_access_token(&resp.access_token)
+            .unwrap();
         let user = state
             .users_service
             .find_by_email("admin@test.com")
@@ -975,7 +1115,7 @@ mod tests {
         let fp = state
             .session_store
             .verify(
-                &user.id.to_string(),
+                &claims.sid.to_string(),
                 &session_fingerprint(
                     Some(SocketAddr::from(([127, 0, 0, 1], 9999)).ip()),
                     None,
@@ -983,8 +1123,10 @@ mod tests {
                     &state.config.security.trusted_proxies,
                 ),
             )
-            .await;
+            .await
+            .unwrap();
         assert_eq!(fp, crate::middleware::session::SessionResult::Matches);
+        let _ = user;
     }
 
     #[tokio::test]

@@ -69,6 +69,12 @@ pub trait EventBus: Send + Sync {
     /// Check if the bus is connected.
     fn is_connected(&self) -> bool;
 
+    /// Perform a real broker round-trip (default: assumed healthy for the
+    /// in-memory bus; NATS overrides with a JetStream publish-ack probe).
+    async fn probe(&self) -> bool {
+        true
+    }
+
     /// Disconnect from the bus.
     async fn disconnect(&self) -> Result<()>;
 }
@@ -189,9 +195,15 @@ impl EventBus for NatsEventBus {
         let data = serde_json::to_vec(&envelope)
             .map_err(|e| EventBusError::SerializationFailed(e.to_string()))?;
 
-        js.publish(subject, data.into())
+        // JetStream publish is two-stage: the first await only hands back
+        // the server-acknowledgement future; the message is NOT durably
+        // accepted until the second await completes.
+        let ack = js
+            .publish(subject, data.into())
             .await
             .map_err(|e| EventBusError::PublishFailed(e.to_string()))?;
+        ack.await
+            .map_err(|e| EventBusError::PublishFailed(format!("server ack failed: {e}")))?;
 
         info!(event_type = event.event_type(), "Published event to NATS");
         Ok(())
@@ -268,7 +280,30 @@ impl EventBus for NatsEventBus {
     }
 
     fn is_connected(&self) -> bool {
+        // Presence of the client object alone is not evidence the broker is
+        // currently reachable — the readiness handler performs a real
+        // JetStream round-trip probe (see check_event_bus in the API).
         self.client.try_read().map(|c| c.is_some()).unwrap_or(false)
+    }
+
+    /// Perform a real broker round-trip: publish to the health subject and
+    /// await the JetStream server acknowledgement with a short timeout.
+    async fn probe(&self) -> bool {
+        let Some(js) = self.jetstream.try_read().ok().and_then(|j| j.clone()) else {
+            return false;
+        };
+        match tokio::time::timeout(
+            std::time::Duration::from_secs(3),
+            js.publish("sensei.health".to_string(), "ok".into()),
+        )
+        .await
+        {
+            Ok(Ok(ack)) => tokio::time::timeout(std::time::Duration::from_secs(3), ack)
+                .await
+                .map(|r| r.is_ok())
+                .unwrap_or(false),
+            _ => false,
+        }
     }
 
     async fn disconnect(&self) -> Result<()> {

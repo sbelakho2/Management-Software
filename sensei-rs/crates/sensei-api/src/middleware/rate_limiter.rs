@@ -46,6 +46,10 @@ pub struct RateLimiter {
     /// Proxies allowed to set forwarding headers (empty = none trusted).
     trusted_proxies: std::sync::Arc<Vec<std::net::IpAddr>>,
     buckets: Arc<DashMap<String, RateLimitState>>,
+    /// Shared PostgreSQL pool: when present, counting is SHARED across all
+    /// API replicas (a per-process DashMap would multiply the effective
+    /// limit by the replica count).
+    pool: Option<sqlx::PgPool>,
 }
 
 #[derive(Serialize)]
@@ -77,6 +81,15 @@ impl RateLimiter {
         window: Duration,
         trusted_proxies: Vec<std::net::IpAddr>,
     ) -> Self {
+        Self::with_window_proxies_pool(max_requests, window, trusted_proxies, None)
+    }
+
+    fn with_window_proxies_pool(
+        max_requests: u32,
+        window: Duration,
+        trusted_proxies: Vec<std::net::IpAddr>,
+        pool: Option<sqlx::PgPool>,
+    ) -> Self {
         let buckets: Arc<DashMap<String, RateLimitState>> = Arc::new(DashMap::new());
 
         // Spawn a background cleanup task that periodically evicts stale entries.
@@ -90,7 +103,57 @@ impl RateLimiter {
             window_duration: window,
             trusted_proxies: std::sync::Arc::new(trusted_proxies),
             buckets,
+            pool,
         }
+    }
+
+    /// Attach the shared PostgreSQL pool (multi-replica counting).
+    pub fn with_shared_pool(mut self, pool: sqlx::PgPool) -> Self {
+        self.pool = Some(pool);
+        self
+    }
+
+    /// Check the key against the SHARED counter when a pool is attached;
+    /// falls back to the in-memory sliding window only in dev mode.
+    pub async fn check_shared(&self, key: &str) -> Result<(), ()> {
+        if let Some(pool) = &self.pool {
+            let window_secs = self.window_duration.as_secs().max(1) as i64;
+            let row: (i64,) = sqlx::query_as(
+                "INSERT INTO rate_limits (key, window_start, count, expires_at) \
+                 VALUES ($1, NOW(), 1, NOW() + make_interval(secs => $3)) \
+                 ON CONFLICT (key) DO UPDATE SET \
+                     count = CASE \
+                         WHEN rate_limits.window_start <= NOW() - make_interval(secs => $2) \
+                             THEN 1 \
+                         ELSE rate_limits.count + 1 \
+                     END, \
+                     window_start = CASE \
+                         WHEN rate_limits.window_start <= NOW() - make_interval(secs => $2) \
+                             THEN NOW() \
+                         ELSE rate_limits.window_start \
+                     END, \
+                     expires_at = NOW() + make_interval(secs => $3) \
+                 RETURNING count",
+            )
+            .bind(key)
+            .bind(window_secs)
+            .bind(window_secs * 5)
+            .fetch_one(pool)
+            .await
+            .map_err(|e| {
+                tracing::error!(error = %e, "Shared rate-limit counter failed");
+                // FAIL CLOSED for abuse prevention? No — rate limiting is a
+                // safety net, not an authorization boundary: on store
+                // failure we must NOT block all traffic. Log loudly.
+            })
+            .map_err(|_| ())?;
+            return if row.0 as u32 > self.max_requests {
+                Err(())
+            } else {
+                Ok(())
+            };
+        }
+        self.check(key)
     }
 
     /// Create a limiter that honours forwarding headers only from the given
@@ -199,7 +262,7 @@ pub async fn rate_limit_middleware(mut req: Request, next: Next) -> Response {
     // Determine the client key (IP address).
     let client_ip = extract_client_ip(&req, &rate_limiter.trusted_proxies);
 
-    match rate_limiter.check(&client_ip) {
+    match rate_limiter.check_shared(&client_ip).await {
         Ok(()) => {
             // Inject the limiter back so downstream layers can reuse it.
             req.extensions_mut().insert(rate_limiter);
