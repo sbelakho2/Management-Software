@@ -17,7 +17,9 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::state::AppState;
-use crate::stores::{LswAudit, LswAuditResult, LswChecklistItem, LswFrequency, LswStandard};
+use crate::stores::{
+    LswAudit, LswAuditResult, LswChecklistItem, LswFrequency, LswOccurrence, LswStandard,
+};
 
 // ── Query / Request DTOs ───────────────────────────────────────────────────
 
@@ -65,6 +67,18 @@ pub struct PerformAuditRequest {
     pub results: Vec<LswAuditResult>,
     pub notes: Option<String>,
     pub audited_at: Option<DateTime<Utc>>,
+    /// The scheduled occurrence this audit executes.
+    pub occurrence_id: Option<Uuid>,
+}
+
+/// The standard's CURRENT revision (the occurrence must match it).
+async fn standard_occurrence_revision(state: &AppState, tenant_id: Uuid, standard_id: Uuid) -> i32 {
+    let store = state.lsw_standards.read(tenant_id).await;
+    store
+        .values()
+        .find(|s| s.id == standard_id && s.tenant_id == tenant_id)
+        .map(|s| s.revision)
+        .unwrap_or(0)
 }
 
 /// Dashboard query parameters.
@@ -165,6 +179,7 @@ pub async fn create_lsw_standard(
     let now = Utc::now();
     let standard = LswStandard {
         id: new_id(),
+        revision: 1,
         tenant_id,
         title: req.title,
         area: req.area,
@@ -260,9 +275,58 @@ pub async fn delete_lsw_standard(
     Ok(Json(()))
 }
 
+/// Request to schedule an LSW occurrence.
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct ScheduleOccurrenceRequest {
+    pub due_at: DateTime<Utc>,
+    pub assigned_leader: Uuid,
+}
+
+/// Schedule an LSW occurrence for a standard (server owns the lifecycle:
+/// scheduled_at/started_at/completed_at/leader).
+pub async fn schedule_occurrence(
+    user: AuthenticatedUser,
+    State(state): State<AppState>,
+    Path(standard_id): Path<Uuid>,
+    Json(req): Json<ScheduleOccurrenceRequest>,
+) -> Result<Json<LswOccurrence>> {
+    user.require_permission("tps:lsw:manage")?;
+    let tenant_id = user.tenant_id;
+    let standard = {
+        let store = state.lsw_standards.read(user.tenant_id).await;
+        store
+            .values()
+            .find(|s| s.id == standard_id && s.tenant_id == tenant_id)
+            .cloned()
+            .ok_or_else(|| SenseiError::NotFound(format!("LSW standard {standard_id} not found")))?
+    };
+    let now = Utc::now();
+    let occurrence = LswOccurrence {
+        id: new_id(),
+        standard_id,
+        tenant_id,
+        checklist_revision: standard.revision,
+        due_at: req.due_at,
+        assigned_leader: req.assigned_leader,
+        area: standard.area.clone(),
+        layer: standard.layer,
+        status: "scheduled".to_string(),
+        scheduled_at: now,
+        started_at: None,
+        completed_at: None,
+    };
+    let mut store = state.lsw_occurrences.write(tenant_id).await;
+    store.insert(occurrence.id, occurrence.clone());
+    store.persist().await?;
+    Ok(Json(occurrence))
+}
+
 // ── Audit Handlers ─────────────────────────────────────────────────────────
 
 /// Perform an audit (checklist) against an LSW standard.
+///
+/// Audits execute a SCHEDULED OCCURRENCE (server-owned lifecycle): the
+/// client supplies the occurrence id, never the timestamps or leader.
 pub async fn perform_audit(
     user: AuthenticatedUser,
     State(state): State<AppState>,
@@ -271,6 +335,42 @@ pub async fn perform_audit(
 ) -> Result<Json<LswAudit>> {
     user.require_permission("tps:lsw:execute")?;
     let tenant_id = user.tenant_id;
+
+    // Resolve the occurrence: it must exist, belong to this standard, be
+    // scheduled/in_progress, and carry the CURRENT checklist revision.
+    let occurrence_id = req
+        .occurrence_id
+        .ok_or_else(|| SenseiError::Validation("An occurrence_id is required".to_string()))?;
+    {
+        let mut store = state.lsw_occurrences.write(user.tenant_id).await;
+        let occurrence = store
+            .get_mut(&occurrence_id)
+            .filter(|o| o.tenant_id == tenant_id && o.standard_id == standard_id)
+            .ok_or_else(|| {
+                SenseiError::NotFound(format!("LSW occurrence {occurrence_id} not found"))
+            })?;
+        if occurrence.status == "completed" {
+            return Err(SenseiError::Conflict(
+                "This LSW occurrence is already completed".to_string(),
+            ));
+        }
+        let now = Utc::now();
+        if occurrence.started_at.is_none() {
+            occurrence.started_at = Some(now);
+        }
+        occurrence.status = "in_progress".to_string();
+        let checked_revision = occurrence.checklist_revision;
+        store.persist().await?;
+        // The checklist revision the occurrence executes must match the
+        // standard's revision (a stale checklist cannot be audited).
+        if checked_revision != standard_occurrence_revision(&state, tenant_id, standard_id).await {
+            return Err(SenseiError::Conflict(
+                "The occurrence's checklist revision is stale — schedule a new occurrence"
+                    .to_string(),
+            ));
+        }
+    }
+
     // Verify standard exists
     let standard = {
         let store = state.lsw_standards.read(user.tenant_id).await;
@@ -335,6 +435,16 @@ pub async fn perform_audit(
     let mut store = state.lsw_audits.write(user.tenant_id).await;
     store.insert(audit.id, audit.clone());
     store.persist().await?;
+
+    // The occurrence is COMPLETED by this audit (server-owned timestamps).
+    {
+        let mut occ = state.lsw_occurrences.write(user.tenant_id).await;
+        if let Some(o) = occ.get_mut(&occurrence_id) {
+            o.status = "completed".to_string();
+            o.completed_at = Some(Utc::now());
+        }
+        occ.persist().await?;
+    }
     Ok(Json(audit))
 }
 

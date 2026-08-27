@@ -56,6 +56,7 @@ use dashmap::DashMap;
 use uuid::Uuid;
 
 use crate::attachment_repository::AttachmentRepository;
+use crate::db_stores::EntityStore;
 use crate::middleware::audit::AuditLog;
 use crate::middleware::rate_limiter::RateLimiter;
 use crate::middleware::session::SessionStore;
@@ -488,6 +489,8 @@ pub struct AppState {
     pub lsw_standards: stores::LswStandardStore,
     /// LSW audits entity store.
     pub lsw_audits: stores::LswAuditStore,
+    /// Scheduled LSW occurrences (server-owned lifecycle).
+    pub lsw_occurrences: EntityStore<crate::stores::LswOccurrence>,
     // ── Notification Trigger stores ─────────────────────────────────────
     /// Notification triggers entity store.
     pub notification_triggers: stores::NotificationTriggerStore,
@@ -638,6 +641,7 @@ impl AppState {
         let kpi_values = stores::new_store!("kpi_value");
         let lsw_standards = stores::new_store!("lsw_standard");
         let lsw_audits = stores::new_store!("lsw_audit");
+        let lsw_occurrences = EntityStore::new("lsw_occurrence");
         let notification_triggers = stores::new_store!("notification_trigger");
         let standard_work_documents = stores::new_store!("standard_work_document");
         let standard_work_versions = stores::new_store!("standard_work_version");
@@ -759,6 +763,7 @@ impl AppState {
             kpi_values,
             lsw_standards,
             lsw_audits,
+            lsw_occurrences,
             notification_triggers,
             standard_work_documents,
             standard_work_versions,
@@ -865,6 +870,7 @@ impl AppState {
         self.kpi_values = EntityStore::with_pool("kpi_value", p.clone());
         self.lsw_standards = EntityStore::with_pool("lsw_standard", p.clone());
         self.lsw_audits = EntityStore::with_pool("lsw_audit", p.clone());
+        self.lsw_occurrences = EntityStore::with_pool("lsw_occurrence", p.clone());
         self.notification_triggers = EntityStore::with_pool("notification_trigger", p.clone());
         self.standard_work_documents = EntityStore::with_pool("standard_work_document", p.clone());
         self.standard_work_versions = EntityStore::with_pool("standard_work_version", p.clone());
@@ -981,6 +987,7 @@ impl AppState {
             kpi_values,
             lsw_standards,
             lsw_audits,
+            lsw_occurrences,
             notification_triggers,
             standard_work_documents,
             standard_work_versions,

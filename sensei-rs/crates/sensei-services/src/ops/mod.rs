@@ -100,6 +100,33 @@ pub struct A3 {
     /// Severity of the problem addressed (e.g. low, medium, high, critical).
     #[serde(default)]
     pub severity: String,
+    /// Optimistic-concurrency version (commands require expected_version).
+    #[serde(default)]
+    pub version: u64,
+    /// Structured observed conditions (OBSERVATION, with source evidence).
+    #[serde(default)]
+    pub observed_conditions: Vec<serde_json::Value>,
+    /// Metric baselines (target/actual/trend measurements).
+    #[serde(default)]
+    pub metric_baselines: Vec<serde_json::Value>,
+    /// Evidence references supporting every factual claim in the case.
+    #[serde(default)]
+    pub evidence_refs: Vec<String>,
+    /// Cause hypotheses (never asserted as fact without verification).
+    #[serde(default)]
+    pub cause_hypotheses: Vec<serde_json::Value>,
+    /// Controlled experiments.
+    #[serde(default)]
+    pub experiments: Vec<serde_json::Value>,
+    /// Countermeasure verifications (metric observed after the change).
+    #[serde(default)]
+    pub verifications: Vec<serde_json::Value>,
+    /// Standardization actions (standard work / control plan updates).
+    #[serde(default)]
+    pub standardizations: Vec<serde_json::Value>,
+    /// Organizational learnings.
+    #[serde(default)]
+    pub learnings: Vec<serde_json::Value>,
     pub owner_id: Uuid,
     pub created_at: DateTime<Utc>,
     pub closed_at: Option<DateTime<Utc>>,
@@ -1017,6 +1044,7 @@ mod tests {
             a3_number: String::new(),
             title: "Reduce changeover time".to_string(),
             background: "Current changeover takes 45 minutes".to_string(),
+            version: 0,
             current_state: "SMED analysis shows 60% internal setup".to_string(),
             goal: "Reduce to under 15 minutes".to_string(),
             root_cause_analysis: "Lack of standard work".to_string(),
@@ -1029,6 +1057,14 @@ mod tests {
             owner_id,
             created_at: Utc::now(),
             closed_at: None,
+            observed_conditions: vec![],
+            metric_baselines: vec![],
+            evidence_refs: vec![],
+            cause_hypotheses: vec![],
+            experiments: vec![],
+            verifications: vec![],
+            standardizations: vec![],
+            learnings: vec![],
         };
 
         let created = service

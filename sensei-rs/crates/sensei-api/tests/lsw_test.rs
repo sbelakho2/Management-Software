@@ -129,9 +129,24 @@ async fn test_perform_audit() {
         })
         .collect();
 
+    // Audits execute a SCHEDULED occurrence (server-owned lifecycle).
+    let occ_req = app.post_authenticated(
+        &format!("/api/v1/lsw/standards/{}/occurrences", std_id),
+        &token,
+        serde_json::json!({
+            "due_at": "2026-09-01T08:00:00Z",
+            "assigned_leader": uuid::Uuid::new_v4().to_string(),
+        }),
+    );
+    let mut occ_resp = app.send_request(occ_req).await;
+    assert_eq!(occ_resp.status(), StatusCode::OK);
+    let occ: Value = app.json_body(&mut occ_resp).await;
+    let occurrence_id = occ["id"].as_str().unwrap().to_string();
+
     let audit = serde_json::json!({
         "results": results,
         "notes": "Audit completed",
+        "occurrence_id": occurrence_id,
     });
     let req = app.post_authenticated(
         &format!("/api/v1/lsw/standards/{}/audits", std_id),

@@ -56,6 +56,10 @@ pub struct UpdateStandardWorkRequest {
     pub title: Option<String>,
     pub area: Option<String>,
     pub process: Option<String>,
+    /// Optimistic-concurrency token: the version the caller read. A
+    /// mismatch returns 409 VERSION_CONFLICT instead of overwriting.
+    #[serde(default)]
+    pub expected_version: Option<u64>,
 
     pub steps: Option<Vec<WorkStep>>,
     pub required_skills: Option<Vec<String>>,
@@ -140,6 +144,7 @@ pub async fn create_standard_work(
         area: req.area,
         process: req.process,
         current_version: 1,
+        version: 1,
         status: SwStatus::Draft,
         steps: req.steps,
         required_skills: req.required_skills,
@@ -193,6 +198,16 @@ pub async fn update_standard_work(
         .get_mut(&sw_id)
         .filter(|d| d.tenant_id == tenant_id)
         .ok_or_else(|| SenseiError::NotFound(format!("Standard work {sw_id} not found")))?;
+    // Optimistic concurrency: a stale edit (based on an older version) is
+    // rejected — never silently overwrite a newer change.
+    if let Some(expected) = req.expected_version {
+        if doc.version != expected {
+            return Err(SenseiError::Conflict(format!(
+                "VERSION_CONFLICT: document is at version {}, expected {expected}",
+                doc.version
+            )));
+        }
+    }
     // An EFFECTIVE (or approved) revision is immutable: changes create a
     // new revision, they never mutate the controlled standard in place.
     if matches!(doc.status, SwStatus::Published) || doc.approved_by.is_some() {
@@ -242,6 +257,7 @@ pub async fn update_standard_work(
     }
     // approved_by / approved_at are intentionally NOT settable via PUT —
     // they are owned by the approve/reject endpoints.
+    doc.version += 1;
     doc.updated_at = Utc::now();
     let result = doc.clone();
     store.persist().await?;

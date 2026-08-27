@@ -90,6 +90,14 @@ struct A3Row {
     owner_id: Uuid,
     created_at: chrono::DateTime<Utc>,
     closed_at: Option<chrono::DateTime<Utc>>,
+    observed_conditions: serde_json::Value,
+    metric_baselines: serde_json::Value,
+    evidence_refs: serde_json::Value,
+    cause_hypotheses: serde_json::Value,
+    experiments: serde_json::Value,
+    verifications: serde_json::Value,
+    standardizations: serde_json::Value,
+    learnings: serde_json::Value,
 }
 
 #[derive(Debug, Clone, sqlx::FromRow)]
@@ -176,9 +184,30 @@ fn a3_row_to_domain(r: A3Row) -> A3 {
         a3_type: r.a3_type,
         severity: r.severity,
         status: r.status,
+        version: 0,
         owner_id: r.owner_id,
         created_at: r.created_at,
         closed_at: r.closed_at,
+        observed_conditions: r
+            .observed_conditions
+            .as_array()
+            .cloned()
+            .unwrap_or_default(),
+        metric_baselines: r.metric_baselines.as_array().cloned().unwrap_or_default(),
+        evidence_refs: r
+            .evidence_refs
+            .as_array()
+            .map(|a| {
+                a.iter()
+                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                    .collect()
+            })
+            .unwrap_or_default(),
+        cause_hypotheses: r.cause_hypotheses.as_array().cloned().unwrap_or_default(),
+        experiments: r.experiments.as_array().cloned().unwrap_or_default(),
+        verifications: r.verifications.as_array().cloned().unwrap_or_default(),
+        standardizations: r.standardizations.as_array().cloned().unwrap_or_default(),
+        learnings: r.learnings.as_array().cloned().unwrap_or_default(),
     }
 }
 
@@ -459,9 +488,9 @@ impl OperationsService for DatabaseOperationsService {
         );
 
         let row = sqlx::query_as::<_, A3Row>(
-            r#"INSERT INTO a3_reports (id, tenant_id, a3_number, title, background, current_state, goal, root_cause_analysis, countermeasures, check_plan, follow_up, a3_type, severity, status, owner_id, created_at, closed_at)
+            r#"INSERT INTO a3_reports (id, tenant_id, a3_number, title, background, current_state, goal, root_cause_analysis, countermeasures, check_plan, follow_up, a3_type, severity, status, owner_id, created_at, closed_at, observed_conditions, metric_baselines, evidence_refs, cause_hypotheses, experiments, verifications, standardizations, learnings)
                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,'draft',$14,$15,NULL)
-               RETURNING id, tenant_id, a3_number, title, background, current_state, goal, root_cause_analysis, countermeasures, check_plan, follow_up, a3_type, severity, status, owner_id, created_at, closed_at"#,
+               RETURNING id, tenant_id, a3_number, title, background, current_state, goal, root_cause_analysis, countermeasures, check_plan, follow_up, a3_type, severity, status, owner_id, created_at, closed_at, observed_conditions, metric_baselines, evidence_refs, cause_hypotheses, experiments, verifications, standardizations, learnings"#,
         )
         .bind(id).bind(tenant_id).bind(&a3_number).bind(&a3.title).bind(&a3.background)
         .bind(&a3.current_state).bind(&a3.goal).bind(&a3.root_cause_analysis)
@@ -476,7 +505,7 @@ impl OperationsService for DatabaseOperationsService {
 
     async fn get_a3(&self, tenant_id: Uuid, id: Uuid) -> Result<A3> {
         let row = sqlx::query_as::<_, A3Row>(
-            "SELECT id, tenant_id, a3_number, title, background, current_state, goal, root_cause_analysis, countermeasures, check_plan, follow_up, a3_type, severity, status, owner_id, created_at, closed_at FROM a3_reports WHERE id = $1 AND tenant_id = $2",
+            "SELECT id, tenant_id, a3_number, title, background, current_state, goal, root_cause_analysis, countermeasures, check_plan, follow_up, a3_type, severity, status, owner_id, created_at, closed_at, observed_conditions, metric_baselines, evidence_refs, cause_hypotheses, experiments, verifications, standardizations, learnings FROM a3_reports WHERE id = $1 AND tenant_id = $2",
         )
         .bind(id).bind(tenant_id)
         .fetch_optional(&self.pool)
@@ -498,7 +527,7 @@ impl OperationsService for DatabaseOperationsService {
         let offset = (page - 1) * per_page;
 
         let items: Vec<A3Row> = sqlx::query_as(
-            r#"SELECT id, tenant_id, a3_number, title, background, current_state, goal, root_cause_analysis, countermeasures, check_plan, follow_up, a3_type, severity, status, owner_id, created_at, closed_at
+            r#"SELECT id, tenant_id, a3_number, title, background, current_state, goal, root_cause_analysis, countermeasures, check_plan, follow_up, a3_type, severity, status, owner_id, created_at, closed_at, observed_conditions, metric_baselines, evidence_refs, cause_hypotheses, experiments, verifications, standardizations, learnings
                FROM a3_reports WHERE tenant_id=$1 AND ($2::text IS NULL OR status=$2)
                ORDER BY created_at DESC LIMIT $3 OFFSET $4"#,
         )
@@ -525,7 +554,7 @@ impl OperationsService for DatabaseOperationsService {
         // countermeasures (root_cause_analysis/countermeasures) and the
         // verification plan (check_plan/follow_up) must be recorded first.
         let existing = sqlx::query_as::<_, A3Row>(
-            r#"SELECT id, tenant_id, a3_number, title, background, current_state, goal, root_cause_analysis, countermeasures, check_plan, follow_up, a3_type, severity, status, owner_id, created_at, closed_at
+            r#"SELECT id, tenant_id, a3_number, title, background, current_state, goal, root_cause_analysis, countermeasures, check_plan, follow_up, a3_type, severity, status, owner_id, created_at, closed_at, observed_conditions, metric_baselines, evidence_refs, cause_hypotheses, experiments, verifications, standardizations, learnings
                FROM a3_reports WHERE id=$1 AND tenant_id=$2"#,
         )
         .bind(id)
@@ -549,7 +578,7 @@ impl OperationsService for DatabaseOperationsService {
         let now = Utc::now();
         let row = sqlx::query_as::<_, A3Row>(
             r#"UPDATE a3_reports SET status='closed', closed_at=$1 WHERE id=$2 AND tenant_id=$3
-               RETURNING id, tenant_id, a3_number, title, background, current_state, goal, root_cause_analysis, countermeasures, check_plan, follow_up, a3_type, severity, status, owner_id, created_at, closed_at"#,
+               RETURNING id, tenant_id, a3_number, title, background, current_state, goal, root_cause_analysis, countermeasures, check_plan, follow_up, a3_type, severity, status, owner_id, created_at, closed_at, observed_conditions, metric_baselines, evidence_refs, cause_hypotheses, experiments, verifications, standardizations, learnings"#,
         )
         .bind(now).bind(id).bind(tenant_id)
         .fetch_optional(&self.pool)
@@ -726,7 +755,7 @@ impl OperationsService for DatabaseOperationsService {
         let row = sqlx::query_as::<_, A3Row>(
             r#"UPDATE a3_reports SET title=$1, background=$2, current_state=$3, goal=$4, root_cause_analysis=$5, countermeasures=$6, check_plan=$7, follow_up=$8, a3_type=$9, severity=$10
                WHERE id=$11 AND tenant_id=$12
-               RETURNING id, tenant_id, a3_number, title, background, current_state, goal, root_cause_analysis, countermeasures, check_plan, follow_up, a3_type, severity, status, owner_id, created_at, closed_at"#,
+               RETURNING id, tenant_id, a3_number, title, background, current_state, goal, root_cause_analysis, countermeasures, check_plan, follow_up, a3_type, severity, status, owner_id, created_at, closed_at, observed_conditions, metric_baselines, evidence_refs, cause_hypotheses, experiments, verifications, standardizations, learnings"#,
         )
         .bind(&a3.title).bind(&a3.background).bind(&a3.current_state).bind(&a3.goal)
         .bind(&a3.root_cause_analysis).bind(&a3.countermeasures).bind(&a3.check_plan).bind(&a3.follow_up)

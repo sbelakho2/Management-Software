@@ -1959,6 +1959,10 @@ pub fn build_router(state: AppState) -> Router {
             get(routes::lsw::list_lsw_standards).post(routes::lsw::create_lsw_standard),
         )
         .route(
+            "/api/v1/lsw/standards/{id}/occurrences",
+            post(routes::lsw::schedule_occurrence),
+        )
+        .route(
             "/api/v1/tps/takt/calculate",
             post(routes::tps::calculate_takt),
         )

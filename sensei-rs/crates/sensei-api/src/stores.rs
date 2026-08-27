@@ -963,6 +963,9 @@ pub struct LswStandard {
     pub title: String,
     pub area: String,
     pub layer: u8,
+    /// Checklist revision (occurrences must match it at audit time).
+    #[serde(default)]
+    pub revision: i32,
     pub frequency: LswFrequency,
     pub checklist_items: Vec<LswChecklistItem>,
     pub is_active: bool,
@@ -978,6 +981,29 @@ pub struct LswAuditResult {
     pub passed: bool,
     pub observed_value: Option<String>,
     pub notes: Option<String>,
+}
+
+/// A scheduled LSW occurrence: the audit executes a checklist revision on
+/// a due date with an assigned leader. The server owns scheduled_at,
+/// started_at, completed_at and leader — the client never fabricates an
+/// audit lifecycle.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct LswOccurrence {
+    pub id: Uuid,
+    pub standard_id: Uuid,
+    pub tenant_id: Uuid,
+    /// Checklist revision this occurrence executes (must match the
+    /// standard's current revision at submission time).
+    pub checklist_revision: i32,
+    pub due_at: DateTime<Utc>,
+    pub assigned_leader: Uuid,
+    pub area: String,
+    pub layer: u8,
+    /// scheduled | in_progress | completed
+    pub status: String,
+    pub scheduled_at: DateTime<Utc>,
+    pub started_at: Option<DateTime<Utc>>,
+    pub completed_at: Option<DateTime<Utc>>,
 }
 
 /// An LSW audit (checklist execution).
@@ -1098,6 +1124,8 @@ pub struct StandardWorkDocument {
     pub attachments: Vec<Uuid>,
     pub approved_by: Option<Uuid>,
     pub approved_at: Option<DateTime<Utc>>,
+    #[serde(default)]
+    pub version: u64,
     pub created_by: Uuid,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,

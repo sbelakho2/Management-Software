@@ -84,29 +84,20 @@ async fn test_update_a3() {
     let created: Value = app.json_body(&mut resp).await;
     let a3_id = created["id"].as_str().unwrap().to_string();
 
-    // Update
+    // Update: the editable text fields only (identity/actor/status are
+    // server-owned; the UpdateA3Request DTO ignores them).
     let update_body = serde_json::json!({
-        "id": a3_id,
-        "tenant_id": uuid::Uuid::new_v4().to_string(),
-        "a3_number": format!("A3-{}", uuid::Uuid::new_v4().to_string()[..8].to_string()),
-        "title": "Updated A3 Title",
         "background": "Updated problem",
-        "current_state": "Current state description",
         "goal": "Reduce defects by 50%",
-        "root_cause_analysis": "Root cause analysis findings",
         "countermeasures": "Implement standardized work instructions",
-        "check_plan": "Weekly audits for 4 weeks",
-        "follow_up": "Monthly review with team",
-        "status": "draft",
-        "owner_id": uuid::Uuid::new_v4().to_string(),
-        "created_at": "2026-01-01T00:00:00Z",
     });
     let req = app.put_authenticated(&format!("/api/v1/a3/{}", a3_id), &token, update_body);
     let mut resp = app.send_request(req).await;
     assert_eq!(resp.status(), StatusCode::OK);
 
     let json: Value = app.json_body(&mut resp).await;
-    assert_eq!(json["title"], "Updated A3 Title");
+    assert_eq!(json["background"], "Updated problem");
+    assert_eq!(json["goal"], "Reduce defects by 50%");
 }
 
 #[tokio::test]
