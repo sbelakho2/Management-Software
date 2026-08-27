@@ -57,6 +57,14 @@ config:
   # production (stored in the Secret). A placeholder/weak value is rejected
   # by the API at startup in production.
   ceoPassword: ""
+  bootstrap:
+    # Bootstrap admin identity. The API refuses to start in production
+    # without SENSEI_ADMIN_PASSWORD; supply it here (or via the
+    # external-secret contract) so a fresh deployment can become ready.
+    adminEmail: "admin@sensei.local"
+    adminPassword: ""
+  smtp:
+    password: ""
   # Rust runtime tunables (non-secret; surfaced via the ConfigMap)
   rust:
     accessTokenTtlMinutes: 15
@@ -94,6 +102,10 @@ config:
     - https://crm-v2.example.com
   # Feature flags
   features:
+    aiEnabled: false
+    websocketEnabled: true
+    auditLogging: true
+    rateLimiting: true
     phase2Npi: true
     phase3Production: false
     smartIngestion: true
@@ -139,11 +151,17 @@ nats:
       enabled: true
       size: 10Gi
   auth:
-    enabled: false  # Set to true + provide user/password for token auth
-    user: ""
-    password: ""    # Secret — stored in the Secret, not the ConfigMap
+    # Production requires authenticated NATS: the chart FAILS to render
+    # when auth is enabled with an empty password (set the password or
+    # deliberately allow an unauthenticated broker for non-production).
+    enabled: true
+    user: "sensei"
+    # The password is the single NATS credential used by BOTH the broker
+    # subchart and the application's NATS_URL. Replace it before deploying.
+    password: "REPLACE_WITH_STRONG_NATS_PASSWORD"
+    allowUnauthenticated: false
 
-# Rust Axum API (sensei-rs) configuration
+
 senseiApi:
   enabled: true
   replicaCount: 2

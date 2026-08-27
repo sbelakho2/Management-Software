@@ -127,6 +127,7 @@ pub async fn list_work_centers(
     State(state): State<AppState>,
     Query(params): Query<ListWorkCentersParams>,
 ) -> Result<Json<PaginatedResponse<WorkCenter>>> {
+    user.require_permission("tps:work-center:read")?;
     let tenant_id = user.tenant_id;
     let store = get_store(&state);
     let map = store.read(user.tenant_id).await;
@@ -172,6 +173,7 @@ pub async fn get_work_center(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<WorkCenter>> {
+    user.require_permission("tps:work-center:read")?;
     let tenant_id = user.tenant_id;
     let store = get_store(&state);
     let map = store.read(user.tenant_id).await;
@@ -191,6 +193,7 @@ pub async fn create_work_center(
     State(state): State<AppState>,
     Json(req): Json<CreateWorkCenterRequest>,
 ) -> Result<Json<WorkCenter>> {
+    user.require_permission("tps:work-center:manage")?;
     validate_efficiency(req.efficiency)?;
     let tenant_id = user.tenant_id;
     let now = Utc::now();
@@ -228,6 +231,7 @@ pub async fn update_work_center(
     Path(id): Path<Uuid>,
     Json(req): Json<UpdateWorkCenterRequest>,
 ) -> Result<Json<WorkCenter>> {
+    user.require_permission("tps:work-center:manage")?;
     let tenant_id = user.tenant_id;
     let store = get_store(&state);
     let mut map = store.write(user.tenant_id).await;
@@ -306,6 +310,7 @@ pub async fn get_work_center_capacity(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<WorkCenterCapacity>> {
+    user.require_permission("tps:work-center:read")?;
     let tenant_id = user.tenant_id;
     let store = get_store(&state);
     let map = store.read(user.tenant_id).await;
@@ -340,6 +345,7 @@ pub async fn get_efficiency_report(
     user: AuthenticatedUser,
     State(state): State<AppState>,
 ) -> Result<Json<Vec<EfficiencyReport>>> {
+    user.require_permission("tps:work-center:read")?;
     let tenant_id = user.tenant_id;
     let store = get_store(&state);
     let map = store.read(user.tenant_id).await;

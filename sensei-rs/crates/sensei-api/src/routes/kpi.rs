@@ -126,6 +126,7 @@ pub async fn list_kpis(
     State(state): State<AppState>,
     Query(params): Query<ListKpisParams>,
 ) -> Result<Json<PaginatedResponse<KpiDefinition>>> {
+    user.require_permission("tps:kpi:read")?;
     let tenant_id = user.tenant_id;
     let store = state.kpi_definitions.read(user.tenant_id).await;
     let mut kpis: Vec<KpiDefinition> = store
@@ -158,6 +159,7 @@ pub async fn create_kpi(
     State(state): State<AppState>,
     Json(req): Json<CreateKpiRequest>,
 ) -> Result<Json<KpiDefinition>> {
+    user.require_permission("tps:kpi:manage")?;
     let tenant_id = user.tenant_id;
     let now = Utc::now();
     let kpi = KpiDefinition {
@@ -189,6 +191,7 @@ pub async fn get_kpi(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<KpiDefinition>> {
+    user.require_permission("tps:kpi:read")?;
     let tenant_id = user.tenant_id;
     let store = state.kpi_definitions.read(user.tenant_id).await;
     let kpi = store
@@ -206,6 +209,7 @@ pub async fn update_kpi(
     Path(id): Path<Uuid>,
     Json(req): Json<UpdateKpiRequest>,
 ) -> Result<Json<KpiDefinition>> {
+    user.require_permission("tps:kpi:manage")?;
     let tenant_id = user.tenant_id;
     let mut store = state.kpi_definitions.write(user.tenant_id).await;
     let kpi = store
@@ -255,6 +259,7 @@ pub async fn delete_kpi(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<()>> {
+    user.require_permission("tps:kpi:manage")?;
     let tenant_id = user.tenant_id;
     let mut store = state.kpi_definitions.write(user.tenant_id).await;
     let exists = store
@@ -275,6 +280,7 @@ pub async fn record_kpi_value(
     Path(kpi_id): Path<Uuid>,
     Json(req): Json<RecordKpiValueRequest>,
 ) -> Result<Json<KpiValue>> {
+    user.require_permission("tps:kpi:manage")?;
     let tenant_id = user.tenant_id;
     // Verify KPI exists
     {
@@ -308,6 +314,7 @@ pub async fn list_kpi_values(
     Path(kpi_id): Path<Uuid>,
     Query(params): Query<ListKpiValuesParams>,
 ) -> Result<Json<PaginatedResponse<KpiValue>>> {
+    user.require_permission("tps:kpi:read")?;
     let tenant_id = user.tenant_id;
     let store = state.kpi_values.read(user.tenant_id).await;
     let mut values: Vec<KpiValue> = store
@@ -340,6 +347,7 @@ pub async fn get_kpi_dashboard(
     State(state): State<AppState>,
     Path(kpi_id): Path<Uuid>,
 ) -> Result<Json<KpiDashboard>> {
+    user.require_permission("tps:kpi:read")?;
     let tenant_id = user.tenant_id;
     let kpi = {
         let store = state.kpi_definitions.read(user.tenant_id).await;

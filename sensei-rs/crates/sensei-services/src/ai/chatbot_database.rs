@@ -31,6 +31,9 @@ use crate::ai::chatbot::{
 /// responses. When an optional AI service is provided, it can enrich
 /// responses with AI-generated insights. Falls back to pattern matching
 /// when no AI service is configured.
+/// Identity of a conversation cache entry: (tenant, user, conversation).
+type ConversationCacheKey = (String, String, String);
+
 pub struct DatabaseChatbotService {
     pool: PgPool,
     config: ChatbotConfig,
@@ -38,7 +41,9 @@ pub struct DatabaseChatbotService {
     ai_service: Option<Arc<dyn crate::ai::AiService>>,
     /// In-memory cache of recent conversation IDs to avoid extra DB lookups
     /// for the `stream_chat` method which needs to share state across tasks.
-    conversation_cache: Arc<RwLock<HashMap<String, bool>>>,
+    /// Keyed by (tenant, user, conversation) — a conversation cached for
+    /// ONE caller must never skip ownership validation for another.
+    conversation_cache: Arc<RwLock<HashMap<ConversationCacheKey, bool>>>,
 }
 
 impl DatabaseChatbotService {
@@ -89,10 +94,17 @@ impl DatabaseChatbotService {
         user_id: EntityId,
         conversation_id: &str,
     ) -> Result<()> {
-        // Check the in-memory cache first to avoid a DB round-trip.
+        // Check the in-memory cache first to avoid a DB round-trip. The
+        // cache key includes tenant + user + conversation: ownership is
+        // validated on EVERY caller, never skipped via the cache.
+        let cache_key = (
+            tenant_id.to_string(),
+            user_id.to_string(),
+            conversation_id.to_string(),
+        );
         {
             let cache = self.conversation_cache.read().await;
-            if cache.get(conversation_id).copied().unwrap_or(false) {
+            if cache.get(&cache_key).copied().unwrap_or(false) {
                 return Ok(());
             }
         }
@@ -134,10 +146,10 @@ impl DatabaseChatbotService {
             .map_err(|e| SenseiError::Database(format!("Failed to create conversation: {e}")))?;
         }
 
-        // Update cache.
+        // Update cache (scoped to this tenant+user).
         {
             let mut cache = self.conversation_cache.write().await;
-            cache.insert(conversation_id.to_string(), true);
+            cache.insert(cache_key, true);
         }
 
         Ok(())
@@ -298,11 +310,11 @@ impl DatabaseChatbotService {
 
                 let mut response = format!(
                     "Based on AI analysis, the predicted defect rate is {:.1}% with a CpK of {:.2}. ",
-                    prediction.predicted_defect_rate * 100.0,
-                    prediction.predicted_cpk,
+                    prediction.predicted_defect_rate.unwrap_or(0.0) * 100.0,
+                    prediction.predicted_cpk.unwrap_or(0.0),
                 );
 
-                if prediction.predicted_defect_rate > 0.05 {
+                if prediction.predicted_defect_rate.unwrap_or(0.0) > 0.05 {
                     response.push_str(
                         "I recommend reviewing the suggested process parameters for improvement. ",
                     );
@@ -343,14 +355,20 @@ impl DatabaseChatbotService {
                 return Some(format!(
                     "{risk_emoji} AI Maintenance Analysis:\n\
                      - Failure probability: {:.1}%\n\
-                     - Estimated remaining life: {:.0} hours\n\
+                     - Estimated remaining life: {}\n\
                      - Risk level: {}\n\
                      - Recommended maintenance date: {}\n\
                      \nSuggested actions:\n{}",
                     maintenance.failure_probability * 100.0,
-                    maintenance.estimated_remaining_life_hours,
+                    maintenance
+                        .estimated_remaining_life_hours
+                        .map(|h| format!("{h:.0} hours"))
+                        .unwrap_or_else(|| "unavailable".to_string()),
                     maintenance.risk_level,
-                    maintenance.recommended_maintenance_date.format("%Y-%m-%d"),
+                    maintenance
+                        .recommended_maintenance_date
+                        .map(|d| d.format("%Y-%m-%d").to_string())
+                        .unwrap_or_else(|| "unavailable".to_string()),
                     maintenance
                         .suggested_actions
                         .iter()

@@ -73,6 +73,7 @@ pub async fn list_work_requests(
     State(state): State<AppState>,
     Query(params): Query<ListWorkRequestsParams>,
 ) -> Result<Json<PaginatedResponse<MaintenanceWorkRequest>>> {
+    user.require_permission("maintenance:request")?;
     let tenant_id = user.tenant_id;
     let requests = state
         .maintenance_service
@@ -88,15 +89,43 @@ pub async fn list_work_requests(
 }
 
 /// Create a new maintenance work request.
+/// Client input for a maintenance request: only the operational facts.
+/// requested_by, status and timestamps are server-generated — a caller can
+/// never create a request attributed to someone else or pre-marked
+/// completed.
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct CreateMaintenanceRequest {
+    pub equipment_id: Uuid,
+    pub title: String,
+    pub description: String,
+    pub priority: String, // low, medium, high, critical
+}
+
 pub async fn create_work_request(
     user: AuthenticatedUser,
     State(state): State<AppState>,
-    Json(req): Json<MaintenanceWorkRequest>,
+    Json(req): Json<CreateMaintenanceRequest>,
 ) -> Result<Json<MaintenanceWorkRequest>> {
+    user.require_permission("maintenance:request")?;
     let tenant_id = user.tenant_id;
+    let request = MaintenanceWorkRequest {
+        id: uuid::Uuid::new_v4(),
+        tenant_id,
+        equipment_id: req.equipment_id,
+        title: req.title,
+        description: req.description,
+        priority: req.priority,
+        // The actor is a server-generated identity field; the status always
+        // starts as submitted.
+        status: "submitted".to_string(),
+        requested_by: user.user_id,
+        assigned_to: None,
+        created_at: chrono::Utc::now(),
+        completed_at: None,
+    };
     let request = state
         .maintenance_service
-        .create_work_request(tenant_id, req)
+        .create_work_request(tenant_id, request)
         .await?;
     Ok(Json(request))
 }
@@ -107,6 +136,7 @@ pub async fn get_work_request(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<MaintenanceWorkRequest>> {
+    user.require_permission("maintenance:request")?;
     let tenant_id = user.tenant_id;
     let request = state
         .maintenance_service
@@ -122,6 +152,7 @@ pub async fn update_work_request_status(
     Path(id): Path<Uuid>,
     Json(req): Json<UpdateWorkRequestStatusRequest>,
 ) -> Result<Json<MaintenanceWorkRequest>> {
+    user.require_permission("maintenance:assign")?;
     let tenant_id = user.tenant_id;
     let request = state
         .maintenance_service
@@ -141,6 +172,7 @@ pub async fn assign_work_request(
     Path(id): Path<Uuid>,
     Json(req): Json<AssignWorkRequestRequest>,
 ) -> Result<Json<MaintenanceWorkRequest>> {
+    user.require_permission("maintenance:assign")?;
     use sensei_core::error::SenseiError;
     if req.assigned_to != user.user_id {
         return Err(SenseiError::Forbidden(
@@ -163,6 +195,7 @@ pub async fn list_pm_schedules(
     State(state): State<AppState>,
     Query(params): Query<ListPmSchedulesParams>,
 ) -> Result<Json<PaginatedResponse<PMSchedule>>> {
+    user.require_permission("maintenance:request")?;
     let tenant_id = user.tenant_id;
     let schedules = state
         .maintenance_service
@@ -177,6 +210,7 @@ pub async fn create_pm_schedule(
     State(state): State<AppState>,
     Json(req): Json<PMSchedule>,
 ) -> Result<Json<PMSchedule>> {
+    user.require_permission("maintenance:request")?;
     let tenant_id = user.tenant_id;
     let schedule = state
         .maintenance_service
@@ -191,6 +225,7 @@ pub async fn get_pm_schedule(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<PMSchedule>> {
+    user.require_permission("maintenance:request")?;
     let tenant_id = user.tenant_id;
     let schedule = state
         .maintenance_service
@@ -205,6 +240,7 @@ pub async fn complete_pm_task(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<PMSchedule>> {
+    user.require_permission("maintenance:execute")?;
     let tenant_id = user.tenant_id;
     let schedule = state
         .maintenance_service
@@ -218,6 +254,7 @@ pub async fn get_overdue_pm_tasks(
     user: AuthenticatedUser,
     State(state): State<AppState>,
 ) -> Result<Json<Vec<PMSchedule>>> {
+    user.require_permission("maintenance:request")?;
     let tenant_id = user.tenant_id;
     let tasks = state
         .maintenance_service
@@ -234,6 +271,7 @@ pub async fn list_equipment(
     State(state): State<AppState>,
     Query(params): Query<ListEquipmentParams>,
 ) -> Result<Json<PaginatedResponse<EquipmentRecord>>> {
+    user.require_permission("maintenance:request")?;
     let tenant_id = user.tenant_id;
     let equipment = state
         .maintenance_service
@@ -254,6 +292,7 @@ pub async fn register_equipment(
     State(state): State<AppState>,
     Json(req): Json<EquipmentRecord>,
 ) -> Result<Json<EquipmentRecord>> {
+    user.require_permission("maintenance:execute")?;
     let tenant_id = user.tenant_id;
     let equipment = state
         .maintenance_service
@@ -268,6 +307,7 @@ pub async fn get_equipment(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<EquipmentRecord>> {
+    user.require_permission("maintenance:request")?;
     let tenant_id = user.tenant_id;
     let equipment = state
         .maintenance_service
@@ -285,6 +325,7 @@ pub async fn update_work_request(
     Path(id): Path<Uuid>,
     Json(req): Json<MaintenanceWorkRequest>,
 ) -> Result<Json<MaintenanceWorkRequest>> {
+    user.require_permission("maintenance:assign")?;
     let tenant_id = user.tenant_id;
     let request = state
         .maintenance_service
@@ -299,6 +340,7 @@ pub async fn delete_work_request(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<()>> {
+    user.require_permission("maintenance:assign")?;
     let tenant_id = user.tenant_id;
     state
         .maintenance_service
@@ -314,6 +356,7 @@ pub async fn update_pm_schedule(
     Path(id): Path<Uuid>,
     Json(req): Json<PMSchedule>,
 ) -> Result<Json<PMSchedule>> {
+    user.require_permission("maintenance:assign")?;
     let tenant_id = user.tenant_id;
     let schedule = state
         .maintenance_service
@@ -328,6 +371,7 @@ pub async fn delete_pm_schedule(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<()>> {
+    user.require_permission("maintenance:assign")?;
     let tenant_id = user.tenant_id;
     state
         .maintenance_service
@@ -343,7 +387,12 @@ pub async fn update_equipment(
     Path(id): Path<Uuid>,
     Json(req): Json<EquipmentRecord>,
 ) -> Result<Json<EquipmentRecord>> {
+    user.require_permission("maintenance:assign")?;
     let tenant_id = user.tenant_id;
+    // OEE is DERIVED (availability × performance × quality), never entered
+    // as an equipment master attribute: ignore any client-supplied value.
+    let mut req = req;
+    req.oee_percentage = 0.0;
     let equipment = state
         .maintenance_service
         .update_equipment(tenant_id, id, req)
@@ -357,6 +406,7 @@ pub async fn delete_equipment(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<()>> {
+    user.require_permission("maintenance:assign")?;
     let tenant_id = user.tenant_id;
     state
         .maintenance_service
@@ -372,6 +422,7 @@ pub async fn update_equipment_status(
     Path(id): Path<Uuid>,
     Json(req): Json<UpdateEquipmentStatusRequest>,
 ) -> Result<Json<EquipmentRecord>> {
+    user.require_permission("maintenance:assign")?;
     let tenant_id = user.tenant_id;
     let equipment = state
         .maintenance_service

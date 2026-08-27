@@ -112,10 +112,25 @@ async fn test_perform_audit() {
     let created: Value = app.json_body(&mut resp).await;
     let std_id = created["id"].as_str().unwrap();
 
+    // Every REQUIRED checklist item must be observed: build the results
+    // from the standard's actual checklist (a random item id is rejected).
+    let req = app.get_authenticated(&format!("/api/v1/lsw/standards/{}", std_id), &token);
+    let mut resp = app.send_request(req).await;
+    let std: Value = app.json_body(&mut resp).await;
+    let items = std["checklist_items"].as_array().unwrap();
+    let results: Vec<Value> = items
+        .iter()
+        .map(|i| {
+            serde_json::json!({
+                "item_id": i["id"],
+                "passed": true,
+                "notes": "OK",
+            })
+        })
+        .collect();
+
     let audit = serde_json::json!({
-        "results": [
-            {"item_id": uuid::Uuid::new_v4(), "passed": true, "notes": "OK"},
-        ],
+        "results": results,
         "notes": "Audit completed",
     });
     let req = app.post_authenticated(
@@ -127,6 +142,8 @@ async fn test_perform_audit() {
     assert_eq!(resp.status(), StatusCode::OK);
     let json: Value = app.json_body(&mut resp).await;
     assert!(!json["id"].as_str().unwrap_or("").is_empty());
+    // Compliance is computed against the FULL checklist.
+    assert_eq!(json["compliance_rate"], 100.0);
 }
 
 #[tokio::test]
@@ -190,15 +207,17 @@ async fn test_perform_audit_with_empty_results_reports_zero_compliance() {
     let created: Value = app.json_body(&mut resp).await;
     let std_id = created["id"].as_str().unwrap().to_string();
 
-    // An audit with no results carries no compliance evidence.
+    // An audit with no results is INVALID: the checklist must be completed
+    // (every required item observed) — an empty submission cannot claim
+    // anything, including zero compliance.
     let audit = serde_json::json!({ "results": [] });
     let req = app.post_authenticated(
         &format!("/api/v1/lsw/standards/{}/audits", std_id),
         &token,
         audit,
     );
-    let mut resp = app.send_request(req).await;
-    assert_eq!(resp.status(), StatusCode::OK);
-    let json: Value = app.json_body(&mut resp).await;
-    assert_eq!(json["compliance_rate"], 0.0);
+    let resp = app.send_request(req).await;
+    // Empty submissions are rejected: every required checklist item must be
+    // observed, so a client can never fake compliance.
+    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
 }

@@ -734,7 +734,7 @@ async fn execute_on_transition_hook(state: &AppState, hook: &serde_json::Value, 
                 if let Err(e) = result {
                     tracing::warn!(
                         error = %e,
-                        url = %url,
+                        url = %crate::state::redact_nats_url(url),
                         task_id = %task.id,
                         "webhook hook failed"
                     );

@@ -67,10 +67,13 @@ pub struct AnomalyPrediction {
 pub struct QualityPrediction {
     /// Identifier of the product being produced.
     pub product_id: Uuid,
-    /// Predicted defect rate as a fraction (0.0 – 1.0).
-    pub predicted_defect_rate: f64,
-    /// Predicted process capability index (CpK).
-    pub predicted_cpk: f64,
+    /// Predicted defect rate as a fraction (0.0 – 1.0). `None` when no
+    /// validated defect-rate prediction exists — never fabricated from
+    /// confidence (confidence is not a defect rate).
+    pub predicted_defect_rate: Option<f64>,
+    /// Predicted process capability index (CpK). `None` when no validated
+    /// Cpk prediction exists — a missing Cpk is NOT Cpk = 1.
+    pub predicted_cpk: Option<f64>,
     /// Recommended process parameters as a JSON value.
     pub recommended_params: serde_json::Value,
 }
@@ -82,12 +85,15 @@ pub struct PredictiveMaintenanceResult {
     pub equipment_id: Uuid,
     /// Probability of failure within the forecast window (0.0 – 1.0).
     pub failure_probability: f64,
-    /// Estimated remaining useful life in operating hours.
-    pub estimated_remaining_life_hours: f64,
+    /// Estimated remaining useful life in operating hours. `None` when the
+    /// model produced no validated estimate — never a fabricated default
+    /// like "8760 hours".
+    pub estimated_remaining_life_hours: Option<f64>,
     /// Risk level: "low", "medium", "high", or "critical".
     pub risk_level: String,
-    /// Recommended calendar date for the next maintenance.
-    pub recommended_maintenance_date: DateTime<Utc>,
+    /// Recommended maintenance date derived from the remaining-life
+    /// estimate. `None` when no validated estimate exists.
+    pub recommended_maintenance_date: Option<DateTime<Utc>>,
     /// List of suggested maintenance actions.
     pub suggested_actions: Vec<String>,
 }
@@ -124,7 +130,10 @@ pub trait AiService: Send + Sync {
     ) -> Result<PredictiveMaintenanceResult>;
 
     /// Trigger model retraining for a given model type.
-    async fn retrain_model(&self, tenant_id: Uuid, model_type: &str) -> Result<()>;
+    /// Queue a model-training job. Returns the training job id; the model
+    /// enters the 'training' state and is NEVER deployed automatically (an
+    /// approval step gates promotion to production).
+    async fn queue_model_training(&self, tenant_id: Uuid, model_type: &str) -> Result<Uuid>;
 
     /// Publish an anomaly detected event to the event bus.
     async fn publish_anomaly_event(
@@ -295,8 +304,8 @@ impl AiService for InMemoryAiService {
         // Generate realistic synthetic quality prediction
         let prediction = QualityPrediction {
             product_id,
-            predicted_defect_rate: 0.023,
-            predicted_cpk: 1.42,
+            predicted_defect_rate: Some(0.023),
+            predicted_cpk: Some(1.42),
             recommended_params: serde_json::json!({
                 "temperature_c": {
                     "current": 185,
@@ -346,9 +355,9 @@ impl AiService for InMemoryAiService {
         let prediction = PredictiveMaintenanceResult {
             equipment_id,
             failure_probability: 0.27,
-            estimated_remaining_life_hours: 1250.0,
+            estimated_remaining_life_hours: Some(1250.0),
             risk_level: "medium".to_string(),
-            recommended_maintenance_date: now + chrono::Duration::days(45),
+            recommended_maintenance_date: Some(now + chrono::Duration::days(45)),
             suggested_actions: vec![
                 "Replace oil and hydraulic filters".to_string(),
                 "Inspect and tighten belt tension".to_string(),
@@ -366,7 +375,7 @@ impl AiService for InMemoryAiService {
         Ok(prediction)
     }
 
-    async fn retrain_model(&self, tenant_id: Uuid, model_type: &str) -> Result<()> {
+    async fn queue_model_training(&self, tenant_id: Uuid, model_type: &str) -> Result<Uuid> {
         // Honest retraining: report the accuracy and dataset size recorded via
         // `submit_training_outcomes`. When no labelled data has been supplied
         // for this model type, retraining fails with an explicit
@@ -407,7 +416,8 @@ impl AiService for InMemoryAiService {
             }
         }
 
-        Ok(())
+        // The training job id — the model is NOT deployed by this call.
+        Ok(uuid::Uuid::new_v4())
     }
 
     async fn publish_anomaly_event(
@@ -469,7 +479,7 @@ mod tests {
             .expect("should predict quality");
 
         assert_eq!(result.product_id, product_id);
-        assert!(result.predicted_cpk > 0.0);
+        assert!(result.predicted_cpk.unwrap_or(0.0) > 0.0);
     }
 
     #[tokio::test]
@@ -494,7 +504,7 @@ mod tests {
 
         // Without recorded training outcomes retraining must fail honestly.
         let err = service
-            .retrain_model(tenant_id, "anomaly_detection")
+            .queue_model_training(tenant_id, "anomaly_detection")
             .await
             .expect_err("retrain without data must fail");
         assert!(
@@ -507,7 +517,7 @@ mod tests {
             .submit_training_outcomes("anomaly_detection", 900, 1000)
             .await;
         service
-            .retrain_model(tenant_id, "anomaly_detection")
+            .queue_model_training(tenant_id, "anomaly_detection")
             .await
             .expect("retrain with data should succeed");
     }

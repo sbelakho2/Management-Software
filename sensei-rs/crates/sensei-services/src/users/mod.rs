@@ -453,6 +453,12 @@ impl UsersService for InMemoryUsersService {
 pub(crate) fn validate_roles(roles: &[String]) -> Result<()> {
     let rbac = sensei_auth::rbac::RbacService::new();
     for role in roles {
+        // Break-glass superadmin is a static, non-assignable identity.
+        if role == "platform_superadmin" {
+            return Err(SenseiError::Validation(
+                "'platform_superadmin' is a break-glass role and cannot be assigned".to_string(),
+            ));
+        }
         if !rbac.role_exists(role) {
             return Err(SenseiError::Validation(format!("Unknown role '{role}'")));
         }

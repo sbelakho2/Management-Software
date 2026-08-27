@@ -117,6 +117,7 @@ impl UsersService for DatabaseUsersService {
         .bind(&model.roles)
         .bind(model.is_active)
         .bind(model.email_verified)
+        .bind(model.credential_version)
         .bind(model.last_login_at)
         .bind(now)
         .bind(now)
@@ -166,33 +167,41 @@ impl UsersService for DatabaseUsersService {
 
         // Exact array membership: `$n = ANY(roles)` — no false positives
         // from substring matching ('admin' must not match 'admin2').
-        let (count_sql, data_sql): (&str, &str) = match (role, is_active) {
+        let (count_sql, data_sql): (String, String) = match (role, is_active) {
             (Some(_), Some(_)) => (
-                "SELECT COUNT(*) FROM users WHERE $1 = ANY(roles) AND is_active = $2",
-                "SELECT {USER_COLUMNS} \
+                "SELECT COUNT(*) FROM users WHERE $1 = ANY(roles) AND is_active = $2".to_string(),
+                format!(
+                    "SELECT {USER_COLUMNS} \
                      FROM users WHERE $1 = ANY(roles) AND is_active = $2 \
-                     ORDER BY created_at DESC LIMIT $3 OFFSET $4",
+                     ORDER BY created_at DESC LIMIT $3 OFFSET $4"
+                ),
             ),
             (Some(_), None) => (
-                "SELECT COUNT(*) FROM users WHERE $1 = ANY(roles)",
-                "SELECT {USER_COLUMNS} \
+                "SELECT COUNT(*) FROM users WHERE $1 = ANY(roles)".to_string(),
+                format!(
+                    "SELECT {USER_COLUMNS} \
                      FROM users WHERE $1 = ANY(roles) \
-                     ORDER BY created_at DESC LIMIT $2 OFFSET $3",
+                     ORDER BY created_at DESC LIMIT $2 OFFSET $3"
+                ),
             ),
             (None, Some(_)) => (
-                "SELECT COUNT(*) FROM users WHERE is_active = $1",
-                "SELECT {USER_COLUMNS} \
+                "SELECT COUNT(*) FROM users WHERE is_active = $1".to_string(),
+                format!(
+                    "SELECT {USER_COLUMNS} \
                      FROM users WHERE is_active = $1 \
-                     ORDER BY created_at DESC LIMIT $2 OFFSET $3",
+                     ORDER BY created_at DESC LIMIT $2 OFFSET $3"
+                ),
             ),
             (None, None) => (
-                "SELECT COUNT(*) FROM users",
-                "SELECT {USER_COLUMNS} \
-                     FROM users ORDER BY created_at DESC LIMIT $1 OFFSET $2",
+                "SELECT COUNT(*) FROM users".to_string(),
+                format!(
+                    "SELECT {USER_COLUMNS} \
+                     FROM users ORDER BY created_at DESC LIMIT $1 OFFSET $2"
+                ),
             ),
         };
 
-        let mut count_query = sqlx::query_scalar::<_, i64>(count_sql);
+        let mut count_query = sqlx::query_scalar::<_, i64>(&count_sql);
         if let Some(r) = role {
             count_query = count_query.bind(r);
         }
@@ -204,7 +213,7 @@ impl UsersService for DatabaseUsersService {
             .await
             .map_err(|e| SenseiError::Database(format!("Failed to count users: {e}")))?;
 
-        let mut data_query = sqlx::query_as::<_, UserModel>(data_sql);
+        let mut data_query = sqlx::query_as::<_, UserModel>(&data_sql);
         if let Some(r) = role {
             data_query = data_query.bind(r);
         }
@@ -407,7 +416,7 @@ impl UsersService for DatabaseUsersService {
         id: EntityId,
         roles: Vec<String>,
     ) -> Result<User> {
-        validate_roles_db(&self.pool, &roles).await?;
+        validate_roles_db(&self.pool, caller_tenant_id, &roles).await?;
         let now = Utc::now();
 
         let model = sqlx::query_as::<_, UserModel>(&format!(
@@ -465,15 +474,25 @@ fn is_unique_violation(e: &sqlx::Error) -> bool {
 /// Validate role names against BOTH the static RBAC defaults and the
 /// tenant-scoped `roles` table in PostgreSQL (the DB is the extension
 /// point for custom roles).
-async fn validate_roles_db(pool: &sqlx::PgPool, roles: &[String]) -> Result<()> {
+async fn validate_roles_db(
+    pool: &sqlx::PgPool,
+    caller_tenant_id: uuid::Uuid,
+    roles: &[String],
+) -> Result<()> {
     let static_rbac = sensei_auth::rbac::RbacService::new();
     let mut unknown: Vec<&String> = Vec::new();
     for role in roles {
+        if role == "platform_superadmin" {
+            return Err(SenseiError::Validation(
+                "'platform_superadmin' is a break-glass role and cannot be assigned".to_string(),
+            ));
+        }
         if static_rbac.role_exists(role) {
             continue;
         }
         let found: Option<String> =
-            sqlx::query_scalar("SELECT name FROM roles WHERE name = $1 LIMIT 1")
+            sqlx::query_scalar("SELECT name FROM roles WHERE tenant_id = $1 AND name = $2 LIMIT 1")
+                .bind(caller_tenant_id)
                 .bind(role)
                 .fetch_optional(pool)
                 .await

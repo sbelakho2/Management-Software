@@ -66,6 +66,16 @@ use crate::stores;
 /// Time-to-live for realtime connection tickets, in seconds.
 pub const REALTIME_TICKET_TTL_SECS: u64 = 30;
 
+/// Resolve the realtime-ticket TTL: the `REALTIME_TICKET_TTL` environment
+/// variable when set (the chart emits it), otherwise the 30s default.
+pub fn realtime_ticket_ttl_secs() -> u64 {
+    std::env::var("REALTIME_TICKET_TTL")
+        .ok()
+        .and_then(|v| v.parse::<u64>().ok())
+        .filter(|v| *v > 0)
+        .unwrap_or(REALTIME_TICKET_TTL_SECS)
+}
+
 /// A realtime connection ticket (WebSocket / SSE transport credential).
 #[derive(Debug, Clone)]
 pub struct RealtimeTicket {
@@ -130,7 +140,7 @@ impl RealtimeTicketStore {
         scope: &str,
     ) -> Result<RealtimeTicket, String> {
         let expires_at =
-            chrono::Utc::now() + chrono::Duration::seconds(REALTIME_TICKET_TTL_SECS as i64);
+            chrono::Utc::now() + chrono::Duration::seconds(realtime_ticket_ttl_secs() as i64);
 
         match &self.pool {
             Some(pool) => {
@@ -293,6 +303,17 @@ impl<'a> PmStores<'a> {
             kpi_definition_search_provider(self.kpi_definitions.clone()),
             notification_trigger_search_provider(self.notification_triggers.clone()),
         ]
+    }
+}
+
+/// Redact credentials (userinfo) from a NATS URL before logging.
+pub fn redact_nats_url(url: &str) -> String {
+    match url.split_once("://") {
+        Some((scheme, rest)) => match rest.split_once('@') {
+            Some((_, host)) => format!("{scheme}://{host}"),
+            None => url.to_string(),
+        },
+        None => url.to_string(),
     }
 }
 
@@ -911,6 +932,7 @@ impl AppState {
     /// the new bus.
     pub fn with_event_bus(mut self, event_bus: Arc<dyn EventBus>) -> Self {
         self.ws_manager.set_event_bus(event_bus.clone());
+        self.sse_manager.set_event_bus(event_bus.clone());
         self.event_bus = event_bus;
         self
     }
@@ -1000,7 +1022,10 @@ pub async fn create_event_bus(
     let bus = NatsEventBus::from_config(config);
     match bus.connect(&config.url).await {
         Ok(()) => {
-            tracing::info!(url = %config.url, "Connected to NATS JetStream event bus");
+            tracing::info!(
+                url = %redact_nats_url(&config.url),
+                "Connected to NATS JetStream event bus"
+            );
             Arc::new(bus) as Arc<dyn EventBus>
         }
         Err(e) => {
@@ -1014,7 +1039,7 @@ pub async fn create_event_bus(
             }
             tracing::warn!(
                 error = %e,
-                url = %config.url,
+                url = %redact_nats_url(&config.url),
                 "Failed to connect to NATS, using in-memory event bus (development mode only)"
             );
             Arc::new(sensei_event_bus::InMemoryEventBus::new()) as Arc<dyn EventBus>

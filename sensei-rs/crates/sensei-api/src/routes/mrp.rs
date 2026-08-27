@@ -121,6 +121,7 @@ pub async fn list_demand(
     State(state): State<AppState>,
     Query(params): Query<ListDemandParams>,
 ) -> Result<Json<PaginatedResponse<DemandEntry>>> {
+    user.require_permission("tps:mrp:run")?;
     let tenant_id = user.tenant_id;
     let date_from = parse_date_filter("date_from", params.date_from.as_deref())?;
     let date_to = parse_date_filter("date_to", params.date_to.as_deref())?;
@@ -191,6 +192,7 @@ pub async fn list_supply(
     State(state): State<AppState>,
     Query(params): Query<ListSupplyParams>,
 ) -> Result<Json<PaginatedResponse<SupplyOrder>>> {
+    user.require_permission("tps:mrp:run")?;
     let tenant_id = user.tenant_id;
     let store = state.supply_orders.read(user.tenant_id).await;
     let mut orders: Vec<SupplyOrder> = store
@@ -225,6 +227,7 @@ pub async fn run_mrp(
     State(state): State<AppState>,
     Json(req): Json<RunMrpRequest>,
 ) -> Result<Json<MrpRunDetail>> {
+    user.require_permission("tps:mrp:run")?;
     let tenant_id = user.tenant_id;
     let now = Utc::now();
 
@@ -235,12 +238,26 @@ pub async fn run_mrp(
         .filter(|d| d.tenant_id == tenant_id)
         .collect();
 
-    // Calculate planned orders
+    // Net demands CUMULATIVELY against the same on-hand: each unit of
+    // stock can satisfy exactly ONE demand. (stock=100, demands 80+80 must
+    // yield a 60-unit shortage, never two "0 requirement" lines.)
+    // Demands are processed in due-date order so earlier commitments
+    // consume stock first.
+    let mut demands_sorted = demands.clone();
+    demands_sorted.sort_by_key(|d| d.due_date);
+
     let mut planned_orders: Vec<PlannedOrder> = Vec::new();
-    for demand in &demands {
-        // On-hand is resolved by product (via its SKU), never by string
-        // comparing the product UUID against SKU values.
-        let on_hand = on_hand_for_product(&state, tenant_id, demand.product_id).await;
+    // Resolve on-hand ONCE per product (via SKU, never by string comparing
+    // UUIDs), then consume it cumulatively across that product's demands.
+    let mut remaining: std::collections::HashMap<Uuid, f64> = std::collections::HashMap::new();
+    for demand in &demands_sorted {
+        let on_hand = if let Some(balance) = remaining.get(&demand.product_id) {
+            *balance
+        } else {
+            let on_hand = on_hand_for_product(&state, tenant_id, demand.product_id).await;
+            remaining.insert(demand.product_id, on_hand);
+            on_hand
+        };
 
         let net_requirement = (demand.quantity - on_hand).max(0.0);
         let suggested_qty = if net_requirement > 0.0 {
@@ -249,6 +266,12 @@ pub async fn run_mrp(
         } else {
             0.0
         };
+
+        // Consume the stock this demand was covered by (never below zero).
+        let consumed = demand.quantity.min(on_hand);
+        if let Some(balance) = remaining.get_mut(&demand.product_id) {
+            *balance -= consumed;
+        }
 
         planned_orders.push(PlannedOrder {
             product_id: demand.product_id,
@@ -322,6 +345,7 @@ pub async fn list_mrp_runs(
     user: AuthenticatedUser,
     State(state): State<AppState>,
 ) -> Result<Json<Vec<MrpRun>>> {
+    user.require_permission("tps:mrp:run")?;
     let tenant_id = user.tenant_id;
     let store = state.mrp_runs.read(user.tenant_id).await;
     let mut runs: Vec<MrpRun> = store
@@ -343,6 +367,7 @@ pub async fn get_mrp_run(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<MrpRunDetail>> {
+    user.require_permission("tps:mrp:run")?;
     let tenant_id = user.tenant_id;
     let store = state.mrp_runs.read(user.tenant_id).await;
     let run = store

@@ -235,10 +235,13 @@ pub async fn update_user_roles(
         ));
     }
     for role in &req.roles {
-        if role == "admin" {
-            // The legacy wildcard role is never assignable via the API.
+        if role == "admin" || role == "platform_superadmin" {
+            // The legacy wildcard role and the break-glass superadmin are
+            // NEVER assignable via the API (platform_superadmin carries
+            // *:* — granting it would be instant privilege escalation).
             return Err(SenseiError::Forbidden(
-                "The 'admin' role cannot be assigned through the API".to_string(),
+                "The 'admin' and 'platform_superadmin' roles cannot be assigned through the API"
+                    .to_string(),
             ));
         }
         if role == "platform_admin" && !is_platform {

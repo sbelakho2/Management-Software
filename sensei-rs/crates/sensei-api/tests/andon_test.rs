@@ -156,8 +156,15 @@ async fn test_delete_andon() {
     let created: Value = app.json_body(&mut resp).await;
     let andon_id = created["id"].as_str().unwrap().to_string();
 
-    // Delete
-    let req = app.delete_authenticated(&format!("/api/v1/andon/{}", andon_id), &token);
-    let resp = app.send_request(req).await;
+    // Append-only history: production Andon events are never physically
+    // deleted — they are voided with a reason.
+    let req = app.post_authenticated(
+        &format!("/api/v1/andon/{}/void", andon_id),
+        &token,
+        serde_json::json!({"reason": "false alarm"}),
+    );
+    let mut resp = app.send_request(req).await;
     assert_eq!(resp.status(), StatusCode::OK);
+    let body: Value = app.json_body(&mut resp).await;
+    assert_eq!(body["status"], "voided");
 }

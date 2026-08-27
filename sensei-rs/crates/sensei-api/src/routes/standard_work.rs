@@ -23,9 +23,11 @@ use crate::stores::{QualityCheck, StandardWorkDocument, StandardWorkVersion, SwS
 /// Query parameters for listing standard work documents.
 #[derive(Debug, Deserialize)]
 pub struct ListStandardWorkParams {
+    #[serde(rename = "status")]
+    pub status: Option<SwStatus>,
     pub area: Option<String>,
     pub process: Option<String>,
-    pub status: Option<SwStatus>,
+
     pub page: Option<usize>,
     pub per_page: Option<usize>,
 }
@@ -54,7 +56,7 @@ pub struct UpdateStandardWorkRequest {
     pub title: Option<String>,
     pub area: Option<String>,
     pub process: Option<String>,
-    pub status: Option<SwStatus>,
+
     pub steps: Option<Vec<WorkStep>>,
     pub required_skills: Option<Vec<String>>,
     pub cycle_time_seconds: Option<i32>,
@@ -87,6 +89,7 @@ pub async fn list_standard_work(
     State(state): State<AppState>,
     Query(params): Query<ListStandardWorkParams>,
 ) -> Result<Json<PaginatedResponse<StandardWorkDocument>>> {
+    user.require_permission("tps:standard-work:read")?;
     let tenant_id = user.tenant_id;
     let store = state.standard_work_documents.read(user.tenant_id).await;
     let mut docs: Vec<StandardWorkDocument> = store
@@ -126,6 +129,7 @@ pub async fn create_standard_work(
     State(state): State<AppState>,
     Json(req): Json<CreateStandardWorkRequest>,
 ) -> Result<Json<StandardWorkDocument>> {
+    user.require_permission("tps:standard-work:draft")?;
     let tenant_id = user.tenant_id;
     let now = Utc::now();
     let doc = StandardWorkDocument {
@@ -163,6 +167,7 @@ pub async fn get_standard_work(
     State(state): State<AppState>,
     Path(sw_id): Path<Uuid>,
 ) -> Result<Json<StandardWorkDocument>> {
+    user.require_permission("tps:standard-work:read")?;
     let tenant_id = user.tenant_id;
     let store = state.standard_work_documents.read(user.tenant_id).await;
     let doc = store
@@ -180,6 +185,7 @@ pub async fn update_standard_work(
     Path(sw_id): Path<Uuid>,
     Json(req): Json<UpdateStandardWorkRequest>,
 ) -> Result<Json<StandardWorkDocument>> {
+    user.require_permission("tps:standard-work:draft")?;
     let tenant_id = user.tenant_id;
     let mut store = state.standard_work_documents.write(tenant_id).await;
     let doc = store
@@ -195,9 +201,9 @@ pub async fn update_standard_work(
     if let Some(process) = req.process {
         doc.process = process;
     }
-    if let Some(status) = req.status {
-        doc.status = status;
-    }
+    // Status is NEVER editable via the generic update: it is a controlled
+    // state machine (draft -> under_review -> approved -> effective ->
+    // superseded | rejected) driven by the approve/reject/publish commands.
     if let Some(steps) = req.steps {
         doc.steps = steps;
     }
@@ -242,6 +248,7 @@ pub async fn approve_standard_work(
     Path(sw_id): Path<Uuid>,
     Json(_req): Json<ApproveStandardWorkRequest>,
 ) -> Result<Json<StandardWorkDocument>> {
+    user.require_permission("tps:standard-work:approve")?;
     let tenant_id = user.tenant_id;
     let mut store = state.standard_work_documents.write(tenant_id).await;
     let doc = store
@@ -267,11 +274,12 @@ pub async fn approve_standard_work(
 /// approval fields cleared. (The data model has no dedicated `Rejected`
 /// state, so a rejected document remains editable as a draft.)
 pub async fn reject_standard_work(
-    _user: AuthenticatedUser,
+    user: AuthenticatedUser,
     State(state): State<AppState>,
     Path(sw_id): Path<Uuid>,
 ) -> Result<Json<StandardWorkDocument>> {
-    let tenant_id = _user.tenant_id;
+    user.require_permission("tps:standard-work:review")?;
+    let tenant_id = user.tenant_id;
     let mut store = state.standard_work_documents.write(tenant_id).await;
     let doc = store
         .get_mut(&sw_id)
@@ -297,6 +305,7 @@ pub async fn delete_standard_work(
     State(state): State<AppState>,
     Path(sw_id): Path<Uuid>,
 ) -> Result<Json<()>> {
+    user.require_permission("tps:standard-work:draft")?;
     let tenant_id = user.tenant_id;
     let mut store = state.standard_work_documents.write(tenant_id).await;
     let exists = store
@@ -320,6 +329,7 @@ pub async fn list_versions(
     State(state): State<AppState>,
     Path(sw_id): Path<Uuid>,
 ) -> Result<Json<Vec<StandardWorkVersion>>> {
+    user.require_permission("tps:standard-work:read")?;
     let tenant_id = user.tenant_id;
     let store = state.standard_work_versions.read(user.tenant_id).await;
     let mut versions: Vec<StandardWorkVersion> = store
@@ -338,6 +348,7 @@ pub async fn create_version(
     Path(sw_id): Path<Uuid>,
     Json(req): Json<CreateVersionRequest>,
 ) -> Result<Json<StandardWorkVersion>> {
+    user.require_permission("tps:standard-work:draft")?;
     let tenant_id = user.tenant_id;
 
     // Fetch the current document to snapshot
@@ -391,6 +402,7 @@ pub async fn get_version(
     State(state): State<AppState>,
     Path((sw_id, version_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<StandardWorkVersion>> {
+    user.require_permission("tps:standard-work:read")?;
     let tenant_id = user.tenant_id;
     let store = state.standard_work_versions.read(user.tenant_id).await;
     let version = store
@@ -434,7 +446,11 @@ mod tests {
         AuthenticatedUser {
             user_id,
             tenant_id,
-            roles: vec!["admin".to_string()],
+            roles: vec![
+                "tenant_admin".to_string(),
+                "production_manager".to_string(),
+                "operator".to_string(),
+            ],
             sid: None,
         }
     }

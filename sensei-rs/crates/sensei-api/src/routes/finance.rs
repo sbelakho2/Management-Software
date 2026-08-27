@@ -161,7 +161,6 @@ pub async fn update_invoice(
     Path(id): Path<Uuid>,
     Json(req): Json<Invoice>,
 ) -> Result<Json<Invoice>> {
-    user.require_permission("finance:invoice:create")?;
     user.require_permission("finance:invoice:update")?;
 
     let tenant_id = user.tenant_id;
@@ -178,7 +177,6 @@ pub async fn delete_invoice(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<()>> {
-    user.require_permission("finance:invoice:create")?;
     user.require_permission("finance:invoice:void")?;
 
     let tenant_id = user.tenant_id;
@@ -264,7 +262,6 @@ pub async fn list_budgets(
     State(state): State<AppState>,
     Query(params): Query<ListBudgetsParams>,
 ) -> Result<Json<PaginatedResponse<Budget>>> {
-    user.require_permission("finance:budget:allocate")?;
     user.require_permission("finance:budget:read")?;
 
     let tenant_id = user.tenant_id;
@@ -301,7 +298,6 @@ pub async fn get_budget(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<Budget>> {
-    user.require_permission("finance:budget:allocate")?;
     user.require_permission("finance:budget:read")?;
 
     let tenant_id = user.tenant_id;
@@ -316,7 +312,6 @@ pub async fn allocate_budget(
     Path(id): Path<Uuid>,
     Json(req): Json<AllocateBudgetRequest>,
 ) -> Result<Json<Budget>> {
-    user.require_permission("finance:budget:allocate")?;
     user.require_permission("finance:budget:allocate")?;
 
     let tenant_id = user.tenant_id;
@@ -334,7 +329,6 @@ pub async fn update_budget(
     Path(id): Path<Uuid>,
     Json(req): Json<Budget>,
 ) -> Result<Json<Budget>> {
-    user.require_permission("finance:budget:allocate")?;
     user.require_permission("finance:budget:allocate")?;
 
     let tenant_id = user.tenant_id;
@@ -405,7 +399,6 @@ pub async fn list_journal_entries(
     State(state): State<AppState>,
     Query(params): Query<ListJournalEntriesParams>,
 ) -> Result<Json<PaginatedResponse<JournalEntry>>> {
-    user.require_permission("finance:journal:post")?;
     user.require_permission("finance:journal:read")?;
 
     let tenant_id = user.tenant_id;

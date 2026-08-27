@@ -174,6 +174,30 @@ impl ApiClient {
         self.execute(reqwest::Method::POST, path, Some(body)).await
     }
 
+    /// Perform a POST request with extra headers (e.g. the HttpOnly
+    /// cookie-mode opt-in on login).
+    pub async fn post_with_headers<T: DeserializeOwned, B: Serialize>(
+        &self,
+        path: &str,
+        body: &B,
+        headers: &[(&str, &str)],
+    ) -> Result<T, ApiError> {
+        let body = serde_json::to_value(body).map_err(|e| ApiError::json(e.to_string()))?;
+        let mut req = self.http.request(reqwest::Method::POST, self.url(path));
+        if let Some(token) = self.token() {
+            req = req.bearer_auth(token);
+        }
+        for (name, value) in headers {
+            req = req.header(*name, *value);
+        }
+        req = req.json(&body);
+        let resp = req
+            .send()
+            .await
+            .map_err(|e| ApiError::http(e.to_string()))?;
+        resp.json().await.map_err(|e| ApiError::json(e.to_string()))
+    }
+
     /// Perform a PUT request with a JSON body.
     pub async fn put<T: DeserializeOwned, B: Serialize>(
         &self,

@@ -60,6 +60,7 @@ pub async fn list_work_orders(
     State(state): State<AppState>,
     Query(params): Query<ListWorkOrdersParams>,
 ) -> Result<Json<PaginatedResponse<WorkOrder>>> {
+    user.require_permission("production:work-order:read")?;
     let tenant_id = user.tenant_id;
     let orders = state
         .production_service
@@ -80,6 +81,7 @@ pub async fn create_work_order(
     State(state): State<AppState>,
     Json(req): Json<WorkOrder>,
 ) -> Result<Json<WorkOrder>> {
+    user.require_permission("production:work-order:create")?;
     let tenant_id = user.tenant_id;
     let order = state
         .production_service
@@ -94,6 +96,7 @@ pub async fn get_work_order(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<WorkOrder>> {
+    user.require_permission("production:work-order:read")?;
     let tenant_id = user.tenant_id;
     let order = state
         .production_service
@@ -109,6 +112,7 @@ pub async fn update_work_order_status(
     Path(id): Path<Uuid>,
     Json(req): Json<UpdateWorkOrderStatusRequest>,
 ) -> Result<Json<WorkOrder>> {
+    user.require_permission("production:work-order:update")?;
     let tenant_id = user.tenant_id;
     let order = state
         .production_service
@@ -159,6 +163,7 @@ pub async fn create_production_order(
     State(state): State<AppState>,
     Json(req): Json<ProductionOrder>,
 ) -> Result<Json<ProductionOrder>> {
+    user.require_permission("production:release")?;
     let tenant_id = user.tenant_id;
     let order = state
         .production_service
@@ -181,16 +186,35 @@ pub async fn get_production_order(
     Ok(Json(order))
 }
 
-/// Complete a production order.
+/// Completion request: an optional short close must be explicitly
+/// recorded with a reason; the approver is the token user.
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct CompleteProductionOrderRequest {
+    #[serde(default)]
+    pub short_close_qty: i64,
+    pub short_close_reason: Option<String>,
+}
+
+/// Complete a production order. Output is NEVER fabricated: the order
+/// reconciles produced + scrap + short close against the planned quantity
+/// and refuses completion while units are unaccounted.
 pub async fn complete_production_order(
     user: AuthenticatedUser,
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
+    Json(req): Json<CompleteProductionOrderRequest>,
 ) -> Result<Json<ProductionOrder>> {
+    user.require_permission("production:complete")?;
     let tenant_id = user.tenant_id;
     let order = state
         .production_service
-        .complete_production_order(tenant_id, id)
+        .complete_production_order(
+            tenant_id,
+            id,
+            req.short_close_qty,
+            req.short_close_reason.as_deref(),
+            user.user_id,
+        )
         .await?;
     Ok(Json(order))
 }
@@ -203,6 +227,7 @@ pub async fn add_bom_item(
     State(state): State<AppState>,
     Json(req): Json<BOMItem>,
 ) -> Result<Json<BOMItem>> {
+    user.require_permission("production:work-order:update")?;
     let tenant_id = user.tenant_id;
     let item = state
         .production_service
@@ -217,6 +242,7 @@ pub async fn get_bom(
     State(state): State<AppState>,
     Path(product_id): Path<Uuid>,
 ) -> Result<Json<Vec<BOMItem>>> {
+    user.require_permission("production:work-order:read")?;
     let tenant_id = user.tenant_id;
     let bom = state
         .production_service
@@ -233,6 +259,7 @@ pub async fn run_mrp(
     State(state): State<AppState>,
     Json(req): Json<RunMrpRequest>,
 ) -> Result<Json<Vec<MRPRecord>>> {
+    user.require_permission("tps:mrp:run")?;
     let tenant_id = user.tenant_id;
     let records = state
         .production_service

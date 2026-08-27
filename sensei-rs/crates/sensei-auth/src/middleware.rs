@@ -39,9 +39,12 @@ impl AuthenticatedUser {
     /// comparisons. The `admin` role carries `*:*`; functional roles carry
     /// their families.
     pub fn require_permission(&self, permission: &str) -> Result<(), SenseiError> {
-        let rbac = crate::rbac::RbacService::new();
+        // Resolve through the process-wide shared authorization service
+        // (installed by the API with the DB-loaded role map), scoped to the
+        // user's tenant for custom roles.
+        let rbac = crate::rbac::authorization_service();
         let perm = sensei_core::domain::entities::Permission::new(permission);
-        if rbac.has_permission(&self.roles, &perm) {
+        if rbac.has_permission_for_tenant(&self.roles, Some(self.tenant_id), &perm) {
             Ok(())
         } else {
             Err(SenseiError::Forbidden(format!(

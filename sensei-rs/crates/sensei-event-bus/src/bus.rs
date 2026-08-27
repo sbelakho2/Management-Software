@@ -30,6 +30,15 @@ use tracing::{error, info, warn};
 /// Callback type for event handlers.
 pub type EventHandler = Arc<dyn Fn(EventEnvelope) -> Result<()> + Send + Sync>;
 
+/// Async event handler: the receive loop AWAITS this before acknowledging,
+/// so a worker can guarantee the durable outcome happened (item: never ACK
+/// before the work is committed).
+pub type AsyncEventHandler = Arc<
+    dyn Fn(EventEnvelope) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<()>> + Send>>
+        + Send
+        + Sync,
+>;
+
 /// Core-NATS-style handler: raw payload bytes, no envelope (ephemeral
 /// realtime fanout).
 pub type CoreHandler = Arc<dyn Fn(Vec<u8>) -> std::result::Result<(), EventBusError> + Send + Sync>;
@@ -68,6 +77,17 @@ pub trait EventBus: Send + Sync {
         subject: &str,
         group: &str,
         handler: EventHandler,
+    ) -> Result<()>;
+
+    /// Subscribe with an ASYNC handler: the message is acknowledged ONLY
+    /// after the handler's future completes successfully. Used by workers
+    /// whose side effects must be durable before the ACK (notification
+    /// triggers, escalations).
+    async fn subscribe_with_group_async(
+        &self,
+        subject: &str,
+        group: &str,
+        handler: AsyncEventHandler,
     ) -> Result<()>;
 
     /// Check if the bus is connected.
@@ -297,6 +317,74 @@ impl EventBus for NatsEventBus {
         Ok(())
     }
 
+    async fn subscribe_with_group_async(
+        &self,
+        subject: &str,
+        group: &str,
+        handler: AsyncEventHandler,
+    ) -> Result<()> {
+        let subject = normalize_subject(subject);
+        let js = self
+            .jetstream
+            .read()
+            .await
+            .as_ref()
+            .ok_or(EventBusError::NotConnected)?
+            .clone();
+
+        let stream = self.ensure_stream(&js).await?;
+        let consumer_name = format!("sensei-worker-{}", sanitize_group(group));
+        let consumer = stream
+            .get_or_create_consumer(
+                &consumer_name,
+                pull::Config {
+                    filter_subject: subject.to_string(),
+                    ..Default::default()
+                },
+            )
+            .await
+            .map_err(|e| EventBusError::SubscribeFailed(e.to_string()))?;
+
+        let mut messages = consumer
+            .messages()
+            .await
+            .map_err(|e| EventBusError::SubscribeFailed(e.to_string()))?;
+
+        let handler = handler.clone();
+        tokio::spawn(async move {
+            while let Some(Ok(msg)) = messages.next().await {
+                let payload = msg.payload.to_vec();
+                match serde_json::from_slice::<EventEnvelope>(&payload) {
+                    Ok(envelope) => {
+                        // ACK ONLY after the durable outcome completed:
+                        // an error leaves the message unacked for redelivery.
+                        match handler(envelope).await {
+                            Ok(()) => {
+                                if let Err(e) = msg.ack().await {
+                                    warn!("Failed to ack message: {e}");
+                                }
+                            }
+                            Err(e) => {
+                                error!("Async event handler error: {e}");
+                                // Do not ack — message will be redelivered
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        error!(
+                            error = %EventBusError::DeserializationFailed(e.to_string()),
+                            "Failed to deserialize event; acking poison message"
+                        );
+                        if let Err(e) = msg.ack().await {
+                            warn!("Failed to ack message: {e}");
+                        }
+                    }
+                }
+            }
+        });
+        Ok(())
+    }
+
     fn is_connected(&self) -> bool {
         // Presence of the client object alone is not evidence the broker is
         // currently reachable — the readiness handler performs a real
@@ -400,6 +488,8 @@ pub struct InMemoryEventBus {
     subscribers: Arc<RwLock<Vec<(String, EventHandler)>>>,
     /// Core pub/sub handlers (ephemeral fanout, payload bytes).
     core_subscribers: Arc<RwLock<Vec<(String, CoreHandler)>>>,
+    /// Async handlers: awaited before acknowledgement.
+    async_subscribers: Arc<RwLock<Vec<(String, String, AsyncEventHandler)>>>,
 }
 
 impl InMemoryEventBus {
@@ -408,6 +498,7 @@ impl InMemoryEventBus {
         Self {
             subscribers: Arc::new(RwLock::new(Vec::new())),
             core_subscribers: Arc::new(RwLock::new(Vec::new())),
+            async_subscribers: Arc::new(RwLock::new(Vec::new())),
         }
     }
 }
@@ -450,6 +541,17 @@ impl EventBus for InMemoryEventBus {
                 }
             }
         }
+        drop(subscribers);
+        let async_subscribers = self.async_subscribers.read().await;
+        for (pattern, _group, handler) in async_subscribers.iter() {
+            if subject_matches(pattern, &subject) {
+                let envelope = envelope.clone();
+                let handler = handler.clone();
+                tokio::spawn(async move {
+                    let _ = handler(envelope).await;
+                });
+            }
+        }
 
         Ok(())
     }
@@ -469,6 +571,20 @@ impl EventBus for InMemoryEventBus {
     fn is_connected(&self) -> bool {
         // The in-memory bus is connected from the moment it is created.
         true
+    }
+
+    async fn subscribe_with_group_async(
+        &self,
+        subject: &str,
+        group: &str,
+        handler: AsyncEventHandler,
+    ) -> Result<()> {
+        let subject = normalize_subject(subject);
+        self.async_subscribers
+            .write()
+            .await
+            .push((subject, group.to_string(), handler));
+        Ok(())
     }
 
     async fn subscribe_core(

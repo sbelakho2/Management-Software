@@ -319,8 +319,12 @@ impl<T> EntityStore<T> {
                     });
                     Ok(())
                 });
+            // Per-instance group: EVERY replica receives every invalidation
+            // (a shared queue group would deliver to only ONE replica,
+            // leaving the others stale until the snapshot TTL).
+            let group = store_origin_id().to_string();
             tokio::spawn(async move {
-                let _ = bus.subscribe_core(&subject, "entity-stores", handler).await;
+                let _ = bus.subscribe_core(&subject, &group, handler).await;
             });
         }
     }
@@ -533,10 +537,18 @@ impl<T: Serialize + DeserializeOwned + Clone + PartialEq + Send + Sync + 'static
         };
         match result {
             Ok(()) => {
+                // Capture the changed ids BEFORE after_persist_success
+                // clears the change sets (they are the invalidation payload).
+                let invalidated: Vec<Uuid> = self
+                    .dirty
+                    .iter()
+                    .chain(self.removed.iter())
+                    .copied()
+                    .collect();
                 self.after_persist_success();
                 // Publish cross-replica invalidation so OTHER replicas evict
                 // the affected rows immediately (core NATS, fire-and-forget).
-                self.publish_invalidation().await;
+                self.publish_invalidation(&invalidated).await;
                 Ok(())
             }
             Err(e) => {
@@ -558,8 +570,14 @@ impl<T: Serialize + DeserializeOwned + Clone + PartialEq + Send + Sync + 'static
                 .await
                 {
                     Ok(()) => {
+                        let invalidated: Vec<Uuid> = self
+                            .dirty
+                            .iter()
+                            .chain(self.removed.iter())
+                            .copied()
+                            .collect();
                         self.after_persist_success();
-                        self.publish_invalidation().await;
+                        self.publish_invalidation(&invalidated).await;
                         Ok(())
                     }
                     Err(e) => {
@@ -603,12 +621,10 @@ impl<T: Serialize + DeserializeOwned + Clone + PartialEq + Send + Sync + 'static
 
     /// Fire-and-forget cross-replica invalidation (core NATS): every other
     /// replica evicts the changed rows from its cache immediately.
-    async fn publish_invalidation(&self) {
+    async fn publish_invalidation(&self, ids: &[Uuid]) {
         let Some(bus) = self.bus() else {
             return;
         };
-        let mut ids: Vec<Uuid> = self.dirty.iter().copied().collect();
-        ids.extend(self.removed.iter().copied());
         if ids.is_empty() {
             return;
         }

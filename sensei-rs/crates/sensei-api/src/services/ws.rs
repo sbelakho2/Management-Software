@@ -28,14 +28,11 @@
 //! derives the subject from the static event type); the specific user id /
 //! room name travels inside the envelope payload.
 
-use std::any::Any;
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
-use sensei_core::domain::events::DomainEvent;
-use sensei_core::types::{CorrelationId, EventId, Timestamp};
 use sensei_event_bus::EventBus;
 use tokio::sync::{broadcast, RwLock};
 use tracing::debug;
@@ -73,60 +70,6 @@ enum WsFanoutKind {
     User(Uuid),
     /// A message for a room.
     Room(String),
-}
-
-/// Event published on the bus to fan out a WS message across replicas.
-#[derive(Debug, serde::Serialize, serde::Deserialize, Clone)]
-struct WsFanoutEvent {
-    kind: WsFanoutKind,
-    message: String,
-    origin: String,
-}
-
-impl DomainEvent for WsFanoutEvent {
-    fn event_id(&self) -> EventId {
-        EventId::new_v4()
-    }
-
-    fn event_type(&self) -> &'static str {
-        match self.kind {
-            WsFanoutKind::User(_) => "ws.user",
-            WsFanoutKind::Room(_) => "ws.room",
-        }
-    }
-
-    fn correlation_id(&self) -> CorrelationId {
-        CorrelationId::new_v4()
-    }
-
-    fn tenant_id(&self) -> Uuid {
-        // The tenant is carried inside the payload where known; the bus
-        // envelope tenant is not meaningful for transport fanout.
-        Uuid::nil()
-    }
-
-    fn occurred_at(&self) -> Timestamp {
-        chrono::Utc::now()
-    }
-
-    fn payload(&self) -> Result<serde_json::Value, serde_json::Error> {
-        match &self.kind {
-            WsFanoutKind::User(user_id) => Ok(serde_json::json!({
-                "origin": self.origin,
-                "message": self.message,
-                "target_user": user_id.to_string(),
-            })),
-            WsFanoutKind::Room(room) => Ok(serde_json::json!({
-                "origin": self.origin,
-                "message": self.message,
-                "target_room": room,
-            })),
-        }
-    }
-
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
 }
 
 /// Manages WebSocket connections and room-based message broadcasting.
@@ -374,6 +317,16 @@ impl WebSocketManager {
         }
     }
 
+    /// Local-only tenant-wide delivery used by the bus fanout handler.
+    async fn deliver_to_tenant_local(&self, tenant_id: Uuid, message: &str) {
+        let connections = self.connections.read().await;
+        for connection in connections.values() {
+            if connection.tenant_id == tenant_id {
+                let _ = connection.tx.send(message.to_string());
+            }
+        }
+    }
+
     /// Local-only user delivery used by the bus fanout handler.
     async fn deliver_to_user_local(&self, user_id: Uuid, message: &str) {
         let user_index = self.user_index.read().await;
@@ -415,18 +368,17 @@ impl WebSocketManager {
 
             let group = (*self.instance_id).clone();
             let handler = self.make_core_fanout_handler();
-            let user_ok = bus
-                .subscribe_core("sensei.ws.user", &group, handler.clone())
+            let ok = bus
+                .subscribe_core(super::realtime::REALTIME_TOPIC, &group, handler)
                 .await;
-            let room_ok = bus.subscribe_core("sensei.ws.room", &group, handler).await;
 
-            if user_ok.is_ok() && room_ok.is_ok() {
+            if ok.is_ok() {
                 self.bus_attached.store(true, Ordering::SeqCst);
-                tracing::info!(group = %group, "Realtime fanout subscriptions active");
+                tracing::info!(group = %group, "Realtime fanout subscription active");
                 return;
             }
             tracing::warn!(
-                error = %user_ok.err().or(room_ok.err()).map(|e| e.to_string()).unwrap_or_default(),
+                error = ok.err().map(|e| e.to_string()).unwrap_or_default(),
                 retry_in_ms = delay.as_millis(),
                 "Realtime fanout subscription failed — retrying"
             );
@@ -453,13 +405,9 @@ impl WebSocketManager {
         let group = (*self.instance_id).clone();
         let handler = self.make_core_fanout_handler();
         let subscribed = bus
-            .subscribe_core("sensei.ws.user", &group, handler.clone())
+            .subscribe_core(super::realtime::REALTIME_TOPIC, &group, handler)
             .await
-            .is_ok()
-            && bus
-                .subscribe_core("sensei.ws.room", &group, handler)
-                .await
-                .is_ok();
+            .is_ok();
 
         if subscribed {
             self.bus_attached.store(true, Ordering::SeqCst);
@@ -478,27 +426,26 @@ impl WebSocketManager {
         else {
             return;
         };
-        let event = WsFanoutEvent {
-            kind: kind.clone(),
-            message: message.to_string(),
-            origin: (*self.instance_id).clone(),
+        let origin = uuid::Uuid::parse_str(&self.instance_id).unwrap_or_default();
+        // The receiving replica resolves the tenant from its local socket
+        // state; a nil tenant in the envelope means "resolve locally".
+        let envelope = match kind {
+            WsFanoutKind::User(user_id) => super::realtime::RealtimeEnvelope::user(
+                Uuid::nil(),
+                user_id,
+                origin,
+                "ws.message",
+                serde_json::json!({ "message": message }),
+            ),
+            WsFanoutKind::Room(room) => super::realtime::RealtimeEnvelope::room(
+                Uuid::nil(),
+                &room,
+                origin,
+                "ws.message",
+                serde_json::json!({ "message": message }),
+            ),
         };
-        // Core NATS pub/sub: ephemeral realtime broadcast — never a durable
-        // JetStream consumer/history.
-        let subject = match kind {
-            WsFanoutKind::User(user_id) => format!("sensei.ws.user.{user_id}"),
-            WsFanoutKind::Room(room) => format!("sensei.ws.room.{room}"),
-        };
-        let payload = match serde_json::to_vec(&event) {
-            Ok(p) => p,
-            Err(e) => {
-                debug!(error = %e, "Failed to serialize WS fanout envelope");
-                return;
-            }
-        };
-        if let Err(e) = bus.publish_core(&subject, &payload).await {
-            debug!(error = %e, "Failed to publish WS fanout message");
-        }
+        super::realtime::publish_realtime(bus.as_ref(), &envelope).await;
     }
 
     /// Build the CORE-NATS handler that forwards foreign-replica fanout
@@ -508,47 +455,43 @@ impl WebSocketManager {
         let manager = self.clone();
         let instance_id = (*self.instance_id).clone();
         Arc::new(move |payload: Vec<u8>| {
-            let parsed: serde_json::Value = match serde_json::from_slice(&payload) {
+            let envelope: super::realtime::RealtimeEnvelope = match serde_json::from_slice(&payload)
+            {
                 Ok(v) => v,
                 Err(e) => {
-                    tracing::warn!(error = %e, "Failed to parse core fanout envelope");
+                    tracing::warn!(error = %e, "Failed to parse realtime envelope");
                     return Ok(());
                 }
             };
-            let origin = parsed
-                .get("origin")
-                .and_then(|v| v.as_str())
-                .unwrap_or_default()
-                .to_string();
             // Own publishes were already delivered locally; skipping them
             // makes the in-memory bus a no-op passthrough.
-            if origin == instance_id {
+            let self_id = uuid::Uuid::parse_str(&instance_id).unwrap_or_default();
+            if envelope.origin_instance == self_id {
                 return Ok(());
             }
-            let message = parsed
+            let message = envelope
+                .payload
                 .get("message")
                 .and_then(|v| v.as_str())
                 .unwrap_or_default()
                 .to_string();
-            let target_user = parsed
-                .get("target_user")
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string());
-            let target_room = parsed
-                .get("target_room")
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string());
 
             let manager = manager.clone();
             tokio::spawn(async move {
-                if let Some(user_id) = target_user {
-                    if let Ok(id) = uuid::Uuid::parse_str(&user_id) {
+                match envelope.target {
+                    super::realtime::RealtimeTarget::User(user_id) => {
                         // Local delivery only: the origin replica already
                         // published the fanout — never re-publish.
-                        manager.deliver_to_user_local(id, &message).await;
+                        manager.deliver_to_user_local(user_id, &message).await;
                     }
-                } else if let Some(room) = target_room {
-                    manager.deliver_to_room_local(&room, &message).await;
+                    super::realtime::RealtimeTarget::Room(room) => {
+                        manager.deliver_to_room_local(&room, &message).await;
+                    }
+                    super::realtime::RealtimeTarget::Tenant => {
+                        manager
+                            .deliver_to_tenant_local(envelope.tenant_id, &message)
+                            .await;
+                    }
                 }
             });
             Ok(())

@@ -52,6 +52,7 @@ pub async fn list_andons(
     State(state): State<AppState>,
     Query(params): Query<ListAndonsParams>,
 ) -> Result<Json<PaginatedResponse<Andon>>> {
+    user.require_permission("tps:andon:raise")?;
     let tenant_id = user.tenant_id;
     let andons = state
         .ops_service
@@ -66,14 +67,47 @@ pub async fn list_andons(
     Ok(Json(andons))
 }
 
+/// Client input for raising an Andon: only the operational facts. The
+/// actor (raised_by), tenant, status, timestamps and event identity are
+/// server-generated — a caller can never attribute an Andon to someone
+/// else.
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct RaiseAndonRequest {
+    pub work_center_id: Uuid,
+    pub issue_type: String, // quality, safety, maintenance, material, other
+    pub severity: String,   // low, medium, high, critical
+    pub description: String,
+}
+
 /// Raise (create) a new Andon event.
 pub async fn raise_andon(
     user: AuthenticatedUser,
     State(state): State<AppState>,
-    Json(req): Json<Andon>,
+    Json(req): Json<RaiseAndonRequest>,
 ) -> Result<Json<Andon>> {
+    user.require_permission("tps:andon:raise")?;
     let tenant_id = user.tenant_id;
-    let andon = state.ops_service.raise_andon(tenant_id, req).await?;
+    let andon = Andon {
+        id: Uuid::new_v4(),
+        tenant_id,
+        andon_number: String::new(),
+        work_center_id: req.work_center_id,
+        issue_type: req.issue_type,
+        severity: req.severity,
+        description: req.description,
+        status: "active".to_string(),
+        // The actor is a server-generated identity field.
+        raised_by: user.user_id,
+        acknowledged_by: None,
+        resolved_by: None,
+        resolution: None,
+        response_time_seconds: None,
+        resolution_time_seconds: None,
+        created_at: chrono::Utc::now(),
+        acknowledged_at: None,
+        resolved_at: None,
+    };
+    let andon = state.ops_service.raise_andon(tenant_id, andon).await?;
     Ok(Json(andon))
 }
 
@@ -83,6 +117,7 @@ pub async fn get_andon(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<Andon>> {
+    user.require_permission("tps:andon:raise")?;
     let tenant_id = user.tenant_id;
     let andon = state.ops_service.get_andon(tenant_id, id).await?;
     Ok(Json(andon))
@@ -98,6 +133,7 @@ pub async fn acknowledge_andon(
     Path(id): Path<Uuid>,
     _req: Json<AcknowledgeAndonRequest>,
 ) -> Result<Json<Andon>> {
+    user.require_permission("tps:andon:ack")?;
     let tenant_id = user.tenant_id;
     let andon = state
         .ops_service
@@ -116,6 +152,7 @@ pub async fn resolve_andon(
     Path(id): Path<Uuid>,
     Json(req): Json<ResolveAndonRequest>,
 ) -> Result<Json<Andon>> {
+    user.require_permission("tps:andon:resolve")?;
     let tenant_id = user.tenant_id;
     let andon = state
         .ops_service
@@ -131,18 +168,33 @@ pub async fn update_andon(
     Path(id): Path<Uuid>,
     Json(req): Json<Andon>,
 ) -> Result<Json<Andon>> {
+    user.require_permission("tps:andon:contain")?;
     let tenant_id = user.tenant_id;
     let andon = state.ops_service.update_andon(tenant_id, id, req).await?;
     Ok(Json(andon))
 }
 
 /// Delete an Andon event.
-pub async fn delete_andon(
+/// Void an Andon (append-only operational history: production Andon
+/// events are never physically deleted — abandoned/false signals are
+/// marked `voided` with the actor and reason recorded).
+pub async fn void_andon(
     user: AuthenticatedUser,
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
-) -> Result<Json<()>> {
+    Json(req): Json<VoidAndonRequest>,
+) -> Result<Json<Andon>> {
+    user.require_permission("tps:andon:contain")?;
     let tenant_id = user.tenant_id;
-    state.ops_service.delete_andon(tenant_id, id).await?;
-    Ok(Json(()))
+    let andon = state
+        .ops_service
+        .void_andon(tenant_id, id, user.user_id, &req.reason)
+        .await?;
+    Ok(Json(andon))
+}
+
+/// Reason for voiding an Andon.
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct VoidAndonRequest {
+    pub reason: String,
 }

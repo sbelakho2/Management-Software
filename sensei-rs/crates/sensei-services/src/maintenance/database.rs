@@ -364,6 +364,25 @@ impl MaintenanceService for DatabaseMaintenanceService {
         .fetch_one(&self.pool)
         .await.map_err(|e| SenseiError::Database(format!("Failed to complete PM task: {e}")))?;
 
+        // Maintenance evidence: every completion records an occurrence
+        // (technician, actual time, findings placeholder) so Leader
+        // Standard Work and the future TPM agent can verify work was done.
+        sqlx::query(
+            "INSERT INTO maintenance_occurrences \
+                (id, tenant_id, schedule_id, equipment_id, occurrence_type, \
+                 technician_id, actual_start_at, actual_end_at, findings, created_at) \
+             VALUES ($1, $2, $3, $4, 'pm_completion', $5, $6, $6, '', NOW())",
+        )
+        .bind(Uuid::new_v4())
+        .bind(tenant_id)
+        .bind(schedule_id)
+        .bind(existing.equipment_id)
+        .bind(existing.assigned_to)
+        .bind(now)
+        .execute(&self.pool)
+        .await
+        .map_err(|e| SenseiError::Database(format!("Failed to record PM occurrence: {e}")))?;
+
         Ok(pm_row_to_domain(row))
     }
 

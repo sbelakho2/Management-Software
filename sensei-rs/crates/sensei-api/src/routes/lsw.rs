@@ -2,6 +2,7 @@
 //!
 //! Provides endpoints for managing LSW standards, performing audits,
 //! and viewing compliance dashboards.
+use std::collections::HashSet;
 
 use axum::{
     extract::{Path, Query, State},
@@ -119,6 +120,7 @@ pub async fn list_lsw_standards(
     State(state): State<AppState>,
     Query(params): Query<ListLswStandardsParams>,
 ) -> Result<Json<PaginatedResponse<LswStandard>>> {
+    user.require_permission("tps:lsw:execute")?;
     let tenant_id = user.tenant_id;
     let store = state.lsw_standards.read(user.tenant_id).await;
     let mut standards: Vec<LswStandard> = store
@@ -158,6 +160,7 @@ pub async fn create_lsw_standard(
     State(state): State<AppState>,
     Json(req): Json<CreateLswStandardRequest>,
 ) -> Result<Json<LswStandard>> {
+    user.require_permission("tps:lsw:manage")?;
     let tenant_id = user.tenant_id;
     let now = Utc::now();
     let standard = LswStandard {
@@ -184,6 +187,7 @@ pub async fn get_lsw_standard(
     State(state): State<AppState>,
     Path(standard_id): Path<Uuid>,
 ) -> Result<Json<LswStandard>> {
+    user.require_permission("tps:lsw:execute")?;
     let tenant_id = user.tenant_id;
     let store = state.lsw_standards.read(user.tenant_id).await;
     let standard = store
@@ -201,6 +205,7 @@ pub async fn update_lsw_standard(
     Path(standard_id): Path<Uuid>,
     Json(req): Json<UpdateLswStandardRequest>,
 ) -> Result<Json<LswStandard>> {
+    user.require_permission("tps:lsw:manage")?;
     let tenant_id = user.tenant_id;
     let mut store = state.lsw_standards.write(user.tenant_id).await;
     let standard = store
@@ -235,6 +240,7 @@ pub async fn delete_lsw_standard(
     State(state): State<AppState>,
     Path(standard_id): Path<Uuid>,
 ) -> Result<Json<()>> {
+    user.require_permission("tps:lsw:manage")?;
     let tenant_id = user.tenant_id;
     let mut store = state.lsw_standards.write(user.tenant_id).await;
     let exists = store
@@ -259,6 +265,7 @@ pub async fn perform_audit(
     Path(standard_id): Path<Uuid>,
     Json(req): Json<PerformAuditRequest>,
 ) -> Result<Json<LswAudit>> {
+    user.require_permission("tps:lsw:execute")?;
     let tenant_id = user.tenant_id;
     // Verify standard exists
     let standard = {
@@ -270,9 +277,37 @@ pub async fn perform_audit(
             .ok_or_else(|| SenseiError::NotFound(format!("LSW standard {standard_id} not found")))?
     };
 
-    // Calculate compliance rate. An audit with no results carries no
-    // evidence of compliance, so it reports 0.0 rather than a fake 100%.
-    let total_items = req.results.len();
+    // Enforce checklist completeness: exactly one result for EVERY
+    // required checklist item, no unknown item, no duplicate item — a
+    // client cannot submit only one passing result and make the audit look
+    // fully compliant.
+    let required_ids: Vec<Uuid> = standard.checklist_items.iter().map(|i| i.id).collect();
+    let mut seen: HashSet<Uuid> = HashSet::new();
+    for r in &req.results {
+        if !required_ids.contains(&r.item_id) {
+            return Err(SenseiError::Validation(format!(
+                "Result for item {} is not part of this standard's checklist",
+                r.item_id
+            )));
+        }
+        if !seen.insert(r.item_id) {
+            return Err(SenseiError::Validation(format!(
+                "Duplicate result for checklist item {}",
+                r.item_id
+            )));
+        }
+    }
+    for id in &required_ids {
+        if !seen.contains(id) {
+            return Err(SenseiError::Validation(format!(
+                "Missing result for required checklist item {id} — every item must be observed"
+            )));
+        }
+    }
+
+    // Compliance is the fraction of the FULL checklist, never of the
+    // submitted subset (which is now guaranteed to be the full checklist).
+    let total_items = required_ids.len();
     let passed_items = req.results.iter().filter(|r| r.passed).count();
     let compliance_rate = if total_items > 0 {
         (passed_items as f64 / total_items as f64) * 100.0
@@ -305,6 +340,7 @@ pub async fn list_audits(
     Path(standard_id): Path<Uuid>,
     Query(params): Query<ListAuditsParams>,
 ) -> Result<Json<PaginatedResponse<LswAudit>>> {
+    user.require_permission("tps:lsw:execute")?;
     let tenant_id = user.tenant_id;
     let store = state.lsw_audits.read(user.tenant_id).await;
     let mut audits: Vec<LswAudit> = store
@@ -323,6 +359,7 @@ pub async fn get_audit(
     State(state): State<AppState>,
     Path(audit_id): Path<Uuid>,
 ) -> Result<Json<LswAudit>> {
+    user.require_permission("tps:lsw:execute")?;
     let tenant_id = user.tenant_id;
     let store = state.lsw_audits.read(user.tenant_id).await;
     let audit = store
@@ -341,6 +378,7 @@ pub async fn get_lsw_dashboard(
     State(state): State<AppState>,
     Query(params): Query<LswDashboardParams>,
 ) -> Result<Json<LswDashboard>> {
+    user.require_permission("tps:lsw:execute")?;
     let tenant_id = user.tenant_id;
     let standards_store = state.lsw_standards.read(user.tenant_id).await;
     let audits_store = state.lsw_audits.read(user.tenant_id).await;

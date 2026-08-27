@@ -734,7 +734,7 @@ async fn execute_on_transition_hook(
                 if let Err(e) = result {
                     tracing::warn!(
                         error = %e,
-                        url = %url,
+                        url = %crate::state::redact_nats_url(url),
                         instance_id = %instance.id,
                         "webhook hook failed"
                     );

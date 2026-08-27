@@ -140,13 +140,16 @@ async fn test_delete_a3() {
     let created: Value = app.json_body(&mut resp).await;
     let a3_id = created["id"].as_str().unwrap().to_string();
 
-    // Delete
+    // A3 learning history is append-only: the draft is VOIDED, not
+    // physically deleted, and remains retrievable.
     let req = app.delete_authenticated(&format!("/api/v1/a3/{}", a3_id), &token);
     let resp = app.send_request(req).await;
     assert_eq!(resp.status(), StatusCode::OK);
 
-    // The deleted A3 is gone.
+    // The voided A3 is still readable with status 'voided' (history kept).
     let req = app.get_authenticated(&format!("/api/v1/a3/{}", a3_id), &token);
-    let resp = app.send_request(req).await;
-    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    let mut resp = app.send_request(req).await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    let json: Value = app.json_body(&mut resp).await;
+    assert_eq!(json["status"], "voided");
 }

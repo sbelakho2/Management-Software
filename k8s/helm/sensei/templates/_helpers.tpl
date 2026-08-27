@@ -119,10 +119,18 @@ MinIO endpoint
 {{- end }}
 
 {{/*
-NATS URL: includes the auth token when NATS auth is enabled.
+NATS URL: includes the auth credentials when NATS auth is enabled. A
+production chart MUST NOT ship an unauthenticated broker: auth enabled with
+an empty password fails the render unless allowUnauthenticated is
+deliberately set.
 */}}
 {{- define "sensei.nats.url" -}}
-{{- if .Values.nats.auth.enabled -}}
+{{- if and .Values.nats.auth.enabled (not .Values.nats.auth.allowUnauthenticated) -}}
+{{- if empty .Values.nats.auth.password -}}
+{{- fail "nats.auth.enabled requires nats.auth.password (or set nats.auth.allowUnauthenticated=true deliberately for a non-production deployment)" -}}
+{{- end -}}
+nats://{{ .Values.nats.auth.user }}:{{ .Values.nats.auth.password }}@{{ .Release.Name }}-nats:4222
+{{- else if .Values.nats.auth.enabled -}}
 nats://{{ .Values.nats.auth.user }}:{{ .Values.nats.auth.password }}@{{ .Release.Name }}-nats:4222
 {{- else -}}
 nats://{{ .Release.Name }}-nats:4222

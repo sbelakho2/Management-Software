@@ -53,12 +53,12 @@ pub fn spawn(state: AppState) -> Arc<AtomicBool> {
     let subscribed = Arc::new(AtomicBool::new(false));
     let flag = Arc::clone(&subscribed);
     tokio::spawn(async move {
-        let handler = Arc::new(build_handler(state.clone()));
+        let handler = build_async_handler(state.clone());
         let mut delay = INITIAL_RETRY_DELAY;
         loop {
             match state
                 .event_bus
-                .subscribe_with_group(SUBJECT, WORKER_GROUP, handler.clone())
+                .subscribe_with_group_async(SUBJECT, WORKER_GROUP, handler.clone())
                 .await
             {
                 Ok(()) => {
@@ -86,28 +86,28 @@ pub fn spawn(state: AppState) -> Arc<AtomicBool> {
     subscribed
 }
 
-/// Build the synchronous event handler.
+/// Build the ASYNC event handler.
 ///
-/// The event bus invokes handlers synchronously, so the actual work is
-/// spawned onto the Tokio runtime; the handler itself only enqueues.
-fn build_handler(
-    state: AppState,
-) -> impl Fn(
-    sensei_event_bus::types::EventEnvelope,
-) -> Result<(), sensei_event_bus::error::EventBusError>
-       + Send
-       + Sync {
-    move |envelope| {
+/// The bus ACKs the JetStream message ONLY after this future completes
+/// successfully: the durable outcome (notifications persisted, escalations
+/// sent) happens BEFORE the ACK. A failure returns `Err`, leaving the
+/// message unacked for redelivery — a crash between receive and commit can
+/// never silently lose an escalation.
+fn build_async_handler(state: AppState) -> sensei_event_bus::bus::AsyncEventHandler {
+    Arc::new(move |envelope: sensei_event_bus::types::EventEnvelope| {
         let state = state.clone();
-        tokio::spawn(async move {
-            handle_event(state, envelope).await;
-        });
-        Ok(())
-    }
+        Box::pin(async move { handle_event(state, envelope).await })
+    })
 }
 
 /// Process a single delivered event against all matching triggers.
-async fn handle_event(state: AppState, envelope: sensei_event_bus::types::EventEnvelope) {
+///
+/// Returns `Err` when the durable outcome could not be committed (the
+/// caller leaves the message unacked for redelivery).
+async fn handle_event(
+    state: AppState,
+    envelope: sensei_event_bus::types::EventEnvelope,
+) -> Result<(), sensei_event_bus::error::EventBusError> {
     let tenant_id = envelope.headers.tenant_id;
     let event_type = envelope.event_type.clone();
     let payload = envelope.payload.clone();
@@ -156,7 +156,7 @@ async fn handle_event(state: AppState, envelope: sensei_event_bus::types::EventE
     };
 
     if matched.is_empty() {
-        return;
+        return Ok(());
     }
 
     // Resolve the users whose roles intersect the triggers' target roles.
@@ -164,7 +164,9 @@ async fn handle_event(state: AppState, envelope: sensei_event_bus::types::EventE
         Ok(users) => users,
         Err(e) => {
             error!(error = %e, event_type = %event_type, "Failed to list users for notification triggers");
-            return;
+            return Err(sensei_event_bus::error::EventBusError::SerializationFailed(
+                e.to_string(),
+            ));
         }
     };
 
@@ -210,6 +212,18 @@ async fn handle_event(state: AppState, envelope: sensei_event_bus::types::EventE
         for notification in notifications_to_create {
             store.insert(notification.id, notification.clone());
         }
+        // The in-app notifications must be DURABLE before the ACK: an
+        // explicit persist failure redelivers the event.
+        if let Err(e) = store.persist().await {
+            error!(
+                error = %e,
+                event_type = %event_type,
+                "Failed to persist trigger notifications — leaving event unacked"
+            );
+            return Err(sensei_event_bus::error::EventBusError::SerializationFailed(
+                e.to_string(),
+            ));
+        }
     }
 
     for (to, subject, body) in emails_to_send {
@@ -221,4 +235,5 @@ async fn handle_event(state: AppState, envelope: sensei_event_bus::types::EventE
             warn!(to = %to, error = %e, "Failed to send trigger notification email");
         }
     }
+    Ok(())
 }

@@ -316,15 +316,20 @@ pub async fn update_andon(
     Ok(Json(andon))
 }
 
-/// Delete an Andon signal.
-pub async fn delete_andon(
+/// Void an Andon (append-only history; never physically deleted).
+pub async fn void_andon(
     user: AuthenticatedUser,
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
-) -> Result<Json<()>> {
+    Json(req): Json<crate::routes::andon::VoidAndonRequest>,
+) -> Result<Json<Andon>> {
+    user.require_permission("tps:andon:contain")?;
     let tenant_id = user.tenant_id;
-    state.ops_service.delete_andon(tenant_id, id).await?;
-    Ok(Json(()))
+    let andon = state
+        .ops_service
+        .void_andon(tenant_id, id, user.user_id, &req.reason)
+        .await?;
+    Ok(Json(andon))
 }
 
 /// Update a project.

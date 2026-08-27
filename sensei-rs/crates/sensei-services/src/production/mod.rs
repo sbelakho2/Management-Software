@@ -49,6 +49,16 @@ pub struct WorkOrder {
     pub scheduled_end: Option<DateTime<Utc>>,
     pub actual_start: Option<DateTime<Utc>>,
     pub actual_end: Option<DateTime<Utc>>,
+    #[serde(default)]
+    pub quantity_scrapped: i64,
+    #[serde(default)]
+    pub short_close_qty: i64,
+    #[serde(default)]
+    pub short_close_reason: Option<String>,
+    #[serde(default)]
+    pub short_close_approved_by: Option<Uuid>,
+    #[serde(default)]
+    pub short_close_at: Option<DateTime<Utc>>,
     pub assigned_to: Vec<Uuid>,
     pub notes: String,
     pub created_at: DateTime<Utc>,
@@ -64,6 +74,7 @@ pub struct ProductionOrder {
     pub product_id: Uuid,
     pub quantity_planned: i64,
     pub quantity_produced: i64,
+    #[serde(default)]
     pub quantity_scrapped: i64,
     pub status: String, // planned, released, in_progress, completed, cancelled
     pub work_center_id: Option<Uuid>,
@@ -71,6 +82,14 @@ pub struct ProductionOrder {
     pub planned_end: DateTime<Utc>,
     pub actual_start: Option<DateTime<Utc>>,
     pub actual_end: Option<DateTime<Utc>>,
+    #[serde(default)]
+    pub short_close_qty: f64,
+    #[serde(default)]
+    pub short_close_reason: Option<String>,
+    #[serde(default)]
+    pub short_close_approved_by: Option<Uuid>,
+    #[serde(default)]
+    pub short_close_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
 }
 
@@ -218,8 +237,14 @@ pub trait ProductionService: Send + Sync {
         per_page: Option<usize>,
     ) -> Result<PaginatedResponse<ProductionOrder>>;
     /// Complete a production order.
-    async fn complete_production_order(&self, tenant_id: Uuid, id: Uuid)
-        -> Result<ProductionOrder>;
+    async fn complete_production_order(
+        &self,
+        tenant_id: Uuid,
+        id: Uuid,
+        short_close_qty: i64,
+        short_close_reason: Option<&str>,
+        approver: Uuid,
+    ) -> Result<ProductionOrder>;
 
     // ── BOM ─────────────────────────────────────────────────────────────
     /// Add a BOM item.
@@ -629,6 +654,9 @@ impl ProductionService for InMemoryProductionService {
         &self,
         tenant_id: Uuid,
         id: Uuid,
+        short_close_qty: i64,
+        short_close_reason: Option<&str>,
+        approver: Uuid,
     ) -> Result<ProductionOrder> {
         let mut store = self.production_orders.write().await;
         let po = store
@@ -641,9 +669,38 @@ impl ProductionService for InMemoryProductionService {
             ));
         }
 
+        // Completion must never fabricate output.
+        let produced = po.quantity_produced as i64;
+        let scrapped = po.quantity_scrapped as i64;
+        let planned = po.quantity_planned as i64;
+        let accounted = produced + scrapped + short_close_qty;
+        if accounted < planned {
+            return Err(SenseiError::Validation(format!(
+                "Cannot complete: {accounted} of {planned} units accounted for \
+                 (produced {produced} + scrap {scrapped} + short close {short_close_qty})."
+            )));
+        }
+        if short_close_qty < 0 {
+            return Err(SenseiError::Validation(
+                "Short close quantity cannot be negative".to_string(),
+            ));
+        }
+        if short_close_qty > 0 && short_close_reason.is_none_or(|r| r.trim().is_empty()) {
+            return Err(SenseiError::Validation(
+                "A short close requires a reason".to_string(),
+            ));
+        }
+
         po.status = "completed".to_string();
         po.actual_end = Some(Utc::now());
-        po.quantity_produced = po.quantity_planned;
+        po.short_close_qty = short_close_qty as f64;
+        po.short_close_reason = short_close_reason.map(|s| s.to_string());
+        po.short_close_approved_by = Some(approver);
+        po.short_close_at = if short_close_qty > 0 {
+            po.actual_end
+        } else {
+            None
+        };
         let po_cloned = po.clone();
         drop(store);
 
@@ -785,6 +842,11 @@ mod tests {
             scheduled_end: None,
             actual_start: None,
             actual_end: None,
+            quantity_scrapped: 0,
+            short_close_qty: 0,
+            short_close_reason: None,
+            short_close_approved_by: None,
+            short_close_at: None,
             assigned_to: Vec::new(),
             notes: String::new(),
             created_at: Utc::now(),
@@ -825,6 +887,11 @@ mod tests {
             scheduled_end: None,
             actual_start: None,
             actual_end: None,
+            quantity_scrapped: 0,
+            short_close_qty: 0,
+            short_close_reason: None,
+            short_close_approved_by: None,
+            short_close_at: None,
             assigned_to: Vec::new(),
             notes: String::new(),
             created_at: Utc::now(),
@@ -860,6 +927,11 @@ mod tests {
             scheduled_end: None,
             actual_start: None,
             actual_end: None,
+            quantity_scrapped: 0,
+            short_close_qty: 0,
+            short_close_reason: None,
+            short_close_approved_by: None,
+            short_close_at: None,
             assigned_to: Vec::new(),
             notes: String::new(),
             created_at: Utc::now(),
@@ -894,6 +966,10 @@ mod tests {
             planned_end: Utc::now() + chrono::Duration::days(7),
             actual_start: None,
             actual_end: None,
+            short_close_qty: 0.0,
+            short_close_reason: None,
+            short_close_approved_by: None,
+            short_close_at: None,
             created_at: Utc::now(),
         };
 
@@ -904,8 +980,21 @@ mod tests {
         assert!(created.order_number.starts_with("PO-"));
         assert_eq!(created.status, "planned");
 
+        // An unaccounted completion must be rejected (no fabricated output).
+        let rejected = service
+            .complete_production_order(tenant_id, created.id, 0, None, Uuid::new_v4())
+            .await;
+        assert!(rejected.is_err(), "completion without production must fail");
+
+        // A documented short close reconciles the disposition.
         let completed = service
-            .complete_production_order(tenant_id, created.id)
+            .complete_production_order(
+                tenant_id,
+                created.id,
+                500,
+                Some("customer changed requirement"),
+                Uuid::new_v4(),
+            )
             .await
             .unwrap();
         assert_eq!(completed.status, "completed");
@@ -976,6 +1065,11 @@ mod tests {
             scheduled_end: None,
             actual_start: None,
             actual_end: None,
+            quantity_scrapped: 0,
+            short_close_qty: 0,
+            short_close_reason: None,
+            short_close_approved_by: None,
+            short_close_at: None,
             assigned_to: Vec::new(),
             notes: String::new(),
             created_at: Utc::now(),
@@ -1043,6 +1137,11 @@ mod tests {
             scheduled_end: None,
             actual_start: None,
             actual_end: None,
+            quantity_scrapped: 0,
+            short_close_qty: 0,
+            short_close_reason: None,
+            short_close_approved_by: None,
+            short_close_at: None,
             assigned_to: Vec::new(),
             notes: String::new(),
             created_at: Utc::now(),
@@ -1081,6 +1180,11 @@ mod tests {
             scheduled_end: None,
             actual_start: None,
             actual_end: None,
+            quantity_scrapped: 0,
+            short_close_qty: 0,
+            short_close_reason: None,
+            short_close_approved_by: None,
+            short_close_at: None,
             assigned_to: Vec::new(),
             notes: String::new(),
             created_at: Utc::now(),

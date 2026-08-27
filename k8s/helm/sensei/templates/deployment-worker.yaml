@@ -72,19 +72,19 @@ spec:
           value: {{ .Values.config.storage.bucket | quote }}
         - name: LOG_LEVEL
           value: {{ .Values.config.logLevel | quote }}
-        # Liveness probe — the worker's own --healthcheck verifies REAL
-        # connectivity (DB + NATS), not process existence (no pgrep in the
-        # runtime image).
+        # Liveness: the runtime is alive. NEVER tests dependencies — a
+        # PostgreSQL outage must not restart healthy workers (that only
+        # adds load and noise); DB/NATS belong to readiness.
         livenessProbe:
           exec:
             command:
             - sensei-workers
-            - --healthcheck
-          initialDelaySeconds: 30
+            - --liveness
+          initialDelaySeconds: 10
           periodSeconds: 30
-          timeoutSeconds: 10
+          timeoutSeconds: 5
           failureThreshold: 3
-        # Readiness probe — DB + NATS must be reachable.
+        # Readiness: can it currently process work? Real DB + NATS probes.
         readinessProbe:
           exec:
             command:

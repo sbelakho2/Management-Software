@@ -151,6 +151,7 @@ pub async fn list_characteristics(
     State(state): State<AppState>,
     Query(params): Query<ListCharacteristicsParams>,
 ) -> Result<Json<PaginatedResponse<CtqCharacteristic>>> {
+    user.require_permission("tps:ctq:read")?;
     let tenant_id = user.tenant_id;
     let store = get_char_store(&state);
     let map = store.read(user.tenant_id).await;
@@ -191,6 +192,7 @@ pub async fn get_characteristic(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<CtqCharacteristic>> {
+    user.require_permission("tps:ctq:read")?;
     let tenant_id = user.tenant_id;
     let store = get_char_store(&state);
     let map = store.read(user.tenant_id).await;
@@ -210,6 +212,7 @@ pub async fn create_characteristic(
     State(state): State<AppState>,
     Json(req): Json<CreateCharacteristicRequest>,
 ) -> Result<Json<CtqCharacteristic>> {
+    user.require_permission("tps:ctq:manage")?;
     let tenant_id = user.tenant_id;
     let now = Utc::now();
     let char = CtqCharacteristic {
@@ -243,6 +246,7 @@ pub async fn update_characteristic(
     Path(id): Path<Uuid>,
     Json(req): Json<UpdateCharacteristicRequest>,
 ) -> Result<Json<CtqCharacteristic>> {
+    user.require_permission("tps:ctq:manage")?;
     let tenant_id = user.tenant_id;
     let store = get_char_store(&state);
     let mut map = store.write(user.tenant_id).await;
@@ -293,6 +297,7 @@ pub async fn list_records(
     Path(characteristic_id): Path<Uuid>,
     Query(params): Query<ListRecordsParams>,
 ) -> Result<Json<PaginatedResponse<CtqRecord>>> {
+    user.require_permission("tps:ctq:read")?;
     let tenant_id = user.tenant_id;
     let store = get_record_store(&state);
     let map = store.read(user.tenant_id).await;
@@ -340,6 +345,7 @@ pub async fn create_record(
     Path(characteristic_id): Path<Uuid>,
     Json(req): Json<CreateRecordRequest>,
 ) -> Result<Json<CtqRecord>> {
+    user.require_permission("tps:ctq:manage")?;
     let tenant_id = user.tenant_id;
 
     // Verify the characteristic exists
@@ -392,6 +398,7 @@ pub async fn get_conformance_analysis(
     State(state): State<AppState>,
     Path(characteristic_id): Path<Uuid>,
 ) -> Result<Json<ConformanceAnalysis>> {
+    user.require_permission("tps:ctq:read")?;
     let tenant_id = user.tenant_id;
 
     // Get the characteristic

@@ -55,7 +55,7 @@ impl AppConfig {
             email: EmailConfig::from_env()?,
             observability: ObservabilityConfig::from_env()?,
             security: SecurityConfig::from_env()?,
-            features: FeatureFlags::default(),
+            features: FeatureFlags::from_env(),
             storage: StorageConfig::from_env(),
             environment,
         })
@@ -440,6 +440,21 @@ impl Default for FeatureFlags {
             websocket_enabled: true,
             audit_logging: true,
             rate_limiting: true,
+        }
+    }
+}
+
+impl FeatureFlags {
+    /// Load feature flags from the `FEATURE_*` environment variables the
+    /// Helm chart emits (one canonical schema — no config drift).
+    pub fn from_env() -> Self {
+        // Invalid feature values fall back to the defaults rather than
+        // failing startup (a feature knob must never crash the API).
+        Self {
+            ai_enabled: parse_env_bool("FEATURE_AI", false).unwrap_or(false),
+            websocket_enabled: parse_env_bool("FEATURE_WEBSOCKET", true).unwrap_or(true),
+            audit_logging: parse_env_bool("FEATURE_AUDIT_LOGGING", true).unwrap_or(true),
+            rate_limiting: parse_env_bool("FEATURE_RATE_LIMITING", true).unwrap_or(true),
         }
     }
 }

@@ -119,6 +119,7 @@ pub async fn list_boards(
     State(state): State<AppState>,
     Query(params): Query<ListBoardsParams>,
 ) -> Result<Json<PaginatedResponse<KanbanBoard>>> {
+    user.require_permission("tps:kanban:read")?;
     let tenant_id = user.tenant_id;
     let store = state.kanban_boards.read(user.tenant_id).await;
     let mut boards: Vec<KanbanBoard> = store
@@ -137,6 +138,7 @@ pub async fn create_board(
     State(state): State<AppState>,
     Json(req): Json<BoardRequest>,
 ) -> Result<Json<KanbanBoard>> {
+    user.require_permission("tps:kanban:manage")?;
     let tenant_id = user.tenant_id;
     let now = Utc::now();
     let board = KanbanBoard {
@@ -160,6 +162,7 @@ pub async fn get_board(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<KanbanBoard>> {
+    user.require_permission("tps:kanban:read")?;
     let tenant_id = user.tenant_id;
     let store = state.kanban_boards.read(user.tenant_id).await;
     let board = store
@@ -177,6 +180,7 @@ pub async fn update_board(
     Path(id): Path<Uuid>,
     Json(req): Json<BoardRequest>,
 ) -> Result<Json<KanbanBoard>> {
+    user.require_permission("tps:kanban:manage")?;
     let tenant_id = user.tenant_id;
     let mut store = state.kanban_boards.write(user.tenant_id).await;
     let board = store
@@ -195,6 +199,7 @@ pub async fn delete_board(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<()>> {
+    user.require_permission("tps:kanban:manage")?;
     let tenant_id = user.tenant_id;
     let mut store = state.kanban_boards.write(user.tenant_id).await;
     let exists = store
@@ -247,6 +252,7 @@ pub async fn update_column(
     Path(id): Path<Uuid>,
     Json(req): Json<ColumnRequest>,
 ) -> Result<Json<KanbanColumn>> {
+    user.require_permission("tps:kanban:manage")?;
     let tenant_id = user.tenant_id;
     let now = Utc::now();
     let mut store = state.kanban_boards.write(user.tenant_id).await;
@@ -270,6 +276,7 @@ pub async fn delete_column(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<()>> {
+    user.require_permission("tps:kanban:manage")?;
     let tenant_id = user.tenant_id;
     let mut store = state.kanban_boards.write(user.tenant_id).await;
 
@@ -388,6 +395,7 @@ pub async fn update_card(
     Path(id): Path<Uuid>,
     Json(req): Json<CardRequest>,
 ) -> Result<Json<KanbanCard>> {
+    user.require_permission("tps:kanban:manage")?;
     let tenant_id = user.tenant_id;
     let now = Utc::now();
     let mut store = state.kanban_boards.write(user.tenant_id).await;
@@ -525,6 +533,7 @@ pub async fn delete_card(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<()>> {
+    user.require_permission("tps:kanban:manage")?;
     let tenant_id = user.tenant_id;
     let mut store = state.kanban_boards.write(user.tenant_id).await;
 
@@ -563,6 +572,7 @@ pub async fn move_card(
     Path(card_id): Path<Uuid>,
     Json(req): Json<MoveCardRequest>,
 ) -> Result<Json<KanbanCard>> {
+    user.require_permission("tps:kanban:manage")?;
     let tenant_id = user.tenant_id;
     let now = Utc::now();
     let mut store = state.kanban_boards.write(user.tenant_id).await;
@@ -663,6 +673,7 @@ pub async fn get_kanban_metrics(
     State(state): State<AppState>,
     Query(query): Query<MetricsQuery>,
 ) -> Result<Json<KanbanMetrics>> {
+    user.require_permission("tps:kanban:read")?;
     let tenant_id = user.tenant_id;
     let store = state.kanban_boards.read(user.tenant_id).await;
     let boards: Vec<&KanbanBoard> = store

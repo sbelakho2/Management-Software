@@ -58,45 +58,16 @@ fn anomaly_model_to_prediction(m: AnomalyDetectionModel) -> AnomalyPrediction {
     }
 }
 
-fn prediction_to_quality(p: PredictionModel) -> QualityPrediction {
-    // The predictions table stores predicted_value as a string. For quality
-    // predictions, we attempt to parse the defect rate from stored features.
-    let predicted_defect_rate = p
-        .input_features
-        .as_ref()
-        .and_then(|v| v.get("predicted_defect_rate"))
-        .and_then(|v| v.as_f64())
-        .unwrap_or(p.confidence);
-
-    let predicted_cpk = p
-        .input_features
-        .as_ref()
-        .and_then(|v| v.get("predicted_cpk"))
-        .and_then(|v| v.as_f64())
-        .unwrap_or(1.0);
-
-    let recommended_params = p
-        .input_features
-        .clone()
-        .unwrap_or(serde_json::Value::Object(serde_json::Map::new()));
-
-    QualityPrediction {
-        product_id: p.entity_id,
-        predicted_defect_rate,
-        predicted_cpk,
-        recommended_params,
-    }
-}
-
 fn prediction_to_maintenance(p: PredictionModel) -> PredictiveMaintenanceResult {
     let failure_probability = p.confidence;
 
+    // A missing remaining-life estimate is None — never a fabricated
+    // "8760 hours" default.
     let estimated_remaining_life_hours = p
         .input_features
         .as_ref()
         .and_then(|v| v.get("remaining_life_hours"))
-        .and_then(|v| v.as_f64())
-        .unwrap_or(8760.0); // default: 1 year
+        .and_then(|v| v.as_f64());
 
     let risk_level = p
         .input_features
@@ -114,9 +85,9 @@ fn prediction_to_maintenance(p: PredictionModel) -> PredictiveMaintenanceResult 
             }
         });
 
-    let recommended_maintenance_date = p.predicted_at
-        + chrono::Duration::try_hours(estimated_remaining_life_hours as i64)
-            .unwrap_or(chrono::Duration::try_hours(8760).unwrap());
+    let recommended_maintenance_date = estimated_remaining_life_hours.map(|hours| {
+        p.predicted_at + chrono::Duration::try_hours(hours as i64).unwrap_or_default()
+    });
 
     let suggested_actions: Vec<String> = p
         .input_features
@@ -180,8 +151,12 @@ impl AiService for DatabaseAiService {
         &self,
         tenant_id: Uuid,
         product_id: Uuid,
-        _batch_params: serde_json::Value,
+        batch_params: serde_json::Value,
     ) -> Result<QualityPrediction> {
+        // The contract says "predict THIS batch": run the submitted batch
+        // parameters through the latest stored model's reference profile
+        // and persist a NEW prediction row. Never silently return the last
+        // stored prediction for a different batch.
         let model = sqlx::query_as::<_, PredictionModel>(
             r#"
             SELECT id, tenant_id, model_id, prediction_type, entity_type,
@@ -197,14 +172,95 @@ impl AiService for DatabaseAiService {
         .bind(product_id)
         .fetch_optional(&self.pool)
         .await
-        .map_err(|e| SenseiError::Database(format!("Failed to query quality prediction: {e}")))?;
+        .map_err(|e| SenseiError::Database(format!("Failed to query quality model: {e}")))?;
 
-        match model {
-            Some(m) => Ok(prediction_to_quality(m)),
-            None => Err(SenseiError::NotFound(format!(
-                "No quality prediction found for product {product_id}"
-            ))),
+        let Some(model) = model else {
+            return Err(SenseiError::NotFound(format!(
+                "No quality model found for product {product_id}"
+            )));
+        };
+
+        // Deterministic per-batch scoring: each supplied parameter is
+        // compared against the model's recommended value; the deviation
+        // raises the defect-rate estimate. Missing parameters contribute
+        // nothing (no fabricated certainty).
+        let recommended = model
+            .input_features
+            .clone()
+            .unwrap_or(serde_json::Value::Object(serde_json::Map::new()));
+        let mut defect_rate = 0.0_f64;
+        let mut deviation_count = 0.0_f64;
+        if let Some(params) = batch_params.as_object() {
+            for (name, value) in params {
+                let Some(value) = value.as_f64() else {
+                    continue;
+                };
+                let Some(rec) = recommended
+                    .get(name)
+                    .and_then(|v| v.get("recommended"))
+                    .and_then(|v| v.as_f64())
+                else {
+                    continue;
+                };
+                let Some(range) = recommended
+                    .get(name)
+                    .and_then(|v| v.get("range"))
+                    .and_then(|v| v.as_array())
+                else {
+                    continue;
+                };
+                if range.len() == 2 {
+                    if let (Some(lo), Some(hi)) = (range[0].as_f64(), range[1].as_f64()) {
+                        deviation_count += 1.0;
+                        if value < lo || value > hi {
+                            let span = (hi - lo).max(1e-9);
+                            let dev = ((value - rec).abs() / span).min(1.0);
+                            defect_rate += dev * 0.02;
+                        }
+                    }
+                }
+            }
         }
+        let defect_rate = if deviation_count > 0.0 {
+            // Baseline from the model's own confidence (calibrated),
+            // scaled by measured deviations.
+            (defect_rate + model.confidence * 0.1).min(0.95)
+        } else {
+            model.confidence.min(0.95)
+        };
+
+        // Persist the NEW per-batch prediction (immutable evidence).
+        let id = Uuid::new_v4();
+        let now = Utc::now();
+        let features = serde_json::json!({
+            "predicted_defect_rate": defect_rate,
+            "batch_params": batch_params,
+        });
+        sqlx::query(
+            "INSERT INTO predictions \
+                (id, tenant_id, model_id, prediction_type, entity_type, entity_id, \
+                 predicted_value, actual_value, confidence, input_features, \
+                 is_accurate, predicted_at, created_at) \
+             VALUES ($1, $2, $3, 'quality', 'product', $4, $5, NULL, $6, $7, NULL, $8, $8)",
+        )
+        .bind(id)
+        .bind(tenant_id)
+        .bind(model.model_id)
+        .bind(product_id)
+        .bind(defect_rate.to_string())
+        .bind(model.confidence)
+        .bind(&features)
+        .bind(now)
+        .execute(&self.pool)
+        .await
+        .map_err(|e| SenseiError::Database(format!("Failed to store quality prediction: {e}")))?;
+
+        Ok(QualityPrediction {
+            product_id,
+            predicted_defect_rate: Some(defect_rate),
+            predicted_cpk: None, // no validated Cpk for this batch
+            recommended_params: recommended,
+        })
     }
 
     async fn predict_maintenance(
@@ -239,7 +295,7 @@ impl AiService for DatabaseAiService {
         }
     }
 
-    async fn retrain_model(&self, tenant_id: Uuid, model_type: &str) -> Result<()> {
+    async fn queue_model_training(&self, tenant_id: Uuid, model_type: &str) -> Result<Uuid> {
         let now = Utc::now();
         let model_id = Uuid::new_v4();
 
@@ -259,7 +315,8 @@ impl AiService for DatabaseAiService {
         .bind(format!("{}_model", model_type))
         .bind("1.0.0")
         .bind(model_type)
-        .bind("development")
+        // Honest lifecycle state: the job is QUEUED, not "retrained".
+        .bind("training")
         .bind(0.0_f64) // accuracy
         .bind(None::<f64>) // precision
         .bind(None::<f64>) // recall
@@ -275,7 +332,7 @@ impl AiService for DatabaseAiService {
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to register model: {e}")))?;
 
-        Ok(())
+        Ok(model_id)
     }
 
     async fn publish_anomaly_event(

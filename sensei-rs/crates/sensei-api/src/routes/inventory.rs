@@ -183,13 +183,20 @@ pub async fn create_inventory_item(
     State(state): State<AppState>,
     Json(req): Json<CreateInventoryItemRequest>,
 ) -> Result<Json<InventoryItem>> {
+    user.require_permission("inventory:adjust")?;
     let tenant_id = user.tenant_id;
     let now = Utc::now();
 
-    if req.quantity_reserved > req.quantity_on_hand {
+    // Reject every negative combination: a negative reservation would
+    // INCREASE availability artificially (available = on_hand - (-reserved)).
+    if req.quantity_on_hand < 0.0
+        || req.quantity_reserved < 0.0
+        || req.quantity_reserved > req.quantity_on_hand
+    {
         return Err(SenseiError::Validation(format!(
-            "quantity_reserved ({}) cannot exceed quantity_on_hand ({})",
-            req.quantity_reserved, req.quantity_on_hand
+            "Invalid quantities: on_hand = {}, reserved = {} — neither may be negative and \
+             reserved cannot exceed on_hand",
+            req.quantity_on_hand, req.quantity_reserved
         )));
     }
 
@@ -227,6 +234,7 @@ pub async fn update_inventory_item(
     Path(id): Path<Uuid>,
     Json(req): Json<UpdateInventoryItemRequest>,
 ) -> Result<Json<InventoryItem>> {
+    user.require_permission("inventory:adjust")?;
     let tenant_id = user.tenant_id;
     let mut store = state.inventory_items.write(user.tenant_id).await;
     let item = store
@@ -251,6 +259,19 @@ pub async fn update_inventory_item(
     if let Some(qr) = req.quantity_reserved {
         item.quantity_reserved = qr;
     }
+    // Reject negative combinations (a negative reservation inflates
+    // availability) and keep available derived, never client-supplied.
+    if item.quantity_on_hand < 0.0
+        || item.quantity_reserved < 0.0
+        || item.quantity_reserved > item.quantity_on_hand
+    {
+        return Err(SenseiError::Validation(format!(
+            "Invalid quantities: on_hand = {}, reserved = {} — neither may be negative and \
+             reserved cannot exceed on_hand",
+            item.quantity_on_hand, item.quantity_reserved
+        )));
+    }
+    item.quantity_available = item.quantity_on_hand - item.quantity_reserved;
     if let Some(uc) = req.unit_cost {
         item.unit_cost = uc;
     }

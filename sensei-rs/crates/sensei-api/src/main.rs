@@ -371,6 +371,9 @@ async fn main() {
     // Cross-replica EntityStore cache invalidation: every replica evicts
     // changed rows immediately after ANY replica commits a write.
     state.attach_entity_store_buses(state.event_bus.clone());
+    // Install the shared authorization service: every require_permission
+    // decision resolves through THIS instance (DB-loaded custom roles).
+    sensei_auth::rbac::set_authorization_service(state.rbac_service.clone());
 
     // Eagerly (and with supervision) subscribe the realtime fanout BEFORE
     // the HTTP listener starts: a replica must receive cross-replica WS/SSE

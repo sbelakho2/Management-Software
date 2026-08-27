@@ -219,7 +219,13 @@ pub trait OperationsService: Send + Sync {
     /// Update an Andon signal.
     async fn update_andon(&self, tenant_id: Uuid, id: Uuid, andon: Andon) -> Result<Andon>;
     /// Delete an Andon signal.
-    async fn delete_andon(&self, tenant_id: Uuid, id: Uuid) -> Result<()>;
+    async fn void_andon(
+        &self,
+        tenant_id: Uuid,
+        id: Uuid,
+        actor_id: Uuid,
+        reason: &str,
+    ) -> Result<Andon>;
     /// Update a project.
     async fn update_project(&self, tenant_id: Uuid, id: Uuid, project: Project) -> Result<Project>;
     /// Delete a project.
@@ -619,6 +625,20 @@ impl OperationsService for InMemoryOperationsService {
             ));
         }
 
+        // Evidence gate: countermeasures + a verification plan must be
+        // recorded before closure (an A3 does not close by clicking).
+        if a3.countermeasures.trim().is_empty() {
+            return Err(SenseiError::Validation(
+                "A3 cannot be closed: no countermeasures recorded".to_string(),
+            ));
+        }
+        if a3.check_plan.trim().is_empty() || a3.follow_up.trim().is_empty() {
+            return Err(SenseiError::Validation(
+                "A3 cannot be closed: the verification plan (check_plan/follow_up) is empty"
+                    .to_string(),
+            ));
+        }
+
         a3.status = "closed".to_string();
         a3.closed_at = Some(Utc::now());
         let result = a3.clone();
@@ -761,12 +781,21 @@ impl OperationsService for InMemoryOperationsService {
         Ok(existing.clone())
     }
 
-    async fn delete_andon(&self, _tenant_id: Uuid, id: Uuid) -> Result<()> {
+    async fn void_andon(
+        &self,
+        _tenant_id: Uuid,
+        id: Uuid,
+        actor_id: Uuid,
+        reason: &str,
+    ) -> Result<Andon> {
         let mut store = self.andons.write().await;
-        store
-            .remove(&id)
+        let andon = store
+            .get_mut(&id)
             .ok_or_else(|| SenseiError::NotFound(format!("Andon {id} not found")))?;
-        Ok(())
+        andon.status = "voided".to_string();
+        andon.resolved_by = Some(actor_id);
+        andon.resolution = Some(format!("VOIDED: {reason}"));
+        Ok(andon.clone())
     }
 
     async fn update_project(
@@ -823,10 +852,19 @@ impl OperationsService for InMemoryOperationsService {
     }
 
     async fn delete_a3(&self, _tenant_id: Uuid, id: Uuid) -> Result<()> {
+        // A3 learning history is never physically erased: abandoned draft
+        // cases are voided and retained.
         let mut store = self.a3s.write().await;
-        store
-            .remove(&id)
+        let a3 = store
+            .get_mut(&id)
             .ok_or_else(|| SenseiError::NotFound(format!("A3 {id} not found")))?;
+        if a3.status != "draft" {
+            return Err(SenseiError::Validation(
+                "Only draft A3 cases can be voided; published/closed history is retained"
+                    .to_string(),
+            ));
+        }
+        a3.status = "voided".to_string();
         Ok(())
     }
 

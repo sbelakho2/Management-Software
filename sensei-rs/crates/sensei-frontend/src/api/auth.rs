@@ -42,6 +42,11 @@ pub struct RefreshResponse {
 }
 
 /// Authenticate with email and password.
+///
+/// The request opts into the HttpOnly refresh-cookie mode
+/// (`X-Use-Cookie: true`) so the backend sets the path-scoped, Secure,
+/// SameSite refresh cookie that reload-restoration (`refresh_from_cookie`)
+/// depends on — the browser never sees the refresh secret.
 pub async fn login(
     client: &ApiClient,
     email: &str,
@@ -52,7 +57,9 @@ pub async fn login(
         password: password.to_string(),
     };
 
-    client.post("/api/v1/auth/login", &request).await
+    client
+        .post_with_headers("/api/v1/auth/login", &request, &[("x-use-cookie", "true")])
+        .await
 }
 
 /// Refresh an access token using a valid refresh token.

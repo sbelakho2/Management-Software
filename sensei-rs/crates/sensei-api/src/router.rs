@@ -1230,9 +1230,11 @@ pub fn build_router(state: AppState) -> Router {
         )
         .route(
             "/api/v1/ops/andons/{id}",
-            get(routes::ops::get_andon)
-                .put(routes::ops::update_andon)
-                .delete(routes::ops::delete_andon),
+            get(routes::ops::get_andon).put(routes::ops::update_andon),
+        )
+        .route(
+            "/api/v1/ops/andons/{id}/void",
+            post(routes::ops::void_andon),
         )
         .route(
             "/api/v1/ops/andons/{id}/acknowledge",
@@ -1713,10 +1715,9 @@ pub fn build_router(state: AppState) -> Router {
         )
         .route(
             "/api/v1/andon/{id}",
-            get(routes::andon::get_andon)
-                .put(routes::andon::update_andon)
-                .delete(routes::andon::delete_andon),
+            get(routes::andon::get_andon).put(routes::andon::update_andon),
         )
+        .route("/api/v1/andon/{id}/void", post(routes::andon::void_andon))
         .route(
             "/api/v1/andon/{id}/acknowledge",
             post(routes::andon::acknowledge_andon),

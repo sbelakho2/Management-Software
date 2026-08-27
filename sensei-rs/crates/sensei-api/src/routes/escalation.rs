@@ -73,6 +73,7 @@ pub async fn list_policies(
     State(state): State<AppState>,
     Query(params): Query<ListPoliciesParams>,
 ) -> Result<Json<PaginatedResponse<EscalationPolicy>>> {
+    user.require_permission("tps:escalation:read")?;
     let store = state.escalation_policies.read(user.tenant_id).await;
     let mut policies: Vec<EscalationPolicy> = store
         .values()
@@ -97,6 +98,7 @@ pub async fn create_policy(
     State(state): State<AppState>,
     Json(req): Json<PolicyRequest>,
 ) -> Result<Json<EscalationPolicy>> {
+    user.require_permission("tps:escalation:manage")?;
     validate_rules(&req.rules)?;
     let now = Utc::now();
     let policy = EscalationPolicy {
@@ -122,6 +124,7 @@ pub async fn get_policy(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<EscalationPolicy>> {
+    user.require_permission("tps:escalation:read")?;
     let store = state.escalation_policies.read(user.tenant_id).await;
     let policy = store
         .values()
@@ -138,6 +141,7 @@ pub async fn update_policy(
     Path(id): Path<Uuid>,
     Json(req): Json<PolicyRequest>,
 ) -> Result<Json<EscalationPolicy>> {
+    user.require_permission("tps:escalation:manage")?;
     validate_rules(&req.rules)?;
     let mut store = state.escalation_policies.write(user.tenant_id).await;
     let policy = store
@@ -159,6 +163,7 @@ pub async fn delete_policy(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<()>> {
+    user.require_permission("tps:escalation:manage")?;
     let mut store = state.escalation_policies.write(user.tenant_id).await;
     let exists = store
         .get(&id)

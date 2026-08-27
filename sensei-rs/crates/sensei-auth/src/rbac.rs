@@ -5,13 +5,39 @@
 
 use sensei_core::domain::entities::Permission;
 use std::collections::{HashMap, HashSet};
+use uuid::Uuid;
 
 /// In-memory RBAC service.
 ///
 /// Maps role names to sets of granted permissions.
 pub struct RbacService {
-    /// Role definitions: role_name -> set of permissions.
+    /// Static/system role definitions: role_name -> set of permissions.
     roles: HashMap<String, HashSet<String>>,
+    /// Tenant-scoped custom roles: (tenant_id, role_name) -> perms. A
+    /// custom role NEVER crosses tenant boundaries — two tenants defining
+    /// `operations_manager` with different permissions cannot contaminate
+    /// one another.
+    tenant_roles: HashMap<(Uuid, String), HashSet<String>>,
+}
+
+/// Process-wide shared authorization service, installed by the API at
+/// startup with the DB-loaded role map. `require_permission` resolves
+/// through this registry so database-defined custom roles are actually
+/// used in authorization decisions (never a fresh `RbacService::new()`).
+static AUTHORIZATION_SERVICE: std::sync::OnceLock<std::sync::Arc<RbacService>> =
+    std::sync::OnceLock::new();
+
+/// Install the shared authorization service (idempotent — first install wins).
+pub fn set_authorization_service(svc: std::sync::Arc<RbacService>) {
+    let _ = AUTHORIZATION_SERVICE.set(svc);
+}
+
+/// The shared authorization service (defaults when not installed, e.g. tests).
+pub fn authorization_service() -> std::sync::Arc<RbacService> {
+    AUTHORIZATION_SERVICE
+        .get()
+        .cloned()
+        .unwrap_or_else(|| std::sync::Arc::new(RbacService::new()))
 }
 
 impl RbacService {
@@ -19,6 +45,7 @@ impl RbacService {
     pub fn new() -> Self {
         let mut svc = Self {
             roles: HashMap::new(),
+            tenant_roles: HashMap::new(),
         };
         svc.load_default_roles();
         svc
@@ -28,6 +55,7 @@ impl RbacService {
     pub fn empty() -> Self {
         Self {
             roles: HashMap::new(),
+            tenant_roles: HashMap::new(),
         }
     }
 
@@ -38,16 +66,13 @@ impl RbacService {
     /// hard-coded table reconstructed per decision.
     pub async fn from_db(pool: &sqlx::PgPool) -> Result<Self, sqlx::Error> {
         let mut svc = Self::new();
-        let rows: Vec<(String, Vec<String>)> =
-            sqlx::query_as("SELECT name, permissions FROM roles")
+        let rows: Vec<(Uuid, String, Vec<String>)> =
+            sqlx::query_as("SELECT tenant_id, name, permissions FROM roles")
                 .fetch_all(pool)
                 .await?;
-        for (name, permissions) in rows {
-            if let Some(existing) = svc.roles.get_mut(&name) {
-                existing.extend(permissions.iter().cloned());
-            } else {
-                svc.roles.insert(name, permissions.into_iter().collect());
-            }
+        for (tenant_id, name, permissions) in rows {
+            svc.tenant_roles
+                .insert((tenant_id, name), permissions.into_iter().collect());
         }
         Ok(svc)
     }
@@ -345,6 +370,50 @@ impl RbacService {
                 "production:work-order:delete",
                 "production:schedule:read",
                 "production:schedule:update",
+                "production:report",
+                "production:release",
+                "production:start",
+                "production:complete",
+                "production:short-close",
+                "tps:andon:raise",
+                "tps:andon:ack",
+                "tps:andon:contain",
+                "tps:andon:resolve",
+                "tps:andon:restart",
+                "tps:a3:read",
+                "tps:a3:create",
+                "tps:a3:edit",
+                "tps:a3:verify",
+                "tps:a3:close",
+                "tps:standard-work:read",
+                "tps:standard-work:draft",
+                "tps:standard-work:review",
+                "tps:standard-work:approve",
+                "tps:standard-work:publish",
+                "tps:lsw:execute",
+                "tps:lsw:manage",
+                "tps:obeya:read",
+                "tps:obeya:manage",
+                "tps:kpi:read",
+                "tps:kpi:manage",
+                "tps:ctq:read",
+                "tps:ctq:manage",
+                "tps:work-center:read",
+                "tps:work-center:manage",
+                "tps:cell:read",
+                "tps:cell:manage",
+                "tps:mrp:run",
+                "tps:kanban:read",
+                "tps:kanban:manage",
+                "tps:training-matrix:read",
+                "tps:training-matrix:manage",
+                "tps:escalation:read",
+                "tps:escalation:manage",
+                "tps:notification-triggers:manage",
+                "maintenance:request",
+                "maintenance:assign",
+                "maintenance:execute",
+                "maintenance:return-to-service",
             ],
         );
         self.add_role(
@@ -362,6 +431,20 @@ impl RbacService {
                 "production:work-order:read",
                 "production:work-order:update-status",
                 "production:work-order:report",
+                "production:report",
+                "production:start",
+                "tps:andon:raise",
+                "tps:andon:ack",
+                "tps:a3:read",
+                "tps:a3:create",
+                "tps:standard-work:read",
+                "tps:lsw:execute",
+                "tps:obeya:read",
+                "tps:kpi:read",
+                "tps:ctq:read",
+                "tps:work-center:read",
+                "tps:kanban:read",
+                "maintenance:request",
             ],
         );
 
@@ -385,11 +468,25 @@ impl RbacService {
 
     /// Check if a user with the given roles has the required permission.
     ///
+    /// Check system roles only (static RBAC defaults).
+    ///
     /// Supports wildcard matching:
     /// - `*:*` matches everything
     /// - `quality:*` matches all actions on quality resources
     /// - `*:read` matches read on all resources
     pub fn has_permission(&self, user_roles: &[String], required: &Permission) -> bool {
+        self.has_permission_for_tenant(user_roles, None, required)
+    }
+
+    /// Tenant-aware check: a role grants a permission when it is a system
+    /// role OR a custom role defined for THE SAME tenant. A custom role can
+    /// never leak across tenants.
+    pub fn has_permission_for_tenant(
+        &self,
+        user_roles: &[String],
+        tenant_id: Option<Uuid>,
+        required: &Permission,
+    ) -> bool {
         let (required_resource, required_action) = match required.parse() {
             Some(r) => r,
             None => return false,
@@ -400,6 +497,15 @@ impl RbacService {
                 for perm in perms {
                     if Self::matches(perm, required_resource, required_action) {
                         return true;
+                    }
+                }
+            }
+            if let Some(tenant_id) = tenant_id {
+                if let Some(perms) = self.tenant_roles.get(&(tenant_id, role_name.clone())) {
+                    for perm in perms {
+                        if Self::matches(perm, required_resource, required_action) {
+                            return true;
+                        }
                     }
                 }
             }

@@ -520,7 +520,25 @@ pub async fn refresh(
         Err(TokenReuseDetected::ReuseDetected) => {
             // A rotated token presented again means it was stolen: kill the
             // whole family so neither the thief nor the victim can continue.
-            let _ = state.refresh_token_store.revoke_family(family_id).await;
+            // A revocation write failure is NOT swallowed: the response must
+            // not imply the family was secured when it was not.
+            state
+                .refresh_token_store
+                .revoke_family(family_id)
+                .await
+                .map_err(|e| {
+                    tracing::error!(
+                        error = %e,
+                        family_id = %family_id,
+                        "Failed to revoke refresh-token family after reuse — ALERT: \
+                         the family may still be usable"
+                    );
+                    SenseiError::Internal(
+                        "Token reuse detected but family revocation could not be persisted. \
+                         Please retry and alert your administrator."
+                            .to_string(),
+                    )
+                })?;
             return Err(SenseiError::Unauthorized(
                 "Token reuse detected".to_string(),
             ));

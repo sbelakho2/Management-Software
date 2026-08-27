@@ -18,13 +18,17 @@ const CHANNEL_CAPACITY: usize = 256;
 ///
 /// Each named channel is backed by a [`broadcast::Sender`]. Publishers send
 /// events to a channel and all subscribed clients receive them.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct SseManager {
     /// Per-channel broadcast senders keyed by channel name.
     clients: Arc<RwLock<HashMap<String, broadcast::Sender<String>>>>,
     /// Total number of publishes dropped because every subscriber lagged or
     /// disconnected (slow clients). Logged at debug level.
     dropped_publishes: Arc<AtomicU64>,
+    /// Optional event bus for cross-replica fanout (core NATS).
+    event_bus: Arc<RwLock<Option<Arc<dyn sensei_event_bus::EventBus>>>>,
+    /// Stable identity of this process (origin marker in envelopes).
+    instance_id: String,
 }
 
 impl SseManager {
@@ -33,7 +37,63 @@ impl SseManager {
         Self {
             clients: Arc::new(RwLock::new(HashMap::new())),
             dropped_publishes: Arc::new(AtomicU64::new(0)),
+            event_bus: Arc::new(RwLock::new(None)),
+            instance_id: uuid::Uuid::new_v4().to_string(),
         }
+    }
+
+    /// Attach the event bus: SSE publishes fan out to EVERY replica, and
+    /// this replica delivers envelopes from other replicas to its local
+    /// subscribers (per-instance group — every replica receives).
+    pub fn set_event_bus(&self, bus: Arc<dyn sensei_event_bus::EventBus>) {
+        if let Ok(mut guard) = self.event_bus.try_write() {
+            *guard = Some(bus.clone());
+        }
+        let manager = self.clone();
+        let group = self.instance_id.clone();
+        let group_for_handler = group.clone();
+        let handler: sensei_event_bus::bus::CoreHandler = Arc::new(move |payload: Vec<u8>| {
+            let manager = manager.clone();
+            let self_id = uuid::Uuid::parse_str(&group_for_handler).unwrap_or_default();
+            tokio::spawn(async move {
+                let envelope: super::realtime::RealtimeEnvelope =
+                    match serde_json::from_slice(&payload) {
+                        Ok(v) => v,
+                        Err(_) => return,
+                    };
+                if envelope.event_type != "sse.emit" {
+                    return;
+                }
+                if envelope.origin_instance == self_id {
+                    return;
+                }
+                let channel = envelope
+                    .payload
+                    .get("channel")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default()
+                    .to_string();
+                let event = envelope
+                    .payload
+                    .get("event")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default()
+                    .to_string();
+                let data = envelope
+                    .payload
+                    .get("data")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default()
+                    .to_string();
+                manager.publish_local(&channel, &event, &data).await;
+            });
+            Ok(())
+        });
+        tokio::spawn(async move {
+            let _ = bus
+                .subscribe_core(super::realtime::REALTIME_TOPIC, &group, handler)
+                .await;
+        });
     }
 
     /// Number of publishes dropped due to lagging/disconnected subscribers
@@ -86,7 +146,8 @@ impl SseManager {
     /// ```
     /// Drops (all subscribers lagging or disconnected) are counted and
     /// logged at debug level so a slow client never blocks publishing.
-    pub async fn publish(&self, channel: &str, event: &str, data: &str) {
+    /// Local-only delivery (used by the fanout handler and direct calls).
+    pub async fn publish_local(&self, channel: &str, event: &str, data: &str) {
         let clients = self.clients.read().await;
         if let Some(tx) = clients.get(channel) {
             let message = format!("event: {event}\ndata: {data}\n\n");
@@ -106,6 +167,27 @@ impl SseManager {
                 }
             }
         }
+    }
+
+    /// Publish locally AND fan out to every replica (one realtime topic).
+    pub async fn publish(&self, channel: &str, event: &str, data: &str) {
+        self.publish_local(channel, event, data).await;
+        let bus = self.event_bus.read().await.clone();
+        let Some(bus) = bus else { return };
+        let origin = uuid::Uuid::parse_str(&self.instance_id).unwrap_or_default();
+        let envelope = super::realtime::RealtimeEnvelope {
+            id: uuid::Uuid::new_v4(),
+            tenant_id: uuid::Uuid::nil(),
+            origin_instance: origin,
+            target: super::realtime::RealtimeTarget::Tenant,
+            event_type: "sse.emit".to_string(),
+            payload: serde_json::json!({
+                "channel": channel,
+                "event": event,
+                "data": data,
+            }),
+        };
+        super::realtime::publish_realtime(bus.as_ref(), &envelope).await;
     }
 }
 

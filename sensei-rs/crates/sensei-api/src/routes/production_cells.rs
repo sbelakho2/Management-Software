@@ -82,6 +82,7 @@ pub async fn list_production_cells(
     State(state): State<AppState>,
     Query(params): Query<ListProductionCellsParams>,
 ) -> Result<Json<PaginatedResponse<ProductionCell>>> {
+    user.require_permission("tps:cell:read")?;
     let tenant_id = user.tenant_id;
     let store = state.production_cells.read(user.tenant_id).await;
     let mut cells: Vec<ProductionCell> = store
@@ -114,6 +115,7 @@ pub async fn create_production_cell(
     State(state): State<AppState>,
     Json(req): Json<CreateProductionCellRequest>,
 ) -> Result<Json<ProductionCell>> {
+    user.require_permission("tps:cell:manage")?;
     let tenant_id = user.tenant_id;
     let now = Utc::now();
     let cell = ProductionCell {
@@ -144,6 +146,7 @@ pub async fn get_production_cell(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ProductionCell>> {
+    user.require_permission("tps:cell:read")?;
     let tenant_id = user.tenant_id;
     let store = state.production_cells.read(user.tenant_id).await;
     let cell = store
@@ -161,6 +164,7 @@ pub async fn update_production_cell(
     Path(id): Path<Uuid>,
     Json(req): Json<UpdateProductionCellRequest>,
 ) -> Result<Json<ProductionCell>> {
+    user.require_permission("tps:cell:manage")?;
     let tenant_id = user.tenant_id;
     let mut store = state.production_cells.write(user.tenant_id).await;
     let cell = store
@@ -205,6 +209,7 @@ pub async fn get_cell_utilization(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<CellUtilizationMetrics>> {
+    user.require_permission("tps:cell:read")?;
     let tenant_id = user.tenant_id;
     let store = state.production_cells.read(user.tenant_id).await;
     let cell = store

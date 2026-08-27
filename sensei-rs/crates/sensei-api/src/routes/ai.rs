@@ -3,7 +3,7 @@
 //! Provides endpoints for anomaly detection, quality prediction,
 //! predictive maintenance, and model retraining.
 
-use axum::{extract::State, Json};
+use axum::{extract::State, http::StatusCode, response::IntoResponse, Json};
 use sensei_auth::middleware::AuthenticatedUser;
 use sensei_core::error::Result;
 use serde::Deserialize;
@@ -90,14 +90,20 @@ pub async fn retrain_model(
     user: AuthenticatedUser,
     State(state): State<AppState>,
     Json(req): Json<RetrainModelRequest>,
-) -> Result<Json<serde_json::Value>> {
+) -> Result<axum::response::Response> {
     let tenant_id = user.tenant_id;
-    state
+    // Queue the training job: the model enters 'training' and is NEVER
+    // deployed by this call (approval gates promotion). The response is
+    // 202 Accepted with the job id — not a fabricated success.
+    let training_job_id = state
         .ai_service
-        .retrain_model(tenant_id, &req.model_type)
+        .queue_model_training(tenant_id, &req.model_type)
         .await?;
-    Ok(Json(serde_json::json!({
-        "message": "Model retrained successfully",
-        "model_type": req.model_type
-    })))
+    let body = Json(serde_json::json!({
+        "training_job_id": training_job_id,
+        "status": "training",
+        "model_type": req.model_type,
+        "message": "Training job queued. The model is NOT deployed until it is validated and approved."
+    }));
+    Ok((StatusCode::ACCEPTED, body).into_response())
 }

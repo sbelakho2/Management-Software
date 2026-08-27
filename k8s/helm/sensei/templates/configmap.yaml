@@ -46,7 +46,7 @@ data:
   STORAGE_BACKEND: {{ .Values.config.storage.backend | default "s3" | quote }}
 
   # === NATS / Event Bus (no credentials embedded) ===
-  NATS_URL: nats://{{ .Release.Name }}-nats:4222
+  NATS_URL: {{ include "sensei.nats.url" . | quote }}
   NATS_CLUSTER: {{ .Values.config.natsCluster | default "sensei" | quote }}
 
   # === Feature Flags ===
@@ -54,6 +54,10 @@ data:
   FEATURE_PHASE_3_PRODUCTION: {{ .Values.config.features.phase3Production | quote }}
   FEATURE_SMART_INGESTION: {{ .Values.config.features.smartIngestion | quote }}
   FEATURE_KNOWLEDGE_PACK: {{ .Values.config.features.knowledgePack | quote }}
+  FEATURE_AI: {{ .Values.config.features.aiEnabled | quote }}
+  FEATURE_WEBSOCKET: {{ .Values.config.features.websocketEnabled | quote }}
+  FEATURE_AUDIT_LOGGING: {{ .Values.config.features.auditLogging | quote }}
+  FEATURE_RATE_LIMITING: {{ .Values.config.features.rateLimiting | quote }}
   ENABLE_ML_FEATURES: {{ .Values.config.features.enableMl | default "true" | quote }}
   ENABLE_WEBSOCKETS: {{ .Values.config.features.enableWebsockets | default "true" | quote }}
   ENABLE_BACKGROUND_JOBS: {{ .Values.config.features.enableBackgroundJobs | default "true" | quote }}

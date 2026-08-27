@@ -521,6 +521,31 @@ impl OperationsService for DatabaseOperationsService {
     }
 
     async fn close_a3(&self, tenant_id: Uuid, id: Uuid) -> Result<A3> {
+        // An A3 cannot close because somebody clicked Close: the
+        // countermeasures (root_cause_analysis/countermeasures) and the
+        // verification plan (check_plan/follow_up) must be recorded first.
+        let existing = sqlx::query_as::<_, A3Row>(
+            r#"SELECT id, tenant_id, a3_number, title, background, current_state, goal, root_cause_analysis, countermeasures, check_plan, follow_up, a3_type, severity, status, owner_id, created_at, closed_at
+               FROM a3_reports WHERE id=$1 AND tenant_id=$2"#,
+        )
+        .bind(id)
+        .bind(tenant_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| SenseiError::Database(format!("Failed to get A3: {e}")))?
+        .ok_or_else(|| SenseiError::NotFound(format!("A3 {id} not found")))?;
+        if existing.countermeasures.trim().is_empty() {
+            return Err(SenseiError::Validation(
+                "A3 cannot be closed: no countermeasures recorded".to_string(),
+            ));
+        }
+        if existing.check_plan.trim().is_empty() || existing.follow_up.trim().is_empty() {
+            return Err(SenseiError::Validation(
+                "A3 cannot be closed: the verification plan (check_plan/follow_up) is empty —                  record the target metrics and verification window first"
+                    .to_string(),
+            ));
+        }
+
         let now = Utc::now();
         let row = sqlx::query_as::<_, A3Row>(
             r#"UPDATE a3_reports SET status='closed', closed_at=$1 WHERE id=$2 AND tenant_id=$3
@@ -636,17 +661,30 @@ impl OperationsService for DatabaseOperationsService {
         Ok(andon_row_to_domain(row))
     }
 
-    async fn delete_andon(&self, tenant_id: Uuid, id: Uuid) -> Result<()> {
-        let result = sqlx::query("DELETE FROM andons WHERE id = $1 AND tenant_id = $2")
-            .bind(id)
-            .bind(tenant_id)
-            .execute(&self.pool)
-            .await
-            .map_err(|e| SenseiError::Database(format!("Failed to delete andon: {e}")))?;
-        if result.rows_affected() == 0 {
-            return Err(SenseiError::NotFound(format!("Andon {id} not found")));
-        }
-        Ok(())
+    async fn void_andon(
+        &self,
+        tenant_id: Uuid,
+        id: Uuid,
+        actor_id: Uuid,
+        reason: &str,
+    ) -> Result<Andon> {
+        let row = sqlx::query_as::<_, AndonRow>(
+            "UPDATE andons SET status = 'voided', resolved_by = $3, resolution = $4 \
+             WHERE id = $1 AND tenant_id = $2 \
+             RETURNING id, tenant_id, andon_number, work_center_id, issue_type, severity, \
+                       description, status, raised_by, acknowledged_by, resolved_by, \
+                       resolution, response_time_seconds, resolution_time_seconds, \
+                       created_at, acknowledged_at, resolved_at",
+        )
+        .bind(id)
+        .bind(tenant_id)
+        .bind(actor_id)
+        .bind(format!("VOIDED: {reason}"))
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| SenseiError::Database(format!("Failed to void andon: {e}")))?
+        .ok_or_else(|| SenseiError::NotFound(format!("Andon {id} not found")))?;
+        Ok(andon_row_to_domain(row))
     }
 
     // ── Update/Delete for Project ───────────────────────────────────────
@@ -702,14 +740,22 @@ impl OperationsService for DatabaseOperationsService {
     }
 
     async fn delete_a3(&self, tenant_id: Uuid, id: Uuid) -> Result<()> {
-        let result = sqlx::query("DELETE FROM a3_reports WHERE id = $1 AND tenant_id = $2")
-            .bind(id)
-            .bind(tenant_id)
-            .execute(&self.pool)
-            .await
-            .map_err(|e| SenseiError::Database(format!("Failed to delete A3: {e}")))?;
+        // A3 learning history is never physically erased: abandoned draft
+        // cases are voided and retained.
+        let result = sqlx::query(
+            "UPDATE a3_reports SET status = 'voided' WHERE id = $1 AND tenant_id = $2 \
+             AND status = 'draft'",
+        )
+        .bind(id)
+        .bind(tenant_id)
+        .execute(&self.pool)
+        .await
+        .map_err(|e| SenseiError::Database(format!("Failed to void A3: {e}")))?;
         if result.rows_affected() == 0 {
-            return Err(SenseiError::NotFound(format!("A3 {id} not found")));
+            return Err(SenseiError::Validation(
+                "Only draft A3 cases can be voided; published/closed history is retained"
+                    .to_string(),
+            ));
         }
         Ok(())
     }

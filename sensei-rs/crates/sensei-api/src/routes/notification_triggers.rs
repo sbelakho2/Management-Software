@@ -93,6 +93,7 @@ pub async fn list_triggers(
     State(state): State<AppState>,
     Query(params): Query<ListTriggersParams>,
 ) -> Result<Json<PaginatedResponse<NotificationTrigger>>> {
+    user.require_permission("tps:notification-triggers:manage")?;
     let tenant_id = user.tenant_id;
     let store = state.notification_triggers.read(user.tenant_id).await;
     let mut triggers: Vec<NotificationTrigger> = store
@@ -125,6 +126,7 @@ pub async fn create_trigger(
     State(state): State<AppState>,
     Json(req): Json<CreateTriggerRequest>,
 ) -> Result<Json<NotificationTrigger>> {
+    user.require_permission("tps:notification-triggers:manage")?;
     let tenant_id = user.tenant_id;
     let now = Utc::now();
     let trigger = NotificationTrigger {
@@ -155,6 +157,7 @@ pub async fn get_trigger(
     State(state): State<AppState>,
     Path(trigger_id): Path<Uuid>,
 ) -> Result<Json<NotificationTrigger>> {
+    user.require_permission("tps:notification-triggers:manage")?;
     let tenant_id = user.tenant_id;
     let store = state.notification_triggers.read(user.tenant_id).await;
     let trigger = store
@@ -174,6 +177,7 @@ pub async fn update_trigger(
     Path(trigger_id): Path<Uuid>,
     Json(req): Json<UpdateTriggerRequest>,
 ) -> Result<Json<NotificationTrigger>> {
+    user.require_permission("tps:notification-triggers:manage")?;
     let tenant_id = user.tenant_id;
     let mut store = state.notification_triggers.write(user.tenant_id).await;
     let trigger = store
@@ -221,6 +225,7 @@ pub async fn delete_trigger(
     State(state): State<AppState>,
     Path(trigger_id): Path<Uuid>,
 ) -> Result<Json<()>> {
+    user.require_permission("tps:notification-triggers:manage")?;
     let tenant_id = user.tenant_id;
     let mut store = state.notification_triggers.write(user.tenant_id).await;
     let exists = store
@@ -341,9 +346,10 @@ pub async fn test_trigger(
 /// here matches a real event the bus can deliver. Kept in sync manually;
 /// a test below instantiates key events and asserts catalog membership.
 pub async fn list_event_types(
-    _user: AuthenticatedUser,
+    user: AuthenticatedUser,
     State(_state): State<AppState>,
 ) -> Result<Json<Vec<EventTypeDescriptor>>> {
+    user.require_permission("tps:notification-triggers:manage")?;
     let event_types = vec![
         // ── AI ─────────────────────────────────────────────────────────
         EventTypeDescriptor {

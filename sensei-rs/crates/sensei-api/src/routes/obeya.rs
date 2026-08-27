@@ -186,6 +186,7 @@ pub async fn list_boards(
     State(state): State<AppState>,
     Query(params): Query<ListBoardsParams>,
 ) -> Result<Json<PaginatedResponse<ObeyaBoard>>> {
+    user.require_permission("tps:obeya:read")?;
     let tenant_id = user.tenant_id;
     let store = get_store(&state);
     let map = store.read(user.tenant_id).await;
@@ -230,6 +231,7 @@ pub async fn get_board(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ObeyaBoard>> {
+    user.require_permission("tps:obeya:read")?;
     let tenant_id = user.tenant_id;
     let store = get_store(&state);
     let map = store.read(user.tenant_id).await;
@@ -249,6 +251,7 @@ pub async fn create_board(
     State(state): State<AppState>,
     Json(req): Json<CreateBoardRequest>,
 ) -> Result<Json<ObeyaBoard>> {
+    user.require_permission("tps:obeya:manage")?;
     validate_board_type(&req.board_type)?;
     let tenant_id = user.tenant_id;
     let now = Utc::now();
@@ -282,6 +285,7 @@ pub async fn update_board(
     Path(id): Path<Uuid>,
     Json(req): Json<UpdateBoardRequest>,
 ) -> Result<Json<ObeyaBoard>> {
+    user.require_permission("tps:obeya:manage")?;
     let tenant_id = user.tenant_id;
     let store = get_store(&state);
     let mut map = store.write(user.tenant_id).await;
@@ -321,6 +325,7 @@ pub async fn delete_board(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<()>> {
+    user.require_permission("tps:obeya:manage")?;
     let tenant_id = user.tenant_id;
     let store = get_store(&state);
     let mut map = store.write(user.tenant_id).await;
@@ -344,6 +349,7 @@ pub async fn list_board_items(
     Path(board_id): Path<Uuid>,
     Query(params): Query<ListItemsParams>,
 ) -> Result<Json<PaginatedResponse<ObeyaItem>>> {
+    user.require_permission("tps:obeya:read")?;
     let tenant_id = user.tenant_id;
     let store = get_store(&state);
     let map = store.read(user.tenant_id).await;
@@ -396,6 +402,7 @@ pub async fn add_board_item(
     Path(board_id): Path<Uuid>,
     Json(req): Json<CreateItemRequest>,
 ) -> Result<Json<ObeyaItem>> {
+    user.require_permission("tps:obeya:read")?;
     validate_item_type(&req.item_type)?;
     let priority = req.priority.unwrap_or_else(|| "Medium".to_string());
     validate_item_priority(&priority)?;
@@ -452,6 +459,7 @@ pub async fn update_board_item(
     Path((board_id, item_id)): Path<(Uuid, Uuid)>,
     Json(req): Json<UpdateItemRequest>,
 ) -> Result<Json<ObeyaItem>> {
+    user.require_permission("tps:obeya:manage")?;
     let tenant_id = user.tenant_id;
     let now = Utc::now();
     let store = get_store(&state);
@@ -532,6 +540,7 @@ pub async fn delete_board_item(
     State(state): State<AppState>,
     Path((board_id, item_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<()>> {
+    user.require_permission("tps:obeya:manage")?;
     let tenant_id = user.tenant_id;
     let store = get_store(&state);
     let mut map = store.write(user.tenant_id).await;

@@ -35,6 +35,11 @@ struct WorkOrderRow {
     scheduled_end: Option<chrono::DateTime<Utc>>,
     actual_start: Option<chrono::DateTime<Utc>>,
     actual_end: Option<chrono::DateTime<Utc>>,
+    quantity_scrapped: i64,
+    short_close_qty: i64,
+    short_close_reason: Option<String>,
+    short_close_approved_by: Option<Uuid>,
+    short_close_at: Option<chrono::DateTime<Utc>>,
     assigned_to: Vec<Uuid>,
     notes: String,
     created_at: chrono::DateTime<Utc>,
@@ -56,6 +61,10 @@ struct ProductionOrderRow {
     planned_end: chrono::DateTime<Utc>,
     actual_start: Option<chrono::DateTime<Utc>>,
     actual_end: Option<chrono::DateTime<Utc>>,
+    short_close_qty: f64,
+    short_close_reason: Option<String>,
+    short_close_approved_by: Option<Uuid>,
+    short_close_at: Option<chrono::DateTime<Utc>>,
     created_at: chrono::DateTime<Utc>,
 }
 
@@ -105,6 +114,11 @@ fn wo_row_to_domain(r: WorkOrderRow) -> WorkOrder {
         scheduled_end: r.scheduled_end,
         actual_start: r.actual_start,
         actual_end: r.actual_end,
+        quantity_scrapped: r.quantity_scrapped,
+        short_close_qty: r.short_close_qty,
+        short_close_reason: r.short_close_reason,
+        short_close_approved_by: r.short_close_approved_by,
+        short_close_at: r.short_close_at,
         assigned_to: r.assigned_to,
         notes: r.notes,
         created_at: r.created_at,
@@ -127,6 +141,10 @@ fn po_row_to_domain(r: ProductionOrderRow) -> ProductionOrder {
         planned_end: r.planned_end,
         actual_start: r.actual_start,
         actual_end: r.actual_end,
+        short_close_qty: r.short_close_qty,
+        short_close_reason: r.short_close_reason,
+        short_close_approved_by: r.short_close_approved_by,
+        short_close_at: r.short_close_at,
         created_at: r.created_at,
     }
 }
@@ -164,6 +182,12 @@ fn mrp_row_to_domain(r: MrpRecordRow) -> MRPRecord {
 // ---------------------------------------------------------------------------
 
 /// PostgreSQL-backed implementation of [`ProductionService`].
+/// Actor for production-event records (the caller's user id is bound by
+/// the route; nil here means the report did not identify an operator).
+fn operator_id() -> Uuid {
+    Uuid::nil()
+}
+
 pub struct DatabaseProductionService {
     pool: PgPool,
 }
@@ -300,13 +324,15 @@ impl ProductionService for DatabaseProductionService {
             r#"
             INSERT INTO work_orders (
                 id, tenant_id, wo_number, product_id, product_name,
-                quantity, quantity_completed, status, work_center_id, priority,
+                quantity, quantity_completed, quantity_scrapped, status, work_center_id, priority,
                 scheduled_start, scheduled_end, actual_start, actual_end,
+                short_close_qty, short_close_reason, short_close_approved_by, short_close_at,
                 assigned_to, notes, created_at, updated_at
-            ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
+            ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)
             RETURNING id, tenant_id, wo_number, product_id, product_name,
-                      quantity, quantity_completed, status, work_center_id, priority,
+                      quantity, quantity_completed, quantity_scrapped, status, work_center_id, priority,
                       scheduled_start, scheduled_end, actual_start, actual_end,
+                      short_close_qty, short_close_reason, short_close_approved_by, short_close_at,
                       assigned_to, notes, created_at, updated_at
             "#,
         )
@@ -324,6 +350,10 @@ impl ProductionService for DatabaseProductionService {
         .bind(wo.scheduled_end)
         .bind(wo.actual_start)
         .bind(wo.actual_end)
+        .bind(wo.short_close_qty)
+        .bind(&wo.short_close_reason)
+        .bind(wo.short_close_approved_by)
+        .bind(wo.short_close_at)
         .bind(&wo.assigned_to)
         .bind(&wo.notes)
         .bind(now)
@@ -489,6 +519,7 @@ impl ProductionService for DatabaseProductionService {
         .bind(wo.product_name)
         .bind(wo.quantity)
         .bind(wo.quantity_completed)
+        .bind(wo.quantity_scrapped)
         .bind(wo.status)
         .bind(wo.work_center_id)
         .bind(wo.priority)
@@ -512,14 +543,29 @@ impl ProductionService for DatabaseProductionService {
         tenant_id: Uuid,
         work_order_id: Uuid,
         quantity_completed: i64,
-        _quantity_scrapped: i64,
+        quantity_scrapped: i64,
     ) -> Result<WorkOrder> {
+        // Scrap reported by the shop floor must never disappear: negative
+        // or absurd reports are rejected, and every report is appended to
+        // the immutable production-event ledger.
+        if quantity_completed < 0 || quantity_scrapped < 0 {
+            return Err(SenseiError::Validation(
+                "Production and scrap quantities cannot be negative".to_string(),
+            ));
+        }
         let now = Utc::now();
+
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to begin report tx: {e}")))?;
 
         let row = sqlx::query_as::<_, WorkOrderRow>(
             r#"
             UPDATE work_orders
             SET quantity_completed = quantity_completed + $1,
+                quantity_scrapped = quantity_scrapped + $5,
                 status = CASE
                     WHEN quantity_completed + $1 >= quantity AND status != 'completed' THEN 'completed'
                     ELSE status
@@ -531,7 +577,8 @@ impl ProductionService for DatabaseProductionService {
                 updated_at = $4
             WHERE id = $2 AND tenant_id = $3
             RETURNING id, tenant_id, wo_number, product_id, product_name,
-                      quantity, quantity_completed, status, work_center_id, priority,
+                      quantity, quantity_completed, quantity_scrapped,
+                      short_close_qty, status, work_center_id, priority,
                       scheduled_start, scheduled_end, actual_start, actual_end,
                       assigned_to, notes, created_at, updated_at
             "#,
@@ -540,10 +587,34 @@ impl ProductionService for DatabaseProductionService {
         .bind(work_order_id)
         .bind(tenant_id)
         .bind(now)
-        .fetch_optional(&self.pool)
+        .bind(quantity_scrapped)
+        .fetch_optional(&mut *tx)
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to report production: {e}")))?
         .ok_or_else(|| SenseiError::NotFound(format!("Work order {work_order_id} not found")))?;
+
+        // Append to the immutable event ledger (same transaction).
+        sqlx::query(
+            "INSERT INTO production_events \
+                (id, tenant_id, event_type, work_order_id, product_id, good_qty, \
+                 scrap_qty, operator_id, occurred_at) \
+             VALUES ($1, $2, 'produced', $3, $4, $5, $6, $7, $8)",
+        )
+        .bind(Uuid::new_v4())
+        .bind(tenant_id)
+        .bind(work_order_id)
+        .bind(row.product_id)
+        .bind(quantity_completed)
+        .bind(quantity_scrapped)
+        .bind(operator_id())
+        .bind(now)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| SenseiError::Database(format!("Failed to record production event: {e}")))?;
+
+        tx.commit()
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to commit report tx: {e}")))?;
 
         Ok(wo_row_to_domain(row))
     }
@@ -685,8 +756,16 @@ impl ProductionService for DatabaseProductionService {
         &self,
         tenant_id: Uuid,
         id: Uuid,
+        short_close_qty: i64,
+        short_close_reason: Option<&str>,
+        approver: Uuid,
     ) -> Result<ProductionOrder> {
         let now = Utc::now();
+
+        let mut tx =
+            self.pool.begin().await.map_err(|e| {
+                SenseiError::Database(format!("Failed to begin completion tx: {e}"))
+            })?;
 
         let existing = sqlx::query_as::<_, ProductionOrderRow>(
             r#"
@@ -696,11 +775,12 @@ impl ProductionService for DatabaseProductionService {
                    actual_start, actual_end, created_at
             FROM production_orders
             WHERE id = $1 AND tenant_id = $2
+            FOR UPDATE
             "#,
         )
         .bind(id)
         .bind(tenant_id)
-        .fetch_optional(&self.pool)
+        .fetch_optional(&mut *tx)
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to get production order: {e}")))?
         .ok_or_else(|| SenseiError::NotFound(format!("Production order {id} not found")))?;
@@ -711,12 +791,39 @@ impl ProductionService for DatabaseProductionService {
             ));
         }
 
+        // Completion must NEVER fabricate output: the dispositioned
+        // quantity must reconcile with what actually happened.
+        let produced = existing.quantity_produced as i64;
+        let scrapped = existing.quantity_scrapped as i64;
+        let planned = existing.quantity_planned as i64;
+        let accounted = produced + scrapped + short_close_qty;
+        if accounted < planned {
+            return Err(SenseiError::Validation(format!(
+                "Cannot complete: {accounted} of {planned} units accounted for \
+                 (produced {produced} + scrap {scrapped} + short close {short_close_qty}). \
+                 Report the remaining production or provide a short close."
+            )));
+        }
+        if short_close_qty < 0 {
+            return Err(SenseiError::Validation(
+                "Short close quantity cannot be negative".to_string(),
+            ));
+        }
+        if short_close_qty > 0 && short_close_reason.is_none_or(|r| r.trim().is_empty()) {
+            return Err(SenseiError::Validation(
+                "A short close requires a reason".to_string(),
+            ));
+        }
+
         let row = sqlx::query_as::<_, ProductionOrderRow>(
             r#"
             UPDATE production_orders
             SET status = 'completed',
                 actual_end = $1,
-                quantity_produced = quantity_planned,
+                short_close_qty = $4,
+                short_close_reason = $5,
+                short_close_approved_by = $6,
+                short_close_at = CASE WHEN $4 > 0 THEN $1 ELSE NULL END,
                 updated_at = $1
             WHERE id = $2 AND tenant_id = $3
             RETURNING id, tenant_id, order_number, product_id,
@@ -728,9 +835,36 @@ impl ProductionService for DatabaseProductionService {
         .bind(now)
         .bind(id)
         .bind(tenant_id)
-        .fetch_one(&self.pool)
+        .bind(short_close_qty)
+        .bind(short_close_reason)
+        .bind(approver)
+        .fetch_one(&mut *tx)
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to complete production order: {e}")))?;
+
+        // Append the completion event to the ledger.
+        sqlx::query(
+            "INSERT INTO production_events \
+                (id, tenant_id, event_type, work_order_id, product_id, good_qty, \
+                 scrap_qty, reason_code, operator_id, occurred_at) \
+             VALUES ($1, $2, 'completed', $3, $4, $5, $6, $7, $8, $9)",
+        )
+        .bind(Uuid::new_v4())
+        .bind(tenant_id)
+        .bind(id)
+        .bind(row.product_id)
+        .bind(produced)
+        .bind(scrapped)
+        .bind(short_close_reason.unwrap_or(""))
+        .bind(approver)
+        .bind(now)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| SenseiError::Database(format!("Failed to record completion event: {e}")))?;
+
+        tx.commit()
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to commit completion tx: {e}")))?;
 
         Ok(po_row_to_domain(row))
     }

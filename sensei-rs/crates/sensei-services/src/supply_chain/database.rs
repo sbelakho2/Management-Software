@@ -40,11 +40,15 @@ impl DatabaseSupplyChainService {
         // The unique index on (tenant, product, location, lot_number) treats
         // NULL lot numbers as distinct, so update-then-insert is used instead
         // of ON CONFLICT.
+        // Never clamp an inventory transaction: an issue that would drive
+        // the balance negative must be REJECTED so the ledger and the
+        // balance can never disagree.
         let updated = sqlx::query(
             "UPDATE inventory_items \
-             SET quantity_on_hand = GREATEST(quantity_on_hand + $1::double precision, 0), \
-                 quantity_available = GREATEST(quantity_on_hand + $1::double precision - quantity_reserved, 0) \
-             WHERE tenant_id = $2 AND product_id = $3 AND location = $4 AND lot_number IS NULL",
+             SET quantity_on_hand = quantity_on_hand + $1::double precision, \
+                 quantity_available = quantity_on_hand + $1::double precision - quantity_reserved \
+             WHERE tenant_id = $2 AND product_id = $3 AND location = $4 AND lot_number IS NULL \
+               AND quantity_on_hand + $1::double precision >= 0",
         )
         .bind(delta)
         .bind(tenant_id)
@@ -55,6 +59,14 @@ impl DatabaseSupplyChainService {
         .map_err(|e| SenseiError::Database(format!("Failed to update inventory: {e}")))?;
 
         if updated.rows_affected() == 0 {
+            // No row exists: only a positive (receipt-like) delta may
+            // create stock. Issuing from nothing is a rejected transaction.
+            if delta < 0 {
+                return Err(SenseiError::Validation(format!(
+                    "Insufficient stock at '{location}' for product {product_id}: \
+                     {delta} units would drive the balance negative"
+                )));
+            }
             sqlx::query(
                 "INSERT INTO inventory_items \
                  (id, tenant_id, product_id, location, quantity_on_hand, quantity_reserved, quantity_available, lot_number) \
@@ -64,7 +76,7 @@ impl DatabaseSupplyChainService {
             .bind(tenant_id)
             .bind(product_id)
             .bind(location)
-            .bind(delta.max(0))
+            .bind(delta)
             .execute(&mut **tx)
             .await
             .map_err(|e| SenseiError::Database(format!("Failed to create inventory row: {e}")))?;
@@ -730,13 +742,20 @@ impl SupplyChainService for DatabaseSupplyChainService {
         .execute(&mut *tx).await
         .map_err(|e| SenseiError::Database(format!("Failed to record stock move: {e}")))?;
 
+        // The goods receipt status describes THIS receipt, not the PO:
+        // a partial line receipt is never 'fully_received'.
+        let receipt_status = if all_received {
+            "fully_received"
+        } else {
+            "partially_received"
+        };
         sqlx::query(
             "INSERT INTO goods_receipts (id, tenant_id, receipt_number, purchase_order_id, supplier_id, status, receipt_date, created_at, updated_at) \
-             VALUES ($1,$2,$3,$4,$5,'fully_received',NOW(),NOW(),NOW())",
+             VALUES ($1,$2,$3,$4,$5,$6,NOW(),NOW(),NOW())",
         )
         .bind(Uuid::new_v4()).bind(tenant_id)
         .bind(format!("GR-{}-{}", Utc::now().format("%Y%m%d"), Uuid::new_v4().as_simple()))
-        .bind(po_id).bind(row.supplier_id)
+        .bind(po_id).bind(row.supplier_id).bind(receipt_status)
         .execute(&mut *tx).await
         .map_err(|e| SenseiError::Database(format!("Failed to record goods receipt: {e}")))?;
 
@@ -805,21 +824,69 @@ impl SupplyChainService for DatabaseSupplyChainService {
         product_id: Uuid,
         location: &str,
         quantity_change: i64,
-        _reason: &str,
+        reason: &str,
     ) -> Result<InventoryItem> {
+        // An adjustment without a reason is not an inventory transaction.
+        if reason.trim().is_empty() {
+            return Err(SenseiError::Validation(
+                "An inventory adjustment requires a reason".to_string(),
+            ));
+        }
         // Adjusting stock at a location that has no row is an error — never
         // auto-create an inventory row for an arbitrary location name.
+        let mut tx =
+            self.pool.begin().await.map_err(|e| {
+                SenseiError::Database(format!("Failed to begin adjustment tx: {e}"))
+            })?;
+
         let row = sqlx::query_as::<_, InventoryRow>(
-            r#"UPDATE inventory_items SET quantity_on_hand = GREATEST(quantity_on_hand + $1::double precision, 0),
-                                           quantity_available = GREATEST(quantity_on_hand + $1::double precision - quantity_reserved, 0)
+            r#"UPDATE inventory_items
+               SET quantity_on_hand = quantity_on_hand + $1::double precision,
+                   quantity_available = quantity_on_hand + $1::double precision - quantity_reserved
                WHERE product_id=$2 AND tenant_id=$3 AND location=$4
+                 AND quantity_on_hand + $1::double precision >= 0
                RETURNING id, tenant_id, product_id, product_name,
                          quantity_on_hand::bigint, quantity_reserved::bigint, quantity_available::bigint,
                          location, lot_number, reorder_point::bigint, reorder_quantity::bigint"#,
         ).bind(quantity_change).bind(product_id).bind(tenant_id).bind(location)
-            .fetch_optional(&self.pool).await
+            .fetch_optional(&mut *tx).await
             .map_err(|e| SenseiError::Database(format!("Failed to adjust inventory: {e}")))?
-            .ok_or_else(|| SenseiError::NotFound(format!("Inventory for product {product_id} at {location} not found")))?;
+            .ok_or_else(|| {
+                if quantity_change < 0 {
+                    SenseiError::Validation(format!(
+                        "Insufficient stock at '{location}' for product {product_id}: \
+                         {quantity_change} would drive the balance negative"
+                    ))
+                } else {
+                    SenseiError::NotFound(format!(
+                        "Inventory for product {product_id} at {location} not found"
+                    ))
+                }
+            })?;
+
+        // The ledger row: inventory never changes without a corresponding
+        // stock transaction.
+        sqlx::query(
+            "INSERT INTO stock_moves \
+                (id, tenant_id, product_id, product_name, quantity, move_type, \
+                 from_location, to_location, reference_type, reference_id, created_by, created_at) \
+             VALUES ($1, $2, $3, $4, $5, 'adjustment', $6, $7, 'inventory_adjustment', NULL, NULL, $8)",
+        )
+        .bind(Uuid::new_v4())
+        .bind(tenant_id)
+        .bind(product_id)
+        .bind(&row.product_name)
+        .bind(quantity_change.abs())
+        .bind(location)
+        .bind(location)
+        .bind(Utc::now())
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| SenseiError::Database(format!("Failed to record adjustment ledger: {e}")))?;
+
+        tx.commit()
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to commit adjustment tx: {e}")))?;
         Ok(inv_row_to_domain(row))
     }
 
@@ -828,6 +895,36 @@ impl SupplyChainService for DatabaseSupplyChainService {
     async fn create_stock_move(&self, tenant_id: Uuid, stock_move: StockMove) -> Result<StockMove> {
         let now = Utc::now();
         let id = Uuid::new_v4();
+
+        // Validation BEFORE any write: a negative quantity inverts the
+        // movement semantics, an unknown move type would leave the ledger
+        // and the balance disagreeing, and a transfer without a source
+        // would create stock out of nothing.
+        if stock_move.quantity <= 0 {
+            return Err(SenseiError::Validation(
+                "Stock move quantity must be positive".to_string(),
+            ));
+        }
+        match stock_move.move_type.as_str() {
+            "receipt" | "delivery" | "issue" | "transfer" | "adjustment" => {}
+            other => {
+                return Err(SenseiError::Validation(format!(
+                    "Unknown stock move type '{other}'"
+                )));
+            }
+        }
+        if stock_move.move_type == "transfer"
+            && (stock_move
+                .from_location
+                .as_deref()
+                .is_none_or(|l| l.is_empty())
+                || stock_move.to_location.is_empty())
+        {
+            return Err(SenseiError::Validation(
+                "A transfer requires both a source and a destination location".to_string(),
+            ));
+        }
+
         let mut tx = self
             .pool
             .begin()
@@ -887,18 +984,16 @@ impl SupplyChainService for DatabaseSupplyChainService {
                 .await?;
             }
             "transfer" => {
-                if let Some(from) = from_location {
-                    if !from.is_empty() {
-                        self.apply_inventory_delta(
-                            &mut tx,
-                            tenant_id,
-                            stock_move.product_id,
-                            &from,
-                            -stock_move.quantity,
-                        )
-                        .await?;
-                    }
-                }
+                // Source is validated present; debit it strictly.
+                let from = from_location.clone().unwrap_or_default();
+                self.apply_inventory_delta(
+                    &mut tx,
+                    tenant_id,
+                    stock_move.product_id,
+                    &from,
+                    -stock_move.quantity,
+                )
+                .await?;
                 let to = match to_location.as_str() {
                     "" => {
                         self.resolve_stock_location(&mut tx, tenant_id, stock_move.product_id)
@@ -929,7 +1024,13 @@ impl SupplyChainService for DatabaseSupplyChainService {
                 )
                 .await?;
             }
-            _ => {}
+            // Unreachable: move types are validated before the insert. Kept
+            // as a hard error so the ledger can never silently diverge.
+            other => {
+                return Err(SenseiError::Validation(format!(
+                    "Unsupported stock move type '{other}'"
+                )));
+            }
         }
 
         tx.commit()

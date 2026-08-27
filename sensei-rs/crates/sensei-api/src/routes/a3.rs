@@ -35,6 +35,7 @@ pub async fn list_a3s(
     State(state): State<AppState>,
     Query(params): Query<ListA3sParams>,
 ) -> Result<Json<PaginatedResponse<A3>>> {
+    user.require_permission("tps:a3:read")?;
     let tenant_id = user.tenant_id;
     let a3s = state
         .ops_service
@@ -54,6 +55,7 @@ pub async fn create_a3(
     State(state): State<AppState>,
     Json(req): Json<A3>,
 ) -> Result<Json<A3>> {
+    user.require_permission("tps:a3:create")?;
     let tenant_id = user.tenant_id;
     let a3 = state.ops_service.create_a3(tenant_id, req).await?;
 
@@ -90,6 +92,7 @@ pub async fn get_a3(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<A3>> {
+    user.require_permission("tps:a3:read")?;
     let tenant_id = user.tenant_id;
     let a3 = state.ops_service.get_a3(tenant_id, id).await?;
     Ok(Json(a3))
@@ -102,6 +105,7 @@ pub async fn update_a3(
     Path(id): Path<Uuid>,
     Json(req): Json<A3>,
 ) -> Result<Json<A3>> {
+    user.require_permission("tps:a3:edit")?;
     let tenant_id = user.tenant_id;
     let a3 = state.ops_service.update_a3(tenant_id, id, req).await?;
     Ok(Json(a3))
@@ -113,6 +117,7 @@ pub async fn close_a3(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<A3>> {
+    user.require_permission("tps:a3:close")?;
     let tenant_id = user.tenant_id;
     let a3 = state.ops_service.close_a3(tenant_id, id).await?;
 
@@ -137,6 +142,7 @@ pub async fn delete_a3(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<()>> {
+    user.require_permission("tps:a3:close")?;
     let tenant_id = user.tenant_id;
     state.ops_service.delete_a3(tenant_id, id).await?;
     Ok(Json(()))
