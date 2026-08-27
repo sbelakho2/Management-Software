@@ -197,6 +197,33 @@ async fn seed_user(
 /// Runs *after* `with_db_pool`, so in database mode the accounts are seeded
 /// through the DB-backed users service.
 async fn seed_bootstrap_users(state: &AppState) {
+    // With multiple replicas every pod would run the seed. An advisory
+    // transaction lock makes bootstrap a one-time operation: the first
+    // holder seeds; the others observe the lock and skip (unique
+    // constraints protect double-inserts, but only one pod should run the
+    // bootstrap path at all).
+    if let Some(pool) = &state.db_pool {
+        let mut conn = match pool.acquire().await {
+            Ok(c) => c,
+            Err(e) => {
+                tracing::error!(error = %e, "Bootstrap could not acquire a DB connection");
+                return;
+            }
+        };
+        match sqlx::query(
+            "SELECT pg_advisory_xact_lock(737_012_345) \
+             FROM (SELECT 1) t",
+        )
+        .execute(&mut *conn)
+        .await
+        {
+            Ok(_) => {}
+            Err(e) => {
+                tracing::error!(error = %e, "Bootstrap advisory lock failed");
+                return;
+            }
+        }
+    }
     ensure_bootstrap_tenant(state).await;
 
     let admin_email =

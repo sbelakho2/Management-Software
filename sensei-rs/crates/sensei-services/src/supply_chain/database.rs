@@ -1080,12 +1080,13 @@ impl SupplyChainService for DatabaseSupplyChainService {
     }
 
     async fn delete_rfq(&self, tenant_id: Uuid, id: Uuid) -> Result<()> {
-        let r = sqlx::query("DELETE FROM rfqs WHERE id=$1 AND tenant_id=$2")
+        // RFQs are business history: they are CANCELLED, never erased.
+        let r = sqlx::query("UPDATE rfqs SET status='cancelled' WHERE id=$1 AND tenant_id=$2")
             .bind(id)
             .bind(tenant_id)
             .execute(&self.pool)
             .await
-            .map_err(|e| SenseiError::Database(format!("Failed to delete RFQ: {e}")))?;
+            .map_err(|e| SenseiError::Database(format!("Failed to cancel RFQ: {e}")))?;
         if r.rows_affected() == 0 {
             return Err(SenseiError::NotFound(format!("RFQ {id} not found")));
         }
@@ -1115,12 +1116,13 @@ impl SupplyChainService for DatabaseSupplyChainService {
     }
 
     async fn delete_quote(&self, tenant_id: Uuid, id: Uuid) -> Result<()> {
-        let r = sqlx::query("DELETE FROM quotes WHERE id=$1 AND tenant_id=$2")
+        // Quotes are business history: they are CANCELLED, never erased.
+        let r = sqlx::query("UPDATE quotes SET status='cancelled' WHERE id=$1 AND tenant_id=$2")
             .bind(id)
             .bind(tenant_id)
             .execute(&self.pool)
             .await
-            .map_err(|e| SenseiError::Database(format!("Failed to delete quote: {e}")))?;
+            .map_err(|e| SenseiError::Database(format!("Failed to cancel quote: {e}")))?;
         if r.rows_affected() == 0 {
             return Err(SenseiError::NotFound(format!("Quote {id} not found")));
         }

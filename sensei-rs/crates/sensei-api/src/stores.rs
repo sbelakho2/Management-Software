@@ -475,8 +475,8 @@ pub struct InventoryItem {
     pub quantity_on_hand: f64,
     pub quantity_reserved: f64,
     pub quantity_available: f64,
-    pub unit_cost: f64,
-    pub total_value: f64,
+    pub unit_cost: rust_decimal::Decimal,
+    pub total_value: rust_decimal::Decimal,
     pub reorder_point: f64,
     pub reorder_quantity: f64,
     pub is_active: bool,
@@ -901,6 +901,9 @@ pub struct KpiDefinition {
     pub upper_limit: Option<f64>,
     pub direction: KpiDirection,
     pub formula: Option<String>,
+    /// Version of the calculation this definition represents (values
+    /// recorded against it snapshot this revision for lineage).
+    pub calculation_revision: String,
     pub owner_role: Option<String>,
     pub is_active: bool,
     pub created_by: Uuid,
@@ -918,6 +921,12 @@ pub struct KpiValue {
     pub recorded_at: DateTime<Utc>,
     pub note: Option<String>,
     pub recorded_by: Uuid,
+    /// Version of the calculation/formula that produced this value (the
+    /// formula is lineage, not decorative metadata).
+    pub calculation_revision: String,
+    /// References to the source metrics/evidence this value was derived
+    /// from.
+    pub source_refs: Vec<String>,
 }
 
 /// Entity store for KPI definitions.

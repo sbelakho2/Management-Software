@@ -229,6 +229,42 @@ impl MaintenanceService for DatabaseMaintenanceService {
         status: &str,
     ) -> Result<MaintenanceWorkRequest> {
         let now = Utc::now();
+        // Validated lifecycle: submitted -> approved -> in_progress ->
+        // completed; submitted/approved -> cancelled.
+        let legal_set = [
+            "submitted",
+            "approved",
+            "in_progress",
+            "completed",
+            "cancelled",
+        ];
+        if !legal_set.contains(&status) {
+            return Err(SenseiError::Validation(format!(
+                "Unknown work request status '{status}'"
+            )));
+        }
+        let current: Option<String> = sqlx::query_scalar(
+            "SELECT status FROM maintenance_work_requests WHERE id = $1 AND tenant_id = $2",
+        )
+        .bind(id)
+        .bind(tenant_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| SenseiError::Database(format!("Failed to read work request status: {e}")))?
+        .ok_or_else(|| SenseiError::NotFound(format!("Work request {id} not found")))?;
+        let legal = matches!(
+            (current.as_deref(), status),
+            (Some("submitted"), "approved" | "cancelled")
+                | (Some("approved"), "in_progress" | "cancelled")
+                | (Some("in_progress"), "completed")
+        );
+        if !legal {
+            return Err(SenseiError::Conflict(format!(
+                "Illegal work request transition '{}' -> '{}'",
+                current.as_deref().unwrap_or("?"),
+                status
+            )));
+        }
         let row = sqlx::query_as::<_, WorkRequestRow>(
             r#"UPDATE maintenance_work_requests SET status=$1, completed_at=CASE WHEN $1='completed' THEN $3 ELSE completed_at END
                WHERE id=$2 AND tenant_id=$4
@@ -523,19 +559,23 @@ impl MaintenanceService for DatabaseMaintenanceService {
     }
 
     async fn delete_work_request(&self, tenant_id: TenantId, id: Uuid) -> Result<()> {
-        let result =
-            sqlx::query("DELETE FROM maintenance_work_requests WHERE id = $1 AND tenant_id = $2")
-                .bind(id)
-                .bind(tenant_id)
-                .execute(&self.pool)
-                .await
-                .map_err(|e| {
-                    SenseiError::Database(format!("Failed to delete work request: {e}"))
-                })?;
+        // Maintenance requests are business history: they are CANCELLED,
+        // never physically erased (the audit: completed maintenance and
+        // request history must remain auditable).
+        let result = sqlx::query(
+            "UPDATE maintenance_work_requests SET status = 'cancelled' \
+             WHERE id = $1 AND tenant_id = $2 AND status NOT IN ('completed', 'cancelled')",
+        )
+        .bind(id)
+        .bind(tenant_id)
+        .execute(&self.pool)
+        .await
+        .map_err(|e| SenseiError::Database(format!("Failed to cancel work request: {e}")))?;
         if result.rows_affected() == 0 {
-            return Err(SenseiError::NotFound(format!(
-                "Work request {id} not found"
-            )));
+            return Err(SenseiError::Validation(
+                "Only open maintenance requests can be cancelled; completed history is retained"
+                    .to_string(),
+            ));
         }
         Ok(())
     }

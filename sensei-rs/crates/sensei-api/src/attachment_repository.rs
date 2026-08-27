@@ -76,21 +76,21 @@ impl AttachmentRepository {
         Ok(())
     }
 
-    /// Fetch one attachment scoped to the tenant.
-    pub async fn get(&self, tenant_id: Uuid, id: Uuid) -> Option<Attachment> {
+    /// Fetch one attachment scoped to the tenant. A database failure is a
+    /// REAL error — it must never masquerade as "attachment not found".
+    pub async fn get(&self, tenant_id: Uuid, id: Uuid) -> Result<Option<Attachment>, String> {
         if let Some(pool) = &self.pool {
             let row: Option<AttachmentRow> = sqlx::query_as(
-                "SELECT id, tenant_id, entity_type, entity_id, file_name, content_type, \\
-                        file_size, storage_path, uploaded_by, created_at \\
+                "SELECT id, tenant_id, entity_type, entity_id, file_name, content_type, \
+                        file_size, storage_path, uploaded_by, created_at \
                  FROM attachments WHERE id = $1 AND tenant_id = $2",
             )
             .bind(id)
             .bind(tenant_id)
             .fetch_optional(pool)
             .await
-            .ok()
-            .flatten();
-            return row.map(|r| Attachment {
+            .map_err(|e| format!("Attachment read failed: {e}"))?;
+            return Ok(row.map(|r| Attachment {
                 id: r.0,
                 tenant_id: r.1,
                 entity_type: r.2,
@@ -101,28 +101,30 @@ impl AttachmentRepository {
                 storage_path: r.7,
                 uploaded_by: r.8.unwrap_or_default(),
                 created_at: r.9,
-            });
+            }));
         }
-        self.memory
+        Ok(self
+            .memory
             .read()
             .await
             .get(&id)
             .filter(|a| a.tenant_id == tenant_id)
-            .cloned()
+            .cloned())
     }
 
-    /// List attachments for an entity, newest first.
+    /// List attachments for an entity, newest first. A database failure is
+    /// a REAL error — it must never masquerade as an empty list.
     pub async fn list(
         &self,
         tenant_id: Uuid,
         entity_type: &str,
         entity_id: Uuid,
-    ) -> Vec<Attachment> {
+    ) -> Result<Vec<Attachment>, String> {
         if let Some(pool) = &self.pool {
             let rows: Vec<AttachmentRow> = sqlx::query_as(
-                "SELECT id, tenant_id, entity_type, entity_id, file_name, content_type, \\
-                        file_size, storage_path, uploaded_by, created_at \\
-                 FROM attachments WHERE tenant_id = $1 AND entity_type = $2 AND entity_id = $3 \\
+                "SELECT id, tenant_id, entity_type, entity_id, file_name, content_type, \
+                        file_size, storage_path, uploaded_by, created_at \
+                 FROM attachments WHERE tenant_id = $1 AND entity_type = $2 AND entity_id = $3 \
                  ORDER BY created_at DESC",
             )
             .bind(tenant_id)
@@ -130,8 +132,8 @@ impl AttachmentRepository {
             .bind(entity_id)
             .fetch_all(pool)
             .await
-            .unwrap_or_default();
-            return rows
+            .map_err(|e| format!("Attachment list failed: {e}"))?;
+            return Ok(rows
                 .into_iter()
                 .map(|r| Attachment {
                     id: r.0,
@@ -145,7 +147,7 @@ impl AttachmentRepository {
                     uploaded_by: r.8.unwrap_or_default(),
                     created_at: r.9,
                 })
-                .collect();
+                .collect());
         }
         let mut out: Vec<Attachment> = self
             .memory
@@ -158,7 +160,7 @@ impl AttachmentRepository {
             .cloned()
             .collect();
         out.sort_by_key(|a| std::cmp::Reverse(a.created_at));
-        out
+        Ok(out)
     }
 
     /// Delete an attachment record (scoped to the tenant).

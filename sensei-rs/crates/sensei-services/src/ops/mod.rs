@@ -74,8 +74,8 @@ pub struct Project {
     pub planned_end: Option<DateTime<Utc>>,
     pub actual_start: Option<DateTime<Utc>>,
     pub actual_end: Option<DateTime<Utc>>,
-    pub budget: Option<f64>,
-    pub savings_realized: Option<f64>,
+    pub budget: Option<rust_decimal::Decimal>,
+    pub savings_realized: Option<rust_decimal::Decimal>,
     pub created_at: DateTime<Utc>,
 }
 
@@ -551,7 +551,10 @@ impl OperationsService for InMemoryOperationsService {
         }
 
         project.status = "completed".to_string();
-        project.savings_realized = Some(savings_realized);
+        project.savings_realized = Some(
+            rust_decimal::Decimal::from_f64_retain(savings_realized)
+                .unwrap_or(rust_decimal::Decimal::ZERO),
+        );
         project.actual_end = Some(Utc::now());
 
         if project.actual_start.is_none() {
@@ -979,7 +982,7 @@ mod tests {
             planned_end: Some(Utc::now() + chrono::Duration::days(90)),
             actual_start: None,
             actual_end: None,
-            budget: Some(5000.0),
+            budget: Some(rust_decimal::Decimal::from(5000u32)),
             savings_realized: None,
             created_at: Utc::now(),
         };
@@ -996,7 +999,10 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(completed.status, "completed");
-        assert_eq!(completed.savings_realized, Some(15000.0));
+        assert_eq!(
+            completed.savings_realized,
+            Some(rust_decimal::Decimal::from(15000u32))
+        );
     }
 
     #[tokio::test]

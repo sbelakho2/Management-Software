@@ -72,10 +72,18 @@ pub struct MissingItem {
 }
 
 /// Training metrics for the evidence detector.
+///
+/// HONEST METRICS: the classifier is evaluated on the same examples it was
+/// trained on, so the score is `train_accuracy` — it is NOT F1 and NOT
+/// cross-validation. Naming it F1 would be misleading; any model that
+/// influences TPS decisions must be evaluated on a held-out split before
+/// its metrics are trusted.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TrainingMetrics {
-    pub f1_mean: f64,
-    pub f1_std: f64,
+    /// Accuracy on the training set (NOT a held-out estimate).
+    pub train_accuracy: f64,
+    /// Always 0: no fold variation exists for a training-set evaluation.
+    pub train_accuracy_std: f64,
     pub training_samples: usize,
 }
 
@@ -365,8 +373,8 @@ impl MissingEvidenceDetector {
         let n = labeled_reports.len();
         if n == 0 {
             return TrainingMetrics {
-                f1_mean: 0.0,
-                f1_std: 0.0,
+                train_accuracy: 0.0,
+                train_accuracy_std: 0.0,
                 training_samples: 0,
             };
         }
@@ -414,8 +422,8 @@ impl MissingEvidenceDetector {
         let accuracy = correct as f64 / n.max(1) as f64;
 
         TrainingMetrics {
-            f1_mean: accuracy,
-            f1_std: 0.0,
+            train_accuracy: accuracy,
+            train_accuracy_std: 0.0,
             training_samples: n,
         }
     }

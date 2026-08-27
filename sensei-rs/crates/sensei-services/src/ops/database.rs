@@ -66,8 +66,8 @@ struct ProjectRow {
     planned_end: Option<chrono::DateTime<Utc>>,
     actual_start: Option<chrono::DateTime<Utc>>,
     actual_end: Option<chrono::DateTime<Utc>>,
-    budget: Option<f64>,
-    savings_realized: Option<f64>,
+    budget: Option<rust_decimal::Decimal>,
+    savings_realized: Option<rust_decimal::Decimal>,
     created_at: chrono::DateTime<Utc>,
 }
 

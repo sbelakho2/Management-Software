@@ -148,6 +148,7 @@ pub async fn create_trigger(
     };
     let mut store = state.notification_triggers.write(user.tenant_id).await;
     store.insert(trigger.id, trigger.clone());
+    store.persist().await?;
     Ok(Json(trigger))
 }
 
@@ -216,7 +217,9 @@ pub async fn update_trigger(
         trigger.target_roles = target_roles;
     }
     trigger.updated_at = Utc::now();
-    Ok(Json(trigger.clone()))
+    let result = trigger.clone();
+    store.persist().await?;
+    Ok(Json(result))
 }
 
 /// Delete a notification trigger.
@@ -238,6 +241,7 @@ pub async fn delete_trigger(
         )));
     }
     store.remove(&trigger_id);
+    store.persist().await?;
     Ok(Json(()))
 }
 
@@ -257,7 +261,9 @@ pub async fn toggle_trigger(
         })?;
     trigger.is_active = !trigger.is_active;
     trigger.updated_at = Utc::now();
-    Ok(Json(trigger.clone()))
+    let result = trigger.clone();
+    store.persist().await?;
+    Ok(Json(result))
 }
 
 /// Evaluate whether a trigger condition matches an event payload.

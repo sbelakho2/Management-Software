@@ -4035,3 +4035,51 @@ impl DomainEvent for SavedViewDeletedEvent {
         self
     }
 }
+
+/// Transient event carrying a raw JSON payload (used by the transactional
+/// outbox relay: outbox rows carry the original event payload verbatim and
+/// are published through this envelope).
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub struct GenericJsonEvent {
+    event_id: EventId,
+    event_type: String,
+    payload: serde_json::Value,
+    correlation_id: CorrelationId,
+    tenant_id: uuid::Uuid,
+}
+
+impl GenericJsonEvent {
+    pub fn new(event_type: &str, payload: serde_json::Value) -> Self {
+        Self {
+            event_id: EventId::new_v4(),
+            event_type: event_type.to_string(),
+            payload,
+            correlation_id: CorrelationId::new_v4(),
+            tenant_id: uuid::Uuid::nil(),
+        }
+    }
+}
+
+impl DomainEvent for GenericJsonEvent {
+    fn event_id(&self) -> EventId {
+        self.event_id
+    }
+    fn event_type(&self) -> &'static str {
+        "generic.json"
+    }
+    fn correlation_id(&self) -> CorrelationId {
+        self.correlation_id
+    }
+    fn tenant_id(&self) -> Uuid {
+        self.tenant_id
+    }
+    fn occurred_at(&self) -> Timestamp {
+        Timestamp::from(chrono::Utc::now())
+    }
+    fn payload(&self) -> Result<serde_json::Value, serde_json::Error> {
+        Ok(self.payload.clone())
+    }
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+}

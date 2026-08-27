@@ -86,6 +86,9 @@ pub struct RecordKpiValueRequest {
     pub value: f64,
     pub recorded_at: Option<DateTime<Utc>>,
     pub note: Option<String>,
+    /// Source metrics/evidence this value was derived from.
+    #[serde(default)]
+    pub source_refs: Option<Vec<String>>,
 }
 
 /// Query parameters for listing KPI values.
@@ -174,6 +177,7 @@ pub async fn create_kpi(
         upper_limit: req.upper_limit,
         direction: req.direction,
         formula: req.formula,
+        calculation_revision: format!("v{}", now.timestamp()),
         owner_role: req.owner_role,
         is_active: true,
         created_by: user.user_id,
@@ -182,6 +186,7 @@ pub async fn create_kpi(
     };
     let mut store = state.kpi_definitions.write(user.tenant_id).await;
     store.insert(kpi.id, kpi.clone());
+    store.persist().await?;
     Ok(Json(kpi))
 }
 
@@ -250,7 +255,9 @@ pub async fn update_kpi(
         kpi.is_active = active;
     }
     kpi.updated_at = Utc::now();
-    Ok(Json(kpi.clone()))
+    let result = kpi.clone();
+    store.persist().await?;
+    Ok(Json(result))
 }
 
 /// Delete a KPI definition.
@@ -270,6 +277,7 @@ pub async fn delete_kpi(
         return Err(SenseiError::NotFound(format!("KPI {id} not found")));
     }
     store.remove(&id);
+    store.persist().await?;
     Ok(Json(()))
 }
 
@@ -293,6 +301,15 @@ pub async fn record_kpi_value(
         }
     }
     let now = Utc::now();
+    // Resolve the definition's calculation revision (lineage).
+    let calculation_revision = {
+        let store = state.kpi_definitions.read(user.tenant_id).await;
+        store
+            .values()
+            .find(|k| k.id == kpi_id && k.tenant_id == tenant_id)
+            .map(|k| k.calculation_revision.clone())
+            .unwrap_or_default()
+    };
     let value = KpiValue {
         id: new_id(),
         kpi_id,
@@ -301,9 +318,12 @@ pub async fn record_kpi_value(
         recorded_at: req.recorded_at.unwrap_or(now),
         note: req.note,
         recorded_by: user.user_id,
+        calculation_revision,
+        source_refs: req.source_refs.unwrap_or_default(),
     };
     let mut store = state.kpi_values.write(user.tenant_id).await;
     store.insert(value.id, value.clone());
+    store.persist().await?;
     Ok(Json(value))
 }
 

@@ -249,6 +249,17 @@ async fn run() {
         }
     };
 
+    // ── Transactional-outbox relay ──────────────────────────────────
+    // Business mutations write outbox rows in the same tx; this relay
+    // publishes them to NATS with a real server ack and marks published.
+    {
+        let url = config.event_bus.url.clone();
+        let bus: Arc<dyn sensei_event_bus::EventBus> =
+            Arc::new(sensei_event_bus::NatsEventBus::new("sensei"));
+        let _ = bus.connect(&url).await;
+        sensei_workers::outbox_relay::spawn(pool.clone(), bus);
+    }
+
     // ── Beat-style scheduler (daily snapshots, KPIs, retrains) ──────
     // PostgreSQL advisory-lock leader election prevents duplicate scheduled
     // work when multiple worker instances run; without a database the

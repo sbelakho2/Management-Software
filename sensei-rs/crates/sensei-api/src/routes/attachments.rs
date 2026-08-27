@@ -467,15 +467,19 @@ async fn upload_inner(
     };
 
     // Store metadata in the typed attachment repository (PostgreSQL is the
-    // source of truth — no process-local snapshot caching).
-    state
-        .attachment_repo
-        .put(&attachment)
-        .await
-        .map_err(|e| {
-            tracing::error!(error = %e, attachment_id = %attachment.id, "Failed to persist attachment metadata");
-            SenseiError::Internal("Failed to persist attachment metadata".to_string())
-        })?;
+    // source of truth — no process-local snapshot caching). If the metadata
+    // write fails AFTER the blob was stored, compensate by deleting the
+    // orphaned object so storage and metadata can never diverge.
+    if let Err(e) = state.attachment_repo.put(&attachment).await {
+        tracing::error!(error = %e, attachment_id = %attachment.id, "Failed to persist attachment metadata — compensating blob delete");
+        let _ = state
+            .storage_service
+            .delete(user.tenant_id, &attachment.storage_path)
+            .await;
+        return Err(SenseiError::Internal(
+            "Failed to persist attachment metadata".to_string(),
+        ));
+    }
 
     Ok(Json(UploadedAttachment::from_attachment(
         &attachment,
@@ -538,7 +542,11 @@ pub async fn list_attachments(
     let attachments = state
         .attachment_repo
         .list(user.tenant_id, &entity_type, entity_id)
-        .await;
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "Failed to list attachments");
+            SenseiError::Internal("Failed to read attachments".to_string())
+        })?;
     let result = PaginatedResponse::new(attachments, params.page, params.per_page);
     Ok(Json(result))
 }
@@ -559,7 +567,22 @@ pub async fn download_attachment(
         .attachment_repo
         .get(user.tenant_id, id)
         .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "Failed to read attachment metadata");
+            SenseiError::Internal("Failed to read attachment".to_string())
+        })?
         .ok_or_else(|| SenseiError::NotFound(format!("Attachment {id} not found")))?;
+
+    // Prefer a short-lived signed download (true streaming at the storage
+    // backend); fall back to buffered retrieval when unsupported.
+    if let Some(url) = state
+        .storage_service
+        .get_presigned_url(user.tenant_id, &attachment.storage_path, 300)
+        .await?
+    {
+        use axum::response::IntoResponse;
+        return Ok(axum::response::Redirect::temporary(&url).into_response());
+    }
 
     let bytes = state
         .storage_service
@@ -610,6 +633,10 @@ pub async fn delete_attachment(
         .attachment_repo
         .get(user.tenant_id, id)
         .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "Failed to read attachment metadata");
+            SenseiError::Internal("Failed to read attachment".to_string())
+        })?
         .ok_or_else(|| SenseiError::NotFound(format!("Attachment {id} not found")))?;
 
     // Delete the file from the storage backend (storage_path is the opaque key).

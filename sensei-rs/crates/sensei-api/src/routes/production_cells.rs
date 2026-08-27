@@ -137,6 +137,7 @@ pub async fn create_production_cell(
     };
     let mut store = state.production_cells.write(user.tenant_id).await;
     store.insert(cell.id, cell.clone());
+    store.persist().await?;
     Ok(Json(cell))
 }
 
@@ -200,7 +201,9 @@ pub async fn update_production_cell(
         cell.supervisor_id = sid;
     }
     cell.updated_at = Utc::now();
-    Ok(Json(cell.clone()))
+    let result = cell.clone();
+    store.persist().await?;
+    Ok(Json(result))
 }
 
 /// Get utilization metrics for a production cell.

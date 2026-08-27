@@ -116,6 +116,7 @@ pub async fn create_matrix_entry(
     };
     let mut store = state.training_matrix.write(user.tenant_id).await;
     store.insert(entry.id, entry.clone());
+    store.persist().await?;
     Ok(Json(entry))
 }
 
@@ -143,7 +144,9 @@ pub async fn update_matrix_entry(
     entry.notes = req.notes;
     entry.assessed_by = req.assessed_by;
     entry.updated_at = Utc::now();
-    Ok(Json(entry.clone()))
+    let result = entry.clone();
+    store.persist().await?;
+    Ok(Json(result))
 }
 
 /// Map a proficiency level to the level the employee must reach.

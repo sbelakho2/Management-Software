@@ -92,6 +92,8 @@ COPY crates/sensei-event-bus/Cargo.toml crates/sensei-event-bus/
 COPY crates/sensei-services/Cargo.toml crates/sensei-services/
 COPY crates/sensei-zt/Cargo.toml crates/sensei-zt/
 COPY crates/sensei-workers/Cargo.toml crates/sensei-workers/
+COPY xtask/Cargo.toml xtask/
+COPY src-tauri/Cargo.toml src-tauri/
 COPY crates/ crates/
 
 RUN --mount=type=cache,target=/usr/local/cargo/registry \

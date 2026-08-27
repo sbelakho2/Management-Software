@@ -58,7 +58,7 @@ pub struct CreateInventoryItemRequest {
     pub warehouse_id: Uuid,
     pub quantity_on_hand: f64,
     pub quantity_reserved: f64,
-    pub unit_cost: f64,
+    pub unit_cost: rust_decimal::Decimal,
     pub reorder_point: f64,
     pub reorder_quantity: f64,
 }
@@ -72,7 +72,7 @@ pub struct UpdateInventoryItemRequest {
     pub warehouse_id: Option<Uuid>,
     pub quantity_on_hand: Option<f64>,
     pub quantity_reserved: Option<f64>,
-    pub unit_cost: Option<f64>,
+    pub unit_cost: Option<rust_decimal::Decimal>,
     pub reorder_point: Option<f64>,
     pub reorder_quantity: Option<f64>,
     pub is_active: Option<bool>,
@@ -102,7 +102,7 @@ pub struct CreateWarehouseRequest {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct InventoryStats {
     pub total_items: usize,
-    pub total_value: f64,
+    pub total_value: rust_decimal::Decimal,
     pub total_quantity_on_hand: f64,
     pub total_quantity_reserved: f64,
     pub low_stock_items: Vec<LowStockItem>,
@@ -201,7 +201,9 @@ pub async fn create_inventory_item(
     }
 
     let quantity_available = req.quantity_on_hand - req.quantity_reserved;
-    let total_value = req.quantity_on_hand * req.unit_cost;
+    let total_value = rust_decimal::Decimal::from_f64_retain(req.quantity_on_hand)
+        .unwrap_or(rust_decimal::Decimal::ZERO)
+        * req.unit_cost;
     let item = InventoryItem {
         id: new_id(),
         tenant_id,
@@ -294,7 +296,9 @@ pub async fn update_inventory_item(
     }
 
     item.quantity_available = item.quantity_on_hand - item.quantity_reserved;
-    item.total_value = item.quantity_on_hand * item.unit_cost;
+    item.total_value = rust_decimal::Decimal::from_f64_retain(item.quantity_on_hand)
+        .unwrap_or(rust_decimal::Decimal::ZERO)
+        * item.unit_cost;
     item.updated_at = Utc::now();
     Ok(Json(item.clone()))
 }
@@ -403,7 +407,9 @@ pub async fn create_stock_move(
             }
         }
         item.quantity_available = item.quantity_on_hand - item.quantity_reserved;
-        item.total_value = item.quantity_on_hand * item.unit_cost;
+        item.total_value = rust_decimal::Decimal::from_f64_retain(item.quantity_on_hand)
+            .unwrap_or(rust_decimal::Decimal::ZERO)
+            * item.unit_cost;
         item.updated_at = now;
     } else {
         return Err(SenseiError::NotFound(format!(
@@ -498,7 +504,7 @@ pub async fn get_inventory_stats(
         .collect();
 
     let total_items = items.len();
-    let total_value: f64 = items.iter().map(|i| i.total_value).sum();
+    let total_value: rust_decimal::Decimal = items.iter().map(|i| i.total_value).sum();
     let total_quantity_on_hand: f64 = items.iter().map(|i| i.quantity_on_hand).sum();
     let total_quantity_reserved: f64 = items.iter().map(|i| i.quantity_reserved).sum();
 

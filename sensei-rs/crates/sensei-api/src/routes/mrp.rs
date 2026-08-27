@@ -181,6 +181,7 @@ pub async fn create_demand(
     };
     let mut store = state.demand_entries.write(user.tenant_id).await;
     store.insert(entry.id, entry.clone());
+    store.persist().await?;
     Ok(Json(entry))
 }
 

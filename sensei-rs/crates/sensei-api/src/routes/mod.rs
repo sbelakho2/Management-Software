@@ -49,6 +49,7 @@ pub mod supply_chain;
 pub mod tasks;
 pub mod tenants;
 pub mod today;
+pub mod tps;
 pub mod training;
 pub mod training_matrix;
 pub mod users;

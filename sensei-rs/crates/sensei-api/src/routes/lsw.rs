@@ -178,6 +178,7 @@ pub async fn create_lsw_standard(
     };
     let mut store = state.lsw_standards.write(user.tenant_id).await;
     store.insert(standard.id, standard.clone());
+    store.persist().await?;
     Ok(Json(standard))
 }
 
@@ -231,7 +232,9 @@ pub async fn update_lsw_standard(
         standard.is_active = active;
     }
     standard.updated_at = Utc::now();
-    Ok(Json(standard.clone()))
+    let result = standard.clone();
+    store.persist().await?;
+    Ok(Json(result))
 }
 
 /// Delete an LSW standard.
@@ -253,6 +256,7 @@ pub async fn delete_lsw_standard(
         )));
     }
     store.remove(&standard_id);
+    store.persist().await?;
     Ok(Json(()))
 }
 
@@ -330,6 +334,7 @@ pub async fn perform_audit(
     };
     let mut store = state.lsw_audits.write(user.tenant_id).await;
     store.insert(audit.id, audit.clone());
+    store.persist().await?;
     Ok(Json(audit))
 }
 

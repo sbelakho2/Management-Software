@@ -153,6 +153,7 @@ pub async fn create_board(
     };
     let mut store = state.kanban_boards.write(user.tenant_id).await;
     store.insert(board.id, board.clone());
+    store.persist().await?;
     Ok(Json(board))
 }
 
@@ -190,7 +191,9 @@ pub async fn update_board(
     board.name = req.name;
     board.description = req.description;
     board.updated_at = Utc::now();
-    Ok(Json(board.clone()))
+    let result = board.clone();
+    store.persist().await?;
+    Ok(Json(result))
 }
 
 /// Delete a Kanban board.
@@ -210,6 +213,7 @@ pub async fn delete_board(
         return Err(SenseiError::NotFound(format!("Board {id} not found")));
     }
     store.remove(&id);
+    store.persist().await?;
     Ok(Json(()))
 }
 
@@ -242,6 +246,7 @@ pub async fn add_column(
         .ok_or_else(|| SenseiError::NotFound(format!("Board {board_id} not found")))?;
     board.columns.push(column.clone());
     board.updated_at = now;
+    store.persist().await?;
     Ok(Json(column))
 }
 
@@ -382,6 +387,7 @@ pub async fn add_card(
     );
     publish_event(&state, &event).await;
 
+    store.persist().await?;
     Ok(Json(card))
 }
 

@@ -62,6 +62,7 @@ pub mod email;
 pub mod error;
 pub mod ml;
 pub mod nats;
+pub mod outbox_relay;
 pub mod pdf;
 pub mod scheduler;
 pub mod task;

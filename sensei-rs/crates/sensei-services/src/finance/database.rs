@@ -185,8 +185,10 @@ fn cost_rollup_row_to_domain(r: CostRollupRow) -> CostRollup {
 // ---------------------------------------------------------------------------
 
 /// PostgreSQL-backed implementation of [`FinanceService`].
-/// Write a business-audit row in the SAME transaction as the business
-/// mutation: the financial trail commits atomically with the state change.
+/// Write a business-audit row AND the transactional outbox event in the
+/// SAME transaction as the business mutation: the financial trail commits
+/// atomically with the state change, and the event can never be lost to a
+/// publish failure after commit (a relay publishes outbox rows).
 async fn write_business_audit(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     tenant_id: Uuid,
@@ -207,10 +209,46 @@ async fn write_business_audit(
     .bind(action)
     .bind(entity_type)
     .bind(entity_id)
-    .bind(metadata)
+    .bind(metadata.clone())
     .execute(&mut **tx)
     .await
     .map_err(|e| SenseiError::Database(format!("Failed to write business audit row: {e}")))?;
+
+    // Outbox row in the same transaction — the relay publishes it.
+    sqlx::query(
+        "INSERT INTO outbox_events \
+                (event_id, tenant_id, aggregate_type, aggregate_id, event_type, payload) \
+         VALUES ($1, $2, $3, $4, $5, $6)",
+    )
+    .bind(Uuid::new_v4())
+    .bind(tenant_id)
+    .bind(entity_type)
+    .bind(entity_id)
+    .bind(format!("sensei.{}.{}", entity_type, action))
+    .bind(serde_json::json!({
+        "actor_id": actor_id,
+        "action": action,
+        "details": metadata,
+    }))
+    .execute(&mut **tx)
+    .await
+    .map_err(|e| SenseiError::Database(format!("Failed to write outbox event: {e}")))?;
+    Ok(())
+}
+
+/// Set the transaction-scoped tenant context consumed by Row Level
+/// Security policies (`SET LOCAL app.tenant_id`). RLS is a second barrier:
+/// with the context set, only the tenant's own rows are visible inside
+/// this transaction even if a query forgets `WHERE tenant_id = ...`.
+async fn set_tenant_context(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    tenant_id: Uuid,
+) -> std::result::Result<(), SenseiError> {
+    sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
+        .bind(tenant_id.to_string())
+        .execute(&mut **tx)
+        .await
+        .map_err(|e| SenseiError::Database(format!("Failed to set tenant context: {e}")))?;
     Ok(())
 }
 
@@ -1082,6 +1120,7 @@ impl FinanceService for DatabaseFinanceService {
             .begin()
             .await
             .map_err(|e| SenseiError::Database(format!("Failed to begin reversal: {e}")))?;
+        set_tenant_context(&mut tx, tenant_id).await?;
 
         let original: Option<JournalEntryRow> = sqlx::query_as(
             "SELECT id, tenant_id, entry_number, description, debit_account, credit_account, \

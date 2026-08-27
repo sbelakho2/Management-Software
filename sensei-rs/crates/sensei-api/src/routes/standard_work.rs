@@ -158,6 +158,7 @@ pub async fn create_standard_work(
     };
     let mut store = state.standard_work_documents.write(tenant_id).await;
     store.insert(doc.id, doc.clone());
+    store.persist().await?;
     Ok(Json(doc))
 }
 
@@ -192,6 +193,14 @@ pub async fn update_standard_work(
         .get_mut(&sw_id)
         .filter(|d| d.tenant_id == tenant_id)
         .ok_or_else(|| SenseiError::NotFound(format!("Standard work {sw_id} not found")))?;
+    // An EFFECTIVE (or approved) revision is immutable: changes create a
+    // new revision, they never mutate the controlled standard in place.
+    if matches!(doc.status, SwStatus::Published) || doc.approved_by.is_some() {
+        return Err(SenseiError::Conflict(
+            "Effective/approved standard work is immutable — create a new revision instead"
+                .to_string(),
+        ));
+    }
     if let Some(title) = req.title {
         doc.title = title;
     }
@@ -234,7 +243,9 @@ pub async fn update_standard_work(
     // approved_by / approved_at are intentionally NOT settable via PUT —
     // they are owned by the approve/reject endpoints.
     doc.updated_at = Utc::now();
-    Ok(Json(doc.clone()))
+    let result = doc.clone();
+    store.persist().await?;
+    Ok(Json(result))
 }
 
 /// Approve a standard work document.
@@ -265,7 +276,9 @@ pub async fn approve_standard_work(
     doc.approved_by = Some(user.user_id);
     doc.approved_at = Some(Utc::now());
     doc.updated_at = Utc::now();
-    Ok(Json(doc.clone()))
+    let result = doc.clone();
+    store.persist().await?;
+    Ok(Json(result))
 }
 
 /// Reject a standard work document.
@@ -296,7 +309,9 @@ pub async fn reject_standard_work(
     doc.approved_by = None;
     doc.approved_at = None;
     doc.updated_at = Utc::now();
-    Ok(Json(doc.clone()))
+    let result = doc.clone();
+    store.persist().await?;
+    Ok(Json(result))
 }
 
 /// Delete a standard work document.
@@ -318,6 +333,7 @@ pub async fn delete_standard_work(
         )));
     }
     store.remove(&sw_id);
+    store.persist().await?;
     Ok(Json(()))
 }
 
@@ -388,6 +404,7 @@ pub async fn create_version(
             d.current_version = new_version_number;
             d.updated_at = now;
         }
+        store.persist().await?;
     }
 
     Ok(Json(version))

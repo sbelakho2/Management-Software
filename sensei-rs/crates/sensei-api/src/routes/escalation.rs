@@ -115,6 +115,7 @@ pub async fn create_policy(
     };
     let mut store = state.escalation_policies.write(user.tenant_id).await;
     store.insert(policy.id, policy.clone());
+    store.persist().await?;
     Ok(Json(policy))
 }
 
@@ -154,7 +155,9 @@ pub async fn update_policy(
     policy.is_active = req.is_active;
     policy.rules = req.rules;
     policy.updated_at = Utc::now();
-    Ok(Json(policy.clone()))
+    let result = policy.clone();
+    store.persist().await?;
+    Ok(Json(result))
 }
 
 /// Delete an escalation policy.
@@ -175,5 +178,6 @@ pub async fn delete_policy(
         )));
     }
     store.remove(&id);
+    store.persist().await?;
     Ok(Json(()))
 }

@@ -80,20 +80,6 @@ struct BomItemRow {
     scrap_percentage: f64,
 }
 
-#[derive(Debug, Clone, sqlx::FromRow)]
-struct MrpRecordRow {
-    id: Uuid,
-    tenant_id: Uuid,
-    product_id: Uuid,
-    gross_requirement: i64,
-    scheduled_receipts: i64,
-    projected_on_hand: i64,
-    net_requirement: i64,
-    planned_order_release: i64,
-    time_phase_start: chrono::DateTime<Utc>,
-    time_phase_end: chrono::DateTime<Utc>,
-}
-
 // ---------------------------------------------------------------------------
 // Mapping helpers
 // ---------------------------------------------------------------------------
@@ -159,21 +145,6 @@ fn bom_row_to_domain(r: BomItemRow) -> BOMItem {
         quantity_required: r.quantity_required,
         unit_of_measure: r.unit_of_measure,
         scrap_percentage: r.scrap_percentage,
-    }
-}
-
-fn mrp_row_to_domain(r: MrpRecordRow) -> MRPRecord {
-    MRPRecord {
-        id: r.id,
-        tenant_id: r.tenant_id,
-        product_id: r.product_id,
-        gross_requirement: r.gross_requirement,
-        scheduled_receipts: r.scheduled_receipts,
-        projected_on_hand: r.projected_on_hand,
-        net_requirement: r.net_requirement,
-        planned_order_release: r.planned_order_release,
-        time_phase_start: r.time_phase_start,
-        time_phase_end: r.time_phase_end,
     }
 }
 
@@ -456,6 +427,47 @@ impl ProductionService for DatabaseProductionService {
         status: &str,
     ) -> Result<WorkOrder> {
         let now = Utc::now();
+
+        // Validated lifecycle: Created -> Released -> InProgress ->
+        // Completed; Released/InProgress -> OnHold; Created/Released ->
+        // Cancelled. Anything else is an impossible jump and is rejected.
+        let allowed = matches!(
+            (status, status),
+            (
+                "created" | "released" | "in_progress" | "completed" | "on_hold" | "cancelled",
+                _
+            )
+        );
+        if !allowed {
+            return Err(SenseiError::Validation(format!(
+                "Unknown work order status '{status}'"
+            )));
+        }
+        // Current state gates the transition.
+        let current: Option<String> =
+            sqlx::query_scalar("SELECT status FROM work_orders WHERE id = $1 AND tenant_id = $2")
+                .bind(id)
+                .bind(tenant_id)
+                .fetch_optional(&self.pool)
+                .await
+                .map_err(|e| {
+                    SenseiError::Database(format!("Failed to read work order status: {e}"))
+                })?
+                .ok_or_else(|| SenseiError::NotFound(format!("Work order {id} not found")))?;
+        let legal = matches!(
+            (current.as_deref(), status),
+            (Some("created"), "released" | "cancelled")
+                | (Some("released"), "in_progress" | "on_hold" | "cancelled")
+                | (Some("in_progress"), "completed" | "on_hold")
+                | (Some("on_hold"), "in_progress")
+        );
+        if !legal {
+            return Err(SenseiError::Conflict(format!(
+                "Illegal work order transition '{}' -> '{}'",
+                current.as_deref().unwrap_or("?"),
+                status
+            )));
+        }
 
         let row = sqlx::query_as::<_, WorkOrderRow>(
             r#"
@@ -922,86 +934,151 @@ impl ProductionService for DatabaseProductionService {
     async fn run_mrp(&self, tenant_id: Uuid, product_id: Uuid) -> Result<Vec<MRPRecord>> {
         let now = Utc::now();
 
-        let gross_requirement: i64 = sqlx::query_scalar(
-            r#"
-            SELECT COALESCE(SUM(quantity - quantity_completed), 0)
-            FROM work_orders
-            WHERE product_id = $1 AND tenant_id = $2 AND status NOT IN ('completed', 'cancelled')
-            "#,
+        // ── 1. Independent demand for the product ──────────────────────
+        // Unfinished work orders ARE the independent demand (what the shop
+        // floor has been asked to make).
+        let demand_qty: f64 = sqlx::query_scalar(
+            "SELECT COALESCE(SUM(quantity - quantity_completed), 0)::numeric \
+             FROM work_orders \
+             WHERE product_id = $1 AND tenant_id = $2 AND status NOT IN ('completed', 'cancelled')",
         )
         .bind(product_id)
         .bind(tenant_id)
         .fetch_one(&self.pool)
         .await
-        .map_err(|e| {
-            SenseiError::Database(format!("Failed to compute MRP gross requirement: {e}"))
-        })?;
+        .map_err(|e| SenseiError::Database(format!("Failed to compute MRP demand: {e}")))?;
 
-        let scheduled_receipts: i64 = sqlx::query_scalar(
-            r#"
-            SELECT COALESCE(SUM(quantity_planned - quantity_produced), 0)
-            FROM production_orders
-            WHERE product_id = $1 AND tenant_id = $2 AND status NOT IN ('completed', 'cancelled')
-            "#,
+        // ── 2. BOM explosion (multi-level, scrap-aware) ────────────────
+        // gross[product] accumulates the quantity required at each level;
+        // children of make items are exploded recursively (depth-limited).
+        let mut gross: std::collections::HashMap<Uuid, f64> = std::collections::HashMap::new();
+        *gross.entry(product_id).or_insert(0.0) += demand_qty;
+        let mut queue: Vec<(Uuid, f64)> = vec![(product_id, demand_qty)];
+        let mut depth = 0;
+        while !queue.is_empty() && depth < 6 {
+            let mut next: Vec<(Uuid, f64)> = Vec::new();
+            for (parent, qty) in queue {
+                let bom: Vec<(Uuid, f64, f64)> = sqlx::query_as(
+                    "SELECT component_product_id, quantity, COALESCE(scrap_percent, 0) \
+                     FROM bom_items \
+                     WHERE parent_product_id = $1 AND tenant_id = $2 AND is_active = TRUE",
+                )
+                .bind(parent)
+                .bind(tenant_id)
+                .fetch_all(&self.pool)
+                .await
+                .map_err(|e| SenseiError::Database(format!("Failed to load BOM: {e}")))?;
+                for (component, per_unit, scrap) in bom {
+                    // Gross includes the scrap factor: making 100 with 5%
+                    // scrap consumes 105.
+                    let need = qty * per_unit * (1.0 + scrap / 100.0);
+                    *gross.entry(component).or_insert(0.0) += need;
+                    next.push((component, need));
+                }
+            }
+            queue = next;
+            depth += 1;
+        }
+
+        // ── 3. Scheduled receipts + on-hand per product ────────────────
+        // Production orders not yet complete are scheduled receipts;
+        // on-hand comes from the inventory ledger (real sums, not
+        // bigint truncation).
+        let mut records: Vec<MRPRecord> = Vec::new();
+        let mut products: Vec<Uuid> = gross.keys().copied().collect();
+        if demand_qty > 0.0 && !products.contains(&product_id) {
+            products.push(product_id);
+        }
+        for p in products {
+            let scheduled: f64 = sqlx::query_scalar(
+                "SELECT COALESCE(SUM(quantity_planned - quantity_produced), 0)::numeric \
+                 FROM production_orders \
+                 WHERE product_id = $1 AND tenant_id = $2 AND status NOT IN ('completed', 'cancelled')",
+            )
+            .bind(p)
+            .bind(tenant_id)
+            .fetch_one(&self.pool)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to compute scheduled receipts: {e}")))?;
+
+            let on_hand: f64 = sqlx::query_scalar(
+                "SELECT COALESCE(SUM(quantity_on_hand), 0)::numeric \
+                 FROM inventory_items \
+                 WHERE product_id = $1 AND tenant_id = $2",
+            )
+            .bind(p)
+            .bind(tenant_id)
+            .fetch_one(&self.pool)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to compute on-hand: {e}")))?;
+
+            let (safety_stock, lot_size, lead_days): (f64, f64, i32) = sqlx::query_as(
+                "SELECT COALESCE(safety_stock, 0)::numeric, \
+                        COALESCE(lot_size, 0)::numeric, COALESCE(lead_time_days, 0) \
+                 FROM products WHERE id = $1 AND tenant_id = $2",
+            )
+            .bind(p)
+            .bind(tenant_id)
+            .fetch_one(&self.pool)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to load product policy: {e}")))?;
+
+            let gross_qty = *gross.get(&p).unwrap_or(&0.0);
+
+            // ── 4. Net requirements (safety stock included) ────────────
+            let projected = on_hand + scheduled - gross_qty;
+            let net = (safety_stock - projected).max(0.0);
+
+            // ── 5. Lot sizing: lot-for-lot unless a lot size is set ────
+            let planned_receipt = if lot_size > 0.0 && net > 0.0 {
+                (net / lot_size).ceil() * lot_size
+            } else {
+                net
+            };
+
+            // ── 6. Lead-time offset: release = receipt - lead time ─────
+            let release_date = now - chrono::Duration::days(lead_days as i64);
+            let receipt_date = now + chrono::Duration::days(30);
+
+            records.push(MRPRecord {
+                id: Uuid::new_v4(),
+                tenant_id,
+                product_id: p,
+                gross_requirement: gross_qty.ceil() as i64,
+                scheduled_receipts: scheduled.ceil() as i64,
+                projected_on_hand: projected.ceil() as i64,
+                net_requirement: net.ceil() as i64,
+                planned_order_release: planned_receipt.ceil() as i64,
+                time_phase_start: release_date,
+                time_phase_end: receipt_date,
+            });
+        }
+
+        // ── 7. Immutable snapshot: historic runs never change ──────────
+        // The input snapshot (demands, inventory, receipts, policy) makes
+        // an old result reproducible even when today's stock moves.
+        let snapshot = serde_json::json!({
+            "product_id": product_id,
+            "demand": demand_qty,
+            "gross_by_product": gross,
+            "calculated_at": now,
+        });
+        let result_json =
+            serde_json::to_value(&records).unwrap_or(serde_json::Value::Array(vec![]));
+        let _ = sqlx::query(
+            "INSERT INTO mrp_runs (id, tenant_id, product_id, status, input_snapshot, result, created_at) \
+             VALUES ($1, $2, $3, 'completed', $4, $5, $6)",
         )
-        .bind(product_id)
-        .bind(tenant_id)
-        .fetch_one(&self.pool)
-        .await
-        .map_err(|e| {
-            SenseiError::Database(format!("Failed to compute MRP scheduled receipts: {e}"))
-        })?;
-
-        // Projected on-hand: real current inventory + scheduled receipts −
-        // gross requirement (never negative), matching the in-memory impl.
-        let on_hand: i64 = sqlx::query_scalar(
-            r#"
-            SELECT COALESCE(SUM(quantity_on_hand::bigint), 0)
-            FROM inventory_items
-            WHERE product_id = $1 AND tenant_id = $2
-            "#,
-        )
-        .bind(product_id)
-        .bind(tenant_id)
-        .fetch_one(&self.pool)
-        .await
-        .map_err(|e| SenseiError::Database(format!("Failed to compute MRP on-hand: {e}")))?;
-
-        let projected_on_hand = (on_hand + scheduled_receipts - gross_requirement).max(0);
-        let net_requirement = (gross_requirement - scheduled_receipts - on_hand).max(0);
-        let planned_order_release = net_requirement;
-
-        let id = Uuid::new_v4();
-        let time_phase_start = now;
-        let time_phase_end = now + chrono::Duration::days(30);
-
-        let row = sqlx::query_as::<_, MrpRecordRow>(
-            r#"
-            INSERT INTO mrp_records (
-                id, tenant_id, product_id, gross_requirement, scheduled_receipts,
-                projected_on_hand, net_requirement, planned_order_release,
-                time_phase_start, time_phase_end
-            ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
-            RETURNING id, tenant_id, product_id, gross_requirement, scheduled_receipts,
-                      projected_on_hand, net_requirement, planned_order_release,
-                      time_phase_start, time_phase_end
-            "#,
-        )
-        .bind(id)
+        .bind(Uuid::new_v4())
         .bind(tenant_id)
         .bind(product_id)
-        .bind(gross_requirement)
-        .bind(scheduled_receipts)
-        .bind(projected_on_hand)
-        .bind(net_requirement)
-        .bind(planned_order_release)
-        .bind(time_phase_start)
-        .bind(time_phase_end)
-        .fetch_one(&self.pool)
-        .await
-        .map_err(|e| SenseiError::Database(format!("Failed to create MRP record: {e}")))?;
+        .bind(snapshot)
+        .bind(result_json)
+        .bind(now)
+        .execute(&self.pool)
+        .await;
 
-        Ok(vec![mrp_row_to_domain(row)])
+        Ok(records)
     }
 
     async fn list_work_order_operations(

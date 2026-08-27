@@ -29,6 +29,7 @@ pub mod quality;
 pub mod storage;
 pub mod supply_chain;
 pub mod tenants;
+pub mod tps;
 pub mod users;
 
 /// Re-export domain service traits for convenience.

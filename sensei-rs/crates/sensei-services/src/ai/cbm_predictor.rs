@@ -120,8 +120,10 @@ pub struct Recommendation {
 /// Training metrics returned after model training.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TrainingMetrics {
-    pub f1_mean: f64,
-    pub f1_std: f64,
+    /// Mean accuracy over the seeded 3-fold cross-validation (train/test
+    /// splits are real; the per-fold metric is accuracy, NOT F1).
+    pub cv_accuracy_mean: f64,
+    pub cv_accuracy_std: f64,
     pub training_samples: usize,
     pub error: Option<String>,
 }
@@ -598,8 +600,8 @@ impl ConditionBasedMaintenancePredictor {
 
         if x_train.nrows() < 10 {
             return Ok(TrainingMetrics {
-                f1_mean: 0.0,
-                f1_std: 0.0,
+                cv_accuracy_mean: 0.0,
+                cv_accuracy_std: 0.0,
                 training_samples: x_train.nrows(),
                 error: Some("insufficient_data".into()),
             });
@@ -622,11 +624,11 @@ impl ConditionBasedMaintenancePredictor {
 
         // Cross-validation (simple 3-fold)
         let cv_scores = self.cross_val_score(&x_scaled, &y_train, 3)?;
-        let f1_mean = cv_scores.iter().sum::<f64>() / cv_scores.len() as f64;
-        let f1_std = if cv_scores.len() > 1 {
+        let cv_accuracy_mean = cv_scores.iter().sum::<f64>() / cv_scores.len() as f64;
+        let cv_accuracy_std = if cv_scores.len() > 1 {
             let variance = cv_scores
                 .iter()
-                .map(|&s| (s - f1_mean).powi(2))
+                .map(|&s| (s - cv_accuracy_mean).powi(2))
                 .sum::<f64>()
                 / (cv_scores.len() - 1) as f64;
             variance.sqrt()
@@ -637,8 +639,8 @@ impl ConditionBasedMaintenancePredictor {
         self.is_trained = true;
 
         Ok(TrainingMetrics {
-            f1_mean,
-            f1_std,
+            cv_accuracy_mean,
+            cv_accuracy_std,
             training_samples: x_train.nrows(),
             error: None,
         })
@@ -1407,7 +1409,7 @@ mod tests {
             .train(&[equipment], &maintenance, &readings)
             .unwrap();
         assert!(metrics.training_samples > 0);
-        assert!(metrics.f1_mean >= 0.0);
+        assert!(metrics.cv_accuracy_mean >= 0.0);
     }
 
     #[test]
