@@ -218,7 +218,12 @@ pub trait SupplyChainService: Send + Sync {
     /// Approve a quote.
     async fn approve_quote(&self, tenant_id: Uuid, id: Uuid) -> Result<Quote>;
     /// Convert a quote to a sales order, copying line items and totals.
-    async fn convert_quote_to_order(&self, tenant_id: Uuid, quote_id: Uuid) -> Result<SalesOrder>;
+    async fn convert_quote_to_order(
+        &self,
+        tenant_id: Uuid,
+        quote_id: Uuid,
+        actor_id: Uuid,
+    ) -> Result<SalesOrder>;
 
     // ── Sales Orders ────────────────────────────────────────────────────
     /// Create a new sales order.
@@ -653,7 +658,12 @@ impl SupplyChainService for InMemorySupplyChainService {
         Ok(result)
     }
 
-    async fn convert_quote_to_order(&self, tenant_id: Uuid, quote_id: Uuid) -> Result<SalesOrder> {
+    async fn convert_quote_to_order(
+        &self,
+        tenant_id: Uuid,
+        quote_id: Uuid,
+        _actor_id: Uuid,
+    ) -> Result<SalesOrder> {
         // Fetch and lock the quote
         let quote = {
             let mut store = self.quotes.write().await;
@@ -1494,7 +1504,7 @@ mod tests {
 
         // Convert to sales order
         let order = service
-            .convert_quote_to_order(tenant_id, created_quote.id)
+            .convert_quote_to_order(tenant_id, created_quote.id, Uuid::new_v4())
             .await
             .unwrap();
         assert!(order.order_number.starts_with("SO-"));

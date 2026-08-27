@@ -60,7 +60,7 @@ pub struct MarkInvoicePaidRequest {
 /// Request body for budget allocation.
 #[derive(Debug, Deserialize)]
 pub struct AllocateBudgetRequest {
-    pub amount: f64,
+    pub amount: rust_decimal::Decimal,
 }
 
 /// Request body for cost rollup.
@@ -322,12 +322,7 @@ pub async fn allocate_budget(
     let tenant_id = user.tenant_id;
     let budget = state
         .finance_service
-        .allocate_budget(
-            tenant_id,
-            id,
-            rust_decimal::Decimal::from_f64_retain(req.amount)
-                .unwrap_or(rust_decimal::Decimal::ZERO),
-        )
+        .allocate_budget(tenant_id, id, req.amount)
         .await?;
     Ok(Json(budget))
 }

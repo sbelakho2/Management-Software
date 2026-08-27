@@ -462,7 +462,12 @@ impl SupplyChainService for DatabaseSupplyChainService {
         Ok(quote_row_to_domain(row))
     }
 
-    async fn convert_quote_to_order(&self, tenant_id: Uuid, quote_id: Uuid) -> Result<SalesOrder> {
+    async fn convert_quote_to_order(
+        &self,
+        tenant_id: Uuid,
+        quote_id: Uuid,
+        actor_id: Uuid,
+    ) -> Result<SalesOrder> {
         let quote = self.get_quote(tenant_id, quote_id).await?;
         let now = Utc::now();
         let (id, suffix) = gen_id();
@@ -485,7 +490,7 @@ impl SupplyChainService for DatabaseSupplyChainService {
                VALUES ($1,$2,$3,$4,$5,'pending',$6,$7,$8,NULL,'',$9,$10)
                RETURNING id, tenant_id, order_number, customer_id, customer_name, status, line_items, total_amount, currency, delivery_date, shipping_address, created_by, created_at"#,
         ).bind(id).bind(tenant_id).bind(&order_number).bind(quote.customer_id).bind(&quote.customer_name)
-            .bind(&li_json).bind(quote.total_amount).bind(&quote.currency).bind(quote.created_by).bind(now)
+            .bind(&li_json).bind(quote.total_amount).bind(&quote.currency).bind(actor_id).bind(now)
             .fetch_one(&self.pool).await.map_err(|e| SenseiError::Database(format!("Failed to convert quote to order: {e}")))?;
 
         sqlx::query("UPDATE quotes SET status='converted' WHERE id=$1 AND tenant_id=$2")

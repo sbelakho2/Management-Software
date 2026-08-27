@@ -83,10 +83,10 @@ struct CostRollupRow {
     tenant_id: Uuid,
     product_id: Uuid,
     product_name: String,
-    material_cost: f64,
-    labor_cost: f64,
-    overhead_cost: f64,
-    total_cost: f64,
+    material_cost: rust_decimal::Decimal,
+    labor_cost: rust_decimal::Decimal,
+    overhead_cost: rust_decimal::Decimal,
+    total_cost: rust_decimal::Decimal,
     rollup_date: chrono::DateTime<Utc>,
 }
 
@@ -470,14 +470,14 @@ impl FinanceService for DatabaseFinanceService {
             ));
         }
 
-        let cumulative_raw: f64 = sqlx::query_scalar(
-            "SELECT COALESCE(SUM(amount), 0.0) FROM payments WHERE invoice_id = $1 AND tenant_id = $2",
+        // Exact decimal sum — the payments.amount column is NUMERIC(19,4);
+        // the sum is fetched as Decimal with NO intermediate f64.
+        let cumulative: rust_decimal::Decimal = sqlx::query_scalar(
+            "SELECT COALESCE(SUM(amount), 0.0)::numeric FROM payments WHERE invoice_id = $1 AND tenant_id = $2",
         )
         .bind(id).bind(tenant_id)
         .fetch_one(&self.pool).await
         .map_err(|e| SenseiError::Database(format!("Failed to sum payments: {e}")))?;
-        let cumulative = rust_decimal::Decimal::from_f64_retain(cumulative_raw)
-            .unwrap_or(rust_decimal::Decimal::ZERO);
 
         if cumulative + rust_decimal::Decimal::new(1, 2) < row.total_amount {
             return Err(SenseiError::Validation(format!(
@@ -1162,9 +1162,12 @@ impl FinanceService for DatabaseFinanceService {
         let now = Utc::now();
         let id = Uuid::new_v4();
 
-        // Material cost: Σ(bom_items.quantity × component standard_cost).
-        let material_cost: f64 = sqlx::query_scalar(
-            r#"SELECT COALESCE(SUM(b.quantity * COALESCE(p.standard_cost, 0)), 0.0)
+        // Material cost: Σ(bom_items.quantity × component standard_cost) as
+        // an exact Decimal (the source columns are floating-point, so the
+        // SUM is rounded to 4 decimal places at the boundary — after that
+        // every step is exact Decimal arithmetic).
+        let material_cost: rust_decimal::Decimal = sqlx::query_scalar(
+            r#"SELECT ROUND(COALESCE(SUM(b.quantity * COALESCE(p.standard_cost, 0)), 0.0)::numeric, 4)
                FROM bom_items b
                JOIN products p ON p.id = b.component_product_id
                WHERE b.parent_product_id = $1 AND b.tenant_id = $2 AND b.is_active = TRUE"#,
@@ -1178,8 +1181,8 @@ impl FinanceService for DatabaseFinanceService {
         // Labor cost: Σ(routing standard_time × work_center standard_rate).
         // Work centers carry no rate until one is configured; when no rate is
         // available the labor contribution is honestly zero.
-        let labor_cost: f64 = sqlx::query_scalar(
-            r#"SELECT COALESCE(SUM(r.standard_time * COALESCE(wc.standard_rate, 0)), 0.0)
+        let labor_cost: rust_decimal::Decimal = sqlx::query_scalar(
+            r#"SELECT ROUND(COALESCE(SUM(r.standard_time * COALESCE(wc.standard_rate, 0)), 0.0)::numeric, 4)
                FROM routings r
                JOIN work_centers wc ON wc.id = r.work_center_id
                WHERE r.product_id = $1 AND r.tenant_id = $2 AND r.is_active = TRUE"#,
@@ -1190,16 +1193,17 @@ impl FinanceService for DatabaseFinanceService {
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to compute labor cost: {e}")))?;
 
-        // Round both to cents before applying overhead so sums stay exact.
-        let material_cents = (material_cost * 100.0).round() as i64;
-        let labor_cents = (labor_cost * 100.0).round() as i64;
-        let overhead_pct = super::overhead_percentage();
-        let overhead_cents =
-            ((material_cents + labor_cents) as f64 * overhead_pct / 100.0).round() as i64;
+        // Cents-based overhead: exact integer arithmetic, then Decimal.
+        let hundred = rust_decimal::Decimal::from(100u32);
+        let material_cents = (material_cost * hundred).round();
+        let labor_cents = (labor_cost * hundred).round();
+        let overhead_pct = rust_decimal::Decimal::from_f64_retain(super::overhead_percentage())
+            .unwrap_or(rust_decimal::Decimal::ZERO);
+        let overhead_cents = ((material_cents + labor_cents) * overhead_pct / hundred).round();
 
-        let material_cost = material_cents as f64 / 100.0;
-        let labor_cost = labor_cents as f64 / 100.0;
-        let overhead_cost = overhead_cents as f64 / 100.0;
+        let material_cost = material_cents / hundred;
+        let labor_cost = labor_cents / hundred;
+        let overhead_cost = overhead_cents / hundred;
         let total_cost = material_cost + labor_cost + overhead_cost;
 
         let product_name: String =

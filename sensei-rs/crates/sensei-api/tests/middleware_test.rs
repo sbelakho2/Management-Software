@@ -166,7 +166,8 @@ async fn session_mismatch_returns_401_and_removes_binding() {
             app.admin_tenant_id,
             "attacker-fingerprint".to_string(),
         )
-        .await;
+        .await
+        .unwrap();
 
     let req = app.get_authenticated("/api/v1/tasks", &token);
     let resp = app.send_request(req).await;

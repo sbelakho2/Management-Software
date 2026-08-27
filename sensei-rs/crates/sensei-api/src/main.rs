@@ -263,7 +263,21 @@ async fn seed_bootstrap_users(state: &AppState) {
         &ceo_email,
         &ceo_password,
         "CEO",
-        &["ceo", "user"],
+        // The CEO is the break-glass operational identity: functional
+        // manager roles + platform administration. The legacy "ceo" role is
+        // NOT defined by the authorization model, so it is never seeded.
+        &[
+            "user",
+            "tenant_admin",
+            "platform_admin",
+            "finance_manager",
+            "hr_manager",
+            "purchasing_manager",
+            "inventory_manager",
+            "sales_manager",
+            "quality_manager",
+            "production_manager",
+        ],
         true,
     )
     .await

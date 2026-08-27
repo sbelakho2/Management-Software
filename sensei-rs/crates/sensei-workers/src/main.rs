@@ -312,7 +312,10 @@ async fn connect_database(config: &AppConfig) -> Result<Option<Arc<PgPool>>, Con
     let pool = match sensei_db::pg_pool::init_pool(&config.database).await {
         Ok(pool) => pool,
         Err(e) => {
-            let msg = format!("Failed to connect to PostgreSQL at {url}: {e}");
+            let msg = format!(
+                "Failed to connect to PostgreSQL at {}: {e}",
+                redact_url(&url)
+            );
             return Err(if config.environment.is_prod() {
                 ConnectError::Fatal(msg)
             } else {
@@ -361,7 +364,9 @@ async fn connect_nats(config: &AppConfig) -> Result<(async_nats::Client, Context
     let client = match options.connect(&url).await {
         Ok(client) => client,
         Err(e) => {
-            let msg = format!("Failed to connect to NATS at {url}: {e}");
+            // Never include the credential-bearing URL in logs/errors.
+            let redacted = redact_url(&url);
+            let msg = format!("Failed to connect to NATS at {redacted}: {e}");
             return Err(if config.environment.is_prod() {
                 ConnectError::Fatal(msg)
             } else {
@@ -375,6 +380,17 @@ async fn connect_nats(config: &AppConfig) -> Result<(async_nats::Client, Context
 
 /// Initialize file storage: S3/MinIO when endpoint + credentials are
 /// configured, local disk otherwise.
+/// Redact credentials from a URL (userinfo) before it reaches logs/errors.
+fn redact_url(url: &str) -> String {
+    let Some((scheme, rest)) = url.split_once("://") else {
+        return url.to_string();
+    };
+    match rest.split_once('@') {
+        Some((_, host)) => format!("{scheme}://{host}"),
+        None => url.to_string(),
+    }
+}
+
 fn init_storage(config: &AppConfig) -> Arc<dyn FileStorageService> {
     let cfg = &config.storage;
     let use_s3 = cfg.backend == "s3"

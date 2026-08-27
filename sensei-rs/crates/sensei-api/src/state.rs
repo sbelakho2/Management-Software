@@ -856,6 +856,20 @@ impl AppState {
         // Refresh tokens persist to the database when a pool is available.
         self.refresh_token_store = Arc::new(RefreshTokenStore::new(Some(p.clone())));
 
+        // The authorization service reads role/permission data from
+        // PostgreSQL (roles table overlaid on the static defaults) instead
+        // of reconstructing a hard-coded table per decision.
+        if tokio::runtime::Handle::try_current().is_ok() {
+            match futures::executor::block_on(sensei_auth::rbac::RbacService::from_db(&p)) {
+                Ok(db_rbac) => {
+                    self.rbac_service = Arc::new(db_rbac);
+                }
+                Err(e) => {
+                    tracing::error!(error = %e, "Failed to load roles from database — using defaults");
+                }
+            }
+        }
+
         // Realtime tickets persist to the database when a pool is available.
         self.realtime_tickets = RealtimeTicketStore::with_pool(Some(Arc::new(p.clone())));
 

@@ -115,10 +115,10 @@ pub struct CostRollup {
     pub tenant_id: Uuid,
     pub product_id: Uuid,
     pub product_name: String,
-    pub material_cost: f64,
-    pub labor_cost: f64,
-    pub overhead_cost: f64,
-    pub total_cost: f64,
+    pub material_cost: rust_decimal::Decimal,
+    pub labor_cost: rust_decimal::Decimal,
+    pub overhead_cost: rust_decimal::Decimal,
+    pub total_cost: rust_decimal::Decimal,
     pub rollup_date: DateTime<Utc>,
 }
 
@@ -342,7 +342,7 @@ pub struct InMemoryFinanceService {
     // Costing inputs (seeded for tests/demos; the DB implementation reads
     // the real BOM / routing tables).
     bom: RwLock<HashMap<Uuid, Vec<BomEntry>>>,
-    standard_costs: RwLock<HashMap<Uuid, f64>>,
+    standard_costs: RwLock<HashMap<Uuid, rust_decimal::Decimal>>,
     routings: RwLock<HashMap<Uuid, Vec<RoutingEntry>>>,
     product_names: RwLock<HashMap<Uuid, String>>,
     // AP 3-way match inputs (seeded for tests/demos).
@@ -426,7 +426,7 @@ impl InMemoryFinanceService {
     }
 
     /// Seed a product's standard cost for cost rollups.
-    pub async fn seed_standard_cost(&self, product_id: Uuid, cost: f64) {
+    pub async fn seed_standard_cost(&self, product_id: Uuid, cost: rust_decimal::Decimal) {
         self.standard_costs.write().await.insert(product_id, cost);
     }
 
@@ -845,41 +845,41 @@ impl FinanceService for InMemoryFinanceService {
         // Real rollup from seeded BOM/routing data, summed in integer cents.
         let bom = self.bom.read().await;
         let costs = self.standard_costs.read().await;
-        let mut material_cents: i64 = 0;
+        let hundred = rust_decimal::Decimal::from(100u32);
+        let away = rust_decimal::RoundingStrategy::AwayFromZero;
+        let mut material_cents = rust_decimal::Decimal::ZERO;
         for entry in bom.get(&product_id).into_iter().flatten() {
             let unit_cost = costs
                 .get(&entry.component_product_id)
                 .copied()
-                .unwrap_or(0.0);
-            let line = sensei_core::domain::value_objects::Money::from_decimal(
-                entry.quantity * unit_cost,
-                sensei_core::domain::value_objects::CurrencyCode::USD,
-            )
-            .map_err(|e| SenseiError::Internal(format!("Invalid cost value in BOM: {e}")))?;
-            material_cents += line.cents;
+                .unwrap_or(rust_decimal::Decimal::ZERO);
+            let quantity = rust_decimal::Decimal::from_f64_retain(entry.quantity)
+                .unwrap_or(rust_decimal::Decimal::ZERO);
+            material_cents += (quantity * unit_cost * hundred).round_dp_with_strategy(0, away);
         }
         drop(bom);
         drop(costs);
 
         let routings = self.routings.read().await;
-        let mut labor_cents: i64 = 0;
+        let mut labor_cents = rust_decimal::Decimal::ZERO;
         for step in routings.get(&product_id).into_iter().flatten() {
-            let labor = sensei_core::domain::value_objects::Money::from_decimal(
+            labor_cents += (rust_decimal::Decimal::from_f64_retain(
                 step.standard_time_hours * step.hourly_rate,
-                sensei_core::domain::value_objects::CurrencyCode::USD,
             )
-            .map_err(|e| SenseiError::Internal(format!("Invalid labor rate: {e}")))?;
-            labor_cents += labor.cents;
+            .unwrap_or(rust_decimal::Decimal::ZERO)
+                * hundred)
+                .round_dp_with_strategy(0, away);
         }
         drop(routings);
 
-        let overhead_pct = overhead_percentage();
-        let overhead_cents =
-            ((material_cents + labor_cents) as f64 * overhead_pct / 100.0).round() as i64;
+        let overhead_pct = rust_decimal::Decimal::from_f64_retain(overhead_percentage())
+            .unwrap_or(rust_decimal::Decimal::ZERO);
+        let overhead_cents = ((material_cents + labor_cents) * overhead_pct / hundred)
+            .round_dp_with_strategy(0, away);
 
-        let material_cost = material_cents as f64 / 100.0;
-        let labor_cost = labor_cents as f64 / 100.0;
-        let overhead_cost = overhead_cents as f64 / 100.0;
+        let material_cost = material_cents / hundred;
+        let labor_cost = labor_cents / hundred;
+        let overhead_cost = overhead_cents / hundred;
         let total_cost = material_cost + labor_cost + overhead_cost;
 
         let product_names = self.product_names.read().await;
@@ -910,7 +910,11 @@ impl FinanceService for InMemoryFinanceService {
         self.publish_event(CostRollupCompleted::new(
             tenant_id,
             product_id,
-            rollup.total_cost,
+            rollup
+                .total_cost
+                .to_string()
+                .parse::<f64>()
+                .unwrap_or_default(),
             "USD".to_string(),
         ))
         .await;
@@ -1505,17 +1509,21 @@ mod tests {
             .await
             .expect("should run cost rollup");
         assert_eq!(zero.product_id, product_id);
-        assert_eq!(zero.material_cost, 0.0);
-        assert_eq!(zero.labor_cost, 0.0);
-        assert_eq!(zero.overhead_cost, 0.0);
+        assert_eq!(zero.material_cost, rust_decimal::dec!(0.0));
+        assert_eq!(zero.labor_cost, rust_decimal::dec!(0.0));
+        assert_eq!(zero.overhead_cost, rust_decimal::dec!(0.0));
 
         // Seed BOM: 2× component A @ $10.00, 1× component B @ $25.50.
         let comp_a = Uuid::new_v4();
         let comp_b = Uuid::new_v4();
         service.seed_bom(product_id, comp_a, 2.0).await;
         service.seed_bom(product_id, comp_b, 1.0).await;
-        service.seed_standard_cost(comp_a, 10.0).await;
-        service.seed_standard_cost(comp_b, 25.5).await;
+        service
+            .seed_standard_cost(comp_a, rust_decimal::dec!(10.0))
+            .await;
+        service
+            .seed_standard_cost(comp_b, rust_decimal::dec!(25.5))
+            .await;
         // Seed routing: 2h @ $40/h → $80 labor.
         service.seed_routing(product_id, 2.0, 40.0).await;
         service.seed_product_name(product_id, "Widget").await;
@@ -1526,11 +1534,11 @@ mod tests {
             .expect("should run cost rollup");
         assert_eq!(rollup.product_name, "Widget");
         // material = 2*10.00 + 1*25.50 = 45.50
-        assert_eq!(rollup.material_cost, 45.50);
+        assert_eq!(rollup.material_cost, rust_decimal::dec!(45.50));
         // labor = 2h * 40 = 80.00
-        assert_eq!(rollup.labor_cost, 80.00);
+        assert_eq!(rollup.labor_cost, rust_decimal::dec!(80.00));
         // overhead = 15% of (45.50 + 80.00) = 18.825 → 18.83 (rounded to cents)
-        assert_eq!(rollup.overhead_cost, 18.83);
+        assert_eq!(rollup.overhead_cost, rust_decimal::dec!(18.83));
         assert_eq!(
             rollup.total_cost,
             rollup.material_cost + rollup.labor_cost + rollup.overhead_cost

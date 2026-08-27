@@ -6,6 +6,7 @@ license.workspace = true
 description = "Core types, traits, and domain models for Sensei ERP"
 
 [dependencies]
+ipnet = { workspace = true, features = ["serde"] }
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true

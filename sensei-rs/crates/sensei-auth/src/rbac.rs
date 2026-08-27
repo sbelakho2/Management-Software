@@ -31,6 +31,27 @@ impl RbacService {
         }
     }
 
+    /// Build a role map from PostgreSQL: the static defaults provide the
+    /// baseline, then every row of the tenant-scoped `roles` table is
+    /// overlaid (name -> permissions, unioned across tenants). This makes
+    /// the authorization service a shared, DB-driven component instead of a
+    /// hard-coded table reconstructed per decision.
+    pub async fn from_db(pool: &sqlx::PgPool) -> Result<Self, sqlx::Error> {
+        let mut svc = Self::new();
+        let rows: Vec<(String, Vec<String>)> =
+            sqlx::query_as("SELECT name, permissions FROM roles")
+                .fetch_all(pool)
+                .await?;
+        for (name, permissions) in rows {
+            if let Some(existing) = svc.roles.get_mut(&name) {
+                existing.extend(permissions.iter().cloned());
+            } else {
+                svc.roles.insert(name, permissions.into_iter().collect());
+            }
+        }
+        Ok(svc)
+    }
+
     /// Load the default role hierarchy.
     fn load_default_roles(&mut self) {
         // Break-glass superuser only (never assigned through the normal

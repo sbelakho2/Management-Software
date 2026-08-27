@@ -35,7 +35,7 @@ const DEFAULT_CSP_HEADER: &str = "default-src 'self'; script-src 'self' 'wasm-un
 ///
 /// Trusts `X-Forwarded-Proto` only when the immediate peer is a configured
 /// trusted proxy; otherwise the request URI scheme decides.
-fn request_is_https(req: &Request, trusted_proxies: &[std::net::IpAddr]) -> bool {
+fn request_is_https(req: &Request, trusted_proxies: &[ipnet::IpNet]) -> bool {
     if req.uri().scheme_str() == Some("https") {
         return true;
     }
@@ -43,7 +43,7 @@ fn request_is_https(req: &Request, trusted_proxies: &[std::net::IpAddr]) -> bool
     let peer_is_trusted = req
         .extensions()
         .get::<axum::extract::ConnectInfo<std::net::SocketAddr>>()
-        .map(|ci| trusted_proxies.contains(&ci.0.ip()))
+        .map(|ci| trusted_proxies.iter().any(|net| net.contains(&ci.0.ip())))
         .unwrap_or(false);
 
     if peer_is_trusted {
@@ -376,8 +376,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_https_detection_trusted_proxy_x_forwarded_proto() {
-        use std::net::IpAddr;
-        let trusted: Vec<IpAddr> = vec!["10.0.0.1".parse().unwrap()];
+        let trusted: Vec<ipnet::IpNet> = vec!["10.0.0.1/32".parse().unwrap()];
 
         let req = Request::builder()
             .uri("/")

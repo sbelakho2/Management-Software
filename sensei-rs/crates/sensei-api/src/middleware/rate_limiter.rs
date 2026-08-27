@@ -44,7 +44,7 @@ pub struct RateLimiter {
     max_requests: u32,
     window_duration: Duration,
     /// Proxies allowed to set forwarding headers (empty = none trusted).
-    trusted_proxies: std::sync::Arc<Vec<std::net::IpAddr>>,
+    trusted_proxies: std::sync::Arc<Vec<ipnet::IpNet>>,
     buckets: Arc<DashMap<String, RateLimitState>>,
     /// Shared PostgreSQL pool: when present, counting is SHARED across all
     /// API replicas (a per-process DashMap would multiply the effective
@@ -79,7 +79,7 @@ impl RateLimiter {
     fn with_window_and_proxies(
         max_requests: u32,
         window: Duration,
-        trusted_proxies: Vec<std::net::IpAddr>,
+        trusted_proxies: Vec<ipnet::IpNet>,
     ) -> Self {
         Self::with_window_proxies_pool(max_requests, window, trusted_proxies, None)
     }
@@ -87,7 +87,7 @@ impl RateLimiter {
     fn with_window_proxies_pool(
         max_requests: u32,
         window: Duration,
-        trusted_proxies: Vec<std::net::IpAddr>,
+        trusted_proxies: Vec<ipnet::IpNet>,
         pool: Option<sqlx::PgPool>,
     ) -> Self {
         let buckets: Arc<DashMap<String, RateLimitState>> = Arc::new(DashMap::new());
@@ -161,7 +161,7 @@ impl RateLimiter {
     pub fn with_trusted_proxies(
         max_requests: u32,
         window_secs: u64,
-        trusted_proxies: Vec<std::net::IpAddr>,
+        trusted_proxies: Vec<ipnet::IpNet>,
     ) -> Self {
         Self::with_window_and_proxies(
             max_requests,
@@ -237,7 +237,7 @@ async fn cleanup_task(buckets: Arc<DashMap<String, RateLimitState>>, window: Dur
 
 /// Extract the client IP from the `X-Forwarded-For` header or fall back
 /// to the socket address.
-fn extract_client_ip(req: &Request, trusted_proxies: &[std::net::IpAddr]) -> String {
+fn extract_client_ip(req: &Request, trusted_proxies: &[ipnet::IpNet]) -> String {
     // X-Forwarded-For is only honoured when the immediate TCP peer is a
     // trusted proxy — an untrusted client must not rotate the header to
     // bypass the limiter.
@@ -358,7 +358,7 @@ mod tests {
     fn test_extract_client_ip_from_trusted_proxy() {
         // The immediate peer is a trusted proxy: the rightmost untrusted
         // XFF entry wins.
-        let trusted = vec![std::net::IpAddr::V4(std::net::Ipv4Addr::new(10, 0, 0, 1))];
+        let trusted = vec!["10.0.0.1/32".parse::<ipnet::IpNet>().unwrap()];
         let mut req = Request::builder()
             .header("x-forwarded-for", "203.0.113.42, 10.0.0.1")
             .body(axum::body::Body::empty())

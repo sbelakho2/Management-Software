@@ -129,20 +129,23 @@ impl SessionStore {
     ///
     /// Called by the auth routes on login and refresh so that a successful
     /// authentication always re-binds the session to the current client.
+    /// Register a session binding. FAILS LOUDLY: when a shared database is
+    /// configured, a persistence failure is returned as `Err` — the caller
+    /// must not treat the session as registered.
     pub async fn register(
         &self,
         sid: &str,
         user_id: &str,
         tenant_id: uuid::Uuid,
         fingerprint: String,
-    ) {
+    ) -> Result<(), String> {
         if let Some(pool) = &self.pool {
             let (sid_uuid, user_uuid) =
                 match (uuid::Uuid::parse_str(sid), uuid::Uuid::parse_str(user_id)) {
                     (Ok(s), Ok(u)) => (s, u),
-                    _ => return,
+                    _ => return Err("Invalid sid/user id".to_string()),
                 };
-            if let Err(e) = sqlx::query(
+            sqlx::query(
                 "INSERT INTO sessions (id, user_id, tenant_id, fingerprint_hash, created_at, last_seen_at) \
                  VALUES ($1, $2, $3, $4, NOW(), NOW()) \
                  ON CONFLICT (id) DO UPDATE SET fingerprint_hash = $4, last_seen_at = NOW()",
@@ -153,9 +156,7 @@ impl SessionStore {
             .bind(&fingerprint)
             .execute(pool)
             .await
-            {
-                tracing::warn!(error = %e, sid, "Failed to persist session binding");
-            }
+            .map_err(|e| format!("Failed to persist session binding: {e}"))?;
         }
         self.store.insert(
             sid.to_string(),
@@ -165,6 +166,7 @@ impl SessionStore {
                 last_seen: Instant::now(),
             },
         );
+        Ok(())
     }
 
     /// Verify the fingerprint for a session. FAILS CLOSED: a database error
@@ -210,30 +212,35 @@ impl SessionStore {
         })
     }
 
-    /// Revoke exactly one session (logout this device).
-    pub async fn revoke_session(&self, sid: &str) {
+    /// Revoke exactly one session (logout this device). FAILS LOUDLY: a
+    /// shared-state write failure is returned as `Err`.
+    pub async fn revoke_session(&self, sid: &str) -> Result<(), String> {
         if let Some(pool) = &self.pool {
-            if let Ok(sid_uuid) = uuid::Uuid::parse_str(sid) {
-                let _ = sqlx::query("UPDATE sessions SET revoked_at = NOW() WHERE id = $1")
-                    .bind(sid_uuid)
-                    .execute(pool)
-                    .await;
-            }
+            let sid_uuid = uuid::Uuid::parse_str(sid).map_err(|e| format!("Invalid sid: {e}"))?;
+            sqlx::query("UPDATE sessions SET revoked_at = NOW() WHERE id = $1")
+                .bind(sid_uuid)
+                .execute(pool)
+                .await
+                .map_err(|e| format!("Failed to revoke session: {e}"))?;
         }
         self.store.remove(sid);
+        Ok(())
     }
 
     /// Revoke every session of a user (logout all devices / password change).
-    pub async fn revoke_all_for_user(&self, user_id: &str) {
+    /// FAILS LOUDLY: a shared-state write failure is returned as `Err`.
+    pub async fn revoke_all_for_user(&self, user_id: &str) -> Result<(), String> {
         if let Some(pool) = &self.pool {
-            if let Ok(user_id_uuid) = uuid::Uuid::parse_str(user_id) {
-                let _ = sqlx::query("UPDATE sessions SET revoked_at = NOW() WHERE user_id = $1")
-                    .bind(user_id_uuid)
-                    .execute(pool)
-                    .await;
-            }
+            let user_id_uuid =
+                uuid::Uuid::parse_str(user_id).map_err(|e| format!("Invalid user id: {e}"))?;
+            sqlx::query("UPDATE sessions SET revoked_at = NOW() WHERE user_id = $1")
+                .bind(user_id_uuid)
+                .execute(pool)
+                .await
+                .map_err(|e| format!("Failed to revoke user sessions: {e}"))?;
         }
         self.store.retain(|_, fp| fp.owner_user_id != user_id);
+        Ok(())
     }
 
     /// Number of active session bindings currently tracked.
@@ -273,7 +280,7 @@ struct SessionError {
 ///   itself a trusted proxy is used.
 /// * Otherwise the peer address is authoritative.
 /// * If no peer address is available, `"unknown"` is returned.
-pub fn extract_client_ip(req: &Request, trusted_proxies: &[IpAddr]) -> String {
+pub fn extract_client_ip(req: &Request, trusted_proxies: &[ipnet::IpNet]) -> String {
     let peer_ip = req
         .extensions()
         .get::<axum::extract::ConnectInfo<std::net::SocketAddr>>()
@@ -295,10 +302,10 @@ pub fn extract_client_ip(req: &Request, trusted_proxies: &[IpAddr]) -> String {
 pub fn resolve_client_ip(
     peer_ip: Option<IpAddr>,
     xff: Option<&str>,
-    trusted_proxies: &[IpAddr],
+    trusted_proxies: &[ipnet::IpNet],
 ) -> String {
     let peer_is_trusted = peer_ip
-        .map(|ip| trusted_proxies.contains(&ip))
+        .map(|ip| trusted_proxies.iter().any(|net| net.contains(&ip)))
         .unwrap_or(false);
 
     if peer_is_trusted {
@@ -312,7 +319,7 @@ pub fn resolve_client_ip(
                 }
                 let is_trusted = candidate
                     .parse::<IpAddr>()
-                    .is_ok_and(|ip| trusted_proxies.contains(&ip));
+                    .is_ok_and(|ip| trusted_proxies.iter().any(|net| net.contains(&ip)));
                 if !is_trusted {
                     return candidate.to_string();
                 }
@@ -337,7 +344,7 @@ pub fn session_fingerprint(
     peer_ip: Option<IpAddr>,
     xff: Option<&str>,
     user_agent: Option<&str>,
-    trusted_proxies: &[IpAddr],
+    trusted_proxies: &[ipnet::IpNet],
 ) -> String {
     let ip = resolve_client_ip(peer_ip, xff, trusted_proxies);
     compute_fingerprint(user_agent.unwrap_or("unknown"), &ip)
@@ -409,9 +416,12 @@ pub async fn session_binding_middleware(
                 .unwrap_or(false)
             {
                 debug!(user_id = %user_id_str, sid = %sid, "Auto-registering session (compat switch)");
-                session_store
+                if let Err(e) = session_store
                     .register(&sid, &user_id_str, user.tenant_id, fingerprint)
-                    .await;
+                    .await
+                {
+                    warn!(error = %e, "Failed to auto-register session binding");
+                }
             } else {
                 warn!(
                     user_id = %user_id_str,
@@ -427,7 +437,9 @@ pub async fn session_binding_middleware(
         }
         Ok(SessionResult::Mismatch) => {
             // Revoke the stale binding so the next login re-binds cleanly.
-            session_store.revoke_session(&sid).await;
+            if let Err(e) = session_store.revoke_session(&sid).await {
+                warn!(error = %e, "Failed to revoke stale session binding");
+            }
             warn!(
                 user_id = %user_id_str,
                 "Session fingerprint mismatch – possible token theft"
@@ -496,7 +508,8 @@ mod tests {
         // Explicit registration, then verification matches.
         store
             .register(user_id, "user-u", tenant, fp.to_string())
-            .await;
+            .await
+            .unwrap();
         assert_eq!(
             store.verify(user_id, fp).await.unwrap(),
             SessionResult::Matches
@@ -515,7 +528,8 @@ mod tests {
                 uuid::Uuid::new_v4(),
                 "first-fingerprint".to_string(),
             )
-            .await;
+            .await
+            .unwrap();
 
         // Verify with different fingerprint should fail.
         assert_eq!(
@@ -539,12 +553,13 @@ mod tests {
 
         store
             .register(user_id, "user-u", uuid::Uuid::new_v4(), fp.to_string())
-            .await;
+            .await
+            .unwrap();
         assert_eq!(
             store.verify(user_id, fp).await.unwrap(),
             SessionResult::Matches
         );
-        store.revoke_session(user_id).await;
+        store.revoke_session(user_id).await.unwrap();
 
         // After removal, verify reports Unknown (no binding stored).
         assert_eq!(
@@ -559,10 +574,12 @@ mod tests {
 
         store
             .register("user-a", "user-x", uuid::Uuid::new_v4(), "fp-a".to_string())
-            .await;
+            .await
+            .unwrap();
         store
             .register("user-b", "user-x", uuid::Uuid::new_v4(), "fp-b".to_string())
-            .await;
+            .await
+            .unwrap();
 
         // Mismatch should still fail for each independently.
         assert_eq!(
@@ -602,11 +619,15 @@ mod tests {
         s.parse().unwrap()
     }
 
+    fn ipnet(s: &str) -> ipnet::IpNet {
+        s.parse().unwrap()
+    }
+
     #[test]
     fn test_extract_client_ip_untrusted_peer_ignores_xff() {
         // Peer 203.0.113.10 is NOT a trusted proxy: X-Forwarded-For must be
         // ignored and the peer address used.
-        let trusted = vec![ip("10.0.0.1"), ip("10.0.0.2")];
+        let trusted = vec![ipnet("10.0.0.1/32"), ipnet("10.0.0.2/32")];
         let req = req_with_peer(Some(ip("203.0.113.10")), Some("198.51.100.7, 10.0.0.2"));
         assert_eq!(extract_client_ip(&req, &trusted), "203.0.113.10");
     }
@@ -614,7 +635,7 @@ mod tests {
     #[test]
     fn test_extract_client_ip_trusted_proxy_uses_rightmost_foreign_xff() {
         // Peer 10.0.0.1 IS trusted: use the rightmost non-trusted XFF entry.
-        let trusted = vec![ip("10.0.0.1"), ip("10.0.0.2")];
+        let trusted = vec![ipnet("10.0.0.1/32"), ipnet("10.0.0.2/32")];
         let req = req_with_peer(
             Some(ip("10.0.0.1")),
             Some("198.51.100.7, 10.0.0.2, 203.0.113.99"),
@@ -624,7 +645,7 @@ mod tests {
 
     #[test]
     fn test_extract_client_ip_trusted_proxy_all_entries_trusted_falls_back_to_peer() {
-        let trusted = vec![ip("10.0.0.1"), ip("10.0.0.2")];
+        let trusted = vec![ipnet("10.0.0.1/32"), ipnet("10.0.0.2/32")];
         let req = req_with_peer(Some(ip("10.0.0.1")), Some("10.0.0.2, 10.0.0.1"));
         assert_eq!(extract_client_ip(&req, &trusted), "10.0.0.1");
     }
@@ -647,7 +668,8 @@ mod tests {
         let user_id = "ttl-test";
         store
             .register(user_id, "user-u", uuid::Uuid::new_v4(), "fp".to_string())
-            .await;
+            .await
+            .unwrap();
 
         // After verify, last_seen should be updated. We can't check the
         // internal time, but the entry must still exist afterwards.

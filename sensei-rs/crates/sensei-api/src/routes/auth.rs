@@ -443,7 +443,11 @@ pub async fn login(
             user.tenant_id,
             fingerprint,
         )
-        .await;
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "Failed to persist session binding");
+            SenseiError::Internal("Unable to establish the session. Please retry.".to_string())
+        })?;
 
     // Optional HttpOnly cookie persistence: the refresh token NEVER
     // touches localStorage or JavaScript — it is not even present in the
@@ -552,7 +556,11 @@ pub async fn refresh(
             claims.tenant_id,
             fingerprint,
         )
-        .await;
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "Failed to persist refreshed session binding");
+            SenseiError::Internal("Unable to establish the session. Please retry.".to_string())
+        })?;
 
     let response = LoginResponse {
         access_token,
@@ -638,7 +646,11 @@ pub async fn register(
             user.tenant_id,
             fingerprint,
         )
-        .await;
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "Failed to persist session binding");
+            SenseiError::Internal("Unable to establish the session. Please retry.".to_string())
+        })?;
 
     // Optional HttpOnly cookie persistence: the refresh token NEVER
     // touches localStorage or JavaScript — it is not even present in the
@@ -685,7 +697,12 @@ pub async fn logout(
 
     // Revoke the current session binding (this device).
     if let Some(sid) = user.sid {
-        state.session_store.revoke_session(&sid.to_string()).await;
+        if let Err(e) = state.session_store.revoke_session(&sid.to_string()).await {
+            tracing::error!(error = %e, "Failed to revoke server-side session");
+            return Err(SenseiError::Internal(
+                "Unable to complete logout — session revocation could not be persisted. Please retry.".to_string(),
+            ));
+        }
     }
     // `X-Logout-All: true` revokes every device.
     if headers
@@ -693,10 +710,16 @@ pub async fn logout(
         .and_then(|v| v.to_str().ok())
         .is_some_and(|v| v.eq_ignore_ascii_case("true"))
     {
-        state
+        if let Err(e) = state
             .session_store
             .revoke_all_for_user(&user.user_id.to_string())
-            .await;
+            .await
+        {
+            tracing::error!(error = %e, "Failed to revoke all user sessions");
+            return Err(SenseiError::Internal(
+                "Unable to complete logout — session revocation could not be persisted. Please retry.".to_string(),
+            ));
+        }
     }
 
     // Revoke the user's refresh families: a logged-out refresh token must
@@ -809,7 +832,11 @@ pub async fn change_password(
     state
         .session_store
         .revoke_all_for_user(&user.user_id.to_string())
-        .await;
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "Failed to revoke all user sessions");
+            SenseiError::Internal("Unable to revoke sessions. Please retry.".to_string())
+        })?;
 
     Ok(Json(MessageResponse {
         message: "Password changed successfully".to_string(),
@@ -932,7 +959,11 @@ pub async fn confirm_password_reset(
     state
         .session_store
         .revoke_all_for_user(&stored.user_id.to_string())
-        .await;
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "Failed to revoke all user sessions");
+            SenseiError::Internal("Unable to revoke sessions. Please retry.".to_string())
+        })?;
 
     Ok(Json(MessageResponse {
         message: "Password has been reset successfully".to_string(),

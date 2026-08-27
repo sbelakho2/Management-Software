@@ -333,8 +333,9 @@ pub struct SecurityConfig {
     pub csp: Option<String>,
     /// Whether to emit the Strict-Transport-Security header (default true).
     pub hsts: bool,
-    /// IP addresses trusted to set client IP headers (e.g. reverse proxies).
-    pub trusted_proxies: Vec<IpAddr>,
+    /// Networks trusted to set client IP headers (e.g. reverse proxies).
+    /// Accepts both single IPs (`1.2.3.4`) and CIDRs (`10.0.0.0/8`).
+    pub trusted_proxies: Vec<ipnet::IpNet>,
 }
 
 impl SecurityConfig {
@@ -346,12 +347,22 @@ impl SecurityConfig {
                     .map(|s| s.trim())
                     .filter(|s| !s.is_empty())
                     .map(|s| {
-                        s.parse::<IpAddr>().map_err(|_| ConfigError::InvalidValue {
-                            var: "TRUSTED_PROXIES".to_string(),
-                            reason: format!("'{}' is not a valid IP address", s),
-                        })
+                        // Single IPs become host nets; CIDRs are accepted
+                        // as-is (Kubernetes ingress/proxy pods are dynamic,
+                        // so exact-address lists are unusable there).
+                        s.parse::<ipnet::IpNet>()
+                            .or_else(|_| {
+                                s.parse::<IpAddr>().map(|ip| match ip {
+                                    IpAddr::V4(v4) => ipnet::IpNet::V4(v4.into()),
+                                    IpAddr::V6(v6) => ipnet::IpNet::V6(v6.into()),
+                                })
+                            })
+                            .map_err(|_| ConfigError::InvalidValue {
+                                var: "TRUSTED_PROXIES".to_string(),
+                                reason: format!("'{}' is not a valid IP address or CIDR", s),
+                            })
                     })
-                    .collect::<Result<Vec<IpAddr>, ConfigError>>()
+                    .collect::<Result<Vec<ipnet::IpNet>, ConfigError>>()
             })
             .unwrap_or_else(|_| Ok(Vec::new()))?;
 

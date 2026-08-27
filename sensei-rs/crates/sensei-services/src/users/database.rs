@@ -12,7 +12,7 @@ use sensei_core::types::EntityId;
 use sensei_db::models::UserModel;
 use sqlx::PgPool;
 
-use super::{check_password, validate_roles, UsersService};
+use super::{check_password, UsersService};
 
 /// PostgreSQL-backed implementation of [`UsersService`].
 pub struct DatabaseUsersService {
@@ -407,7 +407,7 @@ impl UsersService for DatabaseUsersService {
         id: EntityId,
         roles: Vec<String>,
     ) -> Result<User> {
-        validate_roles(&roles)?;
+        validate_roles_db(&self.pool, &roles).await?;
         let now = Utc::now();
 
         let model = sqlx::query_as::<_, UserModel>(&format!(
@@ -460,4 +460,37 @@ fn is_unique_violation(e: &sqlx::Error) -> bool {
         sqlx::Error::Database(db)
             if db.code().as_deref() == Some("23505")
     )
+}
+
+/// Validate role names against BOTH the static RBAC defaults and the
+/// tenant-scoped `roles` table in PostgreSQL (the DB is the extension
+/// point for custom roles).
+async fn validate_roles_db(pool: &sqlx::PgPool, roles: &[String]) -> Result<()> {
+    let static_rbac = sensei_auth::rbac::RbacService::new();
+    let mut unknown: Vec<&String> = Vec::new();
+    for role in roles {
+        if static_rbac.role_exists(role) {
+            continue;
+        }
+        let found: Option<String> =
+            sqlx::query_scalar("SELECT name FROM roles WHERE name = $1 LIMIT 1")
+                .bind(role)
+                .fetch_optional(pool)
+                .await
+                .map_err(|e| SenseiError::Database(format!("Failed to validate roles: {e}")))?;
+        if found.is_none() {
+            unknown.push(role);
+        }
+    }
+    if !unknown.is_empty() {
+        return Err(SenseiError::Validation(format!(
+            "Unknown role(s): {}",
+            unknown
+                .iter()
+                .map(|r| r.as_str())
+                .collect::<Vec<_>>()
+                .join(", ")
+        )));
+    }
+    Ok(())
 }

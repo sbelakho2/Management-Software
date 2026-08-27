@@ -296,7 +296,7 @@ pub async fn convert_quote_to_order(
     let tenant_id = user.tenant_id;
     let order = state
         .supply_chain_service
-        .convert_quote_to_order(tenant_id, req.quote_id)
+        .convert_quote_to_order(tenant_id, req.quote_id, user.user_id)
         .await?;
     Ok(Json(order))
 }

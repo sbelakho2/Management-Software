@@ -396,6 +396,9 @@ pub struct MlWorker {
     /// Idempotency guard (migration 053): claims the task_id before
     /// training/drift-check side effects.
     idempotency: IdempotencyGuard,
+    /// The task id currently being processed (used for lease renewal of
+    /// long-running training jobs).
+    current_task_id: std::sync::Arc<tokio::sync::RwLock<Option<String>>>,
 }
 
 impl Default for MlWorker {
@@ -416,6 +419,7 @@ impl MlWorker {
             registry,
             pool: None,
             idempotency: IdempotencyGuard::new(None, "ml"),
+            current_task_id: std::sync::Arc::new(tokio::sync::RwLock::new(None)),
         }
     }
 
@@ -426,6 +430,7 @@ impl MlWorker {
             registry: Arc::new(ModelRegistry::new()),
             pool: pool.clone(),
             idempotency: IdempotencyGuard::new(pool, "ml"),
+            current_task_id: std::sync::Arc::new(tokio::sync::RwLock::new(None)),
         }
     }
 
@@ -670,6 +675,11 @@ impl MlWorker {
             .update_status(model_name, ModelStatus::Training { progress: 0.2 })
             .await;
 
+        // Long-running training must renew the idempotency lease so a
+        // second worker never starts the same model job after expiry.
+        if let Some(task_id) = self.current_task_id.read().await.clone() {
+            let _ = self.idempotency.renew_lease(&task_id).await;
+        }
         let mut data = self.load_training_data(model_name).await?;
 
         // Fall back to calibration data if no real data available.
@@ -862,6 +872,7 @@ impl TaskConsumer for MlWorker {
         })?;
 
         let task_id_str = metadata.task_id.to_string();
+        *self.current_task_id.write().await = Some(task_id_str.clone());
         if !self.claim(&task_id_str).await? {
             // Idempotency: ONLY now is the side effect durable.
             self.idempotency.mark_completed(&task_id_str).await?;
