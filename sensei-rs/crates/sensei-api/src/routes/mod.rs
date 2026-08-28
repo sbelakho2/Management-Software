@@ -14,6 +14,7 @@ pub mod auth;
 pub mod chatbot;
 pub mod contacts;
 pub mod ctq;
+pub mod employee_assignments;
 pub mod escalation;
 pub mod export;
 pub mod finance;

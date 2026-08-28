@@ -107,7 +107,7 @@ pub struct ExecuteToolRequest {
 
 /// Build the SERVER-CREATED context from the authenticated request (the
 /// model can never supply tenant/user/site — they are injected here).
-async fn build_context(user: &AuthenticatedUser, state: &AppState) -> AgentContext {
+pub async fn build_context(user: &AuthenticatedUser, state: &AppState) -> AgentContext {
     let rbac = sensei_auth::rbac::authorization_service();
     let mut permissions = std::collections::HashSet::new();
     for role in &user.roles {
@@ -119,25 +119,58 @@ async fn build_context(user: &AuthenticatedUser, state: &AppState) -> AgentConte
         }
     }
     // The employee's active site assignment is resolved at request time
-    // (item 17): the agent knows WHERE the user works.
-    let site_id = state
-        .users_service
-        .find_by_id(user.user_id)
+    // (item 17): the agent knows WHERE the user works. The full topology
+    // scope (value stream, work center, shift) and the site timezone come
+    // from the authoritative assignment/site records when a pool exists.
+    let user_row = state.users_service.find_by_id(user.user_id).await.ok();
+    let site_id = user_row.as_ref().and_then(|u| u.site_id);
+    let mut value_stream_id = None;
+    let mut work_center_id = None;
+    let mut shift_id = None;
+    let mut timezone = "UTC".to_string();
+    if let Some(pool) = state.db_pool.as_ref() {
+        if let Some(site) = site_id {
+            let tz: Option<String> =
+                sqlx::query_scalar("SELECT timezone FROM sites WHERE id = $1 AND tenant_id = $2")
+                    .bind(site)
+                    .bind(user.tenant_id)
+                    .fetch_one(pool.as_ref())
+                    .await
+                    .ok();
+            if let Some(tz) = tz {
+                timezone = tz;
+            }
+        }
+        let assignment: Option<(Option<Uuid>, Option<Uuid>, Option<Uuid>)> = sqlx::query_as(
+            "SELECT value_stream_id, work_center_id, shift_id \
+                 FROM employee_assignments \
+                 WHERE tenant_id = $1 AND user_id = $2 AND is_active = TRUE \
+                 ORDER BY updated_at DESC LIMIT 1",
+        )
+        .bind(user.tenant_id)
+        .bind(user.user_id)
+        .fetch_optional(pool.as_ref())
         .await
         .ok()
-        .and_then(|u| u.site_id);
+        .flatten();
+        if let Some((vs, wc, sh)) = assignment {
+            value_stream_id = vs;
+            work_center_id = wc;
+            shift_id = sh;
+        }
+    }
     AgentContext {
         tenant_id: user.tenant_id,
         user_id: user.user_id,
         session_id: user.sid,
         site_id,
-        value_stream_id: None,
-        work_center_id: None,
-        shift_id: None,
+        value_stream_id,
+        work_center_id,
+        shift_id,
         roles: user.roles.clone(),
         permissions,
         locale: "en".to_string(),
-        timezone: "UTC".to_string(),
+        timezone,
         request_id: Uuid::new_v4(),
         conversation_id: None,
     }

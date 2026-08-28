@@ -3,8 +3,7 @@
 //! contracts (A3, BOM, outbox, andon restart) must execute CRUD against
 //! the migrated schema.
 //!
-//! Run with:  DATABASE_URL_TEST=postgres://user:pass@localhost:5432/sensei_test \
-//!             cargo test -p sensei-db --test db_contract -- --ignored
+//! Run with:  DATABASE_URL_TEST=postgres://user:pass@localhost:5432/sensei_test  //!             cargo test -p sensei-db --test db_contract -- --ignored
 
 use sqlx::PgPool;
 
@@ -44,15 +43,13 @@ async fn full_migration_chain_applies_and_core_contracts_work() {
     // ── A3 service contract (P0-3) ────────────────────────────────────
     let a3_id = uuid::Uuid::new_v4();
     let tenant_id = uuid::Uuid::new_v4();
-    sqlx::query(
-        "INSERT INTO a3_reports \\
-            (id, tenant_id, a3_number, title, background, current_state, goal, \\
-             root_cause_analysis, countermeasures, check_plan, follow_up, a3_type, \\
-             severity, status, owner_id, created_at, closed_at, version, \\
-             observed_conditions, metric_baselines, evidence_refs, cause_hypotheses, \\
-             experiments, verifications, standardizations, learnings) \\
-         VALUES ($1, $2, $3, 't', 'b', 'cs', 'g', 'rca', 'cm', 'cp', 'fu', 'standard', \\
-                 'medium', 'draft', NULL, NOW(), NULL, 0, '[]', '[]', '[]', '[]', '[]', '[]', '[]', '[]')",
+    // FK prerequisites: a real tenant (and a user for owner_id later).
+    sqlx::query("INSERT INTO tenants (id, name, slug) VALUES ($1, 'contract', 'contract')")
+        .bind(tenant_id)
+        .execute(&pool)
+        .await
+        .expect("tenant insert must succeed against the migrated schema");
+    sqlx::query("INSERT INTO a3_reports  (id, tenant_id, a3_number, title, background, current_state, goal,  root_cause_analysis, countermeasures, check_plan, follow_up, a3_type,  severity, status, owner_id, created_at, closed_at, version,  observed_conditions, metric_baselines, evidence_refs, cause_hypotheses,  experiments, verifications, standardizations, learnings)  VALUES ($1, $2, $3, 't', 'b', 'cs', 'g', 'rca', 'cm', 'cp', 'fu', 'standard',  'medium', 'draft', NULL, NOW(), NULL, 0, '[]', '[]', '[]', '[]', '[]', '[]', '[]', '[]')",
     )
     .bind(a3_id)
     .bind(tenant_id)
@@ -64,8 +61,7 @@ async fn full_migration_chain_applies_and_core_contracts_work() {
     // Version CAS: an update at version 0 succeeds and bumps to 1; a second
     // update at version 0 must be rejected (0 rows).
     let updated = sqlx::query(
-        "UPDATE a3_reports SET background = 'b2', version = version + 1 \\
-         WHERE id = $1 AND version = 0",
+        "UPDATE a3_reports SET background = 'b2', version = version + 1  WHERE id = $1 AND version = 0",
     )
     .bind(a3_id)
     .execute(&pool)
@@ -73,8 +69,7 @@ async fn full_migration_chain_applies_and_core_contracts_work() {
     .expect("a3 CAS update");
     assert_eq!(updated.rows_affected(), 1, "first CAS update must apply");
     let stale = sqlx::query(
-        "UPDATE a3_reports SET background = 'b3', version = version + 1 \\
-         WHERE id = $1 AND version = 0",
+        "UPDATE a3_reports SET background = 'b3', version = version + 1  WHERE id = $1 AND version = 0",
     )
     .bind(a3_id)
     .execute(&pool)
@@ -94,8 +89,7 @@ async fn full_migration_chain_applies_and_core_contracts_work() {
     let parent = uuid::Uuid::new_v4();
     let component = uuid::Uuid::new_v4();
     sqlx::query(
-        "INSERT INTO products (id, tenant_id, product_number, name) \\
-         VALUES ($1, $2, 'P-1', 'Parent'), ($3, $2, 'C-1', 'Component')",
+        "INSERT INTO products (id, tenant_id, product_number, name)  VALUES ($1, $2, 'P-1', 'Parent'), ($3, $2, 'C-1', 'Component')",
     )
     .bind(parent)
     .bind(tenant_id)
@@ -104,9 +98,7 @@ async fn full_migration_chain_applies_and_core_contracts_work() {
     .await
     .expect("products insert");
     sqlx::query(
-        "INSERT INTO bom_items (id, tenant_id, parent_product_id, component_product_id, \\
-                                quantity, unit_of_measure, scrap_percent) \\
-         VALUES ($1, $2, $3, $4, 2, 'pcs', 5)",
+        "INSERT INTO bom_items (id, tenant_id, parent_product_id, component_product_id,  quantity, unit_of_measure, scrap_percent)  VALUES ($1, $2, $3, $4, 2, 'pcs', 5)",
     )
     .bind(uuid::Uuid::new_v4())
     .bind(tenant_id)
@@ -119,9 +111,7 @@ async fn full_migration_chain_applies_and_core_contracts_work() {
     // ── Outbox contract (P0-6) ────────────────────────────────────────
     let event_id = uuid::Uuid::new_v4();
     sqlx::query(
-        "INSERT INTO outbox_events (event_id, tenant_id, aggregate_type, aggregate_id, \\
-                                    event_type, payload) \\
-         VALUES ($1, $2, 'a3', $3, 'sensei.a3.closed', '{}')",
+        "INSERT INTO outbox_events (event_id, tenant_id, aggregate_type, aggregate_id,  event_type, payload)  VALUES ($1, $2, 'a3', $3, 'sensei.a3.closed', '{}')",
     )
     .bind(event_id)
     .bind(tenant_id)
@@ -130,8 +120,7 @@ async fn full_migration_chain_applies_and_core_contracts_work() {
     .await
     .expect("outbox insert");
     let claimed = sqlx::query(
-        "UPDATE outbox_events SET claimed_by = 'relay-test', claim_until = NOW() + INTERVAL '30 seconds' \\
-         WHERE event_id = $1",
+        "UPDATE outbox_events SET claimed_by = 'relay-test', claim_until = NOW() + INTERVAL '30 seconds'  WHERE event_id = $1",
     )
     .bind(event_id)
     .execute(&pool)
@@ -143,8 +132,7 @@ async fn full_migration_chain_applies_and_core_contracts_work() {
     // (claim still live) must get 0 rows — the atomic claim prevents
     // double publication.
     let second_claim = sqlx::query(
-        "UPDATE outbox_events SET claimed_by = 'relay-2' \
-         WHERE event_id = $1 AND claim_until > NOW()",
+        "UPDATE outbox_events SET claimed_by = 'relay-2'  WHERE event_id = $1 AND (claim_until IS NULL OR claim_until < NOW())",
     )
     .bind(event_id)
     .execute(&pool)
@@ -162,12 +150,13 @@ async fn full_migration_chain_applies_and_core_contracts_work() {
     // tenant A's rows — an intentionally missing application filter cannot
     // leak tenant B.
     let tenant_b = uuid::Uuid::new_v4();
+    sqlx::query("INSERT INTO tenants (id, name, slug) VALUES ($1, 'contract-b', 'contract-b')")
+        .bind(tenant_b)
+        .execute(&pool)
+        .await
+        .expect("tenant B insert");
     sqlx::query(
-        "INSERT INTO invoices \
-            (id, tenant_id, invoice_number, customer_id, customer_name, status, \
-             line_items, subtotal, tax_percentage, tax_amount, total_amount, \
-             currency, due_date, created_by, created_at) \
-         VALUES ($1, $2, 'INV-B', $3, 'B', 'draft', '[]', 0, 0, 0, 0, 'USD', NOW(), NULL, NOW())",
+        "INSERT INTO invoices  (id, tenant_id, invoice_number, customer_id, customer_name, status,  line_items, subtotal, tax_percentage, tax_amount, total_amount,  currency, due_date, created_by, created_at)  VALUES ($1, $2, 'INV-B', $3, 'B', 'draft', '[]', 0, 0, 0, 0, 'USD', NOW(), NULL, NOW())",
     )
     .bind(uuid::Uuid::new_v4())
     .bind(tenant_b)
@@ -190,30 +179,36 @@ async fn full_migration_chain_applies_and_core_contracts_work() {
     };
     assert_eq!(
         a_count, 1,
-        "RLS must hide tenant B's invoice when the tenant \
-                            predicate is omitted (fail-closed policy)"
+        "RLS must hide tenant B's invoice when the tenant  predicate is omitted (fail-closed policy)"
     );
 
     // ── Andon restart contract (P0-7) ─────────────────────────────────
     let andon_id = uuid::Uuid::new_v4();
+    // FK prerequisites: a real user in tenant A (work_center_id is NOT a
+    // foreign key in the andons table — it references topology only).
+    let raised_by = uuid::Uuid::new_v4();
     sqlx::query(
-        "INSERT INTO andons (id, tenant_id, andon_number, work_center_id, issue_type, \\
-                             severity, description, status, raised_by) \\
-         VALUES ($1, $2, 'AND-1', $3, 'safety', 'critical', 'line stop', 'active', $4)",
+        "INSERT INTO users (id, tenant_id, email, name, password_hash)  VALUES ($1, $2, 'andon@contract.local', 'Andon', 'x')",
+    )
+    .bind(raised_by)
+    .bind(tenant_id)
+    .execute(&pool)
+    .await
+    .expect("andon user insert");
+    sqlx::query(
+        "INSERT INTO andons (id, tenant_id, andon_number, work_center_id, issue_type,  severity, description, status, raised_by)  VALUES ($1, $2, 'AND-1', $3, 'safety', 'critical', 'line stop', 'active', $4)",
     )
     .bind(andon_id)
     .bind(tenant_id)
     .bind(uuid::Uuid::new_v4())
-    .bind(uuid::Uuid::new_v4())
+    .bind(raised_by)
     .execute(&pool)
     .await
     .expect("andon insert");
     // The safety rule lives in SQL: resolving WITHOUT a restart
     // authorization must touch 0 rows.
     let blocked = sqlx::query(
-        "UPDATE andons SET status = 'resolved' \\
-         WHERE id = $1 AND (severity != 'critical' OR issue_type != 'safety' \\
-                            OR restart_authorized_by IS NOT NULL)",
+        "UPDATE andons SET status = 'resolved'  WHERE id = $1 AND (severity != 'critical' OR issue_type != 'safety'  OR restart_authorized_by IS NOT NULL)",
     )
     .bind(andon_id)
     .execute(&pool)

@@ -159,6 +159,9 @@ pub struct InventoryItem {
     pub lot_number: Option<String>,
     pub reorder_point: i64,
     pub reorder_quantity: i64,
+    /// Source record's last update (item 19): evidence freshness is
+    /// measured against THIS time, never the tool-call time.
+    pub updated_at: DateTime<Utc>,
 }
 
 /// A stock movement recording inventory transfers between locations.
@@ -467,6 +470,7 @@ impl InMemorySupplyChainService {
             existing.quantity_on_hand = (existing.quantity_on_hand + delta).max(0);
             existing.quantity_available =
                 (existing.quantity_on_hand - existing.quantity_reserved).max(0);
+            existing.updated_at = chrono::Utc::now();
             existing.clone()
         } else {
             let item = InventoryItem {
@@ -481,6 +485,7 @@ impl InMemorySupplyChainService {
                 lot_number: None,
                 reorder_point: 0,
                 reorder_quantity: 0,
+                updated_at: chrono::Utc::now(),
             };
             store.insert(key, item.clone());
             item
@@ -596,7 +601,7 @@ impl SupplyChainService for InMemorySupplyChainService {
             id,
             quote_number,
             rfq_id,
-            total_amount.to_string().parse::<f64>().unwrap_or_default(),
+            total_amount,
             currency,
         ))
         .await;
@@ -652,7 +657,7 @@ impl SupplyChainService for InMemorySupplyChainService {
             tenant_id,
             id,
             Uuid::nil(),
-            total_amount.to_string().parse::<f64>().unwrap_or_default(),
+            total_amount,
         ))
         .await;
         Ok(result)
@@ -760,7 +765,7 @@ impl SupplyChainService for InMemorySupplyChainService {
             id,
             so_number,
             account_id,
-            total_amount.to_string().parse::<f64>().unwrap_or_default(),
+            total_amount,
             currency,
         ))
         .await;
@@ -835,7 +840,7 @@ impl SupplyChainService for InMemorySupplyChainService {
             id,
             po_number,
             supplier_id,
-            total_amount.to_string().parse::<f64>().unwrap_or_default(),
+            total_amount,
             currency,
         ))
         .await;

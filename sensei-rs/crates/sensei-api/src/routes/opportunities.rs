@@ -186,7 +186,8 @@ pub async fn update_opportunity(
             opp.id,
             old_stage,
             opp.stage.clone(),
-            opp.expected_value,
+            rust_decimal::Decimal::from_f64_retain(opp.expected_value)
+                .unwrap_or(rust_decimal::Decimal::ZERO),
         );
         if let Err(e) = state.event_bus.publish(&event).await {
             tracing::warn!(error = %e, "Failed to publish OpportunityStageChangedEvent");

@@ -22,6 +22,18 @@ BEGIN
         'a3_reports', 'andons', 'chat_conversations', 'chat_messages',
         'scheduler_run_log', 'processed_tasks'
     ] LOOP
+        -- Tolerate tables that later migrations create (e.g. andons is
+        -- created in 088) and tables without a tenant_id column (e.g.
+        -- processed_tasks/scheduler_run_log dedupe tables): a fresh
+        -- database must survive the chain.
+        IF to_regclass(t) IS NULL
+           OR NOT EXISTS (
+               SELECT 1 FROM information_schema.columns c
+               WHERE c.table_schema = 'public' AND c.table_name = t
+                 AND c.column_name = 'tenant_id'
+           ) THEN
+            CONTINUE;
+        END IF;
         EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY', t);
         EXECUTE format(
             'DROP POLICY IF EXISTS tenant_isolation ON %I', t

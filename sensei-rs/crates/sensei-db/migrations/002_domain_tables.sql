@@ -1005,7 +1005,7 @@ CREATE TABLE IF NOT EXISTS kanban_cards (
     board_id            UUID NOT NULL,
     title               VARCHAR(500) NOT NULL,
     description         TEXT,
-    column              VARCHAR(100) NOT NULL DEFAULT 'backlog',
+    column_name         VARCHAR(100) NOT NULL DEFAULT 'backlog',
     position            INT NOT NULL DEFAULT 0,
     card_type           VARCHAR(30) NOT NULL DEFAULT 'task'
                         CHECK (card_type IN ('task', 'issue', 'improvement', 'standard_work')),
@@ -1021,7 +1021,7 @@ CREATE TABLE IF NOT EXISTS kanban_cards (
 );
 
 CREATE INDEX idx_kanban_cards_board ON kanban_cards(board_id);
-CREATE INDEX idx_kanban_cards_column ON kanban_cards(board_id, column);
+CREATE INDEX idx_kanban_cards_column ON kanban_cards(board_id, column_name);
 CREATE INDEX idx_kanban_cards_assignee ON kanban_cards(assignee_id);
 
 -- Issues: problems, bugs, tasks, and action items across the organization.

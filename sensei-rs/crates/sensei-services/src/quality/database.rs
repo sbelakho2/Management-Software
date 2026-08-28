@@ -219,8 +219,26 @@ impl QualityService for DatabaseQualityService {
         };
         let data = serde_json::to_value(&ncr)
             .map_err(|e| SenseiError::Database(format!("Failed to serialize NCR: {e}")))?;
+        // Item 28: the NCR state mutation and its workflow-driving event
+        // are ONE transaction — a committed NCR can never lose its event
+        // to a post-commit publish failure.
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|e| db_err("create_ncr", e))?;
         sqlx::query("INSERT INTO quality_ncrs (id, tenant_id, data, created_at, updated_at) VALUES ($1,$2,$3,$4,$5)")
-            .bind(id).bind(tenant_id).bind(&data).bind(now).bind(now).execute(&self.pool).await.map_err(|e| db_err("create_ncr", e))?;
+            .bind(id).bind(tenant_id).bind(&data).bind(now).bind(now).execute(&mut *tx).await.map_err(|e| db_err("create_ncr", e))?;
+        sensei_db::outbox::enqueue_outbox(
+            &mut tx,
+            tenant_id,
+            "quality_ncr",
+            id,
+            "sensei.quality.ncr.created",
+            serde_json::json!({ "nc_number": ncr.nc_number, "severity": format!("{:?}", ncr.severity) }),
+        )
+        .await?;
+        tx.commit().await.map_err(|e| db_err("create_ncr", e))?;
         Ok(ncr)
     }
 
@@ -325,8 +343,24 @@ impl QualityService for DatabaseQualityService {
             updated_at: now,
         };
         let data = serde_json::to_value(&capa).unwrap_or(serde_json::Value::Null);
+        // Item 28: CAPA creation + its workflow-driving event are atomic.
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|e| db_err("create_capa", e))?;
         sqlx::query("INSERT INTO quality_capas (id, tenant_id, data, created_at, updated_at) VALUES ($1,$2,$3,$4,$5)")
-            .bind(id).bind(tenant_id).bind(&data).bind(now).bind(now).execute(&self.pool).await.map_err(|e| db_err("create_capa", e))?;
+            .bind(id).bind(tenant_id).bind(&data).bind(now).bind(now).execute(&mut *tx).await.map_err(|e| db_err("create_capa", e))?;
+        sensei_db::outbox::enqueue_outbox(
+            &mut tx,
+            tenant_id,
+            "quality_capa",
+            id,
+            "sensei.quality.capa.created",
+            serde_json::json!({ "capa_number": capa.capa_number, "priority": format!("{:?}", capa.priority) }),
+        )
+        .await?;
+        tx.commit().await.map_err(|e| db_err("create_capa", e))?;
         Ok(capa)
     }
 

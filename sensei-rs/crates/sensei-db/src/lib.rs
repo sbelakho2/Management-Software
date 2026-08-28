@@ -11,6 +11,7 @@
 
 pub mod migrations;
 pub mod models;
+pub mod outbox;
 pub mod pg_pool;
 
 pub use migrations::*;

@@ -574,11 +574,7 @@ impl FinanceService for InMemoryFinanceService {
             tenant_id,
             id,
             "standard".to_string(),
-            invoice
-                .total_amount
-                .to_string()
-                .parse::<f64>()
-                .unwrap_or_default(),
+            invoice.total_amount,
             invoice.currency.clone(),
             invoice.customer_name.clone(),
         ))
@@ -695,11 +691,7 @@ impl FinanceService for InMemoryFinanceService {
             tenant_id,
             id,
             payment.payment_method.clone(),
-            payment
-                .amount
-                .to_string()
-                .parse::<f64>()
-                .unwrap_or_default(),
+            payment.amount,
             payment.currency.clone(),
             payment.created_by,
         ))
@@ -812,8 +804,8 @@ impl FinanceService for InMemoryFinanceService {
         self.publish_event(JournalEntryPosted::new(
             tenant_id,
             id,
-            entry.amount.to_string().parse::<f64>().unwrap_or_default(),
-            entry.amount.to_string().parse::<f64>().unwrap_or_default(),
+            entry.amount,
+            entry.amount,
             entry.entry_date.format("%Y-%m").to_string(),
         ))
         .await;
@@ -910,11 +902,7 @@ impl FinanceService for InMemoryFinanceService {
         self.publish_event(CostRollupCompleted::new(
             tenant_id,
             product_id,
-            rollup
-                .total_cost
-                .to_string()
-                .parse::<f64>()
-                .unwrap_or_default(),
+            rollup.total_cost,
             "USD".to_string(),
         ))
         .await;

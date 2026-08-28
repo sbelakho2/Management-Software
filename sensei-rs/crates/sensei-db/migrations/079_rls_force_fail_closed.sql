@@ -13,6 +13,16 @@ BEGIN
         'business_audit_log', 'outbox_events', 'production_events',
         'maintenance_occurrences', 'a3_reports', 'andons'
     ] LOOP
+        -- Tolerate tables not yet created on a fresh chain (andons is
+        -- created in 088; production_events in 066).
+        IF to_regclass(t) IS NULL
+           OR NOT EXISTS (
+               SELECT 1 FROM information_schema.columns c
+               WHERE c.table_schema = 'public' AND c.table_name = t
+                 AND c.column_name = 'tenant_id'
+           ) THEN
+            CONTINUE;
+        END IF;
         EXECUTE format('ALTER TABLE %I FORCE ROW LEVEL SECURITY', t);
         EXECUTE format(
             'DROP POLICY IF EXISTS tenant_isolation ON %I', t
@@ -34,6 +44,14 @@ BEGIN
         'purchase_orders', 'sales_orders', 'customer_invoices',
         'supplier_invoices', 'scheduler_run_log', 'processed_tasks'
     ] LOOP
+        IF to_regclass(t) IS NULL
+           OR NOT EXISTS (
+               SELECT 1 FROM information_schema.columns c
+               WHERE c.table_schema = 'public' AND c.table_name = t
+                 AND c.column_name = 'tenant_id'
+           ) THEN
+            CONTINUE;
+        END IF;
         EXECUTE format('ALTER TABLE %I FORCE ROW LEVEL SECURITY', t);
         EXECUTE format(
             'DROP POLICY IF EXISTS tenant_isolation ON %I', t

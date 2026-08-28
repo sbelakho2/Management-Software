@@ -298,6 +298,14 @@ impl ProductionService for DatabaseProductionService {
         wo.created_at = now;
         wo.updated_at = now;
 
+        // Item 28: the work-order state mutation and its workflow-driving
+        // event are ONE transaction — a committed WO can never lose its
+        // event to a post-commit publish failure.
+        let mut self_tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to begin WO tx: {e}")))?;
         let row = sqlx::query_as::<_, WorkOrderRow>(
             r#"
             INSERT INTO work_orders (
@@ -336,13 +344,31 @@ impl ProductionService for DatabaseProductionService {
         .bind(&wo.notes)
         .bind(now)
         .bind(now)
-        .fetch_one(&self.pool)
+        .fetch_one(&mut *self_tx)
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to create work order: {e}")))?;
 
         // Generate the operations from the product's routing (when configured).
         self.generate_operations(tenant_id, id, wo.product_id)
             .await?;
+
+        sensei_db::outbox::enqueue_outbox(
+            &mut self_tx,
+            tenant_id,
+            "work_order",
+            id,
+            "sensei.production.work-order.created",
+            serde_json::json!({
+                "wo_number": wo.wo_number,
+                "product_id": wo.product_id,
+                "status": "created",
+            }),
+        )
+        .await?;
+        self_tx
+            .commit()
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to commit WO tx: {e}")))?;
 
         Ok(wo_row_to_domain(row))
     }
@@ -476,6 +502,13 @@ impl ProductionService for DatabaseProductionService {
             )));
         }
 
+        // Item 28: the status transition and its workflow-driving event
+        // are ONE transaction.
+        let mut status_tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to begin WO status tx: {e}")))?;
         let row = sqlx::query_as::<_, WorkOrderRow>(
             r#"
             UPDATE work_orders
@@ -494,10 +527,28 @@ impl ProductionService for DatabaseProductionService {
         .bind(tenant_id)
         .bind(now)
         .bind(id)
-        .fetch_optional(&self.pool)
+        .fetch_optional(&mut *status_tx)
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to update work order status: {e}")))?
         .ok_or_else(|| SenseiError::NotFound(format!("Work order {id} not found")))?;
+
+        sensei_db::outbox::enqueue_outbox(
+            &mut status_tx,
+            tenant_id,
+            "work_order",
+            id,
+            "sensei.production.work-order.status-changed",
+            serde_json::json!({
+                "wo_number": row.wo_number,
+                "from_status": current,
+                "to_status": status,
+            }),
+        )
+        .await?;
+        status_tx
+            .commit()
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to commit WO status tx: {e}")))?;
 
         Ok(wo_row_to_domain(row))
     }

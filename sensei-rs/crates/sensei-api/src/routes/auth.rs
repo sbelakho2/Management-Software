@@ -217,23 +217,62 @@ fn reset_email_rate_limits() {
 ///
 /// Returns `true` when the request is allowed. The bucket is pruned of
 /// timestamps older than the sliding window before counting.
-fn allow_email_request(email: &str) -> bool {
-    let now = Instant::now();
-    let key = email.trim().to_lowercase();
-    let mut bucket = EMAIL_REQUEST_RATE_LIMITS.entry(key).or_default();
+///
+/// Item 27: when a shared PostgreSQL pool is attached the counter lives in
+/// the `rate_limits` table (atomic UPSERT) so the limit is GLOBAL across
+/// API replicas; the in-memory DashMap remains the dev-mode fallback.
+async fn allow_email_request(pool: Option<&sqlx::PgPool>, email: &str) -> bool {
+    let key = format!("email:{}", email.trim().to_lowercase());
+    if let Some(pool) = pool {
+        let row = sqlx::query_as::<_, (i64,)>(
+            "INSERT INTO rate_limits (key, window_start, count, expires_at) \
+             VALUES ($1, NOW(), 1, NOW() + make_interval(secs => $3)) \
+             ON CONFLICT (key) DO UPDATE SET \
+                 count = CASE \
+                     WHEN rate_limits.window_start <= NOW() - make_interval(secs => $2) \
+                         THEN 1 \
+                     ELSE rate_limits.count + 1 \
+                 END, \
+                 window_start = CASE \
+                     WHEN rate_limits.window_start <= NOW() - make_interval(secs => $2) \
+                         THEN NOW() \
+                     ELSE rate_limits.window_start \
+                 END, \
+                 expires_at = NOW() + make_interval(secs => $3) \
+             RETURNING count",
+        )
+        .bind(&key)
+        .bind(EMAIL_RATE_WINDOW.as_secs() as i64)
+        .bind(EMAIL_RATE_WINDOW.as_secs() as i64 * 5)
+        .fetch_one(pool)
+        .await;
+        match row {
+            Ok((count,)) => count as usize <= EMAIL_REQUEST_RATE_LIMIT_PER_HOUR,
+            // Store failure: fail OPEN for the safety-net limiter — it is
+            // not an authorization boundary (same policy as the primary
+            // rate limiter), but the error is logged by the caller path.
+            Err(e) => {
+                tracing::error!(error = %e, "Shared email rate-limit counter failed");
+                true
+            }
+        }
+    } else {
+        let now = Instant::now();
+        let mut bucket = EMAIL_REQUEST_RATE_LIMITS.entry(key).or_default();
 
-    while bucket
-        .front()
-        .is_some_and(|t| now.duration_since(*t) >= EMAIL_RATE_WINDOW)
-    {
-        bucket.pop_front();
-    }
+        while bucket
+            .front()
+            .is_some_and(|t| now.duration_since(*t) >= EMAIL_RATE_WINDOW)
+        {
+            bucket.pop_front();
+        }
 
-    if bucket.len() >= EMAIL_REQUEST_RATE_LIMIT_PER_HOUR {
-        return false;
+        if bucket.len() >= EMAIL_REQUEST_RATE_LIMIT_PER_HOUR {
+            return false;
+        }
+        bucket.push_back(now);
+        true
     }
-    bucket.push_back(now);
-    true
 }
 
 /// Compute the session fingerprint for the current client, reusing the same
@@ -874,7 +913,7 @@ pub async fn request_password_reset(
     State(state): State<AppState>,
     Json(req): Json<PasswordResetRequest>,
 ) -> Result<Json<MessageResponse>> {
-    if !allow_email_request(&req.email) {
+    if !allow_email_request(state.db_pool.as_ref().map(|p| p.as_ref()), &req.email).await {
         return Err(SenseiError::HttpError {
             status: 429,
             message: "Too many password reset requests for this email. Try again later."
@@ -1001,7 +1040,7 @@ pub async fn request_email_verification(
     State(state): State<AppState>,
     Json(req): Json<VerifyEmailRequest>,
 ) -> Result<Json<MessageResponse>> {
-    if !allow_email_request(&req.email) {
+    if !allow_email_request(state.db_pool.as_ref().map(|p| p.as_ref()), &req.email).await {
         return Err(SenseiError::HttpError {
             status: 429,
             message: "Too many verification requests for this email. Try again later.".to_string(),

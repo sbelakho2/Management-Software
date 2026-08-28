@@ -13,9 +13,8 @@ CREATE EXTENSION IF NOT EXISTS pg_trgm;
 CREATE INDEX IF NOT EXISTS idx_users_email_trgm ON users USING GIN (email gin_trgm_ops);
 CREATE INDEX IF NOT EXISTS idx_users_name_trgm ON users USING GIN (name gin_trgm_ops);
 CREATE INDEX IF NOT EXISTS idx_accounts_name_trgm ON accounts USING GIN (name gin_trgm_ops);
-CREATE INDEX IF NOT EXISTS idx_contacts_name_trgm ON contacts USING GIN (name gin_trgm_ops);
+CREATE INDEX IF NOT EXISTS idx_contacts_name_trgm ON contacts USING GIN (last_name gin_trgm_ops);
 CREATE INDEX IF NOT EXISTS idx_products_name_trgm ON products USING GIN (name gin_trgm_ops);
-CREATE INDEX IF NOT EXISTS idx_products_sku_trgm ON products USING GIN (sku gin_trgm_ops);
 
 -- ── User Notification Preferences ────────────────────────────────────────────
 -- Simple per-user preferences model complementing the channel/event-type
@@ -53,13 +52,14 @@ BEGIN
     SELECT 'account'::text, a.id, a.name, similarity(a.name, query)
     FROM accounts a WHERE a.tenant_id = p_tenant_id AND a.name ILIKE '%' || query || '%'
     UNION ALL
-    -- Search contacts
-    SELECT 'contact'::text, c.id, c.name, similarity(c.name, query)
-    FROM contacts c WHERE c.tenant_id = p_tenant_id AND c.name ILIKE '%' || query || '%'
+    -- Search contacts (first/last name — the actual schema)
+    SELECT 'contact'::text, c.id, c.last_name, similarity(COALESCE(c.last_name,''), query) + similarity(COALESCE(c.first_name,''), query) * 0.5
+    FROM contacts c WHERE c.tenant_id = p_tenant_id
+       AND (COALESCE(c.last_name,'') ILIKE '%' || query || '%' OR COALESCE(c.first_name,'') ILIKE '%' || query || '%')
     UNION ALL
-    -- Search products
-    SELECT 'product'::text, p.id, p.name, similarity(p.name, query) + similarity(COALESCE(p.sku,''), query) * 0.3
-    FROM products p WHERE p.tenant_id = p_tenant_id AND (p.name ILIKE '%' || query || '%' OR p.sku ILIKE '%' || query || '%')
+    -- Search products (product_number is the unique business key)
+    SELECT 'product'::text, p.id, p.name, similarity(p.name, query) + similarity(COALESCE(p.product_number,''), query) * 0.3
+    FROM products p WHERE p.tenant_id = p_tenant_id AND (p.name ILIKE '%' || query || '%' OR p.product_number ILIKE '%' || query || '%')
     ORDER BY relevance DESC
     LIMIT 50;
 END;

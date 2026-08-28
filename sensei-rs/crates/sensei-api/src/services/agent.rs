@@ -115,7 +115,6 @@ pub async fn execute_tool(
     // Schema enforcement: the declared input schema is checked (type-level)
     // before dispatch — the schema is a contract, not descriptive metadata.
     validate_args(tool, &args)?;
-    let now = chrono::Utc::now();
     // Timeout enforcement (item 16): the declared timeout is a contract.
     let _ = tool.timeout_ms;
     match tool.name.as_str() {
@@ -130,9 +129,17 @@ pub async fn execute_tool(
                 .await
                 .map_err(|e| e.to_string())?;
             let data = serde_json::to_value(&wo).map_err(|e| e.to_string())?;
+            // Item 19: the evidence carries the SOURCE record's last update
+            // (business observation time), never the tool-call time.
+            let observed_at = wo.updated_at;
+            let revision = observed_at.timestamp() as u32;
             Ok(ToolResult::new(
                 data,
-                vec![EvidenceRef::new(format!("work_order:{id}"), 1, now)],
+                vec![EvidenceRef::new(
+                    format!("work_order:{id}"),
+                    revision,
+                    observed_at,
+                )],
                 &format!("get_work_order@v{}", tool.version),
             ))
         }
@@ -148,9 +155,21 @@ pub async fn execute_tool(
                 .map_err(|e| e.to_string())?;
             items.truncate(tool.max_rows);
             let data = serde_json::to_value(&items).map_err(|e| e.to_string())?;
+            // Item 19: freshness is anchored to the newest source record's
+            // last update — a three-month-old stock row is NOT fresh.
+            let observed_at = items
+                .iter()
+                .map(|i| i.updated_at)
+                .max()
+                .unwrap_or_else(chrono::Utc::now);
+            let revision = observed_at.timestamp() as u32;
             Ok(ToolResult::new(
                 data,
-                vec![EvidenceRef::new(format!("inventory:{product_id}"), 1, now)],
+                vec![EvidenceRef::new(
+                    format!("inventory:{product_id}"),
+                    revision,
+                    observed_at,
+                )],
                 &format!("get_inventory_balance@v{}", tool.version),
             ))
         }
@@ -167,18 +186,19 @@ pub async fn execute_tool(
                 .ok_or_else(|| "calculate_takt_for_scope requires date (YYYY-MM-DD)".to_string())?;
 
             // ── Authoritative calendar: shifts + production_calendar ──
-            let calendar: Vec<(i64, i64, i64, bool)> = sqlx::query_as(
-                "SELECT c.scheduled_seconds, c.breaks_seconds, \
-                        c.planned_downtime_seconds, c.is_holiday \
-                 FROM production_calendar c \
-                 WHERE c.tenant_id = $1 AND c.site_id = $2 AND c.calendar_date = $3",
-            )
-            .bind(ctx.tenant_id)
-            .bind(site_id)
-            .bind(date)
-            .fetch_all(pool.ok_or_else(|| "Scope tool requires a database pool".to_string())?)
-            .await
-            .map_err(|e| format!("Calendar read failed: {e}"))?;
+            let calendar: Vec<(i64, i64, i64, bool, chrono::DateTime<chrono::Utc>)> =
+                sqlx::query_as(
+                    "SELECT c.scheduled_seconds, c.breaks_seconds, \
+                            c.planned_downtime_seconds, c.is_holiday, c.updated_at \
+                     FROM production_calendar c \
+                     WHERE c.tenant_id = $1 AND c.site_id = $2 AND c.calendar_date = $3",
+                )
+                .bind(ctx.tenant_id)
+                .bind(site_id)
+                .bind(date)
+                .fetch_all(pool.ok_or_else(|| "Scope tool requires a database pool".to_string())?)
+                .await
+                .map_err(|e| format!("Calendar read failed: {e}"))?;
             let scheduled: u64 = calendar.iter().map(|c| c.0 as u64).sum();
             let breaks: u64 = calendar.iter().map(|c| c.1 as u64).sum();
             let downtime: u64 = calendar.iter().map(|c| c.2 as u64).sum();
@@ -203,6 +223,35 @@ pub async fn execute_tool(
             .await
             .map_err(|e| format!("Demand read failed: {e}"))?;
 
+            // ── Source record time (item 19): the newest calendar/demand
+            //    mutation for the window — evidence freshness is anchored
+            //    to when the FACTORY facts last changed, not tool-call time.
+            let calendar_touched: Option<chrono::DateTime<chrono::Utc>> = sqlx::query_scalar(
+                "SELECT MAX(c.updated_at) FROM production_calendar c \
+                 WHERE c.tenant_id = $1 AND c.site_id = $2 AND c.calendar_date = $3",
+            )
+            .bind(ctx.tenant_id)
+            .bind(site_id)
+            .bind(date)
+            .fetch_one(pool.ok_or_else(|| "Scope tool requires a database pool".to_string())?)
+            .await
+            .map_err(|e| format!("Calendar touched-at read failed: {e}"))?;
+            let demand_touched: Option<chrono::DateTime<chrono::Utc>> = sqlx::query_scalar(
+                "SELECT MAX(so.updated_at) FROM sales_orders so \
+                 WHERE so.tenant_id = $1 AND so.status NOT IN ('completed', 'cancelled', 'closed') \
+                   AND (so.delivery_date IS NULL OR so.delivery_date::date <= $2)",
+            )
+            .bind(ctx.tenant_id)
+            .bind(date)
+            .fetch_one(pool.ok_or_else(|| "Scope tool requires a database pool".to_string())?)
+            .await
+            .map_err(|e| format!("Demand touched-at read failed: {e}"))?;
+            let observed_at = calendar_touched
+                .into_iter()
+                .chain(demand_touched)
+                .max()
+                .unwrap_or_else(chrono::Utc::now);
+
             let available = sensei_services::tps::AvailableProductionTime {
                 scheduled_seconds: scheduled,
                 breaks_seconds: breaks,
@@ -223,8 +272,8 @@ pub async fn execute_tool(
                 data,
                 vec![EvidenceRef::new(
                     format!("calendar:site={site_id}:date={date}"),
-                    1,
-                    now,
+                    observed_at.timestamp() as u32,
+                    observed_at,
                 )],
                 &format!("calculate_takt_for_scope@v{}", tool.version),
             ))
@@ -260,9 +309,12 @@ pub async fn execute_tool(
                 "takt_seconds": takt.takt_seconds.to_string(),
                 "net_available_seconds": takt.net_available_seconds,
             });
+            // Item 19: a formula result is a PURE computation — its evidence
+            // is the formula contract, not a fake "observed now" fact.
+            let observed_at = chrono::Utc::now();
             Ok(ToolResult::new(
                 data,
-                vec![EvidenceRef::new("tps:calculate_takt", 1, now)],
+                vec![EvidenceRef::new("tps:calculate_takt", 1, observed_at)],
                 &format!("calculate_takt@v{}", tool.version),
             ))
         }

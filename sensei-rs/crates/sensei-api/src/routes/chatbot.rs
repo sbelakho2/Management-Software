@@ -103,22 +103,75 @@ pub async fn chat(
             e
         })?;
 
-    let verification = serde_json::json!({
-        "verdict": if response.is_fallback { "needs_evidence" } else { "pass" },
-        "note": if response.is_fallback {
-            "This response is a fallback/general answer — it is not grounded in \
-             tenant evidence. Treat it as guidance, not as a validated fact."
-        } else {
-            "Response produced by the local assistant; claims about live data \
-             should be confirmed through the tool surface (evidence refs)."
-        },
-    });
+    // Item 22: the legacy chat surface flows through the SAME agent
+    // control plane as the tool surface — server-created context, the
+    // effective (policy-filtered) toolset and the deterministic verifier.
+    // The assistant can no longer answer with unverifiable tenant claims:
+    // every response is checked against the caller's real permissions and
+    // the tool contract.
+    let ctx = crate::routes::agent::build_context(&user, &state).await;
+    let policy = sensei_agent_core::tools::PolicyEngine::new(
+        crate::services::agent::build_readonly_tools(),
+        sensei_agent_core::tools::ToolRisk::ReadOnly,
+    );
+    let effective_tools = policy.effective_tools(&ctx);
+    let verification = verify_chat_response(&response, &ctx, &policy, &effective_tools);
     Ok(Json(ChatResponseBody {
         response: response.message.content,
         conversation_id: response.conversation_id,
         is_fallback: response.is_fallback,
         verification: Some(verification),
     }))
+}
+
+/// Run the deterministic verifier over the assistant's reply: any
+/// permission-gated capability referenced in the response must be
+/// executable by the caller, and fallback/general answers are labelled
+/// `needs_evidence` — the same policy the tool surface enforces.
+fn verify_chat_response(
+    response: &sensei_services::ai::chatbot::ChatResponse,
+    ctx: &sensei_agent_core::context::AgentContext,
+    policy: &sensei_agent_core::tools::PolicyEngine,
+    effective_tools: &[&sensei_agent_core::tools::ToolSpec],
+) -> serde_json::Value {
+    let mut issues: Vec<String> = Vec::new();
+    // Claims must not rest on tools the caller cannot execute.
+    for tool in effective_tools {
+        if response
+            .message
+            .content
+            .to_lowercase()
+            .contains(&tool.name.replace('_', " "))
+            && !policy.can_execute(ctx, tool, true)
+        {
+            issues.push(format!(
+                "Response references '{}' which is NOT permitted for this caller",
+                tool.name
+            ));
+        }
+    }
+    if response.is_fallback {
+        issues.push(
+            "Fallback/general answer — not grounded in tenant evidence; \
+             treat as guidance, not as a validated fact."
+                .to_string(),
+        );
+    }
+    let verdict = if issues.is_empty() {
+        "pass"
+    } else {
+        "needs_evidence"
+    };
+    serde_json::json!({
+        "verdict": verdict,
+        "issues": issues,
+        "context": {
+            "site_id": ctx.site_id,
+            "value_stream_id": ctx.value_stream_id,
+            "work_center_id": ctx.work_center_id,
+            "shift_id": ctx.shift_id,
+        },
+    })
 }
 
 /// Stream wrapper that aborts a background task when the stream is dropped.

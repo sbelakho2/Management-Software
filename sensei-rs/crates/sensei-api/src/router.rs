@@ -830,6 +830,11 @@ pub fn build_router(state: AppState) -> Router {
             "/api/v1/users/{id}/roles",
             put(routes::users::update_user_roles),
         )
+        .route(
+            "/api/v1/users/{id}/assignment",
+            get(routes::employee_assignments::get_employee_assignment)
+                .put(routes::employee_assignments::set_employee_assignment),
+        )
         // ── Tenants Routes ──────────────────────────────────────────
         .route(
             "/api/v1/tenants",
@@ -1999,6 +2004,10 @@ pub fn build_router(state: AppState) -> Router {
         .route(
             "/api/v1/tier-meetings/{id}/complete",
             post(routes::tier_meetings::complete_tier_meeting),
+        )
+        .route(
+            "/api/v1/tier-meetings/{id}/escalate",
+            post(routes::tier_meetings::escalate_issue),
         )
         .route(
             "/api/v1/agent/execute",

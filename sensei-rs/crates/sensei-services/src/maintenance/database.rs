@@ -157,6 +157,10 @@ impl MaintenanceService for DatabaseMaintenanceService {
             &request.priority
         };
 
+        let mut wr_tx =
+            self.pool.begin().await.map_err(|e| {
+                SenseiError::Database(format!("Failed to begin work request tx: {e}"))
+            })?;
         let row = sqlx::query_as::<_, WorkRequestRow>(
             r#"INSERT INTO maintenance_work_requests (id, tenant_id, equipment_id, title, description, priority, status, requested_by, assigned_to, created_at, completed_at)
                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,NULL)
@@ -165,8 +169,26 @@ impl MaintenanceService for DatabaseMaintenanceService {
         .bind(id).bind(tenant_id).bind(request.equipment_id).bind(&request.title)
         .bind(&request.description).bind(priority).bind(status)
         .bind(request.requested_by).bind(request.assigned_to).bind(now)
-        .fetch_one(&self.pool)
+        .fetch_one(&mut *wr_tx)
         .await.map_err(|e| SenseiError::Database(format!("Failed to create work request: {e}")))?;
+
+        sensei_db::outbox::enqueue_outbox(
+            &mut wr_tx,
+            tenant_id,
+            "maintenance_work_request",
+            id,
+            "sensei.maintenance.work-request.created",
+            serde_json::json!({
+                "equipment_id": request.equipment_id,
+                "status": status,
+                "priority": priority,
+            }),
+        )
+        .await?;
+        wr_tx
+            .commit()
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to commit work request: {e}")))?;
 
         Ok(wr_row_to_domain(row))
     }

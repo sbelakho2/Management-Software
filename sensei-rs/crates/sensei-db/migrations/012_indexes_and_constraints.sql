@@ -6,6 +6,10 @@
 
 -- ── CRM Indexes ───────────────────────────────────────────────────────────
 CREATE INDEX IF NOT EXISTS idx_accounts_tenant_type ON accounts(tenant_id, account_type);
+-- pg_trgm provides the trigram GIN operator class used by the name/search
+-- indexes below. Must be created BEFORE the first gin_trgm_ops index.
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+
 CREATE INDEX IF NOT EXISTS idx_contacts_name_trgm ON contacts USING gin(last_name gin_trgm_ops);
 
 -- ── RFQ / Quote Indexes ───────────────────────────────────────────────────

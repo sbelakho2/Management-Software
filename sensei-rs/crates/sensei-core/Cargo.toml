@@ -17,6 +17,7 @@ tracing.workspace = true
 dashmap.workspace = true
 once_cell.workspace = true
 regex = "1.12"
+rust_decimal.workspace = true
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 tokio.workspace = true

@@ -4,7 +4,7 @@
 //! movement management backed by PostgreSQL tables. Implements [`SupplyChainService`].
 
 use async_trait::async_trait;
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use sensei_core::error::{Result, SenseiError};
 use sensei_core::pagination::PaginatedResponse;
 use serde_json;
@@ -200,6 +200,7 @@ struct InventoryRow {
     lot_number: Option<String>,
     reorder_point: i64,
     reorder_quantity: i64,
+    updated_at: DateTime<Utc>,
 }
 
 #[derive(Debug, Clone, sqlx::FromRow)]
@@ -307,6 +308,7 @@ fn inv_row_to_domain(r: InventoryRow) -> InventoryItem {
         lot_number: r.lot_number,
         reorder_point: r.reorder_point,
         reorder_quantity: r.reorder_quantity,
+        updated_at: r.updated_at,
     }
 }
 
@@ -796,7 +798,7 @@ impl SupplyChainService for DatabaseSupplyChainService {
         let rows = sqlx::query_as::<_, InventoryRow>(
             "SELECT id, tenant_id, product_id, product_name, \
                     quantity_on_hand::bigint, quantity_reserved::bigint, quantity_available::bigint, \
-                    location, lot_number, reorder_point::bigint, reorder_quantity::bigint \
+                    location, lot_number, reorder_point::bigint, reorder_quantity::bigint, updated_at \
              FROM inventory_items WHERE product_id=$1 AND tenant_id=$2",
         ).bind(product_id).bind(tenant_id).fetch_all(&self.pool).await
             .map_err(|e| SenseiError::Database(format!("Failed to get inventory: {e}")))?;
@@ -816,7 +818,7 @@ impl SupplyChainService for DatabaseSupplyChainService {
         let items: Vec<InventoryRow> = sqlx::query_as(
             r#"SELECT id, tenant_id, product_id, product_name,
                       quantity_on_hand::bigint, quantity_reserved::bigint, quantity_available::bigint,
-                      location, lot_number, reorder_point::bigint, reorder_quantity::bigint
+                      location, lot_number, reorder_point::bigint, reorder_quantity::bigint, updated_at
                FROM inventory_items
                WHERE tenant_id=$1 AND ($2::text IS NULL OR location=$2) ORDER BY product_name LIMIT $3 OFFSET $4"#,
         ).bind(tenant_id).bind(location).bind(per_page as i64).bind(offset as i64).fetch_all(&self.pool).await
@@ -860,7 +862,7 @@ impl SupplyChainService for DatabaseSupplyChainService {
                  AND quantity_on_hand + $1::double precision >= 0
                RETURNING id, tenant_id, product_id, product_name,
                          quantity_on_hand::bigint, quantity_reserved::bigint, quantity_available::bigint,
-                         location, lot_number, reorder_point::bigint, reorder_quantity::bigint"#,
+                         location, lot_number, reorder_point::bigint, reorder_quantity::bigint, updated_at"#,
         ).bind(quantity_change).bind(product_id).bind(tenant_id).bind(location)
             .fetch_optional(&mut *tx).await
             .map_err(|e| SenseiError::Database(format!("Failed to adjust inventory: {e}")))?
@@ -1324,6 +1326,24 @@ impl SupplyChainService for DatabaseSupplyChainService {
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to reload PO: {e}")))?;
 
+        // Item 28: the receipt (state mutation + inventory + ledger) and
+        // its integration-driving event are ONE transaction.
+        sensei_db::outbox::enqueue_outbox(
+            &mut tx,
+            tenant_id,
+            "purchase_order",
+            id,
+            "sensei.supply-chain.po.received",
+            serde_json::json!({
+                "po_number": updated.po_number,
+                "supplier_id": updated.supplier_id,
+                "received_lines": remaining.iter().map(|(pid, name, qty)| {
+                    serde_json::json!({ "product_id": pid, "product_name": name, "quantity": qty })
+                }).collect::<Vec<_>>(),
+            }),
+        )
+        .await?;
+
         tx.commit()
             .await
             .map_err(|e| SenseiError::Database(format!("Failed to commit full receipt: {e}")))?;
@@ -1343,7 +1363,7 @@ impl SupplyChainService for DatabaseSupplyChainService {
             r#"UPDATE inventory_items SET product_name=$1, reorder_point=$2, reorder_quantity=$3 WHERE id=$4 AND tenant_id=$5
                RETURNING id, tenant_id, product_id, product_name,
                          quantity_on_hand::bigint, quantity_reserved::bigint, quantity_available::bigint,
-                         location, lot_number, reorder_point::bigint, reorder_quantity::bigint"#,
+                         location, lot_number, reorder_point::bigint, reorder_quantity::bigint, updated_at"#,
         ).bind(&item.product_name).bind(item.reorder_point).bind(item.reorder_quantity).bind(id).bind(tenant_id)
             .fetch_optional(&self.pool).await.map_err(|e| SenseiError::Database(format!("Failed to update inventory: {e}")))?
             .ok_or_else(|| SenseiError::NotFound(format!("Inventory item {id} not found")))?;

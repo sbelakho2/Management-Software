@@ -5,6 +5,7 @@
 //! notifications, integrations, or state transitions.
 
 use crate::types::{new_correlation_id, now, CorrelationId, EventId, Timestamp};
+use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use std::any::Any;
 use uuid::Uuid;
@@ -956,15 +957,16 @@ pub struct CostRollupCompleted {
     pub metadata: EventMetadata,
     /// The product's unique identifier.
     pub product_id: Uuid,
-    /// Computed total cost.
-    pub total_cost: f64,
+    /// Computed total cost (exact Decimal — never f64 across the
+    /// integration boundary, item 25).
+    pub total_cost: Decimal,
     /// Currency code.
     pub currency: String,
 }
 
 impl CostRollupCompleted {
     /// Create a new [`CostRollupCompleted`].
-    pub fn new(tenant_id: Uuid, product_id: Uuid, total_cost: f64, currency: String) -> Self {
+    pub fn new(tenant_id: Uuid, product_id: Uuid, total_cost: Decimal, currency: String) -> Self {
         Self {
             metadata: EventMetadata::new("finance.cost-rollup.completed", tenant_id),
             product_id,
@@ -1011,10 +1013,10 @@ pub struct JournalEntryPosted {
     pub metadata: EventMetadata,
     /// The journal entry's unique identifier.
     pub entry_id: Uuid,
-    /// Total debits.
-    pub debit_total: f64,
-    /// Total credits.
-    pub credit_total: f64,
+    /// Total debits (exact Decimal, item 25).
+    pub debit_total: Decimal,
+    /// Total credits (exact Decimal, item 25).
+    pub credit_total: Decimal,
     /// Accounting period.
     pub period: String,
 }
@@ -1024,8 +1026,8 @@ impl JournalEntryPosted {
     pub fn new(
         tenant_id: Uuid,
         entry_id: Uuid,
-        debit_total: f64,
-        credit_total: f64,
+        debit_total: Decimal,
+        credit_total: Decimal,
         period: String,
     ) -> Self {
         Self {
@@ -1077,8 +1079,8 @@ pub struct InvoiceCreatedEvent {
     pub invoice_id: Uuid,
     /// Type of invoice (payable / receivable).
     pub invoice_type: String,
-    /// Invoice amount.
-    pub amount: f64,
+    /// Invoice amount (exact Decimal, item 25).
+    pub amount: Decimal,
     /// Currency code.
     pub currency: String,
     /// Counterparty name or identifier.
@@ -1091,7 +1093,7 @@ impl InvoiceCreatedEvent {
         tenant_id: Uuid,
         invoice_id: Uuid,
         invoice_type: String,
-        amount: f64,
+        amount: Decimal,
         currency: String,
         counterparty: String,
     ) -> Self {
@@ -1145,8 +1147,8 @@ pub struct PaymentProcessedEvent {
     pub payment_id: Uuid,
     /// Type of payment (received / issued).
     pub payment_type: String,
-    /// Payment amount.
-    pub amount: f64,
+    /// Payment amount (exact Decimal, item 25).
+    pub amount: Decimal,
     /// Currency code.
     pub currency: String,
     /// Counterparty unique identifier.
@@ -1159,7 +1161,7 @@ impl PaymentProcessedEvent {
         tenant_id: Uuid,
         payment_id: Uuid,
         payment_type: String,
-        amount: f64,
+        amount: Decimal,
         currency: String,
         counterparty_id: Uuid,
     ) -> Self {
@@ -1789,8 +1791,8 @@ pub struct QuoteCreatedEvent {
     pub quote_number: String,
     /// The RFQ's unique identifier.
     pub rfq_id: Uuid,
-    /// Total amount.
-    pub total_amount: f64,
+    /// Total amount (exact Decimal, item 25).
+    pub total_amount: Decimal,
     /// Currency code.
     pub currency: String,
 }
@@ -1802,7 +1804,7 @@ impl QuoteCreatedEvent {
         quote_id: Uuid,
         quote_number: String,
         rfq_id: Uuid,
-        total_amount: f64,
+        total_amount: Decimal,
         currency: String,
     ) -> Self {
         Self {
@@ -1855,13 +1857,18 @@ pub struct QuoteApprovedEvent {
     pub quote_id: Uuid,
     /// ID of the user who approved.
     pub approved_by_id: Uuid,
-    /// Total amount approved.
-    pub total_amount: f64,
+    /// Total amount approved (exact Decimal, item 25).
+    pub total_amount: Decimal,
 }
 
 impl QuoteApprovedEvent {
     /// Create a new [`QuoteApprovedEvent`].
-    pub fn new(tenant_id: Uuid, quote_id: Uuid, approved_by_id: Uuid, total_amount: f64) -> Self {
+    pub fn new(
+        tenant_id: Uuid,
+        quote_id: Uuid,
+        approved_by_id: Uuid,
+        total_amount: Decimal,
+    ) -> Self {
         Self {
             metadata: EventMetadata::new("supply-chain.quote.approved", tenant_id),
             quote_id,
@@ -1964,8 +1971,8 @@ pub struct SalesOrderCreatedEvent {
     pub so_number: String,
     /// The account's unique identifier.
     pub account_id: Uuid,
-    /// Total amount.
-    pub total_amount: f64,
+    /// Total amount (exact Decimal, item 25).
+    pub total_amount: Decimal,
     /// Currency code.
     pub currency: String,
 }
@@ -1977,7 +1984,7 @@ impl SalesOrderCreatedEvent {
         sales_order_id: Uuid,
         so_number: String,
         account_id: Uuid,
-        total_amount: f64,
+        total_amount: Decimal,
         currency: String,
     ) -> Self {
         Self {
@@ -2032,8 +2039,8 @@ pub struct PurchaseOrderCreatedEvent {
     pub po_number: String,
     /// The supplier's unique identifier.
     pub supplier_id: Uuid,
-    /// Total amount.
-    pub total_amount: f64,
+    /// Total amount (exact Decimal, item 25).
+    pub total_amount: Decimal,
     /// Currency code.
     pub currency: String,
 }
@@ -2045,7 +2052,7 @@ impl PurchaseOrderCreatedEvent {
         purchase_order_id: Uuid,
         po_number: String,
         supplier_id: Uuid,
-        total_amount: f64,
+        total_amount: Decimal,
         currency: String,
     ) -> Self {
         Self {
@@ -3058,8 +3065,8 @@ pub struct OpportunityStageChangedEvent {
     pub old_stage: String,
     /// New pipeline stage.
     pub new_stage: String,
-    /// Opportunity amount.
-    pub amount: f64,
+    /// Opportunity amount (exact Decimal, item 25).
+    pub amount: Decimal,
 }
 
 impl OpportunityStageChangedEvent {
@@ -3069,7 +3076,7 @@ impl OpportunityStageChangedEvent {
         opportunity_id: Uuid,
         old_stage: String,
         new_stage: String,
-        amount: f64,
+        amount: Decimal,
     ) -> Self {
         Self {
             metadata: EventMetadata::new("crm.opportunity.stage-changed", tenant_id),

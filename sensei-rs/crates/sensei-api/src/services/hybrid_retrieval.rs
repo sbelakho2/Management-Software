@@ -101,7 +101,10 @@ pub async fn hybrid_search(
 
     // ACL prefilter (item 24): role-restricted knowledge packs are
     // invisible to callers without the role — forbidden records never
-    // enter the candidate corpus (never retrieve-then-redact).
+    // enter the candidate corpus (never retrieve-then-redact). Effective
+    // filter (item 29): only EFFECTIVE documents inside their validity
+    // window are retrievable — superseded/archived/draft knowledge never
+    // enters the corpus.
     let dense: Vec<(String, Uuid, String, String, f32)> = sqlx::query_as(
         "SELECT de.document_type, de.document_id, de.title, \
                 COALESCE(es.data->>'authority', 'employee note'), \
@@ -117,6 +120,13 @@ pub async fn hybrid_search(
                 OR es.data->'allowed_roles' = '[]'::jsonb \
                 OR EXISTS (SELECT 1 FROM jsonb_array_elements_text(es.data->'allowed_roles') r \
                            WHERE r = ANY($5::text[]))) \
+           AND (es.data IS NULL OR COALESCE(es.data->>'status', 'effective') = 'effective') \
+           AND (es.data IS NULL \
+                OR NOT es.data ? 'effective_from' \
+                OR (es.data->>'effective_from')::timestamptz <= $6::timestamptz) \
+           AND (es.data IS NULL \
+                OR NOT es.data ? 'effective_to' \
+                OR (es.data->>'effective_to')::timestamptz >= $6::timestamptz) \
          ORDER BY de.embedding <=> $4::vector \
          LIMIT $2",
     )
@@ -124,23 +134,45 @@ pub async fn hybrid_search(
     .bind(limit)
     .bind(format!("[{serialized}]"))
     .bind(caller_roles)
+    .bind(chrono::Utc::now())
     .fetch_all(pool)
     .await
     .map_err(|e| format!("Dense retrieval failed: {e}"))?;
 
-    // Lexical leg: ILIKE + trigram similarity (BM25-ish proxy).
+    // Lexical leg: ILIKE + trigram similarity (BM25-ish proxy). The same
+    // effective-window + ACL filters apply (item 29): obsolete documents
+    // never enter the corpus.
     let escaped = query.replace('%', "\\%").replace('_', "\\_");
     let lexical: Vec<(String, Uuid, String, String, f32)> = sqlx::query_as(
-        "SELECT document_type, document_id, title, authority, \\
-                GREATEST(similarity(title, $3), similarity(content, $3)) AS sim \\
-         FROM document_embeddings \\
-         WHERE tenant_id = $1 \\
-           AND (title ILIKE '%' || $3 || '%' OR content ILIKE '%' || $3 || '%') \\
+        "SELECT de.document_type, de.document_id, de.title, \
+                COALESCE(es.data->>'authority', 'employee note'), \
+                GREATEST(similarity(de.title, $3), similarity(de.content, $3)) AS sim \
+         FROM document_embeddings de \
+         LEFT JOIN entity_store es \
+           ON es.tenant_id = de.tenant_id \
+          AND es.entity_type = 'knowledge_pack' \
+          AND es.id = de.document_id \
+         WHERE de.tenant_id = $1 \
+           AND (de.title ILIKE '%' || $3 || '%' OR de.content ILIKE '%' || $3 || '%') \
+           AND (es.data IS NULL \
+                OR NOT es.data ? 'allowed_roles' \
+                OR es.data->'allowed_roles' = '[]'::jsonb \
+                OR EXISTS (SELECT 1 FROM jsonb_array_elements_text(es.data->'allowed_roles') r \
+                           WHERE r = ANY($5::text[]))) \
+           AND (es.data IS NULL OR COALESCE(es.data->>'status', 'effective') = 'effective') \
+           AND (es.data IS NULL \
+                OR NOT es.data ? 'effective_from' \
+                OR (es.data->>'effective_from')::timestamptz <= $4::timestamptz) \
+           AND (es.data IS NULL \
+                OR NOT es.data ? 'effective_to' \
+                OR (es.data->>'effective_to')::timestamptz >= $4::timestamptz) \
          ORDER BY sim DESC LIMIT $2",
     )
     .bind(tenant_id)
     .bind(limit)
     .bind(&escaped)
+    .bind(chrono::Utc::now())
+    .bind(caller_roles)
     .fetch_all(pool)
     .await
     .map_err(|e| format!("Lexical retrieval failed: {e}"))?;

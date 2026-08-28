@@ -459,6 +459,18 @@ pub struct TierMeeting {
     /// 1 = line/cell every shift, 2 = value stream, 3 = plant, 4 = site.
     pub tier_level: u8,
     pub title: String,
+    /// Topology anchors (item 15): the meeting is tied to the SAME
+    /// organizational objects the rest of the operating system uses —
+    /// never a free-form prose field alone.
+    pub site_id: Option<Uuid>,
+    pub value_stream_id: Option<Uuid>,
+    pub work_center_id: Option<Uuid>,
+    pub shift_id: Option<Uuid>,
+    pub leader_id: Option<Uuid>,
+    #[serde(default)]
+    pub attendee_ids: Vec<Uuid>,
+    /// planned | in_progress | completed | cancelled | escalated
+    pub status: String,
     pub area: Option<String>,
     pub scheduled_at: DateTime<Utc>,
     pub started_at: Option<DateTime<Utc>>,

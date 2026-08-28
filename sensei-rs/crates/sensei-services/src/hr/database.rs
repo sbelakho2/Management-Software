@@ -212,6 +212,11 @@ impl HrService for DatabaseHrService {
             &id.as_simple().encode_lower(&mut Uuid::encode_buffer())[..8]
         );
 
+        let mut emp_tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to begin employee tx: {e}")))?;
         let row = sqlx::query_as::<_, EmployeeRow>(
             r#"
             INSERT INTO employees (id, tenant_id, employee_code, user_id, full_name, email, department, job_title, employment_type, status, hire_date, termination_date, supervisor_id, created_at)
@@ -223,9 +228,23 @@ impl HrService for DatabaseHrService {
         .bind(&employee.full_name).bind(&employee.email).bind(&employee.department)
         .bind(&employee.job_title).bind(&employee.employment_type).bind(employee.hire_date)
         .bind(employee.supervisor_id).bind(now)
-        .fetch_one(&self.pool)
+        .fetch_one(&mut *emp_tx)
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to create employee: {e}")))?;
+
+        sensei_db::outbox::enqueue_outbox(
+            &mut emp_tx,
+            tenant_id,
+            "employee",
+            id,
+            "sensei.hr.employee.onboarded",
+            serde_json::json!({ "employee_code": employee_code, "department": employee.department }),
+        )
+        .await?;
+        emp_tx
+            .commit()
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to commit employee: {e}")))?;
 
         Ok(emp_row_to_domain(row))
     }

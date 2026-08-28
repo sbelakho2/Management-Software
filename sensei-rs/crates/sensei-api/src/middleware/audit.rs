@@ -118,7 +118,7 @@ impl AuditLog {
                 tokio::spawn(async move {
                     let outcome = sqlx::query(
                         "INSERT INTO audit_logs \
-                         (timestamp, tenant_id, actor_id, session_id, request_id, action, \
+                         (occurred_at, tenant_id, actor_id, session_id, request_id, action, \
                           resource_type, resource_id, result, source_ip, details) \
                          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)",
                     )
