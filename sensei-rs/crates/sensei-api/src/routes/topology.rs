@@ -12,7 +12,7 @@ use uuid::Uuid;
 
 use crate::state::AppState;
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, sqlx::FromRow)]
 pub struct Site {
     pub id: Uuid,
     pub tenant_id: Uuid,
@@ -23,7 +23,7 @@ pub struct Site {
     pub is_active: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, sqlx::FromRow)]
 pub struct ValueStream {
     pub id: Uuid,
     pub tenant_id: Uuid,
@@ -33,7 +33,7 @@ pub struct ValueStream {
     pub is_active: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, sqlx::FromRow)]
 pub struct ProductFamily {
     pub id: Uuid,
     pub tenant_id: Uuid,
@@ -90,9 +90,11 @@ pub async fn create_site(
         timezone: req.timezone.unwrap_or_else(|| "UTC".to_string()),
         is_active: true,
     };
-    let mut store = state.sites.write(user.tenant_id).await;
-    store.insert(site.id, site.clone());
-    store.persist().await?;
+    state
+        .topology
+        .put_site(&site)
+        .await
+        .map_err(SenseiError::Internal)?;
     Ok(Json(site))
 }
 
@@ -101,13 +103,11 @@ pub async fn list_sites(
     State(state): State<AppState>,
 ) -> Result<Json<Vec<Site>>, SenseiError> {
     user.require_permission("tps:work-center:read")?;
-    let store = state.sites.read(user.tenant_id).await;
-    let mut sites: Vec<Site> = store
-        .values()
-        .filter(|s| s.tenant_id == user.tenant_id)
-        .cloned()
-        .collect();
-    sites.sort_by(|a, b| a.site_code.cmp(&b.site_code));
+    let sites = state
+        .topology
+        .list_sites(user.tenant_id)
+        .await
+        .map_err(SenseiError::Internal)?;
     Ok(Json(sites))
 }
 
@@ -125,9 +125,11 @@ pub async fn create_value_stream(
         description: req.description,
         is_active: true,
     };
-    let mut store = state.value_streams.write(user.tenant_id).await;
-    store.insert(vs.id, vs.clone());
-    store.persist().await?;
+    state
+        .topology
+        .put_value_stream(&vs)
+        .await
+        .map_err(SenseiError::Internal)?;
     Ok(Json(vs))
 }
 
@@ -136,13 +138,11 @@ pub async fn list_value_streams(
     State(state): State<AppState>,
 ) -> Result<Json<Vec<ValueStream>>, SenseiError> {
     user.require_permission("tps:work-center:read")?;
-    let store = state.value_streams.read(user.tenant_id).await;
-    let mut streams: Vec<ValueStream> = store
-        .values()
-        .filter(|s| s.tenant_id == user.tenant_id)
-        .cloned()
-        .collect();
-    streams.sort_by(|a, b| a.name.cmp(&b.name));
+    let streams = state
+        .topology
+        .list_value_streams(user.tenant_id)
+        .await
+        .map_err(SenseiError::Internal)?;
     Ok(Json(streams))
 }
 
@@ -160,9 +160,11 @@ pub async fn create_product_family(
         description: req.description,
         is_active: true,
     };
-    let mut store = state.product_families.write(user.tenant_id).await;
-    store.insert(family.id, family.clone());
-    store.persist().await?;
+    state
+        .topology
+        .put_product_family(&family)
+        .await
+        .map_err(SenseiError::Internal)?;
     Ok(Json(family))
 }
 
@@ -171,12 +173,10 @@ pub async fn list_product_families(
     State(state): State<AppState>,
 ) -> Result<Json<Vec<ProductFamily>>, SenseiError> {
     user.require_permission("tps:work-center:read")?;
-    let store = state.product_families.read(user.tenant_id).await;
-    let mut families: Vec<ProductFamily> = store
-        .values()
-        .filter(|f| f.tenant_id == user.tenant_id)
-        .cloned()
-        .collect();
-    families.sort_by(|a, b| a.name.cmp(&b.name));
+    let families = state
+        .topology
+        .list_product_families(user.tenant_id)
+        .await
+        .map_err(SenseiError::Internal)?;
     Ok(Json(families))
 }

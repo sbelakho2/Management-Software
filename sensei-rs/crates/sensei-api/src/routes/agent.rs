@@ -110,7 +110,10 @@ async fn build_context(user: &AuthenticatedUser, _state: &AppState) -> AgentCont
     let rbac = sensei_auth::rbac::authorization_service();
     let mut permissions = std::collections::HashSet::new();
     for role in &user.roles {
-        for perm in rbac.permissions_for_role(role) {
+        // Same resolution as HTTP authorization: system + tenant-scoped
+        // custom role permissions (item 18 — no disagreement between the
+        // two layers).
+        for perm in rbac.permissions_for_role_in_tenant(user.tenant_id, role) {
             permissions.insert(perm);
         }
     }

@@ -583,17 +583,28 @@ impl RbacService {
         self.roles.keys().cloned().collect()
     }
 
-    /// Permissions a role grants (system roles + the tenant-scoped custom
-    /// role when one exists for the caller's tenant).
+    /// Permissions a role grants (system roles only).
     pub fn permissions_for_role(&self, role_name: &str) -> Vec<String> {
         let mut perms: Vec<String> = self
             .roles
             .get(role_name)
             .map(|p| p.iter().cloned().collect())
             .unwrap_or_default();
-        // Custom roles are tenant-scoped at check time; the caller (agent
-        // context builder) passes the tenant via
-        // permissions_for_role_in_tenant.
+        perms.sort();
+        perms.dedup();
+        perms
+    }
+
+    /// THE effective-permission resolution both HTTP authorization and the
+    /// agent layer must consume (item 18): system role permissions UNION
+    /// the tenant-scoped custom role when one exists for the caller's
+    /// tenant. A user with a valid custom tenant role gets the SAME
+    /// permission set in the agent tools as in the HTTP routes.
+    pub fn permissions_for_role_in_tenant(&self, tenant_id: Uuid, role_name: &str) -> Vec<String> {
+        let mut perms = self.permissions_for_role(role_name);
+        if let Some(custom) = self.tenant_roles.get(&(tenant_id, role_name.to_string())) {
+            perms.extend(custom.iter().cloned());
+        }
         perms.sort();
         perms.dedup();
         perms

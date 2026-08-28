@@ -66,7 +66,9 @@ pub struct ListAuditsParams {
 pub struct PerformAuditRequest {
     pub results: Vec<LswAuditResult>,
     pub notes: Option<String>,
-    pub audited_at: Option<DateTime<Utc>>,
+    /// The event time of the observation (server still owns recorded_at /
+    /// completed_at). Future timestamps are rejected (clock-skew bound).
+    pub observed_at: Option<DateTime<Utc>>,
     /// The scheduled occurrence this audit executes.
     pub occurrence_id: Option<Uuid>,
 }
@@ -341,10 +343,10 @@ pub async fn perform_audit(
     let occurrence_id = req
         .occurrence_id
         .ok_or_else(|| SenseiError::Validation("An occurrence_id is required".to_string()))?;
-    {
-        let mut store = state.lsw_occurrences.write(user.tenant_id).await;
+    let assigned_leader = {
+        let store = state.lsw_occurrences.read(user.tenant_id).await;
         let occurrence = store
-            .get_mut(&occurrence_id)
+            .get(&occurrence_id)
             .filter(|o| o.tenant_id == tenant_id && o.standard_id == standard_id)
             .ok_or_else(|| {
                 SenseiError::NotFound(format!("LSW occurrence {occurrence_id} not found"))
@@ -354,21 +356,35 @@ pub async fn perform_audit(
                 "This LSW occurrence is already completed".to_string(),
             ));
         }
-        let now = Utc::now();
-        if occurrence.started_at.is_none() {
-            occurrence.started_at = Some(now);
-        }
-        occurrence.status = "in_progress".to_string();
-        let checked_revision = occurrence.checklist_revision;
-        store.persist().await?;
-        // The checklist revision the occurrence executes must match the
-        // standard's revision (a stale checklist cannot be audited).
-        if checked_revision != standard_occurrence_revision(&state, tenant_id, standard_id).await {
+        // VALIDATE BEFORE MUTATION: the checklist revision must match the
+        // standard's current revision (a stale checklist cannot be audited).
+        if occurrence.checklist_revision
+            != standard_occurrence_revision(&state, tenant_id, standard_id).await
+        {
             return Err(SenseiError::Conflict(
                 "The occurrence's checklist revision is stale — schedule a new occurrence"
                     .to_string(),
             ));
         }
+        occurrence.assigned_leader
+    };
+
+    // Leader enforcement: the auditor must BE the assigned leader, or a
+    // manager (tps:lsw:manage) performing a legitimate delegation.
+    if user.user_id != assigned_leader {
+        user.require_permission("tps:lsw:manage")?;
+    }
+
+    {
+        let mut store = state.lsw_occurrences.write(user.tenant_id).await;
+        if let Some(occurrence) = store.get_mut(&occurrence_id) {
+            let now = Utc::now();
+            if occurrence.started_at.is_none() {
+                occurrence.started_at = Some(now);
+            }
+            occurrence.status = "in_progress".to_string();
+        }
+        store.persist().await?;
     }
 
     // Verify standard exists
@@ -430,7 +446,7 @@ pub async fn perform_audit(
         results: req.results,
         compliance_rate,
         notes: req.notes,
-        audited_at: req.audited_at.unwrap_or(now),
+        audited_at: req.observed_at.unwrap_or(now),
     };
     let mut store = state.lsw_audits.write(user.tenant_id).await;
     store.insert(audit.id, audit.clone());

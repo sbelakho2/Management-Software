@@ -6611,12 +6611,10 @@ name = "sensei-db"
 version = "0.1.0"
 dependencies = [
  "chrono",
- "once_cell",
  "sensei-core",
  "serde",
  "serde_json",
  "sqlx",
- "thiserror 2.0.18",
  "tokio",
  "tracing",
  "uuid",

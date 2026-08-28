@@ -974,10 +974,18 @@ impl ProductionService for DatabaseProductionService {
             .entry(product_id)
             .or_insert(rust_decimal::Decimal::ZERO) += demand_qty;
         let mut queue: Vec<(Uuid, rust_decimal::Decimal)> = vec![(product_id, demand_qty)];
-        let mut depth = 0;
-        while !queue.is_empty() && depth < 6 {
+        // Cycle detection: a cyclic BOM is explicitly rejected, never
+        // silently depth-capped or partially expanded.
+        let mut visited: std::collections::HashSet<Uuid> = std::collections::HashSet::new();
+        let mut in_stack: std::collections::HashSet<Uuid> = std::collections::HashSet::new();
+        while !queue.is_empty() {
             let mut next: Vec<(Uuid, rust_decimal::Decimal)> = Vec::new();
             for (parent, qty) in queue {
+                if !in_stack.insert(parent) {
+                    return Err(SenseiError::Validation(format!(
+                        "CYCLIC BOM detected at product {parent} — a BOM must be a DAG"
+                    )));
+                }
                 let bom: Vec<(Uuid, rust_decimal::Decimal, rust_decimal::Decimal)> =
                     sqlx::query_as(
                         "SELECT component_product_id, quantity, COALESCE(scrap_percent, 0) \
@@ -999,11 +1007,13 @@ impl ProductionService for DatabaseProductionService {
                     *gross
                         .entry(component)
                         .or_insert(rust_decimal::Decimal::ZERO) += need;
-                    next.push((component, need));
+                    if visited.insert(component) {
+                        next.push((component, need));
+                    }
                 }
+                in_stack.remove(&parent);
             }
             queue = next;
-            depth += 1;
         }
 
         // ── 3. Scheduled receipts + on-hand per product ────────────────
@@ -1071,9 +1081,21 @@ impl ProductionService for DatabaseProductionService {
                     net
                 };
 
-            // ── 6. Lead-time offset: release = receipt - lead time ─────
-            let release_date = now - chrono::Duration::days(lead_days as i64);
-            let receipt_date = now + chrono::Duration::days(30);
+            // ── 6. Time phasing: the receipt requirement date comes from
+            // the demand's own timing (earliest open work-order due date);
+            // the release is offset BACKWARD from that date by lead time.
+            let demand_due: Option<chrono::DateTime<Utc>> = sqlx::query_scalar(
+                "SELECT MIN(scheduled_end) FROM work_orders \
+                 WHERE product_id = $1 AND tenant_id = $2 \
+                   AND status NOT IN ('completed', 'cancelled')",
+            )
+            .bind(p)
+            .bind(tenant_id)
+            .fetch_one(&self.pool)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to load demand timing: {e}")))?;
+            let receipt_date = demand_due.unwrap_or(now + chrono::Duration::days(30));
+            let release_date = receipt_date - chrono::Duration::days(lead_days as i64);
 
             records.push(MRPRecord {
                 id: Uuid::new_v4(),
@@ -1104,7 +1126,9 @@ impl ProductionService for DatabaseProductionService {
         });
         let result_json =
             serde_json::to_value(&records).unwrap_or(serde_json::Value::Array(vec![]));
-        let _ = sqlx::query(
+        // Reproducibility is a product invariant: a successful plan without
+        // its promised audit snapshot is a FAILURE, not a silent success.
+        sqlx::query(
             "INSERT INTO mrp_runs (id, tenant_id, product_id, status, input_snapshot, result, created_at) \
              VALUES ($1, $2, $3, 'completed', $4, $5, $6)",
         )
@@ -1115,7 +1139,10 @@ impl ProductionService for DatabaseProductionService {
         .bind(result_json)
         .bind(now)
         .execute(&self.pool)
-        .await;
+        .await
+        .map_err(|e| {
+            SenseiError::Database(format!("Failed to persist MRP run snapshot: {e}"))
+        })?;
 
         Ok(records)
     }

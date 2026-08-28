@@ -63,6 +63,7 @@ use crate::middleware::session::SessionStore;
 use crate::middleware::shared_auth_stores::{TokenBlacklist, TokenKind, TokenStore};
 use crate::services::{sse::SseManager, ws::WebSocketManager};
 use crate::stores;
+use crate::topology_repository::TopologyRepository;
 
 /// Time-to-live for realtime connection tickets, in seconds.
 pub const REALTIME_TICKET_TTL_SECS: u64 = 30;
@@ -494,6 +495,7 @@ pub struct AppState {
     /// Daily tier meetings (item 54).
     pub tier_meetings: EntityStore<crate::stores::TierMeeting>,
     /// Plant topology (item 90): sites, value streams, product families.
+    pub topology: TopologyRepository,
     pub sites: EntityStore<crate::routes::topology::Site>,
     pub value_streams: EntityStore<crate::routes::topology::ValueStream>,
     pub product_families: EntityStore<crate::routes::topology::ProductFamily>,
@@ -649,6 +651,7 @@ impl AppState {
         let lsw_audits = stores::new_store!("lsw_audit");
         let lsw_occurrences = EntityStore::new("lsw_occurrence");
         let tier_meetings = EntityStore::new("tier_meeting");
+        let topology = TopologyRepository::new(None);
         let sites = EntityStore::new("site");
         let value_streams = EntityStore::new("value_stream");
         let product_families = EntityStore::new("product_family");
@@ -775,6 +778,7 @@ impl AppState {
             lsw_audits,
             lsw_occurrences,
             tier_meetings,
+            topology,
             sites,
             value_streams,
             product_families,
@@ -886,6 +890,7 @@ impl AppState {
         self.lsw_audits = EntityStore::with_pool("lsw_audit", p.clone());
         self.lsw_occurrences = EntityStore::with_pool("lsw_occurrence", p.clone());
         self.tier_meetings = EntityStore::with_pool("tier_meeting", p.clone());
+        self.topology = self.topology.attach_pool(p.clone());
         self.sites = EntityStore::with_pool("site", p.clone());
         self.value_streams = EntityStore::with_pool("value_stream", p.clone());
         self.product_families = EntityStore::with_pool("product_family", p.clone());

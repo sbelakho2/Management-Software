@@ -6,13 +6,15 @@ license.workspace = true
 description = "Database layer for Sensei ERP (sqlx, PostgreSQL)"
 
 [dependencies]
-sensei-core = { path = "../sensei-core" }
 sqlx.workspace = true
 tokio.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-thiserror.workspace = true
-tracing.workspace = true
 uuid.workspace = true
 chrono.workspace = true
-once_cell.workspace = true
+tracing.workspace = true
+sensei-core = { path = "../sensei-core" }
+
+[dev-dependencies]
+sqlx.workspace = true
+uuid.workspace = true

@@ -1,0 +1,44 @@
+name: db-contract
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  fresh-database-gate:
+    name: Fresh PostgreSQL migration + contract gate
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: sensei
+          POSTGRES_PASSWORD: sensei_test
+          POSTGRES_DB: sensei_test
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U sensei -d sensei_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    defaults:
+      run:
+        working-directory: sensei-rs
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+      - name: Fresh-database migration + DB contract gate
+        run: |
+          cargo test -p sensei-db --test db_contract -- \
+            --test-threads=1
+        env:
+          DATABASE_URL_TEST: postgres://sensei:sensei_test@localhost:5433/sensei_test
+      - name: Authorization matrix invariant
+        run: cargo test -p sensei-api --test authorization_matrix_test
+      - name: Workspace tests
+        run: cargo test --workspace --no-fail-fast

@@ -39,6 +39,47 @@ pub fn build_readonly_tools() -> Vec<ToolSpec> {
     ]
 }
 
+/// Validate the arguments against the tool's declared input schema
+/// (type-level: uuid/string/integer/number). The schema is enforced, not
+/// descriptive.
+fn validate_args(tool: &ToolSpec, args: &serde_json::Value) -> Result<(), String> {
+    let Some(schema) = tool.input_schema.as_object() else {
+        return Ok(());
+    };
+    for (key, expected) in schema {
+        if expected == "uuid" {
+            if args
+                .get(key)
+                .and_then(|v| v.as_str())
+                .is_none_or(|s| uuid::Uuid::parse_str(s).is_err())
+            {
+                return Err(format!(
+                    "Tool '{}': argument '{key}' must be a uuid",
+                    tool.name
+                ));
+            }
+        } else if expected == "string" {
+            if args.get(key).and_then(|v| v.as_str()).is_none() {
+                return Err(format!(
+                    "Tool '{}': argument '{key}' must be a string",
+                    tool.name
+                ));
+            }
+        } else if expected == "integer" && args.get(key).and_then(|v| v.as_u64()).is_none() {
+            return Err(format!(
+                "Tool '{}': argument '{key}' must be an integer",
+                tool.name
+            ));
+        } else if expected == "number" && args.get(key).and_then(|v| v.as_f64()).is_none() {
+            return Err(format!(
+                "Tool '{}': argument '{key}' must be a number",
+                tool.name
+            ));
+        }
+    }
+    Ok(())
+}
+
 /// Execute one tool on behalf of the caller. The permission is re-checked
 /// here (the prompt is never the security boundary); every result carries
 /// evidence refs and the tool version.
@@ -58,6 +99,9 @@ pub async fn execute_tool(
             tool.name
         ));
     }
+    // Schema enforcement: the declared input schema is checked (type-level)
+    // before dispatch — the schema is a contract, not descriptive metadata.
+    validate_args(tool, &args)?;
     let now = chrono::Utc::now();
     match tool.name.as_str() {
         "get_work_order" => {
