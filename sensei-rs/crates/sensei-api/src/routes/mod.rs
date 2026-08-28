@@ -19,6 +19,7 @@ pub mod export;
 pub mod finance;
 pub mod health;
 pub mod hr;
+pub mod hybrid_search;
 pub mod inventory;
 pub mod kanban;
 pub mod knowledge;

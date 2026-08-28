@@ -1647,6 +1647,10 @@ pub fn build_router(state: AppState) -> Router {
             get(routes::knowledge::list_packs).post(routes::knowledge::create_pack),
         )
         .route(
+            "/api/v1/knowledge/hybrid-search",
+            get(routes::hybrid_search::hybrid_search),
+        )
+        .route(
             "/api/v1/knowledge-packs/{id}",
             get(routes::knowledge::get_pack)
                 .put(routes::knowledge::update_pack)

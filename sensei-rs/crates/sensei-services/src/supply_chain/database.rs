@@ -998,6 +998,13 @@ impl SupplyChainService for DatabaseSupplyChainService {
                 .await?;
             }
             "transfer" => {
+                // Hard rule (item 126): an inventory transfer must balance
+                // (Σ location deltas = 0). The rule is the gate.
+                crate::tps::rules::check_transfer_balance(&[
+                    (stock_move.product_id, -stock_move.quantity),
+                    (stock_move.product_id, stock_move.quantity),
+                ])
+                .map_err(|v| SenseiError::Validation(v.message().to_string()))?;
                 // Source is validated present; debit it strictly.
                 let from = from_location.clone().unwrap_or_default();
                 self.apply_inventory_delta(

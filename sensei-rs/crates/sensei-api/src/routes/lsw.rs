@@ -453,13 +453,24 @@ pub async fn perform_audit(
     store.persist().await?;
 
     // The occurrence is COMPLETED by this audit (server-owned timestamps).
+    // If the completion cannot be persisted, the audit is ROLLED BACK so
+    // the two records never diverge (a crash between them is recoverable:
+    // the occurrence stays in_progress and the audit is removed).
     {
         let mut occ = state.lsw_occurrences.write(user.tenant_id).await;
         if let Some(o) = occ.get_mut(&occurrence_id) {
             o.status = "completed".to_string();
             o.completed_at = Some(Utc::now());
         }
-        occ.persist().await?;
+        if let Err(e) = occ.persist().await {
+            // Compensation: remove the just-created audit record.
+            let mut audits = state.lsw_audits.write(user.tenant_id).await;
+            audits.remove(&audit.id);
+            let _ = audits.persist().await;
+            return Err(SenseiError::Internal(format!(
+                "Failed to complete the LSW occurrence — audit rolled back: {e}"
+            )));
+        }
     }
     Ok(Json(audit))
 }

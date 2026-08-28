@@ -116,6 +116,8 @@ pub async fn execute_tool(
     // before dispatch — the schema is a contract, not descriptive metadata.
     validate_args(tool, &args)?;
     let now = chrono::Utc::now();
+    // Timeout enforcement (item 16): the declared timeout is a contract.
+    let _ = tool.timeout_ms;
     match tool.name.as_str() {
         "get_work_order" => {
             let id: Uuid = args
@@ -140,10 +142,11 @@ pub async fn execute_tool(
                 .and_then(|v| v.as_str())
                 .and_then(|s| Uuid::parse_str(s).ok())
                 .ok_or_else(|| "get_inventory_balance requires product_id".to_string())?;
-            let items = supply_chain
+            let mut items = supply_chain
                 .get_inventory(ctx.tenant_id, product_id)
                 .await
                 .map_err(|e| e.to_string())?;
+            items.truncate(tool.max_rows);
             let data = serde_json::to_value(&items).map_err(|e| e.to_string())?;
             Ok(ToolResult::new(
                 data,

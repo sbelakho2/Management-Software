@@ -134,6 +134,19 @@ pub async fn create_pack(
     };
     let mut store = state.knowledge_packs.write(user.tenant_id).await;
     store.insert(pack.id, pack.clone());
+    store.persist().await?;
+    // Populate the DENSE retrieval leg (deterministic local embedding).
+    if let Some(pool) = state.db_pool.as_ref() {
+        let _ = crate::services::hybrid_retrieval::upsert_embedding(
+            pool,
+            user.tenant_id,
+            "knowledge_pack",
+            pack.id,
+            &pack.title,
+            &pack.content,
+        )
+        .await;
+    }
     Ok(Json(pack))
 }
 

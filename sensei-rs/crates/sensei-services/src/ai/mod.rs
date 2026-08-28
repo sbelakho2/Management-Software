@@ -13,6 +13,7 @@ pub mod analytics;
 pub mod anomaly;
 pub mod cbm_predictor;
 pub mod database;
+pub mod embedding;
 pub mod enhanced_ml_pipeline;
 pub mod evaluation;
 pub mod evidence_detector;

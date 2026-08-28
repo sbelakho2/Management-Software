@@ -4,6 +4,7 @@
 //! connection management and Server-Sent Events (SSE) broadcasting.
 
 pub mod agent;
+pub mod hybrid_retrieval;
 pub mod notification_trigger_worker;
 pub mod realtime;
 pub mod sse;
