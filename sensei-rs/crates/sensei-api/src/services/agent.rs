@@ -181,7 +181,9 @@ pub async fn execute_tool(
             let downtime: u64 = calendar.iter().map(|c| c.2 as u64).sum();
             let holiday = calendar.iter().any(|c| c.3);
             if holiday {
-                return Err("HOLIDAY: no production time is scheduled for this site/date".to_string());
+                return Err(
+                    "HOLIDAY: no production time is scheduled for this site/date".to_string(),
+                );
             }
 
             // ── Authoritative demand: open sales orders for the window ──

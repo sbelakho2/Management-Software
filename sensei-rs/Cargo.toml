@@ -7,6 +7,7 @@ members = [
     "crates/sensei-db",
     "crates/sensei-event-bus",
     "crates/sensei-agent-core",
+    "crates/sensei-agent-orchestrator",
     "crates/sensei-auth",
     "crates/sensei-api",
     "crates/sensei-services",
@@ -23,6 +24,7 @@ repository = "https://github.com/sensei/management-software"
 
 [workspace.dependencies]
 sensei-agent-core = { path = "crates/sensei-agent-core" }
+async-trait = "0.1"
 ipnet = "2.11.0"
 # Async runtime
 tokio = { version = "1", features = ["full"] }
@@ -118,7 +120,6 @@ lettre = { version = "0.11", features = ["tokio1-native-tls", "builder"] }
 rust-s3 = { version = "0.35", features = ["tokio"] }
 
 # Async helpers
-async-trait = "0.1"
 pin-project = "1"
 
 [profile.release]

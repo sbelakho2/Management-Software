@@ -76,8 +76,7 @@ pub async fn list_packs(
         // ACL prefilter: role-restricted packs are invisible to callers
         // without the role (never retrieved, never mentioned).
         .filter(|p| {
-            p.allowed_roles.is_empty()
-                || p.allowed_roles.iter().any(|r| user.roles.contains(r))
+            p.allowed_roles.is_empty() || p.allowed_roles.iter().any(|r| user.roles.contains(r))
         })
         .filter(|p| params.category.as_ref().is_none_or(|c| p.category == *c))
         .filter(|p| {

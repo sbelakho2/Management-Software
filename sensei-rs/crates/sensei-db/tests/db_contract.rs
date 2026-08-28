@@ -139,6 +139,23 @@ async fn full_migration_chain_applies_and_core_contracts_work() {
     .expect("outbox claim columns must exist");
     assert_eq!(claimed.rows_affected(), 1);
 
+    // Two-relay test (item 31): a SECOND relay claiming the same event
+    // (claim still live) must get 0 rows — the atomic claim prevents
+    // double publication.
+    let second_claim = sqlx::query(
+        "UPDATE outbox_events SET claimed_by = 'relay-2' \
+         WHERE event_id = $1 AND claim_until > NOW()",
+    )
+    .bind(event_id)
+    .execute(&pool)
+    .await
+    .expect("second claim attempt");
+    assert_eq!(
+        second_claim.rows_affected(),
+        0,
+        "an event with a live claim must not be claimable by a second relay"
+    );
+
     // ── RLS tenant adversarial test (item 31) ─────────────────────────
     // With the transaction-scoped context set to tenant A, a SELECT on a
     // fail-closed table WITHOUT any tenant predicate must return ONLY

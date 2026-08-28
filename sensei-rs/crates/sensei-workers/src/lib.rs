@@ -58,13 +58,14 @@
 //! from [`WorkerContext::default_consumers`].
 
 pub mod analytics;
+pub mod andon_sla;
 pub mod email;
 pub mod error;
 pub mod ml;
-pub mod andon_sla;
 pub mod nats;
 pub mod outbox_relay;
 pub mod pdf;
+pub mod rule_watchers;
 pub mod scheduler;
 pub mod task;
 

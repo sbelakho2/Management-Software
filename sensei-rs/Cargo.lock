@@ -6522,6 +6522,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "sensei-agent-orchestrator"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "chrono",
+ "sensei-agent-core",
+ "serde",
+ "serde_json",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
 name = "sensei-api"
 version = "0.1.0"
 dependencies = [

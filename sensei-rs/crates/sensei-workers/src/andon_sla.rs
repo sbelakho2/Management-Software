@@ -36,7 +36,10 @@ pub fn spawn(pool: Option<Arc<sqlx::PgPool>>, bus: Arc<dyn sensei_event_bus::Eve
     });
 }
 
-async fn watch_once(pool: &sqlx::PgPool, bus: &Arc<dyn sensei_event_bus::EventBus>) -> Result<(), String> {
+async fn watch_once(
+    pool: &sqlx::PgPool,
+    bus: &Arc<dyn sensei_event_bus::EventBus>,
+) -> Result<(), String> {
     // Open Andons whose age exceeds their severity SLA, not yet escalated.
     let rows: Vec<(uuid::Uuid, uuid::Uuid, String, String)> = sqlx::query_as(
         "SELECT id, tenant_id, severity, issue_type FROM andons \\
@@ -73,10 +76,8 @@ async fn watch_once(pool: &sqlx::PgPool, bus: &Arc<dyn sensei_event_bus::EventBu
             "sla_minutes": minutes,
             "reason": "andon_sla_breached",
         });
-        let event = sensei_core::domain::events::GenericJsonEvent::new(
-            "andon.sla.escalated",
-            payload,
-        );
+        let event =
+            sensei_core::domain::events::GenericJsonEvent::new("andon.sla.escalated", payload);
         if let Err(e) = bus.publish(&event).await {
             error!(
                 error = %e,
