@@ -101,9 +101,9 @@ pub struct BOMItem {
     pub parent_product_id: Uuid,
     pub component_product_id: Uuid,
     pub component_name: String,
-    pub quantity_required: f64,
+    pub quantity: rust_decimal::Decimal,
     pub unit_of_measure: String,
-    pub scrap_percentage: f64,
+    pub scrap_percent: rust_decimal::Decimal,
 }
 
 /// A material requirements planning (MRP) record.
@@ -211,6 +211,7 @@ pub trait ProductionService: Send + Sync {
         work_order_id: Uuid,
         quantity_completed: i64,
         quantity_scrapped: i64,
+        actor_id: Uuid,
     ) -> Result<WorkOrder>;
     /// List operations / routing steps for a work order.
     async fn list_work_order_operations(
@@ -526,6 +527,7 @@ impl ProductionService for InMemoryProductionService {
         work_order_id: Uuid,
         quantity_completed: i64,
         quantity_scrapped: i64,
+        _actor_id: Uuid,
     ) -> Result<WorkOrder> {
         let mut store = self.work_orders.write().await;
         let wo = store.get_mut(&work_order_id).ok_or_else(|| {
@@ -674,7 +676,7 @@ impl ProductionService for InMemoryProductionService {
         let scrapped = po.quantity_scrapped as i64;
         let planned = po.quantity_planned as i64;
         let accounted = produced + scrapped + short_close_qty;
-        if accounted < planned {
+        if accounted != planned {
             return Err(SenseiError::Validation(format!(
                 "Cannot complete: {accounted} of {planned} units accounted for \
                  (produced {produced} + scrap {scrapped} + short close {short_close_qty})."
@@ -940,7 +942,7 @@ mod tests {
 
         let created = service.create_work_order(tenant_id, wo).await.unwrap();
         let reported = service
-            .report_production(tenant_id, created.id, 10, 0)
+            .report_production(tenant_id, created.id, 10, 0, Uuid::new_v4())
             .await
             .unwrap();
         assert_eq!(reported.status, "completed");
@@ -1013,9 +1015,10 @@ mod tests {
             parent_product_id: product_id,
             component_product_id: component_id,
             component_name: "Test Component".to_string(),
-            quantity_required: 2.0,
+            quantity: rust_decimal::Decimal::from(2u32),
             unit_of_measure: "pcs".to_string(),
-            scrap_percentage: 0.05,
+            scrap_percent: rust_decimal::Decimal::from_f64_retain(0.05)
+                .unwrap_or(rust_decimal::Decimal::ZERO),
         };
 
         let added = service

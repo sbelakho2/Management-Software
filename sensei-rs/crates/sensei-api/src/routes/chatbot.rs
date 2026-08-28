@@ -81,6 +81,7 @@ pub async fn chat(
     State(state): State<AppState>,
     Json(req): Json<ChatRequest>,
 ) -> Result<Json<ChatResponseBody>> {
+    user.require_permission("ai:inference")?;
     let response = state
         .chatbot_service
         .chat(
@@ -139,6 +140,7 @@ pub async fn chat_stream(
     State(state): State<AppState>,
     Json(req): Json<ChatRequest>,
 ) -> Result<Sse<impl Stream<Item = std::result::Result<Event, Infallible>>>> {
+    user.require_permission("ai:inference")?;
     let sse_manager = state.sse_manager.clone();
     let chatbot_service = state.chatbot_service.clone();
 

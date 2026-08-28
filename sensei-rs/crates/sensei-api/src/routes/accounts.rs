@@ -96,6 +96,7 @@ pub async fn list_accounts(
     State(state): State<AppState>,
     Query(params): Query<ListAccountsParams>,
 ) -> Result<Json<PaginatedResponse<AccountResponse>>> {
+    user.require_permission("sales:account:read")?;
     let tenant_id = user.tenant_id;
     let result = state
         .accounts_service
@@ -123,6 +124,7 @@ pub async fn create_account(
     State(state): State<AppState>,
     Json(req): Json<AccountRequest>,
 ) -> Result<Json<AccountResponse>> {
+    user.require_permission("sales:account:manage")?;
     let tenant_id = user.tenant_id;
     let account = Account {
         id: EntityId::default(),
@@ -156,6 +158,7 @@ pub async fn get_account(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<AccountResponse>> {
+    user.require_permission("sales:account:read")?;
     let tenant_id = user.tenant_id;
     let account = state.accounts_service.get_account(tenant_id, id).await?;
     Ok(Json(AccountResponse::from(account)))
@@ -171,6 +174,7 @@ pub async fn update_account(
     Path(id): Path<Uuid>,
     Json(req): Json<AccountRequest>,
 ) -> Result<Json<AccountResponse>> {
+    user.require_permission("sales:account:manage")?;
     let tenant_id = user.tenant_id;
     let existing = state.accounts_service.get_account(tenant_id, id).await?;
     let account = Account {
@@ -205,6 +209,7 @@ pub async fn delete_account(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>> {
+    user.require_permission("sales:account:manage")?;
     let tenant_id = user.tenant_id;
     state.accounts_service.delete_account(tenant_id, id).await?;
     Ok(Json(serde_json::json!({
@@ -246,7 +251,17 @@ mod tests {
         AuthenticatedUser {
             user_id,
             tenant_id,
-            roles: vec!["admin".to_string()],
+            roles: vec![
+                "user".to_string(),
+                "tenant_admin".to_string(),
+                "production_manager".to_string(),
+                "quality_manager".to_string(),
+                "purchasing_manager".to_string(),
+                "sales_manager".to_string(),
+                "finance_manager".to_string(),
+                "inventory_manager".to_string(),
+                "operator".to_string(),
+            ],
             sid: None,
         }
     }

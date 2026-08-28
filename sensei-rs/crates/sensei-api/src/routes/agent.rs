@@ -20,6 +20,7 @@ pub async fn list_agent_tools(
     user: AuthenticatedUser,
     State(state): State<AppState>,
 ) -> Result<Json<serde_json::Value>, SenseiError> {
+    user.require_permission("ai:inference")?;
     let ctx = build_context(&user, &state).await;
     let policy = PolicyEngine::new(build_readonly_tools(), ToolRisk::ReadOnly);
     let effective: Vec<&ToolSpec> = policy.effective_tools(&ctx);
@@ -43,6 +44,7 @@ pub async fn execute_agent_tool(
     State(state): State<AppState>,
     Json(req): Json<ExecuteToolRequest>,
 ) -> Result<Json<serde_json::Value>, SenseiError> {
+    user.require_permission("ai:inference")?;
     let ctx = build_context(&user, &state).await;
     let tools = build_readonly_tools();
     let policy = PolicyEngine::new(tools.clone(), ToolRisk::ReadOnly);
@@ -61,9 +63,38 @@ pub async fn execute_agent_tool(
     )
     .await
     .map_err(SenseiError::Validation)?;
-    Ok(Json(
-        serde_json::to_value(result).unwrap_or(serde_json::Value::Null),
-    ))
+
+    // The deterministic verifier runs IN the response path: freshness is
+    // measured against the evidence's own observed_at (source time, not
+    // tool-call time).
+    let freshness = match tool.name.as_str() {
+        "get_inventory_balance" => sensei_agent_core::evidence::FreshnessClass::Minutes,
+        _ => sensei_agent_core::evidence::FreshnessClass::Hours,
+    };
+    let claim = sensei_agent_core::claims::Claim {
+        id: Uuid::new_v4(),
+        kind: sensei_agent_core::claims::ClaimKind::ObservedFact,
+        statement: format!("tool '{}' result", tool.name),
+        evidence_refs: result.evidence.clone(),
+        deterministic_calculation: None,
+        confidence: None,
+        created_at: chrono::Utc::now(),
+    };
+    let verification = sensei_agent_core::verifier::verify(
+        &[claim],
+        &policy,
+        &ctx.permissions.iter().cloned().collect::<Vec<_>>(),
+        std::slice::from_ref(tool),
+        &[],
+        &[(0, freshness)],
+    );
+    Ok(Json(serde_json::json!({
+        "result": result,
+        "verification": {
+            "verdict": format!("{:?}", verification.verdict),
+            "issues": verification.issues,
+        },
+    })))
 }
 
 /// Request: tool name + args.

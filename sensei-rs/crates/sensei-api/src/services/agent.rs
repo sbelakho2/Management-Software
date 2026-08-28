@@ -50,8 +50,9 @@ pub async fn execute_tool(
     production: &dyn ProductionService,
     supply_chain: &dyn SupplyChainService,
 ) -> Result<ToolResult<serde_json::Value>, String> {
-    // Defense in depth: independent re-check at execution time.
-    if !policy.can_execute(ctx, tool) {
+    // Defense in depth: independent re-check at execution time (read-only
+    // tools are Automatic; write tools would require an approval artifact).
+    if !policy.can_execute(ctx, tool, true) {
         return Err(format!(
             "Tool '{}' is not permitted for this caller",
             tool.name

@@ -75,9 +75,9 @@ struct BomItemRow {
     parent_product_id: Uuid,
     component_product_id: Uuid,
     component_name: String,
-    quantity_required: f64,
+    quantity: rust_decimal::Decimal,
     unit_of_measure: String,
-    scrap_percentage: f64,
+    scrap_percent: rust_decimal::Decimal,
 }
 
 // ---------------------------------------------------------------------------
@@ -142,9 +142,9 @@ fn bom_row_to_domain(r: BomItemRow) -> BOMItem {
         parent_product_id: r.parent_product_id,
         component_product_id: r.component_product_id,
         component_name: r.component_name,
-        quantity_required: r.quantity_required,
+        quantity: r.quantity,
         unit_of_measure: r.unit_of_measure,
-        scrap_percentage: r.scrap_percentage,
+        scrap_percent: r.scrap_percent,
     }
 }
 
@@ -153,10 +153,17 @@ fn bom_row_to_domain(r: BomItemRow) -> BOMItem {
 // ---------------------------------------------------------------------------
 
 /// PostgreSQL-backed implementation of [`ProductionService`].
-/// Actor for production-event records (the caller's user id is bound by
-/// the route; nil here means the report did not identify an operator).
-fn operator_id() -> Uuid {
-    Uuid::nil()
+/// Transaction-scoped tenant context for RLS (SET LOCAL app.tenant_id).
+async fn set_tenant_context(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    tenant_id: Uuid,
+) -> std::result::Result<(), SenseiError> {
+    sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
+        .bind(tenant_id.to_string())
+        .execute(&mut **tx)
+        .await
+        .map_err(|e| SenseiError::Database(format!("Failed to set tenant context: {e}")))?;
+    Ok(())
 }
 
 pub struct DatabaseProductionService {
@@ -556,6 +563,7 @@ impl ProductionService for DatabaseProductionService {
         work_order_id: Uuid,
         quantity_completed: i64,
         quantity_scrapped: i64,
+        actor_id: Uuid,
     ) -> Result<WorkOrder> {
         // Scrap reported by the shop floor must never disappear: negative
         // or absurd reports are rejected, and every report is appended to
@@ -572,6 +580,7 @@ impl ProductionService for DatabaseProductionService {
             .begin()
             .await
             .map_err(|e| SenseiError::Database(format!("Failed to begin report tx: {e}")))?;
+        set_tenant_context(&mut tx, tenant_id).await?;
 
         let row = sqlx::query_as::<_, WorkOrderRow>(
             r#"
@@ -618,7 +627,8 @@ impl ProductionService for DatabaseProductionService {
         .bind(row.product_id)
         .bind(quantity_completed)
         .bind(quantity_scrapped)
-        .bind(operator_id())
+        // MES-grade provenance: WHO reported is part of the immutable event.
+        .bind(actor_id)
         .bind(now)
         .execute(&mut *tx)
         .await
@@ -809,11 +819,12 @@ impl ProductionService for DatabaseProductionService {
         let scrapped = existing.quantity_scrapped as i64;
         let planned = existing.quantity_planned as i64;
         let accounted = produced + scrapped + short_close_qty;
-        if accounted < planned {
+        if accounted != planned {
             return Err(SenseiError::Validation(format!(
                 "Cannot complete: {accounted} of {planned} units accounted for \
                  (produced {produced} + scrap {scrapped} + short close {short_close_qty}). \
-                 Report the remaining production or provide a short close."
+                 Disposition must reconcile EXACTLY — report the difference or provide a \
+                 short close / approved overproduction variance."
             )));
         }
         if short_close_qty < 0 {
@@ -888,22 +899,26 @@ impl ProductionService for DatabaseProductionService {
 
         let row = sqlx::query_as::<_, BomItemRow>(
             r#"
-            INSERT INTO bom_items (
-                id, tenant_id, parent_product_id, component_product_id,
-                component_name, quantity_required, unit_of_measure, scrap_percentage
-            ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
-            RETURNING id, tenant_id, parent_product_id, component_product_id,
-                      component_name, quantity_required, unit_of_measure, scrap_percentage
+            WITH ins AS (
+                INSERT INTO bom_items (
+                    id, tenant_id, parent_product_id, component_product_id,
+                    quantity, unit_of_measure, scrap_percent
+                ) VALUES ($1,$2,$3,$4,$5,$6,$7)
+                RETURNING id, tenant_id, parent_product_id, component_product_id,
+                          quantity, unit_of_measure, scrap_percent
+            )
+            SELECT ins.id, ins.tenant_id, ins.parent_product_id, ins.component_product_id,
+                   p.name AS component_name, ins.quantity, ins.unit_of_measure, ins.scrap_percent
+            FROM ins JOIN products p ON p.id = ins.component_product_id
             "#,
         )
         .bind(id)
         .bind(tenant_id)
         .bind(item.parent_product_id)
         .bind(item.component_product_id)
-        .bind(&item.component_name)
-        .bind(item.quantity_required)
+        .bind(item.quantity)
         .bind(&item.unit_of_measure)
-        .bind(item.scrap_percentage)
+        .bind(item.scrap_percent)
         .fetch_one(&self.pool)
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to add BOM item: {e}")))?;
@@ -951,28 +966,39 @@ impl ProductionService for DatabaseProductionService {
         // ── 2. BOM explosion (multi-level, scrap-aware) ────────────────
         // gross[product] accumulates the quantity required at each level;
         // children of make items are exploded recursively (depth-limited).
-        let mut gross: std::collections::HashMap<Uuid, f64> = std::collections::HashMap::new();
-        *gross.entry(product_id).or_insert(0.0) += demand_qty;
-        let mut queue: Vec<(Uuid, f64)> = vec![(product_id, demand_qty)];
+        let demand_qty: rust_decimal::Decimal = rust_decimal::Decimal::from_f64_retain(demand_qty)
+            .unwrap_or(rust_decimal::Decimal::ZERO);
+        let mut gross: std::collections::HashMap<Uuid, rust_decimal::Decimal> =
+            std::collections::HashMap::new();
+        *gross
+            .entry(product_id)
+            .or_insert(rust_decimal::Decimal::ZERO) += demand_qty;
+        let mut queue: Vec<(Uuid, rust_decimal::Decimal)> = vec![(product_id, demand_qty)];
         let mut depth = 0;
         while !queue.is_empty() && depth < 6 {
-            let mut next: Vec<(Uuid, f64)> = Vec::new();
+            let mut next: Vec<(Uuid, rust_decimal::Decimal)> = Vec::new();
             for (parent, qty) in queue {
-                let bom: Vec<(Uuid, f64, f64)> = sqlx::query_as(
-                    "SELECT component_product_id, quantity, COALESCE(scrap_percent, 0) \
-                     FROM bom_items \
-                     WHERE parent_product_id = $1 AND tenant_id = $2 AND is_active = TRUE",
-                )
-                .bind(parent)
-                .bind(tenant_id)
-                .fetch_all(&self.pool)
-                .await
-                .map_err(|e| SenseiError::Database(format!("Failed to load BOM: {e}")))?;
+                let bom: Vec<(Uuid, rust_decimal::Decimal, rust_decimal::Decimal)> =
+                    sqlx::query_as(
+                        "SELECT component_product_id, quantity, COALESCE(scrap_percent, 0) \
+                     FROM bom_items b \
+                     WHERE b.parent_product_id = $1 AND b.tenant_id = $2 AND b.is_active = TRUE",
+                    )
+                    .bind(parent)
+                    .bind(tenant_id)
+                    .fetch_all(&self.pool)
+                    .await
+                    .map_err(|e| SenseiError::Database(format!("Failed to load BOM: {e}")))?;
                 for (component, per_unit, scrap) in bom {
                     // Gross includes the scrap factor: making 100 with 5%
                     // scrap consumes 105.
-                    let need = qty * per_unit * (1.0 + scrap / 100.0);
-                    *gross.entry(component).or_insert(0.0) += need;
+                    let need = qty
+                        * per_unit
+                        * (rust_decimal::Decimal::ONE
+                            + scrap / rust_decimal::Decimal::from(100u32));
+                    *gross
+                        .entry(component)
+                        .or_insert(rust_decimal::Decimal::ZERO) += need;
                     next.push((component, need));
                 }
             }
@@ -986,7 +1012,7 @@ impl ProductionService for DatabaseProductionService {
         // bigint truncation).
         let mut records: Vec<MRPRecord> = Vec::new();
         let mut products: Vec<Uuid> = gross.keys().copied().collect();
-        if demand_qty > 0.0 && !products.contains(&product_id) {
+        if demand_qty > rust_decimal::Decimal::ZERO && !products.contains(&product_id) {
             products.push(product_id);
         }
         for p in products {
@@ -1023,18 +1049,27 @@ impl ProductionService for DatabaseProductionService {
             .await
             .map_err(|e| SenseiError::Database(format!("Failed to load product policy: {e}")))?;
 
-            let gross_qty = *gross.get(&p).unwrap_or(&0.0);
+            let gross_qty = *gross.get(&p).unwrap_or(&rust_decimal::Decimal::ZERO);
+            let scheduled = rust_decimal::Decimal::from_f64_retain(scheduled)
+                .unwrap_or(rust_decimal::Decimal::ZERO);
+            let on_hand = rust_decimal::Decimal::from_f64_retain(on_hand)
+                .unwrap_or(rust_decimal::Decimal::ZERO);
+            let safety_stock = rust_decimal::Decimal::from_f64_retain(safety_stock)
+                .unwrap_or(rust_decimal::Decimal::ZERO);
+            let lot_size = rust_decimal::Decimal::from_f64_retain(lot_size)
+                .unwrap_or(rust_decimal::Decimal::ZERO);
 
             // ── 4. Net requirements (safety stock included) ────────────
             let projected = on_hand + scheduled - gross_qty;
-            let net = (safety_stock - projected).max(0.0);
+            let net = (safety_stock - projected).max(rust_decimal::Decimal::ZERO);
 
             // ── 5. Lot sizing: lot-for-lot unless a lot size is set ────
-            let planned_receipt = if lot_size > 0.0 && net > 0.0 {
-                (net / lot_size).ceil() * lot_size
-            } else {
-                net
-            };
+            let planned_receipt =
+                if lot_size > rust_decimal::Decimal::ZERO && net > rust_decimal::Decimal::ZERO {
+                    (net / lot_size).ceil() * lot_size
+                } else {
+                    net
+                };
 
             // ── 6. Lead-time offset: release = receipt - lead time ─────
             let release_date = now - chrono::Duration::days(lead_days as i64);
@@ -1044,11 +1079,15 @@ impl ProductionService for DatabaseProductionService {
                 id: Uuid::new_v4(),
                 tenant_id,
                 product_id: p,
-                gross_requirement: gross_qty.ceil() as i64,
-                scheduled_receipts: scheduled.ceil() as i64,
-                projected_on_hand: projected.ceil() as i64,
-                net_requirement: net.ceil() as i64,
-                planned_order_release: planned_receipt.ceil() as i64,
+                gross_requirement: gross_qty.ceil().to_string().parse::<i64>().unwrap_or(0),
+                scheduled_receipts: scheduled.ceil().to_string().parse::<i64>().unwrap_or(0),
+                projected_on_hand: projected.ceil().to_string().parse::<i64>().unwrap_or(0),
+                net_requirement: net.ceil().to_string().parse::<i64>().unwrap_or(0),
+                planned_order_release: planned_receipt
+                    .ceil()
+                    .to_string()
+                    .parse::<i64>()
+                    .unwrap_or(0),
                 time_phase_start: release_date,
                 time_phase_end: receipt_date,
             });

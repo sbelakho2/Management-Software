@@ -51,6 +51,7 @@ pub async fn list_packs(
     State(state): State<AppState>,
     Query(params): Query<ListPacksParams>,
 ) -> Result<Json<PaginatedResponse<KnowledgePack>>> {
+    user.require_permission("knowledge:read")?;
     let store = state.knowledge_packs.read(user.tenant_id).await;
     let mut packs: Vec<KnowledgePack> = store
         .values()
@@ -80,6 +81,7 @@ pub async fn create_pack(
     State(state): State<AppState>,
     Json(req): Json<PackRequest>,
 ) -> Result<Json<KnowledgePack>> {
+    user.require_permission("knowledge:manage")?;
     let now = Utc::now();
     let pack = KnowledgePack {
         id: new_id(),
@@ -107,6 +109,7 @@ pub async fn get_pack(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<KnowledgePack>> {
+    user.require_permission("knowledge:read")?;
     let store = state.knowledge_packs.read(user.tenant_id).await;
     let pack = store
         .values()
@@ -123,6 +126,7 @@ pub async fn update_pack(
     Path(id): Path<Uuid>,
     Json(req): Json<PackRequest>,
 ) -> Result<Json<KnowledgePack>> {
+    user.require_permission("knowledge:manage")?;
     let mut store = state.knowledge_packs.write(user.tenant_id).await;
     let pack = store
         .get_mut(&id)
@@ -146,6 +150,7 @@ pub async fn delete_pack(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<()>> {
+    user.require_permission("knowledge:manage")?;
     let mut store = state.knowledge_packs.write(user.tenant_id).await;
     let exists = store
         .get(&id)

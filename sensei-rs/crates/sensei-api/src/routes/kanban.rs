@@ -226,6 +226,7 @@ pub async fn add_column(
     Path(board_id): Path<Uuid>,
     Json(req): Json<ColumnRequest>,
 ) -> Result<Json<KanbanColumn>> {
+    user.require_permission("tps:kanban:manage")?;
     let tenant_id = user.tenant_id;
     let now = Utc::now();
     let column = KanbanColumn {
@@ -307,6 +308,7 @@ pub async fn add_card(
     Path(column_id): Path<Uuid>,
     Json(req): Json<CardRequest>,
 ) -> Result<Json<KanbanCard>> {
+    user.require_permission("tps:kanban:manage")?;
     let tenant_id = user.tenant_id;
     let now = Utc::now();
 

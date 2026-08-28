@@ -200,6 +200,7 @@ pub async fn list_state_machines(
     State(state): State<AppState>,
     Query(params): Query<ListStateMachinesParams>,
 ) -> Result<Json<PaginatedResponse<StateMachineDefinition>>> {
+    user.require_permission("system:state-machines:read")?;
     let tenant_id = user.tenant_id;
     let store = state.state_machine_definitions.read(user.tenant_id).await;
     let mut defs: Vec<StateMachineDefinition> = store
@@ -232,6 +233,7 @@ pub async fn create_state_machine(
     State(state): State<AppState>,
     Json(req): Json<CreateStateMachineRequest>,
 ) -> Result<Json<StateMachineDefinition>> {
+    user.require_permission("system:state-machines:manage")?;
     let tenant_id = user.tenant_id;
     let now = Utc::now();
     let def = StateMachineDefinition {
@@ -260,6 +262,7 @@ pub async fn get_state_machine(
     State(state): State<AppState>,
     Path(sm_id): Path<Uuid>,
 ) -> Result<Json<StateMachineDefinition>> {
+    user.require_permission("system:state-machines:read")?;
     let tenant_id = user.tenant_id;
     let store = state.state_machine_definitions.read(user.tenant_id).await;
     let def = store
@@ -277,6 +280,7 @@ pub async fn update_state_machine(
     Path(sm_id): Path<Uuid>,
     Json(req): Json<UpdateStateMachineRequest>,
 ) -> Result<Json<StateMachineDefinition>> {
+    user.require_permission("system:state-machines:manage")?;
     let tenant_id = user.tenant_id;
     let mut store = state.state_machine_definitions.write(user.tenant_id).await;
     let def = store
@@ -315,6 +319,7 @@ pub async fn delete_state_machine(
     State(state): State<AppState>,
     Path(sm_id): Path<Uuid>,
 ) -> Result<Json<()>> {
+    user.require_permission("system:state-machines:manage")?;
     let tenant_id = user.tenant_id;
     let mut store = state.state_machine_definitions.write(user.tenant_id).await;
     let exists = store
@@ -339,6 +344,7 @@ pub async fn create_instance(
     Path(sm_id): Path<Uuid>,
     Json(req): Json<CreateInstanceRequest>,
 ) -> Result<Json<StateMachineInstance>> {
+    user.require_permission("system:state-machines:manage")?;
     let tenant_id = user.tenant_id;
 
     // Verify the definition exists
@@ -401,6 +407,7 @@ pub async fn list_instances(
     Path(sm_id): Path<Uuid>,
     Query(params): Query<ListInstancesParams>,
 ) -> Result<Json<PaginatedResponse<StateMachineInstance>>> {
+    user.require_permission("system:state-machines:read")?;
     let tenant_id = user.tenant_id;
     let store = state.state_machine_instances.read(user.tenant_id).await;
     let mut instances: Vec<StateMachineInstance> = store
@@ -433,6 +440,7 @@ pub async fn get_instance(
     State(state): State<AppState>,
     Path(instance_id): Path<Uuid>,
 ) -> Result<Json<StateMachineInstance>> {
+    user.require_permission("system:state-machines:read")?;
     let tenant_id = user.tenant_id;
     let store = state.state_machine_instances.read(user.tenant_id).await;
     let instance = store
@@ -462,6 +470,7 @@ pub async fn transition_instance(
     Path(instance_id): Path<Uuid>,
     Json(req): Json<TransitionRequest>,
 ) -> Result<Json<TransitionResult>> {
+    user.require_permission("system:state-machines:manage")?;
     let tenant_id = user.tenant_id;
 
     let mut store = state.state_machine_instances.write(user.tenant_id).await;

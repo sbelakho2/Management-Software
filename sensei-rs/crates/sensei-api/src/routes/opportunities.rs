@@ -90,6 +90,7 @@ pub async fn list_opportunities(
     State(state): State<AppState>,
     Query(params): Query<ListOpportunitiesParams>,
 ) -> Result<Json<PaginatedResponse<Opportunity>>> {
+    user.require_permission("sales:opportunity:read")?;
     let store = state.opportunities.read(user.tenant_id).await;
     let mut ops: Vec<Opportunity> = store
         .values()
@@ -109,6 +110,7 @@ pub async fn create_opportunity(
     State(state): State<AppState>,
     Json(req): Json<OpportunityRequest>,
 ) -> Result<Json<Opportunity>> {
+    user.require_permission("sales:opportunity:manage")?;
     validate_opportunity(&req)?;
     let now = Utc::now();
     let opportunity = Opportunity {
@@ -140,6 +142,7 @@ pub async fn get_opportunity(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<Opportunity>> {
+    user.require_permission("sales:opportunity:read")?;
     let store = state.opportunities.read(user.tenant_id).await;
     let opp = store
         .values()
@@ -156,6 +159,7 @@ pub async fn update_opportunity(
     Path(id): Path<Uuid>,
     Json(req): Json<OpportunityRequest>,
 ) -> Result<Json<Opportunity>> {
+    user.require_permission("sales:opportunity:manage")?;
     validate_opportunity(&req)?;
     let mut store = state.opportunities.write(user.tenant_id).await;
     let opp = store
@@ -197,6 +201,7 @@ pub async fn delete_opportunity(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<()>> {
+    user.require_permission("sales:opportunity:manage")?;
     let mut store = state.opportunities.write(user.tenant_id).await;
     let exists = store
         .get(&id)

@@ -75,6 +75,7 @@ pub async fn list_audit_logs(
     State(state): State<AppState>,
     Query(params): Query<ListAuditLogsParams>,
 ) -> Result<Json<PaginatedResponse<AuditLogEntry>>> {
+    user.require_permission("system:audit:read")?;
     let tenant_id = user.tenant_id;
     let store = state.audit_log_entries.read(user.tenant_id).await;
     let date_from = parse_date_filter("date_from", params.date_from.as_deref())?;
@@ -119,6 +120,7 @@ pub async fn get_audit_log(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<AuditLogEntry>> {
+    user.require_permission("system:audit:read")?;
     let tenant_id = user.tenant_id;
     let store = state.audit_log_entries.read(user.tenant_id).await;
     let entry = store
@@ -135,6 +137,7 @@ pub async fn get_entity_audit_trail(
     State(state): State<AppState>,
     Path((entity_type, entity_id)): Path<(String, Uuid)>,
 ) -> Result<Json<Vec<AuditLogEntry>>> {
+    user.require_permission("system:audit:read")?;
     let tenant_id = user.tenant_id;
     let store = state.audit_log_entries.read(user.tenant_id).await;
     let mut entries: Vec<AuditLogEntry> = store
@@ -153,6 +156,7 @@ pub async fn get_audit_log_stats(
     user: AuthenticatedUser,
     State(state): State<AppState>,
 ) -> Result<Json<AuditLogStats>> {
+    user.require_permission("system:audit:read")?;
     let tenant_id = user.tenant_id;
     let store = state.audit_log_entries.read(user.tenant_id).await;
     let entries: Vec<&AuditLogEntry> = store

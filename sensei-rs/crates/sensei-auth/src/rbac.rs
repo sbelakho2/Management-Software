@@ -256,6 +256,9 @@ impl RbacService {
                 "purchasing:quote:create",
                 "purchasing:quote:update",
                 "purchasing:quote:approve",
+                "sales:account:manage",
+                "sales:opportunity:manage",
+                "ai:retrain",
             ],
         );
         self.add_role(
@@ -414,6 +417,14 @@ impl RbacService {
                 "maintenance:assign",
                 "maintenance:execute",
                 "maintenance:return-to-service",
+                "knowledge:manage",
+                "learning:manage",
+                "training:manage",
+                "tasks:manage",
+                "ai:retrain",
+                "master-data:products:manage",
+                "system:state-machines:manage",
+                "attachments:manage",
             ],
         );
         self.add_role(
@@ -456,6 +467,18 @@ impl RbacService {
                 "users:update:self",
                 "notifications:read",
                 "dashboard:read",
+                "knowledge:read",
+                "learning:read",
+                "training:read",
+                "tasks:read",
+                "ai:inference",
+                "sales:account:read",
+                "sales:opportunity:read",
+                "master-data:products:read",
+                "system:state-machines:read",
+                "attachments:read",
+                "system:audit:read",
+                "inventory:read",
             ],
         );
     }

@@ -383,6 +383,7 @@ pub async fn list_purchase_orders(
     State(state): State<AppState>,
     Query(params): Query<ListPurchaseOrdersParams>,
 ) -> Result<Json<PaginatedResponse<PurchaseOrder>>> {
+    user.require_permission("purchasing:po:create")?;
     let tenant_id = user.tenant_id;
     let orders = state
         .supply_chain_service
@@ -453,6 +454,7 @@ pub async fn list_inventory(
     State(state): State<AppState>,
     Query(params): Query<ListInventoryParams>,
 ) -> Result<Json<PaginatedResponse<InventoryItem>>> {
+    user.require_permission("inventory:read")?;
     let tenant_id = user.tenant_id;
     let items = state
         .supply_chain_service
@@ -663,6 +665,7 @@ pub async fn reject_quote(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<Quote>> {
+    user.require_permission("purchasing:quote:approve")?;
     let tenant_id = user.tenant_id;
     let quote = state
         .supply_chain_service
@@ -678,6 +681,7 @@ pub async fn update_sales_order(
     Path(id): Path<Uuid>,
     Json(req): Json<SalesOrder>,
 ) -> Result<Json<SalesOrder>> {
+    user.require_permission("sales:order:update")?;
     let tenant_id = user.tenant_id;
     let order = state
         .supply_chain_service
@@ -739,6 +743,7 @@ pub async fn receive_full_po(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<PurchaseOrder>> {
+    user.require_permission("purchasing:po:approve")?;
     let tenant_id = user.tenant_id;
     let po = state
         .supply_chain_service
@@ -754,6 +759,7 @@ pub async fn update_inventory(
     Path(id): Path<Uuid>,
     Json(req): Json<InventoryItem>,
 ) -> Result<Json<InventoryItem>> {
+    user.require_permission("inventory:adjust")?;
     let tenant_id = user.tenant_id;
     let item = state
         .supply_chain_service
@@ -768,6 +774,7 @@ pub async fn delete_inventory(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<()>> {
+    user.require_permission("inventory:adjust")?;
     let tenant_id = user.tenant_id;
     state
         .supply_chain_service
@@ -782,6 +789,7 @@ pub async fn delete_stock_move(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<()>> {
+    user.require_permission("inventory:adjust")?;
     let tenant_id = user.tenant_id;
     state
         .supply_chain_service

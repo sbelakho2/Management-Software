@@ -203,6 +203,7 @@ pub async fn get_today_snapshot(
     user: AuthenticatedUser,
     State(state): State<AppState>,
 ) -> Result<Json<TodaySnapshot>> {
+    user.require_permission("dashboard:read")?;
     let tenant_id = user.tenant_id;
     let today = Utc::now().date_naive();
     let date_str = today.to_string();

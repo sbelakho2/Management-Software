@@ -144,6 +144,7 @@ pub async fn list_tasks(
     State(state): State<AppState>,
     Query(params): Query<ListTasksParams>,
 ) -> Result<Json<PaginatedResponse<Task>>> {
+    user.require_permission("tasks:read")?;
     let tenant_id = user.tenant_id;
     let store = state.tasks.read(user.tenant_id).await;
     let mut tasks: Vec<Task> = store
@@ -190,6 +191,7 @@ pub async fn create_task(
     State(state): State<AppState>,
     Json(req): Json<CreateTaskRequest>,
 ) -> Result<Json<Task>> {
+    user.require_permission("tasks:manage")?;
     let tenant_id = user.tenant_id;
     let now = Utc::now();
     let due_date = req
@@ -248,6 +250,7 @@ pub async fn get_task(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<Task>> {
+    user.require_permission("tasks:read")?;
     let tenant_id = user.tenant_id;
     let store = state.tasks.read(user.tenant_id).await;
     let task = store
@@ -265,6 +268,7 @@ pub async fn update_task(
     Path(id): Path<Uuid>,
     Json(req): Json<UpdateTaskRequest>,
 ) -> Result<Json<Task>> {
+    user.require_permission("tasks:manage")?;
     let tenant_id = user.tenant_id;
     let mut store = state.tasks.write(user.tenant_id).await;
     let task = store
@@ -353,6 +357,7 @@ pub async fn delete_task(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<()>> {
+    user.require_permission("tasks:manage")?;
     let tenant_id = user.tenant_id;
     let mut store = state.tasks.write(user.tenant_id).await;
     let exists = store
@@ -376,6 +381,7 @@ pub async fn update_task_status(
     Path(id): Path<Uuid>,
     Json(req): Json<UpdateStatusRequest>,
 ) -> Result<Json<Task>> {
+    user.require_permission("tasks:manage")?;
     let tenant_id = user.tenant_id;
     let mut store = state.tasks.write(user.tenant_id).await;
     let task = store
@@ -541,6 +547,7 @@ pub async fn assign_task(
     Path(id): Path<Uuid>,
     Json(req): Json<AssignTaskRequest>,
 ) -> Result<Json<Task>> {
+    user.require_permission("tasks:manage")?;
     let tenant_id = user.tenant_id;
     let mut store = state.tasks.write(user.tenant_id).await;
     let task = store
@@ -567,6 +574,7 @@ pub async fn get_task_stats(
     user: AuthenticatedUser,
     State(state): State<AppState>,
 ) -> Result<Json<TaskStats>> {
+    user.require_permission("tasks:read")?;
     let tenant_id = user.tenant_id;
     let store = state.tasks.read(user.tenant_id).await;
     let tasks: Vec<&Task> = store

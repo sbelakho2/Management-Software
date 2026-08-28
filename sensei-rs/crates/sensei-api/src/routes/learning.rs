@@ -49,6 +49,7 @@ pub async fn list_modules(
     State(state): State<AppState>,
     Query(params): Query<ListModulesParams>,
 ) -> Result<Json<PaginatedResponse<LearningModule>>> {
+    user.require_permission("learning:read")?;
     let store = state.learning_modules.read(user.tenant_id).await;
     let mut modules: Vec<LearningModule> = store
         .values()
@@ -74,6 +75,7 @@ pub async fn create_module(
     State(state): State<AppState>,
     Json(req): Json<ModuleRequest>,
 ) -> Result<Json<LearningModule>> {
+    user.require_permission("learning:manage")?;
     let now = Utc::now();
     let module = LearningModule {
         id: new_id(),
@@ -100,6 +102,7 @@ pub async fn get_module(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<LearningModule>> {
+    user.require_permission("learning:read")?;
     let store = state.learning_modules.read(user.tenant_id).await;
     let module = store
         .values()
@@ -116,6 +119,7 @@ pub async fn update_module(
     Path(id): Path<Uuid>,
     Json(req): Json<ModuleRequest>,
 ) -> Result<Json<LearningModule>> {
+    user.require_permission("learning:manage")?;
     let mut store = state.learning_modules.write(user.tenant_id).await;
     let module = store
         .get_mut(&id)
@@ -138,6 +142,7 @@ pub async fn delete_module(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<()>> {
+    user.require_permission("learning:manage")?;
     let mut store = state.learning_modules.write(user.tenant_id).await;
     let exists = store
         .get(&id)

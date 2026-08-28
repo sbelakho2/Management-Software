@@ -248,6 +248,16 @@ async fn test_ops_close_a3() {
     let created: Value = app.json_body(&mut resp).await;
     let a3_id = created["id"].as_str().unwrap().to_string();
 
+    // Evidence-driven close: record verification evidence first (the
+    // legacy update takes the full document).
+    let get = app.get_authenticated(&format!("/api/v1/ops/a3s/{}", a3_id), &token);
+    let mut get_resp = app.send_request(get).await;
+    let mut doc: Value = app.json_body(&mut get_resp).await;
+    doc["verifications"] = serde_json::json!([{"metric": "defect_rate", "after": 1.8}]);
+    let upd = app.put_authenticated(&format!("/api/v1/ops/a3s/{}", a3_id), &token, doc);
+    let resp = app.send_request(upd).await;
+    assert_eq!(resp.status(), StatusCode::OK);
+
     let req = app.post_authenticated(
         &format!("/api/v1/ops/a3s/{}/close", a3_id),
         &token,

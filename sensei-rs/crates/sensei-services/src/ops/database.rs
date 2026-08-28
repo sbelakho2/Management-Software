@@ -14,6 +14,19 @@ use uuid::Uuid;
 use super::{Andon, OperationsService, Project, Risk, A3};
 
 /// PostgreSQL-backed implementation of [`OperationsService`].
+/// Transaction-scoped tenant context for RLS (SET LOCAL app.tenant_id).
+async fn set_tenant_context(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    tenant_id: Uuid,
+) -> std::result::Result<(), SenseiError> {
+    sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
+        .bind(tenant_id.to_string())
+        .execute(&mut **tx)
+        .await
+        .map_err(|e| SenseiError::Database(format!("Failed to set tenant context: {e}")))?;
+    Ok(())
+}
+
 pub struct DatabaseOperationsService {
     pool: PgPool,
 }
@@ -92,6 +105,7 @@ struct A3Row {
     owner_id: Uuid,
     created_at: chrono::DateTime<Utc>,
     closed_at: Option<chrono::DateTime<Utc>>,
+    version: i64,
     observed_conditions: serde_json::Value,
     metric_baselines: serde_json::Value,
     evidence_refs: serde_json::Value,
@@ -188,7 +202,7 @@ fn a3_row_to_domain(r: A3Row) -> A3 {
         a3_type: r.a3_type,
         severity: r.severity,
         status: r.status,
-        version: 0,
+        version: r.version.max(0) as u64,
         owner_id: r.owner_id,
         created_at: r.created_at,
         closed_at: r.closed_at,
@@ -322,38 +336,53 @@ impl OperationsService for DatabaseOperationsService {
         resolved_by: Uuid,
         resolution: &str,
     ) -> Result<Andon> {
-        // HARD RULE: a critical-safety Andon keeps the line stopped until
-        // an authorized restart exists (item 126).
-        let current: Option<(String, String, Option<Uuid>)> = sqlx::query_as(
-            "SELECT severity, issue_type, restart_authorized_by FROM andons \
-             WHERE id = $1 AND tenant_id = $2",
-        )
-        .bind(id)
-        .bind(tenant_id)
-        .fetch_optional(&self.pool)
-        .await
-        .map_err(|e| SenseiError::Database(format!("Failed to read andon state: {e}")))?;
-        if let Some((severity, issue_type, restart_authorized_by)) = current {
-            let is_critical_safety = severity == "critical" && issue_type == "safety";
-            crate::tps::rules::check_safety_restart(
-                is_critical_safety,
-                restart_authorized_by.is_some(),
-            )
-            .map_err(|v| SenseiError::Conflict(v.message().to_string()))?;
-        }
-
+        // HARD RULE, enforced ATOMICALLY in SQL: a critical-safety Andon
+        // can only be resolved when a restart authorization exists — the
+        // condition is part of the UPDATE's WHERE, so there is no
+        // read/check/write race between replicas.
         let now = Utc::now();
         let row = sqlx::query_as::<_, AndonRow>(
             r#"UPDATE andons SET status='resolved', resolved_by=$1, resolution=$2, resolved_at=$3,
                 resolution_time_seconds=EXTRACT(EPOCH FROM ($3 - created_at))::bigint,
                 response_time_seconds=COALESCE(response_time_seconds, EXTRACT(EPOCH FROM ($3 - created_at))::bigint)
                WHERE id=$4 AND tenant_id=$5 AND status NOT IN ('resolved','closed')
+                 AND (severity != 'critical' OR issue_type != 'safety' OR restart_authorized_by IS NOT NULL)
                RETURNING id, tenant_id, andon_number, work_center_id, issue_type, severity, description, status, raised_by, acknowledged_by, resolved_by, resolution, response_time_seconds, resolution_time_seconds, created_at, acknowledged_at, resolved_at, restart_authorized_by, restart_authorized_at"#,
         )
         .bind(resolved_by).bind(resolution).bind(now).bind(id).bind(tenant_id)
         .fetch_optional(&self.pool)
-        .await.map_err(|e| SenseiError::Database(format!("Failed to resolve andon: {e}")))?
-        .ok_or_else(|| SenseiError::NotFound(format!("Andon {id} not found or already resolved")))?;
+        .await.map_err(|e| SenseiError::Database(format!("Failed to resolve andon: {e}")))?;
+
+        let Some(row) = row else {
+            // Distinguish: not found / already resolved / safety rule.
+            let state: Option<(String, String, Option<Uuid>, String)> = sqlx::query_as(
+                "SELECT severity, issue_type, restart_authorized_by, status FROM andons \
+                 WHERE id = $1 AND tenant_id = $2",
+            )
+            .bind(id)
+            .bind(tenant_id)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to read andon state: {e}")))?;
+            match state {
+                None => return Err(SenseiError::NotFound(format!("Andon {id} not found"))),
+                Some((_, _, _, status)) if status == "resolved" || status == "closed" => {
+                    return Err(SenseiError::Conflict(format!(
+                        "Andon {id} is already {status}"
+                    )));
+                }
+                Some((severity, issue_type, restart_authorized_by, _)) => {
+                    return crate::tps::rules::check_safety_restart(
+                        severity == "critical" && issue_type == "safety",
+                        restart_authorized_by.is_some(),
+                    )
+                    .map_err(|v| SenseiError::Conflict(v.message().to_string()))
+                    .and(Err(SenseiError::Conflict(
+                        "Andon state changed concurrently — retry".to_string(),
+                    )));
+                }
+            }
+        };
 
         Ok(andon_row_to_domain(row))
     }
@@ -536,15 +565,24 @@ impl OperationsService for DatabaseOperationsService {
         );
 
         let row = sqlx::query_as::<_, A3Row>(
-            r#"INSERT INTO a3_reports (id, tenant_id, a3_number, title, background, current_state, goal, root_cause_analysis, countermeasures, check_plan, follow_up, a3_type, severity, status, owner_id, created_at, closed_at, observed_conditions, metric_baselines, evidence_refs, cause_hypotheses, experiments, verifications, standardizations, learnings)
-               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,'draft',$14,$15,NULL)
-               RETURNING id, tenant_id, a3_number, title, background, current_state, goal, root_cause_analysis, countermeasures, check_plan, follow_up, a3_type, severity, status, owner_id, created_at, closed_at, observed_conditions, metric_baselines, evidence_refs, cause_hypotheses, experiments, verifications, standardizations, learnings"#,
+            r#"INSERT INTO a3_reports (id, tenant_id, a3_number, title, background, current_state, goal, root_cause_analysis, countermeasures, check_plan, follow_up, a3_type, severity, status, owner_id, created_at, closed_at, version, observed_conditions, metric_baselines, evidence_refs, cause_hypotheses, experiments, verifications, standardizations, learnings)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,'draft',$14,$15,NULL,
+                       $16,$17,$18,$19,$20,$21,$22,$23)
+               RETURNING id, tenant_id, a3_number, title, background, current_state, goal, root_cause_analysis, countermeasures, check_plan, follow_up, a3_type, severity, status, owner_id, created_at, closed_at, version, observed_conditions, metric_baselines, evidence_refs, cause_hypotheses, experiments, verifications, standardizations, learnings"#,
         )
         .bind(id).bind(tenant_id).bind(&a3_number).bind(&a3.title).bind(&a3.background)
         .bind(&a3.current_state).bind(&a3.goal).bind(&a3.root_cause_analysis)
         .bind(&a3.countermeasures).bind(&a3.check_plan).bind(&a3.follow_up)
         .bind(&a3.a3_type).bind(&a3.severity)
         .bind(a3.owner_id).bind(now)
+        .bind(serde_json::to_value(&a3.observed_conditions).unwrap_or(serde_json::Value::Array(vec![])))
+        .bind(serde_json::to_value(&a3.metric_baselines).unwrap_or(serde_json::Value::Array(vec![])))
+        .bind(serde_json::to_value(&a3.evidence_refs).unwrap_or(serde_json::Value::Array(vec![])))
+        .bind(serde_json::to_value(&a3.cause_hypotheses).unwrap_or(serde_json::Value::Array(vec![])))
+        .bind(serde_json::to_value(&a3.experiments).unwrap_or(serde_json::Value::Array(vec![])))
+        .bind(serde_json::to_value(&a3.verifications).unwrap_or(serde_json::Value::Array(vec![])))
+        .bind(serde_json::to_value(&a3.standardizations).unwrap_or(serde_json::Value::Array(vec![])))
+        .bind(serde_json::to_value(&a3.learnings).unwrap_or(serde_json::Value::Array(vec![])))
         .fetch_one(&self.pool)
         .await.map_err(|e| SenseiError::Database(format!("Failed to create A3: {e}")))?;
 
@@ -553,7 +591,7 @@ impl OperationsService for DatabaseOperationsService {
 
     async fn get_a3(&self, tenant_id: Uuid, id: Uuid) -> Result<A3> {
         let row = sqlx::query_as::<_, A3Row>(
-            "SELECT id, tenant_id, a3_number, title, background, current_state, goal, root_cause_analysis, countermeasures, check_plan, follow_up, a3_type, severity, status, owner_id, created_at, closed_at, observed_conditions, metric_baselines, evidence_refs, cause_hypotheses, experiments, verifications, standardizations, learnings FROM a3_reports WHERE id = $1 AND tenant_id = $2",
+            "SELECT id, tenant_id, a3_number, title, background, current_state, goal, root_cause_analysis, countermeasures, check_plan, follow_up, a3_type, severity, status, owner_id, created_at, closed_at, version, observed_conditions, metric_baselines, evidence_refs, cause_hypotheses, experiments, verifications, standardizations, learnings FROM a3_reports WHERE id = $1 AND tenant_id = $2",
         )
         .bind(id).bind(tenant_id)
         .fetch_optional(&self.pool)
@@ -575,7 +613,7 @@ impl OperationsService for DatabaseOperationsService {
         let offset = (page - 1) * per_page;
 
         let items: Vec<A3Row> = sqlx::query_as(
-            r#"SELECT id, tenant_id, a3_number, title, background, current_state, goal, root_cause_analysis, countermeasures, check_plan, follow_up, a3_type, severity, status, owner_id, created_at, closed_at, observed_conditions, metric_baselines, evidence_refs, cause_hypotheses, experiments, verifications, standardizations, learnings
+            r#"SELECT id, tenant_id, a3_number, title, background, current_state, goal, root_cause_analysis, countermeasures, check_plan, follow_up, a3_type, severity, status, owner_id, created_at, closed_at, version, observed_conditions, metric_baselines, evidence_refs, cause_hypotheses, experiments, verifications, standardizations, learnings
                FROM a3_reports WHERE tenant_id=$1 AND ($2::text IS NULL OR status=$2)
                ORDER BY created_at DESC LIMIT $3 OFFSET $4"#,
         )
@@ -602,7 +640,7 @@ impl OperationsService for DatabaseOperationsService {
         // countermeasures (root_cause_analysis/countermeasures) and the
         // verification plan (check_plan/follow_up) must be recorded first.
         let existing = sqlx::query_as::<_, A3Row>(
-            r#"SELECT id, tenant_id, a3_number, title, background, current_state, goal, root_cause_analysis, countermeasures, check_plan, follow_up, a3_type, severity, status, owner_id, created_at, closed_at, observed_conditions, metric_baselines, evidence_refs, cause_hypotheses, experiments, verifications, standardizations, learnings
+            r#"SELECT id, tenant_id, a3_number, title, background, current_state, goal, root_cause_analysis, countermeasures, check_plan, follow_up, a3_type, severity, status, owner_id, created_at, closed_at, version, observed_conditions, metric_baselines, evidence_refs, cause_hypotheses, experiments, verifications, standardizations, learnings
                FROM a3_reports WHERE id=$1 AND tenant_id=$2"#,
         )
         .bind(id)
@@ -622,16 +660,57 @@ impl OperationsService for DatabaseOperationsService {
                     .to_string(),
             ));
         }
+        // Closing is evidence-driven: at least one VERIFICATION record
+        // (metric observed after the countermeasure) must be populated.
+        let verifications = existing
+            .verifications
+            .as_array()
+            .map(|a| a.len())
+            .unwrap_or(0);
+        if verifications == 0 {
+            return Err(SenseiError::Validation(
+                "A3 cannot be closed: no verification evidence recorded (verifications is empty)"
+                    .to_string(),
+            ));
+        }
 
         let now = Utc::now();
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to begin close tx: {e}")))?;
+        set_tenant_context(&mut tx, tenant_id).await?;
+
         let row = sqlx::query_as::<_, A3Row>(
-            r#"UPDATE a3_reports SET status='closed', closed_at=$1 WHERE id=$2 AND tenant_id=$3
-               RETURNING id, tenant_id, a3_number, title, background, current_state, goal, root_cause_analysis, countermeasures, check_plan, follow_up, a3_type, severity, status, owner_id, created_at, closed_at, observed_conditions, metric_baselines, evidence_refs, cause_hypotheses, experiments, verifications, standardizations, learnings"#,
+            r#"UPDATE a3_reports SET status='closed', closed_at=$1, version = version + 1 WHERE id=$2 AND tenant_id=$3
+               RETURNING id, tenant_id, a3_number, title, background, current_state, goal, root_cause_analysis, countermeasures, check_plan, follow_up, a3_type, severity, status, owner_id, created_at, closed_at, version, observed_conditions, metric_baselines, evidence_refs, cause_hypotheses, experiments, verifications, standardizations, learnings"#,
         )
         .bind(now).bind(id).bind(tenant_id)
-        .fetch_optional(&self.pool)
+        .fetch_optional(&mut *tx)
         .await.map_err(|e| SenseiError::Database(format!("Failed to close A3: {e}")))?
         .ok_or_else(|| SenseiError::NotFound(format!("A3 {id} not found")))?;
+
+        // Outbox row in the SAME transaction: the close event is never
+        // lost to a post-commit publish failure.
+        sqlx::query(
+            "INSERT INTO outbox_events \
+                (event_id, tenant_id, aggregate_type, aggregate_id, event_type, payload) \
+             VALUES ($1, $2, 'a3', $3, 'sensei.a3.closed', $4)",
+        )
+        .bind(Uuid::new_v4())
+        .bind(tenant_id)
+        .bind(id)
+        .bind(serde_json::json!({ "a3_number": row.a3_number }))
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| {
+            SenseiError::Database(format!("Failed to write A3 close outbox event: {e}"))
+        })?;
+
+        tx.commit()
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to commit close tx: {e}")))?;
 
         Ok(a3_row_to_domain(row))
     }
@@ -745,9 +824,12 @@ impl OperationsService for DatabaseOperationsService {
         actor_id: Uuid,
         reason: &str,
     ) -> Result<Andon> {
+        // The critical-safety rule applies to voiding too: a safety Andon
+        // cannot avoid the resolve guard by going down the void path.
         let row = sqlx::query_as::<_, AndonRow>(
             "UPDATE andons SET status = 'voided', resolved_by = $3, resolution = $4 \
              WHERE id = $1 AND tenant_id = $2 \
+               AND (severity != 'critical' OR issue_type != 'safety' OR restart_authorized_by IS NOT NULL) \
              RETURNING id, tenant_id, andon_number, work_center_id, issue_type, severity, \
                        description, status, raised_by, acknowledged_by, resolved_by, \
                        resolution, response_time_seconds, resolution_time_seconds, \
@@ -759,8 +841,32 @@ impl OperationsService for DatabaseOperationsService {
         .bind(format!("VOIDED: {reason}"))
         .fetch_optional(&self.pool)
         .await
-        .map_err(|e| SenseiError::Database(format!("Failed to void andon: {e}")))?
-        .ok_or_else(|| SenseiError::NotFound(format!("Andon {id} not found")))?;
+        .map_err(|e| SenseiError::Database(format!("Failed to void andon: {e}")))?;
+
+        let Some(row) = row else {
+            let state: Option<(String, String, Option<Uuid>)> = sqlx::query_as(
+                "SELECT severity, issue_type, restart_authorized_by FROM andons \
+                 WHERE id = $1 AND tenant_id = $2",
+            )
+            .bind(id)
+            .bind(tenant_id)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to read andon state: {e}")))?;
+            return match state {
+                None => Err(SenseiError::NotFound(format!("Andon {id} not found"))),
+                Some((severity, issue_type, restart_authorized_by)) => {
+                    crate::tps::rules::check_safety_restart(
+                        severity == "critical" && issue_type == "safety",
+                        restart_authorized_by.is_some(),
+                    )
+                    .map_err(|v| SenseiError::Conflict(v.message().to_string()))
+                    .and(Err(SenseiError::Conflict(
+                        "Andon state changed concurrently — retry".to_string(),
+                    )))
+                }
+            };
+        };
         Ok(andon_row_to_domain(row))
     }
 
@@ -800,18 +906,38 @@ impl OperationsService for DatabaseOperationsService {
     // ── Update/Delete for A3 ────────────────────────────────────────────
 
     async fn update_a3(&self, tenant_id: Uuid, id: Uuid, a3: A3) -> Result<A3> {
+        // Optimistic concurrency is ATOMIC in SQL: the row updates ONLY
+        // when it still holds the caller's expected version, and the
+        // version increments in the same statement. Two replicas that both
+        // read version 0 cannot both succeed — the loser gets 0 rows -> 409.
+        let expected = a3.version;
         let row = sqlx::query_as::<_, A3Row>(
-            r#"UPDATE a3_reports SET title=$1, background=$2, current_state=$3, goal=$4, root_cause_analysis=$5, countermeasures=$6, check_plan=$7, follow_up=$8, a3_type=$9, severity=$10
-               WHERE id=$11 AND tenant_id=$12
-               RETURNING id, tenant_id, a3_number, title, background, current_state, goal, root_cause_analysis, countermeasures, check_plan, follow_up, a3_type, severity, status, owner_id, created_at, closed_at, observed_conditions, metric_baselines, evidence_refs, cause_hypotheses, experiments, verifications, standardizations, learnings"#,
+            r#"UPDATE a3_reports SET title=$1, background=$2, current_state=$3, goal=$4, root_cause_analysis=$5, countermeasures=$6, check_plan=$7, follow_up=$8, a3_type=$9, severity=$10,
+                                   observed_conditions=$13, metric_baselines=$14, evidence_refs=$15, cause_hypotheses=$16, experiments=$17, verifications=$18, standardizations=$19, learnings=$20,
+                                   version = version + 1
+               WHERE id=$11 AND tenant_id=$12 AND version=$21
+               RETURNING id, tenant_id, a3_number, title, background, current_state, goal, root_cause_analysis, countermeasures, check_plan, follow_up, a3_type, severity, status, owner_id, created_at, closed_at, version, observed_conditions, metric_baselines, evidence_refs, cause_hypotheses, experiments, verifications, standardizations, learnings"#,
         )
         .bind(&a3.title).bind(&a3.background).bind(&a3.current_state).bind(&a3.goal)
         .bind(&a3.root_cause_analysis).bind(&a3.countermeasures).bind(&a3.check_plan).bind(&a3.follow_up)
         .bind(&a3.a3_type).bind(&a3.severity)
         .bind(id).bind(tenant_id)
+        .bind(serde_json::to_value(&a3.observed_conditions).unwrap_or(serde_json::Value::Array(vec![])))
+        .bind(serde_json::to_value(&a3.metric_baselines).unwrap_or(serde_json::Value::Array(vec![])))
+        .bind(serde_json::to_value(&a3.evidence_refs).unwrap_or(serde_json::Value::Array(vec![])))
+        .bind(serde_json::to_value(&a3.cause_hypotheses).unwrap_or(serde_json::Value::Array(vec![])))
+        .bind(serde_json::to_value(&a3.experiments).unwrap_or(serde_json::Value::Array(vec![])))
+        .bind(serde_json::to_value(&a3.verifications).unwrap_or(serde_json::Value::Array(vec![])))
+        .bind(serde_json::to_value(&a3.standardizations).unwrap_or(serde_json::Value::Array(vec![])))
+        .bind(serde_json::to_value(&a3.learnings).unwrap_or(serde_json::Value::Array(vec![])))
+        .bind(expected as i64)
         .fetch_optional(&self.pool)
         .await.map_err(|e| SenseiError::Database(format!("Failed to update A3: {e}")))?
-        .ok_or_else(|| SenseiError::NotFound(format!("A3 {id} not found")))?;
+        .ok_or_else(|| {
+            SenseiError::Conflict(format!(
+                "VERSION_CONFLICT: A3 {id} was modified concurrently (expected version {expected})"
+            ))
+        })?;
 
         Ok(a3_row_to_domain(row))
     }

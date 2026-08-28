@@ -97,6 +97,7 @@ pub async fn list_products(
     State(state): State<AppState>,
     Query(params): Query<ListProductsParams>,
 ) -> Result<Json<PaginatedResponse<ProductResponse>>> {
+    user.require_permission("master-data:products:read")?;
     let tenant_id = user.tenant_id;
     let result = state
         .products_service
@@ -124,6 +125,7 @@ pub async fn create_product(
     State(state): State<AppState>,
     Json(req): Json<ProductRequest>,
 ) -> Result<Json<ProductResponse>> {
+    user.require_permission("master-data:products:manage")?;
     let tenant_id = user.tenant_id;
     let product = Product {
         id: EntityId::default(),
@@ -157,6 +159,7 @@ pub async fn get_product(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ProductResponse>> {
+    user.require_permission("master-data:products:read")?;
     let tenant_id = user.tenant_id;
     let product = state.products_service.get_product(tenant_id, id).await?;
     Ok(Json(ProductResponse::from(product)))
@@ -169,6 +172,7 @@ pub async fn update_product(
     Path(id): Path<Uuid>,
     Json(req): Json<ProductRequest>,
 ) -> Result<Json<ProductResponse>> {
+    user.require_permission("master-data:products:manage")?;
     let tenant_id = user.tenant_id;
     // Fetch the stored product so creation timestamps and the active flag
     // (when not overridden) survive the update.
@@ -205,6 +209,7 @@ pub async fn delete_product(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>> {
+    user.require_permission("master-data:products:manage")?;
     let tenant_id = user.tenant_id;
     state.products_service.delete_product(tenant_id, id).await?;
     Ok(Json(serde_json::json!({
@@ -246,7 +251,17 @@ mod tests {
         AuthenticatedUser {
             user_id,
             tenant_id,
-            roles: vec!["admin".to_string()],
+            roles: vec![
+                "user".to_string(),
+                "tenant_admin".to_string(),
+                "production_manager".to_string(),
+                "quality_manager".to_string(),
+                "purchasing_manager".to_string(),
+                "sales_manager".to_string(),
+                "finance_manager".to_string(),
+                "inventory_manager".to_string(),
+                "operator".to_string(),
+            ],
             sid: None,
         }
     }

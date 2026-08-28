@@ -92,6 +92,7 @@ pub async fn list_saved_views(
     State(state): State<AppState>,
     Query(params): Query<ListSavedViewsParams>,
 ) -> Result<Json<PaginatedResponse<SavedView>>> {
+    user.require_permission("dashboard:read")?;
     let tenant_id = user.tenant_id;
     let user_id = user.user_id;
     let store = state.saved_views.read(user.tenant_id).await;
@@ -128,6 +129,7 @@ pub async fn create_saved_view(
     State(state): State<AppState>,
     Json(req): Json<SavedViewRequest>,
 ) -> Result<Json<SavedView>> {
+    user.require_permission("dashboard:read")?;
     let tenant_id = user.tenant_id;
     let user_id = user.user_id;
     validate_shared_users(&state, tenant_id, &req.shared_with).await?;
@@ -191,6 +193,7 @@ pub async fn get_saved_view(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<SavedView>> {
+    user.require_permission("dashboard:read")?;
     let tenant_id = user.tenant_id;
     let user_id = user.user_id;
     let mut store = state.saved_views.write(user.tenant_id).await;
@@ -232,6 +235,7 @@ pub async fn update_saved_view(
     Path(id): Path<Uuid>,
     Json(req): Json<UpdateSavedViewRequest>,
 ) -> Result<Json<SavedView>> {
+    user.require_permission("dashboard:read")?;
     let tenant_id = user.tenant_id;
     let user_id = user.user_id;
     if let Some(shared) = &req.shared_with {
@@ -322,6 +326,7 @@ pub async fn delete_saved_view(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<()>> {
+    user.require_permission("dashboard:read")?;
     let tenant_id = user.tenant_id;
     let user_id = user.user_id;
     let mut store = state.saved_views.write(user.tenant_id).await;
@@ -356,6 +361,7 @@ pub async fn share_saved_view(
     Path(view_id): Path<Uuid>,
     Json(req): Json<ShareViewRequest>,
 ) -> Result<Json<SavedView>> {
+    user.require_permission("dashboard:read")?;
     let tenant_id = user.tenant_id;
     let user_id = user.user_id;
     validate_shared_users(&state, tenant_id, &req.user_ids).await?;

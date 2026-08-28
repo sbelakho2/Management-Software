@@ -62,6 +62,7 @@ pub async fn list_rfqs(
     State(state): State<AppState>,
     Query(params): Query<ListRfqsParams>,
 ) -> Result<Json<PaginatedResponse<RFQ>>> {
+    user.require_permission("purchasing:rfq:manage")?;
     let tenant_id = user.tenant_id;
     let rfqs = state
         .supply_chain_service
@@ -81,6 +82,7 @@ pub async fn create_rfq(
     State(state): State<AppState>,
     Json(req): Json<RfqRequest>,
 ) -> Result<Json<RFQ>> {
+    user.require_permission("purchasing:rfq:create")?;
     let tenant_id = user.tenant_id;
     let rfq = RFQ {
         id: Uuid::new_v4(),
@@ -107,6 +109,7 @@ pub async fn get_rfq(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<RFQ>> {
+    user.require_permission("purchasing:rfq:manage")?;
     let tenant_id = user.tenant_id;
     let rfq = state.supply_chain_service.get_rfq(tenant_id, id).await?;
     Ok(Json(rfq))
@@ -119,6 +122,7 @@ pub async fn update_rfq(
     Path(id): Path<Uuid>,
     Json(req): Json<RfqRequest>,
 ) -> Result<Json<RFQ>> {
+    user.require_permission("purchasing:rfq:update")?;
     let tenant_id = user.tenant_id;
     let mut rfq = state.supply_chain_service.get_rfq(tenant_id, id).await?;
     rfq.supplier_id = req.supplier_id;
@@ -137,6 +141,7 @@ pub async fn delete_rfq(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<()>> {
+    user.require_permission("purchasing:rfq:delete")?;
     let tenant_id = user.tenant_id;
     state.supply_chain_service.delete_rfq(tenant_id, id).await?;
     Ok(Json(()))
@@ -149,6 +154,7 @@ pub async fn add_rfq_line_item(
     Path(rfq_id): Path<Uuid>,
     Json(req): Json<RfqLineItemRequest>,
 ) -> Result<Json<RFQItem>> {
+    user.require_permission("purchasing:rfq:update")?;
     let tenant_id = user.tenant_id;
     let item = RFQItem {
         line_item_id: Some(Uuid::new_v4()),
@@ -183,6 +189,7 @@ pub async fn update_rfq_line_item(
     Path((rfq_id, item_id)): Path<(Uuid, Uuid)>,
     Json(req): Json<RfqLineItemRequest>,
 ) -> Result<Json<RFQItem>> {
+    user.require_permission("purchasing:rfq:update")?;
     let tenant_id = user.tenant_id;
     let mut rfq = state
         .supply_chain_service

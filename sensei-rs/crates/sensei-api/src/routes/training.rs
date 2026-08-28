@@ -132,6 +132,7 @@ pub async fn list_courses(
     State(state): State<AppState>,
     Query(params): Query<ListCoursesParams>,
 ) -> Result<Json<PaginatedResponse<TrainingCourse>>> {
+    user.require_permission("training:read")?;
     let tenant_id = user.tenant_id;
     let store = state.training_courses.read(user.tenant_id).await;
     let mut courses: Vec<TrainingCourse> = store
@@ -171,6 +172,7 @@ pub async fn create_course(
     State(state): State<AppState>,
     Json(req): Json<CreateCourseRequest>,
 ) -> Result<Json<TrainingCourse>> {
+    user.require_permission("training:manage")?;
     let tenant_id = user.tenant_id;
     let now = Utc::now();
     let course = TrainingCourse {
@@ -201,6 +203,7 @@ pub async fn get_course(
     State(state): State<AppState>,
     Path(course_id): Path<Uuid>,
 ) -> Result<Json<TrainingCourse>> {
+    user.require_permission("training:read")?;
     let tenant_id = user.tenant_id;
     let store = state.training_courses.read(user.tenant_id).await;
     let course = store
@@ -218,6 +221,7 @@ pub async fn update_course(
     Path(course_id): Path<Uuid>,
     Json(req): Json<UpdateCourseRequest>,
 ) -> Result<Json<TrainingCourse>> {
+    user.require_permission("training:manage")?;
     let tenant_id = user.tenant_id;
     let mut store = state.training_courses.write(user.tenant_id).await;
     let course = store
@@ -264,6 +268,7 @@ pub async fn delete_course(
     State(state): State<AppState>,
     Path(course_id): Path<Uuid>,
 ) -> Result<Json<()>> {
+    user.require_permission("training:manage")?;
     let tenant_id = user.tenant_id;
     let mut store = state.training_courses.write(user.tenant_id).await;
     let exists = store
@@ -291,6 +296,7 @@ pub async fn enroll_users(
     Path(course_id): Path<Uuid>,
     Json(req): Json<EnrollUsersRequest>,
 ) -> Result<Json<Vec<TrainingEnrollment>>> {
+    user.require_permission("training:manage")?;
     let tenant_id = user.tenant_id;
     // Verify course exists
     {
@@ -349,6 +355,7 @@ pub async fn list_enrollments(
     Path(course_id): Path<Uuid>,
     Query(params): Query<ListEnrollmentsParams>,
 ) -> Result<Json<PaginatedResponse<TrainingEnrollment>>> {
+    user.require_permission("training:read")?;
     let tenant_id = user.tenant_id;
     let store = state.training_enrollments.read(user.tenant_id).await;
     let mut enrollments: Vec<TrainingEnrollment> = store
@@ -382,6 +389,7 @@ pub async fn update_enrollment_status(
     Path(enrollment_id): Path<Uuid>,
     Json(req): Json<UpdateEnrollmentStatusRequest>,
 ) -> Result<Json<TrainingEnrollment>> {
+    user.require_permission("training:manage")?;
     let tenant_id = user.tenant_id;
     let mut store = state.training_enrollments.write(user.tenant_id).await;
     let enrollment = store
@@ -412,6 +420,7 @@ pub async fn my_courses(
     State(state): State<AppState>,
     Query(params): Query<MyCoursesParams>,
 ) -> Result<Json<PaginatedResponse<TrainingEnrollment>>> {
+    user.require_permission("training:read")?;
     let tenant_id = user.tenant_id;
     let store = state.training_enrollments.read(user.tenant_id).await;
     let mut enrollments: Vec<TrainingEnrollment> = store
@@ -436,6 +445,7 @@ pub async fn get_training_dashboard(
     user: AuthenticatedUser,
     State(state): State<AppState>,
 ) -> Result<Json<TrainingDashboard>> {
+    user.require_permission("training:read")?;
     let tenant_id = user.tenant_id;
 
     let courses_store = state.training_courses.read(user.tenant_id).await;

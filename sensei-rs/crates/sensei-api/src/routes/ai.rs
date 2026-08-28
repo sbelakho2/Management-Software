@@ -49,6 +49,7 @@ pub async fn detect_anomalies(
     State(state): State<AppState>,
     Json(req): Json<DetectAnomaliesRequest>,
 ) -> Result<Json<Vec<sensei_services::ai::AnomalyPrediction>>> {
+    user.require_permission("ai:inference")?;
     let tenant_id = user.tenant_id;
     let predictions = state
         .ai_service
@@ -63,6 +64,7 @@ pub async fn predict_quality(
     State(state): State<AppState>,
     Json(req): Json<PredictQualityRequest>,
 ) -> Result<Json<sensei_services::ai::QualityPrediction>> {
+    user.require_permission("ai:inference")?;
     let tenant_id = user.tenant_id;
     let prediction = state
         .ai_service
@@ -77,6 +79,7 @@ pub async fn predict_maintenance(
     State(state): State<AppState>,
     Json(req): Json<PredictMaintenanceRequest>,
 ) -> Result<Json<sensei_services::ai::PredictiveMaintenanceResult>> {
+    user.require_permission("ai:inference")?;
     let tenant_id = user.tenant_id;
     let result = state
         .ai_service
@@ -91,6 +94,7 @@ pub async fn retrain_model(
     State(state): State<AppState>,
     Json(req): Json<RetrainModelRequest>,
 ) -> Result<axum::response::Response> {
+    user.require_permission("ai:retrain")?;
     let tenant_id = user.tenant_id;
     // Queue the training job: the model enters 'training' and is NEVER
     // deployed by this call (approval gates promotion). The response is

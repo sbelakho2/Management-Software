@@ -251,6 +251,7 @@ pub async fn toggle_trigger(
     State(state): State<AppState>,
     Path(trigger_id): Path<Uuid>,
 ) -> Result<Json<NotificationTrigger>> {
+    user.require_permission("tps:notification-triggers:manage")?;
     let tenant_id = user.tenant_id;
     let mut store = state.notification_triggers.write(user.tenant_id).await;
     let trigger = store
@@ -305,6 +306,7 @@ pub async fn test_trigger(
     Path(trigger_id): Path<Uuid>,
     Json(req): Json<TestTriggerRequest>,
 ) -> Result<Json<TriggerTestResult>> {
+    user.require_permission("tps:notification-triggers:manage")?;
     let tenant_id = user.tenant_id;
     let store = state.notification_triggers.read(user.tenant_id).await;
     let trigger = store

@@ -17,6 +17,19 @@ use super::{
 };
 
 /// PostgreSQL-backed implementation of [`SupplyChainService`].
+/// Transaction-scoped tenant context for RLS (SET LOCAL app.tenant_id).
+async fn set_tenant_context(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    tenant_id: Uuid,
+) -> std::result::Result<(), SenseiError> {
+    sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
+        .bind(tenant_id.to_string())
+        .execute(&mut **tx)
+        .await
+        .map_err(|e| SenseiError::Database(format!("Failed to set tenant context: {e}")))?;
+    Ok(())
+}
+
 pub struct DatabaseSupplyChainService {
     pool: PgPool,
 }
@@ -930,6 +943,7 @@ impl SupplyChainService for DatabaseSupplyChainService {
             .begin()
             .await
             .map_err(|e| SenseiError::Database(format!("Failed to begin transaction: {e}")))?;
+        set_tenant_context(&mut tx, tenant_id).await?;
 
         let row = sqlx::query_as::<_, StockMoveRow>(
             r#"INSERT INTO stock_moves (id, tenant_id, product_id, product_name, quantity, move_type, from_location, to_location, reference_type, reference_id, created_by, created_at)

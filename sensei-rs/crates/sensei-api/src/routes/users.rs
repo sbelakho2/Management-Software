@@ -298,7 +298,17 @@ mod tests {
         AuthenticatedUser {
             user_id,
             tenant_id,
-            roles: vec!["admin".to_string()],
+            roles: vec![
+                "user".to_string(),
+                "tenant_admin".to_string(),
+                "production_manager".to_string(),
+                "quality_manager".to_string(),
+                "purchasing_manager".to_string(),
+                "sales_manager".to_string(),
+                "finance_manager".to_string(),
+                "inventory_manager".to_string(),
+                "operator".to_string(),
+            ],
             sid: None,
         }
     }

@@ -43,4 +43,5 @@ async-trait.workspace = true
 reqwest.workspace = true
 
 [dev-dependencies]
+regex = "1"
 reqwest.workspace = true

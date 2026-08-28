@@ -113,6 +113,25 @@ pub struct UpdateA3Request {
     pub follow_up: Option<String>,
     #[serde(default)]
     pub expected_version: Option<u64>,
+    /// Structured evidence model (observed conditions, baselines, evidence
+    /// refs, hypotheses, experiments, verifications, standardizations,
+    /// learnings).
+    #[serde(default)]
+    pub observed_conditions: Option<Vec<serde_json::Value>>,
+    #[serde(default)]
+    pub metric_baselines: Option<Vec<serde_json::Value>>,
+    #[serde(default)]
+    pub evidence_refs: Option<Vec<String>>,
+    #[serde(default)]
+    pub cause_hypotheses: Option<Vec<serde_json::Value>>,
+    #[serde(default)]
+    pub experiments: Option<Vec<serde_json::Value>>,
+    #[serde(default)]
+    pub verifications: Option<Vec<serde_json::Value>>,
+    #[serde(default)]
+    pub standardizations: Option<Vec<serde_json::Value>>,
+    #[serde(default)]
+    pub learnings: Option<Vec<serde_json::Value>>,
 }
 
 pub async fn update_a3(
@@ -155,7 +174,33 @@ pub async fn update_a3(
     if let Some(v) = req.follow_up {
         updated.follow_up = v;
     }
-    updated.version += 1;
+    // The structured evidence model is writable through the API.
+    if let Some(v) = req.observed_conditions {
+        updated.observed_conditions = v;
+    }
+    if let Some(v) = req.metric_baselines {
+        updated.metric_baselines = v;
+    }
+    if let Some(v) = req.evidence_refs {
+        updated.evidence_refs = v;
+    }
+    if let Some(v) = req.cause_hypotheses {
+        updated.cause_hypotheses = v;
+    }
+    if let Some(v) = req.experiments {
+        updated.experiments = v;
+    }
+    if let Some(v) = req.verifications {
+        updated.verifications = v;
+    }
+    if let Some(v) = req.standardizations {
+        updated.standardizations = v;
+    }
+    if let Some(v) = req.learnings {
+        updated.learnings = v;
+    }
+    // The DB owns the version increment (atomic CAS); `updated.version` is
+    // the EXPECTED version the SQL compares against.
     let a3 = state.ops_service.update_a3(tenant_id, id, updated).await?;
     Ok(Json(a3))
 }

@@ -74,6 +74,7 @@ pub async fn list_andons(
     State(state): State<AppState>,
     Query(params): Query<ListAndonsParams>,
 ) -> Result<Json<PaginatedResponse<Andon>>> {
+    user.require_permission("tps:andon:raise")?;
     let tenant_id = user.tenant_id;
     let andons = state
         .ops_service
@@ -94,6 +95,7 @@ pub async fn raise_andon(
     State(state): State<AppState>,
     Json(req): Json<Andon>,
 ) -> Result<Json<Andon>> {
+    user.require_permission("tps:andon:raise")?;
     let tenant_id = user.tenant_id;
     let andon = state.ops_service.raise_andon(tenant_id, req).await?;
     Ok(Json(andon))
@@ -105,6 +107,7 @@ pub async fn get_andon(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<Andon>> {
+    user.require_permission("tps:andon:raise")?;
     let tenant_id = user.tenant_id;
     let andon = state.ops_service.get_andon(tenant_id, id).await?;
     Ok(Json(andon))
@@ -119,6 +122,7 @@ pub async fn acknowledge_andon(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<Andon>> {
+    user.require_permission("tps:andon:ack")?;
     let tenant_id = user.tenant_id;
     let andon = state
         .ops_service
@@ -137,6 +141,7 @@ pub async fn resolve_andon(
     Path(id): Path<Uuid>,
     Json(req): Json<ResolveAndonRequest>,
 ) -> Result<Json<Andon>> {
+    user.require_permission("tps:andon:resolve")?;
     let tenant_id = user.tenant_id;
     let andon = state
         .ops_service
@@ -153,6 +158,7 @@ pub async fn list_projects(
     State(state): State<AppState>,
     Query(params): Query<ListProjectsParams>,
 ) -> Result<Json<PaginatedResponse<Project>>> {
+    user.require_permission("tps:obeya:read")?;
     let tenant_id = user.tenant_id;
     let projects = state
         .ops_service
@@ -173,6 +179,7 @@ pub async fn create_project(
     State(state): State<AppState>,
     Json(req): Json<Project>,
 ) -> Result<Json<Project>> {
+    user.require_permission("tps:obeya:manage")?;
     let tenant_id = user.tenant_id;
     let project = state.ops_service.create_project(tenant_id, req).await?;
     Ok(Json(project))
@@ -184,6 +191,7 @@ pub async fn get_project(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<Project>> {
+    user.require_permission("tps:obeya:read")?;
     let tenant_id = user.tenant_id;
     let project = state.ops_service.get_project(tenant_id, id).await?;
     Ok(Json(project))
@@ -196,6 +204,7 @@ pub async fn complete_project(
     Path(id): Path<Uuid>,
     Json(req): Json<CompleteProjectRequest>,
 ) -> Result<Json<Project>> {
+    user.require_permission("tps:obeya:manage")?;
     let tenant_id = user.tenant_id;
     let project = state
         .ops_service
@@ -212,6 +221,7 @@ pub async fn list_a3s(
     State(state): State<AppState>,
     Query(params): Query<ListA3sParams>,
 ) -> Result<Json<PaginatedResponse<A3>>> {
+    user.require_permission("tps:a3:read")?;
     let tenant_id = user.tenant_id;
     let a3s = state
         .ops_service
@@ -231,6 +241,7 @@ pub async fn create_a3(
     State(state): State<AppState>,
     Json(req): Json<A3>,
 ) -> Result<Json<A3>> {
+    user.require_permission("tps:a3:create")?;
     let tenant_id = user.tenant_id;
     let a3 = state.ops_service.create_a3(tenant_id, req).await?;
     Ok(Json(a3))
@@ -242,6 +253,7 @@ pub async fn get_a3(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<A3>> {
+    user.require_permission("tps:a3:read")?;
     let tenant_id = user.tenant_id;
     let a3 = state.ops_service.get_a3(tenant_id, id).await?;
     Ok(Json(a3))
@@ -253,6 +265,7 @@ pub async fn close_a3(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<A3>> {
+    user.require_permission("tps:a3:close")?;
     let tenant_id = user.tenant_id;
     let a3 = state.ops_service.close_a3(tenant_id, id).await?;
     Ok(Json(a3))
@@ -266,6 +279,7 @@ pub async fn list_risks(
     State(state): State<AppState>,
     Query(params): Query<ListRisksParams>,
 ) -> Result<Json<PaginatedResponse<Risk>>> {
+    user.require_permission("quality:audit:read")?;
     let tenant_id = user.tenant_id;
     let risks = state
         .ops_service
@@ -286,6 +300,7 @@ pub async fn create_risk(
     State(state): State<AppState>,
     Json(req): Json<Risk>,
 ) -> Result<Json<Risk>> {
+    user.require_permission("quality:audit:create")?;
     let tenant_id = user.tenant_id;
     let risk = state.ops_service.create_risk(tenant_id, req).await?;
     Ok(Json(risk))
@@ -297,6 +312,7 @@ pub async fn get_risk(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<Risk>> {
+    user.require_permission("quality:audit:read")?;
     let tenant_id = user.tenant_id;
     let risk = state.ops_service.get_risk(tenant_id, id).await?;
     Ok(Json(risk))
@@ -339,6 +355,7 @@ pub async fn update_project(
     Path(id): Path<Uuid>,
     Json(req): Json<Project>,
 ) -> Result<Json<Project>> {
+    user.require_permission("tps:obeya:manage")?;
     let tenant_id = user.tenant_id;
     let project = state.ops_service.update_project(tenant_id, id, req).await?;
     Ok(Json(project))
@@ -350,6 +367,7 @@ pub async fn delete_project(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<()>> {
+    user.require_permission("tps:obeya:manage")?;
     let tenant_id = user.tenant_id;
     state.ops_service.delete_project(tenant_id, id).await?;
     Ok(Json(()))
@@ -362,6 +380,7 @@ pub async fn update_a3(
     Path(id): Path<Uuid>,
     Json(req): Json<A3>,
 ) -> Result<Json<A3>> {
+    user.require_permission("tps:a3:edit")?;
     let tenant_id = user.tenant_id;
     let a3 = state.ops_service.update_a3(tenant_id, id, req).await?;
     Ok(Json(a3))
@@ -373,6 +392,7 @@ pub async fn delete_a3(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<()>> {
+    user.require_permission("tps:a3:close")?;
     let tenant_id = user.tenant_id;
     state.ops_service.delete_a3(tenant_id, id).await?;
     Ok(Json(()))
@@ -385,6 +405,7 @@ pub async fn update_risk(
     Path(id): Path<Uuid>,
     Json(req): Json<Risk>,
 ) -> Result<Json<Risk>> {
+    user.require_permission("quality:audit:update")?;
     let tenant_id = user.tenant_id;
     let risk = state.ops_service.update_risk(tenant_id, id, req).await?;
     Ok(Json(risk))
@@ -396,6 +417,7 @@ pub async fn delete_risk(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<()>> {
+    user.require_permission("quality:audit:update")?;
     let tenant_id = user.tenant_id;
     state.ops_service.delete_risk(tenant_id, id).await?;
     Ok(Json(()))
@@ -407,6 +429,7 @@ pub async fn mitigate_risk(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<Risk>> {
+    user.require_permission("quality:audit:update")?;
     let tenant_id = user.tenant_id;
     let risk = state.ops_service.mitigate_risk(tenant_id, id).await?;
     Ok(Json(risk))

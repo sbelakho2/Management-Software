@@ -107,6 +107,7 @@ pub async fn upload_document(
     State(state): State<AppState>,
     mut multipart: Multipart,
 ) -> Result<Json<UploadResponse>> {
+    user.require_permission("knowledge:manage")?;
     let max_size = state.config.api.body_limit;
     let mut file_name = String::new();
     let mut content_type = String::new();
@@ -247,6 +248,7 @@ pub async fn get_ingestion_status(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<IngestionJob>> {
+    user.require_permission("knowledge:read")?;
     let store = state.ingestion_jobs.read(user.tenant_id).await;
     let job = store
         .values()
@@ -262,6 +264,7 @@ pub async fn list_ingestion_history(
     State(state): State<AppState>,
     Query(params): Query<IngestionHistoryParams>,
 ) -> Result<Json<PaginatedResponse<IngestionJob>>> {
+    user.require_permission("knowledge:read")?;
     let store = state.ingestion_jobs.read(user.tenant_id).await;
     let mut jobs: Vec<IngestionJob> = store
         .values()

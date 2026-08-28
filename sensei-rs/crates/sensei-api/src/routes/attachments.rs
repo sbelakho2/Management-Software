@@ -348,6 +348,7 @@ pub async fn upload_attachment(
     State(state): State<AppState>,
     mut multipart: Multipart,
 ) -> Result<Json<UploadedAttachment>> {
+    user.require_permission("attachments:manage")?;
     let mut tmp_path: Option<std::path::PathBuf> = None;
     let outcome = upload_inner(&state, user, &mut multipart, &mut tmp_path).await;
     // Best-effort cleanup of the spooled temp file on every path.
@@ -539,6 +540,7 @@ pub async fn list_attachments(
     Path((entity_type, entity_id)): Path<(String, Uuid)>,
     Query(params): Query<ListAttachmentsParams>,
 ) -> Result<Json<PaginatedResponse<Attachment>>> {
+    user.require_permission("attachments:read")?;
     let attachments = state
         .attachment_repo
         .list(user.tenant_id, &entity_type, entity_id)
@@ -561,6 +563,7 @@ pub async fn download_attachment(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<axum::response::Response> {
+    user.require_permission("attachments:read")?;
     use axum::http::header::{CONTENT_DISPOSITION, CONTENT_TYPE};
 
     let attachment = state
@@ -628,6 +631,7 @@ pub async fn delete_attachment(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<()>> {
+    user.require_permission("attachments:manage")?;
     // Read the metadata entry first (typed repository).
     let attachment = state
         .attachment_repo

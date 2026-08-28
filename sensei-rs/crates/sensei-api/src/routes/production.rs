@@ -128,10 +128,17 @@ pub async fn report_production(
     Path(id): Path<Uuid>,
     Json(req): Json<ReportProductionRequest>,
 ) -> Result<Json<WorkOrder>> {
+    user.require_permission("production:report")?;
     let tenant_id = user.tenant_id;
     let order = state
         .production_service
-        .report_production(tenant_id, id, req.quantity_completed, req.quantity_scrapped)
+        .report_production(
+            tenant_id,
+            id,
+            req.quantity_completed,
+            req.quantity_scrapped,
+            user.user_id,
+        )
         .await?;
     Ok(Json(order))
 }
@@ -144,6 +151,7 @@ pub async fn list_production_orders(
     State(state): State<AppState>,
     Query(params): Query<ListProductionOrdersParams>,
 ) -> Result<Json<PaginatedResponse<ProductionOrder>>> {
+    user.require_permission("production:work-order:read")?;
     let tenant_id = user.tenant_id;
     let orders = state
         .production_service
@@ -178,6 +186,7 @@ pub async fn get_production_order(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ProductionOrder>> {
+    user.require_permission("production:work-order:read")?;
     let tenant_id = user.tenant_id;
     let order = state
         .production_service

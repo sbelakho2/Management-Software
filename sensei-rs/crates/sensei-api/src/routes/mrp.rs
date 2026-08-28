@@ -159,6 +159,7 @@ pub async fn create_demand(
     State(state): State<AppState>,
     Json(req): Json<CreateDemandRequest>,
 ) -> Result<Json<DemandEntry>> {
+    user.require_permission("tps:mrp:run")?;
     let tenant_id = user.tenant_id;
     let now = Utc::now();
     let due_date = DateTime::parse_from_rfc3339(&req.due_date)

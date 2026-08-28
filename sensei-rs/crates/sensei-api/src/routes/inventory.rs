@@ -127,6 +127,7 @@ pub async fn list_inventory_items(
     State(state): State<AppState>,
     Query(params): Query<ListInventoryItemsParams>,
 ) -> Result<Json<PaginatedResponse<InventoryItem>>> {
+    user.require_permission("inventory:read")?;
     let tenant_id = user.tenant_id;
     let store = state.inventory_items.read(user.tenant_id).await;
     let mut items: Vec<InventoryItem> = store
@@ -167,6 +168,7 @@ pub async fn get_inventory_item(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<InventoryItem>> {
+    user.require_permission("inventory:read")?;
     let tenant_id = user.tenant_id;
     let store = state.inventory_items.read(user.tenant_id).await;
     let item = store
@@ -311,6 +313,7 @@ pub async fn list_stock_moves(
     State(state): State<AppState>,
     Query(params): Query<ListStockMovesParams>,
 ) -> Result<Json<PaginatedResponse<StockMove>>> {
+    user.require_permission("inventory:read")?;
     let tenant_id = user.tenant_id;
     let store = state.stock_moves.read(user.tenant_id).await;
     let mut moves: Vec<StockMove> = store
@@ -444,6 +447,7 @@ pub async fn list_warehouses(
     State(state): State<AppState>,
     Query(params): Query<ListWarehousesParams>,
 ) -> Result<Json<PaginatedResponse<Warehouse>>> {
+    user.require_permission("inventory:read")?;
     let tenant_id = user.tenant_id;
     let store = state.warehouses.read(user.tenant_id).await;
     let mut warehouses: Vec<Warehouse> = store
@@ -496,6 +500,7 @@ pub async fn get_inventory_stats(
     user: AuthenticatedUser,
     State(state): State<AppState>,
 ) -> Result<Json<InventoryStats>> {
+    user.require_permission("inventory:read")?;
     let tenant_id = user.tenant_id;
     let store = state.inventory_items.read(user.tenant_id).await;
     let items: Vec<&InventoryItem> = store

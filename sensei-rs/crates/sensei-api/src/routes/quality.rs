@@ -187,6 +187,7 @@ pub async fn list_audit_findings(
     State(state): State<AppState>,
     Path(audit_id): axum::extract::Path<Uuid>,
 ) -> Result<Json<Vec<AuditFinding>>> {
+    user.require_permission("quality:audit:read")?;
     let tenant_id = user.tenant_id;
     let result = state
         .quality_service
@@ -201,6 +202,7 @@ pub async fn list_supplier_scorecards(
     State(state): State<AppState>,
     Query(params): axum::extract::Query<ListSupplierScorecardsParams>,
 ) -> Result<Json<PaginatedResponse<SupplierScorecard>>> {
+    user.require_permission("quality:supplier:read")?;
     let tenant_id = user.tenant_id;
     let result = state
         .quality_service
@@ -253,6 +255,7 @@ pub async fn list_first_article_inspections(
     State(state): State<AppState>,
     Query(pagination): Query<ListPaginationParams>,
 ) -> Result<Json<PaginatedResponse<FirstArticleInspection>>> {
+    user.require_permission("quality:fai:read")?;
     let tenant_id = user.tenant_id;
     let result = state
         .quality_service
@@ -313,6 +316,7 @@ pub async fn list_control_plans(
     State(state): State<AppState>,
     Query(pagination): Query<ListPaginationParams>,
 ) -> Result<Json<PaginatedResponse<ControlPlan>>> {
+    user.require_permission("quality:control-plan:read")?;
     let tenant_id = user.tenant_id;
     let result = state
         .quality_service
@@ -327,6 +331,7 @@ pub async fn list_pfmeas(
     State(state): State<AppState>,
     Query(pagination): Query<ListPaginationParams>,
 ) -> Result<Json<PaginatedResponse<PfmeaLite>>> {
+    user.require_permission("quality:pfmea:read")?;
     let tenant_id = user.tenant_id;
     let result = state
         .quality_service
@@ -341,6 +346,7 @@ pub async fn list_npi_projects(
     State(state): State<AppState>,
     Query(params): axum::extract::Query<ListNpiProjectsParams>,
 ) -> Result<Json<PaginatedResponse<NpiProject>>> {
+    user.require_permission("quality:npi:read")?;
     let tenant_id = user.tenant_id;
     let result = state
         .quality_service
@@ -362,6 +368,7 @@ pub async fn list_npi_risks(
     Path(project_id): axum::extract::Path<Uuid>,
     Query(pagination): Query<ListPaginationParams>,
 ) -> Result<Json<PaginatedResponse<NpiRisk>>> {
+    user.require_permission("quality:npi:read")?;
     let tenant_id = user.tenant_id;
     let result = state
         .quality_service
@@ -850,6 +857,7 @@ pub async fn update_first_article_inspection(
     Path(id): Path<Uuid>,
     Json(fai): Json<FirstArticleInspection>,
 ) -> Result<Json<FirstArticleInspection>> {
+    user.require_permission("quality:fai:create")?;
     let tenant_id = user.tenant_id;
     let result = state
         .quality_service
@@ -895,6 +903,7 @@ pub async fn update_self_inspection(
     Path(id): Path<Uuid>,
     Json(inspection): Json<SelfInspection>,
 ) -> Result<Json<SelfInspection>> {
+    user.require_permission("quality:inspection:self")?;
     let tenant_id = user.tenant_id;
     let result = state
         .quality_service
@@ -909,6 +918,7 @@ pub async fn delete_self_inspection(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<()>> {
+    user.require_permission("quality:inspection:self")?;
     let tenant_id = user.tenant_id;
     state
         .quality_service
@@ -974,6 +984,7 @@ pub async fn create_supplier_evaluation(
     State(state): State<AppState>,
     Json(scorecard): Json<SupplierScorecard>,
 ) -> Result<Json<SupplierScorecard>> {
+    user.require_permission("quality:supplier:manage")?;
     let tenant_id = user.tenant_id;
     let result = state
         .quality_service
@@ -989,6 +1000,7 @@ pub async fn update_supplier_scorecard(
     Path(id): Path<Uuid>,
     Json(scorecard): Json<SupplierScorecard>,
 ) -> Result<Json<SupplierScorecard>> {
+    user.require_permission("quality:supplier:manage")?;
     let tenant_id = user.tenant_id;
     let result = state
         .quality_service
@@ -1081,6 +1093,7 @@ pub async fn update_document(
     Path(id): Path<Uuid>,
     Json(doc): Json<QmsDocument>,
 ) -> Result<Json<QmsDocument>> {
+    user.require_permission("quality:document:create")?;
     let tenant_id = user.tenant_id;
     let result = state
         .quality_service
@@ -1095,6 +1108,7 @@ pub async fn delete_document(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<()>> {
+    user.require_permission("quality:document:create")?;
     let tenant_id = user.tenant_id;
     state.quality_service.delete_document(tenant_id, id).await?;
     Ok(Json(()))
@@ -1126,6 +1140,7 @@ pub async fn delete_msa_study(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<()>> {
+    user.require_permission("quality:msa:create")?;
     let tenant_id = user.tenant_id;
     state
         .quality_service
@@ -1160,6 +1175,7 @@ pub async fn delete_process_capability_study(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<()>> {
+    user.require_permission("quality:spc:create")?;
     let tenant_id = user.tenant_id;
     state
         .quality_service
@@ -1211,6 +1227,7 @@ pub async fn delete_control_plan(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<()>> {
+    user.require_permission("quality:control-plan:update")?;
     let tenant_id = user.tenant_id;
     state
         .quality_service
@@ -1242,6 +1259,7 @@ pub async fn delete_pfmea(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<()>> {
+    user.require_permission("quality:pfmea:create")?;
     let tenant_id = user.tenant_id;
     state.quality_service.delete_pfmea(tenant_id, id).await?;
     Ok(Json(()))
@@ -1257,6 +1275,7 @@ pub async fn create_npi_project(
     State(state): State<AppState>,
     Json(project): Json<NpiProject>,
 ) -> Result<Json<NpiProject>> {
+    user.require_permission("quality:npi:manage")?;
     let tenant_id = user.tenant_id;
     let result = state
         .quality_service
@@ -1272,6 +1291,7 @@ pub async fn update_npi_project(
     Path(id): Path<Uuid>,
     Json(project): Json<NpiProject>,
 ) -> Result<Json<NpiProject>> {
+    user.require_permission("quality:npi:manage")?;
     let tenant_id = user.tenant_id;
     let result = state
         .quality_service
@@ -1286,6 +1306,7 @@ pub async fn delete_npi_project(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<()>> {
+    user.require_permission("quality:npi:manage")?;
     let tenant_id = user.tenant_id;
     state
         .quality_service
@@ -1334,6 +1355,7 @@ pub async fn delete_gauge(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<()>> {
+    user.require_permission("quality:gauge:update")?;
     let tenant_id = user.tenant_id;
     state.quality_service.delete_gauge(tenant_id, id).await?;
     Ok(Json(()))
@@ -1366,6 +1388,7 @@ pub async fn update_complaint(
     Path(id): Path<Uuid>,
     Json(complaint): Json<CustomerComplaint>,
 ) -> Result<Json<CustomerComplaint>> {
+    user.require_permission("quality:complaint:create")?;
     let tenant_id = user.tenant_id;
     let result = state
         .quality_service
@@ -1380,6 +1403,7 @@ pub async fn delete_complaint(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<()>> {
+    user.require_permission("quality:complaint:create")?;
     let tenant_id = user.tenant_id;
     state
         .quality_service
@@ -1415,6 +1439,7 @@ pub async fn update_eight_d_report(
     Path(id): Path<Uuid>,
     Json(report): Json<EightDReport>,
 ) -> Result<Json<EightDReport>> {
+    user.require_permission("quality:8d:create")?;
     let tenant_id = user.tenant_id;
     let result = state
         .quality_service
@@ -1429,6 +1454,7 @@ pub async fn delete_eight_d_report(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<()>> {
+    user.require_permission("quality:8d:create")?;
     let tenant_id = user.tenant_id;
     state
         .quality_service
@@ -1464,6 +1490,7 @@ pub async fn update_management_review(
     Path(id): Path<Uuid>,
     Json(review): Json<ManagementReview>,
 ) -> Result<Json<ManagementReview>> {
+    user.require_permission("quality:review:create")?;
     let tenant_id = user.tenant_id;
     let result = state
         .quality_service
@@ -1478,6 +1505,7 @@ pub async fn delete_management_review(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<()>> {
+    user.require_permission("quality:review:create")?;
     let tenant_id = user.tenant_id;
     state
         .quality_service
@@ -1492,6 +1520,7 @@ pub async fn list_management_reviews(
     State(state): State<AppState>,
     Query(pagination): Query<ListPaginationParams>,
 ) -> Result<Json<PaginatedResponse<ManagementReview>>> {
+    user.require_permission("quality:review:read")?;
     let tenant_id = user.tenant_id;
     let result = state
         .quality_service

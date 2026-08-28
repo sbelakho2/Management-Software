@@ -741,13 +741,19 @@ pub async fn logout(
     }
 
     // Revoke the user's refresh families: a logged-out refresh token must
-    // not be able to mint new access tokens.
+    // not be able to mint new access tokens. FAIL CLOSED: if the
+    // revocation could not be persisted, the logout must not claim success
+    // (a stolen refresh token may still mint credentials).
     if let Err(e) = state
         .refresh_token_store
         .revoke_user_sessions(user.user_id)
         .await
     {
-        tracing::warn!(error = ?e, user_id = %user.user_id, "Failed to revoke refresh sessions on logout");
+        tracing::error!(error = ?e, user_id = %user.user_id, "Failed to revoke refresh sessions on logout — failing closed");
+        return Err(SenseiError::Internal(
+            "Unable to complete logout — refresh revocation could not be persisted. Please retry."
+                .to_string(),
+        ));
     }
 
     // Clear the HttpOnly refresh cookie when the legacy frontend used it.
@@ -1152,7 +1158,17 @@ mod tests {
         AuthenticatedUser {
             user_id,
             tenant_id,
-            roles: vec!["admin".to_string()],
+            roles: vec![
+                "user".to_string(),
+                "tenant_admin".to_string(),
+                "production_manager".to_string(),
+                "quality_manager".to_string(),
+                "purchasing_manager".to_string(),
+                "sales_manager".to_string(),
+                "finance_manager".to_string(),
+                "inventory_manager".to_string(),
+                "operator".to_string(),
+            ],
             sid: None,
         }
     }

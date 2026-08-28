@@ -112,6 +112,22 @@ async fn test_close_a3() {
     let created: Value = app.json_body(&mut resp).await;
     let a3_id = created["id"].as_str().unwrap().to_string();
 
+    // Record verification evidence first (closing is evidence-driven).
+    let upd = app.put_authenticated(
+        &format!("/api/v1/a3/{}", a3_id),
+        &token,
+        serde_json::json!({
+            "verifications": [{
+                "metric": "defect_rate",
+                "before": 5.2,
+                "after": 1.8,
+                "observed_at": "2026-08-01T08:00:00Z"
+            }]
+        }),
+    );
+    let resp = app.send_request(upd).await;
+    assert_eq!(resp.status(), StatusCode::OK);
+
     // Close
     let close_body = serde_json::json!({});
     let req = app.post_authenticated(&format!("/api/v1/a3/{}/close", a3_id), &token, close_body);

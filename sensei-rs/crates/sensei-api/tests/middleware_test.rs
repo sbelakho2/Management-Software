@@ -205,8 +205,12 @@ async fn session_first_sight_auto_registers_and_passes() {
 async fn idempotency_key_is_scoped_per_user() {
     let app = TestApp::new().await;
     let admin_token = login(&app, "admin@sensei.test", &app.admin_password).await;
-    app.create_user_with_roles("other@sensei.test", "Other123!", &["user"])
-        .await;
+    app.create_user_with_roles(
+        "other@sensei.test",
+        "Other123!",
+        &["user", "production_manager"],
+    )
+    .await;
     let other_token = login(&app, "other@sensei.test", "Other123!").await;
 
     // Both users send the same Idempotency-Key on the same path.

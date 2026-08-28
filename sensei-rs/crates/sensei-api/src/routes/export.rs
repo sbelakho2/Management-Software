@@ -75,6 +75,7 @@ pub async fn export_entity(
     Path(entity_type): Path<String>,
     Query(params): Query<ExportParams>,
 ) -> Result<Response> {
+    user.require_permission("system:audit:read")?;
     // Validate format
     let format = params.format.to_lowercase();
     if !matches!(format.as_str(), "pdf" | "csv" | "xlsx") {

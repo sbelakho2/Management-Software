@@ -683,8 +683,15 @@ impl OperationsService for InMemoryOperationsService {
             ));
         }
 
+        if a3.verifications.is_empty() {
+            return Err(SenseiError::Validation(
+                "A3 cannot be closed: no verification evidence recorded (verifications is empty)"
+                    .to_string(),
+            ));
+        }
         a3.status = "closed".to_string();
         a3.closed_at = Some(Utc::now());
+        a3.version += 1;
         let result = a3.clone();
         // The outcome reflects the A3's actual state before closure: reports
         // closed from `implemented`/`verified` carry that outcome, anything
@@ -896,6 +903,13 @@ impl OperationsService for InMemoryOperationsService {
         let existing = store
             .get_mut(&id)
             .ok_or_else(|| SenseiError::NotFound(format!("A3 {id} not found")))?;
+        // Optimistic concurrency mirrors the DB CAS.
+        if existing.version != a3.version {
+            return Err(SenseiError::Conflict(format!(
+                "VERSION_CONFLICT: A3 {id} was modified concurrently (expected version {})",
+                a3.version
+            )));
+        }
         existing.title = a3.title;
         existing.background = a3.background;
         existing.current_state = a3.current_state;
@@ -906,6 +920,16 @@ impl OperationsService for InMemoryOperationsService {
         existing.follow_up = a3.follow_up;
         existing.status = a3.status;
         existing.owner_id = a3.owner_id;
+        // Evidence model is part of the update.
+        existing.observed_conditions = a3.observed_conditions;
+        existing.metric_baselines = a3.metric_baselines;
+        existing.evidence_refs = a3.evidence_refs;
+        existing.cause_hypotheses = a3.cause_hypotheses;
+        existing.experiments = a3.experiments;
+        existing.verifications = a3.verifications;
+        existing.standardizations = a3.standardizations;
+        existing.learnings = a3.learnings;
+        existing.version += 1;
         // Preserve: id, tenant_id, a3_number, created_at, closed_at
         Ok(existing.clone())
     }
@@ -1105,6 +1129,13 @@ mod tests {
         assert!(created.a3_number.starts_with("A3-"));
         assert_eq!(created.status, "draft");
 
+        let mut with_evidence = service.get_a3(tenant_id, created.id).await.unwrap();
+        with_evidence.verifications =
+            vec![serde_json::json!({"metric": "defect_rate", "after": 1.8})];
+        let _ = service
+            .update_a3(tenant_id, created.id, with_evidence)
+            .await
+            .unwrap();
         let closed = service.close_a3(tenant_id, created.id).await.unwrap();
         assert_eq!(closed.status, "closed");
         assert!(closed.closed_at.is_some());

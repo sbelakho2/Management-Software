@@ -111,8 +111,23 @@ impl PolicyEngine {
             .collect()
     }
 
-    /// Whether an execution attempt is permitted for this caller.
-    pub fn can_execute(&self, ctx: &crate::context::AgentContext, tool: &ToolSpec) -> bool {
+    /// Whether an execution attempt is permitted for this caller. This is
+    /// the FINAL source of truth (never the prompt):
+    /// - Denied policies never execute;
+    /// - Required policies execute only with a valid approval artifact;
+    /// - Automatic policies need permission + risk ceiling.
+    pub fn can_execute(
+        &self,
+        ctx: &crate::context::AgentContext,
+        tool: &ToolSpec,
+        has_approval: bool,
+    ) -> bool {
+        if tool.approval_policy == ApprovalPolicy::Denied {
+            return false;
+        }
+        if tool.approval_policy == ApprovalPolicy::Required && !has_approval {
+            return false;
+        }
         ctx.can(&tool.required_permission) && tool.risk <= self.risk_ceiling
     }
 

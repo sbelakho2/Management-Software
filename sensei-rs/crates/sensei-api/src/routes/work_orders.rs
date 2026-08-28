@@ -126,6 +126,7 @@ pub async fn list_work_orders(
     State(state): State<AppState>,
     Query(params): Query<ListWorkOrdersParams>,
 ) -> Result<Json<PaginatedResponse<WorkOrder>>> {
+    user.require_permission("production:work-order:read")?;
     let tenant_id = user.tenant_id;
 
     let date_from = params
@@ -181,6 +182,7 @@ pub async fn get_work_order(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<WorkOrder>> {
+    user.require_permission("production:work-order:read")?;
     let tenant_id = user.tenant_id;
     let order = state
         .production_service
@@ -195,6 +197,7 @@ pub async fn create_work_order(
     State(state): State<AppState>,
     Json(req): Json<WorkOrder>,
 ) -> Result<Json<WorkOrder>> {
+    user.require_permission("production:work-order:create")?;
     let tenant_id = user.tenant_id;
     let order = state
         .production_service
@@ -213,6 +216,7 @@ pub async fn update_work_order(
     Path(id): Path<Uuid>,
     Json(req): Json<UpdateWorkOrderRequest>,
 ) -> Result<Json<WorkOrder>> {
+    user.require_permission("production:work-order:update")?;
     let tenant_id = user.tenant_id;
 
     // Fetch the existing work order to verify it exists and merge with it.
@@ -280,6 +284,7 @@ pub async fn delete_work_order(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<()>> {
+    user.require_permission("production:work-order:delete")?;
     let tenant_id = user.tenant_id;
     state
         .production_service
@@ -295,6 +300,7 @@ pub async fn update_work_order_status(
     Path(id): Path<Uuid>,
     Json(req): Json<UpdateStatusRequest>,
 ) -> Result<Json<WorkOrder>> {
+    user.require_permission("production:work-order:update")?;
     let tenant_id = user.tenant_id;
     let order = state
         .production_service
@@ -312,6 +318,7 @@ pub async fn list_work_order_operations(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<Vec<WorkOrderOperation>>> {
+    user.require_permission("production:work-order:read")?;
     let tenant_id = user.tenant_id;
     let ops = state
         .production_service
@@ -344,6 +351,7 @@ pub async fn get_work_order_stats(
     user: AuthenticatedUser,
     State(state): State<AppState>,
 ) -> Result<Json<WorkOrderStats>> {
+    user.require_permission("production:work-order:read")?;
     let tenant_id = user.tenant_id;
     let orders = fetch_all_work_orders(state.production_service.as_ref(), tenant_id).await?;
 

@@ -290,6 +290,7 @@ pub async fn deactivate_work_center(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<WorkCenter>> {
+    user.require_permission("tps:work-center:manage")?;
     let tenant_id = user.tenant_id;
     let store = get_store(&state);
     let mut map = store.write(user.tenant_id).await;

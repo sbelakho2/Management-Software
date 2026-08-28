@@ -293,6 +293,7 @@ pub async fn generate_work_packets(
     Path(rfq_id): Path<Uuid>,
     Json(req): Json<GenerateWorkPacketsRequest>,
 ) -> Result<(StatusCode, Json<WorkPacketResponse>)> {
+    user.require_permission("purchasing:quote:create")?;
     let tenant_id = user.tenant_id;
 
     // The RFQ must exist and own the requested line items.
@@ -357,6 +358,7 @@ pub async fn list_work_packets(
     Path(rfq_id): Path<Uuid>,
     Query(params): Query<PaginationParams>,
 ) -> Result<Json<PaginatedResponse<WorkPacketResponse>>> {
+    user.require_permission("purchasing:quote:create")?;
     let packets: Vec<WorkPacketResponse> = state
         .work_packets
         .read(user.tenant_id)
@@ -384,6 +386,7 @@ pub async fn update_work_packet(
     Path(packet_id): Path<Uuid>,
     Json(req): Json<UpdateWorkPacketRequest>,
 ) -> Result<Json<WorkPacketResponse>> {
+    user.require_permission("purchasing:quote:update")?;
     let mut store = state.work_packets.write(user.tenant_id).await;
     let packet = store
         .get_mut(&packet_id)
@@ -455,6 +458,7 @@ pub async fn ingest_rfq_documents(
     Path(rfq_id): Path<Uuid>,
     Json(req): Json<IngestRfqRequest>,
 ) -> Result<(StatusCode, Json<IngestionResponse>)> {
+    user.require_permission("purchasing:rfq:create")?;
     use sha2::{Digest, Sha256};
 
     let tenant_id = user.tenant_id;
@@ -540,6 +544,7 @@ pub async fn build_quote_cost(
     Path(quote_id): Path<Uuid>,
     Json(req): Json<BuildCostRequest>,
 ) -> Result<(StatusCode, Json<CostBuildResponse>)> {
+    user.require_permission("purchasing:quote:create")?;
     let now = Utc::now();
 
     // Calculate costs from the provided input.
@@ -614,6 +619,7 @@ pub async fn convert_quote_to_npi(
     State(state): State<AppState>,
     Path(quote_id): Path<Uuid>,
 ) -> Result<(StatusCode, Json<NpiConversionResponse>)> {
+    user.require_permission("quality:npi:manage")?;
     use sensei_services::quality::{NpiProject, NpiStage};
 
     let tenant_id = user.tenant_id;
@@ -696,6 +702,7 @@ pub async fn suggest_clarifications(
     State(state): State<AppState>,
     Path(rfq_id): Path<Uuid>,
 ) -> Result<Json<ClarificationResponse>> {
+    user.require_permission("purchasing:quote:create")?;
     let tenant_id = user.tenant_id;
     let rfq = state
         .supply_chain_service
@@ -771,6 +778,7 @@ pub async fn retrieve_quote_memory(
     State(state): State<AppState>,
     Path(rfq_id): Path<Uuid>,
 ) -> Result<Json<QuoteMemoryResponse>> {
+    user.require_permission("purchasing:quote:create")?;
     let tenant_id = user.tenant_id;
 
     // The RFQ must exist; its products define the similarity target.

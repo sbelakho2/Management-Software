@@ -15,6 +15,9 @@ const POLL_INTERVAL: Duration = Duration::from_secs(2);
 const BATCH_SIZE: i64 = 50;
 const MAX_ATTEMPTS: i32 = 25;
 
+/// Stable identity of this relay process (claim ownership).
+const REPLICA_ID: &str = concat!("relay-", env!("CARGO_PKG_VERSION"));
+
 /// Spawn the outbox relay (DB-backed only; in-memory/dev modes no-op).
 pub fn spawn(pool: Option<Arc<sqlx::PgPool>>, bus: Arc<dyn sensei_event_bus::EventBus>) {
     let Some(pool) = pool else {
@@ -45,19 +48,39 @@ async fn relay_once(
         String,
         String,
         serde_json::Value,
-    )> = sqlx::query_as(
-        "SELECT event_id, tenant_id, event_type, aggregate_type, aggregate_id, payload \\
-         FROM outbox_events \\
-         WHERE published_at IS NULL AND attempt_count < $1 \\
-         ORDER BY occurred_at \\
-         LIMIT $2 \\
-         FOR UPDATE SKIP LOCKED",
-    )
-    .bind(MAX_ATTEMPTS)
-    .bind(BATCH_SIZE)
-    .fetch_all(pool)
-    .await
-    .map_err(|e| format!("Failed to claim outbox batch: {e}"))?;
+    )> = {
+        // Atomic claim transaction (P0-6): selection + claim UPDATE run in
+        // ONE transaction so the FOR UPDATE SKIP LOCKED row locks are held
+        // until COMMIT — two relays can never claim the same event.
+        let mut tx = pool
+            .begin()
+            .await
+            .map_err(|e| format!("Failed to begin claim tx: {e}"))?;
+        let rows = sqlx::query_as(
+            "WITH selected AS (
+                 SELECT event_id FROM outbox_events \
+                 WHERE published_at IS NULL AND attempt_count < $1 \
+                   AND (claim_until IS NULL OR claim_until < NOW()) \
+                 ORDER BY occurred_at \
+                 LIMIT $2 \
+                 FOR UPDATE SKIP LOCKED
+             )
+             UPDATE outbox_events o SET claimed_by = $3, claim_until = NOW() + INTERVAL '30 seconds' \
+             FROM selected s WHERE o.event_id = s.event_id \
+             RETURNING o.event_id, o.tenant_id, o.event_type, o.aggregate_type, \
+                       o.aggregate_id, o.payload",
+        )
+        .bind(MAX_ATTEMPTS)
+        .bind(BATCH_SIZE)
+        .bind(REPLICA_ID)
+        .fetch_all(&mut *tx)
+        .await
+        .map_err(|e| format!("Failed to claim outbox batch: {e}"))?;
+        tx.commit()
+            .await
+            .map_err(|e| format!("Failed to commit claim tx: {e}"))?;
+        rows
+    };
 
     for (event_id, tenant_id, event_type, aggregate_type, aggregate_id, payload) in rows {
         // Publish with a REAL server acknowledgement (JetStream ack).
@@ -121,7 +144,8 @@ async fn mark_published(pool: &sqlx::PgPool, event_id: uuid::Uuid) {
 
 async fn record_failure(pool: &sqlx::PgPool, event_id: uuid::Uuid, err: &str) {
     if let Err(e) = sqlx::query(
-        "UPDATE outbox_events SET attempt_count = attempt_count + 1, last_error = $2 \\
+        "UPDATE outbox_events SET attempt_count = attempt_count + 1, last_error = $2, \\
+                claimed_by = NULL, claim_until = NULL \\
          WHERE event_id = $1",
     )
     .bind(event_id)

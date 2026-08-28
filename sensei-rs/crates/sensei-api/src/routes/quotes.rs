@@ -59,6 +59,7 @@ pub async fn list_quotes(
     State(state): State<AppState>,
     Query(params): Query<ListQuotesParams>,
 ) -> Result<Json<PaginatedResponse<Quote>>> {
+    user.require_permission("purchasing:quote:create")?;
     let tenant_id = user.tenant_id;
     let quotes = state
         .supply_chain_service
@@ -78,6 +79,7 @@ pub async fn create_quote(
     State(state): State<AppState>,
     Json(req): Json<QuoteRequest>,
 ) -> Result<Json<Quote>> {
+    user.require_permission("purchasing:quote:create")?;
     let tenant_id = user.tenant_id;
     let quote = Quote {
         id: Uuid::new_v4(),
@@ -107,6 +109,7 @@ pub async fn get_quote(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<Quote>> {
+    user.require_permission("purchasing:quote:create")?;
     let tenant_id = user.tenant_id;
     let quote = state.supply_chain_service.get_quote(tenant_id, id).await?;
     Ok(Json(quote))
@@ -119,6 +122,7 @@ pub async fn update_quote(
     Path(id): Path<Uuid>,
     Json(req): Json<QuoteRequest>,
 ) -> Result<Json<Quote>> {
+    user.require_permission("purchasing:quote:update")?;
     let tenant_id = user.tenant_id;
     let mut quote = state.supply_chain_service.get_quote(tenant_id, id).await?;
     quote.rfq_id = req.rfq_id;
@@ -141,6 +145,7 @@ pub async fn delete_quote(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<()>> {
+    user.require_permission("purchasing:quote:update")?;
     let tenant_id = user.tenant_id;
     state
         .supply_chain_service
@@ -155,6 +160,7 @@ pub async fn create_quote_version(
     State(state): State<AppState>,
     Path(quote_id): Path<Uuid>,
 ) -> Result<Json<QuoteVersion>> {
+    user.require_permission("purchasing:quote:create")?;
     let tenant_id = user.tenant_id;
     let quote = state
         .supply_chain_service
@@ -190,6 +196,7 @@ pub async fn list_quote_versions(
     State(state): State<AppState>,
     Path(quote_id): Path<Uuid>,
 ) -> Result<Json<Vec<QuoteVersion>>> {
+    user.require_permission("purchasing:quote:create")?;
     let tenant_id = user.tenant_id;
     // Verify the quote exists
     let _ = state

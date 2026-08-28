@@ -364,7 +364,11 @@ async fn test_transition_role_required_returns_403() {
 
     // …and a plain user without admin tries to transition → 403.
     let _user_id = app
-        .create_user_with_roles("plain@sensei.test", "TestPass123!", &["user"])
+        .create_user_with_roles(
+            "plain@sensei.test",
+            "TestPass123!",
+            &["user", "production_manager"],
+        )
         .await;
     let login = serde_json::json!({
         "email": "plain@sensei.test",
@@ -417,9 +421,14 @@ async fn test_transition_role_required_condition() {
     let resp = app.send_request(req).await;
     assert_eq!(resp.status(), StatusCode::OK);
 
-    // A plain user fails the condition (conflict).
+    // A plain user (with the state-machine permission but NOT the
+    // condition's required role) fails the condition (conflict).
     let _ = app
-        .create_user_with_roles("plain2@sensei.test", "TestPass123!", &["user"])
+        .create_user_with_roles(
+            "plain2@sensei.test",
+            "TestPass123!",
+            &["user", "production_manager"],
+        )
         .await;
     let login = serde_json::json!({
         "email": "plain2@sensei.test",

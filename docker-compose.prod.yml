@@ -20,6 +20,9 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER required}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required}
       POSTGRES_DB: ${POSTGRES_DB:-sensei}
+      # Creates the non-owner sensei_app role (RLS depends on the app NOT
+      # being the table owner).
+      SENSEI_APP_PASSWORD: ${SENSEI_APP_PASSWORD:?SENSEI_APP_PASSWORD required}
     volumes:
       - pg-data:/var/lib/postgresql/data
       - ./postgres-init:/docker-entrypoint-initdb.d:ro
@@ -66,7 +69,8 @@ services:
     restart: unless-stopped
     environment:
       SENSEI_ENV: production
-      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-sensei}
+      # The app connects as sensei_app (non-owner) so RLS is enforced.
+      DATABASE_URL: postgres://sensei_app:${SENSEI_APP_PASSWORD}@db:5432/${POSTGRES_DB:-sensei}
       NATS_URL: nats://${NATS_TOKEN}@nats:4222
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET required}
       JWT_PREVIOUS_SIGNING_KEY: ${JWT_PREVIOUS_SIGNING_KEY:-}
@@ -107,7 +111,8 @@ services:
       retries: 3
     environment:
       SENSEI_ENV: production
-      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-sensei}
+      # The app connects as sensei_app (non-owner) so RLS is enforced.
+      DATABASE_URL: postgres://sensei_app:${SENSEI_APP_PASSWORD}@db:5432/${POSTGRES_DB:-sensei}
       NATS_URL: nats://${NATS_TOKEN}@nats:4222
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET required}
       SMTP_HOST: ${SMTP_HOST:-}
