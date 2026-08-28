@@ -327,6 +327,7 @@ pub async fn update_andon(
     Path(id): Path<Uuid>,
     Json(req): Json<Andon>,
 ) -> Result<Json<Andon>> {
+    user.require_permission("tps:andon:manage")?;
     let tenant_id = user.tenant_id;
     let andon = state.ops_service.update_andon(tenant_id, id, req).await?;
     Ok(Json(andon))

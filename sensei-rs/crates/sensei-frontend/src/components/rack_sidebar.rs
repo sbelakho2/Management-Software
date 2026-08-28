@@ -123,8 +123,9 @@ pub fn RackSidebar(
                 <div class="racksidebar-user">
                     <span class="racksidebar-user-name">{username}</span>
                 </div>
-                <div class="andon-stack">
-                    <div class="andon-light andon-light--green" title="System Operational"></div>
+                <div class="andon-stack" title="Application connectivity — NOT process health">
+                    <div class="andon-light andon-light--green"></div>
+                    <span class="rams-text-xs" style="color: var(--rams-muted)">"CONNECTED"</span>
                 </div>
                 <button
                     class="rams-btn rams-btn--ghost rams-btn--sm"

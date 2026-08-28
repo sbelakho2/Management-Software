@@ -15,8 +15,25 @@ const POLL_INTERVAL: Duration = Duration::from_secs(2);
 const BATCH_SIZE: i64 = 50;
 const MAX_ATTEMPTS: i32 = 25;
 
-/// Stable identity of this relay process (claim ownership).
-const REPLICA_ID: &str = concat!("relay-", env!("CARGO_PKG_VERSION"));
+/// Identity of THIS relay process (claim ownership).
+///
+/// Two relays running the same release MUST NOT share an identity — a
+/// shared id would let one relay's ownership check pass for the other's
+/// claims. A per-process UUID is generated at spawn (item 10).
+fn replica_id() -> String {
+    use std::sync::OnceLock;
+    static REPLICA_ID: OnceLock<String> = OnceLock::new();
+    REPLICA_ID
+        .get_or_init(|| {
+            let pid = std::process::id();
+            let start = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0);
+            format!("relay-{pid}-{start}-{}", uuid::Uuid::new_v4())
+        })
+        .clone()
+}
 
 /// Spawn the outbox relay (DB-backed only; in-memory/dev modes no-op).
 pub fn spawn(pool: Option<Arc<sqlx::PgPool>>, bus: Arc<dyn sensei_event_bus::EventBus>) {
@@ -72,7 +89,7 @@ async fn relay_once(
         )
         .bind(MAX_ATTEMPTS)
         .bind(BATCH_SIZE)
-        .bind(REPLICA_ID)
+        .bind(replica_id())
         .fetch_all(&mut *tx)
         .await
         .map_err(|e| format!("Failed to claim outbox batch: {e}"))?;
@@ -95,13 +112,31 @@ async fn relay_once(
         });
         match serde_json::to_vec(&envelope) {
             Ok(bytes) => {
-                let published = publish_acknowledged(bus, &subject, bytes).await;
+                // Renew the lease while the publish is in flight so a slow
+                // publish cannot be reclaimed by another relay.
+                let subject_owned = subject.clone();
+                let bus_owned = Arc::clone(bus);
+                let publish_task = tokio::spawn(async move {
+                    publish_acknowledged(&bus_owned, &subject_owned, bytes).await
+                });
+                let mut publish_task = publish_task;
+                let published = loop {
+                    tokio::select! {
+                        outcome = &mut publish_task => break outcome,
+                        _ = tokio::time::sleep(std::time::Duration::from_secs(15)) => {
+                            renew_claim(pool, event_id).await;
+                        }
+                    }
+                };
                 match published {
-                    Ok(()) => {
+                    Ok(Ok(())) => {
                         mark_published(pool, event_id).await;
                     }
-                    Err(e) => {
+                    Ok(Err(e)) => {
                         record_failure(pool, event_id, &e).await;
+                    }
+                    Err(e) => {
+                        record_failure(pool, event_id, &format!("publish task join: {e}")).await;
                     }
                 }
             }
@@ -130,15 +165,54 @@ async fn publish_acknowledged(
     bus.publish(&event).await.map_err(|e| e.to_string())
 }
 
-async fn mark_published(pool: &sqlx::PgPool, event_id: uuid::Uuid) {
+/// Renew the claim lease while a publish is in flight: a publish that
+/// stalls beyond the fixed lease must NOT let a second relay reclaim the
+/// event mid-flight (item 10).
+async fn renew_claim(pool: &sqlx::PgPool, event_id: uuid::Uuid) {
     if let Err(e) = sqlx::query(
-        "UPDATE outbox_events SET published_at = NOW() WHERE event_id = $1 AND published_at IS NULL",
+        "UPDATE outbox_events SET claim_until = NOW() + INTERVAL '30 seconds'          WHERE event_id = $1 AND claimed_by = $2 AND published_at IS NULL",
     )
     .bind(event_id)
+    .bind(replica_id())
     .execute(pool)
     .await
     {
-        error!(error = %e, event_id = %event_id, "Failed to mark outbox event published");
+        error!(error = %e, event_id = %event_id, "Failed to renew outbox claim");
+    }
+}
+
+/// Mark published with an OWNERSHIP check: only the relay that holds the
+/// claim may mark the event — a stale replica can never overwrite a newer
+/// publish. The durable `outbox_published` record is the consumer-side
+/// deduplication anchor (item 10).
+async fn mark_published(pool: &sqlx::PgPool, event_id: uuid::Uuid) {
+    let result = sqlx::query(
+        "UPDATE outbox_events SET published_at = NOW(), claimed_by = NULL, claim_until = NULL          WHERE event_id = $1 AND published_at IS NULL AND claimed_by = $2",
+    )
+    .bind(event_id)
+    .bind(replica_id())
+    .execute(pool)
+    .await;
+    match result {
+        Ok(outcome) if outcome.rows_affected() == 1 => {
+            // Durable dedupe record: consumers that crash after the JetStream
+            // ack but before processing can reconcile against this table.
+            if let Err(e) = sqlx::query(
+                "INSERT INTO outbox_published (event_id, published_at)                  VALUES ($1, NOW()) ON CONFLICT (event_id) DO NOTHING",
+            )
+            .bind(event_id)
+            .execute(pool)
+            .await
+            {
+                error!(error = %e, event_id = %event_id, "Failed to record outbox_published");
+            }
+        }
+        Ok(_) => {
+            warn!(event_id = %event_id, "mark_published skipped: event not owned by this relay or already published");
+        }
+        Err(e) => {
+            error!(error = %e, event_id = %event_id, "Failed to mark outbox event published");
+        }
     }
 }
 

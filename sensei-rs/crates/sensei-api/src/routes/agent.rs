@@ -108,6 +108,16 @@ pub struct ExecuteToolRequest {
 /// Build the SERVER-CREATED context from the authenticated request (the
 /// model can never supply tenant/user/site — they are injected here).
 pub async fn build_context(user: &AuthenticatedUser, state: &AppState) -> AgentContext {
+    build_context_with_locale(user, state, None).await
+}
+
+/// Item 59: the agent locale comes from the caller's session/headers (the
+/// UI language), never a hardcoded "en".
+pub async fn build_context_with_locale(
+    user: &AuthenticatedUser,
+    state: &AppState,
+    accept_language: Option<&str>,
+) -> AgentContext {
     let rbac = sensei_auth::rbac::authorization_service();
     let mut permissions = std::collections::HashSet::new();
     for role in &user.roles {
@@ -169,7 +179,11 @@ pub async fn build_context(user: &AuthenticatedUser, state: &AppState) -> AgentC
         shift_id,
         roles: user.roles.clone(),
         permissions,
-        locale: "en".to_string(),
+        locale: accept_language
+            .and_then(|h| h.split(',').next())
+            .map(|tag| tag.trim().split('-').next().unwrap_or("en").to_string())
+            .filter(|l| ["en", "fr", "ar", "de", "es"].contains(&l.as_str()))
+            .unwrap_or_else(|| "en".to_string()),
         timezone,
         request_id: Uuid::new_v4(),
         conversation_id: None,

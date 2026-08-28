@@ -185,6 +185,7 @@ impl DatabaseProductionService {
     /// rather than failed.
     async fn generate_operations(
         &self,
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
         tenant_id: Uuid,
         work_order_id: Uuid,
         product_id: Uuid,
@@ -204,7 +205,7 @@ impl DatabaseProductionService {
         )
         .bind(product_id)
         .bind(tenant_id)
-        .fetch_all(&self.pool)
+        .fetch_all(&mut **tx)
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to load routings: {e}")))?;
 
@@ -226,7 +227,7 @@ impl DatabaseProductionService {
                 )
                 .bind(tenant_id)
                 .bind(wc_id)
-                .fetch_optional(&self.pool)
+                .fetch_optional(&mut **tx)
                 .await
                 .map_err(|e| SenseiError::Database(format!("Failed to resolve station: {e}")))?;
                 if let Some(st) = station {
@@ -238,7 +239,7 @@ impl DatabaseProductionService {
             "SELECT id FROM stations WHERE tenant_id = $1 ORDER BY created_at LIMIT 1",
         )
         .bind(tenant_id)
-        .fetch_optional(&self.pool)
+        .fetch_optional(&mut **tx)
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to resolve fallback station: {e}")))?;
 
@@ -266,7 +267,7 @@ impl DatabaseProductionService {
             .bind(step.standard_time)
             .bind(step.setup_time)
             .bind(now)
-            .execute(&self.pool)
+            .execute(&mut **tx)
             .await
             .map_err(|e| {
                 SenseiError::Database(format!("Failed to create work order operation: {e}"))
@@ -314,11 +315,11 @@ impl ProductionService for DatabaseProductionService {
                 scheduled_start, scheduled_end, actual_start, actual_end,
                 short_close_qty, short_close_reason, short_close_approved_by, short_close_at,
                 assigned_to, notes, created_at, updated_at
-            ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)
+            ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23)
             RETURNING id, tenant_id, wo_number, product_id, product_name,
                       quantity, quantity_completed, quantity_scrapped, status, work_center_id, priority,
                       scheduled_start, scheduled_end, actual_start, actual_end,
-                      short_close_qty, short_close_reason, short_close_approved_by, short_close_at,
+                      quantity_scrapped, short_close_qty, short_close_reason, short_close_approved_by, short_close_at,
                       assigned_to, notes, created_at, updated_at
             "#,
         )
@@ -329,6 +330,7 @@ impl ProductionService for DatabaseProductionService {
         .bind(&wo.product_name)
         .bind(wo.quantity)
         .bind(wo.quantity_completed)
+        .bind(wo.quantity_scrapped)
         .bind(&wo.status)
         .bind(wo.work_center_id)
         .bind(&wo.priority)
@@ -348,8 +350,11 @@ impl ProductionService for DatabaseProductionService {
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to create work order: {e}")))?;
 
-        // Generate the operations from the product's routing (when configured).
-        self.generate_operations(tenant_id, id, wo.product_id)
+        // Generate the operations from the product's routing (when configured)
+        // INSIDE the same transaction — operation rows cannot survive
+        // independently of their parent, and routing/station reads see the
+        // same snapshot as the insert (P0-2).
+        self.generate_operations(&mut self_tx, tenant_id, id, wo.product_id)
             .await?;
 
         sensei_db::outbox::enqueue_outbox(
@@ -376,8 +381,9 @@ impl ProductionService for DatabaseProductionService {
         let row = sqlx::query_as::<_, WorkOrderRow>(
             r#"
             SELECT id, tenant_id, wo_number, product_id, product_name,
-                   quantity, quantity_completed, status, work_center_id, priority,
+                   quantity, quantity_completed, quantity_scrapped, status, work_center_id, priority,
                    scheduled_start, scheduled_end, actual_start, actual_end,
+                   quantity_scrapped, short_close_qty, short_close_reason, short_close_approved_by, short_close_at,
                    assigned_to, notes, created_at, updated_at
             FROM work_orders
             WHERE id = $1 AND tenant_id = $2
@@ -408,8 +414,9 @@ impl ProductionService for DatabaseProductionService {
         let items: Vec<WorkOrderRow> = sqlx::query_as(
             r#"
             SELECT id, tenant_id, wo_number, product_id, product_name,
-                   quantity, quantity_completed, status, work_center_id, priority,
+                   quantity, quantity_completed, quantity_scrapped, status, work_center_id, priority,
                    scheduled_start, scheduled_end, actual_start, actual_end,
+                   quantity_scrapped, short_close_qty, short_close_reason, short_close_approved_by, short_close_at,
                    assigned_to, notes, created_at, updated_at
             FROM work_orders
             WHERE tenant_id = $1
@@ -518,8 +525,9 @@ impl ProductionService for DatabaseProductionService {
                 updated_at = $3
             WHERE id = $4 AND tenant_id = $2
             RETURNING id, tenant_id, wo_number, product_id, product_name,
-                      quantity, quantity_completed, status, work_center_id, priority,
+                      quantity, quantity_completed, quantity_scrapped, status, work_center_id, priority,
                       scheduled_start, scheduled_end, actual_start, actual_end,
+                      quantity_scrapped, short_close_qty, short_close_reason, short_close_approved_by, short_close_at,
                       assigned_to, notes, created_at, updated_at
             "#,
         )
@@ -570,18 +578,20 @@ impl ProductionService for DatabaseProductionService {
                 product_name = $2,
                 quantity = $3,
                 quantity_completed = CASE WHEN $4 = 0 AND quantity_completed > 0 THEN quantity_completed ELSE $4 END,
-                status = $5,
-                work_center_id = $6,
-                priority = $7,
-                scheduled_start = $8,
-                scheduled_end = $9,
-                assigned_to = $10,
-                notes = $11,
-                updated_at = $12
-            WHERE id = $13 AND tenant_id = $14
+                quantity_scrapped = $5,
+                status = $6,
+                work_center_id = $7,
+                priority = $8,
+                scheduled_start = $9,
+                scheduled_end = $10,
+                assigned_to = $11,
+                notes = $12,
+                updated_at = $13
+            WHERE id = $14 AND tenant_id = $15
             RETURNING id, tenant_id, wo_number, product_id, product_name,
-                      quantity, quantity_completed, status, work_center_id, priority,
+                      quantity, quantity_completed, quantity_scrapped, status, work_center_id, priority,
                       scheduled_start, scheduled_end, actual_start, actual_end,
+                      quantity_scrapped, short_close_qty, short_close_reason, short_close_approved_by, short_close_at,
                       assigned_to, notes, created_at, updated_at
             "#,
         )
@@ -650,7 +660,8 @@ impl ProductionService for DatabaseProductionService {
             WHERE id = $2 AND tenant_id = $3
             RETURNING id, tenant_id, wo_number, product_id, product_name,
                       quantity, quantity_completed, quantity_scrapped,
-                      short_close_qty, status, work_center_id, priority,
+                      short_close_qty, short_close_reason, short_close_approved_by, short_close_at,
+                      status, work_center_id, priority,
                       scheduled_start, scheduled_end, actual_start, actual_end,
                       assigned_to, notes, created_at, updated_at
             "#,
@@ -721,12 +732,16 @@ impl ProductionService for DatabaseProductionService {
                 id, tenant_id, order_number, product_id,
                 quantity_planned, quantity_produced, quantity_scrapped,
                 status, work_center_id, planned_start, planned_end,
-                actual_start, actual_end, created_at
-            ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+                actual_start, actual_end,
+                short_close_qty, short_close_reason, short_close_approved_by, short_close_at,
+                created_at
+            ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
             RETURNING id, tenant_id, order_number, product_id,
                       quantity_planned, quantity_produced, quantity_scrapped,
                       status, work_center_id, planned_start, planned_end,
-                      actual_start, actual_end, created_at
+                      actual_start, actual_end,
+                      short_close_qty, short_close_reason, short_close_approved_by, short_close_at,
+                      created_at
             "#,
         )
         .bind(order.id)
@@ -742,6 +757,10 @@ impl ProductionService for DatabaseProductionService {
         .bind(order.planned_end)
         .bind(order.actual_start)
         .bind(order.actual_end)
+        .bind(0i64)
+        .bind(Option::<String>::None)
+        .bind(Option::<Uuid>::None)
+        .bind(Option::<chrono::DateTime<Utc>>::None)
         .bind(now)
         .fetch_one(&self.pool)
         .await
@@ -756,7 +775,9 @@ impl ProductionService for DatabaseProductionService {
             SELECT id, tenant_id, order_number, product_id,
                    quantity_planned, quantity_produced, quantity_scrapped,
                    status, work_center_id, planned_start, planned_end,
-                   actual_start, actual_end, created_at
+                   actual_start, actual_end,
+                   short_close_qty, short_close_reason, short_close_approved_by, short_close_at,
+                   created_at
             FROM production_orders
             WHERE id = $1 AND tenant_id = $2
             "#,
@@ -787,7 +808,9 @@ impl ProductionService for DatabaseProductionService {
             SELECT id, tenant_id, order_number, product_id,
                    quantity_planned, quantity_produced, quantity_scrapped,
                    status, work_center_id, planned_start, planned_end,
-                   actual_start, actual_end, created_at
+                   actual_start, actual_end,
+                   short_close_qty, short_close_reason, short_close_approved_by, short_close_at,
+                   created_at
             FROM production_orders
             WHERE tenant_id = $1
               AND ($2::text IS NULL OR status = $2)
@@ -845,7 +868,9 @@ impl ProductionService for DatabaseProductionService {
             SELECT id, tenant_id, order_number, product_id,
                    quantity_planned, quantity_produced, quantity_scrapped,
                    status, work_center_id, planned_start, planned_end,
-                   actual_start, actual_end, created_at
+                   actual_start, actual_end,
+                   short_close_qty, short_close_reason, short_close_approved_by, short_close_at,
+                   created_at
             FROM production_orders
             WHERE id = $1 AND tenant_id = $2
             FOR UPDATE
@@ -903,7 +928,9 @@ impl ProductionService for DatabaseProductionService {
             RETURNING id, tenant_id, order_number, product_id,
                       quantity_planned, quantity_produced, quantity_scrapped,
                       status, work_center_id, planned_start, planned_end,
-                      actual_start, actual_end, created_at
+                      actual_start, actual_end,
+                      short_close_qty, short_close_reason, short_close_approved_by, short_close_at,
+                      created_at
             "#,
         )
         .bind(now)
@@ -1005,7 +1032,7 @@ impl ProductionService for DatabaseProductionService {
         // unfinished work-order backlog (execution supply already created
         // for demand). Sales demand drives planning; the work-order
         // backlog is the in-flight portion of that demand.
-        let so_demand: f64 = sqlx::query_scalar(
+        let so_demand: rust_decimal::Decimal = sqlx::query_scalar(
             "SELECT COALESCE(SUM(                 (li->>'quantity')::numeric - COALESCE((li->>'quantity_delivered')::numeric, 0)             ), 0)::numeric \
              FROM sales_orders so, jsonb_array_elements(so.line_items) AS li \
              WHERE so.tenant_id = $1 \
@@ -1017,7 +1044,7 @@ impl ProductionService for DatabaseProductionService {
         .fetch_one(&self.pool)
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to compute sales demand: {e}")))?;
-        let wo_backlog: f64 = sqlx::query_scalar(
+        let wo_backlog: rust_decimal::Decimal = sqlx::query_scalar(
             "SELECT COALESCE(SUM(quantity - quantity_completed), 0)::numeric \
              FROM work_orders \
              WHERE product_id = $1 AND tenant_id = $2 AND status NOT IN ('completed', 'cancelled')",
@@ -1027,31 +1054,78 @@ impl ProductionService for DatabaseProductionService {
         .fetch_one(&self.pool)
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to compute work-order backlog: {e}")))?;
-        let demand_qty = so_demand.max(wo_backlog);
+        // Item 18: the demand is compared in DECIMAL (NUMERIC) — the f64
+        // round-trip is gone.
+        let demand_qty = if so_demand > wo_backlog {
+            so_demand
+        } else {
+            wo_backlog
+        };
 
         // ── 2. BOM explosion (multi-level, scrap-aware) ────────────────
         // gross[product] accumulates the quantity required at each level;
         // children of make items are exploded recursively (depth-limited).
-        let demand_qty: rust_decimal::Decimal = rust_decimal::Decimal::from_f64_retain(demand_qty)
-            .unwrap_or(rust_decimal::Decimal::ZERO);
         let mut gross: std::collections::HashMap<Uuid, rust_decimal::Decimal> =
             std::collections::HashMap::new();
         *gross
             .entry(product_id)
             .or_insert(rust_decimal::Decimal::ZERO) += demand_qty;
-        let mut queue: Vec<(Uuid, rust_decimal::Decimal)> = vec![(product_id, demand_qty)];
-        // Cycle detection: a cyclic BOM is explicitly rejected, never
-        // silently depth-capped or partially expanded.
-        let mut visited: std::collections::HashSet<Uuid> = std::collections::HashSet::new();
-        let mut in_stack: std::collections::HashSet<Uuid> = std::collections::HashSet::new();
+        // Item 17: earliest need date per product — the MIN over all paths
+        // that require it (a component feeding two parents is needed by
+        // the EARLIER one).
+        let mut need_dates: std::collections::HashMap<Uuid, chrono::DateTime<Utc>> =
+            std::collections::HashMap::new();
+        // Cycle detection (item 16): each queue item carries its FULL
+        // ancestry chain; a component that is an ancestor of its own parent
+        // is a cycle and is REJECTED — the previous visited/in_stack pair
+        // cleared the stack between levels and silently truncated cycles.
+        // Item 17: each item also carries its requirement date, which
+        // propagates BACKWARD through the BOM — a component is needed no
+        // later than its parent's planned release.
+        let lead_by_product: std::collections::HashMap<Uuid, i64> = {
+            let rows: Vec<(Uuid, i64)> = sqlx::query_as(
+                "SELECT id, COALESCE(lead_time_days, 0) FROM products \
+                 WHERE tenant_id = $1 AND id = ANY($2::uuid[])",
+            )
+            .bind(tenant_id)
+            .bind(gross.keys().copied().collect::<Vec<Uuid>>())
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to load lead times: {e}")))?;
+            rows.into_iter().collect()
+        };
+        // The root need date: the demand's own timing (earliest open
+        // work-order due date); without one, the requirement is due NOW —
+        // never an arbitrary now+30d default (item 17).
+        let root_due: Option<chrono::DateTime<Utc>> = sqlx::query_scalar(
+            "SELECT MIN(scheduled_end) FROM work_orders \
+             WHERE product_id = $1 AND tenant_id = $2 \
+               AND status NOT IN ('completed', 'cancelled')",
+        )
+        .bind(product_id)
+        .bind(tenant_id)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|e| SenseiError::Database(format!("Failed to load demand timing: {e}")))?;
+        let root_need = root_due.unwrap_or(now);
+        need_dates.insert(product_id, root_need);
+
+        let mut queue: Vec<(
+            Uuid,
+            rust_decimal::Decimal,
+            chrono::DateTime<Utc>,
+            Vec<Uuid>,
+        )> = vec![(product_id, demand_qty, root_need, vec![])];
         while !queue.is_empty() {
-            let mut next: Vec<(Uuid, rust_decimal::Decimal)> = Vec::new();
-            for (parent, qty) in queue {
-                if !in_stack.insert(parent) {
-                    return Err(SenseiError::Validation(format!(
-                        "CYCLIC BOM detected at product {parent} — a BOM must be a DAG"
-                    )));
-                }
+            let mut next: Vec<(
+                Uuid,
+                rust_decimal::Decimal,
+                chrono::DateTime<Utc>,
+                Vec<Uuid>,
+            )> = Vec::new();
+            for (parent, qty, need_date, ancestors) in queue {
+                let mut ancestry = ancestors.clone();
+                ancestry.push(parent);
                 let bom: Vec<(Uuid, rust_decimal::Decimal, rust_decimal::Decimal)> =
                     sqlx::query_as(
                         "SELECT component_product_id, quantity, COALESCE(scrap_percent, 0) \
@@ -1064,6 +1138,16 @@ impl ProductionService for DatabaseProductionService {
                     .await
                     .map_err(|e| SenseiError::Database(format!("Failed to load BOM: {e}")))?;
                 for (component, per_unit, scrap) in bom {
+                    if ancestry.contains(&component) {
+                        let chain = ancestry
+                            .iter()
+                            .map(|u| u.to_string())
+                            .collect::<Vec<_>>()
+                            .join(" -> ");
+                        return Err(SenseiError::Validation(format!(
+                            "CYCLIC BOM detected: {chain} -> {component} — a BOM must be a DAG"
+                        )));
+                    }
                     // Gross includes the scrap factor: making 100 with 5%
                     // scrap consumes 105.
                     let need = qty
@@ -1073,11 +1157,21 @@ impl ProductionService for DatabaseProductionService {
                     *gross
                         .entry(component)
                         .or_insert(rust_decimal::Decimal::ZERO) += need;
-                    if visited.insert(component) {
-                        next.push((component, need));
-                    }
+                    // Time phasing (item 17): the component is needed when
+                    // the parent must START — the parent's need date offset
+                    // back by the parent's lead time.
+                    let parent_lead = lead_by_product.get(&parent).copied().unwrap_or(0);
+                    let component_need = need_date - chrono::Duration::days(parent_lead);
+                    need_dates
+                        .entry(component)
+                        .and_modify(|d| {
+                            if component_need < *d {
+                                *d = component_need;
+                            }
+                        })
+                        .or_insert(component_need);
+                    next.push((component, need, component_need, ancestry.clone()));
                 }
-                in_stack.remove(&parent);
             }
             queue = next;
         }
@@ -1091,8 +1185,10 @@ impl ProductionService for DatabaseProductionService {
         if demand_qty > rust_decimal::Decimal::ZERO && !products.contains(&product_id) {
             products.push(product_id);
         }
+        // Item 18: every policy figure arrives as Decimal directly from the
+        // NUMERIC column — no f64 conversion anywhere in the engine.
         for p in products {
-            let scheduled: f64 = sqlx::query_scalar(
+            let scheduled: rust_decimal::Decimal = sqlx::query_scalar(
                 "SELECT COALESCE(SUM(quantity_planned - quantity_produced), 0)::numeric \
                  FROM production_orders \
                  WHERE product_id = $1 AND tenant_id = $2 AND status NOT IN ('completed', 'cancelled')",
@@ -1103,7 +1199,7 @@ impl ProductionService for DatabaseProductionService {
             .await
             .map_err(|e| SenseiError::Database(format!("Failed to compute scheduled receipts: {e}")))?;
 
-            let on_hand: f64 = sqlx::query_scalar(
+            let on_hand: rust_decimal::Decimal = sqlx::query_scalar(
                 "SELECT COALESCE(SUM(quantity_on_hand), 0)::numeric \
                  FROM inventory_items \
                  WHERE product_id = $1 AND tenant_id = $2",
@@ -1114,10 +1210,14 @@ impl ProductionService for DatabaseProductionService {
             .await
             .map_err(|e| SenseiError::Database(format!("Failed to compute on-hand: {e}")))?;
 
-            let (safety_stock, lot_size, lead_days): (f64, f64, i32) = sqlx::query_as(
+            let (safety_stock, lot_size, lead_days): (
+                rust_decimal::Decimal,
+                rust_decimal::Decimal,
+                i32,
+            ) = sqlx::query_as(
                 "SELECT COALESCE(safety_stock, 0)::numeric, \
-                        COALESCE(lot_size, 0)::numeric, COALESCE(lead_time_days, 0) \
-                 FROM products WHERE id = $1 AND tenant_id = $2",
+                            COALESCE(lot_size, 0)::numeric, COALESCE(lead_time_days, 0) \
+                     FROM products WHERE id = $1 AND tenant_id = $2",
             )
             .bind(p)
             .bind(tenant_id)
@@ -1126,14 +1226,6 @@ impl ProductionService for DatabaseProductionService {
             .map_err(|e| SenseiError::Database(format!("Failed to load product policy: {e}")))?;
 
             let gross_qty = *gross.get(&p).unwrap_or(&rust_decimal::Decimal::ZERO);
-            let scheduled = rust_decimal::Decimal::from_f64_retain(scheduled)
-                .unwrap_or(rust_decimal::Decimal::ZERO);
-            let on_hand = rust_decimal::Decimal::from_f64_retain(on_hand)
-                .unwrap_or(rust_decimal::Decimal::ZERO);
-            let safety_stock = rust_decimal::Decimal::from_f64_retain(safety_stock)
-                .unwrap_or(rust_decimal::Decimal::ZERO);
-            let lot_size = rust_decimal::Decimal::from_f64_retain(lot_size)
-                .unwrap_or(rust_decimal::Decimal::ZERO);
 
             // ── 4. Net requirements (safety stock included) ────────────
             let projected = on_hand + scheduled - gross_qty;
@@ -1147,20 +1239,12 @@ impl ProductionService for DatabaseProductionService {
                     net
                 };
 
-            // ── 6. Time phasing: the receipt requirement date comes from
-            // the demand's own timing (earliest open work-order due date);
-            // the release is offset BACKWARD from that date by lead time.
-            let demand_due: Option<chrono::DateTime<Utc>> = sqlx::query_scalar(
-                "SELECT MIN(scheduled_end) FROM work_orders \
-                 WHERE product_id = $1 AND tenant_id = $2 \
-                   AND status NOT IN ('completed', 'cancelled')",
-            )
-            .bind(p)
-            .bind(tenant_id)
-            .fetch_one(&self.pool)
-            .await
-            .map_err(|e| SenseiError::Database(format!("Failed to load demand timing: {e}")))?;
-            let receipt_date = demand_due.unwrap_or(now + chrono::Duration::days(30));
+            // ── 6. Time phasing (item 17): the receipt requirement date
+            // is the demand's own date PROPAGATED BACKWARD through the BOM
+            // (component_need during the explosion); the release is offset
+            // further back by THIS product's lead time. A component can
+            // never inherit an arbitrary now+30d default.
+            let receipt_date = need_dates.get(&p).copied().unwrap_or(root_need);
             let release_date = receipt_date - chrono::Duration::days(lead_days as i64);
 
             records.push(MRPRecord {
@@ -1181,13 +1265,126 @@ impl ProductionService for DatabaseProductionService {
             });
         }
 
+        // Source identity for the reproducible snapshot (item 19): the
+        // ACTUAL ids of every input the plan consumed.
+        let sales_order_ids: Vec<String> = {
+            let rows: Vec<(Uuid,)> = sqlx::query_as(
+                "SELECT DISTINCT so.id FROM sales_orders so, jsonb_array_elements(so.line_items) AS li \
+                 WHERE so.tenant_id = $1 AND (li->>'product_id')::uuid = $2 \
+                   AND so.status NOT IN ('completed', 'cancelled', 'closed')",
+            )
+            .bind(tenant_id)
+            .bind(product_id)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to snapshot sales orders: {e}")))?;
+            rows.into_iter().map(|(u,)| u.to_string()).collect()
+        };
+        let work_order_ids: Vec<String> = {
+            let rows: Vec<(Uuid,)> = sqlx::query_as(
+                "SELECT id FROM work_orders \
+                 WHERE product_id = $1 AND tenant_id = $2 AND status NOT IN ('completed', 'cancelled')",
+            )
+            .bind(product_id)
+            .bind(tenant_id)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to snapshot work orders: {e}")))?;
+            rows.into_iter().map(|(u,)| u.to_string()).collect()
+        };
+        let receipt_ids: Vec<String> = {
+            let rows: Vec<(Uuid,)> = sqlx::query_as(
+                "SELECT id FROM production_orders \
+                 WHERE tenant_id = $1 AND status NOT IN ('completed', 'cancelled') \
+                   AND product_id = ANY($2::uuid[])",
+            )
+            .bind(tenant_id)
+            .bind(gross.keys().copied().collect::<Vec<Uuid>>())
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to snapshot receipts: {e}")))?;
+            rows.into_iter().map(|(u,)| u.to_string()).collect()
+        };
+        let bom_rows_snapshot: Vec<serde_json::Value> = {
+            let rows: Vec<(Uuid, Uuid, rust_decimal::Decimal, rust_decimal::Decimal)> =
+                sqlx::query_as(
+                    "SELECT parent_product_id, component_product_id, quantity, \
+                            COALESCE(scrap_percent, 0) \
+                     FROM bom_items WHERE tenant_id = $1 AND is_active = TRUE",
+                )
+                .bind(tenant_id)
+                .fetch_all(&self.pool)
+                .await
+                .map_err(|e| SenseiError::Database(format!("Failed to snapshot BOM: {e}")))?;
+            rows.into_iter()
+                .map(|(p, c, q, s)| {
+                    serde_json::json!({
+                        "parent": p.to_string(),
+                        "component": c.to_string(),
+                        "quantity": q.to_string(),
+                        "scrap_percent": s.to_string(),
+                    })
+                })
+                .collect()
+        };
+        let on_hand_ledger_snapshot: Vec<serde_json::Value> = {
+            let rows: Vec<(Uuid, String, rust_decimal::Decimal, chrono::DateTime<Utc>)> =
+                sqlx::query_as(
+                    "SELECT product_id, location, quantity_on_hand::numeric, updated_at \
+                     FROM inventory_items WHERE tenant_id = $1",
+                )
+                .bind(tenant_id)
+                .fetch_all(&self.pool)
+                .await
+                .map_err(|e| SenseiError::Database(format!("Failed to snapshot inventory: {e}")))?;
+            rows.into_iter()
+                .map(|(p, loc, q, t)| {
+                    serde_json::json!({
+                        "product_id": p.to_string(),
+                        "location": loc,
+                        "quantity_on_hand": q.to_string(),
+                        "updated_at": t.to_rfc3339(),
+                    })
+                })
+                .collect()
+        };
+        let (policy_safety_stock, policy_lot_size, policy_lead_days) = {
+            let (safety, lot, lead): (rust_decimal::Decimal, rust_decimal::Decimal, i32) =
+                sqlx::query_as(
+                    "SELECT COALESCE(safety_stock, 0)::numeric, \
+                            COALESCE(lot_size, 0)::numeric, COALESCE(lead_time_days, 0) \
+                     FROM products WHERE id = $1 AND tenant_id = $2",
+                )
+                .bind(product_id)
+                .bind(tenant_id)
+                .fetch_one(&self.pool)
+                .await
+                .map_err(|e| SenseiError::Database(format!("Failed to snapshot policy: {e}")))?;
+            (safety.to_string(), lot.to_string(), lead)
+        };
+
         // ── 7. Immutable snapshot: historic runs never change ──────────
-        // The input snapshot (demands, inventory, receipts, policy) makes
-        // an old result reproducible even when today's stock moves.
+        // The input snapshot captures AUTHORITATIVE SOURCE IDENTITY — the
+        // actual sales-order/work-order ids and revisions, the BOM rows,
+        // the ledger, policy and calendar — so an old result can be
+        // reconstructed even when today's stock moves (item 19).
         let snapshot = serde_json::json!({
             "product_id": product_id,
             "demand": demand_qty,
             "gross_by_product": gross,
+            "need_dates": need_dates.iter().map(|(k, v)| (k.to_string(), v.to_rfc3339())).collect::<Vec<_>>(),
+            "demand_sources": {
+                "open_sales_order_ids": sales_order_ids,
+                "open_work_order_ids": work_order_ids,
+                "scheduled_receipt_ids": receipt_ids,
+                "bom_rows": bom_rows_snapshot,
+                "on_hand_ledger": on_hand_ledger_snapshot,
+            },
+            "policy": {
+                "safety_stock": policy_safety_stock,
+                "lot_size": policy_lot_size,
+                "lead_time_days": policy_lead_days,
+            },
             "calculated_at": now,
         });
         let result_json =

@@ -27,6 +27,29 @@ async fn set_tenant_context(
     Ok(())
 }
 
+/// Run `f` inside a transaction with the RLS tenant context set — every
+/// andon path (reads included) must establish the context: the policy is
+/// FAIL-CLOSED (missing context = no rows).
+async fn with_tenant_tx<T, F>(pool: &PgPool, tenant_id: Uuid, f: F) -> Result<T>
+where
+    F: for<'t> FnOnce(
+        &'t mut sqlx::Transaction<'_, sqlx::Postgres>,
+    ) -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = std::result::Result<T, SenseiError>> + Send + 't>,
+    >,
+{
+    let mut tx = pool
+        .begin()
+        .await
+        .map_err(|e| SenseiError::Database(format!("Failed to begin tenant tx: {e}")))?;
+    set_tenant_context(&mut tx, tenant_id).await?;
+    let result = f(&mut tx).await?;
+    tx.commit()
+        .await
+        .map_err(|e| SenseiError::Database(format!("Failed to commit tenant tx: {e}")))?;
+    Ok(result)
+}
+
 pub struct DatabaseOperationsService {
     pool: PgPool,
 }
@@ -294,16 +317,20 @@ impl OperationsService for DatabaseOperationsService {
             &id.as_simple().encode_lower(&mut Uuid::encode_buffer())[..8]
         );
 
-        let row = sqlx::query_as::<_, AndonRow>(
-            r#"INSERT INTO andons (id, tenant_id, andon_number, work_center_id, issue_type, severity, description, status, raised_by, acknowledged_by, resolved_by, resolution, response_time_seconds, resolution_time_seconds, created_at, acknowledged_at, resolved_at, restart_authorized_by, restart_authorized_at)
-               VALUES ($1,$2,$3,$4,$5,$6,$7,'active',$8,NULL,NULL,NULL,NULL,NULL,$9,NULL,NULL)
-               RETURNING id, tenant_id, andon_number, work_center_id, issue_type, severity, description, status, raised_by, acknowledged_by, resolved_by, resolution, response_time_seconds, resolution_time_seconds, created_at, acknowledged_at, resolved_at, restart_authorized_by, restart_authorized_at"#,
-        )
-        .bind(id).bind(tenant_id).bind(&andon_number).bind(andon.work_center_id)
-        .bind(&andon.issue_type).bind(&andon.severity).bind(&andon.description)
-        .bind(andon.raised_by).bind(now)
-        .fetch_one(&self.pool)
-        .await.map_err(|e| SenseiError::Database(format!("Failed to raise andon: {e}")))?;
+        let row = with_tenant_tx(&self.pool, tenant_id, |tx| {
+            Box::pin(async move {
+                sqlx::query_as::<_, AndonRow>(
+                    r#"INSERT INTO andons (id, tenant_id, andon_number, work_center_id, issue_type, severity, description, status, raised_by, acknowledged_by, resolved_by, resolution, response_time_seconds, resolution_time_seconds, created_at, acknowledged_at, resolved_at, restart_authorized_by, restart_authorized_at)
+                       VALUES ($1,$2,$3,$4,$5,$6,$7,'active',$8,NULL,NULL,NULL,NULL,NULL,$9,NULL,NULL,NULL,NULL)
+                       RETURNING id, tenant_id, andon_number, work_center_id, issue_type, severity, description, status, raised_by, acknowledged_by, resolved_by, resolution, response_time_seconds, resolution_time_seconds, created_at, acknowledged_at, resolved_at, restart_authorized_by, restart_authorized_at"#,
+                )
+                .bind(id).bind(tenant_id).bind(&andon_number).bind(andon.work_center_id)
+                .bind(&andon.issue_type).bind(&andon.severity).bind(&andon.description)
+                .bind(andon.raised_by).bind(now)
+                .fetch_one(&mut **tx)
+                .await.map_err(|e| SenseiError::Database(format!("Failed to raise andon: {e}")))
+            })
+        }).await?;
 
         Ok(andon_row_to_domain(row))
     }
@@ -315,16 +342,20 @@ impl OperationsService for DatabaseOperationsService {
         acknowledged_by: Uuid,
     ) -> Result<Andon> {
         let now = Utc::now();
-        let row = sqlx::query_as::<_, AndonRow>(
-            r#"UPDATE andons SET status='acknowledged', acknowledged_by=$1, acknowledged_at=$2,
-                response_time_seconds=EXTRACT(EPOCH FROM ($2 - created_at))::bigint
-               WHERE id=$3 AND tenant_id=$4 AND status='active'
-               RETURNING id, tenant_id, andon_number, work_center_id, issue_type, severity, description, status, raised_by, acknowledged_by, resolved_by, resolution, response_time_seconds, resolution_time_seconds, created_at, acknowledged_at, resolved_at, restart_authorized_by, restart_authorized_at"#,
-        )
-        .bind(acknowledged_by).bind(now).bind(id).bind(tenant_id)
-        .fetch_optional(&self.pool)
-        .await.map_err(|e| SenseiError::Database(format!("Failed to acknowledge andon: {e}")))?
-        .ok_or_else(|| SenseiError::NotFound(format!("Andon {id} not found or not active")))?;
+        let row = with_tenant_tx(&self.pool, tenant_id, |tx| {
+            Box::pin(async move {
+                sqlx::query_as::<_, AndonRow>(
+                    r#"UPDATE andons SET status='acknowledged', acknowledged_by=$1, acknowledged_at=$2,
+                        response_time_seconds=EXTRACT(EPOCH FROM ($2 - created_at))::bigint
+                       WHERE id=$3 AND tenant_id=$4 AND status='active'
+                       RETURNING id, tenant_id, andon_number, work_center_id, issue_type, severity, description, status, raised_by, acknowledged_by, resolved_by, resolution, response_time_seconds, resolution_time_seconds, created_at, acknowledged_at, resolved_at, restart_authorized_by, restart_authorized_at"#,
+                )
+                .bind(acknowledged_by).bind(now).bind(id).bind(tenant_id)
+                .fetch_optional(&mut **tx)
+                .await.map_err(|e| SenseiError::Database(format!("Failed to acknowledge andon: {e}")))?
+                .ok_or_else(|| SenseiError::NotFound(format!("Andon {id} not found or not active")))
+            })
+        }).await?;
 
         Ok(andon_row_to_domain(row))
     }
@@ -341,48 +372,59 @@ impl OperationsService for DatabaseOperationsService {
         // condition is part of the UPDATE's WHERE, so there is no
         // read/check/write race between replicas.
         let now = Utc::now();
-        let row = sqlx::query_as::<_, AndonRow>(
-            r#"UPDATE andons SET status='resolved', resolved_by=$1, resolution=$2, resolved_at=$3,
-                resolution_time_seconds=EXTRACT(EPOCH FROM ($3 - created_at))::bigint,
-                response_time_seconds=COALESCE(response_time_seconds, EXTRACT(EPOCH FROM ($3 - created_at))::bigint)
-               WHERE id=$4 AND tenant_id=$5 AND status NOT IN ('resolved','closed')
-                 AND (severity != 'critical' OR issue_type != 'safety' OR restart_authorized_by IS NOT NULL)
-               RETURNING id, tenant_id, andon_number, work_center_id, issue_type, severity, description, status, raised_by, acknowledged_by, resolved_by, resolution, response_time_seconds, resolution_time_seconds, created_at, acknowledged_at, resolved_at, restart_authorized_by, restart_authorized_at"#,
-        )
-        .bind(resolved_by).bind(resolution).bind(now).bind(id).bind(tenant_id)
-        .fetch_optional(&self.pool)
-        .await.map_err(|e| SenseiError::Database(format!("Failed to resolve andon: {e}")))?;
+        let resolution_owned = resolution.to_string();
+        let row = with_tenant_tx(&self.pool, tenant_id, |tx| {
+            Box::pin(async move {
+                let row = sqlx::query_as::<_, AndonRow>(
+                    r#"UPDATE andons SET status='resolved', resolved_by=$1, resolution=$2, resolved_at=$3,
+                        resolution_time_seconds=EXTRACT(EPOCH FROM ($3 - created_at))::bigint,
+                        response_time_seconds=COALESCE(response_time_seconds, EXTRACT(EPOCH FROM ($3 - created_at))::bigint)
+                       WHERE id=$4 AND tenant_id=$5 AND status NOT IN ('resolved','closed')
+                         AND (severity != 'critical' OR issue_type != 'safety' OR restart_authorized_by IS NOT NULL)
+                       RETURNING id, tenant_id, andon_number, work_center_id, issue_type, severity, description, status, raised_by, acknowledged_by, resolved_by, resolution, response_time_seconds, resolution_time_seconds, created_at, acknowledged_at, resolved_at, restart_authorized_by, restart_authorized_at"#,
+                )
+                .bind(resolved_by).bind(&resolution_owned).bind(now).bind(id).bind(tenant_id)
+                .fetch_optional(&mut **tx)
+                .await.map_err(|e| SenseiError::Database(format!("Failed to resolve andon: {e}")))?;
 
-        let Some(row) = row else {
-            // Distinguish: not found / already resolved / safety rule.
-            let state: Option<(String, String, Option<Uuid>, String)> = sqlx::query_as(
-                "SELECT severity, issue_type, restart_authorized_by, status FROM andons \
-                 WHERE id = $1 AND tenant_id = $2",
-            )
-            .bind(id)
-            .bind(tenant_id)
-            .fetch_optional(&self.pool)
-            .await
-            .map_err(|e| SenseiError::Database(format!("Failed to read andon state: {e}")))?;
-            match state {
+                let Some(row) = row else {
+                    // Distinguish: not found / already resolved / safety rule.
+                    let state: Option<(String, String, Option<Uuid>, String)> = sqlx::query_as(
+                        "SELECT severity, issue_type, restart_authorized_by, status FROM andons \
+                         WHERE id = $1 AND tenant_id = $2",
+                    )
+                    .bind(id)
+                    .bind(tenant_id)
+                    .fetch_optional(&mut **tx)
+                    .await
+                    .map_err(|e| SenseiError::Database(format!("Failed to read andon state: {e}")))?;
+                    match state {
                 None => return Err(SenseiError::NotFound(format!("Andon {id} not found"))),
                 Some((_, _, _, status)) if status == "resolved" || status == "closed" => {
                     return Err(SenseiError::Conflict(format!(
                         "Andon {id} is already {status}"
                     )));
                 }
-                Some((severity, issue_type, restart_authorized_by, _)) => {
-                    return crate::tps::rules::check_safety_restart(
-                        severity == "critical" && issue_type == "safety",
-                        restart_authorized_by.is_some(),
-                    )
-                    .map_err(|v| SenseiError::Conflict(v.message().to_string()))
-                    .and(Err(SenseiError::Conflict(
-                        "Andon state changed concurrently — retry".to_string(),
-                    )));
+                    Some((severity, issue_type, restart_authorized_by, _)) => {
+                        return Err(crate::tps::rules::check_safety_restart(
+                            severity == "critical" && issue_type == "safety",
+                            restart_authorized_by.is_some(),
+                        )
+                        .map_err(|v| SenseiError::Conflict(v.message().to_string()))
+                        .map_err(|_| {
+                            SenseiError::Conflict(
+                                "Andon state changed concurrently — retry".to_string(),
+                            )
+                        })
+                        .unwrap_err());
+                    }
                 }
-            }
-        };
+                };
+
+                Ok(row)
+            })
+        })
+        .await?;
 
         Ok(andon_row_to_domain(row))
     }
@@ -393,32 +435,40 @@ impl OperationsService for DatabaseOperationsService {
         id: Uuid,
         authorized_by: Uuid,
     ) -> Result<Andon> {
-        let row = sqlx::query_as::<_, AndonRow>(
-            "UPDATE andons SET restart_authorized_by = $3, restart_authorized_at = NOW() \
-             WHERE id = $1 AND tenant_id = $2 \
-             RETURNING id, tenant_id, andon_number, work_center_id, issue_type, severity, \
-                       description, status, raised_by, acknowledged_by, resolved_by, resolution, \
-                       response_time_seconds, resolution_time_seconds, created_at, \
-                       acknowledged_at, resolved_at, restart_authorized_by, restart_authorized_at",
-        )
-        .bind(id)
-        .bind(tenant_id)
-        .bind(authorized_by)
-        .fetch_optional(&self.pool)
-        .await
-        .map_err(|e| SenseiError::Database(format!("Failed to authorize restart: {e}")))?
-        .ok_or_else(|| SenseiError::NotFound(format!("Andon {id} not found")))?;
+        let row = with_tenant_tx(&self.pool, tenant_id, |tx| {
+            Box::pin(async move {
+                sqlx::query_as::<_, AndonRow>(
+                    "UPDATE andons SET restart_authorized_by = $3, restart_authorized_at = NOW() \
+                     WHERE id = $1 AND tenant_id = $2 \
+                     RETURNING id, tenant_id, andon_number, work_center_id, issue_type, severity, \
+                               description, status, raised_by, acknowledged_by, resolved_by, resolution, \
+                               response_time_seconds, resolution_time_seconds, created_at, \
+                               acknowledged_at, resolved_at, restart_authorized_by, restart_authorized_at",
+                )
+                .bind(id)
+                .bind(tenant_id)
+                .bind(authorized_by)
+                .fetch_optional(&mut **tx)
+                .await
+                .map_err(|e| SenseiError::Database(format!("Failed to authorize restart: {e}")))?
+                .ok_or_else(|| SenseiError::NotFound(format!("Andon {id} not found")))
+            })
+        }).await?;
         Ok(andon_row_to_domain(row))
     }
 
     async fn get_andon(&self, tenant_id: Uuid, id: Uuid) -> Result<Andon> {
-        let row = sqlx::query_as::<_, AndonRow>(
-            "SELECT id, tenant_id, andon_number, work_center_id, issue_type, severity, description, status, raised_by, acknowledged_by, resolved_by, resolution, response_time_seconds, resolution_time_seconds, created_at, acknowledged_at, resolved_at, restart_authorized_by, restart_authorized_at FROM andons WHERE id = $1 AND tenant_id = $2",
-        )
-        .bind(id).bind(tenant_id)
-        .fetch_optional(&self.pool)
-        .await.map_err(|e| SenseiError::Database(format!("Failed to get andon: {e}")))?
-        .ok_or_else(|| SenseiError::NotFound(format!("Andon {id} not found")))?;
+        let row = with_tenant_tx(&self.pool, tenant_id, |tx| {
+            Box::pin(async move {
+                sqlx::query_as::<_, AndonRow>(
+                    "SELECT id, tenant_id, andon_number, work_center_id, issue_type, severity, description, status, raised_by, acknowledged_by, resolved_by, resolution, response_time_seconds, resolution_time_seconds, created_at, acknowledged_at, resolved_at, restart_authorized_by, restart_authorized_at FROM andons WHERE id = $1 AND tenant_id = $2",
+                )
+                .bind(id).bind(tenant_id)
+                .fetch_optional(&mut **tx)
+                .await.map_err(|e| SenseiError::Database(format!("Failed to get andon: {e}")))?
+                .ok_or_else(|| SenseiError::NotFound(format!("Andon {id} not found")))
+            })
+        }).await?;
 
         Ok(andon_row_to_domain(row))
     }
@@ -434,21 +484,27 @@ impl OperationsService for DatabaseOperationsService {
         let page = page.unwrap_or(1).max(1);
         let per_page = per_page.unwrap_or(20).clamp(1, 100);
         let offset = (page - 1) * per_page;
+        let status_owned = status.map(|s| s.to_string());
 
-        let items: Vec<AndonRow> = sqlx::query_as(
-            r#"SELECT id, tenant_id, andon_number, work_center_id, issue_type, severity, description, status, raised_by, acknowledged_by, resolved_by, resolution, response_time_seconds, resolution_time_seconds, created_at, acknowledged_at, resolved_at, restart_authorized_by, restart_authorized_at
-               FROM andons WHERE tenant_id=$1 AND ($2::text IS NULL OR status=$2) AND ($3::uuid IS NULL OR work_center_id=$3)
-               ORDER BY created_at DESC LIMIT $4 OFFSET $5"#,
-        )
-        .bind(tenant_id).bind(status).bind(work_center_id).bind(per_page as i64).bind(offset as i64)
-        .fetch_all(&self.pool)
-        .await.map_err(|e| SenseiError::Database(format!("Failed to list andons: {e}")))?;
+        let (items, count) = with_tenant_tx(&self.pool, tenant_id, |tx| {
+            Box::pin(async move {
+                let items: Vec<AndonRow> = sqlx::query_as(
+                    r#"SELECT id, tenant_id, andon_number, work_center_id, issue_type, severity, description, status, raised_by, acknowledged_by, resolved_by, resolution, response_time_seconds, resolution_time_seconds, created_at, acknowledged_at, resolved_at, restart_authorized_by, restart_authorized_at
+                       FROM andons WHERE tenant_id=$1 AND ($2::text IS NULL OR status=$2) AND ($3::uuid IS NULL OR work_center_id=$3)
+                       ORDER BY created_at DESC LIMIT $4 OFFSET $5"#,
+                )
+                .bind(tenant_id).bind(&status_owned).bind(work_center_id).bind(per_page as i64).bind(offset as i64)
+                .fetch_all(&mut **tx)
+                .await.map_err(|e| SenseiError::Database(format!("Failed to list andons: {e}")))?;
 
-        let count: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM andons WHERE tenant_id=$1 AND ($2::text IS NULL OR status=$2) AND ($3::uuid IS NULL OR work_center_id=$3)",
-        )
-        .bind(tenant_id).bind(status).bind(work_center_id).fetch_one(&self.pool).await
-        .map_err(|e| SenseiError::Database(format!("Failed to count andons: {e}")))?;
+                let count: i64 = sqlx::query_scalar(
+                    "SELECT COUNT(*) FROM andons WHERE tenant_id=$1 AND ($2::text IS NULL OR status=$2) AND ($3::uuid IS NULL OR work_center_id=$3)",
+                )
+                .bind(tenant_id).bind(&status_owned).bind(work_center_id).fetch_one(&mut **tx).await
+                .map_err(|e| SenseiError::Database(format!("Failed to count andons: {e}")))?;
+                Ok((items, count))
+            })
+        }).await?;
 
         Ok(paginate(
             items.into_iter().map(andon_row_to_domain).collect(),
@@ -805,14 +861,18 @@ impl OperationsService for DatabaseOperationsService {
     // ── Update/Delete for Andon ─────────────────────────────────────────
 
     async fn update_andon(&self, tenant_id: Uuid, id: Uuid, andon: Andon) -> Result<Andon> {
-        let row = sqlx::query_as::<_, AndonRow>(
-            r#"UPDATE andons SET issue_type=$1, severity=$2, description=$3 WHERE id=$4 AND tenant_id=$5
-               RETURNING id, tenant_id, andon_number, work_center_id, issue_type, severity, description, status, raised_by, acknowledged_by, resolved_by, resolution, response_time_seconds, resolution_time_seconds, created_at, acknowledged_at, resolved_at, restart_authorized_by, restart_authorized_at"#,
-        )
-        .bind(&andon.issue_type).bind(&andon.severity).bind(&andon.description).bind(id).bind(tenant_id)
-        .fetch_optional(&self.pool)
-        .await.map_err(|e| SenseiError::Database(format!("Failed to update andon: {e}")))?
-        .ok_or_else(|| SenseiError::NotFound(format!("Andon {id} not found")))?;
+        let row = with_tenant_tx(&self.pool, tenant_id, |tx| {
+            Box::pin(async move {
+                sqlx::query_as::<_, AndonRow>(
+                    r#"UPDATE andons SET issue_type=$1, severity=$2, description=$3 WHERE id=$4 AND tenant_id=$5
+                       RETURNING id, tenant_id, andon_number, work_center_id, issue_type, severity, description, status, raised_by, acknowledged_by, resolved_by, resolution, response_time_seconds, resolution_time_seconds, created_at, acknowledged_at, resolved_at, restart_authorized_by, restart_authorized_at"#,
+                )
+                .bind(&andon.issue_type).bind(&andon.severity).bind(&andon.description).bind(id).bind(tenant_id)
+                .fetch_optional(&mut **tx)
+                .await.map_err(|e| SenseiError::Database(format!("Failed to update andon: {e}")))?
+                .ok_or_else(|| SenseiError::NotFound(format!("Andon {id} not found")))
+            })
+        }).await?;
 
         Ok(andon_row_to_domain(row))
     }
@@ -826,47 +886,53 @@ impl OperationsService for DatabaseOperationsService {
     ) -> Result<Andon> {
         // The critical-safety rule applies to voiding too: a safety Andon
         // cannot avoid the resolve guard by going down the void path.
-        let row = sqlx::query_as::<_, AndonRow>(
-            "UPDATE andons SET status = 'voided', resolved_by = $3, resolution = $4 \
-             WHERE id = $1 AND tenant_id = $2 \
-               AND (severity != 'critical' OR issue_type != 'safety' OR restart_authorized_by IS NOT NULL) \
-             RETURNING id, tenant_id, andon_number, work_center_id, issue_type, severity, \
-                       description, status, raised_by, acknowledged_by, resolved_by, \
-                       resolution, response_time_seconds, resolution_time_seconds, \
-                       created_at, acknowledged_at, resolved_at, restart_authorized_by, restart_authorized_at",
-        )
-        .bind(id)
-        .bind(tenant_id)
-        .bind(actor_id)
-        .bind(format!("VOIDED: {reason}"))
-        .fetch_optional(&self.pool)
-        .await
-        .map_err(|e| SenseiError::Database(format!("Failed to void andon: {e}")))?;
+        let reason_owned = format!("VOIDED: {reason}");
+        let row = with_tenant_tx(&self.pool, tenant_id, |tx| {
+            Box::pin(async move {
+                let row = sqlx::query_as::<_, AndonRow>(
+                    "UPDATE andons SET status = 'voided', resolved_by = $3, resolution = $4 \
+                     WHERE id = $1 AND tenant_id = $2 \
+                       AND (severity != 'critical' OR issue_type != 'safety' OR restart_authorized_by IS NOT NULL) \
+                     RETURNING id, tenant_id, andon_number, work_center_id, issue_type, severity, \
+                               description, status, raised_by, acknowledged_by, resolved_by, \
+                               resolution, response_time_seconds, resolution_time_seconds, \
+                               created_at, acknowledged_at, resolved_at, restart_authorized_by, restart_authorized_at",
+                )
+                .bind(id)
+                .bind(tenant_id)
+                .bind(actor_id)
+                .bind(&reason_owned)
+                .fetch_optional(&mut **tx)
+                .await
+                .map_err(|e| SenseiError::Database(format!("Failed to void andon: {e}")))?;
 
-        let Some(row) = row else {
-            let state: Option<(String, String, Option<Uuid>)> = sqlx::query_as(
-                "SELECT severity, issue_type, restart_authorized_by FROM andons \
-                 WHERE id = $1 AND tenant_id = $2",
-            )
-            .bind(id)
-            .bind(tenant_id)
-            .fetch_optional(&self.pool)
-            .await
-            .map_err(|e| SenseiError::Database(format!("Failed to read andon state: {e}")))?;
-            return match state {
-                None => Err(SenseiError::NotFound(format!("Andon {id} not found"))),
-                Some((severity, issue_type, restart_authorized_by)) => {
-                    crate::tps::rules::check_safety_restart(
-                        severity == "critical" && issue_type == "safety",
-                        restart_authorized_by.is_some(),
+                let Some(row) = row else {
+                    let state: Option<(String, String, Option<Uuid>)> = sqlx::query_as(
+                        "SELECT severity, issue_type, restart_authorized_by FROM andons \
+                         WHERE id = $1 AND tenant_id = $2",
                     )
-                    .map_err(|v| SenseiError::Conflict(v.message().to_string()))
-                    .and(Err(SenseiError::Conflict(
-                        "Andon state changed concurrently — retry".to_string(),
-                    )))
-                }
-            };
-        };
+                    .bind(id)
+                    .bind(tenant_id)
+                    .fetch_optional(&mut **tx)
+                    .await
+                    .map_err(|e| SenseiError::Database(format!("Failed to read andon state: {e}")))?;
+                    return match state {
+                        None => Err(SenseiError::NotFound(format!("Andon {id} not found"))),
+                        Some((severity, issue_type, restart_authorized_by)) => {
+                            crate::tps::rules::check_safety_restart(
+                                severity == "critical" && issue_type == "safety",
+                                restart_authorized_by.is_some(),
+                            )
+                            .map_err(|v| SenseiError::Conflict(v.message().to_string()))
+                            .and(Err(SenseiError::Conflict(
+                                "Andon state changed concurrently — retry".to_string(),
+                            )))
+                        }
+                    };
+                };
+                Ok(row)
+            })
+        }).await?;
         Ok(andon_row_to_domain(row))
     }
 

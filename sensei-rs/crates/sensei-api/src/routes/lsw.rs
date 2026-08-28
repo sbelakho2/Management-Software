@@ -336,6 +336,20 @@ pub async fn perform_audit(
     user.require_permission("tps:lsw:execute")?;
     let tenant_id = user.tenant_id;
 
+    // Item 14: the OBSERVATION time is event time — a future timestamp is
+    // rejected (a clock-skewed client cannot backdate a completed audit
+    // into the future). Recorded time stays server-owned.
+    let now = Utc::now();
+    if let Some(observed) = req.observed_at {
+        if observed > now + chrono::Duration::minutes(5) {
+            return Err(SenseiError::Validation(
+                "observed_at cannot be in the future — the observation must \
+                 have already happened (allowed skew: 5 minutes)"
+                    .to_string(),
+            ));
+        }
+    }
+
     // Resolve the occurrence: it must exist, belong to this standard, be
     // scheduled/in_progress, and carry the CURRENT checklist revision.
     let occurrence_id = req
@@ -460,38 +474,15 @@ pub async fn perform_audit(
         audited_at: req.observed_at.unwrap_or(now),
         created_at: now,
     };
+    // Item 13: audit + occurrence completion are ONE transaction — lock the
+    // occurrence, re-validate, insert the audit (UNIQUE occurrence_id
+    // rejects concurrent duplicates), mark completed, commit. There is no
+    // intermediate state and no compensation path to get wrong.
     state
         .lsw_repo
-        .put_audit(&audit)
+        .complete_occurrence_with_audit(tenant_id, standard_id, occurrence_id, &audit)
         .await
         .map_err(SenseiError::Internal)?;
-
-    // The occurrence is COMPLETED by this audit (server-owned timestamps).
-    // If the completion cannot be persisted, the audit is ROLLED BACK so
-    // the two records never diverge (a crash between them is recoverable:
-    // the occurrence stays in_progress and the audit is removed).
-    {
-        let mut occurrence = state
-            .lsw_repo
-            .get_occurrence(user.tenant_id, occurrence_id)
-            .await
-            .map_err(SenseiError::Internal)?
-            .filter(|o| o.tenant_id == tenant_id && o.standard_id == standard_id)
-            .ok_or_else(|| {
-                SenseiError::NotFound(format!("LSW occurrence {occurrence_id} not found"))
-            })?;
-        occurrence.status = "completed".to_string();
-        occurrence.completed_at = Some(Utc::now());
-        if let Err(e) = state.lsw_repo.put_occurrence(&occurrence).await {
-            // Compensation: remove the just-created audit record.
-            let mut audits = state.lsw_audits.write(user.tenant_id).await;
-            audits.remove(&audit.id);
-            let _ = audits.persist().await;
-            return Err(SenseiError::Internal(format!(
-                "Failed to complete the LSW occurrence — audit rolled back: {e}"
-            )));
-        }
-    }
     Ok(Json(audit))
 }
 
@@ -512,19 +503,19 @@ pub async fn list_audits(
     Ok(Json(result))
 }
 
-/// Get a specific audit by ID.
+/// Get a specific audit by ID (item 12: the same repository the list
+/// reads — an audit that appears in a list can never 404 on its detail).
 pub async fn get_audit(
     user: AuthenticatedUser,
     State(state): State<AppState>,
     Path(audit_id): Path<Uuid>,
 ) -> Result<Json<LswAudit>> {
     user.require_permission("tps:lsw:execute")?;
-    let tenant_id = user.tenant_id;
-    let store = state.lsw_audits.read(user.tenant_id).await;
-    let audit = store
-        .values()
-        .find(|a| a.id == audit_id && a.tenant_id == tenant_id)
-        .cloned()
+    let audit = state
+        .lsw_repo
+        .get_audit(user.tenant_id, audit_id)
+        .await
+        .map_err(SenseiError::Internal)?
         .ok_or_else(|| SenseiError::NotFound(format!("Audit {audit_id} not found")))?;
     Ok(Json(audit))
 }
@@ -539,17 +530,24 @@ pub async fn get_lsw_dashboard(
 ) -> Result<Json<LswDashboard>> {
     user.require_permission("tps:lsw:execute")?;
     let tenant_id = user.tenant_id;
-    let standards_store = state.lsw_standards.read(user.tenant_id).await;
-    let audits_store = state.lsw_audits.read(user.tenant_id).await;
+    // Item 12: the dashboard reads the SAME stores the CRUD paths write
+    // (standards + audits via the typed repository) — never the legacy
+    // generic EntityStore for audits.
+    let standards = state
+        .lsw_repo
+        .list_standards(tenant_id)
+        .await
+        .map_err(SenseiError::Internal)?;
+    let all_audits = state
+        .lsw_repo
+        .list_all_audits(tenant_id)
+        .await
+        .map_err(SenseiError::Internal)?;
 
-    let total_standards = standards_store
-        .values()
-        .filter(|s| s.tenant_id == tenant_id)
-        .count();
+    let total_standards = standards.len();
 
-    let audits: Vec<&LswAudit> = audits_store
-        .values()
-        .filter(|a| a.tenant_id == tenant_id)
+    let audits: Vec<&LswAudit> = all_audits
+        .iter()
         .filter(|a| {
             if let Some(ref area) = params.area {
                 a.area == *area

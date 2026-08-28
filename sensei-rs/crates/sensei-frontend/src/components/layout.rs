@@ -53,7 +53,7 @@ pub fn RootLayout(
                 <div class="rams-status-bar-left">
                     <span class="dymo-label">"SENSEI-OS"</span>
                     <span class="rams-status-bar-separator">"|"</span>
-                    <span class="rams-status-text">"OPERATIONAL"</span>
+                    <span class="rams-status-text" title="Application infrastructure only — process status comes from live data">"CONNECTED"</span>
                 </div>
                 <div class="rams-status-bar-right">
                     <span class="rams-status-text">{username_footer}</span>

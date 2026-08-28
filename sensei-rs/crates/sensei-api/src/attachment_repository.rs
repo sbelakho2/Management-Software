@@ -49,10 +49,7 @@ impl AttachmentRepository {
     pub async fn put(&self, attachment: &Attachment) -> Result<(), String> {
         if let Some(pool) = &self.pool {
             sqlx::query(
-                "INSERT INTO attachments (id, tenant_id, entity_type, entity_id, file_name, \\
-                                          content_type, file_size, storage_path, uploaded_by, created_at) \\
-                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) \\
-                 ON CONFLICT (id) DO UPDATE SET file_name = $5, content_type = $6, file_size = $7",
+                "INSERT INTO attachments (id, tenant_id, entity_type, entity_id, file_name,  content_type, file_size, storage_path, uploaded_by, created_at)  VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)  ON CONFLICT (id) DO UPDATE SET file_name = $5, content_type = $6, file_size = $7",
             )
             .bind(attachment.id)
             .bind(attachment.tenant_id)

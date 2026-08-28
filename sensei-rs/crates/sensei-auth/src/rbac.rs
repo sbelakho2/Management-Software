@@ -197,6 +197,7 @@ impl RbacService {
             vec![
                 "purchasing:po:create",
                 "purchasing:po:approve",
+                "purchasing:po:read",
                 "purchasing:rfq:manage",
                 "purchasing:supplier:manage",
                 "purchasing:rfq:create",
@@ -210,6 +211,7 @@ impl RbacService {
                 "sales:order:create",
                 "sales:order:update",
                 "sales:order:status",
+                "sales:order:delete",
             ],
         );
         self.add_role(
@@ -381,6 +383,7 @@ impl RbacService {
                 "tps:andon:raise",
                 "tps:andon:ack",
                 "tps:andon:contain",
+                "tps:andon:manage",
                 "tps:andon:resolve",
                 "tps:andon:restart",
                 "tps:a3:read",

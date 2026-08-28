@@ -10,7 +10,8 @@ CREATE TABLE IF NOT EXISTS standard_work_documents (
     process            VARCHAR(100) NOT NULL DEFAULT '',
     current_version    INT NOT NULL DEFAULT 1,
     status             VARCHAR(30) NOT NULL DEFAULT 'draft'
-                       CHECK (status IN ('draft', 'published', 'archived')),
+                       CHECK (status IN ('draft', 'under_review', 'published',
+                                         'effective', 'superseded', 'archived', 'rejected')),
     steps              JSONB NOT NULL DEFAULT '[]',
     required_skills    JSONB NOT NULL DEFAULT '[]',
     cycle_time_seconds INT,
@@ -22,6 +23,10 @@ CREATE TABLE IF NOT EXISTS standard_work_documents (
     attachments        JSONB NOT NULL DEFAULT '[]',
     approved_by        UUID,
     approved_at        TIMESTAMPTZ,
+    -- Item 15: validity window + supersession lineage.
+    effective_from     TIMESTAMPTZ,
+    effective_to       TIMESTAMPTZ,
+    supersedes         UUID REFERENCES standard_work_documents(id) ON DELETE SET NULL,
     version            BIGINT NOT NULL DEFAULT 1,
     created_by         UUID NOT NULL,
     created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),

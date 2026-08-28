@@ -45,3 +45,5 @@ reqwest.workspace = true
 [dev-dependencies]
 regex = "1"
 reqwest.workspace = true
+syn = { version = "2", features = ["full", "visit", "printing"] }
+quote = "1"

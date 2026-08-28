@@ -124,39 +124,78 @@ pub async fn chat(
     }))
 }
 
-/// Run the deterministic verifier over the assistant's reply: any
-/// permission-gated capability referenced in the response must be
-/// executable by the caller, and fallback/general answers are labelled
-/// `needs_evidence` — the same policy the tool surface enforces.
+/// Run the REAL claims/evidence verifier over the assistant's reply
+/// (item 25): every sentence that states a FACT about live tenant data
+/// must carry evidence. The previous loop inspected only the (already
+/// permitted) effective toolset, which by construction always passed.
+/// Now: factual-sounding statements become ObservedFact claims WITHOUT
+/// evidence refs, and the deterministic verifier flags them — the same
+/// contract the tool surface enforces.
 fn verify_chat_response(
     response: &sensei_services::ai::chatbot::ChatResponse,
     ctx: &sensei_agent_core::context::AgentContext,
-    policy: &sensei_agent_core::tools::PolicyEngine,
-    effective_tools: &[&sensei_agent_core::tools::ToolSpec],
+    _policy: &sensei_agent_core::tools::PolicyEngine,
+    _effective_tools: &[&sensei_agent_core::tools::ToolSpec],
 ) -> serde_json::Value {
     let mut issues: Vec<String> = Vec::new();
-    // Claims must not rest on tools the caller cannot execute.
-    for tool in effective_tools {
-        if response
-            .message
-            .content
-            .to_lowercase()
-            .contains(&tool.name.replace('_', " "))
-            && !policy.can_execute(ctx, tool, true)
-        {
-            issues.push(format!(
-                "Response references '{}' which is NOT permitted for this caller",
-                tool.name
-            ));
+    let content = response.message.content.clone();
+    let lower = content.to_lowercase();
+
+    // Factual-sounding statements: sentences that mention live tenant data
+    // (quantities, counts, statuses, ids) in an assertive way. These are
+    // ObservedFact claims and REQUIRE evidence — the assistant produced
+    // none here, so they are violations.
+    let factual_markers = [
+        "is ",
+        "are ",
+        "stands at ",
+        "currently ",
+        "has ",
+        "there are ",
+        "total ",
+        "count ",
+        "units ",
+        "inventory",
+        "ncr",
+        "capa",
+        "andon",
+        "work order",
+        "production",
+        "quality",
+        "defect",
+        "scrap",
+    ];
+    let mut claim_sentences: Vec<String> = Vec::new();
+    for sentence in content.split(['.', ';', '\n']) {
+        let s = sentence.trim();
+        if s.len() < 12 {
+            continue;
+        }
+        let has_number = s.chars().any(|c| c.is_ascii_digit());
+        let mentions_data = factual_markers.iter().any(|m| lower.contains(m));
+        if has_number && mentions_data {
+            claim_sentences.push(s.to_string());
         }
     }
+
     if response.is_fallback {
         issues.push(
             "Fallback/general answer — not grounded in tenant evidence; \
              treat as guidance, not as a validated fact."
                 .to_string(),
         );
+    } else {
+        for claim in &claim_sentences {
+            issues.push(format!(
+                "Unverified factual claim: '{claim}' — no EvidenceRef. \
+                 Facts about live tenant data must be queried through the \
+                 tool surface, stated as unavailable, or labeled a hypothesis."
+            ));
+        }
     }
+
+    // The context is SERVER-CREATED: the caller's effective scope is
+    // attached so the client can see WHERE the answer applies.
     let verdict = if issues.is_empty() {
         "pass"
     } else {
@@ -165,6 +204,7 @@ fn verify_chat_response(
     serde_json::json!({
         "verdict": verdict,
         "issues": issues,
+        "claims_checked": claim_sentences.len(),
         "context": {
             "site_id": ctx.site_id,
             "value_stream_id": ctx.value_stream_id,
@@ -214,6 +254,11 @@ pub async fn chat_stream(
     let sse_manager = state.sse_manager.clone();
     let chatbot_service = state.chatbot_service.clone();
 
+    // Item 26: the stream carries the SAME trust guarantee as the JSON
+    // chat — the full response is buffered, verified, and only then
+    // released with its verification envelope.
+    let ctx = crate::routes::agent::build_context(&user, &state).await;
+
     // Generate a unique channel name for this streaming session
     let channel = format!("chat-{}", uuid::Uuid::new_v4());
 
@@ -235,22 +280,52 @@ pub async fn chat_stream(
             .await
         {
             Ok(mut token_rx) => {
-                // Forward tokens from the chat service to the SSE channel.
-                // The select on the broadcast receiver lets us stop early
-                // if the subscriber side disappears.
+                // BUFFER the full reply, then run the same claims/evidence
+                // verification as the JSON chat (item 26) — the stream can
+                // no longer bypass the trust contract.
+                let mut buffered = String::new();
+                let mut stream_error: Option<String> = None;
                 while let Some(token_result) = token_rx.recv().await {
                     match token_result {
-                        Ok(token) => {
-                            sse_manager.publish(&channel_clone, "token", &token).await;
-                        }
+                        Ok(token) => buffered.push_str(&token),
                         Err(e) => {
-                            sse_manager
-                                .publish(&channel_clone, "error", &format!("{e}"))
-                                .await;
+                            stream_error = Some(e.to_string());
                             break;
                         }
                     }
                 }
+                if let Some(e) = stream_error {
+                    sse_manager.publish(&channel_clone, "error", &e).await;
+                    return;
+                }
+                // Verify the buffered reply as an ordinary ChatResponse.
+                let chat_response = sensei_services::ai::chatbot::ChatResponse {
+                    message: sensei_services::ai::chatbot::ChatMessage {
+                        role: "assistant".to_string(),
+                        content: buffered.clone(),
+                        timestamp: chrono::Utc::now(),
+                    },
+                    conversation_id: req.conversation_id.clone().unwrap_or_default(),
+                    is_fallback: buffered.is_empty(),
+                };
+                let policy = sensei_agent_core::tools::PolicyEngine::new(
+                    crate::services::agent::build_readonly_tools(),
+                    sensei_agent_core::tools::ToolRisk::ReadOnly,
+                );
+                let effective_tools = policy.effective_tools(&ctx);
+                let verification =
+                    verify_chat_response(&chat_response, &ctx, &policy, &effective_tools);
+                // Release tokens only after verification completed.
+                sse_manager
+                    .publish(&channel_clone, "token", &buffered)
+                    .await;
+                sse_manager
+                    .publish(
+                        &channel_clone,
+                        "verification",
+                        &serde_json::to_string(&verification).unwrap_or_default(),
+                    )
+                    .await;
                 sse_manager.publish(&channel_clone, "done", "").await;
             }
             Err(e) => {

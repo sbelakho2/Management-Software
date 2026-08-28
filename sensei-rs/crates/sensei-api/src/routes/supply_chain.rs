@@ -421,6 +421,7 @@ pub async fn get_purchase_order(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<PurchaseOrder>> {
+    user.require_permission("purchasing:po:read")?;
     let tenant_id = user.tenant_id;
     let order = state
         .supply_chain_service
@@ -474,6 +475,7 @@ pub async fn get_inventory(
     State(state): State<AppState>,
     Path(product_id): Path<Uuid>,
 ) -> Result<Json<Vec<InventoryItem>>> {
+    user.require_permission("inventory:read")?;
     let tenant_id = user.tenant_id;
     let items = state
         .supply_chain_service
@@ -528,6 +530,7 @@ pub async fn list_stock_moves(
     State(state): State<AppState>,
     Query(params): Query<ListStockMovesParams>,
 ) -> Result<Json<PaginatedResponse<StockMove>>> {
+    user.require_permission("inventory:read")?;
     let tenant_id = user.tenant_id;
     let moves = state
         .supply_chain_service
@@ -696,6 +699,7 @@ pub async fn delete_sales_order(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<()>> {
+    user.require_permission("sales:order:delete")?;
     let tenant_id = user.tenant_id;
     state
         .supply_chain_service

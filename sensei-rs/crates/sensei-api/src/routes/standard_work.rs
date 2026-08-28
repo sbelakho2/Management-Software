@@ -77,6 +77,17 @@ pub struct UpdateStandardWorkRequest {
 pub struct ApproveStandardWorkRequest {
     /// Optional comment/notes recorded with the approval.
     pub notes: Option<String>,
+    /// Optional future effective date (defaults to now).
+    #[serde(default)]
+    pub effective_from: Option<chrono::DateTime<chrono::Utc>>,
+}
+
+/// Request body for approving a standard (item 15: optional future
+/// effective date).
+#[derive(Debug, Deserialize)]
+pub struct SupersedeStandardWorkRequest {
+    /// The replacement revision this standard is superseded by.
+    pub replacement_id: Option<Uuid>,
 }
 
 /// Request body for creating a new version of a standard work document.
@@ -142,6 +153,9 @@ pub async fn create_standard_work(
         attachments: req.attachments,
         approved_by: None,
         approved_at: None,
+        effective_from: None,
+        effective_to: None,
+        supersedes: None,
         created_by: user.user_id,
         created_at: now,
         updated_at: now,
@@ -256,16 +270,49 @@ pub async fn update_standard_work(
     Ok(Json(doc))
 }
 
-/// Approve a standard work document.
-///
-/// Transitions the document from `Draft` to `Published`, recording the
-/// approving user (from the token) and the approval timestamp. Only draft
-/// documents can be approved.
+/// Submit a draft for review (item 15): Draft -> UnderReview. Once under
+/// review the document is immutable except by reviewers.
+pub async fn submit_standard_work(
+    user: AuthenticatedUser,
+    State(state): State<AppState>,
+    Path(sw_id): Path<Uuid>,
+) -> Result<Json<StandardWorkDocument>> {
+    user.require_permission("tps:standard-work:review")?;
+    let tenant_id = user.tenant_id;
+    let mut doc = state
+        .standard_work_repo
+        .get(tenant_id, sw_id)
+        .await
+        .map_err(SenseiError::Internal)?
+        .filter(|d| d.tenant_id == tenant_id)
+        .ok_or_else(|| SenseiError::NotFound(format!("Standard work {sw_id} not found")))?;
+    if doc.status != SwStatus::Draft && doc.status != SwStatus::Rejected {
+        return Err(SenseiError::Conflict(format!(
+            "Cannot submit a document in state {:?}; only Draft/Rejected documents can be submitted",
+            doc.status
+        )));
+    }
+    doc.status = SwStatus::UnderReview;
+    doc.approved_by = None;
+    doc.approved_at = None;
+    doc.updated_at = Utc::now();
+    state
+        .standard_work_repo
+        .put(&doc, None)
+        .await
+        .map_err(SenseiError::Internal)?;
+    Ok(Json(doc))
+}
+
+/// Approve a standard work document (item 15): UnderReview -> Published,
+/// recording the approving user and timestamp. The document becomes
+/// EFFECTIVE immediately (effective_from = now) unless a future
+/// effective_from was requested.
 pub async fn approve_standard_work(
     user: AuthenticatedUser,
     State(state): State<AppState>,
     Path(sw_id): Path<Uuid>,
-    Json(_req): Json<ApproveStandardWorkRequest>,
+    Json(req): Json<ApproveStandardWorkRequest>,
 ) -> Result<Json<StandardWorkDocument>> {
     user.require_permission("tps:standard-work:approve")?;
     let tenant_id = user.tenant_id;
@@ -276,16 +323,31 @@ pub async fn approve_standard_work(
         .map_err(SenseiError::Internal)?
         .filter(|d| d.tenant_id == tenant_id)
         .ok_or_else(|| SenseiError::NotFound(format!("Standard work {sw_id} not found")))?;
-    if doc.status != SwStatus::Draft {
+    if doc.status != SwStatus::UnderReview {
         return Err(SenseiError::Conflict(format!(
-            "Cannot approve a document in state {:?}; only Draft documents can be approved",
+            "Cannot approve a document in state {:?}; only UnderReview documents can be approved",
             doc.status
         )));
     }
+    let now = Utc::now();
+    // A requested future effective date is honored; an explicit past date
+    // is rejected (approval cannot retroactively apply a controlled
+    // standard).
+    if let Some(from) = req.effective_from {
+        if from < now - chrono::Duration::minutes(5) {
+            return Err(SenseiError::Validation(
+                "effective_from cannot be in the past — a controlled standard                  takes effect now or in the future"
+                    .to_string(),
+            ));
+        }
+        doc.effective_from = Some(from);
+    } else {
+        doc.effective_from = Some(now);
+    }
     doc.status = SwStatus::Published;
     doc.approved_by = Some(user.user_id);
-    doc.approved_at = Some(Utc::now());
-    doc.updated_at = Utc::now();
+    doc.approved_at = Some(now);
+    doc.updated_at = now;
 
     state
         .standard_work_repo
@@ -295,11 +357,8 @@ pub async fn approve_standard_work(
     Ok(Json(doc))
 }
 
-/// Reject a standard work document.
-///
-/// Declines the draft for approval: the document returns to `Draft` with the
-/// approval fields cleared. (The data model has no dedicated `Rejected`
-/// state, so a rejected document remains editable as a draft.)
+/// Reject a standard work document (item 15): UnderReview -> Rejected.
+/// A rejected document is editable again and must be re-submitted.
 pub async fn reject_standard_work(
     user: AuthenticatedUser,
     State(state): State<AppState>,
@@ -314,14 +373,13 @@ pub async fn reject_standard_work(
         .map_err(SenseiError::Internal)?
         .filter(|d| d.tenant_id == tenant_id)
         .ok_or_else(|| SenseiError::NotFound(format!("Standard work {sw_id} not found")))?;
-    if doc.status != SwStatus::Draft {
+    if doc.status != SwStatus::UnderReview {
         return Err(SenseiError::Conflict(format!(
-            "Cannot reject a document in state {:?}; only Draft documents can be rejected",
+            "Cannot reject a document in state {:?}; only UnderReview documents can be rejected",
             doc.status
         )));
     }
-    // The document stays a draft but the approval is cleared; `approved_by`
-    // staying None is the observable rejection signal.
+    doc.status = SwStatus::Rejected;
     doc.approved_by = None;
     doc.approved_at = None;
     doc.updated_at = Utc::now();
@@ -331,6 +389,66 @@ pub async fn reject_standard_work(
         .put(&doc, None)
         .await
         .map_err(SenseiError::Internal)?;
+    Ok(Json(doc))
+}
+
+/// Supersede an effective standard (item 15): the CURRENT revision is
+/// closed (effective_to = now, status = superseded) and the REPLACEMENT
+/// revision's `supersedes` field is linked. The lineage is explicit — a
+/// superseded standard is never silently replaced.
+pub async fn supersede_standard_work(
+    user: AuthenticatedUser,
+    State(state): State<AppState>,
+    Path(sw_id): Path<Uuid>,
+    Json(req): Json<SupersedeStandardWorkRequest>,
+) -> Result<Json<StandardWorkDocument>> {
+    user.require_permission("tps:standard-work:approve")?;
+    let tenant_id = user.tenant_id;
+    let mut doc = state
+        .standard_work_repo
+        .get(tenant_id, sw_id)
+        .await
+        .map_err(SenseiError::Internal)?
+        .filter(|d| d.tenant_id == tenant_id)
+        .ok_or_else(|| SenseiError::NotFound(format!("Standard work {sw_id} not found")))?;
+    if doc.status != SwStatus::Published && doc.status != SwStatus::Effective {
+        return Err(SenseiError::Conflict(format!(
+            "Cannot supersede a document in state {:?}; only Published/Effective              standards can be superseded",
+            doc.status
+        )));
+    }
+    let now = Utc::now();
+    doc.status = SwStatus::Superseded;
+    doc.effective_to = Some(now);
+    doc.updated_at = now;
+    state
+        .standard_work_repo
+        .put(&doc, None)
+        .await
+        .map_err(SenseiError::Internal)?;
+
+    // Link the replacement revision's supersedes lineage (both rows live
+    // in the same table; the replacement is fetched and updated).
+    if let Some(replacement_id) = req.replacement_id {
+        let mut replacement = state
+            .standard_work_repo
+            .get(tenant_id, replacement_id)
+            .await
+            .map_err(SenseiError::Internal)?
+            .filter(|d| d.tenant_id == tenant_id)
+            .ok_or_else(|| {
+                SenseiError::NotFound(format!(
+                    "Replacement standard work {replacement_id} not found"
+                ))
+            })?;
+        replacement.supersedes = Some(sw_id);
+        replacement.updated_at = now;
+        state
+            .standard_work_repo
+            .put(&replacement, None)
+            .await
+            .map_err(SenseiError::Internal)?;
+    }
     Ok(Json(doc))
 }
 
@@ -529,24 +647,54 @@ mod tests {
             .unwrap();
         assert_eq!(created.status, SwStatus::Draft);
 
+        // Item 15: the lifecycle is draft -> under_review -> published.
+        // Approving a plain draft is REJECTED.
+        let premature = approve_standard_work(
+            user.clone(),
+            State(state.clone()),
+            Path(created.id),
+            Json(ApproveStandardWorkRequest {
+                notes: None,
+                effective_from: None,
+            }),
+        )
+        .await
+        .unwrap_err();
+        assert!(matches!(premature, SenseiError::Conflict(_)));
+
+        let submitted = submit_standard_work(user.clone(), State(state.clone()), Path(created.id))
+            .await
+            .unwrap();
+        assert_eq!(submitted.status, SwStatus::UnderReview);
+
         let approved = approve_standard_work(
             user.clone(),
             State(state.clone()),
             Path(created.id),
-            Json(ApproveStandardWorkRequest { notes: None }),
+            Json(ApproveStandardWorkRequest {
+                notes: None,
+                effective_from: None,
+            }),
         )
         .await
         .unwrap();
         assert_eq!(approved.status, SwStatus::Published);
         assert_eq!(approved.approved_by, Some(uid));
         assert!(approved.approved_at.is_some());
+        assert!(
+            approved.effective_from.is_some(),
+            "approval sets the effective date"
+        );
 
         // Approving again is a conflict (already published).
         let err = approve_standard_work(
             user.clone(),
             State(state.clone()),
             Path(created.id),
-            Json(ApproveStandardWorkRequest { notes: None }),
+            Json(ApproveStandardWorkRequest {
+                notes: None,
+                effective_from: None,
+            }),
         )
         .await
         .unwrap_err();
@@ -561,10 +709,21 @@ mod tests {
             .await
             .unwrap();
 
+        // Item 15: only UnderReview documents can be rejected.
+        let premature = reject_standard_work(user.clone(), State(state.clone()), Path(created.id))
+            .await
+            .unwrap_err();
+        assert!(matches!(premature, SenseiError::Conflict(_)));
+
+        let submitted = submit_standard_work(user.clone(), State(state.clone()), Path(created.id))
+            .await
+            .unwrap();
+        assert_eq!(submitted.status, SwStatus::UnderReview);
+
         let rejected = reject_standard_work(user.clone(), State(state.clone()), Path(created.id))
             .await
             .unwrap();
-        assert_eq!(rejected.status, SwStatus::Draft);
+        assert_eq!(rejected.status, SwStatus::Rejected);
         assert!(rejected.approved_by.is_none());
         assert!(rejected.approved_at.is_none());
     }

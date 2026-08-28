@@ -2062,6 +2062,22 @@ pub fn build_router(state: AppState) -> Router {
                 .delete(routes::standard_work::delete_standard_work),
         )
         .route(
+            "/api/v1/standard-work/{sw_id}/submit",
+            post(routes::standard_work::submit_standard_work),
+        )
+        .route(
+            "/api/v1/standard-work/{sw_id}/approve",
+            post(routes::standard_work::approve_standard_work),
+        )
+        .route(
+            "/api/v1/standard-work/{sw_id}/reject",
+            post(routes::standard_work::reject_standard_work),
+        )
+        .route(
+            "/api/v1/standard-work/{sw_id}/supersede",
+            post(routes::standard_work::supersede_standard_work),
+        )
+        .route(
             "/api/v1/standard-work/{sw_id}/versions",
             get(routes::standard_work::list_versions).post(routes::standard_work::create_version),
         )

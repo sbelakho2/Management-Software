@@ -28,6 +28,9 @@ struct SwRow {
     attachments: serde_json::Value,
     approved_by: Option<Uuid>,
     approved_at: Option<DateTime<Utc>>,
+    effective_from: Option<DateTime<Utc>>,
+    effective_to: Option<DateTime<Utc>>,
+    supersedes: Option<Uuid>,
     version: i64,
     created_by: Uuid,
     created_at: DateTime<Utc>,
@@ -58,6 +61,9 @@ fn map_sw_row(r: SwRow) -> StandardWorkDocument {
         attachments: serde_json::from_value(r.attachments).unwrap_or_default(),
         approved_by: r.approved_by,
         approved_at: r.approved_at,
+        effective_from: r.effective_from,
+        effective_to: r.effective_to,
+        supersedes: r.supersedes,
         version: r.version.max(0) as u64,
         created_by: r.created_by,
         created_at: r.created_at,
@@ -99,21 +105,7 @@ impl StandardWorkRepository {
     ) -> Result<(), String> {
         if let Some(pool) = &self.pool {
             let row = sqlx::query_as::<_, (Uuid, i64)>(
-                "INSERT INTO standard_work_documents \\
-                    (id, tenant_id, title, document_number, area, process, current_version, \\
-                     status, steps, required_skills, cycle_time_seconds, takt_time_seconds, \\
-                     quality_checks, safety_notes, tools_required, materials_required, \\
-                     attachments, approved_by, approved_at, version, created_by, created_at, updated_at) \\
-                 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,NOW()) \\
-                 ON CONFLICT (tenant_id, document_number) DO UPDATE \\
-                 SET title=$3, area=$5, process=$6, steps=$9, required_skills=$10, \\
-                     cycle_time_seconds=$11, takt_time_seconds=$12, quality_checks=$13, \\
-                     safety_notes=$14, tools_required=$15, materials_required=$16, \\
-                     attachments=$17, approved_by=$18, approved_at=$19, updated_at=NOW(), \\
-                     version = standard_work_documents.version + 1 \\
-                 WHERE standard_work_documents.id = $1 \\
-                   AND ($24::bigint IS NULL OR standard_work_documents.version = $24) \\
-                 RETURNING id, version",
+                "INSERT INTO standard_work_documents  (id, tenant_id, title, document_number, area, process, current_version,  status, steps, required_skills, cycle_time_seconds, takt_time_seconds,  quality_checks, safety_notes, tools_required, materials_required,  attachments, approved_by, approved_at, effective_from, effective_to,  supersedes, version, created_by, created_at, updated_at)  VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,NOW())  ON CONFLICT (tenant_id, document_number) DO UPDATE  SET title=$3, area=$5, process=$6, status=$8, steps=$9, required_skills=$10,  cycle_time_seconds=$11, takt_time_seconds=$12, quality_checks=$13,  safety_notes=$14, tools_required=$15, materials_required=$16,  attachments=$17, approved_by=$18, approved_at=$19,  effective_from=$20, effective_to=$21, supersedes=$22, updated_at=NOW(),  version = standard_work_documents.version + 1  WHERE standard_work_documents.id = $1  AND ($27::bigint IS NULL OR standard_work_documents.version = $27)  RETURNING id, version",
             )
             .bind(doc.id)
             .bind(doc.tenant_id)
@@ -134,6 +126,9 @@ impl StandardWorkRepository {
             .bind(serde_json::to_value(&doc.attachments).unwrap_or(serde_json::Value::Array(vec![])))
             .bind(doc.approved_by)
             .bind(doc.approved_at)
+            .bind(doc.effective_from)
+            .bind(doc.effective_to)
+            .bind(doc.supersedes)
             .bind(doc.version as i64)
             .bind(doc.created_by)
             .bind(doc.created_at)
@@ -178,7 +173,8 @@ impl StandardWorkRepository {
                 "SELECT id, tenant_id, title, document_number, area, process, current_version, \
                         status::text, steps, required_skills, cycle_time_seconds, takt_time_seconds, \
                         quality_checks, safety_notes, tools_required, materials_required, \
-                        attachments, approved_by, approved_at, version, created_by, \
+                        attachments, approved_by, approved_at, effective_from, effective_to, \
+                        supersedes, version, created_by, \
                         created_at, updated_at \
                  FROM standard_work_documents WHERE id = $1 AND tenant_id = $2",
             )
@@ -198,7 +194,8 @@ impl StandardWorkRepository {
                 "SELECT id, tenant_id, title, document_number, area, process, current_version, \
                         status::text, steps, required_skills, cycle_time_seconds, takt_time_seconds, \
                         quality_checks, safety_notes, tools_required, materials_required, \
-                        attachments, approved_by, approved_at, version, created_by, \
+                        attachments, approved_by, approved_at, effective_from, effective_to, \
+                        supersedes, version, created_by, \
                         created_at, updated_at \
                  FROM standard_work_documents WHERE tenant_id = $1 ORDER BY updated_at DESC",
             )
@@ -223,10 +220,7 @@ impl StandardWorkRepository {
     pub async fn put_version(&self, v: &StandardWorkVersion) -> Result<(), String> {
         if let Some(pool) = &self.pool {
             sqlx::query(
-                "INSERT INTO standard_work_versions \\
-                    (id, document_id, tenant_id, version_number, snapshot, change_notes, created_by, created_at) \\
-                 VALUES ($1,$2,$3,$4,$5,$6,$7,$8) \\
-                 ON CONFLICT (document_id, version_number) DO NOTHING",
+                "INSERT INTO standard_work_versions  (id, document_id, tenant_id, version_number, snapshot, change_notes, created_by, created_at)  VALUES ($1,$2,$3,$4,$5,$6,$7,$8)  ON CONFLICT (document_id, version_number) DO NOTHING",
             )
             .bind(v.id)
             .bind(v.document_id)

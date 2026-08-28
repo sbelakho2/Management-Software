@@ -34,3 +34,15 @@ CREATE INDEX IF NOT EXISTS idx_andons_tenant_status
     ON andons (tenant_id, status);
 CREATE INDEX IF NOT EXISTS idx_andons_work_center
     ON andons (tenant_id, work_center_id);
+
+-- Isolation established by the CREATING migration (item 8): 070/079 run
+-- BEFORE this table exists on a fresh chain and skip it — the table must
+-- not remain without RLS. Andons are critical-safety records: fail-closed
+-- policy (missing tenant context = DENY), FORCED for the owner too.
+ALTER TABLE andons ENABLE ROW LEVEL SECURITY;
+ALTER TABLE andons FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS tenant_isolation ON andons;
+CREATE POLICY tenant_isolation ON andons
+    USING (
+        tenant_id = current_setting('app.tenant_id', true)::uuid
+    );

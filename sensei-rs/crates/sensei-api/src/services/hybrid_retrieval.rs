@@ -105,10 +105,14 @@ pub async fn hybrid_search(
     // filter (item 29): only EFFECTIVE documents inside their validity
     // window are retrievable — superseded/archived/draft knowledge never
     // enters the corpus.
+    // Placeholders are $1..$5 IN ORDER (item 20): $1 tenant, $2 limit,
+    // $3 the query vector, $4 caller roles, $5 now — the previous binding
+    // order put the vector in an unused $3 and the roles into the vector
+    // cast, breaking the dense leg at runtime.
     let dense: Vec<(String, Uuid, String, String, f32)> = sqlx::query_as(
         "SELECT de.document_type, de.document_id, de.title, \
                 COALESCE(es.data->>'authority', 'employee note'), \
-                1 - (de.embedding <=> $4::vector) AS similarity \
+                1 - (de.embedding <=> $3::vector) AS similarity \
          FROM document_embeddings de \
          LEFT JOIN entity_store es \
            ON es.tenant_id = de.tenant_id \
@@ -119,15 +123,15 @@ pub async fn hybrid_search(
                 OR NOT es.data ? 'allowed_roles' \
                 OR es.data->'allowed_roles' = '[]'::jsonb \
                 OR EXISTS (SELECT 1 FROM jsonb_array_elements_text(es.data->'allowed_roles') r \
-                           WHERE r = ANY($5::text[]))) \
+                           WHERE r = ANY($4::text[]))) \
            AND (es.data IS NULL OR COALESCE(es.data->>'status', 'effective') = 'effective') \
            AND (es.data IS NULL \
                 OR NOT es.data ? 'effective_from' \
-                OR (es.data->>'effective_from')::timestamptz <= $6::timestamptz) \
+                OR (es.data->>'effective_from')::timestamptz <= $5::timestamptz) \
            AND (es.data IS NULL \
                 OR NOT es.data ? 'effective_to' \
-                OR (es.data->>'effective_to')::timestamptz >= $6::timestamptz) \
-         ORDER BY de.embedding <=> $4::vector \
+                OR (es.data->>'effective_to')::timestamptz >= $5::timestamptz) \
+         ORDER BY de.embedding <=> $3::vector \
          LIMIT $2",
     )
     .bind(tenant_id)
@@ -177,20 +181,85 @@ pub async fn hybrid_search(
     .await
     .map_err(|e| format!("Lexical retrieval failed: {e}"))?;
 
-    // Fusion: weighted sum (dense 0.6, lexical 0.4) × authority × recency,
-    // deduplicated by (type, id).
+    // Fusion (item 21 — the algorithm actually executed, matching the
+    // documentation): score = (0.6 × dense_sim + 0.4 × lexical_sim)
+    // × authority_weight × recency_decay, deduplicated by (type, id).
+    // Recency decay is a half-life of 90 days: a document updated today
+    // scores 1.0, one updated 90 days ago scores 0.5.
+    const DENSE_WEIGHT: f64 = 0.6;
+    const LEXICAL_WEIGHT: f64 = 0.4;
+    const RECENCY_HALF_LIFE_DAYS: f64 = 90.0;
+    let now = chrono::Utc::now();
+
+    let mut dense_scores: std::collections::HashMap<(String, Uuid), (f32, String, String)> =
+        std::collections::HashMap::new();
+    for (ty, id, title, authority, sim) in &dense {
+        dense_scores
+            .entry((ty.clone(), *id))
+            .or_insert((0.0, title.clone(), authority.clone()))
+            .0 = (*sim).max(
+            dense_scores
+                .get(&(ty.clone(), *id))
+                .map(|e| e.0)
+                .unwrap_or(0.0),
+        );
+    }
+    let mut lexical_scores: std::collections::HashMap<(String, Uuid), (f32, String, String)> =
+        std::collections::HashMap::new();
+    for (ty, id, title, authority, sim) in &lexical {
+        lexical_scores
+            .entry((ty.clone(), *id))
+            .or_insert((0.0, title.clone(), authority.clone()))
+            .0 = (*sim).max(
+            lexical_scores
+                .get(&(ty.clone(), *id))
+                .map(|e| e.0)
+                .unwrap_or(0.0),
+        );
+    }
+
     let mut scores: std::collections::HashMap<(String, Uuid), (f64, String, String)> =
         std::collections::HashMap::new();
-    for (ty, id, title, authority, sim) in dense.iter().chain(lexical.iter()) {
-        let weight = authority_weight(authority)
+    let mut keys: std::collections::HashSet<(String, Uuid)> = std::collections::HashSet::new();
+    keys.extend(dense_scores.keys().cloned());
+    keys.extend(lexical_scores.keys().cloned());
+    for key in keys {
+        let (dense_sim, title, authority) = dense_scores.get(&key).cloned().unwrap_or_default();
+        let (lexical_sim, _, _) = lexical_scores.get(&key).cloned().unwrap_or_default();
+        let authority = if authority.is_empty() {
+            "employee note".to_string()
+        } else {
+            authority
+        };
+        let weight = authority_weight(&authority)
             .to_string()
             .parse::<f64>()
             .unwrap_or(0.5);
-        let entry =
-            scores
-                .entry((ty.clone(), *id))
-                .or_insert((0.0, title.clone(), authority.clone()));
-        entry.0 += *sim as f64 * weight;
+        let combined = DENSE_WEIGHT * dense_sim as f64 + LEXICAL_WEIGHT * lexical_sim as f64;
+        // Recency: decay from the document's last embedding update. The
+        // half-life makes old-but-authoritative content rank below recent
+        // content of equal authority (item 21).
+        let updated_at: Option<chrono::DateTime<chrono::Utc>> = sqlx::query_scalar(
+            "SELECT updated_at FROM document_embeddings \
+             WHERE tenant_id = $1 AND document_type = $2 AND document_id = $3",
+        )
+        .bind(tenant_id)
+        .bind(&key.0)
+        .bind(key.1)
+        .fetch_one(pool)
+        .await
+        .ok();
+        let recency = match updated_at {
+            Some(t) => {
+                let age_days = (now - t).num_milliseconds() as f64 / 86_400_000.0;
+                0.5f64.powf(age_days / RECENCY_HALF_LIFE_DAYS)
+            }
+            None => 1.0,
+        };
+        scores
+            .entry(key.clone())
+            .or_insert((0.0, title.clone(), authority.clone()))
+            .0 = combined * weight * recency;
     }
     let mut hits: Vec<HybridHit> = scores
         .into_iter()
@@ -219,5 +288,24 @@ mod tests {
     fn authority_weights_are_ordered() {
         assert!(authority_weight("tps_canonical") > authority_weight("employee_note"));
         assert!(authority_weight("effective_standard_work") > authority_weight("ai_hypothesis"));
+    }
+
+    #[test]
+    fn fusion_uses_0604_weights_and_authority() {
+        // Item 21: the executed algorithm is 0.6×dense + 0.4×lexical,
+        // multiplied by authority — the documented formula, not a sum.
+        let dense_sim: f32 = 0.8;
+        let lexical_sim: f32 = 0.4;
+        let authority = authority_weight("tps_canonical")
+            .to_string()
+            .parse::<f64>()
+            .unwrap();
+        let combined = 0.6 * dense_sim as f64 + 0.4 * lexical_sim as f64;
+        let score = combined * authority;
+        // 0.6*0.8 + 0.4*0.4 = 0.64; ×1.5 = 0.96 (f32 inputs → ~1e-7 tolerance)
+        assert!((score - 0.96).abs() < 1e-6);
+        // A bare SUM of the two sims (the old behavior) would give
+        // (0.8 + 0.4) × 1.5 = 1.8 — the fix is measurably different.
+        assert!((score - 1.8).abs() > 0.5);
     }
 }

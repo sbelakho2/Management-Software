@@ -270,6 +270,7 @@ pub async fn list_self_inspections(
     State(state): State<AppState>,
     Query(pagination): Query<ListPaginationParams>,
 ) -> Result<Json<PaginatedResponse<SelfInspection>>> {
+    user.require_permission("quality:inspection:read")?;
     let tenant_id = user.tenant_id;
     let result = state
         .quality_service
@@ -872,6 +873,7 @@ pub async fn delete_first_article_inspection(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<()>> {
+    user.require_permission("quality:inspection:manage")?;
     let tenant_id = user.tenant_id;
     state
         .quality_service
@@ -1015,6 +1017,7 @@ pub async fn delete_supplier_scorecard(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<()>> {
+    user.require_permission("quality:supplier:manage")?;
     let tenant_id = user.tenant_id;
     state
         .quality_service

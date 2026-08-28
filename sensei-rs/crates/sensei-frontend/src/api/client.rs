@@ -339,6 +339,14 @@ impl ApiClient {
     /// Execute a request, transparently handling `401` via the single-flight
     /// refresh path: the request is retried exactly once after a successful
     /// refresh.
+    ///
+    /// Item 3 (frontend/backend contract): the backend returns lists as
+    /// `Json<PaginatedResponse<T>>` (`{"data": [...], "total": ...}`) while
+    /// the frontend API modules declared `Result<Vec<T>, ApiError>`. The
+    /// client now unwraps the envelope TRANSPARENTLY: when the response is a
+    /// paginated envelope and the caller asks for a `Vec<T>`, only `.data`
+    /// is deserialized. The type-system mismatch is eliminated at the
+    /// boundary, not at every call site.
     async fn execute<T: DeserializeOwned>(
         &self,
         method: reqwest::Method,
@@ -346,7 +354,27 @@ impl ApiClient {
         body: Option<Value>,
     ) -> Result<T, ApiError> {
         let resp = self.execute_raw(method, path, body).await?;
-        resp.json().await.map_err(|e| ApiError::json(e.to_string()))
+        let bytes = resp
+            .bytes()
+            .await
+            .map_err(|e| ApiError::http(e.to_string()))?;
+        // First try the ENVELOPE for Vec targets: `{"data": [...], ...}`.
+        // Deserialize the whole body as Value (cheap, local), detect the
+        // pagination shape, and unwrap `.data`.
+        if let Ok(value) = serde_json::from_slice::<Value>(&bytes) {
+            if value.get("data").is_some() && value.get("total").is_some() {
+                let data = value.get("data").cloned().unwrap_or(Value::Null);
+                if let Ok(inner) = serde_json::from_value::<T>(data) {
+                    return Ok(inner);
+                }
+            }
+            // Non-envelope responses (single objects, plain arrays from
+            // non-paginated endpoints) deserialize as-is.
+            if let Ok(inner) = serde_json::from_value::<T>(value) {
+                return Ok(inner);
+            }
+        }
+        serde_json::from_slice(&bytes).map_err(|e| ApiError::json(e.to_string()))
     }
 
     /// Execute a request and return the raw response, retrying once after a

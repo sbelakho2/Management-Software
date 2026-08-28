@@ -295,6 +295,107 @@ pub type TrainingMatrixStore = EntityStore<TrainingMatrixEntry>;
 // ── Knowledge Pack ────────────────────────────────────────────────────────────
 
 /// A knowledge pack containing curated content.
+/// Source authority classes (item 24): an ENUM, not prose — every pack
+/// belongs to exactly one class and each class has a fixed retrieval
+/// weight. The free-form string default ("employee note" with a space)
+/// previously fell through to the generic weight.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum KnowledgeAuthority {
+    /// Canonical, stable TPS principle (highest weight).
+    TpsCanonical,
+    /// Approved organizational rule.
+    CorporatePolicy,
+    /// The standard currently in force.
+    EffectiveStandardWork,
+    /// Contractual/technical customer requirement.
+    CustomerRequirement,
+    /// Current measured condition.
+    ProductionFact,
+    /// Past event / A3 / historical case.
+    HistoricalCase,
+    /// Valuable but not yet validated employee observation.
+    #[default]
+    EmployeeNote,
+    /// Explicitly non-authoritative model output (lowest weight).
+    AiHypothesis,
+}
+
+impl std::fmt::Display for KnowledgeAuthority {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = match self {
+            KnowledgeAuthority::TpsCanonical => "tps_canonical",
+            KnowledgeAuthority::CorporatePolicy => "corporate_policy",
+            KnowledgeAuthority::EffectiveStandardWork => "effective_standard_work",
+            KnowledgeAuthority::CustomerRequirement => "customer_requirement",
+            KnowledgeAuthority::ProductionFact => "production_fact",
+            KnowledgeAuthority::HistoricalCase => "historical_case",
+            KnowledgeAuthority::EmployeeNote => "employee_note",
+            KnowledgeAuthority::AiHypothesis => "ai_hypothesis",
+        };
+        f.write_str(s)
+    }
+}
+
+impl std::str::FromStr for KnowledgeAuthority {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "tps_canonical" => Ok(KnowledgeAuthority::TpsCanonical),
+            "corporate_policy" => Ok(KnowledgeAuthority::CorporatePolicy),
+            "effective_standard_work" => Ok(KnowledgeAuthority::EffectiveStandardWork),
+            "customer_requirement" => Ok(KnowledgeAuthority::CustomerRequirement),
+            "production_fact" => Ok(KnowledgeAuthority::ProductionFact),
+            "historical_case" => Ok(KnowledgeAuthority::HistoricalCase),
+            "employee_note" | "employee note" => Ok(KnowledgeAuthority::EmployeeNote),
+            "ai_hypothesis" => Ok(KnowledgeAuthority::AiHypothesis),
+            other => Err(format!(
+                "Unknown knowledge authority '{other}' — must be one of:                  tps_canonical, corporate_policy, effective_standard_work,                  customer_requirement, production_fact, historical_case,                  employee_note, ai_hypothesis"
+            )),
+        }
+    }
+}
+
+/// Knowledge pack lifecycle (item 24): explicit states with validity
+/// windows — draft, under_review, effective, superseded, archived.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum KnowledgeStatus {
+    #[default]
+    Draft,
+    UnderReview,
+    Effective,
+    Superseded,
+    Archived,
+}
+
+impl std::fmt::Display for KnowledgeStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = match self {
+            KnowledgeStatus::Draft => "draft",
+            KnowledgeStatus::UnderReview => "under_review",
+            KnowledgeStatus::Effective => "effective",
+            KnowledgeStatus::Superseded => "superseded",
+            KnowledgeStatus::Archived => "archived",
+        };
+        f.write_str(s)
+    }
+}
+
+impl std::str::FromStr for KnowledgeStatus {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "draft" => Ok(KnowledgeStatus::Draft),
+            "under_review" => Ok(KnowledgeStatus::UnderReview),
+            "effective" => Ok(KnowledgeStatus::Effective),
+            "superseded" => Ok(KnowledgeStatus::Superseded),
+            "archived" => Ok(KnowledgeStatus::Archived),
+            other => Err(format!("Unknown knowledge status '{other}'")),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct KnowledgePack {
     pub id: Uuid,
@@ -307,12 +408,10 @@ pub struct KnowledgePack {
     pub source_url: Option<String>,
     pub version: String,
     pub is_published: bool,
-    /// Source authority (item 24/29): canonical TPS principle, corporate
-    /// policy, standard work, customer requirement, production fact,
-    /// historical case, employee note, AI hypothesis — NOT all equal in
-    /// retrieval weight.
+    /// Source authority (item 24/29): an ENUM with a fixed retrieval
+    /// weight per class — never free-form prose.
     #[serde(default)]
-    pub authority: String,
+    pub authority: KnowledgeAuthority,
     /// Document validity window; RAG only retrieves EFFECTIVE documents.
     #[serde(default)]
     pub effective_from: Option<DateTime<Utc>>,
@@ -321,7 +420,7 @@ pub struct KnowledgePack {
     #[serde(default)]
     pub supersedes: Option<Uuid>,
     #[serde(default)]
-    pub status: String, // draft | effective | superseded | archived
+    pub status: KnowledgeStatus,
     /// ACL prefilter: when non-empty, ONLY callers holding one of these
     /// roles may retrieve the pack (role/site-scoped retrieval — forbidden
     /// records never enter the candidate corpus).
@@ -1188,8 +1287,18 @@ pub type NotificationTriggerStore = EntityStore<NotificationTrigger>;
 #[sqlx(rename_all = "lowercase")]
 pub enum SwStatus {
     Draft,
+    /// Submitted for review — immutable except by reviewers (item 15).
+    UnderReview,
+    /// Approved by the review authority — ready to take effect.
     Published,
+    /// The currently APPLIED revision (validity window enforced).
+    Effective,
+    /// Replaced by a newer revision (supersedes relationship recorded).
+    Superseded,
+    /// Withdrawn/retired — never erased (append-only).
     Archived,
+    /// The review declined the submission; the draft is editable again.
+    Rejected,
 }
 
 impl std::str::FromStr for SwStatus {
@@ -1197,8 +1306,12 @@ impl std::str::FromStr for SwStatus {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
             "draft" => Ok(SwStatus::Draft),
+            "under_review" => Ok(SwStatus::UnderReview),
             "published" => Ok(SwStatus::Published),
+            "effective" => Ok(SwStatus::Effective),
+            "superseded" => Ok(SwStatus::Superseded),
             "archived" => Ok(SwStatus::Archived),
+            "rejected" => Ok(SwStatus::Rejected),
             other => Err(format!("Unknown standard-work status '{other}'")),
         }
     }
@@ -1248,6 +1361,14 @@ pub struct StandardWorkDocument {
     pub attachments: Vec<Uuid>,
     pub approved_by: Option<Uuid>,
     pub approved_at: Option<DateTime<Utc>>,
+    /// Item 15: the validity window of an EFFECTIVE revision and the
+    /// document it supersedes.
+    #[serde(default)]
+    pub effective_from: Option<DateTime<Utc>>,
+    #[serde(default)]
+    pub effective_to: Option<DateTime<Utc>>,
+    #[serde(default)]
+    pub supersedes: Option<Uuid>,
     #[serde(default)]
     pub version: u64,
     pub created_by: Uuid,

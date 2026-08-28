@@ -39,6 +39,9 @@ CREATE TABLE IF NOT EXISTS lsw_audits (
     id               UUID PRIMARY KEY,
     standard_id      UUID NOT NULL REFERENCES lsw_standards(id) ON DELETE CASCADE,
     occurrence_id    UUID REFERENCES lsw_occurrences(id) ON DELETE SET NULL,
+    -- One audit per occurrence: a single request can never create two
+    -- audits for the same execution (item 13).
+    CONSTRAINT lsw_audits_occurrence_once UNIQUE (occurrence_id, tenant_id),
     tenant_id        UUID NOT NULL,
     auditor_id       UUID NOT NULL,
     leader_id        UUID,

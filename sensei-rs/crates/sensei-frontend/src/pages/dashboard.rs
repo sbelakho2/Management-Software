@@ -29,6 +29,18 @@ struct DashboardMetrics {
     total_inventory_items: usize,
     overdue_pm_tasks: usize,
     active_risks: usize,
+    /// Item 4: which domains FAILED to load. A failed request must NEVER
+    /// look like a healthy zero — the tile renders UNAVAILABLE instead.
+    #[serde(default)]
+    pub unavailable: Vec<String>,
+}
+
+impl DashboardMetrics {
+    fn unavailable(&mut self, domain: &str) {
+        if !self.unavailable.iter().any(|d| d == domain) {
+            self.unavailable.push(domain.to_string());
+        }
+    }
 }
 
 /// Dashboard page component.
@@ -45,85 +57,115 @@ pub fn DashboardPage() -> impl IntoView {
             let mut m = DashboardMetrics::default();
 
             // Quality
-            if let Ok(ncrs) = QualityApi::list_ncrs(&client).await {
-                m.open_ncrs = ncrs
-                    .iter()
-                    .filter(|n| n.status == "Open" || n.status == "open")
-                    .count();
+            match QualityApi::list_ncrs(&client).await {
+                Ok(ncrs) => {
+                    m.open_ncrs = ncrs
+                        .iter()
+                        .filter(|n| n.status == "Open" || n.status == "open")
+                        .count();
+                }
+                Err(_) => m.unavailable("quality"),
             }
-            if let Ok(capas) = QualityApi::list_capas(&client).await {
-                m.active_capas = capas
-                    .iter()
-                    .filter(|c| c.status != "Closed" && c.status != "closed")
-                    .count();
+            match QualityApi::list_capas(&client).await {
+                Ok(capas) => {
+                    m.active_capas = capas
+                        .iter()
+                        .filter(|c| c.status != "Closed" && c.status != "closed")
+                        .count();
+                }
+                Err(_) => m.unavailable("quality"),
             }
 
             // Production
-            if let Ok(wos) = ProductionApi::list_work_orders(&client).await {
-                m.open_work_orders = wos
-                    .iter()
-                    .filter(|wo| wo.status != "Completed" && wo.status != "completed")
-                    .count();
+            match ProductionApi::list_work_orders(&client).await {
+                Ok(wos) => {
+                    m.open_work_orders = wos
+                        .iter()
+                        .filter(|wo| wo.status != "Completed" && wo.status != "completed")
+                        .count();
+                }
+                Err(_) => m.unavailable("production"),
             }
 
             // Maintenance
-            if let Ok(wrs) = MaintenanceApi::list_work_requests(&client).await {
-                m.open_work_requests = wrs
-                    .iter()
-                    .filter(|wr| wr.status != "Completed" && wr.status != "completed")
-                    .count();
+            match MaintenanceApi::list_work_requests(&client).await {
+                Ok(wrs) => {
+                    m.open_work_requests = wrs
+                        .iter()
+                        .filter(|wr| wr.status != "Completed" && wr.status != "completed")
+                        .count();
+                }
+                Err(_) => m.unavailable("maintenance"),
             }
-            if let Ok(pms) = MaintenanceApi::list_pm_schedules(&client).await {
-                m.overdue_pm_tasks = pms
-                    .iter()
-                    .filter(|pm| pm.status == "Overdue" || pm.status == "overdue")
-                    .count();
+            match MaintenanceApi::list_pm_schedules(&client).await {
+                Ok(pms) => {
+                    m.overdue_pm_tasks = pms
+                        .iter()
+                        .filter(|pm| pm.status == "Overdue" || pm.status == "overdue")
+                        .count();
+                }
+                Err(_) => m.unavailable("maintenance"),
             }
 
             // HR
-            if let Ok(emps) = HrApi::list_employees(&client).await {
-                m.total_employees = emps.len();
+            match HrApi::list_employees(&client).await {
+                Ok(emps) => m.total_employees = emps.len(),
+                Err(_) => m.unavailable("hr"),
             }
-            if let Ok(leaves) = HrApi::list_leave_requests(&client).await {
-                m.pending_leave = leaves
-                    .iter()
-                    .filter(|l| l.status == "Pending" || l.status == "pending")
-                    .count();
+            match HrApi::list_leave_requests(&client).await {
+                Ok(leaves) => {
+                    m.pending_leave = leaves
+                        .iter()
+                        .filter(|l| l.status == "Pending" || l.status == "pending")
+                        .count();
+                }
+                Err(_) => m.unavailable("hr"),
             }
 
             // Operations
-            if let Ok(andons) = OpsApi::list_andons(&client).await {
-                m.active_andons = andons
-                    .iter()
-                    .filter(|a| a.status != "Resolved" && a.status != "resolved")
-                    .count();
+            match OpsApi::list_andons(&client).await {
+                Ok(andons) => {
+                    m.active_andons = andons
+                        .iter()
+                        .filter(|a| a.status != "Resolved" && a.status != "resolved")
+                        .count();
+                }
+                Err(_) => m.unavailable("operations"),
             }
-            if let Ok(projects) = OpsApi::list_projects(&client).await {
-                m.active_projects = projects
-                    .iter()
-                    .filter(|p| {
-                        p.status != "Completed"
-                            && p.status != "completed"
-                            && p.status != "Closed"
-                            && p.status != "closed"
-                    })
-                    .count();
+            match OpsApi::list_projects(&client).await {
+                Ok(projects) => {
+                    m.active_projects = projects
+                        .iter()
+                        .filter(|p| {
+                            p.status != "Completed"
+                                && p.status != "completed"
+                                && p.status != "Closed"
+                                && p.status != "closed"
+                        })
+                        .count();
+                }
+                Err(_) => m.unavailable("operations"),
             }
-            if let Ok(risks) = OpsApi::list_risks(&client).await {
-                m.active_risks = risks
-                    .iter()
-                    .filter(|r| r.status != "Mitigated" && r.status != "mitigated")
-                    .count();
+            match OpsApi::list_risks(&client).await {
+                Ok(risks) => {
+                    m.active_risks = risks
+                        .iter()
+                        .filter(|r| r.status != "Mitigated" && r.status != "mitigated")
+                        .count();
+                }
+                Err(_) => m.unavailable("operations"),
             }
 
             // Finance
-            if let Ok(invs) = FinanceApi::list_invoices(&client).await {
-                m.total_invoices = invs.len();
+            match FinanceApi::list_invoices(&client).await {
+                Ok(invs) => m.total_invoices = invs.len(),
+                Err(_) => m.unavailable("finance"),
             }
 
             // Supply Chain
-            if let Ok(inv) = SupplyChainApi::list_inventory(&client).await {
-                m.total_inventory_items = inv.len();
+            match SupplyChainApi::list_inventory(&client).await {
+                Ok(inv) => m.total_inventory_items = inv.len(),
+                Err(_) => m.unavailable("supply-chain"),
             }
 
             m
@@ -135,7 +177,27 @@ pub fn DashboardPage() -> impl IntoView {
             <h1 class="module-title rams-mb-4">"SYSTEM OVERVIEW"</h1>
             {move || metrics.map(|m| {
                 let m = &**m;
+                // Item 4: a failed domain is a BUSINESS STATE, not a zero.
+                // Render the UNAVAILABLE banner and mark the affected tiles.
+                let unavailable = m.unavailable.clone();
+                let has_failures = !unavailable.is_empty();
+                let unavailable_clone = unavailable.clone();
+                let is_unavail = move |d: &str| unavailable_clone.iter().any(|u| u == d);
                 view! {
+                    {if has_failures {
+                        view! {
+                            <div class="rams-alert rams-alert--danger rams-mb-4" role="alert">
+                                <strong>"STATUS UNKNOWN — LIVE DATA UNAVAILABLE"</strong>
+                                <span>" "</span>
+                                {format!(
+                                    "Could not obtain {} — values below are NOT confirmed. Check connectivity or permissions.",
+                                    unavailable.join(", ")
+                                )}
+                            </div>
+                        }.into_any()
+                    } else {
+                        ().into_any()
+                    }}
                     // Quality & Production (4 metrics — respects 5-element rule)
                     <div class="module rams-mb-4">
                         <div class="module-header">
@@ -143,10 +205,34 @@ pub fn DashboardPage() -> impl IntoView {
                         </div>
                         <div class="module-content">
                             <div class="rams-grid rams-grid--cols-4 rams-gap-4">
-                                <MetricDisplay value=m.open_ncrs.to_string() label="OPEN NCRs".to_string() />
-                                <MetricDisplay value=m.active_capas.to_string() label="ACTIVE CAPAs".to_string() />
-                                <MetricDisplay value=m.open_work_orders.to_string() label="OPEN WORK ORDERS".to_string() />
-                                <MetricDisplay value=m.open_work_requests.to_string() label="WORK REQUESTS".to_string() />
+                                <MetricDisplay value={
+        if is_unavail("quality") {
+            "UNAVAILABLE".to_string()
+        } else {
+            m.open_ncrs.to_string()
+        }
+    } label="OPEN NCRs".to_string() />
+                                <MetricDisplay value={
+        if is_unavail("quality") {
+            "UNAVAILABLE".to_string()
+        } else {
+            m.active_capas.to_string()
+        }
+    } label="ACTIVE CAPAs".to_string() />
+                                <MetricDisplay value={
+        if is_unavail("production") {
+            "UNAVAILABLE".to_string()
+        } else {
+            m.open_work_orders.to_string()
+        }
+    } label="OPEN WORK ORDERS".to_string() />
+                                <MetricDisplay value={
+        if is_unavail("maintenance") {
+            "UNAVAILABLE".to_string()
+        } else {
+            m.open_work_requests.to_string()
+        }
+    } label="WORK REQUESTS".to_string() />
                             </div>
                         </div>
                     </div>
@@ -157,10 +243,34 @@ pub fn DashboardPage() -> impl IntoView {
                         </div>
                         <div class="module-content">
                             <div class="rams-grid rams-grid--cols-4 rams-gap-4">
-                                <MetricDisplay value=m.total_employees.to_string() label="EMPLOYEES".to_string() />
-                                <MetricDisplay value=m.pending_leave.to_string() label="PENDING LEAVE".to_string() />
-                                <MetricDisplay value=m.active_projects.to_string() label="ACTIVE PROJECTS".to_string() />
-                                <MetricDisplay value=m.active_andons.to_string() label="ACTIVE ANDONS".to_string() />
+                                <MetricDisplay value={
+        if is_unavail("hr") {
+            "UNAVAILABLE".to_string()
+        } else {
+            m.total_employees.to_string()
+        }
+    } label="EMPLOYEES".to_string() />
+                                <MetricDisplay value={
+        if is_unavail("hr") {
+            "UNAVAILABLE".to_string()
+        } else {
+            m.pending_leave.to_string()
+        }
+    } label="PENDING LEAVE".to_string() />
+                                <MetricDisplay value={
+        if is_unavail("operations") {
+            "UNAVAILABLE".to_string()
+        } else {
+            m.active_projects.to_string()
+        }
+    } label="ACTIVE PROJECTS".to_string() />
+                                <MetricDisplay value={
+        if is_unavail("operations") {
+            "UNAVAILABLE".to_string()
+        } else {
+            m.active_andons.to_string()
+        }
+    } label="ACTIVE ANDONS".to_string() />
                             </div>
                         </div>
                     </div>
@@ -171,10 +281,34 @@ pub fn DashboardPage() -> impl IntoView {
                         </div>
                         <div class="module-content">
                             <div class="rams-grid rams-grid--cols-4 rams-gap-4">
-                                <MetricDisplay value=m.total_invoices.to_string() label="INVOICES".to_string() />
-                                <MetricDisplay value=m.total_inventory_items.to_string() label="INVENTORY ITEMS".to_string() />
-                                <MetricDisplay value=m.overdue_pm_tasks.to_string() label="OVERDUE PM TASKS".to_string() />
-                                <MetricDisplay value=m.active_risks.to_string() label="ACTIVE RISKS".to_string() />
+                                <MetricDisplay value={
+        if is_unavail("finance") {
+            "UNAVAILABLE".to_string()
+        } else {
+            m.total_invoices.to_string()
+        }
+    } label="INVOICES".to_string() />
+                                <MetricDisplay value={
+        if is_unavail("supply-chain") {
+            "UNAVAILABLE".to_string()
+        } else {
+            m.total_inventory_items.to_string()
+        }
+    } label="INVENTORY ITEMS".to_string() />
+                                <MetricDisplay value={
+        if is_unavail("maintenance") {
+            "UNAVAILABLE".to_string()
+        } else {
+            m.overdue_pm_tasks.to_string()
+        }
+    } label="OVERDUE PM TASKS".to_string() />
+                                <MetricDisplay value={
+        if is_unavail("operations") {
+            "UNAVAILABLE".to_string()
+        } else {
+            m.active_risks.to_string()
+        }
+    } label="ACTIVE RISKS".to_string() />
                             </div>
                         </div>
                     </div>
