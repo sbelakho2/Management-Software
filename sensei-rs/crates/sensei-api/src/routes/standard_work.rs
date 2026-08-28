@@ -102,7 +102,10 @@ pub async fn list_standard_work(
     docs.retain(|d| {
         (params.area.as_ref().is_none_or(|a| d.area == *a))
             && (params.process.as_ref().is_none_or(|p| d.process == *p))
-            && (params.status.as_ref().is_none_or(|s| std::mem::discriminant(s) == std::mem::discriminant(&d.status)))
+            && (params
+                .status
+                .as_ref()
+                .is_none_or(|s| std::mem::discriminant(s) == std::mem::discriminant(&d.status)))
     });
     docs.sort_by_key(|a| std::cmp::Reverse(a.updated_at));
     let result = PaginatedResponse::new(docs, params.page, params.per_page);

@@ -57,13 +57,14 @@ use uuid::Uuid;
 
 use crate::attachment_repository::AttachmentRepository;
 use crate::db_stores::EntityStore;
+use crate::lsw_repository::LswRepository;
 use crate::middleware::audit::AuditLog;
 use crate::middleware::rate_limiter::RateLimiter;
 use crate::middleware::session::SessionStore;
 use crate::middleware::shared_auth_stores::{TokenBlacklist, TokenKind, TokenStore};
 use crate::services::{sse::SseManager, ws::WebSocketManager};
-use crate::stores;
 use crate::standard_work_repository::StandardWorkRepository;
+use crate::stores;
 use crate::topology_repository::TopologyRepository;
 
 /// Time-to-live for realtime connection tickets, in seconds.
@@ -492,6 +493,7 @@ pub struct AppState {
     /// LSW audits entity store.
     pub lsw_audits: stores::LswAuditStore,
     /// Scheduled LSW occurrences (server-owned lifecycle).
+    pub lsw_repo: LswRepository,
     pub lsw_occurrences: EntityStore<crate::stores::LswOccurrence>,
     /// Daily tier meetings (item 54).
     pub tier_meetings: EntityStore<crate::stores::TierMeeting>,
@@ -651,6 +653,7 @@ impl AppState {
         let kpi_values = stores::new_store!("kpi_value");
         let lsw_standards = stores::new_store!("lsw_standard");
         let lsw_audits = stores::new_store!("lsw_audit");
+        let lsw_repo = LswRepository::new(None);
         let lsw_occurrences = EntityStore::new("lsw_occurrence");
         let tier_meetings = EntityStore::new("tier_meeting");
         let topology = TopologyRepository::new(None);
@@ -780,6 +783,7 @@ impl AppState {
             lsw_standards,
             lsw_audits,
             lsw_occurrences,
+            lsw_repo,
             tier_meetings,
             topology,
             sites,
@@ -892,6 +896,7 @@ impl AppState {
         self.kpi_values = EntityStore::with_pool("kpi_value", p.clone());
         self.lsw_standards = EntityStore::with_pool("lsw_standard", p.clone());
         self.lsw_audits = EntityStore::with_pool("lsw_audit", p.clone());
+        self.lsw_repo = self.lsw_repo.attach_pool(p.clone());
         self.lsw_occurrences = EntityStore::with_pool("lsw_occurrence", p.clone());
         self.tier_meetings = EntityStore::with_pool("tier_meeting", p.clone());
         self.topology = self.topology.attach_pool(p.clone());

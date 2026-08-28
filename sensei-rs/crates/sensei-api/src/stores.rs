@@ -1021,6 +1021,19 @@ pub enum LswFrequency {
     Monthly,
 }
 
+impl std::str::FromStr for LswFrequency {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "hourly" => Ok(LswFrequency::Hourly),
+            "daily" => Ok(LswFrequency::Daily),
+            "weekly" => Ok(LswFrequency::Weekly),
+            "monthly" => Ok(LswFrequency::Monthly),
+            other => Err(format!("Unknown LSW frequency '{other}'")),
+        }
+    }
+}
+
 /// A checklist item within an LSW standard.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct LswChecklistItem {
@@ -1088,12 +1101,20 @@ pub struct LswAudit {
     pub standard_id: Uuid,
     pub tenant_id: Uuid,
     pub auditor_id: Uuid,
+    /// The occurrence this audit executed (server-owned lineage).
+    #[serde(default)]
+    pub occurrence_id: Option<Uuid>,
+    /// The assigned leader at execution time (stored for delegation
+    /// auditing — auditor_id may differ under a manager delegation).
+    #[serde(default)]
+    pub leader_id: Option<Uuid>,
     pub area: String,
     pub layer: u8,
     pub results: Vec<LswAuditResult>,
     pub compliance_rate: f64,
     pub notes: Option<String>,
     pub audited_at: DateTime<Utc>,
+    pub created_at: DateTime<Utc>,
 }
 
 /// Entity store for tier meetings.

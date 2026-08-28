@@ -13,14 +13,15 @@ pub mod attachment_repository;
 pub mod db_search_service;
 pub mod db_stores;
 pub mod error;
+pub mod lsw_repository;
 pub mod middleware;
 pub mod router;
 pub mod routes;
 pub mod search_providers;
 pub mod services;
+pub mod standard_work_repository;
 pub mod state;
 pub mod stores;
-pub mod standard_work_repository;
 pub mod topology_repository;
 
 pub use error::*;

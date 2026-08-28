@@ -168,7 +168,11 @@ impl StandardWorkRepository {
         Ok(())
     }
 
-    pub async fn get(&self, tenant_id: Uuid, id: Uuid) -> Result<Option<StandardWorkDocument>, String> {
+    pub async fn get(
+        &self,
+        tenant_id: Uuid,
+        id: Uuid,
+    ) -> Result<Option<StandardWorkDocument>, String> {
         if let Some(pool) = &self.pool {
             let row: Option<SwRow> = sqlx::query_as(
                 "SELECT id, tenant_id, title, document_number, area, process, current_version, \

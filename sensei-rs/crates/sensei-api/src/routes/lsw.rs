@@ -75,10 +75,12 @@ pub struct PerformAuditRequest {
 
 /// The standard's CURRENT revision (the occurrence must match it).
 async fn standard_occurrence_revision(state: &AppState, tenant_id: Uuid, standard_id: Uuid) -> i32 {
-    let store = state.lsw_standards.read(tenant_id).await;
-    store
-        .values()
-        .find(|s| s.id == standard_id && s.tenant_id == tenant_id)
+    state
+        .lsw_repo
+        .get_standard(tenant_id, standard_id)
+        .await
+        .ok()
+        .flatten()
         .map(|s| s.revision)
         .unwrap_or(0)
 }
@@ -138,33 +140,17 @@ pub async fn list_lsw_standards(
 ) -> Result<Json<PaginatedResponse<LswStandard>>> {
     user.require_permission("tps:lsw:execute")?;
     let tenant_id = user.tenant_id;
-    let store = state.lsw_standards.read(user.tenant_id).await;
-    let mut standards: Vec<LswStandard> = store
-        .values()
-        .filter(|s| s.tenant_id == tenant_id)
-        .filter(|s| {
-            if let Some(ref area) = params.area {
-                s.area == *area
-            } else {
-                true
-            }
-        })
-        .filter(|s| {
-            if let Some(layer) = params.layer {
-                s.layer == layer
-            } else {
-                true
-            }
-        })
-        .filter(|s| {
-            if let Some(active) = params.is_active {
-                s.is_active == active
-            } else {
-                true
-            }
-        })
-        .cloned()
-        .collect();
+    let mut standards = state
+        .lsw_repo
+        .list_standards(user.tenant_id)
+        .await
+        .map_err(SenseiError::Internal)?;
+    standards.retain(|s| {
+        s.tenant_id == tenant_id
+            && params.area.as_ref().is_none_or(|a| s.area == *a)
+            && params.layer.is_none_or(|l| s.layer == l)
+            && params.is_active.is_none_or(|a| s.is_active == a)
+    });
     standards.sort_by(|a, b| a.title.cmp(&b.title));
     let result = PaginatedResponse::new(standards, params.page, params.per_page);
     Ok(Json(result))
@@ -193,9 +179,11 @@ pub async fn create_lsw_standard(
         created_at: now,
         updated_at: now,
     };
-    let mut store = state.lsw_standards.write(user.tenant_id).await;
-    store.insert(standard.id, standard.clone());
-    store.persist().await?;
+    state
+        .lsw_repo
+        .put_standard(&standard)
+        .await
+        .map_err(SenseiError::Internal)?;
     Ok(Json(standard))
 }
 
@@ -207,11 +195,12 @@ pub async fn get_lsw_standard(
 ) -> Result<Json<LswStandard>> {
     user.require_permission("tps:lsw:execute")?;
     let tenant_id = user.tenant_id;
-    let store = state.lsw_standards.read(user.tenant_id).await;
-    let standard = store
-        .values()
-        .find(|s| s.id == standard_id && s.tenant_id == tenant_id)
-        .cloned()
+    let standard = state
+        .lsw_repo
+        .get_standard(user.tenant_id, standard_id)
+        .await
+        .map_err(SenseiError::Internal)?
+        .filter(|s| s.tenant_id == tenant_id)
         .ok_or_else(|| SenseiError::NotFound(format!("LSW standard {standard_id} not found")))?;
     Ok(Json(standard))
 }
@@ -225,9 +214,11 @@ pub async fn update_lsw_standard(
 ) -> Result<Json<LswStandard>> {
     user.require_permission("tps:lsw:manage")?;
     let tenant_id = user.tenant_id;
-    let mut store = state.lsw_standards.write(user.tenant_id).await;
-    let standard = store
-        .get_mut(&standard_id)
+    let mut standard = state
+        .lsw_repo
+        .get_standard(user.tenant_id, standard_id)
+        .await
+        .map_err(SenseiError::Internal)?
         .filter(|s| s.tenant_id == tenant_id)
         .ok_or_else(|| SenseiError::NotFound(format!("LSW standard {standard_id} not found")))?;
     if let Some(title) = req.title {
@@ -249,9 +240,12 @@ pub async fn update_lsw_standard(
         standard.is_active = active;
     }
     standard.updated_at = Utc::now();
-    let result = standard.clone();
-    store.persist().await?;
-    Ok(Json(result))
+    state
+        .lsw_repo
+        .put_standard(&standard)
+        .await
+        .map_err(SenseiError::Internal)?;
+    Ok(Json(standard))
 }
 
 /// Delete an LSW standard.
@@ -262,18 +256,21 @@ pub async fn delete_lsw_standard(
 ) -> Result<Json<()>> {
     user.require_permission("tps:lsw:manage")?;
     let tenant_id = user.tenant_id;
-    let mut store = state.lsw_standards.write(user.tenant_id).await;
-    let exists = store
-        .get(&standard_id)
+    let mut standard = state
+        .lsw_repo
+        .get_standard(user.tenant_id, standard_id)
+        .await
+        .map_err(SenseiError::Internal)?
         .filter(|s| s.tenant_id == tenant_id)
-        .is_some();
-    if !exists {
-        return Err(SenseiError::NotFound(format!(
-            "LSW standard {standard_id} not found"
-        )));
-    }
-    store.remove(&standard_id);
-    store.persist().await?;
+        .ok_or_else(|| SenseiError::NotFound(format!("LSW standard {standard_id} not found")))?;
+    // Append-only: standards are DEACTIVATED, never erased (history and
+    // their occurrences/audits stay linked).
+    standard.is_active = false;
+    state
+        .lsw_repo
+        .put_standard(&standard)
+        .await
+        .map_err(SenseiError::Internal)?;
     Ok(Json(()))
 }
 
@@ -294,14 +291,13 @@ pub async fn schedule_occurrence(
 ) -> Result<Json<LswOccurrence>> {
     user.require_permission("tps:lsw:manage")?;
     let tenant_id = user.tenant_id;
-    let standard = {
-        let store = state.lsw_standards.read(user.tenant_id).await;
-        store
-            .values()
-            .find(|s| s.id == standard_id && s.tenant_id == tenant_id)
-            .cloned()
-            .ok_or_else(|| SenseiError::NotFound(format!("LSW standard {standard_id} not found")))?
-    };
+    let standard = state
+        .lsw_repo
+        .get_standard(user.tenant_id, standard_id)
+        .await
+        .map_err(SenseiError::Internal)?
+        .filter(|s| s.tenant_id == tenant_id)
+        .ok_or_else(|| SenseiError::NotFound(format!("LSW standard {standard_id} not found")))?;
     let now = Utc::now();
     let occurrence = LswOccurrence {
         id: new_id(),
@@ -317,9 +313,11 @@ pub async fn schedule_occurrence(
         started_at: None,
         completed_at: None,
     };
-    let mut store = state.lsw_occurrences.write(tenant_id).await;
-    store.insert(occurrence.id, occurrence.clone());
-    store.persist().await?;
+    state
+        .lsw_repo
+        .put_occurrence(&occurrence)
+        .await
+        .map_err(SenseiError::Internal)?;
     Ok(Json(occurrence))
 }
 
@@ -344,9 +342,11 @@ pub async fn perform_audit(
         .occurrence_id
         .ok_or_else(|| SenseiError::Validation("An occurrence_id is required".to_string()))?;
     let assigned_leader = {
-        let store = state.lsw_occurrences.read(user.tenant_id).await;
-        let occurrence = store
-            .get(&occurrence_id)
+        let occurrence = state
+            .lsw_repo
+            .get_occurrence(user.tenant_id, occurrence_id)
+            .await
+            .map_err(SenseiError::Internal)?
             .filter(|o| o.tenant_id == tenant_id && o.standard_id == standard_id)
             .ok_or_else(|| {
                 SenseiError::NotFound(format!("LSW occurrence {occurrence_id} not found"))
@@ -376,26 +376,35 @@ pub async fn perform_audit(
     }
 
     {
-        let mut store = state.lsw_occurrences.write(user.tenant_id).await;
-        if let Some(occurrence) = store.get_mut(&occurrence_id) {
-            let now = Utc::now();
-            if occurrence.started_at.is_none() {
-                occurrence.started_at = Some(now);
-            }
-            occurrence.status = "in_progress".to_string();
+        let mut occurrence = state
+            .lsw_repo
+            .get_occurrence(user.tenant_id, occurrence_id)
+            .await
+            .map_err(SenseiError::Internal)?
+            .filter(|o| o.tenant_id == tenant_id && o.standard_id == standard_id)
+            .ok_or_else(|| {
+                SenseiError::NotFound(format!("LSW occurrence {occurrence_id} not found"))
+            })?;
+        let now = Utc::now();
+        if occurrence.started_at.is_none() {
+            occurrence.started_at = Some(now);
         }
-        store.persist().await?;
+        occurrence.status = "in_progress".to_string();
+        state
+            .lsw_repo
+            .put_occurrence(&occurrence)
+            .await
+            .map_err(SenseiError::Internal)?;
     }
 
-    // Verify standard exists
-    let standard = {
-        let store = state.lsw_standards.read(user.tenant_id).await;
-        store
-            .values()
-            .find(|s| s.id == standard_id && s.tenant_id == tenant_id)
-            .cloned()
-            .ok_or_else(|| SenseiError::NotFound(format!("LSW standard {standard_id} not found")))?
-    };
+    // Verify standard exists (typed repository).
+    let standard = state
+        .lsw_repo
+        .get_standard(user.tenant_id, standard_id)
+        .await
+        .map_err(SenseiError::Internal)?
+        .filter(|s| s.tenant_id == tenant_id)
+        .ok_or_else(|| SenseiError::NotFound(format!("LSW standard {standard_id} not found")))?;
 
     // Enforce checklist completeness: exactly one result for EVERY
     // required checklist item, no unknown item, no duplicate item — a
@@ -441,28 +450,39 @@ pub async fn perform_audit(
         standard_id,
         tenant_id,
         auditor_id: user.user_id,
+        occurrence_id: Some(occurrence_id),
+        leader_id: Some(assigned_leader),
         area: standard.area.clone(),
         layer: standard.layer,
         results: req.results,
         compliance_rate,
         notes: req.notes,
         audited_at: req.observed_at.unwrap_or(now),
+        created_at: now,
     };
-    let mut store = state.lsw_audits.write(user.tenant_id).await;
-    store.insert(audit.id, audit.clone());
-    store.persist().await?;
+    state
+        .lsw_repo
+        .put_audit(&audit)
+        .await
+        .map_err(SenseiError::Internal)?;
 
     // The occurrence is COMPLETED by this audit (server-owned timestamps).
     // If the completion cannot be persisted, the audit is ROLLED BACK so
     // the two records never diverge (a crash between them is recoverable:
     // the occurrence stays in_progress and the audit is removed).
     {
-        let mut occ = state.lsw_occurrences.write(user.tenant_id).await;
-        if let Some(o) = occ.get_mut(&occurrence_id) {
-            o.status = "completed".to_string();
-            o.completed_at = Some(Utc::now());
-        }
-        if let Err(e) = occ.persist().await {
+        let mut occurrence = state
+            .lsw_repo
+            .get_occurrence(user.tenant_id, occurrence_id)
+            .await
+            .map_err(SenseiError::Internal)?
+            .filter(|o| o.tenant_id == tenant_id && o.standard_id == standard_id)
+            .ok_or_else(|| {
+                SenseiError::NotFound(format!("LSW occurrence {occurrence_id} not found"))
+            })?;
+        occurrence.status = "completed".to_string();
+        occurrence.completed_at = Some(Utc::now());
+        if let Err(e) = state.lsw_repo.put_occurrence(&occurrence).await {
             // Compensation: remove the just-created audit record.
             let mut audits = state.lsw_audits.write(user.tenant_id).await;
             audits.remove(&audit.id);
@@ -483,14 +503,11 @@ pub async fn list_audits(
     Query(params): Query<ListAuditsParams>,
 ) -> Result<Json<PaginatedResponse<LswAudit>>> {
     user.require_permission("tps:lsw:execute")?;
-    let tenant_id = user.tenant_id;
-    let store = state.lsw_audits.read(user.tenant_id).await;
-    let mut audits: Vec<LswAudit> = store
-        .values()
-        .filter(|a| a.standard_id == standard_id && a.tenant_id == tenant_id)
-        .cloned()
-        .collect();
-    audits.sort_by_key(|a| std::cmp::Reverse(a.audited_at));
+    let audits = state
+        .lsw_repo
+        .list_audits(user.tenant_id, standard_id)
+        .await
+        .map_err(SenseiError::Internal)?;
     let result = PaginatedResponse::new(audits, params.page, params.per_page);
     Ok(Json(result))
 }
