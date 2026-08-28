@@ -5,6 +5,8 @@
 
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
+pub mod rules;
+
 use std::time::Duration;
 
 /// A window of customer demand for a product family.

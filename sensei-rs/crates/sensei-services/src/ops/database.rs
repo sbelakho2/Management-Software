@@ -48,6 +48,8 @@ struct AndonRow {
     created_at: chrono::DateTime<Utc>,
     acknowledged_at: Option<chrono::DateTime<Utc>>,
     resolved_at: Option<chrono::DateTime<Utc>>,
+    restart_authorized_by: Option<Uuid>,
+    restart_authorized_at: Option<chrono::DateTime<Utc>>,
 }
 
 #[derive(Debug, Clone, sqlx::FromRow)]
@@ -142,6 +144,8 @@ fn andon_row_to_domain(r: AndonRow) -> Andon {
         created_at: r.created_at,
         acknowledged_at: r.acknowledged_at,
         resolved_at: r.resolved_at,
+        restart_authorized_by: r.restart_authorized_by,
+        restart_authorized_at: r.restart_authorized_at,
     }
 }
 
@@ -277,9 +281,9 @@ impl OperationsService for DatabaseOperationsService {
         );
 
         let row = sqlx::query_as::<_, AndonRow>(
-            r#"INSERT INTO andons (id, tenant_id, andon_number, work_center_id, issue_type, severity, description, status, raised_by, acknowledged_by, resolved_by, resolution, response_time_seconds, resolution_time_seconds, created_at, acknowledged_at, resolved_at)
+            r#"INSERT INTO andons (id, tenant_id, andon_number, work_center_id, issue_type, severity, description, status, raised_by, acknowledged_by, resolved_by, resolution, response_time_seconds, resolution_time_seconds, created_at, acknowledged_at, resolved_at, restart_authorized_by, restart_authorized_at)
                VALUES ($1,$2,$3,$4,$5,$6,$7,'active',$8,NULL,NULL,NULL,NULL,NULL,$9,NULL,NULL)
-               RETURNING id, tenant_id, andon_number, work_center_id, issue_type, severity, description, status, raised_by, acknowledged_by, resolved_by, resolution, response_time_seconds, resolution_time_seconds, created_at, acknowledged_at, resolved_at"#,
+               RETURNING id, tenant_id, andon_number, work_center_id, issue_type, severity, description, status, raised_by, acknowledged_by, resolved_by, resolution, response_time_seconds, resolution_time_seconds, created_at, acknowledged_at, resolved_at, restart_authorized_by, restart_authorized_at"#,
         )
         .bind(id).bind(tenant_id).bind(&andon_number).bind(andon.work_center_id)
         .bind(&andon.issue_type).bind(&andon.severity).bind(&andon.description)
@@ -301,7 +305,7 @@ impl OperationsService for DatabaseOperationsService {
             r#"UPDATE andons SET status='acknowledged', acknowledged_by=$1, acknowledged_at=$2,
                 response_time_seconds=EXTRACT(EPOCH FROM ($2 - created_at))::bigint
                WHERE id=$3 AND tenant_id=$4 AND status='active'
-               RETURNING id, tenant_id, andon_number, work_center_id, issue_type, severity, description, status, raised_by, acknowledged_by, resolved_by, resolution, response_time_seconds, resolution_time_seconds, created_at, acknowledged_at, resolved_at"#,
+               RETURNING id, tenant_id, andon_number, work_center_id, issue_type, severity, description, status, raised_by, acknowledged_by, resolved_by, resolution, response_time_seconds, resolution_time_seconds, created_at, acknowledged_at, resolved_at, restart_authorized_by, restart_authorized_at"#,
         )
         .bind(acknowledged_by).bind(now).bind(id).bind(tenant_id)
         .fetch_optional(&self.pool)
@@ -318,13 +322,33 @@ impl OperationsService for DatabaseOperationsService {
         resolved_by: Uuid,
         resolution: &str,
     ) -> Result<Andon> {
+        // HARD RULE: a critical-safety Andon keeps the line stopped until
+        // an authorized restart exists (item 126).
+        let current: Option<(String, String, Option<Uuid>)> = sqlx::query_as(
+            "SELECT severity, issue_type, restart_authorized_by FROM andons \
+             WHERE id = $1 AND tenant_id = $2",
+        )
+        .bind(id)
+        .bind(tenant_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| SenseiError::Database(format!("Failed to read andon state: {e}")))?;
+        if let Some((severity, issue_type, restart_authorized_by)) = current {
+            let is_critical_safety = severity == "critical" && issue_type == "safety";
+            crate::tps::rules::check_safety_restart(
+                is_critical_safety,
+                restart_authorized_by.is_some(),
+            )
+            .map_err(|v| SenseiError::Conflict(v.message().to_string()))?;
+        }
+
         let now = Utc::now();
         let row = sqlx::query_as::<_, AndonRow>(
             r#"UPDATE andons SET status='resolved', resolved_by=$1, resolution=$2, resolved_at=$3,
                 resolution_time_seconds=EXTRACT(EPOCH FROM ($3 - created_at))::bigint,
                 response_time_seconds=COALESCE(response_time_seconds, EXTRACT(EPOCH FROM ($3 - created_at))::bigint)
                WHERE id=$4 AND tenant_id=$5 AND status NOT IN ('resolved','closed')
-               RETURNING id, tenant_id, andon_number, work_center_id, issue_type, severity, description, status, raised_by, acknowledged_by, resolved_by, resolution, response_time_seconds, resolution_time_seconds, created_at, acknowledged_at, resolved_at"#,
+               RETURNING id, tenant_id, andon_number, work_center_id, issue_type, severity, description, status, raised_by, acknowledged_by, resolved_by, resolution, response_time_seconds, resolution_time_seconds, created_at, acknowledged_at, resolved_at, restart_authorized_by, restart_authorized_at"#,
         )
         .bind(resolved_by).bind(resolution).bind(now).bind(id).bind(tenant_id)
         .fetch_optional(&self.pool)
@@ -334,9 +358,33 @@ impl OperationsService for DatabaseOperationsService {
         Ok(andon_row_to_domain(row))
     }
 
+    async fn authorize_restart(
+        &self,
+        tenant_id: Uuid,
+        id: Uuid,
+        authorized_by: Uuid,
+    ) -> Result<Andon> {
+        let row = sqlx::query_as::<_, AndonRow>(
+            "UPDATE andons SET restart_authorized_by = $3, restart_authorized_at = NOW() \
+             WHERE id = $1 AND tenant_id = $2 \
+             RETURNING id, tenant_id, andon_number, work_center_id, issue_type, severity, \
+                       description, status, raised_by, acknowledged_by, resolved_by, resolution, \
+                       response_time_seconds, resolution_time_seconds, created_at, \
+                       acknowledged_at, resolved_at, restart_authorized_by, restart_authorized_at",
+        )
+        .bind(id)
+        .bind(tenant_id)
+        .bind(authorized_by)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| SenseiError::Database(format!("Failed to authorize restart: {e}")))?
+        .ok_or_else(|| SenseiError::NotFound(format!("Andon {id} not found")))?;
+        Ok(andon_row_to_domain(row))
+    }
+
     async fn get_andon(&self, tenant_id: Uuid, id: Uuid) -> Result<Andon> {
         let row = sqlx::query_as::<_, AndonRow>(
-            "SELECT id, tenant_id, andon_number, work_center_id, issue_type, severity, description, status, raised_by, acknowledged_by, resolved_by, resolution, response_time_seconds, resolution_time_seconds, created_at, acknowledged_at, resolved_at FROM andons WHERE id = $1 AND tenant_id = $2",
+            "SELECT id, tenant_id, andon_number, work_center_id, issue_type, severity, description, status, raised_by, acknowledged_by, resolved_by, resolution, response_time_seconds, resolution_time_seconds, created_at, acknowledged_at, resolved_at, restart_authorized_by, restart_authorized_at FROM andons WHERE id = $1 AND tenant_id = $2",
         )
         .bind(id).bind(tenant_id)
         .fetch_optional(&self.pool)
@@ -359,7 +407,7 @@ impl OperationsService for DatabaseOperationsService {
         let offset = (page - 1) * per_page;
 
         let items: Vec<AndonRow> = sqlx::query_as(
-            r#"SELECT id, tenant_id, andon_number, work_center_id, issue_type, severity, description, status, raised_by, acknowledged_by, resolved_by, resolution, response_time_seconds, resolution_time_seconds, created_at, acknowledged_at, resolved_at
+            r#"SELECT id, tenant_id, andon_number, work_center_id, issue_type, severity, description, status, raised_by, acknowledged_by, resolved_by, resolution, response_time_seconds, resolution_time_seconds, created_at, acknowledged_at, resolved_at, restart_authorized_by, restart_authorized_at
                FROM andons WHERE tenant_id=$1 AND ($2::text IS NULL OR status=$2) AND ($3::uuid IS NULL OR work_center_id=$3)
                ORDER BY created_at DESC LIMIT $4 OFFSET $5"#,
         )
@@ -680,7 +728,7 @@ impl OperationsService for DatabaseOperationsService {
     async fn update_andon(&self, tenant_id: Uuid, id: Uuid, andon: Andon) -> Result<Andon> {
         let row = sqlx::query_as::<_, AndonRow>(
             r#"UPDATE andons SET issue_type=$1, severity=$2, description=$3 WHERE id=$4 AND tenant_id=$5
-               RETURNING id, tenant_id, andon_number, work_center_id, issue_type, severity, description, status, raised_by, acknowledged_by, resolved_by, resolution, response_time_seconds, resolution_time_seconds, created_at, acknowledged_at, resolved_at"#,
+               RETURNING id, tenant_id, andon_number, work_center_id, issue_type, severity, description, status, raised_by, acknowledged_by, resolved_by, resolution, response_time_seconds, resolution_time_seconds, created_at, acknowledged_at, resolved_at, restart_authorized_by, restart_authorized_at"#,
         )
         .bind(&andon.issue_type).bind(&andon.severity).bind(&andon.description).bind(id).bind(tenant_id)
         .fetch_optional(&self.pool)
@@ -703,7 +751,7 @@ impl OperationsService for DatabaseOperationsService {
              RETURNING id, tenant_id, andon_number, work_center_id, issue_type, severity, \
                        description, status, raised_by, acknowledged_by, resolved_by, \
                        resolution, response_time_seconds, resolution_time_seconds, \
-                       created_at, acknowledged_at, resolved_at",
+                       created_at, acknowledged_at, resolved_at, restart_authorized_by, restart_authorized_at",
         )
         .bind(id)
         .bind(tenant_id)

@@ -491,6 +491,12 @@ pub struct AppState {
     pub lsw_audits: stores::LswAuditStore,
     /// Scheduled LSW occurrences (server-owned lifecycle).
     pub lsw_occurrences: EntityStore<crate::stores::LswOccurrence>,
+    /// Daily tier meetings (item 54).
+    pub tier_meetings: EntityStore<crate::stores::TierMeeting>,
+    /// Plant topology (item 90): sites, value streams, product families.
+    pub sites: EntityStore<crate::routes::topology::Site>,
+    pub value_streams: EntityStore<crate::routes::topology::ValueStream>,
+    pub product_families: EntityStore<crate::routes::topology::ProductFamily>,
     // ── Notification Trigger stores ─────────────────────────────────────
     /// Notification triggers entity store.
     pub notification_triggers: stores::NotificationTriggerStore,
@@ -642,6 +648,10 @@ impl AppState {
         let lsw_standards = stores::new_store!("lsw_standard");
         let lsw_audits = stores::new_store!("lsw_audit");
         let lsw_occurrences = EntityStore::new("lsw_occurrence");
+        let tier_meetings = EntityStore::new("tier_meeting");
+        let sites = EntityStore::new("site");
+        let value_streams = EntityStore::new("value_stream");
+        let product_families = EntityStore::new("product_family");
         let notification_triggers = stores::new_store!("notification_trigger");
         let standard_work_documents = stores::new_store!("standard_work_document");
         let standard_work_versions = stores::new_store!("standard_work_version");
@@ -764,6 +774,10 @@ impl AppState {
             lsw_standards,
             lsw_audits,
             lsw_occurrences,
+            tier_meetings,
+            sites,
+            value_streams,
+            product_families,
             notification_triggers,
             standard_work_documents,
             standard_work_versions,
@@ -871,6 +885,10 @@ impl AppState {
         self.lsw_standards = EntityStore::with_pool("lsw_standard", p.clone());
         self.lsw_audits = EntityStore::with_pool("lsw_audit", p.clone());
         self.lsw_occurrences = EntityStore::with_pool("lsw_occurrence", p.clone());
+        self.tier_meetings = EntityStore::with_pool("tier_meeting", p.clone());
+        self.sites = EntityStore::with_pool("site", p.clone());
+        self.value_streams = EntityStore::with_pool("value_stream", p.clone());
+        self.product_families = EntityStore::with_pool("product_family", p.clone());
         self.notification_triggers = EntityStore::with_pool("notification_trigger", p.clone());
         self.standard_work_documents = EntityStore::with_pool("standard_work_document", p.clone());
         self.standard_work_versions = EntityStore::with_pool("standard_work_version", p.clone());
@@ -988,6 +1006,10 @@ impl AppState {
             lsw_standards,
             lsw_audits,
             lsw_occurrences,
+            tier_meetings,
+            sites,
+            value_streams,
+            product_families,
             notification_triggers,
             standard_work_documents,
             standard_work_versions,

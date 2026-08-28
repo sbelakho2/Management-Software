@@ -1719,6 +1719,10 @@ pub fn build_router(state: AppState) -> Router {
         )
         .route("/api/v1/andon/{id}/void", post(routes::andon::void_andon))
         .route(
+            "/api/v1/andon/{id}/restart-authorization",
+            post(routes::andon::authorize_restart),
+        )
+        .route(
             "/api/v1/andon/{id}/acknowledge",
             post(routes::andon::acknowledge_andon),
         )
@@ -1965,6 +1969,36 @@ pub fn build_router(state: AppState) -> Router {
         .route(
             "/api/v1/tps/takt/calculate",
             post(routes::tps::calculate_takt),
+        )
+        .route("/api/v1/agent/tools", get(routes::agent::list_agent_tools))
+        .route(
+            "/api/v1/tier-meetings",
+            post(routes::tier_meetings::schedule_tier_meeting),
+        )
+        .route(
+            "/api/v1/topology/sites",
+            get(routes::topology::list_sites).post(routes::topology::create_site),
+        )
+        .route(
+            "/api/v1/topology/value-streams",
+            get(routes::topology::list_value_streams).post(routes::topology::create_value_stream),
+        )
+        .route(
+            "/api/v1/topology/product-families",
+            get(routes::topology::list_product_families)
+                .post(routes::topology::create_product_family),
+        )
+        .route(
+            "/api/v1/tier-meetings/{id}/start",
+            post(routes::tier_meetings::start_tier_meeting),
+        )
+        .route(
+            "/api/v1/tier-meetings/{id}/complete",
+            post(routes::tier_meetings::complete_tier_meeting),
+        )
+        .route(
+            "/api/v1/agent/execute",
+            post(routes::agent::execute_agent_tool),
         )
         .route(
             "/api/v1/lsw/standards/{standard_id}",

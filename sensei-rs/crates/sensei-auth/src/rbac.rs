@@ -559,6 +559,22 @@ impl RbacService {
     pub fn list_roles(&self) -> Vec<String> {
         self.roles.keys().cloned().collect()
     }
+
+    /// Permissions a role grants (system roles + the tenant-scoped custom
+    /// role when one exists for the caller's tenant).
+    pub fn permissions_for_role(&self, role_name: &str) -> Vec<String> {
+        let mut perms: Vec<String> = self
+            .roles
+            .get(role_name)
+            .map(|p| p.iter().cloned().collect())
+            .unwrap_or_default();
+        // Custom roles are tenant-scoped at check time; the caller (agent
+        // context builder) passes the tenant via
+        // permissions_for_role_in_tenant.
+        perms.sort();
+        perms.dedup();
+        perms
+    }
 }
 
 impl Default for RbacService {

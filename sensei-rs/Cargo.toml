@@ -6,6 +6,7 @@ members = [
     "crates/sensei-core",
     "crates/sensei-db",
     "crates/sensei-event-bus",
+    "crates/sensei-agent-core",
     "crates/sensei-auth",
     "crates/sensei-api",
     "crates/sensei-services",
@@ -21,6 +22,7 @@ license = "MIT"
 repository = "https://github.com/sensei/management-software"
 
 [workspace.dependencies]
+sensei-agent-core = { path = "crates/sensei-agent-core" }
 ipnet = "2.11.0"
 # Async runtime
 tokio = { version = "1", features = ["full"] }

@@ -403,6 +403,8 @@ pub struct ObeyaItem {
     pub board_id: Uuid,
     pub title: String,
     pub description: String,
+    /// SQDCP/QCDSM panel type: safety, quality, delivery, cost, people,
+    /// improvement — the typed daily-management panels.
     pub item_type: String,
     pub status: String,
     pub priority: String,
@@ -410,9 +412,46 @@ pub struct ObeyaItem {
     pub target_date: Option<DateTime<Utc>>,
     pub completed_at: Option<DateTime<Utc>>,
     pub notes: String,
+    /// Panel metrics: target / actual / trend (the board tracks the
+    /// deviation, not just a ticket list).
+    #[serde(default)]
+    pub target: Option<f64>,
+    #[serde(default)]
+    pub actual: Option<f64>,
+    #[serde(default)]
+    pub trend: Vec<f64>,
+    /// The issue id this item escalates from/into (escalation carries the
+    /// SAME issue upward rather than creating an unrelated ticket).
+    #[serde(default)]
+    pub escalation_of: Option<Uuid>,
     pub created_by: Uuid,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+}
+
+/// Daily tier meeting (item 54): tier level + occurrence with metric
+/// snapshots, abnormalities, escalations and actions.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TierMeeting {
+    pub id: Uuid,
+    pub tenant_id: Uuid,
+    /// 1 = line/cell every shift, 2 = value stream, 3 = plant, 4 = site.
+    pub tier_level: u8,
+    pub title: String,
+    pub area: Option<String>,
+    pub scheduled_at: DateTime<Utc>,
+    pub started_at: Option<DateTime<Utc>>,
+    pub completed_at: Option<DateTime<Utc>>,
+    #[serde(default)]
+    pub metric_snapshots: Vec<serde_json::Value>,
+    #[serde(default)]
+    pub abnormality_ids: Vec<Uuid>,
+    #[serde(default)]
+    pub escalation_ids: Vec<Uuid>,
+    #[serde(default)]
+    pub action_ids: Vec<Uuid>,
+    pub created_by: Uuid,
+    pub created_at: DateTime<Utc>,
 }
 
 /// Entity store for Obeya boards.
@@ -1020,6 +1059,9 @@ pub struct LswAudit {
     pub notes: Option<String>,
     pub audited_at: DateTime<Utc>,
 }
+
+/// Entity store for tier meetings.
+pub type TierMeetingStore = EntityStore<TierMeeting>;
 
 /// Entity store for LSW standards.
 pub type LswStandardStore = EntityStore<LswStandard>;

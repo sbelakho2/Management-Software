@@ -55,6 +55,12 @@ pub struct Andon {
     pub created_at: DateTime<Utc>,
     pub acknowledged_at: Option<DateTime<Utc>>,
     pub resolved_at: Option<DateTime<Utc>>,
+    /// Restart authorization for critical-safety Andons (hard rule: the
+    /// line stays stopped until an authorized restart exists).
+    #[serde(default)]
+    pub restart_authorized_by: Option<Uuid>,
+    #[serde(default)]
+    pub restart_authorized_at: Option<DateTime<Utc>>,
 }
 
 /// A continuous improvement or kaizen project.
@@ -179,6 +185,14 @@ pub trait OperationsService: Send + Sync {
     ) -> Result<Andon>;
     /// Get an Andon signal by ID.
     async fn get_andon(&self, tenant_id: Uuid, id: Uuid) -> Result<Andon>;
+    /// Authorize the restart of a line after a critical-safety Andon (hard
+    /// rule: resolution requires this authorization).
+    async fn authorize_restart(
+        &self,
+        tenant_id: Uuid,
+        id: Uuid,
+        authorized_by: Uuid,
+    ) -> Result<Andon>;
     /// List Andon signals with optional status and work center filters, with pagination.
     async fn list_andons(
         &self,
@@ -811,6 +825,21 @@ impl OperationsService for InMemoryOperationsService {
         Ok(existing.clone())
     }
 
+    async fn authorize_restart(
+        &self,
+        _tenant_id: Uuid,
+        id: Uuid,
+        authorized_by: Uuid,
+    ) -> Result<Andon> {
+        let mut store = self.andons.write().await;
+        let andon = store
+            .get_mut(&id)
+            .ok_or_else(|| SenseiError::NotFound(format!("Andon {id} not found")))?;
+        andon.restart_authorized_by = Some(authorized_by);
+        andon.restart_authorized_at = Some(Utc::now());
+        Ok(andon.clone())
+    }
+
     async fn void_andon(
         &self,
         _tenant_id: Uuid,
@@ -955,6 +984,8 @@ mod tests {
             created_at: Utc::now(),
             acknowledged_at: None,
             resolved_at: None,
+            restart_authorized_by: None,
+            restart_authorized_at: None,
         };
 
         let raised = service
@@ -1143,6 +1174,8 @@ mod tests {
             created_at: Utc::now(),
             acknowledged_at: None,
             resolved_at: None,
+            restart_authorized_by: None,
+            restart_authorized_at: None,
         };
         let a2 = Andon {
             id: Uuid::nil(),
@@ -1162,6 +1195,8 @@ mod tests {
             created_at: Utc::now(),
             acknowledged_at: None,
             resolved_at: None,
+            restart_authorized_by: None,
+            restart_authorized_at: None,
         };
 
         service.raise_andon(tenant_id, a1).await.unwrap();

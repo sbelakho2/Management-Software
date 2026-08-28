@@ -106,6 +106,8 @@ pub async fn raise_andon(
         created_at: chrono::Utc::now(),
         acknowledged_at: None,
         resolved_at: None,
+        restart_authorized_by: None,
+        restart_authorized_at: None,
     };
     let andon = state.ops_service.raise_andon(tenant_id, andon).await?;
     Ok(Json(andon))
@@ -175,6 +177,22 @@ pub async fn update_andon(
 }
 
 /// Delete an Andon event.
+/// Authorize the restart of a line after a critical-safety Andon (hard
+/// rule: the line stays stopped until this authorization exists).
+pub async fn authorize_restart(
+    user: AuthenticatedUser,
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<Andon>> {
+    user.require_permission("tps:andon:restart")?;
+    let tenant_id = user.tenant_id;
+    let andon = state
+        .ops_service
+        .authorize_restart(tenant_id, id, user.user_id)
+        .await?;
+    Ok(Json(andon))
+}
+
 /// Void an Andon (append-only operational history: production Andon
 /// events are never physically deleted — abandoned/false signals are
 /// marked `voided` with the actor and reason recorded).

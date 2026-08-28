@@ -5,6 +5,7 @@
 pub mod a3;
 pub mod accounts;
 pub mod admin;
+pub mod agent;
 pub mod ai;
 pub mod andon;
 pub mod attachments;
@@ -48,7 +49,9 @@ pub mod state_machines;
 pub mod supply_chain;
 pub mod tasks;
 pub mod tenants;
+pub mod tier_meetings;
 pub mod today;
+pub mod topology;
 pub mod tps;
 pub mod training;
 pub mod training_matrix;

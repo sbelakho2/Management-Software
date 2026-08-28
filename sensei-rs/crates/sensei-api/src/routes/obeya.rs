@@ -74,6 +74,17 @@ pub struct CreateItemRequest {
     pub owner_id: Option<Uuid>,
     pub target_date: Option<String>,
     pub notes: Option<String>,
+    /// SQDCP panel metrics (target/actual/trend) — the board tracks the
+    /// deviation, not just a ticket list.
+    #[serde(default)]
+    pub target: Option<f64>,
+    #[serde(default)]
+    pub actual: Option<f64>,
+    #[serde(default)]
+    pub trend: Option<Vec<f64>>,
+    /// The issue id this item escalates from (same issue upward).
+    #[serde(default)]
+    pub escalation_of: Option<Uuid>,
 }
 
 /// Request body for updating an Obeya item.
@@ -420,6 +431,10 @@ pub async fn add_board_item(
         target_date: parse_dt(req.target_date.as_deref()),
         completed_at: None,
         notes: req.notes.unwrap_or_default(),
+        target: req.target,
+        actual: req.actual,
+        trend: req.trend.unwrap_or_default(),
+        escalation_of: req.escalation_of,
         created_by: user.user_id,
         created_at: now,
         updated_at: now,

@@ -6,6 +6,7 @@ license.workspace = true
 description = "Axum API server for Sensei ERP"
 
 [dependencies]
+sensei-agent-core = { workspace = true }
 ipnet = { workspace = true }
 rust_decimal.workspace = true
 sensei-core = { path = "../sensei-core", features = ["axum"] }

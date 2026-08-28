@@ -6512,6 +6512,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "sensei-agent-core"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "serde",
+ "serde_json",
+ "uuid",
+]
+
+[[package]]
 name = "sensei-api"
 version = "0.1.0"
 dependencies = [
@@ -6531,6 +6541,7 @@ dependencies = [
  "prometheus",
  "reqwest 0.12.28",
  "rust_decimal",
+ "sensei-agent-core",
  "sensei-auth",
  "sensei-core",
  "sensei-db",
