@@ -36,6 +36,18 @@ pub fn build_readonly_tools() -> Vec<ToolSpec> {
             }),
             serde_json::json!({"takt_seconds": "number"}),
         ),
+        // The SCOPE variant (item 20): retrieves the authoritative calendar
+        // and customer demand from the database for the site/date window —
+        // the inputs represent the FACTORY, not model-supplied numbers.
+        ToolSpec::read_only(
+            "calculate_takt_for_scope",
+            "tps:standard-work:read",
+            serde_json::json!({
+                "site_id": "uuid",
+                "date": "string"
+            }),
+            serde_json::json!({"takt_seconds": "number", "evidence": "array"}),
+        ),
     ]
 }
 
@@ -90,6 +102,7 @@ pub async fn execute_tool(
     policy: &PolicyEngine,
     production: &dyn ProductionService,
     supply_chain: &dyn SupplyChainService,
+    pool: Option<&sqlx::PgPool>,
 ) -> Result<ToolResult<serde_json::Value>, String> {
     // Defense in depth: independent re-check at execution time (read-only
     // tools are Automatic; write tools would require an approval artifact).
@@ -136,6 +149,79 @@ pub async fn execute_tool(
                 data,
                 vec![EvidenceRef::new(format!("inventory:{product_id}"), 1, now)],
                 &format!("get_inventory_balance@v{}", tool.version),
+            ))
+        }
+        "calculate_takt_for_scope" => {
+            let site_id: Uuid = args
+                .get("site_id")
+                .and_then(|v| v.as_str())
+                .and_then(|s| Uuid::parse_str(s).ok())
+                .ok_or_else(|| "calculate_takt_for_scope requires site_id".to_string())?;
+            let date: chrono::NaiveDate = args
+                .get("date")
+                .and_then(|v| v.as_str())
+                .and_then(|s| chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d").ok())
+                .ok_or_else(|| "calculate_takt_for_scope requires date (YYYY-MM-DD)".to_string())?;
+
+            // ── Authoritative calendar: shifts + production_calendar ──
+            let calendar: Vec<(i64, i64, i64, bool)> = sqlx::query_as(
+                "SELECT c.scheduled_seconds, c.breaks_seconds, \
+                        c.planned_downtime_seconds, c.is_holiday \
+                 FROM production_calendar c \
+                 WHERE c.tenant_id = $1 AND c.site_id = $2 AND c.calendar_date = $3",
+            )
+            .bind(ctx.tenant_id)
+            .bind(site_id)
+            .bind(date)
+            .fetch_all(pool.ok_or_else(|| "Scope tool requires a database pool".to_string())?)
+            .await
+            .map_err(|e| format!("Calendar read failed: {e}"))?;
+            let scheduled: u64 = calendar.iter().map(|c| c.0 as u64).sum();
+            let breaks: u64 = calendar.iter().map(|c| c.1 as u64).sum();
+            let downtime: u64 = calendar.iter().map(|c| c.2 as u64).sum();
+            let holiday = calendar.iter().any(|c| c.3);
+            if holiday {
+                return Err("HOLIDAY: no production time is scheduled for this site/date".to_string());
+            }
+
+            // ── Authoritative demand: open sales orders for the window ──
+            let demand: rust_decimal::Decimal = sqlx::query_scalar(
+                "SELECT COALESCE(SUM(                     (li->>'quantity')::numeric - COALESCE((li->>'quantity_delivered')::numeric, 0)                 ), 0)::numeric \
+                 FROM sales_orders so, jsonb_array_elements(so.line_items) AS li \
+                 WHERE so.tenant_id = $1 \
+                   AND so.status NOT IN ('completed', 'cancelled', 'closed') \
+                   AND (so.delivery_date IS NULL OR so.delivery_date::date <= $2)",
+            )
+            .bind(ctx.tenant_id)
+            .bind(date)
+            .fetch_one(pool.ok_or_else(|| "Scope tool requires a database pool".to_string())?)
+            .await
+            .map_err(|e| format!("Demand read failed: {e}"))?;
+
+            let available = sensei_services::tps::AvailableProductionTime {
+                scheduled_seconds: scheduled,
+                breaks_seconds: breaks,
+                planned_downtime_seconds: downtime,
+            };
+            let takt = sensei_services::tps::calculate_takt(site_id, &available, demand)
+                .ok_or_else(|| "No takt exists: zero demand for the window".to_string())?;
+            let data = serde_json::json!({
+                "takt_seconds": takt.takt_seconds.to_string(),
+                "net_available_seconds": takt.net_available_seconds,
+                "demand_units": takt.demand_units.to_string(),
+                "evidence": vec![
+                    format!("calendar:site={site_id}:date={date}"),
+                    format!("sales_demand:site={site_id}:window={date}"),
+                ],
+            });
+            Ok(ToolResult::new(
+                data,
+                vec![EvidenceRef::new(
+                    format!("calendar:site={site_id}:date={date}"),
+                    1,
+                    now,
+                )],
+                &format!("calculate_takt_for_scope@v{}", tool.version),
             ))
         }
         "calculate_takt" => {

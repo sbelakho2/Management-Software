@@ -257,7 +257,8 @@ async fn run() {
         let bus: Arc<dyn sensei_event_bus::EventBus> =
             Arc::new(sensei_event_bus::NatsEventBus::new("sensei"));
         let _ = bus.connect(&url).await;
-        sensei_workers::outbox_relay::spawn(pool.clone(), bus);
+        sensei_workers::outbox_relay::spawn(pool.clone(), bus.clone());
+        sensei_workers::andon_sla::spawn(pool.clone(), bus);
     }
 
     // ── Beat-style scheduler (daily snapshots, KPIs, retrains) ──────

@@ -60,6 +60,7 @@ pub async fn execute_agent_tool(
         &policy,
         state.production_service.as_ref(),
         state.supply_chain_service.as_ref(),
+        state.db_pool.as_ref().map(|p| p.as_ref()),
     )
     .await
     .map_err(SenseiError::Validation)?;

@@ -54,6 +54,10 @@ pub struct PackRequest {
     pub supersedes: Option<Uuid>,
     #[serde(default)]
     pub status: Option<String>,
+    /// ACL prefilter: roles that may retrieve this pack (empty = all
+    /// authenticated tenant users).
+    #[serde(default)]
+    pub allowed_roles: Option<Vec<String>>,
 }
 
 // ── Handlers ─────────────────────────────────────────────────────────────────
@@ -69,6 +73,12 @@ pub async fn list_packs(
     let mut packs: Vec<KnowledgePack> = store
         .values()
         .filter(|p| p.tenant_id == user.tenant_id)
+        // ACL prefilter: role-restricted packs are invisible to callers
+        // without the role (never retrieved, never mentioned).
+        .filter(|p| {
+            p.allowed_roles.is_empty()
+                || p.allowed_roles.iter().any(|r| user.roles.contains(r))
+        })
         .filter(|p| params.category.as_ref().is_none_or(|c| p.category == *c))
         .filter(|p| {
             params
@@ -118,6 +128,7 @@ pub async fn create_pack(
                 "draft".to_string()
             }
         }),
+        allowed_roles: req.allowed_roles.unwrap_or_default(),
         created_by: user.user_id,
         created_at: now,
         updated_at: now,

@@ -322,6 +322,11 @@ pub struct KnowledgePack {
     pub supersedes: Option<Uuid>,
     #[serde(default)]
     pub status: String, // draft | effective | superseded | archived
+    /// ACL prefilter: when non-empty, ONLY callers holding one of these
+    /// roles may retrieve the pack (role/site-scoped retrieval — forbidden
+    /// records never enter the candidate corpus).
+    #[serde(default)]
+    pub allowed_roles: Vec<String>,
 
     pub created_by: Uuid,
     pub created_at: DateTime<Utc>,

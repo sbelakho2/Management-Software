@@ -61,6 +61,7 @@ pub mod analytics;
 pub mod email;
 pub mod error;
 pub mod ml;
+pub mod andon_sla;
 pub mod nats;
 pub mod outbox_relay;
 pub mod pdf;
