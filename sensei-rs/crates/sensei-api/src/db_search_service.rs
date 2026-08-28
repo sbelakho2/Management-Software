@@ -237,6 +237,16 @@ impl DatabaseSearchService {
                AND (COALESCE(data->>'name', '') ILIKE '%' || replace(replace($3, '%', '\\%'), '_', '\\_') || '%' \
                     OR COALESCE(data->>'title', '') ILIKE '%' || replace(replace($3, '%', '\\%'), '_', '\\_') || '%' \
                     OR COALESCE(data->>'description', '') ILIKE '%' || replace(replace($3, '%', '\\%'), '_', '\\_') || '%') \
+               -- Authority gate (item 24): knowledge packs are retrievable
+               -- ONLY when effective (published, within their validity
+               -- window). Draft/superseded/archived documents never enter
+               -- the result set as authoritative.
+               AND (entity_type <> 'knowledge_pack' \
+                    OR (COALESCE(data->>'status', 'draft') = 'effective' \
+                        AND (data->>'effective_from' IS NULL \
+                             OR (data->>'effective_from')::timestamptz <= NOW()) \
+                        AND (data->>'effective_to' IS NULL \
+                             OR (data->>'effective_to')::timestamptz >= NOW()))) \
              ORDER BY relevance DESC \
              LIMIT $4",
         )

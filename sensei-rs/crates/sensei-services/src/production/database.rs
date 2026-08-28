@@ -950,9 +950,23 @@ impl ProductionService for DatabaseProductionService {
         let now = Utc::now();
 
         // ── 1. Independent demand for the product ──────────────────────
-        // Unfinished work orders ARE the independent demand (what the shop
-        // floor has been asked to make).
-        let demand_qty: f64 = sqlx::query_scalar(
+        // Demand = open SALES ORDERS (the customer pull) plus the
+        // unfinished work-order backlog (execution supply already created
+        // for demand). Sales demand drives planning; the work-order
+        // backlog is the in-flight portion of that demand.
+        let so_demand: f64 = sqlx::query_scalar(
+            "SELECT COALESCE(SUM(                 (li->>'quantity')::numeric - COALESCE((li->>'quantity_delivered')::numeric, 0)             ), 0)::numeric \
+             FROM sales_orders so, jsonb_array_elements(so.line_items) AS li \
+             WHERE so.tenant_id = $1 \
+               AND (li->>'product_id')::uuid = $2 \
+               AND so.status NOT IN ('completed', 'cancelled', 'closed')",
+        )
+        .bind(tenant_id)
+        .bind(product_id)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|e| SenseiError::Database(format!("Failed to compute sales demand: {e}")))?;
+        let wo_backlog: f64 = sqlx::query_scalar(
             "SELECT COALESCE(SUM(quantity - quantity_completed), 0)::numeric \
              FROM work_orders \
              WHERE product_id = $1 AND tenant_id = $2 AND status NOT IN ('completed', 'cancelled')",
@@ -961,7 +975,8 @@ impl ProductionService for DatabaseProductionService {
         .bind(tenant_id)
         .fetch_one(&self.pool)
         .await
-        .map_err(|e| SenseiError::Database(format!("Failed to compute MRP demand: {e}")))?;
+        .map_err(|e| SenseiError::Database(format!("Failed to compute work-order backlog: {e}")))?;
+        let demand_qty = so_demand.max(wo_backlog);
 
         // ── 2. BOM explosion (multi-level, scrap-aware) ────────────────
         // gross[product] accumulates the quantity required at each level;

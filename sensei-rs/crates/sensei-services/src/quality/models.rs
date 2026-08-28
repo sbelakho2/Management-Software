@@ -1687,6 +1687,14 @@ pub struct ProcessCapabilityStudy {
     pub result: Option<ProcessCapabilityResult>,
     pub created_at: DateTime<Utc>,
     pub completed_at: Option<DateTime<Utc>>,
+    /// Reference to the MSA study this capability claim depends on
+    /// (capability is NOT decision-grade without an acceptable MSA).
+    #[serde(default)]
+    pub msa_reference: Option<Uuid>,
+    /// Whether this study is decision-grade (hard rule: requires an
+    /// acceptable measurement system).
+    #[serde(default)]
+    pub decision_grade: bool,
 }
 
 /// A single measurement in a capability study.

@@ -139,6 +139,44 @@ async fn full_migration_chain_applies_and_core_contracts_work() {
     .expect("outbox claim columns must exist");
     assert_eq!(claimed.rows_affected(), 1);
 
+    // ── RLS tenant adversarial test (item 31) ─────────────────────────
+    // With the transaction-scoped context set to tenant A, a SELECT on a
+    // fail-closed table WITHOUT any tenant predicate must return ONLY
+    // tenant A's rows — an intentionally missing application filter cannot
+    // leak tenant B.
+    let tenant_b = uuid::Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO invoices \
+            (id, tenant_id, invoice_number, customer_id, customer_name, status, \
+             line_items, subtotal, tax_percentage, tax_amount, total_amount, \
+             currency, due_date, created_by, created_at) \
+         VALUES ($1, $2, 'INV-B', $3, 'B', 'draft', '[]', 0, 0, 0, 0, 'USD', NOW(), NULL, NOW())",
+    )
+    .bind(uuid::Uuid::new_v4())
+    .bind(tenant_b)
+    .bind(uuid::Uuid::new_v4())
+    .execute(&pool)
+    .await
+    .expect("tenant B invoice");
+    let a_count: i64 = {
+        let mut tx = pool.begin().await.expect("begin adversarial tx");
+        sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
+            .bind(tenant_id.to_string())
+            .execute(&mut *tx)
+            .await
+            .expect("set tenant context");
+        // NO tenant predicate: RLS must filter to tenant A only.
+        sqlx::query_scalar("SELECT count(*) FROM invoices")
+            .fetch_one(&mut *tx)
+            .await
+            .expect("adversarial count")
+    };
+    assert_eq!(
+        a_count, 1,
+        "RLS must hide tenant B's invoice when the tenant \
+                            predicate is omitted (fail-closed policy)"
+    );
+
     // ── Andon restart contract (P0-7) ─────────────────────────────────
     let andon_id = uuid::Uuid::new_v4();
     sqlx::query(

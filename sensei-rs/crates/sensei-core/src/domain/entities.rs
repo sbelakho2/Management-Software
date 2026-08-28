@@ -27,6 +27,9 @@ pub struct User {
     /// under an older version are rejected (forced re-authentication).
     #[serde(default)]
     pub credential_version: u64,
+    /// Site assignment (plant scope for the agent context).
+    #[serde(default)]
+    pub site_id: Option<EntityId>,
     /// When the user last logged in.
     pub last_login_at: Option<Timestamp>,
     /// When this record was created.
@@ -65,6 +68,7 @@ impl User {
             roles,
             is_active: true,
             credential_version: 0,
+            site_id: None,
             last_login_at: None,
             created_at: now,
             updated_at: now,

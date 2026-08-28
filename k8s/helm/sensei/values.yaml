@@ -263,47 +263,6 @@ autoscaling:
     maxReplicas: 5
     targetCPUUtilizationPercentage: 70
 
-# Health checks
-healthChecks:
-  senseiApi:
-    livenessProbe:
-      httpGet:
-        path: /api/v1/health
-        port: 8080
-      initialDelaySeconds: 30
-      periodSeconds: 10
-      timeoutSeconds: 5
-      failureThreshold: 3
-    readinessProbe:
-      httpGet:
-        path: /api/v1/health
-        port: 8080
-      initialDelaySeconds: 10
-      periodSeconds: 5
-      timeoutSeconds: 3
-      failureThreshold: 3
-  worker:
-    livenessProbe:
-      exec:
-        command:
-          - pgrep
-          - -f
-          - sensei-workers
-      initialDelaySeconds: 30
-      periodSeconds: 30
-      timeoutSeconds: 15
-      failureThreshold: 3
-    readinessProbe:
-      exec:
-        command:
-          - pgrep
-          - -f
-          - sensei-workers
-      initialDelaySeconds: 15
-      periodSeconds: 15
-      timeoutSeconds: 10
-      failureThreshold: 3
-
 # Redis configuration (Bitnami chart)
 # The credential-bearing REDIS_URL for the app is assembled in the Secret
 # (templates/secret.yaml) from redis.auth when enabled.

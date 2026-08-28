@@ -379,6 +379,8 @@ impl ProcessCapabilityService for InMemoryMsaSpcService {
             result: None,
             created_at: now(),
             completed_at: None,
+            msa_reference: None,
+            decision_grade: false,
         };
         self.capa_studies.write().await.push(study.clone());
         Ok(study)

@@ -106,7 +106,7 @@ pub struct ExecuteToolRequest {
 
 /// Build the SERVER-CREATED context from the authenticated request (the
 /// model can never supply tenant/user/site — they are injected here).
-async fn build_context(user: &AuthenticatedUser, _state: &AppState) -> AgentContext {
+async fn build_context(user: &AuthenticatedUser, state: &AppState) -> AgentContext {
     let rbac = sensei_auth::rbac::authorization_service();
     let mut permissions = std::collections::HashSet::new();
     for role in &user.roles {
@@ -117,11 +117,19 @@ async fn build_context(user: &AuthenticatedUser, _state: &AppState) -> AgentCont
             permissions.insert(perm);
         }
     }
+    // The employee's active site assignment is resolved at request time
+    // (item 17): the agent knows WHERE the user works.
+    let site_id = state
+        .users_service
+        .find_by_id(user.user_id)
+        .await
+        .ok()
+        .and_then(|u| u.site_id);
     AgentContext {
         tenant_id: user.tenant_id,
         user_id: user.user_id,
         session_id: user.sid,
-        site_id: None,
+        site_id,
         value_stream_id: None,
         work_center_id: None,
         shift_id: None,

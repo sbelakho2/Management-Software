@@ -96,6 +96,8 @@ pub struct UserModel {
     /// Incremented on every password change/reset; older refresh tokens
     /// become invalid.
     pub credential_version: i64,
+    /// Site assignment (plant scope for the agent context).
+    pub site_id: Option<Uuid>,
     /// Last login timestamp.
     pub last_login_at: Option<DateTime<Utc>>,
     /// Record creation timestamp.

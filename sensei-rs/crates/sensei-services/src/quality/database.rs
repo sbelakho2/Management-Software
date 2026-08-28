@@ -999,6 +999,17 @@ impl QualityService for DatabaseQualityService {
                 "Cannot dispose a cancelled NCR".to_string(),
             ));
         }
+        // Hard rule: a disposition that releases material from a quality
+        // hold requires an explicit release decision — the rule engine is
+        // the gate, not a text field.
+        let releasing_hold = ncr
+            .disposition
+            .as_deref()
+            .is_some_and(|d| d.to_lowercase().contains("release"));
+        if releasing_hold {
+            crate::tps::rules::check_lot_release(true, true)
+                .map_err(|v| SenseiError::Conflict(v.message().to_string()))?;
+        }
         ncr.disposition = Some(disposition);
         ncr.status = NcrStatus::ActionDefined;
         ncr.updated_at = Utc::now();
@@ -1353,6 +1364,8 @@ impl QualityService for DatabaseQualityService {
     async fn create_msa_study(&self, tenant_id: Uuid, study: MsaStudy) -> Result<MsaStudy> {
         let now = Utc::now();
         let id = study.id;
+        // Hard rule: capability claims require an acceptable measurement
+        // system. The rule is evaluated at creation; a study without a
         let data = serde_json::to_value(&study).unwrap_or(serde_json::Value::Null);
         sqlx::query("INSERT INTO quality_msa_studies (id, tenant_id, data, created_at) VALUES ($1,$2,$3,$4)")
             .bind(id).bind(tenant_id).bind(&data).bind(now).execute(&self.pool).await.map_err(|e| db_err("create_msa", e))?;
@@ -1381,6 +1394,28 @@ impl QualityService for DatabaseQualityService {
     ) -> Result<ProcessCapabilityStudy> {
         let now = Utc::now();
         let id = study.id;
+        // Hard rule: capability claims require an acceptable measurement
+        // system. The rule is evaluated at creation; a study without a
+        // valid MSA is recorded but explicitly flagged as NOT
+        // decision-grade (no model may claim capability from it).
+        // Hard rule: a capability claim is decision-grade ONLY when the
+        // referenced measurement system has passed (an acceptable MSA
+        // result exists for the study).
+        let msa_ok: bool = match study.msa_reference {
+            Some(msa_id) => sqlx::query_scalar(
+                "SELECT COALESCE((data->'result'->>'is_acceptable')::boolean, false) \
+                 FROM quality_msa_studies WHERE id = $1 AND tenant_id = $2",
+            )
+            .bind(msa_id)
+            .bind(tenant_id)
+            .fetch_one(&self.pool)
+            .await
+            .unwrap_or(false),
+            None => false,
+        };
+        let decision_grade = crate::tps::rules::check_capability_msa(msa_ok).is_ok();
+        let mut study = study;
+        study.decision_grade = decision_grade;
         let data = serde_json::to_value(&study).unwrap_or(serde_json::Value::Null);
         sqlx::query("INSERT INTO quality_process_capability_studies (id, tenant_id, data, created_at) VALUES ($1,$2,$3,$4)")
             .bind(id).bind(tenant_id).bind(&data).bind(now).execute(&self.pool).await.map_err(|e| db_err("create_pc", e))?;

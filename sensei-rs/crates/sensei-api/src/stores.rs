@@ -307,6 +307,22 @@ pub struct KnowledgePack {
     pub source_url: Option<String>,
     pub version: String,
     pub is_published: bool,
+    /// Source authority (item 24/29): canonical TPS principle, corporate
+    /// policy, standard work, customer requirement, production fact,
+    /// historical case, employee note, AI hypothesis — NOT all equal in
+    /// retrieval weight.
+    #[serde(default)]
+    pub authority: String,
+    /// Document validity window; RAG only retrieves EFFECTIVE documents.
+    #[serde(default)]
+    pub effective_from: Option<DateTime<Utc>>,
+    #[serde(default)]
+    pub effective_to: Option<DateTime<Utc>>,
+    #[serde(default)]
+    pub supersedes: Option<Uuid>,
+    #[serde(default)]
+    pub status: String, // draft | effective | superseded | archived
+
     pub created_by: Uuid,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
@@ -450,6 +466,21 @@ pub struct TierMeeting {
     pub escalation_ids: Vec<Uuid>,
     #[serde(default)]
     pub action_ids: Vec<Uuid>,
+    /// The SAME issue escalates upward: the abnormality/issue id carried
+    /// from the lower tier (escalated_from) and where it was raised to
+    /// (escalated_to), with its action linkage.
+    #[serde(default)]
+    pub abnormality_id: Option<Uuid>,
+    #[serde(default)]
+    pub escalated_from: Option<Uuid>,
+    #[serde(default)]
+    pub escalated_to: Option<Uuid>,
+    #[serde(default)]
+    pub action_id: Option<Uuid>,
+    #[serde(default)]
+    pub owner: Option<Uuid>,
+    #[serde(default)]
+    pub deadline: Option<DateTime<Utc>>,
     pub created_by: Uuid,
     pub created_at: DateTime<Utc>,
 }

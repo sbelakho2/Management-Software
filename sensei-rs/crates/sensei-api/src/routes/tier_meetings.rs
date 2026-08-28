@@ -45,6 +45,12 @@ pub async fn schedule_tier_meeting(
         abnormality_ids: vec![],
         escalation_ids: vec![],
         action_ids: vec![],
+        abnormality_id: None,
+        escalated_from: None,
+        escalated_to: None,
+        action_id: None,
+        owner: None,
+        deadline: None,
         created_by: user.user_id,
         created_at: now,
     };

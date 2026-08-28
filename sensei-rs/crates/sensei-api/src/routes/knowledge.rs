@@ -7,7 +7,7 @@ use axum::{
     extract::{Path, Query, State},
     Json,
 };
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use sensei_auth::middleware::AuthenticatedUser;
 use sensei_core::error::{Result, SenseiError};
 use sensei_core::pagination::PaginatedResponse;
@@ -41,6 +41,19 @@ pub struct PackRequest {
     pub source_url: Option<String>,
     pub version: String,
     pub is_published: bool,
+    /// Source authority (canonical TPS principle, corporate policy,
+    /// standard work, customer requirement, production fact, historical
+    /// case, employee note, AI hypothesis).
+    #[serde(default)]
+    pub authority: Option<String>,
+    #[serde(default)]
+    pub effective_from: Option<DateTime<Utc>>,
+    #[serde(default)]
+    pub effective_to: Option<DateTime<Utc>>,
+    #[serde(default)]
+    pub supersedes: Option<Uuid>,
+    #[serde(default)]
+    pub status: Option<String>,
 }
 
 // ── Handlers ─────────────────────────────────────────────────────────────────
@@ -94,6 +107,17 @@ pub async fn create_pack(
         source_url: req.source_url,
         version: req.version,
         is_published: req.is_published,
+        authority: req.authority.unwrap_or_else(|| "employee note".to_string()),
+        effective_from: req.effective_from,
+        effective_to: req.effective_to,
+        supersedes: req.supersedes,
+        status: req.status.unwrap_or_else(|| {
+            if req.is_published {
+                "effective".to_string()
+            } else {
+                "draft".to_string()
+            }
+        }),
         created_by: user.user_id,
         created_at: now,
         updated_at: now,

@@ -1000,14 +1000,41 @@ async fn persist_changes_inner<T: Serialize>(
     }
 
     if !removed_ids.is_empty() {
-        sqlx::query(
-            "DELETE FROM entity_store WHERE tenant_id = $1 AND entity_type = $2 AND id = ANY($3)",
-        )
-        .bind(tenant_id)
-        .bind(entity_type)
-        .bind(removed_ids)
-        .execute(&mut *tx)
-        .await?;
+        // Delete with an optimistic predicate: the row is removed ONLY
+        // when it still matches the caller's snapshot (data = prev), so a
+        // stale replica can never delete a row another replica updated.
+        let mut delete_conflicts: Vec<Uuid> = Vec::new();
+        for id in removed_ids {
+            let Some(prev) = original_values.get(id) else {
+                // The caller's snapshot had no row for this id; a delete of
+                // a row that appeared since is a lost update.
+                delete_conflicts.push(*id);
+                continue;
+            };
+            let prev_json = serde_json::to_value(prev)
+                .map_err(|e| sqlx::Error::Protocol(format!("Serialization error: {e}")))?;
+            let deleted = sqlx::query(
+                "DELETE FROM entity_store \
+                 WHERE tenant_id = $1 AND entity_type = $2 AND id = $3 AND data = $4",
+            )
+            .bind(tenant_id)
+            .bind(entity_type)
+            .bind(id)
+            .bind(&prev_json)
+            .execute(&mut *tx)
+            .await?;
+            if deleted.rows_affected() == 0 {
+                delete_conflicts.push(*id);
+            }
+        }
+        if !delete_conflicts.is_empty() {
+            let ids: Vec<String> = delete_conflicts.iter().map(|id| id.to_string()).collect();
+            tx.rollback().await?;
+            return Err(sqlx::Error::Protocol(format!(
+                "Concurrent modification conflict on delete for entity ids: {}",
+                ids.join(", ")
+            )));
+        }
     }
 
     tx.commit().await?;
