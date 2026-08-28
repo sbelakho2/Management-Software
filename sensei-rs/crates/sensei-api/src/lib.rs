@@ -20,6 +20,7 @@ pub mod search_providers;
 pub mod services;
 pub mod state;
 pub mod stores;
+pub mod standard_work_repository;
 pub mod topology_repository;
 
 pub use error::*;

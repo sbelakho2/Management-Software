@@ -1151,11 +1151,24 @@ pub type NotificationTriggerStore = EntityStore<NotificationTrigger>;
 // ── Standard Work ────────────────────────────────────────────────────────────
 
 /// Status of a standard work document.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, sqlx::Type)]
+#[sqlx(rename_all = "lowercase")]
 pub enum SwStatus {
     Draft,
     Published,
     Archived,
+}
+
+impl std::str::FromStr for SwStatus {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "draft" => Ok(SwStatus::Draft),
+            "published" => Ok(SwStatus::Published),
+            "archived" => Ok(SwStatus::Archived),
+            other => Err(format!("Unknown standard-work status '{other}'")),
+        }
+    }
 }
 
 /// A single work step in a standard work document.

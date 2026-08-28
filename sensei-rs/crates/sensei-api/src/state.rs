@@ -63,6 +63,7 @@ use crate::middleware::session::SessionStore;
 use crate::middleware::shared_auth_stores::{TokenBlacklist, TokenKind, TokenStore};
 use crate::services::{sse::SseManager, ws::WebSocketManager};
 use crate::stores;
+use crate::standard_work_repository::StandardWorkRepository;
 use crate::topology_repository::TopologyRepository;
 
 /// Time-to-live for realtime connection tickets, in seconds.
@@ -504,6 +505,7 @@ pub struct AppState {
     pub notification_triggers: stores::NotificationTriggerStore,
     // ── Standard Work stores ────────────────────────────────────────────
     /// Standard work documents entity store.
+    pub standard_work_repo: StandardWorkRepository,
     pub standard_work_documents: stores::StandardWorkStore,
     /// Standard work document versions entity store.
     pub standard_work_versions: stores::StandardWorkVersionStore,
@@ -656,6 +658,7 @@ impl AppState {
         let value_streams = EntityStore::new("value_stream");
         let product_families = EntityStore::new("product_family");
         let notification_triggers = stores::new_store!("notification_trigger");
+        let standard_work_repo = StandardWorkRepository::new(None);
         let standard_work_documents = stores::new_store!("standard_work_document");
         let standard_work_versions = stores::new_store!("standard_work_version");
         let state_machine_definitions = stores::new_store!("state_machine_definition");
@@ -783,6 +786,7 @@ impl AppState {
             value_streams,
             product_families,
             notification_triggers,
+            standard_work_repo,
             standard_work_documents,
             standard_work_versions,
             state_machine_definitions,
@@ -895,6 +899,7 @@ impl AppState {
         self.value_streams = EntityStore::with_pool("value_stream", p.clone());
         self.product_families = EntityStore::with_pool("product_family", p.clone());
         self.notification_triggers = EntityStore::with_pool("notification_trigger", p.clone());
+        self.standard_work_repo = self.standard_work_repo.attach_pool(p.clone());
         self.standard_work_documents = EntityStore::with_pool("standard_work_document", p.clone());
         self.standard_work_versions = EntityStore::with_pool("standard_work_version", p.clone());
         self.state_machine_definitions =

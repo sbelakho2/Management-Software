@@ -94,34 +94,16 @@ pub async fn list_standard_work(
     Query(params): Query<ListStandardWorkParams>,
 ) -> Result<Json<PaginatedResponse<StandardWorkDocument>>> {
     user.require_permission("tps:standard-work:read")?;
-    let tenant_id = user.tenant_id;
-    let store = state.standard_work_documents.read(user.tenant_id).await;
-    let mut docs: Vec<StandardWorkDocument> = store
-        .values()
-        .filter(|d| d.tenant_id == tenant_id)
-        .filter(|d| {
-            if let Some(ref area) = params.area {
-                d.area == *area
-            } else {
-                true
-            }
-        })
-        .filter(|d| {
-            if let Some(ref process) = params.process {
-                d.process == *process
-            } else {
-                true
-            }
-        })
-        .filter(|d| {
-            if let Some(ref status) = params.status {
-                std::mem::discriminant(status) == std::mem::discriminant(&d.status)
-            } else {
-                true
-            }
-        })
-        .cloned()
-        .collect();
+    let mut docs = state
+        .standard_work_repo
+        .list(user.tenant_id)
+        .await
+        .map_err(SenseiError::Internal)?;
+    docs.retain(|d| {
+        (params.area.as_ref().is_none_or(|a| d.area == *a))
+            && (params.process.as_ref().is_none_or(|p| d.process == *p))
+            && (params.status.as_ref().is_none_or(|s| std::mem::discriminant(s) == std::mem::discriminant(&d.status)))
+    });
     docs.sort_by_key(|a| std::cmp::Reverse(a.updated_at));
     let result = PaginatedResponse::new(docs, params.page, params.per_page);
     Ok(Json(result))
@@ -161,9 +143,11 @@ pub async fn create_standard_work(
         created_at: now,
         updated_at: now,
     };
-    let mut store = state.standard_work_documents.write(tenant_id).await;
-    store.insert(doc.id, doc.clone());
-    store.persist().await?;
+    state
+        .standard_work_repo
+        .put(&doc, None)
+        .await
+        .map_err(SenseiError::Internal)?;
     Ok(Json(doc))
 }
 
@@ -175,11 +159,12 @@ pub async fn get_standard_work(
 ) -> Result<Json<StandardWorkDocument>> {
     user.require_permission("tps:standard-work:read")?;
     let tenant_id = user.tenant_id;
-    let store = state.standard_work_documents.read(user.tenant_id).await;
-    let doc = store
-        .values()
-        .find(|d| d.id == sw_id && d.tenant_id == tenant_id)
-        .cloned()
+    let doc = state
+        .standard_work_repo
+        .get(tenant_id, sw_id)
+        .await
+        .map_err(SenseiError::Internal)?
+        .filter(|d| d.tenant_id == tenant_id)
         .ok_or_else(|| SenseiError::NotFound(format!("Standard work {sw_id} not found")))?;
     Ok(Json(doc))
 }
@@ -193,21 +178,15 @@ pub async fn update_standard_work(
 ) -> Result<Json<StandardWorkDocument>> {
     user.require_permission("tps:standard-work:draft")?;
     let tenant_id = user.tenant_id;
-    let mut store = state.standard_work_documents.write(tenant_id).await;
-    let doc = store
-        .get_mut(&sw_id)
+    let mut doc = state
+        .standard_work_repo
+        .get(tenant_id, sw_id)
+        .await
+        .map_err(SenseiError::Internal)?
         .filter(|d| d.tenant_id == tenant_id)
         .ok_or_else(|| SenseiError::NotFound(format!("Standard work {sw_id} not found")))?;
-    // Optimistic concurrency: a stale edit (based on an older version) is
-    // rejected — never silently overwrite a newer change.
-    if let Some(expected) = req.expected_version {
-        if doc.version != expected {
-            return Err(SenseiError::Conflict(format!(
-                "VERSION_CONFLICT: document is at version {}, expected {expected}",
-                doc.version
-            )));
-        }
-    }
+    // Optimistic concurrency: a stale edit is rejected ATOMICALLY by the
+    // repository (the CAS lives in the SQL, not a read/check/write race).
     // An EFFECTIVE (or approved) revision is immutable: changes create a
     // new revision, they never mutate the controlled standard in place.
     if matches!(doc.status, SwStatus::Published) || doc.approved_by.is_some() {
@@ -257,11 +236,21 @@ pub async fn update_standard_work(
     }
     // approved_by / approved_at are intentionally NOT settable via PUT —
     // they are owned by the approve/reject endpoints.
-    doc.version += 1;
     doc.updated_at = Utc::now();
-    let result = doc.clone();
-    store.persist().await?;
-    Ok(Json(result))
+
+    let expected = req.expected_version;
+    state
+        .standard_work_repo
+        .put(&doc, expected)
+        .await
+        .map_err(|e| {
+            if e.contains("VERSION_CONFLICT") {
+                SenseiError::Conflict(e)
+            } else {
+                SenseiError::Internal(e)
+            }
+        })?;
+    Ok(Json(doc))
 }
 
 /// Approve a standard work document.
@@ -277,9 +266,11 @@ pub async fn approve_standard_work(
 ) -> Result<Json<StandardWorkDocument>> {
     user.require_permission("tps:standard-work:approve")?;
     let tenant_id = user.tenant_id;
-    let mut store = state.standard_work_documents.write(tenant_id).await;
-    let doc = store
-        .get_mut(&sw_id)
+    let mut doc = state
+        .standard_work_repo
+        .get(tenant_id, sw_id)
+        .await
+        .map_err(SenseiError::Internal)?
         .filter(|d| d.tenant_id == tenant_id)
         .ok_or_else(|| SenseiError::NotFound(format!("Standard work {sw_id} not found")))?;
     if doc.status != SwStatus::Draft {
@@ -292,9 +283,13 @@ pub async fn approve_standard_work(
     doc.approved_by = Some(user.user_id);
     doc.approved_at = Some(Utc::now());
     doc.updated_at = Utc::now();
-    let result = doc.clone();
-    store.persist().await?;
-    Ok(Json(result))
+
+    state
+        .standard_work_repo
+        .put(&doc, None)
+        .await
+        .map_err(SenseiError::Internal)?;
+    Ok(Json(doc))
 }
 
 /// Reject a standard work document.
@@ -309,9 +304,11 @@ pub async fn reject_standard_work(
 ) -> Result<Json<StandardWorkDocument>> {
     user.require_permission("tps:standard-work:review")?;
     let tenant_id = user.tenant_id;
-    let mut store = state.standard_work_documents.write(tenant_id).await;
-    let doc = store
-        .get_mut(&sw_id)
+    let mut doc = state
+        .standard_work_repo
+        .get(tenant_id, sw_id)
+        .await
+        .map_err(SenseiError::Internal)?
         .filter(|d| d.tenant_id == tenant_id)
         .ok_or_else(|| SenseiError::NotFound(format!("Standard work {sw_id} not found")))?;
     if doc.status != SwStatus::Draft {
@@ -325,9 +322,13 @@ pub async fn reject_standard_work(
     doc.approved_by = None;
     doc.approved_at = None;
     doc.updated_at = Utc::now();
-    let result = doc.clone();
-    store.persist().await?;
-    Ok(Json(result))
+
+    state
+        .standard_work_repo
+        .put(&doc, None)
+        .await
+        .map_err(SenseiError::Internal)?;
+    Ok(Json(doc))
 }
 
 /// Delete a standard work document.
@@ -338,18 +339,21 @@ pub async fn delete_standard_work(
 ) -> Result<Json<()>> {
     user.require_permission("tps:standard-work:draft")?;
     let tenant_id = user.tenant_id;
-    let mut store = state.standard_work_documents.write(tenant_id).await;
-    let exists = store
-        .get(&sw_id)
+    let mut doc = state
+        .standard_work_repo
+        .get(tenant_id, sw_id)
+        .await
+        .map_err(SenseiError::Internal)?
         .filter(|d| d.tenant_id == tenant_id)
-        .is_some();
-    if !exists {
-        return Err(SenseiError::NotFound(format!(
-            "Standard work {sw_id} not found"
-        )));
-    }
-    store.remove(&sw_id);
-    store.persist().await?;
+        .ok_or_else(|| SenseiError::NotFound(format!("Standard work {sw_id} not found")))?;
+    // Append-only: controlled documents are ARCHIVED, never erased.
+    doc.status = SwStatus::Archived;
+    doc.updated_at = Utc::now();
+    state
+        .standard_work_repo
+        .put(&doc, None)
+        .await
+        .map_err(SenseiError::Internal)?;
     Ok(Json(()))
 }
 
@@ -363,13 +367,11 @@ pub async fn list_versions(
 ) -> Result<Json<Vec<StandardWorkVersion>>> {
     user.require_permission("tps:standard-work:read")?;
     let tenant_id = user.tenant_id;
-    let store = state.standard_work_versions.read(user.tenant_id).await;
-    let mut versions: Vec<StandardWorkVersion> = store
-        .values()
-        .filter(|v| v.document_id == sw_id && v.tenant_id == tenant_id)
-        .cloned()
-        .collect();
-    versions.sort_by_key(|a| std::cmp::Reverse(a.version_number));
+    let versions = state
+        .standard_work_repo
+        .list_versions(tenant_id, sw_id)
+        .await
+        .map_err(SenseiError::Internal)?;
     Ok(Json(versions))
 }
 
@@ -383,15 +385,14 @@ pub async fn create_version(
     user.require_permission("tps:standard-work:draft")?;
     let tenant_id = user.tenant_id;
 
-    // Fetch the current document to snapshot
-    let doc = {
-        let store = state.standard_work_documents.read(user.tenant_id).await;
-        store
-            .values()
-            .find(|d| d.id == sw_id && d.tenant_id == tenant_id)
-            .cloned()
-            .ok_or_else(|| SenseiError::NotFound(format!("Standard work {sw_id} not found")))?
-    };
+    // Fetch the current document to snapshot (typed repository).
+    let doc = state
+        .standard_work_repo
+        .get(user.tenant_id, sw_id)
+        .await
+        .map_err(SenseiError::Internal)?
+        .filter(|d| d.tenant_id == tenant_id)
+        .ok_or_else(|| SenseiError::NotFound(format!("Standard work {sw_id} not found")))?;
 
     let new_version_number = doc.current_version + 1;
     let now = Utc::now();
@@ -407,20 +408,28 @@ pub async fn create_version(
         created_at: now,
     };
 
-    // Store the version
-    {
-        let mut store = state.standard_work_versions.write(user.tenant_id).await;
-        store.insert(version.id, version.clone());
-    }
+    // Store the version (typed repository — the version relationship is
+    // database-enforced).
+    state
+        .standard_work_repo
+        .put_version(&version)
+        .await
+        .map_err(SenseiError::Internal)?;
 
-    // Update the document's current version number
+    // Update the document's current version number.
+    if let Some(mut d) = state
+        .standard_work_repo
+        .get(tenant_id, sw_id)
+        .await
+        .map_err(SenseiError::Internal)?
     {
-        let mut store = state.standard_work_documents.write(tenant_id).await;
-        if let Some(d) = store.get_mut(&sw_id) {
-            d.current_version = new_version_number;
-            d.updated_at = now;
-        }
-        store.persist().await?;
+        d.current_version = new_version_number;
+        d.updated_at = now;
+        state
+            .standard_work_repo
+            .put(&d, None)
+            .await
+            .map_err(SenseiError::Internal)?;
     }
 
     Ok(Json(version))
@@ -437,11 +446,13 @@ pub async fn get_version(
 ) -> Result<Json<StandardWorkVersion>> {
     user.require_permission("tps:standard-work:read")?;
     let tenant_id = user.tenant_id;
-    let store = state.standard_work_versions.read(user.tenant_id).await;
-    let version = store
-        .values()
-        .find(|v| v.id == version_id && v.document_id == sw_id && v.tenant_id == tenant_id)
-        .cloned()
+    let version = state
+        .standard_work_repo
+        .list_versions(tenant_id, sw_id)
+        .await
+        .map_err(SenseiError::Internal)?
+        .into_iter()
+        .find(|v| v.id == version_id)
         .ok_or_else(|| SenseiError::NotFound(format!("Version {version_id} not found")))?;
     Ok(Json(version))
 }
