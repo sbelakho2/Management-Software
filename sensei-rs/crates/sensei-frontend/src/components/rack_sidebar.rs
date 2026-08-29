@@ -127,6 +127,11 @@ pub fn RackSidebar(
             icon: "◆",
         },
         NavItem {
+            label: "INTEGRATION",
+            path: "/integration",
+            icon: "⇄",
+        },
+        NavItem {
             label: "QUALITY",
             path: "/quality",
             icon: "■",

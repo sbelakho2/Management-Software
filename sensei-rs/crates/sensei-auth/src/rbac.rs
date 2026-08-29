@@ -471,6 +471,7 @@ impl RbacService {
                 "notifications:read",
                 "dashboard:read",
                 "knowledge:read",
+                "integration:import",
                 "learning:read",
                 "training:read",
                 "tasks:read",

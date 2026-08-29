@@ -4,6 +4,7 @@ pub mod dashboard;
 pub mod finance;
 pub mod flow_economics;
 pub mod hr;
+pub mod integration;
 pub mod learning_metrics;
 pub mod login;
 pub mod maintenance;

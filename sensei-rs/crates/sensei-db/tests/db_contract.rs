@@ -1207,3 +1207,104 @@ async fn graph_search_and_station_run_on_migrated_schema() {
     .expect("takt query");
     assert_eq!(takt, 60);
 }
+
+/// Legacy-system interoperability (entity map): the import must be
+/// IDEMPOTENT — the same legacy id maps to the SAME Sensei entity across
+/// repeated imports, and the integration_entity_map table enforces it.
+#[tokio::test]
+async fn integration_entity_map_is_idempotent() {
+    let Some(pool) = connect().await else { return };
+    sqlx::query(
+        r#"DO $$ DECLARE r RECORD; BEGIN
+             FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname = 'public') LOOP
+                 EXECUTE format('DROP TABLE IF EXISTS %I CASCADE', r.tablename);
+             END LOOP;
+         END $$"#,
+    )
+    .execute(&pool)
+    .await
+    .expect("drop all tables");
+    sensei_db::migrations::run_migrations(&pool)
+        .await
+        .expect("the ENTIRE migration chain must apply to an empty database");
+
+    type Uuid = uuid::Uuid;
+    let tenant_id = Uuid::new_v4();
+    sqlx::query("INSERT INTO tenants (id, name, slug) VALUES ($1, 'int', 'int')")
+        .bind(tenant_id)
+        .execute(&pool)
+        .await
+        .expect("tenant insert");
+
+    // Import the SAME legacy article twice — the entity map must resolve
+    // the second import to the SAME sensei id (no duplicate product).
+    let sensei_id = uuid::Uuid::new_v4();
+    for round in 0..2 {
+        let existing: Option<Uuid> = sqlx::query_scalar(
+            "SELECT sensei_id FROM integration_entity_map \
+             WHERE tenant_id = $1 AND legacy_system = 'starzerp' AND legacy_entity = 'article' \
+               AND legacy_id = '42'",
+        )
+        .bind(tenant_id)
+        .fetch_optional(&pool)
+        .await
+        .expect("map lookup");
+        let id = existing.unwrap_or(sensei_id);
+        if round == 0 {
+            sqlx::query(
+                "INSERT INTO integration_entity_map  (tenant_id, legacy_system, legacy_entity, legacy_id, sensei_entity, sensei_id)  VALUES ($1, 'starzerp', 'article', '42', 'product', $2)",
+            )
+            .bind(tenant_id)
+            .bind(id)
+            .execute(&pool)
+            .await
+            .expect("map insert");
+            sqlx::query(
+                "INSERT INTO products (id, tenant_id, product_number, name, unit_of_measure)  VALUES ($1, $2, 'PCB-100', 'Controller PCB', 'pcs')",
+            )
+            .bind(id)
+            .bind(tenant_id)
+            .execute(&pool)
+            .await
+            .expect("product insert");
+        } else {
+            // Second import: the mapping EXISTS and resolves to the SAME id.
+            let mapped: Option<Uuid> = sqlx::query_scalar(
+                "SELECT sensei_id FROM integration_entity_map \
+                 WHERE tenant_id = $1 AND legacy_system = 'starzerp' AND legacy_entity = 'article' \
+                   AND legacy_id = '42'",
+            )
+            .bind(tenant_id)
+            .fetch_optional(&pool)
+            .await
+            .expect("map lookup round 2");
+            assert_eq!(
+                mapped,
+                Some(id),
+                "second import must resolve to the same entity"
+            );
+        }
+    }
+    // Exactly ONE product exists for this tenant+sku — no duplicates.
+    let count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM products WHERE tenant_id = $1 AND product_number = 'PCB-100'",
+    )
+    .bind(tenant_id)
+    .fetch_one(&pool)
+    .await
+    .expect("product count");
+    assert_eq!(count, 1, "idempotent import must never duplicate");
+
+    // The UNIQUE constraint itself rejects a conflicting second mapping.
+    let duplicate = sqlx::query(
+        "INSERT INTO integration_entity_map  (tenant_id, legacy_system, legacy_entity, legacy_id, sensei_entity, sensei_id)  VALUES ($1, 'starzerp', 'article', '42', 'product', $2)",
+    )
+    .bind(tenant_id)
+    .bind(uuid::Uuid::new_v4())
+    .execute(&pool)
+    .await;
+    assert!(
+        duplicate.is_err(),
+        "the entity map UNIQUE must reject a second mapping for the same legacy id"
+    );
+}

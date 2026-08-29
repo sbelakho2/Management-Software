@@ -181,3 +181,36 @@ impl ProductionApi {
             .await
     }
 }
+
+// ── MRP planning (item 47: product search + exception-based output) ─────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ShortageExceptionDto {
+    pub product_id: String,
+    pub product_number: String,
+    pub product_name: String,
+    pub need_qty: i64,
+    pub available_qty: i64,
+    pub short_qty: i64,
+    pub need_date: String,
+    pub latest_release_date: String,
+    pub supplier_risk: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MrpPlanningDto {
+    pub product_id: String,
+    pub product_number: String,
+    pub product_name: String,
+    pub exceptions: Vec<ShortageExceptionDto>,
+    pub records: Vec<MrpRecordDto>,
+    pub demand: String,
+    pub generated_at: String,
+}
+
+pub async fn run_mrp_planning(client: &ApiClient, q: &str) -> Result<MrpPlanningDto, ApiError> {
+    let encoded = q.replace(' ', "%20");
+    client
+        .get(&format!("/api/v1/mrp/planning?q={encoded}"))
+        .await
+}

@@ -652,3 +652,40 @@ pub struct FinanceWasteDto {
 pub async fn get_finance_waste(client: &ApiClient) -> Result<FinanceWasteDto, ApiError> {
     client.get("/api/v1/tps/flow-economics/waste").await
 }
+
+// ── Legacy-system integration (interoperability) ────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IntegrationStatusDto {
+    pub legacy_systems: Vec<String>,
+    pub supported_entities: Vec<String>,
+    pub entity_map_count: i64,
+}
+
+pub async fn get_integration_status(client: &ApiClient) -> Result<IntegrationStatusDto, ApiError> {
+    client.get("/api/v1/integration/status").await
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ImportResultDto {
+    pub sensei_entity: String,
+    pub sensei_id: String,
+    pub updated: bool,
+    pub legacy_system: String,
+    pub legacy_id: String,
+}
+
+pub async fn import_legacy_record(
+    client: &ApiClient,
+    system: &str,
+    entity: &str,
+    legacy_id: &str,
+    payload: serde_json::Value,
+) -> Result<ImportResultDto, ApiError> {
+    client
+        .post(
+            &format!("/api/v1/integration/{system}/{entity}"),
+            &serde_json::json!({ "legacy_id": legacy_id, "payload": payload }),
+        )
+        .await
+}

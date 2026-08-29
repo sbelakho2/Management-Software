@@ -29,6 +29,7 @@ use crate::pages::{
     hr::{
         EmployeeListPage, HrPage, LeaveListPage, ReviewListPage, TimecardListPage, TrainingListPage,
     },
+    integration::IntegrationPage,
     learning_metrics::LearningMetricsPage,
     login::LoginPage,
     maintenance::{EquipmentListPage, MaintenancePage, PmScheduleListPage, WorkRequestListPage},
@@ -167,6 +168,7 @@ pub fn App() -> impl IntoView {
                     <Route path=path!("/team-lead") view=TeamLeadPage />
                     <Route path=path!("/tps/learning") view=LearningMetricsPage />
                     <Route path=path!("/tps/flow-economics") view=FlowEconomicsPage />
+                    <Route path=path!("/integration") view=IntegrationPage />
 
                     // Quality Management
                     <ParentRoute path=path!("/quality") view=QualityPage>

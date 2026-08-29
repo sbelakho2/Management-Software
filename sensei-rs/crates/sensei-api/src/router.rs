@@ -2046,6 +2046,18 @@ pub fn build_router(state: AppState) -> Router {
             get(routes::station::get_interval_board),
         )
         .route(
+            "/api/v1/mrp/planning",
+            get(routes::mrp_planning::run_mrp_planning),
+        )
+        .route(
+            "/api/v1/integration/status",
+            get(routes::integration::integration_status),
+        )
+        .route(
+            "/api/v1/integration/{system}/{entity}",
+            post(routes::integration::import_record),
+        )
+        .route(
             "/api/v1/lsw/standards/{standard_id}",
             get(routes::lsw::get_lsw_standard)
                 .put(routes::lsw::update_lsw_standard)

@@ -20,6 +20,7 @@ pub mod contacts;
 pub mod export;
 pub mod finance;
 pub mod hr;
+pub mod integration;
 pub mod maintenance;
 pub mod notifications;
 pub mod ops;

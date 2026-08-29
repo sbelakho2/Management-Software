@@ -1,0 +1,17 @@
+[package]
+name = "sensei-bridge"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Legacy-system sync bridge: pulls starzERP (Symfony/MySQL) and CRM-v2 (Symfony/MySQL) records and imports them into Sensei through the versioned import API (idempotent entity map)."
+
+[dependencies]
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { workspace = true, features = ["full"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+sqlx = { workspace = true, features = ["runtime-tokio", "mysql", "chrono", "json"] }
