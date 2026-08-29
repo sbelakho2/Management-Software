@@ -65,6 +65,16 @@ web-sys = { version = "0.3", features = [
     "StorageEvent",
     "Window",
     "WindowClient",
+    "Document",
+    "Element",
+    "HtmlElement",
+    "KeyboardEvent",
+    "NodeList",
+    "MouseEvent",
+    "HtmlDialogElement",
+    "MessageEvent",
+    "WebSocket",
+    "BinaryType",
 ] }
 log = "0.4"
 once_cell.workspace = true

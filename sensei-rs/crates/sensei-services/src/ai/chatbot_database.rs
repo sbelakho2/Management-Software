@@ -308,19 +308,37 @@ impl DatabaseChatbotService {
                         .join("\n")
                 });
 
+                // Item 27/42: TPS reasoning order — observation FIRST, never
+                // a jump from prediction straight to a countermeasure. The
+                // model output is a HYPOTHESIS, not a verified fact; the
+                // reply asks the questions that distinguish causes before
+                // any recommendation is offered.
+                let rate = prediction.predicted_defect_rate.unwrap_or(0.0);
+                let cpk = prediction.predicted_cpk.unwrap_or(0.0);
                 let mut response = format!(
-                    "Based on AI analysis, the predicted defect rate is {:.1}% with a CpK of {:.2}. ",
-                    prediction.predicted_defect_rate.unwrap_or(0.0) * 100.0,
-                    prediction.predicted_cpk.unwrap_or(0.0),
+                    "A model estimate suggests a defect rate of {:.1}% (CpK {:.2}). \
+                     This is a HYPOTHESIS about the current condition, not a \
+                     verified measurement. Before acting on it:",
+                    rate * 100.0,
+                    cpk,
                 );
-
-                if prediction.predicted_defect_rate.unwrap_or(0.0) > 0.05 {
+                response.push_str(
+                    "  1. What is the CURRENT STANDARD for this parameter set — and is \
+                       the process actually running to it?\n\
+                       2. What was OBSERVED directly at the process (measurements, \
+                       samples, timestamps), not inferred from the model?\n\
+                       3. When and where did the deviation first appear?\n\
+                       4. What changed immediately before it (material, method, \
+                       machine, operator, setup)?\n\
+                       5. Which possible cause can we TEST, and what result would \
+                       confirm or refute it?",
+                );
+                if rate > 0.05 {
                     response.push_str(
-                        "I recommend reviewing the suggested process parameters for improvement. ",
-                    );
-                } else {
-                    response.push_str(
-                        "The process appears to be performing within acceptable limits. ",
+                        "The estimate is above the 5% threshold — worth a \
+                         CONTAINMENT step while the observation questions above \
+                         are answered: contain the risk to the customer first, \
+                         then compare actual vs standard at the process.",
                     );
                 }
 
@@ -346,19 +364,18 @@ impl DatabaseChatbotService {
                 .predict_maintenance(tenant_id, equipment_id)
                 .await
             {
-                let risk_emoji = match maintenance.risk_level.as_str() {
-                    "high" | "critical" => "⚠️",
-                    "medium" => "⚡",
-                    _ => "✅",
-                };
-
                 return Some(format!(
-                    "{risk_emoji} AI Maintenance Analysis:\n\
+                    "Maintenance model estimate (HYPOTHESIS, not a verified fact):\n\
                      - Failure probability: {:.1}%\n\
                      - Estimated remaining life: {}\n\
                      - Risk level: {}\n\
-                     - Recommended maintenance date: {}\n\
-                     \nSuggested actions:\n{}",
+                     - Model-suggested maintenance date: {}\n\
+                     \nBefore acting, compare with the actual condition: is the \
+                     equipment running to its standard, what was directly observed \
+                     (noise, vibration, temperature, output trend), and what changed \
+                     since the last maintenance? Then decide whether the suggested \
+                     actions below are supported by the observation.\n\
+                     \nCandidate actions to evaluate:\n{}",
                     maintenance.failure_probability * 100.0,
                     maintenance
                         .estimated_remaining_life_hours
@@ -408,8 +425,13 @@ impl DatabaseChatbotService {
                         .collect();
 
                     return Some(format!(
-                        "AI has detected the following anomalies:\n{}\n\n\
-                         I recommend investigating these findings and taking corrective action.",
+                        "The system flags the following anomalies as HYPOTHESES, not \
+                         verified facts:\n{}\n\n\
+                         For each one, the useful next step is to go see the actual \
+                         condition: what is the standard, what was observed, what \
+                         changed, and what evidence would confirm or refute the \
+                         hypothesis? A countermeasure chosen without that comparison \
+                         is a guess.",
                         anomaly_reports.join("\n"),
                     ));
                 }

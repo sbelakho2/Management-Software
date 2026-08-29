@@ -725,3 +725,259 @@ async fn lsw_occurrence_yields_at_most_one_audit() {
         .expect("audit detail");
     assert!(detail.is_some(), "the listed audit must resolve on detail");
 }
+
+/// MRP fixtures (audit gate "MRP fixtures"): a KNOWN cyclic BOM must be
+/// REJECTED (not silently truncated) and a two-level BOM must phase the
+/// component need date BACKWARD from the finished good's due date.
+#[tokio::test]
+async fn mrp_rejects_cycles_and_phases_dates_backward() {
+    let Some(pool) = connect().await else { return };
+    sqlx::query(
+        r#"DO $$ DECLARE r RECORD; BEGIN
+             FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname = 'public') LOOP
+                 EXECUTE format('DROP TABLE IF EXISTS %I CASCADE', r.tablename);
+             END LOOP;
+         END $$"#,
+    )
+    .execute(&pool)
+    .await
+    .expect("drop all tables");
+    sensei_db::migrations::run_migrations(&pool)
+        .await
+        .expect("the ENTIRE migration chain must apply to an empty database");
+
+    use sensei_services::production::ProductionService;
+    let service = sensei_services::production::DatabaseProductionService::new(pool.clone());
+    let tenant_id = uuid::Uuid::new_v4();
+    let a = uuid::Uuid::new_v4();
+    let b = uuid::Uuid::new_v4();
+    let c = uuid::Uuid::new_v4();
+    sqlx::query("INSERT INTO tenants (id, name, slug) VALUES ($1, 'mrp', 'mrp')")
+        .bind(tenant_id)
+        .execute(&pool)
+        .await
+        .expect("tenant insert");
+    for (id, num, name, lead) in [
+        (a, "A", "Assembly A", 5),
+        (b, "B", "Component B", 2),
+        (c, "C", "Raw C", 0),
+    ] {
+        sqlx::query(
+            "INSERT INTO products (id, tenant_id, product_number, name, unit_of_measure, lead_time_days) \
+             VALUES ($1, $2, $3, $4, 'pcs', $5)",
+        )
+        .bind(id)
+        .bind(tenant_id)
+        .bind(num)
+        .bind(name)
+        .bind(lead)
+        .execute(&pool)
+        .await
+        .expect("product insert");
+    }
+
+    // ── Cycle fixture: A -> B -> A must be REJECTED ──
+    sqlx::query(
+        "INSERT INTO bom_items (id, tenant_id, parent_product_id, component_product_id, quantity, unit_of_measure) \
+         VALUES ($1,$2,$3,$4,1,'pcs'), ($5,$2,$4,$3,1,'pcs')",
+    )
+    .bind(uuid::Uuid::new_v4())
+    .bind(tenant_id)
+    .bind(a)
+    .bind(b)
+    .bind(uuid::Uuid::new_v4())
+    .execute(&pool)
+    .await
+    .expect("cyclic BOM insert");
+    let cycle_result = service.run_mrp(tenant_id, a).await;
+    assert!(
+        cycle_result.is_err(),
+        "a cyclic BOM must be rejected, never silently truncated"
+    );
+    sqlx::query("DELETE FROM bom_items WHERE tenant_id = $1")
+        .bind(tenant_id)
+        .execute(&pool)
+        .await
+        .expect("clear BOM");
+
+    // ── Time-phasing fixture: A (lead 5) needs B (lead 2) ──
+    sqlx::query(
+        "INSERT INTO bom_items (id, tenant_id, parent_product_id, component_product_id, quantity, unit_of_measure) \
+         VALUES ($1,$2,$3,$4,2,'pcs')",
+    )
+    .bind(uuid::Uuid::new_v4())
+    .bind(tenant_id)
+    .bind(a)
+    .bind(b)
+    .execute(&pool)
+    .await
+    .expect("BOM insert");
+    // A work order due in 10 days establishes the demand timing.
+    let wo_id = uuid::Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO work_orders (id, tenant_id, wo_number, product_id, product_name, quantity, status, scheduled_end) \
+         VALUES ($1,$2,'WO-MRP',$3,'Assembly A',100,'released',$4)",
+    )
+    .bind(wo_id)
+    .bind(tenant_id)
+    .bind(a)
+    .bind(chrono::Utc::now() + chrono::Duration::days(10))
+    .execute(&pool)
+    .await
+    .expect("WO insert");
+
+    let records = service.run_mrp(tenant_id, a).await.expect("MRP must run");
+    let a_rec = records
+        .iter()
+        .find(|r| r.product_id == a)
+        .expect("A record");
+    let b_rec = records
+        .iter()
+        .find(|r| r.product_id == b)
+        .expect("B record");
+    // A: due 10 days out, release 5 days earlier (its own lead).
+    assert!(
+        (a_rec.time_phase_end - chrono::Utc::now()).num_days() >= 9,
+        "A due date must track the work-order demand, got {:?}",
+        a_rec.time_phase_end
+    );
+    assert!(
+        (a_rec.time_phase_end - a_rec.time_phase_start).num_days() >= 4,
+        "A release must be offset back by A's lead time"
+    );
+    // B: needed when A starts — strictly EARLIER than A's end, offset by
+    // A's lead; never an arbitrary now+30d default (item 17).
+    assert!(
+        b_rec.time_phase_end <= a_rec.time_phase_start,
+        "component B must be needed no later than A's release, got B={} A_start={}",
+        b_rec.time_phase_end,
+        a_rec.time_phase_start
+    );
+    assert_eq!(b_rec.gross_requirement, 200, "2 per A × 100");
+}
+
+/// RAG golden set (audit gate "RAG golden set / RAG authority"): the
+/// effective-window + ACL prefilter runs against a real database, and a
+/// SUPERSEDED pack with higher authority must NEVER surface over an
+/// effective one.
+#[tokio::test]
+async fn rag_golden_effective_filter_and_authority_order() {
+    let Some(pool) = connect().await else { return };
+    sqlx::query(
+        r#"DO $$ DECLARE r RECORD; BEGIN
+             FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname = 'public') LOOP
+                 EXECUTE format('DROP TABLE IF EXISTS %I CASCADE', r.tablename);
+             END LOOP;
+         END $$"#,
+    )
+    .execute(&pool)
+    .await
+    .expect("drop all tables");
+    sensei_db::migrations::run_migrations(&pool)
+        .await
+        .expect("the ENTIRE migration chain must apply to an empty database");
+
+    let tenant_id = uuid::Uuid::new_v4();
+    let supplier_roles = vec!["supplier".to_string()];
+    sqlx::query("INSERT INTO tenants (id, name, slug) VALUES ($1, 'rag', 'rag')")
+        .bind(tenant_id)
+        .execute(&pool)
+        .await
+        .expect("tenant insert");
+
+    // A superseded high-authority pack and an effective employee-note pack
+    // both contain the same keyword.
+    let superseded_id = uuid::Uuid::new_v4();
+    let effective_id = uuid::Uuid::new_v4();
+    for (id, status, authority) in [
+        (superseded_id, "superseded", "tps_canonical"),
+        (effective_id, "effective", "employee_note"),
+    ] {
+        sqlx::query(
+            "INSERT INTO entity_store (tenant_id, entity_type, id, data) \
+             VALUES ($1, 'knowledge_pack', $2, $3)",
+        )
+        .bind(tenant_id)
+        .bind(id)
+        .bind(serde_json::json!({
+            "title": "changeover standard",
+            "status": status,
+            "authority": authority,
+        }))
+        .execute(&pool)
+        .await
+        .expect("knowledge pack insert");
+        sensei_api::services::hybrid_retrieval::upsert_embedding(
+            &pool,
+            tenant_id,
+            "knowledge_pack",
+            id,
+            "changeover standard",
+            "changeover sequence for the press line",
+        )
+        .await
+        .expect("embedding upsert");
+    }
+
+    let hits = sensei_api::services::hybrid_retrieval::hybrid_search(
+        &pool,
+        tenant_id,
+        "changeover press line",
+        &supplier_roles,
+        10,
+    )
+    .await
+    .expect("hybrid search must execute against a real database");
+    // The superseded pack must NOT appear — effective filter before ranking.
+    assert!(
+        !hits.iter().any(|h| h.document_id == superseded_id),
+        "superseded knowledge must never surface: {hits:?}"
+    );
+    assert!(
+        hits.iter().any(|h| h.document_id == effective_id),
+        "the effective pack must be retrievable"
+    );
+
+    // Authority order: an effective tps_canonical pack outranks an
+    // effective employee-note pack for the same query.
+    let canonical_id = uuid::Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO entity_store (tenant_id, entity_type, id, data) \
+         VALUES ($1, 'knowledge_pack', $2, $3)",
+    )
+    .bind(tenant_id)
+    .bind(canonical_id)
+    .bind(serde_json::json!({
+        "title": "changeover standard",
+        "status": "effective",
+        "authority": "tps_canonical",
+    }))
+    .execute(&pool)
+    .await
+    .expect("canonical pack insert");
+    sensei_api::services::hybrid_retrieval::upsert_embedding(
+        &pool,
+        tenant_id,
+        "knowledge_pack",
+        canonical_id,
+        "changeover standard",
+        "changeover sequence for the press line",
+    )
+    .await
+    .expect("canonical embedding");
+    let hits = sensei_api::services::hybrid_retrieval::hybrid_search(
+        &pool,
+        tenant_id,
+        "changeover press line",
+        &supplier_roles,
+        10,
+    )
+    .await
+    .expect("hybrid search");
+    let canonical_rank = hits.iter().position(|h| h.document_id == canonical_id);
+    let note_rank = hits.iter().position(|h| h.document_id == effective_id);
+    assert!(
+        canonical_rank.is_some() && note_rank.is_some() && canonical_rank < note_rank,
+        "tps_canonical must outrank employee_note: {hits:?}"
+    );
+}

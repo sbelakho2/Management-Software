@@ -72,7 +72,7 @@
   --rams-space-5:  20px;
   --rams-space-6:  24px;
   --rams-space-8:  32px;
-  --rams-space-10: 40px;
+  --rams-space-10: 48px;
   --rams-space-12: 48px;
   --rams-space-16: 64px;
 
@@ -88,9 +88,9 @@
      Font Sizes (exact pixel values, no fractional)
      -------------------------------------------------------------------- */
   --rams-text-3xs: 8px;
-  --rams-text-2xs: 10px;
-  --rams-text-xs:  12px;
-  --rams-text-sm:  14px;
+  --rams-text-2xs: 12px;
+  --rams-text-xs:  13px;
+  --rams-text-sm:  15px;
   --rams-text-base: 16px;
   --rams-text-lg:  18px;
   --rams-text-xl:  20px;
@@ -131,10 +131,10 @@
     --rams-module:  #252525;
     --rams-panel:   #2D2D2D;
     --rams-line:    #404040;
-    --rams-muted:   #666666;
+    --rams-muted:   #8F8F8F;
 
     --rams-foreground:      #F2F2F2;
-    --rams-foreground-muted: #999999;
+    --rams-foreground-muted: #ADADAD;
 
     --rams-pressed:  inset 0 1px 2px rgba(0, 0, 0, 0.3);
     --rams-border:   inset 0 0 0 1px rgba(255, 255, 255, 0.08);
@@ -1552,4 +1552,36 @@ a:hover {
 .andon-light--inactive {
   background-color: var(--rams-muted);
   opacity: 0.2;
+}
+
+/* ==========================================================================
+   Responsive behavior (item 48): gemba use is tablet/handheld-first — the
+   fixed 240px sidebar and four-column grids must reshape on smaller
+   viewports instead of overflowing.
+   ========================================================================== */
+
+@media (max-width: 1100px) {
+  .rams-grid--cols-4 { grid-template-columns: repeat(2, 1fr); }
+  .rams-grid--cols-3 { grid-template-columns: repeat(2, 1fr); }
+  .racksidebar { width: 200px; }
+}
+
+@media (max-width: 900px) {
+  .racksidebar { width: 64px; }
+  .racksidebar-item-label { display: none; }
+  .racksidebar-station-id { display: none; }
+  .rams-grid--cols-4 { grid-template-columns: 1fr; }
+  .rams-grid--cols-3 { grid-template-columns: 1fr; }
+  .rams-grid--cols-2 { grid-template-columns: 1fr; }
+  .rams-table-container { overflow-x: auto; }
+  .rams-btn--md { height: 56px; font-size: var(--rams-text-sm); }
+}
+
+@media (max-width: 640px) {
+  .rams-status-bar { flex-direction: column; gap: var(--rams-space-2); }
+  .rams-p-4 { padding: var(--rams-space-3); }
+  /* Touch targets for station/handheld use (item 52): never below 44px. */
+  .rams-btn, .rams-table-sort { min-height: 44px; }
+  .rams-input, select.rams-input { min-height: 44px; font-size: 16px; }
+  .metric-display-value { font-size: 28px; }
 }

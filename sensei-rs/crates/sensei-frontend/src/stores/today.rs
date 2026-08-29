@@ -1,16 +1,15 @@
-//! Today screen reactive store.
-//!
-//! Mirrors the Zustand [`today.ts`](frontend/src/stores/today.ts) store.
+//! Today screen reactive store — item 30: consumes the REAL backend
+//! `/api/v1/today` snapshot (server-scoped, site-timezone).
 
 use crate::api::client::ApiClient;
-use crate::api::today::{TodayApi, TodayScreenData};
+use crate::api::today::{get_today_snapshot, TodaySnapshot};
 use leptos::prelude::*;
 
-/// Reactive store for today screen data.
+/// Reactive store for the Today snapshot.
 #[derive(Debug, Clone)]
 pub struct TodayStore {
-    /// The fetched today screen data.
-    pub data: RwSignal<Option<TodayScreenData>>,
+    /// The fetched Today snapshot.
+    pub data: RwSignal<Option<TodaySnapshot>>,
     /// Whether a fetch is in flight.
     pub loading: RwSignal<bool>,
     /// Last error, if any.
@@ -26,16 +25,11 @@ impl TodayStore {
         }
     }
 
-    /// Fetch the today screen for a given user.
-    pub async fn fetch_today_screen(
-        &self,
-        client: &ApiClient,
-        user_id: &str,
-        user_name: Option<&str>,
-    ) {
+    /// Fetch the server-generated Today snapshot.
+    pub async fn fetch_today(&self, client: &ApiClient) {
         self.loading.set(true);
         self.error.set(None);
-        match TodayApi::get_today(client, user_id, user_name).await {
+        match get_today_snapshot(client).await {
             Ok(data) => {
                 self.data.set(Some(data));
             }

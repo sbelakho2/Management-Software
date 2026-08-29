@@ -55,6 +55,7 @@ pub mod tier_meetings;
 pub mod today;
 pub mod topology;
 pub mod tps;
+pub mod tps_signals;
 pub mod training;
 pub mod training_matrix;
 pub mod users;

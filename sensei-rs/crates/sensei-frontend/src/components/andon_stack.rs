@@ -32,8 +32,27 @@ pub fn AndonStack(
     #[prop(optional)]
     label: String,
 ) -> impl IntoView {
+    // Item 56: severity precedence is red > yellow > green — when multiple
+    // conditions are active, the MOST severe one defines the status (the
+    // old green-wins-if-first chain reported NORMAL for a stopped line).
+    let condition = if red {
+        "STOP"
+    } else if yellow {
+        "CAUTION"
+    } else if green {
+        "NORMAL"
+    } else {
+        "INACTIVE"
+    };
+    // The condition is EXPLICIT VISIBLE TEXT, not color alone (item 56) —
+    // color-vision deficiency and rapid floor scanning both rely on it.
+    let status_line = if condition == "INACTIVE" {
+        label.clone()
+    } else {
+        format!("{condition} — {}", label.clone())
+    };
     view! {
-        <div class="andon-stack" role="status" aria-label=format!("Andon status: {}", if green { "normal" } else if yellow { "caution" } else if red { "stop" } else { "inactive" })>
+        <div class="andon-stack" role="status" aria-label=format!("Andon status: {condition}")>
             <div
                 class=format!(
                     "andon-light {}",
@@ -55,8 +74,8 @@ pub fn AndonStack(
                 )
                 title="Normal"
             ></div>
-            {if !label.is_empty() {
-                view! { <span class="dymo-label">{label.clone()}</span> }.into_any()
+            {if !status_line.is_empty() {
+                view! { <span class="dymo-label">{status_line}</span> }.into_any()
             } else {
                 ().into_any()
             }}

@@ -41,11 +41,70 @@ pub fn RackSidebar(
     let location = use_location();
     let pathname = move || location.pathname.get();
 
+    // Item 67: the shell leads with WORK, not departments — Today first,
+    // then the TPS work surfaces; departments remain secondary filters.
+    // Item 69: operator-facing surfaces (TODAY, WORK, ABNORMALITIES) are
+    // visible to everyone; finance/master-data items are role-gated.
     let nav_items = vec![
         NavItem {
-            label: "DASHBOARD",
-            path: "/dashboard",
-            icon: "●",
+            label: "TODAY",
+            path: "/today",
+            icon: "◉",
+        },
+        NavItem {
+            label: "WORK",
+            path: "/tps/standard-work",
+            icon: "▣",
+        },
+        NavItem {
+            label: "LSW",
+            path: "/tps/lsw",
+            icon: "✓",
+        },
+        NavItem {
+            label: "ABNORMALITIES",
+            path: "/ops/andons",
+            icon: "▲",
+        },
+        NavItem {
+            label: "TIER MEETINGS",
+            path: "/tps/tier-meetings",
+            icon: "▤",
+        },
+        NavItem {
+            label: "OBEYA",
+            path: "/tps/obeya",
+            icon: "▦",
+        },
+        NavItem {
+            label: "KANBAN",
+            path: "/tps/kanban",
+            icon: "▤",
+        },
+        NavItem {
+            label: "WORK CENTERS",
+            path: "/tps/work-centers",
+            icon: "◆",
+        },
+        NavItem {
+            label: "TOPOLOGY",
+            path: "/tps/topology",
+            icon: "⬢",
+        },
+        NavItem {
+            label: "TRAINING",
+            path: "/tps/training",
+            icon: "✦",
+        },
+        NavItem {
+            label: "CTQ",
+            path: "/tps/ctq",
+            icon: "◆",
+        },
+        NavItem {
+            label: "AGENT",
+            path: "/agent",
+            icon: "◆",
         },
         NavItem {
             label: "QUALITY",

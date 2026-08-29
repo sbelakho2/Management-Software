@@ -38,16 +38,16 @@ pub fn Alert(
 ) -> impl IntoView {
     // Each colour helper captures its own clone of `level` to avoid
     // moving a shared closure into two places.
-    let get_accent = {
-        let level = level.clone();
-        move || match level.clone().unwrap_or_else(|| "info".to_string()).as_str() {
-            "success" => "var(--rams-green)",
-            "warning" => "var(--rams-orange)",
-            "error" => "var(--rams-red)",
-            _ => "var(--rams-steel)",
-        }
+    let level_accent = level.clone();
+    let level_dot = level.clone();
+    let level_role = level.clone();
+    let get_accent = move || match level_accent.unwrap_or_else(|| "info".to_string()).as_str() {
+        "success" => "var(--rams-green)",
+        "warning" => "var(--rams-orange)",
+        "error" => "var(--rams-red)",
+        _ => "var(--rams-steel)",
     };
-    let get_dot = move || match level.clone().unwrap_or_else(|| "info".to_string()).as_str() {
+    let get_dot = move || match level_dot.unwrap_or_else(|| "info".to_string()).as_str() {
         "success" => "var(--rams-green)",
         "warning" => "var(--rams-orange)",
         "error" => "var(--rams-red)",
@@ -67,10 +67,16 @@ pub fn Alert(
 
     let accent = move || get_accent();
     let dot = move || get_dot();
+    // Item 57: assertive `alert` is reserved for errors that truly require
+    // immediate attention; success/info/warning are polite `status` so
+    // screen-reader users are not interrupted by routine messages.
+    let level_str = level_role.unwrap_or_else(|| "info".to_string());
+    let is_error = level_str.eq("error");
+    let role = if is_error { "alert" } else { "status" };
 
     view! {
         <div
-            role="alert"
+            role=role
             hidden=move || !visible.get()
             style=format!(
                 "display: flex; align-items: center; gap: var(--rams-space-3); \

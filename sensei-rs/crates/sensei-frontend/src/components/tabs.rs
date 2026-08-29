@@ -42,8 +42,37 @@ pub fn Tabs(
     #[prop(into)]
     active_tab: RwSignal<String>,
 ) -> impl IntoView {
+    // Item 55: roving tabindex + Arrow/Home/End keyboard navigation
+    // (W3C tabs pattern) — the tablist is focusable and the handlers
+    // move the active tab with the arrow keys.
+    let tab_ids: Vec<String> = tabs.iter().map(|t| t.id.clone()).collect();
+    let handle_keydown = move |ev: web_sys::KeyboardEvent| {
+        let current = active_tab.get_untracked();
+        let Some(pos) = tab_ids.iter().position(|id| id == &current) else {
+            return;
+        };
+        let next = match ev.key().as_str() {
+            "ArrowRight" => Some((pos + 1) % tab_ids.len()),
+            "ArrowLeft" => Some((pos + tab_ids.len() - 1) % tab_ids.len()),
+            "Home" => Some(0),
+            "End" => Some(tab_ids.len() - 1),
+            _ => None,
+        };
+        if let Some(idx) = next {
+            if let Some(id) = tab_ids.get(idx) {
+                active_tab.set(id.clone());
+                ev.prevent_default();
+            }
+        }
+    };
     view! {
-        <nav class="rams-flex" style="border-bottom: 1px solid var(--rams-line);" role="tablist" aria-label="Tab navigation">
+        <nav
+            class="rams-flex"
+            style="border-bottom: 1px solid var(--rams-line);"
+            role="tablist"
+            aria-label="Tab navigation"
+            on:keydown=handle_keydown
+        >
             {tabs.iter().map(|tab| {
                 let tab_id = tab.id.clone();
                 let tab_label = tab.label.clone();
@@ -52,6 +81,7 @@ pub fn Tabs(
                 let tab_id_for_id = tab_id.clone();
                 let tab_id_for_click = tab_id.clone();
                 let is_active = move || active_tab.get() == tab_id_for_active;
+                let is_active_for_tabindex = is_active.clone();
                 let is_active_for_style = is_active.clone();
                 let tab_label_upper = tab_label.to_uppercase();
 
@@ -79,6 +109,9 @@ pub fn Tabs(
                                 );
                             }
                             styles
+                        }
+                        tabindex=move || {
+                            if is_active_for_tabindex() { "0".to_string() } else { "-1".to_string() }
                         }
                         on:click=move |_| {
                             active_tab.set(tab_id_for_click.clone());

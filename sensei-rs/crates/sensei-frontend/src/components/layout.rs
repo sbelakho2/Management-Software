@@ -56,6 +56,10 @@ pub fn RootLayout(
                     <span class="rams-status-text" title="Application infrastructure only — process status comes from live data">"CONNECTED"</span>
                 </div>
                 <div class="rams-status-bar-right">
+                    // Item 63: the realtime connection state is part of the
+                    // chrome — a disconnected socket is EXPLICIT, never a
+                    // quiet healthy system.
+                    <RealtimeStatus />
                     <span class="rams-status-text">{username_footer}</span>
                 </div>
             </footer>
@@ -215,4 +219,29 @@ pub fn ProtectedShell() -> impl IntoView {
             }.into_any(),
         }}
     }
+}
+
+/// Realtime connection indicator (item 63): CONNECTED / RECONNECTING with
+/// the pushed Andon count — the socket state is part of the chrome.
+#[component]
+fn RealtimeStatus() -> impl IntoView {
+    let realtime = use_context::<crate::stores::realtime::RealtimeStore>();
+    let Some(store) = realtime else {
+        return view! { <span class="rams-status-text">""</span> }.into_any();
+    };
+    let connected = store.connected;
+    let count = store.andon_push_count;
+    let error = store.error;
+    view! {
+        <span class="rams-status-text" title=move || error.get().unwrap_or_default()>
+            {move || {
+                if connected.get() {
+                    format!("LIVE · {} EVENTS", count.get())
+                } else {
+                    "SYNC …".to_string()
+                }
+            }}
+        </span>
+    }
+    .into_any()
 }

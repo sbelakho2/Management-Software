@@ -19,5 +19,6 @@ pub mod rfq;
 pub mod supply_chain;
 pub mod task;
 pub mod today;
+pub mod tps;
 
 pub use client::ApiClient;

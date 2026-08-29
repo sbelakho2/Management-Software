@@ -79,12 +79,17 @@ pub fn IndustrialButton(
         ButtonSize::Lg => "rams-btn--lg",
     };
 
+    // Item 53: an empty explicit aria-label can ERASE the visible child
+    // text as the accessible name — when no override is provided the
+    // attribute is NOT rendered at all (None), so the visible text remains
+    // the accessible name.
+    let aria = aria_label.clone();
     view! {
         <button
             type="button"
             class=format!("rams-btn {} {} {}", variant_class, size_class, class)
             disabled=disabled
-            aria-label=aria_label.unwrap_or_default()
+            attr:aria-label=aria
             on:click=move |_| { if let Some(ref cb) = on_click { cb() } }
         >
             {children()}

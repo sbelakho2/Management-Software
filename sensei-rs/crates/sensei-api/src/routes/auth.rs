@@ -152,6 +152,9 @@ pub struct MessageResponse {
 #[derive(Debug, Serialize)]
 pub struct UserProfileResponse {
     pub id: EntityId,
+    /// The tenant scope (item 63): the client needs it to join its own
+    /// tenant realtime room.
+    pub tenant_id: EntityId,
     pub email: String,
     pub name: String,
     pub roles: Vec<String>,
@@ -164,6 +167,7 @@ impl From<User> for UserProfileResponse {
     fn from(u: User) -> Self {
         Self {
             id: u.id,
+            tenant_id: u.tenant_id,
             email: u.email,
             name: u.name,
             roles: u.roles,

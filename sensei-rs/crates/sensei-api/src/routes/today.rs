@@ -22,6 +22,10 @@ use crate::state::AppState;
 #[derive(Debug, Serialize)]
 pub struct TodaySnapshot {
     pub date: String,
+    /// Site-local "today" (item 65): the timezone used for the date.
+    pub timezone: String,
+    /// The caller's active operational scope.
+    pub scope: TodayScope,
     pub work_orders: WorkOrderSummary,
     pub quality: QualitySummary,
     pub operations: OperationsSummary,
@@ -50,6 +54,37 @@ pub struct OperationsSummary {
     pub open_risks: usize,
     pub open_a3s: usize,
     pub active_projects: usize,
+}
+
+// ── Status normalization (item 65): business-state strings are compared
+// through ONE canonical form — "completed"/"Completed" are the same state,
+// and the string soup cannot silently miscount.
+fn status_is_completed(status: &str) -> bool {
+    matches!(
+        status.to_lowercase().as_str(),
+        "completed" | "done" | "closed"
+    )
+}
+
+fn status_is_open(status: &str) -> bool {
+    !status_is_completed(status) && !status_is_cancelled(status)
+}
+
+fn status_is_cancelled(status: &str) -> bool {
+    matches!(
+        status.to_lowercase().as_str(),
+        "cancelled" | "canceled" | "voided"
+    )
+}
+
+/// The caller's active operational scope (item 65) — attached to the
+/// snapshot so the client can render site/shift context.
+#[derive(Debug, Serialize)]
+pub struct TodayScope {
+    pub site_id: Option<Uuid>,
+    pub value_stream_id: Option<Uuid>,
+    pub work_center_id: Option<Uuid>,
+    pub shift_id: Option<Uuid>,
 }
 
 // ── Handlers ───────────────────────────────────────────────────────────────
@@ -205,8 +240,27 @@ pub async fn get_today_snapshot(
 ) -> Result<Json<TodaySnapshot>> {
     user.require_permission("dashboard:read")?;
     let tenant_id = user.tenant_id;
-    let today = Utc::now().date_naive();
+    // Item 65: "today" is the SITE's today, never UTC — the user's active
+    // site timezone (resolved at request time) defines the day boundary.
+    // The timezone conversion happens IN the database (PostgreSQL's
+    // `AT TIME ZONE` understands every IANA zone) — no client-side tz db.
+    let ctx = crate::routes::agent::build_context(&user, &state).await;
+    let today: chrono::NaiveDate = if let Some(pool) = state.db_pool.as_ref() {
+        sqlx::query_scalar("SELECT (NOW() AT TIME ZONE $1)::date")
+            .bind(&ctx.timezone)
+            .fetch_one(pool.as_ref())
+            .await
+            .unwrap_or_else(|_| Utc::now().date_naive())
+    } else {
+        Utc::now().date_naive()
+    };
     let date_str = today.to_string();
+    let scope = TodayScope {
+        site_id: ctx.site_id,
+        value_stream_id: ctx.value_stream_id,
+        work_center_id: ctx.work_center_id,
+        shift_id: ctx.shift_id,
+    };
 
     // ── Work Orders ──────────────────────────────────────────────────
     let all_work_orders = fetch_all_work_orders(&state, tenant_id).await?;
@@ -229,8 +283,7 @@ pub async fn get_today_snapshot(
         let overdue = all_work_orders
             .iter()
             .filter(|o| {
-                o.status != "Completed"
-                    && o.status != "Cancelled"
+                status_is_open(&o.status)
                     && o.scheduled_end.is_some_and(|end| end.date_naive() < today)
             })
             .count();
@@ -289,6 +342,8 @@ pub async fn get_today_snapshot(
     // ── Assemble response ────────────────────────────────────────────
     Ok(Json(TodaySnapshot {
         date: date_str,
+        timezone: ctx.timezone.clone(),
+        scope,
         work_orders: work_order_summary,
         quality: QualitySummary {
             active_andons,

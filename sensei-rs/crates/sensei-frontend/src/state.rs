@@ -37,6 +37,9 @@ pub enum AuthState {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct UserProfile {
     pub id: String,
+    /// Tenant scope (item 63): used to join the tenant realtime room.
+    #[serde(default)]
+    pub tenant_id: String,
     pub email: String,
     #[serde(default)]
     pub name: String,
@@ -188,6 +191,7 @@ impl AppState {
                             .set(AuthState::Authenticated(self.user.get().unwrap_or(
                                 UserProfile {
                                     id: String::new(),
+                                    tenant_id: String::new(),
                                     email: String::new(),
                                     name: String::new(),
                                     roles: Vec::new(),
@@ -206,6 +210,7 @@ impl AppState {
                             .set(AuthState::Authenticated(self.user.get().unwrap_or(
                                 UserProfile {
                                     id: String::new(),
+                                    tenant_id: String::new(),
                                     email: String::new(),
                                     name: String::new(),
                                     roles: Vec::new(),
@@ -243,6 +248,7 @@ impl AppState {
         // only used if /auth/me is unavailable.
         let provisional = UserProfile {
             id: resp.user_id.clone(),
+            tenant_id: resp.tenant_id.clone().unwrap_or_default(),
             email: email.to_string(),
             name: String::new(),
             roles: resp.roles.clone(),

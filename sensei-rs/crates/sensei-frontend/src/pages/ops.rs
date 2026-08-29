@@ -28,6 +28,9 @@ pub fn AndonListPage() -> impl IntoView {
         let client = app_state.api_client();
         async move { OpsApi::list_andons(&client).await }
     });
+    // Item 63: the LAST pushed Andon is surfaced at the top of the board —
+    // a new Andon arrives without any refresh.
+    let realtime = use_context::<crate::stores::realtime::RealtimeStore>();
 
     let columns = vec![
         TableColumn {
@@ -88,6 +91,33 @@ pub fn AndonListPage() -> impl IntoView {
 
     view! {
         <Module title="ANDON BOARD".to_string()>
+            {realtime.map(|rt| {
+                let last = rt.last_andon;
+                let connected = rt.connected;
+                view! {
+                    <div class="rams-mb-4">
+                        {move || match last.get() {
+                            Some(push) => view! {
+                                <div class=format!("rams-alert {}", if push.severity.as_deref() == Some("critical") { "rams-alert--danger" } else { "rams-alert--warning" }) role="status">
+                                    <strong>"LIVE PUSH"</strong>
+                                    <span>" "</span>
+                                    {format!(
+                                        "{} — {} (severity: {})",
+                                        push.issue_type.as_deref().unwrap_or("Andon"),
+                                        push.status.as_deref().unwrap_or("raised"),
+                                        push.severity.as_deref().unwrap_or("unknown"),
+                                    )}
+                                </div>
+                            }.into_any(),
+                            None => view! {
+                                <p class="rams-font-mono rams-text-sm" style="color: var(--rams-muted)">
+                                    {move || if connected.get() { "LIVE — waiting for events".to_string() } else { "SYNC …".to_string() }}
+                                </p>
+                            }.into_any(),
+                        }}
+                    </div>
+                }
+            })}
             {move || data.map(|w| match &**w {
                 Ok(list) => {
                     let rows: Vec<_> = list.clone().into_iter().map(|a| {

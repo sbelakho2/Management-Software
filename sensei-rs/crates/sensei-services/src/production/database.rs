@@ -1083,7 +1083,9 @@ impl ProductionService for DatabaseProductionService {
         // propagates BACKWARD through the BOM — a component is needed no
         // later than its parent's planned release.
         let lead_by_product: std::collections::HashMap<Uuid, i64> = {
-            let rows: Vec<(Uuid, i64)> = sqlx::query_as(
+            // lead_time_days is INT4 in the schema — decode as i32 and
+            // widen, never pretend it is INT8.
+            let rows: Vec<(Uuid, i32)> = sqlx::query_as(
                 "SELECT id, COALESCE(lead_time_days, 0) FROM products \
                  WHERE tenant_id = $1 AND id = ANY($2::uuid[])",
             )
@@ -1092,7 +1094,9 @@ impl ProductionService for DatabaseProductionService {
             .fetch_all(&self.pool)
             .await
             .map_err(|e| SenseiError::Database(format!("Failed to load lead times: {e}")))?;
-            rows.into_iter().collect()
+            rows.into_iter()
+                .map(|(id, lead)| (id, i64::from(lead)))
+                .collect()
         };
         // The root need date: the demand's own timing (earliest open
         // work-order due date); without one, the requirement is due NOW —

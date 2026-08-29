@@ -21,6 +21,9 @@ pub struct LoginResponse {
     pub refresh_token: String,
     pub token_type: String,
     pub user_id: String,
+    /// Tenant scope (item 63) — present on the backend login response.
+    #[serde(default)]
+    pub tenant_id: Option<String>,
     #[serde(default)]
     pub roles: Vec<String>,
     #[serde(default)]

@@ -80,9 +80,18 @@ impl ApiClient {
     /// The `reqwest::Client` inside is built once with explicit connect and
     /// request timeouts; no per-call construction happens anywhere.
     pub fn new(base_url: &str) -> Self {
+        // The browser's fetch API ignores connect timeouts; reqwest's
+        // wasm backend does not expose the builder methods.
+        #[cfg(not(target_arch = "wasm32"))]
+        let http = {
+            reqwest::Client::builder()
+                .connect_timeout(Duration::from_secs(CONNECT_TIMEOUT_SECS))
+                .timeout(Duration::from_secs(REQUEST_TIMEOUT_SECS))
+                .build()
+                .unwrap_or_default()
+        };
+        #[cfg(target_arch = "wasm32")]
         let http = reqwest::Client::builder()
-            .connect_timeout(Duration::from_secs(CONNECT_TIMEOUT_SECS))
-            .timeout(Duration::from_secs(REQUEST_TIMEOUT_SECS))
             .build()
             .unwrap_or_default();
         Self {

@@ -59,16 +59,13 @@ pub async fn upsert_embedding(
         .collect::<Vec<_>>()
         .join(",");
     sqlx::query(
-        "INSERT INTO document_embeddings \\
-            (document_type, document_id, tenant_id, title, content_hash, embedding, updated_at) \\
-         VALUES ($1, $2, $3, $4, $5, $6::vector, NOW()) \\
-         ON CONFLICT (document_type, document_id) DO UPDATE \\
-         SET title = $4, content_hash = $5, embedding = $6::vector, updated_at = NOW()",
+        "INSERT INTO document_embeddings  (document_type, document_id, tenant_id, title, content, content_hash, embedding, updated_at)  VALUES ($1, $2, $3, $4, $5, $6, $7::vector, NOW())  ON CONFLICT (document_type, document_id) DO UPDATE  SET title = $4, content = $5, content_hash = $6, embedding = $7::vector, updated_at = NOW()",
     )
     .bind(document_type)
     .bind(document_id)
     .bind(tenant_id)
     .bind(title)
+    .bind(content)
     .bind(format!(
         "{:x}",
         default_hasher(&format!("{title}:{content}"))
@@ -109,7 +106,7 @@ pub async fn hybrid_search(
     // $3 the query vector, $4 caller roles, $5 now — the previous binding
     // order put the vector in an unused $3 and the roles into the vector
     // cast, breaking the dense leg at runtime.
-    let dense: Vec<(String, Uuid, String, String, f32)> = sqlx::query_as(
+    let dense: Vec<(String, Uuid, String, String, f64)> = sqlx::query_as(
         "SELECT de.document_type, de.document_id, de.title, \
                 COALESCE(es.data->>'authority', 'employee note'), \
                 1 - (de.embedding <=> $3::vector) AS similarity \
@@ -194,15 +191,11 @@ pub async fn hybrid_search(
     let mut dense_scores: std::collections::HashMap<(String, Uuid), (f32, String, String)> =
         std::collections::HashMap::new();
     for (ty, id, title, authority, sim) in &dense {
+        let sim_f = *sim as f32;
         dense_scores
             .entry((ty.clone(), *id))
-            .or_insert((0.0, title.clone(), authority.clone()))
-            .0 = (*sim).max(
-            dense_scores
-                .get(&(ty.clone(), *id))
-                .map(|e| e.0)
-                .unwrap_or(0.0),
-        );
+            .and_modify(|e| e.0 = e.0.max(sim_f))
+            .or_insert((sim_f, title.clone(), authority.clone()));
     }
     let mut lexical_scores: std::collections::HashMap<(String, Uuid), (f32, String, String)> =
         std::collections::HashMap::new();

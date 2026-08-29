@@ -249,4 +249,46 @@ mod tests {
         let msg2 = rx2.recv().await.unwrap();
         assert_eq!(msg1, msg2);
     }
+
+    /// Realtime contract (audit gate "Real-time"): an Andon raised in the
+    /// operations service must arrive on the tenant's realtime channel
+    /// WITHOUT any refresh — the Jidoka push path.
+    #[tokio::test]
+    async fn andon_event_reaches_realtime_subscribers() {
+        let manager = SseManager::new();
+        let mut rx = manager.subscribe("tenant-realtime").await;
+
+        // An Andon raise publishes a realtime envelope (item 63): the
+        // envelope is what the WS/SSE transports forward to subscribers.
+        let envelope = crate::services::realtime::RealtimeEnvelope::room(
+            uuid::Uuid::new_v4(),
+            "tenant-realtime",
+            uuid::Uuid::new_v4(),
+            "andon.raised",
+            serde_json::json!({
+                "andon_id": uuid::Uuid::new_v4(),
+                "severity": "critical",
+                "issue_type": "safety",
+            }),
+        );
+        let payload = serde_json::to_string(&envelope).unwrap();
+        manager
+            .publish("tenant-realtime", "realtime", &payload)
+            .await;
+
+        let msg = rx.recv().await.unwrap();
+        assert!(
+            msg.contains("event: realtime"),
+            "must carry the realtime event"
+        );
+        assert!(
+            msg.contains("andon.raised"),
+            "the Andon event type must be delivered"
+        );
+        assert!(msg.contains("critical"), "the severity must be delivered");
+        assert!(
+            msg.contains("tenant_id") || msg.contains("user_ids"),
+            "the envelope must carry routing scope"
+        );
+    }
 }

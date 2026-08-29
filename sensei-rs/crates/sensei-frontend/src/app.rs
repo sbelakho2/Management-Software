@@ -42,6 +42,9 @@ use crate::pages::{
         InventoryListPage, PurchaseOrderListPage, QuoteListPage, RfqListPage, SalesOrderListPage,
         StockMoveListPage, SupplyChainPage,
     },
+    today::TodayPage,
+    tps::{LswPage, StandardWorkPage, TierMeetingsPage, TopologyPage, WorkCentersPage},
+    tps_flow::{AgentPage, CtqPage, KanbanPage, ObeyaPage, TrainingPage},
 };
 use crate::state::AppState;
 use crate::stores::ui::provide_ui_store;
@@ -74,6 +77,40 @@ pub fn App() -> impl IntoView {
     // Provide responsive breakpoint info.
     let _responsive = provide_responsive();
 
+    // Item 60: the PWA/offline machinery was never INITIALIZED — the
+    // service worker registration, connectivity listeners and the offline
+    // queue now start with the application.
+    let _pwa_state = crate::pwa::init_pwa();
+    let sync_store = crate::stores::sync::SyncStore::new();
+    provide_context(sync_store.clone());
+    leptos::task::spawn_local(async move {
+        let _ = crate::pwa::init_sync_service(sync_store).await;
+    });
+
+    // Item 63: realtime push — when a session exists, connect the WebSocket
+    // and join the tenant room so Andon/production events arrive without
+    // any refresh.
+    let realtime_store = crate::stores::realtime::RealtimeStore::new();
+    provide_context(realtime_store.clone());
+    leptos::task::spawn_local({
+        let state = app_state.clone();
+        let realtime_store = realtime_store.clone();
+        async move {
+            let Some(tokens) = state.tokens.get_untracked() else {
+                return;
+            };
+            let Some(user) = state.user.get_untracked() else {
+                return;
+            };
+            realtime_store.connect(
+                &state.api_base.get_untracked(),
+                &user.tenant_id,
+                &tokens.access_token,
+            );
+        }
+    });
+    let _ = realtime_store;
+
     view! {
         <Html attr:lang=move || i18n.locale.get() attr:dir=move || dir.get() />
 
@@ -105,8 +142,24 @@ pub fn App() -> impl IntoView {
                 // ProtectedShell provides the RootLayout (bezel, status bar,
                 // rack sidebar, corner screws) via <Outlet/>.
                 <ParentRoute path=path!("/") view=ProtectedShell>
-                    // Dashboard
+                    // Today is the primary home (item 30/67): the landing
+                    // route redirects here, not to the count dashboard.
+                    <Route path=path!("/") view=TodayPage />
+                    <Route path=path!("today") view=TodayPage />
                     <Route path=path!("/dashboard") view=DashboardPage />
+
+                    // TPS work surfaces (item 64): the flows live beside
+                    // the work — not inside an "Ops" module.
+                    <Route path=path!("/tps/lsw") view=LswPage />
+                    <Route path=path!("/tps/standard-work") view=StandardWorkPage />
+                    <Route path=path!("/tps/tier-meetings") view=TierMeetingsPage />
+                    <Route path=path!("/tps/topology") view=TopologyPage />
+                    <Route path=path!("/tps/work-centers") view=WorkCentersPage />
+                    <Route path=path!("/tps/kanban") view=KanbanPage />
+                    <Route path=path!("/tps/training") view=TrainingPage />
+                    <Route path=path!("/tps/ctq") view=CtqPage />
+                    <Route path=path!("/tps/obeya") view=ObeyaPage />
+                    <Route path=path!("/agent") view=AgentPage />
 
                     // Quality Management
                     <ParentRoute path=path!("/quality") view=QualityPage>

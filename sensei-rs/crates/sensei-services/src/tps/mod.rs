@@ -6,6 +6,7 @@
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 pub mod rules;
+pub mod signals;
 
 use std::time::Duration;
 

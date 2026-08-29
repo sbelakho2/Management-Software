@@ -2014,6 +2014,10 @@ pub fn build_router(state: AppState) -> Router {
             post(routes::agent::execute_agent_tool),
         )
         .route(
+            "/api/v1/tps/signals/classify",
+            post(routes::tps_signals::classify_signals),
+        )
+        .route(
             "/api/v1/lsw/standards/{standard_id}",
             get(routes::lsw::get_lsw_standard)
                 .put(routes::lsw::update_lsw_standard)
