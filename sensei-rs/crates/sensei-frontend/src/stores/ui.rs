@@ -53,6 +53,10 @@ pub struct UiStore {
     pub modal_open: RwSignal<bool>,
     /// Optional modal content identifier.
     pub modal_content: RwSignal<Option<String>>,
+    /// Display mode (item 70): "desk" | "gemba" | "station".
+    /// Station mode hides navigation and enlarges targets; gemba mode
+    /// prioritizes one-handed tablet use.
+    pub display_mode: RwSignal<String>,
 }
 
 impl UiStore {
@@ -68,6 +72,7 @@ impl UiStore {
             toasts: RwSignal::new(Vec::new()),
             modal_open: RwSignal::new(false),
             modal_content: RwSignal::new(None),
+            display_mode: RwSignal::new("desk".to_string()),
         }
     }
 

@@ -25,9 +25,11 @@ use crate::pages::{
         BudgetListPage, CostRollupListPage, FinancePage, InvoiceListPage, JournalEntryListPage,
         PaymentListPage,
     },
+    flow_economics::FlowEconomicsPage,
     hr::{
         EmployeeListPage, HrPage, LeaveListPage, ReviewListPage, TimecardListPage, TrainingListPage,
     },
+    learning_metrics::LearningMetricsPage,
     login::LoginPage,
     maintenance::{EquipmentListPage, MaintenancePage, PmScheduleListPage, WorkRequestListPage},
     ops::{A3ListPage, AndonListPage, OpsPage, ProjectListPage, RiskListPage},
@@ -38,6 +40,7 @@ use crate::pages::{
         AuditListPage, CapaListPage, InspectionListPage, NcrListPage, QualityPage,
         SupplierEvalListPage,
     },
+    station::{StationPage, TeamLeadPage},
     supply_chain::{
         InventoryListPage, PurchaseOrderListPage, QuoteListPage, RfqListPage, SalesOrderListPage,
         StockMoveListPage, SupplyChainPage,
@@ -160,6 +163,10 @@ pub fn App() -> impl IntoView {
                     <Route path=path!("/tps/ctq") view=CtqPage />
                     <Route path=path!("/tps/obeya") view=ObeyaPage />
                     <Route path=path!("/agent") view=AgentPage />
+                    <Route path=path!("/station") view=StationPage />
+                    <Route path=path!("/team-lead") view=TeamLeadPage />
+                    <Route path=path!("/tps/learning") view=LearningMetricsPage />
+                    <Route path=path!("/tps/flow-economics") view=FlowEconomicsPage />
 
                     // Quality Management
                     <ParentRoute path=path!("/quality") view=QualityPage>

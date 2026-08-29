@@ -495,3 +495,160 @@ pub async fn execute_agent_tool(
         )
         .await
 }
+
+// ── Station (item 31) + interval board (item 32) ────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CurrentJobDto {
+    pub work_order_id: String,
+    pub wo_number: String,
+    pub product_name: String,
+    pub required_qty: i64,
+    pub completed_qty: i64,
+    pub remaining_qty: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PitchNowDto {
+    pub target: i64,
+    pub actual: i64,
+    pub gap: i64,
+    pub interval_start: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StepNowDto {
+    pub position: usize,
+    pub total_steps: usize,
+    pub description: String,
+    pub expected_seconds: Option<i64>,
+    pub is_critical: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StationSnapshotDto {
+    pub current_job: Option<CurrentJobDto>,
+    pub pitch: Option<PitchNowDto>,
+    pub current_step: Option<StepNowDto>,
+    pub quality_check: Option<String>,
+    pub work_center_name: String,
+    pub help_categories: Vec<String>,
+    pub generated_at: String,
+}
+
+pub async fn get_station_snapshot(
+    client: &ApiClient,
+    work_center_id: Option<&str>,
+) -> Result<StationSnapshotDto, ApiError> {
+    match work_center_id {
+        Some(wc) => {
+            client
+                .get(&format!("/api/v1/station/snapshot?work_center_id={wc}"))
+                .await
+        }
+        None => client.get("/api/v1/station/snapshot").await,
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IntervalAbnormalityDto {
+    pub andon_number: String,
+    pub issue_type: String,
+    pub severity: String,
+    pub created_at: String,
+    pub response_seconds: Option<i64>,
+    pub resolved: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IntervalRowDto {
+    pub interval_start: String,
+    pub plan: i64,
+    pub actual: i64,
+    pub gap: i64,
+    pub abnormalities: Vec<IntervalAbnormalityDto>,
+}
+
+pub async fn get_interval_board(
+    client: &ApiClient,
+    work_center_id: Option<&str>,
+) -> Result<Vec<IntervalRowDto>, ApiError> {
+    match work_center_id {
+        Some(wc) => {
+            client
+                .get(&format!(
+                    "/api/v1/station/interval-board?work_center_id={wc}"
+                ))
+                .await
+        }
+        None => client.get("/api/v1/station/interval-board").await,
+    }
+}
+
+// ── Learning metrics (item 43) ──────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LearningMetricDto {
+    pub key: String,
+    pub label: String,
+    pub value: f64,
+    pub unit: String,
+    pub better: String,
+    pub target: Option<f64>,
+    pub gap: Option<f64>,
+    pub guidance: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LearningSnapshotDto {
+    pub window_days: i64,
+    pub metrics: Vec<LearningMetricDto>,
+    pub learning_index: f64,
+    pub generated_at: String,
+}
+
+pub async fn get_learning_metrics(client: &ApiClient) -> Result<LearningSnapshotDto, ApiError> {
+    client.get("/api/v1/tps/learning-metrics").await
+}
+
+// ── Flow economics (items 36/38) ────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SourcingFlowCostDto {
+    pub option_label: String,
+    pub unit_price: String,
+    pub moq: String,
+    pub lead_time_days: i64,
+    pub on_time_delivery: String,
+    pub inventory_days: String,
+    pub trapped_cash: String,
+    pub shortage_risk: String,
+    pub guidance: String,
+}
+
+pub async fn sourcing_flow_cost(
+    client: &ApiClient,
+    req: serde_json::Value,
+) -> Result<SourcingFlowCostDto, ApiError> {
+    client
+        .post("/api/v1/tps/flow-economics/sourcing", &req)
+        .await
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WasteLineDto {
+    pub key: String,
+    pub label: String,
+    pub value: String,
+    pub guidance: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FinanceWasteDto {
+    pub lines: Vec<WasteLineDto>,
+    pub total_waste_annual: String,
+}
+
+pub async fn get_finance_waste(client: &ApiClient) -> Result<FinanceWasteDto, ApiError> {
+    client.get("/api/v1/tps/flow-economics/waste").await
+}

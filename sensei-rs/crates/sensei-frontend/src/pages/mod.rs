@@ -2,12 +2,15 @@
 
 pub mod dashboard;
 pub mod finance;
+pub mod flow_economics;
 pub mod hr;
+pub mod learning_metrics;
 pub mod login;
 pub mod maintenance;
 pub mod ops;
 pub mod production;
 pub mod quality;
+pub mod station;
 pub mod supply_chain;
 pub mod today;
 pub mod tps;

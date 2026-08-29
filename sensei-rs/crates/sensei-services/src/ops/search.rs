@@ -462,6 +462,126 @@ impl SearchService for DatabaseSearchService {
             return Ok(Vec::new());
         }
 
+        // Item 71: operational EXACT-MATCH ids resolve deterministically
+        // BEFORE semantic/fuzzy retrieval — typing "WO-30291" or
+        // "PO-9918" must find the object, not a fuzzy guess. Exact matches
+        // score 2.0 (above any fuzzy relevance).
+        let mut exact_results: Vec<SearchResult> = Vec::new();
+        if entity_type.is_none_or(|et| et == "work_order") {
+            let rows: Vec<(String, Uuid, String)> = sqlx::query_as(
+                "SELECT 'work_order', id, wo_number FROM work_orders \
+                 WHERE tenant_id = $1 AND UPPER(wo_number) = UPPER($2) LIMIT 5",
+            )
+            .bind(tenant_id)
+            .bind(query)
+            .fetch_all(&self.pool)
+            .await
+            .unwrap_or_default();
+            for (t, id, title) in rows {
+                exact_results.push(SearchResult {
+                    result_type: t,
+                    result_id: id,
+                    result_title: title,
+                    relevance: 2.0,
+                });
+            }
+        }
+        if entity_type.is_none_or(|et| et == "production_order") {
+            let rows: Vec<(String, Uuid, String)> = sqlx::query_as(
+                "SELECT 'production_order', id, order_number FROM production_orders \
+                 WHERE tenant_id = $1 AND UPPER(order_number) = UPPER($2) LIMIT 5",
+            )
+            .bind(tenant_id)
+            .bind(query)
+            .fetch_all(&self.pool)
+            .await
+            .unwrap_or_default();
+            for (t, id, title) in rows {
+                exact_results.push(SearchResult {
+                    result_type: t,
+                    result_id: id,
+                    result_title: title,
+                    relevance: 2.0,
+                });
+            }
+        }
+        if entity_type.is_none_or(|et| et == "purchase_order") {
+            let rows: Vec<(String, Uuid, String)> = sqlx::query_as(
+                "SELECT 'purchase_order', id, po_number FROM purchase_orders \
+                 WHERE tenant_id = $1 AND UPPER(po_number) = UPPER($2) LIMIT 5",
+            )
+            .bind(tenant_id)
+            .bind(query)
+            .fetch_all(&self.pool)
+            .await
+            .unwrap_or_default();
+            for (t, id, title) in rows {
+                exact_results.push(SearchResult {
+                    result_type: t,
+                    result_id: id,
+                    result_title: title,
+                    relevance: 2.0,
+                });
+            }
+        }
+        if entity_type.is_none_or(|et| et == "sales_order") {
+            let rows: Vec<(String, Uuid, String)> = sqlx::query_as(
+                "SELECT 'sales_order', id, so_number FROM sales_orders \
+                 WHERE tenant_id = $1 AND UPPER(so_number) = UPPER($2) LIMIT 5",
+            )
+            .bind(tenant_id)
+            .bind(query)
+            .fetch_all(&self.pool)
+            .await
+            .unwrap_or_default();
+            for (t, id, title) in rows {
+                exact_results.push(SearchResult {
+                    result_type: t,
+                    result_id: id,
+                    result_title: title,
+                    relevance: 2.0,
+                });
+            }
+        }
+        if entity_type.is_none_or(|et| et == "product") {
+            let rows: Vec<(String, Uuid, String)> = sqlx::query_as(
+                "SELECT 'product', id, product_number FROM products \
+                 WHERE tenant_id = $1 AND UPPER(product_number) = UPPER($2) LIMIT 5",
+            )
+            .bind(tenant_id)
+            .bind(query)
+            .fetch_all(&self.pool)
+            .await
+            .unwrap_or_default();
+            for (t, id, title) in rows {
+                exact_results.push(SearchResult {
+                    result_type: t,
+                    result_id: id,
+                    result_title: title,
+                    relevance: 2.0,
+                });
+            }
+        }
+        if entity_type.is_none_or(|et| et == "supplier") {
+            let rows: Vec<(String, Uuid, String)> = sqlx::query_as(
+                "SELECT 'supplier', id, name FROM suppliers \
+                 WHERE tenant_id = $1 AND UPPER(name) = UPPER($2) LIMIT 5",
+            )
+            .bind(tenant_id)
+            .bind(query)
+            .fetch_all(&self.pool)
+            .await
+            .unwrap_or_default();
+            for (t, id, title) in rows {
+                exact_results.push(SearchResult {
+                    result_type: t,
+                    result_id: id,
+                    result_title: title,
+                    relevance: 2.0,
+                });
+            }
+        }
+
         let rows = if let Some(et) = entity_type {
             sqlx::query_as::<_, (String, Uuid, String, f32)>(
                 "SELECT result_type, result_id, result_title, relevance \
@@ -484,18 +604,20 @@ impl SearchService for DatabaseSearchService {
             .map_err(|e| SenseiError::Database(format!("Full-text search failed: {e}")))?
         };
 
-        let results = rows
-            .into_iter()
-            .map(
-                |(result_type, result_id, result_title, relevance)| SearchResult {
-                    result_type,
-                    result_id,
-                    result_title,
-                    relevance,
-                },
-            )
-            .collect();
-
+        exact_results.extend(rows.into_iter().map(
+            |(result_type, result_id, result_title, relevance)| SearchResult {
+                result_type,
+                result_id,
+                result_title,
+                relevance,
+            },
+        ));
+        exact_results.sort_by(|a, b| {
+            b.relevance
+                .partial_cmp(&a.relevance)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+        let results: Vec<SearchResult> = exact_results;
         Ok(results)
     }
 

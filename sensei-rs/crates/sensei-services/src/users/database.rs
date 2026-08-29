@@ -41,6 +41,7 @@ fn user_model_to_domain(m: UserModel) -> User {
         is_active: m.is_active,
         credential_version: m.credential_version.max(0) as u64,
         site_id: m.site_id,
+        locale: m.locale,
         last_login_at: m.last_login_at,
         created_at: m.created_at,
         updated_at: m.updated_at,
@@ -62,6 +63,7 @@ fn user_to_model(u: User, email_verified: bool) -> UserModel {
         email_verified,
         credential_version: u.credential_version as i64,
         site_id: u.site_id,
+        locale: u.locale,
         last_login_at: u.last_login_at,
         created_at: u.created_at,
         updated_at: u.updated_at,
@@ -69,7 +71,7 @@ fn user_to_model(u: User, email_verified: bool) -> UserModel {
 }
 
 const USER_COLUMNS: &str = "id, tenant_id, email, name, password_hash, roles, \
-                            is_active, email_verified, credential_version, site_id, \
+                            is_active, email_verified, credential_version, site_id, locale, \
                             last_login_at, created_at, updated_at";
 
 #[async_trait]
@@ -106,9 +108,9 @@ impl UsersService for DatabaseUsersService {
 
         let created = sqlx::query_as::<_, UserModel>(&format!(
             "INSERT INTO users (id, tenant_id, email, name, password_hash, roles, \
-                                    is_active, email_verified, credential_version, site_id, \
+                                    is_active, email_verified, credential_version, site_id, locale, \
                                     last_login_at, created_at, updated_at) \
-                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) \
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) \
                  ON CONFLICT (tenant_id, email) DO NOTHING \
                  RETURNING {USER_COLUMNS}"
         ))
@@ -122,6 +124,7 @@ impl UsersService for DatabaseUsersService {
         .bind(model.email_verified)
         .bind(model.credential_version)
         .bind(model.site_id)
+        .bind(&model.locale)
         .bind(model.last_login_at)
         .bind(now)
         .bind(now)

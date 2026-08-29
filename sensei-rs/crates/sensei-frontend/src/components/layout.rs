@@ -35,16 +35,38 @@ pub fn RootLayout(
     /// Current user display name shown in the status bar.
     #[prop(optional)]
     username: String,
-    /// Optional logout callback — pass `Some(Box::new(...))` or `None`.
-    on_logout: Option<Box<dyn Fn() + 'static>>,
+    /// Optional logout callback — pass `Some(Arc::new(...))` or `None`.
+    on_logout: Option<std::sync::Arc<dyn Fn() + Send + Sync + 'static>>,
 ) -> impl IntoView {
     let username_footer = username.clone();
 
+    // Item 70: display modes reshape the chrome. Station mode hides the
+    // navigation (the operator sees only the work); gemba mode keeps a
+    // slim rail; desk mode is the full shell.
+    let ui = use_context::<crate::stores::ui::UiStore>();
+    let ui_for_shell = ui.clone();
+    let ui_for_sidebar = ui.clone();
+    let ui_for_modes = ui.clone();
+    let shell_class = move || match ui_for_shell
+        .as_ref()
+        .map(|u| u.display_mode.get_untracked())
+        .as_deref()
+    {
+        Some("station") => "rams-bezel rams-bezel--station",
+        Some("gemba") => "rams-bezel rams-bezel--gemba",
+        _ => "rams-bezel",
+    };
+
     view! {
         <a class="skip-link" href="#main-content">"SKIP TO MAIN CONTENT"</a>
-        <div class="rams-bezel">
+        <div class=shell_class>
             <div class="rams-bezel-inner">
-                <RackSidebar username=username on_logout=on_logout />
+                {move || {
+                    match ui_for_sidebar.as_ref().map(|u| u.display_mode.get_untracked()).as_deref() {
+                        Some("station") => ().into_any(),
+                        _ => view! { <RackSidebar username=username.clone() on_logout=on_logout.clone() /> }.into_any(),
+                    }
+                }}
                 <main id="main-content" class="rams-main">
                     {children()}
                 </main>
@@ -60,6 +82,33 @@ pub fn RootLayout(
                     // chrome — a disconnected socket is EXPLICIT, never a
                     // quiet healthy system.
                     <RealtimeStatus />
+                    <OfflineStatus />
+                    // Item 70: display-mode switch (Desk / Gemba / Station).
+                    {move || {
+                        let ui = ui_for_modes.clone();
+                        let Some(ui) = ui else { return ().into_any() };
+                        let mode = ui.display_mode;
+                        view! {
+                            <div class="rams-flex rams-gap-1" role="group" aria-label="Display mode">
+                                {["desk", "gemba", "station"].iter().map(|m| {
+                                    let m_for_active = m.to_string();
+                                    let m_for_click = m.to_string();
+                                    let m_for_label = m.to_string();
+                                    let mode_set = mode;
+                                    view! {
+                                        <button
+                                            type="button"
+                                            class=format!("rams-btn rams-btn--sm {}", if mode.get() == m_for_active { "" } else { "rams-btn--ghost" })
+                                            aria-pressed=move || mode.get() == m_for_active.clone()
+                                            on:click=move |_| mode_set.set(m_for_click.clone())
+                                        >
+                                            {m_for_label.to_uppercase()}
+                                        </button>
+                                    }
+                                }).collect::<Vec<_>>()}
+                            </div>
+                        }.into_any()
+                    }}
                     <span class="rams-status-text">{username_footer}</span>
                 </div>
             </footer>
@@ -99,14 +148,14 @@ pub fn ProtectedRoute() -> impl IntoView {
         _ => String::new(),
     };
 
-    let on_logout = {
+    let on_logout: std::sync::Arc<dyn Fn() + Send + Sync + 'static> = {
         let state = app_state.clone();
-        move || {
+        std::sync::Arc::new(move || {
             let state = state.clone();
             spawn_local(async move {
                 let _ = state.logout().await;
             });
-        }
+        })
     };
 
     // The router renders the matched child route through the Outlet.
@@ -115,7 +164,7 @@ pub fn ProtectedRoute() -> impl IntoView {
             // Re-evaluated per render: fresh values keep the outer closure
             // re-callable (leptos requires Fn for reactive re-renders).
             let uname = username();
-            let logout = Some(Box::new(on_logout.clone()) as Box<dyn Fn() + 'static>);
+            let logout = Some(on_logout.clone());
             match app_state.auth_state.get() {
                 AuthState::Loading => view! {
                     <div
@@ -181,14 +230,14 @@ pub fn ProtectedShell() -> impl IntoView {
         _ => String::new(),
     };
 
-    let on_logout = {
+    let on_logout: std::sync::Arc<dyn Fn() + Send + Sync + 'static> = {
         let state = app_state.clone();
-        move || {
+        std::sync::Arc::new(move || {
             let state = state.clone();
             spawn_local(async move {
                 let _ = state.logout().await;
             });
-        }
+        })
     };
 
     view! {
@@ -212,7 +261,10 @@ pub fn ProtectedShell() -> impl IntoView {
             AuthState::Authenticated(_) => view! {
                 <RootLayout
                     username=username()
-                    on_logout=Some(Box::new(on_logout.clone()) as Box<dyn Fn() + 'static>)
+                    on_logout=Some({
+                        let cb = on_logout.clone();
+                        std::sync::Arc::new(move || cb())
+                    } as std::sync::Arc<dyn Fn() + Send + Sync + 'static>)
                 >
                     <Outlet/>
                 </RootLayout>
@@ -239,6 +291,40 @@ fn RealtimeStatus() -> impl IntoView {
                     format!("LIVE · {} EVENTS", count.get())
                 } else {
                     "SYNC …".to_string()
+                }
+            }}
+        </span>
+    }
+    .into_any()
+}
+
+/// Offline/sync state in the chrome (item 60/62): a manufacturing terminal
+/// must show OFFLINE / pending count / last sync — never a quiet healthy
+/// shell when the connection is gone.
+#[component]
+fn OfflineStatus() -> impl IntoView {
+    let sync_store = use_context::<crate::stores::sync::SyncStore>();
+    let Some(store) = sync_store else {
+        return view! { <span class="rams-status-text">""</span> }.into_any();
+    };
+    let is_online = store.is_online;
+    let pending = store.pending_operations;
+    let last_sync = store.last_sync_at;
+    view! {
+        <span class="rams-status-text" role="status">
+            {move || {
+                if !is_online.get() {
+                    format!("OFFLINE · {} PENDING", pending.get().iter().filter(|op| op.status == "pending").count())
+                } else {
+                    let count = pending.get().iter().filter(|op| op.status == "pending").count();
+                    if count > 0 {
+                        format!("SYNCING · {} PENDING", count)
+                    } else {
+                        match last_sync.get() {
+                            Some(t) => format!("SYNCED {}", t),
+                            None => "SYNCED".to_string(),
+                        }
+                    }
                 }
             }}
         </span>

@@ -11,10 +11,6 @@ use crate::state::AppState;
 use leptos::prelude::*;
 use std::sync::Arc;
 
-fn short_id(id: &str) -> String {
-    id.chars().take(8).collect()
-}
-
 // ── Kanban (item 64: boards + cards, pull-based visual control) ─────────
 
 #[component]
@@ -692,9 +688,4 @@ pub fn AgentPage() -> impl IntoView {
 
 fn modal_open(open: bool) -> leptos::prelude::RwSignal<bool> {
     leptos::prelude::RwSignal::new(open)
-}
-
-#[allow(dead_code)]
-fn _unused() {
-    let _ = short_id("");
 }

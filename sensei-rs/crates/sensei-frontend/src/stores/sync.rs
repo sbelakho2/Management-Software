@@ -81,6 +81,20 @@ impl SyncStore {
         });
     }
 
+    /// Fetch one pending operation by id (for conflict resolution).
+    pub fn get_operation(&self, id: &str) -> Option<PendingOperation> {
+        self.pending_operations
+            .get()
+            .into_iter()
+            .find(|op| op.id == id)
+    }
+
+    /// Replace the reactive queue entirely (item 62: after loading the
+    /// PERSISTED queue from IndexedDB at init, before any replay).
+    pub fn load_operations(&self, operations: Vec<PendingOperation>) {
+        self.pending_operations.set(operations);
+    }
+
     /// Increment the retry count for a pending operation.
     pub fn increment_retry(&self, id: &str) {
         self.pending_operations.update(|ops| {

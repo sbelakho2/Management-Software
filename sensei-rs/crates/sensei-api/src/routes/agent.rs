@@ -179,10 +179,20 @@ pub async fn build_context_with_locale(
         shift_id,
         roles: user.roles.clone(),
         permissions,
-        locale: accept_language
-            .and_then(|h| h.split(',').next())
-            .map(|tag| tag.trim().split('-').next().unwrap_or("en").to_string())
+        // Item 59: the EMPLOYEE PROFILE locale wins — a French operator's
+        // profile is authoritative even when the browser sends en-US.
+        // Accept-Language is only a fallback for profiles without a
+        // preference.
+        locale: user_row
+            .as_ref()
+            .map(|u| u.locale.clone())
             .filter(|l| ["en", "fr", "ar", "de", "es"].contains(&l.as_str()))
+            .or_else(|| {
+                accept_language
+                    .and_then(|h| h.split(',').next())
+                    .map(|tag| tag.trim().split('-').next().unwrap_or("en").to_string())
+                    .filter(|l| ["en", "fr", "ar", "de", "es"].contains(&l.as_str()))
+            })
             .unwrap_or_else(|| "en".to_string()),
         timezone,
         request_id: Uuid::new_v4(),

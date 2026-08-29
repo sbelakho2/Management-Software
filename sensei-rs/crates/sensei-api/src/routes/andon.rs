@@ -110,6 +110,20 @@ pub async fn raise_andon(
         restart_authorized_at: None,
     };
     let andon = state.ops_service.raise_andon(tenant_id, andon).await?;
+    // Item 73: the abnormality is anchored to where it occurred — the
+    // knowledge graph records `abnormality occurred_at work_center`.
+    if let Some(pool) = state.db_pool.as_ref() {
+        let wc = andon.work_center_id;
+        let _ = sqlx::query(
+            "INSERT INTO knowledge_graph_edges                 (tenant_id, source_type, source_id, relation, target_type, target_id, created_by)              VALUES ($1, 'abnormality', $2, 'occurred_at', 'work_center', $3, $4)              ON CONFLICT DO NOTHING",
+        )
+        .bind(tenant_id)
+        .bind(andon.id)
+        .bind(wc)
+        .bind(user.user_id)
+        .execute(pool.as_ref())
+        .await;
+    }
     Ok(Json(andon))
 }
 

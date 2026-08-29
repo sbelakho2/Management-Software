@@ -187,6 +187,17 @@ impl SyncService {
                 .await;
         }
 
+        // Item 62: load the PERSISTED queue from IndexedDB into the
+        // reactive queue BEFORE any replay — otherwise an app restart
+        // forgets every queued operation (the reactive queue started
+        // empty and the replay checked only in-memory state).
+        if self.db.is_some() {
+            let persisted = self.get_pending_operations_from_db().await?;
+            if !persisted.is_empty() {
+                self.sync_store.load_operations(persisted);
+            }
+        }
+
         // Attempt to replay the offline queue (if we're online now)
         if is_online() {
             let store = self.sync_store.clone();
@@ -597,6 +608,7 @@ async fn replay_queue_internal(store: SyncStore, client: ApiClient) -> Result<Sy
     for operation in &pending {
         if operation.retry_count >= MAX_RETRY_COUNT {
             store.update_operation_status(&operation.id, "failed", Some("Max retries exceeded"));
+            persist_operation_update(&store, &operation.id).await;
             failed_count += 1;
             errors.push(SyncOperationResult {
                 operation_id: operation.id.clone(),
@@ -610,6 +622,7 @@ async fn replay_queue_internal(store: SyncStore, client: ApiClient) -> Result<Sy
         match execute_operation(&store, &client, operation).await {
             Ok(()) => {
                 store.update_operation_status(&operation.id, "completed", None);
+                persist_operation_update(&store, &operation.id).await;
                 synced_count += 1;
                 errors.push(SyncOperationResult {
                     operation_id: operation.id.clone(),
@@ -619,8 +632,59 @@ async fn replay_queue_internal(store: SyncStore, client: ApiClient) -> Result<Sy
             }
             Err(e) => {
                 let error_msg = e.to_string();
+                // Item 61/62: the CONFLICT path is domain-aware — the
+                // naive local-wins default is unsafe for inventory,
+                // quality results, standard work, Andons, A3s and
+                // production reports. Those domains resolve SERVER-WINS
+                // (authoritative refresh); create-type conflicts are
+                // flagged for review instead of silently overwriting.
+                if is_conflict_error(&error_msg) {
+                    match domain_conflict_resolution(operation) {
+                        ConflictResolution::ServerWins => {
+                            store.update_operation_status(
+                                &operation.id,
+                                "abandoned",
+                                Some("Server state is authoritative for this domain; local change dropped"),
+                            );
+                            persist_operation_update(&store, &operation.id).await;
+                            continue;
+                        }
+                        ConflictResolution::FlagForReview(reason) => {
+                            store.update_operation_status(
+                                &operation.id,
+                                "conflict",
+                                Some(&format!("{reason}: {error_msg}")),
+                            );
+                            persist_operation_update(&store, &operation.id).await;
+                            failed_count += 1;
+                            errors.push(SyncOperationResult {
+                                operation_id: operation.id.clone(),
+                                success: false,
+                                error: Some(format!("CONFLICT: {reason}")),
+                            });
+                            continue;
+                        }
+                        ConflictResolution::LocalWins => {
+                            store.increment_retry(&operation.id);
+                            store.update_operation_status(
+                                &operation.id,
+                                "pending",
+                                Some(&error_msg),
+                            );
+                            persist_operation_update(&store, &operation.id).await;
+                            failed_count += 1;
+                            errors.push(SyncOperationResult {
+                                operation_id: operation.id.clone(),
+                                success: false,
+                                error: Some(error_msg),
+                            });
+                            continue;
+                        }
+                    }
+                }
                 store.increment_retry(&operation.id);
                 store.update_operation_status(&operation.id, "pending", Some(&error_msg));
+                persist_operation_update(&store, &operation.id).await;
                 failed_count += 1;
                 errors.push(SyncOperationResult {
                     operation_id: operation.id.clone(),
@@ -671,18 +735,29 @@ async fn execute_operation(
     // Resolve the API path for this entity type.
     let api_path = entity_api_path(&operation.entity_type, operation.entity_id.as_deref());
 
-    // Dispatch based on operation type.
+    // Item 62: the replay is IDEMPOTENT — every queued operation carries
+    // its queue id as an Idempotency-Key, so a retry after a crash cannot
+    // double-create the entity.
+    let idempotency_key = format!("sensei-queue-{}", operation.id);
     let result = match operation.operation_type.as_str() {
         "create" => {
             client
-                .post::<serde_json::Value, _>(&api_path, &operation.payload)
+                .post_with_idempotency::<serde_json::Value, _>(
+                    &api_path,
+                    &operation.payload,
+                    &idempotency_key,
+                )
                 .await
                 .map_err(|e| format!("POST {} failed: {}", api_path, e))?;
             Ok(())
         }
         "update" => {
             client
-                .put::<serde_json::Value, _>(&api_path, &operation.payload)
+                .put_with_idempotency::<serde_json::Value, _>(
+                    &api_path,
+                    &operation.payload,
+                    &idempotency_key,
+                )
                 .await
                 .map_err(|e| format!("PUT {} failed: {}", api_path, e))?;
             Ok(())
@@ -701,6 +776,73 @@ async fn execute_operation(
     };
 
     result
+}
+
+/// Domain-aware conflict strategy (item 61): local-wins is only safe for
+/// UI preferences and draft notes. Inventory, quality results, standard
+/// work, Andons, A3s, production reports and restart authorizations are
+/// authoritative-server domains — a stale terminal must NEVER silently
+/// overwrite them.
+fn domain_conflict_resolution(operation: &PendingOperation) -> ConflictResolution {
+    let authoritative_domains = [
+        "inventory",
+        "inventory_item",
+        "stock_move",
+        "quality_result",
+        "inspection",
+        "first_article",
+        "standard_work",
+        "andon",
+        "a3",
+        "a3_report",
+        "production_report",
+        "production_event",
+        "restart_authorization",
+        "work_order",
+    ];
+    if authoritative_domains.contains(&operation.entity_type.as_str()) {
+        return ConflictResolution::ServerWins;
+    }
+    // Creates on entities the server may already hold need a human.
+    if operation.operation_type == "create" && operation.entity_id.is_none() {
+        return ConflictResolution::FlagForReview(
+            "Server may already hold this entity; manual merge required".to_string(),
+        );
+    }
+    ConflictResolution::LocalWins
+}
+
+/// Whether an error string indicates a version/ownership conflict (409).
+fn is_conflict_error(msg: &str) -> bool {
+    let lower = msg.to_lowercase();
+    lower.contains("conflict") || lower.contains("409") || lower.contains("already exists")
+}
+
+/// Persist a single operation's updated status/retry back to IndexedDB
+/// (item 62: reactive-memory-only updates were lost on refresh).
+async fn persist_operation_update(store: &SyncStore, operation_id: &str) {
+    let Some(op) = store.get_operation(operation_id) else {
+        return;
+    };
+    let Ok(value) = serde_wasm_bindgen::to_value(&op) else {
+        return;
+    };
+    let Some(window) = web_sys::window() else {
+        return;
+    };
+    let Ok(db) = pwa_indexed_db(&window).await else {
+        return;
+    };
+    let _ = db.put_pending_operation(&value).await;
+}
+
+/// Open the app IndexedDB (shared with the rest of the PWA layer).
+async fn pwa_indexed_db(
+    _window: &web_sys::Window,
+) -> std::result::Result<crate::pwa::indexed_db::IndexedDb, SyncError> {
+    crate::pwa::indexed_db::IndexedDb::open()
+        .await
+        .map_err(SyncError::IndexedDb)
 }
 
 /// Map an entity type (and optional entity ID) to the backend API path.

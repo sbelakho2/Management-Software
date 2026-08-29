@@ -6,6 +6,11 @@
 use crate::types::{new_id, now, EntityId, TenantId, Timestamp};
 use serde::{Deserialize, Serialize};
 
+/// Default UI locale for users without a profile preference.
+fn default_user_locale() -> String {
+    "en".to_string()
+}
+
 /// A user account in the system.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct User {
@@ -30,6 +35,9 @@ pub struct User {
     /// Site assignment (plant scope for the agent context).
     #[serde(default)]
     pub site_id: Option<EntityId>,
+    /// Preferred UI/coaching locale (item 59): en/fr/ar/de/es.
+    #[serde(default = "default_user_locale")]
+    pub locale: String,
     /// When the user last logged in.
     pub last_login_at: Option<Timestamp>,
     /// When this record was created.
@@ -69,6 +77,7 @@ impl User {
             is_active: true,
             credential_version: 0,
             site_id: None,
+            locale: "en".to_string(),
             last_login_at: None,
             created_at: now,
             updated_at: now,

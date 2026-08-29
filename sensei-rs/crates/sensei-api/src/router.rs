@@ -2018,6 +2018,34 @@ pub fn build_router(state: AppState) -> Router {
             post(routes::tps_signals::classify_signals),
         )
         .route(
+            "/api/v1/tps/learning-metrics",
+            get(routes::learning_metrics::get_learning_metrics),
+        )
+        .route(
+            "/api/v1/tps/flow-economics/sourcing",
+            post(routes::flow_economics::sourcing_flow_cost),
+        )
+        .route(
+            "/api/v1/tps/flow-economics/waste",
+            get(routes::flow_economics::finance_waste),
+        )
+        .route(
+            "/api/v1/knowledge-graph/edges",
+            post(routes::knowledge_graph::record_edge),
+        )
+        .route(
+            "/api/v1/knowledge-graph/{entity_type}/{entity_id}",
+            get(routes::knowledge_graph::edges_around),
+        )
+        .route(
+            "/api/v1/station/snapshot",
+            get(routes::station::get_station_snapshot),
+        )
+        .route(
+            "/api/v1/station/interval-board",
+            get(routes::station::get_interval_board),
+        )
+        .route(
             "/api/v1/lsw/standards/{standard_id}",
             get(routes::lsw::get_lsw_standard)
                 .put(routes::lsw::update_lsw_standard)

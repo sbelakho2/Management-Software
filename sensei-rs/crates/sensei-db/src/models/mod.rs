@@ -98,6 +98,8 @@ pub struct UserModel {
     pub credential_version: i64,
     /// Site assignment (plant scope for the agent context).
     pub site_id: Option<Uuid>,
+    /// Preferred UI/coaching locale (item 59): en/fr/ar/de/es.
+    pub locale: String,
     /// Last login timestamp.
     pub last_login_at: Option<DateTime<Utc>>,
     /// Record creation timestamp.

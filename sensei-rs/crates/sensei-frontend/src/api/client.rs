@@ -91,9 +91,7 @@ impl ApiClient {
                 .unwrap_or_default()
         };
         #[cfg(target_arch = "wasm32")]
-        let http = reqwest::Client::builder()
-            .build()
-            .unwrap_or_default();
+        let http = reqwest::Client::builder().build().unwrap_or_default();
         Self {
             base_url: std::sync::Arc::new(std::sync::RwLock::new(
                 base_url.trim_end_matches('/').to_string(),
@@ -215,6 +213,48 @@ impl ApiClient {
     ) -> Result<T, ApiError> {
         let body = serde_json::to_value(body).map_err(|e| ApiError::json(e.to_string()))?;
         self.execute(reqwest::Method::PUT, path, Some(body)).await
+    }
+
+    /// POST with an Idempotency-Key (item 62): the offline replay can
+    /// retry safely — a crash after the server committed cannot double
+    /// create.
+    pub async fn post_with_idempotency<T: DeserializeOwned, B: Serialize>(
+        &self,
+        path: &str,
+        body: &B,
+        idempotency_key: &str,
+    ) -> Result<T, ApiError> {
+        let body = serde_json::to_value(body).map_err(|e| ApiError::json(e.to_string()))?;
+        let mut req = self.http.request(reqwest::Method::POST, self.url(path));
+        if let Some(token) = self.token() {
+            req = req.bearer_auth(token);
+        }
+        req = req.header("Idempotency-Key", idempotency_key).json(&body);
+        let resp = req
+            .send()
+            .await
+            .map_err(|e| ApiError::http(e.to_string()))?;
+        resp.json().await.map_err(|e| ApiError::json(e.to_string()))
+    }
+
+    /// PUT with an Idempotency-Key (item 62).
+    pub async fn put_with_idempotency<T: DeserializeOwned, B: Serialize>(
+        &self,
+        path: &str,
+        body: &B,
+        idempotency_key: &str,
+    ) -> Result<T, ApiError> {
+        let body = serde_json::to_value(body).map_err(|e| ApiError::json(e.to_string()))?;
+        let mut req = self.http.request(reqwest::Method::PUT, self.url(path));
+        if let Some(token) = self.token() {
+            req = req.bearer_auth(token);
+        }
+        req = req.header("Idempotency-Key", idempotency_key).json(&body);
+        let resp = req
+            .send()
+            .await
+            .map_err(|e| ApiError::http(e.to_string()))?;
+        resp.json().await.map_err(|e| ApiError::json(e.to_string()))
     }
 
     /// Perform a DELETE request.

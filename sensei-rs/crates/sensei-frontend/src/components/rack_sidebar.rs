@@ -35,8 +35,8 @@ pub fn RackSidebar(
     /// Current user display name.
     #[prop(optional)]
     username: String,
-    /// Optional logout click callback — pass `Some(Box::new(...))` or `None`.
-    on_logout: Option<Box<dyn Fn() + 'static>>,
+    /// Optional logout click callback — pass `Some(Arc::new(...))` or `None`.
+    on_logout: Option<std::sync::Arc<dyn Fn() + Send + Sync + 'static>>,
 ) -> impl IntoView {
     let location = use_location();
     let pathname = move || location.pathname.get();
@@ -100,6 +100,26 @@ pub fn RackSidebar(
             label: "CTQ",
             path: "/tps/ctq",
             icon: "◆",
+        },
+        NavItem {
+            label: "STATION",
+            path: "/station",
+            icon: "◈",
+        },
+        NavItem {
+            label: "TEAM LEAD",
+            path: "/team-lead",
+            icon: "▥",
+        },
+        NavItem {
+            label: "LEARNING",
+            path: "/tps/learning",
+            icon: "◭",
+        },
+        NavItem {
+            label: "FLOW ECONOMICS",
+            path: "/tps/flow-economics",
+            icon: "€",
         },
         NavItem {
             label: "AGENT",
