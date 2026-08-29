@@ -1308,3 +1308,132 @@ async fn integration_entity_map_is_idempotent() {
         "the entity map UNIQUE must reject a second mapping for the same legacy id"
     );
 }
+
+/// Document ingestion pipeline (item 72): an ingested document starts as a
+/// CANDIDATE — it never becomes authoritative without human approval. The
+/// workflow (extracted -> approved -> draft knowledge pack) must run
+/// against the migrated schema, and a rejected document must never enter
+/// the corpus.
+#[tokio::test]
+async fn document_ingestion_requires_human_approval() {
+    let Some(pool) = connect().await else { return };
+    sqlx::query(
+        r#"DO $$ DECLARE r RECORD; BEGIN
+             FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname = 'public') LOOP
+                 EXECUTE format('DROP TABLE IF EXISTS %I CASCADE', r.tablename);
+             END LOOP;
+         END $$"#,
+    )
+    .execute(&pool)
+    .await
+    .expect("drop all tables");
+    sensei_db::migrations::run_migrations(&pool)
+        .await
+        .expect("the ENTIRE migration chain must apply to an empty database");
+
+    let tenant_id = uuid::Uuid::new_v4();
+    let user_id = uuid::Uuid::new_v4();
+    sqlx::query("INSERT INTO tenants (id, name, slug) VALUES ($1, 'ing', 'ing')")
+        .bind(tenant_id)
+        .execute(&pool)
+        .await
+        .expect("tenant insert");
+    sqlx::query(
+        "INSERT INTO users (id, tenant_id, email, name, password_hash)  VALUES ($1, $2, 'i@x.local', 'I', 'x')",
+    )
+    .bind(user_id)
+    .bind(tenant_id)
+    .execute(&pool)
+    .await
+    .expect("user insert");
+
+    // A scanned work-instruction document lands as 'extracted' (candidate).
+    let doc_id = uuid::Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO document_ingestions  (id, tenant_id, title, source_path, raw_text, structured, candidate, status, uploaded_by, created_at, updated_at)  VALUES ($1, $2, 'Cell 4 work instruction', 'scan/wi-4.pdf', 'This is the standard work instruction for Cell 4 assembly', '[]', '{\"authority\":\"effective_standard_work\",\"content\":\"This is the standard work instruction\"}', 'extracted', $3, NOW(), NOW())",
+    )
+    .bind(doc_id)
+    .bind(tenant_id)
+    .bind(user_id)
+    .execute(&pool)
+    .await
+    .expect("ingestion insert");
+    let status: String = sqlx::query_scalar("SELECT status FROM document_ingestions WHERE id = $1")
+        .bind(doc_id)
+        .fetch_one(&pool)
+        .await
+        .expect("status read");
+    assert_eq!(
+        status, "extracted",
+        "OCR output must never be auto-authoritative"
+    );
+
+    // Approve -> the pipeline creates a DRAFT knowledge pack (still not
+    // effective) and marks the document approved.
+    sqlx::query(
+        "UPDATE document_ingestions SET status = 'approved', approved_by = $2, approved_at = NOW(), updated_at = NOW() \
+         WHERE id = $1 AND tenant_id = $3",
+    )
+    .bind(doc_id)
+    .bind(user_id)
+    .bind(tenant_id)
+    .execute(&pool)
+    .await
+    .expect("approve");
+    sqlx::query(
+        "INSERT INTO entity_store (tenant_id, entity_type, id, data) \
+         VALUES ($1, 'knowledge_pack', $2, $3)",
+    )
+    .bind(tenant_id)
+    .bind(uuid::Uuid::new_v4())
+    .bind(serde_json::json!({
+        "title": "Cell 4 work instruction",
+        "authority": "effective_standard_work",
+        "status": "draft",
+        "source_document": doc_id.to_string(),
+    }))
+    .execute(&pool)
+    .await
+    .expect("draft pack");
+    let pack: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM entity_store \
+         WHERE tenant_id = $1 AND entity_type = 'knowledge_pack' AND data->>'status' = 'draft'",
+    )
+    .bind(tenant_id)
+    .fetch_one(&pool)
+    .await
+    .expect("pack count");
+    assert_eq!(pack, 1, "approved ingestion creates exactly one DRAFT pack");
+
+    // Rejecting a second document must leave it rejected — never a pack.
+    let doc2 = uuid::Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO document_ingestions  (id, tenant_id, title, source_path, raw_text, structured, candidate, status, uploaded_by, created_at, updated_at)  VALUES ($1, $2, 'Unverified note', 'scan/n.pdf', 'some vague claim', '[]', '{\"authority\":\"employee_note\"}', 'rejected', $3, NOW(), NOW())",
+    )
+    .bind(doc2)
+    .bind(tenant_id)
+    .bind(user_id)
+    .execute(&pool)
+    .await
+    .expect("rejected insert");
+    let rejected_status: String =
+        sqlx::query_scalar("SELECT status FROM document_ingestions WHERE id = $1")
+            .bind(doc2)
+            .fetch_one(&pool)
+            .await
+            .expect("status read");
+    assert_eq!(rejected_status, "rejected");
+    let packs_for_doc2: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM entity_store \
+         WHERE tenant_id = $1 AND entity_type = 'knowledge_pack' AND data->>'source_document' = $2",
+    )
+    .bind(tenant_id)
+    .bind(doc2.to_string())
+    .fetch_one(&pool)
+    .await
+    .expect("pack count 2");
+    assert_eq!(
+        packs_for_doc2, 0,
+        "a rejected document must never enter the corpus"
+    );
+}

@@ -21,6 +21,7 @@ use crate::hooks::use_responsive::provide_responsive;
 use crate::i18n::provide_i18n;
 use crate::pages::{
     dashboard::DashboardPage,
+    document_ingestion::DocumentIngestionPage,
     finance::{
         BudgetListPage, CostRollupListPage, FinancePage, InvoiceListPage, JournalEntryListPage,
         PaymentListPage,
@@ -169,6 +170,7 @@ pub fn App() -> impl IntoView {
                     <Route path=path!("/tps/learning") view=LearningMetricsPage />
                     <Route path=path!("/tps/flow-economics") view=FlowEconomicsPage />
                     <Route path=path!("/integration") view=IntegrationPage />
+                    <Route path=path!("/documents/ingestion") view=DocumentIngestionPage />
 
                     // Quality Management
                     <ParentRoute path=path!("/quality") view=QualityPage>

@@ -1,12 +1,13 @@
 {
   "name": "sensei-e2e",
   "private": true,
-  "description": "Playwright E2E gates (item 77): the frontend behavioral contracts — login, Today landing, station help flow, TPS surfaces, error states.",
+  "description": "Playwright E2E gates (item 77): the frontend behavioral contracts \u2014 login, Today landing, station help flow, TPS surfaces, error states.",
   "scripts": {
     "e2e": "playwright test",
     "e2e:install": "playwright install chromium"
   },
   "devDependencies": {
-    "@playwright/test": "^1.45.0"
+    "@playwright/test": "^1.45.0",
+    "@axe-core/playwright": "^4.9.0"
   }
 }

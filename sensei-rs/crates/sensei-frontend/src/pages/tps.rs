@@ -320,6 +320,10 @@ pub fn StandardWorkPage() -> impl IntoView {
 
     view! {
         <div class="rams-p-4">
+            <crate::components::inline_coach::InlineCoach
+                step="STANDARDIZE ONLY VERIFIED LEARNING".to_string()
+                question="When you change a standard: what verified learning justifies this revision? What evidence distinguished the cause — and what result will confirm the change worked?".to_string()
+            />
             <div class="rams-flex rams-flex--between rams-mb-4" style="align-items: center;">
                 <h1 class="module-title">"STANDARD WORK"</h1>
                 <button type="button" class="rams-btn rams-btn--md" on:click=move |_| create_open.set(true)>

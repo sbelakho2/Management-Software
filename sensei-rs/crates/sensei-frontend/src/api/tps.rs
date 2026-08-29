@@ -689,3 +689,91 @@ pub async fn import_legacy_record(
         )
         .await
 }
+
+// ── Sales flow impact (item 37) ─────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CustomerNeedLineDto {
+    pub product_sku: String,
+    pub product_name: String,
+    pub quantity: i64,
+    pub implied_daily_demand: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CapacityEffectDto {
+    pub value_stream_name: Option<String>,
+    pub available_hours_per_day: String,
+    pub required_takt_seconds: String,
+    pub current_takt_seconds: Option<String>,
+    pub exceeds_capacity: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SalesFlowImpactDto {
+    pub customer_need: Vec<CustomerNeedLineDto>,
+    pub capacity_effect: CapacityEffectDto,
+    pub qualification_needs: Vec<String>,
+    pub supplier_dependencies: Vec<String>,
+    pub honest_lead_time_days: i64,
+    pub guidance: String,
+}
+
+pub async fn get_sales_flow_impact(
+    client: &ApiClient,
+    product_id: &str,
+    quantity: i64,
+    window_days: i64,
+) -> Result<SalesFlowImpactDto, ApiError> {
+    client
+        .get(&format!(
+            "/api/v1/sales/flow-impact?product_id={product_id}&quantity={quantity}&delivery_window_days={window_days}"
+        ))
+        .await
+}
+
+// ── Document ingestion (item 72) ────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IngestedDocumentDto {
+    pub id: String,
+    pub title: String,
+    pub status: String,
+    pub candidate: Option<ExtractionCandidateDto>,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExtractionCandidateDto {
+    pub authority: String,
+    pub content: String,
+    pub possible_authorities: Vec<String>,
+}
+
+pub async fn list_ingestions(client: &ApiClient) -> Result<Vec<IngestedDocumentDto>, ApiError> {
+    client.get("/api/v1/documents/ingestions").await
+}
+
+pub async fn ingest_document(
+    client: &ApiClient,
+    req: serde_json::Value,
+) -> Result<IngestedDocumentDto, ApiError> {
+    client.post("/api/v1/documents/ingestions", &req).await
+}
+
+pub async fn review_document(
+    client: &ApiClient,
+    id: &str,
+    approve: bool,
+    authority: Option<String>,
+) -> Result<IngestedDocumentDto, ApiError> {
+    client
+        .post(
+            &format!("/api/v1/documents/ingestions/{id}/review"),
+            &serde_json::json!({ "approve": approve, "authority": authority, "reason": null }),
+        )
+        .await
+}
+
+// ── Sales flow impact UI DTO (item 37) ──────────────────────────────────
+// (the DTO mirrors the backend SalesFlowImpact)

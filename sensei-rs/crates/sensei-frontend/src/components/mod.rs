@@ -16,6 +16,7 @@ pub mod checkbox;
 pub mod data_table;
 pub mod dymo_label;
 pub mod empty_state;
+pub mod inline_coach;
 pub mod input;
 pub mod layout;
 pub mod loading;

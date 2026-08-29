@@ -1,6 +1,7 @@
 //! Frontend page components.
 
 pub mod dashboard;
+pub mod document_ingestion;
 pub mod finance;
 pub mod flow_economics;
 pub mod hr;

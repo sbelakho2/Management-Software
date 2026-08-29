@@ -30,6 +30,15 @@ pub fn NcrListPage() -> impl IntoView {
         let client = app_state.api_client();
         async move { QualityApi::list_ncrs(&client).await }
     });
+    // Item 68: the coaching lives BESIDE the work — when a defect is
+    // recorded, the first question is about the EXPECTED condition, not
+    // the assignment of blame.
+    let coach = view! {
+        <crate::components::inline_coach::InlineCoach
+            step="OBSERVE BEFORE ASSIGNING CAUSE".to_string()
+            question="You recorded the defect. What was the EXPECTED condition at that step, and what did you actually observe? When and where did the deviation first appear?".to_string()
+        />
+    };
 
     let columns = vec![
         TableColumn {
@@ -72,6 +81,7 @@ pub fn NcrListPage() -> impl IntoView {
 
     view! {
         <Module title="NCRs".to_string()>
+            {coach}
             {move || ncrs.map(|w| match &**w {
                 Ok(list) => {
                     let rows: Vec<_> = list.clone().into_iter().map(|ncr| {

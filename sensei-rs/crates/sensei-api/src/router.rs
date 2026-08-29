@@ -2054,6 +2054,19 @@ pub fn build_router(state: AppState) -> Router {
             get(routes::integration::integration_status),
         )
         .route(
+            "/api/v1/sales/flow-impact",
+            get(routes::sales_flow_impact::sales_flow_impact),
+        )
+        .route(
+            "/api/v1/documents/ingestions",
+            get(routes::document_ingestion::list_ingestions)
+                .post(routes::document_ingestion::ingest_document),
+        )
+        .route(
+            "/api/v1/documents/ingestions/{id}/review",
+            post(routes::document_ingestion::review_document),
+        )
+        .route(
             "/api/v1/integration/{system}/{entity}",
             post(routes::integration::import_record),
         )

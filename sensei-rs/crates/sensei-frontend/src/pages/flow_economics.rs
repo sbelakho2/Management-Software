@@ -4,7 +4,10 @@
 //! snapshot (WIP cash, aging stock, scrap, rework). No lectures about
 //! waste — the numbers make the flow condition visible.
 
-use crate::api::tps::{get_finance_waste, sourcing_flow_cost, SourcingFlowCostDto};
+use crate::api::tps::{
+    get_finance_waste, get_sales_flow_impact, sourcing_flow_cost, SalesFlowImpactDto,
+    SourcingFlowCostDto,
+};
 use crate::state::AppState;
 use leptos::prelude::*;
 
@@ -13,6 +16,7 @@ pub fn FlowEconomicsPage() -> impl IntoView {
     let app_state = use_context::<AppState>().expect("AppState not provided");
 
     // ── Sourcing comparison (item 36) ──
+    let app_state_for_sales = app_state.clone();
     let option_a_label = RwSignal::new("Supplier A".to_string());
     let a_price = RwSignal::new("1.92".to_string());
     let a_moq = RwSignal::new("10000".to_string());
@@ -80,9 +84,113 @@ pub fn FlowEconomicsPage() -> impl IntoView {
         async move { get_finance_waste(&client).await }
     });
 
+    // ── Sales flow impact (item 37) ──
+    let sales_product = RwSignal::new(String::new());
+    let sales_qty = RwSignal::new("1000".to_string());
+    let sales_window = RwSignal::new("30".to_string());
+    let sales_impact = RwSignal::new(None::<SalesFlowImpactDto>);
+    let sales_error = RwSignal::new(None::<String>);
+
+    let check_impact = {
+        std::sync::Arc::new(move || {
+            let app_state = app_state_for_sales.clone();
+            leptos::task::spawn_local(async move {
+                let client = app_state.api_client();
+                sales_error.set(None);
+                let qty = sales_qty.get_untracked().parse::<i64>().unwrap_or(0);
+                let window = sales_window.get_untracked().parse::<i64>().unwrap_or(30);
+                match get_sales_flow_impact(&client, &sales_product.get_untracked(), qty, window)
+                    .await
+                {
+                    Ok(impact) => sales_impact.set(Some(impact)),
+                    Err(e) => sales_error.set(Some(e.to_string())),
+                }
+            });
+        })
+    };
+    let on_check_impact = RwSignal::new(Some(check_impact));
+
     view! {
         <div class="rams-p-4">
             <h1 class="module-title rams-mb-4">"FLOW ECONOMICS"</h1>
+
+            <div class="module rams-mb-4">
+                <div class="module-header"><h3 class="module-title">"SALES — WHAT DOES THIS QUOTE MEAN FOR THE SYSTEM?"</h3></div>
+                <div class="module-content">
+                    <p class="rams-font-mono rams-text-sm rams-mb-3" style="color: var(--rams-muted);">
+                        "Sell what the system can repeatedly deliver — check the takt/capacity effect, qualification needs and honest lead time."
+                    </p>
+                    <div class="rams-grid rams-grid--cols-3 rams-gap-2">
+                        <div>
+                            <label class="rams-text-sm" for="sf-product">"PRODUCT NUMBER"</label>
+                            <input id="sf-product" class="rams-input" prop:value=sales_product placeholder="PCB-100" />
+                        </div>
+                        <div>
+                            <label class="rams-text-sm" for="sf-qty">"QUANTITY"</label>
+                            <input id="sf-qty" class="rams-input" prop:value=sales_qty />
+                        </div>
+                        <div>
+                            <label class="rams-text-sm" for="sf-window">"DELIVERY WINDOW (days)"</label>
+                            <input id="sf-window" class="rams-input" prop:value=sales_window />
+                        </div>
+                    </div>
+                    <button
+                        type="button"
+                        class="rams-btn rams-btn--md rams-mt-3"
+                        on:click=move |_| { if let Some(cb) = on_check_impact.get_untracked() { cb() } }
+                    >
+                        "CHECK FLOW IMPACT"
+                    </button>
+                    {move || sales_error.get().map(|e| view! {
+                        <div class="rams-alert rams-alert--danger rams-mt-2" role="alert">{e}</div>
+                    })}
+                    {move || sales_impact.get().map(|i| {
+                        let exceeds = i.capacity_effect.exceeds_capacity;
+                        let guidance = i.guidance.clone();
+                        let needed = i.customer_need.clone();
+                        let quals = i.qualification_needs.clone();
+                        let deps = i.supplier_dependencies.clone();
+                        let lead = i.honest_lead_time_days;
+                        let required_takt = i.capacity_effect.required_takt_seconds.clone();
+                        let current_takt = i.capacity_effect.current_takt_seconds.clone();
+                        let vs = i.capacity_effect.value_stream_name.clone();
+                        view! {
+                            <div class=format!("rams-alert rams-mt-3 {}", if exceeds { "rams-alert--danger" } else { "rams-alert--success" }) role="status">
+                                <strong>{if exceeds { "CAPACITY RISK" } else { "FLOW-COMPATIBLE" }}</strong>
+                                <p class="rams-mt-2 rams-text-sm">{guidance}</p>
+                            </div>
+                            <div class="rams-grid rams-grid--cols-2 rams-gap-3 rams-mt-3">
+                                <div class="module">
+                                    <div class="module-header"><h3 class="module-title">"SYSTEM IMPACT"</h3></div>
+                                    <div class="module-content">
+                                        <div class="rams-text-sm">"Value stream: " {vs.unwrap_or_else(|| "—".to_string())}</div>
+                                        <div class="rams-text-sm rams-mt-1">"Required takt: " {format!("{required_takt:.0}s")}</div>
+                                        <div class="rams-text-sm">"Current takt: " {current_takt.map(|t| format!("{t:.0}s")).unwrap_or_else(|| "—".to_string())}</div>
+                                        <div class="rams-text-sm">"Honest lead time: " {format!("{lead}d")}</div>
+                                    </div>
+                                </div>
+                                <div class="module">
+                                    <div class="module-header"><h3 class="module-title">"NEEDS + QUALIFICATION"</h3></div>
+                                    <div class="module-content">
+                                        {needed.iter().map(|n| {
+                                            let sku = n.product_sku.clone();
+                                            view! { <div class="rams-text-sm">{format!("{sku} × {}", n.quantity)}</div> }
+                                        }).collect::<Vec<_>>()}
+                                        {quals.iter().map(|q| {
+                                            let q = q.clone();
+                                            view! { <div class="rams-font-mono rams-text-2xs" style="color: var(--rams-muted);">{q}</div> }
+                                        }).collect::<Vec<_>>()}
+                                        {deps.iter().map(|d| {
+                                            let d = d.clone();
+                                            view! { <div class="rams-font-mono rams-text-2xs" style="color: var(--rams-orange);">{d}</div> }
+                                        }).collect::<Vec<_>>()}
+                                    </div>
+                                </div>
+                            </div>
+                        }.into_any()
+                    })}
+                </div>
+            </div>
 
             <div class="module rams-mb-4">
                 <div class="module-header"><h3 class="module-title">"SOURCING — TOTAL FLOW IMPACT"</h3></div>
@@ -91,6 +199,10 @@ pub fn FlowEconomicsPage() -> impl IntoView {
                         "Unit price is not the cost. Compare two options and see the cash, stock and \
                          variability each one commits."
                     </p>
+                    <crate::components::inline_coach::InlineCoach
+                        step="COMPARE TOTAL FLOW IMPACT".to_string()
+                        question="The 'cheapest' part can create excess WIP, trapped cash and shortages when demand moves — compare the flow impact, not just the unit price.".to_string()
+                    />
                     <div class="rams-grid rams-grid--cols-3 rams-gap-3">
                         <div class="rams-flex rams-flex--col rams-gap-1">
                             <label class="rams-text-sm" for="a-label">"OPTION A NAME"</label>

@@ -132,6 +132,11 @@ pub fn RackSidebar(
             icon: "⇄",
         },
         NavItem {
+            label: "DOC INGESTION",
+            path: "/documents/ingestion",
+            icon: "◫",
+        },
+        NavItem {
             label: "QUALITY",
             path: "/quality",
             icon: "■",
