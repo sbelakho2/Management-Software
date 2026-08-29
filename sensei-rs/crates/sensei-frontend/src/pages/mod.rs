@@ -12,6 +12,7 @@ pub mod maintenance;
 pub mod ops;
 pub mod production;
 pub mod quality;
+pub mod search;
 pub mod station;
 pub mod supply_chain;
 pub mod today;

@@ -53,9 +53,10 @@ pub async fn get_learning_metrics(
         "SELECT EXTRACT(EPOCH FROM (a.created_at - COALESCE(e.first_event, a.created_at))) \
          FROM andons a \
          LEFT JOIN LATERAL ( \
-             SELECT MIN(occurred_at) AS first_event FROM production_events e \
-             WHERE e.tenant_id = a.tenant_id AND e.work_center_id = a.work_center_id \
-               AND e.occurred_at::date = a.created_at::date \
+             SELECT MIN(e.created_at) AS first_event FROM production_events e \
+             JOIN work_orders wo ON wo.id = e.work_order_id AND wo.tenant_id = e.tenant_id \
+             WHERE e.tenant_id = a.tenant_id AND wo.work_center_id = a.work_center_id \
+               AND e.created_at::date = a.created_at::date \
          ) e ON TRUE \
          WHERE a.tenant_id = $1 AND a.created_at > NOW() - INTERVAL '30 days' \
          ORDER BY a.created_at DESC LIMIT 200",

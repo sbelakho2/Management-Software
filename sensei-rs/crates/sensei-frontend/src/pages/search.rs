@@ -1,0 +1,142 @@
+//! Universal search (item 71): type or SCAN an operational id —
+//! WO-30291, SN-817723, PO-9918, Supplier ABC, Line 4 — and see the
+//! relevant object with context. Exact-match ids resolve deterministically
+//! before semantic retrieval (backend). Every failure renders an explicit
+//! UNAVAILABLE state.
+
+use crate::api::tps::{universal_search, SearchResponseDto};
+use crate::state::AppState;
+use leptos::prelude::*;
+
+#[component]
+pub fn SearchPage() -> impl IntoView {
+    let app_state = use_context::<AppState>().expect("AppState not provided");
+    let query = RwSignal::new(String::new());
+    let result = RwSignal::new(None::<std::result::Result<SearchResponseDto, String>>);
+    let running = RwSignal::new(false);
+
+    let run_search = {
+        let app_state = app_state.clone();
+        std::sync::Arc::new(move || {
+            let app_state = app_state.clone();
+            leptos::task::spawn_local(async move {
+                let client = app_state.api_client();
+                running.set(true);
+                let q = query.get_untracked();
+                if q.trim().is_empty() {
+                    result.set(None);
+                    running.set(false);
+                    return;
+                }
+                match universal_search(&client, &q).await {
+                    Ok(resp) => result.set(Some(Ok(resp))),
+                    Err(e) => result.set(Some(Err(e.to_string()))),
+                }
+                running.set(false);
+            });
+        })
+    };
+    let on_search = RwSignal::new(Some(run_search));
+
+    view! {
+        <div class="rams-p-4">
+            <h1 class="module-title rams-mb-4">"SEARCH"</h1>
+            <div class="rams-flex rams-gap-2 rams-mb-4">
+                <div class="rams-input-group" style="flex: 1;">
+                    <label for="search-q" class="rams-label">"TYPE OR SCAN AN OPERATIONAL ID"</label>
+                    <input
+                        id="search-q"
+                        type="text"
+                        class="rams-input"
+                        placeholder="WO-30291 · SN-817723 · PO-9918 · Supplier ABC · Line 4"
+                        prop:value=query
+                        on:input=move |ev| query.set(event_target_value(&ev))
+                        on:keydown=move |ev: web_sys::KeyboardEvent| {
+                            if ev.key() == "Enter" {
+                                if let Some(cb) = on_search.get_untracked() { cb() }
+                            }
+                        }
+                    />
+                </div>
+                <button
+                    class="rams-btn rams-btn--primary rams-btn--md"
+                    on:click=move |_| { if let Some(cb) = on_search.get_untracked() { cb() } }
+                    disabled=move || running.get() || query.get().trim().is_empty()
+                >
+                    {move || if running.get() { "SEARCHING..." } else { "SEARCH" }}
+                </button>
+            </div>
+
+            {move || match result.get() {
+                Some(Ok(resp)) => {
+                    let results = resp.results.clone();
+                    let facets = resp.facets.clone();
+                    let total = resp.total;
+                    view! {
+                        <div class="rams-font-mono rams-text-sm rams-mb-3" style="color: var(--rams-muted);">
+                            {format!("{total} RESULTS FOR \"{}\"", resp.query)}
+                        </div>
+                        {if !facets.is_empty() {
+                            view! {
+                                <div class="rams-flex rams-flex--wrap rams-gap-2 rams-mb-4">
+                                    {facets.iter().map(|f| {
+                                        let label = f.entity_type.clone();
+                                        let count = f.count;
+                                        view! { <span class="rams-badge status-ok">{format!("{} · {}", label.to_uppercase(), count)}</span> }
+                                    }).collect::<Vec<_>>()}
+                                </div>
+                            }.into_any()
+                        } else {
+                            ().into_any()
+                        }}
+                        <div class="module">
+                            <div class="module-content">
+                                {if results.is_empty() {
+                                    view! {
+                                        <p class="rams-font-mono rams-text-sm" style="color: var(--rams-muted);">
+                                            "NO MATCHES — this is a confirmed empty result, not a failed search."
+                                        </p>
+                                    }.into_any()
+                                } else {
+                                    view! {
+                                        {results.iter().map(|r| {
+                                            let rtype = r.result_type.clone();
+                                            let title = r.result_title.clone();
+                                            let rid = r.result_id.clone();
+                                            let is_exact = r.relevance > 1.0;
+                                            let badge = if is_exact { "rams-badge status-open" } else { "rams-badge status-ok" };
+                                            view! {
+                                                <div class="rams-flex rams-flex--between" style="padding: var(--rams-space-3); border-bottom: 1px solid var(--rams-line);">
+                                                    <div>
+                                                        <div class="rams-text-sm">{title}</div>
+                                                        <div class="rams-font-mono rams-text-2xs" style="color: var(--rams-muted);">
+                                                            {format!("{} · {}", rtype.to_uppercase(), &rid[..8])}
+                                                        </div>
+                                                    </div>
+                                                    <span class=badge>
+                                                        {if is_exact { "EXACT MATCH".to_string() } else { format!("{:.0}%", r.relevance * 100.0) }}
+                                                    </span>
+                                                </div>
+                                            }
+                                        }).collect::<Vec<_>>()}
+                                    }.into_any()
+                                }}
+                            </div>
+                        </div>
+                    }.into_any()
+                }
+                Some(Err(e)) => view! {
+                    <div class="rams-alert rams-alert--danger" role="alert">
+                        <strong>"STATUS UNKNOWN — SEARCH UNAVAILABLE"</strong>
+                        <p class="rams-mt-2 rams-text-sm">{e}</p>
+                    </div>
+                }.into_any(),
+                None => view! {
+                    <p class="rams-font-mono rams-text-sm" style="color: var(--rams-muted);">
+                        "Search an operational id or name — exact matches resolve first."
+                    </p>
+                }.into_any(),
+            }}
+        </div>
+    }
+}

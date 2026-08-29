@@ -52,6 +52,11 @@ pub fn RackSidebar(
             icon: "◉",
         },
         NavItem {
+            label: "SEARCH",
+            path: "/search",
+            icon: "⌕",
+        },
+        NavItem {
             label: "WORK",
             path: "/tps/standard-work",
             icon: "▣",

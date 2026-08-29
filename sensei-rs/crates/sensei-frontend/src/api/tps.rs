@@ -777,3 +777,37 @@ pub async fn review_document(
 
 // ── Sales flow impact UI DTO (item 37) ──────────────────────────────────
 // (the DTO mirrors the backend SalesFlowImpact)
+
+// ── Universal search (item 71) ──────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SearchResultDto {
+    pub result_type: String,
+    pub result_id: String,
+    pub result_title: String,
+    pub relevance: f32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SearchResponseDto {
+    pub results: Vec<SearchResultDto>,
+    pub total: usize,
+    pub query: String,
+    pub facets: Vec<SearchFacetDto>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SearchFacetDto {
+    pub entity_type: String,
+    pub count: usize,
+}
+
+/// Universal object-aware search (item 71): operational exact-match ids
+/// (WO-30291, PO-9918, supplier names) resolve deterministically BEFORE
+/// semantic/fuzzy results on the backend.
+pub async fn universal_search(client: &ApiClient, q: &str) -> Result<SearchResponseDto, ApiError> {
+    let encoded = q.replace(' ', "%20");
+    client
+        .get(&format!("/api/v1/search?q={encoded}&limit=25"))
+        .await
+}

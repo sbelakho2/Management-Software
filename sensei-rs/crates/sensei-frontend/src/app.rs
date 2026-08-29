@@ -42,6 +42,7 @@ use crate::pages::{
         AuditListPage, CapaListPage, InspectionListPage, NcrListPage, QualityPage,
         SupplierEvalListPage,
     },
+    search::SearchPage,
     station::{StationPage, TeamLeadPage},
     supply_chain::{
         InventoryListPage, PurchaseOrderListPage, QuoteListPage, RfqListPage, SalesOrderListPage,
@@ -171,6 +172,7 @@ pub fn App() -> impl IntoView {
                     <Route path=path!("/tps/flow-economics") view=FlowEconomicsPage />
                     <Route path=path!("/integration") view=IntegrationPage />
                     <Route path=path!("/documents/ingestion") view=DocumentIngestionPage />
+                    <Route path=path!("/search") view=SearchPage />
 
                     // Quality Management
                     <ParentRoute path=path!("/quality") view=QualityPage>

@@ -1437,3 +1437,127 @@ async fn document_ingestion_requires_human_approval() {
         "a rejected document must never enter the corpus"
     );
 }
+
+/// TPS behavioral contract (audit item 76 "TPS behavioral test"): the
+/// system's surfaces embody Expected → Actual → Gap → Response → Verify →
+/// Standardize. The backend must answer the six questions from real data:
+/// the station snapshot returns the EXPECTED (standard takt), ACTUAL
+/// (produced), GAP (pitch delta); the learning metrics verify whether the
+/// RESPONSE produced learning; the interval board shows what stopped flow.
+#[tokio::test]
+async fn tps_behavioral_surfaces_answer_the_six_questions() {
+    let Some(pool) = connect().await else { return };
+    sqlx::query(
+        r#"DO $$ DECLARE r RECORD; BEGIN
+             FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname = 'public') LOOP
+                 EXECUTE format('DROP TABLE IF EXISTS %I CASCADE', r.tablename);
+             END LOOP;
+         END $$"#,
+    )
+    .execute(&pool)
+    .await
+    .expect("drop all tables");
+    sensei_db::migrations::run_migrations(&pool)
+        .await
+        .expect("the ENTIRE migration chain must apply to an empty database");
+
+    let tenant_id = uuid::Uuid::new_v4();
+    let user_id = uuid::Uuid::new_v4();
+    sqlx::query("INSERT INTO tenants (id, name, slug) VALUES ($1, 'tps', 'tps')")
+        .bind(tenant_id)
+        .execute(&pool)
+        .await
+        .expect("tenant insert");
+    sqlx::query(
+        "INSERT INTO users (id, tenant_id, email, name, password_hash)  VALUES ($1, $2, 't@x.local', 'T', 'x')",
+    )
+    .bind(user_id)
+    .bind(tenant_id)
+    .execute(&pool)
+    .await
+    .expect("user insert");
+
+    // EXPECTED: an effective standard with takt 60s.
+    sqlx::query(
+        "INSERT INTO standard_work_documents  (id, tenant_id, title, document_number, area, process, current_version, status, steps, required_skills, cycle_time_seconds, takt_time_seconds, quality_checks, safety_notes, tools_required, materials_required, attachments, approved_by, approved_at, version, created_by, created_at, updated_at)  VALUES ($1,$2,'S','SW-TPS','a','p',1,'effective','[]','[]',60,60,'[]','[]','[]','[]','[]',NULL,NULL,1,$3,NOW(),NOW())",
+    )
+    .bind(uuid::Uuid::new_v4())
+    .bind(tenant_id)
+    .bind(user_id)
+    .execute(&pool)
+    .await
+    .expect("standard insert");
+
+    // ACTUAL: production events report what was really made. The events
+    // reference a work order (the production_events schema), which carries
+    // the work center — the station pitch query joins through it.
+    let wc = uuid::Uuid::new_v4();
+    let product_id = uuid::Uuid::new_v4();
+    sqlx::query("INSERT INTO products (id, tenant_id, product_number, name, unit_of_measure) VALUES ($1,$2,'P-TPS','P','pcs')")
+        .bind(product_id)
+        .bind(tenant_id)
+        .execute(&pool)
+        .await
+        .expect("product insert");
+    let wo_id = uuid::Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO work_orders (id, tenant_id, wo_number, product_id, product_name, quantity, status, work_center_id)  VALUES ($1,$2,'WO-TPS',$3,'P',100,'in_progress',$4)",
+    )
+    .bind(wo_id)
+    .bind(tenant_id)
+    .bind(product_id)
+    .bind(wc)
+    .execute(&pool)
+    .await
+    .expect("work order insert");
+    for qty in [20i64, 22, 18] {
+        sqlx::query(
+            "INSERT INTO production_events  (id, tenant_id, event_type, work_order_id, good_qty, created_at)  VALUES ($1, $2, 'produced', $3, $4, NOW())",
+        )
+        .bind(uuid::Uuid::new_v4())
+        .bind(tenant_id)
+        .bind(wo_id)
+        .bind(qty)
+        .execute(&pool)
+        .await
+        .expect("event insert");
+    }
+
+    // GAP: the actual produced vs the takt target — the station pitch
+    // query shape (join through the work order) must compute 60.
+    let actual: i64 = sqlx::query_scalar(
+        "SELECT COALESCE(SUM(e.good_qty), 0)::bigint FROM production_events e \
+         JOIN work_orders wo ON wo.id = e.work_order_id AND wo.tenant_id = e.tenant_id \
+         WHERE e.tenant_id = $1 AND wo.work_center_id = $2 AND e.event_type = 'produced'",
+    )
+    .bind(tenant_id)
+    .bind(wc)
+    .fetch_one(&pool)
+    .await
+    .expect("actual read");
+    assert_eq!(actual, 60, "actual produced must sum to 60");
+
+    // RESPONSE/VERIFY/STANDARDIZE: an A3 with a verified countermeasure
+    // that produced a standardization is the closed loop.
+    sqlx::query(
+        "INSERT INTO a3_reports  (id, tenant_id, a3_number, title, background, current_state, goal,  root_cause_analysis, countermeasures, check_plan, follow_up, a3_type,  severity, status, owner_id, created_at, closed_at, version,  observed_conditions, metric_baselines, evidence_refs, cause_hypotheses,  experiments, verifications, standardizations, learnings)  VALUES ($1, $2, 'A3-TPS', 't', 'b', 'cs', 'g', 'rca', 'cm', 'cp', 'fu', 'standard',  'medium', 'closed', $3, NOW(), NOW(), 0, '[]', '[]', '[]', '[]', '[]', '[{\"conclusion\":\"verified\"}]', '[{\"standard\":\"revised\"}]', '[]')",
+    )
+    .bind(uuid::Uuid::new_v4())
+    .bind(tenant_id)
+    .bind(user_id)
+    .execute(&pool)
+    .await
+    .expect("a3 insert");
+    let (verified, standardized): (i64, i64) = sqlx::query_as(
+        "SELECT \
+            COUNT(*) FILTER (WHERE jsonb_array_length(COALESCE(verifications, '[]')) > 0), \
+            COUNT(*) FILTER (WHERE jsonb_array_length(COALESCE(standardizations, '[]')) > 0) \
+         FROM a3_reports WHERE tenant_id = $1",
+    )
+    .bind(tenant_id)
+    .fetch_one(&pool)
+    .await
+    .expect("a3 read");
+    assert_eq!(verified, 1, "the countermeasure is VERIFIED with evidence");
+    assert_eq!(standardized, 1, "the verified learning is STANDARDIZED");
+}

@@ -140,10 +140,11 @@ pub async fn get_station_snapshot(
                 .map(|d| d.and_utc())
                 .unwrap_or(now);
             let actual: i64 = sqlx::query_scalar(
-                "SELECT COALESCE(SUM(quantity_completed), 0)::bigint \
-                 FROM production_events \
-                 WHERE tenant_id = $1 AND work_center_id = $2 \
-                   AND occurred_at >= $3 AND event_type = 'produced'",
+                "SELECT COALESCE(SUM(e.good_qty), 0)::bigint \
+                 FROM production_events e \
+                 JOIN work_orders wo ON wo.id = e.work_order_id AND wo.tenant_id = e.tenant_id \
+                 WHERE e.tenant_id = $1 AND wo.work_center_id = $2 \
+                   AND e.created_at >= $3 AND e.event_type = 'produced'",
             )
             .bind(user.tenant_id)
             .bind(wc)
@@ -301,10 +302,11 @@ pub async fn get_interval_board(
             - chrono::Duration::hours(back as i64);
         let end = start + chrono::Duration::hours(1);
         let actual: i64 = sqlx::query_scalar(
-            "SELECT COALESCE(SUM(quantity_completed), 0)::bigint \
-             FROM production_events \
-             WHERE tenant_id = $1 AND work_center_id = $2 \
-               AND occurred_at >= $3 AND occurred_at < $4 AND event_type = 'produced'",
+            "SELECT COALESCE(SUM(e.good_qty), 0)::bigint \
+             FROM production_events e \
+             JOIN work_orders wo ON wo.id = e.work_order_id AND wo.tenant_id = e.tenant_id \
+             WHERE e.tenant_id = $1 AND wo.work_center_id = $2 \
+               AND e.created_at >= $3 AND e.created_at < $4 AND e.event_type = 'produced'",
         )
         .bind(user.tenant_id)
         .bind(work_center_id)
