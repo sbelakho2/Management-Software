@@ -1,85 +1,79 @@
-# Playwright E2E gate (item 77): the frontend behavioral contracts run as
-# a REAL CI gate — login identity, Today landing, explicit error states,
-# TPS navigation and the station help flow against a built stack.
-name: E2E - Playwright
+name: e2e-playwright
 
 on:
   push:
-    branches: [main, develop]
+    branches: [main]
   pull_request:
-  workflow_dispatch:
 
 jobs:
-  playwright:
-    name: E2E (Playwright, chromium)
+  e2e:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: sensei_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/sensei_test
+      JWT_SECRET: ci-e2e-secret
+      SENSEI_ENV: test
+      RUST_BACKTRACE: 1
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Rust toolchain
+      - name: Install Rust (wasm32)
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-unknown-unknown
 
-      - name: Install Zig (version from .github/.tool-versions)
-        run: |
-          ZIG_VERSION=$(grep zig .github/.tool-versions | awk '{print $2}')
-          curl -sL "https://ziglang.org/download/${ZIG_VERSION}/zig-linux-x86_64-${ZIG_VERSION}.tar.xz" -o /tmp/zig.tar.xz
-          tar -xJf /tmp/zig.tar.xz -C /tmp
-          echo "/tmp/zig-linux-x86_64-${ZIG_VERSION}" >> "$GITHUB_PATH"
+      - name: Install trunk
+        uses: jetli/trunk-action@v0.5.0
+        with:
+          version: latest
 
-      - name: Install Node + Playwright
-        working-directory: sensei-rs
+      - name: Build frontend (trunk — the REAL bundle the router serves)
+        working-directory: crates/sensei-frontend
         run: |
-          npm install
+          trunk build --release
+          cp -r dist ../../dist-frontend
+
+      - name: Build API
+        run: cargo build -p sensei-api --release
+
+      - name: Run migrations + seed
+        run: |
+          DATABASE_URL_TEST=$DATABASE_URL cargo test -p sensei-db --test db_contract every_tenant
+          cargo run -p sensei-api --release --bin sensei-api -- --migrate-only
+
+      - name: Start API + frontend
+        run: |
+          cargo run -p sensei-api --release &
+          python3 -m http.server 8080 -d dist-frontend &
+          # Item 79: the API exposes /livez and /readyz (NOT /healthz).
+          for i in $(seq 1 60); do
+            if curl -sf http://127.0.0.1:8081/livez > /dev/null \
+               && curl -sf http://127.0.0.1:8081/readyz > /dev/null; then
+              echo "API ready"; break
+            fi
+            sleep 2
+          done
+          curl -sf http://127.0.0.1:8080/ > /dev/null || (echo "frontend not serving"; exit 1)
+
+      - name: Install Playwright
+        run: |
+          cd e2e
+          npm ci
           npx playwright install --with-deps chromium
 
-      - name: Build the wasm frontend
-        working-directory: sensei-rs
+      - name: Run E2E + axe
         run: |
-          cargo build --release --target wasm32-unknown-unknown -p sensei-frontend
-          # Serve the built frontend from the public/ directory served by
-          # the API (the dev server serves the wasm build on :8080).
-
-      - name: Start PostgreSQL (test database)
-        run: |
-          docker run -d --name sensei-pg -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=sensei_test -p 5432:5432 postgres:16
-          for i in $(seq 1 30); do
-            docker exec sensei-pg pg_isready -U postgres && break
-            sleep 1
-          done
-
-      - name: Start Sensei API (test env)
-        working-directory: sensei-rs
-        env:
-          DATABASE_URL: postgres://postgres:postgres@localhost:5432/sensei_test
-          NATS_TOKEN: test-token
-          JWT_SECRET: test-secret
-          SENSEI_APP_PASSWORD: app-password
-          SENSEI_ADMIN_EMAIL: admin@sensei.local
-          SENSEI_ADMIN_PASSWORD: admin-password
-          SENSEI_CEO_PASSWORD: ceo-password
-          RUST_LOG: warn
-        run: |
-          cargo run -p sensei-api &
-          for i in $(seq 1 60); do
-            curl -sf http://localhost:8080/healthz && break
-            sleep 1
-          done
-
-      - name: Run Playwright suite
-        working-directory: sensei-rs
-        env:
-          E2E_BASE_URL: http://localhost:8080
-          E2E_ADMIN_EMAIL: admin@sensei.local
-          E2E_ADMIN_PASSWORD: admin-password
-        run: npx playwright test
-
-      - name: Upload traces on failure
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: playwright-traces
-          path: sensei-rs/test-results/
-          if-no-files-found: ignore
+          cd e2e
+          E2E_ADMIN_EMAIL=admin@sensei.local \
+          E2E_ADMIN_PASSWORD=Test@1234 \
+          npx playwright test --reporter=line

@@ -132,13 +132,15 @@ pub async fn derive_signals(
     use sensei_services::tps::signals::*;
     let mut signals: Vec<TpsSignal> = Vec::new();
 
-    // Item 45: contextual thresholds — versioned factory knowledge per
-    // signal key (site-policy defaults when no override exists). The
-    // classifiers stay deterministic; the NUMBERS are data.
+    // Item 45 (thirteenth audit): thresholds are consumed at the MOST
+    // SPECIFIC scope first — the product-family override, then the
+    // site-policy default; window_days is applied instead of hardcoded
+    // windows. Deterministic classifiers, data-driven numbers.
     let mut threshold: std::collections::HashMap<String, f64> = std::collections::HashMap::new();
+    let mut window_days: std::collections::HashMap<String, i64> = std::collections::HashMap::new();
     {
-        let rows: Vec<(String, f64)> = sqlx::query_as(
-            "SELECT signal_key, threshold_value FROM tps_thresholds \
+        let rows: Vec<(String, f64, i32)> = sqlx::query_as(
+            "SELECT signal_key, threshold_value, window_days FROM tps_thresholds \
              WHERE tenant_id = $1 AND product_family_id IS NULL",
         )
         .bind(user.tenant_id)
@@ -147,22 +149,41 @@ pub async fn derive_signals(
         .map_err(|e| {
             sensei_core::error::SenseiError::Database(format!("Threshold read failed: {e}"))
         })?;
-        for (key, value) in rows {
-            threshold.insert(key, value);
+        for (key, value, wd) in rows {
+            threshold.insert(key.clone(), value);
+            window_days.insert(key, i64::from(wd));
+        }
+        // Product-family overrides (most specific) take precedence.
+        let family_rows: Vec<(String, f64, i32)> = sqlx::query_as(
+            "SELECT signal_key, threshold_value, window_days FROM tps_thresholds \
+             WHERE tenant_id = $1 AND product_family_id IS NOT NULL",
+        )
+        .bind(user.tenant_id)
+        .fetch_all(pool.as_ref())
+        .await
+        .map_err(|e| {
+            sensei_core::error::SenseiError::Database(format!("Family threshold read failed: {e}"))
+        })?;
+        for (key, value, wd) in family_rows {
+            threshold.insert(key.clone(), value);
+            window_days.insert(key, i64::from(wd));
         }
     }
     let thr = |key: &str, default: f64| -> f64 { threshold.get(key).copied().unwrap_or(default) };
+    let win = |key: &str, default: i64| -> i64 { window_days.get(key).copied().unwrap_or(default) };
 
     // ── Andon recurrence (item 41): the SAME issue type on the SAME work
     //    center raised 3+ times in 14 days — countermeasure ineffective.
+    let recurrence_window = win("andon_recurrence_count", 14);
     let recurring: Vec<(i64,)> = sqlx::query_as(
-        "SELECT COUNT(*) FROM andons a \\
-         WHERE a.tenant_id = $1 AND a.created_at > NOW() - INTERVAL '14 days' \\
-         GROUP BY a.work_center_id, a.issue_type \\
-         HAVING COUNT(*) >= 3 \\
+        "SELECT COUNT(*) FROM andons a \
+         WHERE a.tenant_id = $1 AND a.created_at > NOW() - $2::interval \
+         GROUP BY a.work_center_id, a.issue_type \
+         HAVING COUNT(*) >= 3 \
          ORDER BY COUNT(*) DESC LIMIT 3",
     )
     .bind(user.tenant_id)
+    .bind(format!("{recurrence_window} days"))
     .fetch_all(pool.as_ref())
     .await
     .map_err(|e| {
@@ -170,70 +191,89 @@ pub async fn derive_signals(
     })?;
     for (count,) in recurring {
         let recurrence_threshold = thr("andon_recurrence_count", 3.0) as i64;
-        if let Some(s) = classify_andon_recurrence(count, 14, recurrence_threshold) {
+        if let Some(s) = classify_andon_recurrence(count, recurrence_window, recurrence_threshold) {
             signals.push(s);
         }
     }
-
-    // ── Queue growth: work orders accumulating at a work center vs the
-    //    completed share — flow/bottleneck signal.
-    let queue: Vec<(String, i64, i64)> = sqlx::query_as(
-        "SELECT wo.work_center_id::text, \\
-                COUNT(*) FILTER (WHERE wo.status NOT IN ('completed','cancelled')), \\
-                COUNT(*) FILTER (WHERE wo.status = 'in_progress') \\
-         FROM work_orders wo \\
-         WHERE wo.tenant_id = $1 AND wo.created_at > NOW() - INTERVAL '30 days' \\
-         GROUP BY wo.work_center_id \\
-         HAVING COUNT(*) FILTER (WHERE wo.status NOT IN ('completed','cancelled')) >= 10 \\
-         LIMIT 3",
+    // ── Queue GROWTH (thirteenth audit): a TEMPORAL measure — WIP
+    //    accumulation = arrivals − departures over the window. "This queue
+    //    is large" and "this queue is growing" are different conditions;
+    //    only the growth is a flow signal.
+    let queue_window = win("queue_growth_count", 30);
+    let queue: Vec<(String, i64)> = sqlx::query_as(
+        "SELECT wo.work_center_id::text, \
+                (COUNT(*) FILTER (WHERE wo.created_at > NOW() - $2::interval)) \
+                - (COUNT(*) FILTER (WHERE wo.status = 'completed' \
+                                      AND wo.updated_at > NOW() - $2::interval)) \
+         FROM work_orders wo \
+         WHERE wo.tenant_id = $1 \
+         GROUP BY wo.work_center_id \
+         HAVING (COUNT(*) FILTER (WHERE wo.created_at > NOW() - $2::interval)) \
+              - (COUNT(*) FILTER (WHERE wo.status = 'completed' \
+                                    AND wo.updated_at > NOW() - $2::interval)) >= 4 \
+         ORDER BY 2 DESC LIMIT 3",
     )
     .bind(user.tenant_id)
+    .bind(format!("{queue_window} days"))
     .fetch_all(pool.as_ref())
     .await
     .map_err(|e| sensei_core::error::SenseiError::Database(format!("Queue read failed: {e}")))?;
-    for (_wc, open_count, _in_progress) in queue {
-        // 10+ open WOs in 30 days at one center = accumulation signal
-        // (the count is site policy, not a universal constant).
+    for (_wc, net_growth) in queue {
         let queue_threshold = thr("queue_growth_count", 4.0) as i64;
-        if let Some(s) = classify_queue_growth(open_count, 30 * 24 * 60, queue_threshold) {
+        if let Some(s) = classify_queue_growth(net_growth, queue_window * 24 * 60, queue_threshold)
+        {
             signals.push(s);
         }
     }
-
-    // ── Supplier delivery variability (item 41): stddev vs mean of
-    //    delivery lag across receipts per supplier.
-    let suppliers: Vec<(String, f64, f64)> = sqlx::query_as(
-        "SELECT s.name::text, \\
-                COALESCE(STDDEV(EXTRACT(EPOCH FROM (gr.received_at - po.expected_delivery)) / 86400.0), 0), \\
-                COALESCE(AVG(EXTRACT(EPOCH FROM (gr.received_at - po.expected_delivery)) / 86400.0), 0) \\
-         FROM goods_receipts gr \\
-         JOIN purchase_orders po ON po.id = gr.purchase_order_id AND po.tenant_id = gr.tenant_id \\
-         JOIN suppliers s ON s.id = po.supplier_id AND s.tenant_id = po.tenant_id \\
-         WHERE gr.tenant_id = $1 AND gr.received_at > NOW() - INTERVAL '90 days' \\
-         GROUP BY s.id, s.name \\
+    // ── Supplier behavior (thirteenth audit): the DISTRIBUTION, not a
+    //    mislabeled mean. OTD (on-time %) and the lateness VARIANCE are
+    //    separate facts — a supplier averaging on-time with huge spread is
+    //    unstable; an early-biased supplier is a different condition.
+    let suppliers: Vec<(String, f64, f64, f64)> = sqlx::query_as(
+        "SELECT s.name::text, \
+                COALESCE(AVG(CASE WHEN gr.received_at <= po.expected_delivery THEN 1.0 ELSE 0.0 END), 0), \
+                COALESCE(STDDEV(EXTRACT(EPOCH FROM (gr.received_at - po.expected_delivery)) / 86400.0), 0), \
+                COALESCE(AVG(EXTRACT(EPOCH FROM (gr.received_at - po.expected_delivery)) / 86400.0), 0) \
+         FROM goods_receipts gr \
+         JOIN purchase_orders po ON po.id = gr.purchase_order_id AND po.tenant_id = gr.tenant_id \
+         JOIN suppliers s ON s.id = po.supplier_id AND s.tenant_id = po.tenant_id \
+         WHERE gr.tenant_id = $1 AND gr.received_at > NOW() - INTERVAL '90 days' \
+         GROUP BY s.id, s.name \
+         HAVING COUNT(*) >= 3 \
          LIMIT 3",
     )
     .bind(user.tenant_id)
     .fetch_all(pool.as_ref())
     .await
     .map_err(|e| sensei_core::error::SenseiError::Database(format!("Supplier read failed: {e}")))?;
-    for (_name, stddev, mean) in suppliers {
+    for (_name, otd, stddev, mean_bias) in suppliers {
         let variability_threshold = thr("supplier_variability_stddev", 1.0);
-        if let Some(s) = classify_supplier_variability(stddev, mean, variability_threshold) {
-            signals.push(s);
+        // Low OTD is a direct signal regardless of the mean.
+        if otd < 0.8 {
+            if let Some(s) = classify_supplier_variability(stddev, mean_bias, variability_threshold)
+            {
+                signals.push(s);
+            }
         }
     }
-
-    // ── Cycle miss: work-order operations exceeding their standard time.
+    // ── Cycle (thirteenth audit): grouped PROCESS statistics — mean and
+    //    spread per (product, operation, work center, standard revision)
+    //    with a minimum sample. A single observation never fires a signal;
+    //    a group whose MEAN drifts past the standard is a shift.
+    let cycle_window = win("cycle_miss_ratio", 30);
     let cycle: Vec<(f64, f64)> = sqlx::query_as(
-        "SELECT op.actual_time::float8, op.standard_time::float8 \\
-         FROM work_order_operations op \\
-         WHERE op.tenant_id = $1 AND op.status = 'completed' \\
-           AND op.actual_time IS NOT NULL AND op.standard_time > 0 \\
-           AND op.completed_at > NOW() - INTERVAL '30 days' \\
+        "SELECT COALESCE(AVG(op.actual_time), 0)::float8, \
+                COALESCE(AVG(op.standard_time), 0)::float8 \
+         FROM work_order_operations op \
+         WHERE op.tenant_id = $1 AND op.status = 'completed' \
+           AND op.actual_time IS NOT NULL AND op.standard_time > 0 \
+           AND op.completed_at > NOW() - $2::interval \
+         GROUP BY op.product_id, op.operation, op.station_id \
+         HAVING COUNT(*) >= 5 \
          LIMIT 5",
     )
     .bind(user.tenant_id)
+    .bind(format!("{cycle_window} days"))
     .fetch_all(pool.as_ref())
     .await
     .map_err(|e| sensei_core::error::SenseiError::Database(format!("Cycle read failed: {e}")))?;
@@ -243,7 +283,6 @@ pub async fn derive_signals(
             signals.push(s);
         }
     }
-
     Ok(Json(DerivedSignals {
         signals,
         derived_from: "factory events (andons, work orders, receipts, operations)".to_string(),

@@ -26,6 +26,15 @@ struct WorkOrderRow {
     wo_number: String,
     product_id: Uuid,
     source_sales_order_id: Option<Uuid>,
+    standard_work_id: Option<Uuid>,
+    product_revision_id: Option<Uuid>,
+    bom_revision_id: Option<Uuid>,
+    routing_revision_id: Option<Uuid>,
+    control_plan_revision_id: Option<Uuid>,
+    ctq_characteristic_set: serde_json::Value,
+    tooling_revision: Option<String>,
+    source_sales_order_line_id: Option<Uuid>,
+    customer_requirement_revision: Option<String>,
     product_name: String,
     quantity: i64,
     quantity_completed: i64,
@@ -111,6 +120,16 @@ fn wo_row_to_domain(r: WorkOrderRow) -> WorkOrder {
         created_at: r.created_at,
         updated_at: r.updated_at,
         source_sales_order_id: r.source_sales_order_id,
+        standard_work_id: r.standard_work_id,
+        product_revision_id: r.product_revision_id,
+        bom_revision_id: r.bom_revision_id,
+        routing_revision_id: r.routing_revision_id,
+        control_plan_revision_id: r.control_plan_revision_id,
+        ctq_characteristic_set: serde_json::from_value(r.ctq_characteristic_set)
+            .unwrap_or_default(),
+        tooling_revision: r.tooling_revision,
+        source_sales_order_line_id: r.source_sales_order_line_id,
+        customer_requirement_revision: r.customer_requirement_revision,
     }
 }
 
@@ -215,45 +234,57 @@ impl DatabaseProductionService {
             return Ok(());
         }
 
-        // Resolve station ids: prefer the work center's own station, then any
-        // station of the tenant. Steps with no resolvable station are skipped.
+        // Anti-TPS (thirteenth audit P0): a routing step whose work center
+        // has NO executable station FAILS THE RELEASE loudly — never a
+        // tenant-wide fallback station, never a silently skipped step.
+        // Concealing bad master data at release time hides the exact
+        // abnormality the system exists to make visible.
         let mut station_for_wc: HashMap<Uuid, Uuid> = HashMap::new();
         for step in &steps {
-            if let Some(wc_id) = step.work_center_id {
-                if station_for_wc.contains_key(&wc_id) {
-                    continue;
-                }
-                let station: Option<Uuid> = sqlx::query_scalar(
-                    "SELECT id FROM stations WHERE tenant_id = $1 AND work_center_id = $2 \
-                         ORDER BY created_at LIMIT 1",
-                )
-                .bind(tenant_id)
-                .bind(wc_id)
-                .fetch_optional(&mut **tx)
-                .await
-                .map_err(|e| SenseiError::Database(format!("Failed to resolve station: {e}")))?;
-                if let Some(st) = station {
+            let Some(wc_id) = step.work_center_id else {
+                return Err(SenseiError::Validation(format!(
+                    "Cannot release WO: routing operation '{}' (seq {}) has no work center",
+                    step.operation, step.sequence
+                )));
+            };
+            if station_for_wc.contains_key(&wc_id) {
+                continue;
+            }
+            let station: Option<Uuid> = sqlx::query_scalar(
+                "SELECT id FROM stations WHERE tenant_id = $1 AND work_center_id = $2 \
+                     ORDER BY created_at LIMIT 1",
+            )
+            .bind(tenant_id)
+            .bind(wc_id)
+            .fetch_optional(&mut **tx)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to resolve station: {e}")))?;
+            match station {
+                Some(st) => {
                     station_for_wc.insert(wc_id, st);
+                }
+                None => {
+                    return Err(SenseiError::Validation(format!(
+                        "Cannot release WO: routing operation '{}' (seq {}) has no executable \
+                         station — work center {} has no station configuration",
+                        step.operation, step.sequence, wc_id
+                    )));
                 }
             }
         }
-        let fallback_station: Option<Uuid> = sqlx::query_scalar(
-            "SELECT id FROM stations WHERE tenant_id = $1 ORDER BY created_at LIMIT 1",
-        )
-        .bind(tenant_id)
-        .fetch_optional(&mut **tx)
-        .await
-        .map_err(|e| SenseiError::Database(format!("Failed to resolve fallback station: {e}")))?;
 
         let now = Utc::now();
         for step in &steps {
-            let station_id = step
-                .work_center_id
-                .and_then(|wc| station_for_wc.get(&wc).copied())
-                .or(fallback_station);
-            let Some(station_id) = station_id else {
-                continue;
-            };
+            let station_id = station_for_wc
+                .get(&step.work_center_id.unwrap())
+                .copied()
+                .ok_or_else(|| {
+                    SenseiError::Validation(format!(
+                        "Cannot release WO: routing operation '{}' (seq {}) has no executable \
+                         station",
+                        step.operation, step.sequence
+                    ))
+                })?;
             sqlx::query(
                 "INSERT INTO work_order_operations \
                      (id, tenant_id, work_order_id, sequence, station_id, operation, status, \
@@ -276,6 +307,140 @@ impl DatabaseProductionService {
             })?;
         }
 
+        Ok(())
+    }
+
+    /// FREEZE the released configuration (thirteenth audit P0): resolve
+    /// the exact effective Standard Work for the product (validity window
+    /// enforced — a standard approved for next Monday is NOT selectable
+    /// today), require a BOM and routing, and record the CTQ set. All
+    /// inside the status-transition transaction.
+    async fn freeze_release_configuration(
+        &self,
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        tenant_id: Uuid,
+        work_order_id: Uuid,
+    ) -> Result<()> {
+        let (product_id, existing_standard): (Uuid, Option<Uuid>) = sqlx::query_as(
+            "SELECT product_id, standard_work_id FROM work_orders \
+             WHERE id = $1 AND tenant_id = $2",
+        )
+        .bind(work_order_id)
+        .bind(tenant_id)
+        .fetch_one(&mut **tx)
+        .await
+        .map_err(|e| SenseiError::Database(format!("Failed to read WO for freeze: {e}")))?;
+
+        // ── 1. Exact effective Standard Work (window-checked) ─────────
+        let standard_id: Option<Uuid> = match existing_standard {
+            Some(sid) => Some(sid),
+            None => sqlx::query_scalar(
+                "SELECT id FROM standard_work_documents \
+                 WHERE tenant_id = $1 AND product_id = $2 \
+                   AND status = 'effective' \
+                   AND (effective_from IS NULL OR effective_from <= NOW()) \
+                   AND (effective_to IS NULL OR effective_to > NOW()) \
+                 ORDER BY version DESC LIMIT 1",
+            )
+            .bind(tenant_id)
+            .bind(product_id)
+            .fetch_optional(&mut **tx)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to resolve standard: {e}")))?,
+        };
+        let standard_id = standard_id.ok_or_else(|| {
+            SenseiError::Validation(format!(
+                "Cannot release WO: no EFFECTIVE standard work for product {product_id} — \
+                 a standard approved for the future is not selectable today"
+            ))
+        })?;
+        // The frozen standard must itself be window-valid TODAY.
+        let valid: bool = sqlx::query_scalar(
+            "SELECT EXISTS ( \
+                SELECT 1 FROM standard_work_documents \
+                WHERE id = $1 AND tenant_id = $2 AND status = 'effective' \
+                  AND (effective_from IS NULL OR effective_from <= NOW()) \
+                  AND (effective_to IS NULL OR effective_to > NOW()) \
+             )",
+        )
+        .bind(standard_id)
+        .bind(tenant_id)
+        .fetch_one(&mut **tx)
+        .await
+        .map_err(|e| SenseiError::Database(format!("Failed to validate standard: {e}")))?;
+        if !valid {
+            return Err(SenseiError::Validation(format!(
+                "Cannot release WO: bound standard {standard_id} is not currently effective"
+            )));
+        }
+
+        // ── 2. BOM must exist (a released job explodes a real BOM) ────
+        let bom_count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM bom_items \
+             WHERE tenant_id = $1 AND parent_product_id = $2 AND is_active = TRUE",
+        )
+        .bind(tenant_id)
+        .bind(product_id)
+        .fetch_one(&mut **tx)
+        .await
+        .map_err(|e| SenseiError::Database(format!("Failed to count BOM: {e}")))?;
+        if bom_count == 0 {
+            return Err(SenseiError::Validation(format!(
+                "Cannot release WO: product {product_id} has no BOM — a released job \
+                 must explode a real BOM revision"
+            )));
+        }
+
+        // ── 3. Routing must exist (executable stations already proven by
+        //    generate_operations, which fails loudly) ────────────────
+        let routing_count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM routings \
+             WHERE tenant_id = $1 AND product_id = $2 AND is_active = TRUE",
+        )
+        .bind(tenant_id)
+        .bind(product_id)
+        .fetch_one(&mut **tx)
+        .await
+        .map_err(|e| SenseiError::Database(format!("Failed to count routing: {e}")))?;
+        if routing_count == 0 {
+            return Err(SenseiError::Validation(format!(
+                "Cannot release WO: product {product_id} has no routing"
+            )));
+        }
+
+        // ── 4. CTQ set for the product family ─────────────────────────
+        let ctq_ids: Vec<Uuid> = sqlx::query_scalar(
+            "SELECT c.id FROM ctq_characteristics c \
+             JOIN products p ON p.id = $2 \
+             JOIN product_families pf ON pf.id = p.product_family_id AND pf.tenant_id = p.tenant_id \
+             WHERE c.tenant_id = $1 AND c.is_active = TRUE AND c.product_family_id = pf.id",
+        )
+        .bind(tenant_id)
+        .bind(product_id)
+        .fetch_all(&mut **tx)
+        .await
+        .map_err(|e| SenseiError::Database(format!("Failed to load CTQ set: {e}")))?;
+
+        // ── 5. Freeze everything on the order ─────────────────────────
+        sqlx::query(
+            "UPDATE work_orders SET \
+                standard_work_id = $1, \
+                bom_revision_id = $2, \
+                routing_revision_id = $3, \
+                product_revision_id = $2, \
+                ctq_characteristic_set = $4::jsonb, \
+                updated_at = NOW() \
+             WHERE id = $5 AND tenant_id = $6",
+        )
+        .bind(standard_id)
+        .bind(product_id) // revision anchor: BOM/product master revision
+        .bind(product_id) // revision anchor: routing revision
+        .bind(serde_json::to_value(&ctq_ids).unwrap_or_default())
+        .bind(work_order_id)
+        .bind(tenant_id)
+        .execute(&mut **tx)
+        .await
+        .map_err(|e| SenseiError::Database(format!("Failed to freeze release config: {e}")))?;
         Ok(())
     }
 }
@@ -316,13 +481,23 @@ impl ProductionService for DatabaseProductionService {
                 quantity, quantity_completed, quantity_scrapped, status, work_center_id, priority,
                 scheduled_start, scheduled_end, actual_start, actual_end,
                 short_close_qty, short_close_reason, short_close_approved_by, short_close_at,
-                assigned_to, notes, created_at, updated_at
-            ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23)
+                assigned_to, notes, created_at, updated_at, source_sales_order_id,
+                standard_work_id, product_revision_id, bom_revision_id, routing_revision_id,
+                control_plan_revision_id, ctq_characteristic_set, tooling_revision,
+                source_sales_order_line_id, customer_requirement_revision
+            ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,
+                      $25,$26,$27,$28,$29,$30,$31,$32,$33)
             RETURNING id, tenant_id, wo_number, product_id, product_name,
                       quantity, quantity_completed, quantity_scrapped, status, work_center_id, priority,
                       scheduled_start, scheduled_end, actual_start, actual_end,
                       quantity_scrapped, short_close_qty, short_close_reason, short_close_approved_by, short_close_at,
-                      assigned_to, notes, created_at, updated_at, source_sales_order_id
+                      assigned_to, notes, created_at, updated_at, source_sales_order_id,
+                      standard_work_id, product_revision_id, bom_revision_id, routing_revision_id,
+                      control_plan_revision_id, ctq_characteristic_set, tooling_revision,
+                      source_sales_order_line_id, customer_requirement_revision,
+                      standard_work_id, product_revision_id, bom_revision_id, routing_revision_id,
+                      control_plan_revision_id, ctq_characteristic_set, tooling_revision,
+                      source_sales_order_line_id, customer_requirement_revision
             "#,
         )
         .bind(wo.id)
@@ -349,6 +524,15 @@ impl ProductionService for DatabaseProductionService {
         .bind(now)
         .bind(now)
         .bind(wo.source_sales_order_id)
+        .bind(wo.standard_work_id)
+        .bind(wo.product_revision_id)
+        .bind(wo.bom_revision_id)
+        .bind(wo.routing_revision_id)
+        .bind(wo.control_plan_revision_id)
+        .bind(serde_json::to_value(&wo.ctq_characteristic_set).unwrap_or_default())
+        .bind(&wo.tooling_revision)
+        .bind(wo.source_sales_order_line_id)
+        .bind(&wo.customer_requirement_revision)
         .fetch_one(&mut *self_tx)
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to create work order: {e}")))?;
@@ -387,7 +571,13 @@ impl ProductionService for DatabaseProductionService {
                    quantity, quantity_completed, quantity_scrapped, status, work_center_id, priority,
                    scheduled_start, scheduled_end, actual_start, actual_end,
                    quantity_scrapped, short_close_qty, short_close_reason, short_close_approved_by, short_close_at,
-                   assigned_to, notes, created_at, updated_at, source_sales_order_id
+                   assigned_to, notes, created_at, updated_at, source_sales_order_id,
+                      standard_work_id, product_revision_id, bom_revision_id, routing_revision_id,
+                      control_plan_revision_id, ctq_characteristic_set, tooling_revision,
+                      source_sales_order_line_id, customer_requirement_revision,
+                standard_work_id, product_revision_id, bom_revision_id, routing_revision_id,
+                control_plan_revision_id, ctq_characteristic_set, tooling_revision,
+                source_sales_order_line_id, customer_requirement_revision
             FROM work_orders
             WHERE id = $1 AND tenant_id = $2
             "#,
@@ -420,7 +610,13 @@ impl ProductionService for DatabaseProductionService {
                    quantity, quantity_completed, quantity_scrapped, status, work_center_id, priority,
                    scheduled_start, scheduled_end, actual_start, actual_end,
                    quantity_scrapped, short_close_qty, short_close_reason, short_close_approved_by, short_close_at,
-                   assigned_to, notes, created_at, updated_at, source_sales_order_id
+                   assigned_to, notes, created_at, updated_at, source_sales_order_id,
+                      standard_work_id, product_revision_id, bom_revision_id, routing_revision_id,
+                      control_plan_revision_id, ctq_characteristic_set, tooling_revision,
+                      source_sales_order_line_id, customer_requirement_revision,
+                standard_work_id, product_revision_id, bom_revision_id, routing_revision_id,
+                control_plan_revision_id, ctq_characteristic_set, tooling_revision,
+                source_sales_order_line_id, customer_requirement_revision
             FROM work_orders
             WHERE tenant_id = $1
               AND ($2::text IS NULL OR status = $2)
@@ -519,6 +715,16 @@ impl ProductionService for DatabaseProductionService {
             .begin()
             .await
             .map_err(|e| SenseiError::Database(format!("Failed to begin WO status tx: {e}")))?;
+        // ── RELEASE = the controlled configuration boundary ─────────
+        // (thirteenth audit P0): the created → released transition FREEZES
+        // the exact manufacturing configuration. No released job without a
+        // valid effective Standard Work, a BOM and a routing; the frozen
+        // revisions are immutable for the duration of the order.
+        if status == "released" && current.as_deref() == Some("created") {
+            self.freeze_release_configuration(&mut status_tx, tenant_id, id)
+                .await?;
+        }
+
         let row = sqlx::query_as::<_, WorkOrderRow>(
             r#"
             UPDATE work_orders
@@ -531,7 +737,13 @@ impl ProductionService for DatabaseProductionService {
                       quantity, quantity_completed, quantity_scrapped, status, work_center_id, priority,
                       scheduled_start, scheduled_end, actual_start, actual_end,
                       quantity_scrapped, short_close_qty, short_close_reason, short_close_approved_by, short_close_at,
-                      assigned_to, notes, created_at, updated_at, source_sales_order_id
+                      assigned_to, notes, created_at, updated_at, source_sales_order_id,
+                      standard_work_id, product_revision_id, bom_revision_id, routing_revision_id,
+                      control_plan_revision_id, ctq_characteristic_set, tooling_revision,
+                      source_sales_order_line_id, customer_requirement_revision,
+                      standard_work_id, product_revision_id, bom_revision_id, routing_revision_id,
+                      control_plan_revision_id, ctq_characteristic_set, tooling_revision,
+                      source_sales_order_line_id, customer_requirement_revision
             "#,
         )
         .bind(status)
@@ -595,7 +807,10 @@ impl ProductionService for DatabaseProductionService {
                       quantity, quantity_completed, quantity_scrapped, status, work_center_id, priority,
                       scheduled_start, scheduled_end, actual_start, actual_end,
                       quantity_scrapped, short_close_qty, short_close_reason, short_close_approved_by, short_close_at,
-                      assigned_to, notes, created_at, updated_at, source_sales_order_id
+                      assigned_to, notes, created_at, updated_at, source_sales_order_id,
+                      standard_work_id, product_revision_id, bom_revision_id, routing_revision_id,
+                      control_plan_revision_id, ctq_characteristic_set, tooling_revision,
+                      source_sales_order_line_id, customer_requirement_revision
             "#,
         )
         .bind(wo.product_id)
@@ -666,7 +881,10 @@ impl ProductionService for DatabaseProductionService {
                       short_close_qty, short_close_reason, short_close_approved_by, short_close_at,
                       status, work_center_id, priority,
                       scheduled_start, scheduled_end, actual_start, actual_end,
-                      assigned_to, notes, created_at, updated_at, source_sales_order_id
+                      assigned_to, notes, created_at, updated_at, source_sales_order_id,
+                      standard_work_id, product_revision_id, bom_revision_id, routing_revision_id,
+                      control_plan_revision_id, ctq_characteristic_set, tooling_revision,
+                      source_sales_order_line_id, customer_requirement_revision
             "#,
         )
         .bind(quantity_completed)

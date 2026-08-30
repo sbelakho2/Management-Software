@@ -1776,7 +1776,7 @@ pub fn build_router(state: AppState) -> Router {
             "/api/v1/a3/{id}",
             get(routes::a3::get_a3)
                 .put(routes::a3::update_a3)
-                .delete(routes::a3::delete_a3),
+                .delete(routes::ops::delete_a3),
         )
         .route("/api/v1/a3/{id}/close", post(routes::a3::close_a3))
         // ── Obeya Routes ──────────────────────────────────────────────────
@@ -2092,6 +2092,10 @@ pub fn build_router(state: AppState) -> Router {
         .route(
             "/api/v1/integration/checkpoint",
             post(routes::integration::save_checkpoint),
+        )
+        .route(
+            "/api/v1/integration/checkpoint/{system}/{source_table}",
+            get(routes::integration::get_checkpoint),
         )
         .route(
             "/api/v1/sales/flow-impact",

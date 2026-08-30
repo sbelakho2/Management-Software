@@ -37,6 +37,29 @@ type MappingRow = (String, Uuid, Option<String>, Option<String>, bool);
 /// Field-level source-of-truth (item 2): `sensei_wins` fields are NEVER
 /// overwritten by a legacy import. Defaults to writable when the matrix
 /// has no row (the matrix is authoritative when it does).
+/// Field authority inside an open transaction (thirteenth audit P0:
+/// the authority matrix read must be part of the same tx as the write).
+async fn field_is_writable_in_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    tenant_id: Uuid,
+    sensei_entity: &str,
+    field_name: &str,
+) -> Result<bool> {
+    let mode: Option<String> = sqlx::query_scalar(
+        "SELECT mode FROM integration_field_authority \
+         WHERE tenant_id = $1 AND sensei_entity = $2 AND field_name = $3",
+    )
+    .bind(tenant_id)
+    .bind(sensei_entity)
+    .bind(field_name)
+    .fetch_optional(&mut **tx)
+    .await
+    .map_err(|e| SenseiError::Database(format!("Field authority read failed: {e}")))?;
+    // Item 13 (thirteenth audit): FAIL CLOSED — unknown authority is NOT
+    // writable; only source_wins fields may be overwritten by the import.
+    Ok(mode.as_deref() == Some("source_wins"))
+}
+
 pub async fn field_is_writable(
     pool: &sqlx::PgPool,
     tenant_id: Uuid,
@@ -117,15 +140,54 @@ pub struct Envelope {
     pub extraction_run_id: String,
 }
 
+/// REAL SHA-256 over the canonicalized payload JSON (thirteenth audit):
+/// integration identity/idempotency/provenance must not rely on a 64-bit
+/// FNV-style hash. The canonicalization sorts object keys so identical
+/// payloads always hash identically regardless of key order.
 fn sha256_hex(s: &str) -> String {
-    // Deterministic payload hash (FNV-1a 64-bit — adequate for change
-    // detection, not cryptography).
-    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
-    for b in s.as_bytes() {
-        h ^= u64::from(*b);
-        h = h.wrapping_mul(0x1000_0000_01b3);
+    use sha2::{Digest, Sha256};
+    let mut hasher = Sha256::new();
+    hasher.update(s.as_bytes());
+    let digest = hasher.finalize();
+    digest.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+/// Canonicalize a payload for hashing: sorted object keys, stable JSON.
+fn canonical_json(value: &serde_json::Value) -> String {
+    fn canon(v: &serde_json::Value, out: &mut String) {
+        match v {
+            serde_json::Value::Object(map) => {
+                let mut keys: Vec<&String> = map.keys().collect();
+                keys.sort();
+                out.push('{');
+                for (i, k) in keys.iter().enumerate() {
+                    if i > 0 {
+                        out.push(',');
+                    }
+                    out.push('"');
+                    out.push_str(k);
+                    out.push('"');
+                    out.push(':');
+                    canon(&map[*k], out);
+                }
+                out.push('}');
+            }
+            serde_json::Value::Array(items) => {
+                out.push('[');
+                for (i, item) in items.iter().enumerate() {
+                    if i > 0 {
+                        out.push(',');
+                    }
+                    canon(item, out);
+                }
+                out.push(']');
+            }
+            other => out.push_str(&other.to_string()),
+        }
     }
-    format!("{h:016x}")
+    let mut out = String::new();
+    canon(value, &mut out);
+    out
 }
 
 async fn inbox_seen(
@@ -248,6 +310,21 @@ pub async fn resolve_legacy_id(
     }
 }
 
+async fn resolve_product_sku_in_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    tenant_id: Uuid,
+    sku: &str,
+) -> Result<Option<Uuid>> {
+    let id: Option<Uuid> =
+        sqlx::query_scalar("SELECT id FROM products WHERE tenant_id = $1 AND product_number = $2")
+            .bind(tenant_id)
+            .bind(sku)
+            .fetch_optional(&mut **tx)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Product SKU resolution failed: {e}")))?;
+    Ok(id)
+}
+
 pub async fn resolve_product_sku(
     pool: &sqlx::PgPool,
     tenant_id: Uuid,
@@ -261,6 +338,33 @@ pub async fn resolve_product_sku(
             .await
             .map_err(|e| SenseiError::Database(format!("Product SKU resolution failed: {e}")))?;
     Ok(id)
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn record_unresolved_in_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    tenant_id: Uuid,
+    system: &str,
+    entity: &str,
+    legacy_id: &str,
+    kind: &str,
+    value: &str,
+    context: serde_json::Value,
+) -> Result<()> {
+    sqlx::query(
+        "INSERT INTO integration_reconciliation  (tenant_id, source_system, source_entity, source_id, reference_kind, reference_value, context, status)  VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, 'open')  ON CONFLICT (tenant_id, source_system, source_entity, source_id, reference_kind, reference_value) DO NOTHING",
+    )
+    .bind(tenant_id)
+    .bind(system)
+    .bind(entity)
+    .bind(legacy_id)
+    .bind(kind)
+    .bind(value)
+    .bind(context)
+    .execute(&mut **tx)
+    .await
+    .map_err(|e| SenseiError::Database(format!("Reconciliation record failed: {e}")))?;
+    Ok(())
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -316,94 +420,85 @@ async fn quarantine(
 
 // ── Canonical-domain helpers (through the SERVICES, never raw writes) ───
 
-async fn find_or_create_account(
-    state: &AppState,
+async fn upsert_account_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     tenant_id: Uuid,
     name: &str,
     email: Option<String>,
     phone: Option<String>,
     country: Option<String>,
 ) -> Result<Uuid> {
-    let pool = state
-        .db_pool
-        .as_ref()
-        .ok_or_else(|| SenseiError::Database("Import requires the database".to_string()))?;
+    // Canonical SQL mirrored from DatabaseAccountsService — executed in
+    // the SAME transaction as the identity claim + inbox finalization
+    // (thirteenth audit P0: canonical mutation, map and inbox commit or
+    // roll back together).
     let existing: Option<Uuid> =
         sqlx::query_scalar("SELECT id FROM accounts WHERE tenant_id = $1 AND name = $2")
             .bind(tenant_id)
             .bind(name)
-            .fetch_optional(pool.as_ref())
+            .fetch_optional(&mut **tx)
             .await
             .map_err(|e| SenseiError::Database(format!("Account lookup failed: {e}")))?;
     if let Some(id) = existing {
-        // Update facts through the canonical service (domain invariants).
-        let mut account = state
-            .accounts_service
-            .get_account(tenant_id, id)
+        // Field authority (items 2/13): only CRM-owned facts update;
+        // Sensei-owned lifecycle state is never clobbered.
+        let name_ok = field_is_writable_in_tx(tx, tenant_id, "account", "name").await?;
+        let email_ok = field_is_writable_in_tx(tx, tenant_id, "account", "email").await?;
+        let phone_ok = field_is_writable_in_tx(tx, tenant_id, "account", "phone").await?;
+        let (final_name, final_email, final_phone) = if name_ok && email_ok && phone_ok {
+            (name.to_string(), email, phone)
+        } else {
+            // Sensei owns at least one field — read the current row and
+            // patch only the writable fields (PATCH semantics, item 13).
+            let row: Option<(String, Option<String>, Option<String>)> = sqlx::query_as(
+                "SELECT name, email, phone FROM accounts WHERE id = $1 AND tenant_id = $2",
+            )
+            .bind(id)
+            .bind(tenant_id)
+            .fetch_optional(&mut **tx)
             .await
-            .unwrap_or_else(|_| sensei_core::domain::entities::Account {
-                id,
-                tenant_id,
-                name: name.to_string(),
-                tax_id: None,
-                email: email.clone(),
-                phone: phone.clone(),
-                address_line1: None,
-                address_line2: None,
-                city: None,
-                state: None,
-                postal_code: None,
-                country: country.clone(),
-                account_type: "customer".to_string(),
-                is_active: true,
-                notes: None,
-                created_at: chrono::Utc::now(),
-                updated_at: chrono::Utc::now(),
-            });
-        if account.email.is_none() {
-            account.email = email;
-        }
-        if account.phone.is_none() {
-            account.phone = phone;
-        }
-        if account.country.is_none() {
-            account.country = country;
-        }
-        let _ = state
-            .accounts_service
-            .update_account(tenant_id, id, account)
-            .await;
+            .map_err(|e| SenseiError::Database(format!("Account read failed: {e}")))?;
+            let (cur_name, cur_email, cur_phone) = row.unwrap_or_default();
+            (
+                if name_ok { name.to_string() } else { cur_name },
+                if email_ok { email } else { cur_email },
+                if phone_ok { phone } else { cur_phone },
+            )
+        };
+        sqlx::query(
+            "UPDATE accounts SET name = $3, phone = $4, email = $5, updated_at = NOW() \
+             WHERE id = $1 AND tenant_id = $2",
+        )
+        .bind(id)
+        .bind(tenant_id)
+        .bind(&final_name)
+        .bind(&final_phone)
+        .bind(&final_email)
+        .execute(&mut **tx)
+        .await
+        .map_err(|e| SenseiError::Database(format!("Account update failed: {e}")))?;
         return Ok(id);
     }
-    let account = sensei_core::domain::entities::Account {
-        id: Uuid::new_v4(),
-        tenant_id,
-        name: name.to_string(),
-        tax_id: None,
-        email,
-        phone,
-        address_line1: None,
-        address_line2: None,
-        city: None,
-        state: None,
-        postal_code: None,
-        country,
-        account_type: "customer".to_string(),
-        is_active: true,
-        notes: None,
-        created_at: chrono::Utc::now(),
-        updated_at: chrono::Utc::now(),
-    };
-    state
-        .accounts_service
-        .create_account(tenant_id, account)
-        .await
-        .map(|a| a.id)
-        .map_err(|e| SenseiError::Internal(format!("Account create failed: {e}")))
+    let id = Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO accounts (id, tenant_id, name, account_type, status, phone, email, \
+                               country, created_at, updated_at) \
+         VALUES ($1, $2, $3, 'customer', 'active', $4, $5, $6, NOW(), NOW())",
+    )
+    .bind(id)
+    .bind(tenant_id)
+    .bind(name)
+    .bind(&phone)
+    .bind(&email)
+    .bind(&country)
+    .execute(&mut **tx)
+    .await
+    .map_err(|e| SenseiError::Database(format!("Account create failed: {e}")))?;
+    Ok(id)
 }
 
-async fn find_or_create_product(
-    state: &AppState,
+async fn upsert_product_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     tenant_id: Uuid,
     sku: &str,
     name: &str,
@@ -411,87 +506,61 @@ async fn find_or_create_product(
     standard_cost: Option<Decimal>,
     selling_price: Option<Decimal>,
 ) -> Result<Uuid> {
-    let pool = state
-        .db_pool
-        .as_ref()
-        .ok_or_else(|| SenseiError::Database("Import requires the database".to_string()))?;
+    // Canonical SQL mirrored from DatabaseProductsService — same tx as
+    // the claim + inbox (thirteenth audit P0).
     let existing: Option<Uuid> =
         sqlx::query_scalar("SELECT id FROM products WHERE tenant_id = $1 AND product_number = $2")
             .bind(tenant_id)
             .bind(sku)
-            .fetch_optional(pool.as_ref())
+            .fetch_optional(&mut **tx)
             .await
             .map_err(|e| SenseiError::Database(format!("Product lookup failed: {e}")))?;
     if let Some(id) = existing {
-        let _ = state
-            .products_service
-            .update_product(
-                tenant_id,
-                id,
-                sensei_core::domain::entities::Product {
-                    id,
-                    tenant_id,
-                    sku: sku.to_string(),
-                    name: name.to_string(),
-                    description: None,
-                    category: None,
-                    product_type: "finished_good".to_string(),
-                    unit_of_measure: unit.to_string(),
-                    standard_cost: standard_cost
-                        .map(|d| d.to_string().parse::<f64>().unwrap_or(0.0)),
-                    selling_price: selling_price
-                        .map(|d| d.to_string().parse::<f64>().unwrap_or(0.0)),
-                    min_stock_level: None,
-                    max_stock_level: None,
-                    current_stock: 0.0,
-                    is_active: true,
-                    notes: None,
-                    created_at: chrono::Utc::now(),
-                    updated_at: chrono::Utc::now(),
-                },
-            )
-            .await;
+        // PATCH semantics: only source-owned master-data fields update;
+        // planning policy (min/max stock) is NEVER reset by a re-import.
+        sqlx::query(
+            "UPDATE products SET name = $3, standard_cost = $4, list_price = $5, \
+                                unit_of_measure = $6, updated_at = NOW() \
+             WHERE id = $1 AND tenant_id = $2",
+        )
+        .bind(id)
+        .bind(tenant_id)
+        .bind(name)
+        .bind(standard_cost.map(|d| d.to_string().parse::<f64>().unwrap_or(0.0)))
+        .bind(selling_price.map(|d| d.to_string().parse::<f64>().unwrap_or(0.0)))
+        .bind(unit)
+        .execute(&mut **tx)
+        .await
+        .map_err(|e| SenseiError::Database(format!("Product update failed: {e}")))?;
         return Ok(id);
     }
-    state
-        .products_service
-        .create_product(
-            tenant_id,
-            sensei_core::domain::entities::Product {
-                id: Uuid::new_v4(),
-                tenant_id,
-                sku: sku.to_string(),
-                name: name.to_string(),
-                description: None,
-                category: None,
-                product_type: "finished_good".to_string(),
-                unit_of_measure: unit.to_string(),
-                standard_cost: standard_cost.map(|d| d.to_string().parse::<f64>().unwrap_or(0.0)),
-                selling_price: selling_price.map(|d| d.to_string().parse::<f64>().unwrap_or(0.0)),
-                min_stock_level: None,
-                max_stock_level: None,
-                current_stock: 0.0,
-                is_active: true,
-                notes: None,
-                created_at: chrono::Utc::now(),
-                updated_at: chrono::Utc::now(),
-            },
-        )
-        .await
-        .map(|p| p.id)
-        .map_err(|e| SenseiError::Internal(format!("Product create failed: {e}")))
+    let id = Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO products (id, tenant_id, product_number, name, unit_of_measure, \
+                               standard_cost, list_price, quantity_on_hand, is_active, \
+                               product_type, created_at, updated_at) \
+         VALUES ($1, $2, $3, $4, $5, $6, $7, 0, TRUE, 'finished_good', NOW(), NOW())",
+    )
+    .bind(id)
+    .bind(tenant_id)
+    .bind(sku)
+    .bind(name)
+    .bind(unit)
+    .bind(standard_cost.map(|d| d.to_string().parse::<f64>().unwrap_or(0.0)))
+    .bind(selling_price.map(|d| d.to_string().parse::<f64>().unwrap_or(0.0)))
+    .execute(&mut **tx)
+    .await
+    .map_err(|e| SenseiError::Database(format!("Product create failed: {e}")))?;
+    Ok(id)
 }
 
-async fn find_or_create_contact(
-    state: &AppState,
+async fn upsert_contact_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     tenant_id: Uuid,
     account_id: Option<Uuid>,
     c: &sensei_services::integration::CanonicalContact,
 ) -> Result<Uuid> {
-    let pool = state
-        .db_pool
-        .as_ref()
-        .ok_or_else(|| SenseiError::Database("Import requires the database".to_string()))?;
+    // Canonical SQL mirrored from DatabaseContactsService — same tx.
     let existing: Option<Uuid> = match c.email.as_deref().unwrap_or("") {
         "" => sqlx::query_scalar(
             "SELECT id FROM contacts WHERE tenant_id = $1 AND first_name = $2 AND last_name = $3 LIMIT 1",
@@ -499,7 +568,7 @@ async fn find_or_create_contact(
         .bind(tenant_id)
         .bind(&c.first_name)
         .bind(&c.last_name)
-        .fetch_optional(pool.as_ref())
+        .fetch_optional(&mut **tx)
         .await
         .map_err(|e| SenseiError::Database(format!("Contact lookup failed: {e}")))?,
         email => sqlx::query_scalar(
@@ -507,76 +576,59 @@ async fn find_or_create_contact(
         )
         .bind(tenant_id)
         .bind(email)
-        .fetch_optional(pool.as_ref())
+        .fetch_optional(&mut **tx)
         .await
         .map_err(|e| SenseiError::Database(format!("Contact lookup failed: {e}")))?,
     };
     if let Some(id) = existing {
-        // Update the relationship through the canonical service.
-        let _ = state
-            .contacts_service
-            .update_contact(
-                tenant_id,
-                id,
-                sensei_core::domain::entities::Contact {
-                    id,
-                    tenant_id,
-                    account_id,
-                    first_name: c.first_name.clone(),
-                    last_name: c.last_name.clone(),
-                    email: c.email.clone().unwrap_or_default(),
-                    phone: c.phone.clone(),
-                    job_title: None,
-                    department: None,
-                    is_primary: account_id.is_some(),
-                    is_active: true,
-                    notes: None,
-                    created_at: chrono::Utc::now(),
-                    updated_at: chrono::Utc::now(),
-                },
-            )
-            .await;
+        // Item 14: the account relationship is re-resolved through the
+        // identity map on every import — a contact never silently loses
+        // its company.
+        sqlx::query(
+            "UPDATE contacts SET account_id = $3, first_name = $4, last_name = $5, \
+                                 email = $6, phone = $7, updated_at = NOW() \
+             WHERE id = $1 AND tenant_id = $2",
+        )
+        .bind(id)
+        .bind(tenant_id)
+        .bind(account_id)
+        .bind(&c.first_name)
+        .bind(&c.last_name)
+        .bind(&c.email)
+        .bind(&c.phone)
+        .execute(&mut **tx)
+        .await
+        .map_err(|e| SenseiError::Database(format!("Contact update failed: {e}")))?;
         return Ok(id);
     }
-    state
-        .contacts_service
-        .create_contact(
-            tenant_id,
-            sensei_core::domain::entities::Contact {
-                id: Uuid::new_v4(),
-                tenant_id,
-                account_id,
-                first_name: c.first_name.clone(),
-                last_name: c.last_name.clone(),
-                email: c.email.clone().unwrap_or_default(),
-                phone: c.phone.clone(),
-                job_title: None,
-                department: None,
-                is_primary: account_id.is_some(),
-                is_active: true,
-                notes: None,
-                created_at: chrono::Utc::now(),
-                updated_at: chrono::Utc::now(),
-            },
-        )
-        .await
-        .map(|c| c.id)
-        .map_err(|e| SenseiError::Internal(format!("Contact create failed: {e}")))
+    let id = Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO contacts (id, tenant_id, first_name, last_name, email, phone, \
+                               account_id, is_active, created_at, updated_at) \
+         VALUES ($1, $2, $3, $4, $5, $6, $7, TRUE, NOW(), NOW())",
+    )
+    .bind(id)
+    .bind(tenant_id)
+    .bind(&c.first_name)
+    .bind(&c.last_name)
+    .bind(&c.email)
+    .bind(&c.phone)
+    .bind(account_id)
+    .execute(&mut **tx)
+    .await
+    .map_err(|e| SenseiError::Database(format!("Contact create failed: {e}")))?;
+    Ok(id)
 }
 
 /// Item 15: a lead maps to the OPPORTUNITY pipeline (the real CRM
 /// semantics), not to an account with notes. Uses the actual schema.
-async fn create_opportunity(
-    state: &AppState,
+async fn create_opportunity_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     tenant_id: Uuid,
     account_id: Uuid,
     company: &str,
     score: Option<i64>,
 ) -> Result<Uuid> {
-    let pool = state
-        .db_pool
-        .as_ref()
-        .ok_or_else(|| SenseiError::Database("Import requires the database".to_string()))?;
     let id = Uuid::new_v4();
     let probability = score.unwrap_or(20).clamp(0, 100) as i32;
     sqlx::query(
@@ -588,7 +640,7 @@ async fn create_opportunity(
     .bind(probability)
     .bind(account_id)
     .bind(serde_json::json!({ "lead_score": score }).to_string())
-    .execute(pool.as_ref())
+    .execute(&mut **tx)
     .await
     .map_err(|e| SenseiError::Database(format!("Opportunity create failed: {e}")))?;
     Ok(id)
@@ -597,25 +649,22 @@ async fn create_opportunity(
 /// Item 8: CRM quotes land in sales_quotes (customer quotations) — the
 /// canonical `quotes` table is for SUPPLIER responses to RFQs and must
 /// never receive customer quotes.
-async fn create_sales_quote(
-    state: &AppState,
+async fn create_sales_quote_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     tenant_id: Uuid,
     q: &sensei_services::integration::CanonicalQuote,
     customer_id: Uuid,
 ) -> Result<Uuid> {
-    let pool = state
-        .db_pool
-        .as_ref()
-        .ok_or_else(|| SenseiError::Database("Import requires the database".to_string()))?;
     let id = Uuid::new_v4();
     // Item 13: quote lines resolve their product_id via the SKU master —
     // unresolved lines enter reconciliation, never disconnected demand.
+    // (resolution reads happen in the same tx as the write).
     let mut line_items: Vec<serde_json::Value> = Vec::new();
     for line in &q.lines {
-        let product_id = resolve_product_sku(pool, tenant_id, &line.part_number).await?;
+        let product_id = resolve_product_sku_in_tx(tx, tenant_id, &line.part_number).await?;
         if product_id.is_none() {
-            record_unresolved(
-                pool,
+            record_unresolved_in_tx(
+                tx,
                 tenant_id,
                 "crm_v2",
                 "quote",
@@ -645,7 +694,7 @@ async fn create_sales_quote(
     .bind(serde_json::Value::Array(line_items))
     .bind(q.total_cost)
     .bind(&q.currency)
-    .execute(pool.as_ref())
+    .execute(&mut **tx)
     .await
     .map_err(|e| SenseiError::Database(format!("Sales quote create failed: {e}")))?;
     Ok(id)
@@ -662,24 +711,16 @@ fn normalize_quote_status(status: &str) -> &'static str {
 }
 
 /// Item 7: RFQs require a supplier_id (NOT NULL) and use the normalized
-/// line-item child table. Unresolved suppliers go to reconciliation.
-async fn create_rfq(
-    state: &AppState,
+/// line-item child table — all inside the CALLER's transaction (the
+/// importer's claim + inbox commit with the RFQ or nothing commits).
+async fn create_rfq_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     tenant_id: Uuid,
     r: &sensei_services::integration::CanonicalRfq,
     supplier_id: Uuid,
     system: &str,
     legacy_id: &str,
 ) -> Result<Uuid> {
-    let pool = state
-        .db_pool
-        .as_ref()
-        .ok_or_else(|| SenseiError::Database("Import requires the database".to_string()))?;
-    let mut tx = pool
-        .begin()
-        .await
-        .map_err(|e| SenseiError::Database(format!("RFQ tx begin failed: {e}")))?;
-    set_tenant_context(&mut tx, tenant_id).await?;
     let id = Uuid::new_v4();
     sqlx::query(
         "INSERT INTO rfqs (id, tenant_id, rfq_number, supplier_id, status, created_at, updated_at) \
@@ -690,14 +731,14 @@ async fn create_rfq(
     .bind(&r.rfq_number)
     .bind(supplier_id)
     .bind(normalize_rfq_status(&r.status))
-    .execute(&mut *tx)
+    .execute(&mut **tx)
     .await
     .map_err(|e| SenseiError::Database(format!("RFQ create failed: {e}")))?;
     for line in &r.lines {
-        let product_id = resolve_product_sku(pool, tenant_id, &line.part_number).await?;
+        let product_id = resolve_product_sku_in_tx(tx, tenant_id, &line.part_number).await?;
         if product_id.is_none() {
-            record_unresolved(
-                pool,
+            record_unresolved_in_tx(
+                tx,
                 tenant_id,
                 system,
                 "rfq",
@@ -718,13 +759,10 @@ async fn create_rfq(
         .bind(product_id)
         .bind(&line.part_number)
         .bind(line.quantity)
-        .execute(&mut *tx)
+        .execute(&mut **tx)
         .await
         .map_err(|e| SenseiError::Database(format!("RFQ line insert failed: {e}")))?;
     }
-    tx.commit()
-        .await
-        .map_err(|e| SenseiError::Database(format!("RFQ commit failed: {e}")))?;
     Ok(id)
 }
 
@@ -738,26 +776,23 @@ fn normalize_rfq_status(status: &str) -> &'static str {
 }
 
 /// Item 12: imported sales orders carry RESOLVED product ids so MRP sees
-/// the demand; unresolved lines enter reconciliation.
-async fn create_sales_order(
-    state: &AppState,
+/// the demand; unresolved lines enter reconciliation — all inside the
+/// CALLER's transaction.
+async fn create_sales_order_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     tenant_id: Uuid,
     so: &sensei_services::integration::CanonicalSalesOrder,
     customer_id: Uuid,
     system: &str,
     legacy_id: &str,
 ) -> Result<Uuid> {
-    let pool = state
-        .db_pool
-        .as_ref()
-        .ok_or_else(|| SenseiError::Database("Import requires the database".to_string()))?;
     let id = Uuid::new_v4();
     let mut line_items: Vec<serde_json::Value> = Vec::new();
     for line in &so.line_items {
-        let product_id = resolve_product_sku(pool, tenant_id, &line.product_sku).await?;
+        let product_id = resolve_product_sku_in_tx(tx, tenant_id, &line.product_sku).await?;
         if product_id.is_none() {
-            record_unresolved(
-                pool,
+            record_unresolved_in_tx(
+                tx,
                 tenant_id,
                 system,
                 "sales_order",
@@ -794,7 +829,7 @@ async fn create_sales_order(
     .bind(so.total_amount)
     .bind(&so.currency)
     .bind(delivery_date)
-    .execute(pool.as_ref())
+    .execute(&mut **tx)
     .await
     .map_err(|e| SenseiError::Database(format!("Sales order create failed: {e}")))?;
     Ok(id)
@@ -815,8 +850,8 @@ fn normalize_so_status(status: &str) -> &'static str {
 /// append immutable move + update the inventory ledger, validate the
 /// product/UOM/location, normalize movement semantics. Errors propagate —
 /// a failed move is NEVER silently mapped.
-async fn create_stock_move_canonical(
-    state: &AppState,
+async fn create_stock_move_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     tenant_id: Uuid,
     product_id: Uuid,
     product_name: &str,
@@ -842,29 +877,87 @@ async fn create_stock_move_canonical(
         _ => "main",
     };
     let move_id = Uuid::new_v4();
-    // The canonical service enforces the ledger update + provenance.
-    state
-        .supply_chain_service
-        .create_stock_move(
-            tenant_id,
-            sensei_services::supply_chain::StockMove {
-                id: move_id,
-                tenant_id,
-                product_id,
-                product_name: product_name.to_string(),
-                quantity,
-                move_type: normalized.to_string(),
-                from_location: None,
-                to_location: to_location.to_string(),
-                reference_type: Some("legacy_import".to_string()),
-                reference_id: None,
-                created_by: Uuid::new_v4(),
-                created_at: chrono::Utc::now(),
-            },
+    // Canonical SQL mirrored from DatabaseSupplyChainService —
+    // executed in the SAME transaction as the identity claim + inbox
+    // (thirteenth audit P0): a failed mapping/inbox NEVER orphans a
+    // committed stock move, and a failed ledger NEVER records a mapping.
+    sqlx::query(
+        "INSERT INTO stock_moves (id, tenant_id, product_id, product_name, quantity, \
+                                  move_type, from_location, to_location, reference_type, \
+                                  reference_id, created_by, created_at) \
+         VALUES ($1, $2, $3, $4, $5, $6, NULL, $7, 'legacy_import', NULL, $8, NOW())",
+    )
+    .bind(move_id)
+    .bind(tenant_id)
+    .bind(product_id)
+    .bind(product_name)
+    .bind(quantity)
+    .bind(normalized)
+    .bind(to_location)
+    .bind(Uuid::new_v4())
+    .execute(&mut **tx)
+    .await
+    .map_err(|e| SenseiError::Database(format!("Stock move insert failed: {e}")))?;
+    // Inventory ledger delta (mirrors apply_inventory_delta): never
+    // clamp — an issue that would drive the balance negative is REJECTED.
+    let delta = match normalized {
+        "receipt" => quantity,
+        "delivery" => -quantity,
+        _ => 0,
+    };
+    if delta != 0 {
+        let updated = sqlx::query(
+            "UPDATE inventory_items \
+             SET quantity_on_hand = quantity_on_hand + $1::double precision, \
+                 quantity_available = quantity_on_hand + $1::double precision - quantity_reserved \
+             WHERE tenant_id = $2 AND product_id = $3 AND location = $4 AND lot_number IS NULL \
+               AND quantity_on_hand + $1::double precision >= 0",
         )
+        .bind(delta)
+        .bind(tenant_id)
+        .bind(product_id)
+        .bind(to_location)
+        .execute(&mut **tx)
         .await
-        .map(|m| m.id)
-        .map_err(|e| SenseiError::Internal(format!("Stock move create failed: {e}")))
+        .map_err(|e| SenseiError::Database(format!("Inventory delta failed: {e}")))?;
+        if updated.rows_affected() == 0 {
+            // The row may not exist yet (first receipt creates stock).
+            sqlx::query(
+                "INSERT INTO inventory_items (id, tenant_id, product_id, location, \
+                                              quantity_on_hand, quantity_available, \
+                                              quantity_reserved, created_at, updated_at) \
+                 VALUES ($1, $2, $3, $4, GREATEST($5, 0), GREATEST($5, 0), 0, NOW(), NOW()) \
+                 ON CONFLICT (tenant_id, product_id, location) DO NOTHING",
+            )
+            .bind(Uuid::new_v4())
+            .bind(tenant_id)
+            .bind(product_id)
+            .bind(to_location)
+            .bind(delta)
+            .execute(&mut **tx)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Inventory create failed: {e}")))?;
+            // A delivery with no existing balance must not go negative.
+            if delta < 0 {
+                let balance: f64 = sqlx::query_scalar(
+                    "SELECT quantity_on_hand FROM inventory_items \
+                     WHERE tenant_id = $1 AND product_id = $2 AND location = $3 AND lot_number IS NULL",
+                )
+                .bind(tenant_id)
+                .bind(product_id)
+                .bind(to_location)
+                .fetch_one(&mut **tx)
+                .await
+                .map_err(|e| SenseiError::Database(format!("Balance read failed: {e}")))?;
+                if balance < 0.0 {
+                    return Err(SenseiError::Validation(format!(
+                        "Stock move would drive inventory negative at {to_location}"
+                    )));
+                }
+            }
+        }
+    }
+    Ok(move_id)
 }
 
 /// The main entry: apply one record with full transactional semantics.
@@ -878,8 +971,8 @@ pub async fn apply_record(
         .db_pool
         .as_ref()
         .ok_or_else(|| SenseiError::Database("Import requires the database".to_string()))?;
-    let payload = serde_json::to_string(&record.payload).unwrap_or_default();
-    let payload_hash = sha256_hex(&payload);
+    // Canonicalized hash: identical payloads (any key order) hash equal.
+    let payload_hash = sha256_hex(&canonical_json(&record.payload));
 
     // Item 21: a TOMBSTONED legacy id is permanently archived — even a
     // byte-identical replay of the pre-deletion payload must not slip
@@ -1038,8 +1131,8 @@ pub async fn apply_record(
 
     let (sensei_entity, sensei_id) = match &canonical {
         sensei_services::integration::CanonicalEntity::Product(p) => {
-            let id = find_or_create_product(
-                state,
+            let id = upsert_product_tx(
+                &mut tx,
                 tenant_id,
                 &p.sku,
                 &p.name,
@@ -1051,8 +1144,8 @@ pub async fn apply_record(
             ("product", id)
         }
         sensei_services::integration::CanonicalEntity::Account(a) => {
-            let id = find_or_create_account(
-                state,
+            let id = upsert_account_tx(
+                &mut tx,
                 tenant_id,
                 &a.name,
                 a.email.clone(),
@@ -1071,21 +1164,26 @@ pub async fn apply_record(
                 }
                 None => None,
             };
-            let id = find_or_create_contact(state, tenant_id, account_id, c).await?;
+            let id = upsert_contact_tx(&mut tx, tenant_id, account_id, c).await?;
             ("contact", id)
         }
         sensei_services::integration::CanonicalEntity::Lead(l) => {
             let account_id =
-                find_or_create_account(state, tenant_id, &l.company_name, None, None, None).await?;
-            let id =
-                create_opportunity(state, tenant_id, account_id, &l.company_name, l.lead_score)
-                    .await?;
+                upsert_account_tx(&mut tx, tenant_id, &l.company_name, None, None, None).await?;
+            let id = create_opportunity_tx(
+                &mut tx,
+                tenant_id,
+                account_id,
+                &l.company_name,
+                l.lead_score,
+            )
+            .await?;
             ("opportunity", id)
         }
         sensei_services::integration::CanonicalEntity::Quote(q) => {
             let customer_id =
-                find_or_create_account(state, tenant_id, &q.company_name, None, None, None).await?;
-            let id = create_sales_quote(state, tenant_id, q, customer_id).await?;
+                upsert_account_tx(&mut tx, tenant_id, &q.company_name, None, None, None).await?;
+            let id = create_sales_quote_tx(&mut tx, tenant_id, q, customer_id).await?;
             ("sales_quote", id)
         }
         sensei_services::integration::CanonicalEntity::Rfq(r) => {
@@ -1124,8 +1222,8 @@ pub async fn apply_record(
                     "RFQ requires a supplier — unresolved".to_string(),
                 ));
             };
-            let id = create_rfq(
-                state,
+            let id = create_rfq_tx(
+                &mut tx,
                 tenant_id,
                 r,
                 supplier_id,
@@ -1137,10 +1235,9 @@ pub async fn apply_record(
         }
         sensei_services::integration::CanonicalEntity::SalesOrder(so) => {
             let customer_id =
-                find_or_create_account(state, tenant_id, &so.customer_name, None, None, None)
-                    .await?;
-            let id = create_sales_order(
-                state,
+                upsert_account_tx(&mut tx, tenant_id, &so.customer_name, None, None, None).await?;
+            let id = create_sales_order_tx(
+                &mut tx,
                 tenant_id,
                 so,
                 customer_id,
@@ -1151,8 +1248,8 @@ pub async fn apply_record(
             ("sales_order", id)
         }
         sensei_services::integration::CanonicalEntity::Supplier(s) => {
-            let id = find_or_create_supplier(
-                state,
+            let id = upsert_supplier_tx(
+                &mut tx,
                 tenant_id,
                 &s.name,
                 s.email.clone(),
@@ -1190,8 +1287,8 @@ pub async fn apply_record(
                     "Stock move requires a resolvable product".to_string(),
                 ));
             };
-            let id = create_stock_move_canonical(
-                state,
+            let id = create_stock_move_tx(
+                &mut tx,
                 tenant_id,
                 product_id,
                 &m.product_sku,
@@ -1238,96 +1335,70 @@ async fn apply_canonical(
         .ok_or_else(|| SenseiError::Database("Import requires the database".to_string()))?;
     match (sensei_entity, &canonical) {
         ("product", sensei_services::integration::CanonicalEntity::Product(p)) => {
-            let _ = state
-                .products_service
-                .update_product(
-                    tenant_id,
-                    sensei_id,
-                    sensei_core::domain::entities::Product {
-                        id: sensei_id,
-                        tenant_id,
-                        sku: p.sku.clone(),
-                        name: p.name.clone(),
-                        description: None,
-                        category: None,
-                        product_type: "finished_good".to_string(),
-                        unit_of_measure: p.unit_of_measure.clone(),
-                        standard_cost: p
-                            .standard_cost
-                            .map(|d| d.to_string().parse::<f64>().unwrap_or(0.0)),
-                        selling_price: p
-                            .selling_price
-                            .map(|d| d.to_string().parse::<f64>().unwrap_or(0.0)),
-                        min_stock_level: None,
-                        max_stock_level: None,
-                        current_stock: 0.0,
-                        is_active: true,
-                        notes: None,
-                        created_at: chrono::Utc::now(),
-                        updated_at: chrono::Utc::now(),
-                    },
-                )
-                .await;
+            // In-tx canonical update (thirteenth audit P0): the mutation
+            // is part of the SAME transaction as the claim + inbox, and
+            // its failure is NEVER ignored.
+            sqlx::query(
+                "UPDATE products SET name = $3, standard_cost = $4, list_price = $5, \
+                                    unit_of_measure = $6, updated_at = NOW() \
+                 WHERE id = $1 AND tenant_id = $2",
+            )
+            .bind(sensei_id)
+            .bind(tenant_id)
+            .bind(&p.name)
+            .bind(
+                p.standard_cost
+                    .map(|d| d.to_string().parse::<f64>().unwrap_or(0.0)),
+            )
+            .bind(
+                p.selling_price
+                    .map(|d| d.to_string().parse::<f64>().unwrap_or(0.0)),
+            )
+            .bind(&p.unit_of_measure)
+            .execute(&mut **tx)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Product update failed: {e}")))?;
         }
         ("account", sensei_services::integration::CanonicalEntity::Account(a)) => {
-            // Item 2: account_type/status are Sensei-owned (sensei_wins) —
-            // the import may update CRM-owned facts ONLY (name/email/phone).
-            let writable_name = field_is_writable(pool, tenant_id, "account", "name").await?;
-            let writable_email = field_is_writable(pool, tenant_id, "account", "email").await?;
-            let writable_phone = field_is_writable(pool, tenant_id, "account", "phone").await?;
-            let current = state
-                .accounts_service
-                .get_account(tenant_id, sensei_id)
-                .await
-                .ok();
-            let (name, email, phone) = match current {
-                Some(cur) => (
-                    if writable_name {
-                        a.name.clone()
-                    } else {
-                        cur.name.clone()
-                    },
-                    if writable_email {
-                        a.email.clone()
-                    } else {
-                        cur.email.clone()
-                    },
-                    if writable_phone {
-                        a.phone.clone()
-                    } else {
-                        cur.phone.clone()
-                    },
-                ),
-                None => (a.name.clone(), a.email.clone(), a.phone.clone()),
-            };
-            let _ = state
-                .accounts_service
-                .update_account(
-                    tenant_id,
-                    sensei_id,
-                    sensei_core::domain::entities::Account {
-                        id: sensei_id,
-                        tenant_id,
-                        name,
-                        tax_id: None,
-                        email,
-                        phone,
-                        address_line1: None,
-                        address_line2: None,
-                        city: None,
-                        state: None,
-                        postal_code: None,
-                        country: a.country.clone(),
-                        // sensei_wins: preserve the Sensei-owned lifecycle
-                        // state — never clobbered by a CRM re-import.
-                        account_type: "customer".to_string(),
-                        is_active: true,
-                        notes: None,
-                        created_at: chrono::Utc::now(),
-                        updated_at: chrono::Utc::now(),
-                    },
+            // In-tx PATCH (items 2/13): only source-owned fields update;
+            // Sensei-owned lifecycle state is never clobbered, and the
+            // update failure is NEVER ignored.
+            let writable_name = field_is_writable_in_tx(tx, tenant_id, "account", "name").await?;
+            let writable_email = field_is_writable_in_tx(tx, tenant_id, "account", "email").await?;
+            let writable_phone = field_is_writable_in_tx(tx, tenant_id, "account", "phone").await?;
+            let (cur_name, cur_email, cur_phone): (String, Option<String>, Option<String>) =
+                sqlx::query_as(
+                    "SELECT name, email, phone FROM accounts WHERE id = $1 AND tenant_id = $2",
                 )
-                .await;
+                .bind(sensei_id)
+                .bind(tenant_id)
+                .fetch_one(&mut **tx)
+                .await
+                .map_err(|e| SenseiError::Database(format!("Account read failed: {e}")))?;
+            sqlx::query(
+                "UPDATE accounts SET name = $3, email = $4, phone = $5, updated_at = NOW() \
+                 WHERE id = $1 AND tenant_id = $2",
+            )
+            .bind(sensei_id)
+            .bind(tenant_id)
+            .bind(if writable_name {
+                a.name.clone()
+            } else {
+                cur_name
+            })
+            .bind(if writable_email {
+                a.email.clone()
+            } else {
+                cur_email
+            })
+            .bind(if writable_phone {
+                a.phone.clone()
+            } else {
+                cur_phone
+            })
+            .execute(&mut **tx)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Account update failed: {e}")))?;
         }
         ("contact", sensei_services::integration::CanonicalEntity::Contact(c)) => {
             let account_id = match &c.account_id {
@@ -1337,34 +1408,27 @@ async fn apply_canonical(
                 }
                 None => None,
             };
-            let _ = state
-                .contacts_service
-                .update_contact(
-                    tenant_id,
-                    sensei_id,
-                    sensei_core::domain::entities::Contact {
-                        id: sensei_id,
-                        tenant_id,
-                        account_id,
-                        first_name: c.first_name.clone(),
-                        last_name: c.last_name.clone(),
-                        email: c.email.clone().unwrap_or_default(),
-                        phone: c.phone.clone(),
-                        job_title: None,
-                        department: None,
-                        is_primary: account_id.is_some(),
-                        is_active: true,
-                        notes: None,
-                        created_at: chrono::Utc::now(),
-                        updated_at: chrono::Utc::now(),
-                    },
-                )
-                .await;
+            // In-tx canonical update — error-propagating.
+            sqlx::query(
+                "UPDATE contacts SET account_id = $3, first_name = $4, last_name = $5, \
+                                     email = $6, phone = $7, updated_at = NOW() \
+                 WHERE id = $1 AND tenant_id = $2",
+            )
+            .bind(sensei_id)
+            .bind(tenant_id)
+            .bind(account_id)
+            .bind(&c.first_name)
+            .bind(&c.last_name)
+            .bind(&c.email)
+            .bind(&c.phone)
+            .execute(&mut **tx)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Contact update failed: {e}")))?;
         }
         ("supplier", sensei_services::integration::CanonicalEntity::Supplier(s)) => {
             // Supplier updates through the canonical path: the number is
-            // the stable legacy-derived key.
-            let _ = sqlx::query(
+            // the stable legacy-derived key. Failure is NEVER ignored.
+            sqlx::query(
                 "UPDATE suppliers SET name = $3, email = $4, phone = $5, updated_at = NOW() \
                  WHERE id = $1 AND tenant_id = $2",
             )
@@ -1380,7 +1444,7 @@ async fn apply_canonical(
         ("sales_order", sensei_services::integration::CanonicalEntity::SalesOrder(so)) => {
             let mut line_items: Vec<serde_json::Value> = Vec::new();
             for l in &so.line_items {
-                let product_id = resolve_product_sku(pool, tenant_id, &l.product_sku)
+                let product_id = resolve_product_sku_in_tx(tx, tenant_id, &l.product_sku)
                     .await
                     .ok()
                     .flatten();
@@ -1414,7 +1478,7 @@ async fn apply_canonical(
             // Re-import updates the sales quote status and lines.
             let mut line_items: Vec<serde_json::Value> = Vec::new();
             for l in &q.lines {
-                let product_id = resolve_product_sku(pool, tenant_id, &l.part_number)
+                let product_id = resolve_product_sku_in_tx(tx, tenant_id, &l.part_number)
                     .await
                     .ok()
                     .flatten();
@@ -1635,30 +1699,27 @@ async fn mark_inbox_applied(
 }
 
 /// Item 9: the supplier's canonical number is derived from its STABLE
-/// legacy identifier (never an arbitrary internal one).
-async fn find_or_create_supplier(
-    state: &AppState,
+/// legacy identifier (never an arbitrary internal one) — all inside the
+/// CALLER's transaction, errors propagated.
+async fn upsert_supplier_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     tenant_id: Uuid,
     name: &str,
     email: Option<String>,
     phone: Option<String>,
     legacy_id: &str,
 ) -> Result<Uuid> {
-    let pool = state
-        .db_pool
-        .as_ref()
-        .ok_or_else(|| SenseiError::Database("Import requires the database".to_string()))?;
     let supplier_number = format!("SUP-L{legacy_id}");
     let existing: Option<Uuid> = sqlx::query_scalar(
         "SELECT id FROM suppliers WHERE tenant_id = $1 AND supplier_number = $2",
     )
     .bind(tenant_id)
     .bind(&supplier_number)
-    .fetch_optional(pool.as_ref())
+    .fetch_optional(&mut **tx)
     .await
     .map_err(|e| SenseiError::Database(format!("Supplier lookup failed: {e}")))?;
     if let Some(id) = existing {
-        let _ = sqlx::query(
+        sqlx::query(
             "UPDATE suppliers SET name = $3, email = $4, phone = $5, updated_at = NOW() \
              WHERE id = $1 AND tenant_id = $2",
         )
@@ -1667,8 +1728,9 @@ async fn find_or_create_supplier(
         .bind(name)
         .bind(&email)
         .bind(&phone)
-        .execute(pool.as_ref())
-        .await;
+        .execute(&mut **tx)
+        .await
+        .map_err(|e| SenseiError::Database(format!("Supplier update failed: {e}")))?;
         return Ok(id);
     }
     let id = Uuid::new_v4();
@@ -1682,7 +1744,7 @@ async fn find_or_create_supplier(
     .bind(name)
     .bind(&email)
     .bind(&phone)
-    .execute(pool.as_ref())
+    .execute(&mut **tx)
     .await
     .map_err(|e| SenseiError::Database(format!("Supplier create failed: {e}")))?;
     Ok(id)

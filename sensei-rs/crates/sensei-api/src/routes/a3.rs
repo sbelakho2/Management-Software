@@ -8,7 +8,6 @@ use axum::{
     Json,
 };
 use sensei_auth::middleware::AuthenticatedUser;
-use sensei_core::domain::events::{A3ClosedEvent, A3CreatedEvent};
 use sensei_core::error::{Result, SenseiError};
 use sensei_core::pagination::PaginatedResponse;
 use sensei_services::ops::A3;
@@ -57,32 +56,10 @@ pub async fn create_a3(
 ) -> Result<Json<A3>> {
     user.require_permission("tps:a3:create")?;
     let tenant_id = user.tenant_id;
+    // The A3-created event is enqueued TRANSACTIONALLY inside the
+    // service (thirteenth audit) — the route no longer best-effort
+    // publishes, which would double-deliver with the outbox worker.
     let a3 = state.ops_service.create_a3(tenant_id, req).await?;
-
-    // Publish A3 created event for notification triggers and downstream
-    // consumers, derived from the real entity fields (no hardcoded
-    // "standard"/"medium" values).
-    let a3_type = if a3.a3_type.is_empty() {
-        "standard"
-    } else {
-        a3.a3_type.as_str()
-    };
-    let severity = if a3.severity.is_empty() {
-        "medium"
-    } else {
-        a3.severity.as_str()
-    };
-    let event = A3CreatedEvent::new(
-        tenant_id,
-        a3.id,
-        a3_type.to_string(),
-        a3.title.clone(),
-        severity.to_string(),
-    );
-    if let Err(e) = state.event_bus.publish(&event).await {
-        tracing::warn!("Failed to publish A3CreatedEvent: {e}");
-    }
-
     Ok(Json(a3))
 }
 
@@ -213,31 +190,8 @@ pub async fn close_a3(
 ) -> Result<Json<A3>> {
     user.require_permission("tps:a3:close")?;
     let tenant_id = user.tenant_id;
+    // The A3-close event is enqueued TRANSACTIONALLY inside the service —
+    // the route no longer best-effort publishes (double delivery).
     let a3 = state.ops_service.close_a3(tenant_id, id).await?;
-
-    // Publish A3 closed event; the outcome is the entity's actual status
-    // after closure (e.g. "closed"), never a hardcoded value.
-    let outcome = if a3.status.is_empty() {
-        "closed"
-    } else {
-        a3.status.as_str()
-    };
-    let event = A3ClosedEvent::new(tenant_id, id, outcome.to_string());
-    if let Err(e) = state.event_bus.publish(&event).await {
-        tracing::warn!("Failed to publish A3ClosedEvent: {e}");
-    }
-
     Ok(Json(a3))
-}
-
-/// Delete an A3 report.
-pub async fn delete_a3(
-    user: AuthenticatedUser,
-    State(state): State<AppState>,
-    Path(id): Path<Uuid>,
-) -> Result<Json<()>> {
-    user.require_permission("tps:a3:close")?;
-    let tenant_id = user.tenant_id;
-    state.ops_service.delete_a3(tenant_id, id).await?;
-    Ok(Json(()))
 }

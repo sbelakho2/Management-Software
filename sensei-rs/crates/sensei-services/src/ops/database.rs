@@ -662,6 +662,14 @@ impl OperationsService for DatabaseOperationsService {
             &id.as_simple().encode_lower(&mut Uuid::encode_buffer())[..8]
         );
 
+        // Thirteenth audit: the A3 row and its created EVENT are ONE
+        // transaction — a committed A3 can never lose its event to a
+        // post-commit publish failure (the old best-effort warn-and-drop).
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to begin A3 tx: {e}")))?;
         let row = sqlx::query_as::<_, A3Row>(
             r#"INSERT INTO a3_reports (id, tenant_id, a3_number, title, background, current_state, goal, root_cause_analysis, countermeasures, check_plan, follow_up, a3_type, severity, status, owner_id, created_at, closed_at, version, observed_conditions, metric_baselines, evidence_refs, cause_hypotheses, experiments, verifications, standardizations, learnings)
                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,'draft',$14,$15,NULL,
@@ -681,8 +689,27 @@ impl OperationsService for DatabaseOperationsService {
         .bind(serde_json::to_value(&a3.verifications).unwrap_or(serde_json::Value::Array(vec![])))
         .bind(serde_json::to_value(&a3.standardizations).unwrap_or(serde_json::Value::Array(vec![])))
         .bind(serde_json::to_value(&a3.learnings).unwrap_or(serde_json::Value::Array(vec![])))
-        .fetch_one(&self.pool)
+        .fetch_one(&mut *tx)
         .await.map_err(|e| SenseiError::Database(format!("Failed to create A3: {e}")))?;
+        // The A3-created event rides the SAME transaction (thirteenth
+        // audit): a committed A3 can never lose its event.
+        sensei_db::outbox::enqueue_outbox(
+            &mut tx,
+            tenant_id,
+            "a3",
+            id,
+            "sensei.ops.a3.created",
+            serde_json::json!({
+                "a3_number": a3_number,
+                "title": a3.title,
+                "a3_type": a3.a3_type,
+                "severity": a3.severity,
+            }),
+        )
+        .await?;
+        tx.commit()
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to commit A3: {e}")))?;
 
         Ok(a3_row_to_domain(row))
     }

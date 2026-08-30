@@ -68,14 +68,29 @@ impl RealtimeStore {
     /// Mint a one-time ticket via authenticated HTTP (item 66) — the
     /// bearer token is NEVER placed in the WS query string.
     async fn mint_ticket(client: &crate::api::client::ApiClient) -> Option<String> {
-        let body: serde_json::Value = client
-            .post(
-                "/api/v1/realtime/ticket",
-                &serde_json::json!({ "scope": "ws" }),
-            )
-            .await
-            .ok()?;
-        body.get("ticket")?.as_str().map(|s| s.to_string())
+        // A mint failure RETRIES with backoff (thirteenth audit): the
+        // connection loop must not depend solely on onclose.
+        for attempt in 0..5u32 {
+            let body: Option<serde_json::Value> = client
+                .post(
+                    "/api/v1/realtime/ticket",
+                    &serde_json::json!({ "scope": "ws" }),
+                )
+                .await
+                .ok();
+            if let Some(body) = body {
+                let ticket = body
+                    .get("ticket")
+                    .and_then(|t| t.as_str())
+                    .map(str::to_string);
+                if ticket.is_some() {
+                    return ticket;
+                }
+            }
+            let delay_ms = 500u32 << attempt.min(4);
+            gloo_timers::future::TimeoutFuture::new(delay_ms).await;
+        }
+        None
     }
 
     /// Connect (or reconnect) — call from a reactive effect tied to

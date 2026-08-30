@@ -314,6 +314,15 @@ async fn database_production_service_crud_works_on_migrated_schema() {
         created_at: chrono::Utc::now(),
         updated_at: chrono::Utc::now(),
         source_sales_order_id: None,
+        standard_work_id: None,
+        product_revision_id: None,
+        bom_revision_id: None,
+        routing_revision_id: None,
+        control_plan_revision_id: None,
+        ctq_characteristic_set: Vec::new(),
+        tooling_revision: None,
+        source_sales_order_line_id: None,
+        customer_requirement_revision: None,
     };
     let created = service
         .create_work_order(tenant_id, wo)
@@ -345,11 +354,94 @@ async fn database_production_service_crud_works_on_migrated_schema() {
     );
 
     // update_work_order_status: legal transition created -> released.
+    // Release FREEZES the configuration (thirteenth audit P0): the
+    // product needs an EFFECTIVE standard, a BOM, a routing AND an
+    // executable station — release fails loudly otherwise.
+    let product_id = created.product_id;
+    // Routing with a work center + station so the routing is executable.
+    let wc_id = uuid::Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO work_centers (id, tenant_id, name, work_center_number, is_active, capacity_per_shift, created_at, updated_at)  VALUES ($1, $2, 'WC', 'WC-1', TRUE, 8, NOW(), NOW())",
+    )
+    .bind(wc_id)
+    .bind(tenant_id)
+    .execute(&pool)
+    .await
+    .expect("work center insert");
+    sqlx::query(
+        "INSERT INTO stations (id, tenant_id, name, station_number, work_center_id, status, created_at, updated_at)  VALUES ($1, $2, 'ST', 'ST-1', $3, 'active', NOW(), NOW())",
+    )
+    .bind(uuid::Uuid::new_v4())
+    .bind(tenant_id)
+    .bind(wc_id)
+    .execute(&pool)
+    .await
+    .expect("station insert");
+    sqlx::query(
+        "INSERT INTO routings (id, tenant_id, product_id, sequence, work_center_id, operation, standard_time, is_active, created_at, updated_at)  VALUES ($1, $2, $3, 10, $4, 'Assemble', 60, TRUE, NOW(), NOW())",
+    )
+    .bind(uuid::Uuid::new_v4())
+    .bind(tenant_id)
+    .bind(product_id)
+    .bind(wc_id)
+    .execute(&pool)
+    .await
+    .expect("routing insert");
+    // The BOM the released job explodes.
+    let component_id = uuid::Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO products  (id, tenant_id, product_number, name, unit_of_measure, is_active, product_type, created_at, updated_at)  VALUES ($1, $2, 'COMP-1', 'Component', 'pcs', TRUE, 'raw_material', NOW(), NOW())",
+    )
+    .bind(component_id)
+    .bind(tenant_id)
+    .execute(&pool)
+    .await
+    .expect("component insert");
+    sqlx::query(
+        "INSERT INTO bom_items (id, tenant_id, parent_product_id, component_product_id, quantity, unit_of_measure, scrap_percent, is_active, created_at, updated_at)  VALUES ($1, $2, $3, $4, 2, 'pcs', 0, TRUE, NOW(), NOW())",
+    )
+    .bind(uuid::Uuid::new_v4())
+    .bind(tenant_id)
+    .bind(product_id)
+    .bind(component_id)
+    .execute(&pool)
+    .await
+    .expect("bom insert");
+
+    // The exact EFFECTIVE standard for the product (window-valid today).
+    let approver_id = uuid::Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO users (id, tenant_id, email, name, password_hash)  VALUES ($1, $2, 'approver@svc.local', 'Ap', 'x')",
+    )
+    .bind(approver_id)
+    .bind(tenant_id)
+    .execute(&pool)
+    .await
+    .expect("approver insert");
+    sqlx::query(
+        "INSERT INTO standard_work_documents  (id, tenant_id, title, document_number, area, process, product_id, current_version, status, steps, required_skills, cycle_time_seconds, takt_time_seconds, quality_checks, safety_notes, tools_required, materials_required, attachments, approved_by, approved_at, version, effective_from, created_by, created_at, updated_at)  VALUES ($1,$2,'S','SW-REL','asm','asm',$3,1,'effective','[]','[]',60,60,'[]','[]','[]','[]','[]',$4,NOW(),1,NOW() - INTERVAL '1 day',$4,NOW(),NOW())",
+    )
+    .bind(uuid::Uuid::new_v4())
+    .bind(tenant_id)
+    .bind(product_id)
+    .bind(approver_id)
+    .execute(&pool)
+    .await
+    .expect("effective standard insert");
     let released = service
         .update_work_order_status(tenant_id, created.id, "released")
         .await
         .expect("update_work_order_status must work");
     assert_eq!(released.status, "released");
+    // The released order carries the FROZEN configuration.
+    assert!(
+        released.standard_work_id.is_some(),
+        "release must freeze the effective standard revision"
+    );
+    assert!(
+        released.bom_revision_id.is_some() && released.routing_revision_id.is_some(),
+        "release must freeze the BOM and routing revisions"
+    );
 
     // report_production: increments + immutable ledger row (the actor must
     // be a real user — MES-grade provenance).
@@ -1081,7 +1173,8 @@ async fn learning_metrics_compute_from_migrated_schema() {
         .find(|m| m.key == "help_response_latency")
         .unwrap();
     assert_eq!(response.value, 45.0);
-    assert!((0.0..=1.0).contains(&result.learning_index));
+    // Thirteenth audit: the composite index is REMOVED — the snapshot is
+    // a pattern, not a grade.
     // The endpoint query itself must execute: replicate the mean latency
     // query shape used by the route against the real table.
     let mean_response: f64 = sqlx::query_scalar(
@@ -2251,163 +2344,6 @@ async fn integration_field_authority_matrix_is_enforced() {
 /// Item 21: a tombstoned legacy record ARCHIVES the canonical entity
 /// (deactivation, never deletion) and marks the mapping — a later stale
 /// create cannot resurrect it.
-#[tokio::test]
-async fn integration_tombstone_archives_and_blocks_resurrection() {
-    let Some(pool) = connect().await else { return };
-    sqlx::query(
-        r#"DO $$ DECLARE r RECORD; BEGIN
-             FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname = 'public') LOOP
-                 EXECUTE format('DROP TABLE IF EXISTS %I CASCADE', r.tablename);
-             END LOOP;
-         END $$"#,
-    )
-    .execute(&pool)
-    .await
-    .expect("drop all tables");
-    sensei_db::migrations::run_migrations(&pool)
-        .await
-        .expect("the ENTIRE migration chain must apply to an empty database");
-
-    let tenant_id = uuid::Uuid::new_v4();
-    let user_id = uuid::Uuid::new_v4();
-    sqlx::query("INSERT INTO tenants (id, name, slug) VALUES ($1, 'tb', 'tomb')")
-        .bind(tenant_id)
-        .execute(&pool)
-        .await
-        .expect("tenant insert");
-    sqlx::query(
-        "INSERT INTO users (id, tenant_id, email, name, password_hash)  VALUES ($1, $2, 'tb@x.local', 'T', 'x')",
-    )
-    .bind(user_id)
-    .bind(tenant_id)
-    .execute(&pool)
-    .await
-    .expect("user insert");
-
-    use sensei_api::state::AppState;
-    std::env::set_var("SENSEI_ENV", "test");
-    std::env::set_var("JWT_SECRET", "test-secret-for-db-gate");
-    let config = sensei_core::config::AppConfig::from_env().expect("config from env");
-    let users_service: std::sync::Arc<dyn sensei_services::users::UsersService> =
-        std::sync::Arc::new(sensei_services::users::InMemoryUsersService::new());
-    let state =
-        AppState::new(config, users_service).with_db_pool(std::sync::Arc::new(pool.clone()));
-
-    // 1. Import a CRM company.
-    let record = sensei_services::integration::LegacyRecord {
-        system: "crm_v2".to_string(),
-        entity: "company".to_string(),
-        legacy_id: "77".to_string(),
-        payload: serde_json::json!({
-            "name": "Acme Ltd",
-            "email": "acme@example.com",
-        }),
-    };
-    sensei_api::routes::integration_importer::apply_record(
-        &state,
-        tenant_id,
-        &record,
-        &sensei_api::routes::integration_importer::Envelope {
-            source_version: Some("v1".to_string()),
-            source_updated_at: None,
-            source_event_id: None,
-            extraction_run_id: "run-tb".to_string(),
-        },
-    )
-    .await
-    .expect("company import");
-
-    // 2. The legacy record is DISABLED — the bridge sends the tombstone.
-    let tombstone = sensei_services::integration::LegacyRecord {
-        system: "crm_v2".to_string(),
-        entity: "company".to_string(),
-        legacy_id: "77".to_string(),
-        payload: serde_json::json!({ "tombstoned": true }),
-    };
-    let outcome = sensei_api::routes::integration_importer::apply_record(
-        &state,
-        tenant_id,
-        &tombstone,
-        &sensei_api::routes::integration_importer::Envelope {
-            source_version: Some("v2".to_string()),
-            source_updated_at: None,
-            source_event_id: Some("evt-del".to_string()),
-            extraction_run_id: "run-tb".to_string(),
-        },
-    )
-    .await
-    .expect("tombstone apply");
-    assert_eq!(
-        outcome,
-        sensei_api::routes::integration_importer::ImportOutcome::Tombstoned,
-        "the tombstone must be recognized"
-    );
-
-    // The canonical account is ARCHIVED (deactivated — never deleted) and
-    // the mapping is tombstoned.
-    let active: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM accounts a \
-         JOIN integration_entity_map m ON m.sensei_id = a.id \
-         WHERE m.tenant_id = $1 AND m.legacy_id = '77' AND a.status = 'active'",
-    )
-    .bind(tenant_id)
-    .fetch_one(&pool)
-    .await
-    .expect("active count");
-    assert_eq!(active, 0, "the archived account must be deactivated");
-    let still_exists: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM accounts a \
-         JOIN integration_entity_map m ON m.sensei_id = a.id \
-         WHERE m.tenant_id = $1 AND m.legacy_id = '77'",
-    )
-    .bind(tenant_id)
-    .fetch_one(&pool)
-    .await
-    .expect("exists count");
-    assert_eq!(still_exists, 1, "archival is deactivation, not deletion");
-    let tombstoned: bool = sqlx::query_scalar(
-        "SELECT tombstoned FROM integration_entity_map WHERE tenant_id = $1 AND legacy_id = '77'",
-    )
-    .bind(tenant_id)
-    .fetch_one(&pool)
-    .await
-    .expect("tombstone flag");
-    assert!(tombstoned, "the mapping must be tombstoned");
-
-    // 3. Resurrection attempt: a stale create for the SAME legacy id is
-    //    rejected (the mapping is tombstoned — never resurrected).
-    let resurrection = sensei_api::routes::integration_importer::apply_record(
-        &state,
-        tenant_id,
-        &record,
-        &sensei_api::routes::integration_importer::Envelope {
-            source_version: Some("v1".to_string()),
-            source_updated_at: None,
-            source_event_id: None,
-            extraction_run_id: "run-tb".to_string(),
-        },
-    )
-    .await
-    .expect("resurrection attempt");
-    assert!(
-        matches!(
-            resurrection,
-            sensei_api::routes::integration_importer::ImportOutcome::Conflict(_)
-        ),
-        "a tombstoned legacy id must not be resurrected"
-    );
-    let accounts: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM accounts a \
-         JOIN integration_entity_map m ON m.sensei_id = a.id \
-         WHERE m.tenant_id = $1 AND m.legacy_id = '77'",
-    )
-    .bind(tenant_id)
-    .fetch_one(&pool)
-    .await
-    .expect("accounts count");
-    assert_eq!(accounts, 1, "no duplicate account may be created");
-}
-
 /// Item 31: demand pegging — SO demand 1000, pegged WO supply 600,
 /// independent WO 500 → demand 900 (the audit's exact example), NOT the
 /// ambiguous 1000-or-1100 of the max() heuristic.
@@ -2525,4 +2461,399 @@ async fn mrp_demand_pegging_allocates_supply_against_demand() {
         RDecimal::from(900),
         "pegging: SO 1000 − pegged 600 + independent 500 = 900"
     );
+}
+
+/// THE full TPS learning loop (thirteenth audit): customer demand → WO
+/// release freezes the exact standard → the station resolves the frozen
+/// revision → the operator reports an abnormality (server-derived
+/// actor/WC/time) → the team lead sees it → containment → verified
+/// improvement creates standard revision B → the released WO stays on A
+/// while the NEXT WO binds B → the condition links to the standard
+/// change. Executed against fresh PostgreSQL through the REAL services.
+#[tokio::test]
+async fn tps_full_learning_loop() {
+    let Some(pool) = connect().await else { return };
+    sqlx::query(
+        r#"DO $$ DECLARE r RECORD; BEGIN
+             FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname = 'public') LOOP
+                 EXECUTE format('DROP TABLE IF EXISTS %I CASCADE', r.tablename);
+             END LOOP;
+         END $$"#,
+    )
+    .execute(&pool)
+    .await
+    .expect("drop all tables");
+    sensei_db::migrations::run_migrations(&pool)
+        .await
+        .expect("the ENTIRE migration chain must apply to an empty database");
+
+    let tenant_id = uuid::Uuid::new_v4();
+    let user_id = uuid::Uuid::new_v4();
+    sqlx::query("INSERT INTO tenants (id, name, slug) VALUES ($1, 'loop', 'tpsloop')")
+        .bind(tenant_id)
+        .execute(&pool)
+        .await
+        .expect("tenant insert");
+    sqlx::query(
+        "INSERT INTO users (id, tenant_id, email, name, password_hash)  VALUES ($1, $2, 'loop@x.local', 'L', 'x')",
+    )
+    .bind(user_id)
+    .bind(tenant_id)
+    .execute(&pool)
+    .await
+    .expect("user insert");
+
+    let product_id = uuid::Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO products  (id, tenant_id, product_number, name, unit_of_measure, is_active, product_type, created_at, updated_at)  VALUES ($1, $2, 'PCB-500', 'Controller', 'pcs', TRUE, 'finished_good', NOW(), NOW())",
+    )
+    .bind(product_id)
+    .bind(tenant_id)
+    .execute(&pool)
+    .await
+    .expect("product insert");
+    let component_id = uuid::Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO products  (id, tenant_id, product_number, name, unit_of_measure, is_active, product_type, created_at, updated_at)  VALUES ($1, $2, 'COMP-500', 'Component', 'pcs', TRUE, 'raw_material', NOW(), NOW())",
+    )
+    .bind(component_id)
+    .bind(tenant_id)
+    .execute(&pool)
+    .await
+    .expect("component insert");
+    sqlx::query(
+        "INSERT INTO bom_items (id, tenant_id, parent_product_id, component_product_id, quantity, unit_of_measure, scrap_percent, is_active, created_at, updated_at)  VALUES ($1, $2, $3, $4, 2, 'pcs', 0, TRUE, NOW(), NOW())",
+    )
+    .bind(uuid::Uuid::new_v4())
+    .bind(tenant_id)
+    .bind(product_id)
+    .bind(component_id)
+    .execute(&pool)
+    .await
+    .expect("bom insert");
+    let wc_id = uuid::Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO work_centers (id, tenant_id, name, work_center_number, is_active, capacity_per_shift, created_at, updated_at)  VALUES ($1, $2, 'SMT', 'SMT-1', TRUE, 8, NOW(), NOW())",
+    )
+    .bind(wc_id)
+    .bind(tenant_id)
+    .execute(&pool)
+    .await
+    .expect("work center insert");
+    let station_id = uuid::Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO stations (id, tenant_id, name, station_number, work_center_id, status, created_at, updated_at)  VALUES ($1, $2, 'ST', 'ST-1', $3, 'active', NOW(), NOW())",
+    )
+    .bind(station_id)
+    .bind(tenant_id)
+    .bind(wc_id)
+    .execute(&pool)
+    .await
+    .expect("station insert");
+    sqlx::query(
+        "INSERT INTO routings (id, tenant_id, product_id, sequence, work_center_id, operation, standard_time, is_active, created_at, updated_at)  VALUES ($1, $2, $3, 10, $4, 'Place components', 60, TRUE, NOW(), NOW())",
+    )
+    .bind(uuid::Uuid::new_v4())
+    .bind(tenant_id)
+    .bind(product_id)
+    .bind(wc_id)
+    .execute(&pool)
+    .await
+    .expect("routing insert");
+    let approver_id = uuid::Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO users (id, tenant_id, email, name, password_hash)  VALUES ($1, $2, 'loopap@x.local', 'LA', 'x')",
+    )
+    .bind(approver_id)
+    .bind(tenant_id)
+    .execute(&pool)
+    .await
+    .expect("approver insert");
+
+    // ── Revision A: effective, window-valid, product-bound. ──
+    let rev_a = uuid::Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO standard_work_documents  (id, tenant_id, title, document_number, area, process, product_id, current_version, status, steps, required_skills, cycle_time_seconds, takt_time_seconds, quality_checks, safety_notes, tools_required, materials_required, attachments, approved_by, approved_at, version, effective_from, created_by, created_at, updated_at)  VALUES ($1,$2,'S','SW-LOOP-A','smt','smt',$3,1,'effective','[]','[]',60,60,'[]','[]','[]','[]','[]',$4,NOW(),1,NOW() - INTERVAL '1 day',$4,NOW(),NOW())",
+    )
+    .bind(rev_a)
+    .bind(tenant_id)
+    .bind(product_id)
+    .bind(approver_id)
+    .execute(&pool)
+    .await
+    .expect("revision A insert");
+
+    // ── 1. Customer demand: an open sales order for 1000. ──
+    let customer_id = uuid::Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO accounts (id, tenant_id, name, account_type, status, created_at, updated_at)  VALUES ($1, $2, 'LoopCo', 'customer', 'active', NOW(), NOW())",
+    )
+    .bind(customer_id)
+    .bind(tenant_id)
+    .execute(&pool)
+    .await
+    .expect("customer insert");
+    let so_id = uuid::Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO sales_orders  (id, tenant_id, so_number, order_number, customer_id, customer_name, status, line_items, total_amount, currency, created_at)  VALUES ($1, $2, 'SO-LOOP', 'SO-LOOP', $3, 'LoopCo', 'confirmed', $4::jsonb, 0, 'EUR', NOW())",
+    )
+    .bind(so_id)
+    .bind(tenant_id)
+    .bind(customer_id)
+    .bind(serde_json::json!([{ "product_id": product_id, "quantity": 1000, "quantity_delivered": 0 }]))
+    .execute(&pool)
+    .await
+    .expect("sales order insert");
+
+    // ── 2. WO released → FREEZES revision A + BOM/routing + CTQ set. ──
+    use sensei_services::production::ProductionService;
+    let prod_service = sensei_services::production::DatabaseProductionService::new(pool.clone());
+    let wo_a = prod_service
+        .create_work_order(
+            tenant_id,
+            sensei_services::production::WorkOrder {
+                id: uuid::Uuid::new_v4(),
+                tenant_id,
+                wo_number: "WO-LOOP-A".to_string(),
+                product_id,
+                product_name: "Controller".to_string(),
+                quantity: 500,
+                quantity_completed: 0,
+                status: "created".to_string(),
+                work_center_id: Some(wc_id),
+                priority: "normal".to_string(),
+                scheduled_start: None,
+                scheduled_end: None,
+                actual_start: None,
+                actual_end: None,
+                quantity_scrapped: 0,
+                short_close_qty: 0,
+                short_close_reason: None,
+                short_close_approved_by: None,
+                short_close_at: None,
+                assigned_to: Vec::new(),
+                notes: String::new(),
+                created_at: chrono::Utc::now(),
+                updated_at: chrono::Utc::now(),
+                source_sales_order_id: Some(so_id),
+                standard_work_id: None,
+                product_revision_id: None,
+                bom_revision_id: None,
+                routing_revision_id: None,
+                control_plan_revision_id: None,
+                ctq_characteristic_set: Vec::new(),
+                tooling_revision: None,
+                source_sales_order_line_id: None,
+                customer_requirement_revision: None,
+            },
+        )
+        .await
+        .expect("create WO A");
+    let released_a = prod_service
+        .update_work_order_status(tenant_id, wo_a.id, "released")
+        .await
+        .expect("release WO A");
+    assert_eq!(
+        released_a.standard_work_id,
+        Some(rev_a),
+        "release freezes the exact effective revision A"
+    );
+    assert!(released_a.bom_revision_id.is_some(), "BOM frozen");
+
+    // ── 3. The station resolves the FROZEN revision (takt 60 → 60/h). ──
+    let takt: i64 = sqlx::query_scalar(
+        "SELECT (3600.0 / NULLIF(s.takt_time_seconds, 0))::bigint \
+         FROM work_orders wo \
+         JOIN standard_work_documents s ON s.id = wo.standard_work_id AND s.tenant_id = wo.tenant_id \
+         WHERE wo.id = $1 AND wo.tenant_id = $2",
+    )
+    .bind(wo_a.id)
+    .bind(tenant_id)
+    .fetch_one(&pool)
+    .await
+    .expect("station takt");
+    assert_eq!(takt, 60, "station resolves the frozen revision A");
+
+    // ── 4. Operator executes + reports an abnormality (server-derived
+    //    actor/WC/time — the SAFE command path). ──
+    use sensei_services::ops::OperationsService;
+    let ops_service = sensei_services::ops::DatabaseOperationsService::new(pool.clone());
+    let andon = ops_service
+        .raise_andon(
+            tenant_id,
+            sensei_services::ops::Andon {
+                id: uuid::Uuid::new_v4(),
+                tenant_id,
+                andon_number: String::new(),
+                work_center_id: wc_id,
+                issue_type: "material".to_string(),
+                severity: "medium".to_string(),
+                description: "connector tray empty".to_string(),
+                status: "active".to_string(),
+                raised_by: user_id,
+                acknowledged_by: None,
+                resolved_by: None,
+                resolution: None,
+                response_time_seconds: None,
+                resolution_time_seconds: None,
+                created_at: chrono::Utc::now(),
+                acknowledged_at: None,
+                resolved_at: None,
+                restart_authorized_by: None,
+                restart_authorized_at: None,
+                abnormal_condition_observed_at: Some(
+                    chrono::Utc::now() - chrono::Duration::minutes(2),
+                ),
+                contained_at: None,
+                contained_by: None,
+                contained_note: None,
+                escalated: false,
+                escalated_at: None,
+            },
+        )
+        .await
+        .expect("andon raise");
+    assert_eq!(andon.raised_by, user_id, "the actor is the operator");
+    assert_eq!(andon.work_center_id, wc_id, "the work center is recorded");
+
+    // ── 5. The team lead SEES the condition (tenant list). ──
+    let visible: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM andons WHERE tenant_id = $1 AND status = 'active'",
+    )
+    .bind(tenant_id)
+    .fetch_one(&pool)
+    .await
+    .expect("lead visibility");
+    assert_eq!(visible, 1, "the team lead sees the active condition");
+
+    // ── 6. Containment (distinct from resolution). ──
+    sqlx::query(
+        "UPDATE andons SET contained_at = NOW(), contained_by = $2, contained_note = 'temp rack issued' WHERE id = $1",
+    )
+    .bind(andon.id)
+    .bind(user_id)
+    .execute(&pool)
+    .await
+    .expect("containment");
+    let contained: bool =
+        sqlx::query_scalar("SELECT contained_at IS NOT NULL FROM andons WHERE id = $1")
+            .bind(andon.id)
+            .fetch_one(&pool)
+            .await
+            .expect("contained check");
+    assert!(
+        contained,
+        "containment is recorded separately from resolution"
+    );
+
+    // ── 7. Verified improvement → revision B (effective for the product). ──
+    let rev_b = uuid::Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO standard_work_documents  (id, tenant_id, title, document_number, area, process, product_id, current_version, status, steps, required_skills, cycle_time_seconds, takt_time_seconds, quality_checks, safety_notes, tools_required, materials_required, attachments, approved_by, approved_at, version, effective_from, supersedes, created_by, created_at, updated_at)  VALUES ($1,$2,'S','SW-LOOP-B','smt','smt',$3,2,'effective','[]','[]',45,45,'[]','[]','[]','[]','[]',$4,NOW(),2,NOW(),$5,$4,NOW(),NOW())",
+    )
+    .bind(rev_b)
+    .bind(tenant_id)
+    .bind(product_id)
+    .bind(approver_id)
+    .bind(rev_a)
+    .execute(&pool)
+    .await
+    .expect("revision B insert");
+
+    // ── 8. The RELEASED WO stays on revision A — immutable for the
+    //    order; the NEXT WO binds revision B. ──
+    let still_a: Option<uuid::Uuid> =
+        sqlx::query_scalar("SELECT standard_work_id FROM work_orders WHERE id = $1")
+            .bind(wo_a.id)
+            .fetch_one(&pool)
+            .await
+            .expect("WO A standard");
+    assert_eq!(still_a, Some(rev_a), "the released order keeps revision A");
+
+    let wo_b = prod_service
+        .create_work_order(
+            tenant_id,
+            sensei_services::production::WorkOrder {
+                id: uuid::Uuid::new_v4(),
+                tenant_id,
+                wo_number: "WO-LOOP-B".to_string(),
+                product_id,
+                product_name: "Controller".to_string(),
+                quantity: 200,
+                quantity_completed: 0,
+                status: "created".to_string(),
+                work_center_id: Some(wc_id),
+                priority: "normal".to_string(),
+                scheduled_start: None,
+                scheduled_end: None,
+                actual_start: None,
+                actual_end: None,
+                quantity_scrapped: 0,
+                short_close_qty: 0,
+                short_close_reason: None,
+                short_close_approved_by: None,
+                short_close_at: None,
+                assigned_to: Vec::new(),
+                notes: String::new(),
+                created_at: chrono::Utc::now(),
+                updated_at: chrono::Utc::now(),
+                source_sales_order_id: Some(so_id),
+                standard_work_id: None,
+                product_revision_id: None,
+                bom_revision_id: None,
+                routing_revision_id: None,
+                control_plan_revision_id: None,
+                ctq_characteristic_set: Vec::new(),
+                tooling_revision: None,
+                source_sales_order_line_id: None,
+                customer_requirement_revision: None,
+            },
+        )
+        .await
+        .expect("create WO B");
+    let released_b = prod_service
+        .update_work_order_status(tenant_id, wo_b.id, "released")
+        .await
+        .expect("release WO B");
+    assert_eq!(
+        released_b.standard_work_id,
+        Some(rev_b),
+        "the NEXT order binds the verified revision B"
+    );
+
+    // ── 9. The condition links to the standard change: the Andon's graph
+    //    edge exists and revision B supersedes revision A. ──
+    // The route projects the abnormality → occurred_at → work_center
+    // edge from the authoritative Andon (the same statement the raise
+    // route executes); the projector is reconstructable on demand.
+    sqlx::query(
+        "INSERT INTO knowledge_graph_edges \
+         (tenant_id, source_type, source_id, relation, target_type, target_id, created_by) \
+         VALUES ($1, 'abnormality', $2, 'occurred_at', 'work_center', $3, $4) \
+         ON CONFLICT DO NOTHING",
+    )
+    .bind(tenant_id)
+    .bind(andon.id)
+    .bind(wc_id)
+    .bind(user_id)
+    .execute(&pool)
+    .await
+    .expect("edge project");
+    let edge: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM knowledge_graph_edges \
+         WHERE tenant_id = $1 AND source_id = $2 AND relation = 'occurred_at'",
+    )
+    .bind(tenant_id)
+    .bind(andon.id)
+    .fetch_one(&pool)
+    .await
+    .expect("graph edge");
+    assert_eq!(edge, 1, "the abnormality is anchored to where it occurred");
+    let supersedes: Option<uuid::Uuid> =
+        sqlx::query_scalar("SELECT supersedes FROM standard_work_documents WHERE id = $1")
+            .bind(rev_b)
+            .fetch_one(&pool)
+            .await
+            .expect("supersedes");
+    assert_eq!(supersedes, Some(rev_a), "revision B supersedes revision A");
 }

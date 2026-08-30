@@ -200,6 +200,35 @@ pub async fn save_checkpoint(
     Ok(Json(CheckpointResponse { ok: true }))
 }
 
+/// Read a saved checkpoint watermark (the bridge resumes incrementally).
+#[derive(Debug, serde::Serialize)]
+pub struct CheckpointReadResponse {
+    pub watermark: Option<chrono::DateTime<chrono::Utc>>,
+}
+
+pub async fn get_checkpoint(
+    user: AuthenticatedUser,
+    State(state): State<AppState>,
+    Path((system, source_table)): Path<(String, String)>,
+) -> Result<Json<CheckpointReadResponse>> {
+    user.require_permission("integration:status:read")?;
+    let pool = state
+        .db_pool
+        .as_ref()
+        .ok_or_else(|| SenseiError::Database("Checkpoints require the database".to_string()))?;
+    let watermark: Option<chrono::DateTime<chrono::Utc>> = sqlx::query_scalar(
+        "SELECT watermark FROM integration_checkpoints \
+         WHERE tenant_id = $1 AND source_system = $2 AND source_table = $3",
+    )
+    .bind(user.tenant_id)
+    .bind(&system)
+    .bind(&source_table)
+    .fetch_optional(pool.as_ref())
+    .await
+    .map_err(|e| SenseiError::Database(format!("Checkpoint read failed: {e}")))?;
+    Ok(Json(CheckpointReadResponse { watermark }))
+}
+
 /// Health/summary of the integration layer (item 24: Unknown is NOT zero —
 /// a database failure must never look like 0 mappings).
 #[derive(Debug, serde::Serialize)]

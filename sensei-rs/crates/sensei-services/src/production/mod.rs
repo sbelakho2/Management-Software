@@ -68,6 +68,29 @@ pub struct WorkOrder {
     /// by in-flight supply instead of using the max() heuristic.
     #[serde(default)]
     pub source_sales_order_id: Option<Uuid>,
+    /// FROZEN MANUFACTURING CONFIGURATION (thirteenth audit P0): every
+    /// revision is captured at release and immutable for the duration of
+    /// the order — a later revision becoming effective NEVER changes what
+    /// an in-progress order builds against.
+    #[serde(default)]
+    pub standard_work_id: Option<Uuid>,
+    #[serde(default)]
+    pub product_revision_id: Option<Uuid>,
+    #[serde(default)]
+    pub bom_revision_id: Option<Uuid>,
+    #[serde(default)]
+    pub routing_revision_id: Option<Uuid>,
+    #[serde(default)]
+    pub control_plan_revision_id: Option<Uuid>,
+    #[serde(default)]
+    pub ctq_characteristic_set: Vec<Uuid>,
+    #[serde(default)]
+    pub tooling_revision: Option<String>,
+    /// Demand pegging at LINE granularity (partial/mixed fulfillment).
+    #[serde(default)]
+    pub source_sales_order_line_id: Option<Uuid>,
+    #[serde(default)]
+    pub customer_requirement_revision: Option<String>,
 }
 
 /// A production order authorizing the manufacture of a specific product quantity.
@@ -876,6 +899,15 @@ mod tests {
             created_at: Utc::now(),
             updated_at: Utc::now(),
             source_sales_order_id: None,
+            standard_work_id: None,
+            product_revision_id: None,
+            bom_revision_id: None,
+            routing_revision_id: None,
+            control_plan_revision_id: None,
+            ctq_characteristic_set: Vec::new(),
+            tooling_revision: None,
+            source_sales_order_line_id: None,
+            customer_requirement_revision: None,
         };
 
         let created = service
@@ -922,6 +954,15 @@ mod tests {
             created_at: Utc::now(),
             updated_at: Utc::now(),
             source_sales_order_id: None,
+            standard_work_id: None,
+            product_revision_id: None,
+            bom_revision_id: None,
+            routing_revision_id: None,
+            control_plan_revision_id: None,
+            ctq_characteristic_set: Vec::new(),
+            tooling_revision: None,
+            source_sales_order_line_id: None,
+            customer_requirement_revision: None,
         };
 
         let created = service.create_work_order(tenant_id, wo).await.unwrap();
@@ -963,6 +1004,15 @@ mod tests {
             created_at: Utc::now(),
             updated_at: Utc::now(),
             source_sales_order_id: None,
+            standard_work_id: None,
+            product_revision_id: None,
+            bom_revision_id: None,
+            routing_revision_id: None,
+            control_plan_revision_id: None,
+            ctq_characteristic_set: Vec::new(),
+            tooling_revision: None,
+            source_sales_order_line_id: None,
+            customer_requirement_revision: None,
         };
 
         let created = service.create_work_order(tenant_id, wo).await.unwrap();
@@ -1103,6 +1153,15 @@ mod tests {
             created_at: Utc::now(),
             updated_at: Utc::now(),
             source_sales_order_id: None,
+            standard_work_id: None,
+            product_revision_id: None,
+            bom_revision_id: None,
+            routing_revision_id: None,
+            control_plan_revision_id: None,
+            ctq_characteristic_set: Vec::new(),
+            tooling_revision: None,
+            source_sales_order_line_id: None,
+            customer_requirement_revision: None,
         };
         service.create_work_order(tenant_id, wo).await.unwrap();
 
@@ -1182,6 +1241,15 @@ mod tests {
             created_at: Utc::now(),
             updated_at: Utc::now(),
             source_sales_order_id: None,
+            standard_work_id: None,
+            product_revision_id: None,
+            bom_revision_id: None,
+            routing_revision_id: None,
+            control_plan_revision_id: None,
+            ctq_characteristic_set: Vec::new(),
+            tooling_revision: None,
+            source_sales_order_line_id: None,
+            customer_requirement_revision: None,
         };
         let created = service.create_work_order(tenant_id, wo).await.unwrap();
 
@@ -1226,6 +1294,15 @@ mod tests {
             created_at: Utc::now(),
             updated_at: Utc::now(),
             source_sales_order_id: None,
+            standard_work_id: None,
+            product_revision_id: None,
+            bom_revision_id: None,
+            routing_revision_id: None,
+            control_plan_revision_id: None,
+            ctq_characteristic_set: Vec::new(),
+            tooling_revision: None,
+            source_sales_order_line_id: None,
+            customer_requirement_revision: None,
         };
         let created2 = service.create_work_order(tenant_id, wo2).await.unwrap();
         let ops = service

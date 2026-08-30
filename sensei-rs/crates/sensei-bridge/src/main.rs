@@ -148,6 +148,43 @@ impl Bridge {
         Ok(RecordResult::Failed)
     }
 
+    /// Load the previously saved watermark for a source table — the
+    /// bridge RESUMES where it stopped; it never re-reads from the
+    /// beginning (thirteenth audit: checkpoint_watermark was initialized
+    /// to None everywhere, so every run repeated the oldest page).
+    async fn load_checkpoint(
+        &self,
+        system: &str,
+        source_table: &str,
+    ) -> std::result::Result<Option<String>, anyhow::Error> {
+        let url = format!(
+            "{}/api/v1/integration/checkpoint/{system}/{source_table}",
+            self.api_url
+        );
+        let resp = self
+            .client
+            .get(&url)
+            .bearer_auth(&self.token)
+            .header("X-Sensei-Tenant", &self.tenant_id)
+            .send()
+            .await
+            .with_context(|| format!("GET checkpoint {url}"))?;
+        if resp.status() == reqwest::StatusCode::NOT_FOUND {
+            return Ok(None);
+        }
+        if !resp.status().is_success() {
+            anyhow::bail!(
+                "load checkpoint {system}/{source_table} -> HTTP {}",
+                resp.status()
+            );
+        }
+        let body: serde_json::Value = resp.json().await.context("checkpoint body")?;
+        Ok(body
+            .get("watermark")
+            .and_then(|w| w.as_str())
+            .map(|s| s.to_string()))
+    }
+
     /// Persist the watermark checkpoint for a source table (item 20: the
     /// bridge is INCREMENTAL — the oldest rows can never be skipped).
     async fn save_checkpoint(
@@ -257,130 +294,187 @@ async fn pull_table(
     limit: i64,
 ) -> Result<RunStats> {
     let mut stats = RunStats::default();
-    // Incremental: only rows changed since the checkpoint (item 20).
-    let rows = match &cfg.checkpoint_watermark {
-        Some(wm) => {
-            sqlx::query(&format!(
-                "SELECT * FROM {cfg_source_table} WHERE {cfg_watermark_column} > ? ORDER BY {cfg_watermark_column} ASC LIMIT ?",
-                cfg_source_table = cfg.source_table,
-                cfg_watermark_column = cfg.watermark_column,
-            ))
-            .bind(wm)
-            .bind(limit)
-            .fetch_all(db)
-            .await
-            .with_context(|| format!("SELECT {} (incremental)", cfg.source_table))?
-        }
-        None => {
-            sqlx::query(&format!(
-                "SELECT * FROM {cfg_source_table} ORDER BY {cfg_watermark_column} ASC LIMIT ?",
-                cfg_source_table = cfg.source_table,
-                cfg_watermark_column = cfg.watermark_column,
-            ))
-            .bind(limit)
-            .fetch_all(db)
-            .await
-            .with_context(|| format!("SELECT {} (initial)", cfg.source_table))?
-        }
-    };
-    stats.read = rows.len() as u64;
-    let mut max_watermark: Option<String> = cfg.checkpoint_watermark.clone();
-    for row in &rows {
-        let id: i64 = match row.try_get(cfg.id_column) {
-            Ok(v) => v,
-            Err(_) => {
-                stats.failed += 1;
-                continue;
+    // Thirteenth audit: the previously saved checkpoint is LOADED, never
+    // initialized to None — otherwise every run re-reads the oldest page
+    // and the newest rows never arrive.
+    let mut cursor = bridge.load_checkpoint(cfg.system, cfg.source_table).await?;
+    // Paginate until exhaustion (a table larger than one page is fully
+    // covered), advancing the cursor only past records that SUCCEEDED —
+    // a failed record halts the cursor so the next run re-reads it
+    // (item: cursor advancement must account for unresolved records).
+    loop {
+        let rows = match &cursor {
+            Some(wm) => {
+                sqlx::query(&format!(
+                    "SELECT * FROM {cfg_source_table} WHERE {cfg_watermark_column} > ? ORDER BY {cfg_watermark_column} ASC LIMIT ?",
+                    cfg_source_table = cfg.source_table,
+                    cfg_watermark_column = cfg.watermark_column,
+                ))
+                .bind(wm)
+                .bind(limit)
+                .fetch_all(db)
+                .await
+                .with_context(|| format!("SELECT {} (incremental)", cfg.source_table))?
+            }
+            None => {
+                sqlx::query(&format!(
+                    "SELECT * FROM {cfg_source_table} ORDER BY {cfg_watermark_column} ASC LIMIT ?",
+                    cfg_source_table = cfg.source_table,
+                    cfg_watermark_column = cfg.watermark_column,
+                ))
+                .bind(limit)
+                .fetch_all(db)
+                .await
+                .with_context(|| format!("SELECT {} (initial)", cfg.source_table))?
             }
         };
-        let id_str = id.to_string();
-        let source_updated: Option<String> =
-            row.try_get(cfg.watermark_column).ok().map(|v: String| v);
-        // Date normalization (item 19): MySQL DATETIME -> RFC3339.
-        let source_updated_rfc = source_updated.clone().and_then(|s| {
-            chrono::NaiveDateTime::parse_from_str(&s, "%Y-%m-%d %H:%M:%S")
-                .ok()
-                .map(|nd| nd.and_utc().to_rfc3339())
-        });
-        if let Some(ref s) = source_updated_rfc {
-            let newer = match max_watermark.as_ref() {
-                Some(m) => s > m,
-                None => true,
+        if rows.is_empty() {
+            break;
+        }
+        stats.read += rows.len() as u64;
+        let mut page_watermark: Option<String> = cursor.clone();
+        let mut page_has_failure = false;
+        for row in &rows {
+            let id: i64 = match row.try_get(cfg.id_column) {
+                Ok(v) => v,
+                Err(_) => {
+                    stats.failed += 1;
+                    page_has_failure = true;
+                    continue;
+                }
             };
-            if newer {
-                max_watermark = Some(s.clone());
-            }
-        }
+            let id_str = id.to_string();
+            let source_updated: Option<String> =
+                row.try_get(cfg.watermark_column).ok().map(|v: String| v);
+            // Date normalization (item 19): MySQL DATETIME -> RFC3339.
+            let source_updated_rfc = source_updated.clone().and_then(|s| {
+                chrono::NaiveDateTime::parse_from_str(&s, "%Y-%m-%d %H:%M:%S")
+                    .ok()
+                    .map(|nd| nd.and_utc().to_rfc3339())
+            });
 
-        // Tombstone detection (item 21): disabled/deleted markers become
-        // an archival intent — the row is still imported; the API maps it.
-        let mut payload = row_to_json(row);
-        let tombstoned = match (cfg.system, cfg.entity) {
-            ("starzerp", "customer") => row
-                .try_get::<bool, _>("is_active")
-                .map(|v| !v)
-                .unwrap_or(false),
-            ("starzerp", "supplier") => row
-                .try_get::<bool, _>("is_active")
-                .map(|v| !v)
-                .unwrap_or(false),
-            _ => false,
-        };
-        if tombstoned {
-            payload["tombstoned"] = Value::Bool(true);
-            stats.tombstones += 1;
-        }
-
-        // Child rows belong to the record (item 22): a child failure is a
-        // record failure — never an empty silent parent. load_children
-        // returns None when the cfg.entity has no children, Some(vec) on
-        // success, and Some(vec![error_sentinel]) on failure.
-        if let Some(children) = load_children(db, cfg.system, cfg.entity, row).await {
-            if children
-                .first()
-                .and_then(|c| c.get("__child_error"))
-                .is_some()
-            {
-                stats.failed += 1;
-                continue;
-            }
-            let key = if cfg.entity == "sales_order" {
-                "orderItems"
-            } else if cfg.entity == "quote" {
-                "partBreakdowns"
-            } else {
-                "lineItems"
+            // Tombstone detection (item 21): disabled/deleted markers
+            // become an archival intent — the row is still imported.
+            let mut payload = row_to_json(row);
+            let tombstoned = match (cfg.system, cfg.entity) {
+                ("starzerp", "customer") => row
+                    .try_get::<bool, _>("is_active")
+                    .map(|v| !v)
+                    .unwrap_or(false),
+                ("starzerp", "supplier") => row
+                    .try_get::<bool, _>("is_active")
+                    .map(|v| !v)
+                    .unwrap_or(false),
+                _ => false,
             };
-            payload[key] = Value::Array(children);
-        }
-
-        match bridge
-            .import(
-                cfg.system,
-                cfg.entity,
-                &id_str,
-                payload,
-                source_updated.as_deref(),
-                source_updated_rfc.as_deref(),
-            )
-            .await
-        {
-            Ok(RecordResult::Applied) => stats.applied += 1,
-            Ok(RecordResult::Unchanged) => stats.unchanged += 1,
-            Ok(RecordResult::Quarantined) => stats.quarantined += 1,
-            Ok(RecordResult::Failed) => stats.failed += 1,
-            Err(e) => {
-                tracing::error!("{}/{}/{}: {}", cfg.system, cfg.entity, id_str, e);
-                stats.failed += 1;
+            if tombstoned {
+                payload["tombstoned"] = Value::Bool(true);
+                stats.tombstones += 1;
             }
+
+            // Child rows belong to the record (item 22): a child failure is
+            // a record failure — never an empty silent parent.
+            if let Some(children) = load_children(db, cfg.system, cfg.entity, row).await {
+                if children
+                    .first()
+                    .and_then(|c| c.get("__child_error"))
+                    .is_some()
+                {
+                    stats.failed += 1;
+                    page_has_failure = true;
+                    continue;
+                }
+                let key = if cfg.entity == "sales_order" {
+                    "orderItems"
+                } else if cfg.entity == "quote" {
+                    "partBreakdowns"
+                } else {
+                    "lineItems"
+                };
+                payload[key] = Value::Array(children);
+            }
+
+            let result = bridge
+                .import(
+                    cfg.system,
+                    cfg.entity,
+                    &id_str,
+                    payload,
+                    source_updated.as_deref(),
+                    source_updated_rfc.as_deref(),
+                )
+                .await;
+            match result {
+                Ok(RecordResult::Applied) => {
+                    stats.applied += 1;
+                    // Advance the cursor ONLY past successfully imported
+                    // records.
+                    if let Some(ref s) = source_updated_rfc {
+                        let newer = match page_watermark.as_ref() {
+                            Some(m) => s > m,
+                            None => true,
+                        };
+                        if newer {
+                            page_watermark = Some(s.clone());
+                        }
+                    }
+                }
+                Ok(RecordResult::Unchanged) => {
+                    stats.unchanged += 1;
+                    if let Some(ref s) = source_updated_rfc {
+                        let newer = match page_watermark.as_ref() {
+                            Some(m) => s > m,
+                            None => true,
+                        };
+                        if newer {
+                            page_watermark = Some(s.clone());
+                        }
+                    }
+                }
+                Ok(RecordResult::Quarantined) => {
+                    stats.quarantined += 1;
+                    // Quarantined records ARE resolved (dead-lettered) —
+                    // the cursor may pass them.
+                    if let Some(ref s) = source_updated_rfc {
+                        let newer = match page_watermark.as_ref() {
+                            Some(m) => s > m,
+                            None => true,
+                        };
+                        if newer {
+                            page_watermark = Some(s.clone());
+                        }
+                    }
+                }
+                Ok(RecordResult::Failed) => {
+                    stats.failed += 1;
+                    // FAILURE HALTS THE CURSOR: the next run re-reads
+                    // from the last successful watermark and retries.
+                    page_has_failure = true;
+                }
+                Err(e) => {
+                    tracing::error!("{}/{}: {}", cfg.system, cfg.entity, e);
+                    stats.failed += 1;
+                    page_has_failure = true;
+                }
+            }
+        }
+        cursor = page_watermark;
+        // A failed record means later rows are NOT advanced past — stop
+        // the page loop so the next run resumes from the safe cursor.
+        if page_has_failure || rows.len() < limit as usize {
+            break;
         }
     }
-    // Advance the checkpoint (item 20): the next run starts after this
-    // watermark — nothing is ever skipped or re-read from the beginning.
-    if let Some(wm) = &max_watermark {
-        let _ = bridge
-            .save_checkpoint(cfg.system, cfg.source_table, wm, run_id)
-            .await;
+    // The checkpoint save is NOT best-effort: a lost checkpoint re-reads
+    // the whole table; a failed save fails the run loudly.
+    if let Some(wm) = &cursor {
+        if wm != &cfg.checkpoint_watermark.clone().unwrap_or_default()
+            || cfg.checkpoint_watermark.is_some()
+        {
+            bridge
+                .save_checkpoint(cfg.system, cfg.source_table, wm, run_id)
+                .await?;
+        }
     }
     stats.report(&format!("{}/{}", cfg.system, cfg.entity));
     Ok(stats)

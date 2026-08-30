@@ -34,13 +34,14 @@ pub struct LearningMetric {
     pub guidance: String,
 }
 
-/// Aggregated learning view over a window.
+/// Aggregated learning view over a window — a PATTERN, not a grade
+/// (thirteenth audit): a composite index would be optimized and would
+/// punish problem exposure. The metrics carry their own direction and
+/// the interpretation belongs to the reader.
 #[derive(Debug, Clone, Serialize)]
 pub struct LearningSnapshot {
     pub window_days: i64,
     pub metrics: Vec<LearningMetric>,
-    /// The system's overall learning state (0..1) — NOT a person ranking.
-    pub learning_index: f64,
     pub generated_at: DateTime<Utc>,
 }
 
@@ -82,7 +83,7 @@ pub fn compute_learning(inputs: &LearningInputs) -> LearningSnapshot {
         unit: "s",
         better: "lower",
         target: Some(60.0),
-        gap: Some((60.0 - inputs.detection_latency_seconds).max(0.0)),
+        gap: Some((inputs.detection_latency_seconds - 60.0).max(0.0)),
         guidance: "How quickly an abnormality becomes visible. Falling latency means \
                    people are comfortable exposing problems EARLY — that is health, \
                    not failure."
@@ -95,7 +96,7 @@ pub fn compute_learning(inputs: &LearningInputs) -> LearningSnapshot {
         unit: "s",
         better: "lower",
         target: Some(300.0),
-        gap: Some((300.0 - inputs.help_response_seconds).max(0.0)),
+        gap: Some((inputs.help_response_seconds - 300.0).max(0.0)),
         guidance: "Whether the support chain responds when help is asked. This is the \
                    system's promise to the person who stops the line."
             .to_string(),
@@ -107,7 +108,7 @@ pub fn compute_learning(inputs: &LearningInputs) -> LearningSnapshot {
         unit: "s",
         better: "lower",
         target: Some(1800.0),
-        gap: Some((1800.0 - inputs.containment_seconds).max(0.0)),
+        gap: Some((inputs.containment_seconds - 1800.0).max(0.0)),
         guidance: "How quickly customer/process risk is controlled after the abnormality \
                    becomes visible."
             .to_string(),
@@ -119,7 +120,7 @@ pub fn compute_learning(inputs: &LearningInputs) -> LearningSnapshot {
         unit: "%",
         better: "lower",
         target: Some(0.15),
-        gap: Some((0.15 - inputs.recurrence_rate).max(0.0)),
+        gap: Some((inputs.recurrence_rate - 0.15).max(0.0)),
         guidance: "Whether learning actually worked. Rising recurrence means the \
                    countermeasure was not verified — reopen the learning path."
             .to_string(),
@@ -131,7 +132,7 @@ pub fn compute_learning(inputs: &LearningInputs) -> LearningSnapshot {
         unit: "s",
         better: "lower",
         target: Some(3600.0),
-        gap: Some((3600.0 - inputs.escalation_latency_seconds).max(0.0)),
+        gap: Some((inputs.escalation_latency_seconds - 3600.0).max(0.0)),
         guidance: "Whether barriers move upward promptly instead of being absorbed \
                    silently."
             .to_string(),
@@ -143,7 +144,7 @@ pub fn compute_learning(inputs: &LearningInputs) -> LearningSnapshot {
         unit: "%",
         better: "higher",
         target: Some(0.8),
-        gap: Some((inputs.verification_rate - 0.8).max(0.0)),
+        gap: Some((0.8 - inputs.verification_rate).max(0.0)),
         guidance: "Whether PDCA closes with demonstrated evidence — 'we did something' \
                    is not 'we demonstrated it changed the condition'."
             .to_string(),
@@ -155,7 +156,7 @@ pub fn compute_learning(inputs: &LearningInputs) -> LearningSnapshot {
         unit: "%",
         better: "higher",
         target: Some(0.7),
-        gap: Some((inputs.standardization_rate - 0.7).max(0.0)),
+        gap: Some((0.7 - inputs.standardization_rate).max(0.0)),
         guidance: "Whether learning becomes institutional (a revised standard), not a \
                    one-off fix."
             .to_string(),
@@ -168,7 +169,7 @@ pub fn compute_learning(inputs: &LearningInputs) -> LearningSnapshot {
             unit: "%",
             better: "higher",
             target: Some(0.9),
-            gap: Some((value - 0.9).max(0.0)),
+            gap: Some((0.9 - value).max(0.0)),
             guidance: "Whether 'normal' is actually defined — an abnormality without a \
                        standard is a gap in the standard, not a person's failure."
                 .to_string(),
@@ -234,31 +235,9 @@ pub fn compute_learning(inputs: &LearningInputs) -> LearningSnapshot {
         hypothesis_quality,
     ];
 
-    // Learning index: normalized 0..1 across the directional metrics.
-    // Recurrence and latencies: lower = better; rates: higher = better.
-    let mut parts = Vec::new();
-    for m in &metrics {
-        // Unmeasured metrics (no target) do not contribute to the index —
-        // counting them as zero would fabricate a learning score.
-        if m.target.is_none() && m.key == "deviations_tied_to_standard" {
-            continue;
-        }
-        let normalized = match m.better {
-            "lower" => (1.0 - (m.value / (m.value + m.target.unwrap_or(1.0)))).clamp(0.0, 1.0),
-            _ => m.value.clamp(0.0, 1.0),
-        };
-        parts.push(normalized);
-    }
-    let learning_index = if parts.is_empty() {
-        0.0
-    } else {
-        parts.iter().sum::<f64>() / parts.len() as f64
-    };
-
     LearningSnapshot {
         window_days: 30,
         metrics,
-        learning_index,
         generated_at: Utc::now(),
     }
 }
@@ -312,7 +291,6 @@ mod tests {
         };
         let s = compute_learning(&inputs);
         assert_eq!(s.metrics.len(), 10);
-        assert!((0.0..=1.0).contains(&s.learning_index));
         // All metric labels present and gap direction correct.
         let recurrence = s
             .metrics
@@ -356,9 +334,26 @@ mod tests {
             open_a3s: 5,
             a3s_with_hypothesis: 5,
         };
+        // Thirteenth audit: NO composite index — the pattern carries the
+        // interpretation. Assert the DIRECTIONAL invariants instead.
+        let good_s = compute_learning(&good);
+        let poor_s = compute_learning(&poor);
+        let gap_of = |s: &LearningSnapshot, key: &str| -> f64 {
+            s.metrics
+                .iter()
+                .find(|m| m.key == key)
+                .and_then(|m| m.gap)
+                .unwrap_or(0.0)
+        };
+        // lower-better: a slower response has a LARGER gap.
         assert!(
-            compute_learning(&good).learning_index > compute_learning(&poor).learning_index,
-            "a healthier system must score higher — and this metric never ranks people"
+            gap_of(&poor_s, "help_response_latency") > gap_of(&good_s, "help_response_latency"),
+            "a slower help response must show a larger gap, not zero"
+        );
+        // higher-better: a lower verification rate has a LARGER gap.
+        assert!(
+            gap_of(&poor_s, "verification_rate") > gap_of(&good_s, "verification_rate"),
+            "a lower verification rate must show a larger gap"
         );
     }
 
@@ -371,5 +366,67 @@ mod tests {
         assert!((d - 300.0).abs() < 1.0);
         assert_eq!(mean(&[]), 0.0);
         assert_eq!(mean(&[1.0, 3.0]), 2.0);
+    }
+}
+
+#[cfg(test)]
+mod behavioral_anti_tests {
+    use super::*;
+
+    /// Thirteenth audit: "Never treat fewer Andons as intrinsically
+    /// better" — a system with FEW Andons but MANY escapes must not look
+    /// healthier than one exposing MORE problems while containing them
+    /// faster. There is NO composite index to game; the pattern must be
+    /// read from the metrics themselves.
+    #[test]
+    fn hidden_problems_are_not_excellence() {
+        // Sick system: zero visible problems, everything escapes downstream.
+        let sick = LearningInputs {
+            detection_latency_seconds: 0.0,
+            help_response_seconds: 0.0,
+            containment_seconds: 0.0,
+            recurrence_rate: 1.0, // every escape recurs
+            escalation_latency_seconds: 0.0,
+            verification_rate: 0.0, // nothing ever verified
+            standardization_rate: 0.0,
+            deviations_tied_to_standard: Some(0.0),
+            mean_interval_between_failures_seconds: 1e15, // NO andons at all
+            open_a3s: 0,
+            a3s_with_hypothesis: 0,
+        };
+        // Healthy: problems EXPOSED, contained fast, verified, standardized.
+        let healthy = LearningInputs {
+            detection_latency_seconds: 60.0,
+            help_response_seconds: 120.0,
+            containment_seconds: 600.0,
+            recurrence_rate: 0.1,
+            escalation_latency_seconds: 1800.0,
+            verification_rate: 0.9,
+            standardization_rate: 0.8,
+            deviations_tied_to_standard: Some(0.9),
+            mean_interval_between_failures_seconds: 1800.0,
+            open_a3s: 3,
+            a3s_with_hypothesis: 3,
+        };
+        let sick_s = compute_learning(&sick);
+        let healthy_s = compute_learning(&healthy);
+        let gap_of = |s: &LearningSnapshot, key: &str| -> f64 {
+            s.metrics
+                .iter()
+                .find(|m| m.key == key)
+                .and_then(|m| m.gap)
+                .unwrap_or(f64::INFINITY)
+        };
+        // Recurrence: the sick system's escapes recur — its gap is LARGER
+        // than the healthy system that actually reports problems.
+        assert!(
+            gap_of(&sick_s, "recurrence_rate") > gap_of(&healthy_s, "recurrence_rate"),
+            "hidden problems must NOT look healthy"
+        );
+        // Verification: the sick system verified nothing — larger gap.
+        assert!(
+            gap_of(&sick_s, "verification_rate") > gap_of(&healthy_s, "verification_rate"),
+            "a system that verifies nothing must show the larger gap"
+        );
     }
 }

@@ -152,22 +152,28 @@ pub async fn get_station_snapshot(
             .fetch_one(pool.as_ref())
             .await
             .unwrap_or(0);
-            // Pitch target (item 36): the takt is bound to THIS job's
-            // PRODUCT — the routing's work center and the effective
-            // standard for that product. The most-recent tenant-global
-            // standard is NEVER used.
+            // Pitch target (thirteenth audit P0): the takt comes from the
+            // WORK ORDER'S FROZEN standard revision (standard_work_id) —
+            // the exact revision the order was released under. A newly
+            // published standard for another product can NEVER leak in.
+            // Only WOs released before the freeze feature resolve a
+            // fallback: the exact EFFECTIVE standard for the product,
+            // with the validity window enforced (a standard approved for
+            // next Monday is not selectable today).
             let takt: Option<i64> = sqlx::query_scalar(
-                "SELECT (3600.0 / NULLIF(s.takt_time_seconds, 0))::bigint \
+                "SELECT (3600.0 / NULLIF(COALESCE(s.takt_time_seconds, fs.takt_time_seconds), 0))::bigint \
                  FROM work_orders wo \
-                 JOIN standard_work_documents s \
-                   ON s.tenant_id = wo.tenant_id \
-                  AND s.status IN ('effective', 'published') \
-                  AND s.id = ( \
-                       SELECT s2.id FROM standard_work_documents s2 \
-                       WHERE s2.tenant_id = wo.tenant_id \
-                         AND s2.status IN ('effective', 'published') \
-                       ORDER BY s2.updated_at DESC LIMIT 1 \
-                   ) \
+                 LEFT JOIN standard_work_documents s \
+                   ON s.id = wo.standard_work_id AND s.tenant_id = wo.tenant_id \
+                 LEFT JOIN LATERAL ( \
+                     SELECT s2.* FROM standard_work_documents s2 \
+                     WHERE s2.tenant_id = wo.tenant_id \
+                       AND s2.product_id = wo.product_id \
+                       AND s2.status = 'effective' \
+                       AND (s2.effective_from IS NULL OR s2.effective_from <= NOW()) \
+                       AND (s2.effective_to IS NULL OR s2.effective_to > NOW()) \
+                     ORDER BY s2.version DESC LIMIT 1 \
+                 ) fs ON wo.standard_work_id IS NULL \
                  WHERE wo.id = $1 AND wo.tenant_id = $2 \
                  LIMIT 1",
             )

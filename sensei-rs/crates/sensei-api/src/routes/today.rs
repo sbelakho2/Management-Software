@@ -70,6 +70,11 @@ fn status_is_open(status: &str) -> bool {
     !status_is_completed(status) && !status_is_cancelled(status)
 }
 
+fn status_is_in_progress(status: &str) -> bool {
+    let normalized = status.trim().to_lowercase().replace(['-', ' '], "_");
+    normalized == "in_progress" || normalized == "inprogress"
+}
+
 fn status_is_cancelled(status: &str) -> bool {
     matches!(
         status.to_lowercase().as_str(),
@@ -268,17 +273,15 @@ pub async fn get_today_snapshot(
     let work_order_summary = {
         let total_active = all_work_orders
             .iter()
-            .filter(|o| o.status != "Cancelled" && o.status != "Completed")
+            .filter(|o| !status_is_cancelled(&o.status) && !status_is_completed(&o.status))
             .count();
         let completed_today = all_work_orders
             .iter()
-            .filter(|o| o.status == "Completed" && o.updated_at.date_naive() == today)
+            .filter(|o| status_is_completed(&o.status) && o.updated_at.date_naive() == today)
             .count();
         let in_progress = all_work_orders
             .iter()
-            .filter(|o| {
-                o.status == "InProgress" || o.status == "In Progress" || o.status == "in_progress"
-            })
+            .filter(|o| status_is_in_progress(&o.status))
             .count();
         let overdue = all_work_orders
             .iter()
@@ -336,7 +339,7 @@ pub async fn get_today_snapshot(
     let all_projects = fetch_all_projects(&state, tenant_id).await?;
     let active_projects = all_projects
         .iter()
-        .filter(|p| p.status != "Completed" && p.status != "Cancelled")
+        .filter(|p| !status_is_completed(&p.status) && !status_is_cancelled(&p.status))
         .count();
 
     // ── Assemble response ────────────────────────────────────────────

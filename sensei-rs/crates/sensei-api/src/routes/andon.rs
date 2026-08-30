@@ -73,7 +73,10 @@ pub async fn list_andons(
 /// else.
 #[derive(Debug, Clone, serde::Deserialize)]
 pub struct RaiseAndonRequest {
-    pub work_center_id: Uuid,
+    /// The work center is server-resolved from the caller's assignment
+    /// when absent (thirteenth audit P0): the operator never supplies an
+    /// id, and a client cannot forge a work center it does not work at.
+    pub work_center_id: Option<Uuid>,
     pub issue_type: String, // quality, safety, maintenance, material, other
     pub severity: String,   // low, medium, high, critical
     pub description: String,
@@ -101,11 +104,27 @@ pub async fn raise_andon(
             ));
         }
     }
+    // Thirteenth audit P0: the work center is SERVER-RESOLVED from the
+    // caller's operational assignment — never accepted as a forged id.
+    let work_center_id = match req.work_center_id {
+        Some(wc) => wc,
+        None => {
+            // The agent context resolves the caller's site/work center.
+            let ctx = crate::routes::agent::build_context(&user, &state).await;
+            ctx.work_center_id.ok_or_else(|| {
+                sensei_core::error::SenseiError::Validation(
+                    "Cannot raise help: the caller has no work center assigned — \
+                     contact your team lead"
+                        .to_string(),
+                )
+            })?
+        }
+    };
     let andon = Andon {
         id: Uuid::new_v4(),
         tenant_id,
         andon_number: String::new(),
-        work_center_id: req.work_center_id,
+        work_center_id,
         issue_type: req.issue_type,
         severity: req.severity,
         description: req.description,

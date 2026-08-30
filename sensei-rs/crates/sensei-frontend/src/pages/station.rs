@@ -27,6 +27,7 @@ pub fn StationPage() -> impl IntoView {
     let help_category = RwSignal::new("Quality".to_string());
     let help_note = RwSignal::new(String::new());
     let help_error = RwSignal::new(None::<String>);
+    let help_status = RwSignal::new(HelpRequestState::Idle);
 
     let help_submit: std::sync::Arc<dyn Fn() + Send + Sync + 'static> =
         std::sync::Arc::new(move || {
@@ -78,6 +79,7 @@ pub fn StationPage() -> impl IntoView {
                                 help_category=help_category
                                 help_note=help_note
                                 help_error=help_error
+                                help_status=help_status
                             />
                         }.into_any()
                     }
@@ -108,6 +110,7 @@ fn StationView(
     help_category: RwSignal<String>,
     help_note: RwSignal<String>,
     help_error: RwSignal<Option<String>>,
+    help_status: RwSignal<HelpRequestState>,
 ) -> impl IntoView {
     let wc_display = wc_name.clone();
     let help_click = on_help;
@@ -273,6 +276,18 @@ fn StationView(
                         {move || help_error.get().map(|e| view! {
                             <div class="rams-alert rams-alert--danger" role="alert">{e}</div>
                         })}
+                        {move || {
+                            let label = help_status.get().label();
+                            if label.is_empty() {
+                                ().into_any()
+                            } else {
+                                view! {
+                                    <div class="rams-alert rams-alert--info" role="status" aria-live="polite">
+                                        {label}
+                                    </div>
+                                }.into_any()
+                            }
+                        }}
                         <button type="button" class="rams-btn rams-btn--md" on:click=move |_| { if let Some(cb) = help_click.get_untracked() { cb() } }>
                             "REQUEST HELP NOW"
                         </button>
@@ -370,5 +385,32 @@ fn normalize_help_category(category: &str) -> String {
         "safety" => "safety".to_string(),
         "i cannot keep pace" | "cannot keep pace" => "capacity".to_string(),
         _ => "other".to_string(),
+    }
+}
+
+/// The Help interaction state machine (thirteenth audit P0): the operator
+/// always sees what happened — never a silently closed dialog.
+#[derive(Debug, Clone, PartialEq)]
+pub enum HelpRequestState {
+    Idle,
+    Sending,
+    /// HELP REQUESTED with the server-assigned Andon number.
+    Requested(String),
+    Failed,
+}
+
+impl HelpRequestState {
+    fn label(&self) -> String {
+        match self {
+            HelpRequestState::Idle => String::new(),
+            HelpRequestState::Sending => "SENDING...".to_string(),
+            HelpRequestState::Requested(number) => {
+                format!("HELP REQUESTED · {number} — a team lead will respond. The dialog stays open so you can see the response.")
+            }
+            HelpRequestState::Failed => {
+                "FAILED — the request was not sent. Retry below or use the team-lead channel."
+                    .to_string()
+            }
+        }
     }
 }
