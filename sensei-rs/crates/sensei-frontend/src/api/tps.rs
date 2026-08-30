@@ -523,6 +523,12 @@ pub struct StepNowDto {
     pub description: String,
     pub expected_seconds: Option<i64>,
     pub is_critical: bool,
+    #[serde(default)]
+    pub key_point: Option<String>,
+    #[serde(default)]
+    pub why_key_point_matters: Option<String>,
+    #[serde(default)]
+    pub safety_warning: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

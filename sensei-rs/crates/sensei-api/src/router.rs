@@ -1743,6 +1743,14 @@ pub fn build_router(state: AppState) -> Router {
         )
         // ── Andon Routes ──────────────────────────────────────────────────
         .route(
+            "/api/v1/conditions",
+            get(routes::conditions::list_conditions),
+        )
+        .route(
+            "/api/v1/conditions/{id}",
+            get(routes::conditions::get_condition).post(routes::conditions::contain_condition),
+        )
+        .route(
             "/api/v1/andon",
             get(routes::andon::list_andons).post(routes::andon::raise_andon),
         )
@@ -2008,6 +2016,10 @@ pub fn build_router(state: AppState) -> Router {
             post(routes::tps::calculate_takt),
         )
         .route("/api/v1/agent/tools", get(routes::agent::list_agent_tools))
+        .route(
+            "/api/v1/tier-meetings/agenda",
+            get(routes::tier_meetings::generate_agenda),
+        )
         .route(
             "/api/v1/tier-meetings",
             post(routes::tier_meetings::schedule_tier_meeting),

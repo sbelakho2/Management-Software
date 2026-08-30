@@ -204,3 +204,102 @@ pub async fn escalate_issue(
     store.persist().await?;
     Ok(Json(cloned))
 }
+
+/// The GENERATED tier agenda (thirteenth audit): the meeting is an
+/// exception-processing queue — unresolved conditions, open help calls,
+/// active containments and persistent pitch gaps are brought
+/// automatically. No manual board prep, no retyping, no PowerPoint. The
+/// same condition ID flows upward.
+#[derive(Debug, Clone, serde::Serialize, sqlx::FromRow)]
+pub struct TierAgendaItem {
+    pub condition_id: uuid::Uuid,
+    pub condition_number: String,
+    pub work_center_id: Option<uuid::Uuid>,
+    pub subject_type: String,
+    pub issue_type: String,
+    pub status: String,
+    pub recurrence_count: i64,
+    pub help_required: bool,
+    pub containment_required: bool,
+    pub expertise_required: Option<String>,
+    pub source_entity_type: Option<String>,
+    pub source_entity_id: Option<uuid::Uuid>,
+    pub opened_at: chrono::DateTime<chrono::Utc>,
+}
+
+#[derive(Debug, serde::Serialize)]
+pub struct TierAgenda {
+    pub tier_level: i64,
+    pub generated_at: chrono::DateTime<chrono::Utc>,
+    /// Unresolved conditions that flow upward with the SAME id.
+    pub items: Vec<TierAgendaItem>,
+    /// What the tier must decide about each (plain language).
+    pub guidance: String,
+}
+
+pub async fn generate_agenda(
+    user: AuthenticatedUser,
+    State(state): State<AppState>,
+    axum::extract::Query(params): axum::extract::Query<TierAgendaParams>,
+) -> Result<Json<TierAgenda>, SenseiError> {
+    user.require_permission("tps:obeya:read")?;
+    let pool = state
+        .db_pool
+        .as_ref()
+        .ok_or_else(|| SenseiError::Database("Agenda requires the database".to_string()))?;
+    let tier = params.tier_level.unwrap_or(1).clamp(1, 4);
+    // Tier 1 = everything unresolved at the work center; higher tiers
+    // only receive what lower tiers cannot resolve (escalated/contained-
+    // pending conditions with recurrence ≥ tier or open help calls).
+    let rows: Vec<TierAgendaItem> = sqlx::query_as(
+        "SELECT id, condition_number, scope_work_center_id, subject_type, \\
+                COALESCE(observed_condition->>'issue_type', 'condition') AS issue_type, \\
+                status, \\
+                COALESCE((learning->>'recurrence_count')::bigint, 0) AS recurrence_count, \\
+                help_required, containment_required, expertise_required, \\
+                source_entity_type, source_entity_id, created_at \\
+         FROM operational_conditions \\
+         WHERE tenant_id = $1 \\
+           AND status IN ('open', 'responding', 'contained', 'investigating') \\
+           AND ($2 = 1 \\
+                OR help_required = TRUE \\
+                OR COALESCE((learning->>'recurrence_count')::bigint, 0) >= $2) \\
+         ORDER BY \\
+           CASE WHEN containment_required THEN 0 ELSE 1 END, \\
+           COALESCE((learning->>'recurrence_count')::bigint, 0) DESC, \\
+           created_at ASC \\
+         LIMIT 100",
+    )
+    .bind(user.tenant_id)
+    .bind(tier)
+    .fetch_all(pool.as_ref())
+    .await
+    .map_err(|e| SenseiError::Database(format!("Agenda generation failed: {e}")))?;
+
+    let guidance = match tier {
+        1 => {
+            "Tier 1 decides: contain it now, clear the barrier, or escalate the SAME condition id."
+                .to_string()
+        }
+        2 => {
+            "Tier 2 receives only what Tier 1 could not resolve — same condition ids, no retyping."
+                .to_string()
+        }
+        3 => "Tier 3 receives only cross-functional conditions the lower tiers cannot clear."
+            .to_string(),
+        _ => {
+            "Tier 4 (site/business) receives only conditions that survive three tiers.".to_string()
+        }
+    };
+    Ok(Json(TierAgenda {
+        tier_level: tier,
+        generated_at: chrono::Utc::now(),
+        items: rows,
+        guidance,
+    }))
+}
+
+#[derive(Debug, serde::Deserialize)]
+pub struct TierAgendaParams {
+    pub tier_level: Option<i64>,
+}

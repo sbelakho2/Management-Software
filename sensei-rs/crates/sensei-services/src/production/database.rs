@@ -274,7 +274,9 @@ impl DatabaseProductionService {
         }
 
         let now = Utc::now();
+        let mut ordinal = 0;
         for step in &steps {
+            ordinal += 1;
             let station_id = station_for_wc
                 .get(&step.work_center_id.unwrap())
                 .copied()
@@ -288,8 +290,8 @@ impl DatabaseProductionService {
             sqlx::query(
                 "INSERT INTO work_order_operations \
                      (id, tenant_id, work_order_id, sequence, station_id, operation, status, \
-                      standard_time, setup_time, created_at, updated_at) \
-                     VALUES ($1,$2,$3,$4,$5,$6,'pending',$7,$8,$9,$9)",
+                      standard_time, setup_time, ordinal_position, created_at, updated_at) \
+                     VALUES ($1,$2,$3,$4,$5,$6,'pending',$7,$8,$9,$10,$10)",
             )
             .bind(Uuid::new_v4())
             .bind(tenant_id)
@@ -299,6 +301,7 @@ impl DatabaseProductionService {
             .bind(&step.operation)
             .bind(step.standard_time)
             .bind(step.setup_time)
+            .bind(ordinal)
             .bind(now)
             .execute(&mut **tx)
             .await

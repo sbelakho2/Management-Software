@@ -9,6 +9,7 @@ description = "Leptos WASM frontend for Sensei ERP"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
+sensei-contracts = { path = "../sensei-contracts" }
 sensei-core = { path = "../sensei-core" }
 leptos.workspace = true
 leptos_router.workspace = true

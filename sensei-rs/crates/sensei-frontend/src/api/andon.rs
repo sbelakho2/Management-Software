@@ -10,58 +10,15 @@ use std::collections::HashMap;
 // DTOs
 // ---------------------------------------------------------------------------
 
-/// The CANONICAL Andon response (thirteenth audit P0): mirrors the
-/// backend `Andon` domain exactly — the legacy title/location-style DTO
-/// deserialization failures are gone.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AndonEventDto {
-    pub id: String,
-    pub tenant_id: String,
-    pub andon_number: String,
-    pub work_center_id: String,
-    pub issue_type: String,
-    pub severity: String,
-    pub description: String,
-    pub status: String,
-    pub raised_by: String,
-    #[serde(default)]
-    pub acknowledged_by: Option<String>,
-    #[serde(default)]
-    pub resolved_by: Option<String>,
-    #[serde(default)]
-    pub resolution: Option<String>,
-    #[serde(default)]
-    pub response_time_seconds: Option<i64>,
-    #[serde(default)]
-    pub resolution_time_seconds: Option<i64>,
-    pub created_at: String,
-    #[serde(default)]
-    pub acknowledged_at: Option<String>,
-    #[serde(default)]
-    pub resolved_at: Option<String>,
-    #[serde(default)]
-    pub restart_authorized_by: Option<String>,
-    #[serde(default)]
-    pub restart_authorized_at: Option<String>,
-    #[serde(default)]
-    pub abnormal_condition_observed_at: Option<String>,
-    #[serde(default)]
-    pub contained_at: Option<String>,
-    #[serde(default)]
-    pub contained_by: Option<String>,
-    #[serde(default)]
-    pub contained_note: Option<String>,
-    #[serde(default)]
-    pub escalated: bool,
-    #[serde(default)]
-    pub escalated_at: Option<String>,
-}
+/// The CANONICAL Andon contract — shared with the backend via
+/// sensei-contracts (thirteenth audit): no independent DTO exists twice.
+pub type AndonEventDto = sensei_contracts::Andon;
 
+/// The operator's raise inputs (canonical command DTO — the server
+/// derives actor/tenant/status/work center).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RaiseAndonData {
-    pub work_center_id: String,
-    /// The plain-language category (quality, safety, maintenance,
-    /// material, other) — the operator never needs Andon terminology.
+    pub work_center_id: Option<String>,
     pub issue_type: String,
     pub severity: String,
     pub description: String,

@@ -139,6 +139,8 @@ pub async fn sales_flow_impact(
 
     // ── Capacity effect: the value stream + its work centers ──
     let first_sku = &need_lines[0].product_sku;
+    let mut qualification_needs: Vec<String> = Vec::new();
+    let mut supplier_dependencies: Vec<String> = Vec::new();
     let value_stream: Option<String> = sqlx::query_scalar(
         "SELECT vs.name FROM products p \
          LEFT JOIN product_families pf ON pf.id = p.product_family_id AND pf.tenant_id = p.tenant_id \
@@ -154,23 +156,67 @@ pub async fn sales_flow_impact(
 
     // Item 52: capacity is scoped to THIS product's ROUTING work centers
     // — the actual flow path, never the tenant-global sum of all centers.
-    let available_hours: Decimal = sqlx::query_scalar(
-        "SELECT COALESCE(SUM(wc.available_hours_per_day), 0)::numeric \
-         FROM products p \
-         JOIN routings r ON r.product_id = p.id AND r.tenant_id = p.tenant_id \
-         JOIN work_centers wc ON wc.id = r.work_center_id AND wc.tenant_id = p.tenant_id \
-         WHERE p.tenant_id = $1 AND p.product_number = $2 AND wc.is_active = TRUE",
+    // Thirteenth audit: capacity is BOTTLENECK-BASED — the constrained
+    // routing step decides, never the SUM of all work-center hours (SMT 40h
+    // + AOI 20h + Assembly 30h + Test 10h is NOT 100h of capacity; the
+    // limiting operation is what matters). Per step: required seconds =
+    // standard_time × quantity; the constraint = max(required / available).
+    let total_qty = need_lines.iter().map(|l| l.quantity).sum::<i64>();
+    let required_per_unit: Decimal = sqlx::query_scalar(
+        "SELECT COALESCE(SUM(r.standard_time), 0)::numeric \
+         FROM routings r \
+         JOIN products p ON p.id = r.product_id AND p.tenant_id = r.tenant_id \
+         WHERE p.tenant_id = $1 AND p.product_number = $2 AND r.is_active = TRUE",
     )
     .bind(user.tenant_id)
     .bind(first_sku)
     .fetch_one(pool.as_ref())
     .await
     .unwrap_or(Decimal::ZERO);
-
-    let total_qty = need_lines.iter().map(|l| l.quantity).sum::<i64>();
-    // Required takt: seconds available per day / daily demand.
+    // The bottleneck work center: the routing step with the highest
+    // load = required seconds / available seconds per day.
+    let bottleneck: Option<(String, Decimal, Decimal)> = sqlx::query_as(
+        "SELECT wc.name::text, \
+                (r.standard_time * $3)::numeric AS required_seconds, \
+                (COALESCE(wc.available_hours_per_day, 0) * 3600)::numeric AS available_seconds \
+         FROM routings r \
+         JOIN products p ON p.id = r.product_id AND p.tenant_id = r.tenant_id \
+         JOIN work_centers wc ON wc.id = r.work_center_id AND wc.tenant_id = p.tenant_id \
+         WHERE p.tenant_id = $1 AND p.product_number = $2 AND r.is_active = TRUE \
+         ORDER BY (r.standard_time * $3) / NULLIF(COALESCE(wc.available_hours_per_day, 0) * 3600, 0) DESC \
+         LIMIT 1",
+    )
+    .bind(user.tenant_id)
+    .bind(first_sku)
+    .bind(Decimal::from(total_qty))
+    .fetch_optional(pool.as_ref())
+    .await
+    .ok()
+    .flatten();
+    // The constrained operation determines the honest capacity.
+    let (bottleneck_name, bottleneck_required, bottleneck_available) =
+        bottleneck.unwrap_or(("(no routing)".to_string(), Decimal::ZERO, Decimal::ZERO));
+    let overload_seconds = (bottleneck_required - bottleneck_available).max(Decimal::ZERO);
+    // Required takt: bottleneck available seconds per day / daily demand.
+    let available_hours = (bottleneck_available / Decimal::from(3600)).max(Decimal::ONE);
     let seconds_per_day = available_hours * Decimal::from(3600);
     let daily_demand = Decimal::from(total_qty) / Decimal::from(window);
+    // Expose the constraint in plain language (thirteenth audit: the
+    // answer names the limiting operation, e.g. 'Assembly Cell 3 by 27h').
+    if overload_seconds > Decimal::ZERO {
+        qualification_needs.push(format!(
+            "Bottleneck {bottleneck_name}: this promise needs {}h more than the \
+             constrained operation has available ({}s required per unit × {} units)",
+            (overload_seconds / Decimal::from(3600)).round_dp(1),
+            required_per_unit,
+            total_qty
+        ));
+    } else {
+        qualification_needs.push(format!(
+            "The constrained operation is {bottleneck_name} — {required_per_unit}s per unit \
+             fits the available capacity."
+        ));
+    }
     let required_takt = if daily_demand > Decimal::ZERO {
         seconds_per_day / daily_demand
     } else {
@@ -200,8 +246,6 @@ pub async fn sales_flow_impact(
         .unwrap_or(false);
 
     // ── Qualification / tooling / supplier dependencies ──
-    let mut qualification_needs: Vec<String> = Vec::new();
-    let mut supplier_dependencies: Vec<String> = Vec::new();
     // CTQs of THIS product family imply inspection capability (item 52).
     if let Ok(ctqs) = sqlx::query_scalar::<_, String>(
         "SELECT c.name FROM ctq_characteristics c \

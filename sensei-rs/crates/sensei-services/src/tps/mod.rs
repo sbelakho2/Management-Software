@@ -5,6 +5,7 @@
 
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
+pub mod conditions;
 pub mod flow_economics;
 pub mod learning;
 pub mod rules;

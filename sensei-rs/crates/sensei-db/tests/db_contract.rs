@@ -8,6 +8,12 @@
 use rust_decimal::Decimal as RDecimal;
 use sqlx::PgPool;
 
+/// The gate tests each DROP+CREATE the shared schema — running them
+/// concurrently races the schema locks (deadlocks observed). A global
+/// lock serializes the suite: every test acquires it before touching the
+/// database.
+static DB_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
 /// Connect to the CI-provided empty test database. Returns None when the
 /// env var is absent so the local suite stays green (the gate runs in CI).
 async fn connect() -> Option<PgPool> {
@@ -20,6 +26,7 @@ async fn connect() -> Option<PgPool> {
 
 #[tokio::test]
 async fn full_migration_chain_applies_and_core_contracts_work() {
+    let _serial = DB_LOCK.lock().await;
     let Some(pool) = connect().await else { return };
     // Fresh-database gate: drop everything, then apply EVERY migration.
     sqlx::query(
@@ -250,6 +257,7 @@ async fn empty_database_survives_the_migration_chain() {
 /// service works": this test instantiates the service and runs its methods.
 #[tokio::test]
 async fn database_production_service_crud_works_on_migrated_schema() {
+    let _serial = DB_LOCK.lock().await;
     let Some(pool) = connect().await else { return };
     // Fresh-database guarantee: every migration must apply, then the REAL
     // service executes against that schema (audit item 76).
@@ -524,6 +532,7 @@ async fn database_production_service_crud_works_on_migrated_schema() {
 /// a restart authorization.
 #[tokio::test]
 async fn andon_service_rls_and_safety_rule_work_on_migrated_schema() {
+    let _serial = DB_LOCK.lock().await;
     let Some(pool) = connect().await else { return };
     sqlx::query(
         r#"DO $$ DECLARE r RECORD; BEGIN
@@ -623,6 +632,7 @@ async fn andon_service_rls_and_safety_rule_work_on_migrated_schema() {
 /// be rejected by the DATABASE when it references tenant-B's site.
 #[tokio::test]
 async fn topology_composite_tenant_fk_rejects_cross_tenant_reference() {
+    let _serial = DB_LOCK.lock().await;
     let Some(pool) = connect().await else { return };
     sqlx::query(
         r#"DO $$ DECLARE r RECORD; BEGIN
@@ -692,6 +702,7 @@ async fn topology_composite_tenant_fk_rejects_cross_tenant_reference() {
 /// second audit for the same execution impossible.
 #[tokio::test]
 async fn lsw_occurrence_yields_at_most_one_audit() {
+    let _serial = DB_LOCK.lock().await;
     let Some(pool) = connect().await else { return };
     sqlx::query(
         r#"DO $$ DECLARE r RECORD; BEGIN
@@ -831,6 +842,7 @@ async fn lsw_occurrence_yields_at_most_one_audit() {
 /// component need date BACKWARD from the finished good's due date.
 #[tokio::test]
 async fn mrp_rejects_cycles_and_phases_dates_backward() {
+    let _serial = DB_LOCK.lock().await;
     let Some(pool) = connect().await else { return };
     sqlx::query(
         r#"DO $$ DECLARE r RECORD; BEGIN
@@ -966,6 +978,7 @@ async fn mrp_rejects_cycles_and_phases_dates_backward() {
 /// effective one.
 #[tokio::test]
 async fn rag_golden_effective_filter_and_authority_order() {
+    let _serial = DB_LOCK.lock().await;
     let Some(pool) = connect().await else { return };
     sqlx::query(
         r#"DO $$ DECLARE r RECORD; BEGIN
@@ -1091,6 +1104,7 @@ async fn rag_golden_effective_filter_and_authority_order() {
 /// and standardization all compute from the migrated tables.
 #[tokio::test]
 async fn learning_metrics_compute_from_migrated_schema() {
+    let _serial = DB_LOCK.lock().await;
     let Some(pool) = connect().await else { return };
     sqlx::query(
         r#"DO $$ DECLARE r RECORD; BEGIN
@@ -1191,6 +1205,7 @@ async fn learning_metrics_compute_from_migrated_schema() {
 /// 71/73/31): the new surfaces must execute against the migrated schema.
 #[tokio::test]
 async fn graph_search_and_station_run_on_migrated_schema() {
+    let _serial = DB_LOCK.lock().await;
     let Some(pool) = connect().await else { return };
     sqlx::query(
         r#"DO $$ DECLARE r RECORD; BEGIN
@@ -1324,6 +1339,7 @@ async fn graph_search_and_station_run_on_migrated_schema() {
 ///     second mapping for the same legacy id.
 #[tokio::test]
 async fn integration_importer_is_idempotent_and_versioned() {
+    let _serial = DB_LOCK.lock().await;
     let Some(pool) = connect().await else { return };
     sqlx::query(
         r#"DO $$ DECLARE r RECORD; BEGIN
@@ -1527,6 +1543,7 @@ async fn integration_importer_is_idempotent_and_versioned() {
 /// must NOT record a mapping pointing at a nonexistent entity.
 #[tokio::test]
 async fn integration_stock_move_unresolved_is_quarantined() {
+    let _serial = DB_LOCK.lock().await;
     let Some(pool) = connect().await else { return };
     sqlx::query(
         r#"DO $$ DECLARE r RECORD; BEGIN
@@ -1632,6 +1649,7 @@ async fn integration_stock_move_unresolved_is_quarantined() {
 /// the corpus.
 #[tokio::test]
 async fn document_ingestion_requires_human_approval() {
+    let _serial = DB_LOCK.lock().await;
     let Some(pool) = connect().await else { return };
     sqlx::query(
         r#"DO $$ DECLARE r RECORD; BEGIN
@@ -1786,6 +1804,7 @@ async fn document_ingestion_requires_human_approval() {
 /// RESPONSE produced learning; the interval board shows what stopped flow.
 #[tokio::test]
 async fn tps_behavioral_surfaces_answer_the_six_questions() {
+    let _serial = DB_LOCK.lock().await;
     let Some(pool) = connect().await else { return };
     sqlx::query(
         r#"DO $$ DECLARE r RECORD; BEGIN
@@ -1909,6 +1928,7 @@ async fn tps_behavioral_surfaces_answer_the_six_questions() {
 /// fails this gate.
 #[tokio::test]
 async fn every_tenant_owned_table_has_fail_closed_rls() {
+    let _serial = DB_LOCK.lock().await;
     let Some(pool) = connect().await else { return };
     sqlx::query(
         r#"DO $$ DECLARE r RECORD; BEGIN
@@ -2083,6 +2103,7 @@ fn integration_import_rejects_humans_and_scopes_by_system() {
 /// → work center → standard) instead of a tenant-global pick.
 #[tokio::test]
 async fn tps_standard_revision_binding_follows_the_work_order() {
+    let _serial = DB_LOCK.lock().await;
     let Some(pool) = connect().await else { return };
     sqlx::query(
         r#"DO $$ DECLARE r RECORD; BEGIN
@@ -2256,6 +2277,7 @@ async fn tps_standard_revision_binding_follows_the_work_order() {
 /// overwritten by a legacy re-import; source-owned fields still update.
 #[tokio::test]
 async fn integration_field_authority_matrix_is_enforced() {
+    let _serial = DB_LOCK.lock().await;
     let Some(pool) = connect().await else { return };
     sqlx::query(
         r#"DO $$ DECLARE r RECORD; BEGIN
@@ -2349,6 +2371,7 @@ async fn integration_field_authority_matrix_is_enforced() {
 /// ambiguous 1000-or-1100 of the max() heuristic.
 #[tokio::test]
 async fn mrp_demand_pegging_allocates_supply_against_demand() {
+    let _serial = DB_LOCK.lock().await;
     let Some(pool) = connect().await else { return };
     sqlx::query(
         r#"DO $$ DECLARE r RECORD; BEGIN
@@ -2472,6 +2495,7 @@ async fn mrp_demand_pegging_allocates_supply_against_demand() {
 /// change. Executed against fresh PostgreSQL through the REAL services.
 #[tokio::test]
 async fn tps_full_learning_loop() {
+    let _serial = DB_LOCK.lock().await;
     let Some(pool) = connect().await else { return };
     sqlx::query(
         r#"DO $$ DECLARE r RECORD; BEGIN
@@ -2856,4 +2880,109 @@ async fn tps_full_learning_loop() {
             .await
             .expect("supersedes");
     assert_eq!(supersedes, Some(rev_a), "revision B supersedes revision A");
+}
+
+/// OperationalCondition nervous system (thirteenth audit): the SAME
+/// underlying condition (same work center + issue type) reuses ONE
+/// record with a rising recurrence count — a recurring problem never
+/// spawns a new ticket each time. The condition carries the risk,
+/// expertise and containment facts any surface can read.
+#[tokio::test]
+async fn operational_conditions_dedupe_by_recurrence_signature() {
+    let _serial = DB_LOCK.lock().await;
+    let Some(pool) = connect().await else { return };
+    sqlx::query(
+        r#"DO $$ DECLARE r RECORD; BEGIN
+             FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname = 'public') LOOP
+                 EXECUTE format('DROP TABLE IF EXISTS %I CASCADE', r.tablename);
+             END LOOP;
+         END $$"#,
+    )
+    .execute(&pool)
+    .await
+    .expect("drop all tables");
+    sensei_db::migrations::run_migrations(&pool)
+        .await
+        .expect("the ENTIRE migration chain must apply to an empty database");
+
+    let tenant_id = uuid::Uuid::new_v4();
+    let user_id = uuid::Uuid::new_v4();
+    sqlx::query("INSERT INTO tenants (id, name, slug) VALUES ($1, 'cond', 'conditions')")
+        .bind(tenant_id)
+        .execute(&pool)
+        .await
+        .expect("tenant insert");
+    sqlx::query(
+        "INSERT INTO users (id, tenant_id, email, name, password_hash)  VALUES ($1, $2, 'cond@x.local', 'C', 'x')",
+    )
+    .bind(user_id)
+    .bind(tenant_id)
+    .execute(&pool)
+    .await
+    .expect("user insert");
+    let wc = uuid::Uuid::new_v4();
+
+    use sensei_services::tps::conditions::*;
+    let base = OpenConditionInput {
+        scope_work_center_id: Some(wc),
+        scope_site_id: None,
+        scope_value_stream_id: None,
+        scope_shift_id: None,
+        subject_type: ConditionSubject::Operation,
+        subject_id: None,
+        expected_condition: serde_json::json!({}),
+        observed_condition: serde_json::json!({ "issue_type": "material" }),
+        gap: serde_json::json!({}),
+        risk: serde_json::json!({ "flow": 1 }),
+        help_required: true,
+        containment_required: false,
+        expertise_required: Some("material_planner".to_string()),
+        condition_type: "material".to_string(),
+        source_entity_type: "andon".to_string(),
+        source_entity_id: uuid::Uuid::new_v4(),
+        created_by: user_id,
+    };
+    let first = open_condition(&pool, tenant_id, &base)
+        .await
+        .expect("first condition");
+    assert_eq!(first.recurrence_count, 1, "first occurrence");
+
+    // A SECOND Andon for the SAME work center + issue type reinforces the
+    // SAME condition — never a new ticket.
+    let mut again = base.clone();
+    again.source_entity_id = uuid::Uuid::new_v4();
+    let reinforced = open_condition(&pool, tenant_id, &again)
+        .await
+        .expect("reinforced condition");
+    assert_eq!(
+        reinforced.id, first.id,
+        "the same underlying condition reuses ONE record"
+    );
+    assert_eq!(reinforced.recurrence_count, 2, "recurrence counter rises");
+
+    // A DIFFERENT issue type on the same work center is a DIFFERENT
+    // condition.
+    let mut different = base.clone();
+    different.condition_type = "quality".to_string();
+    different.source_entity_id = uuid::Uuid::new_v4();
+    let other = open_condition(&pool, tenant_id, &different)
+        .await
+        .expect("different condition");
+    assert_ne!(
+        other.id, first.id,
+        "a different condition is a different record"
+    );
+    let total: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM operational_conditions WHERE tenant_id = $1")
+            .bind(tenant_id)
+            .fetch_one(&pool)
+            .await
+            .expect("condition count");
+    assert_eq!(total, 2, "two underlying conditions, not three tickets");
+
+    // Containment moves it to 'contained' (risk controlled).
+    let contained = contain_condition(&pool, tenant_id, first.id, user_id)
+        .await
+        .expect("contain");
+    assert_eq!(contained.status, "contained");
 }

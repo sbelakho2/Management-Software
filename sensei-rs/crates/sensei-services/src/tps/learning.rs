@@ -30,6 +30,10 @@ pub struct LearningMetric {
     pub target: Option<f64>,
     /// The gap to target (positive = below target when better is "lower").
     pub gap: Option<f64>,
+    /// false when the value is NOT MEASURED — the response carries
+    /// MeasurementState::Unavailable, never a fabricated zero.
+    #[serde(default)]
+    pub measured: bool,
     /// Interpretation guidance (plain language, item 43).
     pub guidance: String,
 }
@@ -84,6 +88,7 @@ pub fn compute_learning(inputs: &LearningInputs) -> LearningSnapshot {
         better: "lower",
         target: Some(60.0),
         gap: Some((inputs.detection_latency_seconds - 60.0).max(0.0)),
+        measured: true,
         guidance: "How quickly an abnormality becomes visible. Falling latency means \
                    people are comfortable exposing problems EARLY — that is health, \
                    not failure."
@@ -97,6 +102,7 @@ pub fn compute_learning(inputs: &LearningInputs) -> LearningSnapshot {
         better: "lower",
         target: Some(300.0),
         gap: Some((inputs.help_response_seconds - 300.0).max(0.0)),
+        measured: true,
         guidance: "Whether the support chain responds when help is asked. This is the \
                    system's promise to the person who stops the line."
             .to_string(),
@@ -109,6 +115,7 @@ pub fn compute_learning(inputs: &LearningInputs) -> LearningSnapshot {
         better: "lower",
         target: Some(1800.0),
         gap: Some((inputs.containment_seconds - 1800.0).max(0.0)),
+        measured: true,
         guidance: "How quickly customer/process risk is controlled after the abnormality \
                    becomes visible."
             .to_string(),
@@ -121,6 +128,7 @@ pub fn compute_learning(inputs: &LearningInputs) -> LearningSnapshot {
         better: "lower",
         target: Some(0.15),
         gap: Some((inputs.recurrence_rate - 0.15).max(0.0)),
+        measured: true,
         guidance: "Whether learning actually worked. Rising recurrence means the \
                    countermeasure was not verified — reopen the learning path."
             .to_string(),
@@ -133,6 +141,7 @@ pub fn compute_learning(inputs: &LearningInputs) -> LearningSnapshot {
         better: "lower",
         target: Some(3600.0),
         gap: Some((inputs.escalation_latency_seconds - 3600.0).max(0.0)),
+        measured: true,
         guidance: "Whether barriers move upward promptly instead of being absorbed \
                    silently."
             .to_string(),
@@ -145,6 +154,7 @@ pub fn compute_learning(inputs: &LearningInputs) -> LearningSnapshot {
         better: "higher",
         target: Some(0.8),
         gap: Some((0.8 - inputs.verification_rate).max(0.0)),
+        measured: true,
         guidance: "Whether PDCA closes with demonstrated evidence — 'we did something' \
                    is not 'we demonstrated it changed the condition'."
             .to_string(),
@@ -157,6 +167,7 @@ pub fn compute_learning(inputs: &LearningInputs) -> LearningSnapshot {
         better: "higher",
         target: Some(0.7),
         gap: Some((0.7 - inputs.standardization_rate).max(0.0)),
+        measured: true,
         guidance: "Whether learning becomes institutional (a revised standard), not a \
                    one-off fix."
             .to_string(),
@@ -170,6 +181,7 @@ pub fn compute_learning(inputs: &LearningInputs) -> LearningSnapshot {
             better: "higher",
             target: Some(0.9),
             gap: Some((0.9 - value).max(0.0)),
+            measured: true,
             guidance: "Whether 'normal' is actually defined — an abnormality without a \
                        standard is a gap in the standard, not a person's failure."
                 .to_string(),
@@ -183,6 +195,7 @@ pub fn compute_learning(inputs: &LearningInputs) -> LearningSnapshot {
             better: "higher",
             target: None,
             gap: None,
+            measured: false,
             guidance: "NOT YET MEASURED — this KPI requires deviation records that \
                        reference a standard; it is not a measured zero."
                 .to_string(),
@@ -200,6 +213,7 @@ pub fn compute_learning(inputs: &LearningInputs) -> LearningSnapshot {
         better: "higher",
         target: None,
         gap: None,
+        measured: true,
         guidance: "Stability trend (resolved-Andon intervals). NOT equipment MTBF — \
                    Andons cover material, quality, method and safety conditions too; \
                    true MTBF requires failure-specific event semantics."
@@ -217,6 +231,7 @@ pub fn compute_learning(inputs: &LearningInputs) -> LearningSnapshot {
         better: "higher",
         target: Some(0.9),
         gap: None,
+        measured: true,
         guidance: "Whether people TEST rather than guess — a hypothesis states what \
                    result would confirm/refute a cause."
             .to_string(),

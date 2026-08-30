@@ -204,11 +204,23 @@ pub async fn update_standard_work(
         .ok_or_else(|| SenseiError::NotFound(format!("Standard work {sw_id} not found")))?;
     // Optimistic concurrency: a stale edit is rejected ATOMICALLY by the
     // repository (the CAS lives in the SQL, not a read/check/write race).
-    // An EFFECTIVE (or approved) revision is immutable: changes create a
-    // new revision, they never mutate the controlled standard in place.
-    if matches!(doc.status, SwStatus::Published) || doc.approved_by.is_some() {
+    // Thirteenth audit: EVERY controlled revision is immutable — effective,
+    // superseded, archived, AND published-with-window-started (a revision
+    // whose effective_from is now or past is operationally selectable and
+    // must never mutate in place). Changes always create a new revision.
+    let window_started = doc
+        .effective_from
+        .map(|f| f <= chrono::Utc::now())
+        .unwrap_or(false);
+    if matches!(
+        doc.status,
+        SwStatus::Published | SwStatus::Effective | SwStatus::Superseded | SwStatus::Archived
+    ) || window_started
+        || doc.approved_by.is_some()
+    {
         return Err(SenseiError::Conflict(
-            "Effective/approved standard work is immutable — create a new revision instead"
+            "Controlled standard work is immutable (effective/superseded/archived/approved) — \
+             create a new revision instead"
                 .to_string(),
         ));
     }

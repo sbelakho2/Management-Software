@@ -13,6 +13,7 @@ sensei-core = { path = "../sensei-core", features = ["axum"] }
 sensei-auth = { path = "../sensei-auth" }
 sensei-db = { path = "../sensei-db" }
 sensei-event-bus = { path = "../sensei-event-bus" }
+sensei-contracts = { path = "../sensei-contracts" }
 sensei-services = { path = "../sensei-services" }
 axum.workspace = true
 tower.workspace = true

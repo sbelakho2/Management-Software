@@ -6678,6 +6678,7 @@ dependencies = [
  "rust_decimal",
  "sensei-agent-core",
  "sensei-auth",
+ "sensei-contracts",
  "sensei-core",
  "sensei-db",
  "sensei-event-bus",
@@ -6736,6 +6737,16 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
+ "uuid",
+]
+
+[[package]]
+name = "sensei-contracts"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "serde",
+ "serde_json",
  "uuid",
 ]
 
@@ -6810,6 +6821,7 @@ dependencies = [
  "log",
  "once_cell",
  "reqwest 0.12.28",
+ "sensei-contracts",
  "sensei-core",
  "serde",
  "serde-wasm-bindgen",

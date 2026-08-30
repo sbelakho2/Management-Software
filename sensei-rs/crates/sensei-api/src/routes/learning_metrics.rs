@@ -6,7 +6,7 @@ use axum::extract::State;
 use axum::Json;
 use sensei_auth::middleware::AuthenticatedUser;
 use sensei_core::error::{Result, SenseiError};
-use sensei_services::tps::learning::{self, LearningInputs, LearningSnapshot};
+use sensei_services::tps::learning::{self, LearningInputs};
 
 use crate::state::AppState;
 
@@ -14,7 +14,7 @@ use crate::state::AppState;
 pub async fn get_learning_metrics(
     user: AuthenticatedUser,
     State(state): State<AppState>,
-) -> Result<Json<LearningSnapshot>> {
+) -> Result<Json<serde_json::Value>> {
     user.require_permission("tps:read")?;
     let tenant_id = user.tenant_id;
     let pool = state.db_pool.as_ref().ok_or_else(|| {
@@ -180,5 +180,36 @@ pub async fn get_learning_metrics(
         a3s_with_hypothesis: a3_hypotheses as usize,
     };
 
-    Ok(Json(learning::compute_learning(&inputs)))
+    let snapshot = learning::compute_learning(&inputs);
+    // Thirteenth audit: the response carries MeasurementState — an
+    // unmeasured metric is Unavailable(reason), NEVER a fabricated zero.
+    let contract_metrics: Vec<sensei_contracts::tps::LearningMetric> = snapshot
+        .metrics
+        .iter()
+        .map(|m| {
+            let value = if m.measured {
+                sensei_contracts::tps::MeasurementState::measured(m.value)
+            } else {
+                sensei_contracts::tps::MeasurementState::unavailable(
+                    "not yet measured — this KPI requires event semantics that are not \
+                     tracked; it is not a measured zero",
+                )
+            };
+            sensei_contracts::tps::LearningMetric {
+                key: m.key.to_string(),
+                label: m.label.to_string(),
+                value,
+                unit: m.unit.to_string(),
+                better: m.better.to_string(),
+                target: m.target,
+                gap: m.gap,
+                guidance: m.guidance.clone(),
+            }
+        })
+        .collect();
+    Ok(Json(serde_json::json!({
+        "window_days": snapshot.window_days,
+        "metrics": contract_metrics,
+        "generated_at": snapshot.generated_at,
+    })))
 }

@@ -105,6 +105,26 @@ pub struct LswDashboard {
     pub by_area: Vec<AreaCompliance>,
     pub by_layer: Vec<LayerCompliance>,
     pub recent_trend: Vec<ComplianceTrendPoint>,
+    /// Thirteenth audit: the leader's TRUE focus — response, barriers,
+    /// observation, verification and coaching. "Did Sarah complete 97% of
+    /// her LSW?" is replaced by "when the system exposed a barrier Sarah
+    /// owned, did the support loop close?"
+    pub leader: LeaderFocus,
+}
+
+/// What the leader should do next (the most useful LSW output).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LeaderFocus {
+    /// Help requests still waiting for a responder.
+    pub help_waiting: i64,
+    /// Conditions that recurred and need deeper observation.
+    pub recurring_conditions: i64,
+    /// Experiments awaiting verification (recorded, not yet verified).
+    pub experiments_awaiting_verification: i64,
+    /// Standards changed recently — coaching targets.
+    pub standards_changed_recently: i64,
+    /// Plain-language guidance assembled from the facts.
+    pub guidance: Vec<String>,
 }
 
 /// Compliance breakdown by area.
@@ -654,6 +674,80 @@ pub async fn get_lsw_dashboard(
         })
         .collect();
 
+    // ── Leader focus (thirteenth audit): the useful LSW output. ──
+    let mut guidance: Vec<String> = Vec::new();
+    let (help_waiting, recurring_conditions) = if let Some(pool) = state.db_pool.as_ref() {
+        let waiting: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM operational_conditions \
+             WHERE tenant_id = $1 AND help_required = TRUE \
+               AND status IN ('open', 'responding')",
+        )
+        .bind(tenant_id)
+        .fetch_one(pool.as_ref())
+        .await
+        .unwrap_or(0);
+        let recurring: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM operational_conditions \
+             WHERE tenant_id = $1 AND status IN ('open', 'responding', 'investigating') \
+               AND COALESCE((learning->>'recurrence_count')::bigint, 0) >= 2",
+        )
+        .bind(tenant_id)
+        .fetch_one(pool.as_ref())
+        .await
+        .unwrap_or(0);
+        if waiting > 0 {
+            guidance.push(format!(
+                "{waiting} help request(s) are still waiting for a responder — go where the \
+                 barrier is."
+            ));
+        }
+        if recurring > 0 {
+            guidance.push(format!(
+                "{recurring} condition(s) keep recurring — observe the actual work; the \
+                 standard may not fit the condition."
+            ));
+        }
+        (waiting, recurring)
+    } else {
+        (0, 0)
+    };
+    let (experiments_awaiting_verification, standards_changed_recently) =
+        if let Some(pool) = state.db_pool.as_ref() {
+            let experiments: i64 = sqlx::query_scalar(
+                "SELECT COUNT(*) FROM a3_reports \
+                 WHERE tenant_id = $1 AND status != 'closed' \
+                   AND jsonb_array_length(COALESCE(experiments, '[]')) > 0 \
+                   AND jsonb_array_length(COALESCE(verifications, '[]')) = 0",
+            )
+            .bind(tenant_id)
+            .fetch_one(pool.as_ref())
+            .await
+            .unwrap_or(0);
+            let changed: i64 = sqlx::query_scalar(
+                "SELECT COUNT(*) FROM standard_work_documents \
+                 WHERE tenant_id = $1 AND status = 'effective' \
+                   AND updated_at > NOW() - INTERVAL '14 days'",
+            )
+            .bind(tenant_id)
+            .fetch_one(pool.as_ref())
+            .await
+            .unwrap_or(0);
+            if experiments > 0 {
+                guidance.push(format!(
+                    "{experiments} experiment(s) are awaiting verification — we don't call it \
+                     fixed until measured."
+                ));
+            }
+            if changed > 0 {
+                guidance.push(format!(
+                    "{changed} standard(s) changed recently — coach the team on the new way."
+                ));
+            }
+            (experiments, changed)
+        } else {
+            (0, 0)
+        };
+
     let dashboard = LswDashboard {
         total_standards,
         total_audits,
@@ -661,6 +755,13 @@ pub async fn get_lsw_dashboard(
         by_area,
         by_layer,
         recent_trend,
+        leader: LeaderFocus {
+            help_waiting,
+            recurring_conditions,
+            experiments_awaiting_verification,
+            standards_changed_recently,
+            guidance,
+        },
     };
     Ok(Json(dashboard))
 }

@@ -47,6 +47,14 @@ pub struct StepNow {
     pub description: String,
     pub expected_seconds: Option<i64>,
     pub is_critical: bool,
+    /// The bound WorkStep's key point — why THIS step matters
+    /// (thirteenth audit: the operator learns, not just follows).
+    #[serde(default)]
+    pub key_point: Option<String>,
+    #[serde(default)]
+    pub why_key_point_matters: Option<String>,
+    #[serde(default)]
+    pub safety_warning: Option<String>,
 }
 
 /// The operator station snapshot (item 31).
@@ -193,33 +201,72 @@ pub async fn get_station_snapshot(
         _ => None,
     };
 
-    // CURRENT STEP (item 37): the EXECUTION POINTER — the first
-    // pending/in-progress operation of THIS work order
-    // (work_order_operations), with its standard time and the total step
-    // count. It is NEVER steps[0] of a tenant-global standard.
+    // CURRENT STEP (items 37 + thirteenth audit): the EXECUTION POINTER —
+    // the first pending/in-progress operation of THIS work order, shown at
+    // its ORDINAL position (1/3, not 10/30), bound to the RELEASED
+    // standard's matching WorkStep so the operator sees the key point,
+    // the WHY, the safety warning and the step's criticality.
     let current_step: Option<StepNow> = match current_job.as_ref() {
         Some(job) => {
-            let row: Option<(String, i64, i64, i64)> = sqlx::query_as(
+            let row: Option<(String, i64, i64, i64, serde_json::Value)> = sqlx::query_as(
                 "SELECT op.operation, op.standard_time::bigint, \
-                        op.sequence, \
+                        op.ordinal_position, \
                         (SELECT COUNT(*) FROM work_order_operations o2 \
-                         WHERE o2.work_order_id = op.work_order_id) \
+                         WHERE o2.work_order_id = op.work_order_id), \
+                        COALESCE(sw.steps, '[]') \
                  FROM work_order_operations op \
+                 JOIN work_orders wo ON wo.id = op.work_order_id AND wo.tenant_id = op.tenant_id \
+                 LEFT JOIN standard_work_documents sw \
+                   ON sw.id = wo.standard_work_id AND sw.tenant_id = wo.tenant_id \
                  WHERE op.work_order_id = $1 AND op.tenant_id = $2 \
                    AND op.status IN ('pending', 'in_progress') \
-                 ORDER BY op.sequence ASC LIMIT 1",
+                 ORDER BY op.ordinal_position ASC LIMIT 1",
             )
             .bind(job.work_order_id)
             .bind(user.tenant_id)
             .fetch_optional(pool.as_ref())
             .await
             .map_err(|e| SenseiError::Database(format!("Step read failed: {e}")))?;
-            row.map(|(operation, standard_time, sequence, total)| StepNow {
-                position: sequence.max(0) as usize,
-                total_steps: total.max(0) as usize,
-                description: operation,
-                expected_seconds: Some(standard_time),
-                is_critical: false,
+            row.map(|(operation, standard_time, ordinal, total, steps)| {
+                // Bind the operation to the released standard's WorkStep
+                // by name/description — the operator sees the step's
+                // reasons, not a bare operation label.
+                let steps_arr = steps.as_array().cloned().unwrap_or_default();
+                let step = steps_arr.iter().find(|st| {
+                    st.get("description")
+                        .and_then(|d| d.as_str())
+                        .map(|d| {
+                            d.to_lowercase().contains(&operation.to_lowercase())
+                                || operation.to_lowercase().contains(&d.to_lowercase())
+                        })
+                        .unwrap_or(false)
+                });
+                let key_point = step
+                    .and_then(|st| st.get("key_points"))
+                    .and_then(|k| k.as_str())
+                    .map(|k| k.to_string());
+                let why = step
+                    .and_then(|st| st.get("why_key_point_matters"))
+                    .and_then(|k| k.as_str())
+                    .map(|k| k.to_string());
+                let safety = step
+                    .and_then(|st| st.get("safety_warning"))
+                    .and_then(|k| k.as_str())
+                    .map(|k| k.to_string());
+                let is_critical = step
+                    .and_then(|st| st.get("is_critical"))
+                    .and_then(|k| k.as_bool())
+                    .unwrap_or(false);
+                StepNow {
+                    position: ordinal.max(0) as usize,
+                    total_steps: total.max(0) as usize,
+                    description: operation,
+                    expected_seconds: Some(standard_time),
+                    is_critical,
+                    key_point,
+                    why_key_point_matters: why,
+                    safety_warning: safety,
+                }
             })
         }
         None => None,

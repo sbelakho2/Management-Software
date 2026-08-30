@@ -149,6 +149,55 @@ pub async fn raise_andon(
         escalated_at: None,
     };
     let andon = state.ops_service.raise_andon(tenant_id, andon).await?;
+    // Thirteenth audit: the abnormality ALSO opens/reinforces ONE
+    // OperationalCondition — the same work center + issue type within
+    // the window reuses the same condition (recurrence signature), so a
+    // recurring problem never spawns a new ticket each time.
+    if let Some(pool) = state.db_pool.as_ref() {
+        let cond_input = sensei_services::tps::conditions::OpenConditionInput {
+            scope_work_center_id: Some(andon.work_center_id),
+            scope_site_id: None,
+            scope_value_stream_id: None,
+            scope_shift_id: None,
+            subject_type: sensei_services::tps::conditions::ConditionSubject::Operation,
+            subject_id: None,
+            expected_condition: serde_json::json!({
+                "reference_type": "standard_work",
+                "condition": "work proceeds at the expected condition",
+            }),
+            observed_condition: serde_json::json!({
+                "source": "andon",
+                "source_entity_id": andon.id,
+                "issue_type": andon.issue_type,
+                "description": andon.description,
+            }),
+            gap: serde_json::json!({ "condition_type": andon.issue_type }),
+            risk: serde_json::json!({
+                "quality": if andon.issue_type == "quality" { 1 } else { 0 },
+                "safety": if andon.issue_type == "safety" { 1 } else { 0 },
+                "flow": if andon.issue_type == "material" || andon.issue_type == "capacity" { 1 } else { 0 },
+                "customer": 0,
+                "cost": 0,
+                "people": 0,
+            }),
+            help_required: true,
+            containment_required: andon.issue_type == "quality" || andon.issue_type == "safety",
+            expertise_required: match andon.issue_type.as_str() {
+                "quality" => Some("quality_engineer".to_string()),
+                "maintenance" => Some("maintenance_tech".to_string()),
+                "material" => Some("material_planner".to_string()),
+                "safety" => Some("safety_lead".to_string()),
+                _ => None,
+            },
+            condition_type: andon.issue_type.clone(),
+            source_entity_type: "andon".to_string(),
+            source_entity_id: andon.id,
+            created_by: user.user_id,
+        };
+        let _ =
+            sensei_services::tps::conditions::open_condition(pool.as_ref(), tenant_id, &cond_input)
+                .await;
+    }
     // Item 63/73: the graph edge is a DERIVED PROJECTION of the
     // authoritative Andon row. The write error is NOT ignored — a failed
     // projection is logged loudly, and the graph is rebuildable from

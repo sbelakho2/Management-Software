@@ -12,6 +12,7 @@ pub mod attachments;
 pub mod audit_logs;
 pub mod auth;
 pub mod chatbot;
+pub mod conditions;
 pub mod contacts;
 pub mod ctq;
 pub mod document_ingestion;
