@@ -2018,6 +2018,10 @@ pub fn build_router(state: AppState) -> Router {
             post(routes::tps_signals::classify_signals),
         )
         .route(
+            "/api/v1/tps/signals/derive",
+            get(routes::tps_signals::derive_signals),
+        )
+        .route(
             "/api/v1/tps/learning-metrics",
             get(routes::learning_metrics::get_learning_metrics),
         )
@@ -2038,6 +2042,10 @@ pub fn build_router(state: AppState) -> Router {
             get(routes::knowledge_graph::edges_around),
         )
         .route(
+            "/api/v1/knowledge-graph/rebuild",
+            post(routes::knowledge_graph::rebuild_graph),
+        )
+        .route(
             "/api/v1/station/snapshot",
             get(routes::station::get_station_snapshot),
         )
@@ -2052,6 +2060,10 @@ pub fn build_router(state: AppState) -> Router {
         .route(
             "/api/v1/integration/status",
             get(routes::integration::integration_status),
+        )
+        .route(
+            "/api/v1/integration/checkpoint",
+            post(routes::integration::save_checkpoint),
         )
         .route(
             "/api/v1/sales/flow-impact",

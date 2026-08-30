@@ -204,6 +204,16 @@ pub async fn review_document(
                 valid.join(", ")
             )));
         }
+        // Items 59/60: approval, the knowledge-pack draft AND its dense
+        // embedding are ONE TRANSACTION — an "approved" response is only
+        // possible when the pack was actually created, and the pack goes
+        // through the canonical KnowledgePack shape (typed authority,
+        // status lifecycle, source_document provenance, embedding) — not
+        // a partial JSON blob. A failure rolls back the approval.
+        let mut tx = pool
+            .begin()
+            .await
+            .map_err(|e| SenseiError::Database(format!("Approval tx begin failed: {e}")))?;
         sqlx::query(
             "UPDATE document_ingestions SET status = 'approved', approved_by = $3, approved_at = NOW(), updated_at = NOW() \
              WHERE id = $1 AND tenant_id = $2",
@@ -211,13 +221,15 @@ pub async fn review_document(
         .bind(id)
         .bind(user.tenant_id)
         .bind(user.user_id)
-        .execute(pool.as_ref())
+        .execute(&mut *tx)
         .await
         .map_err(|e| SenseiError::Database(format!("Ingestion approve failed: {e}")))?;
-        // Create a knowledge pack DRAFT with the approved authority —
-        // still not effective; a separate publish flow promotes it.
+        // Create the knowledge pack DRAFT with the approved authority —
+        // still not effective; a separate publish flow promotes it. The
+        // canonical create_pack path (typed validation + embedding) is
+        // mirrored INSIDE this transaction so the pair is atomic.
         let pack_id = Uuid::new_v4();
-        let _ = sqlx::query(
+        sqlx::query(
             "INSERT INTO entity_store (tenant_id, entity_type, id, data) \
              VALUES ($1, 'knowledge_pack', $2, $3)",
         )
@@ -229,9 +241,38 @@ pub async fn review_document(
             "authority": authority,
             "status": "draft",
             "source_document": id.to_string(),
+            "allowed_roles": [],
+            "created_by": user.user_id,
         }))
-        .execute(pool.as_ref())
-        .await;
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| SenseiError::Database(format!("Knowledge pack create failed: {e}")))?;
+        // Dense embedding in the SAME transaction — a draft that cannot
+        // be embedded must not be approved either.
+        let vector = sensei_services::ai::embedding::embed(&format!("{title} {raw_text}"));
+        let serialized = vector
+            .iter()
+            .map(|v| v.to_string())
+            .collect::<Vec<_>>()
+            .join(",");
+        sqlx::query(
+            "INSERT INTO document_embeddings  (document_type, document_id, tenant_id, title, content, content_hash, embedding, updated_at)  VALUES ('knowledge_pack', $1, $2, $3, $4, $5, $6::vector, NOW())  ON CONFLICT (document_type, document_id) DO UPDATE  SET title = $3, content = $4, content_hash = $5, embedding = $6::vector, updated_at = NOW()",
+        )
+        .bind(pack_id)
+        .bind(user.tenant_id)
+        .bind(&title)
+        .bind(&raw_text)
+        .bind(format!(
+            "{:x}",
+            crate::services::hybrid_retrieval::content_hash(&format!("{title}:{raw_text}"))
+        ))
+        .bind(format!("[{serialized}]"))
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| SenseiError::Database(format!("Embedding upsert failed: {e}")))?;
+        tx.commit()
+            .await
+            .map_err(|e| SenseiError::Database(format!("Approval commit failed: {e}")))?;
         Ok(Json(IngestedDocument {
             id,
             title,

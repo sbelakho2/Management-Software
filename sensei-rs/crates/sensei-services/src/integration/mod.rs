@@ -134,6 +134,8 @@ pub struct CanonicalQuoteLine {
 pub struct CanonicalRfq {
     pub rfq_number: String,
     pub company_name: String,
+    /// The legacy supplier id (resolved through the identity map).
+    pub supplier_id: Option<String>,
     pub status: String,
     pub lines: Vec<CanonicalRfqLine>,
 }
@@ -203,6 +205,54 @@ fn get_string_array(payload: &Value, keys: &[&str]) -> Vec<String> {
     Vec::new()
 }
 
+/// Normalize fit signals (item 16): the legacy CRM can express the same
+/// semantic in three shapes —
+///   Object<bool>:  {"pcba": true, "smt": true}   → ["pcba", "smt"]
+///   Array<string>: ["pcba", "smt"]               → as-is
+///   Delimited:     "pcba,smt" | "pcba|smt"       → split
+/// All three converge on ONE canonical representation instead of the
+/// object shape silently vanishing.
+fn normalize_fit_signals(payload: &Value, keys: &[&str]) -> Vec<String> {
+    for k in keys {
+        let Some(v) = payload.get(k) else { continue };
+        if let Some(arr) = v.as_array() {
+            // Array<string> (and Array<bool> where true = present).
+            let mut out = Vec::new();
+            for item in arr {
+                if let Some(s) = item.as_str() {
+                    out.push(s.to_string());
+                } else if item.as_bool() == Some(true) {
+                    // position-only signals — use the index as the label
+                    // is meaningless; skip booleans in arrays.
+                }
+            }
+            if !out.is_empty() || !arr.is_empty() {
+                return out;
+            }
+        }
+        if let Some(obj) = v.as_object() {
+            // Object<bool>: keys whose value is truthy are the signals.
+            return obj
+                .iter()
+                .filter(|(_, val)| val.as_bool().unwrap_or(false) || val.is_string())
+                .map(|(k, _)| k.clone())
+                .collect();
+        }
+        if let Some(s) = v.as_str() {
+            // Delimited string: split on commas or pipes.
+            let parts: Vec<String> = s
+                .split([',', '|', ';'])
+                .map(|p| p.trim().to_string())
+                .filter(|p| !p.is_empty())
+                .collect();
+            if !parts.is_empty() {
+                return parts;
+            }
+        }
+    }
+    Vec::new()
+}
+
 /// Map an erpStarz Article payload onto a canonical Product.
 pub fn map_starz_article(payload: &Value) -> Result<CanonicalProduct, String> {
     let sku = get_str(payload, &["codeReference", "code_reference", "sku"])
@@ -260,11 +310,8 @@ pub fn map_crm_lead(payload: &Value) -> Result<CanonicalLead, String> {
             payload,
             &["websiteRoot", "website_root", "leadUrl", "lead_url"],
         ),
-        sector_tags: get_string_array(payload, &["sectorTags", "sector_tags"]),
-        fit_signals: get_string_array(payload, &["fitSignals", "fit_signals"])
-            .into_iter()
-            .filter(|s| s == "true")
-            .collect(),
+        sector_tags: normalize_fit_signals(payload, &["sectorTags", "sector_tags"]),
+        fit_signals: normalize_fit_signals(payload, &["fitSignals", "fit_signals"]),
         quality_stack: get_string_array(payload, &["qualityStack", "quality_stack"]),
         lead_score: get_i64(payload, &["leadScore", "lead_score"]),
         review_status: get_str(payload, &["reviewStatus", "review_status"]),
@@ -277,26 +324,32 @@ pub fn map_crm_quote(payload: &Value) -> Result<CanonicalQuote, String> {
         .ok_or_else(|| "CRM-v2 quote missing quoteNumber".to_string())?;
     let company = get_str(payload, &["issuingCompany", "issuing_company"])
         .unwrap_or_else(|| "unknown".to_string());
-    let lines = payload
+    let lines = match payload
         .get("partBreakdowns")
         .or_else(|| payload.get("part_breakdowns"))
         .and_then(|v| v.as_array())
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|line| {
-                    let part = get_str(line, &["partNumber", "part_number", "mpn"])?;
-                    let qty = get_i64(line, &["quantity", "qty"]).unwrap_or(0);
-                    let price =
-                        get_decimal(line, &["unitPrice", "unit_price"]).unwrap_or(Decimal::ZERO);
-                    Some(CanonicalQuoteLine {
-                        part_number: part,
-                        quantity: qty,
-                        unit_price: price,
-                    })
+    {
+        // Item 17: quantity/price are REQUIRED — a parse failure rejects
+        // the WHOLE quote (quarantined upstream), never a silent
+        // 0-unit/€0 line.
+        Some(arr) => arr
+            .iter()
+            .map(|line| {
+                let part = get_str(line, &["partNumber", "part_number", "mpn"])
+                    .ok_or_else(|| "quote line missing partNumber".to_string())?;
+                let qty = get_i64(line, &["quantity", "qty"])
+                    .ok_or_else(|| format!("quote line {part} missing/invalid quantity"))?;
+                let price = get_decimal(line, &["unitPrice", "unit_price"])
+                    .ok_or_else(|| format!("quote line {part} missing/invalid unit price"))?;
+                Ok(CanonicalQuoteLine {
+                    part_number: part,
+                    quantity: qty,
+                    unit_price: price,
                 })
-                .collect::<Vec<_>>()
-        })
-        .unwrap_or_default();
+            })
+            .collect::<Result<Vec<_>, String>>()?,
+        None => Vec::new(),
+    };
     Ok(CanonicalQuote {
         quote_number,
         company_name: company,
@@ -331,6 +384,7 @@ pub fn map_crm_rfq(payload: &Value) -> Result<CanonicalRfq, String> {
     Ok(CanonicalRfq {
         rfq_number,
         company_name: get_str(payload, &["companyName", "company_name"]).unwrap_or_default(),
+        supplier_id: get_str(payload, &["supplierId", "supplier_id", "supplier"]),
         status: get_str(payload, &["status"]).unwrap_or_else(|| "open".to_string()),
         lines,
     })
@@ -390,16 +444,24 @@ pub fn map_starz_sales_order(payload: &Value) -> Result<CanonicalSalesOrder, Str
 pub fn map_starz_stock_move(payload: &Value) -> Result<CanonicalStockMove, String> {
     let sku = get_str(payload, &["article", "articleCode", "codeReference", "sku"])
         .ok_or_else(|| "starzERP stock movement missing article".to_string())?;
-    let quantity = get_i64(payload, &["quantity", "qty", "quantite"]).unwrap_or(0);
+    let quantity = get_i64(payload, &["quantity", "qty", "quantite"])
+        .ok_or_else(|| "starzERP stock movement missing/invalid quantity".to_string())?;
+    // Item 17: an UNKNOWN movement type is REJECTED (never silently
+    // defaulted to "in" — a direction misread as a receipt corrupts the
+    // inventory ledger).
     let move_type = match get_str(payload, &["type", "mouvement", "direction"])
-        .unwrap_or_default()
+        .ok_or_else(|| "starzERP stock movement missing type".to_string())?
         .to_lowercase()
         .as_str()
     {
         "in" | "entree" | "reception" | "receive" => "in",
         "out" | "sortie" | "expedition" | "ship" => "out",
-        "transfer" | "transfert" => "transfer",
-        _ => "in",
+        "transfer" | "transfert" | "deplacement" => "transfer",
+        other => {
+            return Err(format!(
+                "starzERP stock movement has unsupported type '{other}' — expected in/out/transfer"
+            ));
+        }
     }
     .to_string();
     Ok(CanonicalStockMove {
@@ -577,4 +639,29 @@ mod tests {
         };
         assert!(map_record(&rec).is_err());
     }
+}
+
+#[test]
+fn crm_fit_signals_normalize_all_three_shapes() {
+    let obj_payload = serde_json::json!({
+        "companyName": "Acme",
+        "fitSignals": {"pcba": true, "smt": true, "cnc": false},
+        "score": 80,
+    });
+    let lead = map_crm_lead(&obj_payload).unwrap();
+    let mut signals = lead.fit_signals.clone();
+    signals.sort();
+    assert_eq!(signals, vec!["pcba", "smt"]);
+
+    for delim in ["pcba,smt", "pcba|smt", "pcba; smt"] {
+        let payload = serde_json::json!({ "companyName": "Acme", "fitSignals": delim });
+        let lead = map_crm_lead(&payload).unwrap();
+        let mut signals = lead.fit_signals.clone();
+        signals.sort();
+        assert_eq!(signals, vec!["pcba", "smt"], "delimited {delim}");
+    }
+
+    let arr_payload = serde_json::json!({ "companyName": "Acme", "fitSignals": ["smt"] });
+    let lead = map_crm_lead(&arr_payload).unwrap();
+    assert_eq!(lead.fit_signals, vec!["smt"]);
 }

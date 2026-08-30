@@ -77,6 +77,11 @@ pub struct RaiseAndonRequest {
     pub issue_type: String, // quality, safety, maintenance, material, other
     pub severity: String,   // low, medium, high, critical
     pub description: String,
+    /// When the abnormal condition was OBSERVED (item 47): the operator's
+    /// honest observation time — detection latency becomes measurable.
+    /// Rejected when in the future beyond a small clock-skew allowance.
+    #[serde(default)]
+    pub observed_at: Option<chrono::DateTime<chrono::Utc>>,
 }
 
 /// Raise (create) a new Andon event.
@@ -87,6 +92,15 @@ pub async fn raise_andon(
 ) -> Result<Json<Andon>> {
     user.require_permission("tps:andon:raise")?;
     let tenant_id = user.tenant_id;
+    // Item 47: a future observation timestamp is rejected (a clock-skewed
+    // client cannot backdate an observation into the future).
+    if let Some(observed) = req.observed_at {
+        if observed > chrono::Utc::now() + chrono::Duration::minutes(5) {
+            return Err(sensei_core::error::SenseiError::Validation(
+                "observed_at cannot be in the future — allowed skew 5 minutes".to_string(),
+            ));
+        }
+    }
     let andon = Andon {
         id: Uuid::new_v4(),
         tenant_id,
@@ -96,6 +110,7 @@ pub async fn raise_andon(
         severity: req.severity,
         description: req.description,
         status: "active".to_string(),
+        abnormal_condition_observed_at: req.observed_at,
         // The actor is a server-generated identity field.
         raised_by: user.user_id,
         acknowledged_by: None,
@@ -108,21 +123,31 @@ pub async fn raise_andon(
         resolved_at: None,
         restart_authorized_by: None,
         restart_authorized_at: None,
+        contained_at: None,
+        contained_by: None,
+        contained_note: None,
     };
     let andon = state.ops_service.raise_andon(tenant_id, andon).await?;
-    // Item 73: the abnormality is anchored to where it occurred — the
-    // knowledge graph records `abnormality occurred_at work_center`.
+    // Item 63/73: the graph edge is a DERIVED PROJECTION of the
+    // authoritative Andon row. The write error is NOT ignored — a failed
+    // projection is logged loudly, and the graph is rebuildable from
+    // authoritative sources (the rebuild endpoint). The Andon itself is
+    // the source of truth; the edge can never lose it.
     if let Some(pool) = state.db_pool.as_ref() {
         let wc = andon.work_center_id;
-        let _ = sqlx::query(
-            "INSERT INTO knowledge_graph_edges                 (tenant_id, source_type, source_id, relation, target_type, target_id, created_by)              VALUES ($1, 'abnormality', $2, 'occurred_at', 'work_center', $3, $4)              ON CONFLICT DO NOTHING",
+        sqlx::query(
+            "INSERT INTO knowledge_graph_edges                     (tenant_id, source_type, source_id, relation, target_type, target_id, created_by)                  VALUES ($1, 'abnormality', $2, 'occurred_at', 'work_center', $3, $4)                  ON CONFLICT DO NOTHING",
         )
         .bind(tenant_id)
         .bind(andon.id)
         .bind(wc)
         .bind(user.user_id)
         .execute(pool.as_ref())
-        .await;
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, andon_id = %andon.id, "Graph projection failed");
+            sensei_core::error::SenseiError::Internal(format!("Andon raised but graph projection failed: {e}"))
+        })?;
     }
     Ok(Json(andon))
 }

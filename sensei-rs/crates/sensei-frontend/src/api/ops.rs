@@ -122,6 +122,17 @@ impl OpsApi {
         client.post("/api/v1/ops/andons", req).await
     }
 
+    /// The SAFE Andon raise command (item 40): the request carries only
+    /// the operator's plain-language inputs; the server derives
+    /// actor/tenant/status. The legacy /api/v1/ops/andons full-object
+    /// route must NOT be used by clients.
+    pub async fn raise_andon_command(
+        client: &ApiClient,
+        req: &crate::api::andon::RaiseAndonCommandRequest,
+    ) -> Result<AndonDto, ApiError> {
+        client.post("/api/v1/andon", req).await
+    }
+
     // ---- Projects ----
     pub async fn list_projects(client: &ApiClient) -> Result<Vec<ProjectDto>, ApiError> {
         client.get("/api/v1/ops/projects").await
@@ -140,15 +151,15 @@ impl OpsApi {
 
     // ---- A3 ----
     pub async fn list_a3s(client: &ApiClient) -> Result<Vec<A3Dto>, ApiError> {
-        client.get("/api/v1/ops/a3").await
+        client.get("/api/v1/ops/a3s").await
     }
 
     pub async fn get_a3(client: &ApiClient, id: &str) -> Result<A3Dto, ApiError> {
-        client.get(&format!("/api/v1/ops/a3/{}", id)).await
+        client.get(&format!("/api/v1/ops/a3s/{}", id)).await
     }
 
     pub async fn create_a3(client: &ApiClient, req: &CreateA3Request) -> Result<A3Dto, ApiError> {
-        client.post("/api/v1/ops/a3", req).await
+        client.post("/api/v1/ops/a3s", req).await
     }
 
     // ---- Risks ----

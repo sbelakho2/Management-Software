@@ -91,6 +91,8 @@ pub struct WasteLine {
     pub key: &'static str,
     pub label: &'static str,
     pub value: Decimal,
+    /// false when the value is NOT MEASURED (unknown ≠ zero, item 53).
+    pub measured: bool,
     /// The flow condition it reveals (plain language).
     pub guidance: String,
 }
@@ -117,6 +119,17 @@ pub struct BatchPolicyInput {
     pub unit_cost: Decimal,
 }
 
+/// Unmeasured waste inputs (item 53): premium freight, expediting and
+/// batch-policy cash are NOT tracked yet — they must be reported as
+/// "not yet measured", never as €0.
+pub struct UnmeasuredWaste {
+    pub premium_freight: bool,
+    pub expediting: bool,
+    pub batch_policy: bool,
+    pub rework: bool,
+}
+
+#[allow(clippy::too_many_arguments)]
 pub fn finance_waste(
     wip_cash: Decimal,
     aging_stock_value: Decimal,
@@ -125,6 +138,7 @@ pub fn finance_waste(
     premium_freight: Decimal,
     expediting: Decimal,
     batch: BatchPolicyInput,
+    unmeasured: UnmeasuredWaste,
 ) -> FinanceWasteSnapshot {
     let batch_cash = batch.excess_days * batch.daily_demand * batch.unit_cost;
     let total = wip_cash
@@ -139,6 +153,7 @@ pub fn finance_waste(
             key: "wip_cash",
             label: "Cash in work-in-process",
             value: wip_cash,
+            measured: true,
             guidance: "WIP is cash sitting between operations. High WIP hides \
                        flow problems and delays defect discovery."
                 .to_string(),
@@ -147,6 +162,7 @@ pub fn finance_waste(
             key: "aging_inventory",
             label: "Aging inventory",
             value: aging_stock_value,
+            measured: true,
             guidance: "Stock older than the target is a demand/mismatch signal, \
                        not an asset."
                 .to_string(),
@@ -155,6 +171,7 @@ pub fn finance_waste(
             key: "scrap",
             label: "Scrap",
             value: scrap_cost,
+            measured: true,
             guidance: "Scrap is the measurable part of 'quality is not built \
                        in' — the invisible part is the lost capacity."
                 .to_string(),
@@ -163,32 +180,54 @@ pub fn finance_waste(
             key: "rework",
             label: "Rework",
             value: rework_cost,
-            guidance: "Rework doubles the work without doubling the value — it \
-                       is the classic sign of inspect-in quality."
-                .to_string(),
+            measured: !unmeasured.rework,
+            guidance: if unmeasured.rework {
+                "NOT YET MEASURED — rework is not tracked in the work-order \
+                 ledger; this is not a measured zero."
+                    .to_string()
+            } else {
+                "Rework doubles the work without doubling the value — it \
+                 is the classic sign of inspect-in quality."
+                    .to_string()
+            },
         },
         WasteLine {
             key: "premium_freight",
             label: "Premium freight",
             value: premium_freight,
+            measured: true,
             guidance: "Premium freight is the price of plan instability.".to_string(),
         },
         WasteLine {
             key: "expediting",
             label: "Expediting",
             value: expediting,
-            guidance: "Expediting effort is the system compensating for a \
-                       broken plan with people's time."
-                .to_string(),
+            measured: !unmeasured.expediting,
+            guidance: if unmeasured.expediting {
+                "NOT YET MEASURED — expediting effort is not tracked; this is \
+                 not a measured zero."
+                    .to_string()
+            } else {
+                "Expediting effort is the system compensating for a \
+                 broken plan with people's time."
+                    .to_string()
+            },
         },
         WasteLine {
             key: "batch_policy_cash",
             label: "Working capital caused by batch policy",
             value: batch_cash,
-            guidance: "The batch size holds THIS much cash above near-term \
-                       pull — a local 'efficiency' gain that looks economically \
-                       bad at the system level."
-                .to_string(),
+            measured: !unmeasured.batch_policy,
+            guidance: if unmeasured.batch_policy {
+                "NOT YET MEASURED — batch-policy cash needs batch-size and \
+                 demand data; this is not a measured zero."
+                    .to_string()
+            } else {
+                "The batch size holds THIS much cash above near-term \
+                 pull — a local 'efficiency' gain that looks economically \
+                 bad at the system level."
+                    .to_string()
+            },
         },
     ];
     FinanceWasteSnapshot {
@@ -268,6 +307,12 @@ mod tests {
                 daily_demand: Decimal::from(100),
                 unit_cost: Decimal::from(10),
             }, // batch: 5000
+            UnmeasuredWaste {
+                premium_freight: false,
+                expediting: false,
+                batch_policy: false,
+                rework: false,
+            },
         );
         assert_eq!(s.lines.len(), 7);
         assert_eq!(s.total_waste_annual, Decimal::from(15400));

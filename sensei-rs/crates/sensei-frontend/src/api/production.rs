@@ -84,6 +84,10 @@ pub struct MrpRecordDto {
     pub net_requirement: f64,
     pub planned_order_release: Option<f64>,
     pub period: String,
+    /// The product's unit of measure — quantities are exact in
+    /// fractional UOMs (m, kg, l); display must respect it (item 34).
+    #[serde(default)]
+    pub unit_of_measure: String,
 }
 
 // ---------------------------------------------------------------------------

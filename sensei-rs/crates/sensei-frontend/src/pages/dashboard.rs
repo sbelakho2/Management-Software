@@ -323,7 +323,7 @@ pub fn DashboardPage() -> impl IntoView {
 
             <Module title="QUICK LINKS".to_string()>
                 <div class="rams-flex rams-flex--wrap rams-gap-2">
-                    <a href="/quality/ncr" class="rams-btn rams-btn--ghost rams-btn--md">"VIEW NCRs"</a>
+                    <a href="/quality/ncrs" class="rams-btn rams-btn--ghost rams-btn--md">"VIEW NCRs"</a>
                     <a href="/quality/capa" class="rams-btn rams-btn--ghost rams-btn--md">"VIEW CAPAs"</a>
                     <a href="/production/work-orders" class="rams-btn rams-btn--ghost rams-btn--md">"WORK ORDERS"</a>
                     <a href="/maintenance/work-requests" class="rams-btn rams-btn--ghost rams-btn--md">"MAINTENANCE REQUESTS"</a>

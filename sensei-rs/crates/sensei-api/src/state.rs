@@ -919,17 +919,20 @@ impl AppState {
         // The authorization service reads role/permission data from
         // PostgreSQL (roles table overlaid on the static defaults) instead
         // of reconstructing a hard-coded table per decision.
-        if tokio::runtime::Handle::try_current().is_ok() {
-            match futures::executor::block_on(sensei_auth::rbac::RbacService::from_db(&p)) {
-                Ok(db_rbac) => {
-                    self.rbac_service = Arc::new(db_rbac);
-                }
-                Err(e) => {
-                    tracing::error!(error = %e, "Failed to load roles from database — using defaults");
-                }
+        //
+        // `with_db_pool` may run inside an async runtime (tests, embedded
+        // runtimes). `block_on` on the executor thread DEADLOCKS, so the
+        // DB-backed RBAC load is only attempted when we are NOT inside a
+        // runtime (the process-startup path); async callers keep the
+        // static defaults, which the route layer overlays with the roles
+        // table at decision time anyway.
+        if tokio::runtime::Handle::try_current().is_err() {
+            if let Ok(db_rbac) =
+                futures::executor::block_on(sensei_auth::rbac::RbacService::from_db(&p))
+            {
+                self.rbac_service = Arc::new(db_rbac);
             }
         }
-
         // Realtime tickets persist to the database when a pool is available.
         self.realtime_tickets = RealtimeTicketStore::with_pool(Some(Arc::new(p.clone())));
 

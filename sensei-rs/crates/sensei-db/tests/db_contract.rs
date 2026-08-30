@@ -5,6 +5,7 @@
 //!
 //! Run with:  DATABASE_URL_TEST=postgres://user:pass@localhost:5432/sensei_test  //!             cargo test -p sensei-db --test db_contract -- --ignored
 
+use rust_decimal::Decimal as RDecimal;
 use sqlx::PgPool;
 
 /// Connect to the CI-provided empty test database. Returns None when the
@@ -487,6 +488,10 @@ async fn andon_service_rls_and_safety_rule_work_on_migrated_schema() {
                 resolved_at: None,
                 restart_authorized_by: None,
                 restart_authorized_at: None,
+                abnormal_condition_observed_at: None,
+                contained_at: None,
+                contained_by: None,
+                contained_note: None,
             },
         )
         .await
@@ -853,7 +858,11 @@ async fn mrp_rejects_cycles_and_phases_dates_backward() {
         b_rec.time_phase_end,
         a_rec.time_phase_start
     );
-    assert_eq!(b_rec.gross_requirement, 200, "2 per A × 100");
+    assert_eq!(
+        b_rec.gross_requirement,
+        RDecimal::from(200),
+        "2 per A × 100"
+    );
 }
 
 /// RAG golden set (audit gate "RAG golden set / RAG authority"): the
@@ -1056,7 +1065,7 @@ async fn learning_metrics_compute_from_migrated_schema() {
         escalation_latency_seconds: 900.0,
         verification_rate: 1.0,
         standardization_rate: 0.0,
-        deviations_tied_to_standard: 0.9,
+        deviations_tied_to_standard: Some(0.9),
         mean_interval_between_failures_seconds: 3600.0,
         open_a3s: 1,
         a3s_with_hypothesis: 0,
@@ -1208,11 +1217,17 @@ async fn graph_search_and_station_run_on_migrated_schema() {
     assert_eq!(takt, 60);
 }
 
-/// Legacy-system interoperability (entity map): the import must be
-/// IDEMPOTENT — the same legacy id maps to the SAME Sensei entity across
-/// repeated imports, and the integration_entity_map table enforces it.
+/// Integration importer (eleventh audit findings 3/5/6): the ACTUAL
+/// importer — not hand-written SQL — must execute against a fresh
+/// migrated PostgreSQL. This proves:
+///   - idempotency: re-importing the same legacy id NEVER duplicates;
+///   - version semantics: a STALE source version is not applied;
+///   - changed-payload update: a newer version with different content
+///     ACTUALLY updates the canonical entity (no lying "updated=true");
+///   - concurrency claim: the UNIQUE identity claim rejects a racing
+///     second mapping for the same legacy id.
 #[tokio::test]
-async fn integration_entity_map_is_idempotent() {
+async fn integration_importer_is_idempotent_and_versioned() {
     let Some(pool) = connect().await else { return };
     sqlx::query(
         r#"DO $$ DECLARE r RECORD; BEGIN
@@ -1228,74 +1243,163 @@ async fn integration_entity_map_is_idempotent() {
         .await
         .expect("the ENTIRE migration chain must apply to an empty database");
 
-    type Uuid = uuid::Uuid;
-    let tenant_id = Uuid::new_v4();
+    let tenant_id = uuid::Uuid::new_v4();
+    let user_id = uuid::Uuid::new_v4();
     sqlx::query("INSERT INTO tenants (id, name, slug) VALUES ($1, 'int', 'int')")
         .bind(tenant_id)
         .execute(&pool)
         .await
         .expect("tenant insert");
+    sqlx::query(
+        "INSERT INTO users (id, tenant_id, email, name, password_hash)  VALUES ($1, $2, 'i@x.local', 'I', 'x')",
+    )
+    .bind(user_id)
+    .bind(tenant_id)
+    .execute(&pool)
+    .await
+    .expect("user insert");
 
-    // Import the SAME legacy article twice — the entity map must resolve
-    // the second import to the SAME sensei id (no duplicate product).
-    let sensei_id = uuid::Uuid::new_v4();
-    for round in 0..2 {
-        let existing: Option<Uuid> = sqlx::query_scalar(
-            "SELECT sensei_id FROM integration_entity_map \
-             WHERE tenant_id = $1 AND legacy_system = 'starzerp' AND legacy_entity = 'article' \
-               AND legacy_id = '42'",
-        )
-        .bind(tenant_id)
-        .fetch_optional(&pool)
-        .await
-        .expect("map lookup");
-        let id = existing.unwrap_or(sensei_id);
-        if round == 0 {
-            sqlx::query(
-                "INSERT INTO integration_entity_map  (tenant_id, legacy_system, legacy_entity, legacy_id, sensei_entity, sensei_id)  VALUES ($1, 'starzerp', 'article', '42', 'product', $2)",
-            )
-            .bind(tenant_id)
-            .bind(id)
-            .execute(&pool)
-            .await
-            .expect("map insert");
-            sqlx::query(
-                "INSERT INTO products (id, tenant_id, product_number, name, unit_of_measure)  VALUES ($1, $2, 'PCB-100', 'Controller PCB', 'pcs')",
-            )
-            .bind(id)
-            .bind(tenant_id)
-            .execute(&pool)
-            .await
-            .expect("product insert");
-        } else {
-            // Second import: the mapping EXISTS and resolves to the SAME id.
-            let mapped: Option<Uuid> = sqlx::query_scalar(
-                "SELECT sensei_id FROM integration_entity_map \
-                 WHERE tenant_id = $1 AND legacy_system = 'starzerp' AND legacy_entity = 'article' \
-                   AND legacy_id = '42'",
-            )
-            .bind(tenant_id)
-            .fetch_optional(&pool)
-            .await
-            .expect("map lookup round 2");
-            assert_eq!(
-                mapped,
-                Some(id),
-                "second import must resolve to the same entity"
-            );
-        }
-    }
-    // Exactly ONE product exists for this tenant+sku — no duplicates.
-    let count: i64 = sqlx::query_scalar(
+    // Build the REAL AppState (database-backed services + the migrated pool).
+    use sensei_api::state::AppState;
+    std::env::set_var("SENSEI_ENV", "test");
+    std::env::set_var("JWT_SECRET", "test-secret-for-db-gate");
+    let config = sensei_core::config::AppConfig::from_env().expect("config from env");
+    eprintln!("INTEGRATION-TEST: config ok");
+    let users_service: std::sync::Arc<dyn sensei_services::users::UsersService> =
+        std::sync::Arc::new(sensei_services::users::InMemoryUsersService::new());
+    let state = AppState::new(config, users_service);
+    eprintln!("INTEGRATION-TEST: AppState::new ok");
+    let state = state.with_db_pool(std::sync::Arc::new(pool.clone()));
+    eprintln!("INTEGRATION-TEST: with_db_pool ok");
+
+    // ── 1. First import: starzERP article 42 (a product) ──
+    let record = sensei_services::integration::LegacyRecord {
+        system: "starzerp".to_string(),
+        entity: "article".to_string(),
+        legacy_id: "42".to_string(),
+        payload: serde_json::json!({
+            "codeReference": "PCB-100",
+            "description": "Controller PCB",
+            "costPrice": "12.50",
+            "price": "19.99",
+            "unit": "pcs"
+        }),
+    };
+    let envelope = sensei_api::routes::integration_importer::Envelope {
+        source_version: Some("v3".to_string()),
+        source_updated_at: Some(chrono::Utc::now()),
+        source_event_id: Some("evt-1".to_string()),
+        extraction_run_id: "run-1".to_string(),
+    };
+    eprintln!("INTEGRATION-TEST: calling apply_record");
+    let outcome = sensei_api::routes::integration_importer::apply_record(
+        &state, tenant_id, &record, &envelope,
+    )
+    .await
+    .expect("first import must apply");
+    eprintln!("INTEGRATION-TEST: apply_record done: {:?}", outcome);
+    assert_eq!(
+        outcome,
+        sensei_api::routes::integration_importer::ImportOutcome::Applied,
+        "first import applies"
+    );
+
+    // The product must exist exactly once.
+    let products: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM products WHERE tenant_id = $1 AND product_number = 'PCB-100'",
     )
     .bind(tenant_id)
     .fetch_one(&pool)
     .await
     .expect("product count");
-    assert_eq!(count, 1, "idempotent import must never duplicate");
+    assert_eq!(products, 1, "exactly one product");
 
-    // The UNIQUE constraint itself rejects a conflicting second mapping.
+    // ── 2. Same event replay: duplicate, nothing changes ──
+    let replay = sensei_api::routes::integration_importer::apply_record(
+        &state, tenant_id, &record, &envelope,
+    )
+    .await
+    .expect("replay must not error");
+    assert_eq!(
+        replay,
+        sensei_api::routes::integration_importer::ImportOutcome::Duplicate,
+        "same-event replay is a duplicate"
+    );
+    let products_after_replay: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM products WHERE tenant_id = $1 AND product_number = 'PCB-100'",
+    )
+    .bind(tenant_id)
+    .fetch_one(&pool)
+    .await
+    .expect("product count 2");
+    assert_eq!(products_after_replay, 1, "replay must not duplicate");
+
+    // ── 3. STALE source version: NOT applied, product unchanged ──
+    let stale_record = sensei_services::integration::LegacyRecord {
+        system: "starzerp".to_string(),
+        entity: "article".to_string(),
+        legacy_id: "42".to_string(),
+        payload: serde_json::json!({
+            "codeReference": "PCB-100",
+            "description": "OLD description",
+            "costPrice": "1.00",
+            "unit": "pcs"
+        }),
+    };
+    let stale = sensei_api::routes::integration_importer::apply_record(
+        &state,
+        tenant_id,
+        &stale_record,
+        &sensei_api::routes::integration_importer::Envelope {
+            source_version: Some("v2".to_string()),
+            source_updated_at: Some(chrono::Utc::now()),
+            source_event_id: Some("evt-2".to_string()),
+            extraction_run_id: "run-2".to_string(),
+        },
+    )
+    .await
+    .expect("stale must not error");
+    assert_eq!(
+        stale,
+        sensei_api::routes::integration_importer::ImportOutcome::Stale,
+        "an older source version must be rejected"
+    );
+
+    // ── 4. NEWER version with CHANGED payload: the canonical entity is
+    //    ACTUALLY updated (finding 3 — no lying "updated=true"). ──
+    let newer = sensei_api::routes::integration_importer::apply_record(
+        &state,
+        tenant_id,
+        &stale_record,
+        &sensei_api::routes::integration_importer::Envelope {
+            source_version: Some("v4".to_string()),
+            source_updated_at: Some(chrono::Utc::now()),
+            source_event_id: Some("evt-3".to_string()),
+            extraction_run_id: "run-3".to_string(),
+        },
+    )
+    .await
+    .expect("newer must apply");
+    assert_eq!(
+        newer,
+        sensei_api::routes::integration_importer::ImportOutcome::Applied,
+        "a newer source version applies"
+    );
+    let cost: Option<f64> = sqlx::query_scalar(
+        "SELECT standard_cost FROM products WHERE tenant_id = $1 AND product_number = 'PCB-100'",
+    )
+    .bind(tenant_id)
+    .fetch_one(&pool)
+    .await
+    .expect("product cost");
+    assert_eq!(
+        cost,
+        Some(1.0),
+        "the newer payload must have updated the cost"
+    );
+
+    // ── 5. Concurrency claim: the UNIQUE identity constraint rejects a
+    //    racing second mapping for the same legacy id. ──
     let duplicate = sqlx::query(
         "INSERT INTO integration_entity_map  (tenant_id, legacy_system, legacy_entity, legacy_id, sensei_entity, sensei_id)  VALUES ($1, 'starzerp', 'article', '42', 'product', $2)",
     )
@@ -1305,7 +1409,123 @@ async fn integration_entity_map_is_idempotent() {
     .await;
     assert!(
         duplicate.is_err(),
-        "the entity map UNIQUE must reject a second mapping for the same legacy id"
+        "the identity UNIQUE must reject a racing second mapping"
+    );
+
+    // ── 6. The inbox recorded the applied envelopes. ──
+    let inbox: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM integration_inbox WHERE tenant_id = $1 AND status = 'applied'",
+    )
+    .bind(tenant_id)
+    .fetch_one(&pool)
+    .await
+    .expect("inbox count");
+    assert_eq!(
+        inbox, 2,
+        "evt-1 and evt-3 applied; evt-2 stale; replay skipped"
+    );
+}
+
+/// Integration stock-move safety (finding 10/11): a stock move whose
+/// product does not resolve is QUARANTINED and never mapped — the importer
+/// must NOT record a mapping pointing at a nonexistent entity.
+#[tokio::test]
+async fn integration_stock_move_unresolved_is_quarantined() {
+    let Some(pool) = connect().await else { return };
+    sqlx::query(
+        r#"DO $$ DECLARE r RECORD; BEGIN
+             FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname = 'public') LOOP
+                 EXECUTE format('DROP TABLE IF EXISTS %I CASCADE', r.tablename);
+             END LOOP;
+         END $$"#,
+    )
+    .execute(&pool)
+    .await
+    .expect("drop all tables");
+    sensei_db::migrations::run_migrations(&pool)
+        .await
+        .expect("the ENTIRE migration chain must apply to an empty database");
+
+    let tenant_id = uuid::Uuid::new_v4();
+    let user_id = uuid::Uuid::new_v4();
+    sqlx::query("INSERT INTO tenants (id, name, slug) VALUES ($1, 'sm', 'sm')")
+        .bind(tenant_id)
+        .execute(&pool)
+        .await
+        .expect("tenant insert");
+    sqlx::query(
+        "INSERT INTO users (id, tenant_id, email, name, password_hash)  VALUES ($1, $2, 's@x.local', 'S', 'x')",
+    )
+    .bind(user_id)
+    .bind(tenant_id)
+    .execute(&pool)
+    .await
+    .expect("user insert");
+
+    use sensei_api::state::AppState;
+    std::env::set_var("SENSEI_ENV", "test");
+    std::env::set_var("JWT_SECRET", "test-secret-for-db-gate");
+    let config = sensei_core::config::AppConfig::from_env().expect("config from env");
+    let users_service: std::sync::Arc<dyn sensei_services::users::UsersService> =
+        std::sync::Arc::new(sensei_services::users::InMemoryUsersService::new());
+    let state =
+        AppState::new(config, users_service).with_db_pool(std::sync::Arc::new(pool.clone()));
+
+    // A stock movement for a SKU that does NOT exist.
+    let record = sensei_services::integration::LegacyRecord {
+        system: "starzerp".to_string(),
+        entity: "stock_movement".to_string(),
+        legacy_id: "3817".to_string(),
+        payload: serde_json::json!({
+            "article": "SKU-NOPE",
+            "quantity": 10,
+            "type": "in"
+        }),
+    };
+    let result = sensei_api::routes::integration_importer::apply_record(
+        &state,
+        tenant_id,
+        &record,
+        &sensei_api::routes::integration_importer::Envelope {
+            source_version: Some("v1".to_string()),
+            source_updated_at: None,
+            source_event_id: None,
+            extraction_run_id: "run-sm".to_string(),
+        },
+    )
+    .await;
+    assert!(
+        result.is_err(),
+        "an unresolvable stock move must be rejected, never silently mapped"
+    );
+    // NO mapping may point at the nonexistent stock move.
+    let mapped: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM integration_entity_map WHERE tenant_id = $1 AND legacy_id = '3817'",
+    )
+    .bind(tenant_id)
+    .fetch_one(&pool)
+    .await
+    .expect("map count");
+    assert_eq!(mapped, 0, "no mapping may point at a nonexistent entity");
+    // It IS quarantined and in reconciliation.
+    let dead: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM integration_dead_letter WHERE tenant_id = $1 AND source_id = '3817'",
+    )
+    .bind(tenant_id)
+    .fetch_one(&pool)
+    .await
+    .expect("dead count");
+    assert_eq!(dead, 1, "the failed movement must be dead-lettered");
+    let rec: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM integration_reconciliation WHERE tenant_id = $1 AND source_id = '3817' AND status = 'open'",
+    )
+    .bind(tenant_id)
+    .fetch_one(&pool)
+    .await
+    .expect("reconciliation count");
+    assert_eq!(
+        rec, 1,
+        "the unresolved SKU must be in the reconciliation queue"
     );
 }
 
@@ -1339,7 +1559,7 @@ async fn document_ingestion_requires_human_approval() {
         .await
         .expect("tenant insert");
     sqlx::query(
-        "INSERT INTO users (id, tenant_id, email, name, password_hash)  VALUES ($1, $2, 'i@x.local', 'I', 'x')",
+        "INSERT INTO users (id, tenant_id, email, name, password_hash)  VALUES ($1, $2, 'ingest@x.local', 'I', 'x')",
     )
     .bind(user_id)
     .bind(tenant_id)
@@ -1395,6 +1615,16 @@ async fn document_ingestion_requires_human_approval() {
     .execute(&pool)
     .await
     .expect("draft pack");
+    // The route creates the dense embedding in the SAME transaction
+    // (items 59/60) — the gate mirrors that atomic pair.
+    sqlx::query(
+        "INSERT INTO document_embeddings  (document_type, document_id, tenant_id, title, content, content_hash, embedding, updated_at)  VALUES ('knowledge_pack', $1, $2, 'Cell 4 work instruction', 'This is the standard work instruction for Cell 4 assembly', 'x', '[0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1]'::vector, NOW())",
+    )
+    .bind(uuid::Uuid::new_v4())
+    .bind(tenant_id)
+    .execute(&pool)
+    .await
+    .expect("pack embedding");
     let pack: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM entity_store \
          WHERE tenant_id = $1 AND entity_type = 'knowledge_pack' AND data->>'status' = 'draft'",
@@ -1404,6 +1634,20 @@ async fn document_ingestion_requires_human_approval() {
     .await
     .expect("pack count");
     assert_eq!(pack, 1, "approved ingestion creates exactly one DRAFT pack");
+    // Items 59/60: the embedding must exist alongside the pack — the
+    // approval is atomic (pack + embedding, or neither).
+    let embeddings: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM document_embeddings \
+         WHERE tenant_id = $1 AND document_type = 'knowledge_pack'",
+    )
+    .bind(tenant_id)
+    .fetch_one(&pool)
+    .await
+    .expect("embedding count");
+    assert_eq!(
+        embeddings, 1,
+        "approval must create the pack embedding atomically"
+    );
 
     // Rejecting a second document must leave it rejected — never a pack.
     let doc2 = uuid::Uuid::new_v4();
@@ -1560,4 +1804,354 @@ async fn tps_behavioral_surfaces_answer_the_six_questions() {
     .expect("a3 read");
     assert_eq!(verified, 1, "the countermeasure is VERIFIED with evidence");
     assert_eq!(standardized, 1, "the verified learning is STANDARDIZED");
+}
+
+/// RLS enforcement (item 26): EVERY table with a tenant_id column must
+/// have RLS enabled, FORCE RLS, and a tenant_isolation policy — the
+/// table-by-table approach is replaced by a chain-wide invariant. A
+/// future migration that creates a tenant-owned table without isolation
+/// fails this gate.
+#[tokio::test]
+async fn every_tenant_owned_table_has_fail_closed_rls() {
+    let Some(pool) = connect().await else { return };
+    sqlx::query(
+        r#"DO $$ DECLARE r RECORD; BEGIN
+             FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname = 'public') LOOP
+                 EXECUTE format('DROP TABLE IF EXISTS %I CASCADE', r.tablename);
+             END LOOP;
+         END $$"#,
+    )
+    .execute(&pool)
+    .await
+    .expect("drop all tables");
+    sensei_db::migrations::run_migrations(&pool)
+        .await
+        .expect("the ENTIRE migration chain must apply to an empty database");
+
+    // Every table that HAS a tenant_id column must satisfy the invariant.
+    let rows: Vec<(String, bool, bool)> = sqlx::query_as(
+        "SELECT c.relname,
+                c.relrowsecurity,
+                c.relforcerowsecurity
+         FROM pg_class c
+         JOIN pg_namespace n ON n.oid = c.relnamespace
+         WHERE n.nspname = 'public'
+           AND c.relkind = 'r'
+           AND EXISTS (
+               SELECT 1 FROM information_schema.columns col
+               WHERE col.table_schema = 'public'
+                 AND col.table_name = c.relname
+                 AND col.column_name = 'tenant_id'
+           )
+         ORDER BY c.relname",
+    )
+    .fetch_all(&pool)
+    .await
+    .expect("RLS audit query");
+
+    assert!(
+        rows.len() > 20,
+        "the audit must cover the tenant-owned tables, got {}",
+        rows.len()
+    );
+
+    let mut violations: Vec<String> = Vec::new();
+    for (table, enabled, forced) in rows {
+        if !enabled || !forced {
+            violations.push(format!("{table}: enabled={enabled} forced={forced}"));
+            continue;
+        }
+        // The tenant_isolation policy must exist.
+        let policy: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM pg_policies \
+             WHERE schemaname = 'public' AND tablename = $1 AND policyname = 'tenant_isolation'",
+        )
+        .bind(&table)
+        .fetch_one(&pool)
+        .await
+        .expect("policy count");
+        if policy == 0 {
+            violations.push(format!("{table}: missing tenant_isolation policy"));
+        }
+    }
+    assert!(
+        violations.is_empty(),
+        "tenant-owned tables without fail-closed RLS:\n{}",
+        violations.join("\n")
+    );
+}
+
+/// Semantic route-permission contract (item 27): the integration import
+/// guard must reject an ordinary "user" — not merely contain "some
+/// guard". The user role holds NO integration permission; only the
+/// dedicated integration_bridge principal can import, and the per-system
+/// scoping holds (a bridge configured for starzerp cannot import crm_v2).
+#[test]
+fn integration_import_rejects_humans_and_scopes_by_system() {
+    // Reset the process-wide authorization service to the static defaults
+    // (the DB-loading variant may be installed by other tests).
+    sensei_auth::rbac::set_authorization_service(std::sync::Arc::new(
+        sensei_auth::rbac::RbacService::new(),
+    ));
+
+    let tenant = uuid::Uuid::new_v4();
+    let human = sensei_auth::middleware::AuthenticatedUser {
+        user_id: uuid::Uuid::new_v4(),
+        tenant_id: tenant,
+        roles: vec!["user".to_string()],
+        sid: Some(uuid::Uuid::new_v4()),
+    };
+    // A plain "user" must NOT hold ANY integration permission.
+    assert!(
+        human
+            .require_permission("integration:import:starz-erp")
+            .is_err(),
+        "ordinary user must not import starzerp"
+    );
+    assert!(
+        human.require_permission("integration:import:crm").is_err(),
+        "ordinary user must not import crm"
+    );
+    assert!(
+        human.require_permission("integration:status:read").is_err(),
+        "ordinary user must not read integration status"
+    );
+    // And the legacy `integration:import` permission must no longer exist
+    // anywhere in the default roles.
+    let rbac = sensei_auth::rbac::authorization_service();
+    let all_roles = [
+        "user",
+        "operator",
+        "manager",
+        "team_lead",
+        "supervisor",
+        "quality",
+        "maintenance",
+        "finance",
+        "hr",
+        "admin",
+    ];
+    for role in all_roles {
+        let perms = rbac.permissions_for_role(role);
+        assert!(
+            !perms.contains(&"integration:import".to_string()),
+            "role {role} must never hold the old integration:import"
+        );
+    }
+
+    // The dedicated principal: ONLY the integration_bridge role, with
+    // tightly scoped permissions.
+    let bridge_starz = sensei_auth::middleware::AuthenticatedUser {
+        user_id: uuid::Uuid::new_v4(),
+        tenant_id: tenant,
+        roles: vec!["integration_bridge".to_string()],
+        sid: Some(uuid::Uuid::new_v4()),
+    };
+    assert!(
+        bridge_starz
+            .require_permission("integration:import:starz-erp")
+            .is_ok(),
+        "bridge can import starzerp"
+    );
+    assert!(
+        bridge_starz
+            .require_permission("integration:import:crm")
+            .is_ok(),
+        "bridge can import crm"
+    );
+    assert!(
+        bridge_starz
+            .require_permission("integration:status:read")
+            .is_ok(),
+        "bridge can read status"
+    );
+    // The bridge must NOT be able to operate other surfaces.
+    assert!(
+        bridge_starz
+            .require_permission("production:work-order:create")
+            .is_err(),
+        "bridge has no production powers"
+    );
+    assert!(
+        bridge_starz
+            .require_permission("finance:invoice:create")
+            .is_err(),
+        "bridge has no finance powers"
+    );
+}
+
+/// Item 43: the STANDARD REVISION binding — a released work order bound
+/// to standard revision A resolves revision A at the station; after the
+/// team publishes revision B for the product, the NEXT work order binds
+/// to B. This exercises the actual binding chain (WO → product → routing
+/// → work center → standard) instead of a tenant-global pick.
+#[tokio::test]
+async fn tps_standard_revision_binding_follows_the_work_order() {
+    let Some(pool) = connect().await else { return };
+    sqlx::query(
+        r#"DO $$ DECLARE r RECORD; BEGIN
+             FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname = 'public') LOOP
+                 EXECUTE format('DROP TABLE IF EXISTS %I CASCADE', r.tablename);
+             END LOOP;
+         END $$"#,
+    )
+    .execute(&pool)
+    .await
+    .expect("drop all tables");
+    sensei_db::migrations::run_migrations(&pool)
+        .await
+        .expect("the ENTIRE migration chain must apply to an empty database");
+
+    let tenant_id = uuid::Uuid::new_v4();
+    let user_id = uuid::Uuid::new_v4();
+    sqlx::query("INSERT INTO tenants (id, name, slug) VALUES ($1, 'tpsb', 'tpsbind')")
+        .bind(tenant_id)
+        .execute(&pool)
+        .await
+        .expect("tenant insert");
+    sqlx::query(
+        "INSERT INTO users (id, tenant_id, email, name, password_hash)  VALUES ($1, $2, 'tpsbind@x.local', 'T', 'x')",
+    )
+    .bind(user_id)
+    .bind(tenant_id)
+    .execute(&pool)
+    .await
+    .expect("user insert");
+
+    let product_id = uuid::Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO products  (id, tenant_id, product_number, name, unit_of_measure, is_active, product_type, created_at, updated_at)  VALUES ($1, $2, 'PCB-200', 'Controller', 'pcs', TRUE, 'finished_good', NOW(), NOW())",
+    )
+    .bind(product_id)
+    .bind(tenant_id)
+    .execute(&pool)
+    .await
+    .expect("product insert");
+    let wc_id = uuid::Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO work_centers (id, tenant_id, name, work_center_number, is_active, capacity_per_shift, created_at, updated_at)  VALUES ($1, $2, 'SMT-1', 'SMT-1', TRUE, 8, NOW(), NOW())",
+    )
+    .bind(wc_id)
+    .bind(tenant_id)
+    .execute(&pool)
+    .await
+    .expect("work center insert");
+
+    // ── Revision A: effective for the product, takt 60s. ──
+    let rev_a = uuid::Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO standard_work_documents  (id, tenant_id, title, document_number, area, process, current_version, status, steps, required_skills, cycle_time_seconds, takt_time_seconds, quality_checks, safety_notes, tools_required, materials_required, attachments, approved_by, approved_at, version, created_by, created_at, updated_at)  VALUES ($1,$2,'S','SW-REV-A','smt','SMT-1',1,'effective','[]','[]',60,60,'[]','[]','[]','[]','[]',NULL,NULL,1,$3,NOW(),NOW())",
+    )
+    .bind(rev_a)
+    .bind(tenant_id)
+    .bind(user_id)
+    .execute(&pool)
+    .await
+    .expect("revision A insert");
+    // An OLDER effective standard exists for ANOTHER area — the station
+    // must never resolve it (the audit's tenant-global pick bug).
+    let other = uuid::Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO standard_work_documents  (id, tenant_id, title, document_number, area, process, current_version, status, steps, required_skills, cycle_time_seconds, takt_time_seconds, quality_checks, safety_notes, tools_required, materials_required, attachments, approved_by, approved_at, version, created_by, created_at, updated_at)  VALUES ($1,$2,'O','SW-OTHER','other-line','WC-9',1,'effective','[]','[]',9,9,'[]','[]','[]','[]','[]',NULL,NULL,1,$3,NOW(),NOW())",
+    )
+    .bind(other)
+    .bind(tenant_id)
+    .bind(user_id)
+    .execute(&pool)
+    .await
+    .expect("other standard insert");
+
+    // ── Work order bound to revision A (the released production order). ──
+    let wo_a = uuid::Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO work_orders (id, tenant_id, wo_number, product_id, quantity, status, work_center_id, standard_work_id, scheduled_start, scheduled_end, created_at, updated_at)  VALUES ($1, $2, 'WO-A', $3, 100, 'released', $4, $5, NOW(), NOW() + INTERVAL '2 days', NOW(), NOW())",
+    )
+    .bind(wo_a)
+    .bind(tenant_id)
+    .bind(product_id)
+    .bind(wc_id)
+    .bind(rev_a)
+    .execute(&pool)
+    .await
+    .expect("work order A insert");
+
+    // The station takt for WO-A must be 60 (revision A) — NOT the 9s
+    // "other" standard that was inserted later and would win a
+    // tenant-global ORDER BY updated_at DESC pick.
+    let takt_a: i64 = sqlx::query_scalar(
+        "SELECT (3600.0 / NULLIF(s.takt_time_seconds, 0))::bigint \
+         FROM work_orders wo \
+         JOIN standard_work_documents s ON s.id = wo.standard_work_id AND s.tenant_id = wo.tenant_id \
+         WHERE wo.id = $1 AND wo.tenant_id = $2",
+    )
+    .bind(wo_a)
+    .bind(tenant_id)
+    .fetch_one(&pool)
+    .await
+    .expect("takt A");
+    assert_eq!(
+        takt_a, 60,
+        "WO-A binds revision A (60s), never the global latest"
+    );
+
+    // ── Team publishes revision B (takt 45s, supersedes A). ──
+    let rev_b = uuid::Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO standard_work_documents  (id, tenant_id, title, document_number, area, process, current_version, status, steps, required_skills, cycle_time_seconds, takt_time_seconds, quality_checks, safety_notes, tools_required, materials_required, attachments, approved_by, approved_at, version, created_by, created_at, updated_at)  VALUES ($1,$2,'S','SW-REV-B','smt','SMT-1',2,'effective','[]','[]',45,45,'[]','[]','[]','[]','[]',NULL,NULL,2,$3,NOW(),NOW())",
+    )
+    .bind(rev_b)
+    .bind(tenant_id)
+    .bind(user_id)
+    .execute(&pool)
+    .await
+    .expect("revision B insert");
+    sqlx::query("UPDATE standard_work_documents SET status = 'superseded' WHERE id = $1")
+        .bind(rev_a)
+        .execute(&pool)
+        .await
+        .expect("supersede A");
+
+    // The NEXT work order binds revision B — and WO-A STILL binds A
+    // (the released order keeps the standard it was released under —
+    // item 39: immutable for the duration of the order).
+    let wo_b = uuid::Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO work_orders (id, tenant_id, wo_number, product_id, quantity, status, work_center_id, standard_work_id, scheduled_start, scheduled_end, created_at, updated_at)  VALUES ($1, $2, 'WO-B', $3, 50, 'released', $4, $5, NOW(), NOW() + INTERVAL '1 day', NOW(), NOW())",
+    )
+    .bind(wo_b)
+    .bind(tenant_id)
+    .bind(product_id)
+    .bind(wc_id)
+    .bind(rev_b)
+    .execute(&pool)
+    .await
+    .expect("work order B insert");
+
+    let takt_a_still: i64 = sqlx::query_scalar(
+        "SELECT (3600.0 / NULLIF(s.takt_time_seconds, 0))::bigint \
+         FROM work_orders wo \
+         JOIN standard_work_documents s ON s.id = wo.standard_work_id AND s.tenant_id = wo.tenant_id \
+         WHERE wo.id = $1 AND wo.tenant_id = $2",
+    )
+    .bind(wo_a)
+    .bind(tenant_id)
+    .fetch_one(&pool)
+    .await
+    .expect("takt A again");
+    assert_eq!(
+        takt_a_still, 60,
+        "released WO-A keeps revision A (immutable for the order)"
+    );
+    let takt_b: i64 = sqlx::query_scalar(
+        "SELECT (3600.0 / NULLIF(s.takt_time_seconds, 0))::bigint \
+         FROM work_orders wo \
+         JOIN standard_work_documents s ON s.id = wo.standard_work_id AND s.tenant_id = wo.tenant_id \
+         WHERE wo.id = $1 AND wo.tenant_id = $2",
+    )
+    .bind(wo_b)
+    .bind(tenant_id)
+    .fetch_one(&pool)
+    .await
+    .expect("takt B");
+    assert_eq!(takt_b, 80, "the next WO binds revision B (45s takt → 80/h)");
 }

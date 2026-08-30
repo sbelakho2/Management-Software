@@ -10,6 +10,37 @@ use rust_decimal::Decimal;
 use sensei_services::ai::embedding::embed;
 use uuid::Uuid;
 
+/// One dense-candidate row: (type, id, title, authority, similarity,
+/// embedding updated_at, effective_from).
+type DenseRow = (
+    String,
+    Uuid,
+    String,
+    String,
+    f64,
+    chrono::DateTime<chrono::Utc>,
+    Option<String>,
+);
+/// One lexical-candidate row (same shape, f32 similarity).
+type LexicalRow = (
+    String,
+    Uuid,
+    String,
+    String,
+    f32,
+    chrono::DateTime<chrono::Utc>,
+    Option<String>,
+);
+/// Accumulated per-key scores: (dense_sim, lexical_sim, title, authority,
+/// embedding updated_at, effective_from).
+type ScoreEntry = (
+    f32,
+    String,
+    String,
+    chrono::DateTime<chrono::Utc>,
+    Option<String>,
+);
+
 /// Authority classes with their retrieval weights (item 24: never equal).
 pub fn authority_weight(authority: &str) -> Decimal {
     match authority {
@@ -26,6 +57,11 @@ pub fn authority_weight(authority: &str) -> Decimal {
 }
 
 /// Deterministic content hash (embedding versioning).
+/// The canonical content hash used for embedding change detection.
+pub fn content_hash(s: &str) -> u64 {
+    default_hasher(s)
+}
+
 fn default_hasher(s: &str) -> u64 {
     use std::hash::{Hash, Hasher};
     let mut h = std::collections::hash_map::DefaultHasher::new();
@@ -106,27 +142,32 @@ pub async fn hybrid_search(
     // $3 the query vector, $4 caller roles, $5 now — the previous binding
     // order put the vector in an unused $3 and the roles into the vector
     // cast, breaking the dense leg at runtime.
-    let dense: Vec<(String, Uuid, String, String, f64)> = sqlx::query_as(
+    // Item 58: knowledge_pack embeddings REQUIRE the authoritative
+    // source row to exist and be effective — an orphaned embedding (the
+    // pack was deleted but the embedding delete failed) can NEVER remain
+    // eligible. Item 56: de.updated_at rides in the candidate query —
+    // no per-candidate N+1 recency fetch.
+    let dense: Vec<DenseRow> = sqlx::query_as(
         "SELECT de.document_type, de.document_id, de.title, \
                 COALESCE(es.data->>'authority', 'employee note'), \
-                1 - (de.embedding <=> $3::vector) AS similarity \
+                1 - (de.embedding <=> $3::vector) AS similarity, \
+                de.updated_at, \
+                es.data->>'effective_from' AS effective_from \
          FROM document_embeddings de \
          LEFT JOIN entity_store es \
            ON es.tenant_id = de.tenant_id \
           AND es.entity_type = 'knowledge_pack' \
           AND es.id = de.document_id \
          WHERE de.tenant_id = $1 AND de.embedding IS NOT NULL \
-           AND (es.data IS NULL \
-                OR NOT es.data ? 'allowed_roles' \
+           AND NOT (de.document_type = 'knowledge_pack' AND es.data IS NULL) \
+           AND (NOT es.data ? 'allowed_roles' \
                 OR es.data->'allowed_roles' = '[]'::jsonb \
                 OR EXISTS (SELECT 1 FROM jsonb_array_elements_text(es.data->'allowed_roles') r \
                            WHERE r = ANY($4::text[]))) \
-           AND (es.data IS NULL OR COALESCE(es.data->>'status', 'effective') = 'effective') \
-           AND (es.data IS NULL \
-                OR NOT es.data ? 'effective_from' \
+           AND COALESCE(es.data->>'status', 'effective') = 'effective' \
+           AND (NOT es.data ? 'effective_from' \
                 OR (es.data->>'effective_from')::timestamptz <= $5::timestamptz) \
-           AND (es.data IS NULL \
-                OR NOT es.data ? 'effective_to' \
+           AND (NOT es.data ? 'effective_to' \
                 OR (es.data->>'effective_to')::timestamptz >= $5::timestamptz) \
          ORDER BY de.embedding <=> $3::vector \
          LIMIT $2",
@@ -144,10 +185,12 @@ pub async fn hybrid_search(
     // effective-window + ACL filters apply (item 29): obsolete documents
     // never enter the corpus.
     let escaped = query.replace('%', "\\%").replace('_', "\\_");
-    let lexical: Vec<(String, Uuid, String, String, f32)> = sqlx::query_as(
+    let lexical: Vec<LexicalRow> = sqlx::query_as(
         "SELECT de.document_type, de.document_id, de.title, \
                 COALESCE(es.data->>'authority', 'employee note'), \
-                GREATEST(similarity(de.title, $3), similarity(de.content, $3)) AS sim \
+                GREATEST(similarity(de.title, $3), similarity(de.content, $3)) AS sim, \
+                de.updated_at, \
+                es.data->>'effective_from' AS effective_from \
          FROM document_embeddings de \
          LEFT JOIN entity_store es \
            ON es.tenant_id = de.tenant_id \
@@ -155,17 +198,15 @@ pub async fn hybrid_search(
           AND es.id = de.document_id \
          WHERE de.tenant_id = $1 \
            AND (de.title ILIKE '%' || $3 || '%' OR de.content ILIKE '%' || $3 || '%') \
-           AND (es.data IS NULL \
-                OR NOT es.data ? 'allowed_roles' \
+           AND NOT (de.document_type = 'knowledge_pack' AND es.data IS NULL) \
+           AND (NOT es.data ? 'allowed_roles' \
                 OR es.data->'allowed_roles' = '[]'::jsonb \
                 OR EXISTS (SELECT 1 FROM jsonb_array_elements_text(es.data->'allowed_roles') r \
                            WHERE r = ANY($5::text[]))) \
-           AND (es.data IS NULL OR COALESCE(es.data->>'status', 'effective') = 'effective') \
-           AND (es.data IS NULL \
-                OR NOT es.data ? 'effective_from' \
+           AND COALESCE(es.data->>'status', 'effective') = 'effective' \
+           AND (NOT es.data ? 'effective_from' \
                 OR (es.data->>'effective_from')::timestamptz <= $4::timestamptz) \
-           AND (es.data IS NULL \
-                OR NOT es.data ? 'effective_to' \
+           AND (NOT es.data ? 'effective_to' \
                 OR (es.data->>'effective_to')::timestamptz >= $4::timestamptz) \
          ORDER BY sim DESC LIMIT $2",
     )
@@ -188,27 +229,39 @@ pub async fn hybrid_search(
     const RECENCY_HALF_LIFE_DAYS: f64 = 90.0;
     let now = chrono::Utc::now();
 
-    let mut dense_scores: std::collections::HashMap<(String, Uuid), (f32, String, String)> =
+    // Item 56: recency rides in the candidate queries — no N+1. The
+    // freshness SOURCE depends on the authority class (item 57): a
+    // canonical principle's freshness is its EFFECTIVE date (a 40-year-old
+    // principle re-embedded yesterday is NOT fresher than a production
+    // fact from five minutes ago); production facts fall back to the
+    // embedding update time.
+    let mut dense_scores: std::collections::HashMap<(String, Uuid), ScoreEntry> =
         std::collections::HashMap::new();
-    for (ty, id, title, authority, sim) in &dense {
-        let sim_f = *sim as f32;
+    for (ty, id, title, authority, sim, updated_at, effective_from) in &dense {
         dense_scores
             .entry((ty.clone(), *id))
-            .and_modify(|e| e.0 = e.0.max(sim_f))
-            .or_insert((sim_f, title.clone(), authority.clone()));
+            .and_modify(|e| e.0 = e.0.max(*sim as f32))
+            .or_insert((
+                *sim as f32,
+                title.clone(),
+                authority.clone(),
+                *updated_at,
+                effective_from.clone(),
+            ));
     }
-    let mut lexical_scores: std::collections::HashMap<(String, Uuid), (f32, String, String)> =
+    let mut lexical_scores: std::collections::HashMap<(String, Uuid), ScoreEntry> =
         std::collections::HashMap::new();
-    for (ty, id, title, authority, sim) in &lexical {
+    for (ty, id, title, authority, sim, updated_at, effective_from) in &lexical {
         lexical_scores
             .entry((ty.clone(), *id))
-            .or_insert((0.0, title.clone(), authority.clone()))
-            .0 = (*sim).max(
-            lexical_scores
-                .get(&(ty.clone(), *id))
-                .map(|e| e.0)
-                .unwrap_or(0.0),
-        );
+            .and_modify(|e| e.0 = e.0.max(*sim))
+            .or_insert((
+                *sim,
+                title.clone(),
+                authority.clone(),
+                *updated_at,
+                effective_from.clone(),
+            ));
     }
 
     let mut scores: std::collections::HashMap<(String, Uuid), (f64, String, String)> =
@@ -217,8 +270,10 @@ pub async fn hybrid_search(
     keys.extend(dense_scores.keys().cloned());
     keys.extend(lexical_scores.keys().cloned());
     for key in keys {
-        let (dense_sim, title, authority) = dense_scores.get(&key).cloned().unwrap_or_default();
-        let (lexical_sim, _, _) = lexical_scores.get(&key).cloned().unwrap_or_default();
+        let (dense_sim, title, authority, dense_updated, dense_eff) =
+            dense_scores.get(&key).cloned().unwrap_or_default();
+        let (lexical_sim, _, _, lexical_updated, lexical_eff) =
+            lexical_scores.get(&key).cloned().unwrap_or_default();
         let authority = if authority.is_empty() {
             "employee note".to_string()
         } else {
@@ -229,26 +284,29 @@ pub async fn hybrid_search(
             .parse::<f64>()
             .unwrap_or(0.5);
         let combined = DENSE_WEIGHT * dense_sim as f64 + LEXICAL_WEIGHT * lexical_sim as f64;
-        // Recency: decay from the document's last embedding update. The
-        // half-life makes old-but-authoritative content rank below recent
-        // content of equal authority (item 21).
-        let updated_at: Option<chrono::DateTime<chrono::Utc>> = sqlx::query_scalar(
-            "SELECT updated_at FROM document_embeddings \
-             WHERE tenant_id = $1 AND document_type = $2 AND document_id = $3",
-        )
-        .bind(tenant_id)
-        .bind(&key.0)
-        .bind(key.1)
-        .fetch_one(pool)
-        .await
-        .ok();
-        let recency = match updated_at {
-            Some(t) => {
-                let age_days = (now - t).num_milliseconds() as f64 / 86_400_000.0;
-                0.5f64.powf(age_days / RECENCY_HALF_LIFE_DAYS)
+        // Item 57: authority-class freshness. Canonical/standard knowledge
+        // ages from its EFFECTIVE date; facts age from observation
+        // (embedding update is the closest proxy until observed_at is
+        // carried).
+        let effective = dense_eff
+            .clone()
+            .or(lexical_eff.clone())
+            .and_then(|e| chrono::DateTime::parse_from_rfc3339(&e).ok())
+            .map(|e| e.with_timezone(&chrono::Utc));
+        let freshness_time = match (authority.as_str(), effective) {
+            ("canonical principle" | "standard work" | "customer requirement", Some(eff)) => eff,
+            _ => {
+                // production fact / historical case / employee note: the
+                // embedding update time is the best available.
+                if dense_updated > lexical_updated {
+                    dense_updated
+                } else {
+                    lexical_updated
+                }
             }
-            None => 1.0,
         };
+        let age_days = (now - freshness_time).num_milliseconds() as f64 / 86_400_000.0;
+        let recency = 0.5f64.powf(age_days.max(0.0) / RECENCY_HALF_LIFE_DAYS);
         scores
             .entry(key.clone())
             .or_insert((0.0, title.clone(), authority.clone()))

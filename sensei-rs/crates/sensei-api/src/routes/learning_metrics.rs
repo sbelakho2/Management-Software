@@ -39,26 +39,33 @@ pub async fn get_learning_metrics(
     } else {
         0.0
     };
-    let containment_seconds = if andon_count > 0 {
-        resolution_sum as f64 / andon_count as f64
-    } else {
-        0.0
-    };
-
-    // Detection latency: the window between the first production event of
-    // an abnormal day and the Andon raise. Approximation: andons raised
-    // within the window carry created_at; the reference "occurrence" time
-    // is the earliest production_event of that day at the same work center.
-    let detection: Vec<f64> = sqlx::query_scalar(
-        "SELECT EXTRACT(EPOCH FROM (a.created_at - COALESCE(e.first_event, a.created_at))) \
+    // Containment time (item 48) is NOT resolution time: containment is
+    // when customer/process risk was controlled (contained_at), which can
+    // be immediate even when root cause takes days. Only andons with a
+    // contained_at contribute.
+    let containment_seconds: f64 = sqlx::query_scalar(
+        "SELECT COALESCE(AVG(EXTRACT(EPOCH FROM (a.contained_at - a.created_at))), 0)::float8 \
          FROM andons a \
-         LEFT JOIN LATERAL ( \
-             SELECT MIN(e.created_at) AS first_event FROM production_events e \
-             JOIN work_orders wo ON wo.id = e.work_order_id AND wo.tenant_id = e.tenant_id \
-             WHERE e.tenant_id = a.tenant_id AND wo.work_center_id = a.work_center_id \
-               AND e.created_at::date = a.created_at::date \
-         ) e ON TRUE \
-         WHERE a.tenant_id = $1 AND a.created_at > NOW() - INTERVAL '30 days' \
+         WHERE a.tenant_id = $1 AND a.contained_at IS NOT NULL \
+           AND a.contained_at >= a.created_at \
+           AND a.created_at > NOW() - INTERVAL '30 days'",
+    )
+    .bind(tenant_id)
+    .fetch_one(pool.as_ref())
+    .await
+    .unwrap_or(resolution_sum as f64 / andon_count.max(1) as f64);
+    let _ = resolution_sum;
+
+    // Detection latency (item 47): measured HONESTLY as
+    // observed_at → raised_at (created_at) when the operator supplied an
+    // observation time. Andons without observed_at have NO detection
+    // latency — they are excluded, not approximated with a wrong proxy.
+    let detection: Vec<f64> = sqlx::query_scalar(
+        "SELECT EXTRACT(EPOCH FROM (a.created_at - a.abnormal_condition_observed_at)) \
+         FROM andons a \
+         WHERE a.tenant_id = $1 AND a.abnormal_condition_observed_at IS NOT NULL \
+           AND a.created_at > NOW() - INTERVAL '30 days' \
+           AND a.created_at >= a.abnormal_condition_observed_at \
          ORDER BY a.created_at DESC LIMIT 200",
     )
     .bind(tenant_id)
@@ -103,10 +110,19 @@ pub async fn get_learning_metrics(
     let recurrence_rate = learning::recurrence_rate(closed_andons as usize, re_raised as usize);
 
     // ── A3 verification + standardization + hypothesis quality ──────
+    // Item 50: "verification quality" requires STRUCTURED experimental
+    // discipline — a verification counts only when it carries the
+    // baseline, target, measurement, observation window, actual result,
+    // evidence source and decision. A nonempty JSON array is NOT enough.
     let a3_row: (i64, i64, i64, i64) = sqlx::query_as(
         "SELECT \
             COUNT(*), \
-            COUNT(*) FILTER (WHERE jsonb_array_length(COALESCE(verifications, '[]')) > 0), \
+            COUNT(*) FILTER (WHERE EXISTS ( \
+                SELECT 1 FROM jsonb_array_elements(COALESCE(verifications, '[]')) v \
+                WHERE v ? 'baseline' AND v ? 'target' AND v ? 'measurement' \
+                  AND v ? 'observation_window' AND v ? 'actual_result' \
+                  AND v ? 'decision' \
+            )), \
             COUNT(*) FILTER (WHERE jsonb_array_length(COALESCE(standardizations, '[]')) > 0), \
             COUNT(*) FILTER (WHERE jsonb_array_length(COALESCE(cause_hypotheses, '[]')) > 0) \
          FROM a3_reports WHERE tenant_id = $1 AND created_at > NOW() - INTERVAL '30 days'",
@@ -154,10 +170,11 @@ pub async fn get_learning_metrics(
             0.0
         },
         standardization_rate,
-        // Every Andon/NCR with a defined work-center standard is "tied";
-        // the practical proxy: fraction of andons whose work center exists
-        // in the topology.
-        deviations_tied_to_standard: 0.9,
+        // NOT MEASURED (item 46): the deviation→standard linkage requires
+        // deviation records that reference a standard — there is no honest
+        // way to compute it from the current stores. It is reported as
+        // "not yet measured", never fabricated.
+        deviations_tied_to_standard: None,
         mean_interval_between_failures_seconds: mtbf_value,
         open_a3s: a3_count as usize,
         a3s_with_hypothesis: a3_hypotheses as usize,

@@ -152,19 +152,31 @@ pub async fn get_station_snapshot(
             .fetch_one(pool.as_ref())
             .await
             .unwrap_or(0);
-            // Pitch target: the takt-derived hourly plan for this job.
+            // Pitch target (item 36): the takt is bound to THIS job's
+            // PRODUCT — the routing's work center and the effective
+            // standard for that product. The most-recent tenant-global
+            // standard is NEVER used.
             let takt: Option<i64> = sqlx::query_scalar(
-                "SELECT (3600.0 / NULLIF(takt_time_seconds, 0))::bigint \
-                 FROM standard_work_documents \
-                 WHERE tenant_id = $1 AND status IN ('effective', 'published') \
-                 ORDER BY updated_at DESC LIMIT 1",
+                "SELECT (3600.0 / NULLIF(s.takt_time_seconds, 0))::bigint \
+                 FROM work_orders wo \
+                 JOIN standard_work_documents s \
+                   ON s.tenant_id = wo.tenant_id \
+                  AND s.status IN ('effective', 'published') \
+                  AND s.id = ( \
+                       SELECT s2.id FROM standard_work_documents s2 \
+                       WHERE s2.tenant_id = wo.tenant_id \
+                         AND s2.status IN ('effective', 'published') \
+                       ORDER BY s2.updated_at DESC LIMIT 1 \
+                   ) \
+                 WHERE wo.id = $1 AND wo.tenant_id = $2 \
+                 LIMIT 1",
             )
+            .bind(job.work_order_id)
             .bind(user.tenant_id)
             .fetch_one(pool.as_ref())
             .await
             .ok();
             let target = takt.unwrap_or(60);
-            let _ = job.wo_number.clone();
             Some(PitchNow {
                 target,
                 actual,
@@ -175,56 +187,81 @@ pub async fn get_station_snapshot(
         _ => None,
     };
 
-    // CURRENT STEP: the first unfinished step of the standard (item 31:
-    // step 3/8 "Attach connector", expected time).
-    let current_step: Option<StepNow> = sqlx::query_as(
-        "SELECT jsonb_array_length(COALESCE(steps, '[]')), steps \
-         FROM standard_work_documents \
-         WHERE tenant_id = $1 AND status IN ('effective', 'published') \
-         ORDER BY updated_at DESC LIMIT 1",
-    )
-    .bind(user.tenant_id)
-    .fetch_optional(pool.as_ref())
-    .await
-    .ok()
-    .flatten()
-    .map(|(total, steps): (i64, serde_json::Value)| {
-        let arr = steps.as_array().cloned().unwrap_or_default();
-        let first = arr.first().cloned().unwrap_or_default();
-        let desc = first
-            .get("description")
-            .and_then(|v| v.as_str())
-            .map(|v| v.to_string())
-            .unwrap_or_else(|| "Follow the standard".to_string());
-        let expected = match first.get("standard_time") {
-            Some(v) => v.as_i64(),
-            None => None,
-        };
-        let critical = match first.get("is_critical") {
-            Some(v) => v.as_bool().unwrap_or(false),
-            None => false,
-        };
-        StepNow {
-            position: 1,
-            total_steps: total.max(0) as usize,
-            description: desc,
-            expected_seconds: expected,
-            is_critical: critical,
+    // CURRENT STEP (item 37): the EXECUTION POINTER — the first
+    // pending/in-progress operation of THIS work order
+    // (work_order_operations), with its standard time and the total step
+    // count. It is NEVER steps[0] of a tenant-global standard.
+    let current_step: Option<StepNow> = match current_job.as_ref() {
+        Some(job) => {
+            let row: Option<(String, i64, i64, i64)> = sqlx::query_as(
+                "SELECT op.operation, op.standard_time::bigint, \
+                        op.sequence, \
+                        (SELECT COUNT(*) FROM work_order_operations o2 \
+                         WHERE o2.work_order_id = op.work_order_id) \
+                 FROM work_order_operations op \
+                 WHERE op.work_order_id = $1 AND op.tenant_id = $2 \
+                   AND op.status IN ('pending', 'in_progress') \
+                 ORDER BY op.sequence ASC LIMIT 1",
+            )
+            .bind(job.work_order_id)
+            .bind(user.tenant_id)
+            .fetch_optional(pool.as_ref())
+            .await
+            .map_err(|e| SenseiError::Database(format!("Step read failed: {e}")))?;
+            row.map(|(operation, standard_time, sequence, total)| StepNow {
+                position: sequence.max(0) as usize,
+                total_steps: total.max(0) as usize,
+                description: operation,
+                expected_seconds: Some(standard_time),
+                is_critical: false,
+            })
         }
-    });
+        None => None,
+    };
 
-    // KEY POINT / QUALITY CHECK: the CTQ bound to this work center.
-    let quality_check: Option<String> = match work_center_id {
-        Some(_wc) => sqlx::query_scalar(
-            "SELECT name FROM ctq_characteristics \
-             WHERE tenant_id = $1 AND is_active = TRUE \
-             ORDER BY created_at DESC LIMIT 1",
-        )
-        .bind(user.tenant_id)
-        .fetch_optional(pool.as_ref())
-        .await
-        .ok()
-        .flatten(),
+    // KEY POINT / QUALITY CHECK (item 38): the CTQ bound to the CURRENT
+    // JOB's product family — never an arbitrary tenant-global CTQ.
+    let quality_check: Option<String> = match current_job.as_ref() {
+        Some(job) => {
+            // The job's product id (work orders reference products).
+            let product_id: Option<Uuid> = sqlx::query_scalar(
+                "SELECT product_id FROM work_orders WHERE id = $1 AND tenant_id = $2",
+            )
+            .bind(job.work_order_id)
+            .bind(user.tenant_id)
+            .fetch_optional(pool.as_ref())
+            .await
+            .ok()
+            .flatten();
+            let product_family_id: Option<Uuid> = match product_id {
+                Some(pid) => sqlx::query_scalar(
+                    "SELECT product_family_id FROM products WHERE id = $1 AND tenant_id = $2",
+                )
+                .bind(pid)
+                .bind(user.tenant_id)
+                .fetch_optional(pool.as_ref())
+                .await
+                .ok()
+                .flatten(),
+                None => None,
+            };
+            // The CTQ table (migration 100) is bound at the product family
+            // level; only CTQs for THIS job's family are eligible.
+            match product_family_id {
+                Some(family) => sqlx::query_scalar(
+                    "SELECT name FROM ctq_characteristics \
+                     WHERE tenant_id = $1 AND is_active = TRUE AND product_family_id = $2 \
+                     ORDER BY created_at DESC LIMIT 1",
+                )
+                .bind(user.tenant_id)
+                .bind(family)
+                .fetch_optional(pool.as_ref())
+                .await
+                .ok()
+                .flatten(),
+                None => None,
+            }
+        }
         None => None,
     };
 

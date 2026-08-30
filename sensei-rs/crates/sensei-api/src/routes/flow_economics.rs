@@ -93,7 +93,7 @@ pub async fn finance_waste(
     user: AuthenticatedUser,
     State(state): State<AppState>,
 ) -> Result<Json<FinanceWasteSnapshot>> {
-    user.require_permission("finance:read")?;
+    user.require_permission("finance:invoice:read")?;
     let pool = state
         .db_pool
         .as_ref()
@@ -125,10 +125,11 @@ pub async fn finance_waste(
     .await
     .map_err(|e| SenseiError::Database(format!("Aging read failed: {e}")))?;
 
-    // Scrap + rework: work orders with scrapped/reworked quantities.
-    let quality_row: (Decimal, Decimal) = sqlx::query_as(
-        "SELECT COALESCE(SUM(quantity_scrapped * COALESCE(p.standard_cost, 0)), 0)::numeric, \
-                COALESCE(SUM(quantity_reworked * COALESCE(p.standard_cost, 0)), 0)::numeric \
+    // Scrap: measured from the work-order ledger. REWORK is NOT tracked
+    // in the schema — it is reported as "not yet measured", never as €0
+    // (item 53: unknown ≠ zero).
+    let scrap_cost: Decimal = sqlx::query_scalar(
+        "SELECT COALESCE(SUM(quantity_scrapped * COALESCE(p.standard_cost, 0)), 0)::numeric \
          FROM work_orders wo \
          LEFT JOIN products p ON p.id = wo.product_id AND p.tenant_id = wo.tenant_id \
          WHERE wo.tenant_id = $1",
@@ -137,7 +138,7 @@ pub async fn finance_waste(
     .fetch_one(pool.as_ref())
     .await
     .map_err(|e| SenseiError::Database(format!("Scrap read failed: {e}")))?;
-    let (scrap_cost, rework_cost) = quality_row;
+    let rework_cost: Decimal = Decimal::ZERO;
 
     Ok(Json(flow_economics::finance_waste(
         wip_cash,
@@ -150,6 +151,13 @@ pub async fn finance_waste(
             excess_days: Decimal::ZERO,
             daily_demand: Decimal::ZERO,
             unit_cost: Decimal::ZERO,
+        },
+        // Item 53: these categories are NOT tracked — report unmeasured.
+        flow_economics::UnmeasuredWaste {
+            premium_freight: true,
+            expediting: true,
+            batch_policy: true,
+            rework: true,
         },
     )))
 }

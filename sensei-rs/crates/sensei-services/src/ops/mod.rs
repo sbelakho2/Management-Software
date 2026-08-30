@@ -61,6 +61,19 @@ pub struct Andon {
     pub restart_authorized_by: Option<Uuid>,
     #[serde(default)]
     pub restart_authorized_at: Option<DateTime<Utc>>,
+    /// When the abnormal condition was OBSERVED (item 47): detection
+    /// latency = observed_at - raised_at, measured honestly. The raised_at
+    /// is created_at.
+    #[serde(default)]
+    pub abnormal_condition_observed_at: Option<DateTime<Utc>>,
+    /// When customer/process risk was CONTAINED (item 48) — distinct from
+    /// resolved_at (root cause fixed).
+    #[serde(default)]
+    pub contained_at: Option<DateTime<Utc>>,
+    #[serde(default)]
+    pub contained_by: Option<Uuid>,
+    #[serde(default)]
+    pub contained_note: Option<String>,
 }
 
 /// A continuous improvement or kaizen project.
@@ -1010,6 +1023,10 @@ mod tests {
             resolved_at: None,
             restart_authorized_by: None,
             restart_authorized_at: None,
+            abnormal_condition_observed_at: None,
+            contained_at: None,
+            contained_by: None,
+            contained_note: None,
         };
 
         let raised = service
@@ -1207,6 +1224,10 @@ mod tests {
             resolved_at: None,
             restart_authorized_by: None,
             restart_authorized_at: None,
+            abnormal_condition_observed_at: None,
+            contained_at: None,
+            contained_by: None,
+            contained_note: None,
         };
         let a2 = Andon {
             id: Uuid::nil(),
@@ -1228,6 +1249,10 @@ mod tests {
             resolved_at: None,
             restart_authorized_by: None,
             restart_authorized_at: None,
+            abnormal_condition_observed_at: None,
+            contained_at: None,
+            contained_by: None,
+            contained_note: None,
         };
 
         service.raise_andon(tenant_id, a1).await.unwrap();

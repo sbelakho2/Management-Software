@@ -35,13 +35,16 @@ pub fn StationPage() -> impl IntoView {
                 let app_state = app_state.clone();
                 async move {
                     let client = app_state.api_client();
-                    let req = crate::api::ops::RaiseAndonRequest {
-                        title: help_category.get_untracked(),
-                        description: Some(help_note.get_untracked()),
+                    // Item 40: the SAFE command path — the operator's
+                    // plain-language category + note; the server derives
+                    // actor/tenant/status/work center.
+                    let req = crate::api::andon::RaiseAndonCommandRequest {
+                        work_center_id: None, // server resolves from the caller
+                        issue_type: normalize_help_category(&help_category.get_untracked()),
                         severity: "medium".to_string(),
-                        location: None,
+                        description: help_note.get_untracked(),
                     };
-                    let _ = crate::api::ops::OpsApi::raise_andon(&client, &req).await;
+                    let _ = crate::api::ops::OpsApi::raise_andon_command(&client, &req).await;
                     help_open.set(false);
                     help_note.set(String::new());
                     refresh.update(|v| *v += 1);
@@ -353,5 +356,19 @@ pub fn TeamLeadPage() -> impl IntoView {
                 <p class="rams-font-mono rams-text-sm" style="color: var(--rams-muted);">"LOADING INTERVALS…"</p>
             }.into_any())}
         </div>
+    }
+}
+
+/// Map the operator's plain-language help category to the Andon issue
+/// type vocabulary (item 40: the operator never learns Andon terms).
+fn normalize_help_category(category: &str) -> String {
+    match category.to_lowercase().as_str() {
+        "quality" => "quality".to_string(),
+        "material" => "material".to_string(),
+        "machine" => "maintenance".to_string(),
+        "method / instructions" | "method" => "method".to_string(),
+        "safety" => "safety".to_string(),
+        "i cannot keep pace" | "cannot keep pace" => "capacity".to_string(),
+        _ => "other".to_string(),
     }
 }

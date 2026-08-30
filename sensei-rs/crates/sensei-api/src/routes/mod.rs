@@ -24,6 +24,7 @@ pub mod health;
 pub mod hr;
 pub mod hybrid_search;
 pub mod integration;
+pub mod integration_importer;
 pub mod inventory;
 pub mod kanban;
 pub mod knowledge;

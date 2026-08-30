@@ -21,9 +21,11 @@ pub struct ShortageException {
     pub product_id: Uuid,
     pub product_number: String,
     pub product_name: String,
-    pub need_qty: i64,
-    pub available_qty: i64,
-    pub short_qty: i64,
+    /// Exact Decimal quantities (item 34) — a shortage of 2.7 kg is
+    /// reported as 2.7 kg, never rounded to 3.
+    pub need_qty: rust_decimal::Decimal,
+    pub available_qty: rust_decimal::Decimal,
+    pub short_qty: rust_decimal::Decimal,
     pub need_date: String,
     pub latest_release_date: String,
     pub supplier_risk: Option<String>,
@@ -113,7 +115,10 @@ pub async fn run_mrp_planning(
     {
         let exception_records: Vec<&sensei_services::production::MRPRecord> = records
             .iter()
-            .filter(|r| r.net_requirement > 0 && r.projected_on_hand < r.net_requirement)
+            .filter(|r| {
+                r.net_requirement > rust_decimal::Decimal::ZERO
+                    && r.projected_on_hand < r.net_requirement
+            })
             .collect();
         if !exception_records.is_empty() {
             let ids: Vec<Uuid> = exception_records.iter().map(|r| r.product_id).collect();
@@ -128,8 +133,8 @@ pub async fn run_mrp_planning(
             let lead_by_id: std::collections::HashMap<Uuid, i32> = lead_rows.into_iter().collect();
             for r in exception_records {
                 let need = r.net_requirement;
-                let available = r.projected_on_hand.max(0);
-                let short = (need - available).max(0);
+                let available = r.projected_on_hand.max(rust_decimal::Decimal::ZERO);
+                let short = (need - available).max(rust_decimal::Decimal::ZERO);
                 let gap_days = (r.time_phase_start - chrono::Utc::now()).num_days();
                 let supplier_risk = lead_by_id.get(&r.product_id).copied().and_then(|lead| {
                     if gap_days < i64::from(lead) {
@@ -181,7 +186,7 @@ pub async fn run_mrp_planning(
     let demand = records
         .iter()
         .find(|r| r.product_id == product_id)
-        .map(|r| Decimal::from(r.gross_requirement))
+        .map(|r| r.gross_requirement)
         .unwrap_or(Decimal::ZERO);
     Ok(Json(MrpPlanningResponse {
         product_id,

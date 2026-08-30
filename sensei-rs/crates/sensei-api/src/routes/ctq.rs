@@ -35,6 +35,10 @@ pub struct CreateCharacteristicRequest {
     pub name: String,
     pub description: Option<String>,
     pub category: String,
+    /// The product family this CTQ binds to (item 38): the station
+    /// quality check resolves through the job's family — never global.
+    #[serde(default)]
+    pub product_family_id: Option<Uuid>,
     pub specification_limit_lower: Option<f64>,
     pub specification_limit_upper: Option<f64>,
     pub target_value: Option<f64>,
@@ -236,6 +240,27 @@ pub async fn create_characteristic(
         .write(user.tenant_id)
         .await
         .insert(char.id, char.clone());
+    // Dual-write to the real ctq_characteristics table (migration 100)
+    // so product-family-bound station lookups work (item 38).
+    if let Some(pool) = state.db_pool.as_ref() {
+        let _ = sqlx::query(
+            "INSERT INTO ctq_characteristics  (id, tenant_id, name, description, category, product_family_id, specification_limit_lower, specification_limit_upper, target_value, unit, measurement_method, is_active, created_by, created_at, updated_at)  VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,TRUE,$12,NOW(),NOW())",
+        )
+        .bind(char.id)
+        .bind(tenant_id)
+        .bind(&char.name)
+        .bind(&char.description)
+        .bind(&char.category)
+        .bind(req.product_family_id)
+        .bind(char.specification_limit_lower)
+        .bind(char.specification_limit_upper)
+        .bind(char.target_value)
+        .bind(&char.unit)
+        .bind(&char.measurement_method)
+        .bind(user.user_id)
+        .execute(pool.as_ref())
+        .await;
+    }
     Ok(Json(char))
 }
 

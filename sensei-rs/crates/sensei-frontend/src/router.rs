@@ -8,7 +8,7 @@ pub mod routes {
 
     // Quality
     pub const QUALITY: &str = "/quality";
-    pub const QUALITY_NCR: &str = "/quality/ncr";
+    pub const QUALITY_NCR: &str = "/quality/ncrs";
     pub const QUALITY_CAPA: &str = "/quality/capa";
     pub const QUALITY_INSPECTIONS: &str = "/quality/inspections";
     pub const QUALITY_AUDITS: &str = "/quality/audits";

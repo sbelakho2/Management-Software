@@ -112,13 +112,19 @@ pub struct MRPRecord {
     pub id: Uuid,
     pub tenant_id: Uuid,
     pub product_id: Uuid,
-    pub gross_requirement: i64,
-    pub scheduled_receipts: i64,
-    pub projected_on_hand: i64,
-    pub net_requirement: i64,
-    pub planned_order_release: i64,
+    /// EXACT planning quantities (item 34): Decimal throughout — rounding
+    /// to integer units is only valid for discrete parts. The planner
+    /// never rounds meters/kilograms/liters; the UI may display rounded.
+    pub gross_requirement: rust_decimal::Decimal,
+    pub scheduled_receipts: rust_decimal::Decimal,
+    pub projected_on_hand: rust_decimal::Decimal,
+    pub net_requirement: rust_decimal::Decimal,
+    pub planned_order_release: rust_decimal::Decimal,
     pub time_phase_start: DateTime<Utc>,
     pub time_phase_end: DateTime<Utc>,
+    /// The product's unit of measure (m, kg, l, pcs...) — the UOM-aware
+    /// planning unit (item 34).
+    pub unit_of_measure: String,
 }
 
 /// A work order operation / routing step.
@@ -743,9 +749,9 @@ impl ProductionService for InMemoryProductionService {
         let now = Utc::now();
         let mut records = Vec::new();
 
-        // Compute a realistic MRP record based on demand
-        // Gross requirement: sum of all active work orders for this product
-        let gross_requirement: i64 = {
+        // Compute a realistic MRP record based on demand — EXACT Decimal
+        // throughout (item 34); the in-memory path mirrors the DB engine.
+        let gross_requirement: rust_decimal::Decimal = {
             let wo_store = self.work_orders.read().await;
             wo_store
                 .values()
@@ -755,12 +761,11 @@ impl ProductionService for InMemoryProductionService {
                         && wo.status != "completed"
                         && wo.status != "cancelled"
                 })
-                .map(|wo| wo.quantity - wo.quantity_completed)
+                .map(|wo| rust_decimal::Decimal::from(wo.quantity - wo.quantity_completed))
                 .sum()
         };
 
-        // Scheduled receipts: sum of all production orders for this product
-        let scheduled_receipts: i64 = {
+        let scheduled_receipts: rust_decimal::Decimal = {
             let po_store = self.production_orders.read().await;
             po_store
                 .values()
@@ -770,22 +775,23 @@ impl ProductionService for InMemoryProductionService {
                         && po.status != "completed"
                         && po.status != "cancelled"
                 })
-                .map(|po| po.quantity_planned - po.quantity_produced)
+                .map(|po| rust_decimal::Decimal::from(po.quantity_planned - po.quantity_produced))
                 .sum()
         };
 
         // Projected on-hand: current inventory + scheduled receipts − gross
         // requirement (never negative).
-        let on_hand = {
+        let on_hand: rust_decimal::Decimal = {
             let inv = self.inventory_on_hand.read().await;
-            inv.get(&product_id).copied().unwrap_or(0)
+            inv.get(&product_id).copied().unwrap_or(0).into()
         };
-        let projected_on_hand = (on_hand + scheduled_receipts - gross_requirement).max(0);
+        let projected_on_hand =
+            (on_hand + scheduled_receipts - gross_requirement).max(rust_decimal::Decimal::ZERO);
 
         // Net requirement: what we still need to order.
-        let net_requirement = (gross_requirement - scheduled_receipts - on_hand).max(0);
+        let net_requirement =
+            (gross_requirement - scheduled_receipts - on_hand).max(rust_decimal::Decimal::ZERO);
 
-        // Planned order release equals net requirement
         let planned_order_release = net_requirement;
 
         let record = MRPRecord {
@@ -799,13 +805,24 @@ impl ProductionService for InMemoryProductionService {
             planned_order_release,
             time_phase_start: now,
             time_phase_end: now + chrono::Duration::days(30),
+            unit_of_measure: "pcs".to_string(),
         };
 
         self.publish_event(MRPRunCompleted::new(
             tenant_id,
             record.id,
-            planned_order_release,
-            net_requirement,
+            // The event carries COUNTS (planned orders, shortages), not
+            // quantities — Decimal widens to i64 only at this boundary.
+            planned_order_release
+                .trunc()
+                .to_string()
+                .parse::<i64>()
+                .unwrap_or(0),
+            net_requirement
+                .trunc()
+                .to_string()
+                .parse::<i64>()
+                .unwrap_or(0),
         ))
         .await;
 
@@ -1084,17 +1101,23 @@ mod tests {
         let record = &records[0];
 
         // projected = on_hand + receipts − gross = 30 + 0 − 100 → 0 (clamped).
-        assert_eq!(record.gross_requirement, 100);
-        assert_eq!(record.projected_on_hand, 0);
+        assert_eq!(record.gross_requirement, rust_decimal::Decimal::from(100));
+        assert_eq!(record.projected_on_hand, rust_decimal::Decimal::ZERO);
         // net = gross − receipts − on_hand = 100 − 0 − 30 = 70.
-        assert_eq!(record.net_requirement, 70);
-        assert_eq!(record.planned_order_release, 70);
+        assert_eq!(record.net_requirement, rust_decimal::Decimal::from(70));
+        assert_eq!(
+            record.planned_order_release,
+            rust_decimal::Decimal::from(70)
+        );
 
         // With enough stock the net requirement drops to zero.
         service.seed_inventory_on_hand(product_id, 150).await;
         let records = service.run_mrp(tenant_id, product_id).await.unwrap();
-        assert_eq!(records[0].projected_on_hand, 50);
-        assert_eq!(records[0].net_requirement, 0);
+        assert_eq!(
+            records[0].projected_on_hand,
+            rust_decimal::Decimal::from(50)
+        );
+        assert_eq!(records[0].net_requirement, rust_decimal::Decimal::ZERO);
     }
 
     #[tokio::test]

@@ -86,6 +86,10 @@ struct AndonRow {
     resolved_at: Option<chrono::DateTime<Utc>>,
     restart_authorized_by: Option<Uuid>,
     restart_authorized_at: Option<chrono::DateTime<Utc>>,
+    abnormal_condition_observed_at: Option<chrono::DateTime<Utc>>,
+    contained_at: Option<chrono::DateTime<Utc>>,
+    contained_by: Option<Uuid>,
+    contained_note: Option<String>,
 }
 
 #[derive(Debug, Clone, sqlx::FromRow)]
@@ -183,6 +187,10 @@ fn andon_row_to_domain(r: AndonRow) -> Andon {
         resolved_at: r.resolved_at,
         restart_authorized_by: r.restart_authorized_by,
         restart_authorized_at: r.restart_authorized_at,
+        abnormal_condition_observed_at: r.abnormal_condition_observed_at,
+        contained_at: r.contained_at,
+        contained_by: r.contained_by,
+        contained_note: r.contained_note,
     }
 }
 
@@ -320,13 +328,17 @@ impl OperationsService for DatabaseOperationsService {
         let row = with_tenant_tx(&self.pool, tenant_id, |tx| {
             Box::pin(async move {
                 sqlx::query_as::<_, AndonRow>(
-                    r#"INSERT INTO andons (id, tenant_id, andon_number, work_center_id, issue_type, severity, description, status, raised_by, acknowledged_by, resolved_by, resolution, response_time_seconds, resolution_time_seconds, created_at, acknowledged_at, resolved_at, restart_authorized_by, restart_authorized_at)
-                       VALUES ($1,$2,$3,$4,$5,$6,$7,'active',$8,NULL,NULL,NULL,NULL,NULL,$9,NULL,NULL,NULL,NULL)
-                       RETURNING id, tenant_id, andon_number, work_center_id, issue_type, severity, description, status, raised_by, acknowledged_by, resolved_by, resolution, response_time_seconds, resolution_time_seconds, created_at, acknowledged_at, resolved_at, restart_authorized_by, restart_authorized_at"#,
+                    r#"INSERT INTO andons (id, tenant_id, andon_number, work_center_id, issue_type, severity, description, status, raised_by, acknowledged_by, resolved_by, resolution, response_time_seconds, resolution_time_seconds, created_at, acknowledged_at, resolved_at, restart_authorized_by, restart_authorized_at, abnormal_condition_observed_at, contained_at, contained_by, contained_note)
+                       VALUES ($1,$2,$3,$4,$5,$6,$7,'active',$8,NULL,NULL,NULL,NULL,NULL,$9,NULL,NULL,NULL,NULL,$10,$11,$12,$13)
+                       RETURNING id, tenant_id, andon_number, work_center_id, issue_type, severity, description, status, raised_by, acknowledged_by, resolved_by, resolution, response_time_seconds, resolution_time_seconds, created_at, acknowledged_at, resolved_at, restart_authorized_by, restart_authorized_at, abnormal_condition_observed_at, contained_at, contained_by, contained_note"#,
                 )
                 .bind(id).bind(tenant_id).bind(&andon_number).bind(andon.work_center_id)
                 .bind(&andon.issue_type).bind(&andon.severity).bind(&andon.description)
                 .bind(andon.raised_by).bind(now)
+                .bind(andon.abnormal_condition_observed_at)
+                .bind(andon.contained_at)
+                .bind(andon.contained_by)
+                .bind(&andon.contained_note)
                 .fetch_one(&mut **tx)
                 .await.map_err(|e| SenseiError::Database(format!("Failed to raise andon: {e}")))
             })
@@ -348,7 +360,7 @@ impl OperationsService for DatabaseOperationsService {
                     r#"UPDATE andons SET status='acknowledged', acknowledged_by=$1, acknowledged_at=$2,
                         response_time_seconds=EXTRACT(EPOCH FROM ($2 - created_at))::bigint
                        WHERE id=$3 AND tenant_id=$4 AND status='active'
-                       RETURNING id, tenant_id, andon_number, work_center_id, issue_type, severity, description, status, raised_by, acknowledged_by, resolved_by, resolution, response_time_seconds, resolution_time_seconds, created_at, acknowledged_at, resolved_at, restart_authorized_by, restart_authorized_at"#,
+                       RETURNING id, tenant_id, andon_number, work_center_id, issue_type, severity, description, status, raised_by, acknowledged_by, resolved_by, resolution, response_time_seconds, resolution_time_seconds, created_at, acknowledged_at, resolved_at, restart_authorized_by, restart_authorized_at, abnormal_condition_observed_at, contained_at, contained_by, contained_note"#,
                 )
                 .bind(acknowledged_by).bind(now).bind(id).bind(tenant_id)
                 .fetch_optional(&mut **tx)
@@ -381,7 +393,7 @@ impl OperationsService for DatabaseOperationsService {
                         response_time_seconds=COALESCE(response_time_seconds, EXTRACT(EPOCH FROM ($3 - created_at))::bigint)
                        WHERE id=$4 AND tenant_id=$5 AND status NOT IN ('resolved','closed')
                          AND (severity != 'critical' OR issue_type != 'safety' OR restart_authorized_by IS NOT NULL)
-                       RETURNING id, tenant_id, andon_number, work_center_id, issue_type, severity, description, status, raised_by, acknowledged_by, resolved_by, resolution, response_time_seconds, resolution_time_seconds, created_at, acknowledged_at, resolved_at, restart_authorized_by, restart_authorized_at"#,
+                       RETURNING id, tenant_id, andon_number, work_center_id, issue_type, severity, description, status, raised_by, acknowledged_by, resolved_by, resolution, response_time_seconds, resolution_time_seconds, created_at, acknowledged_at, resolved_at, restart_authorized_by, restart_authorized_at, abnormal_condition_observed_at, contained_at, contained_by, contained_note"#,
                 )
                 .bind(resolved_by).bind(&resolution_owned).bind(now).bind(id).bind(tenant_id)
                 .fetch_optional(&mut **tx)
@@ -443,7 +455,7 @@ impl OperationsService for DatabaseOperationsService {
                      RETURNING id, tenant_id, andon_number, work_center_id, issue_type, severity, \
                                description, status, raised_by, acknowledged_by, resolved_by, resolution, \
                                response_time_seconds, resolution_time_seconds, created_at, \
-                               acknowledged_at, resolved_at, restart_authorized_by, restart_authorized_at",
+                               acknowledged_at, resolved_at, restart_authorized_by, restart_authorized_at, abnormal_condition_observed_at, contained_at, contained_by, contained_note",
                 )
                 .bind(id)
                 .bind(tenant_id)
@@ -461,7 +473,7 @@ impl OperationsService for DatabaseOperationsService {
         let row = with_tenant_tx(&self.pool, tenant_id, |tx| {
             Box::pin(async move {
                 sqlx::query_as::<_, AndonRow>(
-                    "SELECT id, tenant_id, andon_number, work_center_id, issue_type, severity, description, status, raised_by, acknowledged_by, resolved_by, resolution, response_time_seconds, resolution_time_seconds, created_at, acknowledged_at, resolved_at, restart_authorized_by, restart_authorized_at FROM andons WHERE id = $1 AND tenant_id = $2",
+                    "SELECT id, tenant_id, andon_number, work_center_id, issue_type, severity, description, status, raised_by, acknowledged_by, resolved_by, resolution, response_time_seconds, resolution_time_seconds, created_at, acknowledged_at, resolved_at, restart_authorized_by, restart_authorized_at, abnormal_condition_observed_at, contained_at, contained_by, contained_note FROM andons WHERE id = $1 AND tenant_id = $2",
                 )
                 .bind(id).bind(tenant_id)
                 .fetch_optional(&mut **tx)
@@ -489,7 +501,7 @@ impl OperationsService for DatabaseOperationsService {
         let (items, count) = with_tenant_tx(&self.pool, tenant_id, |tx| {
             Box::pin(async move {
                 let items: Vec<AndonRow> = sqlx::query_as(
-                    r#"SELECT id, tenant_id, andon_number, work_center_id, issue_type, severity, description, status, raised_by, acknowledged_by, resolved_by, resolution, response_time_seconds, resolution_time_seconds, created_at, acknowledged_at, resolved_at, restart_authorized_by, restart_authorized_at
+                    r#"SELECT id, tenant_id, andon_number, work_center_id, issue_type, severity, description, status, raised_by, acknowledged_by, resolved_by, resolution, response_time_seconds, resolution_time_seconds, created_at, acknowledged_at, resolved_at, restart_authorized_by, restart_authorized_at, abnormal_condition_observed_at, contained_at, contained_by, contained_note
                        FROM andons WHERE tenant_id=$1 AND ($2::text IS NULL OR status=$2) AND ($3::uuid IS NULL OR work_center_id=$3)
                        ORDER BY created_at DESC LIMIT $4 OFFSET $5"#,
                 )
@@ -865,7 +877,7 @@ impl OperationsService for DatabaseOperationsService {
             Box::pin(async move {
                 sqlx::query_as::<_, AndonRow>(
                     r#"UPDATE andons SET issue_type=$1, severity=$2, description=$3 WHERE id=$4 AND tenant_id=$5
-                       RETURNING id, tenant_id, andon_number, work_center_id, issue_type, severity, description, status, raised_by, acknowledged_by, resolved_by, resolution, response_time_seconds, resolution_time_seconds, created_at, acknowledged_at, resolved_at, restart_authorized_by, restart_authorized_at"#,
+                       RETURNING id, tenant_id, andon_number, work_center_id, issue_type, severity, description, status, raised_by, acknowledged_by, resolved_by, resolution, response_time_seconds, resolution_time_seconds, created_at, acknowledged_at, resolved_at, restart_authorized_by, restart_authorized_at, abnormal_condition_observed_at, contained_at, contained_by, contained_note"#,
                 )
                 .bind(&andon.issue_type).bind(&andon.severity).bind(&andon.description).bind(id).bind(tenant_id)
                 .fetch_optional(&mut **tx)
@@ -896,7 +908,7 @@ impl OperationsService for DatabaseOperationsService {
                      RETURNING id, tenant_id, andon_number, work_center_id, issue_type, severity, \
                                description, status, raised_by, acknowledged_by, resolved_by, \
                                resolution, response_time_seconds, resolution_time_seconds, \
-                               created_at, acknowledged_at, resolved_at, restart_authorized_by, restart_authorized_at",
+                               created_at, acknowledged_at, resolved_at, restart_authorized_by, restart_authorized_at, abnormal_condition_observed_at, contained_at, contained_by, contained_note",
                 )
                 .bind(id)
                 .bind(tenant_id)

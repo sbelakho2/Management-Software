@@ -1005,12 +1005,18 @@ impl ProductionService for DatabaseProductionService {
     }
 
     async fn get_bom(&self, tenant_id: Uuid, product_id: Uuid) -> Result<Vec<BOMItem>> {
+        // Item 29: ONE BOM vocabulary — quantity / scrap_percent (the
+        // schema columns). The old quantity_required/scrap_percentage
+        // aliases do not exist on bom_items and made get_bom fail at
+        // runtime.
         let rows = sqlx::query_as::<_, BomItemRow>(
             r#"
-            SELECT id, tenant_id, parent_product_id, component_product_id,
-                   component_name, quantity_required, unit_of_measure, scrap_percentage
-            FROM bom_items
-            WHERE parent_product_id = $1 AND tenant_id = $2
+            SELECT b.id, b.tenant_id, b.parent_product_id, b.component_product_id,
+                   p.name AS component_name, b.quantity, b.unit_of_measure,
+                   COALESCE(b.scrap_percent, 0) AS scrap_percent
+            FROM bom_items b
+            JOIN products p ON p.id = b.component_product_id AND p.tenant_id = b.tenant_id
+            WHERE b.parent_product_id = $1 AND b.tenant_id = $2
             "#,
         )
         .bind(product_id)
@@ -1082,9 +1088,13 @@ impl ProductionService for DatabaseProductionService {
         // Item 17: each item also carries its requirement date, which
         // propagates BACKWARD through the BOM — a component is needed no
         // later than its parent's planned release.
-        let lead_by_product: std::collections::HashMap<Uuid, i64> = {
-            // lead_time_days is INT4 in the schema — decode as i32 and
-            // widen, never pretend it is INT8.
+        // Item 33: lead times are cached ON DISCOVERY — the initial map
+        // holds only the root product; deeper components discovered during
+        // traversal must NOT propagate requirements with a silent zero
+        // lead time. load_leads_for() fetches any unknown leads.
+        let mut lead_by_product: std::collections::HashMap<Uuid, i64> =
+            std::collections::HashMap::new();
+        {
             let rows: Vec<(Uuid, i32)> = sqlx::query_as(
                 "SELECT id, COALESCE(lead_time_days, 0) FROM products \
                  WHERE tenant_id = $1 AND id = ANY($2::uuid[])",
@@ -1094,14 +1104,33 @@ impl ProductionService for DatabaseProductionService {
             .fetch_all(&self.pool)
             .await
             .map_err(|e| SenseiError::Database(format!("Failed to load lead times: {e}")))?;
-            rows.into_iter()
-                .map(|(id, lead)| (id, i64::from(lead)))
-                .collect()
-        };
+            for (id, lead) in rows {
+                lead_by_product.insert(id, i64::from(lead));
+            }
+        }
         // The root need date: the demand's own timing (earliest open
         // work-order due date); without one, the requirement is due NOW —
         // never an arbitrary now+30d default (item 17).
-        let root_due: Option<chrono::DateTime<Utc>> = sqlx::query_scalar(
+        // Item 32: the customer's REQUESTED/DELIVERY date is the primary
+        // independent-demand time bucket — sales demand with no work order
+        // yet must still drive the plan. Work-order dates (execution
+        // supply) are secondary: the plan is due no later than BOTH.
+        let so_due: Option<chrono::DateTime<Utc>> = sqlx::query_scalar(
+            "SELECT MIN(delivery_date) FROM sales_orders so \
+             WHERE so.tenant_id = $1 \
+               AND EXISTS ( \
+                   SELECT 1 FROM jsonb_array_elements(so.line_items) li \
+                   WHERE (li->>'product_id')::uuid = $2 \
+               ) \
+               AND so.status NOT IN ('completed', 'cancelled', 'closed') \
+               AND so.delivery_date IS NOT NULL",
+        )
+        .bind(tenant_id)
+        .bind(product_id)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|e| SenseiError::Database(format!("Failed to load sales demand timing: {e}")))?;
+        let wo_due: Option<chrono::DateTime<Utc>> = sqlx::query_scalar(
             "SELECT MIN(scheduled_end) FROM work_orders \
              WHERE product_id = $1 AND tenant_id = $2 \
                AND status NOT IN ('completed', 'cancelled')",
@@ -1111,7 +1140,12 @@ impl ProductionService for DatabaseProductionService {
         .fetch_one(&self.pool)
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to load demand timing: {e}")))?;
-        let root_need = root_due.unwrap_or(now);
+        let root_need = match (so_due, wo_due) {
+            (Some(so), Some(wo)) => so.min(wo),
+            (Some(so), None) => so,
+            (None, Some(wo)) => wo,
+            (None, None) => now,
+        };
         need_dates.insert(product_id, root_need);
 
         let mut queue: Vec<(
@@ -1141,6 +1175,29 @@ impl ProductionService for DatabaseProductionService {
                     .fetch_all(&self.pool)
                     .await
                     .map_err(|e| SenseiError::Database(format!("Failed to load BOM: {e}")))?;
+                // Item 33: cache the lead time of every component AT
+                // DISCOVERY (one batched query per level, never per row).
+                let unknown: Vec<Uuid> = bom
+                    .iter()
+                    .map(|(c, _, _)| *c)
+                    .filter(|c| !lead_by_product.contains_key(c))
+                    .collect();
+                if !unknown.is_empty() {
+                    let rows: Vec<(Uuid, i32)> = sqlx::query_as(
+                        "SELECT id, COALESCE(lead_time_days, 0) FROM products \
+                         WHERE tenant_id = $1 AND id = ANY($2::uuid[])",
+                    )
+                    .bind(tenant_id)
+                    .bind(&unknown)
+                    .fetch_all(&self.pool)
+                    .await
+                    .map_err(|e| {
+                        SenseiError::Database(format!("Failed to load component leads: {e}"))
+                    })?;
+                    for (id, lead) in rows {
+                        lead_by_product.insert(id, i64::from(lead));
+                    }
+                }
                 for (component, per_unit, scrap) in bom {
                     if ancestry.contains(&component) {
                         let chain = ancestry
@@ -1189,6 +1246,20 @@ impl ProductionService for DatabaseProductionService {
         if demand_qty > rust_decimal::Decimal::ZERO && !products.contains(&product_id) {
             products.push(product_id);
         }
+        // Item 34: the product UOMs feed the records (a plan in meters is
+        // never displayed as an integer count).
+        let uom_by_product: std::collections::HashMap<Uuid, String> = {
+            let rows: Vec<(Uuid, String)> = sqlx::query_as(
+                "SELECT id, unit_of_measure FROM products \
+                 WHERE tenant_id = $1 AND id = ANY($2::uuid[])",
+            )
+            .bind(tenant_id)
+            .bind(&products)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to load product UOMs: {e}")))?;
+            rows.into_iter().collect()
+        };
         // Item 18: every policy figure arrives as Decimal directly from the
         // NUMERIC column — no f64 conversion anywhere in the engine.
         for p in products {
@@ -1255,17 +1326,20 @@ impl ProductionService for DatabaseProductionService {
                 id: Uuid::new_v4(),
                 tenant_id,
                 product_id: p,
-                gross_requirement: gross_qty.ceil().to_string().parse::<i64>().unwrap_or(0),
-                scheduled_receipts: scheduled.ceil().to_string().parse::<i64>().unwrap_or(0),
-                projected_on_hand: projected.ceil().to_string().parse::<i64>().unwrap_or(0),
-                net_requirement: net.ceil().to_string().parse::<i64>().unwrap_or(0),
-                planned_order_release: planned_receipt
-                    .ceil()
-                    .to_string()
-                    .parse::<i64>()
-                    .unwrap_or(0),
+                // Item 34: EXACT Decimal quantities — the plan never
+                // rounds fractional UOMs. Ceiling belongs to discrete
+                // display only, and even then not in the planner.
+                gross_requirement: gross_qty,
+                scheduled_receipts: scheduled,
+                projected_on_hand: projected,
+                net_requirement: net,
+                planned_order_release: planned_receipt,
                 time_phase_start: release_date,
                 time_phase_end: receipt_date,
+                unit_of_measure: uom_by_product
+                    .get(&p)
+                    .cloned()
+                    .unwrap_or_else(|| "pcs".to_string()),
             });
         }
 

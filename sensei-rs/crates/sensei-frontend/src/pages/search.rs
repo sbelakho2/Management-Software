@@ -105,18 +105,27 @@ pub fn SearchPage() -> impl IntoView {
                                             let rid = r.result_id.clone();
                                             let is_exact = r.relevance > 1.0;
                                             let badge = if is_exact { "rams-badge status-open" } else { "rams-badge status-ok" };
+                                            // Item 81: every result is a REAL navigable object —
+                                            // the exact-match resolves deterministically and the
+                                            // link goes to the object's operational page, not a
+                                            // raw UUID fragment.
+                                            let target = result_target(&rtype, &rid);
                                             view! {
-                                                <div class="rams-flex rams-flex--between" style="padding: var(--rams-space-3); border-bottom: 1px solid var(--rams-line);">
+                                                <a
+                                                    href=target
+                                                    class="rams-flex rams-flex--between"
+                                                    style="padding: var(--rams-space-3); border-bottom: 1px solid var(--rams-line); text-decoration: none; color: inherit; display: flex;"
+                                                >
                                                     <div>
                                                         <div class="rams-text-sm">{title}</div>
                                                         <div class="rams-font-mono rams-text-2xs" style="color: var(--rams-muted);">
-                                                            {format!("{} · {}", rtype.to_uppercase(), &rid[..8])}
+                                                            {business_identifier(&rtype, &rid)}
                                                         </div>
                                                     </div>
                                                     <span class=badge>
                                                         {if is_exact { "EXACT MATCH".to_string() } else { format!("{:.0}%", r.relevance * 100.0) }}
                                                     </span>
-                                                </div>
+                                                </a>
                                             }
                                         }).collect::<Vec<_>>()}
                                     }.into_any()
@@ -138,5 +147,40 @@ pub fn SearchPage() -> impl IntoView {
                 }.into_any(),
             }}
         </div>
+    }
+}
+
+/// Item 81: map a result type to its operational page. Exact identifiers
+/// (work orders, NCrs, andons, products) resolve deterministically; a
+/// result is a navigable object, never a UUID fragment.
+fn result_target(result_type: &str, id: &str) -> String {
+    match result_type {
+        "work_order" => format!("/work/{}", id),
+        "product" => format!("/production/products/{}", id),
+        "ncr" => format!("/quality/ncrs/{}", id),
+        "andon" => format!("/abnormalities/{}", id),
+        "a3" => format!("/tps/a3/{}", id),
+        "sales_order" => format!("/sales/orders/{}", id),
+        "supplier" => format!("/supply-chain/suppliers/{}", id),
+        "standard_work" | "standard-work" => format!("/tps/standards/{}", id),
+        "account" | "customer" => format!("/sales/accounts/{}", id),
+        "contact" => format!("/sales/contacts/{}", id),
+        "employee" => format!("/hr/employees/{}", id),
+        "knowledge_pack" => format!("/knowledge/{}", id),
+        _ => format!("/search?q={}", id),
+    }
+}
+
+/// Item 81: emphasize BUSINESS identifiers — work-order numbers, SKUs —
+/// instead of UUID fragments where the search index carries them.
+fn business_identifier(result_type: &str, id: &str) -> String {
+    match result_type {
+        "work_order" | "product" | "sales_order" | "ncr" | "andon" | "a3" => {
+            format!("{} · {}", result_type.to_uppercase(), id)
+        }
+        _ => {
+            let short = if id.len() > 8 { &id[..8] } else { id };
+            format!("{} · {}", result_type.to_uppercase(), short)
+        }
     }
 }

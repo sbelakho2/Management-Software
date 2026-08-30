@@ -1,475 +1,45 @@
 //! Legacy-system import API (interoperability): the legacy starzERP and
 //! CRM-v2 systems POST their native payloads here; Sensei maps them onto
-//! canonical entities and persists them IDEMPOTENTLY through
-//! `integration_entity_map`. Re-importing the same legacy id updates the
-//! SAME Sensei entity — never a duplicate.
+//! canonical entities through the importer — a strict canonical boundary
+//! (inbox envelope → identity claim → version decision → domain command →
+//! one transaction). Re-imports are IDEMPOTENT and CONCURRENCY-SAFE; the
+//! bridge principal is `integration_bridge` with per-system permissions;
+//! ordinary users hold NO integration permissions.
 
 use axum::extract::{Path, State};
 use axum::Json;
 use sensei_auth::middleware::AuthenticatedUser;
 use sensei_core::error::{Result, SenseiError};
-use sensei_services::integration::{CanonicalEntity, LegacyRecord};
 use serde_json::Value;
 use uuid::Uuid;
 
+use crate::routes::integration_importer::{self as importer, Envelope};
 use crate::state::AppState;
 
 /// The import endpoint: `POST /api/v1/integration/{system}/{entity}` with
-/// `{ "legacy_id": "42", "payload": { ...legacy shape... } }`.
+/// `{ "legacy_id": "42", "payload": { ...legacy shape... },
+///     "source_version": "...", "source_updated_at": "..." }`.
 #[derive(Debug, serde::Deserialize)]
 pub struct ImportRequest {
     pub legacy_id: String,
     pub payload: Value,
+    #[serde(default)]
+    pub source_version: Option<String>,
+    #[serde(default)]
+    pub source_updated_at: Option<String>,
+    #[serde(default)]
+    pub source_event_id: Option<String>,
 }
 
-/// Import response: the canonical Sensei entity + the idempotency anchor.
+/// Import response: the outcome + the idempotency anchor.
 #[derive(Debug, serde::Serialize)]
 pub struct ImportResponse {
-    pub sensei_entity: String,
-    pub sensei_id: Uuid,
-    /// true when the record already existed (same legacy id) — the import
-    /// UPDATED the existing entity instead of creating a duplicate.
-    pub updated: bool,
+    pub outcome: &'static str,
+    pub sensei_entity: Option<String>,
+    pub sensei_id: Option<Uuid>,
     pub legacy_system: String,
     pub legacy_id: String,
-}
-
-/// Resolve the entity map (idempotency): returns the existing sensei id.
-async fn find_mapped(
-    pool: &sqlx::PgPool,
-    tenant_id: Uuid,
-    system: &str,
-    entity: &str,
-    legacy_id: &str,
-) -> Result<Option<(String, Uuid)>> {
-    let row: Option<(String, Uuid)> = sqlx::query_as(
-        "SELECT sensei_entity, sensei_id FROM integration_entity_map \
-         WHERE tenant_id = $1 AND legacy_system = $2 AND legacy_entity = $3 AND legacy_id = $4",
-    )
-    .bind(tenant_id)
-    .bind(system)
-    .bind(entity)
-    .bind(legacy_id)
-    .fetch_optional(pool)
-    .await
-    .map_err(|e| SenseiError::Database(format!("Entity map lookup failed: {e}")))?;
-    Ok(row)
-}
-
-/// Record the mapping (idempotency anchor).
-async fn record_map(
-    pool: &sqlx::PgPool,
-    tenant_id: Uuid,
-    system: &str,
-    entity: &str,
-    legacy_id: &str,
-    sensei_entity: &str,
-    sensei_id: Uuid,
-) -> Result<()> {
-    sqlx::query(
-        "INSERT INTO integration_entity_map \
-            (tenant_id, legacy_system, legacy_entity, legacy_id, sensei_entity, sensei_id) \
-         VALUES ($1, $2, $3, $4, $5, $6) \
-         ON CONFLICT (tenant_id, legacy_system, legacy_entity, legacy_id) DO NOTHING",
-    )
-    .bind(tenant_id)
-    .bind(system)
-    .bind(entity)
-    .bind(legacy_id)
-    .bind(sensei_entity)
-    .bind(sensei_id)
-    .execute(pool)
-    .await
-    .map_err(|e| SenseiError::Database(format!("Entity map write failed: {e}")))?;
-    Ok(())
-}
-
-async fn find_or_create_product(
-    pool: &sqlx::PgPool,
-    tenant_id: Uuid,
-    p: &sensei_services::integration::CanonicalProduct,
-) -> Result<(Uuid, bool)> {
-    // Exact sku match first — the legacy article IS the same product.
-    let existing: Option<Uuid> =
-        sqlx::query_scalar("SELECT id FROM products WHERE tenant_id = $1 AND product_number = $2")
-            .bind(tenant_id)
-            .bind(&p.sku)
-            .fetch_optional(pool)
-            .await
-            .map_err(|e| SenseiError::Database(format!("Product lookup failed: {e}")))?;
-    if let Some(id) = existing {
-        // Update price/cost facts (not the identity).
-        let _ = sqlx::query(
-            "UPDATE products SET standard_cost = $3, selling_price = $4, updated_at = NOW() \
-             WHERE id = $1 AND tenant_id = $2",
-        )
-        .bind(id)
-        .bind(tenant_id)
-        .bind(p.standard_cost)
-        .bind(p.selling_price)
-        .execute(pool)
-        .await;
-        return Ok((id, true));
-    }
-    let id = Uuid::new_v4();
-    sqlx::query(
-        "INSERT INTO products (id, tenant_id, product_number, name, unit_of_measure, \
-                               standard_cost, selling_price) \
-         VALUES ($1, $2, $3, $4, $5, $6, $7)",
-    )
-    .bind(id)
-    .bind(tenant_id)
-    .bind(&p.sku)
-    .bind(&p.name)
-    .bind(&p.unit_of_measure)
-    .bind(p.standard_cost)
-    .bind(p.selling_price)
-    .execute(pool)
-    .await
-    .map_err(|e| SenseiError::Database(format!("Product create failed: {e}")))?;
-    Ok((id, false))
-}
-
-async fn find_or_create_account(
-    pool: &sqlx::PgPool,
-    tenant_id: Uuid,
-    a: &sensei_services::integration::CanonicalAccount,
-) -> Result<(Uuid, bool)> {
-    let existing: Option<Uuid> =
-        sqlx::query_scalar("SELECT id FROM accounts WHERE tenant_id = $1 AND name = $2")
-            .bind(tenant_id)
-            .bind(&a.name)
-            .fetch_optional(pool)
-            .await
-            .map_err(|e| SenseiError::Database(format!("Account lookup failed: {e}")))?;
-    if let Some(id) = existing {
-        return Ok((id, true));
-    }
-    let id = Uuid::new_v4();
-    sqlx::query(
-        "INSERT INTO accounts (id, tenant_id, name, email, phone, country) \
-         VALUES ($1, $2, $3, $4, $5, $6)",
-    )
-    .bind(id)
-    .bind(tenant_id)
-    .bind(&a.name)
-    .bind(&a.email)
-    .bind(&a.phone)
-    .bind(&a.country)
-    .execute(pool)
-    .await
-    .map_err(|e| SenseiError::Database(format!("Account create failed: {e}")))?;
-    Ok((id, false))
-}
-
-async fn find_or_create_contact(
-    pool: &sqlx::PgPool,
-    tenant_id: Uuid,
-    account_id: Option<Uuid>,
-    c: &sensei_services::integration::CanonicalContact,
-) -> Result<(Uuid, bool)> {
-    let email = c.email.as_deref().unwrap_or("");
-    let existing: Option<Uuid> = if email.is_empty() {
-        sqlx::query_scalar(
-            "SELECT id FROM contacts WHERE tenant_id = $1 AND first_name = $2 AND last_name = $3 \
-             LIMIT 1",
-        )
-        .bind(tenant_id)
-        .bind(&c.first_name)
-        .bind(&c.last_name)
-        .fetch_optional(pool)
-        .await
-        .map_err(|e| SenseiError::Database(format!("Contact lookup failed: {e}")))?
-    } else {
-        sqlx::query_scalar("SELECT id FROM contacts WHERE tenant_id = $1 AND email = $2 LIMIT 1")
-            .bind(tenant_id)
-            .bind(email)
-            .fetch_optional(pool)
-            .await
-            .map_err(|e| SenseiError::Database(format!("Contact lookup failed: {e}")))?
-    };
-    if let Some(id) = existing {
-        return Ok((id, true));
-    }
-    let id = Uuid::new_v4();
-    sqlx::query(
-        "INSERT INTO contacts (id, tenant_id, account_id, first_name, last_name, email, phone) \
-         VALUES ($1, $2, $3, $4, $5, $6, $7)",
-    )
-    .bind(id)
-    .bind(tenant_id)
-    .bind(account_id)
-    .bind(&c.first_name)
-    .bind(&c.last_name)
-    .bind(&c.email)
-    .bind(&c.phone)
-    .execute(pool)
-    .await
-    .map_err(|e| SenseiError::Database(format!("Contact create failed: {e}")))?;
-    Ok((id, false))
-}
-
-async fn persist(
-    state: &AppState,
-    tenant_id: Uuid,
-    record: &LegacyRecord,
-) -> Result<(String, Uuid, bool)> {
-    let pool = state
-        .db_pool
-        .as_ref()
-        .ok_or_else(|| SenseiError::Database("Import requires the database".to_string()))?;
-    // Idempotency: an existing mapping anchors this legacy id.
-    if let Some((sensei_entity, sensei_id)) = find_mapped(
-        pool,
-        tenant_id,
-        &record.system,
-        &record.entity,
-        &record.legacy_id,
-    )
-    .await?
-    {
-        // Update the canonical entity facts (not identity) and report.
-        if sensei_entity == "product" {
-            if let Ok(CanonicalEntity::Product(p)) =
-                sensei_services::integration::map_record(record)
-            {
-                let _ = find_or_create_product(pool, tenant_id, &p).await;
-            }
-        }
-        return Ok((sensei_entity, sensei_id, true));
-    }
-
-    let canonical =
-        sensei_services::integration::map_record(record).map_err(SenseiError::Validation)?;
-    let (sensei_entity, sensei_id): (&str, Uuid) = match &canonical {
-        CanonicalEntity::Product(p) => {
-            let (id, _) = find_or_create_product(pool, tenant_id, p).await?;
-            ("product", id)
-        }
-        CanonicalEntity::Account(a) => {
-            let (id, _) = find_or_create_account(pool, tenant_id, a).await?;
-            ("account", id)
-        }
-        CanonicalEntity::Contact(c) => {
-            let account_id = match &c.account_id {
-                Some(aid) => Uuid::parse_str(aid).ok(),
-                None => None,
-            };
-            let (id, _) = find_or_create_contact(pool, tenant_id, account_id, c).await?;
-            ("contact", id)
-        }
-        CanonicalEntity::Lead(l) => {
-            // A lead becomes an Account (with the sector/quality context in
-            // the account notes) — Sensei's pipeline starts at accounts.
-            let account = sensei_services::integration::CanonicalAccount {
-                name: l.company_name.clone(),
-                email: None,
-                phone: None,
-                country: None,
-                legacy_reference: Some(format!("crm-lead:{}", record.legacy_id)),
-            };
-            let (id, _) = find_or_create_account(pool, tenant_id, &account).await?;
-            let _ = sqlx::query(
-                "UPDATE accounts SET notes = COALESCE(notes, '') || $3, updated_at = NOW() \
-                 WHERE id = $1 AND tenant_id = $2",
-            )
-            .bind(id)
-            .bind(tenant_id)
-            .bind(format!(
-                "\n[CRM-v2 lead] score {} · sectors {} · quality {}",
-                l.lead_score.unwrap_or(0),
-                l.sector_tags.join(", "),
-                l.quality_stack.join(", ")
-            ))
-            .execute(pool.as_ref())
-            .await;
-            ("account", id)
-        }
-        CanonicalEntity::Quote(q) => {
-            // A legacy quote imports as a Sensei quote (draft) with lines
-            // resolved against imported products when they exist.
-            let customer_id = find_or_create_account(
-                pool,
-                tenant_id,
-                &sensei_services::integration::CanonicalAccount {
-                    name: q.company_name.clone(),
-                    email: None,
-                    phone: None,
-                    country: None,
-                    legacy_reference: None,
-                },
-            )
-            .await?
-            .0;
-            let id = Uuid::new_v4();
-            let line_items: Vec<serde_json::Value> = q
-                .lines
-                .iter()
-                .map(|l| {
-                    serde_json::json!({
-                        "product_id": null,
-                        "product_name": l.part_number,
-                        "quantity": l.quantity,
-                        "unit_price": l.unit_price.to_string(),
-                    })
-                })
-                .collect();
-            sqlx::query(
-                "INSERT INTO quotes  (id, tenant_id, quote_number, rfq_id, customer_id, customer_name,  status, line_items, total_amount, currency, valid_until, created_by, created_at)  VALUES ($1, $2, $3, NULL, $4, $5, 'draft', $6::jsonb, $7, $8, NOW() + INTERVAL '30 days', $9, NOW())",
-            )
-            .bind(id)
-            .bind(tenant_id)
-            .bind(&q.quote_number)
-            .bind(customer_id)
-            .bind(&q.company_name)
-            .bind(serde_json::Value::Array(line_items))
-            .bind(q.total_cost)
-            .bind(&q.currency)
-            .bind(user_id_fallback(state))
-            .execute(pool.as_ref())
-            .await
-            .map_err(|e| SenseiError::Database(format!("Quote create failed: {e}")))?;
-            ("quote", id)
-        }
-        CanonicalEntity::Rfq(r) => {
-            let id = Uuid::new_v4();
-            sqlx::query(
-                "INSERT INTO rfqs (id, tenant_id, rfq_number, supplier_id, status, line_items, created_at) \
-                 VALUES ($1, $2, $3, NULL, $4, $5::jsonb, NOW())",
-            )
-            .bind(id)
-            .bind(tenant_id)
-            .bind(&r.rfq_number)
-            .bind(&r.status)
-            .bind(serde_json::Value::Array(
-                r.lines
-                    .iter()
-                    .map(|l| {
-                        serde_json::json!({
-                            "part_number": l.part_number,
-                            "quantity": l.quantity,
-                        })
-                    })
-                    .collect(),
-            ))
-            .execute(pool.as_ref())
-            .await
-            .map_err(|e| SenseiError::Database(format!("RFQ create failed: {e}")))?;
-            ("rfq", id)
-        }
-        CanonicalEntity::SalesOrder(so) => {
-            // Import the sales order as a canonical Sensei sales order.
-            let id = Uuid::new_v4();
-            let customer_id = find_or_create_account(
-                pool,
-                tenant_id,
-                &sensei_services::integration::CanonicalAccount {
-                    name: so.customer_name.clone(),
-                    email: None,
-                    phone: None,
-                    country: None,
-                    legacy_reference: None,
-                },
-            )
-            .await?
-            .0;
-            let line_items: Vec<serde_json::Value> = so
-                .line_items
-                .iter()
-                .map(|l| {
-                    serde_json::json!({
-                        "product_id": null,
-                        "product_name": l.product_sku,
-                        "quantity": l.quantity,
-                        "unit_price": l.unit_price.to_string(),
-                        "quantity_delivered": 0,
-                    })
-                })
-                .collect();
-            sqlx::query(
-                "INSERT INTO sales_orders  (id, tenant_id, order_number, customer_id, customer_name,  status, line_items, total_amount, currency, delivery_date, created_by, created_at)  VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10, $11, NOW())",
-            )
-            .bind(id)
-            .bind(tenant_id)
-            .bind(&so.order_number)
-            .bind(customer_id)
-            .bind(&so.customer_name)
-            .bind(&so.status)
-            .bind(serde_json::Value::Array(line_items))
-            .bind(so.total_amount)
-            .bind(&so.currency)
-            .bind(so.delivery_date.clone().and_then(|d| chrono::DateTime::parse_from_rfc3339(&d).ok().map(|d| d.with_timezone(&chrono::Utc))))
-            .bind(user_id_fallback(state))
-            .execute(pool.as_ref())
-            .await
-            .map_err(|e| SenseiError::Database(format!("Sales order create failed: {e}")))?;
-            ("sales_order", id)
-        }
-        CanonicalEntity::Supplier(s) => {
-            let id = Uuid::new_v4();
-            sqlx::query(
-                "INSERT INTO suppliers (id, tenant_id, name, email, phone, is_active, created_at) \
-                 VALUES ($1, $2, $3, $4, $5, TRUE, NOW())",
-            )
-            .bind(id)
-            .bind(tenant_id)
-            .bind(&s.name)
-            .bind(&s.email)
-            .bind(&s.phone)
-            .execute(pool.as_ref())
-            .await
-            .map_err(|e| SenseiError::Database(format!("Supplier create failed: {e}")))?;
-            ("supplier", id)
-        }
-        CanonicalEntity::StockMove(m) => {
-            // Stock moves need the product; without it they are recorded
-            // with a reference note (the bridge resolves products first).
-            let id = Uuid::new_v4();
-            let product_id: Option<Uuid> = sqlx::query_scalar(
-                "SELECT id FROM products WHERE tenant_id = $1 AND product_number = $2",
-            )
-            .bind(tenant_id)
-            .bind(&m.product_sku)
-            .fetch_optional(pool.as_ref())
-            .await
-            .map_err(|e| SenseiError::Database(format!("Stock move product lookup failed: {e}")))?;
-            let _ = sqlx::query(
-                "INSERT INTO stock_moves (id, tenant_id, product_id, quantity, move_type, reference, created_at) \
-                 VALUES ($1, $2, $3, $4, $5, $6, NOW())",
-            )
-            .bind(id)
-            .bind(tenant_id)
-            .bind(product_id)
-            .bind(m.quantity)
-            .bind(&m.move_type)
-            .bind(m.reference.as_deref().unwrap_or("legacy import"))
-            .execute(pool.as_ref())
-            .await;
-            ("stock_move", id)
-        }
-    };
-
-    record_map(
-        pool,
-        tenant_id,
-        &record.system,
-        &record.entity,
-        &record.legacy_id,
-        sensei_entity,
-        sensei_id,
-    )
-    .await?;
-    Ok((sensei_entity.to_string(), sensei_id, false))
-}
-
-/// Integration imports run under the SYSTEM principal — the bridge is not
-/// a human session. Fall back to a stable synthetic user per tenant when
-/// no operator user exists.
-fn user_id_fallback(_state: &AppState) -> Uuid {
-    // A deterministic nil-ish id would violate FKs; imports run under the
-    // SYSTEM principal and created_by is informational, so a fresh id is
-    // used (the bridge authentication is the real boundary).
-    Uuid::new_v4()
+    pub message: Option<String>,
 }
 
 /// The import handler.
@@ -480,13 +50,22 @@ pub async fn import_record(
     Path((system, entity)): Path<(String, String)>,
     Json(req): Json<ImportRequest>,
 ) -> Result<Json<ImportResponse>> {
-    // The bridge authenticates with an integration-scoped role. The
-    // permission guard is the integration contract: the bridge can import
-    // but not operate other surfaces.
-    user.require_permission("integration:import")?;
+    // The bridge authenticates with the dedicated `integration_bridge`
+    // role — ordinary users hold NO integration permission at all. The
+    // guard is scoped per legacy system.
+    let permission = match system.as_str() {
+        "starzerp" => "integration:import:starz-erp",
+        "crm_v2" => "integration:import:crm",
+        other => {
+            return Err(SenseiError::Validation(format!(
+                "Unknown legacy system '{other}'"
+            )));
+        }
+    };
+    user.require_permission(permission)?;
+
     // Defense-in-depth: the bridge declares its tenant; a mismatch with
-    // the token's tenant is rejected — a leaked token cannot import into
-    // the wrong tenant.
+    // the token's tenant is rejected.
     if let Some(declared) = headers
         .get("x-sensei-tenant")
         .and_then(|value| value.to_str().ok())
@@ -499,45 +78,232 @@ pub async fn import_record(
             }
         }
     }
-    let record = LegacyRecord {
+
+    // The non-human principal: the bridge role must be the ONLY role.
+    // A session that also holds human roles cannot import.
+    if user.roles.len() != 1 || user.roles[0] != "integration_bridge" {
+        return Err(SenseiError::Forbidden(
+            "Integration imports require the dedicated integration_bridge \
+             principal — human sessions cannot import"
+                .to_string(),
+        ));
+    }
+
+    let source_updated_at = req
+        .source_updated_at
+        .as_deref()
+        .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+        .map(|d| d.with_timezone(&chrono::Utc));
+
+    let record = sensei_services::integration::LegacyRecord {
         system: system.clone(),
         entity: entity.clone(),
         legacy_id: req.legacy_id,
         payload: req.payload,
     };
-    let (sensei_entity, sensei_id, updated) = persist(&state, user.tenant_id, &record).await?;
-    Ok(Json(ImportResponse {
-        sensei_entity,
-        sensei_id,
-        updated,
-        legacy_system: system,
-        legacy_id: record.legacy_id,
-    }))
+    let envelope = Envelope {
+        source_version: req.source_version,
+        source_updated_at,
+        source_event_id: req.source_event_id,
+        extraction_run_id: format!("api-{}", Uuid::new_v4()),
+    };
+
+    match importer::apply_record(&state, user.tenant_id, &record, &envelope).await {
+        Ok(outcome) => {
+            let (outcome_str, message) = match outcome {
+                importer::ImportOutcome::Applied => ("applied", None),
+                importer::ImportOutcome::Duplicate => (
+                    "duplicate",
+                    Some("Same-event replay — nothing changed".to_string()),
+                ),
+                importer::ImportOutcome::Stale => (
+                    "stale",
+                    Some("Source version older than applied — not applied".to_string()),
+                ),
+                importer::ImportOutcome::Conflict(m) => ("conflict", Some(m)),
+                importer::ImportOutcome::Quarantined(m) => ("quarantined", Some(m)),
+            };
+            Ok(Json(ImportResponse {
+                outcome: outcome_str,
+                sensei_entity: None,
+                sensei_id: None,
+                legacy_system: system,
+                legacy_id: record.legacy_id,
+                message,
+            }))
+        }
+        Err(e) => {
+            // Validation/dependency failures already dead-lettered inside
+            // the importer; the response reflects the quarantine.
+            Ok(Json(ImportResponse {
+                outcome: "quarantined",
+                sensei_entity: None,
+                sensei_id: None,
+                legacy_system: system,
+                legacy_id: record.legacy_id,
+                message: Some(e.to_string()),
+            }))
+        }
+    }
 }
 
-/// Health/summary of the integration layer.
+/// Persist a source checkpoint (item 20: the bridge is incremental — the
+/// watermark is the ONLY durable cursor; a crashed run resumes from it).
+#[derive(Debug, serde::Deserialize)]
+pub struct CheckpointRequest {
+    pub source_system: String,
+    pub source_table: String,
+    pub watermark: String,
+    pub run_id: String,
+}
+
+#[derive(Debug, serde::Serialize)]
+pub struct CheckpointResponse {
+    pub ok: bool,
+}
+
+pub async fn save_checkpoint(
+    user: AuthenticatedUser,
+    State(state): State<AppState>,
+    Json(req): Json<CheckpointRequest>,
+) -> Result<Json<CheckpointResponse>> {
+    user.require_permission("integration:status:read")?;
+    // The bridge principal only — the same non-human rule as imports.
+    if user.roles.len() != 1 || user.roles[0] != "integration_bridge" {
+        return Err(SenseiError::Forbidden(
+            "Checkpoints require the integration_bridge principal".to_string(),
+        ));
+    }
+    let pool = state
+        .db_pool
+        .as_ref()
+        .ok_or_else(|| SenseiError::Database("Checkpoints require the database".to_string()))?;
+    let watermark = req
+        .watermark
+        .parse::<chrono::DateTime<chrono::Utc>>()
+        .map_err(|e| SenseiError::Validation(format!("Invalid watermark: {e}")))?;
+    sqlx::query(
+        "INSERT INTO integration_checkpoints (tenant_id, source_system, source_table, watermark, last_run_id, last_run_at)          VALUES ($1, $2, $3, $4, $5, NOW())          ON CONFLICT (tenant_id, source_system, source_table)          DO UPDATE SET watermark = $4, last_run_id = $5, last_run_at = NOW()",
+    )
+    .bind(user.tenant_id)
+    .bind(&req.source_system)
+    .bind(&req.source_table)
+    .bind(watermark)
+    .bind(&req.run_id)
+    .execute(pool.as_ref())
+    .await
+    .map_err(|e| SenseiError::Database(format!("Checkpoint write failed: {e}")))?;
+    Ok(Json(CheckpointResponse { ok: true }))
+}
+
+/// Health/summary of the integration layer (item 24: Unknown is NOT zero —
+/// a database failure must never look like 0 mappings).
 #[derive(Debug, serde::Serialize)]
 pub struct IntegrationStatus {
     pub legacy_systems: Vec<&'static str>,
     pub supported_entities: Vec<&'static str>,
-    pub entity_map_count: i64,
+    pub entity_map_count: Option<i64>,
+    pub dead_letter_count: Option<i64>,
+    pub reconciliation_open: Option<i64>,
+    pub status: &'static str,
+    pub detail: Option<String>,
+    /// Item 24: the operational state a production integrator needs.
+    pub last_extraction_at: Option<chrono::DateTime<chrono::Utc>>,
+    pub last_run_id: Option<String>,
+    pub current_watermark: Option<chrono::DateTime<chrono::Utc>>,
+    pub lag_seconds: Option<i64>,
+    pub mapper_version: i64,
+    pub tombstones: Option<i64>,
+    pub oldest_unresolved: Option<chrono::DateTime<chrono::Utc>>,
 }
 
 pub async fn integration_status(
     user: AuthenticatedUser,
     State(state): State<AppState>,
 ) -> Result<Json<IntegrationStatus>> {
-    user.require_permission("integration:import")?;
-    let count: i64 = match state.db_pool.as_ref() {
-        Some(pool) => {
-            sqlx::query_scalar("SELECT COUNT(*) FROM integration_entity_map WHERE tenant_id = $1")
-                .bind(user.tenant_id)
-                .fetch_one(pool.as_ref())
-                .await
-                .unwrap_or(0)
-        }
-        None => 0,
+    user.require_permission("integration:status:read")?;
+    let Some(pool) = state.db_pool.as_ref() else {
+        // The integration layer REQUIRES the database — report degraded,
+        // never a fake healthy zero.
+        return Ok(Json(IntegrationStatus {
+            legacy_systems: vec!["starzerp", "crm_v2"],
+            supported_entities: vec![
+                "article",
+                "customer",
+                "sales_order",
+                "stock_movement",
+                "supplier",
+                "lead",
+                "company",
+                "contact",
+                "quote",
+                "rfq",
+            ],
+            entity_map_count: None,
+            dead_letter_count: None,
+            reconciliation_open: None,
+            status: "degraded",
+            detail: Some("Database unavailable — integration state unknown".to_string()),
+            last_extraction_at: None,
+            last_run_id: None,
+            current_watermark: None,
+            lag_seconds: None,
+            mapper_version: 3,
+            tombstones: None,
+            oldest_unresolved: None,
+        }));
     };
+    let (map_count,): (i64,) =
+        sqlx::query_as("SELECT COUNT(*) FROM integration_entity_map WHERE tenant_id = $1")
+            .bind(user.tenant_id)
+            .fetch_one(pool.as_ref())
+            .await
+            .map_err(|e| SenseiError::Database(format!("Entity map count failed: {e}")))?;
+    let (dead_count,): (i64,) =
+        sqlx::query_as("SELECT COUNT(*) FROM integration_dead_letter WHERE tenant_id = $1")
+            .bind(user.tenant_id)
+            .fetch_one(pool.as_ref())
+            .await
+            .unwrap_or((0,));
+    let (open_rec,): (i64,) = sqlx::query_as(
+        "SELECT COUNT(*) FROM integration_reconciliation WHERE tenant_id = $1 AND status = 'open'",
+    )
+    .bind(user.tenant_id)
+    .fetch_one(pool.as_ref())
+    .await
+    .unwrap_or((0,));
+    // Item 24: source watermarks + run id + mapper version — Unknown is
+    // NOT zero: each is Option (None = nothing recorded yet).
+    let last_checkpoint: Option<(
+        chrono::DateTime<chrono::Utc>,
+        String,
+        chrono::DateTime<chrono::Utc>,
+    )> = sqlx::query_as(
+        "SELECT watermark, last_run_id, last_run_at FROM integration_checkpoints \
+             WHERE tenant_id = $1 ORDER BY last_run_at DESC LIMIT 1",
+    )
+    .bind(user.tenant_id)
+    .fetch_optional(pool.as_ref())
+    .await
+    .unwrap_or(None);
+    let (current_watermark, last_run_id, last_extraction_at) = last_checkpoint
+        .map(|(wm, run, at)| (Some(wm), Some(run), Some(at)))
+        .unwrap_or((None, None, None));
+    let lag_seconds = current_watermark.map(|wm| (chrono::Utc::now() - wm).num_seconds());
+    let (tombstones,): (i64,) = sqlx::query_as(
+        "SELECT COUNT(*) FROM integration_entity_map WHERE tenant_id = $1 AND tombstoned = TRUE",
+    )
+    .bind(user.tenant_id)
+    .fetch_one(pool.as_ref())
+    .await
+    .unwrap_or((0,));
+    let oldest_unresolved: Option<chrono::DateTime<chrono::Utc>> = sqlx::query_scalar(
+        "SELECT MIN(created_at) FROM integration_reconciliation WHERE tenant_id = $1 AND status = 'open'",
+    )
+    .bind(user.tenant_id)
+    .fetch_optional(pool.as_ref())
+    .await
+    .unwrap_or(None);
     Ok(Json(IntegrationStatus {
         legacy_systems: vec!["starzerp", "crm_v2"],
         supported_entities: vec![
@@ -552,6 +318,21 @@ pub async fn integration_status(
             "quote",
             "rfq",
         ],
-        entity_map_count: count,
+        entity_map_count: Some(map_count),
+        dead_letter_count: Some(dead_count),
+        reconciliation_open: Some(open_rec),
+        status: if dead_count > 0 || open_rec > 0 {
+            "degraded"
+        } else {
+            "healthy"
+        },
+        detail: None,
+        last_extraction_at,
+        last_run_id,
+        current_watermark,
+        lag_seconds,
+        mapper_version: 3,
+        tombstones: Some(tombstones),
+        oldest_unresolved,
     }))
 }

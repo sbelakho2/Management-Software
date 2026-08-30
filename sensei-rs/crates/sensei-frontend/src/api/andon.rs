@@ -32,8 +32,19 @@ pub struct AndonEventDto {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RaiseAndonData {
     pub work_center_id: String,
-    #[serde(rename = "type")]
-    pub event_type: String,
+    /// The plain-language category (quality, safety, maintenance,
+    /// material, other) — the operator never needs Andon terminology.
+    pub issue_type: String,
+    pub severity: String,
+    pub description: String,
+}
+
+/// The safe Andon raise command DTO — the operator's inputs only; the
+/// server derives actor/tenant/status (item 40).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RaiseAndonCommandRequest {
+    pub work_center_id: Option<String>,
+    pub issue_type: String,
     pub severity: String,
     pub description: String,
 }
@@ -80,7 +91,7 @@ impl AndonApi {
         client: &ApiClient,
         data: &RaiseAndonData,
     ) -> Result<AndonEventDto, ApiError> {
-        client.post("/api/v1/andon/events", data).await
+        client.post("/api/v1/andon", data).await
     }
 
     pub async fn acknowledge_andon(

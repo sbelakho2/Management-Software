@@ -62,7 +62,9 @@ pub struct LearningInputs {
     /// Fraction of verified learnings that produced a standard revision.
     pub standardization_rate: f64,
     /// Fraction of deviations tied to a defined standard (vs "unknown").
-    pub deviations_tied_to_standard: f64,
+    /// NONE when unmeasured — an unmeasured KPI must never appear as a
+    /// fabricated number (item 46: unknown ≠ zero).
+    pub deviations_tied_to_standard: Option<f64>,
     /// Mean seconds between Andon resolution and the next raise (stability).
     pub mean_interval_between_failures_seconds: f64,
     /// Count of open A3s (hypothesis quality proxy: more open, tested ones
@@ -158,28 +160,48 @@ pub fn compute_learning(inputs: &LearningInputs) -> LearningSnapshot {
                    one-off fix."
             .to_string(),
     };
-    let tied = LearningMetric {
-        key: "deviations_tied_to_standard",
-        label: "Deviations tied to a defined standard",
-        value: inputs.deviations_tied_to_standard,
-        unit: "%",
-        better: "higher",
-        target: Some(0.9),
-        gap: Some((inputs.deviations_tied_to_standard - 0.9).max(0.0)),
-        guidance: "Whether 'normal' is actually defined — an abnormality without a \
-                   standard is a gap in the standard, not a person's failure."
-            .to_string(),
+    let tied = match inputs.deviations_tied_to_standard {
+        Some(value) => LearningMetric {
+            key: "deviations_tied_to_standard",
+            label: "Deviations tied to a defined standard",
+            value,
+            unit: "%",
+            better: "higher",
+            target: Some(0.9),
+            gap: Some((value - 0.9).max(0.0)),
+            guidance: "Whether 'normal' is actually defined — an abnormality without a \
+                       standard is a gap in the standard, not a person's failure."
+                .to_string(),
+        },
+        // NOT MEASURED — an explicit state, never a fabricated zero (item 46).
+        None => LearningMetric {
+            key: "deviations_tied_to_standard",
+            label: "Deviations tied to a defined standard",
+            value: 0.0,
+            unit: "%",
+            better: "higher",
+            target: None,
+            gap: None,
+            guidance: "NOT YET MEASURED — this KPI requires deviation records that \
+                       reference a standard; it is not a measured zero."
+                .to_string(),
+        },
     };
     let stability = LearningMetric {
-        key: "mtbf",
-        label: "Mean time between failures",
+        // Item 49: name the prototype metric honestly — this is the mean
+        // time between RESOLVED ANDONS on a work center, not equipment
+        // MTBF (andons can be material/quality/method/safety, not just
+        // equipment failures).
+        key: "mean_time_between_resolved_andons",
+        label: "Mean time between resolved Andons",
         value: inputs.mean_interval_between_failures_seconds,
         unit: "s",
         better: "higher",
         target: None,
         gap: None,
-        guidance: "WIP/lead-time and stability trend — whether the system is improving \
-                   flow over time."
+        guidance: "Stability trend (resolved-Andon intervals). NOT equipment MTBF — \
+                   Andons cover material, quality, method and safety conditions too; \
+                   true MTBF requires failure-specific event semantics."
             .to_string(),
     };
     let hypothesis_quality = LearningMetric {
@@ -216,6 +238,11 @@ pub fn compute_learning(inputs: &LearningInputs) -> LearningSnapshot {
     // Recurrence and latencies: lower = better; rates: higher = better.
     let mut parts = Vec::new();
     for m in &metrics {
+        // Unmeasured metrics (no target) do not contribute to the index —
+        // counting them as zero would fabricate a learning score.
+        if m.target.is_none() && m.key == "deviations_tied_to_standard" {
+            continue;
+        }
         let normalized = match m.better {
             "lower" => (1.0 - (m.value / (m.value + m.target.unwrap_or(1.0)))).clamp(0.0, 1.0),
             _ => m.value.clamp(0.0, 1.0),
@@ -278,7 +305,7 @@ mod tests {
             escalation_latency_seconds: 1800.0,
             verification_rate: 0.9,
             standardization_rate: 0.8,
-            deviations_tied_to_standard: 0.95,
+            deviations_tied_to_standard: Some(0.95),
             mean_interval_between_failures_seconds: 3600.0,
             open_a3s: 4,
             a3s_with_hypothesis: 4,
@@ -311,7 +338,7 @@ mod tests {
             escalation_latency_seconds: 86400.0,
             verification_rate: 0.1,
             standardization_rate: 0.1,
-            deviations_tied_to_standard: 0.3,
+            deviations_tied_to_standard: Some(0.3),
             mean_interval_between_failures_seconds: 300.0,
             open_a3s: 2,
             a3s_with_hypothesis: 0,
@@ -324,7 +351,7 @@ mod tests {
             escalation_latency_seconds: 900.0,
             verification_rate: 0.95,
             standardization_rate: 0.9,
-            deviations_tied_to_standard: 1.0,
+            deviations_tied_to_standard: Some(1.0),
             mean_interval_between_failures_seconds: 14400.0,
             open_a3s: 5,
             a3s_with_hypothesis: 5,

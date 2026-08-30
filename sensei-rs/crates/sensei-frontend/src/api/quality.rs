@@ -152,34 +152,34 @@ pub struct QualityApi;
 impl QualityApi {
     // ---- NCR ----
     pub async fn list_ncrs(client: &ApiClient) -> Result<Vec<NcrDto>, ApiError> {
-        client.get("/api/v1/quality/ncr").await
+        client.get("/api/v1/quality/ncrs").await
     }
 
     pub async fn get_ncr(client: &ApiClient, id: &str) -> Result<NcrDto, ApiError> {
-        client.get(&format!("/api/v1/quality/ncr/{}", id)).await
+        client.get(&format!("/api/v1/quality/ncrs/{}", id)).await
     }
 
     pub async fn create_ncr(
         client: &ApiClient,
         req: &CreateNcrRequest,
     ) -> Result<NcrDto, ApiError> {
-        client.post("/api/v1/quality/ncr", req).await
+        client.post("/api/v1/quality/ncrs", req).await
     }
 
     // ---- CAPA ----
     pub async fn list_capas(client: &ApiClient) -> Result<Vec<CapaDto>, ApiError> {
-        client.get("/api/v1/quality/capa").await
+        client.get("/api/v1/quality/capas").await
     }
 
     pub async fn get_capa(client: &ApiClient, id: &str) -> Result<CapaDto, ApiError> {
-        client.get(&format!("/api/v1/quality/capa/{}", id)).await
+        client.get(&format!("/api/v1/quality/capas/{}", id)).await
     }
 
     pub async fn create_capa(
         client: &ApiClient,
         req: &CreateCapaRequest,
     ) -> Result<CapaDto, ApiError> {
-        client.post("/api/v1/quality/capa", req).await
+        client.post("/api/v1/quality/capas", req).await
     }
 
     // ---- Inspections ----

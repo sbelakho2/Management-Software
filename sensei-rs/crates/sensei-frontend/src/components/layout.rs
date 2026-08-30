@@ -57,6 +57,18 @@ pub fn RootLayout(
         _ => "rams-bezel",
     };
 
+    // Item 71/72: the sidebar is role-adaptive — resolve the caller's
+    // roles from the authenticated profile.
+    let roles_for_sidebar: std::sync::Arc<std::sync::RwLock<Vec<String>>> =
+        std::sync::Arc::new(std::sync::RwLock::new(Vec::new()));
+    let app_state_roles = use_context::<crate::state::AppState>();
+    if let Some(ref app_state) = app_state_roles {
+        if let crate::state::AuthState::Authenticated(profile) = app_state.auth_state.get() {
+            *roles_for_sidebar.write().unwrap() = profile.roles.clone();
+        }
+    }
+    let roles_for_sidebar_view = roles_for_sidebar.clone();
+
     view! {
         <a class="skip-link" href="#main-content">"SKIP TO MAIN CONTENT"</a>
         <div class=shell_class>
@@ -64,7 +76,10 @@ pub fn RootLayout(
                 {move || {
                     match ui_for_sidebar.as_ref().map(|u| u.display_mode.get_untracked()).as_deref() {
                         Some("station") => ().into_any(),
-                        _ => view! { <RackSidebar username=username.clone() on_logout=on_logout.clone() /> }.into_any(),
+                        _ => {
+                            let roles = roles_for_sidebar_view.read().unwrap().clone();
+                            view! { <RackSidebar username=username.clone() roles=roles on_logout=on_logout.clone() /> }.into_any()
+                        }
                     }
                 }}
                 <main id="main-content" class="rams-main">

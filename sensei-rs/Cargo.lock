@@ -2576,6 +2576,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "gloo-timers"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bbb143cf96099802033e0d4f4963b19fd2e0b728bcf076cd9cf7f6634f092994"
+dependencies = [
+ "futures-channel",
+ "futures-core",
+ "js-sys",
+ "wasm-bindgen",
+]
+
+[[package]]
 name = "gloo-utils"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6715,6 +6727,7 @@ name = "sensei-bridge"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "chrono",
  "clap",
  "reqwest 0.12.28",
  "serde",
@@ -6723,6 +6736,7 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
+ "uuid",
 ]
 
 [[package]]
@@ -6750,7 +6764,9 @@ name = "sensei-db"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "rust_decimal",
  "sensei-api",
+ "sensei-auth",
  "sensei-core",
  "sensei-services",
  "serde",
@@ -6786,6 +6802,7 @@ dependencies = [
  "console_error_panic_hook",
  "console_log",
  "futures",
+ "gloo-timers",
  "js-sys",
  "leptos",
  "leptos_meta",

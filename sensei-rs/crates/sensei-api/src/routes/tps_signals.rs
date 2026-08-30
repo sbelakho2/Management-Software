@@ -105,3 +105,122 @@ pub async fn classify_signals(
     let _ = Uuid::new_v4();
     Ok(Json(signals))
 }
+
+/// Server-driven signal derivation (items 44/45): the TPS nervous system
+/// derives the classifier inputs from REAL factory events — recurring
+/// Andons, queue accumulation, supplier delivery variability, cycle
+/// misses. The UI consumes this endpoint; it never computes signals
+/// client-side.
+#[derive(Debug, serde::Serialize)]
+pub struct DerivedSignals {
+    pub signals: Vec<sensei_services::tps::signals::TpsSignal>,
+    pub derived_from: String,
+    pub generated_at: chrono::DateTime<chrono::Utc>,
+}
+
+/// Derive and classify signals from the tenant's actual operational data.
+pub async fn derive_signals(
+    user: AuthenticatedUser,
+    State(state): State<AppState>,
+) -> Result<Json<DerivedSignals>> {
+    user.require_permission("tps:read")?;
+    let pool = state.db_pool.as_ref().ok_or_else(|| {
+        sensei_core::error::SenseiError::Database(
+            "Signal derivation requires the database".to_string(),
+        )
+    })?;
+    use sensei_services::tps::signals::*;
+    let mut signals: Vec<TpsSignal> = Vec::new();
+
+    // ── Andon recurrence (item 41): the SAME issue type on the SAME work
+    //    center raised 3+ times in 14 days — countermeasure ineffective.
+    let recurring: Vec<(i64,)> = sqlx::query_as(
+        "SELECT COUNT(*) FROM andons a \\
+         WHERE a.tenant_id = $1 AND a.created_at > NOW() - INTERVAL '14 days' \\
+         GROUP BY a.work_center_id, a.issue_type \\
+         HAVING COUNT(*) >= 3 \\
+         ORDER BY COUNT(*) DESC LIMIT 3",
+    )
+    .bind(user.tenant_id)
+    .fetch_all(pool.as_ref())
+    .await
+    .map_err(|e| {
+        sensei_core::error::SenseiError::Database(format!("Recurrence read failed: {e}"))
+    })?;
+    for (count,) in recurring {
+        if let Some(s) = classify_andon_recurrence(count, 14, 3) {
+            signals.push(s);
+        }
+    }
+
+    // ── Queue growth: work orders accumulating at a work center vs the
+    //    completed share — flow/bottleneck signal.
+    let queue: Vec<(String, i64, i64)> = sqlx::query_as(
+        "SELECT wo.work_center_id::text, \\
+                COUNT(*) FILTER (WHERE wo.status NOT IN ('completed','cancelled')), \\
+                COUNT(*) FILTER (WHERE wo.status = 'in_progress') \\
+         FROM work_orders wo \\
+         WHERE wo.tenant_id = $1 AND wo.created_at > NOW() - INTERVAL '30 days' \\
+         GROUP BY wo.work_center_id \\
+         HAVING COUNT(*) FILTER (WHERE wo.status NOT IN ('completed','cancelled')) >= 10 \\
+         LIMIT 3",
+    )
+    .bind(user.tenant_id)
+    .fetch_all(pool.as_ref())
+    .await
+    .map_err(|e| sensei_core::error::SenseiError::Database(format!("Queue read failed: {e}")))?;
+    for (_wc, open_count, _in_progress) in queue {
+        // 10+ open WOs in 30 days at one center = accumulation signal.
+        if let Some(s) = classify_queue_growth(open_count, 30 * 24 * 60, 4) {
+            signals.push(s);
+        }
+    }
+
+    // ── Supplier delivery variability (item 41): stddev vs mean of
+    //    delivery lag across receipts per supplier.
+    let suppliers: Vec<(String, f64, f64)> = sqlx::query_as(
+        "SELECT s.name::text, \\
+                COALESCE(STDDEV(EXTRACT(EPOCH FROM (gr.received_at - po.expected_delivery)) / 86400.0), 0), \\
+                COALESCE(AVG(EXTRACT(EPOCH FROM (gr.received_at - po.expected_delivery)) / 86400.0), 0) \\
+         FROM goods_receipts gr \\
+         JOIN purchase_orders po ON po.id = gr.purchase_order_id AND po.tenant_id = gr.tenant_id \\
+         JOIN suppliers s ON s.id = po.supplier_id AND s.tenant_id = po.tenant_id \\
+         WHERE gr.tenant_id = $1 AND gr.received_at > NOW() - INTERVAL '90 days' \\
+         GROUP BY s.id, s.name \\
+         LIMIT 3",
+    )
+    .bind(user.tenant_id)
+    .fetch_all(pool.as_ref())
+    .await
+    .map_err(|e| sensei_core::error::SenseiError::Database(format!("Supplier read failed: {e}")))?;
+    for (_name, stddev, mean) in suppliers {
+        if let Some(s) = classify_supplier_variability(stddev, mean, 1.0) {
+            signals.push(s);
+        }
+    }
+
+    // ── Cycle miss: work-order operations exceeding their standard time.
+    let cycle: Vec<(f64, f64)> = sqlx::query_as(
+        "SELECT op.actual_time::float8, op.standard_time::float8 \\
+         FROM work_order_operations op \\
+         WHERE op.tenant_id = $1 AND op.status = 'completed' \\
+           AND op.actual_time IS NOT NULL AND op.standard_time > 0 \\
+           AND op.completed_at > NOW() - INTERVAL '30 days' \\
+         LIMIT 5",
+    )
+    .bind(user.tenant_id)
+    .fetch_all(pool.as_ref())
+    .await
+    .map_err(|e| sensei_core::error::SenseiError::Database(format!("Cycle read failed: {e}")))?;
+    for (actual, standard) in cycle {
+        if let Some(s) = classify_cycle_miss(actual, standard, 0.2) {
+            signals.push(s);
+        }
+    }
+
+    Ok(Json(DerivedSignals {
+        signals,
+        derived_from: "factory events (andons, work orders, receipts, operations)".to_string(),
+        generated_at: chrono::Utc::now(),
+    }))
+}

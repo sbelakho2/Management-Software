@@ -67,6 +67,82 @@ pub async fn record_edge(
             valid_relations.join(", ")
         )));
     }
+    // Item 61: TYPED nodes — the source and target must exist in their
+    // typed tables and belong to the SAME tenant. Free-form UUIDs with no
+    // existence proof are rejected (the database cannot FK them).
+    for (entity_type, entity_id) in [
+        (&req.source_type, req.source_id),
+        (&req.target_type, req.target_id),
+    ] {
+        let exists: Option<Uuid> = match entity_type.as_str() {
+            "abnormality" => {
+                sqlx::query_scalar("SELECT id FROM andons WHERE id = $1 AND tenant_id = $2")
+                    .bind(entity_id)
+                    .bind(user.tenant_id)
+                    .fetch_optional(pool.as_ref())
+                    .await
+                    .map_err(|e| SenseiError::Database(format!("Node check failed: {e}")))?
+            }
+            "work_center" => {
+                sqlx::query_scalar("SELECT id FROM work_centers WHERE id = $1 AND tenant_id = $2")
+                    .bind(entity_id)
+                    .bind(user.tenant_id)
+                    .fetch_optional(pool.as_ref())
+                    .await
+                    .map_err(|e| SenseiError::Database(format!("Node check failed: {e}")))?
+            }
+            "a3" => {
+                sqlx::query_scalar("SELECT id FROM a3_reports WHERE id = $1 AND tenant_id = $2")
+                    .bind(entity_id)
+                    .bind(user.tenant_id)
+                    .fetch_optional(pool.as_ref())
+                    .await
+                    .map_err(|e| SenseiError::Database(format!("Node check failed: {e}")))?
+            }
+            "standard" => sqlx::query_scalar(
+                "SELECT id FROM standard_work_documents WHERE id = $1 AND tenant_id = $2",
+            )
+            .bind(entity_id)
+            .bind(user.tenant_id)
+            .fetch_optional(pool.as_ref())
+            .await
+            .map_err(|e| SenseiError::Database(format!("Node check failed: {e}")))?,
+            "action" | "task" => {
+                sqlx::query_scalar("SELECT id FROM tasks WHERE id = $1 AND tenant_id = $2")
+                    .bind(entity_id)
+                    .bind(user.tenant_id)
+                    .fetch_optional(pool.as_ref())
+                    .await
+                    .map_err(|e| SenseiError::Database(format!("Node check failed: {e}")))?
+            }
+            "experiment" | "work_order" => {
+                sqlx::query_scalar("SELECT id FROM work_orders WHERE id = $1 AND tenant_id = $2")
+                    .bind(entity_id)
+                    .bind(user.tenant_id)
+                    .fetch_optional(pool.as_ref())
+                    .await
+                    .map_err(|e| SenseiError::Database(format!("Node check failed: {e}")))?
+            }
+            "product" => {
+                sqlx::query_scalar("SELECT id FROM products WHERE id = $1 AND tenant_id = $2")
+                    .bind(entity_id)
+                    .bind(user.tenant_id)
+                    .fetch_optional(pool.as_ref())
+                    .await
+                    .map_err(|e| SenseiError::Database(format!("Node check failed: {e}")))?
+            }
+            other => {
+                return Err(SenseiError::Validation(format!(
+                    "Unknown node type '{other}' — the graph only links typed nodes"
+                )));
+            }
+        };
+        if exists.is_none() {
+            return Err(SenseiError::Validation(format!(
+                "Graph node {entity_type}/{entity_id} does not exist in this tenant"
+            )));
+        }
+    }
     let row: (Uuid, chrono::DateTime<chrono::Utc>) = sqlx::query_as(
         "INSERT INTO knowledge_graph_edges \
             (tenant_id, source_type, source_id, relation, target_type, target_id, created_by) \
@@ -95,6 +171,34 @@ pub async fn record_edge(
         target_id: req.target_id,
         created_at: row.1,
     }))
+}
+
+/// Rebuild the derived graph from AUTHORITATIVE sources (item 63): the
+/// graph is a reconstructable projection — an abnormality edge is
+/// regenerated from the andons table, so a lost/partial projection can be
+/// repaired without replaying the whole integration history.
+pub async fn rebuild_graph(
+    user: AuthenticatedUser,
+    State(state): State<AppState>,
+) -> Result<Json<serde_json::Value>> {
+    user.require_permission("knowledge:manage")?;
+    let pool = state.db_pool.as_ref().ok_or_else(|| {
+        SenseiError::Database("Knowledge graph requires the database".to_string())
+    })?;
+    // Regenerate the abnormality → occurred_at → work_center edges from
+    // the authoritative andons table.
+    let inserted = sqlx::query(
+        "INSERT INTO knowledge_graph_edges  (tenant_id, source_type, source_id, relation, target_type, target_id)  SELECT a.tenant_id, 'abnormality', a.id, 'occurred_at', 'work_center', a.work_center_id  FROM andons a  WHERE a.tenant_id = $1 AND a.work_center_id IS NOT NULL  ON CONFLICT DO NOTHING",
+    )
+    .bind(user.tenant_id)
+    .execute(pool.as_ref())
+    .await
+    .map_err(|e| SenseiError::Database(format!("Graph rebuild failed: {e}")))?;
+    Ok(Json(serde_json::json!({
+        "rebuilt": true,
+        "edges_created": inserted.rows_affected(),
+        "derived_from": "andons (authoritative)",
+    })))
 }
 
 /// Query the graph around an object: all outgoing and incoming edges

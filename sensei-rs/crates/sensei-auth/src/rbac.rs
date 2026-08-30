@@ -471,7 +471,6 @@ impl RbacService {
                 "notifications:read",
                 "dashboard:read",
                 "knowledge:read",
-                "integration:import",
                 "learning:read",
                 "training:read",
                 "tasks:read",
@@ -483,6 +482,19 @@ impl RbacService {
                 "attachments:read",
                 "system:audit:read",
                 "inventory:read",
+            ],
+        );
+
+        // Dedicated non-human integration principal (item: integration is
+        // a privileged data-write path — ordinary users must NEVER hold
+        // it). The bridge authenticates with this role and per-system
+        // scoped permissions; humans have no integration:import at all.
+        self.add_role(
+            "integration_bridge",
+            vec![
+                "integration:import:starz-erp",
+                "integration:import:crm",
+                "integration:status:read",
             ],
         );
     }

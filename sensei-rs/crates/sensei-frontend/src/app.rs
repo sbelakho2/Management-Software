@@ -52,7 +52,7 @@ use crate::pages::{
     tps::{LswPage, StandardWorkPage, TierMeetingsPage, TopologyPage, WorkCentersPage},
     tps_flow::{AgentPage, CtqPage, KanbanPage, ObeyaPage, TrainingPage},
 };
-use crate::state::AppState;
+use crate::state::{AppState, AuthState};
 use crate::stores::ui::provide_ui_store;
 
 /// Root application component.
@@ -98,21 +98,31 @@ pub fn App() -> impl IntoView {
     // any refresh.
     let realtime_store = crate::stores::realtime::RealtimeStore::new();
     provide_context(realtime_store.clone());
-    leptos::task::spawn_local({
-        let state = app_state.clone();
-        let realtime_store = realtime_store.clone();
-        async move {
-            let Some(tokens) = state.tokens.get_untracked() else {
-                return;
-            };
-            let Some(user) = state.user.get_untracked() else {
-                return;
-            };
-            realtime_store.connect(
-                &state.api_base.get_untracked(),
-                &user.tenant_id,
-                &tokens.access_token,
-            );
+    // Item 64: a REACTIVE effect tied to AuthState::Authenticated drives
+    // the socket — a session restored after app start or a fresh login
+    // ALWAYS connects; logout closes it. The one-shot startup check was
+    // racing auth restoration and never retried.
+    Effect::new(move |_| {
+        match app_state.auth_state.get() {
+            AuthState::Authenticated(_) => {
+                // Only connect once the access token is available — the
+                // ticket mint requires it.
+                if app_state.tokens.get_untracked().is_none() {
+                    return;
+                }
+                let Some(user) = app_state.user.get() else {
+                    return;
+                };
+                let client = app_state.api_client();
+                realtime_store.connect(
+                    &app_state.api_base.get_untracked(),
+                    &user.tenant_id,
+                    &client,
+                );
+            }
+            _ => {
+                realtime_store.disconnect();
+            }
         }
     });
     let _ = realtime_store;

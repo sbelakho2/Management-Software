@@ -96,9 +96,40 @@ pub async fn raise_andon(
     Json(req): Json<Andon>,
 ) -> Result<Json<Andon>> {
     user.require_permission("tps:andon:raise")?;
-    let tenant_id = user.tenant_id;
-    let andon = state.ops_service.raise_andon(tenant_id, req).await?;
-    Ok(Json(andon))
+    // Compatibility adapter (item 41): the legacy full-object route and
+    // the safe command route MUST call the same command with the same
+    // invariants — server-owned identity fields are ALWAYS re-derived,
+    // never trusted from the client.
+    let andon = Andon {
+        id: Uuid::new_v4(),
+        tenant_id: user.tenant_id,
+        andon_number: String::new(),
+        work_center_id: req.work_center_id,
+        issue_type: req.issue_type,
+        severity: req.severity,
+        description: req.description,
+        status: "active".to_string(),
+        raised_by: user.user_id,
+        acknowledged_by: None,
+        resolved_by: None,
+        resolution: None,
+        response_time_seconds: None,
+        resolution_time_seconds: None,
+        created_at: chrono::Utc::now(),
+        acknowledged_at: None,
+        resolved_at: None,
+        restart_authorized_by: None,
+        restart_authorized_at: None,
+        abnormal_condition_observed_at: None,
+        contained_at: None,
+        contained_by: None,
+        contained_note: None,
+    };
+    state
+        .ops_service
+        .raise_andon(user.tenant_id, andon)
+        .await
+        .map(Json)
 }
 
 /// Get a specific Andon event by ID.
