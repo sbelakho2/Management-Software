@@ -49,7 +49,7 @@ pub async fn import_record(
     headers: axum::http::HeaderMap,
     Path((system, entity)): Path<(String, String)>,
     Json(req): Json<ImportRequest>,
-) -> Result<Json<ImportResponse>> {
+) -> Result<(axum::http::StatusCode, Json<ImportResponse>)> {
     // The bridge authenticates with the dedicated `integration_bridge`
     // role — ordinary users hold NO integration permission at all. The
     // guard is scoped per legacy system.
@@ -110,43 +110,89 @@ pub async fn import_record(
 
     match importer::apply_record(&state, user.tenant_id, &record, &envelope).await {
         Ok(outcome) => {
-            let (outcome_str, message) = match outcome {
-                importer::ImportOutcome::Applied => ("applied", None),
+            let (outcome_str, message, status) = match outcome {
+                importer::ImportOutcome::Applied => ("applied", None, axum::http::StatusCode::OK),
                 importer::ImportOutcome::Duplicate => (
                     "duplicate",
                     Some("Same-event replay — nothing changed".to_string()),
+                    axum::http::StatusCode::OK,
                 ),
                 importer::ImportOutcome::Stale => (
                     "stale",
                     Some("Source version older than applied — not applied".to_string()),
+                    axum::http::StatusCode::OK,
                 ),
-                importer::ImportOutcome::Conflict(m) => ("conflict", Some(m)),
-                importer::ImportOutcome::Quarantined(m) => ("quarantined", Some(m)),
+                importer::ImportOutcome::Conflict(m) => {
+                    ("conflict", Some(m), axum::http::StatusCode::CONFLICT)
+                }
+                importer::ImportOutcome::Quarantined(m) => (
+                    "quarantined",
+                    Some(m),
+                    axum::http::StatusCode::UNPROCESSABLE_ENTITY,
+                ),
                 importer::ImportOutcome::Tombstoned => (
                     "tombstoned",
                     Some("Legacy record disabled — canonical entity archived".to_string()),
+                    axum::http::StatusCode::OK,
                 ),
             };
-            Ok(Json(ImportResponse {
-                outcome: outcome_str,
-                sensei_entity: None,
-                sensei_id: None,
-                legacy_system: system,
-                legacy_id: record.legacy_id,
-                message,
-            }))
+            Ok((
+                status,
+                Json(ImportResponse {
+                    outcome: outcome_str,
+                    sensei_entity: None,
+                    sensei_id: None,
+                    legacy_system: system,
+                    legacy_id: record.legacy_id,
+                    message,
+                }),
+            ))
         }
         Err(e) => {
-            // Validation/dependency failures already dead-lettered inside
-            // the importer; the response reflects the quarantine.
-            Ok(Json(ImportResponse {
-                outcome: "quarantined",
-                sensei_entity: None,
-                sensei_id: None,
-                legacy_system: system,
-                legacy_id: record.legacy_id,
-                message: Some(e.to_string()),
-            }))
+            // Fourteenth audit: typed error semantics with matching HTTP
+            // codes — a transient infrastructure failure is NEVER
+            // reported as a permanent "quarantined" record.
+            let (status, outcome_str) = match &e {
+                sensei_core::error::SenseiError::Validation(_) => (
+                    axum::http::StatusCode::UNPROCESSABLE_ENTITY,
+                    "permanent_validation",
+                ),
+                sensei_core::error::SenseiError::Conflict(_) => {
+                    (axum::http::StatusCode::CONFLICT, "conflict")
+                }
+                sensei_core::error::SenseiError::Database(msg) => {
+                    let lowered = msg.to_lowercase();
+                    if ["deadlock", "timeout", "connection", "pool ", "retry"]
+                        .iter()
+                        .any(|k| lowered.contains(k))
+                    {
+                        (
+                            axum::http::StatusCode::SERVICE_UNAVAILABLE,
+                            "retryable_infrastructure",
+                        )
+                    } else {
+                        (
+                            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                            "internal_invariant",
+                        )
+                    }
+                }
+                _ => (
+                    axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                    "internal_invariant",
+                ),
+            };
+            Ok((
+                status,
+                Json(ImportResponse {
+                    outcome: outcome_str,
+                    sensei_entity: None,
+                    sensei_id: None,
+                    legacy_system: system,
+                    legacy_id: record.legacy_id,
+                    message: Some(e.to_string()),
+                }),
+            ))
         }
     }
 }
@@ -158,6 +204,9 @@ pub struct CheckpointRequest {
     pub source_system: String,
     pub source_table: String,
     pub watermark: String,
+    /// The composite cursor's primary-key component (updated_at, id).
+    #[serde(default)]
+    pub watermark_id: Option<String>,
     pub run_id: String,
 }
 
@@ -187,12 +236,13 @@ pub async fn save_checkpoint(
         .parse::<chrono::DateTime<chrono::Utc>>()
         .map_err(|e| SenseiError::Validation(format!("Invalid watermark: {e}")))?;
     sqlx::query(
-        "INSERT INTO integration_checkpoints (tenant_id, source_system, source_table, watermark, last_run_id, last_run_at)          VALUES ($1, $2, $3, $4, $5, NOW())          ON CONFLICT (tenant_id, source_system, source_table)          DO UPDATE SET watermark = $4, last_run_id = $5, last_run_at = NOW()",
+        "INSERT INTO integration_checkpoints (tenant_id, source_system, source_table, watermark, watermark_id, last_run_id, last_run_at)          VALUES ($1, $2, $3, $4, $5, $6, NOW())          ON CONFLICT (tenant_id, source_system, source_table)          DO UPDATE SET watermark = $4, watermark_id = $5, last_run_id = $6, last_run_at = NOW()",
     )
     .bind(user.tenant_id)
     .bind(&req.source_system)
     .bind(&req.source_table)
     .bind(watermark)
+    .bind(&req.watermark_id)
     .bind(&req.run_id)
     .execute(pool.as_ref())
     .await
@@ -204,6 +254,8 @@ pub async fn save_checkpoint(
 #[derive(Debug, serde::Serialize)]
 pub struct CheckpointReadResponse {
     pub watermark: Option<chrono::DateTime<chrono::Utc>>,
+    #[serde(default)]
+    pub watermark_id: Option<String>,
 }
 
 pub async fn get_checkpoint(
@@ -216,8 +268,8 @@ pub async fn get_checkpoint(
         .db_pool
         .as_ref()
         .ok_or_else(|| SenseiError::Database("Checkpoints require the database".to_string()))?;
-    let watermark: Option<chrono::DateTime<chrono::Utc>> = sqlx::query_scalar(
-        "SELECT watermark FROM integration_checkpoints \
+    let row: Option<(chrono::DateTime<chrono::Utc>, Option<String>)> = sqlx::query_as(
+        "SELECT watermark, watermark_id FROM integration_checkpoints \
          WHERE tenant_id = $1 AND source_system = $2 AND source_table = $3",
     )
     .bind(user.tenant_id)
@@ -226,7 +278,11 @@ pub async fn get_checkpoint(
     .fetch_optional(pool.as_ref())
     .await
     .map_err(|e| SenseiError::Database(format!("Checkpoint read failed: {e}")))?;
-    Ok(Json(CheckpointReadResponse { watermark }))
+    let (watermark, watermark_id) = row.unwrap_or((chrono::Utc::now(), None));
+    Ok(Json(CheckpointReadResponse {
+        watermark: Some(watermark),
+        watermark_id,
+    }))
 }
 
 /// Health/summary of the integration layer (item 24: Unknown is NOT zero —

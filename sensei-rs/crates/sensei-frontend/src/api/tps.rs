@@ -510,9 +510,11 @@ pub struct CurrentJobDto {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PitchNowDto {
-    pub target: i64,
+    /// None = the job has no frozen standard — the UI must show
+    /// STANDARD UNAVAILABLE, never a fabricated target.
+    pub target: Option<i64>,
     pub actual: i64,
-    pub gap: i64,
+    pub gap: Option<i64>,
     pub interval_start: String,
 }
 

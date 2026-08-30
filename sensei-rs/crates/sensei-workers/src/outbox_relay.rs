@@ -56,8 +56,31 @@ async fn relay_once(
     pool: &sqlx::PgPool,
     bus: &Arc<dyn sensei_event_bus::EventBus>,
 ) -> Result<(), String> {
-    // Claim a batch with a per-row lock so multiple relays never publish
-    // the same event twice.
+    // Fourteenth audit (P0): FORCE RLS makes a cross-tenant scan invisible
+    // for a non-owner role. The relay enumerates tenants from the (RLS-
+    // free) tenants table and processes ONE tenant-scoped transaction at a
+    // time — SET LOCAL app.tenant_id inside the claim/mark transactions.
+    let tenants: Vec<uuid::Uuid> = sqlx::query_scalar("SELECT id FROM tenants")
+        .fetch_all(pool)
+        .await
+        .map_err(|e| format!("Failed to enumerate tenants: {e}"))?;
+    for tenant_id in tenants {
+        if let Err(e) = relay_tenant(pool, bus, tenant_id).await {
+            warn!(error = %e, tenant_id = %tenant_id, "Outbox relay tenant pass failed");
+        }
+    }
+    Ok(())
+}
+
+/// Process one tenant's unpublished events with the tenant context set.
+async fn relay_tenant(
+    pool: &sqlx::PgPool,
+    bus: &Arc<dyn sensei_event_bus::EventBus>,
+    tenant_id: uuid::Uuid,
+) -> Result<(), String> {
+    // Atomic claim transaction, tenant-scoped: SET LOCAL app.tenant_id so
+    // FORCE RLS admits exactly THIS tenant's rows; selection + claim in
+    // ONE transaction so two relays never claim the same event.
     let rows: Vec<(
         uuid::Uuid,
         uuid::Uuid,
@@ -66,17 +89,19 @@ async fn relay_once(
         String,
         serde_json::Value,
     )> = {
-        // Atomic claim transaction (P0-6): selection + claim UPDATE run in
-        // ONE transaction so the FOR UPDATE SKIP LOCKED row locks are held
-        // until COMMIT — two relays can never claim the same event.
         let mut tx = pool
             .begin()
             .await
             .map_err(|e| format!("Failed to begin claim tx: {e}"))?;
+        sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
+            .bind(tenant_id.to_string())
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| format!("Failed to set tenant context: {e}"))?;
         let rows = sqlx::query_as(
             "WITH selected AS (
                  SELECT event_id FROM outbox_events \
-                 WHERE published_at IS NULL AND attempt_count < $1 \
+                 WHERE tenant_id = $4 AND published_at IS NULL AND attempt_count < $1 \
                    AND (claim_until IS NULL OR claim_until < NOW()) \
                  ORDER BY occurred_at \
                  LIMIT $2 \
@@ -90,6 +115,7 @@ async fn relay_once(
         .bind(MAX_ATTEMPTS)
         .bind(BATCH_SIZE)
         .bind(replica_id())
+        .bind(tenant_id)
         .fetch_all(&mut *tx)
         .await
         .map_err(|e| format!("Failed to claim outbox batch: {e}"))?;
@@ -99,12 +125,11 @@ async fn relay_once(
         rows
     };
 
-    for (event_id, tenant_id, event_type, aggregate_type, aggregate_id, payload) in rows {
-        // Publish with a REAL server acknowledgement (JetStream ack).
+    for (event_id, event_tenant, event_type, aggregate_type, aggregate_id, payload) in rows {
         let subject = format!("sensei.{event_type}");
         let envelope = serde_json::json!({
             "event_id": event_id,
-            "tenant_id": tenant_id,
+            "tenant_id": event_tenant,
             "aggregate_type": aggregate_type,
             "aggregate_id": aggregate_id,
             "event_type": event_type,
@@ -112,8 +137,6 @@ async fn relay_once(
         });
         match serde_json::to_vec(&envelope) {
             Ok(bytes) => {
-                // Renew the lease while the publish is in flight so a slow
-                // publish cannot be reclaimed by another relay.
                 let subject_owned = subject.clone();
                 let bus_owned = Arc::clone(bus);
                 let publish_task = tokio::spawn(async move {
@@ -124,24 +147,30 @@ async fn relay_once(
                     tokio::select! {
                         outcome = &mut publish_task => break outcome,
                         _ = tokio::time::sleep(std::time::Duration::from_secs(15)) => {
-                            renew_claim(pool, event_id).await;
+                            renew_claim(pool, event_id, tenant_id).await;
                         }
                     }
                 };
                 match published {
                     Ok(Ok(())) => {
-                        mark_published(pool, event_id).await;
+                        mark_published(pool, event_id, tenant_id).await;
                     }
                     Ok(Err(e)) => {
-                        record_failure(pool, event_id, &e).await;
+                        record_failure(pool, event_id, tenant_id, &e).await;
                     }
                     Err(e) => {
-                        record_failure(pool, event_id, &format!("publish task join: {e}")).await;
+                        record_failure(
+                            pool,
+                            event_id,
+                            tenant_id,
+                            &format!("publish task join: {e}"),
+                        )
+                        .await;
                     }
                 }
             }
             Err(e) => {
-                record_failure(pool, event_id, &e.to_string()).await;
+                record_failure(pool, event_id, tenant_id, &e.to_string()).await;
             }
         }
     }
@@ -168,15 +197,16 @@ async fn publish_acknowledged(
 /// Renew the claim lease while a publish is in flight: a publish that
 /// stalls beyond the fixed lease must NOT let a second relay reclaim the
 /// event mid-flight (item 10).
-async fn renew_claim(pool: &sqlx::PgPool, event_id: uuid::Uuid) {
-    if let Err(e) = sqlx::query(
-        "UPDATE outbox_events SET claim_until = NOW() + INTERVAL '30 seconds'          WHERE event_id = $1 AND claimed_by = $2 AND published_at IS NULL",
+async fn renew_claim(pool: &sqlx::PgPool, event_id: uuid::Uuid, tenant_id: uuid::Uuid) {
+    let result = sqlx::query(
+        "UPDATE outbox_events SET claim_until = NOW() + INTERVAL '30 seconds'          WHERE event_id = $1 AND claimed_by = $2 AND published_at IS NULL AND tenant_id = $3",
     )
     .bind(event_id)
     .bind(replica_id())
+    .bind(tenant_id)
     .execute(pool)
-    .await
-    {
+    .await;
+    if let Err(e) = result {
         error!(error = %e, event_id = %event_id, "Failed to renew outbox claim");
     }
 }
@@ -185,12 +215,13 @@ async fn renew_claim(pool: &sqlx::PgPool, event_id: uuid::Uuid) {
 /// claim may mark the event — a stale replica can never overwrite a newer
 /// publish. The durable `outbox_published` record is the consumer-side
 /// deduplication anchor (item 10).
-async fn mark_published(pool: &sqlx::PgPool, event_id: uuid::Uuid) {
+async fn mark_published(pool: &sqlx::PgPool, event_id: uuid::Uuid, tenant_id: uuid::Uuid) {
     let result = sqlx::query(
-        "UPDATE outbox_events SET published_at = NOW(), claimed_by = NULL, claim_until = NULL          WHERE event_id = $1 AND published_at IS NULL AND claimed_by = $2",
+        "UPDATE outbox_events SET published_at = NOW(), claimed_by = NULL, claim_until = NULL          WHERE event_id = $1 AND published_at IS NULL AND claimed_by = $2 AND tenant_id = $3",
     )
     .bind(event_id)
     .bind(replica_id())
+    .bind(tenant_id)
     .execute(pool)
     .await;
     match result {
@@ -216,14 +247,20 @@ async fn mark_published(pool: &sqlx::PgPool, event_id: uuid::Uuid) {
     }
 }
 
-async fn record_failure(pool: &sqlx::PgPool, event_id: uuid::Uuid, err: &str) {
+async fn record_failure(
+    pool: &sqlx::PgPool,
+    event_id: uuid::Uuid,
+    tenant_id: uuid::Uuid,
+    err: &str,
+) {
     if let Err(e) = sqlx::query(
-        "UPDATE outbox_events SET attempt_count = attempt_count + 1, last_error = $2, \\
-                claimed_by = NULL, claim_until = NULL \\
-         WHERE event_id = $1",
+        "UPDATE outbox_events SET attempt_count = attempt_count + 1, last_error = $2, \
+                claimed_by = NULL, claim_until = NULL \
+         WHERE event_id = $1 AND tenant_id = $3",
     )
     .bind(event_id)
     .bind(err)
+    .bind(tenant_id)
     .execute(pool)
     .await
     {

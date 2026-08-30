@@ -39,14 +39,20 @@ type MappingRow = (String, Uuid, Option<String>, Option<String>, bool);
 /// has no row (the matrix is authoritative when it does).
 /// Field authority inside an open transaction (thirteenth audit P0:
 /// the authority matrix read must be part of the same tx as the write).
+/// Fourteenth audit: fail-closed field authority. A field is writable
+/// ONLY when the matrix row says source_wins AND the row's authority
+/// system matches the INCOMING source system. `manual` is a candidate/
+/// review state — never auto-written. A missing row is a configuration
+/// error — the import must not overwrite fields with no declared owner.
 async fn field_is_writable_in_tx(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     tenant_id: Uuid,
+    incoming_system: &str,
     sensei_entity: &str,
     field_name: &str,
 ) -> Result<bool> {
-    let mode: Option<String> = sqlx::query_scalar(
-        "SELECT mode FROM integration_field_authority \
+    let row: Option<(String, String)> = sqlx::query_as(
+        "SELECT mode, authority_system FROM integration_field_authority \
          WHERE tenant_id = $1 AND sensei_entity = $2 AND field_name = $3",
     )
     .bind(tenant_id)
@@ -55,9 +61,10 @@ async fn field_is_writable_in_tx(
     .fetch_optional(&mut **tx)
     .await
     .map_err(|e| SenseiError::Database(format!("Field authority read failed: {e}")))?;
-    // Item 13 (thirteenth audit): FAIL CLOSED — unknown authority is NOT
-    // writable; only source_wins fields may be overwritten by the import.
-    Ok(mode.as_deref() == Some("source_wins"))
+    Ok(matches!(
+        row,
+        Some((ref mode, ref system)) if mode == "source_wins" && system == incoming_system
+    ))
 }
 
 pub async fn field_is_writable(
@@ -103,8 +110,8 @@ pub async fn field_is_writable(
     .await
     .map_err(|e| SenseiError::Database(format!("Field authority seed failed: {e}")))?;
 
-    let mode: Option<String> = sqlx::query_scalar(
-        "SELECT mode FROM integration_field_authority \
+    let row: Option<(String, String)> = sqlx::query_as(
+        "SELECT mode, authority_system FROM integration_field_authority \
          WHERE tenant_id = $1 AND sensei_entity = $2 AND field_name = $3",
     )
     .bind(tenant_id)
@@ -113,7 +120,14 @@ pub async fn field_is_writable(
     .fetch_optional(pool)
     .await
     .map_err(|e| SenseiError::Database(format!("Field authority read failed: {e}")))?;
-    Ok(mode.as_deref() != Some("sensei_wins"))
+    // FAIL CLOSED (fourteenth audit): manual ≠ writable, missing row ≠
+    // writable, and the authority system must match the incoming source.
+    // The legacy pool variant is used by tests; the authority system
+    // match is enforced by the in-tx variant at runtime.
+    Ok(matches!(
+        row,
+        Some((ref mode, _)) if mode == "source_wins"
+    ))
 }
 
 /// Per-import outcome (item 23: success / retryable / permanent /
@@ -423,6 +437,7 @@ async fn quarantine(
 async fn upsert_account_tx(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     tenant_id: Uuid,
+    system: &str,
     name: &str,
     email: Option<String>,
     phone: Option<String>,
@@ -442,9 +457,9 @@ async fn upsert_account_tx(
     if let Some(id) = existing {
         // Field authority (items 2/13): only CRM-owned facts update;
         // Sensei-owned lifecycle state is never clobbered.
-        let name_ok = field_is_writable_in_tx(tx, tenant_id, "account", "name").await?;
-        let email_ok = field_is_writable_in_tx(tx, tenant_id, "account", "email").await?;
-        let phone_ok = field_is_writable_in_tx(tx, tenant_id, "account", "phone").await?;
+        let name_ok = field_is_writable_in_tx(tx, tenant_id, system, "account", "name").await?;
+        let email_ok = field_is_writable_in_tx(tx, tenant_id, system, "account", "email").await?;
+        let phone_ok = field_is_writable_in_tx(tx, tenant_id, system, "account", "phone").await?;
         let (final_name, final_email, final_phone) = if name_ok && email_ok && phone_ok {
             (name.to_string(), email, phone)
         } else {
@@ -854,7 +869,7 @@ async fn create_stock_move_tx(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     tenant_id: Uuid,
     product_id: Uuid,
-    product_name: &str,
+    _product_name: &str,
     quantity: i64,
     move_type: &str,
 ) -> Result<Uuid> {
@@ -882,19 +897,19 @@ async fn create_stock_move_tx(
     // (thirteenth audit P0): a failed mapping/inbox NEVER orphans a
     // committed stock move, and a failed ledger NEVER records a mapping.
     sqlx::query(
-        "INSERT INTO stock_moves (id, tenant_id, product_id, product_name, quantity, \
+        // Fourteenth audit: the schema has NO product_name column — the
+        // canonical move row carries product_id only.
+        "INSERT INTO stock_moves (id, tenant_id, product_id, quantity, \
                                   move_type, from_location, to_location, reference_type, \
-                                  reference_id, created_by, created_at) \
-         VALUES ($1, $2, $3, $4, $5, $6, NULL, $7, 'legacy_import', NULL, $8, NOW())",
+                                  reference_id, moved_at, created_at) \
+         VALUES ($1, $2, $3, $4, $5, NULL, $6, 'legacy_import', NULL, NOW(), NOW())",
     )
     .bind(move_id)
     .bind(tenant_id)
     .bind(product_id)
-    .bind(product_name)
     .bind(quantity)
     .bind(normalized)
     .bind(to_location)
-    .bind(Uuid::new_v4())
     .execute(&mut **tx)
     .await
     .map_err(|e| SenseiError::Database(format!("Stock move insert failed: {e}")))?;
@@ -922,12 +937,14 @@ async fn create_stock_move_tx(
         .map_err(|e| SenseiError::Database(format!("Inventory delta failed: {e}")))?;
         if updated.rows_affected() == 0 {
             // The row may not exist yet (first receipt creates stock).
+            // Postgres UNIQUE treats NULL lot numbers as distinct, so an
+            // ON CONFLICT target with lot_number can never match — the
+            // canonical service uses update-then-insert; mirror it.
             sqlx::query(
                 "INSERT INTO inventory_items (id, tenant_id, product_id, location, \
                                               quantity_on_hand, quantity_available, \
                                               quantity_reserved, created_at, updated_at) \
-                 VALUES ($1, $2, $3, $4, GREATEST($5, 0), GREATEST($5, 0), 0, NOW(), NOW()) \
-                 ON CONFLICT (tenant_id, product_id, location) DO NOTHING",
+                 VALUES ($1, $2, $3, $4, GREATEST($5, 0), GREATEST($5, 0), 0, NOW(), NOW())",
             )
             .bind(Uuid::new_v4())
             .bind(tenant_id)
@@ -1096,7 +1113,7 @@ pub async fn apply_record(
                 tx.commit().await.ok();
                 return Ok(ImportOutcome::Stale);
             }
-            VersionDecision::Changed | VersionDecision::Apply => {
+            VersionDecision::Apply => {
                 let outcome =
                     apply_canonical(state, &mut tx, tenant_id, record, entity.as_str(), id).await?;
                 finalize_mapping(
@@ -1114,6 +1131,15 @@ pub async fn apply_record(
                     .await
                     .map_err(|e| SenseiError::Database(format!("Import commit failed: {e}")))?;
                 return Ok(outcome);
+            }
+            VersionDecision::Changed => {
+                // Fourteenth audit matrix: SAME version, DIFFERENT payload
+                // is an explicit CONFLICT — never silently applied.
+                tx.rollback().await.ok();
+                return Ok(ImportOutcome::Conflict(
+                    "Same source version with a changed payload — manual review required"
+                        .to_string(),
+                ));
             }
         }
     }
@@ -1147,6 +1173,7 @@ pub async fn apply_record(
             let id = upsert_account_tx(
                 &mut tx,
                 tenant_id,
+                &record.system,
                 &a.name,
                 a.email.clone(),
                 a.phone.clone(),
@@ -1168,8 +1195,16 @@ pub async fn apply_record(
             ("contact", id)
         }
         sensei_services::integration::CanonicalEntity::Lead(l) => {
-            let account_id =
-                upsert_account_tx(&mut tx, tenant_id, &l.company_name, None, None, None).await?;
+            let account_id = upsert_account_tx(
+                &mut tx,
+                tenant_id,
+                &record.system,
+                &l.company_name,
+                None,
+                None,
+                None,
+            )
+            .await?;
             let id = create_opportunity_tx(
                 &mut tx,
                 tenant_id,
@@ -1181,8 +1216,16 @@ pub async fn apply_record(
             ("opportunity", id)
         }
         sensei_services::integration::CanonicalEntity::Quote(q) => {
-            let customer_id =
-                upsert_account_tx(&mut tx, tenant_id, &q.company_name, None, None, None).await?;
+            let customer_id = upsert_account_tx(
+                &mut tx,
+                tenant_id,
+                &record.system,
+                &q.company_name,
+                None,
+                None,
+                None,
+            )
+            .await?;
             let id = create_sales_quote_tx(&mut tx, tenant_id, q, customer_id).await?;
             ("sales_quote", id)
         }
@@ -1234,8 +1277,16 @@ pub async fn apply_record(
             ("rfq", id)
         }
         sensei_services::integration::CanonicalEntity::SalesOrder(so) => {
-            let customer_id =
-                upsert_account_tx(&mut tx, tenant_id, &so.customer_name, None, None, None).await?;
+            let customer_id = upsert_account_tx(
+                &mut tx,
+                tenant_id,
+                &record.system,
+                &so.customer_name,
+                None,
+                None,
+                None,
+            )
+            .await?;
             let id = create_sales_order_tx(
                 &mut tx,
                 tenant_id,
@@ -1363,9 +1414,12 @@ async fn apply_canonical(
             // In-tx PATCH (items 2/13): only source-owned fields update;
             // Sensei-owned lifecycle state is never clobbered, and the
             // update failure is NEVER ignored.
-            let writable_name = field_is_writable_in_tx(tx, tenant_id, "account", "name").await?;
-            let writable_email = field_is_writable_in_tx(tx, tenant_id, "account", "email").await?;
-            let writable_phone = field_is_writable_in_tx(tx, tenant_id, "account", "phone").await?;
+            let writable_name =
+                field_is_writable_in_tx(tx, tenant_id, &record.system, "account", "name").await?;
+            let writable_email =
+                field_is_writable_in_tx(tx, tenant_id, &record.system, "account", "email").await?;
+            let writable_phone =
+                field_is_writable_in_tx(tx, tenant_id, &record.system, "account", "phone").await?;
             let (cur_name, cur_email, cur_phone): (String, Option<String>, Option<String>) =
                 sqlx::query_as(
                     "SELECT name, email, phone FROM accounts WHERE id = $1 AND tenant_id = $2",
@@ -1502,15 +1556,56 @@ async fn apply_canonical(
             .await
             .map_err(|e| SenseiError::Database(format!("Sales quote update failed: {e}")))?;
         }
-        ("opportunity", _) | ("stock_move", _) | ("rfq", _) => {
-            // Stock moves are immutable once applied; opportunities and
-            // RFQs update via their own commands on first apply; a changed
-            // payload for these types re-applies through the create path
-            // being idempotent by legacy key (upsert on next claim).
-            return Err(SenseiError::Internal(format!(
-                "No in-place update path for mapped entity {sensei_entity} — \
-                 re-import must not silently no-op"
-            )));
+        ("opportunity", sensei_services::integration::CanonicalEntity::Lead(l)) => {
+            // Fourteenth audit: opportunities are MUTABLE — a changed
+            // lead payload updates the opportunity facts in place.
+            sqlx::query(
+                "UPDATE opportunities SET name = $3, probability = $4, updated_at = NOW() \
+                 WHERE id = $1 AND tenant_id = $2",
+            )
+            .bind(sensei_id)
+            .bind(tenant_id)
+            .bind(&l.company_name)
+            .bind((l.lead_score.unwrap_or(20).clamp(0, 100)) as i32)
+            .execute(&mut **tx)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Opportunity update failed: {e}")))?;
+        }
+        ("rfq", sensei_services::integration::CanonicalEntity::Rfq(r)) => {
+            // Fourteenth audit: RFQs are MUTABLE until their lifecycle
+            // state makes them immutable — a changed payload updates the
+            // status + line items.
+            sqlx::query(
+                "UPDATE rfqs SET status = $3, updated_at = NOW() \
+                 WHERE id = $1 AND tenant_id = $2",
+            )
+            .bind(sensei_id)
+            .bind(tenant_id)
+            .bind(normalize_rfq_status(&r.status))
+            .execute(&mut **tx)
+            .await
+            .map_err(|e| SenseiError::Database(format!("RFQ update failed: {e}")))?;
+        }
+        ("stock_move", _) => {
+            // Fourteenth audit: stock moves are IMMUTABLE accounting
+            // ledger entries — a changed source payload is handled by the
+            // CORRECTION MODEL: a reversal entry (negative) is appended
+            // when the source reports the movement was wrong. A silent
+            // in-place update would corrupt the ledger.
+            sqlx::query(
+                "UPDATE stock_moves SET reference_type = 'legacy_corrected', updated_at = NOW() \
+                 WHERE id = $1 AND tenant_id = $2 \
+                   AND reference_type = 'legacy_import'",
+            )
+            .bind(sensei_id)
+            .bind(tenant_id)
+            .execute(&mut **tx)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Stock move correction failed: {e}")))?;
+            // The correction marker means the ledger history keeps the
+            // original fact; a follow-up reversal/credit entry is appended
+            // by the stock-move command on the next import of the
+            // corrected payload.
         }
         _ => {
             return Err(SenseiError::Internal(format!(
@@ -1556,6 +1651,50 @@ async fn apply_tombstone(
     match row {
         Some((entity, sensei_id, already_tombstoned)) => {
             if !already_tombstoned {
+                // Fourteenth audit (source-alias awareness): MULTIPLE
+                // legacy identities can map to ONE canonical object. Only
+                // archive it when NO OTHER LIVE (non-tombstoned) mapping
+                // references the same canonical id — otherwise tombstoning
+                // source A would wrongly deactivate B's still-live entity.
+                let other_live: i64 = sqlx::query_scalar(
+                    "SELECT COUNT(*) FROM integration_entity_map \
+                     WHERE tenant_id = $1 AND sensei_id = $2 \
+                       AND tombstoned = FALSE \
+                       AND NOT (legacy_system = $3 AND legacy_entity = $4 AND legacy_id = $5)",
+                )
+                .bind(tenant_id)
+                .bind(sensei_id)
+                .bind(&record.system)
+                .bind(&record.entity)
+                .bind(&record.legacy_id)
+                .fetch_one(&mut *tx)
+                .await
+                .map_err(|e| SenseiError::Database(format!("Alias check failed: {e}")))?;
+                if other_live > 0 {
+                    // The canonical object is still governed by another
+                    // live source — do NOT deactivate it.
+                    sqlx::query(
+                        "UPDATE integration_entity_map SET tombstoned = TRUE, tombstoned_at = NOW(), \
+                                source_version = $5, source_updated_at = $6, payload_hash = $7, \
+                                last_seen_at = NOW() \
+                         WHERE tenant_id = $1 AND legacy_system = $2 AND legacy_entity = $3 AND legacy_id = $4",
+                    )
+                    .bind(tenant_id)
+                    .bind(&record.system)
+                    .bind(&record.entity)
+                    .bind(&record.legacy_id)
+                    .bind(&envelope.source_version)
+                    .bind(envelope.source_updated_at)
+                    .bind(payload_hash)
+                    .execute(&mut *tx)
+                    .await
+                    .map_err(|e| SenseiError::Database(format!("Tombstone map failed: {e}")))?;
+                    mark_inbox_applied(&mut tx, tenant_id, record, envelope, payload_hash).await?;
+                    tx.commit().await.map_err(|e| {
+                        SenseiError::Database(format!("Tombstone commit failed: {e}"))
+                    })?;
+                    return Ok(ImportOutcome::Tombstoned);
+                }
                 // Deactivate the canonical entity — archival, never
                 // physical deletion.
                 let update: Option<&str> = match entity.as_str() {

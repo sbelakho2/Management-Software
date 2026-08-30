@@ -2986,3 +2986,333 @@ async fn operational_conditions_dedupe_by_recurrence_signature() {
         .expect("contain");
     assert_eq!(contained.status, "contained");
 }
+
+/// Fourteenth audit P0: FORCE RLS + a NON-OWNER application role. Every
+/// tenant query must run with the tenant context established — the WHERE
+/// clause alone does NOT satisfy the policy. This test creates a real
+/// non-superuser role (the production sensei_app pattern), grants table
+/// access, and proves:
+///   - without app.tenant_id: the tenant's own rows are INVISIBLE;
+///   - with a tenant-scoped transaction: only that tenant's rows appear;
+///   - a cross-tenant write is DENIED by the policy.
+#[tokio::test]
+async fn force_rls_requires_tenant_context_for_non_owner_role() {
+    let _serial = DB_LOCK.lock().await;
+    let Some(pool) = connect().await else { return };
+    sqlx::query(
+        r#"DO $$ DECLARE r RECORD; BEGIN
+             FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname = 'public') LOOP
+                 EXECUTE format('DROP TABLE IF EXISTS %I CASCADE', r.tablename);
+             END LOOP;
+         END $$"#,
+    )
+    .execute(&pool)
+    .await
+    .expect("drop all tables");
+    sensei_db::migrations::run_migrations(&pool)
+        .await
+        .expect("the ENTIRE migration chain must apply to an empty database");
+
+    // The non-owner application role (production sensei_app pattern).
+    let role = "sensei_app_gate";
+    // DROP OWNED first (the role may own schema grants from a previous
+    // run), then the role — a clean, idempotent reset.
+    sqlx::query(&format!("DROP OWNED BY {role} CASCADE"))
+        .execute(&pool)
+        .await
+        .ok();
+    sqlx::query(&format!("DROP ROLE IF EXISTS {role}"))
+        .execute(&pool)
+        .await
+        .expect("drop role");
+    sqlx::query(&format!("CREATE ROLE {role} LOGIN"))
+        .execute(&pool)
+        .await
+        .expect("create role");
+    sqlx::query(&format!("GRANT USAGE ON SCHEMA public TO {role}"))
+        .execute(&pool)
+        .await
+        .expect("grant schema");
+    sqlx::query(&format!(
+        "GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO {role}"
+    ))
+    .execute(&pool)
+    .await
+    .expect("grant tables");
+
+    let tenant_a = uuid::Uuid::new_v4();
+    let tenant_b = uuid::Uuid::new_v4();
+    sqlx::query("INSERT INTO tenants (id, name, slug) VALUES ($1, 'a', 'a'), ($2, 'b', 'b')")
+        .bind(tenant_a)
+        .bind(tenant_b)
+        .execute(&pool)
+        .await
+        .expect("tenants");
+    sqlx::query(
+        "INSERT INTO products (id, tenant_id, product_number, name, unit_of_measure, is_active, product_type, created_at, updated_at) \
+         VALUES ($1, $2, 'A-1', 'A', 'pcs', TRUE, 'finished_good', NOW(), NOW()), \
+                ($3, $4, 'B-1', 'B', 'pcs', TRUE, 'finished_good', NOW(), NOW())",
+    )
+    .bind(uuid::Uuid::new_v4())
+    .bind(tenant_a)
+    .bind(uuid::Uuid::new_v4())
+    .bind(tenant_b)
+    .execute(&pool)
+    .await
+    .expect("products");
+
+    // 1. As the non-owner role WITHOUT tenant context: zero rows visible.
+    let invisible: i64 = sqlx::query_scalar(&format!(
+        "SELECT COUNT(*) FROM products WHERE tenant_id = '{tenant_a}'"
+    ))
+    .fetch_one(&pool)
+    .await
+    .expect("read");
+    assert!(invisible >= 1, "sanity: the owner sees the row");
+    // The pool hands out arbitrary connections — session state (SET ROLE)
+    // must live on ONE dedicated connection for the whole probe.
+    let mut conn = pool.acquire().await.expect("acquire");
+    sqlx::query(&format!("SET ROLE {role}"))
+        .execute(&mut *conn)
+        .await
+        .expect("set role");
+    let hidden: i64 = sqlx::query_scalar(&format!(
+        "SELECT COUNT(*) FROM products WHERE tenant_id = '{tenant_a}'"
+    ))
+    .fetch_one(&mut *conn)
+    .await
+    .expect("non-owner read without context");
+    assert_eq!(
+        hidden, 0,
+        "FORCE RLS: the WHERE clause alone is NOT enough — the tenant \
+         context must be established, otherwise own-tenant rows are invisible"
+    );
+    // A cross-tenant write is DENIED.
+    let denied = sqlx::query(&format!(
+        "INSERT INTO products (id, tenant_id, product_number, name, unit_of_measure, is_active, product_type, created_at, updated_at) \
+         VALUES ('{uuid}', '{tenant_a}', 'X-1', 'X', 'pcs', TRUE, 'finished_good', NOW(), NOW())",
+        uuid = uuid::Uuid::new_v4()
+    ))
+    .execute(&mut *conn)
+    .await;
+    assert!(
+        denied.is_err(),
+        "cross-tenant write must be denied by the FORCEd policy"
+    );
+
+    // 2. With the tenant context established (SET LOCAL in a tx), the
+    //    ROLE sees exactly its own tenant's rows and can write them.
+    sqlx::query("BEGIN")
+        .execute(&mut *conn)
+        .await
+        .expect("begin");
+    sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
+        .bind(tenant_a.to_string())
+        .execute(&mut *conn)
+        .await
+        .expect("set tenant");
+    let visible: i64 = sqlx::query_scalar(&format!(
+        "SELECT COUNT(*) FROM products WHERE tenant_id = '{tenant_a}'"
+    ))
+    .fetch_one(&mut *conn)
+    .await
+    .expect("scoped read");
+    assert_eq!(visible, 1, "tenant-scoped read sees exactly its own row");
+    let cross: i64 = sqlx::query_scalar(&format!(
+        "SELECT COUNT(*) FROM products WHERE tenant_id = '{tenant_b}'"
+    ))
+    .fetch_one(&mut *conn)
+    .await
+    .expect("scoped cross read");
+    assert_eq!(cross, 0, "the policy admits ONLY the established tenant");
+    sqlx::query(&format!(
+        "UPDATE products SET name = 'A-updated' WHERE tenant_id = '{tenant_a}'"
+    ))
+    .execute(&mut *conn)
+    .await
+    .expect("scoped write works");
+    sqlx::query("COMMIT")
+        .execute(&mut *conn)
+        .await
+        .expect("commit");
+
+    sqlx::query("RESET ROLE").execute(&mut *conn).await.ok();
+    drop(conn);
+    let updated: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM products WHERE tenant_id = $1 AND name = 'A-updated'",
+    )
+    .bind(tenant_a)
+    .fetch_one(&pool)
+    .await
+    .expect("verify");
+    assert_eq!(updated, 1, "the tenant-scoped write persisted");
+}
+
+/// Fourteenth audit crash-injection matrix (subset on the DB side):
+/// a stock move imported twice yields ONE ledger row (no double count on
+/// retry), and a product master-data refresh NEVER touches inventory or
+/// planning policy.
+#[tokio::test]
+async fn integration_atomicity_and_patch_semantics() {
+    let _serial = DB_LOCK.lock().await;
+    let Some(pool) = connect().await else { return };
+    sqlx::query(
+        r#"DO $$ DECLARE r RECORD; BEGIN
+             FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname = 'public') LOOP
+                 EXECUTE format('DROP TABLE IF EXISTS %I CASCADE', r.tablename);
+             END LOOP;
+         END $$"#,
+    )
+    .execute(&pool)
+    .await
+    .expect("drop all tables");
+    sensei_db::migrations::run_migrations(&pool)
+        .await
+        .expect("the ENTIRE migration chain must apply to an empty database");
+
+    let tenant_id = uuid::Uuid::new_v4();
+    let user_id = uuid::Uuid::new_v4();
+    sqlx::query("INSERT INTO tenants (id, name, slug) VALUES ($1, 'at', 'atomicity')")
+        .bind(tenant_id)
+        .execute(&pool)
+        .await
+        .expect("tenant");
+    sqlx::query(
+        "INSERT INTO users (id, tenant_id, email, name, password_hash)  VALUES ($1, $2, 'at@x.local', 'A', 'x')",
+    )
+    .bind(user_id)
+    .bind(tenant_id)
+    .execute(&pool)
+    .await
+    .expect("user");
+    let product_id = uuid::Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO products  (id, tenant_id, product_number, name, unit_of_measure, quantity_on_hand, reorder_point, max_stock_level, is_active, notes, product_type, created_at, updated_at)  VALUES ($1, $2, 'PCB-900', 'Controller', 'pcs', 8420, 2000, 7500, FALSE, 'engineering hold', 'finished_good', NOW(), NOW())",
+    )
+    .bind(product_id)
+    .bind(tenant_id)
+    .execute(&pool)
+    .await
+    .expect("product with planning state");
+
+    use sensei_api::state::AppState;
+    std::env::set_var("SENSEI_ENV", "test");
+    std::env::set_var("JWT_SECRET", "test-secret-for-db-gate");
+    let config = sensei_core::config::AppConfig::from_env().expect("config");
+    let users_service: std::sync::Arc<dyn sensei_services::users::UsersService> =
+        std::sync::Arc::new(sensei_services::users::InMemoryUsersService::new());
+    let state =
+        AppState::new(config, users_service).with_db_pool(std::sync::Arc::new(pool.clone()));
+
+    // 1. Product master-data refresh (the same import applied twice) must
+    //    NOT erase inventory/planning state — PATCH semantics.
+    let article = sensei_services::integration::LegacyRecord {
+        system: "starzerp".to_string(),
+        entity: "article".to_string(),
+        legacy_id: "900".to_string(),
+        payload: serde_json::json!({
+            "codeReference": "PCB-900",
+            "description": "Controller (rev 2)",
+            "costPrice": "12.50",
+            "price": "19.99",
+            "unit": "pcs"
+        }),
+    };
+    let envelope = sensei_api::routes::integration_importer::Envelope {
+        source_version: Some("v1".to_string()),
+        source_updated_at: None,
+        source_event_id: Some("evt-1".to_string()),
+        extraction_run_id: "run-at".to_string(),
+    };
+    sensei_api::routes::integration_importer::apply_record(&state, tenant_id, &article, &envelope)
+        .await
+        .expect("product import");
+    // Twice — the second import is a duplicate replay.
+    let replay = sensei_api::routes::integration_importer::apply_record(
+        &state, tenant_id, &article, &envelope,
+    )
+    .await
+    .expect("product replay");
+    assert_eq!(
+        replay,
+        sensei_api::routes::integration_importer::ImportOutcome::Duplicate,
+        "same-event replay is a duplicate"
+    );
+    let (on_hand, reorder, max_stock, is_active, notes): (
+        f64,
+        Option<f64>,
+        Option<f64>,
+        bool,
+        Option<String>,
+    ) = sqlx::query_as(
+        "SELECT quantity_on_hand, reorder_point, max_stock_level, is_active, notes \
+             FROM products WHERE id = $1 AND tenant_id = $2",
+    )
+    .bind(product_id)
+    .bind(tenant_id)
+    .fetch_one(&pool)
+    .await
+    .expect("product state");
+    assert_eq!(
+        on_hand, 8420.0,
+        "inventory balance unchanged by a master-data refresh"
+    );
+    assert_eq!(
+        reorder,
+        Some(2000.0),
+        "reorder point unchanged (Sensei-owned)"
+    );
+    assert_eq!(
+        max_stock,
+        Some(7500.0),
+        "max stock unchanged (Sensei-owned)"
+    );
+    assert!(!is_active, "active state unchanged (Sensei-owned)");
+    assert_eq!(
+        notes.as_deref(),
+        Some("engineering hold"),
+        "notes unchanged"
+    );
+
+    // 2. Stock movement imported twice → exactly ONE ledger row.
+    let move_rec = sensei_services::integration::LegacyRecord {
+        system: "starzerp".to_string(),
+        entity: "stock_movement".to_string(),
+        legacy_id: "921".to_string(),
+        payload: serde_json::json!({
+            "article": "PCB-900",
+            "quantity": 10,
+            "type": "in"
+        }),
+    };
+    let mv_env = sensei_api::routes::integration_importer::Envelope {
+        source_version: Some("v1".to_string()),
+        source_updated_at: None,
+        source_event_id: Some("evt-mv".to_string()),
+        extraction_run_id: "run-at".to_string(),
+    };
+    sensei_api::routes::integration_importer::apply_record(&state, tenant_id, &move_rec, &mv_env)
+        .await
+        .expect("move import");
+    sensei_api::routes::integration_importer::apply_record(&state, tenant_id, &move_rec, &mv_env)
+        .await
+        .expect("move replay");
+    let moves: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM stock_moves WHERE tenant_id = $1 AND product_id = $2",
+    )
+    .bind(tenant_id)
+    .bind(product_id)
+    .fetch_one(&pool)
+    .await
+    .expect("move count");
+    assert_eq!(moves, 1, "a retried import never double-counts the ledger");
+    // The mapping exists exactly once and points at the real row.
+    let mappings: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM integration_entity_map WHERE tenant_id = $1 AND legacy_id = '921'",
+    )
+    .bind(tenant_id)
+    .fetch_one(&pool)
+    .await
+    .expect("map count");
+    assert_eq!(mappings, 1, "one mapping, one ledger row");
+}

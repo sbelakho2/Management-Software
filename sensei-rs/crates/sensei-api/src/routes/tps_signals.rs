@@ -175,22 +175,25 @@ pub async fn derive_signals(
     // ── Andon recurrence (item 41): the SAME issue type on the SAME work
     //    center raised 3+ times in 14 days — countermeasure ineffective.
     let recurrence_window = win("andon_recurrence_count", 14);
+    // Fourteenth audit: the configured threshold is bound into HAVING —
+    // a site policy of 2 must see groups of exactly 2.
+    let recurrence_threshold = thr("andon_recurrence_count", 3.0) as i64;
     let recurring: Vec<(i64,)> = sqlx::query_as(
         "SELECT COUNT(*) FROM andons a \
          WHERE a.tenant_id = $1 AND a.created_at > NOW() - $2::interval \
          GROUP BY a.work_center_id, a.issue_type \
-         HAVING COUNT(*) >= 3 \
+         HAVING COUNT(*) >= $3 \
          ORDER BY COUNT(*) DESC LIMIT 3",
     )
     .bind(user.tenant_id)
     .bind(format!("{recurrence_window} days"))
+    .bind(recurrence_threshold)
     .fetch_all(pool.as_ref())
     .await
     .map_err(|e| {
         sensei_core::error::SenseiError::Database(format!("Recurrence read failed: {e}"))
     })?;
     for (count,) in recurring {
-        let recurrence_threshold = thr("andon_recurrence_count", 3.0) as i64;
         if let Some(s) = classify_andon_recurrence(count, recurrence_window, recurrence_threshold) {
             signals.push(s);
         }
@@ -200,6 +203,10 @@ pub async fn derive_signals(
     //    is large" and "this queue is growing" are different conditions;
     //    only the growth is a flow signal.
     let queue_window = win("queue_growth_count", 30);
+    // Fourteenth audit: the configured threshold is bound into the SQL —
+    // no stricter universal hard-filter that would hide groups from the
+    // classifier (a site policy of 2 must see groups of exactly 2).
+    let queue_threshold = thr("queue_growth_count", 4.0) as i64;
     let queue: Vec<(String, i64)> = sqlx::query_as(
         "SELECT wo.work_center_id::text, \
                 (COUNT(*) FILTER (WHERE wo.created_at > NOW() - $2::interval)) \
@@ -210,16 +217,16 @@ pub async fn derive_signals(
          GROUP BY wo.work_center_id \
          HAVING (COUNT(*) FILTER (WHERE wo.created_at > NOW() - $2::interval)) \
               - (COUNT(*) FILTER (WHERE wo.status = 'completed' \
-                                    AND wo.updated_at > NOW() - $2::interval)) >= 4 \
+                                    AND wo.updated_at > NOW() - $2::interval)) >= $3 \
          ORDER BY 2 DESC LIMIT 3",
     )
     .bind(user.tenant_id)
     .bind(format!("{queue_window} days"))
+    .bind(queue_threshold)
     .fetch_all(pool.as_ref())
     .await
     .map_err(|e| sensei_core::error::SenseiError::Database(format!("Queue read failed: {e}")))?;
     for (_wc, net_growth) in queue {
-        let queue_threshold = thr("queue_growth_count", 4.0) as i64;
         if let Some(s) = classify_queue_growth(net_growth, queue_window * 24 * 60, queue_threshold)
         {
             signals.push(s);

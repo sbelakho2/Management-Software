@@ -948,11 +948,10 @@ impl SupplyChainService for DatabaseSupplyChainService {
         set_tenant_context(&mut tx, tenant_id).await?;
 
         let row = sqlx::query_as::<_, StockMoveRow>(
-            r#"INSERT INTO stock_moves (id, tenant_id, product_id, product_name, quantity, move_type, from_location, to_location, reference_type, reference_id, created_by, created_at)
-               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+            r#"INSERT INTO stock_moves (id, tenant_id, product_id, quantity, move_type, from_location, to_location, reference_type, reference_id, created_by, created_at)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
                RETURNING id, tenant_id, product_id, product_name, quantity, move_type, from_location, to_location, reference_type, reference_id, created_by, created_at"#,
-        ).bind(id).bind(tenant_id).bind(stock_move.product_id).bind(&stock_move.product_name)
-            .bind(stock_move.quantity).bind(&stock_move.move_type).bind(&stock_move.from_location)
+        ).bind(id).bind(tenant_id).bind(stock_move.product_id)            .bind(stock_move.quantity).bind(&stock_move.move_type).bind(&stock_move.from_location)
             .bind(&stock_move.to_location).bind(&stock_move.reference_type).bind(stock_move.reference_id)
             .bind(stock_move.created_by).bind(now)
             .fetch_one(&mut *tx).await.map_err(|e| SenseiError::Database(format!("Failed to create stock move: {e}")))?;

@@ -33,9 +33,11 @@ pub struct CurrentJob {
 /// The pitch block (RIGHT NOW).
 #[derive(Debug, Serialize)]
 pub struct PitchNow {
-    pub target: i64,
+    /// None when the job has no frozen standard — the UI must show
+    /// STANDARD UNAVAILABLE, never a fabricated target.
+    pub target: Option<i64>,
     pub actual: i64,
-    pub gap: i64,
+    pub gap: Option<i64>,
     pub interval_start: chrono::DateTime<Utc>,
 }
 
@@ -118,8 +120,9 @@ pub async fn get_station_snapshot(
                 "SELECT wo.id, wo.wo_number, wo.product_name, wo.quantity, wo.quantity_completed \
                  FROM work_orders wo \
                  WHERE wo.tenant_id = $1 AND wo.work_center_id = $2 \
-                   AND wo.status NOT IN ('completed', 'cancelled') \
-                 ORDER BY wo.created_at DESC LIMIT 1",
+                   AND wo.status IN ('in_progress', 'released') \
+                 ORDER BY CASE WHEN wo.status = 'in_progress' THEN 0 ELSE 1 END, \
+                          wo.actual_start DESC NULLS LAST, wo.created_at ASC LIMIT 1",
             )
             .bind(user.tenant_id)
             .bind(wc)
@@ -140,48 +143,40 @@ pub async fn get_station_snapshot(
 
     // RIGHT NOW pitch: actual completed this hour vs the standard takt.
     let pitch: Option<PitchNow> = match (&current_job, work_center_id) {
-        (Some(job), Some(wc)) => {
+        (Some(job), Some(_wc)) => {
             let now = Utc::now();
             let interval_start = now
                 .date_naive()
                 .and_hms_opt(now.hour(), 0, 0)
                 .map(|d| d.and_utc())
                 .unwrap_or(now);
+            // Pitch ACTUAL (fourteenth audit): JOB-level semantics — only
+            // the CURRENT work order's production counts this hour; a
+            // previous job on the same work center must not inflate it.
             let actual: i64 = sqlx::query_scalar(
                 "SELECT COALESCE(SUM(e.good_qty), 0)::bigint \
                  FROM production_events e \
-                 JOIN work_orders wo ON wo.id = e.work_order_id AND wo.tenant_id = e.tenant_id \
-                 WHERE e.tenant_id = $1 AND wo.work_center_id = $2 \
+                 WHERE e.tenant_id = $1 AND e.work_order_id = $2 \
                    AND e.created_at >= $3 AND e.event_type = 'produced'",
             )
             .bind(user.tenant_id)
-            .bind(wc)
+            .bind(job.work_order_id)
             .bind(interval_start)
             .fetch_one(pool.as_ref())
             .await
             .unwrap_or(0);
-            // Pitch target (thirteenth audit P0): the takt comes from the
-            // WORK ORDER'S FROZEN standard revision (standard_work_id) —
-            // the exact revision the order was released under. A newly
-            // published standard for another product can NEVER leak in.
-            // Only WOs released before the freeze feature resolve a
-            // fallback: the exact EFFECTIVE standard for the product,
-            // with the validity window enforced (a standard approved for
-            // next Monday is not selectable today).
+            // Pitch TARGET (fourteenth audit): ONLY the work order's
+            // FROZEN standard revision — no tenant-global or product
+            // fallback. A WO without a frozen standard has NO target: the
+            // UI says STANDARD UNAVAILABLE, never a fabricated 60/h.
             let takt: Option<i64> = sqlx::query_scalar(
-                "SELECT (3600.0 / NULLIF(COALESCE(s.takt_time_seconds, fs.takt_time_seconds), 0))::bigint \
+                "SELECT (3600.0 / NULLIF(s.takt_time_seconds, 0))::bigint \
                  FROM work_orders wo \
-                 LEFT JOIN standard_work_documents s \
+                 JOIN standard_work_documents s \
                    ON s.id = wo.standard_work_id AND s.tenant_id = wo.tenant_id \
-                 LEFT JOIN LATERAL ( \
-                     SELECT s2.* FROM standard_work_documents s2 \
-                     WHERE s2.tenant_id = wo.tenant_id \
-                       AND s2.product_id = wo.product_id \
-                       AND s2.status = 'effective' \
-                       AND (s2.effective_from IS NULL OR s2.effective_from <= NOW()) \
-                       AND (s2.effective_to IS NULL OR s2.effective_to > NOW()) \
-                     ORDER BY s2.version DESC LIMIT 1 \
-                 ) fs ON wo.standard_work_id IS NULL \
+                  AND s.status = 'effective' \
+                  AND (s.effective_from IS NULL OR s.effective_from <= NOW()) \
+                  AND (s.effective_to IS NULL OR s.effective_to > NOW()) \
                  WHERE wo.id = $1 AND wo.tenant_id = $2 \
                  LIMIT 1",
             )
@@ -190,11 +185,10 @@ pub async fn get_station_snapshot(
             .fetch_one(pool.as_ref())
             .await
             .ok();
-            let target = takt.unwrap_or(60);
             Some(PitchNow {
-                target,
+                target: takt,
                 actual,
-                gap: actual - target,
+                gap: takt.map(|t| actual - t),
                 interval_start,
             })
         }
@@ -272,46 +266,96 @@ pub async fn get_station_snapshot(
         None => None,
     };
 
-    // KEY POINT / QUALITY CHECK (item 38): the CTQ bound to the CURRENT
-    // JOB's product family — never an arbitrary tenant-global CTQ.
+    // KEY POINT / QUALITY CHECK (fourteenth audit): resolved for the
+    // CURRENT OPERATION — the released standard's matching WorkStep
+    // carries its own quality_checks (solder paste vs SMT placement vs
+    // AOI...), with the product family's CTQ set as a safety net. Never
+    // a single arbitrary family pick.
     let quality_check: Option<String> = match current_job.as_ref() {
         Some(job) => {
-            // The job's product id (work orders reference products).
-            let product_id: Option<Uuid> = sqlx::query_scalar(
-                "SELECT product_id FROM work_orders WHERE id = $1 AND tenant_id = $2",
+            let row: Option<(String, serde_json::Value)> = sqlx::query_as(
+                "SELECT op.operation, COALESCE(sw.steps, '[]') \
+                 FROM work_order_operations op \
+                 JOIN work_orders wo ON wo.id = op.work_order_id AND wo.tenant_id = op.tenant_id \
+                 LEFT JOIN standard_work_documents sw \
+                   ON sw.id = wo.standard_work_id AND sw.tenant_id = wo.tenant_id \
+                 WHERE op.work_order_id = $1 AND op.tenant_id = $2 \
+                   AND op.status IN ('pending', 'in_progress') \
+                 ORDER BY op.ordinal_position ASC LIMIT 1",
             )
             .bind(job.work_order_id)
             .bind(user.tenant_id)
             .fetch_optional(pool.as_ref())
             .await
-            .ok()
-            .flatten();
-            let product_family_id: Option<Uuid> = match product_id {
-                Some(pid) => sqlx::query_scalar(
-                    "SELECT product_family_id FROM products WHERE id = $1 AND tenant_id = $2",
-                )
-                .bind(pid)
-                .bind(user.tenant_id)
-                .fetch_optional(pool.as_ref())
-                .await
-                .ok()
-                .flatten(),
-                None => None,
-            };
-            // The CTQ table (migration 100) is bound at the product family
-            // level; only CTQs for THIS job's family are eligible.
-            match product_family_id {
-                Some(family) => sqlx::query_scalar(
-                    "SELECT name FROM ctq_characteristics \
-                     WHERE tenant_id = $1 AND is_active = TRUE AND product_family_id = $2 \
-                     ORDER BY created_at DESC LIMIT 1",
-                )
-                .bind(user.tenant_id)
-                .bind(family)
-                .fetch_optional(pool.as_ref())
-                .await
-                .ok()
-                .flatten(),
+            .map_err(|e| SenseiError::Database(format!("Step checks read failed: {e}")))?;
+            match row {
+                Some((operation, steps)) => {
+                    let arr = steps.as_array().cloned().unwrap_or_default();
+                    let step = arr.iter().find(|st| {
+                        st.get("description")
+                            .and_then(|d| d.as_str())
+                            .map(|d| {
+                                d.to_lowercase().contains(&operation.to_lowercase())
+                                    || operation.to_lowercase().contains(&d.to_lowercase())
+                            })
+                            .unwrap_or(false)
+                    });
+                    let step_checks: Vec<String> = step
+                        .and_then(|st| st.get("quality_checks"))
+                        .and_then(|q| q.as_array())
+                        .map(|q| {
+                            q.iter()
+                                .filter_map(|c| c.as_str().map(|x| x.to_string()))
+                                .collect()
+                        })
+                        .unwrap_or_default();
+                    if !step_checks.is_empty() {
+                        Some(step_checks.join(" · "))
+                    } else {
+                        // Safety net: the product family's CTQ set.
+                        let product_id: Option<Uuid> = sqlx::query_scalar(
+                            "SELECT product_id FROM work_orders WHERE id = $1 AND tenant_id = $2",
+                        )
+                        .bind(job.work_order_id)
+                        .bind(user.tenant_id)
+                        .fetch_optional(pool.as_ref())
+                        .await
+                        .ok()
+                        .flatten();
+                        let family: Option<Uuid> = match product_id {
+                            Some(pid) => sqlx::query_scalar(
+                                "SELECT product_family_id FROM products WHERE id = $1 AND tenant_id = $2",
+                            )
+                            .bind(pid)
+                            .bind(user.tenant_id)
+                            .fetch_optional(pool.as_ref())
+                            .await
+                            .ok()
+                            .flatten(),
+                            None => None,
+                        };
+                        match family {
+                            Some(family_id) => {
+                                let names: Vec<String> = sqlx::query_scalar(
+                                    "SELECT name FROM ctq_characteristics \
+                                     WHERE tenant_id = $1 AND is_active = TRUE AND product_family_id = $2 \
+                                     ORDER BY created_at DESC LIMIT 5",
+                                )
+                                .bind(user.tenant_id)
+                                .bind(family_id)
+                                .fetch_all(pool.as_ref())
+                                .await
+                                .unwrap_or_default();
+                                if names.is_empty() {
+                                    None
+                                } else {
+                                    Some(names.join(" · "))
+                                }
+                            }
+                            None => None,
+                        }
+                    }
+                }
                 None => None,
             }
         }

@@ -161,7 +161,11 @@ pub async fn get_learning_metrics(
     let inputs = LearningInputs {
         detection_latency_seconds,
         help_response_seconds,
-        containment_seconds,
+        containment_seconds: if containment_seconds < 0.0 {
+            0.0
+        } else {
+            containment_seconds
+        },
         recurrence_rate,
         escalation_latency_seconds,
         verification_rate: if a3_count > 0 {

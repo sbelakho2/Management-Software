@@ -171,23 +171,35 @@ fn StationView(
                 <div class="module-content">
                     {match pitch {
                         Some(p) => {
-                            let gap_class = if p.gap < 0 { "rams-station-gap-negative" } else { "rams-station-gap-positive" };
-                            view! {
-                                <div class="rams-flex rams-gap-4">
-                                    <div class="rams-station-stat">
-                                        <div class="rams-station-stat-value">{p.target.to_string()}</div>
-                                        <div class="rams-station-stat-label">"PITCH TARGET"</div>
+                            // Fourteenth audit: a job WITHOUT a frozen
+                            // standard shows STANDARD UNAVAILABLE — never
+                            // a fabricated target.
+                            match p.target {
+                                Some(target) => {
+                                    let gap_class = if p.gap.unwrap_or(0) < 0 { "rams-station-gap-negative" } else { "rams-station-gap-positive" };
+                                    view! {
+                                        <div class="rams-flex rams-gap-4">
+                                            <div class="rams-station-stat">
+                                                <div class="rams-station-stat-value">{target.to_string()}</div>
+                                                <div class="rams-station-stat-label">"PITCH TARGET"</div>
+                                            </div>
+                                            <div class="rams-station-stat">
+                                                <div class="rams-station-stat-value">{p.actual.to_string()}</div>
+                                                <div class="rams-station-stat-label">"ACTUAL"</div>
+                                            </div>
+                                            <div class="rams-station-stat">
+                                                <div class=format!("rams-station-stat-value {gap_class}")>{format!("{:+}", p.gap.unwrap_or(0))}</div>
+                                                <div class="rams-station-stat-label">"GAP"</div>
+                                            </div>
+                                        </div>
+                                    }.into_any()
+                                }
+                                None => view! {
+                                    <div class="rams-alert rams-alert--warning" role="alert">
+                                        "STANDARD UNAVAILABLE — TARGET NOT CALCULATED. The released standard revision is missing; do not guess the target."
                                     </div>
-                                    <div class="rams-station-stat">
-                                        <div class="rams-station-stat-value">{p.actual.to_string()}</div>
-                                        <div class="rams-station-stat-label">"ACTUAL"</div>
-                                    </div>
-                                    <div class="rams-station-stat">
-                                        <div class=format!("rams-station-stat-value {gap_class}")>{format!("{:+}", p.gap)}</div>
-                                        <div class="rams-station-stat-label">"GAP"</div>
-                                    </div>
-                                </div>
-                            }.into_any()
+                                }.into_any(),
+                            }
                         }
                         None => view! { <p class="rams-font-mono rams-text-sm" style="color: var(--rams-muted);">"No pitch baseline (no effective standard)."</p> }.into_any(),
                     }}

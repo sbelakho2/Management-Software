@@ -114,11 +114,22 @@ pub async fn finance_waste(
     let (_wip_qty, wip_cash) = wip_row;
 
     // Aging inventory: stock with no movement for 90+ days, at cost.
+    // Fourteenth audit: inventory age comes from the STOCK-MOVE LEDGER —
+    // MAX(stock_moves.moved_at) per product/location/lot. An
+    // administrative touch (updated_at) must never make 18-month-dead
+    // stock look new.
     let aging: Decimal = sqlx::query_scalar(
         "SELECT COALESCE(SUM(ii.quantity_on_hand * COALESCE(p.standard_cost, 0)), 0)::numeric \
          FROM inventory_items ii \
          LEFT JOIN products p ON p.id = ii.product_id AND p.tenant_id = ii.tenant_id \
-         WHERE ii.tenant_id = $1 AND ii.updated_at < NOW() - INTERVAL '90 days'",
+         WHERE ii.tenant_id = $1 \
+           AND COALESCE(( \
+                SELECT MAX(sm.moved_at) FROM stock_moves sm \
+                WHERE sm.tenant_id = ii.tenant_id \
+                  AND sm.product_id = ii.product_id \
+                  AND sm.to_location = ii.location \
+                  AND sm.lot_number IS NOT DISTINCT FROM ii.lot_number \
+           ), ii.created_at) < NOW() - INTERVAL '90 days'",
     )
     .bind(user.tenant_id)
     .fetch_one(pool.as_ref())

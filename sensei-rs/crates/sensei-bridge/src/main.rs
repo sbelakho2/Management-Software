@@ -128,6 +128,10 @@ impl Bridge {
             .with_context(|| format!("POST {url}"))?;
         let status = resp.status();
         let body = resp.text().await.unwrap_or_default();
+        // Fourteenth audit: TYPED semantics — 422/409 are PERMANENT
+        // (quarantined, cursor may pass); 503/500 are RETRYABLE (failed,
+        // cursor halts so the record is re-read). A transient DB outage
+        // must never be recorded as a permanent bad record.
         if status.is_success() {
             let outcome = serde_json::from_str::<serde_json::Value>(&body)
                 .ok()
@@ -140,12 +144,24 @@ impl Bridge {
             return match outcome.as_str() {
                 "applied" => Ok(RecordResult::Applied),
                 "duplicate" | "stale" => Ok(RecordResult::Unchanged),
-                "quarantined" | "conflict" => Ok(RecordResult::Quarantined),
+                "quarantined" | "conflict" | "permanent_validation" => {
+                    Ok(RecordResult::Quarantined)
+                }
+                "tombstoned" => Ok(RecordResult::Applied),
+                "retryable_infrastructure" | "internal_invariant" => {
+                    tracing::error!("import {system}/{entity}/{legacy_id} -> {outcome}: {body}");
+                    Ok(RecordResult::Failed)
+                }
                 _ => Ok(RecordResult::Applied),
             };
         }
-        tracing::error!("import {system}/{entity}/{legacy_id} -> HTTP {status}: {body}");
-        Ok(RecordResult::Failed)
+        match status.as_u16() {
+            422 | 409 => Ok(RecordResult::Quarantined),
+            _ => {
+                tracing::error!("import {system}/{entity}/{legacy_id} -> HTTP {status}: {body}");
+                Ok(RecordResult::Failed)
+            }
+        }
     }
 
     /// Load the previously saved watermark for a source table — the
@@ -156,7 +172,7 @@ impl Bridge {
         &self,
         system: &str,
         source_table: &str,
-    ) -> std::result::Result<Option<String>, anyhow::Error> {
+    ) -> std::result::Result<Option<Cursor>, anyhow::Error> {
         let url = format!(
             "{}/api/v1/integration/checkpoint/{system}/{source_table}",
             self.api_url
@@ -179,10 +195,18 @@ impl Bridge {
             );
         }
         let body: serde_json::Value = resp.json().await.context("checkpoint body")?;
-        Ok(body
+        let time = body
             .get("watermark")
             .and_then(|w| w.as_str())
-            .map(|s| s.to_string()))
+            .map(|s| s.to_string());
+        let id = body
+            .get("watermark_id")
+            .and_then(|w| w.as_str())
+            .and_then(|s| s.parse::<i64>().ok());
+        Ok(match (time, id) {
+            (Some(time), Some(id)) => Some(Cursor { time, id }),
+            _ => None,
+        })
     }
 
     /// Persist the watermark checkpoint for a source table (item 20: the
@@ -191,7 +215,7 @@ impl Bridge {
         &self,
         system: &str,
         source_table: &str,
-        watermark: &str,
+        cursor: &Cursor,
         run_id: &str,
     ) -> Result<()> {
         let url = format!("{}/api/v1/integration/checkpoint", self.api_url);
@@ -203,7 +227,8 @@ impl Bridge {
             .json(&json!({
                 "source_system": system,
                 "source_table": source_table,
-                "watermark": watermark,
+                "watermark": cursor.time,
+                "watermark_id": cursor.id.to_string(),
                 "run_id": run_id,
             }))
             .send()
@@ -283,7 +308,14 @@ struct PullConfig<'a> {
     source_table: &'a str,
     id_column: &'a str,
     watermark_column: &'a str,
-    checkpoint_watermark: Option<String>,
+}
+
+/// Composite cursor: (updated_at, id) — a timestamp-only cursor loses
+/// records when > batch-size rows share one timestamp.
+#[derive(Debug, Clone)]
+struct Cursor {
+    time: String,
+    id: i64,
 }
 
 async fn pull_table(
@@ -305,34 +337,42 @@ async fn pull_table(
     loop {
         let rows = match &cursor {
             Some(wm) => {
+                // Composite cursor (fourteenth audit): (updated_at, id) —
+                // rows sharing the last timestamp are NOT skipped.
                 sqlx::query(&format!(
-                    "SELECT * FROM {cfg_source_table} WHERE {cfg_watermark_column} > ? ORDER BY {cfg_watermark_column} ASC LIMIT ?",
+                    "SELECT * FROM {cfg_source_table} \
+                     WHERE {cfg_watermark_column} > ? \
+                        OR ({cfg_watermark_column} = ? AND {cfg_id_column} > ?) \
+                     ORDER BY {cfg_watermark_column} ASC, {cfg_id_column} ASC LIMIT ?",
                     cfg_source_table = cfg.source_table,
                     cfg_watermark_column = cfg.watermark_column,
+                    cfg_id_column = cfg.id_column,
                 ))
-                .bind(wm)
+                .bind(&wm.time)
+                .bind(&wm.time)
+                .bind(wm.id)
                 .bind(limit)
                 .fetch_all(db)
                 .await
                 .with_context(|| format!("SELECT {} (incremental)", cfg.source_table))?
             }
-            None => {
-                sqlx::query(&format!(
-                    "SELECT * FROM {cfg_source_table} ORDER BY {cfg_watermark_column} ASC LIMIT ?",
-                    cfg_source_table = cfg.source_table,
-                    cfg_watermark_column = cfg.watermark_column,
-                ))
-                .bind(limit)
-                .fetch_all(db)
-                .await
-                .with_context(|| format!("SELECT {} (initial)", cfg.source_table))?
-            }
+            None => sqlx::query(&format!(
+                "SELECT * FROM {cfg_source_table} \
+                     ORDER BY {cfg_watermark_column} ASC, {cfg_id_column} ASC LIMIT ?",
+                cfg_source_table = cfg.source_table,
+                cfg_watermark_column = cfg.watermark_column,
+                cfg_id_column = cfg.id_column,
+            ))
+            .bind(limit)
+            .fetch_all(db)
+            .await
+            .with_context(|| format!("SELECT {} (initial)", cfg.source_table))?,
         };
         if rows.is_empty() {
             break;
         }
         stats.read += rows.len() as u64;
-        let mut page_watermark: Option<String> = cursor.clone();
+        let mut page_watermark: Option<Cursor> = cursor.clone();
         let mut page_has_failure = false;
         for row in &rows {
             let id: i64 = match row.try_get(cfg.id_column) {
@@ -409,25 +449,31 @@ async fn pull_table(
                     stats.applied += 1;
                     // Advance the cursor ONLY past successfully imported
                     // records.
-                    if let Some(ref s) = source_updated_rfc {
+                    if let Some(ref t) = source_updated_rfc {
                         let newer = match page_watermark.as_ref() {
-                            Some(m) => s > m,
+                            Some(m) => t > &m.time || (t == &m.time && id > m.id),
                             None => true,
                         };
                         if newer {
-                            page_watermark = Some(s.clone());
+                            page_watermark = Some(Cursor {
+                                time: t.clone(),
+                                id,
+                            });
                         }
                     }
                 }
                 Ok(RecordResult::Unchanged) => {
                     stats.unchanged += 1;
-                    if let Some(ref s) = source_updated_rfc {
+                    if let Some(ref t) = source_updated_rfc {
                         let newer = match page_watermark.as_ref() {
-                            Some(m) => s > m,
+                            Some(m) => t > &m.time || (t == &m.time && id > m.id),
                             None => true,
                         };
                         if newer {
-                            page_watermark = Some(s.clone());
+                            page_watermark = Some(Cursor {
+                                time: t.clone(),
+                                id,
+                            });
                         }
                     }
                 }
@@ -435,13 +481,16 @@ async fn pull_table(
                     stats.quarantined += 1;
                     // Quarantined records ARE resolved (dead-lettered) —
                     // the cursor may pass them.
-                    if let Some(ref s) = source_updated_rfc {
+                    if let Some(ref t) = source_updated_rfc {
                         let newer = match page_watermark.as_ref() {
-                            Some(m) => s > m,
+                            Some(m) => t > &m.time || (t == &m.time && id > m.id),
                             None => true,
                         };
                         if newer {
-                            page_watermark = Some(s.clone());
+                            page_watermark = Some(Cursor {
+                                time: t.clone(),
+                                id,
+                            });
                         }
                     }
                 }
@@ -465,16 +514,13 @@ async fn pull_table(
             break;
         }
     }
-    // The checkpoint save is NOT best-effort: a lost checkpoint re-reads
-    // the whole table; a failed save fails the run loudly.
+    // Fourteenth audit: checkpoint persistence is part of the
+    // correctness boundary — a failed save FAILS the run (never
+    // best-effort).
     if let Some(wm) = &cursor {
-        if wm != &cfg.checkpoint_watermark.clone().unwrap_or_default()
-            || cfg.checkpoint_watermark.is_some()
-        {
-            bridge
-                .save_checkpoint(cfg.system, cfg.source_table, wm, run_id)
-                .await?;
-        }
+        bridge
+            .save_checkpoint(cfg.system, cfg.source_table, wm, run_id)
+            .await?;
     }
     stats.report(&format!("{}/{}", cfg.system, cfg.entity));
     Ok(stats)
@@ -554,7 +600,6 @@ async fn pull_starzerp_articles(
             source_table: "article",
             id_column: "id",
             watermark_column: "updated_at",
-            checkpoint_watermark: None,
         },
         run_id,
         limit,
@@ -582,7 +627,6 @@ async fn pull_starzerp_customers(
             source_table: table,
             id_column: "id",
             watermark_column: "updated_at",
-            checkpoint_watermark: None,
         },
         run_id,
         limit,
@@ -610,7 +654,6 @@ async fn pull_starzerp_suppliers(
             source_table: table,
             id_column: "id",
             watermark_column: "updated_at",
-            checkpoint_watermark: None,
         },
         run_id,
         limit,
@@ -637,7 +680,6 @@ async fn pull_starzerp_sales_orders(
             source_table: "sales_order",
             id_column: "id",
             watermark_column: "updated_at",
-            checkpoint_watermark: None,
         },
         run_id,
         limit,
@@ -665,7 +707,6 @@ async fn pull_starzerp_stock_moves(
             source_table: table,
             id_column: "id",
             watermark_column: "updated_at",
-            checkpoint_watermark: None,
         },
         run_id,
         limit,
@@ -694,7 +735,6 @@ async fn pull_crm_leads(
             source_table: "lead",
             id_column: "id",
             watermark_column: "updated_at",
-            checkpoint_watermark: None,
         },
         run_id,
         limit,
@@ -721,7 +761,6 @@ async fn pull_crm_companies(
             source_table: "company",
             id_column: "id",
             watermark_column: "updated_at",
-            checkpoint_watermark: None,
         },
         run_id,
         limit,
@@ -748,7 +787,6 @@ async fn pull_crm_contacts(
             source_table: "contact",
             id_column: "id",
             watermark_column: "updated_at",
-            checkpoint_watermark: None,
         },
         run_id,
         limit,
@@ -775,7 +813,6 @@ async fn pull_crm_quotes(
             source_table: "quote",
             id_column: "id",
             watermark_column: "updated_at",
-            checkpoint_watermark: None,
         },
         run_id,
         limit,
@@ -802,7 +839,6 @@ async fn pull_crm_rfqs(
             source_table: "rfq",
             id_column: "id",
             watermark_column: "updated_at",
-            checkpoint_watermark: None,
         },
         run_id,
         limit,
