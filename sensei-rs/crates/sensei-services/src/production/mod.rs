@@ -63,6 +63,11 @@ pub struct WorkOrder {
     pub notes: String,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+    /// Demand pegging (item 31): the sales-order line this work order
+    /// serves — MRP then knows how much open SO demand is already covered
+    /// by in-flight supply instead of using the max() heuristic.
+    #[serde(default)]
+    pub source_sales_order_id: Option<Uuid>,
 }
 
 /// A production order authorizing the manufacture of a specific product quantity.
@@ -870,6 +875,7 @@ mod tests {
             notes: String::new(),
             created_at: Utc::now(),
             updated_at: Utc::now(),
+            source_sales_order_id: None,
         };
 
         let created = service
@@ -915,6 +921,7 @@ mod tests {
             notes: String::new(),
             created_at: Utc::now(),
             updated_at: Utc::now(),
+            source_sales_order_id: None,
         };
 
         let created = service.create_work_order(tenant_id, wo).await.unwrap();
@@ -955,6 +962,7 @@ mod tests {
             notes: String::new(),
             created_at: Utc::now(),
             updated_at: Utc::now(),
+            source_sales_order_id: None,
         };
 
         let created = service.create_work_order(tenant_id, wo).await.unwrap();
@@ -1094,6 +1102,7 @@ mod tests {
             notes: String::new(),
             created_at: Utc::now(),
             updated_at: Utc::now(),
+            source_sales_order_id: None,
         };
         service.create_work_order(tenant_id, wo).await.unwrap();
 
@@ -1172,6 +1181,7 @@ mod tests {
             notes: String::new(),
             created_at: Utc::now(),
             updated_at: Utc::now(),
+            source_sales_order_id: None,
         };
         let created = service.create_work_order(tenant_id, wo).await.unwrap();
 
@@ -1215,6 +1225,7 @@ mod tests {
             notes: String::new(),
             created_at: Utc::now(),
             updated_at: Utc::now(),
+            source_sales_order_id: None,
         };
         let created2 = service.create_work_order(tenant_id, wo2).await.unwrap();
         let ops = service

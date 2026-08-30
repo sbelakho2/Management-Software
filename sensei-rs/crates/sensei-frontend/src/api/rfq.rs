@@ -304,11 +304,13 @@ impl RfqApi {
     }
 
     pub async fn get_rfq(client: &ApiClient, id: &str) -> Result<RfqDto, ApiError> {
-        client.get(&format!("/api/v1/rfqs/{}", id)).await
+        client
+            .get(&format!("/api/v1/supply-chain/rfqs/{}", id))
+            .await
     }
 
     pub async fn create_rfq(client: &ApiClient, data: &CreateRfqData) -> Result<RfqDto, ApiError> {
-        client.post("/api/v1/rfqs", data).await
+        client.post("/api/v1/supply-chain/rfqs", data).await
     }
 
     pub async fn update_rfq(
@@ -316,17 +318,21 @@ impl RfqApi {
         id: &str,
         data: &UpdateRfqData,
     ) -> Result<RfqDto, ApiError> {
-        client.put(&format!("/api/v1/rfqs/{}", id), data).await
+        client
+            .put(&format!("/api/v1/supply-chain/rfqs/{}", id), data)
+            .await
     }
 
     pub async fn delete_rfq(client: &ApiClient, id: &str) -> Result<serde_json::Value, ApiError> {
-        client.delete(&format!("/api/v1/rfqs/{}", id)).await
+        client
+            .delete(&format!("/api/v1/supply-chain/rfqs/{}", id))
+            .await
     }
 
     pub async fn submit_rfq(client: &ApiClient, id: &str) -> Result<RfqDto, ApiError> {
         client
             .post(
-                &format!("/api/v1/rfqs/{}/submit", id),
+                &format!("/api/v1/supply-chain/rfqs/{}/submit", id),
                 &serde_json::json!({}),
             )
             .await
@@ -380,7 +386,7 @@ impl RfqApi {
         }
         client
             .post(
-                &format!("/api/v1/rfqs/{}/cancel", id),
+                &format!("/api/v1/supply-chain/rfqs/{}/cancel", id),
                 &CancelBody { reason },
             )
             .await
@@ -415,7 +421,7 @@ impl RfqApi {
     pub async fn duplicate_rfq(client: &ApiClient, id: &str) -> Result<RfqDto, ApiError> {
         client
             .post(
-                &format!("/api/v1/rfqs/{}/duplicate", id),
+                &format!("/api/v1/supply-chain/rfqs/{}", id),
                 &serde_json::json!({}),
             )
             .await
@@ -545,14 +551,16 @@ impl QuoteApi {
     }
 
     pub async fn get_quote(client: &ApiClient, id: &str) -> Result<QuoteDto, ApiError> {
-        client.get(&format!("/api/v1/quotes/{}", id)).await
+        client
+            .get(&format!("/api/v1/supply-chain/quotes/{}", id))
+            .await
     }
 
     pub async fn create_quote(
         client: &ApiClient,
         data: &CreateQuoteData,
     ) -> Result<QuoteDto, ApiError> {
-        client.post("/api/v1/quotes", data).await
+        client.post("/api/v1/supply-chain/quotes", data).await
     }
 
     pub async fn update_quote(
@@ -560,11 +568,15 @@ impl QuoteApi {
         id: &str,
         data: &UpdateQuoteData,
     ) -> Result<QuoteDto, ApiError> {
-        client.put(&format!("/api/v1/quotes/{}", id), data).await
+        client
+            .put(&format!("/api/v1/supply-chain/quotes/{}", id), data)
+            .await
     }
 
     pub async fn delete_quote(client: &ApiClient, id: &str) -> Result<serde_json::Value, ApiError> {
-        client.delete(&format!("/api/v1/quotes/{}", id)).await
+        client
+            .delete(&format!("/api/v1/supply-chain/quotes/{}", id))
+            .await
     }
 
     pub async fn submit_quote_for_approval(
@@ -573,7 +585,7 @@ impl QuoteApi {
     ) -> Result<QuoteDto, ApiError> {
         client
             .post(
-                &format!("/api/v1/quotes/{}/submit-for-approval", id),
+                &format!("/api/v1/supply-chain/quotes/{}/submit", id),
                 &serde_json::json!({}),
             )
             .await
@@ -590,7 +602,7 @@ impl QuoteApi {
         }
         client
             .post(
-                &format!("/api/v1/quotes/{}/approve", id),
+                &format!("/api/v1/supply-chain/quotes/{}/approve", id),
                 &ApproveBody { notes },
             )
             .await
@@ -607,7 +619,7 @@ impl QuoteApi {
         }
         client
             .post(
-                &format!("/api/v1/quotes/{}/reject", id),
+                &format!("/api/v1/supply-chain/quotes/{}/reject", id),
                 &RejectBody { reason },
             )
             .await
@@ -623,14 +635,17 @@ impl QuoteApi {
             email: Option<&'a str>,
         }
         client
-            .post(&format!("/api/v1/quotes/{}/send", id), &SendBody { email })
+            .post(
+                &format!("/api/v1/supply-chain/quotes/{}/submit", id),
+                &SendBody { email },
+            )
             .await
     }
 
     pub async fn accept_quote(client: &ApiClient, id: &str) -> Result<QuoteDto, ApiError> {
         client
             .post(
-                &format!("/api/v1/quotes/{}/accept", id),
+                &format!("/api/v1/supply-chain/quotes/{}/accept", id),
                 &serde_json::json!({}),
             )
             .await
@@ -773,7 +788,7 @@ impl QuoteApi {
 
 fn build_rfq_query(params: Option<&RfqListParams>) -> String {
     let Some(p) = params else {
-        return "/api/v1/rfqs".to_string();
+        return "/api/v1/supply-chain/rfqs".to_string();
     };
 
     let mut q = Vec::new();
@@ -812,7 +827,7 @@ fn build_rfq_query(params: Option<&RfqListParams>) -> String {
     }
 
     if q.is_empty() {
-        "/api/v1/rfqs".to_string()
+        "/api/v1/supply-chain/rfqs".to_string()
     } else {
         format!("/api/v1/rfqs?{}", q.join("&"))
     }
@@ -820,7 +835,7 @@ fn build_rfq_query(params: Option<&RfqListParams>) -> String {
 
 fn build_quote_query(params: Option<&QuoteListParams>) -> String {
     let Some(p) = params else {
-        return "/api/v1/quotes".to_string();
+        return "/api/v1/supply-chain/quotes".to_string();
     };
 
     let mut q = Vec::new();
@@ -856,7 +871,7 @@ fn build_quote_query(params: Option<&QuoteListParams>) -> String {
     }
 
     if q.is_empty() {
-        "/api/v1/quotes".to_string()
+        "/api/v1/supply-chain/quotes".to_string()
     } else {
         format!("/api/v1/quotes?{}", q.join("&"))
     }

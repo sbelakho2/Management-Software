@@ -236,9 +236,17 @@ pub async fn edges_around(
     .await
     .map_err(|e| SenseiError::Database(format!("Graph query failed: {e}")))?;
 
-    Ok(Json(
-        rows.into_iter()
-            .map(|(id, st, si, rel, tt, ti, ca)| GraphEdge {
+    // Item 62: object-level ACL — an edge is only returned when BOTH
+    // endpoints are visible to the caller. The relationship itself can
+    // reveal sensitive metadata even when the underlying object is not
+    // readable (HR, finance, restricted projects), so the graph must not
+    // leak it.
+    let mut visible: Vec<GraphEdge> = Vec::new();
+    for (id, st, si, rel, tt, ti, ca) in rows {
+        let source_ok = node_visible_to(pool, user.tenant_id, &user.roles, &st, si).await?;
+        let target_ok = node_visible_to(pool, user.tenant_id, &user.roles, &tt, ti).await?;
+        if source_ok && target_ok {
+            visible.push(GraphEdge {
                 id,
                 source_type: st,
                 source_id: si,
@@ -246,7 +254,47 @@ pub async fn edges_around(
                 target_type: tt,
                 target_id: ti,
                 created_at: ca,
-            })
-            .collect(),
-    ))
+            });
+        }
+    }
+    Ok(Json(visible))
+}
+
+/// Whether a graph node is visible to the caller (item 62): knowledge
+/// packs carry `allowed_roles` in their entity_store row — an edge to a
+/// restricted pack is filtered out. All other typed nodes are tenant-
+/// scoped, so tenant membership is the ACL.
+async fn node_visible_to(
+    pool: &sqlx::PgPool,
+    tenant_id: Uuid,
+    caller_roles: &[String],
+    node_type: &str,
+    node_id: Uuid,
+) -> Result<bool> {
+    if node_type != "knowledge_pack" {
+        // Tenant-scoped typed nodes (abnormality, work_center, a3,
+        // standard, work_order, product): tenant isolation is the ACL.
+        return Ok(true);
+    }
+    let allowed: Option<serde_json::Value> = sqlx::query_scalar(
+        "SELECT es.data->'allowed_roles' FROM entity_store es \
+         WHERE es.tenant_id = $1 AND es.entity_type = 'knowledge_pack' AND es.id = $2",
+    )
+    .bind(tenant_id)
+    .bind(node_id)
+    .fetch_optional(pool)
+    .await
+    .map_err(|e| SenseiError::Database(format!("Node ACL read failed: {e}")))?;
+    match allowed {
+        None => Ok(true), // no restriction recorded
+        Some(serde_json::Value::Array(roles)) if roles.is_empty() => Ok(true),
+        Some(serde_json::Value::Array(roles)) => {
+            let required: Vec<String> = roles
+                .iter()
+                .filter_map(|r| r.as_str().map(|s| s.to_string()))
+                .collect();
+            Ok(required.iter().any(|r| caller_roles.iter().any(|c| c == r)))
+        }
+        Some(_) => Ok(true),
+    }
 }

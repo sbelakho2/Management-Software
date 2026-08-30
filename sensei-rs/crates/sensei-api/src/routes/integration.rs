@@ -122,6 +122,10 @@ pub async fn import_record(
                 ),
                 importer::ImportOutcome::Conflict(m) => ("conflict", Some(m)),
                 importer::ImportOutcome::Quarantined(m) => ("quarantined", Some(m)),
+                importer::ImportOutcome::Tombstoned => (
+                    "tombstoned",
+                    Some("Legacy record disabled — canonical entity archived".to_string()),
+                ),
             };
             Ok(Json(ImportResponse {
                 outcome: outcome_str,

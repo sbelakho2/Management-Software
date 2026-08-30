@@ -132,6 +132,27 @@ pub async fn derive_signals(
     use sensei_services::tps::signals::*;
     let mut signals: Vec<TpsSignal> = Vec::new();
 
+    // Item 45: contextual thresholds — versioned factory knowledge per
+    // signal key (site-policy defaults when no override exists). The
+    // classifiers stay deterministic; the NUMBERS are data.
+    let mut threshold: std::collections::HashMap<String, f64> = std::collections::HashMap::new();
+    {
+        let rows: Vec<(String, f64)> = sqlx::query_as(
+            "SELECT signal_key, threshold_value FROM tps_thresholds \
+             WHERE tenant_id = $1 AND product_family_id IS NULL",
+        )
+        .bind(user.tenant_id)
+        .fetch_all(pool.as_ref())
+        .await
+        .map_err(|e| {
+            sensei_core::error::SenseiError::Database(format!("Threshold read failed: {e}"))
+        })?;
+        for (key, value) in rows {
+            threshold.insert(key, value);
+        }
+    }
+    let thr = |key: &str, default: f64| -> f64 { threshold.get(key).copied().unwrap_or(default) };
+
     // ── Andon recurrence (item 41): the SAME issue type on the SAME work
     //    center raised 3+ times in 14 days — countermeasure ineffective.
     let recurring: Vec<(i64,)> = sqlx::query_as(
@@ -148,7 +169,8 @@ pub async fn derive_signals(
         sensei_core::error::SenseiError::Database(format!("Recurrence read failed: {e}"))
     })?;
     for (count,) in recurring {
-        if let Some(s) = classify_andon_recurrence(count, 14, 3) {
+        let recurrence_threshold = thr("andon_recurrence_count", 3.0) as i64;
+        if let Some(s) = classify_andon_recurrence(count, 14, recurrence_threshold) {
             signals.push(s);
         }
     }
@@ -170,8 +192,10 @@ pub async fn derive_signals(
     .await
     .map_err(|e| sensei_core::error::SenseiError::Database(format!("Queue read failed: {e}")))?;
     for (_wc, open_count, _in_progress) in queue {
-        // 10+ open WOs in 30 days at one center = accumulation signal.
-        if let Some(s) = classify_queue_growth(open_count, 30 * 24 * 60, 4) {
+        // 10+ open WOs in 30 days at one center = accumulation signal
+        // (the count is site policy, not a universal constant).
+        let queue_threshold = thr("queue_growth_count", 4.0) as i64;
+        if let Some(s) = classify_queue_growth(open_count, 30 * 24 * 60, queue_threshold) {
             signals.push(s);
         }
     }
@@ -194,7 +218,8 @@ pub async fn derive_signals(
     .await
     .map_err(|e| sensei_core::error::SenseiError::Database(format!("Supplier read failed: {e}")))?;
     for (_name, stddev, mean) in suppliers {
-        if let Some(s) = classify_supplier_variability(stddev, mean, 1.0) {
+        let variability_threshold = thr("supplier_variability_stddev", 1.0);
+        if let Some(s) = classify_supplier_variability(stddev, mean, variability_threshold) {
             signals.push(s);
         }
     }
@@ -213,7 +238,8 @@ pub async fn derive_signals(
     .await
     .map_err(|e| sensei_core::error::SenseiError::Database(format!("Cycle read failed: {e}")))?;
     for (actual, standard) in cycle {
-        if let Some(s) = classify_cycle_miss(actual, standard, 0.2) {
+        let miss_ratio = thr("cycle_miss_ratio", 0.2);
+        if let Some(s) = classify_cycle_miss(actual, standard, miss_ratio) {
             signals.push(s);
         }
     }

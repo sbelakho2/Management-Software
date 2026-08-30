@@ -179,8 +179,8 @@ impl ProductionApi {
     ) -> Result<Vec<MrpRecordDto>, ApiError> {
         client
             .post(
-                &format!("/api/v1/production/mrp/{}", product_id),
-                &serde_json::json!({}),
+                "/api/v1/mrp/planning",
+                &serde_json::json!({ "product_number": product_id }),
             )
             .await
     }

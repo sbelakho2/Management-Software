@@ -462,14 +462,13 @@ impl KanbanApi {
         id: &str,
         params: Option<&TaskListParams>,
     ) -> Result<HashMap<String, Vec<TaskDto>>, ApiError> {
-        let path =
-            build_task_query_with_prefix(&format!("/api/v1/kanban/boards/{}/tasks", id), params);
+        let path = build_task_query_with_prefix(&format!("/api/v1/kanban/columns/{}", id), params);
         client.get(&path).await
     }
 
     pub async fn move_task_on_board(
         client: &ApiClient,
-        board_id: &str,
+        _board_id: &str,
         task_id: &str,
         status: &str,
         position: Option<i32>,
@@ -481,7 +480,7 @@ impl KanbanApi {
         }
         client
             .post(
-                &format!("/api/v1/kanban/boards/{}/tasks/{}/move", board_id, task_id),
+                &format!("/api/v1/kanban/cards/{}/move", task_id),
                 &MoveBody { status, position },
             )
             .await
@@ -526,21 +525,18 @@ impl KanbanApi {
 
     pub async fn update_column(
         client: &ApiClient,
-        board_id: &str,
+        _board_id: &str,
         column_id: &str,
         data: &UpdateKanbanColumnData,
     ) -> Result<KanbanColumnDto, ApiError> {
         client
-            .put(
-                &format!("/api/v1/kanban/boards/{}/columns/{}", board_id, column_id),
-                data,
-            )
+            .put(&format!("/api/v1/kanban/columns/{}", column_id), data)
             .await
     }
 
     pub async fn reorder_columns(
         client: &ApiClient,
-        board_id: &str,
+        _board_id: &str,
         column_ids: &[String],
     ) -> Result<Vec<KanbanColumnDto>, ApiError> {
         #[derive(Serialize)]
@@ -548,10 +544,7 @@ impl KanbanApi {
             ids: &'a [String],
         }
         client
-            .post(
-                &format!("/api/v1/kanban/boards/{}/columns/reorder", board_id),
-                &ReorderBody { ids: column_ids },
-            )
+            .post("/api/v1/kanban/columns", &ReorderBody { ids: column_ids })
             .await
     }
 }

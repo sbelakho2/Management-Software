@@ -25,6 +25,7 @@ struct WorkOrderRow {
     tenant_id: Uuid,
     wo_number: String,
     product_id: Uuid,
+    source_sales_order_id: Option<Uuid>,
     product_name: String,
     quantity: i64,
     quantity_completed: i64,
@@ -109,6 +110,7 @@ fn wo_row_to_domain(r: WorkOrderRow) -> WorkOrder {
         notes: r.notes,
         created_at: r.created_at,
         updated_at: r.updated_at,
+        source_sales_order_id: r.source_sales_order_id,
     }
 }
 
@@ -320,7 +322,7 @@ impl ProductionService for DatabaseProductionService {
                       quantity, quantity_completed, quantity_scrapped, status, work_center_id, priority,
                       scheduled_start, scheduled_end, actual_start, actual_end,
                       quantity_scrapped, short_close_qty, short_close_reason, short_close_approved_by, short_close_at,
-                      assigned_to, notes, created_at, updated_at
+                      assigned_to, notes, created_at, updated_at, source_sales_order_id
             "#,
         )
         .bind(wo.id)
@@ -346,6 +348,7 @@ impl ProductionService for DatabaseProductionService {
         .bind(&wo.notes)
         .bind(now)
         .bind(now)
+        .bind(wo.source_sales_order_id)
         .fetch_one(&mut *self_tx)
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to create work order: {e}")))?;
@@ -384,7 +387,7 @@ impl ProductionService for DatabaseProductionService {
                    quantity, quantity_completed, quantity_scrapped, status, work_center_id, priority,
                    scheduled_start, scheduled_end, actual_start, actual_end,
                    quantity_scrapped, short_close_qty, short_close_reason, short_close_approved_by, short_close_at,
-                   assigned_to, notes, created_at, updated_at
+                   assigned_to, notes, created_at, updated_at, source_sales_order_id
             FROM work_orders
             WHERE id = $1 AND tenant_id = $2
             "#,
@@ -417,7 +420,7 @@ impl ProductionService for DatabaseProductionService {
                    quantity, quantity_completed, quantity_scrapped, status, work_center_id, priority,
                    scheduled_start, scheduled_end, actual_start, actual_end,
                    quantity_scrapped, short_close_qty, short_close_reason, short_close_approved_by, short_close_at,
-                   assigned_to, notes, created_at, updated_at
+                   assigned_to, notes, created_at, updated_at, source_sales_order_id
             FROM work_orders
             WHERE tenant_id = $1
               AND ($2::text IS NULL OR status = $2)
@@ -528,7 +531,7 @@ impl ProductionService for DatabaseProductionService {
                       quantity, quantity_completed, quantity_scrapped, status, work_center_id, priority,
                       scheduled_start, scheduled_end, actual_start, actual_end,
                       quantity_scrapped, short_close_qty, short_close_reason, short_close_approved_by, short_close_at,
-                      assigned_to, notes, created_at, updated_at
+                      assigned_to, notes, created_at, updated_at, source_sales_order_id
             "#,
         )
         .bind(status)
@@ -592,7 +595,7 @@ impl ProductionService for DatabaseProductionService {
                       quantity, quantity_completed, quantity_scrapped, status, work_center_id, priority,
                       scheduled_start, scheduled_end, actual_start, actual_end,
                       quantity_scrapped, short_close_qty, short_close_reason, short_close_approved_by, short_close_at,
-                      assigned_to, notes, created_at, updated_at
+                      assigned_to, notes, created_at, updated_at, source_sales_order_id
             "#,
         )
         .bind(wo.product_id)
@@ -663,7 +666,7 @@ impl ProductionService for DatabaseProductionService {
                       short_close_qty, short_close_reason, short_close_approved_by, short_close_at,
                       status, work_center_id, priority,
                       scheduled_start, scheduled_end, actual_start, actual_end,
-                      assigned_to, notes, created_at, updated_at
+                      assigned_to, notes, created_at, updated_at, source_sales_order_id
             "#,
         )
         .bind(quantity_completed)
@@ -1060,9 +1063,36 @@ impl ProductionService for DatabaseProductionService {
         .fetch_one(&self.pool)
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to compute work-order backlog: {e}")))?;
-        // Item 18: the demand is compared in DECIMAL (NUMERIC) — the f64
-        // round-trip is gone.
-        let demand_qty = if so_demand > wo_backlog {
+        // Item 31 (demand pegging): work orders that CARRY their source
+        // sales-order id are in-flight supply AGAINST that SO demand —
+        // they shrink the remaining demand instead of being double
+        // counted. Unpegged work orders (legacy WOs without a source
+        // link) are INDEPENDENT demand and add on top.
+        let pegged_backlog: rust_decimal::Decimal = sqlx::query_scalar(
+            "SELECT COALESCE(SUM(quantity - quantity_completed), 0)::numeric \
+             FROM work_orders \
+             WHERE product_id = $1 AND tenant_id = $2 \
+               AND source_sales_order_id IS NOT NULL \
+               AND status NOT IN ('completed', 'cancelled')",
+        )
+        .bind(product_id)
+        .bind(tenant_id)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|e| SenseiError::Database(format!("Failed to compute pegged backlog: {e}")))?;
+        // Pegging semantics (item 31): with the WO→SO linkage present,
+        // demand is EXACT — pegged supply covers SO demand, unpegged WOs
+        // are independent demand (audit example: SO 1000 + pegged 600 +
+        // independent 500 → 900, not the ambiguous 1000-or-1100 of max()).
+        // WITHOUT the linkage (legacy WOs untagged) the max() heuristic
+        // stays — it is the safe no-information answer that avoids
+        // double-counting SOs already converted into work orders.
+        let demand_qty = if pegged_backlog > rust_decimal::Decimal::ZERO {
+            let so_remaining = (so_demand - pegged_backlog).max(rust_decimal::Decimal::ZERO);
+            let independent_backlog =
+                (wo_backlog - pegged_backlog).max(rust_decimal::Decimal::ZERO);
+            so_remaining + independent_backlog
+        } else if so_demand > wo_backlog {
             so_demand
         } else {
             wo_backlog

@@ -34,6 +34,65 @@ use crate::state::AppState;
 /// A finalized identity-map row (claim + version semantics).
 type MappingRow = (String, Uuid, Option<String>, Option<String>, bool);
 
+/// Field-level source-of-truth (item 2): `sensei_wins` fields are NEVER
+/// overwritten by a legacy import. Defaults to writable when the matrix
+/// has no row (the matrix is authoritative when it does).
+pub async fn field_is_writable(
+    pool: &sqlx::PgPool,
+    tenant_id: Uuid,
+    sensei_entity: &str,
+    field_name: &str,
+) -> Result<bool> {
+    // Lazy per-tenant seeding (a tenant created AFTER migration 103 still
+    // gets the field-ownership matrix — the migration seed only covers
+    // tenants that existed then).
+    sqlx::query(
+        "INSERT INTO integration_field_authority (tenant_id, sensei_entity, field_name, authority_system, mode, note) \
+         SELECT $1, v.entity, v.field, v.system, v.mode, v.note FROM (VALUES \
+            ('product', 'product_number',  'starzerp', 'source_wins', 'SKU originates in StarzERP'), \
+            ('product', 'name',            'starzerp', 'source_wins', 'description is a legacy master-data fact'), \
+            ('product', 'standard_cost',   'starzerp', 'source_wins', 'cost originates in the ERP cost rollup'), \
+            ('product', 'selling_price',   'starzerp', 'source_wins', 'price list lives in the ERP'), \
+            ('product', 'unit_of_measure', 'starzerp', 'source_wins', 'UOM is a master-data fact'), \
+            ('product', 'min_stock_level', 'sensei',   'sensei_wins', 'planning policy is Sensei-owned (TPS)'), \
+            ('product', 'max_stock_level', 'sensei',   'sensei_wins', 'planning policy is Sensei-owned (TPS)'), \
+            ('account', 'name',            'crm_v2',   'source_wins', 'customer name originates in CRM'), \
+            ('account', 'email',           'crm_v2',   'source_wins', 'contact facts originate in CRM'), \
+            ('account', 'phone',           'crm_v2',   'source_wins', 'contact facts originate in CRM'), \
+            ('account', 'account_type',    'sensei',   'sensei_wins', 'Sensei classifies the account role'), \
+            ('account', 'status',          'sensei',   'sensei_wins', 'lifecycle state is Sensei-owned'), \
+            ('opportunity', 'stage',       'crm_v2',   'source_wins', 'pipeline stage maps from CRM deliberately'), \
+            ('opportunity', 'amount',      'sensei',   'manual',      'cutover-dependent: CRM estimate vs Sensei value'), \
+            ('supplier', 'name',           'starzerp', 'source_wins', 'supplier master data lives in the ERP'), \
+            ('supplier', 'status',         'sensei',   'sensei_wins', 'qualification state is Sensei-owned'), \
+            ('sales_order', 'status',      'starzerp', 'source_wins', 'order lifecycle is the ERP contract'), \
+            ('sales_order', 'delivery_date','starzerp', 'source_wins', 'customer-requested date is a contract fact'), \
+            ('stock_move', 'quantity',     'starzerp', 'source_wins', 'the movement fact is historical truth'), \
+            ('stock_move', 'move_type',    'starzerp', 'source_wins', 'the movement fact is historical truth') \
+         ) AS v(entity, field, system, mode, note) \
+         WHERE NOT EXISTS ( \
+             SELECT 1 FROM integration_field_authority fa \
+             WHERE fa.tenant_id = $1 AND fa.sensei_entity = v.entity AND fa.field_name = v.field \
+         )",
+    )
+    .bind(tenant_id)
+    .execute(pool)
+    .await
+    .map_err(|e| SenseiError::Database(format!("Field authority seed failed: {e}")))?;
+
+    let mode: Option<String> = sqlx::query_scalar(
+        "SELECT mode FROM integration_field_authority \
+         WHERE tenant_id = $1 AND sensei_entity = $2 AND field_name = $3",
+    )
+    .bind(tenant_id)
+    .bind(sensei_entity)
+    .bind(field_name)
+    .fetch_optional(pool)
+    .await
+    .map_err(|e| SenseiError::Database(format!("Field authority read failed: {e}")))?;
+    Ok(mode.as_deref() != Some("sensei_wins"))
+}
+
 /// Per-import outcome (item 23: success / retryable / permanent /
 /// dependency-unresolved / conflict / duplicate / stale).
 #[derive(Debug, Clone, PartialEq)]
@@ -43,6 +102,10 @@ pub enum ImportOutcome {
     Stale,
     Conflict(String),
     Quarantined(String),
+    /// A legacy record was disabled/deleted (item 21): the canonical
+    /// entity was ARCHIVED (deactivated — never physically deleted) and
+    /// the mapping tombstoned.
+    Tombstoned,
 }
 
 /// Source envelope metadata for one legacy record.
@@ -818,6 +881,26 @@ pub async fn apply_record(
     let payload = serde_json::to_string(&record.payload).unwrap_or_default();
     let payload_hash = sha256_hex(&payload);
 
+    // Item 21: a TOMBSTONED legacy id is permanently archived — even a
+    // byte-identical replay of the pre-deletion payload must not slip
+    // through the inbox dedupe and look like a harmless duplicate.
+    let mapping_tombstoned: Option<bool> = sqlx::query_scalar(
+        "SELECT tombstoned FROM integration_entity_map \
+         WHERE tenant_id = $1 AND legacy_system = $2 AND legacy_entity = $3 AND legacy_id = $4",
+    )
+    .bind(tenant_id)
+    .bind(&record.system)
+    .bind(&record.entity)
+    .bind(&record.legacy_id)
+    .fetch_optional(pool.as_ref())
+    .await
+    .map_err(|e| SenseiError::Database(format!("Tombstone check failed: {e}")))?;
+    if mapping_tombstoned == Some(true) {
+        return Ok(ImportOutcome::Conflict(
+            "Legacy record is tombstoned — resurrection blocked".to_string(),
+        ));
+    }
+
     // Replay dedupe (item 4).
     if inbox_seen(
         pool,
@@ -831,6 +914,19 @@ pub async fn apply_record(
     .await?
     {
         return Ok(ImportOutcome::Duplicate);
+    }
+
+    // ── 0. Tombstone (item 21): a legacy disable/delete archives the
+    // canonical entity — deactivation, never physical deletion — and
+    // marks the mapping tombstoned so a stale re-import cannot resurrect
+    // it.
+    if record
+        .payload
+        .get("tombstoned")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false)
+    {
+        return apply_tombstone(state, tenant_id, record, &payload_hash, envelope).await;
     }
 
     let mut tx = pool
@@ -1174,6 +1270,36 @@ async fn apply_canonical(
                 .await;
         }
         ("account", sensei_services::integration::CanonicalEntity::Account(a)) => {
+            // Item 2: account_type/status are Sensei-owned (sensei_wins) —
+            // the import may update CRM-owned facts ONLY (name/email/phone).
+            let writable_name = field_is_writable(pool, tenant_id, "account", "name").await?;
+            let writable_email = field_is_writable(pool, tenant_id, "account", "email").await?;
+            let writable_phone = field_is_writable(pool, tenant_id, "account", "phone").await?;
+            let current = state
+                .accounts_service
+                .get_account(tenant_id, sensei_id)
+                .await
+                .ok();
+            let (name, email, phone) = match current {
+                Some(cur) => (
+                    if writable_name {
+                        a.name.clone()
+                    } else {
+                        cur.name.clone()
+                    },
+                    if writable_email {
+                        a.email.clone()
+                    } else {
+                        cur.email.clone()
+                    },
+                    if writable_phone {
+                        a.phone.clone()
+                    } else {
+                        cur.phone.clone()
+                    },
+                ),
+                None => (a.name.clone(), a.email.clone(), a.phone.clone()),
+            };
             let _ = state
                 .accounts_service
                 .update_account(
@@ -1182,16 +1308,18 @@ async fn apply_canonical(
                     sensei_core::domain::entities::Account {
                         id: sensei_id,
                         tenant_id,
-                        name: a.name.clone(),
+                        name,
                         tax_id: None,
-                        email: a.email.clone(),
-                        phone: a.phone.clone(),
+                        email,
+                        phone,
                         address_line1: None,
                         address_line2: None,
                         city: None,
                         state: None,
                         postal_code: None,
                         country: a.country.clone(),
+                        // sensei_wins: preserve the Sensei-owned lifecycle
+                        // state — never clobbered by a CRM re-import.
                         account_type: "customer".to_string(),
                         is_active: true,
                         notes: None,
@@ -1327,6 +1455,126 @@ async fn apply_canonical(
         }
     }
     Ok(ImportOutcome::Applied)
+}
+
+/// Archive a tombstoned legacy record (item 21): the canonical entity is
+/// DEACTIVATED (never deleted), the mapping is marked tombstoned, and the
+/// inbox records the event.
+async fn apply_tombstone(
+    state: &AppState,
+    tenant_id: Uuid,
+    record: &LegacyRecord,
+    payload_hash: &str,
+    envelope: &Envelope,
+) -> Result<ImportOutcome> {
+    let pool = state
+        .db_pool
+        .as_ref()
+        .ok_or_else(|| SenseiError::Database("Import requires the database".to_string()))?;
+    let mut tx = pool
+        .begin()
+        .await
+        .map_err(|e| SenseiError::Database(format!("Tombstone tx begin failed: {e}")))?;
+    set_tenant_context(&mut tx, tenant_id).await?;
+
+    let row: Option<(String, Uuid, bool)> = sqlx::query_as(
+        "SELECT sensei_entity, sensei_id, tombstoned FROM integration_entity_map \
+         WHERE tenant_id = $1 AND legacy_system = $2 AND legacy_entity = $3 AND legacy_id = $4",
+    )
+    .bind(tenant_id)
+    .bind(&record.system)
+    .bind(&record.entity)
+    .bind(&record.legacy_id)
+    .fetch_optional(&mut *tx)
+    .await
+    .map_err(|e| SenseiError::Database(format!("Tombstone lookup failed: {e}")))?;
+
+    match row {
+        Some((entity, sensei_id, already_tombstoned)) => {
+            if !already_tombstoned {
+                // Deactivate the canonical entity — archival, never
+                // physical deletion.
+                let update: Option<&str> = match entity.as_str() {
+                    "account" => Some(
+                        "UPDATE accounts SET status = 'inactive', updated_at = NOW() \
+                                 WHERE id = $1 AND tenant_id = $2",
+                    ),
+                    "contact" => Some(
+                        "UPDATE contacts SET is_active = FALSE, updated_at = NOW() \
+                                  WHERE id = $1 AND tenant_id = $2",
+                    ),
+                    "product" => Some(
+                        "UPDATE products SET is_active = FALSE, updated_at = NOW() \
+                                  WHERE id = $1 AND tenant_id = $2",
+                    ),
+                    "supplier" => Some(
+                        "UPDATE suppliers SET status = 'inactive', updated_at = NOW() \
+                                   WHERE id = $1 AND tenant_id = $2",
+                    ),
+                    "sales_order" => Some(
+                        "UPDATE sales_orders SET status = 'cancelled', updated_at = NOW() \
+                                      WHERE id = $1 AND tenant_id = $2",
+                    ),
+                    _ => {
+                        // Entities without an archive flag still get the
+                        // mapping tombstoned (the source no longer exists).
+                        None
+                    }
+                };
+                if let Some(sql) = update {
+                    sqlx::query(sql)
+                        .bind(sensei_id)
+                        .bind(tenant_id)
+                        .execute(&mut *tx)
+                        .await
+                        .map_err(|e| {
+                            SenseiError::Database(format!("Tombstone archive failed: {e}"))
+                        })?;
+                }
+            }
+            sqlx::query(
+                "UPDATE integration_entity_map \
+                 SET tombstoned = TRUE, tombstoned_at = NOW(), source_version = $5, \
+                     source_updated_at = $6, payload_hash = $7, last_seen_at = NOW() \
+                 WHERE tenant_id = $1 AND legacy_system = $2 AND legacy_entity = $3 AND legacy_id = $4",
+            )
+            .bind(tenant_id)
+            .bind(&record.system)
+            .bind(&record.entity)
+            .bind(&record.legacy_id)
+            .bind(&envelope.source_version)
+            .bind(envelope.source_updated_at)
+            .bind(payload_hash)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Tombstone map failed: {e}")))?;
+        }
+        None => {
+            // Never imported — just record the tombstone so a later
+            // create for this legacy id cannot resurrect it.
+            let id = Uuid::new_v4();
+            sqlx::query(
+                "INSERT INTO integration_entity_map  (tenant_id, legacy_system, legacy_entity, legacy_id, sensei_entity, sensei_id, tombstoned, tombstoned_at, source_version, source_updated_at, payload_hash, last_seen_at)  VALUES ($1, $2, $3, $4, 'tombstoned', $5, TRUE, NOW(), $6, $7, $8, NOW())  ON CONFLICT (tenant_id, legacy_system, legacy_entity, legacy_id) DO UPDATE SET tombstoned = TRUE, tombstoned_at = NOW()",
+            )
+            .bind(tenant_id)
+            .bind(&record.system)
+            .bind(&record.entity)
+            .bind(&record.legacy_id)
+            .bind(id)
+            .bind(&envelope.source_version)
+            .bind(envelope.source_updated_at)
+            .bind(payload_hash)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Tombstone record failed: {e}")))?;
+        }
+    }
+
+    mark_inbox_applied(&mut tx, tenant_id, record, envelope, payload_hash).await?;
+    tx.commit()
+        .await
+        .map_err(|e| SenseiError::Database(format!("Tombstone commit failed: {e}")))?;
+    Ok(ImportOutcome::Tombstoned)
 }
 
 async fn finalize_mapping(

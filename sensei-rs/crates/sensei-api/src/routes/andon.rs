@@ -126,6 +126,8 @@ pub async fn raise_andon(
         contained_at: None,
         contained_by: None,
         contained_note: None,
+        escalated: false,
+        escalated_at: None,
     };
     let andon = state.ops_service.raise_andon(tenant_id, andon).await?;
     // Item 63/73: the graph edge is a DERIVED PROJECTION of the
@@ -198,6 +200,22 @@ pub async fn resolve_andon(
     let andon = state
         .ops_service
         .resolve_andon(tenant_id, id, user.user_id, &req.resolution)
+        .await?;
+    Ok(Json(andon))
+}
+
+/// Escalate an Andon to the next tier (item 41: the SAME command path as
+/// every other Andon action — the service owns the state transition).
+pub async fn escalate_andon(
+    user: AuthenticatedUser,
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<Andon>> {
+    user.require_permission("tps:andon:resolve")?;
+    let tenant_id = user.tenant_id;
+    let andon = state
+        .ops_service
+        .escalate_andon(tenant_id, id, user.user_id)
         .await?;
     Ok(Json(andon))
 }

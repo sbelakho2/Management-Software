@@ -313,6 +313,7 @@ async fn database_production_service_crud_works_on_migrated_schema() {
         notes: String::new(),
         created_at: chrono::Utc::now(),
         updated_at: chrono::Utc::now(),
+        source_sales_order_id: None,
     };
     let created = service
         .create_work_order(tenant_id, wo)
@@ -492,6 +493,8 @@ async fn andon_service_rls_and_safety_rule_work_on_migrated_schema() {
                 contained_at: None,
                 contained_by: None,
                 contained_note: None,
+                escalated: false,
+                escalated_at: None,
             },
         )
         .await
@@ -2154,4 +2157,372 @@ async fn tps_standard_revision_binding_follows_the_work_order() {
     .await
     .expect("takt B");
     assert_eq!(takt_b, 80, "the next WO binds revision B (45s takt → 80/h)");
+}
+
+/// Item 2: field-level source-of-truth — a `sensei_wins` field is NEVER
+/// overwritten by a legacy re-import; source-owned fields still update.
+#[tokio::test]
+async fn integration_field_authority_matrix_is_enforced() {
+    let Some(pool) = connect().await else { return };
+    sqlx::query(
+        r#"DO $$ DECLARE r RECORD; BEGIN
+             FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname = 'public') LOOP
+                 EXECUTE format('DROP TABLE IF EXISTS %I CASCADE', r.tablename);
+             END LOOP;
+         END $$"#,
+    )
+    .execute(&pool)
+    .await
+    .expect("drop all tables");
+    sensei_db::migrations::run_migrations(&pool)
+        .await
+        .expect("the ENTIRE migration chain must apply to an empty database");
+
+    let tenant_id = uuid::Uuid::new_v4();
+    let user_id = uuid::Uuid::new_v4();
+    sqlx::query("INSERT INTO tenants (id, name, slug) VALUES ($1, 'fa', 'fieldauth')")
+        .bind(tenant_id)
+        .execute(&pool)
+        .await
+        .expect("tenant insert");
+    sqlx::query(
+        "INSERT INTO users (id, tenant_id, email, name, password_hash)  VALUES ($1, $2, 'fa@x.local', 'F', 'x')",
+    )
+    .bind(user_id)
+    .bind(tenant_id)
+    .execute(&pool)
+    .await
+    .expect("user insert");
+
+    // The matrix is seeded lazily per tenant on first use (migration 103
+    // seeds only tenants that existed at migration time) — trigger it.
+    let _ = sensei_api::routes::integration_importer::field_is_writable(
+        &pool, tenant_id, "account", "status",
+    )
+    .await
+    .expect("authority check");
+    let seeded: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM integration_field_authority WHERE tenant_id = $1")
+            .bind(tenant_id)
+            .fetch_one(&pool)
+            .await
+            .expect("seeded count");
+    assert!(
+        seeded >= 20,
+        "the field-ownership matrix must be seeded, got {seeded}"
+    );
+    let status_mode: String = sqlx::query_scalar(
+        "SELECT mode FROM integration_field_authority WHERE tenant_id = $1 AND sensei_entity = 'account' AND field_name = 'status'",
+    )
+    .bind(tenant_id)
+    .fetch_one(&pool)
+    .await
+    .expect("status mode");
+    assert_eq!(status_mode, "sensei_wins", "account.status is Sensei-owned");
+
+    // Sensei sets the account lifecycle state itself.
+    let account_id = uuid::Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO accounts (id, tenant_id, name, account_type, status, created_at, updated_at)  VALUES ($1, $2, 'Acme', 'customer', 'active', NOW(), NOW())",
+    )
+    .bind(account_id)
+    .bind(tenant_id)
+    .execute(&pool)
+    .await
+    .expect("account insert");
+
+    // A legacy re-import carrying a different status must NOT clobber it —
+    // the importer consults the matrix (field_is_writable) and preserves
+    // sensei_wins fields.
+    let writable: bool = sensei_api::routes::integration_importer::field_is_writable(
+        &pool, tenant_id, "account", "status",
+    )
+    .await
+    .expect("authority check");
+    assert!(!writable, "account.status must be sensei_wins");
+    let writable_name: bool = sensei_api::routes::integration_importer::field_is_writable(
+        &pool, tenant_id, "account", "name",
+    )
+    .await
+    .expect("authority check name");
+    assert!(writable_name, "account.name is CRM-owned (source_wins)");
+}
+
+/// Item 21: a tombstoned legacy record ARCHIVES the canonical entity
+/// (deactivation, never deletion) and marks the mapping — a later stale
+/// create cannot resurrect it.
+#[tokio::test]
+async fn integration_tombstone_archives_and_blocks_resurrection() {
+    let Some(pool) = connect().await else { return };
+    sqlx::query(
+        r#"DO $$ DECLARE r RECORD; BEGIN
+             FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname = 'public') LOOP
+                 EXECUTE format('DROP TABLE IF EXISTS %I CASCADE', r.tablename);
+             END LOOP;
+         END $$"#,
+    )
+    .execute(&pool)
+    .await
+    .expect("drop all tables");
+    sensei_db::migrations::run_migrations(&pool)
+        .await
+        .expect("the ENTIRE migration chain must apply to an empty database");
+
+    let tenant_id = uuid::Uuid::new_v4();
+    let user_id = uuid::Uuid::new_v4();
+    sqlx::query("INSERT INTO tenants (id, name, slug) VALUES ($1, 'tb', 'tomb')")
+        .bind(tenant_id)
+        .execute(&pool)
+        .await
+        .expect("tenant insert");
+    sqlx::query(
+        "INSERT INTO users (id, tenant_id, email, name, password_hash)  VALUES ($1, $2, 'tb@x.local', 'T', 'x')",
+    )
+    .bind(user_id)
+    .bind(tenant_id)
+    .execute(&pool)
+    .await
+    .expect("user insert");
+
+    use sensei_api::state::AppState;
+    std::env::set_var("SENSEI_ENV", "test");
+    std::env::set_var("JWT_SECRET", "test-secret-for-db-gate");
+    let config = sensei_core::config::AppConfig::from_env().expect("config from env");
+    let users_service: std::sync::Arc<dyn sensei_services::users::UsersService> =
+        std::sync::Arc::new(sensei_services::users::InMemoryUsersService::new());
+    let state =
+        AppState::new(config, users_service).with_db_pool(std::sync::Arc::new(pool.clone()));
+
+    // 1. Import a CRM company.
+    let record = sensei_services::integration::LegacyRecord {
+        system: "crm_v2".to_string(),
+        entity: "company".to_string(),
+        legacy_id: "77".to_string(),
+        payload: serde_json::json!({
+            "name": "Acme Ltd",
+            "email": "acme@example.com",
+        }),
+    };
+    sensei_api::routes::integration_importer::apply_record(
+        &state,
+        tenant_id,
+        &record,
+        &sensei_api::routes::integration_importer::Envelope {
+            source_version: Some("v1".to_string()),
+            source_updated_at: None,
+            source_event_id: None,
+            extraction_run_id: "run-tb".to_string(),
+        },
+    )
+    .await
+    .expect("company import");
+
+    // 2. The legacy record is DISABLED — the bridge sends the tombstone.
+    let tombstone = sensei_services::integration::LegacyRecord {
+        system: "crm_v2".to_string(),
+        entity: "company".to_string(),
+        legacy_id: "77".to_string(),
+        payload: serde_json::json!({ "tombstoned": true }),
+    };
+    let outcome = sensei_api::routes::integration_importer::apply_record(
+        &state,
+        tenant_id,
+        &tombstone,
+        &sensei_api::routes::integration_importer::Envelope {
+            source_version: Some("v2".to_string()),
+            source_updated_at: None,
+            source_event_id: Some("evt-del".to_string()),
+            extraction_run_id: "run-tb".to_string(),
+        },
+    )
+    .await
+    .expect("tombstone apply");
+    assert_eq!(
+        outcome,
+        sensei_api::routes::integration_importer::ImportOutcome::Tombstoned,
+        "the tombstone must be recognized"
+    );
+
+    // The canonical account is ARCHIVED (deactivated — never deleted) and
+    // the mapping is tombstoned.
+    let active: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM accounts a \
+         JOIN integration_entity_map m ON m.sensei_id = a.id \
+         WHERE m.tenant_id = $1 AND m.legacy_id = '77' AND a.status = 'active'",
+    )
+    .bind(tenant_id)
+    .fetch_one(&pool)
+    .await
+    .expect("active count");
+    assert_eq!(active, 0, "the archived account must be deactivated");
+    let still_exists: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM accounts a \
+         JOIN integration_entity_map m ON m.sensei_id = a.id \
+         WHERE m.tenant_id = $1 AND m.legacy_id = '77'",
+    )
+    .bind(tenant_id)
+    .fetch_one(&pool)
+    .await
+    .expect("exists count");
+    assert_eq!(still_exists, 1, "archival is deactivation, not deletion");
+    let tombstoned: bool = sqlx::query_scalar(
+        "SELECT tombstoned FROM integration_entity_map WHERE tenant_id = $1 AND legacy_id = '77'",
+    )
+    .bind(tenant_id)
+    .fetch_one(&pool)
+    .await
+    .expect("tombstone flag");
+    assert!(tombstoned, "the mapping must be tombstoned");
+
+    // 3. Resurrection attempt: a stale create for the SAME legacy id is
+    //    rejected (the mapping is tombstoned — never resurrected).
+    let resurrection = sensei_api::routes::integration_importer::apply_record(
+        &state,
+        tenant_id,
+        &record,
+        &sensei_api::routes::integration_importer::Envelope {
+            source_version: Some("v1".to_string()),
+            source_updated_at: None,
+            source_event_id: None,
+            extraction_run_id: "run-tb".to_string(),
+        },
+    )
+    .await
+    .expect("resurrection attempt");
+    assert!(
+        matches!(
+            resurrection,
+            sensei_api::routes::integration_importer::ImportOutcome::Conflict(_)
+        ),
+        "a tombstoned legacy id must not be resurrected"
+    );
+    let accounts: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM accounts a \
+         JOIN integration_entity_map m ON m.sensei_id = a.id \
+         WHERE m.tenant_id = $1 AND m.legacy_id = '77'",
+    )
+    .bind(tenant_id)
+    .fetch_one(&pool)
+    .await
+    .expect("accounts count");
+    assert_eq!(accounts, 1, "no duplicate account may be created");
+}
+
+/// Item 31: demand pegging — SO demand 1000, pegged WO supply 600,
+/// independent WO 500 → demand 900 (the audit's exact example), NOT the
+/// ambiguous 1000-or-1100 of the max() heuristic.
+#[tokio::test]
+async fn mrp_demand_pegging_allocates_supply_against_demand() {
+    let Some(pool) = connect().await else { return };
+    sqlx::query(
+        r#"DO $$ DECLARE r RECORD; BEGIN
+             FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname = 'public') LOOP
+                 EXECUTE format('DROP TABLE IF EXISTS %I CASCADE', r.tablename);
+             END LOOP;
+         END $$"#,
+    )
+    .execute(&pool)
+    .await
+    .expect("drop all tables");
+    sensei_db::migrations::run_migrations(&pool)
+        .await
+        .expect("the ENTIRE migration chain must apply to an empty database");
+
+    let tenant_id = uuid::Uuid::new_v4();
+    let user_id = uuid::Uuid::new_v4();
+    sqlx::query("INSERT INTO tenants (id, name, slug) VALUES ($1, 'peg', 'pegging')")
+        .bind(tenant_id)
+        .execute(&pool)
+        .await
+        .expect("tenant insert");
+    sqlx::query(
+        "INSERT INTO users (id, tenant_id, email, name, password_hash)  VALUES ($1, $2, 'peg@x.local', 'P', 'x')",
+    )
+    .bind(user_id)
+    .bind(tenant_id)
+    .execute(&pool)
+    .await
+    .expect("user insert");
+
+    let product_id = uuid::Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO products  (id, tenant_id, product_number, name, unit_of_measure, is_active, product_type, created_at, updated_at)  VALUES ($1, $2, 'PCB-300', 'Controller', 'pcs', TRUE, 'finished_good', NOW(), NOW())",
+    )
+    .bind(product_id)
+    .bind(tenant_id)
+    .execute(&pool)
+    .await
+    .expect("product insert");
+
+    // The customer account the sales order belongs to.
+    let customer_id = uuid::Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO accounts (id, tenant_id, name, account_type, status, created_at, updated_at)  VALUES ($1, $2, 'Acme', 'customer', 'active', NOW(), NOW())",
+    )
+    .bind(customer_id)
+    .bind(tenant_id)
+    .execute(&pool)
+    .await
+    .expect("customer insert");
+
+    // Open sales order: 1000 units.
+    let so_id = uuid::Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO sales_orders  (id, tenant_id, so_number, order_number, customer_id, customer_name, status, line_items, total_amount, currency, created_at)  VALUES ($1, $2, 'SO-1000', 'SO-1000', $3, 'Acme', 'confirmed', $4::jsonb, 0, 'EUR', NOW())",
+    )
+    .bind(so_id)
+    .bind(tenant_id)
+    .bind(customer_id)
+    .bind(serde_json::json!([{ "product_id": product_id, "quantity": 1000, "quantity_delivered": 0 }]))
+    .execute(&pool)
+    .await
+    .expect("sales order insert");
+
+    // Pegged WO: 600 units in flight FOR the SO.
+    let wo_pegged = uuid::Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO work_orders (id, tenant_id, wo_number, product_id, quantity, status, source_sales_order_id, created_at, updated_at)  VALUES ($1, $2, 'WO-PEG', $3, 600, 'in_progress', $4, NOW(), NOW())",
+    )
+    .bind(wo_pegged)
+    .bind(tenant_id)
+    .bind(product_id)
+    .bind(so_id)
+    .execute(&pool)
+    .await
+    .expect("pegged WO insert");
+    // Independent WO: 500 units NOT tied to any sales order.
+    let wo_ind = uuid::Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO work_orders (id, tenant_id, wo_number, product_id, quantity, status, created_at, updated_at)  VALUES ($1, $2, 'WO-IND', $3, 500, 'in_progress', NOW(), NOW())",
+    )
+    .bind(wo_ind)
+    .bind(tenant_id)
+    .bind(product_id)
+    .execute(&pool)
+    .await
+    .expect("independent WO insert");
+
+    // The MRP engine computes demand = (1000 − 600) + 500 = 900.
+    use sensei_api::state::AppState;
+    std::env::set_var("SENSEI_ENV", "test");
+    std::env::set_var("JWT_SECRET", "test-secret-for-db-gate");
+    let config = sensei_core::config::AppConfig::from_env().expect("config from env");
+    let users_service: std::sync::Arc<dyn sensei_services::users::UsersService> =
+        std::sync::Arc::new(sensei_services::users::InMemoryUsersService::new());
+    let state =
+        AppState::new(config, users_service).with_db_pool(std::sync::Arc::new(pool.clone()));
+    let records = state
+        .production_service
+        .run_mrp(tenant_id, product_id)
+        .await
+        .expect("run_mrp");
+    let record = records
+        .iter()
+        .find(|r| r.product_id == product_id)
+        .expect("product record");
+    assert_eq!(
+        record.gross_requirement,
+        RDecimal::from(900),
+        "pegging: SO 1000 − pegged 600 + independent 500 = 900"
+    );
 }

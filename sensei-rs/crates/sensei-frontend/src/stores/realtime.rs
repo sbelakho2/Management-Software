@@ -57,7 +57,7 @@ impl RealtimeStore {
 
     /// Close the current socket (on logout).
     pub fn disconnect(&self) {
-        if let Some(ws) = self.socket.get_untracked().take() {
+        if let Some(ws) = self.socket.get_untracked().as_ref() {
             let _ = ws.close();
         }
         self.socket.set(None);

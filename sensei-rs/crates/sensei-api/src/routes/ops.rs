@@ -124,6 +124,8 @@ pub async fn raise_andon(
         contained_at: None,
         contained_by: None,
         contained_note: None,
+        escalated: false,
+        escalated_at: None,
     };
     state
         .ops_service

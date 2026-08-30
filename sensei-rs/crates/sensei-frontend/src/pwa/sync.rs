@@ -927,3 +927,85 @@ pub struct BackgroundSyncStatus {
     /// Number of pending operations in the queue.
     pub pending_count: usize,
 }
+
+#[cfg(test)]
+mod conflict_tests {
+    use super::*;
+    use crate::stores::sync::PendingOperation;
+
+    fn op(entity_type: &str, operation_type: &str, entity_id: Option<&str>) -> PendingOperation {
+        PendingOperation {
+            id: "op-1".to_string(),
+            operation_type: operation_type.to_string(),
+            entity_type: entity_type.to_string(),
+            entity_id: entity_id.map(|s| s.to_string()),
+            payload: serde_json::json!({}),
+            status: "pending".to_string(),
+            retry_count: 0,
+            created_at: "2026-08-30T00:00:00Z".to_string(),
+            last_error: None,
+        }
+    }
+
+    /// Item 68: the domain-specific offline conflict rules are REAL —
+    /// inventory/quality/standard/andon/A3/production/re-start domains
+    /// resolve SERVER-WINS (a stale terminal must never overwrite the
+    /// authoritative ledger), while ordinary updates stay Local-Wins.
+    #[test]
+    fn authoritative_domains_resolve_server_wins() {
+        for domain in [
+            "inventory",
+            "inventory_item",
+            "stock_move",
+            "quality_result",
+            "inspection",
+            "first_article",
+            "standard_work",
+            "andon",
+            "a3",
+            "a3_report",
+            "production_report",
+            "production_event",
+            "restart_authorization",
+            "work_order",
+        ] {
+            let o = op(domain, "update", Some("e-1"));
+            match domain_conflict_resolution(&o) {
+                ConflictResolution::ServerWins => {}
+                other => panic!("{domain} must resolve ServerWins, got {other:?}"),
+            }
+        }
+    }
+
+    #[test]
+    fn non_authoritative_updates_stay_local_wins() {
+        let o = op("customer_note", "update", Some("e-1"));
+        assert!(
+            matches!(
+                domain_conflict_resolution(&o),
+                ConflictResolution::LocalWins
+            ),
+            "non-authoritative domains keep the local change"
+        );
+    }
+
+    #[test]
+    fn server_owned_creates_are_flagged_for_review() {
+        // A create without a server id may collide with an entity the
+        // server already holds — a human merges, never a silent overwrite.
+        let o = op("customer_note", "create", None);
+        match domain_conflict_resolution(&o) {
+            ConflictResolution::FlagForReview(_) => {}
+            other => panic!("server-owned create must be flagged, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn conflict_error_detection_recognizes_409_and_already_exists() {
+        assert!(is_conflict_error("409 conflict on sync"));
+        assert!(is_conflict_error("entity already exists"));
+        assert!(is_conflict_error("CONFLICT: version mismatch"));
+        assert!(!is_conflict_error("network timeout"));
+        assert!(!is_conflict_error("500 internal"));
+    }
+}

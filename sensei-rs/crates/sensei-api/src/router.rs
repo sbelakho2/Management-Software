@@ -872,6 +872,14 @@ pub fn build_router(state: AppState) -> Router {
             get(routes::products::list_products).post(routes::products::create_product),
         )
         .route(
+            "/api/v1/products/{id}/bom",
+            get(routes::legacy_contracts::get_product_bom),
+        )
+        .route(
+            "/api/v1/products/{id}/routing",
+            get(routes::legacy_contracts::get_product_routing),
+        )
+        .route(
             "/api/v1/products/{id}",
             get(routes::products::get_product)
                 .put(routes::products::update_product)
@@ -900,6 +908,10 @@ pub fn build_router(state: AppState) -> Router {
             post(routes::ws::realtime_ticket_handler),
         )
         // ── Production Routes ─────────────────────────────────────
+        .route(
+            "/api/v1/production/work-order-operations",
+            get(routes::legacy_contracts::list_work_order_operations),
+        )
         .route(
             "/api/v1/production/work-orders",
             get(routes::production::list_work_orders).post(routes::production::create_work_order),
@@ -992,6 +1004,14 @@ pub fn build_router(state: AppState) -> Router {
             put(routes::maintenance::update_equipment_status),
         )
         // ── Finance Routes ────────────────────────────────────────
+        .route(
+            "/api/v1/finance/cost-rollups",
+            get(routes::legacy_contracts::list_cost_rollups),
+        )
+        .route(
+            "/api/v1/finance/cost-rollups/{id}",
+            get(routes::legacy_contracts::get_cost_rollup),
+        )
         .route(
             "/api/v1/finance/invoices",
             get(routes::finance::list_invoices).post(routes::finance::create_invoice),
@@ -1289,6 +1309,10 @@ pub fn build_router(state: AppState) -> Router {
             post(routes::ops::mitigate_risk),
         )
         // ── Quality Routes ────────────────────────────────────────
+        .route(
+            "/api/v1/quality/inspections",
+            get(routes::legacy_contracts::list_inspections),
+        )
         .route(
             "/api/v1/quality/ncrs",
             get(routes::quality::list_ncrs).post(routes::quality::create_ncr),
@@ -1734,6 +1758,10 @@ pub fn build_router(state: AppState) -> Router {
         .route(
             "/api/v1/andon/{id}/acknowledge",
             post(routes::andon::acknowledge_andon),
+        )
+        .route(
+            "/api/v1/andon/{id}/escalate",
+            post(routes::andon::escalate_andon),
         )
         .route(
             "/api/v1/andon/{id}/resolve",

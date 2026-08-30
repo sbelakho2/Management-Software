@@ -104,7 +104,7 @@ impl PipelineStore {
         self.is_loading.set(true);
         self.error.set(None);
         match client
-            .get::<serde_json::Value>(&format!("/api/v1/rfqs/{}/details", id))
+            .get::<serde_json::Value>(&format!("/api/v1/supply-chain/rfqs/{}", id))
             .await
         {
             Ok(_) => {
@@ -197,7 +197,10 @@ impl PipelineStore {
     ) -> Result<RfqDto, ApiError> {
         let payload = serde_json::json!({ "status": status });
         let rfq: RfqDto = client
-            .put(&format!("/api/v1/rfqs/{}/status", id), &payload)
+            .put(
+                &format!("/api/v1/supply-chain/rfqs/{}/status", id),
+                &payload,
+            )
             .await?;
         self.rfqs.update(|r| {
             if let Some(pos) = r.iter().position(|x| x.id == id) {

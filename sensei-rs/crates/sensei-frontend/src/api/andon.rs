@@ -80,11 +80,11 @@ pub struct AndonApi;
 
 impl AndonApi {
     pub async fn list_andons(client: &ApiClient) -> Result<Vec<AndonEventDto>, ApiError> {
-        client.get("/api/v1/andon/events").await
+        client.get("/api/v1/andon").await
     }
 
     pub async fn get_andon(client: &ApiClient, id: &str) -> Result<AndonEventDto, ApiError> {
-        client.get(&format!("/api/v1/andon/events/{}", id)).await
+        client.get(&format!("/api/v1/andon/{}", id)).await
     }
 
     pub async fn raise_andon(
@@ -100,7 +100,7 @@ impl AndonApi {
     ) -> Result<AndonEventDto, ApiError> {
         client
             .post(
-                &format!("/api/v1/andon/events/{}/acknowledge", id),
+                &format!("/api/v1/andon/{}/acknowledge", id),
                 &serde_json::json!({}),
             )
             .await
@@ -112,14 +112,14 @@ impl AndonApi {
         data: &ResolveAndonData,
     ) -> Result<AndonEventDto, ApiError> {
         client
-            .post(&format!("/api/v1/andon/events/{}/resolve", id), data)
+            .post(&format!("/api/v1/andon/{}/resolve", id), data)
             .await
     }
 
     pub async fn escalate_andon(client: &ApiClient, id: &str) -> Result<AndonEventDto, ApiError> {
         client
             .post(
-                &format!("/api/v1/andon/events/{}/escalate", id),
+                &format!("/api/v1/andon/{}/escalate", id),
                 &serde_json::json!({}),
             )
             .await

@@ -32,6 +32,7 @@ pub mod knowledge_graph;
 pub mod kpi;
 pub mod learning;
 pub mod learning_metrics;
+pub mod legacy_contracts;
 pub mod lsw;
 pub mod maintenance;
 pub mod metrics;

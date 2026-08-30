@@ -74,6 +74,11 @@ pub struct Andon {
     pub contained_by: Option<Uuid>,
     #[serde(default)]
     pub contained_note: Option<String>,
+    /// Item 41: escalation to tier review is a REAL state.
+    #[serde(default)]
+    pub escalated: bool,
+    #[serde(default)]
+    pub escalated_at: Option<DateTime<Utc>>,
 }
 
 /// A continuous improvement or kaizen project.
@@ -188,6 +193,9 @@ pub trait OperationsService: Send + Sync {
         id: Uuid,
         acknowledged_by: Uuid,
     ) -> Result<Andon>;
+    /// Escalate an Andon to tier review (item 41): a real state
+    /// transition through the same command path.
+    async fn escalate_andon(&self, tenant_id: Uuid, id: Uuid, escalated_by: Uuid) -> Result<Andon>;
     /// Resolve an Andon signal with a resolution description.
     async fn resolve_andon(
         &self,
@@ -448,6 +456,32 @@ impl OperationsService for InMemoryOperationsService {
         let result = andon.clone();
         drop(store);
         self.publish_event(AndonAcknowledgedEvent::new(tenant_id, id, acknowledged_by))
+            .await;
+        Ok(result)
+    }
+
+    async fn escalate_andon(&self, tenant_id: Uuid, id: Uuid, escalated_by: Uuid) -> Result<Andon> {
+        let mut store = self.andons.write().await;
+        let andon = store
+            .get_mut(&id)
+            .ok_or_else(|| SenseiError::NotFound(format!("Andon {id} not found")))?;
+        if andon.status == "resolved" || andon.status == "voided" {
+            return Err(SenseiError::Validation(format!(
+                "Cannot escalate a closed Andon (status: {})",
+                andon.status
+            )));
+        }
+        let now = Utc::now();
+        andon.escalated = true;
+        andon.escalated_at = Some(now);
+        if andon.status == "active" {
+            andon.status = "acknowledged".to_string();
+            andon.acknowledged_by = Some(escalated_by);
+            andon.acknowledged_at = Some(now);
+        }
+        let result = andon.clone();
+        drop(store);
+        self.publish_event(AndonAcknowledgedEvent::new(tenant_id, id, escalated_by))
             .await;
         Ok(result)
     }
@@ -1027,6 +1061,8 @@ mod tests {
             contained_at: None,
             contained_by: None,
             contained_note: None,
+            escalated: false,
+            escalated_at: None,
         };
 
         let raised = service
@@ -1228,6 +1264,8 @@ mod tests {
             contained_at: None,
             contained_by: None,
             contained_note: None,
+            escalated: false,
+            escalated_at: None,
         };
         let a2 = Andon {
             id: Uuid::nil(),
@@ -1253,6 +1291,8 @@ mod tests {
             contained_at: None,
             contained_by: None,
             contained_note: None,
+            escalated: false,
+            escalated_at: None,
         };
 
         service.raise_andon(tenant_id, a1).await.unwrap();

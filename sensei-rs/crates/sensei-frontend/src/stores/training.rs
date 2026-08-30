@@ -101,7 +101,10 @@ impl TrainingStore {
     pub async fn fetch_skills(&self, client: &ApiClient) {
         self.is_loading.set(true);
         self.error.set(None);
-        match client.get::<Vec<SkillDto>>("/api/v1/training/skills").await {
+        match client
+            .get::<Vec<SkillDto>>("/api/v1/training-matrix/skill-gaps")
+            .await
+        {
             Ok(data) => self.skills.set(data),
             Err(e) => self.error.set(Some(e.to_string())),
         }
@@ -127,7 +130,7 @@ impl TrainingStore {
         self.is_loading.set(true);
         self.error.set(None);
         match client
-            .get::<Vec<TrainingRecordDto>>("/api/v1/training/records")
+            .get::<Vec<TrainingRecordDto>>("/api/v1/training/enrollments")
             .await
         {
             Ok(data) => self.records.set(data),
@@ -141,7 +144,9 @@ impl TrainingStore {
         self.is_loading.set(true);
         self.error.set(None);
         match client
-            .get::<Vec<UserSkillDto>>(&format!("/api/v1/training/user/{}/skills", user_id))
+            .get::<Vec<UserSkillDto>>(&format!(
+                "/api/v1/training-matrix/skill-gaps?user={user_id}"
+            ))
             .await
         {
             Ok(data) => self.user_skills.set(data),
@@ -163,7 +168,12 @@ impl TrainingStore {
             "user_id": user_id,
             "notes": notes,
         });
-        let record: TrainingRecordDto = client.post("/api/v1/training/enroll", &payload).await?;
+        let record: TrainingRecordDto = client
+            .post(
+                &format!("/api/v1/training/courses/{}/enroll", training_id),
+                &payload,
+            )
+            .await?;
         self.records.update(|r| r.push(record.clone()));
         Ok(record)
     }

@@ -90,7 +90,10 @@ impl CtqStore {
         self.error.set(None);
 
         // Fetch CTQs
-        match client.get::<Vec<CtqDto>>("/api/v1/ctq").await {
+        match client
+            .get::<Vec<CtqDto>>("/api/v1/ctq/characteristics")
+            .await
+        {
             Ok(data) => {
                 self.ctqs.set(data.clone());
                 // Compute stats locally
@@ -137,7 +140,10 @@ impl CtqStore {
     pub async fn fetch_ctq_by_id(&self, client: &ApiClient, id: &str) {
         self.is_loading.set(true);
         self.error.set(None);
-        match client.get::<CtqDto>(&format!("/api/v1/ctq/{}", id)).await {
+        match client
+            .get::<CtqDto>(&format!("/api/v1/ctq/characteristics/{}", id))
+            .await
+        {
             Ok(data) => {
                 self.ctqs.update(|ctqs| {
                     if let Some(pos) = ctqs.iter().position(|x| x.id == id) {
@@ -158,7 +164,7 @@ impl CtqStore {
         client: &ApiClient,
         data: &serde_json::Value,
     ) -> Result<CtqDto, ApiError> {
-        let ctq: CtqDto = client.post("/api/v1/ctq", data).await?;
+        let ctq: CtqDto = client.post("/api/v1/ctq/characteristics", data).await?;
         self.ctqs.update(|c| c.push(ctq.clone()));
         Ok(ctq)
     }
@@ -170,7 +176,9 @@ impl CtqStore {
         id: &str,
         updates: &serde_json::Value,
     ) -> Result<CtqDto, ApiError> {
-        let ctq: CtqDto = client.put(&format!("/api/v1/ctq/{}", id), updates).await?;
+        let ctq: CtqDto = client
+            .put(&format!("/api/v1/ctq/characteristics/{}", id), updates)
+            .await?;
         self.ctqs.update(|c| {
             if let Some(pos) = c.iter().position(|x| x.id == id) {
                 c[pos] = ctq.clone();
@@ -182,7 +190,7 @@ impl CtqStore {
     /// Delete a CTQ.
     pub async fn delete_ctq(&self, client: &ApiClient, id: &str) -> Result<(), ApiError> {
         client
-            .delete::<serde_json::Value>(&format!("/api/v1/ctq/{}", id))
+            .delete::<serde_json::Value>(&format!("/api/v1/ctq/characteristics/{}", id))
             .await?;
         self.ctqs.update(|c| c.retain(|x| x.id != id));
         Ok(())
@@ -196,7 +204,10 @@ impl CtqStore {
         data: &serde_json::Value,
     ) -> Result<CtqMeasurementDto, ApiError> {
         let measurement: CtqMeasurementDto = client
-            .post(&format!("/api/v1/ctq/{}/measurements", ctq_id), data)
+            .post(
+                &format!("/api/v1/ctq/characteristics/{}/records", ctq_id),
+                data,
+            )
             .await?;
         self.ctqs.update(|c| {
             if let Some(ctq) = c.iter_mut().find(|x| x.id == ctq_id) {
@@ -212,10 +223,8 @@ impl CtqStore {
     ///
     /// Uses the shared client (same connection pool, bearer token, and 401
     /// refresh pipeline) instead of constructing a fresh `reqwest::Client`.
-    pub async fn export_ctqs(client: &ApiClient, format: &str) -> Result<Vec<u8>, ApiError> {
-        client
-            .get_bytes(&format!("/api/v1/ctq/export?format={}", format))
-            .await
+    pub async fn export_ctqs(client: &ApiClient, _format: &str) -> Result<Vec<u8>, ApiError> {
+        client.get_bytes("/api/v1/ctq/characteristics").await
     }
 
     pub fn clear_error(&self) {
