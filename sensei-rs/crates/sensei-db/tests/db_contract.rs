@@ -8637,16 +8637,20 @@ async fn invariant_context_sensitivity_is_typed() {
         .expect("the ENTIRE migration chain must apply to an empty database");
 
     use sensei_agent_core::context::{
-        AuthorityRank, ContextItem, ContextRequest, EpistemicStatus, TaskKind, TokenBudget,
+        AuthorityRank, ContextItem, ContextRequest, EpistemicStatus, Provenance, TaskKind,
+        TokenBudget,
     };
     use sensei_agent_core::context_kernel::{build_context_bundle, ContextBundle};
 
     let make_item = |sensitivity: &str| ContextItem {
         payload: serde_json::json!({ "live_state": "running" }),
-        source: "sensor-7".to_string(),
-        source_revision: None,
-        observed_at: None,
-        authority: AuthorityRank::VerifiedObservation,
+        provenance: Provenance {
+            source: "sensor-7".to_string(),
+            source_revision: None,
+            observed_at: None,
+            recorded_at: chrono::Utc::now(),
+            authority: AuthorityRank::VerifiedObservation,
+        },
         sensitivity: sensitivity.to_string(),
         token_cost: 1,
         epistemic_status: EpistemicStatus::RecordedFact,
@@ -9441,5 +9445,1189 @@ async fn invariant_metric_engine_matches_ceo_rollup() {
         (row.fpy - engine_fpy).abs() < 1e-9,
         "the CEO rollup FPY must equal the engine FPY: {} vs {engine_fpy}",
         row.fpy
+    );
+}
+
+/// Sixteenth audit items 5/24/84/96: the AuthzSnapshot is captured ONCE
+/// at request start; `is_still_current` re-reads the revision triple
+/// before a consequential step and FAILS CLOSED if the permission state
+/// moved (TOCTOU guard — retrieval can never run under one permission
+/// state and execution under another). The typed scopes make invalid
+/// scope states impossible: a WorkCenterScope always carries its site
+/// and `allows_site` decides admission.
+#[tokio::test]
+async fn authz_snapshot_current_check() {
+    let _serial = DB_LOCK.lock().await;
+    let Some(pool) = connect().await else { return };
+    sqlx::query(
+        r#"DO $$ DECLARE r RECORD; BEGIN
+             FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname = 'public') LOOP
+                 EXECUTE format('DROP TABLE IF EXISTS %I CASCADE', r.tablename);
+             END LOOP;
+         END $$"#,
+    )
+    .execute(&pool)
+    .await
+    .expect("drop all tables");
+    sensei_db::migrations::run_migrations(&pool)
+        .await
+        .expect("the ENTIRE migration chain must apply to an empty database");
+
+    let tenant_id = uuid::Uuid::new_v4();
+    let user_id = uuid::Uuid::new_v4();
+    sqlx::query("INSERT INTO tenants (id, name, slug) VALUES ($1, 'snapchk', 'snapchk')")
+        .bind(tenant_id)
+        .execute(&pool)
+        .await
+        .expect("tenant insert");
+    sqlx::query(
+        "INSERT INTO users (id, tenant_id, email, name, password_hash) \
+         VALUES ($1, $2, 'snap@chk.local', 'S', 'x')",
+    )
+    .bind(user_id)
+    .bind(tenant_id)
+    .execute(&pool)
+    .await
+    .expect("user insert");
+
+    use sensei_auth::authz_snapshot::AuthzSnapshot;
+    use sensei_services::tps::authorization_revisions::{bump_principal, current_snapshot};
+
+    // The request-start read lazy-seeds 1/1/1 (the route calls
+    // current_snapshot when the snapshot is captured) — only then is a
+    // snapshot under those revisions CURRENT.
+    let seeded = current_snapshot(&pool, tenant_id)
+        .await
+        .expect("request-start snapshot read must lazy-seed 1/1/1");
+    assert_eq!(seeded.policy_revision, 1);
+    assert_eq!(seeded.relationship_revision, 1);
+    assert_eq!(seeded.principal_revision, 1);
+
+    let snapshot = AuthzSnapshot {
+        tenant: tenant_id,
+        principal: user_id,
+        policy_revision: 1,
+        relationship_revision: 1,
+        principal_revision: 1,
+        scope_site: None,
+        permission_digest: [0u8; 32],
+    };
+    assert!(
+        snapshot.is_still_current(&pool).await,
+        "1/1/1 must be current immediately after capture"
+    );
+
+    // A mid-request revocation bumps the principal revision — the TOCTOU
+    // guard fires and the snapshot is NOT current anymore.
+    bump_principal(&pool, tenant_id)
+        .await
+        .expect("principal bump must succeed");
+    assert!(
+        !snapshot.is_still_current(&pool).await,
+        "a revision bump must make the snapshot stale (fail closed)"
+    );
+
+    // Typed scope (item 84): a work-center scope always carries its site
+    // and never admits a foreign one.
+    let site = uuid::Uuid::new_v4();
+    let work_center = uuid::Uuid::new_v4();
+    let other_site = uuid::Uuid::new_v4();
+    let scope = sensei_core::domain::scope::WorkCenterScope::new(site, work_center);
+    assert_eq!(
+        scope.work_center, work_center,
+        "the scope carries the work center"
+    );
+    assert!(scope.allows_site(site), "the scope allows its own site");
+    assert!(
+        !scope.allows_site(other_site),
+        "the scope never allows another site"
+    );
+    let site_scope = sensei_core::domain::scope::SiteScope::new(site);
+    assert_eq!(site_scope.site, site, "SiteScope carries the site");
+    assert_eq!(
+        scope.site, site_scope.site,
+        "WorkCenterScope site == SiteScope site"
+    );
+}
+
+/// Sixteenth audit items 65/66 (legal/compliance policy over time):
+/// country policy is EFFECTIVE-DATED — each publish creates a new
+/// revision, closes the previous open one, and `policy_governing(at)`
+/// answers "what policy governed this event in March 2027?" from the
+/// version table, never from the current `country_policies` row. The
+/// jurisdiction holiday calendar is VERSIONED the same way: a second
+/// add_holiday for the same date creates a NEW revision and the read
+/// returns only the latest revision's name (Morocco's calendar is not a
+/// forever-static string list).
+#[tokio::test]
+async fn policy_versions_and_holiday_calendar() {
+    let _serial = DB_LOCK.lock().await;
+    let Some(pool) = connect().await else { return };
+    sqlx::query(
+        r#"DO $$ DECLARE r RECORD; BEGIN
+             FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname = 'public') LOOP
+                 EXECUTE format('DROP TABLE IF EXISTS %I CASCADE', r.tablename);
+             END LOOP;
+         END $$"#,
+    )
+    .execute(&pool)
+    .await
+    .expect("drop all tables");
+    sensei_db::migrations::run_migrations(&pool)
+        .await
+        .expect("the ENTIRE migration chain must apply to an empty database");
+
+    let tenant_id = uuid::Uuid::new_v4();
+    sqlx::query("INSERT INTO tenants (id, name, slug) VALUES ($1, 'polver', 'polver')")
+        .bind(tenant_id)
+        .execute(&pool)
+        .await
+        .expect("tenant insert");
+
+    use sensei_services::tps::country_policy::{
+        add_holiday, holidays_in, policy_governing, publish_policy_version, CountryPolicy,
+    };
+
+    let base_policy = || CountryPolicy {
+        country: "Morocco".to_string(),
+        language: "fr".to_string(),
+        currency: "MAD".to_string(),
+        unit_system: "metric".to_string(),
+        week_start: "monday".to_string(),
+        holiday_schedule: serde_json::json!(["new_year", "throne_day", "green_march"]),
+        timezone: "Africa/Casablanca".to_string(),
+        data_residency: Some("ma".to_string()),
+        retention_days: 365,
+        employment_data_visibility: "restricted".to_string(),
+        local_document_requirements: serde_json::json!(["invoice_ar", "invoice_fr"]),
+    };
+
+    // (a) First publish → revision 1, OPEN (valid_until IS NULL). The
+    // direct-SQL checks need the RLS tenant context: the policy is FORCEd.
+    publish_policy_version(&pool, tenant_id, base_policy(), Some(tenant_id))
+        .await
+        .expect("publish revision 1");
+    {
+        let mut tx = pool.begin().await.expect("begin");
+        sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
+            .bind(tenant_id.to_string())
+            .execute(&mut *tx)
+            .await
+            .expect("set tenant context");
+        let (revision, valid_until): (i64, Option<chrono::DateTime<chrono::Utc>>) = sqlx::query_as(
+            "SELECT revision, valid_until FROM country_policy_versions \
+             WHERE tenant_id = $1 AND country = 'Morocco'",
+        )
+        .bind(tenant_id)
+        .fetch_one(&mut *tx)
+        .await
+        .expect("revision 1 row exists");
+        assert_eq!(revision, 1, "first publish must be revision 1");
+        assert!(
+            valid_until.is_none(),
+            "revision 1 must be OPEN after the first publish"
+        );
+        // Backdate revision 1 so historical queries can resolve it (the
+        // publish set valid_from = NOW()).
+        sqlx::query(
+            "UPDATE country_policy_versions SET valid_from = NOW() - INTERVAL '30 days' \
+             WHERE tenant_id = $1 AND country = 'Morocco'",
+        )
+        .bind(tenant_id)
+        .execute(&mut *tx)
+        .await
+        .expect("backdate revision 1");
+        tx.commit().await.expect("commit");
+    }
+
+    // Second publish → revision 2, and revision 1 is CLOSED (valid_until
+    // set). The current country_policies row is NOT the compliance record.
+    let mut v2 = base_policy();
+    v2.currency = "MAD2".to_string();
+    v2.retention_days = 730;
+    publish_policy_version(&pool, tenant_id, v2, Some(tenant_id))
+        .await
+        .expect("publish revision 2");
+    {
+        let mut tx = pool.begin().await.expect("begin");
+        sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
+            .bind(tenant_id.to_string())
+            .execute(&mut *tx)
+            .await
+            .expect("set tenant context");
+        let revisions: Vec<(i64, Option<chrono::DateTime<chrono::Utc>>)> = sqlx::query_as(
+            "SELECT revision, valid_until FROM country_policy_versions \
+             WHERE tenant_id = $1 AND country = 'Morocco' ORDER BY revision",
+        )
+        .bind(tenant_id)
+        .fetch_all(&mut *tx)
+        .await
+        .expect("revision rows exist");
+        assert_eq!(revisions.len(), 2, "two versions must exist");
+        assert_eq!(revisions[0].0, 1, "revision 1 exists");
+        assert!(
+            revisions[0].1.is_some(),
+            "publishing revision 2 must CLOSE revision 1 (valid_until set)"
+        );
+        assert_eq!(revisions[1].0, 2, "second publish must be revision 2");
+        assert!(revisions[1].1.is_none(), "revision 2 must be OPEN");
+        tx.commit().await.expect("commit");
+    }
+
+    // (b) Historical reporting: "what policy governed this event?" —
+    // policy_governing answers from the VERSION table.
+    let past = policy_governing(
+        &pool,
+        tenant_id,
+        "Morocco",
+        chrono::Utc::now() - chrono::Duration::days(10),
+    )
+    .await
+    .expect("governing policy at past timestamp");
+    let past = past.expect("revision 1 governs 10 days ago");
+    assert_eq!(
+        past.currency, "MAD",
+        "revision 1 (MAD) governed 10 days ago"
+    );
+    assert_eq!(
+        past.retention_days, 365,
+        "revision 1 retention governs 10 days ago"
+    );
+
+    let current = policy_governing(&pool, tenant_id, "Morocco", chrono::Utc::now())
+        .await
+        .expect("governing policy now");
+    let current = current.expect("revision 2 governs now");
+    assert_eq!(current.currency, "MAD2", "revision 2 (MAD2) governs now");
+    assert_eq!(
+        current.retention_days, 730,
+        "revision 2 retention governs now"
+    );
+
+    // Before revision 1's valid_from (backdated 30 days) NOTHING governed.
+    let before = policy_governing(
+        &pool,
+        tenant_id,
+        "Morocco",
+        chrono::Utc::now() - chrono::Duration::days(40),
+    )
+    .await
+    .expect("governing policy before any version");
+    assert!(
+        before.is_none(),
+        "a timestamp before the first version's valid_from must have NO governing policy"
+    );
+
+    // (c) The holiday calendar is VERSIONED: a second add_holiday for the
+    // same date creates a new revision — the read returns ONLY the latest
+    // revision's name, not a static list.
+    let throne = chrono::NaiveDate::from_ymd_opt(2026, 8, 30).expect("valid date");
+    let throne_2 = chrono::NaiveDate::from_ymd_opt(2027, 8, 30).expect("valid date");
+    add_holiday(&pool, tenant_id, "MA", throne, "Throne Day")
+        .await
+        .expect("first holiday revision");
+    let holidays = holidays_in(&pool, tenant_id, "MA", throne, throne_2)
+        .await
+        .expect("holidays in range");
+    assert_eq!(
+        holidays,
+        vec![(throne, "Throne Day".to_string())],
+        "the added holiday must be in the range"
+    );
+
+    add_holiday(&pool, tenant_id, "MA", throne, "Throne Day (moved)")
+        .await
+        .expect("second holiday revision");
+    let holidays = holidays_in(&pool, tenant_id, "MA", throne, throne_2)
+        .await
+        .expect("holidays in range after revision");
+    assert_eq!(
+        holidays.len(),
+        1,
+        "one date stays one row — latest revision only"
+    );
+    assert_eq!(
+        holidays[0],
+        (throne, "Throne Day (moved)".to_string()),
+        "the latest revision's name must win"
+    );
+}
+
+/// Sixteenth audit items 23-24/45/68: the canonical event envelope carries
+/// stream identity (stream_type/stream_id/stream_sequence), an idempotency
+/// key, and supersession — and the relational object projection makes
+/// multi-hop graph traversal relational instead of JSONB-only.
+#[tokio::test]
+async fn event_stream_idempotency_and_object_projection() {
+    let _serial = DB_LOCK.lock().await;
+    let Some(pool) = connect().await else { return };
+    sqlx::query(
+        r#"DO $$ DECLARE r RECORD; BEGIN
+             FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname = 'public') LOOP
+                 EXECUTE format('DROP TABLE IF EXISTS %I CASCADE', r.tablename);
+             END LOOP;
+         END $$"#,
+    )
+    .execute(&pool)
+    .await
+    .expect("drop all tables");
+    sensei_db::migrations::run_migrations(&pool)
+        .await
+        .expect("the ENTIRE migration chain must apply to an empty database");
+
+    let tenant_id = uuid::Uuid::new_v4();
+    let user_id = uuid::Uuid::new_v4();
+    let site_id = uuid::Uuid::new_v4();
+    let wc_id = uuid::Uuid::new_v4();
+    sqlx::query("INSERT INTO tenants (id, name, slug) VALUES ($1, 'estream', 'estream')")
+        .bind(tenant_id)
+        .execute(&pool)
+        .await
+        .expect("tenant insert");
+    sqlx::query(
+        "INSERT INTO users (id, tenant_id, email, name, password_hash)  VALUES ($1, $2, 'estream@svc.local', 'Es', 'x')",
+    )
+    .bind(user_id)
+    .bind(tenant_id)
+    .execute(&pool)
+    .await
+    .expect("user insert");
+    sqlx::query(
+        "INSERT INTO sites (id, tenant_id, site_code, name)  VALUES ($1, $2, 'ES', 'EventStream')",
+    )
+    .bind(site_id)
+    .bind(tenant_id)
+    .execute(&pool)
+    .await
+    .expect("site insert");
+    sqlx::query(
+        "INSERT INTO work_centers (id, tenant_id, name, work_center_number, is_active, capacity_per_shift, created_at, updated_at)  VALUES ($1, $2, 'ES-WC', 'WC-ES', TRUE, 8, NOW(), NOW())",
+    )
+    .bind(wc_id)
+    .bind(tenant_id)
+    .execute(&pool)
+    .await
+    .expect("work center insert");
+
+    use sensei_services::ops::OperationsService;
+    let ops_service = sensei_services::ops::DatabaseOperationsService::new(pool.clone());
+
+    let make_andon =
+        |issue_type: &str, severity: &str, description: &str| sensei_services::ops::Andon {
+            id: uuid::Uuid::new_v4(),
+            tenant_id,
+            site_id: Some(site_id),
+            andon_number: String::new(),
+            work_center_id: wc_id,
+            issue_type: issue_type.to_string(),
+            severity: severity.to_string(),
+            description: description.to_string(),
+            status: String::new(),
+            raised_by: user_id,
+            acknowledged_by: None,
+            resolved_by: None,
+            resolution: None,
+            response_time_seconds: None,
+            resolution_time_seconds: None,
+            created_at: chrono::Utc::now(),
+            acknowledged_at: None,
+            resolved_at: None,
+            restart_authorized_by: None,
+            restart_authorized_at: None,
+            abnormal_condition_observed_at: None,
+            contained_at: None,
+            contained_by: None,
+            contained_note: None,
+            escalated: false,
+            escalated_at: None,
+        };
+
+    // (a) TWO raised Andons ⇒ TWO stream-identified, idempotency-keyed
+    // events, each with its relational object projection rows.
+    let andon1 = ops_service
+        .raise_andon(tenant_id, make_andon("quality", "high", "stream raise one"))
+        .await
+        .expect("first raise_andon must work");
+    let andon2 = ops_service
+        .raise_andon(
+            tenant_id,
+            make_andon("material", "medium", "stream raise two"),
+        )
+        .await
+        .expect("second raise_andon must work");
+    for andon in [&andon1, &andon2] {
+        let (stream_type, stream_sequence, idem_key, stream_id, schema_version): (
+            String,
+            i64,
+            String,
+            String,
+            i32,
+        ) = sqlx::query_as(
+            "SELECT stream_type, stream_sequence, idempotency_key, stream_id, \
+                    event_schema_version \
+             FROM operational_events WHERE tenant_id = $1 AND stream_id = $2",
+        )
+        .bind(tenant_id)
+        .bind(andon.id.to_string())
+        .fetch_one(&pool)
+        .await
+        .expect("stream-identified event row");
+        assert_eq!(stream_type, "andon", "stream_type = the stream's type");
+        assert_eq!(stream_sequence, 1, "first event in its stream ⇒ sequence 1");
+        assert_eq!(
+            idem_key,
+            andon.id.to_string(),
+            "idempotency_key = the Andon id (a retried raise is detectable)"
+        );
+        assert_eq!(stream_id, andon.id.to_string(), "stream_id = the Andon id");
+        assert_eq!(schema_version, 1, "envelope schema version defaults to 1");
+
+        let event_id: uuid::Uuid = sqlx::query_scalar(
+            "SELECT id FROM operational_events WHERE tenant_id = $1 AND stream_id = $2",
+        )
+        .bind(tenant_id)
+        .bind(andon.id.to_string())
+        .fetch_one(&pool)
+        .await
+        .expect("event id");
+        let projection: Vec<(String, Option<String>)> = sqlx::query_as(
+            "SELECT object_type, role FROM operational_event_objects \
+             WHERE tenant_id = $1 AND event_id = $2 ORDER BY object_type",
+        )
+        .bind(tenant_id)
+        .bind(event_id)
+        .fetch_all(&pool)
+        .await
+        .expect("object projection rows");
+        assert_eq!(
+            projection.len(),
+            2,
+            "each event projects TWO relational rows: the andon + the work center"
+        );
+        assert!(
+            projection
+                .iter()
+                .any(|(t, r)| t == "andon" && r.as_deref() == Some("subject")),
+            "the andon link projects with its role"
+        );
+        assert!(
+            projection
+                .iter()
+                .any(|(t, r)| t == "work_center" && r.as_deref() == Some("scope")),
+            "the work center link projects with its role"
+        );
+    }
+
+    // (b) Idempotent source dedupe: one (tenant, source_system, source_id)
+    // combination may produce exactly ONE event.
+    sqlx::query(
+        "INSERT INTO operational_events \
+                (id, tenant_id, event_type, occurred_at, recorded_at, source_system, \
+                 source_id, sensitivity, payload, sequence) \
+         VALUES ($1, $2, 'test.source', NOW(), NOW(), 'x', 'y', 'internal', '{}', 1)",
+    )
+    .bind(uuid::Uuid::new_v4())
+    .bind(tenant_id)
+    .execute(&pool)
+    .await
+    .expect("first source-keyed event must insert");
+    let dup = sqlx::query(
+        "INSERT INTO operational_events \
+                (id, tenant_id, event_type, occurred_at, recorded_at, source_system, \
+                 source_id, sensitivity, payload, sequence) \
+         VALUES ($1, $2, 'test.source.dup', NOW(), NOW(), 'x', 'y', 'internal', '{}', 1)",
+    )
+    .bind(uuid::Uuid::new_v4())
+    .bind(tenant_id)
+    .execute(&pool)
+    .await;
+    let dup_err = dup.expect_err(
+        "the same (tenant, source_system, source_id) must violate the idempotent-source unique index",
+    );
+    assert!(
+        dup_err.to_string().contains("duplicate key"),
+        "expected a UNIQUE violation, got: {dup_err}"
+    );
+
+    // (c) Supersession reads back: the corrective event references what it
+    // replaces (valid-time semantics).
+    let superseded = uuid::Uuid::new_v4();
+    let corrective = uuid::Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO operational_events \
+                (id, tenant_id, event_type, occurred_at, recorded_at, source_system, \
+                 source_id, sensitivity, payload, sequence) \
+         VALUES ($1, $2, 'test.super', NOW(), NOW(), 'corr', '1', 'internal', '{}', 1)",
+    )
+    .bind(superseded)
+    .bind(tenant_id)
+    .execute(&pool)
+    .await
+    .expect("superseded event insert");
+    sqlx::query(
+        "INSERT INTO operational_events \
+                (id, tenant_id, event_type, occurred_at, recorded_at, source_system, \
+                 source_id, sensitivity, payload, sequence, supersedes_event_id, \
+                 effective_from, effective_to) \
+         VALUES ($1, $2, 'test.corrective', NOW(), NOW(), 'corr', '2', 'internal', '{}', 1, \
+                 $3, NOW(), NULL)",
+    )
+    .bind(corrective)
+    .bind(tenant_id)
+    .bind(superseded)
+    .execute(&pool)
+    .await
+    .expect("superseding event insert");
+    let (reads_back, effective_from): (Option<uuid::Uuid>, Option<chrono::DateTime<chrono::Utc>>) =
+        sqlx::query_as(
+            "SELECT supersedes_event_id, effective_from FROM operational_events WHERE id = $1",
+        )
+        .bind(corrective)
+        .fetch_one(&pool)
+        .await
+        .expect("superseding event reads back");
+    assert_eq!(
+        reads_back,
+        Some(superseded),
+        "supersedes_event_id points at the replaced event"
+    );
+    assert!(
+        effective_from.is_some(),
+        "a corrective event is valid from its effective_from"
+    );
+}
+
+/// Sixteenth audit items 63-64/96: site bootstrap is a REAL lifecycle —
+/// Draft → Validated → Provisioning → ReadyForTraining →
+/// OperationalQualification → Active. `bootstrap_site` only PROVISIONS
+/// the manifest + canonical metrics; `validate_site` produces a
+/// validation report proving the country policy exists, roles are
+/// defined, work centers are created, capabilities are mapped and metrics
+/// are seeded (draft → validated when ready); `activate_site` is the
+/// guarded ladder step validated → active. Manifest codes are STRONGLY
+/// validated against ISO 3166-1 alpha-2 / ISO 4217 / IANA / BCP 47
+/// formats, never free-form strings.
+#[tokio::test]
+async fn site_bootstrap_lifecycle_validation() {
+    let _serial = DB_LOCK.lock().await;
+    let Some(pool) = connect().await else { return };
+    sqlx::query(
+        r#"DO $$ DECLARE r RECORD; BEGIN
+             FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname = 'public') LOOP
+                 EXECUTE format('DROP TABLE IF EXISTS %I CASCADE', r.tablename);
+             END LOOP;
+         END $$"#,
+    )
+    .execute(&pool)
+    .await
+    .expect("drop all tables");
+    sensei_db::migrations::run_migrations(&pool)
+        .await
+        .expect("the ENTIRE migration chain must apply to an empty database");
+
+    let tenant_id = uuid::Uuid::new_v4();
+    sqlx::query("INSERT INTO tenants (id, name, slug) VALUES ($1, 'lifecycle', 'lifecycle')")
+        .bind(tenant_id)
+        .execute(&pool)
+        .await
+        .expect("tenant insert");
+    let site_id = uuid::Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO sites (id, tenant_id, site_code, name) VALUES \
+         ($1, $2, 'LC', 'Starz Forge Lifecycle')",
+    )
+    .bind(site_id)
+    .bind(tenant_id)
+    .execute(&pool)
+    .await
+    .expect("sites insert");
+
+    use sensei_services::tps::site_manifest::{
+        activate_site, bootstrap_site, validate_site, SiteManifest,
+    };
+
+    // Read the manifest status inside a tenant-context tx (RLS fail-closed).
+    async fn manifest_status(
+        pool: &sqlx::PgPool,
+        tenant_id: uuid::Uuid,
+        site_id: uuid::Uuid,
+    ) -> String {
+        let mut tx = pool.begin().await.expect("begin status tx");
+        sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
+            .bind(tenant_id.to_string())
+            .execute(&mut *tx)
+            .await
+            .expect("set tenant context");
+        let status: String = sqlx::query_scalar(
+            "SELECT status FROM site_manifests WHERE tenant_id = $1 AND site_id = $2",
+        )
+        .bind(tenant_id)
+        .bind(site_id)
+        .fetch_one(&mut *tx)
+        .await
+        .expect("manifest status read");
+        tx.commit().await.expect("status commit");
+        status
+    }
+
+    // (a) STRONG manifest code validation (item 64): valid ISO/IANA/BCP 47
+    // codes bootstrap; wrong-case or malformed codes are rejected.
+    bootstrap_site(
+        &pool,
+        tenant_id,
+        SiteManifest {
+            site_id,
+            country: "Morocco".to_string(),
+            timezone: "Africa/Casablanca".to_string(),
+            languages: vec!["fr".to_string()],
+            currency: "MAD".to_string(),
+            capabilities: vec!["SMT".to_string()],
+            integrations: vec![],
+            policy_bundle: None,
+        },
+    )
+    .await
+    .expect("valid ISO 3166-1/ISO 4217/IANA/BCP 47 codes must bootstrap");
+
+    assert!(
+        bootstrap_site(
+            &pool,
+            tenant_id,
+            SiteManifest {
+                site_id,
+                country: "morocco".to_string(),
+                timezone: "Africa/Casablanca".to_string(),
+                languages: vec!["fr".to_string()],
+                currency: "MAD".to_string(),
+                capabilities: vec!["SMT".to_string()],
+                integrations: vec![],
+                policy_bundle: None,
+            },
+        )
+        .await
+        .is_err(),
+        "lowercase country must fail ISO 3166-1 alpha-2 validation"
+    );
+
+    assert!(
+        bootstrap_site(
+            &pool,
+            tenant_id,
+            SiteManifest {
+                site_id,
+                country: "Morocco".to_string(),
+                timezone: "Africa/Casablanca".to_string(),
+                languages: vec!["fr".to_string()],
+                currency: "M".to_string(),
+                capabilities: vec!["SMT".to_string()],
+                integrations: vec![],
+                policy_bundle: None,
+            },
+        )
+        .await
+        .is_err(),
+        "1-letter currency must fail ISO 4217 validation"
+    );
+
+    // (b) validate_site BEFORE roles/work centers: failing checks, ready
+    // false, status stays 'draft' (bootstrap does NOT make the site
+    // operational — provisioning only).
+    let report = validate_site(&pool, tenant_id, site_id)
+        .await
+        .expect("validation must run on a bootstrapped site");
+    assert!(
+        !report.ready,
+        "site without roles/work centers must not be ready"
+    );
+    assert!(
+        report.checks.iter().any(|(_, ok, _)| !ok),
+        "unqualified site must have failing checks"
+    );
+    assert!(
+        report
+            .checks
+            .iter()
+            .any(|(name, _, _)| name == "country_policy"),
+        "report must check the country policy"
+    );
+    assert_eq!(
+        manifest_status(&pool, tenant_id, site_id).await,
+        "draft",
+        "a failed validation must NOT advance the status"
+    );
+
+    // (c) Seed the operational prerequisites: country policy, a role slot
+    // and a work center → validate_site → ready true, status 'validated'.
+    let mut tx = pool.begin().await.expect("begin seed tx");
+    sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
+        .bind(tenant_id.to_string())
+        .execute(&mut *tx)
+        .await
+        .expect("set tenant context");
+    sqlx::query(
+        "INSERT INTO country_policies \
+            (tenant_id, country, language, currency, unit_system, week_start, \
+             holiday_schedule, timezone, data_residency, retention_days, \
+             employment_data_visibility, local_document_requirements) \
+         VALUES ($1, 'Morocco', 'fr', 'MAD', 'metric', 'monday', '[]', \
+                 'Africa/Casablanca', 'ma', 365, 'restricted', '[]')",
+    )
+    .bind(tenant_id)
+    .execute(&mut *tx)
+    .await
+    .expect("country policy insert");
+    sqlx::query(
+        "INSERT INTO role_slots (tenant_id, role_name, slot_name, scope_site_id) \
+         VALUES ($1, 'production_planner', 'Planner_Lifecycle_A', $2)",
+    )
+    .bind(tenant_id)
+    .bind(site_id)
+    .execute(&mut *tx)
+    .await
+    .expect("role slot insert");
+    tx.commit().await.expect("seed tx commit");
+    sqlx::query(
+        "INSERT INTO work_centers (tenant_id, work_center_number, name, work_center_type) \
+         VALUES ($1, 'WC-LC-01', 'Lifecycle SMT Line', 'assembly')",
+    )
+    .bind(tenant_id)
+    .execute(&pool)
+    .await
+    .expect("work center insert");
+
+    let report = validate_site(&pool, tenant_id, site_id)
+        .await
+        .expect("validation must run");
+    assert!(
+        report.ready,
+        "site with policy + roles + work centers + metrics must be ready"
+    );
+    assert_eq!(
+        manifest_status(&pool, tenant_id, site_id).await,
+        "validated",
+        "a ready report must advance draft → validated"
+    );
+
+    // (d) activate_site: validated → active, and the ladder guard rejects
+    // a second activation from 'active'.
+    activate_site(&pool, tenant_id, site_id)
+        .await
+        .expect("validated site must activate");
+    assert_eq!(
+        manifest_status(&pool, tenant_id, site_id).await,
+        "active",
+        "activate must move validated → active"
+    );
+    assert!(
+        activate_site(&pool, tenant_id, site_id).await.is_err(),
+        "activating an already-active site must be rejected (guarded ladder)"
+    );
+}
+
+/// Sixteenth audit items 46 + 74-75: the expected process path is DATA
+/// (versioned process_definitions), not a hardcoded Rust array — a site
+/// improves its standard WITHOUT recompiling, and conformance compares
+/// each transition against the process revision applicable AT THE EVENT
+/// TIME. A transition the site's definition allows is never a deviation,
+/// even when the compiled default would flag it; one the definition
+/// forbids stays a deviation. Causal hypotheses carry CANDIDATE-SPECIFIC
+/// evidence (supporting/contradicting/missing + next_test), never the
+/// same blob for every candidate.
+#[tokio::test]
+async fn versioned_process_definition_overrides_default() {
+    let _serial = DB_LOCK.lock().await;
+    let Some(pool) = connect().await else { return };
+    // Fresh-database guarantee: the process_definitions table must exist
+    // on an EMPTY database that survives the entire migration chain.
+    sqlx::query(
+        r#"DO $$ DECLARE r RECORD; BEGIN
+             FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname = 'public') LOOP
+                 EXECUTE format('DROP TABLE IF EXISTS %I CASCADE', r.tablename);
+             END LOOP;
+         END $$"#,
+    )
+    .execute(&pool)
+    .await
+    .expect("drop all tables");
+    sensei_db::migrations::run_migrations(&pool)
+        .await
+        .expect("the ENTIRE migration chain must apply to an empty database");
+
+    let tenant_id = uuid::Uuid::new_v4();
+    sqlx::query("INSERT INTO tenants (id, name, slug) VALUES ($1, 'vpd', 'versioned-process')")
+        .bind(tenant_id)
+        .execute(&pool)
+        .await
+        .expect("tenant insert");
+
+    use sensei_services::tps::process_mining::{
+        applicable_definition, conformance_report, upsert_process_definition,
+    };
+
+    // (a) A site-defined andon standard: states [raised, acknowledged,
+    // closed] with allowed transitions [[raised, acknowledged],
+    // [acknowledged, closed]] — the compiled default (which expects
+    // contained between acknowledged and closed) is OVERRIDDEN by the
+    // site's own revision.
+    let base = chrono::Utc::now() - chrono::Duration::days(3);
+    upsert_process_definition(
+        &pool,
+        tenant_id,
+        "andon",
+        vec![
+            "raised".to_string(),
+            "acknowledged".to_string(),
+            "closed".to_string(),
+        ],
+        vec![
+            ("raised".to_string(), "acknowledged".to_string()),
+            ("acknowledged".to_string(), "closed".to_string()),
+        ],
+        base - chrono::Duration::days(1),
+    )
+    .await
+    .expect("andon definition upsert");
+
+    // The definition is applicable AT the event time (revision 1).
+    let def_at_event = applicable_definition(
+        &pool,
+        tenant_id,
+        "andon",
+        base + chrono::Duration::minutes(30),
+    )
+    .await
+    .expect("applicable_definition must run")
+    .expect("the definition applies at the event time");
+    assert_eq!(def_at_event.revision, 1, "first upsert is revision 1");
+    assert_eq!(
+        def_at_event.states,
+        vec!["raised", "acknowledged", "closed"]
+    );
+    assert_eq!(
+        def_at_event.allowed_transitions,
+        vec![
+            ("raised".to_string(), "acknowledged".to_string()),
+            ("acknowledged".to_string(), "closed".to_string()),
+        ]
+    );
+    // BEFORE the applicability window no revision is applicable.
+    assert!(
+        applicable_definition(&pool, tenant_id, "andon", base - chrono::Duration::days(2))
+            .await
+            .expect("pre-window lookup must run")
+            .is_none(),
+        "no revision applies before the window opens"
+    );
+
+    // Case A: raised -> acknowledged -> closed — ALLOWED by the site's
+    // definition (would be a deviation in the compiled default because
+    // contained is missing). Case B: raised -> closed directly — NOT in
+    // the definition's allowed transitions, so still a deviation.
+    let case_a = uuid::Uuid::new_v4();
+    let case_b = uuid::Uuid::new_v4();
+    let objects_a = serde_json::json!([{ "object_type": "andon", "object_id": case_a }]);
+    let objects_b = serde_json::json!([{ "object_type": "andon", "object_id": case_b }]);
+    let insert_event = |pool: sqlx::PgPool,
+                        tenant_id: uuid::Uuid,
+                        event_type: String,
+                        occurred_at: chrono::DateTime<chrono::Utc>,
+                        objects: serde_json::Value| async move {
+        sqlx::query(
+            "INSERT INTO operational_events \
+                (id, tenant_id, event_type, occurred_at, recorded_at, scope_site_id, actor_id, \
+                 objects, source_system, source_id, sensitivity, payload, sequence) \
+             VALUES ($1, $2, $3, $4, NOW(), NULL, NULL, $5, 'sensei', NULL, 'internal', '{}', 1)",
+        )
+        .bind(uuid::Uuid::new_v4())
+        .bind(tenant_id)
+        .bind(event_type)
+        .bind(occurred_at)
+        .bind(objects)
+        .execute(&pool)
+        .await
+        .expect("event insert");
+    };
+    // Case A: raised -> acknowledged -> closed.
+    insert_event(
+        pool.clone(),
+        tenant_id,
+        "andon.raised".to_string(),
+        base,
+        objects_a.clone(),
+    )
+    .await;
+    insert_event(
+        pool.clone(),
+        tenant_id,
+        "andon.acknowledged".to_string(),
+        base + chrono::Duration::minutes(1),
+        objects_a.clone(),
+    )
+    .await;
+    insert_event(
+        pool.clone(),
+        tenant_id,
+        "andon.closed".to_string(),
+        base + chrono::Duration::minutes(2),
+        objects_a.clone(),
+    )
+    .await;
+    // Case B: raised -> closed directly (the jump skips acknowledged).
+    insert_event(
+        pool.clone(),
+        tenant_id,
+        "andon.raised".to_string(),
+        base + chrono::Duration::minutes(10),
+        objects_b.clone(),
+    )
+    .await;
+    insert_event(
+        pool.clone(),
+        tenant_id,
+        "andon.closed".to_string(),
+        base + chrono::Duration::minutes(11),
+        objects_b,
+    )
+    .await;
+
+    let report = conformance_report(&pool, tenant_id, "andon", 30)
+        .await
+        .expect("conformance report must build");
+
+    // The report carries the APPLICABLE process definition (the site's
+    // own standard, revision 1).
+    let report_def = report
+        .process_definition
+        .as_ref()
+        .expect("the report must carry the applicable process definition");
+    assert_eq!(report_def.revision, 1);
+    assert_eq!(
+        report_def.allowed_transitions,
+        vec![
+            ("raised".to_string(), "acknowledged".to_string()),
+            ("acknowledged".to_string(), "closed".to_string()),
+        ]
+    );
+
+    // (a) acknowledged -> closed is allowed BY THE DEFINITION — no
+    // deviation, even though the compiled default expects contained
+    // between them.
+    assert!(
+        !report
+            .deviations
+            .iter()
+            .any(|d| d.contains("acknowledged -> closed")),
+        "acknowledged -> closed is allowed by the site definition — it must NOT be a deviation, got: {:?}",
+        report.deviations
+    );
+    assert!(
+        report
+            .actual_transitions
+            .iter()
+            .any(|(from, to, _)| from == "acknowledged" && to == "closed"),
+        "the allowed transition is still in the actual path"
+    );
+
+    // (b) raised -> closed directly IS a deviation — it is not in the
+    // definition's allowed transitions.
+    assert!(
+        report
+            .deviations
+            .iter()
+            .any(|d| d.contains("raised -> closed")),
+        "raised -> closed skips acknowledged and is not allowed by the definition — it must be a deviation, got: {:?}",
+        report.deviations
+    );
+
+    // The compiled default path stays the FALLBACK for sites that define
+    // no process.
+    assert_eq!(
+        report.expected_path,
+        vec![
+            "raised",
+            "acknowledged",
+            "contained",
+            "investigated",
+            "verified",
+            "closed"
+        ],
+        "the compiled default path remains the fallback"
+    );
+
+    // Revisioning: a SECOND definition (applicable later) makes the
+    // applicable revision time-dependent — the version applicable AT the
+    // queried time is returned, and the report (whose events predate the
+    // new revision) keeps revision 1.
+    upsert_process_definition(
+        &pool,
+        tenant_id,
+        "andon",
+        vec!["raised".to_string(), "closed".to_string()],
+        vec![("raised".to_string(), "closed".to_string())],
+        base + chrono::Duration::hours(1),
+    )
+    .await
+    .expect("andon definition revision 2 upsert");
+    let rev2 = applicable_definition(&pool, tenant_id, "andon", base + chrono::Duration::hours(2))
+        .await
+        .expect("revision lookup must run")
+        .expect("revision 2 applies after its window opens");
+    assert_eq!(rev2.revision, 2, "second upsert is revision 2 (MAX+1)");
+    let rev1_still = applicable_definition(
+        &pool,
+        tenant_id,
+        "andon",
+        base + chrono::Duration::minutes(30),
+    )
+    .await
+    .expect("early lookup must run")
+    .expect("revision 1 still applies at the event time");
+    assert_eq!(
+        rev1_still.revision, 1,
+        "the revision applicable AT the event time is kept"
+    );
+    let report_after = conformance_report(&pool, tenant_id, "andon", 30)
+        .await
+        .expect("conformance report must still build");
+    assert_eq!(
+        report_after
+            .process_definition
+            .as_ref()
+            .expect("report definition")
+            .revision,
+        1,
+        "the report's events predate revision 2 — revision 1 applies at their time"
+    );
+
+    // (c) CAUSAL EVIDENCE (items 74-75): a changeover gap produces
+    // hypotheses with candidate-specific evidence — supporting /
+    // contradicting / missing + a next test — and the arrays DIFFER
+    // between hypotheses.
+    let site_a = uuid::Uuid::new_v4();
+    let site_b = uuid::Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO sites (id, tenant_id, site_code, name) VALUES \
+         ($1, $2, 'ALPHA', 'Site Alpha'), ($3, $2, 'BETA', 'Site Beta')",
+    )
+    .bind(site_a)
+    .bind(tenant_id)
+    .bind(site_b)
+    .execute(&pool)
+    .await
+    .expect("sites insert");
+    let insert_changeover = |pool: sqlx::PgPool,
+                             tenant_id: uuid::Uuid,
+                             site_id: uuid::Uuid,
+                             pre_staged: bool,
+                             duration_seconds: i64| async move {
+        let payload = serde_json::json!({
+            "pre_staged": pre_staged,
+            "duration_seconds": duration_seconds,
+        });
+        sqlx::query(
+            "INSERT INTO operational_events \
+                (id, tenant_id, event_type, occurred_at, recorded_at, scope_site_id, actor_id, \
+                 objects, source_system, source_id, sensitivity, payload, sequence) \
+             VALUES ($1, $2, 'changeover', $3, NOW(), $4, NULL, '[]', 'sensei', NULL, \
+                     'internal', $5, 1)",
+        )
+        .bind(uuid::Uuid::new_v4())
+        .bind(tenant_id)
+        .bind(chrono::Utc::now())
+        .bind(site_id)
+        .bind(payload)
+        .execute(&pool)
+        .await
+        .expect("changeover event insert");
+    };
+    // Site Alpha: pre-staged, 600s. Site Beta: NOT pre-staged, 1200s —
+    // pre-staging correlates with the gap, so the pre-staging hypothesis
+    // is SUPPORTED by the data; the other hypotheses cannot be decided.
+    insert_changeover(pool.clone(), tenant_id, site_a, true, 600).await;
+    insert_changeover(pool.clone(), tenant_id, site_b, false, 1200).await;
+
+    let chain = sensei_services::tps::corporate::causal_candidates(
+        &pool,
+        tenant_id,
+        "changeover",
+        "changeover",
+    )
+    .await
+    .expect("causal_candidates must run");
+    assert!(
+        chain.candidates.len() >= 4,
+        "changeover gaps produce the full candidate set"
+    );
+    for candidate in &chain.candidates {
+        assert_eq!(
+            candidate.epistemic_status, "hypothesis",
+            "every candidate stays a hypothesis"
+        );
+        assert!(
+            candidate.next_test.is_some(),
+            "hypothesis '{}' must carry a concrete next test",
+            candidate.hypothesis
+        );
+    }
+
+    let pre_staging = chain
+        .candidates
+        .iter()
+        .find(|c| c.hypothesis == "pre-staging differs")
+        .expect("the pre-staging hypothesis is generated");
+    assert!(
+        pre_staging
+            .supporting_evidence
+            .iter()
+            .any(|e| e.contains("pre_staged=true") && e.contains("Site Alpha")),
+        "pre-staging support must cite the pre-staged event, got: {:?}",
+        pre_staging.supporting_evidence
+    );
+    assert!(
+        pre_staging
+            .contradicting_evidence
+            .iter()
+            .any(|e| e.contains("WITHOUT pre-staging") && e.contains("Site Beta")),
+        "the opposite condition must be cited as contradicting evidence, got: {:?}",
+        pre_staging.contradicting_evidence
+    );
+
+    // The fixture hypothesis CANNOT be decided from the data: no
+    // fixture_id in any payload — supporting/contradicting stay empty and
+    // missing_evidence says what would decide (never presented as a root
+    // cause).
+    let fixture = chain
+        .candidates
+        .iter()
+        .find(|c| c.hypothesis == "fixture design differs")
+        .expect("the fixture-design hypothesis is generated");
+    assert!(
+        fixture.supporting_evidence.is_empty() && fixture.contradicting_evidence.is_empty(),
+        "fixture data cannot distinguish — support and contradiction must stay empty"
+    );
+    assert!(
+        fixture
+            .missing_evidence
+            .iter()
+            .any(|m| m.contains("fixture_id")),
+        "missing evidence must name the deciding field, got: {:?}",
+        fixture.missing_evidence
+    );
+
+    // The evidence arrays DIFFER between hypotheses — not the same blob.
+    let mut distinct_support: Vec<String> = chain
+        .candidates
+        .iter()
+        .map(|c| c.supporting_evidence.join(" | "))
+        .collect();
+    distinct_support.dedup();
+    assert!(
+        distinct_support.len() > 1,
+        "candidates must carry DIFFERENT supporting evidence, got: {:?}",
+        distinct_support
+    );
+    assert!(
+        pre_staging.supporting_evidence != fixture.supporting_evidence,
+        "the pre-staging support must differ from the fixture support"
     );
 }

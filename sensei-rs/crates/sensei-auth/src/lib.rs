@@ -7,6 +7,7 @@
 //! - Password hashing with Argon2
 //! - Axum middleware for request authentication
 
+pub mod authz_snapshot;
 pub mod jwt;
 pub mod middleware;
 pub mod oauth2;

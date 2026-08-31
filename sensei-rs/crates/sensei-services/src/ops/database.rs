@@ -352,30 +352,65 @@ impl OperationsService for DatabaseOperationsService {
                 // ('andon.raised') rides the SAME transaction as the Andon —
                 // if the event insert fails the Andon rolls back, so a client
                 // retry can never commit an Andon without its event nor
-                // duplicate one.
+                // duplicate one. Sixteenth audit 23-24: the envelope carries
+                // the stream identity (stream_type/stream_id/stream_sequence)
+                // and the idempotency key (the Andon id) — a retried raise
+                // of the same Andon is detectable.
+                let event_id = Uuid::new_v4();
+                let objects = serde_json::json!([
+                    { "object_type": "andon", "object_id": id, "role": "subject" },
+                    {
+                        "object_type": "work_center",
+                        "object_id": andon.work_center_id,
+                        "role": "scope",
+                    },
+                ]);
                 sqlx::query(
                     "INSERT INTO operational_events \
                          (id, tenant_id, event_type, occurred_at, recorded_at, scope_site_id, actor_id, \
-                          objects, source_system, source_id, sensitivity, payload, sequence) \
-                     VALUES ($1, $2, 'andon.raised', $3, NOW(), $4, $5, $6, 'starz_forge', NULL, 'internal', $7, 1)",
+                          objects, source_system, source_id, sensitivity, payload, sequence, \
+                          event_schema_version, stream_type, stream_id, stream_sequence, idempotency_key) \
+                     VALUES ($1, $2, 'andon.raised', $3, NOW(), $4, $5, $6, 'starz_forge', NULL, 'internal', $7, 1, \
+                             1, 'andon', $8, 1, $9)",
                 )
-                .bind(Uuid::new_v4())
+                .bind(event_id)
                 .bind(tenant_id)
                 .bind(now)
                 .bind(andon.site_id)
                 .bind(andon.raised_by)
-                .bind(serde_json::json!([
-                    { "object_type": "andon", "object_id": id },
-                    { "object_type": "work_center", "object_id": andon.work_center_id },
-                ]))
+                .bind(objects.clone())
                 .bind(serde_json::json!({
                     "issue_type": andon.issue_type,
                     "severity": andon.severity,
                 }))
+                .bind(id)
+                .bind(id.to_string())
                 .execute(&mut **tx)
                 .await
                 .map_err(|e| {
                     SenseiError::Database(format!("Failed to write andon-raised event: {e}"))
+                })?;
+
+                // Sixteenth audit 45: the relational object projection — one
+                // row per object the event links, derived from the SAME
+                // objects payload (JSONB is flexible, but multi-hop graph
+                // traversal needs relational indexes).
+                sqlx::query(
+                    "INSERT INTO operational_event_objects \
+                         (tenant_id, event_id, object_type, object_id, role) \
+                     SELECT $1, $2, x.object_type, x.object_id, x.role \
+                     FROM jsonb_to_recordset($3::jsonb) \
+                          AS x(object_type text, object_id uuid, role text)",
+                )
+                .bind(tenant_id)
+                .bind(event_id)
+                .bind(objects)
+                .execute(&mut **tx)
+                .await
+                .map_err(|e| {
+                    SenseiError::Database(format!(
+                        "Failed to write andon-raised object projection: {e}"
+                    ))
                 })?;
 
                 Ok(row)

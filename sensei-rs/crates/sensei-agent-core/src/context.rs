@@ -72,16 +72,24 @@ pub enum TaskKind {
     General,
 }
 
+/// Central provenance (sixteenth audit item 86): ONE type used by
+/// ContextItem, MetricResult, Lesson, Episode and model claims.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct Provenance {
+    pub source: String,
+    pub source_revision: Option<String>,
+    pub observed_at: Option<chrono::DateTime<chrono::Utc>>,
+    pub recorded_at: chrono::DateTime<chrono::Utc>,
+    pub authority: AuthorityRank,
+}
+
 /// One context item with provenance as DATA (fifteenth audit 75-76):
 /// selection maximizes relevance × authority × freshness under the token
 /// budget and authorization constraints.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ContextItem {
     pub payload: serde_json::Value,
-    pub source: String,
-    pub source_revision: Option<String>,
-    pub observed_at: Option<chrono::DateTime<chrono::Utc>>,
-    pub authority: AuthorityRank,
+    pub provenance: Provenance,
     pub sensitivity: String,
     pub token_cost: u32,
     pub epistemic_status: EpistemicStatus,
@@ -101,7 +109,9 @@ pub enum AuthorityRank {
     AiInference,
 }
 
-/// Fact vs inference vs hypothesis (fifteenth audit 79/A10).
+/// Fact vs inference vs hypothesis (fifteenth audit 79/A10), extended to
+/// the full consolidated epistemic vocabulary (sixteenth audit item 87):
+/// Recommendation and ProposedAction are distinct from a recorded fact.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum EpistemicStatus {
@@ -109,6 +119,8 @@ pub enum EpistemicStatus {
     DerivedFact,
     Inference,
     Hypothesis,
+    Recommendation,
+    ProposedAction,
 }
 
 /// The DETERMINISTIC context plan (fifteenth audit 74): the task decides
@@ -361,5 +373,42 @@ mod tests {
         };
         assert!(ctx.can("production:report"));
         assert!(!ctx.can("quality:ncr:read"));
+    }
+
+    #[test]
+    fn context_item_provenance_source_round_trips() {
+        let item = ContextItem {
+            payload: serde_json::json!({"id": "WO-1", "status": "open"}),
+            provenance: Provenance {
+                source: "machining-line-4/plc".to_string(),
+                source_revision: Some("rev-2026-08-31".to_string()),
+                observed_at: Some(chrono::Utc::now()),
+                recorded_at: chrono::Utc::now(),
+                authority: AuthorityRank::VerifiedObservation,
+            },
+            sensitivity: "1".to_string(),
+            token_cost: 12,
+            epistemic_status: EpistemicStatus::RecordedFact,
+        };
+        let json = serde_json::to_string(&item).unwrap();
+        assert!(json.contains("\"provenance\""));
+        let back: ContextItem = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.provenance.source, "machining-line-4/plc");
+        assert_eq!(
+            back.provenance.authority,
+            AuthorityRank::VerifiedObservation
+        );
+    }
+
+    #[test]
+    fn epistemic_status_recommendation_serializes_as_snake_case() {
+        assert_eq!(
+            serde_json::to_string(&EpistemicStatus::Recommendation).unwrap(),
+            "\"recommendation\""
+        );
+        assert_eq!(
+            serde_json::to_string(&EpistemicStatus::ProposedAction).unwrap(),
+            "\"proposed_action\""
+        );
     }
 }

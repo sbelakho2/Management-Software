@@ -12,10 +12,12 @@ use axum::{
     },
 };
 use futures::stream::Stream;
+use sensei_auth::authz_snapshot::AuthzSnapshot;
 use sensei_auth::middleware::AuthenticatedUser;
 use sensei_core::error::Result;
 use sensei_services::ai::chatbot::ChatSamplingParams;
 use serde::Deserialize;
+use sha2::{Digest, Sha256};
 use std::convert::Infallible;
 use std::pin::Pin;
 use std::task::{Context, Poll};
@@ -94,6 +96,12 @@ pub struct ChatResponseBody {
     /// kernel fetched before the model saw the prompt.
     #[serde(default)]
     pub context_used: Option<Vec<String>>,
+    /// Whether the request's authorization snapshot was still current at
+    /// generation time (sixteenth audit 5/24): the TOCTOU guard re-checks
+    /// the revision triple before the model call, so a response is only
+    /// produced under the permission state it started in.
+    #[serde(default)]
+    pub snapshot_ok: bool,
 }
 
 /// Handle a single-turn chat message.
@@ -114,6 +122,47 @@ pub async fn chat(
     // RETRIEVAL PLAN → AUTHORIZED RETRIEVAL → CONTEXT BUNDLE →
     // GENERATION → CLAIM VERIFICATION → OUTPUT.
     let ctx = crate::routes::agent::build_context(&user, &state).await;
+
+    // Authorization snapshot (sixteenth audit items 5/24): captured ONCE
+    // at request start — the revision triple the whole request runs
+    // under, salted with the caller's effective permissions. Retrieval,
+    // generation and the verifier all run under THIS permission state;
+    // the TOCTOU guard below re-checks it before the model call.
+    let snapshot = match &state.db_pool {
+        Some(pool) => {
+            let revisions = sensei_services::tps::authorization_revisions::current_snapshot(
+                pool,
+                user.tenant_id,
+            )
+            .await?;
+            // Deterministic digest of the sorted effective permissions
+            // (same resolution as HTTP authorization and build_context):
+            // any role change shifts the digest, so it cannot collide
+            // across distinct permission sets.
+            let rbac = sensei_auth::rbac::authorization_service();
+            let mut perms: Vec<String> = user
+                .roles
+                .iter()
+                .flat_map(|role| rbac.permissions_for_role_in_tenant(user.tenant_id, role))
+                .collect();
+            perms.sort();
+            perms.dedup();
+            let mut hasher = Sha256::new();
+            for p in &perms {
+                hasher.update(p.as_bytes());
+            }
+            Some(AuthzSnapshot {
+                tenant: user.tenant_id,
+                principal: user.user_id,
+                policy_revision: revisions.policy_revision,
+                relationship_revision: revisions.relationship_revision,
+                principal_revision: revisions.principal_revision,
+                scope_site: ctx.site_id,
+                permission_digest: hasher.finalize().into(),
+            })
+        }
+        None => None,
+    };
     // Fifteenth audit (6-8/74): EVERY AI operation goes through the
     // Context Kernel — the deterministic plan (task decides the required
     // context sections BEFORE any retrieval). The model never invents the
@@ -152,6 +201,22 @@ pub async fn chat(
         Some(context_used.join("\n"))
     };
 
+    // TOCTOU guard (sixteenth audit items 5/24): the permission state
+    // must NOT have moved between snapshot capture and generation — if
+    // any revision bumped (a revocation landed mid-request), the request
+    // is refused and must be re-authorized, never executed under a stale
+    // state. No snapshot (no DB pool) = fail closed: an unverifiable
+    // request is not executed.
+    let snapshot_ok = match (&state.db_pool, &snapshot) {
+        (Some(pool), Some(snap)) => snap.is_still_current(pool).await,
+        _ => false,
+    };
+    if !snapshot_ok {
+        return Err(sensei_core::error::SenseiError::Forbidden(
+            "authorization state changed during the request — re-authorized and retry".to_string(),
+        ));
+    }
+
     let response = state
         .chatbot_service
         .chat(
@@ -187,6 +252,7 @@ pub async fn chat(
         verification: Some(verification),
         context_plan: Some(context_plan),
         context_used: Some(context_used),
+        snapshot_ok: true,
     }))
 }
 

@@ -28,4 +28,29 @@ pub struct ForgeEvent {
     pub sensitivity: String,
     pub payload: serde_json::Value,
     pub sequence: i64,
+    /// Envelope semantics (sixteenth audit 23-24): schema version so
+    /// consumers can reject unknown envelope shapes, stream identity for
+    /// per-(stream_type, stream_id) ordering, an idempotency key so a
+    /// source retry cannot double-record, and supersession/valid-time
+    /// window for corrective events.
+    #[serde(default = "default_schema_version")]
+    pub event_schema_version: u32,
+    #[serde(default)]
+    pub stream_type: Option<String>,
+    #[serde(default)]
+    pub stream_id: Option<String>,
+    #[serde(default)]
+    pub stream_sequence: Option<i64>,
+    #[serde(default)]
+    pub idempotency_key: Option<String>,
+    #[serde(default)]
+    pub supersedes_event_id: Option<Uuid>,
+    #[serde(default)]
+    pub effective_from: Option<chrono::DateTime<chrono::Utc>>,
+    #[serde(default)]
+    pub effective_to: Option<chrono::DateTime<chrono::Utc>>,
+}
+
+fn default_schema_version() -> u32 {
+    1
 }

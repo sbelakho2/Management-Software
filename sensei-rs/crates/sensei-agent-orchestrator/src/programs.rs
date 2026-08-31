@@ -7,16 +7,11 @@
 //! the Pareto optimum is selected — prompts are never self-rewritten in
 //! production.
 
-/// Epistemic status (fifteenth audit A10 + item 79): a model must never
-/// invent operational facts — FACT/INFERENCE/HYPOTHESIS are distinct.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum EpistemicStatus {
-    RecordedFact,
-    DerivedFact,
-    Inference,
-    Hypothesis,
-}
+/// Epistemic status (fifteenth audit A10 + item 79, consolidated in
+/// sixteenth audit item 87): ONE vocabulary shared with sensei-agent-core —
+/// a model must never invent operational facts; FACT/INFERENCE/HYPOTHESIS
+/// are distinct, as are Recommendation and ProposedAction.
+pub use sensei_agent_core::context::EpistemicStatus;
 
 /// One typed field of a program's input/output signature.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -479,6 +474,21 @@ mod tests {
             serde_json::to_string(&EpistemicStatus::Hypothesis).unwrap(),
             "\"hypothesis\""
         );
+        assert_eq!(
+            serde_json::to_string(&EpistemicStatus::Recommendation).unwrap(),
+            "\"recommendation\""
+        );
+        assert_eq!(
+            serde_json::to_string(&EpistemicStatus::ProposedAction).unwrap(),
+            "\"proposed_action\""
+        );
+    }
+
+    #[test]
+    fn reexported_status_is_the_agent_core_type() {
+        let _: sensei_agent_core::context::EpistemicStatus = EpistemicStatus::Hypothesis;
+        let _: sensei_agent_core::context::EpistemicStatus = EpistemicStatus::Recommendation;
+        let _: sensei_agent_core::context::EpistemicStatus = EpistemicStatus::ProposedAction;
     }
 
     #[test]

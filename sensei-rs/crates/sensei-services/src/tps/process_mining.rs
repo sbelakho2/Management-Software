@@ -15,7 +15,226 @@
 
 use sensei_core::error::{Result, SenseiError};
 use serde::{Deserialize, Serialize};
+use sqlx::Row;
+use tracing::warn;
 use uuid::Uuid;
+
+/// One VERSIONED process definition (sixteenth audit item 46): the
+/// expected path is DATA — a site improves its standard (new revision)
+/// without recompiling. Conformance compares the observed transitions
+/// against the revision applicable AT THE EVENT TIME, so a standard
+/// change mid-window splits the window honestly. Columns map manually
+/// from the JSONB `states` / `allowed_transitions` (FromRow via manual
+/// mapping).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProcessDefinition {
+    pub process_id: String,
+    pub revision: i64,
+    pub states: Vec<String>,
+    pub allowed_transitions: Vec<(String, String)>,
+}
+
+impl<'r> sqlx::FromRow<'r, sqlx::postgres::PgRow> for ProcessDefinition {
+    fn from_row(row: &'r sqlx::postgres::PgRow) -> std::result::Result<Self, sqlx::Error> {
+        let states_value: serde_json::Value = row.try_get("states")?;
+        let transitions_value: serde_json::Value = row.try_get("allowed_transitions")?;
+        let states = states_value
+            .as_array()
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str().map(str::to_string))
+                    .collect()
+            })
+            .unwrap_or_default();
+        let allowed_transitions = transitions_value
+            .as_array()
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| {
+                        let pair = v.as_array()?;
+                        Some((
+                            pair.first()?.as_str()?.to_string(),
+                            pair.get(1)?.as_str()?.to_string(),
+                        ))
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        Ok(ProcessDefinition {
+            process_id: row.try_get("process_id")?,
+            revision: row.try_get("revision")?,
+            states,
+            allowed_transitions,
+        })
+    }
+}
+
+/// A definition row plus its applicability window start — the public
+/// struct deliberately excludes `applicable_from`, so conformance keeps
+/// the versioned timeline internally.
+#[derive(Debug, Clone)]
+struct LoadedDefinition {
+    def: ProcessDefinition,
+    applicable_from: chrono::DateTime<chrono::Utc>,
+}
+
+/// The definition applicable AT `at`: the LATEST revision whose
+/// `applicable_from` is <= the event time. Returns None when NO
+/// definition exists for the process — the caller then uses the built-in
+/// default path with a warning (a site that defines the process
+/// overrides the compiled default; a site that does not keeps it).
+pub async fn applicable_definition(
+    pool: &sqlx::PgPool,
+    tenant_id: Uuid,
+    process_id: &str,
+    at: chrono::DateTime<chrono::Utc>,
+) -> Result<Option<ProcessDefinition>> {
+    let mut tx = pool
+        .begin()
+        .await
+        .map_err(|e| SenseiError::Database(format!("Failed to begin definition tx: {e}")))?;
+    set_tenant_context(&mut tx, tenant_id).await?;
+    let exists: bool = sqlx::query_scalar(
+        "SELECT EXISTS (SELECT 1 FROM process_definitions \
+         WHERE tenant_id = $1 AND process_id = $2)",
+    )
+    .bind(tenant_id)
+    .bind(process_id)
+    .fetch_one(&mut *tx)
+    .await
+    .map_err(|e| SenseiError::Database(format!("Process definition existence failed: {e}")))?;
+    let def: Option<ProcessDefinition> = sqlx::query_as(
+        "SELECT process_id, revision, states, allowed_transitions \
+         FROM process_definitions \
+         WHERE tenant_id = $1 AND process_id = $2 AND applicable_from <= $3 \
+         ORDER BY applicable_from DESC, revision DESC \
+         LIMIT 1",
+    )
+    .bind(tenant_id)
+    .bind(process_id)
+    .bind(at)
+    .fetch_optional(&mut *tx)
+    .await
+    .map_err(|e| SenseiError::Database(format!("Process definition read failed: {e}")))?;
+    tx.commit()
+        .await
+        .map_err(|e| SenseiError::Database(format!("Definition read commit failed: {e}")))?;
+    if !exists {
+        warn!(
+            process = %process_id,
+            "no process definition exists — conformance uses the compiled default path"
+        );
+    }
+    Ok(def)
+}
+
+/// Insert the NEXT revision of a process definition (revision =
+/// MAX(existing) + 1) — a site improves its standard WITHOUT recompiling;
+/// conformance then compares against the revision applicable at each
+/// event's time.
+pub async fn upsert_process_definition(
+    pool: &sqlx::PgPool,
+    tenant_id: Uuid,
+    process_id: &str,
+    states: Vec<String>,
+    allowed_transitions: Vec<(String, String)>,
+    applicable_from: chrono::DateTime<chrono::Utc>,
+) -> Result<()> {
+    let mut tx = pool
+        .begin()
+        .await
+        .map_err(|e| SenseiError::Database(format!("Failed to begin definition upsert tx: {e}")))?;
+    set_tenant_context(&mut tx, tenant_id).await?;
+    let states_json = serde_json::to_value(&states)
+        .map_err(|e| SenseiError::Internal(format!("states JSON encode failed: {e}")))?;
+    let transitions_json = serde_json::to_value(&allowed_transitions)
+        .map_err(|e| SenseiError::Internal(format!("transitions JSON encode failed: {e}")))?;
+    sqlx::query(
+        "INSERT INTO process_definitions \
+             (tenant_id, process_id, revision, applicable_from, states, allowed_transitions) \
+         VALUES ($1, $2, \
+             COALESCE((SELECT MAX(revision) FROM process_definitions \
+                       WHERE tenant_id = $1 AND process_id = $2), 0) + 1, \
+             $3, $4, $5)",
+    )
+    .bind(tenant_id)
+    .bind(process_id)
+    .bind(applicable_from)
+    .bind(states_json)
+    .bind(transitions_json)
+    .execute(&mut *tx)
+    .await
+    .map_err(|e| SenseiError::Database(format!("Process definition upsert failed: {e}")))?;
+    tx.commit()
+        .await
+        .map_err(|e| SenseiError::Database(format!("Definition upsert commit failed: {e}")))?;
+    Ok(())
+}
+
+/// Load every revision of one process's definition (with its
+/// applicability start) for per-event-time lookup inside conformance.
+async fn load_definitions(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    tenant_id: Uuid,
+    process_id: &str,
+) -> Result<Vec<LoadedDefinition>> {
+    type DefinitionRow = (
+        String,
+        i64,
+        chrono::DateTime<chrono::Utc>,
+        serde_json::Value,
+        serde_json::Value,
+    );
+    let rows: Vec<DefinitionRow> = sqlx::query_as(
+        "SELECT process_id, revision, applicable_from, states, allowed_transitions \
+         FROM process_definitions \
+         WHERE tenant_id = $1 AND process_id = $2 \
+         ORDER BY applicable_from ASC, revision ASC",
+    )
+    .bind(tenant_id)
+    .bind(process_id)
+    .fetch_all(&mut **tx)
+    .await
+    .map_err(|e| SenseiError::Database(format!("Process definitions read failed: {e}")))?;
+    Ok(rows
+        .into_iter()
+        .map(
+            |(process_id, revision, applicable_from, states_value, transitions_value)| {
+                let states = states_value
+                    .as_array()
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|v| v.as_str().map(str::to_string))
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                let allowed_transitions = transitions_value
+                    .as_array()
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|v| {
+                                let pair = v.as_array()?;
+                                Some((
+                                    pair.first()?.as_str()?.to_string(),
+                                    pair.get(1)?.as_str()?.to_string(),
+                                ))
+                            })
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                LoadedDefinition {
+                    def: ProcessDefinition {
+                        process_id,
+                        revision,
+                        states,
+                        allowed_transitions,
+                    },
+                    applicable_from,
+                }
+            },
+        )
+        .collect())
+}
 
 /// One actual step on the discovered path: an event type from the log and
 /// how many times it was observed in the window.
@@ -64,6 +283,10 @@ pub struct ConformanceReport {
     /// "acknowledged -> closed" when contained is expected between.
     pub deviations: Vec<String>,
     pub hidden_loops: Vec<LoopFinding>,
+    /// The versioned process definition applicable at the latest event
+    /// time in the window (None when the site defines no process — the
+    /// compiled default path applies then).
+    pub process_definition: Option<ProcessDefinition>,
 }
 
 /// Canonical (expected) path per object type. The path is the standard
@@ -172,12 +395,27 @@ async fn load_events(
     object_type: &str,
     window_days: i64,
 ) -> Result<Vec<LoggedEvent>> {
-    let window_days = if window_days <= 0 { 30 } else { window_days };
     let mut tx = pool
         .begin()
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to begin process-mining tx: {e}")))?;
     set_tenant_context(&mut tx, tenant_id).await?;
+    let events = load_events_tx(&mut tx, tenant_id, object_type, window_days).await?;
+    tx.commit()
+        .await
+        .map_err(|e| SenseiError::Database(format!("Process-mining read commit failed: {e}")))?;
+    Ok(events)
+}
+
+/// Event-loading inside an already tenant-scoped transaction (conformance
+/// reads definitions and events in ONE tx so both see the same context).
+async fn load_events_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    tenant_id: Uuid,
+    object_type: &str,
+    window_days: i64,
+) -> Result<Vec<LoggedEvent>> {
+    let window_days = if window_days <= 0 { 30 } else { window_days };
     type MiningEventRow = (
         Uuid,
         String,
@@ -195,12 +433,9 @@ async fn load_events(
     .bind(tenant_id)
     .bind(format!("{object_type}.%"))
     .bind(format!("{window_days} days"))
-    .fetch_all(&mut *tx)
+    .fetch_all(&mut **tx)
     .await
     .map_err(|e| SenseiError::Database(format!("Operational events read failed: {e}")))?;
-    tx.commit()
-        .await
-        .map_err(|e| SenseiError::Database(format!("Process-mining read commit failed: {e}")))?;
 
     let mut events: Vec<LoggedEvent> = rows
         .into_iter()
@@ -278,7 +513,22 @@ pub async fn conformance_report(
     window_days: i64,
 ) -> Result<ConformanceReport> {
     let canonical = expected_path(object_type);
-    let events = load_events(pool, tenant_id, object_type, window_days).await?;
+    let mut tx = pool
+        .begin()
+        .await
+        .map_err(|e| SenseiError::Database(format!("Failed to begin conformance tx: {e}")))?;
+    set_tenant_context(&mut tx, tenant_id).await?;
+    let definitions = load_definitions(&mut tx, tenant_id, object_type).await?;
+    if definitions.is_empty() {
+        warn!(
+            process = %object_type,
+            "no process definition exists — conformance uses the compiled default path"
+        );
+    }
+    let events = load_events_tx(&mut tx, tenant_id, object_type, window_days).await?;
+    tx.commit()
+        .await
+        .map_err(|e| SenseiError::Database(format!("Conformance commit failed: {e}")))?;
 
     // Strip the object-type prefix ("andon.raised" -> "raised") so the
     // actual steps line up with the canonical path.
@@ -294,12 +544,32 @@ pub async fn conformance_report(
     // (count, total_elapsed_seconds).
     let mut transition_counts: std::collections::HashMap<(String, String), (i64, f64)> =
         std::collections::HashMap::new();
+    // Transitions whose occurrence was disallowed by the standard
+    // applicable AT ITS EVENT TIME (the compiled default when the site
+    // defines no process).
+    let mut deviant_transitions: std::collections::HashSet<(String, String)> =
+        std::collections::HashSet::new();
     // Distinct full sequences per case: sequence -> number of cases.
     let mut variant_counts: std::collections::HashMap<Vec<String>, u64> =
         std::collections::HashMap::new();
     // Hidden loops: one finding per case whose OWN sequence repeats an
     // event type (condition_key -> (occurrences, first, last)).
     let mut hidden_loops: Vec<LoopFinding> = Vec::new();
+
+    // Expected adjacent pairs from the canonical path (the compiled
+    // default — a site-defined revision overrides it when applicable).
+    let mut expected_adjacent: std::collections::HashSet<(String, String)> =
+        std::collections::HashSet::new();
+    for pair in canonical.windows(2) {
+        expected_adjacent.insert((pair[0].clone(), pair[1].clone()));
+    }
+
+    // The revision applicable AT a given event time: the latest revision
+    // whose applicability window has started (definitions are sorted by
+    // applicable_from ASC, revision ASC).
+    let definition_at = |at: chrono::DateTime<chrono::Utc>| -> Option<&LoadedDefinition> {
+        definitions.iter().rev().find(|d| d.applicable_from <= at)
+    };
 
     // `load_events` sorts by (case_key, occurred_at, id); walk each case's
     // events as one contiguous chunk.
@@ -320,9 +590,39 @@ pub async fn conformance_report(
             let to = step_name(&pair[1].event_type);
             let elapsed =
                 (pair[1].occurred_at - pair[0].occurred_at).num_milliseconds() as f64 / 1000.0;
-            let entry = transition_counts.entry((from, to)).or_insert((0, 0.0));
+            let entry = transition_counts
+                .entry((from.clone(), to.clone()))
+                .or_insert((0, 0.0));
             entry.0 += 1;
             entry.1 += elapsed.max(0.0);
+
+            // Conformance AT THE EVENT TIME (sixteenth audit item 46):
+            // this occurrence is judged against the process revision
+            // applicable when the transition completed. A transition the
+            // applicable definition ALLOWS is never a deviation, even if
+            // the compiled default would flag it.
+            let allowed = match definition_at(pair[1].occurred_at) {
+                Some(loaded) => {
+                    if !loaded.def.allowed_transitions.is_empty() {
+                        loaded
+                            .def
+                            .allowed_transitions
+                            .contains(&(from.clone(), to.clone()))
+                    } else if !loaded.def.states.is_empty() {
+                        loaded
+                            .def
+                            .states
+                            .windows(2)
+                            .any(|w| w[0] == from && w[1] == to)
+                    } else {
+                        expected_adjacent.contains(&(from.clone(), to.clone()))
+                    }
+                }
+                None => expected_adjacent.contains(&(from.clone(), to.clone())),
+            };
+            if !allowed {
+                deviant_transitions.insert((from, to));
+            }
         }
 
         // Per-case hidden loop: the SAME event type more than once in ONE
@@ -376,25 +676,28 @@ pub async fn conformance_report(
     let mut variants: Vec<(Vec<String>, u64)> = variant_counts.into_iter().collect();
     variants.sort_by(|a, b| a.1.cmp(&b.1).then_with(|| a.0.cmp(&b.0)));
 
-    // Expected adjacent pairs from the canonical path.
-    let mut expected_adjacent: std::collections::HashSet<(String, String)> =
-        std::collections::HashSet::new();
-    for pair in canonical.windows(2) {
-        expected_adjacent.insert((pair[0].clone(), pair[1].clone()));
-    }
-
-    // Deviations: actual transitions that are NOT adjacent in the
-    // expected path (e.g. "closed" directly after "raised" — containment
-    // skipped).
-    let mut deviations: Vec<String> = actual_transitions
-        .iter()
-        .filter(|(from, to, _)| !expected_adjacent.contains(&(from.clone(), to.clone())))
-        .map(|(from, to, _)| format!("{from} -> {to}"))
+    // Deviations: transitions whose occurrence was disallowed by the
+    // standard applicable at its event time — the applicable process
+    // definition when the site defines one, else the compiled default
+    // path (e.g. "closed" directly after "raised" — containment skipped).
+    let mut deviations: Vec<String> = deviant_transitions
+        .into_iter()
+        .map(|(from, to)| format!("{from} -> {to}"))
         .collect();
     deviations.sort();
     deviations.dedup();
 
     hidden_loops.sort_by(|a, b| a.condition_key.cmp(&b.condition_key));
+
+    // The definition applicable at the LATEST event time in the window —
+    // the site's own standard when it defines the process, else None
+    // (compiled default).
+    let reference_time = events
+        .iter()
+        .map(|e| e.occurred_at)
+        .max()
+        .unwrap_or_else(chrono::Utc::now);
+    let process_definition = definition_at(reference_time).map(|loaded| loaded.def.clone());
 
     Ok(ConformanceReport {
         object_type: object_type.to_string(),
@@ -404,5 +707,6 @@ pub async fn conformance_report(
         variants,
         deviations,
         hidden_loops,
+        process_definition,
     })
 }

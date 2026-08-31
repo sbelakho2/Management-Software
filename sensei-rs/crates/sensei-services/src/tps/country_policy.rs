@@ -179,3 +179,186 @@ pub async fn upsert_country_policy(
     })
     .await
 }
+
+/// Publish a NEW revision of a country policy (sixteenth audit item 65):
+/// policy is EFFECTIVE-DATED. The revision is MAX(revision)+1 for the
+/// country, `valid_from` is NOW(), and the previously-latest OPEN version
+/// is closed (`valid_until = NOW()`). The current `country_policies` row
+/// is NOT the compliance record — the versioned rows are.
+pub async fn publish_policy_version(
+    pool: &sqlx::PgPool,
+    tenant_id: Uuid,
+    policy: CountryPolicy,
+    approved_by: Option<Uuid>,
+) -> Result<()> {
+    with_tenant_tx(pool, tenant_id, move |tx| {
+        Box::pin(async move {
+            // Close the previously-latest open version (valid_until IS NULL).
+            sqlx::query(
+                "UPDATE country_policy_versions SET valid_until = NOW() \
+                 WHERE tenant_id = $1 AND country = $2 AND valid_until IS NULL",
+            )
+            .bind(tenant_id)
+            .bind(&policy.country)
+            .execute(&mut **tx)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to close policy version: {e}")))?;
+
+            let revision = sqlx::query_scalar::<_, i64>(
+                "SELECT COALESCE(MAX(revision), 0) + 1 FROM country_policy_versions \
+                 WHERE tenant_id = $1 AND country = $2",
+            )
+            .bind(tenant_id)
+            .bind(&policy.country)
+            .fetch_one(&mut **tx)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to read policy revision: {e}")))?;
+
+            sqlx::query(
+                "INSERT INTO country_policy_versions \
+                     (tenant_id, country, revision, valid_from, language, currency, \
+                      unit_system, week_start, holiday_schedule, timezone, data_residency, \
+                      retention_days, employment_data_visibility, local_document_requirements, \
+                      approved_by) \
+                 VALUES ($1, $2, $3, NOW(), $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)",
+            )
+            .bind(tenant_id)
+            .bind(&policy.country)
+            .bind(revision)
+            .bind(&policy.language)
+            .bind(&policy.currency)
+            .bind(&policy.unit_system)
+            .bind(&policy.week_start)
+            .bind(policy.holiday_schedule.clone())
+            .bind(&policy.timezone)
+            .bind(&policy.data_residency)
+            .bind(policy.retention_days)
+            .bind(&policy.employment_data_visibility)
+            .bind(policy.local_document_requirements.clone())
+            .bind(approved_by)
+            .execute(&mut **tx)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to publish policy version: {e}")))?;
+            Ok(())
+        })
+    })
+    .await
+}
+
+/// The policy version governing the country AT a timestamp (sixteenth
+/// audit item 65): `valid_from <= at AND (valid_until IS NULL OR
+/// valid_until > at)`. Historical reporting — "what policy governed this
+/// employee/event in March 2027?" — answers with THIS function, never
+/// with the current `country_policies` row.
+pub async fn policy_governing(
+    pool: &sqlx::PgPool,
+    tenant_id: Uuid,
+    country: &str,
+    at: chrono::DateTime<chrono::Utc>,
+) -> Result<Option<CountryPolicy>> {
+    let country = country.to_string();
+    with_tenant_tx(pool, tenant_id, move |tx| {
+        Box::pin(async move {
+            let policy = sqlx::query_as::<_, CountryPolicy>(
+                "SELECT country, language, currency, unit_system, week_start, \
+                        holiday_schedule, timezone, data_residency, retention_days, \
+                        employment_data_visibility, local_document_requirements \
+                 FROM country_policy_versions \
+                 WHERE tenant_id = $1 AND country = $2 \
+                   AND valid_from <= $3 AND (valid_until IS NULL OR valid_until > $3) \
+                 ORDER BY valid_from DESC LIMIT 1",
+            )
+            .bind(tenant_id)
+            .bind(&country)
+            .bind(at)
+            .fetch_optional(&mut **tx)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to read governing policy: {e}")))?;
+            Ok(policy)
+        })
+    })
+    .await
+}
+
+/// The holiday dates for a jurisdiction within `from..=to`, each with the
+/// LATEST revision's name (sixteenth audit item 66): Morocco's calendar is
+/// not a forever-static list — a date's holiday can be re-versioned.
+pub async fn holidays_in(
+    pool: &sqlx::PgPool,
+    tenant_id: Uuid,
+    jurisdiction: &str,
+    from: chrono::NaiveDate,
+    to: chrono::NaiveDate,
+) -> Result<Vec<(chrono::NaiveDate, String)>> {
+    let jurisdiction = jurisdiction.to_string();
+    with_tenant_tx(pool, tenant_id, move |tx| {
+        Box::pin(async move {
+            let rows = sqlx::query_as::<_, (chrono::NaiveDate, String)>(
+                "SELECT holiday_date, name FROM jurisdiction_holidays \
+                 WHERE tenant_id = $1 AND jurisdiction = $2 \
+                   AND holiday_date BETWEEN $3 AND $4 \
+                   AND revision = ( \
+                       SELECT MAX(revision) FROM jurisdiction_holidays h \
+                       WHERE h.tenant_id = jurisdiction_holidays.tenant_id \
+                         AND h.jurisdiction = jurisdiction_holidays.jurisdiction \
+                         AND h.holiday_date = jurisdiction_holidays.holiday_date \
+                   ) \
+                 ORDER BY holiday_date",
+            )
+            .bind(tenant_id)
+            .bind(jurisdiction)
+            .bind(from)
+            .bind(to)
+            .fetch_all(&mut **tx)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to read holidays: {e}")))?;
+            Ok(rows)
+        })
+    })
+    .await
+}
+
+/// Record a holiday for a jurisdiction (sixteenth audit item 66):
+/// tenant-scoped insert with revision = MAX(revision)+1 for the date — a
+/// second call for the same date creates a NEW revision (the calendar
+/// evolves), never an in-place mutation.
+pub async fn add_holiday(
+    pool: &sqlx::PgPool,
+    tenant_id: Uuid,
+    jurisdiction: &str,
+    date: chrono::NaiveDate,
+    name: &str,
+) -> Result<()> {
+    let jurisdiction = jurisdiction.to_string();
+    let name = name.to_string();
+    with_tenant_tx(pool, tenant_id, move |tx| {
+        Box::pin(async move {
+            let revision = sqlx::query_scalar::<_, i64>(
+                "SELECT COALESCE(MAX(revision), 0) + 1 FROM jurisdiction_holidays \
+                 WHERE tenant_id = $1 AND jurisdiction = $2 AND holiday_date = $3",
+            )
+            .bind(tenant_id)
+            .bind(&jurisdiction)
+            .bind(date)
+            .fetch_one(&mut **tx)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to read holiday revision: {e}")))?;
+
+            sqlx::query(
+                "INSERT INTO jurisdiction_holidays \
+                     (tenant_id, jurisdiction, holiday_date, name, revision) \
+                 VALUES ($1, $2, $3, $4, $5)",
+            )
+            .bind(tenant_id)
+            .bind(jurisdiction)
+            .bind(date)
+            .bind(name)
+            .bind(revision)
+            .execute(&mut **tx)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to add holiday: {e}")))?;
+            Ok(())
+        })
+    })
+    .await
+}

@@ -45,10 +45,11 @@ pub fn build_context_bundle(
     // Deterministic greedy order: highest authority first, then most recent,
     // then by source name for full determinism (ties keep input order).
     candidates.sort_by(|a, b| {
-        a.authority
-            .cmp(&b.authority)
-            .then_with(|| b.observed_at.cmp(&a.observed_at))
-            .then_with(|| a.source.cmp(&b.source))
+        a.provenance
+            .authority
+            .cmp(&b.provenance.authority)
+            .then_with(|| b.provenance.observed_at.cmp(&a.provenance.observed_at))
+            .then_with(|| a.provenance.source.cmp(&b.provenance.source))
     });
 
     let mut selected: Vec<ContextItem> = Vec::new();
@@ -174,7 +175,7 @@ fn source_for(
             fact_address_of(i, attribute).as_ref() == Some(address)
                 && i.payload.get(attribute) == Some(value)
         })
-        .map(|i| i.source.clone())
+        .map(|i| i.provenance.source.clone())
 }
 
 /// Crude token estimate for a compact contradiction line: ~4 chars per
@@ -218,10 +219,13 @@ mod tests {
     ) -> ContextItem {
         ContextItem {
             payload,
-            source: source.to_string(),
-            source_revision: None,
-            observed_at,
-            authority,
+            provenance: crate::context::Provenance {
+                source: source.to_string(),
+                source_revision: None,
+                observed_at,
+                recorded_at: Utc::now(),
+                authority,
+            },
             sensitivity: "1".to_string(),
             token_cost,
             epistemic_status: EpistemicStatus::RecordedFact,

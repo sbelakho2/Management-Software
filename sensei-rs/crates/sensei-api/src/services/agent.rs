@@ -105,8 +105,8 @@ pub async fn execute_tool(
     pool: Option<&sqlx::PgPool>,
 ) -> Result<ToolResult<serde_json::Value>, String> {
     // Defense in depth: independent re-check at execution time (read-only
-    // tools are Automatic; write tools would require an approval artifact).
-    if !policy.can_execute(ctx, tool, true) {
+    // tools are Automatic, so no approval artifact is required).
+    if !policy.can_execute(ctx, tool, None) {
         return Err(format!(
             "Tool '{}' is not permitted for this caller",
             tool.name

@@ -79,10 +79,22 @@ pub struct CrossSiteAnalytics {
 /// One causal hypothesis for a metric gap. `epistemic_status` is ALWAYS
 /// "hypothesis" — the corporate layer surfaces candidates and evidence,
 /// and the local site (not headquarters) verifies which one applies.
+/// Each candidate carries CANDIDATE-SPECIFIC evidence (sixteenth audit
+/// items 74-75): `supporting_evidence` = observations consistent with
+/// THIS hypothesis, `contradicting_evidence` = observations showing the
+/// opposite, `missing_evidence` = the fields that would confirm it (the
+/// hypothesis is never presented as a root cause when the data cannot
+/// distinguish — supporting/contradicting stay empty then), and
+/// `next_test` = a concrete deterministic next step. `evidence` keeps the
+/// shared observable context (lessons, episodes, event counts).
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct CausalCandidate {
     pub hypothesis: String,
     pub evidence: Vec<String>,
+    pub supporting_evidence: Vec<String>,
+    pub contradicting_evidence: Vec<String>,
+    pub missing_evidence: Vec<String>,
+    pub next_test: Option<String>,
     pub epistemic_status: String,
 }
 
@@ -371,8 +383,11 @@ pub async fn cross_site_analytics(pool: &PgPool, tenant_id: Uuid) -> Result<Cros
 /// question is answered with HYPOTHESES and evidence, never with facts.
 /// Evidence is drawn from the operational event log (event_type counts
 /// per site), the lesson registry (context_signature process) and the
-/// episode memory (process links) — every candidate stands on the SAME
-/// observable evidence, and `epistemic_status` is always "hypothesis".
+/// episode memory (process links). Each candidate carries CANDIDATE-
+/// SPECIFIC evidence (items 74-75): supporting/contradicting/missing
+/// observations plus a next test, queried per hypothesis against the
+/// event payloads — never the same blob for every candidate — and
+/// `epistemic_status` is always "hypothesis".
 pub async fn causal_candidates(
     pool: &PgPool,
     tenant_id: Uuid,
@@ -445,30 +460,241 @@ pub async fn causal_candidates(
 
             // Deterministic candidate set for changeover gaps (item 67);
             // other gaps get one generic causal candidate rather than an
-            // invented list.
-            let hypotheses: Vec<String> = if gap == "changeover" {
-                vec![
-                    "setup sequence differs (check episodes/lessons with process changeover)"
-                        .to_string(),
-                    "pre-staging differs".to_string(),
-                    "skill mix differs (check skills coverage)".to_string(),
-                    "fixture design differs".to_string(),
-                ]
-            } else {
-                vec![format!(
-                    "{object} {gap} root cause differs — compare operational events, \
-                     lessons and episodes"
-                )]
-            };
+            // invented list. Each hypothesis carries CANDIDATE-SPECIFIC
+            // evidence (sixteenth audit items 74-75): the event payload
+            // keys that would support or contradict IT, the fields that
+            // are missing, and a concrete next test — never the same blob
+            // for every candidate. When the data cannot distinguish,
+            // supporting/contradicting stay empty and missing_evidence
+            // says what would decide; the hypothesis is never presented
+            // as a root cause.
+            let candidates = if gap == "changeover" {
+                // Per-site counts of events whose payload carries the
+                // hypothesis's confirming field.
+                async fn key_presence(
+                    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+                    tenant_id: Uuid,
+                    event_type: &str,
+                    key: &str,
+                ) -> std::result::Result<Vec<(String, i64)>, sqlx::Error> {
+                    sqlx::query_as(
+                        "SELECT COALESCE(s.name, 'unassigned'), COUNT(*)::bigint \
+                         FROM operational_events e \
+                         LEFT JOIN sites s ON s.id = e.scope_site_id \
+                                      AND s.tenant_id = e.tenant_id \
+                         WHERE e.tenant_id = $1 AND e.event_type = $2 AND e.payload ? $3 \
+                         GROUP BY s.name ORDER BY s.name NULLS LAST",
+                    )
+                    .bind(tenant_id)
+                    .bind(event_type)
+                    .bind(key)
+                    .fetch_all(&mut **tx)
+                    .await
+                }
+                // Per-site counts of events whose payload key equals a
+                // specific value (e.g. pre_staged=true vs false).
+                async fn key_value_counts(
+                    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+                    tenant_id: Uuid,
+                    event_type: &str,
+                    key: &str,
+                    value: &str,
+                ) -> std::result::Result<Vec<(String, i64)>, sqlx::Error> {
+                    sqlx::query_as(
+                        "SELECT COALESCE(s.name, 'unassigned'), COUNT(*)::bigint \
+                         FROM operational_events e \
+                         LEFT JOIN sites s ON s.id = e.scope_site_id \
+                                      AND s.tenant_id = e.tenant_id \
+                         WHERE e.tenant_id = $1 AND e.event_type = $2 \
+                           AND payload->>$3 = $4 \
+                         GROUP BY s.name ORDER BY s.name NULLS LAST",
+                    )
+                    .bind(tenant_id)
+                    .bind(event_type)
+                    .bind(key)
+                    .bind(value)
+                    .fetch_all(&mut **tx)
+                    .await
+                }
+                // (distinct recorded values, rows carrying the key) — one
+                // distinct value across sites CONTRADICTS the hypothesis.
+                async fn key_value_span(
+                    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+                    tenant_id: Uuid,
+                    event_type: &str,
+                    key: &str,
+                ) -> std::result::Result<(i64, i64), sqlx::Error> {
+                    sqlx::query_as(
+                        "SELECT COUNT(DISTINCT payload->>$3)::bigint, COUNT(*)::bigint \
+                         FROM operational_events \
+                         WHERE tenant_id = $1 AND event_type = $2 AND payload ? $3",
+                    )
+                    .bind(tenant_id)
+                    .bind(event_type)
+                    .bind(key)
+                    .fetch_one(&mut **tx)
+                    .await
+                }
+                // Average recorded duration_seconds for pre-staged events.
+                async fn avg_duration(
+                    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+                    tenant_id: Uuid,
+                    event_type: &str,
+                    staged: bool,
+                ) -> std::result::Result<f64, sqlx::Error> {
+                    sqlx::query_scalar(
+                        "SELECT COALESCE(AVG((payload->>'duration_seconds')::float8), 0)::float8 \
+                         FROM operational_events \
+                         WHERE tenant_id = $1 AND event_type = $2 \
+                           AND payload ? 'duration_seconds' \
+                           AND payload->>'pre_staged' = $3",
+                    )
+                    .bind(tenant_id)
+                    .bind(event_type)
+                    .bind(if staged { "true" } else { "false" })
+                    .fetch_one(&mut **tx)
+                    .await
+                }
 
-            let candidates = hypotheses
-                .into_iter()
-                .map(|hypothesis| CausalCandidate {
-                    hypothesis,
+                let mut out = Vec::new();
+                for (hypothesis, key, meaning, confirm, test) in [
+                    (
+                        "setup sequence differs (check episodes/lessons with process changeover)",
+                        "setup_sequence",
+                        "the recorded setup sequence per site differs",
+                        "a recorded setup sequence per changeover would decide",
+                        "record the setup sequence of 10 comparable changeovers at each site and compare the step lists",
+                    ),
+                    (
+                        "pre-staging differs",
+                        "pre_staged",
+                        "pre-staging is applied at one site, not the other",
+                        "a staging flag per changeover would decide",
+                        "measure 10 comparable changeovers with identical staging condition at each site and compare durations",
+                    ),
+                    (
+                        "skill mix differs (check skills coverage)",
+                        "operator_skills",
+                        "operator skill coverage differs between sites",
+                        "operator-skill tags per changeover would decide",
+                        "certify the operator skill coverage of the changeover teams at each site and compare",
+                    ),
+                    (
+                        "fixture design differs",
+                        "fixture_id",
+                        "different fixtures are used across sites",
+                        "fixture identifiers per changeover would decide",
+                        "run the same changeover with the same fixture at both sites and compare durations",
+                    ),
+                ] {
+                    let mut supporting = Vec::new();
+                    let mut contradicting = Vec::new();
+                    let mut missing = Vec::new();
+
+                    let present = key_presence(tx, tenant_id, &gap, key)
+                        .await
+                        .map_err(|e| SenseiError::Database(format!("corporate: causal {key}: {e}")))?;
+                    for (site, count) in &present {
+                        supporting.push(format!(
+                            "{count} {gap} event(s) at site {site} record '{key}' — {meaning}"
+                        ));
+                    }
+                    let (distinct, total) = key_value_span(tx, tenant_id, &gap, key)
+                        .await
+                        .map_err(|e| SenseiError::Database(format!("corporate: causal {key} span: {e}")))?;
+                    if total > 0 && distinct == 1 {
+                        contradicting.push(format!(
+                            "all {total} {gap} events record the SAME '{key}' value — the condition does not differ between sites"
+                        ));
+                    }
+                    if present.is_empty() {
+                        missing.push(format!("no {gap} event records '{key}' — {confirm}"));
+                    }
+
+                    // The pre-staging hypothesis is also checked against
+                    // durations: changeovers WITHOUT pre-staging that are
+                    // still fast CONTRADICT it.
+                    if key == "pre_staged" {
+                        let staged = key_value_counts(tx, tenant_id, &gap, "pre_staged", "true")
+                            .await
+                            .map_err(|e| SenseiError::Database(format!("corporate: causal staged: {e}")))?;
+                        let unstaged = key_value_counts(tx, tenant_id, &gap, "pre_staged", "false")
+                            .await
+                            .map_err(|e| SenseiError::Database(format!("corporate: causal unstaged: {e}")))?;
+                        for (site, count) in &staged {
+                            supporting.push(format!(
+                                "{count} {gap} event(s) at site {site} are pre-staged (pre_staged=true)"
+                            ));
+                        }
+                        for (site, count) in &unstaged {
+                            contradicting.push(format!(
+                                "{count} {gap} event(s) at site {site} run WITHOUT pre-staging (pre_staged=false) — the opposite condition"
+                            ));
+                        }
+                        let staged_avg = avg_duration(tx, tenant_id, &gap, true)
+                            .await
+                            .map_err(|e| SenseiError::Database(format!("corporate: causal staged avg: {e}")))?;
+                        let unstaged_avg = avg_duration(tx, tenant_id, &gap, false)
+                            .await
+                            .map_err(|e| SenseiError::Database(format!("corporate: causal unstaged avg: {e}")))?;
+                        if staged_avg > 0.0 && unstaged_avg > 0.0 {
+                            if unstaged_avg < staged_avg {
+                                contradicting.push(format!(
+                                    "changeovers WITHOUT pre-staging average {unstaged_avg:.0}s — FASTER than pre-staged {staged_avg:.0}s; pre-staging does not explain the gap"
+                                ));
+                            } else {
+                                supporting.push(format!(
+                                    "pre-staged changeovers average {staged_avg:.0}s vs {unstaged_avg:.0}s without — pre-staging correlates with the gap"
+                                ));
+                            }
+                        }
+                    }
+
+                    // The field that would CONFIRM staging effort is absent
+                    // from every changeover payload — that absence is the
+                    // missing evidence for the staging hypotheses.
+                    let (_, prep_total) = key_value_span(tx, tenant_id, &gap, "fixture_prep_seconds")
+                        .await
+                        .map_err(|e| SenseiError::Database(format!("corporate: causal prep: {e}")))?;
+                    if prep_total == 0 {
+                        missing.push(
+                            "fixture-preparation timestamps ('fixture_prep_seconds') are absent \
+                             from changeover payloads — they would confirm staging effort"
+                                .to_string(),
+                        );
+                    }
+
+                    out.push(CausalCandidate {
+                        hypothesis: hypothesis.to_string(),
+                        evidence: evidence.clone(),
+                        supporting_evidence: supporting,
+                        contradicting_evidence: contradicting,
+                        missing_evidence: missing,
+                        next_test: Some(test.to_string()),
+                        epistemic_status: "hypothesis".to_string(),
+                    });
+                }
+                out
+            } else {
+                vec![CausalCandidate {
+                    hypothesis: format!(
+                        "{object} {gap} root cause differs — compare operational events, \
+                         lessons and episodes"
+                    ),
                     evidence: evidence.clone(),
+                    supporting_evidence: evidence.clone(),
+                    contradicting_evidence: Vec::new(),
+                    missing_evidence: vec![format!(
+                        "operational_events payloads record no per-site '{gap}' field — \
+                         capturing {gap} inputs per event would decide"
+                    )],
+                    next_test: Some(format!(
+                        "run the {object} {gap} process at both sites with identical inputs \
+                         and compare outcomes"
+                    )),
                     epistemic_status: "hypothesis".to_string(),
-                })
-                .collect();
+                }]
+            };
 
             Ok(candidates)
         })

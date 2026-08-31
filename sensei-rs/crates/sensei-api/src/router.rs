@@ -2105,6 +2105,14 @@ pub fn build_router(state: AppState) -> Router {
             get(routes::site_manifest::get_manifest),
         )
         .route(
+            "/api/v1/sites/{site_id}/validate",
+            post(routes::site_manifest::validate_site),
+        )
+        .route(
+            "/api/v1/sites/{site_id}/activate",
+            post(routes::site_manifest::activate_site),
+        )
+        .route(
             "/api/v1/tier-meetings/{id}/start",
             post(routes::tier_meetings::start_tier_meeting),
         )
