@@ -17,7 +17,8 @@ use uuid::Uuid;
 use crate::state::AppState;
 
 use sensei_services::tps::lessons::{
-    self, adopt, mark_verified, record_lesson, yokoten_match, Lesson, NewLesson,
+    self, adopt, mark_verified, recommend_countermeasures, record_lesson, yokoten_match, Lesson,
+    NewLesson,
 };
 
 // ── Request DTOs ────────────────────────────────────────────────────────────
@@ -35,6 +36,14 @@ pub struct VerifyRequest {
 #[derive(Debug, Deserialize)]
 pub struct YokotenRequest {
     pub context_signature: serde_json::Value,
+}
+
+/// Body for `POST /api/v1/lessons/recommend` — the RECURRING condition
+/// the team faces; prior countermeasures are offered as comparison
+/// hypotheses, never prescriptions.
+#[derive(Debug, Deserialize)]
+pub struct RecommendRequest {
+    pub condition_context: serde_json::Value,
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
@@ -104,5 +113,21 @@ pub async fn yokoten(
     user.require_permission("training:manage")?;
     let p = pool(&state)?;
     let matches = yokoten_match(p, user.tenant_id, req.context_signature).await?;
+    Ok(Json(matches))
+}
+
+/// `POST /api/v1/lessons/recommend` — for a RECURRING condition, offer
+/// prior countermeasures whose context signature overlaps it as
+/// comparison HYPOTHESES (fifteenth audit items 12/14). Only locally
+/// verified/adopted lessons are offered — applicability still belongs to
+/// the local team (A19), never assumed.
+pub async fn recommend(
+    user: AuthenticatedUser,
+    State(state): State<AppState>,
+    Json(req): Json<RecommendRequest>,
+) -> Result<Json<Vec<Lesson>>> {
+    user.require_permission("training:read")?;
+    let p = pool(&state)?;
+    let matches = recommend_countermeasures(p, user.tenant_id, req.condition_context).await?;
     Ok(Json(matches))
 }

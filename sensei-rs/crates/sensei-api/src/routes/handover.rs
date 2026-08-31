@@ -506,6 +506,14 @@ pub async fn run_departure(
         .await
         .map_err(|e| SenseiError::Database(format!("Departure commit failed: {e}")))?;
 
+    // Fifteenth audit 24/A5: a departure is a revocation — bump the
+    // principal revision AFTER the departure transaction completes so the
+    // new permission state is committed before caches are invalidated.
+    // Every authorization-derived cache key embeds the snapshot salt, so
+    // this invalidates them atomically (retrieval can never run under one
+    // permission state and execution under another).
+    sensei_services::tps::authorization_revisions::bump_principal(pool, tenant_id).await?;
+
     let transferred_to_slot = (!slot_id.is_nil()).then(|| {
         serde_json::json!({ "slot_id": slot_id, "role_name": slot_role_name, "slot_name": slot_name })
     });

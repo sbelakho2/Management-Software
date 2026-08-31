@@ -282,3 +282,62 @@ pub async fn yokoten_match(
         })
         .collect())
 }
+
+/// Countermeasure recommender (fifteenth audit items 12/14): for a
+/// recurring condition, OFFER prior countermeasures whose context
+/// signature overlaps the condition — as hypotheses with applicability,
+/// never as prescriptions (A19: local teams verify).
+///
+/// Only lessons the local team already resolved (`verified` or `adopted`)
+/// are offered: a `proposed` yokoten transfer is still an untested offer,
+/// and a `rejected` one is dead. Matching reuses `yokoten_match`'s
+/// semantics — permissive SQL key overlap, then the Rust-side filter
+/// requiring at least one shared key with an EQUAL value — ordered by
+/// confidence DESC, limited to 5.
+pub async fn recommend_countermeasures(
+    pool: &sqlx::PgPool,
+    tenant_id: Uuid,
+    condition_context: serde_json::Value,
+) -> Result<Vec<Lesson>> {
+    let signature = condition_context.clone();
+    let rows = with_tenant_tx(pool, tenant_id, move |tx| {
+        Box::pin(async move {
+            let rows: Vec<Lesson> = sqlx::query_as(&format!(
+                "SELECT {LESSON_COLUMNS} FROM lessons \
+                 WHERE tenant_id = $1 \
+                   AND status IN ('verified','adopted') \
+                   AND context_signature ?| ARRAY(SELECT jsonb_object_keys($2::jsonb)) \
+                 ORDER BY confidence DESC NULLS LAST, created_at DESC"
+            ))
+            .bind(tenant_id)
+            .bind(signature.clone())
+            .fetch_all(&mut **tx)
+            .await
+            .map_err(|e| {
+                SenseiError::Database(format!("Failed to recommend countermeasures: {e}"))
+            })?;
+            Ok(rows)
+        })
+    })
+    .await?;
+
+    // Same overlap rule as yokoten_match: at least one shared key with an
+    // equal value — the actual condition overlap, applied AFTER the
+    // permissive SQL key prefilter so ranking is never skewed.
+    let query = condition_context.as_object().cloned().unwrap_or_default();
+    Ok(rows
+        .into_iter()
+        .filter(|lesson| {
+            lesson
+                .context_signature
+                .as_object()
+                .map(|obj| {
+                    query
+                        .iter()
+                        .any(|(key, value)| obj.get(key).is_some_and(|v| v == value))
+                })
+                .unwrap_or(false)
+        })
+        .take(5)
+        .collect())
+}

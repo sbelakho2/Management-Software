@@ -35,6 +35,10 @@ pub struct RealtimeStore {
     socket: RwSignal<Option<web_sys::WebSocket>>,
     /// Backoff attempt counter for reconnection (item 67).
     attempt: RwSignal<u32>,
+    /// Connection generation (fourteenth audit): bumped on every
+    /// intentional disconnect so reconnects scheduled by a stale
+    /// generation are cancelled instead of resurrecting the socket.
+    generation: RwSignal<u64>,
 }
 
 impl Default for RealtimeStore {
@@ -52,11 +56,16 @@ impl RealtimeStore {
             error: RwSignal::new(None),
             socket: RwSignal::new(None),
             attempt: RwSignal::new(0),
+            generation: RwSignal::new(0),
         }
     }
 
     /// Close the current socket (on logout).
     pub fn disconnect(&self) {
+        // Fourteenth audit: bump the generation BEFORE closing so any
+        // reconnect scheduled by this socket's onclose (or already in
+        // backoff) belongs to a stale generation and is cancelled.
+        self.generation.update(|g| *g += 1);
         if let Some(ws) = self.socket.get_untracked().as_ref() {
             let _ = ws.close();
         }
@@ -97,6 +106,9 @@ impl RealtimeStore {
     /// `AuthState::Authenticated` (item 64).
     pub fn connect(&self, api_base: &str, tenant_id: &str, client: &crate::api::client::ApiClient) {
         let store = self.clone();
+        // Fourteenth audit: capture this connection's generation up front —
+        // a logout that bumps it invalidates every step below.
+        let my_generation = store.generation.get_untracked();
         let api_base = api_base.to_string();
         let tenant_id = tenant_id.to_string();
         let client = client.clone();
@@ -120,17 +132,24 @@ impl RealtimeStore {
                     .set(Some("WebSocket unsupported in this browser".to_string()));
                 return;
             };
+            // Fourteenth audit: a logout during ticket mint invalidates
+            // this connection — abort instead of resurrecting the socket.
+            if store.generation.get_untracked() != my_generation {
+                let _ = ws.close();
+                return;
+            }
             ws.set_binary_type(web_sys::BinaryType::Arraybuffer);
             store.socket.set(Some(ws.clone()));
-            store.attempt.set(0);
 
-            // onopen: joined + reconnect backoff reset.
+            // onopen: joined + reconnect backoff reset (fourteenth audit:
+            // the backoff resets ONLY on a successful open, never before).
             {
                 let store = store.clone();
                 let tenant_id = tenant_id.clone();
                 let ws_join = ws.clone();
                 let onopen = Closure::<dyn FnMut()>::new(move || {
                     store.connected.set(true);
+                    store.attempt.set(0);
                     store.error.set(None);
                     let join = serde_json::json!({
                         "type": "join",
@@ -189,6 +208,10 @@ impl RealtimeStore {
                 let api_base = api_base.clone();
                 let tenant_id = tenant_id.clone();
                 let client = client.clone();
+                // Fourteenth audit: capture the generation at schedule time —
+                // this connection's generation (verified above); a logout
+                // that bumps it cancels the scheduled reconnect.
+                let gen_at_close = store.generation.get_untracked();
                 let onclose = Closure::<dyn FnMut()>::new(move || {
                     store.connected.set(false);
                     store
@@ -204,6 +227,11 @@ impl RealtimeStore {
                     // Reconnect after backoff.
                     leptos::task::spawn_local(async move {
                         gloo_timers::future::TimeoutFuture::new(delay_ms).await;
+                        // Fourteenth audit: cancelled if a disconnect
+                        // bumped the generation while we waited.
+                        if store.generation.get_untracked() != gen_at_close {
+                            return;
+                        }
                         store.connect(&api_base, &tenant_id, &client);
                     });
                 });
@@ -211,5 +239,28 @@ impl RealtimeStore {
                 onclose.forget();
             }
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn disconnect_bumps_generation() {
+        let store = RealtimeStore::new();
+        assert_eq!(store.generation.get_untracked(), 0);
+        store.disconnect();
+        assert_eq!(store.generation.get_untracked(), 1);
+    }
+
+    #[test]
+    fn generation_gates_stale_reconnect() {
+        let store = RealtimeStore::new();
+        let stale_generation = store.generation.get_untracked();
+        store.disconnect();
+        assert_ne!(store.generation.get_untracked(), stale_generation);
+        let reconnect_survives = store.generation.get_untracked() == stale_generation;
+        assert!(!reconnect_survives);
     }
 }

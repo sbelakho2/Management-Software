@@ -1922,6 +1922,18 @@ pub fn build_router(state: AppState) -> Router {
             "/api/v1/audit-logs/stats",
             get(routes::audit_logs::get_audit_log_stats),
         )
+        // ── Authorization Snapshot Routes (fifteenth audit 24/A5) ────
+        // Every AI execution carries the policy/relationship/principal
+        // revision it was authorized under; a bump (revocation) changes
+        // the cache salt and invalidates authorization-derived caches.
+        .route(
+            "/api/v1/authorization/snapshot",
+            get(routes::authorization_revisions::get_snapshot),
+        )
+        .route(
+            "/api/v1/authorization/bump",
+            post(routes::authorization_revisions::bump),
+        )
         // ── Production Cells Routes ──────────────────────────────────────
         .route(
             "/api/v1/production-cells",
@@ -2077,6 +2089,21 @@ pub fn build_router(state: AppState) -> Router {
             get(routes::topology::list_product_families)
                 .post(routes::topology::create_product_family),
         )
+        // ── Site Manifest Routes (fifteenth audit 83/93/A17) ────────
+        // Declarative plant configuration: a new site is bootstrapped with
+        // RECORDS (manifest + canonical metric seed), not core domain code.
+        .route(
+            "/api/v1/sites/manifest",
+            post(routes::site_manifest::upsert_manifest),
+        )
+        .route(
+            "/api/v1/sites/bootstrap",
+            post(routes::site_manifest::bootstrap_site),
+        )
+        .route(
+            "/api/v1/sites/{site_id}/manifest",
+            get(routes::site_manifest::get_manifest),
+        )
         .route(
             "/api/v1/tier-meetings/{id}/start",
             post(routes::tier_meetings::start_tier_meeting),
@@ -2123,6 +2150,42 @@ pub fn build_router(state: AppState) -> Router {
             post(routes::lessons::adopt_handler),
         )
         .route("/api/v1/lessons/yokoten", post(routes::lessons::yokoten))
+        .route(
+            "/api/v1/lessons/recommend",
+            post(routes::lessons::recommend),
+        )
+        // ── Corporate Federation Routes (fifteenth audit 29/46/66-67 +
+        //    A19/A24): mix-normalized cross-site analytics, causal
+        //    HYPOTHESIS chains, and corporate lesson propagation. ──────
+        .route(
+            "/api/v1/corporate/analytics",
+            get(routes::corporate::analytics),
+        )
+        .route("/api/v1/corporate/causal", get(routes::corporate::causal))
+        .route(
+            "/api/v1/corporate/lessons/propagate",
+            post(routes::corporate::propagate_lesson),
+        )
+        // ── Site-Edge Replication Routes (fifteenth audit 29/A15): the
+        //    durable queue between site-local execution and corporate
+        //    federation — sites enqueue AUTHORIZED projections, corporate
+        //    pulls them atomically. ─────────────────────────────────────
+        .route(
+            "/api/v1/replication/enqueue",
+            post(routes::replication::enqueue),
+        )
+        .route("/api/v1/replication/pull", get(routes::replication::pull))
+        // ── Country Policy Routes (fifteenth audit 84): locale, currency,
+        //    units, calendar, holidays, residency, retention — policy
+        //    objects, never `if country == ...` code forks. ────────────
+        .route(
+            "/api/v1/policies/country/{country}",
+            get(routes::country_policy::get_country),
+        )
+        .route(
+            "/api/v1/policies/country",
+            post(routes::country_policy::upsert),
+        )
         // ── Process Mining Routes (fifteenth audit 34/35/99) ──────────
         .route(
             "/api/v1/process-mining/conformance",
@@ -2319,6 +2382,10 @@ pub fn build_router(state: AppState) -> Router {
         .route(
             "/api/v1/skills/turnover-risk",
             get(routes::skills::turnover_risk),
+        )
+        .route(
+            "/api/v1/skills/forecast/{principal_id}",
+            get(routes::skills::forecast_departure),
         )
         .route(
             "/api/v1/skills/{skill_id}/standards",

@@ -5261,3 +5261,793 @@ async fn lesson_lifecycle_yokoten_experiment() {
         "only proposed/verified lessons are offered for comparison"
     );
 }
+
+/// Declarative SITE MANIFEST (fifteenth audit 83/93/A17): a new plant comes
+/// onto Starz Forge WITHOUT modifying core domain code. `bootstrap_site`
+/// upserts the manifest AND seeds the canonical metric definitions in ONE
+/// transaction — "site operational after records, not code".
+#[tokio::test]
+async fn site_manifest_bootstrap_is_declarative() {
+    let _serial = DB_LOCK.lock().await;
+    let Some(pool) = connect().await else { return };
+    sqlx::query(
+        r#"DO $$ DECLARE r RECORD; BEGIN
+             FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname = 'public') LOOP
+                 EXECUTE format('DROP TABLE IF EXISTS %I CASCADE', r.tablename);
+             END LOOP;
+         END $$"#,
+    )
+    .execute(&pool)
+    .await
+    .expect("drop all tables");
+    sensei_db::migrations::run_migrations(&pool)
+        .await
+        .expect("the ENTIRE migration chain must apply to an empty database");
+
+    let tenant_id = uuid::Uuid::new_v4();
+    sqlx::query("INSERT INTO tenants (id, name, slug) VALUES ($1, 'manifest', 'manifest')")
+        .bind(tenant_id)
+        .execute(&pool)
+        .await
+        .expect("tenant insert");
+    let site_id = uuid::Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO sites (id, tenant_id, site_code, name) VALUES \
+         ($1, $2, 'MA', 'Starz Forge Marrakech')",
+    )
+    .bind(site_id)
+    .bind(tenant_id)
+    .execute(&pool)
+    .await
+    .expect("sites insert");
+
+    use sensei_services::tps::site_manifest::{
+        bootstrap_site, get_manifest, upsert_manifest, SiteManifest,
+    };
+
+    let manifest = SiteManifest {
+        site_id,
+        country: "Morocco".to_string(),
+        timezone: "Africa/Casablanca".to_string(),
+        languages: vec!["ar".to_string(), "fr".to_string()],
+        currency: "MAD".to_string(),
+        capabilities: vec!["SMT".to_string(), "AOI".to_string()],
+        integrations: vec![serde_json::json!({"kind": "erp", "name": "starz-erp"})],
+        policy_bundle: Some("morocco-manufacturing".to_string()),
+    };
+
+    bootstrap_site(&pool, tenant_id, manifest)
+        .await
+        .expect("bootstrap must succeed");
+
+    let fetched = get_manifest(&pool, tenant_id, site_id)
+        .await
+        .expect("manifest read")
+        .expect("manifest must exist after bootstrap");
+    assert_eq!(fetched.country, "Morocco");
+    assert_eq!(fetched.timezone, "Africa/Casablanca");
+    assert_eq!(fetched.languages, vec!["ar".to_string(), "fr".to_string()]);
+    assert_eq!(
+        fetched.capabilities,
+        vec!["SMT".to_string(), "AOI".to_string()]
+    );
+
+    // metric_definitions is RLS fail-closed: count inside a tenant-context tx.
+    async fn count_metrics(pool: &sqlx::PgPool, tenant_id: uuid::Uuid) -> i64 {
+        let mut tx = pool.begin().await.expect("begin count tx");
+        sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
+            .bind(tenant_id.to_string())
+            .execute(&mut *tx)
+            .await
+            .expect("set tenant context");
+        let count: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM metric_definitions WHERE tenant_id = $1")
+                .bind(tenant_id)
+                .fetch_one(&mut *tx)
+                .await
+                .expect("metric count");
+        tx.commit().await.expect("count commit");
+        count
+    }
+
+    let metric_count = count_metrics(&pool, tenant_id).await;
+    assert!(
+        metric_count >= 5,
+        "bootstrap must seed the 5 canonical metrics, got {metric_count}"
+    );
+
+    // Re-bootstrap is idempotent: manifest_version bumps, metrics stay 5.
+    bootstrap_site(
+        &pool,
+        tenant_id,
+        SiteManifest {
+            site_id,
+            country: "Morocco".to_string(),
+            timezone: "Africa/Casablanca".to_string(),
+            languages: vec!["ar".to_string(), "fr".to_string()],
+            currency: "MAD".to_string(),
+            capabilities: vec!["SMT".to_string(), "AOI".to_string()],
+            integrations: vec![],
+            policy_bundle: None,
+        },
+    )
+    .await
+    .expect("re-bootstrap must succeed");
+    let count_after = count_metrics(&pool, tenant_id).await;
+    assert_eq!(
+        count_after, metric_count,
+        "ON CONFLICT DO NOTHING must not duplicate metrics"
+    );
+
+    // A manifest with EMPTY capabilities is a configuration error.
+    let invalid = SiteManifest {
+        site_id,
+        country: "Morocco".to_string(),
+        timezone: "Africa/Casablanca".to_string(),
+        languages: vec!["ar".to_string()],
+        currency: "MAD".to_string(),
+        capabilities: vec![],
+        integrations: vec![],
+        policy_bundle: None,
+    };
+    assert!(
+        bootstrap_site(&pool, tenant_id, invalid).await.is_err(),
+        "empty capabilities must be rejected"
+    );
+    assert!(
+        upsert_manifest(
+            &pool,
+            tenant_id,
+            SiteManifest {
+                site_id,
+                country: "".to_string(),
+                timezone: "UTC".to_string(),
+                languages: vec![],
+                currency: "USD".to_string(),
+                capabilities: vec!["SMT".to_string()],
+                integrations: vec![],
+                policy_bundle: None,
+            }
+        )
+        .await
+        .is_err(),
+        "empty country must be rejected"
+    );
+}
+
+/// Fifteenth audit item 84 (country policy bundles): language, currency,
+/// units, week/calendar, holiday schedule, timezone, data residency,
+/// retention, employment-data visibility and local document requirements
+/// are POLICY OBJECTS — never `if country == Morocco` code forks. The
+/// seeded bundles must be readable per tenant, an unknown country is a
+/// fail-closed Validation error (a new country is a policy RECORD, never
+/// a code change), the locale derives from the policy, and an upsert
+/// introduces a new country without touching code.
+#[tokio::test]
+async fn country_policy_bundle_is_data_not_code() {
+    let _serial = DB_LOCK.lock().await;
+    let Some(pool) = connect().await else { return };
+    sqlx::query(
+        r#"DO $$ DECLARE r RECORD; BEGIN
+             FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname = 'public') LOOP
+                 EXECUTE format('DROP TABLE IF EXISTS %I CASCADE', r.tablename);
+             END LOOP;
+         END $$"#,
+    )
+    .execute(&pool)
+    .await
+    .expect("drop all tables");
+    sensei_db::migrations::run_migrations(&pool)
+        .await
+        .expect("the ENTIRE migration chain must apply to an empty database");
+
+    let tenant_id = uuid::Uuid::new_v4();
+    sqlx::query("INSERT INTO tenants (id, name, slug) VALUES ($1, 'policies', 'policies')")
+        .bind(tenant_id)
+        .execute(&pool)
+        .await
+        .expect("tenant insert");
+
+    use sensei_services::tps::country_policy::{
+        get_country_policy, locale_for_policy, upsert_country_policy, CountryPolicy,
+    };
+
+    // The migration SEEDS the Morocco bundle for every tenant — read it
+    // through the REAL service (tenant-scoped RLS transaction).
+    let morocco = get_country_policy(&pool, tenant_id, "Morocco")
+        .await
+        .expect("Morocco bundle must be seeded by migration 122");
+    assert_eq!(morocco.language, "fr");
+    assert_eq!(morocco.currency, "MAD");
+    assert_eq!(morocco.timezone, "Africa/Casablanca");
+    assert_eq!(morocco.retention_days, 365);
+    assert_eq!(morocco.unit_system, "metric");
+    assert_eq!(morocco.week_start, "monday");
+    assert_eq!(morocco.data_residency.as_deref(), Some("ma"));
+    assert_eq!(morocco.employment_data_visibility, "restricted");
+
+    // FAIL-CLOSED: a country without a policy record is a Validation
+    // error — a new country is a policy record, never a code fork.
+    let germany = get_country_policy(&pool, tenant_id, "Germany").await;
+    assert!(
+        germany.is_err(),
+        "an unseeded country must fail closed instead of silently defaulting"
+    );
+
+    // The locale is DERIVED from the policy object; nothing branches on
+    // the country name.
+    assert_eq!(locale_for_policy(&morocco), "fr-Morocco");
+
+    // Adding Germany is a DATA act: upsert the policy record, then the
+    // same read path resolves it.
+    upsert_country_policy(
+        &pool,
+        tenant_id,
+        CountryPolicy {
+            country: "Germany".to_string(),
+            language: "de".to_string(),
+            currency: "EUR".to_string(),
+            unit_system: "metric".to_string(),
+            week_start: "monday".to_string(),
+            holiday_schedule: serde_json::json!(["new_year", "unity_day"]),
+            timezone: "Europe/Berlin".to_string(),
+            data_residency: Some("de".to_string()),
+            retention_days: 730,
+            employment_data_visibility: "restricted".to_string(),
+            local_document_requirements: serde_json::json!(["invoice_de"]),
+        },
+    )
+    .await
+    .expect("upsert must introduce the Germany policy record");
+    let germany = get_country_policy(&pool, tenant_id, "Germany")
+        .await
+        .expect("Germany must resolve after the upsert");
+    assert_eq!(germany.currency, "EUR");
+    assert_eq!(germany.retention_days, 730);
+    assert_eq!(locale_for_policy(&germany), "de-Germany");
+}
+
+/// Fifteenth audit 29/46/66-67 + A19/A24 (corporate federation): the
+/// mix-normalized cross-site analytics and the causal HYPOTHESIS chain
+/// must execute against the migrated schema. Comparing Bizerte vs
+/// Tangier FPY without product-complexity adjustment is forbidden —
+/// `mix_normalized` is always true, and "Why is Bizerte better at
+/// changeovers?" returns hypotheses with evidence, never facts.
+#[tokio::test]
+async fn corporate_cross_site_analytics_and_causal() {
+    let _serial = DB_LOCK.lock().await;
+    let Some(pool) = connect().await else { return };
+    sqlx::query(
+        r#"DO $$ DECLARE r RECORD; BEGIN
+             FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname = 'public') LOOP
+                 EXECUTE format('DROP TABLE IF EXISTS %I CASCADE', r.tablename);
+             END LOOP;
+         END $$"#,
+    )
+    .execute(&pool)
+    .await
+    .expect("drop all tables");
+    sensei_db::migrations::run_migrations(&pool)
+        .await
+        .expect("the ENTIRE migration chain must apply to an empty database");
+
+    let tenant_id = uuid::Uuid::new_v4();
+    let product_id = uuid::Uuid::new_v4();
+    sqlx::query("INSERT INTO tenants (id, name, slug) VALUES ($1, 'corp', 'corp')")
+        .bind(tenant_id)
+        .execute(&pool)
+        .await
+        .expect("tenant insert");
+    sqlx::query(
+        "INSERT INTO products (id, tenant_id, product_number, name, unit_of_measure) \
+         VALUES ($1, $2, 'P-CORP', 'Corporate Product', 'pcs')",
+    )
+    .bind(product_id)
+    .bind(tenant_id)
+    .execute(&pool)
+    .await
+    .expect("product insert");
+
+    // TWO sites: Bizerte (with scrap) and Tangier (without).
+    let bizerte = uuid::Uuid::new_v4();
+    let tangier = uuid::Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO sites (id, tenant_id, site_code, name) VALUES \
+         ($1, $2, 'BIZ', 'Bizerte'), ($3, $2, 'TAN', 'Tangier')",
+    )
+    .bind(bizerte)
+    .bind(tenant_id)
+    .bind(tangier)
+    .execute(&pool)
+    .await
+    .expect("sites insert");
+
+    // A work order per site — Bizerte scraped 10 of 100, Tangier none.
+    sqlx::query(
+        "INSERT INTO work_orders (id, tenant_id, wo_number, product_id, quantity, \
+                                  quantity_scrapped, status, site_id) \
+         VALUES ($1, $2, 'WO-BIZ', $3, 100, 10, 'completed', $4), \
+                ($5, $2, 'WO-TAN', $3, 100, 0, 'completed', $6)",
+    )
+    .bind(uuid::Uuid::new_v4())
+    .bind(tenant_id)
+    .bind(product_id)
+    .bind(bizerte)
+    .bind(uuid::Uuid::new_v4())
+    .bind(tangier)
+    .execute(&pool)
+    .await
+    .expect("work orders insert");
+
+    // An episode with process 'changeover' (the causal-chain evidence).
+    sqlx::query(
+        "INSERT INTO episodes (id, tenant_id, episode_type, title, description, status, \
+                               outcome, confidence, links, source_entity_type, \
+                               source_entity_id, occurred_at) \
+         VALUES ($1, $2, 'standard_change', 'Changeover time cut in half at Bizerte', NULL, \
+                 'open', NULL, NULL, $3, NULL, NULL, NOW())",
+    )
+    .bind(uuid::Uuid::new_v4())
+    .bind(tenant_id)
+    .bind(serde_json::json!([
+        {"kind": "process", "id": "changeover", "label": "changeover"}
+    ]))
+    .execute(&pool)
+    .await
+    .expect("episode insert");
+
+    // ── Cross-site analytics: mix-normalized, never a naive leaderboard ──
+    use sensei_services::tps::corporate::{causal_candidates, cross_site_analytics};
+    let analytics = cross_site_analytics(&pool, tenant_id)
+        .await
+        .expect("cross_site_analytics must run on the migrated schema");
+    assert!(analytics.mix_normalized, "mix normalization is always on");
+    assert_eq!(
+        analytics.site_rows.len(),
+        2,
+        "both sites must appear in the comparison"
+    );
+    assert!(
+        analytics
+            .guidance
+            .iter()
+            .any(|g| g.contains("mix-normalized") && g.contains("naive leaderboard")),
+        "guidance must carry the mix-normalized warning"
+    );
+    let bizerte_row = analytics
+        .site_rows
+        .iter()
+        .find(|r| r.site_name == "Bizerte")
+        .expect("Bizerte row");
+    let tangier_row = analytics
+        .site_rows
+        .iter()
+        .find(|r| r.site_name == "Tangier")
+        .expect("Tangier row");
+    assert!(
+        (bizerte_row.fpy - 0.9).abs() < 1e-9,
+        "Bizerte fpy = 1 − 10/100 scrap"
+    );
+    assert!(
+        (tangier_row.fpy - 1.0).abs() < 1e-9,
+        "Tangier fpy = 1 − 0 scrap"
+    );
+    assert!(
+        bizerte_row.fpy_mix_adjusted.is_finite() && bizerte_row.fpy_mix_adjusted > 0.0,
+        "fpy_mix_adjusted must be computed (deterministic normalization)"
+    );
+    assert!(
+        tangier_row.fpy_mix_adjusted.is_finite() && tangier_row.fpy_mix_adjusted > 0.0,
+        "fpy_mix_adjusted must be computed for the no-scrap site too"
+    );
+
+    // ── Causal chain: hypotheses with evidence, never facts ──
+    let chain = causal_candidates(&pool, tenant_id, "changeover", "changeover")
+        .await
+        .expect("causal_candidates must run on the migrated schema");
+    assert!(
+        chain
+            .candidates
+            .iter()
+            .any(|c| c.hypothesis.contains("setup sequence differs")),
+        "changeover gaps must produce the setup-sequence hypothesis"
+    );
+    assert!(
+        chain.candidates.len() >= 4,
+        "changeover gaps produce the full candidate set"
+    );
+    assert!(
+        chain
+            .candidates
+            .iter()
+            .all(|c| c.epistemic_status == "hypothesis"),
+        "candidates are HYPOTHESES — the causal chain never states a fact"
+    );
+    assert!(
+        chain.candidates.iter().any(|c| c
+            .evidence
+            .iter()
+            .any(|e| e.contains("Changeover time cut in half at Bizerte"))),
+        "evidence must reference the changeover episode"
+    );
+}
+
+/// Site-edge replication (fifteenth audit 29/A15): the durable queue is
+/// the local-first boundary — sites enqueue AUTHORIZED state projections
+/// without depending on the corporate link; corporate pulls them ONCE
+/// (durable once, no double projection) and the projection JSON
+/// round-trips.
+#[tokio::test]
+async fn site_replication_log_durable_projection() {
+    let _serial = DB_LOCK.lock().await;
+    let Some(pool) = connect().await else { return };
+    sqlx::query(
+        r#"DO $$ DECLARE r RECORD; BEGIN
+             FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname = 'public') LOOP
+                 EXECUTE format('DROP TABLE IF EXISTS %I CASCADE', r.tablename);
+             END LOOP;
+         END $$"#,
+    )
+    .execute(&pool)
+    .await
+    .expect("drop all tables");
+    sensei_db::migrations::run_migrations(&pool)
+        .await
+        .expect("the ENTIRE migration chain must apply to an empty database");
+
+    let tenant_id = uuid::Uuid::new_v4();
+    sqlx::query("INSERT INTO tenants (id, name, slug) VALUES ($1, 'replog', 'replog')")
+        .bind(tenant_id)
+        .execute(&pool)
+        .await
+        .expect("tenant insert");
+
+    use sensei_services::tps::replication;
+
+    let site_id = uuid::Uuid::new_v4();
+    let entity_a = uuid::Uuid::new_v4();
+    let entity_b = uuid::Uuid::new_v4();
+
+    // Site-local enqueue of two AUTHORIZED projections for two different
+    // entity types (one without a site / source event — the nullable
+    // contract).
+    replication::enqueue_projection(
+        &pool,
+        tenant_id,
+        Some(site_id),
+        "work_order",
+        entity_a,
+        serde_json::json!({ "status": "completed", "qty": 120 }),
+        Some("evt-wo-1"),
+    )
+    .await
+    .expect("enqueue must succeed site-locally");
+    replication::enqueue_projection(
+        &pool,
+        tenant_id,
+        None,
+        "andon",
+        entity_b,
+        serde_json::json!({ "status": "resolved", "site": site_id }),
+        None,
+    )
+    .await
+    .expect("enqueue must succeed site-locally");
+
+    // Corporate pull: both pending entries, in created_at order, with the
+    // projection JSON round-tripped.
+    let pulled = replication::pull_pending(&pool, tenant_id, 100)
+        .await
+        .expect("corporate pull must work");
+    assert_eq!(pulled.len(), 2, "both projections must be pulled");
+    let mut types: Vec<&str> = pulled.iter().map(|e| e.entity_type.as_str()).collect();
+    types.sort_unstable();
+    assert_eq!(types, vec!["andon", "work_order"]);
+
+    let wo = pulled
+        .iter()
+        .find(|e| e.entity_type == "work_order")
+        .expect("work_order projection present");
+    assert_eq!(wo.entity_id, Some(entity_a));
+    assert_eq!(wo.site_id, Some(site_id));
+    assert_eq!(wo.source_event_id.as_deref(), Some("evt-wo-1"));
+    assert_eq!(wo.projection["status"], "completed");
+    assert_eq!(wo.projection["qty"], 120);
+
+    let andon = pulled
+        .iter()
+        .find(|e| e.entity_type == "andon")
+        .expect("andon projection present");
+    assert_eq!(andon.entity_id, Some(entity_b));
+    assert_eq!(andon.site_id, None);
+    assert!(andon.source_event_id.is_none());
+    assert_eq!(andon.projection["status"], "resolved");
+    assert_eq!(andon.projection["site"], site_id.to_string());
+
+    // Second pull: empty — the claim was atomic, durable once.
+    let again = replication::pull_pending(&pool, tenant_id, 100)
+        .await
+        .expect("second pull must work");
+    assert!(again.is_empty(), "durable once — no double projection");
+}
+
+/// AUTHORIZATION SNAPSHOTS (fifteenth audit 24/A5): every AI execution
+/// carries {policy_revision, relationship_revision, principal_revision}
+/// through the WHOLE transaction — retrieval can never run under one
+/// permission state and execution under another. A fresh tenant gets a
+/// lazy 1/1/1 seed; a bump (departure/revocation) increments the revision,
+/// and the cache salt changes so every authorization-derived cache key is
+/// invalidated.
+#[tokio::test]
+async fn authorization_snapshot_revision_bumps() {
+    let _serial = DB_LOCK.lock().await;
+    let Some(pool) = connect().await else { return };
+    sqlx::query(
+        r#"DO $$ DECLARE r RECORD; BEGIN
+             FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname = 'public') LOOP
+                 EXECUTE format('DROP TABLE IF EXISTS %I CASCADE', r.tablename);
+             END LOOP;
+         END $$"#,
+    )
+    .execute(&pool)
+    .await
+    .expect("drop all tables");
+    sensei_db::migrations::run_migrations(&pool)
+        .await
+        .expect("the ENTIRE migration chain must apply to an empty database");
+
+    let tenant_id = uuid::Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO tenants (id, name, slug) VALUES ($1, 'auth-snapshot', 'auth-snapshot')",
+    )
+    .bind(tenant_id)
+    .execute(&pool)
+    .await
+    .expect("tenant insert");
+
+    use sensei_services::tps::authorization_revisions::{bump_principal, current_snapshot};
+
+    // Lazy seed: a fresh tenant reads 1/1/1 on first access.
+    let fresh = current_snapshot(&pool, tenant_id)
+        .await
+        .expect("fresh tenant must get a lazy-seeded snapshot");
+    assert_eq!(fresh.policy_revision, 1, "policy starts at 1");
+    assert_eq!(fresh.relationship_revision, 1, "relationship starts at 1");
+    assert_eq!(fresh.principal_revision, 1, "principal starts at 1");
+
+    // A departure/revocation bumps ONLY the principal revision.
+    bump_principal(&pool, tenant_id)
+        .await
+        .expect("principal bump must succeed");
+    let after = current_snapshot(&pool, tenant_id)
+        .await
+        .expect("snapshot read after bump");
+    assert_eq!(
+        after.principal_revision, 2,
+        "principal revision must bump to 2"
+    );
+    assert_eq!(after.policy_revision, 1, "policy revision must stay 1");
+    assert_eq!(
+        after.relationship_revision, 1,
+        "relationship revision must stay 1"
+    );
+
+    // The cache salt changes — revocation invalidates all derived caches.
+    assert_ne!(
+        fresh.cache_salt(),
+        after.cache_salt(),
+        "cache salt must differ between (1,1,1) and (1,1,2)"
+    );
+}
+
+/// Fifteenth audit items 12/14/39/63/P3: the countermeasure recommender
+/// OFFERS prior countermeasures as comparison HYPOTHESES for a recurring
+/// condition (never prescriptions — A19: local teams verify), and the
+/// departure forecast detects succession gaps BEFORE they happen: if the
+/// only independent principal left tomorrow, which critical skills would
+/// become single-point?
+#[tokio::test]
+async fn recommender_and_departure_forecast() {
+    let _serial = DB_LOCK.lock().await;
+    let Some(pool) = connect().await else { return };
+    sqlx::query(
+        r#"DO $$ DECLARE r RECORD; BEGIN
+             FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname = 'public') LOOP
+                 EXECUTE format('DROP TABLE IF EXISTS %I CASCADE', r.tablename);
+             END LOOP;
+         END $$"#,
+    )
+    .execute(&pool)
+    .await
+    .expect("drop all tables");
+    sensei_db::migrations::run_migrations(&pool)
+        .await
+        .expect("the ENTIRE migration chain must apply to an empty database");
+
+    let tenant_id = uuid::Uuid::new_v4();
+    sqlx::query("INSERT INTO tenants (id, name, slug) VALUES ($1, 'rec', 'recommender')")
+        .bind(tenant_id)
+        .execute(&pool)
+        .await
+        .expect("tenant insert");
+
+    // ── (a) Countermeasure recommender: a VERIFIED AOI lesson is offered
+    //    for the recurring AOI condition (with its countermeasure text);
+    //    an ADOPTED crimp lesson shares no signature key → not offered. ──
+    use sensei_services::tps::lessons::{
+        adopt, mark_verified, recommend_countermeasures, record_lesson, NewLesson,
+    };
+    let verified = record_lesson(
+        &pool,
+        tenant_id,
+        NewLesson {
+            lesson_id: "cm-aoi".to_string(),
+            title: "AOI false calls".to_string(),
+            source_problem_id: None,
+            context_signature: serde_json::json!({ "machine_family": "AOI" }),
+            hypothesis: Some("paste residues".to_string()),
+            countermeasure: "increase rejection threshold after oven verification".to_string(),
+            observed_result: serde_json::json!({ "false_calls": "reduced" }),
+            confidence: Some(0.85),
+            applicability: serde_json::json!({ "machine_families": ["AOI"] }),
+            origin_site_id: None,
+        },
+    )
+    .await
+    .expect("record AOI lesson");
+    mark_verified(&pool, tenant_id, verified, true)
+        .await
+        .expect("verify AOI lesson");
+
+    let adopted = record_lesson(
+        &pool,
+        tenant_id,
+        NewLesson {
+            lesson_id: "cm-crimp".to_string(),
+            title: "Crimp height drift".to_string(),
+            source_problem_id: None,
+            context_signature: serde_json::json!({ "process": "crimp" }),
+            hypothesis: None,
+            countermeasure: "recalibrate crimp head each shift".to_string(),
+            observed_result: serde_json::json!({ "result": "stable" }),
+            confidence: Some(0.9),
+            applicability: serde_json::json!({ "processes": ["crimp"] }),
+            origin_site_id: None,
+        },
+    )
+    .await
+    .expect("record crimp lesson");
+    mark_verified(&pool, tenant_id, adopted, true)
+        .await
+        .expect("verify crimp lesson");
+    adopt(&pool, tenant_id, adopted)
+        .await
+        .expect("adopt crimp lesson");
+
+    let offered = recommend_countermeasures(
+        &pool,
+        tenant_id,
+        serde_json::json!({ "machine_family": "AOI" }),
+    )
+    .await
+    .expect("recommend_countermeasures must run");
+    assert!(
+        offered.iter().any(|l| l.lesson_id == "cm-aoi"
+            && l.countermeasure == "increase rejection threshold after oven verification"),
+        "the VERIFIED lesson is offered as a hypothesis WITH its countermeasure"
+    );
+    assert!(
+        !offered.iter().any(|l| l.lesson_id == "cm-crimp"),
+        "a lesson with NO context-signature overlap is never offered"
+    );
+
+    // ── (b) Departure forecast: skill1 has P as its ONLY independent +
+    //    trainer; skill2 has P plus a second independent. If P leaves,
+    //    skill1 becomes single-point and loses its trainer; skill2 keeps
+    //    a second independent. ──
+    use sensei_services::tps::skills::{
+        create_skill, forecast_departure, record_qualification, SkillLevel,
+    };
+    let p = uuid::Uuid::new_v4();
+    let second = uuid::Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO users (id, tenant_id, email, name, password_hash) \
+         VALUES ($1, $2, 'p@rec.local', 'P', 'x'), ($3, $2, 's@rec.local', 'S', 'x')",
+    )
+    .bind(p)
+    .bind(tenant_id)
+    .bind(second)
+    .execute(&pool)
+    .await
+    .expect("principals insert");
+
+    let skill1 = create_skill(
+        &pool,
+        tenant_id,
+        "aoi-programming",
+        "AOI Programming",
+        None,
+        None,
+        true,
+    )
+    .await
+    .expect("create critical skill 1");
+    let skill2 = create_skill(
+        &pool,
+        tenant_id,
+        "crimp-press",
+        "Crimp Press",
+        None,
+        None,
+        true,
+    )
+    .await
+    .expect("create critical skill 2");
+
+    record_qualification(
+        &pool,
+        tenant_id,
+        p,
+        skill1,
+        SkillLevel::Trainer,
+        serde_json::json!({ "evidence": "cert-s1" }),
+    )
+    .await
+    .expect("P is the only independent+trainer on skill1");
+    record_qualification(
+        &pool,
+        tenant_id,
+        p,
+        skill2,
+        SkillLevel::Trainer,
+        serde_json::json!({ "evidence": "cert-s2" }),
+    )
+    .await
+    .expect("P qualifies skill2");
+    record_qualification(
+        &pool,
+        tenant_id,
+        second,
+        skill2,
+        SkillLevel::Independent,
+        serde_json::json!({ "evidence": "cert-s2b" }),
+    )
+    .await
+    .expect("second independent on skill2");
+
+    let forecast = forecast_departure(&pool, tenant_id, p)
+        .await
+        .expect("forecast_departure must run");
+    assert_eq!(forecast.departing_principal_id, p);
+    let s1 = forecast
+        .skills_impacted
+        .iter()
+        .find(|i| i.skill_id == "aoi-programming")
+        .expect("skill1 is impacted");
+    assert_eq!(s1.independents_before, 1);
+    assert_eq!(s1.independents_after, 0);
+    assert!(
+        s1.becomes_single_point,
+        "skill1 becomes single-point if its only independent leaves"
+    );
+    assert!(!s1.trainer_remaining, "skill1 loses its only trainer");
+    let s2 = forecast
+        .skills_impacted
+        .iter()
+        .find(|i| i.skill_id == "crimp-press")
+        .expect("skill2 is impacted");
+    assert_eq!(s2.independents_before, 2);
+    assert_eq!(s2.independents_after, 1);
+    assert!(
+        !s2.becomes_single_point,
+        "skill2 keeps a second independent — no succession gap"
+    );
+    assert!(
+        forecast
+            .guidance
+            .iter()
+            .any(|g| g.contains("AOI Programming") && g.contains("cross-train")),
+        "guidance must carry the cross-train warning for skill1: {:?}",
+        forecast.guidance
+    );
+}

@@ -321,6 +321,94 @@ pub fn corrective_action_golden_suite() -> Vec<GoldenCase> {
     ]
 }
 
+/// Routing decision by CONTEXT COMPLEXITY (fifteenth audit 80): a
+/// trivial quality lookup goes to a small model; a multi-site systemic
+/// failure goes to the master model; uncertainty escalates.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RouteLevel {
+    Small,
+    Medium,
+    Master,
+    Escalate,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ComplexityInput {
+    pub risk: u8,           // 0..3
+    pub ambiguity: u8,      // 0..3 (missing/contradictory evidence)
+    pub context_depth: u8,  // 0..3 (how many context sections are required)
+    pub reasoning_hops: u8, // 0..3 (multi-hop causal chains)
+    pub tool_count: u8,     // 0..5
+    pub consequence: u8,    // 0..3 (safety/quality/customer impact)
+}
+
+/// Deterministic routing: score = weighted sum; thresholds pick the
+/// level; a small model that reports uncertainty (ambiguity >= 2 with
+/// consequence >= 2) ESCALATES.
+pub fn route_by_complexity(input: &ComplexityInput) -> RouteLevel {
+    let score = input.risk * 3
+        + input.ambiguity * 2
+        + input.context_depth
+        + input.reasoning_hops * 2
+        + input.tool_count / 2
+        + input.consequence * 3;
+    if input.ambiguity >= 2 && input.consequence >= 2 && score >= 12 {
+        RouteLevel::Escalate
+    } else if score >= 16 {
+        RouteLevel::Master
+    } else if score >= 9 {
+        RouteLevel::Medium
+    } else {
+        RouteLevel::Small
+    }
+}
+
+/// A candidate program result for the offline Pareto selection.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct CandidateResult {
+    pub id: String,
+    pub metrics: EvaluationMetrics,
+    pub latency_ms: f64,
+    pub tokens: u64,
+}
+
+/// Pareto-optimal selection (fifteenth audit 15): a candidate is
+/// dominated when another is better-or-equal on ALL axes (accuracy up,
+/// latency down, tokens down, unsafe down, failure down) and strictly
+/// better on at least one. Returns the non-dominated ids.
+pub fn pareto_select(candidates: &[CandidateResult]) -> Vec<String> {
+    let mut result = Vec::new();
+    for (i, cand) in candidates.iter().enumerate() {
+        let mut dominated = false;
+        for (j, other) in candidates.iter().enumerate() {
+            if i == j {
+                continue;
+            }
+            let better_or_equal = other.metrics.accuracy >= cand.metrics.accuracy
+                && other.latency_ms <= cand.latency_ms
+                && other.tokens <= cand.tokens
+                && other.metrics.unsafe_action_count <= cand.metrics.unsafe_action_count
+                && other.metrics.failure_rate <= cand.metrics.failure_rate
+                && other.metrics.hallucination_count <= cand.metrics.hallucination_count;
+            let strictly_better = other.metrics.accuracy > cand.metrics.accuracy
+                || other.latency_ms < cand.latency_ms
+                || other.tokens < cand.tokens
+                || other.metrics.unsafe_action_count < cand.metrics.unsafe_action_count
+                || other.metrics.failure_rate < cand.metrics.failure_rate
+                || other.metrics.hallucination_count < cand.metrics.hallucination_count;
+            if better_or_equal && strictly_better {
+                dominated = true;
+                break;
+            }
+        }
+        if !dominated {
+            result.push(cand.id.clone());
+        }
+    }
+    result
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -474,5 +562,145 @@ mod tests {
         assert_eq!(m.unsafe_action_count, 0);
         assert_eq!(m.passed, 2);
         assert_eq!(m.accuracy, 2.0 / 3.0);
+    }
+
+    #[test]
+    fn route_by_complexity_trivial_lookup_goes_small() {
+        let input = ComplexityInput {
+            risk: 0,
+            ambiguity: 0,
+            context_depth: 0,
+            reasoning_hops: 0,
+            tool_count: 0,
+            consequence: 0,
+        };
+        assert_eq!(route_by_complexity(&input), RouteLevel::Small);
+    }
+
+    #[test]
+    fn route_by_complexity_systemic_investigation_goes_master() {
+        let input = ComplexityInput {
+            risk: 3,
+            ambiguity: 1,
+            context_depth: 3,
+            reasoning_hops: 3,
+            tool_count: 5,
+            consequence: 3,
+        };
+        assert_eq!(route_by_complexity(&input), RouteLevel::Master);
+    }
+
+    #[test]
+    fn route_by_complexity_ambiguous_consequence_escalates() {
+        let input = ComplexityInput {
+            risk: 1,
+            ambiguity: 2,
+            context_depth: 1,
+            reasoning_hops: 2,
+            tool_count: 0,
+            consequence: 2,
+        };
+        assert_eq!(route_by_complexity(&input), RouteLevel::Escalate);
+    }
+
+    #[test]
+    fn route_by_complexity_medium_case_goes_medium() {
+        let input = ComplexityInput {
+            risk: 1,
+            ambiguity: 1,
+            context_depth: 1,
+            reasoning_hops: 1,
+            tool_count: 2,
+            consequence: 1,
+        };
+        assert_eq!(route_by_complexity(&input), RouteLevel::Medium);
+    }
+
+    #[test]
+    fn pareto_select_excludes_dominated_candidate() {
+        let base = EvaluationMetrics {
+            cases_run: 10,
+            passed: 10,
+            accuracy: 1.0,
+            latency_ms: 100.0,
+            tokens_used: 1000,
+            hallucination_count: 0,
+            unsafe_action_count: 0,
+            failure_rate: 0.0,
+        };
+        let candidates = vec![
+            CandidateResult {
+                id: "fast-small".into(),
+                metrics: EvaluationMetrics {
+                    passed: 8,
+                    accuracy: 0.8,
+                    latency_ms: 20.0,
+                    tokens_used: 200,
+                    ..base.clone()
+                },
+                latency_ms: 20.0,
+                tokens: 200,
+            },
+            CandidateResult {
+                id: "master-best".into(),
+                metrics: base.clone(),
+                latency_ms: 100.0,
+                tokens: 1000,
+            },
+            CandidateResult {
+                id: "slow-dominated".into(),
+                metrics: EvaluationMetrics {
+                    passed: 8,
+                    accuracy: 0.8,
+                    latency_ms: 150.0,
+                    tokens_used: 400,
+                    ..base.clone()
+                },
+                latency_ms: 150.0,
+                tokens: 400,
+            },
+        ];
+        let selected = pareto_select(&candidates);
+        assert!(!selected.contains(&"slow-dominated".to_string()));
+        assert!(selected.contains(&"fast-small".to_string()));
+        assert!(selected.contains(&"master-best".to_string()));
+    }
+
+    #[test]
+    fn pareto_select_keeps_mutually_non_dominated_candidates() {
+        let base = EvaluationMetrics {
+            cases_run: 10,
+            passed: 10,
+            accuracy: 1.0,
+            latency_ms: 100.0,
+            tokens_used: 1000,
+            hallucination_count: 0,
+            unsafe_action_count: 0,
+            failure_rate: 0.0,
+        };
+        let candidates = vec![
+            CandidateResult {
+                id: "fast".into(),
+                metrics: EvaluationMetrics {
+                    passed: 7,
+                    accuracy: 0.7,
+                    latency_ms: 15.0,
+                    tokens_used: 150,
+                    ..base.clone()
+                },
+                latency_ms: 15.0,
+                tokens: 150,
+            },
+            CandidateResult {
+                id: "accurate".into(),
+                metrics: base.clone(),
+                latency_ms: 100.0,
+                tokens: 1000,
+            },
+        ];
+        let selected = pareto_select(&candidates);
+        assert_eq!(selected.len(), 2);
+        assert!(selected.contains(&"fast".to_string()));
+        assert!(selected.contains(&"accurate".to_string()));
     }
 }

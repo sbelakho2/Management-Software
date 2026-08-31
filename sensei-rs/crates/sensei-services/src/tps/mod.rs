@@ -5,7 +5,10 @@
 
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
+pub mod authorization_revisions;
 pub mod conditions;
+pub mod corporate;
+pub mod country_policy;
 pub mod episodes;
 pub mod flow_economics;
 pub mod learning;
@@ -13,9 +16,11 @@ pub mod lessons;
 pub mod metric_registry;
 pub mod organizational_memory;
 pub mod process_mining;
+pub mod replication;
 pub mod role_analytics;
 pub mod rules;
 pub mod signals;
+pub mod site_manifest;
 pub mod skills;
 
 use std::time::Duration;

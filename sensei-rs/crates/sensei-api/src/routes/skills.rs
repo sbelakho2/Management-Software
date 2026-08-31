@@ -14,7 +14,9 @@ use axum::{
 };
 use sensei_auth::middleware::AuthenticatedUser;
 use sensei_core::error::{Result, SenseiError};
-use sensei_services::tps::skills::{JobStep, SkillCoverage, SkillLevel, TurnoverRisk};
+use sensei_services::tps::skills::{
+    DepartureForecast, JobStep, SkillCoverage, SkillLevel, TurnoverRisk,
+};
 use serde::Deserialize;
 use uuid::Uuid;
 
@@ -188,5 +190,22 @@ pub async fn turnover_risk(
     user.require_permission("training:read")?;
     let pool = pool_or_err(&state)?;
     let result = sensei_services::tps::skills::turnover_risk(&pool, user.tenant_id).await?;
+    Ok(Json(result))
+}
+
+/// GET /api/v1/skills/forecast/{principal_id} — skill-risk forecasting
+/// (fifteenth audit items 39/63 + P3): if THIS principal left tomorrow,
+/// which critical skills would become single-point? Succession gaps are
+/// detectable before they happen.
+pub async fn forecast_departure(
+    user: AuthenticatedUser,
+    State(state): State<AppState>,
+    Path(principal_id): Path<Uuid>,
+) -> Result<Json<DepartureForecast>> {
+    user.require_permission("training:read")?;
+    let pool = pool_or_err(&state)?;
+    let result =
+        sensei_services::tps::skills::forecast_departure(&pool, user.tenant_id, principal_id)
+            .await?;
     Ok(Json(result))
 }

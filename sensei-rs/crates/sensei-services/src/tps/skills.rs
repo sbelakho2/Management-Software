@@ -388,3 +388,113 @@ pub async fn turnover_risk(pool: &sqlx::PgPool, tenant_id: Uuid) -> Result<Turno
         guidance,
     })
 }
+
+// ---------------------------------------------------------------------------
+// Skill-risk forecasting (fifteenth audit items 39/63 + P3): what happens
+// to coverage if ONE principal leaves TOMORROW. Succession gaps are
+// detectable BEFORE they happen — the forecast is a what-if over the same
+// skill graph, never a verdict.
+// ---------------------------------------------------------------------------
+
+/// The what-if view for one departing principal.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct DepartureForecast {
+    pub departing_principal_id: Uuid,
+    pub skills_impacted: Vec<SkillImpact>,
+    pub guidance: Vec<String>,
+}
+
+/// Coverage impact on one critical skill if the principal leaves.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct SkillImpact {
+    pub skill_id: String,
+    pub name: String,
+    pub critical: bool,
+    pub independents_before: i64,
+    pub independents_after: i64,
+    /// The departing principal is the ONLY independent — the skill's
+    /// independent coverage collapses to zero when they leave.
+    pub becomes_single_point: bool,
+    /// At least one qualified trainer remains after the departure.
+    pub trainer_remaining: bool,
+}
+
+/// Forecast: for every CRITICAL skill the departing principal runs
+/// independently (level independent/trainer, not expired), recompute the
+/// independent and trainer counts EXCLUDING that principal. Guidance
+/// surfaces the succession gaps: "skill X becomes single-point if the
+/// principal leaves — cross-train now" / "skill X loses its only
+/// trainer".
+pub async fn forecast_departure(
+    pool: &sqlx::PgPool,
+    tenant_id: Uuid,
+    departing_principal_id: Uuid,
+) -> Result<DepartureForecast> {
+    with_tenant_tx(pool, tenant_id, move |tx| {
+        Box::pin(async move {
+            // One row per critical skill the principal qualifies on:
+            //   before = independents INCLUDING the principal,
+            //   after  = independents EXCLUDING the principal,
+            //   trainers_after = trainers EXCLUDING the principal.
+            let rows: Vec<(String, String, bool, i64, i64, i64)> = sqlx::query_as(
+                r#"SELECT s.skill_id, s.name, s.critical,
+                          COUNT(*) FILTER (WHERE q.level IN ('independent','trainer')
+                                           AND (q.expires_at IS NULL OR q.expires_at > NOW())),
+                          COUNT(*) FILTER (WHERE q.level IN ('independent','trainer')
+                                           AND q.principal_id <> $2
+                                           AND (q.expires_at IS NULL OR q.expires_at > NOW())),
+                          COUNT(*) FILTER (WHERE q.level = 'trainer'
+                                           AND q.principal_id <> $2
+                                           AND (q.expires_at IS NULL OR q.expires_at > NOW()))
+                   FROM skills s
+                   JOIN skill_qualifications q ON q.skill_id = s.id AND q.tenant_id = s.tenant_id
+                   WHERE s.tenant_id = $1 AND s.critical
+                     AND EXISTS (
+                         SELECT 1 FROM skill_qualifications q2
+                         WHERE q2.skill_id = s.id AND q2.tenant_id = s.tenant_id
+                           AND q2.principal_id = $2
+                           AND q2.level IN ('independent','trainer')
+                           AND (q2.expires_at IS NULL OR q2.expires_at > NOW())
+                     )
+                   GROUP BY s.id, s.skill_id, s.name, s.critical"#,
+            )
+            .bind(tenant_id)
+            .bind(departing_principal_id)
+            .fetch_all(&mut **tx)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Departure forecast failed: {e}")))?;
+
+            let mut skills_impacted = Vec::new();
+            let mut guidance = Vec::new();
+            for (skill_id, name, critical, independents_before, independents_after, trainers_after)
+                in rows
+            {
+                let becomes_single_point = independents_before == 1;
+                let trainer_remaining = trainers_after > 0;
+                if becomes_single_point {
+                    guidance.push(format!(
+                        "skill {name} becomes single-point if the principal leaves — cross-train now"
+                    ));
+                }
+                if !trainer_remaining {
+                    guidance.push(format!("skill {name} loses its only trainer"));
+                }
+                skills_impacted.push(SkillImpact {
+                    skill_id,
+                    name,
+                    critical,
+                    independents_before,
+                    independents_after,
+                    becomes_single_point,
+                    trainer_remaining,
+                });
+            }
+            Ok(DepartureForecast {
+                departing_principal_id,
+                skills_impacted,
+                guidance,
+            })
+        })
+    })
+    .await
+}
