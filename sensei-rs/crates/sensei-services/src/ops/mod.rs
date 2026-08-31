@@ -40,6 +40,10 @@ use uuid::Uuid;
 pub struct Andon {
     pub id: Uuid,
     pub tenant_id: Uuid,
+    /// Explicit operational scope (fifteenth audit): the site the signal
+    /// belongs to — never implicitly company-wide.
+    #[serde(default)]
+    pub site_id: Option<Uuid>,
     pub andon_number: String,
     pub work_center_id: Uuid,
     pub issue_type: String, // quality, safety, maintenance, material, other
@@ -1040,6 +1044,7 @@ mod tests {
         let andon = Andon {
             id: Uuid::nil(),
             tenant_id,
+            site_id: None,
             andon_number: String::new(),
             work_center_id,
             issue_type: "quality".to_string(),
@@ -1243,6 +1248,7 @@ mod tests {
         let a1 = Andon {
             id: Uuid::nil(),
             tenant_id,
+            site_id: None,
             andon_number: String::new(),
             work_center_id: wc1,
             issue_type: "quality".to_string(),
@@ -1270,6 +1276,7 @@ mod tests {
         let a2 = Andon {
             id: Uuid::nil(),
             tenant_id,
+            site_id: None,
             andon_number: String::new(),
             work_center_id: wc2,
             issue_type: "safety".to_string(),

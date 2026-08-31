@@ -19,8 +19,8 @@ pub fn IntegrationPage() -> impl IntoView {
         <div class="rams-p-4">
             <h1 class="module-title rams-mb-2">"LEGACY SYSTEM INTEGRATION"</h1>
             <p class="rams-font-mono rams-text-sm rams-mb-4" style="color: var(--rams-muted);">
-                "starzERP and CRM-v2 keep running and feed Sensei through the versioned import \
-                 API — every record maps idempotently (same legacy id = same Sensei entity)."
+                "starzERP and CRM-v2 keep running and feed Starz Forge through the versioned import \
+                 API — every record maps idempotently (same legacy id = same Starz Forge entity)."
             </p>
             {move || data.map(|w| match &**w {
                 Ok(s) => {

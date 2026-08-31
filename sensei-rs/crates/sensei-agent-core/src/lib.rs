@@ -8,6 +8,7 @@
 
 pub mod claims;
 pub mod context;
+pub mod context_kernel;
 pub mod evidence;
 pub mod tools;
 pub mod verifier;

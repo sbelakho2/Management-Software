@@ -1,6 +1,6 @@
-# Starz Morocco Manufacturing Management System (Sensei OS)
+# Starz Morocco Manufacturing Management System (Starz Forge)
 
-Enterprise manufacturing management platform grounded in Lean/TPS principles. Sensei OS unifies sales, RFQ, quoting, production, quality, and continuous improvement with advanced analytics and AI assistance.
+Enterprise manufacturing management platform grounded in Lean/TPS principles. Starz Forge unifies sales, RFQ, quoting, production, quality, and continuous improvement with advanced analytics and AI assistance.
 
 > **Status note:** Mobile app, PWA/offline, push notifications, and barcode/camera
 > capture are **planned — not yet implemented**. Do not rely on them in production

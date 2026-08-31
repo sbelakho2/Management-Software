@@ -1138,6 +1138,37 @@ pub fn build_router(state: AppState) -> Router {
             "/api/v1/hr/timecards/clock-out",
             post(routes::hr::clock_out),
         )
+        // ── Role Slot / Departure Routes (fifteenth audit 40-44) ────
+        .route(
+            "/api/v1/roles/slots",
+            get(routes::handover::list_slots).post(routes::handover::create_slot),
+        )
+        .route(
+            "/api/v1/roles/slots/{slot_id}/assign",
+            post(routes::handover::assign_principal),
+        )
+        .route(
+            "/api/v1/roles/slots/{slot_id}/unassign",
+            post(routes::handover::unassign_principal),
+        )
+        .route(
+            "/api/v1/roles/departures",
+            post(routes::handover::record_departure),
+        )
+        // ── Organizational Memory Routes (fifteenth audit 42-47) ────
+        .route(
+            "/api/v1/memory/observe",
+            post(routes::organizational_memory::observe),
+        )
+        .route(
+            "/api/v1/memory/{id}/propose",
+            post(routes::organizational_memory::propose),
+        )
+        .route(
+            "/api/v1/memory/{id}/approve",
+            post(routes::organizational_memory::approve),
+        )
+        .route("/api/v1/memory", get(routes::organizational_memory::list))
         // ── Supply Chain Routes ───────────────────────────────────
         .route(
             "/api/v1/supply-chain/rfqs",
@@ -1983,6 +2014,11 @@ pub fn build_router(state: AppState) -> Router {
             "/api/v1/ctq/characteristics/{id}/analysis",
             get(routes::ctq::get_conformance_analysis),
         )
+        // ── Role Analytics Routes (fifteenth audit 48-68 + A14) ──────────
+        .route(
+            "/api/v1/analytics/role",
+            get(routes::role_analytics::get_role_analytics),
+        )
         // ── KPI Routes ────────────────────────────────────────────────────
         .route(
             "/api/v1/kpi",
@@ -2253,6 +2289,17 @@ pub fn build_router(state: AppState) -> Router {
         .route(
             "/api/v1/training/dashboard",
             get(routes::training::get_training_dashboard),
+        )
+        // ── TWI Skills Routes (fifteenth audit 37-39) ─────────────────────
+        .route("/api/v1/skills", post(routes::skills::create_skill))
+        .route("/api/v1/skills/coverage", get(routes::skills::coverage))
+        .route(
+            "/api/v1/skills/{skill_id}/standards",
+            post(routes::skills::create_job_standard),
+        )
+        .route(
+            "/api/v1/skills/{skill_id}/qualify",
+            post(routes::skills::qualify),
         )
         // ── Today Routes ──────────────────────────────────────────────────
         .route("/api/v1/today", get(routes::today::get_today_snapshot))

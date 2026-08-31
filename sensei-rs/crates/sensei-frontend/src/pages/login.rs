@@ -125,7 +125,7 @@ pub fn LoginPage() -> impl IntoView {
         <div class="rams-flex rams-flex-center rams-min-h-screen rams-w-full">
             <Module title="AUTHENTICATE".to_string()>
                 <div class="rams-p-4">
-                    <DymoLabel text="SENSEI OS".to_string() variant="default".to_string() />
+                    <DymoLabel text="STARZ FORGE".to_string() variant="default".to_string() />
                 </div>
                 <form on:submit=on_submit class="rams-flex rams-flex--col rams-gap-4">
                     {move || {

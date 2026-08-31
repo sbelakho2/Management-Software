@@ -8,8 +8,12 @@ use serde::{Deserialize, Serialize};
 pub mod conditions;
 pub mod flow_economics;
 pub mod learning;
+pub mod metric_registry;
+pub mod organizational_memory;
+pub mod role_analytics;
 pub mod rules;
 pub mod signals;
+pub mod skills;
 
 use std::time::Duration;
 

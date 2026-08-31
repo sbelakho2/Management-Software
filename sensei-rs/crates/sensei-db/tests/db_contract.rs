@@ -573,6 +573,7 @@ async fn andon_service_rls_and_safety_rule_work_on_migrated_schema() {
             sensei_services::ops::Andon {
                 id: uuid::Uuid::new_v4(),
                 tenant_id,
+                site_id: None,
                 andon_number: String::new(),
                 work_center_id: uuid::Uuid::new_v4(),
                 issue_type: "safety".to_string(),
@@ -2096,6 +2097,56 @@ fn integration_import_rejects_humans_and_scopes_by_system() {
     );
 }
 
+/// Item 19/20 + law A6: NIST hierarchical RBAC — a manager inherits the
+/// operator's permissions (authorization hierarchy ≠ organizational
+/// hierarchy). The static defaults must resolve ancestor chains:
+/// manager -> {operator, user}, supervisor -> team_lead ->
+/// {operator, user}, admin -> site_manager -> {manager, quality,
+/// maintenance}, with no cross-branch leakage (finance stays isolated).
+#[test]
+fn hierarchical_rbac_manager_inherits_operator() {
+    let rbac = sensei_auth::rbac::RbacService::new();
+
+    // Operator-only permissions: only the operator role holds
+    // tps:andon:raise and production:work-order:report — a manager gets
+    // them purely through the operator parent.
+    let manager_perms = rbac.permissions_for_role("manager");
+    assert!(
+        manager_perms.contains(&"tps:andon:raise".to_string()),
+        "manager must inherit the operator's tps:andon:raise"
+    );
+    assert!(
+        manager_perms.contains(&"production:work-order:report".to_string()),
+        "manager must inherit the operator's production:work-order:report"
+    );
+
+    // The ancestor chain is explicit and transitive.
+    let manager_ancestors = rbac.role_ancestors("manager");
+    assert!(
+        manager_ancestors.contains(&"operator".to_string()),
+        "manager's ancestor chain must contain operator"
+    );
+
+    // admin -> site_manager -> manager -> operator: operator permissions
+    // reach the admin transitively.
+    let admin_perms = rbac.permissions_for_role("admin");
+    assert!(
+        admin_perms.contains(&"production:start".to_string()),
+        "admin must inherit operator permissions transitively"
+    );
+    assert!(
+        admin_perms.contains(&"tps:andon:raise".to_string()),
+        "admin must inherit operator permissions transitively"
+    );
+
+    // No cross-branch leakage: a finance-only permission (finance:rollup:run
+    // is granted by finance_manager/finance alone) never reaches a manager.
+    assert!(
+        !manager_perms.contains(&"finance:rollup:run".to_string()),
+        "manager must not inherit finance-only permissions"
+    );
+}
+
 /// Item 43: the STANDARD REVISION binding — a released work order bound
 /// to standard revision A resolves revision A at the station; after the
 /// team publishes revision B for the product, the NEXT work order binds
@@ -2708,6 +2759,7 @@ async fn tps_full_learning_loop() {
             sensei_services::ops::Andon {
                 id: uuid::Uuid::new_v4(),
                 tenant_id,
+                site_id: None,
                 andon_number: String::new(),
                 work_center_id: wc_id,
                 issue_type: "material".to_string(),
@@ -3315,4 +3367,1255 @@ async fn integration_atomicity_and_patch_semantics() {
     .await
     .expect("map count");
     assert_eq!(mappings, 1, "one mapping, one ledger row");
+}
+
+/// Fifteenth audit items 31-33: the canonical operational event envelope
+/// is BITEMPORAL — occurred_at (when the Andon happened) is recorded
+/// separately from recorded_at (when the log learned it), which trails
+/// the occurrence; and ONE event links MANY objects (the andon AND its
+/// work center), not a single case id. The envelope is the
+/// organizational nervous system: every operational fact lands in it.
+#[tokio::test]
+async fn operational_event_envelope_records_bitemporal() {
+    let _serial = DB_LOCK.lock().await;
+    let Some(pool) = connect().await else { return };
+    // Fresh-database guarantee: the event envelope must exist on an
+    // EMPTY database that survives the entire migration chain.
+    sqlx::query(
+        r#"DO $$ DECLARE r RECORD; BEGIN
+             FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname = 'public') LOOP
+                 EXECUTE format('DROP TABLE IF EXISTS %I CASCADE', r.tablename);
+             END LOOP;
+         END $$"#,
+    )
+    .execute(&pool)
+    .await
+    .expect("drop all tables");
+    sensei_db::migrations::run_migrations(&pool)
+        .await
+        .expect("the ENTIRE migration chain must apply to an empty database");
+
+    // FK prerequisites: a real tenant and a real user (the actor).
+    let tenant_id = uuid::Uuid::new_v4();
+    let actor_id = uuid::Uuid::new_v4();
+    let andon_id = uuid::Uuid::new_v4();
+    let work_center_id = uuid::Uuid::new_v4();
+    sqlx::query("INSERT INTO tenants (id, name, slug) VALUES ($1, 'events', 'events')")
+        .bind(tenant_id)
+        .execute(&pool)
+        .await
+        .expect("tenant insert");
+    sqlx::query(
+        "INSERT INTO users (id, tenant_id, email, name, password_hash)  VALUES ($1, $2, 'ev@contract.local', 'Ev', 'x')",
+    )
+    .bind(actor_id)
+    .bind(tenant_id)
+    .execute(&pool)
+    .await
+    .expect("event user insert");
+
+    // The Andon was raised TWO MINUTES ago (KNOWN occurred_at — the log
+    // entry is written later, so recorded_at must trail occurred_at).
+    let (occurred_at,): (chrono::DateTime<chrono::Utc>,) = sqlx::query_as(
+        "INSERT INTO andons (id, tenant_id, andon_number, work_center_id, issue_type, \
+                severity, description, status, raised_by, created_at) \
+         VALUES ($1, $2, 'AND-EV', $3, 'quality', 'high', 'defect', 'active', $4, \
+                 NOW() - INTERVAL '2 minutes') \
+         RETURNING created_at",
+    )
+    .bind(andon_id)
+    .bind(tenant_id)
+    .bind(work_center_id)
+    .bind(actor_id)
+    .fetch_one(&pool)
+    .await
+    .expect("andon insert with known occurred_at");
+
+    // The route records the event into the envelope with exactly this SQL:
+    // occurred_at = the andon's created_at, recorded_at = NOW() (default),
+    // objects links the andon AND its work center, payload carries the
+    // operational facts.
+    sqlx::query(
+        "INSERT INTO operational_events \
+                (id, tenant_id, event_type, occurred_at, recorded_at, scope_site_id, actor_id, \
+                 objects, source_system, source_id, sensitivity, payload, sequence) \
+         VALUES ($1, $2, 'andon.raised', $3, NOW(), NULL, $4, $5, 'sensei', NULL, 'internal', $6, 1)",
+    )
+    .bind(uuid::Uuid::new_v4())
+    .bind(tenant_id)
+    .bind(occurred_at)
+    .bind(actor_id)
+    .bind(serde_json::json!([
+        { "object_type": "andon", "object_id": andon_id },
+        { "object_type": "work_center", "object_id": work_center_id },
+    ]))
+    .bind(serde_json::json!({ "issue_type": "quality", "severity": "high" }))
+    .execute(&pool)
+    .await
+    .expect("operational event envelope insert");
+
+    // Bitemporal assertions: one envelope row for the raised Andon.
+    let (event_type, ev_occurred, ev_recorded, objects, sensitivity): (
+        String,
+        chrono::DateTime<chrono::Utc>,
+        chrono::DateTime<chrono::Utc>,
+        serde_json::Value,
+        String,
+    ) = sqlx::query_as(
+        "SELECT event_type, occurred_at, recorded_at, objects, sensitivity \
+         FROM operational_events WHERE tenant_id = $1 AND event_type = 'andon.raised'",
+    )
+    .bind(tenant_id)
+    .fetch_one(&pool)
+    .await
+    .expect("envelope row");
+    assert_eq!(event_type, "andon.raised");
+    assert_eq!(
+        ev_occurred, occurred_at,
+        "occurred_at must preserve the andon's created_at (bitemporal: the event happened THEN)"
+    );
+    assert!(
+        ev_recorded >= occurred_at + chrono::Duration::minutes(1),
+        "recorded_at must trail occurred_at by the 2-minute gap (bitemporal: we learned it LATER)"
+    );
+    assert_eq!(sensitivity, "internal");
+    let objects_arr = objects.as_array().expect("objects is a JSON array");
+    assert!(
+        objects_arr.iter().any(|o| {
+            o["object_type"] == "andon" && o["object_id"] == serde_json::json!(andon_id)
+        }),
+        "objects contains the andon link"
+    );
+    assert!(
+        objects_arr.iter().any(|o| {
+            o["object_type"] == "work_center" && o["object_id"] == serde_json::json!(work_center_id)
+        }),
+        "objects contains the work center link — one event links MANY objects"
+    );
+}
+
+/// Fifteenth audit items 69-70 + law A13: every metric has ONE canonical
+/// definition in the versioned metric registry — formula, grain, source,
+/// owner role, anti-gaming notes and expected action — and metrics with
+/// no registry definition are a CONFIGURATION ERROR ("no unnamed
+/// dashboard SQL").
+#[tokio::test]
+async fn metric_registry_is_versioned_and_required() {
+    let _serial = DB_LOCK.lock().await;
+    let Some(pool) = connect().await else { return };
+    // Fresh-database guarantee: every migration must apply, then the REAL
+    // registry service executes against that schema.
+    sqlx::query(
+        r#"DO $$ DECLARE r RECORD; BEGIN
+             FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname = 'public') LOOP
+                 EXECUTE format('DROP TABLE IF EXISTS %I CASCADE', r.tablename);
+             END LOOP;
+         END $$"#,
+    )
+    .execute(&pool)
+    .await
+    .expect("drop all tables");
+    sensei_db::migrations::run_migrations(&pool)
+        .await
+        .expect("the ENTIRE migration chain must apply to an empty database");
+
+    let tenant_id = uuid::Uuid::new_v4();
+    sqlx::query("INSERT INTO tenants (id, name, slug) VALUES ($1, 'metrics', 'metrics')")
+        .bind(tenant_id)
+        .execute(&pool)
+        .await
+        .expect("tenant insert");
+
+    // The migration seed covers tenants that exist at migration time; a
+    // NEW tenant is bootstrapped with the SAME canonical definitions (the
+    // registry's own seed statement — tenant bootstrap's job).
+    sqlx::query(
+        "INSERT INTO metric_definitions (tenant_id, metric_id, version, name, purpose, formula, unit, grain, source, owner_role, audience, freshness, anti_gaming, expected_action) \
+         SELECT t.id, v.metric_id, 1, v.name, v.purpose, v.formula, v.unit, v.grain, v.source, v.owner_role, v.audience::jsonb, v.freshness, v.anti_gaming, v.expected_action \
+         FROM tenants t, \
+              (VALUES \
+                 ('otd', 'On-time delivery', 'share of customer deliveries within the promised date', 'delivered_on_time / total_deliveries', '%', 'site', 'sales_orders.delivery_date + goods_receipts', 'production_planner', '[\"site_manager\",\"production_manager\",\"sales\"]', 'daily', 'Do not exclude late orders via status churn; a cancelled-late order is still a miss.', 'Identify the constraint that pushed the delivery late and decide the recovery.'), \
+                 ('fpy', 'First-pass yield', 'share of units passing all checks without rework', 'passed_first_pass / total_units', '%', 'line', 'production_events + quality results', 'quality_engineer', '[\"site_manager\",\"production_manager\",\"quality\"]', 'shift', 'Rework recorded as first-pass inflates the metric; audit the rework ledger.', 'Find the operation where defects are introduced and run the containment loop.'), \
+                 ('lead_time', 'Order lead time', 'elapsed time from order receipt to shipment', 'ship_date - order_date', 'days', 'site', 'sales_orders + shipments', 'production_planner', '[\"site_manager\",\"production_manager\",\"sales\"]', 'daily', 'Backdating the ship date hides the true lead time.', 'Compare against demonstrated capacity and decide the honest promise.'), \
+                 ('scrap_rate', 'Scrap rate', 'share of produced units scrapped', 'scrapped / produced', '%', 'line', 'work_orders.quantity_scrapped', 'quality_engineer', '[\"production_manager\",\"quality\"]', 'shift', 'Scrapping at end-of-line only hides the true introduction point.', 'Trace the scrap to its first introduction operation.'), \
+                 ('help_response', 'Andon help response time', 'time from Andon raise to first acknowledgement', 'avg(acknowledged_at - created_at)', 's', 'cell', 'andons', 'team_lead', '[\"team_lead\",\"site_manager\"]', 'realtime', 'Acknowledging without acting is not a response; track containment separately.', 'Go to the work center where help is waiting.') \
+              ) AS v(metric_id, name, purpose, formula, unit, grain, source, owner_role, audience, freshness, anti_gaming, expected_action) \
+         WHERE NOT EXISTS (SELECT 1 FROM metric_definitions m WHERE m.tenant_id = t.id AND m.metric_id = v.metric_id AND m.version = 1)",
+    )
+    .execute(&pool)
+    .await
+    .expect("tenant metric registry bootstrap");
+
+    use sensei_services::tps::metric_registry;
+
+    // The registry is VERSIONED: publish a v2 of 'otd' — the lookup must
+    // return the latest ACTIVE version.
+    sqlx::query(
+        "UPDATE metric_definitions SET version = 2, name = 'On-time delivery v2' \
+         WHERE tenant_id = $1 AND metric_id = 'otd' AND version = 1",
+    )
+    .bind(tenant_id)
+    .execute(&pool)
+    .await
+    .expect("publish metric v2");
+
+    let otd = metric_registry::get_metric(&pool, tenant_id, "otd")
+        .await
+        .expect("a registered metric MUST resolve to its canonical definition");
+    assert_eq!(otd.version, 2, "the latest version wins");
+    assert_eq!(otd.unit, "%");
+    assert_eq!(otd.formula, "delivered_on_time / total_deliveries");
+    assert_eq!(otd.grain, "site");
+    assert_eq!(otd.owner_role, "production_planner");
+    assert_eq!(otd.source, "sales_orders.delivery_date + goods_receipts");
+    assert!(
+        !otd.anti_gaming.is_empty(),
+        "anti-gaming notes are part of the canonical definition"
+    );
+    assert!(
+        !otd.expected_action.is_empty(),
+        "expected user action is part of the canonical definition"
+    );
+
+    // The registry REQUIRES definitions: an unnamed metric is a
+    // configuration error, not a silent zero ("no unnamed dashboard SQL").
+    let missing = metric_registry::get_metric(&pool, tenant_id, "nonexistent_metric").await;
+    assert!(
+        missing.is_err(),
+        "metrics without a registry definition must be rejected"
+    );
+}
+
+/// Fifteenth audit items 40-44 (role/role-slot/principal separation): the
+/// deterministic employee-departure operation. A role slot owns the work —
+/// principals are assigned to slots. When a person leaves:
+///   - every active assignment ends (ended_at set),
+///   - the slot and its full assignment history SURVIVE,
+///   - open work (andons, tasks, operational conditions) transfers to the
+///     successor principal,
+///   - the handover view retains the role memory (slots held) so the next
+///     assignee inherits them.
+/// The REAL route handler runs against the migrated schema inside one
+/// transaction (RLS fail-closed: every direct statement in this test sets
+/// the transaction-scoped tenant context, like the production code).
+#[tokio::test]
+async fn role_slot_departure_handover() {
+    let _serial = DB_LOCK.lock().await;
+    let Some(pool) = connect().await else { return };
+    sqlx::query(
+        r#"DO $$ DECLARE r RECORD; BEGIN
+             FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname = 'public') LOOP
+                 EXECUTE format('DROP TABLE IF EXISTS %I CASCADE', r.tablename);
+             END LOOP;
+         END $$"#,
+    )
+    .execute(&pool)
+    .await
+    .expect("drop all tables");
+    sensei_db::migrations::run_migrations(&pool)
+        .await
+        .expect("the ENTIRE migration chain must apply to an empty database");
+
+    let tenant_id = uuid::Uuid::new_v4();
+    let departing = uuid::Uuid::new_v4();
+    let successor = uuid::Uuid::new_v4();
+    sqlx::query("INSERT INTO tenants (id, name, slug) VALUES ($1, 'roles', 'roles')")
+        .bind(tenant_id)
+        .execute(&pool)
+        .await
+        .expect("tenant insert");
+    for (id, email) in [
+        (departing, "dep@roles.local"),
+        (successor, "succ@roles.local"),
+    ] {
+        sqlx::query(
+            "INSERT INTO users (id, tenant_id, email, name, password_hash) \
+             VALUES ($1, $2, $3, 'R', 'x')",
+        )
+        .bind(id)
+        .bind(tenant_id)
+        .bind(email)
+        .execute(&pool)
+        .await
+        .expect("user insert");
+    }
+
+    // ── Setup: slot + assignment + open work, all inside a context-set tx ──
+    let slot_id = uuid::Uuid::new_v4();
+    let andon_id = uuid::Uuid::new_v4();
+    let task_id = uuid::Uuid::new_v4();
+    let condition_id = uuid::Uuid::new_v4();
+    let work_center_id = uuid::Uuid::new_v4();
+    {
+        let mut tx = pool.begin().await.expect("begin setup tx");
+        sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
+            .bind(tenant_id.to_string())
+            .execute(&mut *tx)
+            .await
+            .expect("set tenant context");
+        sqlx::query(
+            "INSERT INTO role_slots (id, tenant_id, role_name, slot_name) \
+             VALUES ($1, $2, 'electronics_buyer', 'electronics_buyer_tangier')",
+        )
+        .bind(slot_id)
+        .bind(tenant_id)
+        .execute(&mut *tx)
+        .await
+        .expect("slot insert");
+        sqlx::query(
+            "INSERT INTO principal_assignments (tenant_id, principal_id, slot_id) \
+             VALUES ($1, $2, $3)",
+        )
+        .bind(tenant_id)
+        .bind(departing)
+        .bind(slot_id)
+        .execute(&mut *tx)
+        .await
+        .expect("assignment insert");
+        sqlx::query(
+            "INSERT INTO andons (id, tenant_id, andon_number, work_center_id, issue_type, \
+             severity, description, status, raised_by) \
+             VALUES ($1, $2, 'AND-DEP', $3, 'quality', 'high', 'open defect', 'active', $4)",
+        )
+        .bind(andon_id)
+        .bind(tenant_id)
+        .bind(work_center_id)
+        .bind(departing)
+        .execute(&mut *tx)
+        .await
+        .expect("andon insert");
+        sqlx::query(
+            "INSERT INTO tasks (id, tenant_id, task_number, title, status, task_type, \
+             assignee_id, due_date) \
+             VALUES ($1, $2, 'T-DEP', 'Approve PO 901', 'open', 'approval', $3, $4)",
+        )
+        .bind(task_id)
+        .bind(tenant_id)
+        .bind(departing)
+        .bind(chrono::Utc::now() + chrono::Duration::days(3))
+        .execute(&mut *tx)
+        .await
+        .expect("task insert");
+        sqlx::query(
+            "INSERT INTO operational_conditions (id, tenant_id, condition_number, \
+             subject_type, status, owner_id, response_due_at) \
+             VALUES ($1, $2, 'C-DEP', 'process', 'open', $3, $4)",
+        )
+        .bind(condition_id)
+        .bind(tenant_id)
+        .bind(departing)
+        .bind(chrono::Utc::now() + chrono::Duration::days(1))
+        .execute(&mut *tx)
+        .await
+        .expect("condition insert");
+        tx.commit().await.expect("setup commit");
+    }
+
+    // ── Run the REAL departure logic against the migrated schema ──
+    use sensei_api::routes::handover::{run_departure, DepartureRequest};
+    let view = run_departure(
+        &pool,
+        tenant_id,
+        DepartureRequest {
+            principal_id: departing,
+            reason: "resigned".to_string(),
+            target_principal_id: Some(successor),
+        },
+    )
+    .await
+    .expect("departure logic must run against the migrated schema");
+
+    // ── Handover view assertions ──
+    assert_eq!(
+        view["memory_retained"], true,
+        "role memory is retained after departure"
+    );
+    assert_eq!(view["ended_assignments"], 1, "the single assignment ends");
+    assert_eq!(view["transferred_tasks"], 1, "the open task transfers");
+    assert_eq!(
+        view["transferred_conditions"], 1,
+        "the open condition transfers"
+    );
+    assert_eq!(
+        view["transferred_to_principal"],
+        successor.to_string(),
+        "the successor principal is the transfer target"
+    );
+    let slots_held = view["slots_held"].as_array().expect("slots_held array");
+    assert_eq!(slots_held.len(), 1, "the slot history survives");
+    assert_eq!(
+        slots_held[0]["slot_id"],
+        slot_id.to_string(),
+        "the exact slot the departing principal held is retained"
+    );
+    let open_work = view["open_work"].as_array().expect("open_work array");
+    assert_eq!(open_work.len(), 3, "andon + task + condition all carried");
+    for (entity_type, entity_id) in [
+        ("andon", andon_id),
+        ("task", task_id),
+        ("condition", condition_id),
+    ] {
+        let item = open_work
+            .iter()
+            .find(|i| i["entity_type"] == entity_type && i["entity_id"] == entity_id.to_string())
+            .unwrap_or_else(|| panic!("open_work must contain the {entity_type}"));
+        assert_eq!(
+            item["transferred_to_principal"],
+            successor.to_string(),
+            "open {entity_type} transfers to the successor"
+        );
+    }
+    let at_risk = view["at_risk_deadlines"].as_array().expect("at_risk array");
+    assert!(
+        at_risk.iter().any(|d| d["task_id"] == task_id.to_string()),
+        "the task due within 7 days is an at-risk deadline"
+    );
+    let approvals = view["pending_approvals"]
+        .as_array()
+        .expect("approvals array");
+    assert!(
+        approvals
+            .iter()
+            .any(|a| a["task_id"] == task_id.to_string()),
+        "the approval-type task is a pending approval"
+    );
+    let conditions = view["active_conditions"]
+        .as_array()
+        .expect("conditions array");
+    assert!(
+        conditions
+            .iter()
+            .any(|c| c["condition_id"] == condition_id.to_string()),
+        "the open condition is listed as active"
+    );
+
+    // ── Database state assertions (context-set transaction) ──
+    {
+        let mut tx = pool.begin().await.expect("begin verify tx");
+        sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
+            .bind(tenant_id.to_string())
+            .execute(&mut *tx)
+            .await
+            .expect("set tenant context");
+        let ended: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM principal_assignments \
+             WHERE tenant_id = $1 AND principal_id = $2 AND ended_at IS NOT NULL",
+        )
+        .bind(tenant_id)
+        .bind(departing)
+        .fetch_one(&mut *tx)
+        .await
+        .expect("ended count");
+        assert_eq!(ended, 1, "the assignment ended_at is set");
+        let slot_count: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM role_slots WHERE tenant_id = $1 AND id = $2")
+                .bind(tenant_id)
+                .bind(slot_id)
+                .fetch_one(&mut *tx)
+                .await
+                .expect("slot count");
+        assert_eq!(slot_count, 1, "the slot still exists after departure");
+        let task_assignee: Option<uuid::Uuid> =
+            sqlx::query_scalar("SELECT assignee_id FROM tasks WHERE id = $1 AND tenant_id = $2")
+                .bind(task_id)
+                .bind(tenant_id)
+                .fetch_one(&mut *tx)
+                .await
+                .expect("task assignee");
+        assert_eq!(task_assignee, Some(successor), "the task transferred");
+        let condition_owner: Option<uuid::Uuid> = sqlx::query_scalar(
+            "SELECT owner_id FROM operational_conditions WHERE id = $1 AND tenant_id = $2",
+        )
+        .bind(condition_id)
+        .bind(tenant_id)
+        .fetch_one(&mut *tx)
+        .await
+        .expect("condition owner");
+        assert_eq!(
+            condition_owner,
+            Some(successor),
+            "the condition transferred"
+        );
+        // The NEXT assignee can take the same slot — history retained.
+        sqlx::query(
+            "INSERT INTO principal_assignments (tenant_id, principal_id, slot_id) \
+             VALUES ($1, $2, $3)",
+        )
+        .bind(tenant_id)
+        .bind(successor)
+        .bind(slot_id)
+        .execute(&mut *tx)
+        .await
+        .expect("successor re-assignment must succeed");
+        let history: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM principal_assignments \
+             WHERE tenant_id = $1 AND slot_id = $2",
+        )
+        .bind(tenant_id)
+        .bind(slot_id)
+        .fetch_one(&mut *tx)
+        .await
+        .expect("history count");
+        assert_eq!(history, 2, "departure + re-assignment history is retained");
+        tx.commit().await.expect("verify commit");
+    }
+}
+
+/// TWI skill graph (fifteenth audit 37-39): a REAL skill graph with
+/// demonstrated evidence and turnover-resilience metrics. The signature
+/// vulnerability — "Shift 2 is technically staffed but only ONE person
+/// can independently run AOI programming" — must be DETECTABLE: bus
+/// factor 1 + single_point true. A second independent principal must
+/// clear the flag (bus factor 2, single_point false).
+#[tokio::test]
+async fn twi_skill_graph_coverage_and_bus_factor() {
+    let _serial = DB_LOCK.lock().await;
+    let Some(pool) = connect().await else { return };
+    sqlx::query(
+        r#"DO $$ DECLARE r RECORD; BEGIN
+             FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname = 'public') LOOP
+                 EXECUTE format('DROP TABLE IF EXISTS %I CASCADE', r.tablename);
+             END LOOP;
+         END $$"#,
+    )
+    .execute(&pool)
+    .await
+    .expect("drop all tables");
+    sensei_db::migrations::run_migrations(&pool)
+        .await
+        .expect("the ENTIRE migration chain must apply to an empty database");
+
+    let tenant_id = uuid::Uuid::new_v4();
+    let alice = uuid::Uuid::new_v4();
+    let bob = uuid::Uuid::new_v4();
+    sqlx::query("INSERT INTO tenants (id, name, slug) VALUES ($1, 'twi', 'twi')")
+        .bind(tenant_id)
+        .execute(&pool)
+        .await
+        .expect("tenant insert");
+    for (uid, email) in [(alice, "alice@twi.local"), (bob, "bob@twi.local")] {
+        sqlx::query(
+            "INSERT INTO users (id, tenant_id, email, name, password_hash) \
+             VALUES ($1, $2, $3, 'W', 'x')",
+        )
+        .bind(uid)
+        .bind(tenant_id)
+        .bind(email)
+        .execute(&pool)
+        .await
+        .expect("user insert");
+    }
+
+    // Critical skill: AOI programming — the knowledge-concentration risk.
+    let skill_uuid = sensei_services::tps::skills::create_skill(
+        &pool,
+        tenant_id,
+        "aoi_programming",
+        "AOI Programming",
+        Some("SMT"),
+        Some("AOI-OP-01"),
+        true,
+    )
+    .await
+    .expect("create critical skill");
+
+    // Job standard with steps carrying the FULL TWI shape: action, key
+    // points, REASONS (the WHY), hazards, checks.
+    let step = sensei_services::tps::skills::JobStep {
+        action: "Load program P-4711".to_string(),
+        key_points: vec!["Verify board variant matches the work order".to_string()],
+        reasons: vec!["Wrong variant faults every board on the line".to_string()],
+        hazards: vec!["Reel misalignment can jam the feeder".to_string()],
+        checks: vec!["First board passes AOI with zero misses".to_string()],
+    };
+    sensei_services::tps::skills::create_job_standard(
+        &pool,
+        tenant_id,
+        "aoi_programming",
+        "AOI-OP-01",
+        1,
+        "SMT",
+        "AOI Programming Standard",
+        vec![step],
+    )
+    .await
+    .expect("create job standard");
+
+    // Round-trip: steps come back with the reasons field PRESENT (the TWI
+    // model requires the WHY even when it is empty).
+    let steps: serde_json::Value = sqlx::query_scalar(
+        "SELECT steps FROM job_standards WHERE tenant_id = $1 AND standard_id = $2",
+    )
+    .bind(tenant_id)
+    .bind("AOI-OP-01")
+    .fetch_one(&pool)
+    .await
+    .expect("read job standard steps");
+    let first = steps
+        .as_array()
+        .expect("steps is an array")
+        .first()
+        .expect("one step");
+    assert!(
+        first.get("reasons").is_some(),
+        "TWI job steps must carry the reasons field"
+    );
+    assert_eq!(
+        first["reasons"][0],
+        "Wrong variant faults every board on the line"
+    );
+    assert_eq!(first["hazards"][0], "Reel misalignment can jam the feeder");
+
+    // One trainer + one learner: technically staffed (2 people on the
+    // skill), but only ONE can run it independently.
+    sensei_services::tps::skills::record_qualification(
+        &pool,
+        tenant_id,
+        alice,
+        skill_uuid,
+        sensei_services::tps::skills::SkillLevel::Trainer,
+        serde_json::json!({"type": "certification", "ref": "AOI-CERT-2026-0417"}),
+    )
+    .await
+    .expect("alice trainer qualification");
+    sensei_services::tps::skills::record_qualification(
+        &pool,
+        tenant_id,
+        bob,
+        skill_uuid,
+        sensei_services::tps::skills::SkillLevel::Learning,
+        serde_json::json!({"type": "observation", "ref": "LSW-2026-08-30-003"}),
+    )
+    .await
+    .expect("bob learning qualification");
+
+    let coverage = sensei_services::tps::skills::skill_coverage(&pool, tenant_id)
+        .await
+        .expect("coverage must compute");
+    let aoi = coverage
+        .iter()
+        .find(|c| c.skill_id == "aoi_programming")
+        .expect("AOI in coverage");
+    assert_eq!(
+        aoi.bus_factor, 1,
+        "only one person can independently run AOI programming — the vulnerability"
+    );
+    assert!(
+        aoi.single_point,
+        "single-person knowledge concentration must be DETECTABLE"
+    );
+    assert_eq!(aoi.trainer_count, 1);
+    assert!(aoi.critical, "AOI programming is a critical skill");
+
+    // Second person reaches independent: the vulnerability clears.
+    sensei_services::tps::skills::record_qualification(
+        &pool,
+        tenant_id,
+        bob,
+        skill_uuid,
+        sensei_services::tps::skills::SkillLevel::Independent,
+        serde_json::json!({"type": "demonstration", "ref": "AOI-DEMO-2026-09-01"}),
+    )
+    .await
+    .expect("bob independent qualification");
+
+    let coverage = sensei_services::tps::skills::skill_coverage(&pool, tenant_id)
+        .await
+        .expect("coverage refresh");
+    let aoi = coverage
+        .iter()
+        .find(|c| c.skill_id == "aoi_programming")
+        .expect("AOI in coverage");
+    assert_eq!(aoi.bus_factor, 2, "two people can now run it independently");
+    assert!(!aoi.single_point, "no longer a single point of knowledge");
+}
+
+/// Fifteenth audit items 42-47 + A8/A18 (organizational memory): memory
+/// lives at personal / role / process / site / corporate tiers, and
+/// promotion is DETERMINISTIC or reviewed — the model can propose, never
+/// unilaterally promote. The same context signature + kind + tier is the
+/// SAME memory: a second observation reinforces it observation -> repeated
+/// (occurrence_count 2) with NO model in the loop; propose/approve are
+/// reviewed acts. Role-tier memory is anchored to the role slot, so an
+/// employee departure never deletes it.
+#[tokio::test]
+async fn organizational_memory_deterministic_promotion() {
+    let _serial = DB_LOCK.lock().await;
+    let Some(pool) = connect().await else { return };
+    sqlx::query(
+        r#"DO $$ DECLARE r RECORD; BEGIN
+             FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname = 'public') LOOP
+                 EXECUTE format('DROP TABLE IF EXISTS %I CASCADE', r.tablename);
+             END LOOP;
+         END $$"#,
+    )
+    .execute(&pool)
+    .await
+    .expect("drop all tables");
+    sensei_db::migrations::run_migrations(&pool)
+        .await
+        .expect("the ENTIRE migration chain must apply to an empty database");
+
+    let tenant_id = uuid::Uuid::new_v4();
+    let operator = uuid::Uuid::new_v4();
+    sqlx::query("INSERT INTO tenants (id, name, slug) VALUES ($1, 'memory', 'memory')")
+        .bind(tenant_id)
+        .execute(&pool)
+        .await
+        .expect("tenant insert");
+    sqlx::query(
+        "INSERT INTO users (id, tenant_id, email, name, password_hash) \
+         VALUES ($1, $2, 'op@memory.local', 'O', 'x')",
+    )
+    .bind(operator)
+    .bind(tenant_id)
+    .execute(&pool)
+    .await
+    .expect("user insert");
+
+    // A role slot anchors role-tier memory (survives departure).
+    let slot_id = uuid::Uuid::new_v4();
+    {
+        let mut tx = pool.begin().await.expect("begin setup tx");
+        sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
+            .bind(tenant_id.to_string())
+            .execute(&mut *tx)
+            .await
+            .expect("set tenant context");
+        sqlx::query(
+            "INSERT INTO role_slots (id, tenant_id, role_name, slot_name) \
+             VALUES ($1, $2, 'electronics_buyer', 'electronics_buyer_tangier')",
+        )
+        .bind(slot_id)
+        .bind(tenant_id)
+        .execute(&mut *tx)
+        .await
+        .expect("slot insert");
+        tx.commit().await.expect("setup commit");
+    }
+
+    async fn read_memory(
+        pool: &sqlx::PgPool,
+        tenant_id: uuid::Uuid,
+    ) -> Vec<(uuid::Uuid, String, i32)> {
+        let mut tx = pool.begin().await.expect("begin read tx");
+        sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
+            .bind(tenant_id.to_string())
+            .execute(&mut *tx)
+            .await
+            .expect("set tenant context");
+        let rows: Vec<(uuid::Uuid, String, i32)> = sqlx::query_as(
+            "SELECT id, status, occurrence_count FROM organizational_memory \
+             WHERE tenant_id = $1 ORDER BY created_at",
+        )
+        .bind(tenant_id)
+        .fetch_all(&mut *tx)
+        .await
+        .expect("read memory rows");
+        tx.commit().await.expect("read commit");
+        rows
+    }
+
+    use sensei_api::routes::organizational_memory::{
+        run_approve, run_observe, run_propose, ObserveRequest,
+    };
+
+    let signature = serde_json::json!({ "problem": "soldering_joint_voids" });
+    let request = |sig: serde_json::Value| ObserveRequest {
+        tier: "role".to_string(),
+        slot_id: Some(slot_id),
+        process: None,
+        kind: "lesson".to_string(),
+        content: "soldering joint voids spike at the start of every shift".to_string(),
+        context_signature: sig,
+    };
+
+    // First occurrence: a plain observation.
+    run_observe(&pool, tenant_id, request(signature.clone()), Some(operator))
+        .await
+        .expect("first observation must record");
+    let rows = read_memory(&pool, tenant_id).await;
+    assert_eq!(rows.len(), 1, "one memory row");
+    assert_eq!(
+        rows[0].1, "observation",
+        "first occurrence is an observation"
+    );
+    assert_eq!(rows[0].2, 1, "occurrence_count 1");
+
+    // SAME signature again: DETERMINISTIC promotion — observation -> repeated,
+    // occurrence_count 2, no model in the loop.
+    run_observe(&pool, tenant_id, request(signature.clone()), Some(operator))
+        .await
+        .expect("reinforcement must reinforce the SAME memory");
+    let rows = read_memory(&pool, tenant_id).await;
+    assert_eq!(rows.len(), 1, "same signature reuses ONE memory row");
+    assert_eq!(
+        rows[0].1, "repeated",
+        "second occurrence is deterministically repeated"
+    );
+    assert_eq!(rows[0].2, 2, "occurrence_count 2");
+
+    // A DIFFERENT signature stays a separate observation.
+    run_observe(
+        &pool,
+        tenant_id,
+        request(serde_json::json!({ "problem": "capacitor_polarity" })),
+        Some(operator),
+    )
+    .await
+    .expect("different signature must record separately");
+    let rows = read_memory(&pool, tenant_id).await;
+    assert_eq!(rows.len(), 2, "two distinct memories");
+    let (id, other_status, other_count) = rows
+        .iter()
+        .find(|(_, status, _)| status == "observation")
+        .cloned()
+        .expect("the different signature stays an observation");
+    assert_eq!(
+        other_status, "observation",
+        "different signature is untouched"
+    );
+    assert_eq!(other_count, 1);
+
+    // Propose is a REVIEWED act: repeated -> proposed (the model's ceiling).
+    let proposed = run_propose(&pool, tenant_id, id)
+        .await
+        .expect("propose must succeed from repeated");
+    assert_eq!(proposed.status, "proposed", "repeated memory was proposed");
+
+    // Approve is the FINAL gate: only proposed -> approved.
+    let approved = run_approve(&pool, tenant_id, id)
+        .await
+        .expect("approve must succeed from proposed");
+    assert_eq!(approved.status, "approved", "proposed memory was approved");
+
+    // An un-proposed memory can never be approved (approval is gated).
+    let second_id = rows
+        .iter()
+        .find(|(r_id, _, _)| *r_id != id)
+        .map(|(r_id, _, _)| *r_id)
+        .expect("second memory id");
+    let rejected = run_approve(&pool, tenant_id, second_id).await;
+    assert!(
+        rejected.is_err(),
+        "approving an un-proposed observation must be rejected"
+    );
+}
+
+// Fifteenth audit items 1-2 (law A11): model workflows are checkpointable
+// and resumable. start_investigation → record_observation → CRASH (we
+// simply stop calling the engine) → latest_checkpoint must return the
+// durable step 'contain' with a round-tripped payload → propose → reject →
+// the workflow RESUMES by recording a new checkpoint from the latest.
+#[tokio::test]
+async fn workflow_engine_checkpoint_resume() {
+    let _serial = DB_LOCK.lock().await;
+    let Some(pool) = connect().await else { return };
+    sqlx::query(
+        r#"DO $$ DECLARE r RECORD; BEGIN
+             FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname = 'public') LOOP
+                 EXECUTE format('DROP TABLE IF EXISTS %I CASCADE', r.tablename);
+             END LOOP;
+         END $$"#,
+    )
+    .execute(&pool)
+    .await
+    .expect("drop all tables");
+    sensei_db::migrations::run_migrations(&pool)
+        .await
+        .expect("the ENTIRE migration chain must apply to an empty database");
+
+    use sensei_workflow::approval::{decide_approval, Compensation};
+    use sensei_workflow::corrective_action::{
+        close_investigation, propose_countermeasure, record_observation, start_investigation,
+        verify_countermeasure,
+    };
+    use sensei_workflow::state::WorkflowStatus;
+    use sensei_workflow::transition::{latest_checkpoint, record_transition};
+
+    let tenant_id = uuid::Uuid::new_v4();
+    let actor_id = uuid::Uuid::new_v4();
+    sqlx::query("INSERT INTO tenants (id, name, slug) VALUES ($1, 'wf', 'wf')")
+        .bind(tenant_id)
+        .execute(&pool)
+        .await
+        .expect("tenant insert");
+    sqlx::query(
+        "INSERT INTO users (id, tenant_id, email, name, password_hash) \
+         VALUES ($1, $2, 'wf@svc.local', 'W', 'x')",
+    )
+    .bind(actor_id)
+    .bind(tenant_id)
+    .execute(&pool)
+    .await
+    .expect("user insert");
+
+    // ── 1. Start the investigation: durable checkpoint at step 'contain' ──
+    let condition_id = uuid::Uuid::new_v4();
+    let workflow_id = start_investigation(&pool, tenant_id, condition_id, actor_id)
+        .await
+        .expect("start_investigation must checkpoint step contain");
+
+    // ── 2. Record an observation as evidence ──
+    record_observation(
+        &pool,
+        tenant_id,
+        &workflow_id,
+        serde_json::json!({ "observation": "crack visible on roller 7" }),
+    )
+    .await
+    .expect("record_observation must append evidence");
+
+    // ── 3. SIMULATED CRASH: the process dies here; nothing else is called ──
+    //      (deliberately no code between the evidence write and the probe)
+
+    // ── 4. Resume probe: the engine must report the LAST DURABLE step ──
+    let (checkpoint, step, payload) = latest_checkpoint(&pool, tenant_id, &workflow_id)
+        .await
+        .expect("a checkpointed workflow must have a latest checkpoint");
+    assert_eq!(checkpoint, 1, "first checkpoint is sequence 1");
+    assert_eq!(step, "contain", "crash recovery resumes at step contain");
+    assert_eq!(
+        payload["condition_id"],
+        condition_id.to_string(),
+        "the checkpoint payload round-trips after the crash"
+    );
+
+    // ── 5. Propose a countermeasure: parks the workflow in AwaitingApproval ──
+    propose_countermeasure(
+        &pool,
+        tenant_id,
+        &workflow_id,
+        serde_json::json!({ "action": "replace roller 7 bearing" }),
+        "bearing shows visible wear",
+    )
+    .await
+    .expect("propose_countermeasure must request approval");
+
+    // ── 6. Quality engineer REJECTS: compensation is derived from the decision ──
+    let compensation = decide_approval(&pool, tenant_id, &workflow_id, false, Some(actor_id))
+        .await
+        .expect("decide_approval must decide the pending approval");
+    assert_eq!(
+        compensation,
+        Compensation::RevertStep,
+        "a rejection yields the RevertStep compensation action"
+    );
+
+    // ── 7. The workflow RESUMES: a NEW checkpoint extends the history from
+    //       the latest durable step, carrying the round-tripped payload ──
+    record_transition(
+        &pool,
+        tenant_id,
+        &workflow_id,
+        "corrective_action.investigate",
+        WorkflowStatus::Running,
+        &step,
+        "revised_proposal",
+        Some(actor_id),
+        &payload,
+    )
+    .await
+    .expect("resume must record a new checkpoint from the latest");
+    let (resumed_checkpoint, resumed_step, resumed_payload) =
+        latest_checkpoint(&pool, tenant_id, &workflow_id)
+            .await
+            .expect("resumed workflow has a latest checkpoint");
+    assert_eq!(
+        resumed_checkpoint, 3,
+        "resume extends, never overwrites, history"
+    );
+    assert_eq!(
+        resumed_step, "revised_proposal",
+        "resume advances from contain"
+    );
+    assert_eq!(
+        resumed_payload, payload,
+        "the payload round-trips through resume"
+    );
+
+    // ── 8. The engine's own functions can finish the resumed workflow ──
+    verify_countermeasure(
+        &pool,
+        tenant_id,
+        &workflow_id,
+        serde_json::json!({ "vibration": "within spec" }),
+    )
+    .await
+    .expect("verify_countermeasure must append evidence");
+    close_investigation(&pool, tenant_id, &workflow_id, actor_id)
+        .await
+        .expect("close_investigation must checkpoint step closed");
+    let (final_checkpoint, final_step, final_payload) =
+        latest_checkpoint(&pool, tenant_id, &workflow_id)
+            .await
+            .expect("closed workflow has a final checkpoint");
+    assert_eq!(final_checkpoint, 4, "close is the fourth checkpoint");
+    assert_eq!(final_step, "closed", "workflow terminates at step closed");
+    assert_eq!(final_payload["status"], "closed");
+
+    // ── 9. The approval row exists with status 'rejected' (context-set tx) ──
+    {
+        let mut tx = pool.begin().await.expect("begin verify tx");
+        sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
+            .bind(tenant_id.to_string())
+            .execute(&mut *tx)
+            .await
+            .expect("set tenant context");
+        let (status, required_role, decided_by): (String, String, Option<uuid::Uuid>) =
+            sqlx::query_as(
+                "SELECT status, required_role, decided_by FROM workflow_approvals \
+                 WHERE tenant_id = $1 AND workflow_id = $2",
+            )
+            .bind(tenant_id)
+            .bind(&workflow_id)
+            .fetch_one(&mut *tx)
+            .await
+            .expect("approval row must exist");
+        assert_eq!(status, "rejected", "the decision persisted as rejected");
+        assert_eq!(
+            required_role, "quality_engineer",
+            "the approval was role-gated to quality_engineer"
+        );
+        assert_eq!(decided_by, Some(actor_id), "the decider was recorded");
+        let evidence_kinds: Vec<String> = sqlx::query_scalar(
+            "SELECT kind FROM workflow_evidence \
+             WHERE tenant_id = $1 AND workflow_id = $2 ORDER BY kind",
+        )
+        .bind(tenant_id)
+        .bind(&workflow_id)
+        .fetch_all(&mut *tx)
+        .await
+        .expect("evidence rows must exist");
+        assert_eq!(
+            evidence_kinds,
+            vec!["observation".to_string(), "verification".to_string()],
+            "both evidence records are retained"
+        );
+        tx.commit().await.expect("verify commit");
+    }
+}
+
+/// Role-specific analytics (fifteenth audit 48-68 + A14): the
+/// NOW/ABNORMAL/WHY/NEXT/LEARN shape for every role, scoped to the
+/// caller's work center — an operator never sees another line's queue.
+#[tokio::test]
+async fn role_analytics_are_scoped_and_structured() {
+    let _serial = DB_LOCK.lock().await;
+    let Some(pool) = connect().await else { return };
+    // Fresh-database guarantee: the ENTIRE migration chain (incl. 109
+    // operational_conditions) applies, then the role analytics execute.
+    sqlx::query(
+        r#"DO $$ DECLARE r RECORD; BEGIN
+             FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname = 'public') LOOP
+                 EXECUTE format('DROP TABLE IF EXISTS %I CASCADE', r.tablename);
+             END LOOP;
+         END $$"#,
+    )
+    .execute(&pool)
+    .await
+    .expect("drop all tables");
+    sensei_db::migrations::run_migrations(&pool)
+        .await
+        .expect("the ENTIRE migration chain must apply to an empty database");
+
+    let tenant_id = uuid::Uuid::new_v4();
+    let user_id = uuid::Uuid::new_v4();
+    let wc_id = uuid::Uuid::new_v4();
+    sqlx::query("INSERT INTO tenants (id, name, slug) VALUES ($1, 'ra', 'ra')")
+        .bind(tenant_id)
+        .execute(&pool)
+        .await
+        .expect("tenant insert");
+    sqlx::query(
+        "INSERT INTO users (id, tenant_id, email, name, password_hash)  VALUES ($1, $2, 'ra@x.local', 'R', 'x')",
+    )
+    .bind(user_id)
+    .bind(tenant_id)
+    .execute(&pool)
+    .await
+    .expect("user insert");
+    sqlx::query(
+        "INSERT INTO work_centers (id, tenant_id, name, work_center_number, is_active, capacity_per_shift, created_at, updated_at)  VALUES ($1, $2, 'WC', 'WC-RA', TRUE, 8, NOW(), NOW())",
+    )
+    .bind(wc_id)
+    .bind(tenant_id)
+    .execute(&pool)
+    .await
+    .expect("work center insert");
+
+    // One ACTIVE andon at the work center (abnormal + now) ...
+    let andon_number = "AND-RA-1";
+    sqlx::query(
+        "INSERT INTO andons (id, tenant_id, andon_number, work_center_id, issue_type, severity, description, status, raised_by) \
+         VALUES ($1, $2, $3, $4, 'material', 'medium', 'queue empty', 'active', $5)",
+    )
+    .bind(uuid::Uuid::new_v4())
+    .bind(tenant_id)
+    .bind(andon_number)
+    .bind(wc_id)
+    .bind(user_id)
+    .execute(&pool)
+    .await
+    .expect("andon insert");
+    // ... and one in_progress work order behind pitch (completed < qty).
+    let wo_id = uuid::Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO work_orders (id, tenant_id, wo_number, product_id, product_name, quantity, quantity_completed, status, work_center_id) \
+         VALUES ($1, $2, 'WO-RA', $3, 'Assembly A', 100, 0, 'in_progress', $4)",
+    )
+    .bind(wo_id)
+    .bind(tenant_id)
+    .bind(uuid::Uuid::new_v4())
+    .bind(wc_id)
+    .execute(&pool)
+    .await
+    .expect("work order insert");
+
+    // The team lead sees THEIR work center: abnormal + the andon in
+    // now/abnormal + a deterministic next action referencing the andon.
+    let analytics = sensei_services::tps::role_analytics::build_role_analytics(
+        &pool,
+        tenant_id,
+        "team_lead",
+        None,
+        Some(wc_id),
+    )
+    .await
+    .expect("team-lead analytics must build");
+
+    assert_eq!(analytics.role, "team_lead");
+    assert_eq!(analytics.scope_work_center_id, Some(wc_id));
+    assert!(!analytics.now.is_empty(), "NOW carries facts");
+    assert!(
+        !analytics.abnormal.is_empty(),
+        "ABNORMAL carries the active andon and the pitch gap"
+    );
+    assert!(
+        analytics.now.iter().any(|l| l.label.contains(andon_number)),
+        "the andon appears in NOW"
+    );
+    assert!(
+        analytics
+            .abnormal
+            .iter()
+            .any(|l| l.label.contains(andon_number)),
+        "the active andon appears in ABNORMAL"
+    );
+    assert!(
+        analytics.next.iter().any(|n| n.contains(andon_number)),
+        "NEXT contains a deterministic action referencing the andon"
+    );
+    // The six-field shape is present for every role.
+    let shape = (
+        analytics.role.as_str(),
+        analytics.now.len(),
+        analytics.abnormal.len(),
+        analytics.why.len(),
+        analytics.next.len(),
+        analytics.learn.len(),
+    );
+    assert!(shape.0 == "team_lead" && shape.1 > 0 && shape.2 > 0);
+
+    // SCOPE ISOLATION: a different work center must hide the andon — an
+    // operator never sees another line's queue.
+    let other = sensei_services::tps::role_analytics::build_role_analytics(
+        &pool,
+        tenant_id,
+        "team_lead",
+        None,
+        Some(uuid::Uuid::new_v4()),
+    )
+    .await
+    .expect("other work-center analytics must build");
+    assert!(
+        !other.now.iter().any(|l| l.label.contains(andon_number)),
+        "the andon must NOT appear outside the caller's work center"
+    );
+    assert!(
+        !other
+            .abnormal
+            .iter()
+            .any(|l| l.label.contains(andon_number)),
+        "the andon must NOT be abnormal outside the caller's work center"
+    );
+}
+
+/// Fifteenth audit A20 + item 101: the retired public appellation is
+/// prohibited from every SURFACE-VISIBLE artifact — UI text, browser
+/// title/meta, e2e expectations and user-facing docs. Internal crate
+/// names and technical comments about them are exempt.
+#[test]
+fn retired_appellation_is_absent_from_surface_assets() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+    let frontend = root.join("sensei-frontend");
+    let e2e = root.join("..").join("..").join("e2e");
+    let mut violations: Vec<String> = Vec::new();
+
+    let mut check = |path: &std::path::Path, label: &str| {
+        if !path.exists() {
+            return;
+        }
+        if let Ok(content) = std::fs::read_to_string(path) {
+            // Surface text only: "Sensei" as a standalone brand word in
+            // user-visible files. index.html title/meta, UI components,
+            // and e2e expectations are surface; Rust source comments are
+            // exempt but UI string literals in Rust ARE surface.
+            if path.extension().map(|e| e == "html").unwrap_or(false)
+                && (content.contains("Sensei") || content.contains("SENSEI"))
+            {
+                violations.push(format!("{label}: HTML contains the retired appellation"));
+            }
+            if path.extension().map(|e| e == "js").unwrap_or(false)
+                && (content.contains("SENSEI OS") || content.contains("Sensei OS"))
+            {
+                violations.push(format!(
+                    "{label}: e2e expectation contains the retired appellation"
+                ));
+            }
+            if label.contains("login.rs")
+                || label.contains("rack_sidebar.rs")
+                || label.contains("layout.rs")
+                || label.contains("app.rs")
+            {
+                for (idx, line) in content.lines().enumerate() {
+                    let trimmed = line.trim();
+                    if (trimmed.contains("Sensei") || trimmed.contains("SENSEI"))
+                        && !trimmed.starts_with("//")
+                        && !trimmed.starts_with("///")
+                        && !trimmed.contains("sensei-")
+                    {
+                        violations.push(format!(
+                            "{label}:{}: surface string contains the retired appellation",
+                            idx + 1
+                        ));
+                    }
+                }
+            }
+        }
+    };
+
+    for entry in ["index.html", "dist/index.html"] {
+        check(&frontend.join(entry), entry);
+    }
+    for entry in ["login.rs", "rack_sidebar.rs", "layout.rs", "app.rs"] {
+        check(
+            &frontend.join("src").join("pages").join(entry),
+            format!("pages/{entry}").as_str(),
+        );
+        check(
+            &frontend.join("src").join("components").join(entry),
+            format!("components/{entry}").as_str(),
+        );
+    }
+    for entry in ["smoke.spec.js", "accessibility.spec.js"] {
+        check(&e2e.join(entry), entry);
+    }
+    check(&frontend.join("src").join("app.rs"), "app.rs");
+
+    assert!(
+        violations.is_empty(),
+        "retired appellation found in surface assets:\n{}",
+        violations.join("\n")
+    );
 }

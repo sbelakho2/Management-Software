@@ -130,11 +130,11 @@ pub fn App() -> impl IntoView {
     view! {
         <Html attr:lang=move || i18n.locale.get() attr:dir=move || dir.get() />
 
-        <Title text="Sensei ERP" />
+        <Title text="Starz Forge" />
 
         <Meta charset="UTF-8" />
         <Meta name="viewport" content="width=device-width, initial-scale=1.0" />
-        <Meta name="description" content="Sensei ERP - Manufacturing Management System" />
+        <Meta name="description" content="Starz Forge - Manufacturing Management System" />
 
         <Stylesheet href="/pkg/sensei-frontend.css" />
         <Stylesheet href="/styles/rams.css" />

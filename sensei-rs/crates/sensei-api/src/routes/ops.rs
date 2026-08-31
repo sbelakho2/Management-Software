@@ -103,6 +103,7 @@ pub async fn raise_andon(
     let andon = Andon {
         id: Uuid::new_v4(),
         tenant_id: user.tenant_id,
+        site_id: None,
         andon_number: String::new(),
         work_center_id: req.work_center_id,
         issue_type: req.issue_type,

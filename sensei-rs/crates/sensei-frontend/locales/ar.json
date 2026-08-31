@@ -566,9 +566,9 @@
           "reasoningId": "معرف السبب: {id}"
         },
         "defaults": {
-          "senderName": "عامل Sensei",
+          "senderName": "عامل Starz Forge",
           "senderEmail": "operator@sensei.com",
-          "companyName": "Sensei"
+          "companyName": "Starz Forge"
         },
         "sections": {
           "recipient": "المستلم",
@@ -2159,7 +2159,7 @@
         "strategist": "الاستراتيجي الذكي",
         "northStar": "نجم الشمال (North Star)",
         "sqdcp": "SQDCP",
-        "senseiAi": "ذكاء Sensei",
+        "senseiAi": "ذكاء Starz Forge",
         "riskPrediction": "تنبؤ المخاطر"
       },
       "title": "مركز القيادة التنفيذية",
@@ -3301,7 +3301,7 @@
         "issueSeverity": "Issue Severity",
         "issueSeverityDesc": "Risk profile of reported issues",
         "projectContext": "Project Context",
-        "projectContextDesc": "Links to other Sensei OS modules",
+        "projectContextDesc": "Links to other Starz Forge OS modules",
         "owner": "Owner",
         "adminUser": "Admin User",
         "projectType": "Project Type",
@@ -4291,7 +4291,7 @@
         "showHint": "إظهار تلميح",
         "submitResponse": "إرسال الرد",
         "submitting": "جاري الإرسال...",
-        "title": "تمرين_Sensei_اليومي",
+        "title": "تمرين_Starz_Forge_اليومي",
         "yourResponse": "إجابتك"
       },
       "errorLoading": "فشل تحميل بيانات اليوم",
@@ -4324,14 +4324,14 @@
         "recentActivity": "النشاط الأخير",
         "upcoming": "القادمة"
       },
-      "senseiDailyDrill": "تمرين Sensei اليومي",
+      "senseiDailyDrill": "تمرين Starz Forge اليومي",
       "stationStatus": "حالة_المحطة: مثالية",
       "subtitle": "مركز قيادة الذكاء",
       "targetToday": "الهدف_اليوم",
       "topPriorities": "أهم الأولويات",
       "greeting": "مرحباً {name}!",
       "greetingFallback": "يا صديقي",
-      "senseiPulse": "نبض Sensei",
+      "senseiPulse": "نبض Starz Forge",
       "recently": "مؤخراً",
       "rfqAtRisk": "RFQ في خطر",
       "status": {
@@ -5020,7 +5020,7 @@
       "initializedOn": "تمت التهيئة في",
       "requestVolume": "حجم الطلبات (24 ساعة)",
       "errorRate": "معدل الخطأ",
-      "protocolStream": "البروتوكول: REST_JSON_STREAM // العقدة: SENSEI_CORE_V3",
+      "protocolStream": "البروتوكول: REST_JSON_STREAM // العقدة: STARZ_FORGE_CORE_V3",
       "keys": {
         "erpSync": "مزامنة ERP",
         "shopFloorDisplay": "شاشة أرضية المصنع"
@@ -5079,7 +5079,7 @@
       "taxIdVat": "معرّف الضريبة/القيمة المضافة",
       "title": "العنوان",
       "defaults": {
-        "legalEntityIdentity": "Sensei حلول التصنيع",
+        "legalEntityIdentity": "Starz Forge حلول التصنيع",
         "taxIdVat": "الرقم الضريبي: MA-123456789",
         "registeredOffice": "123 شارع الصناعة، الدار البيضاء، المغرب"
       },
@@ -5133,7 +5133,7 @@
       "serverSync": "خادم مزامنة",
       "title": "العنوان",
       "defaults": {
-        "dispatchIdentity": "أمر_نظام_Sensei‏",
+        "dispatchIdentity": "أمر_نظام_Starz_Forge‏",
         "relayReplyTo": "no-reply@sensei-manuf.com‏"
       },
       "smtpStatus": "مرحل SMTP: متزامن‏",
@@ -6262,7 +6262,7 @@
       "helpPanel": "لوحة المساعدة",
       "closeHelpPanel": "إغلاق لوحة المساعدة",
       "dismissSuggestion": "تجاهل الاقتراح",
-      "toggleAssistant": "تفعيل مساعد Sensei",
+      "toggleAssistant": "تفعيل مساعد Starz Forge",
       "dismiss": "تجاهل",
       "searchHelp": "بحث في المساعدة"
     },
@@ -6457,7 +6457,7 @@
       "noData": "لا توجد بيانات متاحة"
     },
     "sidebar": {
-      "senseiHome": "الرئيسية لنظام Sensei",
+      "senseiHome": "الرئيسية لنظام Starz Forge",
       "toggleDarkMode": "تبديل الوضع الداكن",
       "administration": "الإدارة"
     },
@@ -6613,7 +6613,7 @@
   "layout": {
     "brandMark": "S",
     "systemInitialization": "تهيئة النظام...",
-    "bootProtocol": "البروتوكول: Sensei_OS_V3 // تسلسل التمهيد",
+    "bootProtocol": "البروتوكول: Starz_Forge_V3 // تسلسل التمهيد",
     "systemMetadata": {
       "station": "المحطة: {station}",
       "osVer": "إصدار النظام: {version}",

@@ -18,6 +18,7 @@ sensei-core = { path = "../sensei-core" }
 [dev-dependencies]
 rust_decimal = { version = "1.36", features = ["serde-float"] }
 sensei-auth = { path = "../sensei-auth" }
+sensei-workflow = { path = "../sensei-workflow" }
 sqlx.workspace = true
 uuid.workspace = true
 chrono.workspace = true

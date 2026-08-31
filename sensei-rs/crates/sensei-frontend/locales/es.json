@@ -144,7 +144,7 @@
           "senderName": "p. ej., Alex Morgan",
           "senderEmail": "p. ej., alex@sensei.com",
           "senderTitle": "p. ej., Ejecutivo de cuenta",
-          "companyName": "p. ej., Sensei Corp",
+          "companyName": "p. ej., Starz Forge Corp",
           "threadEntityType": "Seleccionar entidad del hilo...",
           "threadEntityId": "Ingresa el ID de la entidad...",
           "referenceNumber": "p. ej., RFQ-2024-001",
@@ -234,9 +234,9 @@
           "reasoningId": "ID de razonamiento: {id}"
         },
         "defaults": {
-          "senderName": "Operador Sensei",
+          "senderName": "Operador Starz Forge",
           "senderEmail": "operador@sensei.com",
-          "companyName": "Sensei"
+          "companyName": "Starz Forge"
         },
         "sections": {
           "recipient": "Destinatario",
@@ -469,7 +469,7 @@
     "processing": "Procesando...",
     "rememberMe": "Recordarme",
     "requestAccess": "Solicitar acceso",
-    "requestAccessSubtitle": "Solicita acceso a la plataforma Sensei OS",
+    "requestAccessSubtitle": "Solicita acceso a la plataforma Starz Forge OS",
     "resetAccess": "Restablecer acceso",
     "resetEmailFailed": "Error al enviar el correo de restablecimiento",
     "resetPassword": "Restablecer contraseña",
@@ -1561,7 +1561,7 @@
       "insights": {
         "highImpactProtocol": "High Impact Protocol",
         "strategicCountermeasures": "Strategic Countermeasures",
-        "synthesizing": "Sensei AI está sintetizando nuevos nodos de inteligencia..."
+        "synthesizing": "Starz Forge AI está sintetizando nuevos nodos de inteligencia..."
       },
       "mlInsights": {
         "actionItems": "Acciones a tomar",
@@ -1593,8 +1593,8 @@
         "noInsights": "No hay perspectivas prioritarias en este momento. El rendimiento organizacional está dentro de parámetros óptimos.",
         "predictiveMetrics": "GRADIENTES_DE_MÉTRICAS_PREDICTIVAS",
         "predictiveMetricsDesc": "Trayectoria actual vs resultado previsto por IA",
-        "reasoning": "Sensei AI está razonando...",
-        "senseiActions": "Acciones recomendadas por Sensei",
+        "reasoning": "Starz Forge AI está razonando...",
+        "senseiActions": "Acciones recomendadas por Starz Forge",
         "strategicIntelFeed": "FUENTE_DE_INTELIGENCIA_ESTRATÉGICA",
         "strategicIntelFeedDesc": "Directrices generadas por IA que requieren atención inmediata",
         "warmingClusters": "Calentando clústeres de cómputo ML..."
@@ -1657,7 +1657,7 @@
         "projection7d": "PROYECCIÓN_7_DÍAS",
         "protocol": "Protocolo",
         "temporalModel": "Model: TEMPORAL-CONV-04",
-        "training": "Sensei AI está entrenando modelos de proyección temporal..."
+        "training": "Starz Forge AI está entrenando modelos de proyección temporal..."
       },
       "statusOptimal": "ÓPTIMO"
     },
@@ -2105,7 +2105,7 @@
         "placeholder": "Ingresa un comando...",
         "protocol": "Protocolo",
         "reasoningInProgress": "Razonamiento en progreso",
-        "senseiReasoning": "Razonamiento de Sensei",
+        "senseiReasoning": "Razonamiento de Starz Forge",
         "title": "Nl2Sql"
       },
       "operationalOverview": "Resumen operativo",
@@ -2159,7 +2159,7 @@
         "strategist": "Estratega IA",
         "northStar": "NORTH_STAR",
         "sqdcp": "SQDCP",
-        "senseiAi": "SENSEI_AI",
+        "senseiAi": "STARZ FORGE AI",
         "riskPrediction": "RISK_PREDICTION"
       },
       "title": "Centro de mando ejecutivo",
@@ -2783,7 +2783,7 @@
         "metrics": "Métricas",
         "overview": "Resumen",
         "problems": "Problemas",
-        "senseiAi": "Sensei AI",
+        "senseiAi": "Starz Forge AI",
         "sqdcpDetail": "Detalle SQDCP"
       },
       "title": "Obeya cognitivo",
@@ -2825,10 +2825,10 @@
       "title": "Nuevo Obeya"
     },
     "offline": {
-      "branding": "Sensei OS • Continuidad de precisión",
+      "branding": "Starz Forge OS • Continuidad de precisión",
       "cachedData": "Datos de inteligencia en caché",
       "capabilitiesTitle": "Funcionalidades sin conexión",
-      "description": "Se ha interrumpido el enlace de inteligencia de Sensei OS. Algunas funciones principales no están disponibles.",
+      "description": "Se ha interrumpido el enlace de inteligencia de Starz Forge OS. Algunas funciones principales no están disponibles.",
       "draftSync": "Sincronización de borradores al reconectar",
       "reconnect": "Restablecer conexión",
       "returnHome": "Volver al inicio",
@@ -3301,7 +3301,7 @@
         "issueSeverity": "Issue Severity",
         "issueSeverityDesc": "Risk profile of reported issues",
         "projectContext": "Project Context",
-        "projectContextDesc": "Links to other Sensei OS modules",
+        "projectContextDesc": "Links to other Starz Forge OS modules",
         "owner": "Owner",
         "adminUser": "Admin User",
         "projectType": "Project Type",
@@ -4291,7 +4291,7 @@
         "showHint": "Mostrar Pista",
         "submitResponse": "Enviar Respuesta",
         "submitting": "Enviando...",
-        "title": "Ejercicio_Diario_Sensei",
+        "title": "Ejercicio_Diario_Starz_Forge",
         "yourResponse": "Tu Respuesta"
       },
       "errorLoading": "Error al cargar datos de hoy",
@@ -4324,14 +4324,14 @@
         "recentActivity": "Actividad Reciente",
         "upcoming": "Próximos"
       },
-      "senseiDailyDrill": "Ejercicio Diario Sensei",
+      "senseiDailyDrill": "Ejercicio Diario Starz Forge",
       "stationStatus": "ESTADO_ESTACIÓN: ÓPTIMO",
       "subtitle": "Centro de Comando de Inteligencia",
       "targetToday": "Meta_Hoy",
       "topPriorities": "Prioridades Superiores",
       "greeting": "¡Hola, {name}!",
       "greetingFallback": "ahí",
-      "senseiPulse": "Pulso Sensei",
+      "senseiPulse": "Pulso Starz Forge",
       "recently": "Recientemente",
       "rfqAtRisk": "RFQ en riesgo",
       "status": {
@@ -4853,7 +4853,7 @@
       "initializedOn": "Inicializado El",
       "requestVolume": "VOLUMEN_SOLICITUDES (24H)",
       "errorRate": "Tasa Error",
-      "protocolStream": "Protocolo: REST_JSON_STREAM // NODO: SENSEI_CORE_V3",
+      "protocolStream": "Protocolo: REST_JSON_STREAM // NODO: STARZ_FORGE_CORE_V3",
       "keys": {
         "erpSync": "Sincronización ERP",
         "shopFloorDisplay": "Pantalla de Planta"
@@ -4892,7 +4892,7 @@
       "save": "Guardar",
       "saveSuccess": "Guardado con éxito",
       "saving": "Guardando...",
-      "senseiOrange": "Naranja Sensei",
+      "senseiOrange": "Naranja Starz Forge",
       "spacious": "Espacioso",
       "subtitle": "Estética de la interfaz y calibraciones",
       "systemDefault": "Predeterminado del sistema",
@@ -4912,7 +4912,7 @@
       "taxIdVat": "ID fiscal / IVA",
       "title": "Arquitectura de la empresa",
       "defaults": {
-        "legalEntityIdentity": "Sensei Manufacturing Solutions",
+        "legalEntityIdentity": "Starz Forge Manufacturing Solutions",
         "taxIdVat": "MA-123456789",
         "registeredOffice": "123 Av. Industrial, Casablanca, Marruecos"
       },
@@ -4966,7 +4966,7 @@
       "serverSync": "Sincronización del servidor",
       "title": "Relay de comunicaciones",
       "defaults": {
-        "dispatchIdentity": "Comando Sensei OS",
+        "dispatchIdentity": "Comando Starz Forge OS",
         "relayReplyTo": "no-reply@sensei-manuf.com"
       },
       "smtpStatus": "SMTP_RELAY: SINCRONIZADO",
@@ -5907,7 +5907,7 @@
       "senderName": "ej. Alex Morgan",
       "senderEmail": "ej. alex@sensei.com",
       "senderTitle": "ej. Gerente de Cuenta",
-      "companyName": "ej. Sensei Corp",
+      "companyName": "ej. Starz Forge Corp",
       "threadEntityType": "Seleccionar entidad del hilo...",
       "threadEntityId": "Introducir ID de entidad...",
       "referenceNumber": "ej. RFQ-2024-001",
@@ -5997,9 +5997,9 @@
       "reasoningId": "ID de razonamiento: {id}"
     },
     "defaults": {
-      "senderName": "Operador Sensei",
+      "senderName": "Operador Starz Forge",
       "senderEmail": "operador@sensei.com",
-      "companyName": "Sensei"
+      "companyName": "Starz Forge"
     },
     "sections": {
       "recipient": "Destinatario",
@@ -6257,7 +6257,7 @@
       "helpPanel": "Help panel",
       "closeHelpPanel": "Close help panel",
       "dismissSuggestion": "Dismiss suggestion",
-      "toggleAssistant": "Toggle Sensei assistant",
+      "toggleAssistant": "Toggle Starz Forge assistant",
       "dismiss": "Dismiss",
       "searchHelp": "Search help"
     },
@@ -6452,7 +6452,7 @@
       "noData": "No data available"
     },
     "sidebar": {
-      "senseiHome": "Sensei OS home",
+      "senseiHome": "Starz Forge OS home",
       "toggleDarkMode": "Toggle dark mode",
       "administration": "Administration"
     },
@@ -6613,7 +6613,7 @@
   "layout": {
     "brandMark": "S",
     "systemInitialization": "SYSTEM_INITIALIZATION...",
-    "bootProtocol": "PROTOCOL: SENSEI_OS_V3 // BOOT_SEQUENCE",
+    "bootProtocol": "PROTOCOL: STARZ_FORGE_V3 // BOOT_SEQUENCE",
     "systemMetadata": {
       "station": "STATION: {station}",
       "osVer": "OS_VER: {version}",

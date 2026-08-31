@@ -106,11 +106,15 @@ pub async fn raise_andon(
     }
     // Thirteenth audit P0: the work center is SERVER-RESOLVED from the
     // caller's operational assignment — never accepted as a forged id.
+    // The site is captured from the same context (fifteenth audit A1):
+    // the Andon is explicitly scoped, never implicitly company-wide.
+    let mut site_id = None;
     let work_center_id = match req.work_center_id {
         Some(wc) => wc,
         None => {
             // The agent context resolves the caller's site/work center.
             let ctx = crate::routes::agent::build_context(&user, &state).await;
+            site_id = ctx.site_id;
             ctx.work_center_id.ok_or_else(|| {
                 sensei_core::error::SenseiError::Validation(
                     "Cannot raise help: the caller has no work center assigned — \
@@ -123,6 +127,7 @@ pub async fn raise_andon(
     let andon = Andon {
         id: Uuid::new_v4(),
         tenant_id,
+        site_id,
         andon_number: String::new(),
         work_center_id,
         issue_type: req.issue_type,
@@ -197,6 +202,57 @@ pub async fn raise_andon(
         let _ =
             sensei_services::tps::conditions::open_condition(pool.as_ref(), tenant_id, &cond_input)
                 .await;
+    }
+    // Fifteenth audit 31-33: the operational event envelope — ONE row in
+    // the event log (the organizational nervous system), bitemporal
+    // (occurred_at = when it happened, recorded_at = when we learned it)
+    // and linking MANY objects (the andon AND its work center). The write
+    // is transactional and tenant-scoped because the envelope is
+    // FORCE-RLS fail-closed; errors propagate — a raised Andon must never
+    // silently lack its log entry.
+    if let Some(pool) = state.db_pool.as_ref() {
+        let objects = serde_json::json!([
+            { "object_type": "andon", "object_id": andon.id },
+            { "object_type": "work_center", "object_id": andon.work_center_id },
+        ]);
+        let payload = serde_json::json!({
+            "issue_type": andon.issue_type,
+            "severity": andon.severity,
+        });
+        let mut tx = pool.begin().await.map_err(|e| {
+            sensei_core::error::SenseiError::Database(format!("Event log tx begin failed: {e}"))
+        })?;
+        sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
+            .bind(tenant_id.to_string())
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| {
+                sensei_core::error::SenseiError::Database(format!(
+                    "Event log tenant context failed: {e}"
+                ))
+            })?;
+        sqlx::query(
+            "INSERT INTO operational_events \
+                     (id, tenant_id, event_type, occurred_at, recorded_at, scope_site_id, actor_id, \
+                      objects, source_system, source_id, sensitivity, payload, sequence) \
+             VALUES ($1, $2, 'andon.raised', $3, NOW(), $4, $5, $6, 'sensei', NULL, 'internal', $7, 1)",
+        )
+        .bind(Uuid::new_v4())
+        .bind(tenant_id)
+        .bind(andon.created_at)
+        .bind(andon.site_id)
+        .bind(user.user_id)
+        .bind(objects)
+        .bind(payload)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, andon_id = %andon.id, "Event log write failed");
+            sensei_core::error::SenseiError::Internal(format!("Andon raised but event log write failed: {e}"))
+        })?;
+        tx.commit().await.map_err(|e| {
+            sensei_core::error::SenseiError::Database(format!("Event log tx commit failed: {e}"))
+        })?;
     }
     // Item 63/73: the graph edge is a DERIVED PROJECTION of the
     // authoritative Andon row. The write error is NOT ignored — a failed
@@ -340,4 +396,98 @@ pub async fn void_andon(
 #[derive(Debug, Clone, serde::Deserialize)]
 pub struct VoidAndonRequest {
     pub reason: String,
+}
+
+/// The last 100 entries of the canonical operational event log for the
+/// tenant (fifteenth audit 31-33): the organizational nervous system —
+/// every event with its bitemporal stamps (occurred_at vs recorded_at)
+/// and the objects it links, newest first.
+pub async fn list_events(
+    user: AuthenticatedUser,
+    State(state): State<AppState>,
+) -> Result<Json<serde_json::Value>> {
+    user.require_permission("tps:read")?;
+    let pool = state.db_pool.as_ref().ok_or_else(|| {
+        sensei_core::error::SenseiError::Database("Event log requires the database".to_string())
+    })?;
+    // Transaction-scoped tenant context: the envelope is FORCE-RLS
+    // fail-closed, so the read must establish app.tenant_id.
+    let mut tx = pool.begin().await.map_err(|e| {
+        sensei_core::error::SenseiError::Database(format!("Event log tx begin failed: {e}"))
+    })?;
+    sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
+        .bind(user.tenant_id.to_string())
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| {
+            sensei_core::error::SenseiError::Database(format!(
+                "Event log tenant context failed: {e}"
+            ))
+        })?;
+    type EventRow = (
+        Uuid,
+        Uuid,
+        String,
+        chrono::DateTime<chrono::Utc>,
+        chrono::DateTime<chrono::Utc>,
+        Option<Uuid>,
+        Option<Uuid>,
+        serde_json::Value,
+        Option<String>,
+        Option<String>,
+        String,
+        serde_json::Value,
+        i64,
+    );
+    let rows: Vec<EventRow> = sqlx::query_as(
+        "SELECT id, tenant_id, event_type, occurred_at, recorded_at, scope_site_id, actor_id, \
+                objects, source_system, source_id, sensitivity, payload, sequence \
+         FROM operational_events WHERE tenant_id = $1 ORDER BY occurred_at DESC LIMIT 100",
+    )
+    .bind(user.tenant_id)
+    .fetch_all(&mut *tx)
+    .await
+    .map_err(|e| {
+        sensei_core::error::SenseiError::Database(format!("Event log read failed: {e}"))
+    })?;
+    tx.commit().await.map_err(|e| {
+        sensei_core::error::SenseiError::Database(format!("Event log tx commit failed: {e}"))
+    })?;
+    let events: Vec<serde_json::Value> = rows
+        .into_iter()
+        .map(
+            |(
+                id,
+                tenant_id,
+                event_type,
+                occurred_at,
+                recorded_at,
+                scope_site_id,
+                actor_id,
+                objects,
+                source_system,
+                source_id,
+                sensitivity,
+                payload,
+                sequence,
+            )| {
+                serde_json::json!({
+                    "id": id,
+                    "tenant_id": tenant_id,
+                    "event_type": event_type,
+                    "occurred_at": occurred_at,
+                    "recorded_at": recorded_at,
+                    "scope_site_id": scope_site_id,
+                    "actor_id": actor_id,
+                    "objects": objects,
+                    "source_system": source_system,
+                    "source_id": source_id,
+                    "sensitivity": sensitivity,
+                    "payload": payload,
+                    "sequence": sequence,
+                })
+            },
+        )
+        .collect();
+    Ok(Json(serde_json::json!({ "events": events })))
 }

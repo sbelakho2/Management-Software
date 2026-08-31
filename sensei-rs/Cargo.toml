@@ -16,6 +16,7 @@ members = [
     "crates/sensei-workers",
     "crates/sensei-bridge",
     "crates/sensei-contracts",
+    "crates/sensei-workflow",
 ]
 
 [workspace.package]

@@ -618,7 +618,7 @@ pub fn AgentPage() -> impl IntoView {
 
     view! {
         <div class="rams-p-4">
-            <h1 class="module-title rams-mb-4">"SENSEI AGENT — EVIDENCE-FIRST"</h1>
+            <h1 class="module-title rams-mb-4">"STARZ FORGE AGENT — EVIDENCE-FIRST"</h1>
             {move || tools.map(|w| match &**w { Ok(list) => {
                     let list_owned: Vec<AgentToolDto> = list.clone();
                     view! {

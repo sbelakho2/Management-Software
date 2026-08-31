@@ -5,6 +5,42 @@
 
 use crate::types::{new_id, now, EntityId, TenantId, Timestamp};
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
+
+/// Organizational scope (fifteenth audit): every operational object is
+/// explicitly scoped — never implicitly company-wide. site is the
+/// mandatory operational grain; area/line/cell refine it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct Scope {
+    pub site_id: Uuid,
+    pub area_id: Option<Uuid>,
+    pub line_id: Option<Uuid>,
+    pub cell_id: Option<Uuid>,
+}
+
+impl Scope {
+    pub fn at_site(site_id: Uuid) -> Self {
+        Self {
+            site_id,
+            area_id: None,
+            line_id: None,
+            cell_id: None,
+        }
+    }
+    pub fn refine(
+        self,
+        area_id: Option<Uuid>,
+        line_id: Option<Uuid>,
+        cell_id: Option<Uuid>,
+    ) -> Self {
+        Self {
+            site_id: self.site_id,
+            area_id,
+            line_id,
+            cell_id,
+        }
+    }
+}
 
 /// Default UI locale for users without a profile preference.
 fn default_user_locale() -> String {

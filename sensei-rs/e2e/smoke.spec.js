@@ -1,4 +1,4 @@
-// Sensei OS smoke suite (item 77): the behavioral contracts that unit
+// Starz Forge smoke suite (item 77): the behavioral contracts that unit
 // tests cannot reach — login, the Today landing page, the station help
 // flow and explicit error states. These run against a REAL built stack.
 
@@ -7,9 +7,9 @@ const { test, expect } = require('@playwright/test');
 const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL || 'admin@sensei.local';
 const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD || 'admin-password';
 
-test('login renders the Sensei OS identity', async ({ page }) => {
+test('login renders the Starz Forge identity', async ({ page }) => {
   await page.goto('/login');
-  await expect(page.getByText('SENSEI OS')).toBeVisible();
+  await expect(page.getByText('STARZ FORGE')).toBeVisible();
   await expect(page.getByRole('heading', { name: /AUTHENTICATE/i })).toBeVisible();
 });
 

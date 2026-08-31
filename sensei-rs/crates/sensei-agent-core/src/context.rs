@@ -45,6 +45,174 @@ impl AgentContext {
     }
 }
 
+/// The context request envelope (fifteenth audit item 7): the system
+/// knows more than the user's words — there is NO "search query string".
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ContextRequest {
+    pub principal_id: Uuid,
+    pub roles: Vec<String>,
+    pub site_id: Option<Uuid>,
+    pub value_stream_id: Option<Uuid>,
+    pub work_center_id: Option<Uuid>,
+    pub task: TaskKind,
+    pub focal_objects: Vec<serde_json::Value>,
+    pub max_tokens: u32,
+    pub sensitivity_ceiling: String,
+    pub trace_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TaskKind {
+    Troubleshoot,
+    ExecutiveAnalysis,
+    OperatorAssist,
+    PlannerDecision,
+    QualityInvestigation,
+    General,
+}
+
+/// One context item with provenance as DATA (fifteenth audit 75-76):
+/// selection maximizes relevance × authority × freshness under the token
+/// budget and authorization constraints.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ContextItem {
+    pub payload: serde_json::Value,
+    pub source: String,
+    pub source_revision: Option<String>,
+    pub observed_at: Option<chrono::DateTime<chrono::Utc>>,
+    pub authority: AuthorityRank,
+    pub sensitivity: String,
+    pub token_cost: u32,
+    pub epistemic_status: EpistemicStatus,
+}
+
+/// Explicit source-authority hierarchy (fifteenth audit 76): an AI
+/// summary never outranks the source it summarized.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AuthorityRank {
+    ApprovedStandard,
+    ReleasedEngineeringRecord,
+    TransactionalState,
+    ApprovedCorrectiveAction,
+    VerifiedObservation,
+    EmployeeNote,
+    AiInference,
+}
+
+/// Fact vs inference vs hypothesis (fifteenth audit 79/A10).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum EpistemicStatus {
+    RecordedFact,
+    DerivedFact,
+    Inference,
+    Hypothesis,
+}
+
+/// The DETERMINISTIC context plan (fifteenth audit 74): the task decides
+/// what must be present BEFORE any semantic retrieval — the model never
+/// invents the retrieval strategy.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ContextPlan {
+    pub required: Vec<String>,
+    pub task: TaskKind,
+    pub budget: u32,
+}
+
+pub fn plan_context(req: &ContextRequest) -> ContextPlan {
+    let mut required = vec![
+        "governing_context".to_string(),
+        "authority_scope".to_string(),
+        "role_context".to_string(),
+        "current_work".to_string(),
+    ];
+    match req.task {
+        TaskKind::Troubleshoot => {
+            required.push("process_standard".into());
+            required.push("recent_failures".into());
+            required.push("similar_lessons".into());
+        }
+        TaskKind::ExecutiveAnalysis => {
+            required.push("metric_tree".into());
+            required.push("exception_summary".into());
+            required.push("causal_candidates".into());
+        }
+        TaskKind::OperatorAssist => {
+            required.push("standard_work".into());
+            required.push("live_state".into());
+        }
+        TaskKind::PlannerDecision => {
+            required.push("demand_vs_capacity".into());
+            required.push("constraint_loading".into());
+        }
+        TaskKind::QualityInvestigation => {
+            required.push("occurrence_history".into());
+            required.push("detection_history".into());
+            required.push("escape_history".into());
+        }
+        TaskKind::General => {}
+    }
+    ContextPlan {
+        required,
+        task: req.task.clone(),
+        budget: req.max_tokens,
+    }
+}
+
+/// Token-budget allocation (fifteenth audit 8): dynamic per task, not
+/// hardcoded globally. Returns the section → token share (0..1).
+pub fn budget_allocation(task: &TaskKind) -> Vec<(&'static str, f64)> {
+    match task {
+        TaskKind::Troubleshoot => vec![
+            ("live_state", 0.20),
+            ("process_standard", 0.18),
+            ("episodic_history", 0.20),
+            ("graph", 0.10),
+            ("rules", 0.08),
+            ("role", 0.08),
+            ("analytics", 0.06),
+            ("provenance", 0.05),
+            ("tool_contract", 0.05),
+        ],
+        TaskKind::ExecutiveAnalysis => vec![
+            ("aggregation", 0.25),
+            ("causal_candidates", 0.15),
+            ("exceptions", 0.15),
+            ("cross_site", 0.10),
+            ("rules", 0.08),
+            ("role", 0.08),
+            ("provenance", 0.05),
+            ("tool_contract", 0.04),
+        ],
+        _ => vec![
+            ("live_state", 0.20),
+            ("standard_work", 0.18),
+            ("process_standard", 0.14),
+            ("episodic_history", 0.12),
+            ("graph", 0.10),
+            ("rules", 0.08),
+            ("role", 0.08),
+            ("analytics", 0.05),
+            ("provenance", 0.03),
+            ("tool_contract", 0.02),
+        ],
+    }
+}
+
+/// Contradiction survives retrieval (fifteenth audit 77): a group of
+/// items disagreeing on a fact is returned as a conflict, never collapsed.
+pub fn has_contradiction(items: &[ContextItem], fact_key: &str) -> bool {
+    let mut values = std::collections::HashSet::new();
+    for item in items {
+        if let Some(v) = item.payload.get(fact_key) {
+            values.insert(v.to_string());
+        }
+    }
+    values.len() > 1
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

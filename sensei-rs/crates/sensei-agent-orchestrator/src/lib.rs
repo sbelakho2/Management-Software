@@ -3,6 +3,8 @@
 //! frontier model, an OpenAI-compatible gateway, or a local model — the
 //! tool/policy contracts stay identical.
 
+pub mod programs;
+
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 

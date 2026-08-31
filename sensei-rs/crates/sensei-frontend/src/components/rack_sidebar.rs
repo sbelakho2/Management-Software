@@ -248,7 +248,7 @@ pub fn RackSidebar(
     view! {
         <aside class="racksidebar">
             <div class="racksidebar-station">
-                <span class="dymo-label">"SENSEI-OS"</span>
+                <span class="dymo-label">"STARZ FORGE"</span>
                 // Item 78: the station identity is REAL operational context
                 // (site/work-center assignment), never static chrome.
                 <StationIdentity />

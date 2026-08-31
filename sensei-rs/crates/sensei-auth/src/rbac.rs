@@ -4,7 +4,7 @@
 //! defined as `{resource}:{action}` strings (e.g., `quality:ncr:create`).
 
 use sensei_core::domain::entities::Permission;
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use uuid::Uuid;
 
 /// In-memory RBAC service.
@@ -18,6 +18,13 @@ pub struct RbacService {
     /// `operations_manager` with different permissions cannot contaminate
     /// one another.
     tenant_roles: HashMap<(Uuid, String), HashSet<String>>,
+    /// NIST hierarchical RBAC: role name -> its DIRECT parent roles.
+    /// A role inherits its own permissions plus every ancestor's
+    /// permissions. This authorization hierarchy is deliberately NOT the
+    /// organizational chart (law A6) — e.g. the HR `supervisor` inherits
+    /// the operational `team_lead` set because supervisors must be able
+    /// to do what their team leads do on the shop floor.
+    role_hierarchy: HashMap<String, Vec<String>>,
 }
 
 /// Process-wide shared authorization service, installed by the API at
@@ -46,8 +53,10 @@ impl RbacService {
         let mut svc = Self {
             roles: HashMap::new(),
             tenant_roles: HashMap::new(),
+            role_hierarchy: HashMap::new(),
         };
         svc.load_default_roles();
+        svc.load_default_hierarchy();
         svc
     }
 
@@ -56,6 +65,7 @@ impl RbacService {
         Self {
             roles: HashMap::new(),
             tenant_roles: HashMap::new(),
+            role_hierarchy: HashMap::new(),
         }
     }
 
@@ -169,6 +179,8 @@ impl RbacService {
                 "hr:timecard:self",
                 "hr:timecard:manage",
                 "hr:training:manage",
+                "hr:manage",
+                "training:manage",
             ],
         );
         self.add_role(
@@ -485,6 +497,117 @@ impl RbacService {
             ],
         );
 
+        // ── Generic organizational roles (NIST hierarchical RBAC; the
+        //    inheritance edges live in load_default_hierarchy) ─────────
+        self.add_role(
+            "manager",
+            vec![
+                "production:work-order:create",
+                "production:work-order:update",
+                "production:schedule:read",
+                "production:schedule:update",
+                "production:release",
+                "production:short-close",
+                "tps:andon:manage",
+                "tps:standard-work:review",
+                "tasks:manage",
+                "training:manage",
+            ],
+        );
+        self.add_role("team_lead", vec![]);
+        self.add_role(
+            "quality",
+            vec![
+                "quality:ncr:read",
+                "quality:capa:read",
+                "quality:audit:read",
+                "quality:inspection:read",
+                "quality:inspection:self",
+                "quality:scar:read",
+                "quality:msa:read",
+                "quality:spc:read",
+                "quality:control-plan:read",
+                "quality:pfmea:read",
+                "quality:gauge:read",
+                "quality:document:read",
+                "quality:fai:read",
+                "quality:complaint:read",
+                "quality:8d:read",
+                "quality:supplier:read",
+                "quality:review:read",
+                "quality:stage-gate:read",
+                "quality:npi:read",
+            ],
+        );
+        self.add_role(
+            "maintenance",
+            vec![
+                "maintenance:request",
+                "maintenance:assign",
+                "maintenance:execute",
+                "maintenance:return-to-service",
+            ],
+        );
+        self.add_role(
+            "finance",
+            vec![
+                "finance:invoice:read",
+                "finance:invoice:create",
+                "finance:invoice:update",
+                "finance:invoice:void",
+                "finance:invoice:approve",
+                "finance:payment:read",
+                "finance:payment:record",
+                "finance:payment:reverse",
+                "finance:payment:void",
+                "finance:journal:read",
+                "finance:journal:post",
+                "finance:journal:reverse",
+                "finance:budget:read",
+                "finance:budget:create",
+                "finance:budget:allocate",
+                "finance:budget:approve",
+                "finance:rollup:run",
+                "finance:match:three-way",
+            ],
+        );
+        self.add_role(
+            "hr",
+            vec![
+                "hr:employee:read",
+                "hr:leave:self",
+                "hr:leave:approve",
+                "hr:review:manage",
+                "hr:timecard:self",
+                "hr:timecard:manage",
+                "hr:training:manage",
+            ],
+        );
+        self.add_role(
+            "site_manager",
+            vec![
+                "inventory:adjust",
+                "inventory:warehouse:manage",
+                "master-data:products:manage",
+                "system:state-machines:manage",
+                "attachments:manage",
+                "knowledge:manage",
+                "learning:manage",
+                "users:list",
+                "users:update",
+            ],
+        );
+        self.add_role(
+            "admin",
+            vec![
+                "users:list",
+                "users:update",
+                "users:roles",
+                "users:deactivate",
+                "users:activate",
+            ],
+        );
+
         // Dedicated non-human integration principal (item: integration is
         // a privileged data-write path — ordinary users must NEVER hold
         // it). The bridge authenticates with this role and per-system
@@ -505,6 +628,55 @@ impl RbacService {
         self.roles.insert(role_name.to_string(), perms);
     }
 
+    /// Load the default NIST hierarchical-RBAC edges: role -> its direct
+    /// parent roles. Permission resolution walks this chain upward, so
+    /// e.g. `manager` inherits everything `operator` and `user` grant.
+    fn load_default_hierarchy(&mut self) {
+        self.role_hierarchy = HashMap::from([
+            (
+                "manager".to_string(),
+                vec!["operator".to_string(), "user".to_string()],
+            ),
+            (
+                "team_lead".to_string(),
+                vec!["operator".to_string(), "user".to_string()],
+            ),
+            ("supervisor".to_string(), vec!["team_lead".to_string()]),
+            ("quality".to_string(), vec!["user".to_string()]),
+            ("maintenance".to_string(), vec!["user".to_string()]),
+            (
+                "site_manager".to_string(),
+                vec![
+                    "manager".to_string(),
+                    "quality".to_string(),
+                    "maintenance".to_string(),
+                ],
+            ),
+            ("admin".to_string(), vec!["site_manager".to_string()]),
+        ]);
+    }
+
+    /// Transitive ancestor chain of a role (parents, grandparents, ...),
+    /// deduplicated, parents first. Empty for roles without parents.
+    pub fn role_ancestors(&self, role: &str) -> Vec<String> {
+        let mut seen = HashSet::new();
+        let mut ancestors = Vec::new();
+        let mut queue: VecDeque<String> = self
+            .role_hierarchy
+            .get(role)
+            .map(|parents| parents.iter().cloned().collect())
+            .unwrap_or_default();
+        while let Some(parent) = queue.pop_front() {
+            if seen.insert(parent.clone()) {
+                ancestors.push(parent.clone());
+                if let Some(grandparents) = self.role_hierarchy.get(&parent) {
+                    queue.extend(grandparents.iter().cloned());
+                }
+            }
+        }
+        ancestors
+    }
+
     /// Check if a user with the given roles has the required permission.
     ///
     /// Check system roles only (static RBAC defaults).
@@ -520,6 +692,11 @@ impl RbacService {
     /// Tenant-aware check: a role grants a permission when it is a system
     /// role OR a custom role defined for THE SAME tenant. A custom role can
     /// never leak across tenants.
+    ///
+    /// Hierarchical (NIST): a role also grants everything its ancestor
+    /// roles grant — `manager` can raise an andon because `operator` is
+    /// its parent. The tenant-scoped custom overlay applies to the exact
+    /// role name only; ancestor resolution is static.
     pub fn has_permission_for_tenant(
         &self,
         user_roles: &[String],
@@ -536,6 +713,15 @@ impl RbacService {
                 for perm in perms {
                     if Self::matches(perm, required_resource, required_action) {
                         return true;
+                    }
+                }
+            }
+            for ancestor in self.role_ancestors(role_name) {
+                if let Some(perms) = self.roles.get(&ancestor) {
+                    for perm in perms {
+                        if Self::matches(perm, required_resource, required_action) {
+                            return true;
+                        }
                     }
                 }
             }
@@ -599,15 +785,22 @@ impl RbacService {
         self.roles.keys().cloned().collect()
     }
 
-    /// Permissions a role grants (system roles only).
+    /// Permissions a role grants (system roles only), including every
+    /// ancestor's permissions (NIST hierarchical RBAC — a role inherits
+    /// its parent roles' permissions).
     pub fn permissions_for_role(&self, role_name: &str) -> Vec<String> {
-        let mut perms: Vec<String> = self
+        let mut perms: HashSet<String> = self
             .roles
             .get(role_name)
             .map(|p| p.iter().cloned().collect())
             .unwrap_or_default();
+        for ancestor in self.role_ancestors(role_name) {
+            if let Some(p) = self.roles.get(&ancestor) {
+                perms.extend(p.iter().cloned());
+            }
+        }
+        let mut perms: Vec<String> = perms.into_iter().collect();
         perms.sort();
-        perms.dedup();
         perms
     }
 

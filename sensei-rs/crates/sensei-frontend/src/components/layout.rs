@@ -88,7 +88,7 @@ pub fn RootLayout(
             </div>
             <footer class="rams-status-bar" role="contentinfo">
                 <div class="rams-status-bar-left">
-                    <span class="dymo-label">"SENSEI-OS"</span>
+                    <span class="dymo-label">"STARZ FORGE"</span>
                     <span class="rams-status-bar-separator">"|"</span>
                     <span class="rams-status-text" title="Application infrastructure only — process status comes from live data">"CONNECTED"</span>
                 </div>

@@ -6780,6 +6780,7 @@ dependencies = [
  "sensei-auth",
  "sensei-core",
  "sensei-services",
+ "sensei-workflow",
  "serde",
  "serde_json",
  "sqlx",
@@ -6903,6 +6904,18 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
+ "uuid",
+]
+
+[[package]]
+name = "sensei-workflow"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "tokio",
  "uuid",
 ]
 
