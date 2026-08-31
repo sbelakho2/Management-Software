@@ -6,10 +6,13 @@
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 pub mod conditions;
+pub mod episodes;
 pub mod flow_economics;
 pub mod learning;
+pub mod lessons;
 pub mod metric_registry;
 pub mod organizational_memory;
+pub mod process_mining;
 pub mod role_analytics;
 pub mod rules;
 pub mod signals;

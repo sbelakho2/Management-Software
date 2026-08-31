@@ -14,7 +14,7 @@ use axum::{
 };
 use sensei_auth::middleware::AuthenticatedUser;
 use sensei_core::error::{Result, SenseiError};
-use sensei_services::tps::skills::{JobStep, SkillCoverage, SkillLevel};
+use sensei_services::tps::skills::{JobStep, SkillCoverage, SkillLevel, TurnoverRisk};
 use serde::Deserialize;
 use uuid::Uuid;
 
@@ -174,5 +174,19 @@ pub async fn coverage(
     user.require_permission("training:read")?;
     let pool = pool_or_err(&state)?;
     let result = sensei_services::tps::skills::skill_coverage(&pool, user.tenant_id).await?;
+    Ok(Json(result))
+}
+
+/// GET /api/v1/skills/turnover-risk — the site-level turnover-resilience
+/// view (fifteenth audit 39/63): single-person knowledge concentration,
+/// trainer coverage, and the key metric "% of critical operations with
+/// >= 2 independent qualified people".
+pub async fn turnover_risk(
+    user: AuthenticatedUser,
+    State(state): State<AppState>,
+) -> Result<Json<TurnoverRisk>> {
+    user.require_permission("training:read")?;
+    let pool = pool_or_err(&state)?;
+    let result = sensei_services::tps::skills::turnover_risk(&pool, user.tenant_id).await?;
     Ok(Json(result))
 }

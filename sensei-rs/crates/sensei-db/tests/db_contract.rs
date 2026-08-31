@@ -4619,3 +4619,645 @@ fn retired_appellation_is_absent_from_surface_assets() {
         violations.join("\n")
     );
 }
+
+// Fifteenth audit 12/14: episode memory is a first-class organizational
+// memory tier with ASSOCIATIVE retrieval — episodes are related through
+// SHARED LINKS (supplier, machine, process...), never through textual
+// similarity. The "connector intermittent failure" and the "crimp force
+// drop" have DISSIMILAR text but associate through the same supplier S1;
+// an episode on an unrelated supplier stays out.
+#[tokio::test]
+async fn episode_memory_associative_retrieval() {
+    let _serial = DB_LOCK.lock().await;
+    let Some(pool) = connect().await else { return };
+    sqlx::query(
+        r#"DO $$ DECLARE r RECORD; BEGIN
+             FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname = 'public') LOOP
+                 EXECUTE format('DROP TABLE IF EXISTS %I CASCADE', r.tablename);
+             END LOOP;
+         END $$"#,
+    )
+    .execute(&pool)
+    .await
+    .expect("drop all tables");
+    sensei_db::migrations::run_migrations(&pool)
+        .await
+        .expect("the ENTIRE migration chain must apply to an empty database");
+
+    let tenant_id = uuid::Uuid::new_v4();
+    sqlx::query("INSERT INTO tenants (id, name, slug) VALUES ($1, 'episodes', 'episodes')")
+        .bind(tenant_id)
+        .execute(&pool)
+        .await
+        .expect("tenant insert");
+
+    use sensei_services::tps::episodes::{find_related, record_episode};
+
+    // A: connector failure on supplier S1 / machine M7.
+    let a = record_episode(
+        &pool,
+        tenant_id,
+        "ncr",
+        "connector intermittent failure",
+        Some("connector loses contact under vibration"),
+        "resolved",
+        Some("replaced connector, tightened spec"),
+        Some(0.9),
+        vec![
+            serde_json::json!({"kind": "supplier", "id": "S1", "label": "S"}),
+            serde_json::json!({"kind": "machine", "id": "M7", "label": "M"}),
+        ],
+        Some("ncr"),
+        Some(uuid::Uuid::new_v4()),
+    )
+    .await
+    .expect("episode A records");
+    // B: crimp force drop on the SAME supplier S1, different process.
+    let b = record_episode(
+        &pool,
+        tenant_id,
+        "ncr",
+        "crimp force drop",
+        Some("crimp height below tolerance"),
+        "open",
+        None,
+        Some(0.7),
+        vec![
+            serde_json::json!({"kind": "supplier", "id": "S1"}),
+            serde_json::json!({"kind": "process", "id": "crimp"}),
+        ],
+        Some("ncr"),
+        Some(uuid::Uuid::new_v4()),
+    )
+    .await
+    .expect("episode B records");
+    // C: an episode on an UNRELATED supplier — text mentions the same
+    // failure mode, but no link is shared.
+    let c = record_episode(
+        &pool,
+        tenant_id,
+        "ncr",
+        "gold plating thickness drift",
+        Some("plating layer below spec on delivery"),
+        "resolved",
+        Some("supplier S2 process audit"),
+        Some(0.8),
+        vec![serde_json::json!({"kind": "supplier", "id": "S2"})],
+        Some("ncr"),
+        Some(uuid::Uuid::new_v4()),
+    )
+    .await
+    .expect("episode C records");
+
+    // Associative probe: just the supplier link. A and B share it; C does
+    // not — no textual similarity is consulted.
+    let related = find_related(
+        &pool,
+        tenant_id,
+        &[serde_json::json!({"kind": "supplier", "id": "S1"})],
+        10,
+    )
+    .await
+    .expect("associative retrieval must run");
+
+    let titles: Vec<&str> = related.iter().map(|e| e.title.as_str()).collect();
+    assert!(
+        titles.contains(&"connector intermittent failure"),
+        "episode A shares supplier S1 with the probe: {titles:?}"
+    );
+    assert!(
+        titles.contains(&"crimp force drop"),
+        "episode B shares supplier S1 with the probe: {titles:?}"
+    );
+    assert!(
+        !titles.contains(&"gold plating thickness drift"),
+        "episode C's supplier S2 is unrelated and must NOT be retrieved: {titles:?}"
+    );
+    assert_eq!(
+        related.len(),
+        2,
+        "exactly the two S1-linked episodes are retrieved: {titles:?}"
+    );
+    assert!(
+        related.iter().all(|e| e.shared_links == Some(1)),
+        "each retrieved episode reports its shared-link count (1): {:?}",
+        related
+            .iter()
+            .map(|e| (e.title.as_str(), e.shared_links))
+            .collect::<Vec<_>>()
+    );
+
+    // The recorded ids round-trip through the single-fetch path.
+    for id in [a, b, c] {
+        sensei_services::tps::episodes::get_episode(&pool, tenant_id, id)
+            .await
+            .expect("recorded episode must be fetchable by id");
+    }
+}
+
+/// Fifteenth audit items 39/63 (turnover risk): the site-level
+/// resilience view — "% of critical operations with >= 2 independent
+/// qualified people" is the key metric (far better than "95% courses
+/// completed"). One critical skill held by exactly ONE person must be
+/// flagged as a single point, while the 2-plus and trainer metrics are
+/// derived from the same skill graph as coverage.
+#[tokio::test]
+async fn turnover_risk_flags_single_point_concentration() {
+    let _serial = DB_LOCK.lock().await;
+    let Some(pool) = connect().await else { return };
+    sqlx::query(
+        r#"DO $$ DECLARE r RECORD; BEGIN
+             FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname = 'public') LOOP
+                 EXECUTE format('DROP TABLE IF EXISTS %I CASCADE', r.tablename);
+             END LOOP;
+         END $$"#,
+    )
+    .execute(&pool)
+    .await
+    .expect("drop all tables");
+    sensei_db::migrations::run_migrations(&pool)
+        .await
+        .expect("the ENTIRE migration chain must apply to an empty database");
+
+    let tenant_id = uuid::Uuid::new_v4();
+    let alice = uuid::Uuid::new_v4();
+    let bob = uuid::Uuid::new_v4();
+    sqlx::query("INSERT INTO tenants (id, name, slug) VALUES ($1, 'turnover', 'turnover')")
+        .bind(tenant_id)
+        .execute(&pool)
+        .await
+        .expect("tenant insert");
+    for (uid, email) in [(alice, "alice@turnover.local"), (bob, "bob@turnover.local")] {
+        sqlx::query(
+            "INSERT INTO users (id, tenant_id, email, name, password_hash) \
+             VALUES ($1, $2, $3, 'W', 'x')",
+        )
+        .bind(uid)
+        .bind(tenant_id)
+        .bind(email)
+        .execute(&pool)
+        .await
+        .expect("user insert");
+    }
+
+    // Skill 1 (CRITICAL): exactly ONE independent person (the trainer) —
+    // the single-person knowledge concentration risk.
+    let aoi = sensei_services::tps::skills::create_skill(
+        &pool,
+        tenant_id,
+        "aoi_programming",
+        "AOI Programming",
+        Some("SMT"),
+        Some("AOI-OP-01"),
+        true,
+    )
+    .await
+    .expect("create critical skill");
+    sensei_services::tps::skills::record_qualification(
+        &pool,
+        tenant_id,
+        alice,
+        aoi,
+        sensei_services::tps::skills::SkillLevel::Trainer,
+        serde_json::json!({"type": "certification", "ref": "AOI-CERT-2026-0417"}),
+    )
+    .await
+    .expect("alice trainer qualification");
+
+    // Skill 2 (CRITICAL): two independent people — the healthy case.
+    let reflow = sensei_services::tps::skills::create_skill(
+        &pool,
+        tenant_id,
+        "reflow_profiling",
+        "Reflow Profiling",
+        Some("SMT"),
+        Some("RF-OP-02"),
+        true,
+    )
+    .await
+    .expect("create critical skill");
+    for (uid, ref_) in [(alice, "RF-CERT-2026-0501"), (bob, "RF-CERT-2026-0515")] {
+        sensei_services::tps::skills::record_qualification(
+            &pool,
+            tenant_id,
+            uid,
+            reflow,
+            sensei_services::tps::skills::SkillLevel::Independent,
+            serde_json::json!({"type": "certification", "ref": ref_}),
+        )
+        .await
+        .expect("independent qualification");
+    }
+
+    // Skill 3 (CRITICAL): NO qualifications at all — untrained gap.
+    sensei_services::tps::skills::create_skill(
+        &pool,
+        tenant_id,
+        "stencil_inspection",
+        "Stencil Inspection",
+        Some("SMT"),
+        Some("SI-OP-03"),
+        true,
+    )
+    .await
+    .expect("create critical skill");
+
+    let risk = sensei_services::tps::skills::turnover_risk(&pool, tenant_id)
+        .await
+        .expect("turnover risk must compute");
+    assert_eq!(risk.critical_skills, 3);
+    assert_eq!(
+        risk.single_point_skills, 1,
+        "AOI is held by exactly one person"
+    );
+    assert_eq!(risk.single_point_ratio, 1.0 / 3.0);
+    assert_eq!(
+        risk.critical_with_2plus, 1,
+        "only reflow profiling has >= 2 independent people"
+    );
+    assert_eq!(
+        risk.critical_2plus_ratio,
+        1.0 / 3.0,
+        "1 of 3 critical operations has >= 2 independent people"
+    );
+    assert_eq!(
+        risk.trainer_coverage,
+        1.0 / 3.0,
+        "only AOI has a qualified trainer"
+    );
+    assert!(
+        risk.guidance.iter().any(|g| g.contains("SINGLE person")),
+        "guidance must warn about the single-person concentration"
+    );
+    assert!(
+        risk.guidance
+            .iter()
+            .any(|g| g.contains("no qualified trainer")),
+        "guidance must flag the trainer gap"
+    );
+    assert_eq!(risk.knowledge_concentration.len(), 1);
+    assert_eq!(
+        risk.knowledge_concentration[0].skill_id, "aoi_programming",
+        "the single-point skill must appear in knowledge concentration"
+    );
+    assert!(risk.knowledge_concentration[0].single_point);
+}
+
+/// Fifteenth audit items 34/35/99: process mining on the operational
+/// events log — Forge learns the EXPECTED canonical path vs the ACTUAL
+/// path. Conformance checking surfaces deviations (a step skipped, e.g.
+/// containment), and hidden-loop detection finds conditions that close
+/// and REOPEN. The loop signal comes FROM HISTORY — the report never
+/// announces "you are now practicing TPS".
+#[tokio::test]
+async fn process_mining_detects_hidden_loop() {
+    let _serial = DB_LOCK.lock().await;
+    let Some(pool) = connect().await else { return };
+    // Fresh-database guarantee: the event log must exist on an EMPTY
+    // database that survives the entire migration chain.
+    sqlx::query(
+        r#"DO $$ DECLARE r RECORD; BEGIN
+             FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname = 'public') LOOP
+                 EXECUTE format('DROP TABLE IF EXISTS %I CASCADE', r.tablename);
+             END LOOP;
+         END $$"#,
+    )
+    .execute(&pool)
+    .await
+    .expect("drop all tables");
+    sensei_db::migrations::run_migrations(&pool)
+        .await
+        .expect("the ENTIRE migration chain must apply to an empty database");
+
+    // FK prerequisite: a real tenant owns the event log rows.
+    let tenant_id = uuid::Uuid::new_v4();
+    sqlx::query("INSERT INTO tenants (id, name, slug) VALUES ($1, 'pm', 'process-mining')")
+        .bind(tenant_id)
+        .execute(&pool)
+        .await
+        .expect("tenant insert");
+
+    // Two andon entities. Entity A: raised -> acknowledged -> closed,
+    // SKIPPING contained — a deviation from the canonical path. Entity B:
+    // raised -> closed -> raised — the condition closed and REOPENED (a
+    // hidden loop). Each event links its entity through the objects JSONB.
+    let entity_a = uuid::Uuid::new_v4();
+    let entity_b = uuid::Uuid::new_v4();
+    let objects_a = serde_json::json!([{ "object_type": "andon", "object_id": entity_a }]);
+    let objects_b = serde_json::json!([{ "object_type": "andon", "object_id": entity_b }]);
+    let base = chrono::Utc::now() - chrono::Duration::days(3);
+
+    // Entity A: deviation path (contained skipped).
+    sqlx::query(
+        "INSERT INTO operational_events \
+                (id, tenant_id, event_type, occurred_at, recorded_at, scope_site_id, actor_id, \
+                 objects, source_system, source_id, sensitivity, payload, sequence) \
+             VALUES ($1, $2, 'andon.raised', $3, NOW(), NULL, NULL, $4, 'sensei', NULL, 'internal', '{}', 1)",
+    )
+    .bind(uuid::Uuid::new_v4())
+    .bind(tenant_id)
+    .bind(base)
+    .bind(objects_a.clone())
+    .execute(&pool)
+    .await
+    .expect("entity A raised event");
+    sqlx::query(
+        "INSERT INTO operational_events \
+                (id, tenant_id, event_type, occurred_at, recorded_at, scope_site_id, actor_id, \
+                 objects, source_system, source_id, sensitivity, payload, sequence) \
+             VALUES ($1, $2, 'andon.acknowledged', $3, NOW(), NULL, NULL, $4, 'sensei', NULL, 'internal', '{}', 1)",
+    )
+    .bind(uuid::Uuid::new_v4())
+    .bind(tenant_id)
+    .bind(base + chrono::Duration::minutes(1))
+    .bind(objects_a.clone())
+    .execute(&pool)
+    .await
+    .expect("entity A acknowledged event");
+    sqlx::query(
+        "INSERT INTO operational_events \
+                (id, tenant_id, event_type, occurred_at, recorded_at, scope_site_id, actor_id, \
+                 objects, source_system, source_id, sensitivity, payload, sequence) \
+             VALUES ($1, $2, 'andon.closed', $3, NOW(), NULL, NULL, $4, 'sensei', NULL, 'internal', '{}', 1)",
+    )
+    .bind(uuid::Uuid::new_v4())
+    .bind(tenant_id)
+    .bind(base + chrono::Duration::minutes(2))
+    .bind(objects_a.clone())
+    .execute(&pool)
+    .await
+    .expect("entity A closed event");
+    // Entity B: hidden loop / reopen — raised again after closing.
+    sqlx::query(
+        "INSERT INTO operational_events \
+                (id, tenant_id, event_type, occurred_at, recorded_at, scope_site_id, actor_id, \
+                 objects, source_system, source_id, sensitivity, payload, sequence) \
+             VALUES ($1, $2, 'andon.raised', $3, NOW(), NULL, NULL, $4, 'sensei', NULL, 'internal', '{}', 1)",
+    )
+    .bind(uuid::Uuid::new_v4())
+    .bind(tenant_id)
+    .bind(base + chrono::Duration::minutes(10))
+    .bind(objects_b.clone())
+    .execute(&pool)
+    .await
+    .expect("entity B raised event");
+    sqlx::query(
+        "INSERT INTO operational_events \
+                (id, tenant_id, event_type, occurred_at, recorded_at, scope_site_id, actor_id, \
+                 objects, source_system, source_id, sensitivity, payload, sequence) \
+             VALUES ($1, $2, 'andon.closed', $3, NOW(), NULL, NULL, $4, 'sensei', NULL, 'internal', '{}', 1)",
+    )
+    .bind(uuid::Uuid::new_v4())
+    .bind(tenant_id)
+    .bind(base + chrono::Duration::minutes(11))
+    .bind(objects_b.clone())
+    .execute(&pool)
+    .await
+    .expect("entity B closed event");
+    sqlx::query(
+        "INSERT INTO operational_events \
+                (id, tenant_id, event_type, occurred_at, recorded_at, scope_site_id, actor_id, \
+                 objects, source_system, source_id, sensitivity, payload, sequence) \
+             VALUES ($1, $2, 'andon.raised', $3, NOW(), NULL, NULL, $4, 'sensei', NULL, 'internal', '{}', 1)",
+    )
+    .bind(uuid::Uuid::new_v4())
+    .bind(tenant_id)
+    .bind(base + chrono::Duration::minutes(12))
+    .bind(objects_b)
+    .execute(&pool)
+    .await
+    .expect("entity B reopen event");
+
+    let report =
+        sensei_services::tps::process_mining::conformance_report(&pool, tenant_id, "andon", 30)
+            .await
+            .expect("conformance report must build");
+
+    // The EXPECTED canonical path for an andon.
+    assert_eq!(
+        report.expected_path,
+        vec![
+            "raised",
+            "acknowledged",
+            "contained",
+            "investigated",
+            "verified",
+            "closed"
+        ],
+        "the canonical andon path is fixed"
+    );
+
+    // DEVIATION: acknowledged -> closed is NOT adjacent in the expected
+    // path — contained is expected between them.
+    assert!(
+        report
+            .deviations
+            .iter()
+            .any(|d| d.contains("acknowledged -> closed")),
+        "acknowledged -> closed must be a deviation (contained was skipped), got: {:?}",
+        report.deviations
+    );
+
+    // HIDDEN LOOP: entity B reopened — 'andon.raised' appears twice in
+    // its sequence, and the guidance speaks about the CONDITION, not TPS.
+    assert!(
+        report
+            .hidden_loops
+            .iter()
+            .any(|l| l.condition_key == "andon.raised"
+                && l.reopen_count >= 1
+                && l.guidance.contains("this condition keeps recurring")),
+        "the reopened andon must be a hidden loop, got: {:?}",
+        report.hidden_loops
+    );
+    assert!(
+        report
+            .hidden_loops
+            .iter()
+            .any(|l| !l.guidance.contains("practicing TPS")),
+        "the report never announces 'you are now practicing TPS'"
+    );
+}
+
+/// Fifteenth audit items 46-47 + law A19 (lessons + yokoten): explicit
+/// lesson objects carry a context_signature and an APPLICABILITY rule.
+/// Cross-site transfer is an EXPERIMENT, never blind replication — a
+/// lesson from another site is OFFERED as a comparison ("a similar issue
+/// was resolved elsewhere — would you like to compare conditions?"), and
+/// the local team verifies applicability BEFORE adoption. The ladder
+/// proposed -> verified (locally) -> adopted encodes that gate.
+#[tokio::test]
+async fn lesson_lifecycle_yokoten_experiment() {
+    let _serial = DB_LOCK.lock().await;
+    let Some(pool) = connect().await else { return };
+    sqlx::query(
+        r#"DO $$ DECLARE r RECORD; BEGIN
+             FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname = 'public') LOOP
+                 EXECUTE format('DROP TABLE IF EXISTS %I CASCADE', r.tablename);
+             END LOOP;
+         END $$"#,
+    )
+    .execute(&pool)
+    .await
+    .expect("drop all tables");
+    sensei_db::migrations::run_migrations(&pool)
+        .await
+        .expect("the ENTIRE migration chain must apply to an empty database");
+
+    let tenant_id = uuid::Uuid::new_v4();
+    sqlx::query("INSERT INTO tenants (id, name, slug) VALUES ($1, 'lessons', 'lessons')")
+        .bind(tenant_id)
+        .execute(&pool)
+        .await
+        .expect("tenant insert");
+
+    use sensei_services::tps::lessons::{
+        adopt, mark_verified, record_lesson, yokoten_match, NewLesson,
+    };
+
+    async fn read_status(pool: &sqlx::PgPool, tenant_id: uuid::Uuid, lesson_id: &str) -> String {
+        let mut tx = pool.begin().await.expect("begin read tx");
+        sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
+            .bind(tenant_id.to_string())
+            .execute(&mut *tx)
+            .await
+            .expect("set tenant context");
+        let status: String = sqlx::query_scalar(
+            "SELECT status FROM lessons WHERE tenant_id = $1 AND lesson_id = $2",
+        )
+        .bind(tenant_id)
+        .bind(lesson_id)
+        .fetch_one(&mut *tx)
+        .await
+        .expect("read lesson status");
+        tx.commit().await.expect("read commit");
+        status
+    }
+
+    let new_lesson = |lesson_id: &str, machine_family: &str, paste_family: &str| NewLesson {
+        lesson_id: lesson_id.to_string(),
+        title: "lesson".to_string(),
+        source_problem_id: None,
+        context_signature: serde_json::json!({
+            "machine_family": machine_family,
+            "paste_family": paste_family,
+        }),
+        hypothesis: None,
+        countermeasure: "countermeasure".to_string(),
+        observed_result: serde_json::json!({ "result": "reduced" }),
+        confidence: Some(0.9),
+        applicability: serde_json::json!({
+            "machine_families": [machine_family],
+            "processes": ["smt"],
+        }),
+        origin_site_id: None,
+    };
+
+    // A lesson always enters the ladder as `proposed`.
+    let a = record_lesson(&pool, tenant_id, new_lesson("lesson-a", "AOI", "P1"))
+        .await
+        .expect("record lesson a");
+    assert_eq!(
+        read_status(&pool, tenant_id, "lesson-a").await,
+        "proposed",
+        "every lesson starts proposed — the yokoten offer is not auto-accepted"
+    );
+
+    // Local verification FAILED: the experiment did not pass here.
+    mark_verified(&pool, tenant_id, a, false)
+        .await
+        .expect("mark rejected");
+    assert_eq!(
+        read_status(&pool, tenant_id, "lesson-a").await,
+        "rejected",
+        "failed local verification rejects the lesson"
+    );
+
+    // Second lesson: verified locally, then adopted — the full ladder.
+    let b = record_lesson(&pool, tenant_id, new_lesson("lesson-b", "AOI", "P2"))
+        .await
+        .expect("record lesson b");
+    mark_verified(&pool, tenant_id, b, true)
+        .await
+        .expect("mark verified");
+    assert_eq!(
+        read_status(&pool, tenant_id, "lesson-b").await,
+        "verified",
+        "passing local verification promotes proposed -> verified"
+    );
+    adopt(&pool, tenant_id, b).await.expect("adopt");
+    assert_eq!(
+        read_status(&pool, tenant_id, "lesson-b").await,
+        "adopted",
+        "verified -> adopted completes the ladder"
+    );
+
+    // A VERIFIED lesson remains in the yokoten offer pool (shared
+    // machine_family key with the local context).
+    let c = record_lesson(&pool, tenant_id, new_lesson("lesson-c", "AOI", "P3"))
+        .await
+        .expect("record lesson c");
+    mark_verified(&pool, tenant_id, c, true)
+        .await
+        .expect("verify lesson c");
+
+    // An UNRELATED lesson (different machine family) is verified too, so
+    // the yokoten filter must exclude it by SIGNATURE, not by status.
+    let d = record_lesson(&pool, tenant_id, new_lesson("lesson-d", "LAM", "Q1"))
+        .await
+        .expect("record lesson d");
+    mark_verified(&pool, tenant_id, d, true)
+        .await
+        .expect("verify lesson d");
+
+    // Status guards: adopting a rejected or a still-proposed lesson fails.
+    assert!(
+        adopt(&pool, tenant_id, a).await.is_err(),
+        "a REJECTED lesson cannot be adopted"
+    );
+    let e = record_lesson(&pool, tenant_id, new_lesson("lesson-e", "AOI", "P1"))
+        .await
+        .expect("record lesson e");
+    assert_eq!(
+        read_status(&pool, tenant_id, "lesson-e").await,
+        "proposed",
+        "lesson e stays proposed"
+    );
+    assert!(
+        adopt(&pool, tenant_id, e).await.is_err(),
+        "a PROPOSED lesson cannot be adopted before local verification"
+    );
+
+    // Yokoten: the local context shares machine_family 'AOI' with
+    // lesson-c — it is OFFERED as a comparison. lesson-d is unrelated,
+    // lesson-a is rejected, lesson-b is already adopted: none offered.
+    let matches = yokoten_match(
+        &pool,
+        tenant_id,
+        serde_json::json!({ "machine_family": "AOI", "paste_family": "P2" }),
+    )
+    .await
+    .expect("yokoten match must run");
+    assert!(
+        matches.iter().any(|l| l.lesson_id == "lesson-c"),
+        "verified lesson sharing the machine_family key is offered"
+    );
+    assert!(
+        !matches.iter().any(|l| l.lesson_id == "lesson-d"),
+        "an unrelated lesson is NOT offered"
+    );
+    assert!(
+        !matches.iter().any(|l| l.lesson_id == "lesson-a"),
+        "a rejected lesson is NOT re-offered"
+    );
+    assert!(
+        !matches.iter().any(|l| l.lesson_id == "lesson-b"),
+        "an adopted lesson is NOT re-offered"
+    );
+    assert!(
+        matches
+            .iter()
+            .all(|l| l.status == "verified" || l.status == "proposed"),
+        "only proposed/verified lessons are offered for comparison"
+    );
+}

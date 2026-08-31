@@ -6,9 +6,11 @@
 //! server-created context, risk-annotated tools, evidence-carrying
 //! results, a classified claim ledger and a deterministic verifier.
 
+pub mod cache;
 pub mod claims;
 pub mod context;
 pub mod context_kernel;
 pub mod evidence;
+pub mod retrieval;
 pub mod tools;
 pub mod verifier;

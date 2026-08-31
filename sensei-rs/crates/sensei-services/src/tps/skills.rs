@@ -313,3 +313,78 @@ pub async fn skill_coverage(pool: &sqlx::PgPool, tenant_id: Uuid) -> Result<Vec<
     })
     .await
 }
+
+/// Turnover resilience (fifteenth audit 39/63): the site-level risk
+/// view — how many people can run each critical operation, where
+/// knowledge concentrates in ONE person, and whether trainers exist.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct TurnoverRisk {
+    pub critical_skills: i64,
+    pub single_point_skills: i64, // exactly one independent person
+    pub single_point_ratio: f64,
+    pub critical_with_2plus: i64,  // the key metric: >= 2 independent
+    pub critical_2plus_ratio: f64, // % of critical ops with >= 2 independent
+    pub trainer_coverage: f64,     // share of critical skills with >= 1 trainer
+    pub knowledge_concentration: Vec<SkillCoverage>, // the single-point list
+    pub guidance: Vec<String>,
+}
+
+/// The continuous turnover-resilience view (audit item 39): computed
+/// from the same skill graph as coverage, always available.
+pub async fn turnover_risk(pool: &sqlx::PgPool, tenant_id: Uuid) -> Result<TurnoverRisk> {
+    // Reuse skill_coverage (computed over ALL skills with the critical
+    // flag, not just critical ones); derive the site-level risk view:
+    //   critical_skills = count of critical skills
+    //   single_point_skills = count where single_point
+    //   critical_with_2plus = count of critical skills with independent_count >= 2
+    //   trainer_coverage = critical skills with trainer_count >= 1 / critical_skills
+    let coverage = skill_coverage(pool, tenant_id).await?;
+    let critical: Vec<&SkillCoverage> = coverage.iter().filter(|c| c.critical).collect();
+    let critical_skills = critical.len() as i64;
+    let single_point_skills = critical.iter().filter(|c| c.single_point).count() as i64;
+    let critical_with_2plus = critical.iter().filter(|c| c.independent_count >= 2).count() as i64;
+    let trained = critical.iter().filter(|c| c.trainer_count >= 1).count() as f64;
+    let no_trainer = critical.iter().filter(|c| c.trainer_count == 0).count();
+
+    let ratio = |n: i64| -> f64 {
+        if critical_skills == 0 {
+            0.0
+        } else {
+            n as f64 / critical_skills as f64
+        }
+    };
+
+    let mut guidance = Vec::new();
+    if single_point_skills > 0 {
+        guidance.push(format!(
+            "{single_point_skills} critical operation(s) depend on a SINGLE person — cross-train now"
+        ));
+    }
+    if no_trainer > 0 {
+        guidance.push(format!(
+            "{no_trainer} critical skill(s) have no qualified trainer"
+        ));
+    }
+    if critical_skills > 0 && single_point_skills == 0 && no_trainer == 0 {
+        guidance.push("critical operations are covered by >= 2 independent people".to_string());
+    }
+
+    Ok(TurnoverRisk {
+        critical_skills,
+        single_point_skills,
+        single_point_ratio: ratio(single_point_skills),
+        critical_with_2plus,
+        critical_2plus_ratio: ratio(critical_with_2plus),
+        trainer_coverage: if critical_skills == 0 {
+            0.0
+        } else {
+            trained / critical_skills as f64
+        },
+        knowledge_concentration: critical
+            .iter()
+            .filter(|c| c.single_point)
+            .map(|c| (*c).clone())
+            .collect(),
+        guidance,
+    })
+}

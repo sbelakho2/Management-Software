@@ -1169,6 +1169,10 @@ pub fn build_router(state: AppState) -> Router {
             post(routes::organizational_memory::approve),
         )
         .route("/api/v1/memory", get(routes::organizational_memory::list))
+        // ── Episode Memory Routes (fifteenth audit 12/14) ──────────
+        .route("/api/v1/episodes", post(routes::episodes::record))
+        .route("/api/v1/episodes/related", post(routes::episodes::related))
+        .route("/api/v1/episodes/{id}", get(routes::episodes::get))
         // ── Supply Chain Routes ───────────────────────────────────
         .route(
             "/api/v1/supply-chain/rfqs",
@@ -2109,6 +2113,25 @@ pub fn build_router(state: AppState) -> Router {
             "/api/v1/tps/flow-economics/waste",
             get(routes::flow_economics::finance_waste),
         )
+        // ── Lesson Routes (fifteenth audit 46-47/A19): yokoten is an
+        //    EXPERIMENT — offered as a comparison, verified locally,
+        //    adopted only after the local verification passes. ─────────
+        .route("/api/v1/lessons", post(routes::lessons::create))
+        .route("/api/v1/lessons/{id}/verify", post(routes::lessons::verify))
+        .route(
+            "/api/v1/lessons/{id}/adopt",
+            post(routes::lessons::adopt_handler),
+        )
+        .route("/api/v1/lessons/yokoten", post(routes::lessons::yokoten))
+        // ── Process Mining Routes (fifteenth audit 34/35/99) ──────────
+        .route(
+            "/api/v1/process-mining/conformance",
+            get(routes::process_mining::conformance),
+        )
+        .route(
+            "/api/v1/process-mining/path",
+            get(routes::process_mining::path),
+        )
         .route(
             "/api/v1/knowledge-graph/edges",
             post(routes::knowledge_graph::record_edge),
@@ -2293,6 +2316,10 @@ pub fn build_router(state: AppState) -> Router {
         // ── TWI Skills Routes (fifteenth audit 37-39) ─────────────────────
         .route("/api/v1/skills", post(routes::skills::create_skill))
         .route("/api/v1/skills/coverage", get(routes::skills::coverage))
+        .route(
+            "/api/v1/skills/turnover-risk",
+            get(routes::skills::turnover_risk),
+        )
         .route(
             "/api/v1/skills/{skill_id}/standards",
             post(routes::skills::create_job_standard),
