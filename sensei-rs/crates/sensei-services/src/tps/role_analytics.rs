@@ -17,6 +17,7 @@
 //!   priority ([`ANALYTICS_ROLE_PRIORITY`]), never by the arbitrary order
 //!   of the user's roles vector.
 use chrono::{DateTime, Utc};
+use sensei_core::db::tenant_tx::TenantTx;
 use sensei_core::error::{Result, SenseiError};
 use sqlx::PgPool;
 use uuid::Uuid;
@@ -144,7 +145,10 @@ fn require_scope(role: &str, site_id: Option<Uuid>, work_center_id: Option<Uuid>
 /// the SCOPE (site + work center) restricts every query — an operator
 /// never sees another line's queue, the plan-vs-actual is always
 /// target/actual/delta/first divergence, and the scope gate (item 31)
-/// denies unscoped calls before any query runs.
+/// denies unscoped calls before any query runs. EVERY read runs inside
+/// ONE [`TenantTx`] (sixteenth audit items 21/83): the RLS tenant context
+/// is construction-time — a raw-pool read would depend on connection/RLS
+/// configuration instead of the typed handle.
 pub async fn build_role_analytics(
     pool: &PgPool,
     tenant_id: Uuid,
@@ -153,6 +157,10 @@ pub async fn build_role_analytics(
     work_center_id: Option<Uuid>,
 ) -> Result<RoleAnalytics> {
     require_scope(role, site_id, work_center_id)?;
+
+    let mut ttx = TenantTx::begin(pool, tenant_id)
+        .await
+        .map_err(|e| SenseiError::Database(format!("role analytics: begin tenant tx: {e}")))?;
 
     let mut analytics = RoleAnalytics {
         role: role.to_string(),
@@ -169,18 +177,18 @@ pub async fn build_role_analytics(
     match role {
         // Work-center roles: the caller's OWN work center.
         "operator" | "team_lead" => {
-            collect_work_center_view(pool, tenant_id, site_id, work_center_id, &mut analytics)
+            collect_work_center_view(&mut ttx, tenant_id, site_id, work_center_id, &mut analytics)
                 .await?;
         }
         // Site roles: the aggregate flow view of the caller's site.
         "manager" | "site_manager" | "quality" | "planner" | "supervisor" => {
-            collect_site_view(pool, tenant_id, site_id, work_center_id, &mut analytics).await?;
+            collect_site_view(&mut ttx, tenant_id, site_id, work_center_id, &mut analytics).await?;
         }
         // Distinct supply/finance/readiness roles (item 29).
-        "buyer" => collect_buyer_view(pool, tenant_id, site_id, &mut analytics).await?,
+        "buyer" => collect_buyer_view(&mut ttx, tenant_id, site_id, &mut analytics).await?,
         "material_controller" => {
             collect_material_controller_view(
-                pool,
+                &mut ttx,
                 tenant_id,
                 site_id,
                 work_center_id,
@@ -189,10 +197,11 @@ pub async fn build_role_analytics(
             .await?;
         }
         "npi" => {
-            collect_npi_view(pool, tenant_id, site_id, work_center_id, &mut analytics).await?;
+            collect_npi_view(&mut ttx, tenant_id, site_id, work_center_id, &mut analytics).await?;
         }
         "finance" => {
-            collect_finance_view(pool, tenant_id, site_id, work_center_id, &mut analytics).await?;
+            collect_finance_view(&mut ttx, tenant_id, site_id, work_center_id, &mut analytics)
+                .await?;
         }
         other => {
             return Err(SenseiError::Validation(format!(
@@ -205,16 +214,21 @@ pub async fn build_role_analytics(
 
     // Shared, scope-restricted: open conditions feed ABNORMAL/WHY/NEXT,
     // recurring conditions feed LEARN — for EVERY role.
-    collect_conditions(pool, tenant_id, site_id, work_center_id, &mut analytics).await?;
+    collect_conditions(&mut ttx, tenant_id, site_id, work_center_id, &mut analytics).await?;
+
+    ttx.commit()
+        .await
+        .map_err(|e| SenseiError::Database(format!("role analytics: commit tenant tx: {e}")))?;
 
     Ok(analytics)
 }
 
 /// Operator/team-lead view: the caller's own work center — andons, pitch
 /// gaps, today's production, material starvation, skill coverage, last
-/// abnormality. Every query is restricted by work_center_id (or site).
+/// abnormality. Every query is restricted by work_center_id (or site) and
+/// runs on the shared [`TenantTx`].
 async fn collect_work_center_view(
-    pool: &PgPool,
+    ttx: &mut TenantTx<'_>,
     tenant_id: Uuid,
     site_id: Option<Uuid>,
     work_center_id: Option<Uuid>,
@@ -245,7 +259,7 @@ async fn collect_work_center_view(
         .bind(tenant_id)
         .bind(work_center_id)
         .bind(site_id)
-        .fetch_all(pool)
+        .fetch_all(&mut **ttx.tx())
         .await
         .map_err(|e| SenseiError::Database(format!("role analytics: andons in scope: {e}")))?;
 
@@ -324,7 +338,7 @@ async fn collect_work_center_view(
         .bind(tenant_id)
         .bind(work_center_id)
         .bind(site_id)
-        .fetch_all(pool)
+        .fetch_all(&mut **ttx.tx())
         .await
         .map_err(|e| SenseiError::Database(format!("role analytics: pitch gaps: {e}")))?;
 
@@ -410,7 +424,7 @@ async fn collect_work_center_view(
     .bind(tenant_id)
     .bind(work_center_id)
     .bind(site_id)
-    .fetch_one(pool)
+    .fetch_one(&mut **ttx.tx())
     .await
     .map_err(|e| SenseiError::Database(format!("role analytics: production events: {e}")))?;
 
@@ -444,12 +458,14 @@ async fn collect_work_center_view(
 
     // Skill coverage (qualifications): optional surface — a missing or
     // differently-shaped skills table degrades to no line, never an error.
+    // The catalog probe stays readable for any role; the tenant-domain
+    // count itself runs on the TenantTx (admitted by RLS).
     let skills_readable: bool = sqlx::query_scalar(
         "SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'employee_skills') \
             AND EXISTS (SELECT 1 FROM information_schema.columns \
                         WHERE table_name = 'employee_skills' AND column_name = 'work_center_id')",
     )
-    .fetch_one(pool)
+    .fetch_one(&mut **ttx.tx())
     .await
     .unwrap_or(false);
     if skills_readable {
@@ -462,7 +478,7 @@ async fn collect_work_center_view(
         )
         .bind(tenant_id)
         .bind(work_center_id)
-        .fetch_one(pool)
+        .fetch_one(&mut **ttx.tx())
         .await
         {
             let line = AnalyticLine::fact(
@@ -495,7 +511,7 @@ async fn collect_work_center_view(
     .bind(tenant_id)
     .bind(work_center_id)
     .bind(site_id)
-    .fetch_optional(pool)
+    .fetch_optional(&mut **ttx.tx())
     .await
     .map_err(|e| SenseiError::Database(format!("role analytics: last abnormality: {e}")))?;
     if let Some((number, subject_type, created_at)) = last {
@@ -515,7 +531,7 @@ async fn collect_work_center_view(
 /// Manager/site view: flow, WIP, scrap and andon response aggregated over
 /// the caller's site (work center still narrows when present).
 async fn collect_site_view(
-    pool: &PgPool,
+    ttx: &mut TenantTx<'_>,
     tenant_id: Uuid,
     site_id: Option<Uuid>,
     work_center_id: Option<Uuid>,
@@ -534,7 +550,7 @@ async fn collect_site_view(
     .bind(tenant_id)
     .bind(work_center_id)
     .bind(site_id)
-    .fetch_one(pool)
+    .fetch_one(&mut **ttx.tx())
     .await
     .map_err(|e| SenseiError::Database(format!("role analytics: open work orders: {e}")))?;
 
@@ -566,7 +582,7 @@ async fn collect_site_view(
     .bind(tenant_id)
     .bind(work_center_id)
     .bind(site_id)
-    .fetch_one(pool)
+    .fetch_one(&mut **ttx.tx())
     .await
     .map_err(|e| SenseiError::Database(format!("role analytics: scrap: {e}")))?;
 
@@ -601,7 +617,7 @@ async fn collect_site_view(
     .bind(tenant_id)
     .bind(work_center_id)
     .bind(site_id)
-    .fetch_one(pool)
+    .fetch_one(&mut **ttx.tx())
     .await
     .map_err(|e| SenseiError::Database(format!("role analytics: open andons: {e}")))?;
 
@@ -636,7 +652,7 @@ async fn collect_site_view(
     .bind(tenant_id)
     .bind(work_center_id)
     .bind(site_id)
-    .fetch_one(pool)
+    .fetch_one(&mut **ttx.tx())
     .await
     .map_err(|e| SenseiError::Database(format!("role analytics: andon response: {e}")))?;
 
@@ -665,7 +681,7 @@ async fn collect_site_view(
     .bind(tenant_id)
     .bind(work_center_id)
     .bind(site_id)
-    .fetch_all(pool)
+    .fetch_all(&mut **ttx.tx())
     .await
     .map_err(|e| SenseiError::Database(format!("role analytics: andon numbers: {e}")))?;
 
@@ -682,7 +698,7 @@ async fn collect_site_view(
 /// (item 31) is the available boundary; when POs gain a site column the
 /// site_id binding belongs here.
 async fn collect_buyer_view(
-    pool: &PgPool,
+    ttx: &mut TenantTx<'_>,
     tenant_id: Uuid,
     site_id: Option<Uuid>,
     a: &mut RoleAnalytics,
@@ -695,7 +711,7 @@ async fn collect_buyer_view(
            AND po.status NOT IN ('received', 'cancelled', 'closed')",
     )
     .bind(tenant_id)
-    .fetch_one(pool)
+    .fetch_one(&mut **ttx.tx())
     .await
     .map_err(|e| SenseiError::Database(format!("role analytics: buyer open POs: {e}")))?;
 
@@ -728,7 +744,7 @@ async fn collect_buyer_view(
          LIMIT 10",
     )
     .bind(tenant_id)
-    .fetch_all(pool)
+    .fetch_all(&mut **ttx.tx())
     .await
     .map_err(|e| SenseiError::Database(format!("role analytics: buyer past-due POs: {e}")))?;
 
@@ -754,7 +770,7 @@ async fn collect_buyer_view(
 /// orders whose product has ZERO inventory balance (the simplified
 /// starvation proxy: no stock to pull from).
 async fn collect_material_controller_view(
-    pool: &PgPool,
+    ttx: &mut TenantTx<'_>,
     tenant_id: Uuid,
     site_id: Option<Uuid>,
     work_center_id: Option<Uuid>,
@@ -773,7 +789,7 @@ async fn collect_material_controller_view(
     .bind(tenant_id)
     .bind(site_id)
     .bind(work_center_id)
-    .fetch_one(pool)
+    .fetch_one(&mut **ttx.tx())
     .await
     .map_err(|e| SenseiError::Database(format!("role analytics: starvation risk: {e}")))?;
 
@@ -813,7 +829,7 @@ async fn collect_material_controller_view(
     .bind(tenant_id)
     .bind(site_id)
     .bind(work_center_id)
-    .fetch_all(pool)
+    .fetch_all(&mut **ttx.tx())
     .await
     .map_err(|e| SenseiError::Database(format!("role analytics: starvation list: {e}")))?;
 
@@ -836,7 +852,7 @@ async fn collect_material_controller_view(
 /// created less than 90 days ago (the newest products are the least
 /// likely to have proven, stable standard work).
 async fn collect_npi_view(
-    pool: &PgPool,
+    ttx: &mut TenantTx<'_>,
     tenant_id: Uuid,
     site_id: Option<Uuid>,
     work_center_id: Option<Uuid>,
@@ -855,7 +871,7 @@ async fn collect_npi_view(
     .bind(tenant_id)
     .bind(site_id)
     .bind(work_center_id)
-    .fetch_one(pool)
+    .fetch_one(&mut **ttx.tx())
     .await
     .map_err(|e| SenseiError::Database(format!("role analytics: npi readiness: {e}")))?;
 
@@ -888,7 +904,7 @@ async fn collect_npi_view(
     .bind(tenant_id)
     .bind(site_id)
     .bind(work_center_id)
-    .fetch_all(pool)
+    .fetch_all(&mut **ttx.tx())
     .await
     .map_err(|e| SenseiError::Database(format!("role analytics: npi list: {e}")))?;
 
@@ -914,7 +930,7 @@ async fn collect_npi_view(
 /// work orders multiplied by the product's standard cost (the
 /// premium-freight-style proxy: defects carry real, quantified cost).
 async fn collect_finance_view(
-    pool: &PgPool,
+    ttx: &mut TenantTx<'_>,
     tenant_id: Uuid,
     site_id: Option<Uuid>,
     work_center_id: Option<Uuid>,
@@ -933,7 +949,7 @@ async fn collect_finance_view(
     .bind(tenant_id)
     .bind(site_id)
     .bind(work_center_id)
-    .fetch_one(pool)
+    .fetch_one(&mut **ttx.tx())
     .await
     .map_err(|e| SenseiError::Database(format!("role analytics: scrap value: {e}")))?;
 
@@ -978,7 +994,7 @@ async fn collect_finance_view(
     .bind(tenant_id)
     .bind(site_id)
     .bind(work_center_id)
-    .fetch_all(pool)
+    .fetch_all(&mut **ttx.tx())
     .await
     .map_err(|e| SenseiError::Database(format!("role analytics: scrap list: {e}")))?;
 
@@ -1002,7 +1018,7 @@ async fn collect_finance_view(
 /// deterministic why/next); recurring conditions (recurrence_count >= 2)
 /// feed LEARN.
 async fn collect_conditions(
-    pool: &PgPool,
+    ttx: &mut TenantTx<'_>,
     tenant_id: Uuid,
     site_id: Option<Uuid>,
     work_center_id: Option<Uuid>,
@@ -1021,7 +1037,7 @@ async fn collect_conditions(
     .bind(tenant_id)
     .bind(work_center_id)
     .bind(site_id)
-    .fetch_all(pool)
+    .fetch_all(&mut **ttx.tx())
     .await
     .map_err(|e| SenseiError::Database(format!("role analytics: conditions: {e}")))?;
 
@@ -1059,7 +1075,7 @@ async fn collect_conditions(
     .bind(tenant_id)
     .bind(work_center_id)
     .bind(site_id)
-    .fetch_all(pool)
+    .fetch_all(&mut **ttx.tx())
     .await
     .map_err(|e| SenseiError::Database(format!("role analytics: recurring conditions: {e}")))?;
 

@@ -144,7 +144,7 @@
           "recipientNameOptional": "Nom (facultatif)",
           "keyPoint": "Ajouter un point clé",
           "senderName": "ex : Alex Morgan",
-          "senderEmail": "ex : alex@sensei.com",
+          "senderEmail": "ex : admin@starzforge.local",
           "senderTitle": "ex : Responsable de Compte",
           "companyName": "ex : Starz Forge SAS",
           "threadEntityType": "Sélectionner l'entité du fil...",
@@ -237,7 +237,7 @@
         },
         "defaults": {
           "senderName": "Opérateur Starz Forge",
-          "senderEmail": "operateur@sensei.com",
+          "senderEmail": "operator@starzforge.local",
           "companyName": "Starz Forge"
         },
         "sections": {
@@ -4740,7 +4740,7 @@
       "recipientNameOptional": "Nom (optionnel)",
       "keyPoint": "Ajouter un point clé",
       "senderName": "ex. Alex Durand",
-      "senderEmail": "ex. alex@sensei.com",
+      "senderEmail": "ex. admin@starzforge.local",
       "senderTitle": "ex. Responsable de compte",
       "companyName": "ex. Starz Forge Corp",
       "threadEntityType": "Sélectionner l'entité du fil...",
@@ -4833,7 +4833,7 @@
     },
     "defaults": {
       "senderName": "Opérateur Starz Forge",
-      "senderEmail": "operateur@sensei.com",
+      "senderEmail": "operator@starzforge.local",
       "companyName": "Starz Forge"
     },
     "sections": {
@@ -5030,10 +5030,10 @@
       "title": "E-mail",
       "defaults": {
         "dispatchIdentity": "Commande Starz Forge OS",
-        "relayReplyTo": "no-reply@sensei-manuf.com"
+        "relayReplyTo": "no-reply@starzforge.local"
       },
       "smtpStatus": "RELAIS_SMTP : SYNCHRONISÉ",
-      "smtpDetails": "Hôte : mail.sensei-infra.com // Port : 587 (TLS)"
+      "smtpDetails": "Hôte : mail.starzforge.local // Port : 587 (TLS)"
     },
     "general": "Général",
     "integrations": {

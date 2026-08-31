@@ -4,7 +4,7 @@
 
 const { test, expect } = require('@playwright/test');
 
-const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL || 'admin@sensei.local';
+const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL || 'admin@starzforge.local';
 const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD || 'admin-password';
 
 test('login renders the Starz Forge identity', async ({ page }) => {

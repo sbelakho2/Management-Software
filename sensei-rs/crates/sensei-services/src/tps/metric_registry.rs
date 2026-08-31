@@ -2,6 +2,7 @@
 //! is code + a seeded DB definition — the same definition feeds every
 //! dashboard, API and AI surface.
 
+use sensei_core::db::tenant_tx::TenantTx;
 use sensei_core::error::{Result, SenseiError};
 use uuid::Uuid;
 
@@ -26,12 +27,17 @@ pub struct MetricDefinition {
 
 /// Look up the ACTIVE version of a metric for a tenant — metrics without
 /// a registry definition are a CONFIGURATION ERROR (the audit's "no
-/// unnamed dashboard SQL" rule): return an explicit error.
+/// unnamed dashboard SQL" rule): return an explicit error. The read runs
+/// through a [`TenantTx`] (sixteenth audit items 21/83): the RLS tenant
+/// context is construction-time, never a per-function afterthought.
 pub async fn get_metric(
     pool: &sqlx::PgPool,
     tenant_id: Uuid,
     metric_id: &str,
 ) -> Result<MetricDefinition> {
+    let mut ttx = TenantTx::begin(pool, tenant_id)
+        .await
+        .map_err(|e| SenseiError::Database(format!("Metric registry read failed: {e}")))?;
     let row: Option<MetricDefinition> = sqlx::query_as(
         "SELECT metric_id, version, name, \
                 COALESCE(purpose, '') AS purpose, formula, unit, grain, \
@@ -47,9 +53,12 @@ pub async fn get_metric(
     )
     .bind(tenant_id)
     .bind(metric_id)
-    .fetch_optional(pool)
+    .fetch_optional(&mut **ttx.tx())
     .await
     .map_err(|e| SenseiError::Database(format!("Metric registry read failed: {e}")))?;
+    ttx.commit()
+        .await
+        .map_err(|e| SenseiError::Database(format!("Metric registry read failed: {e}")))?;
     row.ok_or_else(|| {
         SenseiError::Validation(format!(
             "Metric '{metric_id}' is not defined in the versioned metric registry — \

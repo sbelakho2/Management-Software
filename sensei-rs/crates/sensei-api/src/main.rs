@@ -226,8 +226,8 @@ async fn seed_bootstrap_users(state: &AppState) {
     }
     ensure_bootstrap_tenant(state).await;
 
-    let admin_email =
-        std::env::var("SENSEI_ADMIN_EMAIL").unwrap_or_else(|_| "admin@sensei.com".to_string());
+    let admin_email = std::env::var("SENSEI_ADMIN_EMAIL")
+        .unwrap_or_else(|_| "admin@starzforge.local".to_string());
     let admin_password = match std::env::var("SENSEI_ADMIN_PASSWORD") {
         Ok(v) if !v.is_empty() => v,
         _ => {

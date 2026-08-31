@@ -465,7 +465,7 @@
       "recipientNameOptional": "Name (optional)",
       "keyPoint": "Add key point",
       "senderName": "e.g., Alex Morgan",
-      "senderEmail": "e.g., alex@sensei.com",
+      "senderEmail": "e.g., admin@starzforge.local",
       "senderTitle": "e.g., Account Manager",
       "companyName": "e.g., Starz Forge Corp",
       "threadEntityType": "Select thread entity...",
@@ -558,7 +558,7 @@
     },
     "defaults": {
       "senderName": "Starz Forge Operator",
-      "senderEmail": "operator@sensei.com",
+      "senderEmail": "operator@starzforge.local",
       "companyName": "Starz Forge"
     },
     "sections": {
@@ -1459,10 +1459,10 @@
       "title": "Communications Relay",
       "defaults": {
         "dispatchIdentity": "STARZ_FORGE_COMMAND",
-        "relayReplyTo": "no-reply@sensei-manuf.com"
+        "relayReplyTo": "no-reply@starzforge.local"
       },
       "smtpStatus": "SMTP_RELAY: SYNCHRONIZED",
-      "smtpDetails": "Host: mail.sensei-infra.com // Port: 587 (TLS)"
+      "smtpDetails": "Host: mail.starzforge.local // Port: 587 (TLS)"
     },
     "mobile": {
       "biometricSync": "Biometric Sync",
@@ -5328,7 +5328,7 @@
           "recipientNameOptional": "Name (optional)",
           "keyPoint": "Kernaussage hinzufügen",
           "senderName": "z. B. Alex Morgan",
-          "senderEmail": "z. B. alex@sensei.com",
+          "senderEmail": "z. B. admin@starzforge.local",
           "senderTitle": "z. B. Account Manager",
           "companyName": "z. B. Starz Forge GmbH",
           "threadEntityType": "Thread-Entität auswählen...",
@@ -5421,7 +5421,7 @@
         },
         "defaults": {
           "senderName": "Starz Forge Operator",
-          "senderEmail": "operator@sensei.com",
+          "senderEmail": "operator@starzforge.local",
           "companyName": "Starz Forge"
         },
         "sections": {

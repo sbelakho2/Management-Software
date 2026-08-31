@@ -7,6 +7,7 @@
 //! to prevent. Fail-closed: an unknown country is a Validation error, not
 //! a silent default.
 
+use sensei_core::db::tenant_tx::TenantTx;
 use sensei_core::error::{Result, SenseiError};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -66,12 +67,19 @@ where
 
 /// Fetch the policy bundle for a country. FAIL-CLOSED: a country without
 /// a policy is a Validation error — a new country is a policy RECORD,
-/// never a code fork.
+/// never a code fork. The lazy seed AND the read run inside ONE
+/// [`TenantTx`] (sixteenth audit items 21/83): the seeding INSERT is
+/// tenant-admitted by RLS exactly like the SELECT — a raw-pool seed could
+/// write rows the tenant context would never see.
 pub async fn get_country_policy(
     pool: &sqlx::PgPool,
     tenant_id: Uuid,
     country: &str,
 ) -> Result<CountryPolicy> {
+    let mut ttx = TenantTx::begin(pool, tenant_id)
+        .await
+        .map_err(|e| SenseiError::Database(format!("Failed to begin tenant tx: {e}")))?;
+
     // Lazy per-tenant seeding (same pattern as the field-authority
     // matrix): tenants created AFTER migration 122 still get the
     // canonical operating-country policies.
@@ -87,33 +95,33 @@ pub async fn get_country_policy(
          )",
     )
     .bind(tenant_id)
-    .execute(pool)
+    .execute(&mut **ttx.tx())
     .await
     .map_err(|e| SenseiError::Database(format!("Country policy seed failed: {e}")))?;
 
     let country = country.to_string();
-    with_tenant_tx(pool, tenant_id, move |tx| {
-        Box::pin(async move {
-            sqlx::query_as::<_, CountryPolicy>(
-                "SELECT country, language, currency, unit_system, week_start, \
-                        holiday_schedule, timezone, data_residency, retention_days, \
-                        employment_data_visibility, local_document_requirements \
-                 FROM country_policies WHERE tenant_id = $1 AND country = $2",
-            )
-            .bind(tenant_id)
-            .bind(&country)
-            .fetch_optional(&mut **tx)
-            .await
-            .map_err(|e| SenseiError::Database(format!("Failed to fetch country policy: {e}")))?
-            .ok_or_else(|| {
-                SenseiError::Validation(format!(
-                    "no country policy for {country} — a new country is a policy record, \
-                     never a code fork"
-                ))
-            })
-        })
-    })
+    let policy = sqlx::query_as::<_, CountryPolicy>(
+        "SELECT country, language, currency, unit_system, week_start, \
+                holiday_schedule, timezone, data_residency, retention_days, \
+                employment_data_visibility, local_document_requirements \
+         FROM country_policies WHERE tenant_id = $1 AND country = $2",
+    )
+    .bind(tenant_id)
+    .bind(&country)
+    .fetch_optional(&mut **ttx.tx())
     .await
+    .map_err(|e| SenseiError::Database(format!("Failed to fetch country policy: {e}")))?
+    .ok_or_else(|| {
+        SenseiError::Validation(format!(
+            "no country policy for {country} — a new country is a policy record, \
+             never a code fork"
+        ))
+    })?;
+
+    ttx.commit()
+        .await
+        .map_err(|e| SenseiError::Database(format!("Failed to commit tenant tx: {e}")))?;
+    Ok(policy)
 }
 
 /// The locale string derived from a policy bundle (`language-country`),

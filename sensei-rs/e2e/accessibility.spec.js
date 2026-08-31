@@ -5,7 +5,7 @@
 const { test, expect } = require('@playwright/test');
 const AxeBuilder = require('@axe-core/playwright').default;
 
-const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL || 'admin@sensei.local';
+const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL || 'admin@starzforge.local';
 const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD || 'admin-password';
 
 async function login(page) {

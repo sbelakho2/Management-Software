@@ -474,7 +474,7 @@
           "recipientNameOptional": "الاسم (اختياري)",
           "keyPoint": "إضافة نقطة رئيسية",
           "senderName": "مثلاً: Alex Morgan",
-          "senderEmail": "مثلاً: alex@sensei.com",
+          "senderEmail": "مثلاً: admin@starzforge.local",
           "senderTitle": "مثلاً: مدير الحساب",
           "companyName": "مثلاً: شركة سينسي",
           "threadEntityType": "اختر كيان الموضوع...",
@@ -567,7 +567,7 @@
         },
         "defaults": {
           "senderName": "عامل Starz Forge",
-          "senderEmail": "operator@sensei.com",
+          "senderEmail": "operator@starzforge.local",
           "companyName": "Starz Forge"
         },
         "sections": {
@@ -4839,7 +4839,7 @@
       "recipientNameOptional": "الاسم (اختياري)",
       "keyPoint": "أضف نقطة رئيسية",
       "senderName": "مثال: أحمد محمد",
-      "senderEmail": "مثال: ahmed@sensei.com",
+      "senderEmail": "مثال: admin@starzforge.local",
       "senderTitle": "مثال: مدير الحساب",
       "companyName": "مثال: شركة سينسي",
       "threadEntityType": "اختر نوع الكيان...",
@@ -4932,7 +4932,7 @@
     },
     "defaults": {
       "senderName": "مشغل سينسي",
-      "senderEmail": "operator@sensei.com",
+      "senderEmail": "operator@starzforge.local",
       "companyName": "سينسي"
     },
     "sections": {
@@ -5134,10 +5134,10 @@
       "title": "العنوان",
       "defaults": {
         "dispatchIdentity": "أمر_نظام_Starz_Forge‏",
-        "relayReplyTo": "no-reply@sensei-manuf.com‏"
+        "relayReplyTo": "no-reply@starzforge.local‏"
       },
       "smtpStatus": "مرحل SMTP: متزامن‏",
-      "smtpDetails": "المضيف: mail.sensei-infra.com // المنفذ: 587 (TLS)‏"
+      "smtpDetails": "المضيف: mail.starzforge.local // المنفذ: 587 (TLS)‏"
     },
     "general": "عام",
     "integrations": {

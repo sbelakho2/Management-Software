@@ -32,12 +32,20 @@ use sensei_services::tps::organizational_memory::{
 
 /// Body for `POST /api/v1/memory/observe` — an operator comment becomes an
 /// observation. `context_signature` is the identity of the memory: the same
-/// signature + kind + tier reinforces ONE memory.
+/// signature + kind + tier anchors reinforces ONE memory. Anchors are
+/// structurally required per tier (personal -> owner_principal_id, role ->
+/// slot_id, process -> process, site -> scope_site_id), and
+/// `provenance_event_ids` are the distinct source event ids that
+/// corroborate the observation — the SAME provenance twice never promotes.
 #[derive(Debug, Deserialize)]
 pub struct ObserveRequest {
     pub tier: String,
     pub slot_id: Option<Uuid>,
     pub process: Option<String>,
+    pub owner_principal_id: Option<Uuid>,
+    pub scope_site_id: Option<Uuid>,
+    #[serde(default)]
+    pub provenance_event_ids: Vec<String>,
     pub kind: String,
     pub content: String,
     #[serde(default)]
@@ -79,6 +87,9 @@ pub async fn run_observe(
         &req.tier,
         req.slot_id,
         req.process.as_deref(),
+        req.owner_principal_id,
+        req.scope_site_id,
+        req.provenance_event_ids.clone(),
         &req.kind,
         &req.content,
         req.context_signature.clone(),
@@ -91,6 +102,8 @@ pub async fn run_observe(
         &req.tier,
         req.slot_id,
         req.process.as_deref(),
+        req.owner_principal_id,
+        req.scope_site_id,
         &req.kind,
         &req.context_signature,
     )

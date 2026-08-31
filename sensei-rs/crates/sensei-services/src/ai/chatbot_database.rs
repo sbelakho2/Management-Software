@@ -630,6 +630,7 @@ impl ChatbotService for DatabaseChatbotService {
         message: &str,
         conversation_id: Option<&str>,
         sampling: Option<ChatSamplingParams>,
+        _system_context: Option<&str>,
     ) -> Result<ChatResponse> {
         let conv_id = conversation_id
             .map(|s| s.to_string())
@@ -688,7 +689,7 @@ impl ChatbotService for DatabaseChatbotService {
 
         // Perform the chat to persist messages.
         let response = self
-            .chat(tenant_id, user_id, message, conversation_id, sampling)
+            .chat(tenant_id, user_id, message, conversation_id, sampling, None)
             .await?;
 
         let response_text = response.message.content;

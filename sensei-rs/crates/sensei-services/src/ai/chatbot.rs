@@ -177,6 +177,9 @@ pub trait ChatbotService: Send + Sync {
     /// to continue. If `None`, a new conversation is started.
     /// `sampling` optionally overrides the configured sampling parameters
     /// (max tokens, temperature, top-k, top-p) for this request.
+    /// `system_context` is the server-built authoritative context bundle
+    /// (Context Kernel, sixteenth audit 8/96) threaded into the prompt
+    /// BEFORE generation — the model never invents the retrieval strategy.
     async fn chat(
         &self,
         tenant_id: EntityId,
@@ -184,6 +187,7 @@ pub trait ChatbotService: Send + Sync {
         message: &str,
         conversation_id: Option<&str>,
         sampling: Option<ChatSamplingParams>,
+        system_context: Option<&str>,
     ) -> Result<ChatResponse>;
 
     /// Stream a chat response token by token.
@@ -285,13 +289,31 @@ impl SenseiChatbotService {
         uuid::Uuid::new_v4().to_string()
     }
 
-    /// Build the full prompt including system prompt and conversation history.
-    fn build_prompt(&self, message: &str, history: &[ChatMessage]) -> String {
+    /// Build the full prompt including system prompt, the authoritative
+    /// live context bundle and conversation history.
+    fn build_prompt(
+        &self,
+        message: &str,
+        history: &[ChatMessage],
+        system_context: Option<&str>,
+    ) -> String {
         let mut prompt = String::new();
 
         // System prompt
         prompt.push_str(&self.config.system_prompt);
         prompt.push('\n');
+
+        // Context Kernel (sixteenth audit 8/96): the authoritative live
+        // bundle is part of the prompt — generation happens WITH it, it is
+        // not attached afterwards as metadata.
+        if let Some(context) = system_context {
+            let trimmed = context.trim();
+            if !trimmed.is_empty() {
+                prompt.push_str("AUTHORITATIVE CONTEXT (live): ");
+                prompt.push_str(trimmed);
+                prompt.push('\n');
+            }
+        }
 
         // Conversation history
         for msg in history {
@@ -315,6 +337,7 @@ impl ChatbotService for SenseiChatbotService {
         message: &str,
         conversation_id: Option<&str>,
         sampling: Option<ChatSamplingParams>,
+        system_context: Option<&str>,
     ) -> Result<ChatResponse> {
         let conv_id = conversation_id
             .map(|s| s.to_string())
@@ -327,7 +350,7 @@ impl ChatbotService for SenseiChatbotService {
         };
 
         // Build prompt
-        let prompt = self.build_prompt(message, &history);
+        let prompt = self.build_prompt(message, &history, system_context);
 
         // Per-request sampling overrides the configured defaults.
         let sampling = sampling.unwrap_or_default();
@@ -384,7 +407,7 @@ impl ChatbotService for SenseiChatbotService {
         tokio::spawn(async move {
             // Get the full response first
             let response = this
-                .chat(tenant_id, user_id, &message, Some(&conv_id), sampling)
+                .chat(tenant_id, user_id, &message, Some(&conv_id), sampling, None)
                 .await;
 
             match response {
@@ -470,6 +493,7 @@ impl ChatbotService for InMemoryChatbotService {
         message: &str,
         conversation_id: Option<&str>,
         _sampling: Option<ChatSamplingParams>,
+        _system_context: Option<&str>,
     ) -> Result<ChatResponse> {
         let conv_id = conversation_id
             .map(|s| s.to_string())
@@ -510,7 +534,7 @@ impl ChatbotService for InMemoryChatbotService {
 
         tokio::spawn(async move {
             let response = this
-                .chat(tenant_id, user_id, &message, Some(&conv_id), sampling)
+                .chat(tenant_id, user_id, &message, Some(&conv_id), sampling, None)
                 .await;
 
             match response {
@@ -662,7 +686,7 @@ mod tests {
         let user_id = EntityId::new_v4();
 
         let response = service
-            .chat(tenant_id, user_id, "hello", None, None)
+            .chat(tenant_id, user_id, "hello", None, None, None)
             .await
             .expect("chat should succeed");
 
@@ -679,7 +703,7 @@ mod tests {
         let conv_id = "test-conv-123";
 
         let response = service
-            .chat(tenant_id, user_id, "hello", Some(conv_id), None)
+            .chat(tenant_id, user_id, "hello", Some(conv_id), None, None)
             .await
             .expect("chat should succeed");
 
@@ -696,11 +720,18 @@ mod tests {
 
         // Send two messages
         service
-            .chat(tenant_id, user_id, "hello", Some(conv_id), None)
+            .chat(tenant_id, user_id, "hello", Some(conv_id), None, None)
             .await
             .expect("first chat");
         service
-            .chat(tenant_id, user_id, "help with quality", Some(conv_id), None)
+            .chat(
+                tenant_id,
+                user_id,
+                "help with quality",
+                Some(conv_id),
+                None,
+                None,
+            )
             .await
             .expect("second chat");
 
@@ -762,6 +793,7 @@ mod tests {
                 tenant_id,
                 user_id,
                 "I need help with quality inspection",
+                None,
                 None,
                 None,
             )

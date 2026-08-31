@@ -21,6 +21,7 @@ rust_decimal.workspace = true
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 tokio.workspace = true
+sqlx.workspace = true
 
 [features]
 axum = ["dep:axum"]

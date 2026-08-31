@@ -201,16 +201,118 @@ pub fn budget_allocation(task: &TaskKind) -> Vec<(&'static str, f64)> {
     }
 }
 
-/// Contradiction survives retrieval (fifteenth audit 77): a group of
-/// items disagreeing on a fact is returned as a conflict, never collapsed.
-pub fn has_contradiction(items: &[ContextItem], fact_key: &str) -> bool {
-    let mut values = std::collections::HashSet::new();
-    for item in items {
-        if let Some(v) = item.payload.get(fact_key) {
-            values.insert(v.to_string());
+/// A fact ADDRESS (sixteenth audit item 10): a contradiction requires
+/// the SAME object, SAME attribute and SAME relevant time with different
+/// authoritative values.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub struct FactAddress {
+    pub object_type: String,
+    pub object_id: String,
+    pub attribute: String,
+    pub valid_time: Option<String>,
+}
+
+/// A fact candidate with provenance — only same-address candidates can
+/// contradict.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct FactCandidate {
+    pub address: FactAddress,
+    pub value: serde_json::Value,
+    pub provenance: String,
+}
+
+/// A bounded conflict budget (sixteenth audit item 11): contradictions
+/// are compact, not two full 8k-token documents.
+#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
+pub struct TokenBudget {
+    pub normal: u32,
+    pub conflicts_reserved: u32,
+    pub emergency_overrun: u32,
+}
+
+impl TokenBudget {
+    pub fn default_for(max_tokens: u32) -> Self {
+        Self {
+            normal: (max_tokens as f64 * 0.85) as u32,
+            conflicts_reserved: (max_tokens as f64 * 0.10) as u32,
+            emergency_overrun: (max_tokens as f64 * 0.05) as u32,
         }
     }
-    values.len() > 1
+}
+
+/// The fact address an item contributes for `attribute`: from
+/// payload["_fact_address"] (object_type/object_id/valid_time) or, when
+/// absent, from payload["id"] + the key being examined. Returns None when
+/// the object identity is unknown — an item without id and without
+/// _fact_address is never grouped, so it can never contradict.
+pub(crate) fn fact_address_of(item: &ContextItem, attribute: &str) -> Option<FactAddress> {
+    let payload = &item.payload;
+    let object_id = payload
+        .get("_fact_address")
+        .and_then(|a| a.get("object_id"))
+        .and_then(|v| v.as_str())
+        .or_else(|| payload.get("id").and_then(|v| v.as_str()))?;
+    Some(FactAddress {
+        object_type: payload
+            .get("_fact_address")
+            .and_then(|a| a.get("object_type"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("unknown")
+            .to_string(),
+        object_id: object_id.to_string(),
+        attribute: attribute.to_string(),
+        valid_time: payload
+            .get("_fact_address")
+            .and_then(|a| a.get("valid_time"))
+            .and_then(|v| v.as_str())
+            .map(str::to_string),
+    })
+}
+
+/// Detect contradictions ONLY at the fact-address level: group items by
+/// (object_type, object_id, attribute) parsed from the item payload —
+/// an item contributes its address from payload["_fact_address"] (an
+/// object with object_type/object_id/attribute) or, when absent, from
+/// payload["id"] + the KEY being examined. Two items with the SAME
+/// address and DIFFERENT values for that attribute are a contradiction.
+pub fn contradiction_candidates(
+    items: &[ContextItem],
+    attribute: &str,
+) -> Vec<(FactAddress, Vec<serde_json::Value>)> {
+    let mut groups: std::collections::HashMap<FactAddress, Vec<serde_json::Value>> =
+        std::collections::HashMap::new();
+    for item in items {
+        let Some(address) = fact_address_of(item, attribute) else {
+            continue;
+        };
+        let Some(value) = item.payload.get(attribute) else {
+            continue;
+        };
+        let values = groups.entry(address).or_default();
+        if !values.iter().any(|v| v == value) {
+            values.push(value.clone());
+        }
+    }
+    let mut result: Vec<_> = groups
+        .into_iter()
+        .filter(|(_, values)| values.len() > 1)
+        .collect();
+    result.sort_by(|a, b| {
+        a.0.object_type
+            .cmp(&b.0.object_type)
+            .then_with(|| a.0.object_id.cmp(&b.0.object_id))
+            .then_with(|| a.0.attribute.cmp(&b.0.attribute))
+    });
+    result
+}
+
+/// Contradiction survives retrieval (fifteenth audit 77): a group of
+/// items disagreeing on a fact is returned as a conflict, never
+/// collapsed. Thin wrapper over [`contradiction_candidates`] for
+/// backward compatibility (sixteenth audit 10): only same-address facts
+/// can contradict.
+pub fn has_contradiction(items: &[ContextItem], fact_key: &str) -> bool {
+    !contradiction_candidates(items, fact_key).is_empty()
 }
 
 #[cfg(test)]

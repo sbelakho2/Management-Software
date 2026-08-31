@@ -39,6 +39,9 @@ pub struct MemoryRecord {
     pub tier: String,
     pub slot_id: Option<Uuid>,
     pub process: Option<String>,
+    pub owner_principal_id: Option<Uuid>,
+    pub scope_site_id: Option<Uuid>,
+    pub provenance_event_ids: serde_json::Value,
     pub kind: String,
     pub status: String,
     pub content: String,
@@ -70,19 +73,31 @@ async fn set_tenant_context(
     Ok(())
 }
 
-const MEMORY_COLUMNS: &str = "id, tenant_id, tier, slot_id, process, kind, status, content, \
-    context_signature, confidence, source_problem_id, occurrence_count, created_by, \
-    created_at, updated_at";
+const MEMORY_COLUMNS: &str = "id, tenant_id, tier, slot_id, process, owner_principal_id, \
+    scope_site_id, provenance_event_ids, kind, status, content, context_signature, \
+    confidence, source_problem_id, occurrence_count, created_by, created_at, updated_at";
 
 /// Record an observation. The SAME memory (context signature + kind +
-/// tier) reinforces its occurrence count — the deterministic route from
-/// "operator comment" toward "repeated observation": the second
-/// occurrence of the same signature flips an `observation` to `repeated`
-/// (occurrence_count >= 2) with NO model in the loop. Nothing past
-/// `repeated` is automatic — `proposed`/`approved` are review acts.
+/// tier + anchors) reinforces its occurrence count — the deterministic
+/// route from "operator comment" toward "repeated observation": the
+/// second occurrence of the same signature flips an `observation` to
+/// `repeated` (occurrence_count >= 2) with NO model in the loop. Nothing
+/// past `repeated` is automatic — `proposed`/`approved` are review acts.
 ///
-/// Role-tier memory requires a role slot anchor and process-tier memory a
-/// process anchor, so the memory outlives any employee departure.
+/// Each tier STRUCTURALLY requires its anchor: personal memory is bound
+/// to a principal (`owner_principal_id`), role memory to a role slot
+/// (`slot_id`), process memory to a process, site memory to a site
+/// (`scope_site_id`) — the database CHECK backs the service up.
+///
+/// INDEPENDENT CORROBORATION (sixteenth audit item 41): promotion to
+/// `repeated` must NOT fire from the same provenance twice. Two
+/// observations by the same person/sensor/import (the same source event
+/// ids) are NOT independent corroboration. The new provenance event ids
+/// are merged into the row (distinct); the occurrence count increments
+/// ONLY when the new record contributes at least one event id not
+/// already seen — a duplicate API retry or same-source repeat is a
+/// no-op. Promotion requires >= 2 DISTINCT event ids, so a row recorded
+/// with no provenance can never become `repeated` from the counter.
 #[allow(clippy::too_many_arguments)]
 pub async fn record_observation(
     pool: &sqlx::PgPool,
@@ -90,6 +105,9 @@ pub async fn record_observation(
     tier: &str,
     slot_id: Option<Uuid>,
     process: Option<&str>,
+    owner_principal_id: Option<Uuid>,
+    scope_site_id: Option<Uuid>,
+    provenance_event_ids: Vec<String>,
     kind: &str,
     content: &str,
     context_signature: serde_json::Value,
@@ -100,6 +118,11 @@ pub async fn record_observation(
             "tier must be one of personal|role|process|site|corporate (got '{tier}')"
         )));
     }
+    if tier == "personal" && owner_principal_id.is_none() {
+        return Err(SenseiError::Validation(
+            "personal-tier memory must be anchored to a principal (owner_principal_id)".to_string(),
+        ));
+    }
     if tier == "role" && slot_id.is_none() {
         return Err(SenseiError::Validation(
             "role-tier memory must be anchored to a role slot (slot_id)".to_string(),
@@ -108,6 +131,11 @@ pub async fn record_observation(
     if tier == "process" && process.is_none() {
         return Err(SenseiError::Validation(
             "process-tier memory must be anchored to a process (process)".to_string(),
+        ));
+    }
+    if tier == "site" && scope_site_id.is_none() {
+        return Err(SenseiError::Validation(
+            "site-tier memory must be anchored to a site (scope_site_id)".to_string(),
         ));
     }
     if kind.trim().is_empty() || content.trim().is_empty() {
@@ -125,12 +153,15 @@ pub async fn record_observation(
     // The SAME signature (tier + kind + context_signature + anchors) is the
     // SAME memory: reinforce its occurrence count instead of duplicating.
     let existing: Option<MemoryRecord> = sqlx::query_as(
-        "SELECT id, tenant_id, tier, slot_id, process, kind, status, content, \
+        "SELECT id, tenant_id, tier, slot_id, process, owner_principal_id, \
+                scope_site_id, provenance_event_ids, kind, status, content, \
                 context_signature, confidence, source_problem_id, occurrence_count, \
                 created_by, created_at, updated_at \
          FROM organizational_memory \
          WHERE tenant_id = $1 AND tier = $2 AND kind = $3 AND context_signature = $4 \
            AND slot_id IS NOT DISTINCT FROM $5 AND process IS NOT DISTINCT FROM $6 \
+           AND owner_principal_id IS NOT DISTINCT FROM $7 \
+           AND scope_site_id IS NOT DISTINCT FROM $8 \
          ORDER BY created_at DESC LIMIT 1",
     )
     .bind(tenant_id)
@@ -139,42 +170,80 @@ pub async fn record_observation(
     .bind(context_signature.clone())
     .bind(slot_id)
     .bind(process)
+    .bind(owner_principal_id)
+    .bind(scope_site_id)
     .fetch_optional(&mut *tx)
     .await
     .map_err(|e| SenseiError::Database(format!("Memory lookup failed: {e}")))?;
 
     if let Some(mem) = existing {
+        // Independent corroboration: the count increments only when this
+        // record contributes a NEW source event id. The same person/sensor/
+        // import repeating itself (or an API retry) is not corroboration.
+        let mut known: Vec<String> = mem
+            .provenance_event_ids
+            .as_array()
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                    .collect()
+            })
+            .unwrap_or_default();
+        let new_ids: Vec<String> = provenance_event_ids
+            .into_iter()
+            .filter(|id| !known.iter().any(|k| k == id))
+            .collect();
+        if new_ids.is_empty() {
+            tx.commit()
+                .await
+                .map_err(|e| SenseiError::Database(format!("Memory commit failed: {e}")))?;
+            return Ok(());
+        }
+        known.extend(new_ids.iter().cloned());
         let count = mem.occurrence_count + 1;
         // Deterministic promotion: an `observation` reaching >= 2
-        // occurrences becomes `repeated`. Anything beyond that (verified /
-        // proposed / approved) is never granted by the counter — those are
-        // reviewed acts.
-        let new_status = if mem.status == "observation" && count >= 2 {
+        // occurrences with >= 2 DISTINCT source event ids becomes
+        // `repeated`. Zero-provenance observations can never cross the
+        // corroboration bar. Anything beyond that (verified / proposed /
+        // approved) is never granted by the counter — those are reviewed
+        // acts.
+        let new_status = if mem.status == "observation" && count >= 2 && known.len() >= 2 {
             "repeated"
         } else {
             &mem.status
         };
         sqlx::query(
             "UPDATE organizational_memory SET occurrence_count = $1, status = $2, \
-             updated_at = NOW() WHERE id = $3",
+             provenance_event_ids = $3, updated_at = NOW() WHERE id = $4",
         )
         .bind(count)
         .bind(new_status)
+        .bind(serde_json::json!(known))
         .bind(mem.id)
         .execute(&mut *tx)
         .await
         .map_err(|e| SenseiError::Database(format!("Memory reinforce failed: {e}")))?;
     } else {
+        let mut distinct: Vec<String> = Vec::new();
+        for id in provenance_event_ids {
+            if !distinct.iter().any(|d| d == &id) {
+                distinct.push(id);
+            }
+        }
         sqlx::query(
             "INSERT INTO organizational_memory \
-                (tenant_id, tier, slot_id, process, kind, status, content, \
-                 context_signature, occurrence_count, created_by) \
-             VALUES ($1, $2, $3, $4, $5, 'observation', $6, $7, 1, $8)",
+                (tenant_id, tier, slot_id, process, owner_principal_id, scope_site_id, \
+                 provenance_event_ids, kind, status, content, context_signature, \
+                 occurrence_count, created_by) \
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'observation', $9, $10, 1, $11)",
         )
         .bind(tenant_id)
         .bind(tier)
         .bind(slot_id)
         .bind(process)
+        .bind(owner_principal_id)
+        .bind(scope_site_id)
+        .bind(serde_json::json!(distinct))
         .bind(kind)
         .bind(content)
         .bind(context_signature)
@@ -192,12 +261,15 @@ pub async fn record_observation(
 
 /// The deterministic kernel's read-back: the affected memory row for a
 /// signature (used by the observe route after [`record_observation`]).
+#[allow(clippy::too_many_arguments)]
 pub async fn find_memory_by_signature(
     pool: &sqlx::PgPool,
     tenant_id: Uuid,
     tier: &str,
     slot_id: Option<Uuid>,
     process: Option<&str>,
+    owner_principal_id: Option<Uuid>,
+    scope_site_id: Option<Uuid>,
     kind: &str,
     context_signature: &serde_json::Value,
 ) -> Result<MemoryRecord> {
@@ -207,12 +279,15 @@ pub async fn find_memory_by_signature(
         .map_err(|e| SenseiError::Database(format!("Failed to begin memory read tx: {e}")))?;
     set_tenant_context(&mut tx, tenant_id).await?;
     let row: MemoryRecord = sqlx::query_as(
-        "SELECT id, tenant_id, tier, slot_id, process, kind, status, content, \
+        "SELECT id, tenant_id, tier, slot_id, process, owner_principal_id, \
+                scope_site_id, provenance_event_ids, kind, status, content, \
                 context_signature, confidence, source_problem_id, occurrence_count, \
                 created_by, created_at, updated_at \
          FROM organizational_memory \
          WHERE tenant_id = $1 AND tier = $2 AND kind = $3 AND context_signature = $4 \
            AND slot_id IS NOT DISTINCT FROM $5 AND process IS NOT DISTINCT FROM $6 \
+           AND owner_principal_id IS NOT DISTINCT FROM $7 \
+           AND scope_site_id IS NOT DISTINCT FROM $8 \
          ORDER BY created_at DESC LIMIT 1",
     )
     .bind(tenant_id)
@@ -221,6 +296,8 @@ pub async fn find_memory_by_signature(
     .bind(context_signature.clone())
     .bind(slot_id)
     .bind(process)
+    .bind(owner_principal_id)
+    .bind(scope_site_id)
     .fetch_one(&mut *tx)
     .await
     .map_err(|e| SenseiError::Database(format!("Memory read-back failed: {e}")))?;
@@ -244,7 +321,8 @@ pub async fn list_memory(
         .map_err(|e| SenseiError::Database(format!("Failed to begin memory list tx: {e}")))?;
     set_tenant_context(&mut tx, tenant_id).await?;
     let rows: Vec<MemoryRecord> = sqlx::query_as(
-        "SELECT id, tenant_id, tier, slot_id, process, kind, status, content, \
+        "SELECT id, tenant_id, tier, slot_id, process, owner_principal_id, \
+                scope_site_id, provenance_event_ids, kind, status, content, \
                 context_signature, confidence, source_problem_id, occurrence_count, \
                 created_by, created_at, updated_at \
          FROM organizational_memory \

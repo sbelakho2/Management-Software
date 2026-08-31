@@ -41,6 +41,13 @@ pub struct ChatRequest {
     pub top_k: Option<u32>,
     /// Top-p (nucleus) sampling parameter (optional).
     pub top_p: Option<f32>,
+    /// Server-built authoritative context bundle (sixteenth audit 8/96):
+    /// the Context Kernel runs BEFORE generation and this field reports
+    /// the compact live context that was used. Clients may supply their
+    /// own value, but the server ALWAYS overrides it with the plan-driven
+    /// bundle — the model never invents the retrieval strategy.
+    #[serde(default)]
+    pub system_context: Option<String>,
 }
 
 impl ChatRequest {
@@ -82,6 +89,11 @@ pub struct ChatResponseBody {
     /// verification layer).
     #[serde(default)]
     pub verification: Option<serde_json::Value>,
+    /// The compact authoritative context bundle that was fed INTO
+    /// generation (sixteenth audit 8/96) — what the plan required and the
+    /// kernel fetched before the model saw the prompt.
+    #[serde(default)]
+    pub context_used: Option<Vec<String>>,
 }
 
 /// Handle a single-turn chat message.
@@ -93,32 +105,19 @@ pub async fn chat(
     Json(req): Json<ChatRequest>,
 ) -> Result<Json<ChatResponseBody>> {
     user.require_permission("ai:inference")?;
-    let response = state
-        .chatbot_service
-        .chat(
-            user.tenant_id,
-            user.user_id,
-            &req.message,
-            req.conversation_id.as_deref(),
-            req.sampling_params(),
-        )
-        .await
-        .map_err(|e| {
-            error!(error = %e, "Chatbot chat failed");
-            e
-        })?;
 
-    // Item 22: the legacy chat surface flows through the SAME agent
-    // control plane as the tool surface — server-created context, the
-    // effective (policy-filtered) toolset and the deterministic verifier.
-    // The assistant can no longer answer with unverifiable tenant claims:
-    // every response is checked against the caller's real permissions and
-    // the tool contract.
+    // Context Kernel BEFORE generation (sixteenth audit 8/96): the
+    // deterministic plan decides what live tenant state is retrieved —
+    // the compact authoritative bundle is fed INTO the prompt, it is not
+    // attached afterwards as metadata. Order: AUTHENTICATE →
+    // AUTHORIZATION SNAPSHOT → TASK CLASSIFICATION → CONTEXT REQUEST →
+    // RETRIEVAL PLAN → AUTHORIZED RETRIEVAL → CONTEXT BUNDLE →
+    // GENERATION → CLAIM VERIFICATION → OUTPUT.
     let ctx = crate::routes::agent::build_context(&user, &state).await;
     // Fifteenth audit (6-8/74): EVERY AI operation goes through the
     // Context Kernel — the deterministic plan (task decides the required
-    // context sections BEFORE any retrieval) travels with the response.
-    // The model never invents the retrieval strategy.
+    // context sections BEFORE any retrieval). The model never invents the
+    // retrieval strategy.
     let context_request = sensei_agent_core::context::ContextRequest {
         principal_id: user.user_id,
         roles: user.roles.clone(),
@@ -132,6 +131,49 @@ pub async fn chat(
         trace_id: req.conversation_id.clone().unwrap_or_default(),
     };
     let context_plan = sensei_agent_core::context::plan_context(&context_request);
+    // Authorized retrieval of the plan's required sections, tenant-scoped
+    // (RLS fail-closed) — the plan is the source of the model's context.
+    let context_used = match &state.db_pool {
+        Some(pool) => {
+            sensei_services::tps::context_sections::build_compact_context(
+                pool,
+                user.tenant_id,
+                ctx.site_id,
+                ctx.work_center_id,
+                &context_plan,
+            )
+            .await
+        }
+        None => Vec::new(),
+    };
+    let system_context = if context_used.is_empty() {
+        None
+    } else {
+        Some(context_used.join("\n"))
+    };
+
+    let response = state
+        .chatbot_service
+        .chat(
+            user.tenant_id,
+            user.user_id,
+            &req.message,
+            req.conversation_id.as_deref(),
+            req.sampling_params(),
+            system_context.as_deref(),
+        )
+        .await
+        .map_err(|e| {
+            error!(error = %e, "Chatbot chat failed");
+            e
+        })?;
+
+    // Item 22: the legacy chat surface flows through the SAME agent
+    // control plane as the tool surface — server-created context, the
+    // effective (policy-filtered) toolset and the deterministic verifier.
+    // The assistant can no longer answer with unverifiable tenant claims:
+    // every response is checked against the caller's real permissions and
+    // the tool contract.
     let policy = sensei_agent_core::tools::PolicyEngine::new(
         crate::services::agent::build_readonly_tools(),
         sensei_agent_core::tools::ToolRisk::ReadOnly,
@@ -144,6 +186,7 @@ pub async fn chat(
         is_fallback: response.is_fallback,
         verification: Some(verification),
         context_plan: Some(context_plan),
+        context_used: Some(context_used),
     }))
 }
 

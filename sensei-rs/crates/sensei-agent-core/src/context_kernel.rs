@@ -3,11 +3,15 @@
 //! `plan_context` decides what must be present, and `build_context_bundle`
 //! assembles it under the token budget while preserving contradictions.
 
-use crate::context::{plan_context, ContextItem, ContextPlan, ContextRequest};
+use crate::context::{
+    contradiction_candidates, fact_address_of, plan_context, ContextItem, ContextPlan,
+    ContextRequest, FactAddress, TokenBudget,
+};
 use std::collections::{HashMap, HashSet};
 
 /// The assembled context handed to the model: sections keyed by plan
-/// requirement, the spent token budget, and any surviving contradictions.
+/// requirement, the spent token budget, and any surviving contradictions
+/// as COMPACT one-line representations (sixteenth audit 11).
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ContextBundle {
     pub plan: ContextPlan,
@@ -17,10 +21,17 @@ pub struct ContextBundle {
 }
 
 /// Assemble the context bundle: filter by sensitivity ceiling, select
-/// greedily by authority × recency under the token budget, then force-include
-/// every side of any contradiction (fifteenth audit 77: contradictions
-/// survive retrieval — they are never collapsed, even past the budget).
-pub fn build_context_bundle(req: &ContextRequest, items: Vec<ContextItem>) -> ContextBundle {
+/// greedily by authority × recency under the normal token budget, then
+/// represent every surviving contradiction as compact one-line claims
+/// (sixteenth audit 10-11) charged against `conflicts_reserved` first,
+/// then `emergency_overrun` — beyond that cap the contradiction is
+/// dropped, never unbounded. Contradictions are detected at the
+/// fact-address level, so WO-1 vs WO-2 is never a contradiction.
+pub fn build_context_bundle(
+    req: &ContextRequest,
+    items: Vec<ContextItem>,
+    budget: TokenBudget,
+) -> ContextBundle {
     let plan = plan_context(req);
     let ceiling = parse_sensitivity(&req.sensitivity_ceiling);
 
@@ -44,7 +55,7 @@ pub fn build_context_bundle(req: &ContextRequest, items: Vec<ContextItem>) -> Co
     let mut dropped: Vec<ContextItem> = Vec::new();
     let mut total: u32 = 0;
     for item in candidates {
-        if total + item.token_cost <= req.max_tokens {
+        if total + item.token_cost <= budget.normal {
             let cost = item.token_cost;
             selected.push(item);
             total += cost;
@@ -53,44 +64,46 @@ pub fn build_context_bundle(req: &ContextRequest, items: Vec<ContextItem>) -> Co
         }
     }
 
-    // Contradiction preservation: for every fact key on which the supplied
-    // items disagree, ensure at least one item per distinct value survives.
-    let mut key_values: HashMap<String, HashSet<String>> = HashMap::new();
-    let mut value_cost: HashMap<(String, String), u32> = HashMap::new();
+    // Contradiction preservation: detect disagreements at the fact-address
+    // level over every attribute present in the supplied items, then emit
+    // one compact line per distinct value ("source X says value Y for
+    // {attribute}"). Each line's token cost counts against
+    // conflicts_reserved; once that is exhausted, emergency_overrun is
+    // used up to its cap; beyond that the contradiction is dropped.
+    let mut attributes: Vec<String> = Vec::new();
     for item in selected.iter().chain(dropped.iter()) {
         if let Some(obj) = item.payload.as_object() {
-            for (key, value) in obj {
-                let v = value.to_string();
-                key_values.entry(key.clone()).or_default().insert(v.clone());
-                value_cost
-                    .entry((key.clone(), v))
-                    .and_modify(|c| *c = (*c).min(item.token_cost))
-                    .or_insert(item.token_cost);
+            for key in obj.keys() {
+                if !attributes.iter().any(|k| k == key) {
+                    attributes.push(key.clone());
+                }
             }
         }
     }
+    attributes.sort();
 
+    let all: Vec<ContextItem> = selected.iter().chain(dropped.iter()).cloned().collect();
+    let conflict_cap = budget
+        .conflicts_reserved
+        .saturating_add(budget.emergency_overrun);
+    let mut conflict_spent: u32 = 0;
     let mut contradictions: Vec<String> = Vec::new();
-    for (key, values) in &key_values {
-        if values.len() <= 1 {
-            continue;
-        }
-        contradictions.push(key.clone());
-        for value in values {
-            let present = selected
-                .iter()
-                .any(|i| i.payload.get(key).map(|v| v.to_string()) == Some(value.clone()));
-            if present {
-                continue;
-            }
-            if let Some(item) = dropped
-                .iter()
-                .filter(|i| i.payload.get(key).map(|v| v.to_string()) == Some(value.clone()))
-                .min_by_key(|i| i.token_cost)
-            {
-                let cost = item.token_cost;
-                selected.push(item.clone());
+    for attribute in &attributes {
+        for (address, values) in contradiction_candidates(&all, attribute) {
+            for value in values {
+                let source = source_for(&selected, &dropped, &address, attribute, &value);
+                let line = format!(
+                    "source {} says value {} for {attribute}",
+                    source.as_deref().unwrap_or("unknown"),
+                    value
+                );
+                let cost = estimate_tokens(&line);
+                if conflict_spent + cost > conflict_cap {
+                    continue; // budget exhausted: drop, never unbounded
+                }
+                conflict_spent += cost;
                 total += cost;
+                contradictions.push(line);
             }
         }
     }
@@ -145,11 +158,37 @@ fn section_of(item: &ContextItem, required: &[String]) -> String {
     "general".to_string()
 }
 
+/// The source of an item that contributed `value` for `attribute` at the
+/// given fact address (prefers selected items, then dropped).
+fn source_for(
+    selected: &[ContextItem],
+    dropped: &[ContextItem],
+    address: &FactAddress,
+    attribute: &str,
+    value: &serde_json::Value,
+) -> Option<String> {
+    selected
+        .iter()
+        .chain(dropped.iter())
+        .find(|i| {
+            fact_address_of(i, attribute).as_ref() == Some(address)
+                && i.payload.get(attribute) == Some(value)
+        })
+        .map(|i| i.source.clone())
+}
+
+/// Crude token estimate for a compact contradiction line: ~4 chars per
+/// token, at least 1.
+fn estimate_tokens(s: &str) -> u32 {
+    (s.chars().count() as u32).div_ceil(4)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::context::{
-        budget_allocation, has_contradiction, AuthorityRank, EpistemicStatus, TaskKind,
+        budget_allocation, contradiction_candidates, has_contradiction, AuthorityRank,
+        EpistemicStatus, TaskKind, TokenBudget,
     };
     use chrono::{Duration, Utc};
     use serde_json::json;
@@ -229,14 +268,20 @@ mod tests {
     fn contradiction_is_detected() {
         let a = item(
             "sensor-a",
-            json!({"valve_position": "open"}),
+            json!({
+                "_fact_address": {"object_type": "valve", "object_id": "v-1"},
+                "valve_position": "open"
+            }),
             AuthorityRank::VerifiedObservation,
             5,
             Some(Utc::now()),
         );
         let b = item(
             "sensor-b",
-            json!({"valve_position": "closed"}),
+            json!({
+                "_fact_address": {"object_type": "valve", "object_id": "v-1"},
+                "valve_position": "closed"
+            }),
             AuthorityRank::VerifiedObservation,
             5,
             Some(Utc::now()),
@@ -258,7 +303,11 @@ mod tests {
                 )
             })
             .collect();
-        let bundle = build_context_bundle(&request(TaskKind::Troubleshoot, 25), items);
+        let bundle = build_context_bundle(
+            &request(TaskKind::Troubleshoot, 25),
+            items,
+            TokenBudget::default_for(25),
+        );
         assert!(bundle.total_tokens <= 25);
         assert_eq!(bundle.total_tokens, 20);
         assert!(bundle.contradictions.is_empty());
@@ -271,24 +320,196 @@ mod tests {
         let now = Utc::now();
         let a = item(
             "sensor-a",
-            json!({"valve_position": "open", "live_state": "running"}),
+            json!({
+                "_fact_address": {"object_type": "valve", "object_id": "v-1"},
+                "valve_position": "open",
+                "live_state": "running"
+            }),
             AuthorityRank::VerifiedObservation,
             10,
             Some(now),
         );
         let b = item(
             "sensor-b",
-            json!({"valve_position": "closed", "live_state": "running"}),
+            json!({
+                "_fact_address": {"object_type": "valve", "object_id": "v-1"},
+                "valve_position": "closed",
+                "live_state": "running"
+            }),
             AuthorityRank::VerifiedObservation,
             100,
             Some(now - Duration::minutes(1)),
         );
-        let bundle = build_context_bundle(&request(TaskKind::Troubleshoot, 10), vec![a, b]);
+        let budget = TokenBudget::default_for(300);
+        let bundle =
+            build_context_bundle(&request(TaskKind::Troubleshoot, 300), vec![a, b], budget);
         assert!(bundle
             .contradictions
-            .contains(&"valve_position".to_string()));
+            .iter()
+            .any(|c| c.contains("valve_position") && c.contains("open")));
+        assert!(bundle
+            .contradictions
+            .iter()
+            .any(|c| c.contains("valve_position") && c.contains("closed")));
         let kept: usize = bundle.sections.iter().map(|(_, v)| v.len()).sum();
         assert_eq!(kept, 2);
-        assert_eq!(bundle.total_tokens, 110);
+        assert!(bundle.total_tokens <= 110 + budget.conflicts_reserved + budget.emergency_overrun);
+    }
+
+    #[test]
+    fn different_objects_do_not_contradict() {
+        let now = Utc::now();
+        let a = item(
+            "wo-src",
+            json!({"id": "WO-1", "status": "open"}),
+            AuthorityRank::TransactionalState,
+            10,
+            Some(now),
+        );
+        let b = item(
+            "wo-src",
+            json!({"id": "WO-2", "status": "closed"}),
+            AuthorityRank::TransactionalState,
+            10,
+            Some(now),
+        );
+        assert!(!has_contradiction(&[a.clone(), b.clone()], "status"));
+        assert!(contradiction_candidates(&[a, b], "status").is_empty());
+    }
+
+    #[test]
+    fn same_address_different_values_contradict() {
+        let now = Utc::now();
+        let a = item(
+            "wo-src",
+            json!({
+                "_fact_address": {"object_type": "work_order", "object_id": "WO-1"},
+                "status": "open"
+            }),
+            AuthorityRank::TransactionalState,
+            10,
+            Some(now),
+        );
+        let b = item(
+            "wo-src",
+            json!({
+                "_fact_address": {"object_type": "work_order", "object_id": "WO-1"},
+                "status": "closed"
+            }),
+            AuthorityRank::TransactionalState,
+            10,
+            Some(now),
+        );
+        assert!(has_contradiction(&[a.clone(), b.clone()], "status"));
+        let candidates = contradiction_candidates(&[a, b], "status");
+        assert_eq!(candidates.len(), 1);
+        assert_eq!(candidates[0].0.object_id, "WO-1");
+        assert_eq!(candidates[0].1.len(), 2);
+    }
+
+    #[test]
+    fn compact_contradiction_stays_within_conflicts_reserved() {
+        let now = Utc::now();
+        let a = item(
+            "sensor-a",
+            json!({
+                "_fact_address": {"object_type": "valve", "object_id": "v-1"},
+                "valve_position": "open"
+            }),
+            AuthorityRank::VerifiedObservation,
+            10,
+            Some(now),
+        );
+        let b = item(
+            "sensor-b",
+            json!({
+                "_fact_address": {"object_type": "valve", "object_id": "v-1"},
+                "valve_position": "closed"
+            }),
+            AuthorityRank::VerifiedObservation,
+            10,
+            Some(now),
+        );
+        let budget = TokenBudget::default_for(1000);
+        let bundle =
+            build_context_bundle(&request(TaskKind::Troubleshoot, 1000), vec![a, b], budget);
+        assert_eq!(bundle.contradictions.len(), 2);
+        let kept: usize = bundle.sections.iter().map(|(_, v)| v.len()).sum();
+        assert_eq!(kept, 2);
+        assert!(bundle.total_tokens <= budget.normal + budget.conflicts_reserved);
+    }
+
+    #[test]
+    fn budget_exhaustion_stops_force_includes() {
+        let now = Utc::now();
+        let mut a_fields = serde_json::Map::new();
+        let mut b_fields = serde_json::Map::new();
+        a_fields.insert("id".into(), json!("WO-1"));
+        b_fields.insert("id".into(), json!("WO-1"));
+        for i in 0..10 {
+            a_fields.insert(format!("attr-{i:02}"), json!("open"));
+            b_fields.insert(format!("attr-{i:02}"), json!("closed"));
+        }
+        let a = item(
+            "sensor-a",
+            serde_json::Value::Object(a_fields),
+            AuthorityRank::VerifiedObservation,
+            10,
+            Some(now),
+        );
+        let b = item(
+            "sensor-b",
+            serde_json::Value::Object(b_fields),
+            AuthorityRank::VerifiedObservation,
+            10,
+            Some(now - Duration::minutes(1)),
+        );
+        let budget = TokenBudget {
+            normal: 1000,
+            conflicts_reserved: 30,
+            emergency_overrun: 10,
+        };
+        let bundle =
+            build_context_bundle(&request(TaskKind::Troubleshoot, 1000), vec![a, b], budget);
+        assert!(!bundle.contradictions.is_empty());
+        assert!(bundle.contradictions.len() < 20);
+        assert!(
+            bundle.total_tokens
+                <= budget.normal + budget.conflicts_reserved + budget.emergency_overrun
+        );
+    }
+
+    #[test]
+    fn zero_conflict_budget_drops_all_contradictions() {
+        let now = Utc::now();
+        let a = item(
+            "sensor-a",
+            json!({
+                "_fact_address": {"object_type": "valve", "object_id": "v-1"},
+                "valve_position": "open"
+            }),
+            AuthorityRank::VerifiedObservation,
+            10,
+            Some(now),
+        );
+        let b = item(
+            "sensor-b",
+            json!({
+                "_fact_address": {"object_type": "valve", "object_id": "v-1"},
+                "valve_position": "closed"
+            }),
+            AuthorityRank::VerifiedObservation,
+            10,
+            Some(now),
+        );
+        let budget = TokenBudget {
+            normal: 1000,
+            conflicts_reserved: 0,
+            emergency_overrun: 0,
+        };
+        let bundle =
+            build_context_bundle(&request(TaskKind::Troubleshoot, 1000), vec![a, b], budget);
+        assert!(bundle.contradictions.is_empty());
+        assert!(bundle.total_tokens <= budget.normal);
     }
 }
