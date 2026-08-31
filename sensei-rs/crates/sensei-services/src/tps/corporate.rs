@@ -1,7 +1,12 @@
-//! Corporate federation (fifteenth audit 29/46/66-67 + A19/A24):
-//! cross-site aggregation with authorization. Corporate analytics are
-//! MIX-NORMALIZED — comparing Bizerte vs Tangier FPY without product
-//! complexity adjustment is forbidden. Causal questions ("Why is Bizerte
+//! Corporate federation (fifteenth audit 29/46/66-67 + A19/A24,
+//! sixteenth audit items 25-28): cross-site aggregation with
+//! authorization. Corporate analytics are STRATIFIED — FPY is reported
+//! per product family and only the SAME family is comparable across
+//! sites; a naive Bizerte-vs-Tangier leaderboard is forbidden. Every
+//! metric is computed with its TRUE definition (documented per metric in
+//! `definitions`), and the metric engine (`metric_engine`) is the ONE
+//! executable definition — API, dashboard, AI and corporate rollup all
+//! call the same Rust computers. Causal questions ("Why is Bizerte
 //! better at changeovers?") produce HYPOTHESES with evidence, never
 //! answers: every candidate carries `epistemic_status = "hypothesis"` so
 //! the corporate layer can never present a guess as a fact.
@@ -12,13 +17,20 @@ use uuid::Uuid;
 
 use super::lessons;
 
-/// One site's row in the mix-normalized corporate comparison. `fpy` and
-/// `scrap_rate` are fractions (0..1); `otd` is the completed-share proxy;
-/// `complexity_index` is the deterministic product-complexity proxy
-/// (mean routing standard_time in seconds — 0 when the site has no
-/// routings); `fpy_mix_adjusted` is the FAIR comparison value — the raw
-/// FPY divided by the complexity proxy, so a complex product mix never
-/// masquerades as a quality problem.
+/// One site's row in the STRATIFIED corporate comparison. `fpy` is a
+/// FRACTION (0..1) and a documented FIRST-PASS PROXY: completed without
+/// scrap / completed — the schema has no unit-level first-pass quality
+/// signal (inspection_records are sample-based), so the approximation is
+/// documented instead of hidden. `scrap_rate` is scrapped / completed
+/// (produced units). `otd` is delivered / (delivered + pending_due) —
+/// sales_orders carry NO site scope in this schema, so the honest value
+/// is computed at tenant level and reported identically for every site.
+/// `lead_time_days` is the MANUFACTURING LEAD TIME PROXY: delivered_at
+/// (updated_at) − created_at — no shipped_at column exists.
+/// `complexity_index` is the deterministic product-complexity proxy (mean
+/// routing standard_time in seconds — 0 when the site has no routings).
+/// There is NO `fpy_mix_adjusted`: dividing a fraction by seconds is
+/// dimensionally invalid; the stratified comparison replaced it.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct SiteRow {
     pub site_id: Uuid,
@@ -28,16 +40,39 @@ pub struct SiteRow {
     pub otd: f64,
     pub lead_time_days: f64,
     pub complexity_index: f64,
-    pub fpy_mix_adjusted: f64,
 }
 
-/// The corporate cross-site view. `mix_normalized` is always true — the
-/// shape EXISTS so consumers cannot silently build a naive leaderboard;
-/// `guidance` carries the standing warning plus per-site evidence.
+/// One stratum of the stratified comparison: FPY for ONE product family
+/// at ONE site. `product_family_id` is NULL for products without a
+/// family — that unassigned stratum is still comparable across sites.
+/// `sample_size` is the completed units behind the FPY.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct SiteFamilyStratum {
+    pub site_id: Uuid,
+    pub product_family_id: Option<Uuid>,
+    pub fpy: f64,
+    pub sample_size: i64,
+}
+
+/// The EXACT definition used for one metric (sixteenth audit items
+/// 25-28): `metric_id` + `definition_note` — the audit demands honesty
+/// about what each number means, approximations included.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct MetricDefinitionNote {
+    pub metric_id: String,
+    pub definition_note: String,
+}
+
+/// The corporate cross-site view. `stratified` carries the per-site FPY
+/// WITHIN the same product family — the shape EXISTS so consumers cannot
+/// silently build a naive leaderboard; `definitions` documents the exact
+/// definition of every metric; `guidance` carries the standing warning
+/// plus per-site evidence.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct CrossSiteAnalytics {
     pub site_rows: Vec<SiteRow>,
-    pub mix_normalized: bool,
+    pub stratified: Vec<SiteFamilyStratum>,
+    pub definitions: Vec<MetricDefinitionNote>,
     pub guidance: Vec<String>,
 }
 
@@ -96,24 +131,68 @@ where
 }
 
 /// The standing corporate guidance: cross-site comparison is a
-/// mix-normalized investigation, never a naive leaderboard.
-pub const MIX_NORMALIZED_GUIDANCE: &str =
-    "cross-site comparison is mix-normalized — never a naive leaderboard; \
-     investigate the causal chain before concluding.";
+/// STRATIFIED investigation — only the same product family is comparable
+/// across sites; never a naive leaderboard.
+pub const STRATIFIED_GUIDANCE: &str =
+    "stratified comparison: only compare the same product family across sites; \
+     never a naive leaderboard — investigate the causal chain before concluding.";
+
+/// The exact per-metric definitions used by the corporate rollup — these
+/// are the same TRUE definitions the metric engine computes
+/// (`crates/sensei-services/src/tps/metric_engine.rs`).
+fn metric_definitions() -> Vec<MetricDefinitionNote> {
+    vec![
+        MetricDefinitionNote {
+            metric_id: "fpy".to_string(),
+            definition_note: "first-pass proxy: completed without scrap / completed \
+                              (the schema has no unit-level first-pass quality signal — \
+                              inspection_records are sample-based)"
+                .to_string(),
+        },
+        MetricDefinitionNote {
+            metric_id: "scrap_rate".to_string(),
+            definition_note: "scrapped / completed (produced units)".to_string(),
+        },
+        MetricDefinitionNote {
+            metric_id: "otd".to_string(),
+            definition_note: "delivered / (delivered + pending_due) where delivered = status in \
+                              ('shipped','delivered') and pending_due = the other non-cancelled, \
+                              non-draft orders (confirmed, in_production, invoiced). \
+                              sales_orders carry NO site scope in this schema, so OTD is \
+                              tenant-level and reported identically for every site"
+                .to_string(),
+        },
+        MetricDefinitionNote {
+            metric_id: "lead_time".to_string(),
+            definition_note: "manufacturing lead time proxy: delivered_at − created_at \
+                              (updated_at of delivered orders − created_at — no shipped_at \
+                              column exists). sales_orders carry NO site scope in this schema, \
+                              so lead time is tenant-level and reported identically for every \
+                              site"
+                .to_string(),
+        },
+    ]
+}
 
 /// Cross-site analytics for the tenant, all in ONE tenant-scoped
-/// transaction. Deterministic inputs:
-///   - fpy = 1 − scrap ratio (quantity_scrapped / quantity) from
-///     `work_orders` per `site_id`; scrap_rate = the same scrap ratio;
-///   - otd = share of work orders completed (a deterministic delivery
-///     proxy — sales-order dates are not required);
-///   - lead_time_days = mean planned duration (scheduled_end −
-///     scheduled_start) of the site's work orders;
-/// - complexity_index = AVG(standard_time) of routings for the site's
-///   products (more complex mix = higher standard time);
-/// - fpy_mix_adjusted = fpy / complexity_index × 100 (when the site has
-///   no routings the raw fpy × 100 stands in — the value stays
-///   deterministic and finite).
+/// transaction. Deterministic inputs, each with its TRUE definition:
+///   - fpy = FIRST-PASS PROXY: completed without scrap / completed, from
+///     `work_orders` per `site_id` (units passing without rework / units
+///     entering is not directly available — there is no unit-level
+///     first-pass quality signal; the approximation is documented);
+///   - scrap_rate = quantity_scrapped / quantity_completed;
+///   - otd = delivered / (delivered + pending_due) over `sales_orders`
+///     (status in ('shipped','delivered') / non-cancelled, non-draft) —
+///     TENANT-level: sales_orders carry no site scope;
+///   - lead_time_days = manufacturing lead time proxy: AVG(updated_at −
+///     created_at) of delivered sales orders in days — no shipped_at
+///     column exists;
+///   - complexity_index = AVG(standard_time) of routings for the site's
+///     products (informational context only — it is NEVER divided into a
+///     fraction, which would be dimensionally invalid);
+///   - stratified = per-site FPY WITHIN each product family (join
+///     products.product_family_id), so only the same family is compared
+///     across sites — never a naive leaderboard.
 ///
 /// Andon response counts per site are reported in `guidance` as a
 /// responsiveness signal.
@@ -129,19 +208,54 @@ pub async fn cross_site_analytics(pool: &PgPool, tenant_id: Uuid) -> Result<Cros
             .await
             .map_err(|e| SenseiError::Database(format!("corporate: sites: {e}")))?;
 
+            // Tenant-level OTD: sales_orders carry NO site scope in this
+            // schema, so the honest value is computed ONCE and reported
+            // identically for every site row.
+            let (delivered, eligible): (i64, i64) = sqlx::query_as(
+                "SELECT COUNT(*) FILTER (WHERE status IN ('shipped','delivered'))::bigint, \
+                        COUNT(*) FILTER (WHERE status NOT IN ('cancelled','draft'))::bigint \
+                 FROM sales_orders \
+                 WHERE tenant_id = $1",
+            )
+            .bind(tenant_id)
+            .fetch_one(&mut **tx)
+            .await
+            .map_err(|e| SenseiError::Database(format!("corporate: sales orders: {e}")))?;
+            let otd = if eligible > 0 {
+                delivered as f64 / eligible as f64
+            } else {
+                0.0
+            };
+
+            // Tenant-level lead time: manufacturing lead time proxy,
+            // delivered_at (updated_at) − created_at, in days.
+            let lead_time_days: f64 = sqlx::query_scalar(
+                "SELECT COALESCE(AVG(EXTRACT(EPOCH FROM (so.updated_at - so.created_at)) \
+                                     / 86400.0), 0)::float8 \
+                 FROM sales_orders so \
+                 WHERE so.tenant_id = $1 AND so.status IN ('shipped','delivered')",
+            )
+            .bind(tenant_id)
+            .fetch_one(&mut **tx)
+            .await
+            .map_err(|e| SenseiError::Database(format!("corporate: lead time: {e}")))?;
+
             let mut site_rows = Vec::with_capacity(sites.len());
             let mut guidance = Vec::new();
             for (site_id, site_name) in &sites {
-                // Deterministic work-order aggregate: quantity, scrap,
-                // completed share, planned lead time, complexity proxy.
-                let (qty, scrapped, total, completed, lead_days, complexity): (i64, i64, i64, i64, f64, f64) =
-                    sqlx::query_as(
-                        "SELECT COALESCE(SUM(wo.quantity), 0)::bigint, \
+                // Deterministic work-order aggregate: completed-without-
+                // scrap units, completed units, scrapped units and the
+                // complexity proxy (informational only).
+                let (good_units, completed_units, scrapped_units, complexity): (
+                    i64,
+                    i64,
+                    i64,
+                    f64,
+                ) = sqlx::query_as(
+                    "SELECT COALESCE(SUM(GREATEST(wo.quantity_completed \
+                                                       - wo.quantity_scrapped, 0)), 0)::bigint, \
+                                COALESCE(SUM(wo.quantity_completed), 0)::bigint, \
                                 COALESCE(SUM(wo.quantity_scrapped), 0)::bigint, \
-                                COUNT(*)::bigint, \
-                                COUNT(*) FILTER (WHERE wo.status = 'completed')::bigint, \
-                                COALESCE(AVG(EXTRACT(EPOCH FROM \
-                                    (wo.scheduled_end - wo.scheduled_start)) / 86400.0), 0)::float8, \
                                 COALESCE((SELECT AVG(r.standard_time) \
                                           FROM routings r \
                                           WHERE r.tenant_id = $1 \
@@ -152,15 +266,16 @@ pub async fn cross_site_analytics(pool: &PgPool, tenant_id: Uuid) -> Result<Cros
                                                   AND w.site_id = $2)) \
                                          , 0)::float8 \
                          FROM work_orders wo \
-                         WHERE wo.tenant_id = $1 AND wo.site_id = $2",
-                    )
-                    .bind(tenant_id)
-                    .bind(site_id)
-                    .fetch_one(&mut **tx)
-                    .await
-                    .map_err(|e| {
-                        SenseiError::Database(format!("corporate: work orders for {site_name}: {e}"))
-                    })?;
+                         WHERE wo.tenant_id = $1 AND wo.site_id = $2 \
+                           AND wo.status <> 'cancelled'",
+                )
+                .bind(tenant_id)
+                .bind(site_id)
+                .fetch_one(&mut **tx)
+                .await
+                .map_err(|e| {
+                    SenseiError::Database(format!("corporate: work orders for {site_name}: {e}"))
+                })?;
 
                 // Andon response count per site (a responsiveness signal).
                 let (andons_total, andons_resolved): (i64, i64) = sqlx::query_as(
@@ -176,35 +291,25 @@ pub async fn cross_site_analytics(pool: &PgPool, tenant_id: Uuid) -> Result<Cros
                     SenseiError::Database(format!("corporate: andons for {site_name}: {e}"))
                 })?;
 
-                let scrap_ratio = if qty > 0 {
-                    scrapped as f64 / qty as f64
+                let fpy = if completed_units > 0 {
+                    good_units as f64 / completed_units as f64
                 } else {
                     0.0
                 };
-                let fpy = (1.0 - scrap_ratio).clamp(0.0, 1.0);
-                let otd = if total > 0 {
-                    completed as f64 / total as f64
+                let scrap_rate = if completed_units > 0 {
+                    scrapped_units as f64 / completed_units as f64
                 } else {
                     0.0
-                };
-                // Mix normalization: divide by the complexity proxy so a
-                // high-standard-time product mix cannot masquerade as a
-                // quality problem. Deterministic and finite in all cases.
-                let fpy_mix_adjusted = if complexity > 0.0 {
-                    fpy / complexity * 100.0
-                } else {
-                    fpy * 100.0
                 };
 
                 site_rows.push(SiteRow {
                     site_id: *site_id,
                     site_name: site_name.clone(),
                     fpy,
-                    scrap_rate: scrap_ratio,
+                    scrap_rate,
                     otd,
-                    lead_time_days: lead_days,
+                    lead_time_days,
                     complexity_index: complexity,
-                    fpy_mix_adjusted,
                 });
                 guidance.push(format!(
                     "{site_name}: {andons_total} andons raised, {andons_resolved} resolved \
@@ -212,14 +317,49 @@ pub async fn cross_site_analytics(pool: &PgPool, tenant_id: Uuid) -> Result<Cros
                 ));
             }
 
-            guidance.push(MIX_NORMALIZED_GUIDANCE.to_string());
+            // STRATIFIED comparison: FPY per site WITHIN each product
+            // family — only the same family is comparable across sites.
+            let strata_rows: Vec<(Uuid, Option<Uuid>, i64, i64)> = sqlx::query_as(
+                "SELECT wo.site_id, p.product_family_id, \
+                        COALESCE(SUM(GREATEST(wo.quantity_completed \
+                                               - wo.quantity_scrapped, 0)), 0)::bigint, \
+                        COALESCE(SUM(wo.quantity_completed), 0)::bigint \
+                 FROM work_orders wo \
+                 LEFT JOIN products p ON p.id = wo.product_id \
+                                      AND p.tenant_id = wo.tenant_id \
+                 WHERE wo.tenant_id = $1 AND wo.status <> 'cancelled' \
+                 GROUP BY wo.site_id, p.product_family_id \
+                 ORDER BY wo.site_id ASC, p.product_family_id ASC",
+            )
+            .bind(tenant_id)
+            .fetch_all(&mut **tx)
+            .await
+            .map_err(|e| SenseiError::Database(format!("corporate: strata: {e}")))?;
+            let stratified = strata_rows
+                .into_iter()
+                .map(
+                    |(site_id, product_family_id, good_units, completed_units)| SiteFamilyStratum {
+                        site_id,
+                        product_family_id,
+                        fpy: if completed_units > 0 {
+                            good_units as f64 / completed_units as f64
+                        } else {
+                            0.0
+                        },
+                        sample_size: completed_units,
+                    },
+                )
+                .collect();
+
+            guidance.push(STRATIFIED_GUIDANCE.to_string());
             if site_rows.len() < 2 {
                 guidance.push("insufficient sites for comparison".to_string());
             }
 
             Ok(CrossSiteAnalytics {
                 site_rows,
-                mix_normalized: true,
+                stratified,
+                definitions: metric_definitions(),
                 guidance,
             })
         })

@@ -333,7 +333,7 @@ impl OperationsService for DatabaseOperationsService {
 
         let row = with_tenant_tx(&self.pool, tenant_id, |tx| {
             Box::pin(async move {
-                sqlx::query_as::<_, AndonRow>(
+                let row = sqlx::query_as::<_, AndonRow>(
                     r#"INSERT INTO andons (id, tenant_id, andon_number, site_id, work_center_id, issue_type, severity, description, status, raised_by, acknowledged_by, resolved_by, resolution, response_time_seconds, resolution_time_seconds, created_at, acknowledged_at, resolved_at, restart_authorized_by, restart_authorized_at, abnormal_condition_observed_at, contained_at, contained_by, contained_note, escalated, escalated_at)
                        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'active',$9,NULL,NULL,NULL,NULL,NULL,$10,NULL,NULL,NULL,NULL,$11,$12,$13,$14,FALSE,NULL)
                        RETURNING id, tenant_id, andon_number, site_id, work_center_id, issue_type, severity, description, status, raised_by, acknowledged_by, resolved_by, resolution, response_time_seconds, resolution_time_seconds, created_at, acknowledged_at, resolved_at, restart_authorized_by, restart_authorized_at, abnormal_condition_observed_at, contained_at, contained_by, contained_note, escalated, escalated_at"#,
@@ -346,7 +346,39 @@ impl OperationsService for DatabaseOperationsService {
                 .bind(andon.contained_by)
                 .bind(&andon.contained_note)
                 .fetch_one(&mut **tx)
-                .await.map_err(|e| SenseiError::Database(format!("Failed to raise andon: {e}")))
+                .await.map_err(|e| SenseiError::Database(format!("Failed to raise andon: {e}")))?;
+
+                // Sixteenth audit 22/96: the canonical operational event
+                // ('andon.raised') rides the SAME transaction as the Andon —
+                // if the event insert fails the Andon rolls back, so a client
+                // retry can never commit an Andon without its event nor
+                // duplicate one.
+                sqlx::query(
+                    "INSERT INTO operational_events \
+                         (id, tenant_id, event_type, occurred_at, recorded_at, scope_site_id, actor_id, \
+                          objects, source_system, source_id, sensitivity, payload, sequence) \
+                     VALUES ($1, $2, 'andon.raised', $3, NOW(), $4, $5, $6, 'starz_forge', NULL, 'internal', $7, 1)",
+                )
+                .bind(Uuid::new_v4())
+                .bind(tenant_id)
+                .bind(now)
+                .bind(andon.site_id)
+                .bind(andon.raised_by)
+                .bind(serde_json::json!([
+                    { "object_type": "andon", "object_id": id },
+                    { "object_type": "work_center", "object_id": andon.work_center_id },
+                ]))
+                .bind(serde_json::json!({
+                    "issue_type": andon.issue_type,
+                    "severity": andon.severity,
+                }))
+                .execute(&mut **tx)
+                .await
+                .map_err(|e| {
+                    SenseiError::Database(format!("Failed to write andon-raised event: {e}"))
+                })?;
+
+                Ok(row)
             })
         }).await?;
 

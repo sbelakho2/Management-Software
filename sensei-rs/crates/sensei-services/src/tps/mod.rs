@@ -13,6 +13,7 @@ pub mod episodes;
 pub mod flow_economics;
 pub mod learning;
 pub mod lessons;
+pub mod metric_engine;
 pub mod metric_registry;
 pub mod organizational_memory;
 pub mod process_mining;

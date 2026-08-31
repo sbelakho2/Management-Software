@@ -45,6 +45,62 @@ impl SkillLevel {
             SkillLevel::Trainer => "trainer",
         }
     }
+
+    /// Parse the stored level string back into the ladder state (any
+    /// unrecognized value degrades to [`SkillLevel::Unexposed`]).
+    pub fn from_stored(value: &str) -> SkillLevel {
+        match value {
+            "learning" => SkillLevel::Learning,
+            "supervised" => SkillLevel::Supervised,
+            "independent" => SkillLevel::Independent,
+            "trainer" => SkillLevel::Trainer,
+            _ => SkillLevel::Unexposed,
+        }
+    }
+}
+
+/// Qualification transition state machine (sixteenth audit item 34):
+/// only adjacent ladder moves are allowed; a higher state is never
+/// overwritten with a lower one without an explicit revocation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum QualificationError {
+    ImpossibleJump,
+    DemotionWithoutRevocation,
+    SelfAssessment,
+    MissingStandardRevision,
+}
+
+impl QualificationError {
+    /// The human-readable contract violation behind the error variant.
+    fn message(self) -> &'static str {
+        match self {
+            QualificationError::ImpossibleJump => {
+                "impossible skill jump — qualification is a \
+                 controlled ladder; exceptional prior competence requires a \
+                 RecognitionOfPriorCompetence workflow"
+            }
+            QualificationError::DemotionWithoutRevocation => {
+                "demotion requires an explicit \
+                 revocation path — a higher state is never overwritten with a lower one"
+            }
+            QualificationError::SelfAssessment => "critical skills prohibit self-qualification",
+            QualificationError::MissingStandardRevision => {
+                "qualification evidence must \
+                 reference the exact standard revision, an assessor, observed cycles and checks"
+            }
+        }
+    }
+}
+
+pub fn allowed_transition(current: SkillLevel, requested: SkillLevel) -> bool {
+    use SkillLevel::*;
+    matches!(
+        (current, requested),
+        (Unexposed, Learning)
+            | (Learning, Supervised)
+            | (Supervised, Independent)
+            | (Independent, Trainer)
+    )
 }
 
 /// One TWI job step. The `reasons` field is REQUIRED to exist (the WHY is
@@ -239,6 +295,16 @@ pub async fn create_job_standard(
 /// skill ladder (observed -> demonstrated -> supervised -> independent ->
 /// trainer). Promotion is always explicit evidence-based: every upsert
 /// stamps `demonstrated_at = NOW()` and stores the evidence.
+///
+/// The ladder is a controlled state machine (sixteenth audit item 34):
+/// only ADJACENT moves are allowed, a higher state is never overwritten
+/// with a lower one without an explicit revocation, and an evidence
+/// object must reference the EXACT job-standard revision, an assessor,
+/// observed cycles and the checks passed (items 34/35). Critical skills
+/// prohibit self-qualification (item 36). Exceptional prior competence
+/// can justify a jump via `prior_competence` — the
+/// RecognitionOfPriorCompetence bypass — but only into
+/// Independent/Trainer, never self-assessed.
 #[allow(clippy::too_many_arguments)]
 pub async fn record_qualification(
     pool: &sqlx::PgPool,
@@ -247,10 +313,145 @@ pub async fn record_qualification(
     skill_id: Uuid,
     level: SkillLevel,
     evidence: serde_json::Value,
+    prior_competence: Option<serde_json::Value>,
 ) -> Result<()> {
     let level_str = level.as_str().to_string();
+    let principal_str = principal_id.to_string();
     with_tenant_tx(pool, tenant_id, move |tx| {
         Box::pin(async move {
+            // The CURRENT state is read from storage — the machine is
+            // checked against what is actually recorded, not the request.
+            let current: SkillLevel = match sqlx::query_scalar::<_, String>(
+                "SELECT level FROM skill_qualifications \
+                     WHERE tenant_id = $1 AND principal_id = $2 AND skill_id = $3",
+            )
+            .bind(tenant_id)
+            .bind(principal_id)
+            .bind(skill_id)
+            .fetch_optional(&mut **tx)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to read qualification: {e}")))?
+            {
+                Some(level) => SkillLevel::from_stored(&level),
+                None => SkillLevel::Unexposed,
+            };
+
+            // No-op: re-recording the SAME level changes nothing.
+            if current == level {
+                return Ok(());
+            }
+            // Demotion: a higher state is never overwritten with a lower
+            // one without an explicit revocation path.
+            if level.rank() < current.rank() {
+                return Err(SenseiError::Validation(
+                    QualificationError::DemotionWithoutRevocation
+                        .message()
+                        .to_string(),
+                ));
+            }
+
+            // Whether the skill is critical (item 36: no self-qualification).
+            let critical: bool =
+                sqlx::query_scalar("SELECT critical FROM skills WHERE tenant_id = $1 AND id = $2")
+                    .bind(tenant_id)
+                    .bind(skill_id)
+                    .fetch_one(&mut **tx)
+                    .await
+                    .map_err(|e| SenseiError::Database(format!("Failed to read skill: {e}")))?;
+
+            // Evidence is STRUCTURED (items 34/35): the exact standard
+            // revision, an assessor identity, observed cycles (u16) and
+            // the checks passed — anything else is not evidence.
+            let evidence_valid = |ev: &serde_json::Value| -> bool {
+                let Some(obj) = ev.as_object() else {
+                    return false;
+                };
+                let standard_revision = obj
+                    .get("standard_revision")
+                    .and_then(|v| v.as_str())
+                    .is_some_and(|s| !s.is_empty());
+                let assessor = obj
+                    .get("assessor_id")
+                    .and_then(|v| v.as_str())
+                    .is_some_and(|s| !s.is_empty());
+                let observed_cycles = obj
+                    .get("observed_cycles")
+                    .and_then(|v| v.as_u64())
+                    .is_some_and(|n| n <= u16::MAX as u64);
+                let checks_passed = obj.get("checks_passed").is_some_and(|v| v.is_array());
+                standard_revision && assessor && observed_cycles && checks_passed
+            };
+            if !evidence_valid(&evidence) {
+                return Err(SenseiError::Validation(
+                    QualificationError::MissingStandardRevision
+                        .message()
+                        .to_string(),
+                ));
+            }
+            // Critical skills prohibit self-qualification (item 36): the
+            // assessor must be a DIFFERENT principal.
+            if critical {
+                let assessor = evidence
+                    .get("assessor_id")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default();
+                if assessor == principal_str {
+                    return Err(SenseiError::Validation(
+                        QualificationError::SelfAssessment.message().to_string(),
+                    ));
+                }
+            }
+
+            // RecognitionOfPriorCompetence bypass (item 34): documented
+            // prior competence justifies a jump, but only into
+            // Independent/Trainer, and never self-assessed (item 36).
+            let prior_competence_bypass = if let Some(pc) = &prior_competence {
+                let documented = pc.as_object().is_some_and(|obj| {
+                    let assessor = obj
+                        .get("assessor_id")
+                        .and_then(|v| v.as_str())
+                        .is_some_and(|s| !s.is_empty());
+                    let standard_revision = obj
+                        .get("standard_revision")
+                        .and_then(|v| v.as_str())
+                        .is_some_and(|s| !s.is_empty());
+                    let observed_cycles = obj
+                        .get("observed_cycles")
+                        .and_then(|v| v.as_u64())
+                        .is_some_and(|n| n >= 3);
+                    assessor && standard_revision && observed_cycles
+                });
+                if !documented {
+                    return Err(SenseiError::Validation(
+                        "prior competence evidence must document an assessor, the exact \
+                         standard revision and >= 3 observed cycles"
+                            .to_string(),
+                    ));
+                }
+                let pc_assessor = pc
+                    .get("assessor_id")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default();
+                if pc_assessor == principal_str {
+                    return Err(SenseiError::Validation(
+                        "prior competence cannot be self-assessed — the assessor must be a \
+                         different principal (audit item 36)"
+                            .to_string(),
+                    ));
+                }
+                matches!(level, SkillLevel::Independent | SkillLevel::Trainer)
+            } else {
+                false
+            };
+
+            // The controlled ladder: only adjacent moves, unless the
+            // prior-competence bypass documented above applies.
+            if !prior_competence_bypass && !allowed_transition(current, level) {
+                return Err(SenseiError::Validation(
+                    QualificationError::ImpossibleJump.message().to_string(),
+                ));
+            }
+
             sqlx::query(
                 "INSERT INTO skill_qualifications \
                     (id, tenant_id, principal_id, skill_id, level, demonstrated_at, evidence) \
@@ -286,7 +487,8 @@ pub async fn skill_coverage(pool: &sqlx::PgPool, tenant_id: Uuid) -> Result<Vec<
                 r#"SELECT s.skill_id, s.name, s.critical,
                           COUNT(*) FILTER (WHERE q.level IN ('independent','trainer')
                                            AND (q.expires_at IS NULL OR q.expires_at > NOW())),
-                          COUNT(*) FILTER (WHERE q.level = 'trainer')
+                          COUNT(*) FILTER (WHERE q.level = 'trainer'
+                                           AND (q.expires_at IS NULL OR q.expires_at > NOW()))
                    FROM skills s
                    LEFT JOIN skill_qualifications q ON q.skill_id = s.id AND q.tenant_id = s.tenant_id
                    WHERE s.tenant_id = $1 GROUP BY s.id, s.skill_id, s.name, s.critical"#,
@@ -295,6 +497,67 @@ pub async fn skill_coverage(pool: &sqlx::PgPool, tenant_id: Uuid) -> Result<Vec<
             .fetch_all(&mut **tx)
             .await
             .map_err(|e| SenseiError::Database(format!("Skill coverage failed: {e}")))?;
+            Ok(rows
+                .into_iter()
+                .map(|(skill_id, name, critical, independent_count, trainer_count)| {
+                    SkillCoverage {
+                        skill_id,
+                        name,
+                        critical,
+                        independent_count,
+                        trainer_count,
+                        bus_factor: independent_count,
+                        single_point: independent_count == 1,
+                    }
+                })
+                .collect())
+        })
+    })
+    .await
+}
+
+/// Site/shift-aware coverage (sixteenth audit item 38): the bus factor
+/// scoped to one site's role-slot assignment context. The principal's
+/// site is derived from their ACTIVE role-slot assignment
+/// (`principal_assignments` -> `role_slots.scope_site_id`), so a
+/// qualification only counts when the principal is currently assigned to
+/// a slot on that site. Qualifications themselves carry no shift — shift
+/// awareness is a documented approximation over role-slot assignment
+/// context: the `shift` parameter matches the slot name
+/// (`role_slots.slot_name LIKE '%' || shift || '%'`, e.g. slots named
+/// `Planner_Tangier_A` carry the shift in their name).
+pub async fn skill_coverage_at(
+    pool: &sqlx::PgPool,
+    tenant_id: Uuid,
+    site_id: Option<Uuid>,
+    shift: Option<&str>,
+) -> Result<Vec<SkillCoverage>> {
+    let shift = shift.map(str::to_string);
+    with_tenant_tx(pool, tenant_id, move |tx| {
+        Box::pin(async move {
+            let rows: Vec<(String, String, bool, i64, i64)> = sqlx::query_as(
+                r#"SELECT s.skill_id, s.name, s.critical,
+                          COUNT(*) FILTER (WHERE q.level IN ('independent','trainer')
+                                           AND (q.expires_at IS NULL OR q.expires_at > NOW())),
+                          COUNT(*) FILTER (WHERE q.level = 'trainer'
+                                           AND (q.expires_at IS NULL OR q.expires_at > NOW()))
+                   FROM skills s
+                   LEFT JOIN skill_qualifications q ON q.skill_id = s.id AND q.tenant_id = s.tenant_id
+                   LEFT JOIN principal_assignments pa
+                          ON pa.principal_id = q.principal_id AND pa.tenant_id = q.tenant_id
+                         AND pa.ended_at IS NULL
+                   LEFT JOIN role_slots rs ON rs.id = pa.slot_id AND rs.tenant_id = pa.tenant_id
+                   WHERE s.tenant_id = $1
+                     AND ($2::uuid IS NULL OR rs.scope_site_id = $2)
+                     AND ($3::text IS NULL OR rs.slot_name LIKE '%' || $3 || '%')
+                   GROUP BY s.id, s.skill_id, s.name, s.critical"#,
+            )
+            .bind(tenant_id)
+            .bind(site_id)
+            .bind(shift.as_deref())
+            .fetch_all(&mut **tx)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Site skill coverage failed: {e}")))?;
             Ok(rows
                 .into_iter()
                 .map(|(skill_id, name, critical, independent_count, trainer_count)| {

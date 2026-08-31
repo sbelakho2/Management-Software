@@ -44,6 +44,73 @@ pub struct NewLesson {
     pub origin_site_id: Option<Uuid>,
 }
 
+/// Structured applicability (sixteenth audit item 43): one equal context
+/// key is FAR too permissive — a countermeasure for paste-viscosity drift
+/// must never be offered for feeder wear merely because both are SMT.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ApplicabilityRule {
+    pub required_matches: Vec<ContextDimension>,
+    #[serde(default)]
+    pub weighted_matches: Vec<WeightedDimension>,
+    #[serde(default)]
+    pub incompatible_conditions: Vec<ContextCondition>,
+    #[serde(default = "default_min_similarity")]
+    pub minimum_similarity: f32,
+}
+
+fn default_min_similarity() -> f32 {
+    0.5
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ContextDimension {
+    pub key: String,
+    pub value: String,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct WeightedDimension {
+    pub key: String,
+    pub weight: f32,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ContextCondition {
+    pub key: String,
+    pub value: String,
+}
+
+/// The structured applicability decision (item 43): ALL required matches
+/// must hold; ANY incompatible condition blocks; similarity = matched
+/// weighted weight / total weight >= minimum_similarity.
+pub fn applicability_matches(rule: &ApplicabilityRule, candidate: &serde_json::Value) -> bool {
+    let ctx = candidate.as_object().cloned().unwrap_or_default();
+    let val_of = |key: &str| -> Option<String> {
+        ctx.get(key).and_then(|v| v.as_str()).map(|s| s.to_string())
+    };
+    for required in &rule.required_matches {
+        if val_of(&required.key).as_deref() != Some(required.value.as_str()) {
+            return false;
+        }
+    }
+    for incompatible in &rule.incompatible_conditions {
+        if val_of(&incompatible.key).as_deref() == Some(incompatible.value.as_str()) {
+            return false;
+        }
+    }
+    if rule.weighted_matches.is_empty() {
+        return true;
+    }
+    let total: f32 = rule.weighted_matches.iter().map(|w| w.weight).sum();
+    let matched: f32 = rule
+        .weighted_matches
+        .iter()
+        .filter(|w| val_of(&w.key).is_some())
+        .map(|w| w.weight)
+        .sum();
+    total > 0.0 && matched / total >= rule.minimum_similarity
+}
+
 const LESSON_COLUMNS: &str = "id, lesson_id, title, source_problem_id, context_signature, \
     hypothesis, countermeasure, observed_result, confidence, applicability, status, \
     origin_site_id, created_at";
@@ -97,8 +164,58 @@ pub async fn record_lesson(
             "lesson_id and countermeasure are required".to_string(),
         ));
     }
+    // Sixteenth audit item 42: verified/adopted lessons are IMMUTABLE —
+    // a re-record of the same lesson_id becomes a NEW REVISION
+    // (lesson_id-rN) with status 'proposed'; the original evidence and
+    // history are never overwritten. Drafts (proposed/rejected) may be
+    // corrected in place.
+    let existing_status: Option<String> =
+        sqlx::query_scalar("SELECT status FROM lessons WHERE tenant_id = $1 AND lesson_id = $2")
+            .bind(tenant_id)
+            .bind(&lesson.lesson_id)
+            .fetch_optional(pool)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Lesson lookup failed: {e}")))?;
+    let revision_id = match existing_status.as_deref() {
+        Some("verified") | Some("adopted") => {
+            let revision: i64 = sqlx::query_scalar(
+                "SELECT COUNT(*) FROM lessons WHERE tenant_id = $1 AND lesson_id LIKE $2",
+            )
+            .bind(tenant_id)
+            .bind(format!("{}-r%", lesson.lesson_id))
+            .fetch_one(pool)
+            .await
+            .unwrap_or(0);
+            let new_id = format!("{}-r{}", lesson.lesson_id, revision + 1);
+            let mut sig = lesson.context_signature.clone();
+            if let Some(obj) = sig.as_object_mut() {
+                obj.insert(
+                    "supersedes_lesson_id".to_string(),
+                    serde_json::json!(lesson.lesson_id),
+                );
+            }
+            // Continue with the revision id + supersedes signature.
+            (new_id, sig)
+        }
+        _ => (lesson.lesson_id.clone(), lesson.context_signature.clone()),
+    };
+    let (lesson_id, context_signature) = revision_id;
+
+    // Sixteenth audit item 43: NEW lessons require a STRUCTURED
+    // applicability rule — one-key matching is too permissive.
+    let rule: ApplicabilityRule =
+        serde_json::from_value(lesson.applicability.clone()).map_err(|_| {
+            SenseiError::Validation(
+                "applicability must be a structured rule with required_matches".to_string(),
+            )
+        })?;
+    if rule.required_matches.is_empty() {
+        return Err(SenseiError::Validation(
+            "applicability.required_matches must contain at least one dimension".to_string(),
+        ));
+    }
+
     let id = Uuid::new_v4();
-    let lesson_id = lesson.lesson_id.clone();
     let title = lesson.title.clone();
     with_tenant_tx(pool, tenant_id, move |tx| {
         Box::pin(async move {
@@ -126,7 +243,7 @@ pub async fn record_lesson(
             .bind(&lesson_id)
             .bind(&title)
             .bind(lesson.source_problem_id)
-            .bind(lesson.context_signature.clone())
+            .bind(context_signature.clone())
             .bind(&lesson.hypothesis)
             .bind(&lesson.countermeasure)
             .bind(lesson.observed_result.clone())

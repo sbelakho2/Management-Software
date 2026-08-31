@@ -3967,24 +3967,47 @@ async fn twi_skill_graph_coverage_and_bus_factor() {
     assert_eq!(first["hazards"][0], "Reel misalignment can jam the feeder");
 
     // One trainer + one learner: technically staffed (2 people on the
-    // skill), but only ONE can run it independently.
-    sensei_services::tps::skills::record_qualification(
-        &pool,
-        tenant_id,
-        alice,
-        skill_uuid,
+    // skill), but only ONE can run it independently. The ladder is a
+    // controlled state machine (sixteenth audit item 34): alice walks
+    // unexposed -> ... -> trainer (adjacent moves only), every evidence
+    // object references the exact standard revision with an assessor and
+    // observed cycles (items 34/35), and the skill is critical so the
+    // assessor is never the principal (item 36).
+    let evidence = |assessor: uuid::Uuid| {
+        serde_json::json!({
+            "standard_revision": "AOI-OP-01/r1",
+            "assessor_id": assessor.to_string(),
+            "observed_cycles": 4,
+            "checks_passed": ["program loads", "board variant verified"],
+            "type": "certification",
+        })
+    };
+    for level in [
+        sensei_services::tps::skills::SkillLevel::Learning,
+        sensei_services::tps::skills::SkillLevel::Supervised,
+        sensei_services::tps::skills::SkillLevel::Independent,
         sensei_services::tps::skills::SkillLevel::Trainer,
-        serde_json::json!({"type": "certification", "ref": "AOI-CERT-2026-0417"}),
-    )
-    .await
-    .expect("alice trainer qualification");
+    ] {
+        sensei_services::tps::skills::record_qualification(
+            &pool,
+            tenant_id,
+            alice,
+            skill_uuid,
+            level,
+            evidence(bob),
+            None,
+        )
+        .await
+        .expect("alice walks the qualification ladder to trainer");
+    }
     sensei_services::tps::skills::record_qualification(
         &pool,
         tenant_id,
         bob,
         skill_uuid,
         sensei_services::tps::skills::SkillLevel::Learning,
-        serde_json::json!({"type": "observation", "ref": "LSW-2026-08-30-003"}),
+        evidence(alice),
+        None,
     )
     .await
     .expect("bob learning qualification");
@@ -4007,17 +4030,24 @@ async fn twi_skill_graph_coverage_and_bus_factor() {
     assert_eq!(aoi.trainer_count, 1);
     assert!(aoi.critical, "AOI programming is a critical skill");
 
-    // Second person reaches independent: the vulnerability clears.
-    sensei_services::tps::skills::record_qualification(
-        &pool,
-        tenant_id,
-        bob,
-        skill_uuid,
+    // Second person reaches independent: the vulnerability clears (bob
+    // walks learning -> supervised -> independent).
+    for level in [
+        sensei_services::tps::skills::SkillLevel::Supervised,
         sensei_services::tps::skills::SkillLevel::Independent,
-        serde_json::json!({"type": "demonstration", "ref": "AOI-DEMO-2026-09-01"}),
-    )
-    .await
-    .expect("bob independent qualification");
+    ] {
+        sensei_services::tps::skills::record_qualification(
+            &pool,
+            tenant_id,
+            bob,
+            skill_uuid,
+            level,
+            evidence(alice),
+            None,
+        )
+        .await
+        .expect("bob walks the ladder to independent");
+    }
 
     let coverage = sensei_services::tps::skills::skill_coverage(&pool, tenant_id)
         .await
@@ -4028,6 +4058,369 @@ async fn twi_skill_graph_coverage_and_bus_factor() {
         .expect("AOI in coverage");
     assert_eq!(aoi.bus_factor, 2, "two people can now run it independently");
     assert!(!aoi.single_point, "no longer a single point of knowledge");
+}
+
+/// Sixteenth audit items 34-38/96: qualification mechanics are a
+/// CONTROLLED LADDER — impossible jumps are rejected, demotion requires
+/// an explicit revocation, evidence must reference the exact job-standard
+/// revision with an assessor and observed cycles, critical skills
+/// prohibit self-qualification, the RecognitionOfPriorCompetence bypass
+/// works (different assessor only), expired trainers are excluded from
+/// coverage, and the bus factor is site-aware through role-slot
+/// assignment context.
+#[tokio::test]
+async fn twi_qualification_ladder_enforced() {
+    let _serial = DB_LOCK.lock().await;
+    let Some(pool) = connect().await else { return };
+    sqlx::query(
+        r#"DO $$ DECLARE r RECORD; BEGIN
+             FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname = 'public') LOOP
+                 EXECUTE format('DROP TABLE IF EXISTS %I CASCADE', r.tablename);
+             END LOOP;
+         END $$"#,
+    )
+    .execute(&pool)
+    .await
+    .expect("drop all tables");
+    sensei_db::migrations::run_migrations(&pool)
+        .await
+        .expect("the ENTIRE migration chain must apply to an empty database");
+
+    let tenant_id = uuid::Uuid::new_v4();
+    let user1 = uuid::Uuid::new_v4();
+    let user2 = uuid::Uuid::new_v4();
+    let user3 = uuid::Uuid::new_v4();
+    sqlx::query("INSERT INTO tenants (id, name, slug) VALUES ($1, 'twi16', 'twi16')")
+        .bind(tenant_id)
+        .execute(&pool)
+        .await
+        .expect("tenant insert");
+    for (uid, email) in [
+        (user1, "u1@twi16.local"),
+        (user2, "u2@twi16.local"),
+        (user3, "u3@twi16.local"),
+    ] {
+        sqlx::query(
+            "INSERT INTO users (id, tenant_id, email, name, password_hash) \
+             VALUES ($1, $2, $3, 'W', 'x')",
+        )
+        .bind(uid)
+        .bind(tenant_id)
+        .bind(email)
+        .execute(&pool)
+        .await
+        .expect("user insert");
+    }
+
+    // Critical skill + job standard revision 7 (items 34/35): evidence
+    // must reference the exact standard revision.
+    let skill_uuid = sensei_services::tps::skills::create_skill(
+        &pool,
+        tenant_id,
+        "aoi_programming",
+        "AOI Programming",
+        Some("SMT"),
+        Some("AOI-OP-01"),
+        true,
+    )
+    .await
+    .expect("create critical skill");
+    let step = sensei_services::tps::skills::JobStep {
+        action: "Load program P-4711".to_string(),
+        key_points: vec!["Verify board variant".to_string()],
+        reasons: vec!["Wrong variant faults every board".to_string()],
+        hazards: vec!["Reel misalignment jams the feeder".to_string()],
+        checks: vec!["First board passes AOI".to_string()],
+    };
+    sensei_services::tps::skills::create_job_standard(
+        &pool,
+        tenant_id,
+        "aoi_programming",
+        "AOI-OP-01",
+        7,
+        "SMT",
+        "AOI Programming Standard",
+        vec![step],
+    )
+    .await
+    .expect("create job standard revision 7");
+
+    // Structured evidence (item 35): exact standard revision, an assessor
+    // identity, observed cycles (u16) and the checks passed.
+    let evidence = |assessor: uuid::Uuid| {
+        serde_json::json!({
+            "standard_revision": "AOI-OP-01/r7",
+            "assessor_id": assessor.to_string(),
+            "observed_cycles": 4,
+            "checks_passed": ["program loads", "board variant verified"],
+            "type": "observation",
+        })
+    };
+
+    // (1) Impossible jump: unexposed -> independent directly is Err.
+    let jump = sensei_services::tps::skills::record_qualification(
+        &pool,
+        tenant_id,
+        user1,
+        skill_uuid,
+        sensei_services::tps::skills::SkillLevel::Independent,
+        evidence(user2),
+        None,
+    )
+    .await;
+    assert!(
+        jump.is_err(),
+        "unexposed -> independent must be an impossible jump"
+    );
+
+    // (2) Adjacent move: unexposed -> learning is Ok.
+    sensei_services::tps::skills::record_qualification(
+        &pool,
+        tenant_id,
+        user1,
+        skill_uuid,
+        sensei_services::tps::skills::SkillLevel::Learning,
+        evidence(user2),
+        None,
+    )
+    .await
+    .expect("unexposed -> learning is an adjacent move");
+
+    // (3) Jump from learning: learning -> trainer is Err.
+    let jump = sensei_services::tps::skills::record_qualification(
+        &pool,
+        tenant_id,
+        user1,
+        skill_uuid,
+        sensei_services::tps::skills::SkillLevel::Trainer,
+        evidence(user2),
+        None,
+    )
+    .await;
+    assert!(
+        jump.is_err(),
+        "learning -> trainer must be an impossible jump"
+    );
+
+    // Walk user2 up the ladder to independent (adjacent moves only).
+    for level in [
+        sensei_services::tps::skills::SkillLevel::Learning,
+        sensei_services::tps::skills::SkillLevel::Supervised,
+        sensei_services::tps::skills::SkillLevel::Independent,
+    ] {
+        sensei_services::tps::skills::record_qualification(
+            &pool,
+            tenant_id,
+            user2,
+            skill_uuid,
+            level,
+            evidence(user1),
+            None,
+        )
+        .await
+        .expect("adjacent promotion on the ladder");
+    }
+
+    // (4) Demotion: independent -> learning is Err (requires an explicit
+    // revocation path).
+    let demote = sensei_services::tps::skills::record_qualification(
+        &pool,
+        tenant_id,
+        user2,
+        skill_uuid,
+        sensei_services::tps::skills::SkillLevel::Learning,
+        evidence(user1),
+        None,
+    )
+    .await;
+    assert!(
+        demote.is_err(),
+        "independent -> learning is a demotion without revocation"
+    );
+
+    // (5) Prior competence with SELF-assessment on a critical skill: Err
+    // (item 36 — no self-qualification).
+    let self_assessed = sensei_services::tps::skills::record_qualification(
+        &pool,
+        tenant_id,
+        user1,
+        skill_uuid,
+        sensei_services::tps::skills::SkillLevel::Supervised,
+        evidence(user2),
+        Some(serde_json::json!({
+            "assessor_id": user1.to_string(),
+            "standard_revision": "rev",
+            "observed_cycles": 3,
+        })),
+    )
+    .await;
+    assert!(
+        self_assessed.is_err(),
+        "prior competence cannot be self-assessed on a critical skill"
+    );
+
+    // (6) Prior competence by a DIFFERENT assessor with valid fields: the
+    // RecognitionOfPriorCompetence bypass works (learning -> trainer).
+    sensei_services::tps::skills::record_qualification(
+        &pool,
+        tenant_id,
+        user1,
+        skill_uuid,
+        sensei_services::tps::skills::SkillLevel::Trainer,
+        evidence(user2),
+        Some(serde_json::json!({
+            "assessor_id": user2.to_string(),
+            "standard_revision": "AOI-OP-01/r7",
+            "observed_cycles": 5,
+        })),
+    )
+    .await
+    .expect("prior competence bypass allows the jump");
+
+    // (7) Trainer expiry (item 37): an expired trainer must not count in
+    // coverage while non-expired independents still do.
+    let skill2 = sensei_services::tps::skills::create_skill(
+        &pool,
+        tenant_id,
+        "reflow_profiling",
+        "Reflow Profiling",
+        Some("SMT"),
+        Some("RF-OP-02"),
+        false,
+    )
+    .await
+    .expect("create second skill");
+    for level in [
+        sensei_services::tps::skills::SkillLevel::Learning,
+        sensei_services::tps::skills::SkillLevel::Supervised,
+        sensei_services::tps::skills::SkillLevel::Independent,
+    ] {
+        sensei_services::tps::skills::record_qualification(
+            &pool,
+            tenant_id,
+            user2,
+            skill2,
+            level,
+            evidence(user1),
+            None,
+        )
+        .await
+        .expect("user2 walks skill2 to independent");
+    }
+    for level in [
+        sensei_services::tps::skills::SkillLevel::Learning,
+        sensei_services::tps::skills::SkillLevel::Supervised,
+        sensei_services::tps::skills::SkillLevel::Independent,
+        sensei_services::tps::skills::SkillLevel::Trainer,
+    ] {
+        sensei_services::tps::skills::record_qualification(
+            &pool,
+            tenant_id,
+            user3,
+            skill2,
+            level,
+            evidence(user1),
+            None,
+        )
+        .await
+        .expect("user3 walks skill2 to trainer");
+    }
+    // Expire user3's trainer qualification — the expiry fix (item 37).
+    sqlx::query(
+        "UPDATE skill_qualifications SET expires_at = NOW() - INTERVAL '1 day' \
+         WHERE tenant_id = $1 AND principal_id = $2 AND skill_id = $3",
+    )
+    .bind(tenant_id)
+    .bind(user3)
+    .bind(skill2)
+    .execute(&pool)
+    .await
+    .expect("expire user3's trainer qualification");
+    let coverage = sensei_services::tps::skills::skill_coverage(&pool, tenant_id)
+        .await
+        .expect("coverage must compute");
+    let reflow = coverage
+        .iter()
+        .find(|c| c.skill_id == "reflow_profiling")
+        .expect("reflow in coverage");
+    assert_eq!(
+        reflow.trainer_count, 0,
+        "expired trainers must be excluded from trainer coverage"
+    );
+    assert_eq!(
+        reflow.independent_count, 1,
+        "independent count includes only non-expired qualifications"
+    );
+
+    // (8) Site-aware bus factor (item 38): the principal's site comes from
+    // their ACTIVE role-slot assignment (role_slots.scope_site_id).
+    let site_a = uuid::Uuid::new_v4();
+    let site_b = uuid::Uuid::new_v4();
+    let slot_a = uuid::Uuid::new_v4();
+    let slot_b = uuid::Uuid::new_v4();
+    {
+        let mut tx = pool.begin().await.expect("begin site setup tx");
+        sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
+            .bind(tenant_id.to_string())
+            .execute(&mut *tx)
+            .await
+            .expect("set tenant context");
+        sqlx::query(
+            "INSERT INTO role_slots (id, tenant_id, role_name, slot_name, scope_site_id) \
+             VALUES ($1, $2, 'aoi_operator', 'AOI_Operator_A', $3), \
+                    ($4, $2, 'aoi_operator', 'AOI_Operator_B', $5)",
+        )
+        .bind(slot_a)
+        .bind(tenant_id)
+        .bind(site_a)
+        .bind(slot_b)
+        .bind(site_b)
+        .execute(&mut *tx)
+        .await
+        .expect("role slots insert");
+        sqlx::query(
+            "INSERT INTO principal_assignments (id, tenant_id, principal_id, slot_id) \
+             VALUES ($1, $2, $3, $4), ($5, $2, $7, $8)",
+        )
+        .bind(uuid::Uuid::new_v4())
+        .bind(tenant_id)
+        .bind(user1)
+        .bind(slot_a)
+        .bind(uuid::Uuid::new_v4())
+        .bind(tenant_id)
+        .bind(user2)
+        .bind(slot_b)
+        .execute(&mut *tx)
+        .await
+        .expect("principal assignments insert");
+        tx.commit().await.expect("commit site setup");
+    }
+    let site_a_coverage =
+        sensei_services::tps::skills::skill_coverage_at(&pool, tenant_id, Some(site_a), None)
+            .await
+            .expect("site coverage must compute");
+    let aoi = site_a_coverage
+        .iter()
+        .find(|c| c.skill_id == "aoi_programming")
+        .expect("AOI in site coverage");
+    assert_eq!(
+        aoi.independent_count, 1,
+        "site A bus factor counts only user1 (assigned to a site A slot)"
+    );
+    assert_eq!(aoi.trainer_count, 1, "site A trainer is user1");
+    let site_b_coverage =
+        sensei_services::tps::skills::skill_coverage_at(&pool, tenant_id, Some(site_b), None)
+            .await
+            .expect("site coverage must compute");
+    let aoi = site_b_coverage
+        .iter()
+        .find(|c| c.skill_id == "aoi_programming")
+        .expect("AOI in site coverage");
+    assert_eq!(
+        aoi.independent_count, 1,
+        "site B bus factor counts only user2 (assigned to a site B slot)"
+    );
+    assert_eq!(aoi.trainer_count, 0, "site B has no trainer");
 }
 
 /// Fifteenth audit items 42-47 + A8/A18 (organizational memory): memory
@@ -4202,11 +4595,26 @@ async fn organizational_memory_deterministic_promotion() {
     );
 }
 
-// Fifteenth audit items 1-2 (law A11): model workflows are checkpointable
-// and resumable. start_investigation → record_observation → CRASH (we
-// simply stop calling the engine) → latest_checkpoint must return the
-// durable step 'contain' with a round-tripped payload → propose → reject →
-// the workflow RESUMES by recording a new checkpoint from the latest.
+// Fifteenth audit items 1-2 (law A11) + sixteenth audit items 47-51:
+// model workflows are checkpointable and resumable, and the lifecycle is
+// GUARDED. start_investigation (contain → investigate) →
+// record_observation → CRASH (we simply stop calling the engine) →
+// latest_checkpoint must return the durable step with a round-tripped
+// payload → propose (guarded: only from investigate) → guards fail on
+// wrong-step/unauthorized calls → APPROVE (guarded: the decider must hold
+// quality_engineer) → verify (guarded: only from countermeasure_approved)
+// → close (guarded: verify + approved countermeasure + verification
+// evidence). Checkpoints are versioned by workflow_instances.current_version
+// (item 48: no MAX(checkpoint)+1 race); the CAS form
+// record_transition_expected fails on a stale version; a rejection's
+// 'compensated' checkpoint is the durable repair record (item 51).
+//
+// NOTE (intentional behavior change): the pre-item-47 sequence proposed →
+// REJECTED → resume → verify was legal because the engine had no
+// transition guards. Under the new guards verify requires
+// CountermeasureApproved, so the happy path now APPROVES first; the
+// rejection path is asserted separately as the durable 'compensated'
+// checkpoint.
 #[tokio::test]
 async fn workflow_engine_checkpoint_resume() {
     let _serial = DB_LOCK.lock().await;
@@ -4231,7 +4639,7 @@ async fn workflow_engine_checkpoint_resume() {
         verify_countermeasure,
     };
     use sensei_workflow::state::WorkflowStatus;
-    use sensei_workflow::transition::{latest_checkpoint, record_transition};
+    use sensei_workflow::transition::{latest_checkpoint, record_transition_expected};
 
     let tenant_id = uuid::Uuid::new_v4();
     let actor_id = uuid::Uuid::new_v4();
@@ -4250,11 +4658,12 @@ async fn workflow_engine_checkpoint_resume() {
     .await
     .expect("user insert");
 
-    // ── 1. Start the investigation: durable checkpoint at step 'contain' ──
+    // ── 1. Start the investigation: durable checkpoints contain (1) and
+    //       investigate (2) ──
     let condition_id = uuid::Uuid::new_v4();
     let workflow_id = start_investigation(&pool, tenant_id, condition_id, actor_id)
         .await
-        .expect("start_investigation must checkpoint step contain");
+        .expect("start_investigation must checkpoint contain -> investigate");
 
     // ── 2. Record an observation as evidence ──
     record_observation(
@@ -4272,16 +4681,33 @@ async fn workflow_engine_checkpoint_resume() {
     // ── 4. Resume probe: the engine must report the LAST DURABLE step ──
     let (checkpoint, step, payload) = latest_checkpoint(&pool, tenant_id, &workflow_id)
         .await
-        .expect("a checkpointed workflow must have a latest checkpoint");
-    assert_eq!(checkpoint, 1, "first checkpoint is sequence 1");
-    assert_eq!(step, "contain", "crash recovery resumes at step contain");
+        .expect("a checkpointed workflow must have a latest checkpoint")
+        .expect("a started workflow has checkpoints");
+    assert_eq!(
+        checkpoint, 2,
+        "contain(1) and investigate(2) are the first checkpoints"
+    );
+    assert_eq!(
+        step, "investigate",
+        "crash recovery resumes at step investigate"
+    );
     assert_eq!(
         payload["condition_id"],
         condition_id.to_string(),
         "the checkpoint payload round-trips after the crash"
     );
 
-    // ── 5. Propose a countermeasure: parks the workflow in AwaitingApproval ──
+    // ── 5. A workflow with NO checkpoints reads Ok(None), not an error ──
+    let missing = latest_checkpoint(&pool, tenant_id, "corrective_action.investigate:missing")
+        .await
+        .expect("no-row is Ok(None), never a DB error");
+    assert!(
+        missing.is_none(),
+        "a nonexistent workflow has no latest checkpoint"
+    );
+
+    // ── 6. Propose a countermeasure (guarded: only from investigate):
+    //       parks the workflow in AwaitingApproval ──
     propose_countermeasure(
         &pool,
         tenant_id,
@@ -4290,51 +4716,71 @@ async fn workflow_engine_checkpoint_resume() {
         "bearing shows visible wear",
     )
     .await
-    .expect("propose_countermeasure must request approval");
+    .expect("propose_countermeasure must request approval from investigate");
 
-    // ── 6. Quality engineer REJECTS: compensation is derived from the decision ──
-    let compensation = decide_approval(&pool, tenant_id, &workflow_id, false, Some(actor_id))
+    // ── 7. Guards (sixteenth audit item 47): wrong-step writes FAIL ──
+    //       close before approval: the workflow is at countermeasure_proposed
+    let err = close_investigation(&pool, tenant_id, &workflow_id, actor_id)
         .await
-        .expect("decide_approval must decide the pending approval");
-    assert_eq!(
-        compensation,
-        Compensation::RevertStep,
-        "a rejection yields the RevertStep compensation action"
+        .expect_err("closing before the countermeasure is approved must fail");
+    assert!(
+        err.contains("Verify"),
+        "the close guard names the required step: {err}"
     );
-
-    // ── 7. The workflow RESUMES: a NEW checkpoint extends the history from
-    //       the latest durable step, carrying the round-tripped payload ──
-    record_transition(
+    //       verify before approval: the workflow is at countermeasure_proposed
+    let err = verify_countermeasure(
         &pool,
         tenant_id,
         &workflow_id,
-        "corrective_action.investigate",
-        WorkflowStatus::Running,
-        &step,
-        "revised_proposal",
-        Some(actor_id),
-        &payload,
+        serde_json::json!({ "vibration": "within spec" }),
     )
     .await
-    .expect("resume must record a new checkpoint from the latest");
-    let (resumed_checkpoint, resumed_step, resumed_payload) =
-        latest_checkpoint(&pool, tenant_id, &workflow_id)
-            .await
-            .expect("resumed workflow has a latest checkpoint");
-    assert_eq!(
-        resumed_checkpoint, 3,
-        "resume extends, never overwrites, history"
-    );
-    assert_eq!(
-        resumed_step, "revised_proposal",
-        "resume advances from contain"
-    );
-    assert_eq!(
-        resumed_payload, payload,
-        "the payload round-trips through resume"
+    .expect_err("verification before approval must fail");
+    assert!(
+        err.contains("CountermeasureApproved"),
+        "the verify guard names the required step: {err}"
     );
 
-    // ── 8. The engine's own functions can finish the resumed workflow ──
+    // ── 8. The DECIDER must hold the approval's required_role (item 48):
+    //       a quality_engineer approval cannot be decided by a technician ──
+    let err = decide_approval(
+        &pool,
+        tenant_id,
+        &workflow_id,
+        true,
+        Some(actor_id),
+        &["maintenance_technician".to_string()],
+    )
+    .await
+    .expect_err("a decider without the required role must be rejected");
+    assert!(
+        err.contains("does not hold the required role"),
+        "the role guard message: {err}"
+    );
+    assert!(
+        err.contains("quality_engineer"),
+        "the role guard names the required role: {err}"
+    );
+    // The failed role check leaves the approval PENDING — the entitled
+    // decider can still decide it.
+    let compensation = decide_approval(
+        &pool,
+        tenant_id,
+        &workflow_id,
+        true,
+        Some(actor_id),
+        &["quality_engineer".to_string()],
+    )
+    .await
+    .expect("the quality engineer approves the countermeasure");
+    assert_eq!(
+        compensation,
+        Compensation::None,
+        "an approval needs no compensation"
+    );
+
+    // ── 9. Verify (guarded: only from countermeasure_approved): evidence
+    //       + durable step verify ──
     verify_countermeasure(
         &pool,
         tenant_id,
@@ -4342,19 +4788,26 @@ async fn workflow_engine_checkpoint_resume() {
         serde_json::json!({ "vibration": "within spec" }),
     )
     .await
-    .expect("verify_countermeasure must append evidence");
+    .expect("verify_countermeasure must record evidence and move to verify");
+
+    // ── 10. Close (guarded: verify + approved countermeasure +
+    //        verification evidence): durable step closed ──
     close_investigation(&pool, tenant_id, &workflow_id, actor_id)
         .await
         .expect("close_investigation must checkpoint step closed");
     let (final_checkpoint, final_step, final_payload) =
         latest_checkpoint(&pool, tenant_id, &workflow_id)
             .await
-            .expect("closed workflow has a final checkpoint");
-    assert_eq!(final_checkpoint, 4, "close is the fourth checkpoint");
+            .expect("closed workflow has a final checkpoint")
+            .expect("checkpoints exist");
+    assert_eq!(
+        final_checkpoint, 6,
+        "contain(1) investigate(2) proposed(3) approved(4) verify(5) closed(6)"
+    );
     assert_eq!(final_step, "closed", "workflow terminates at step closed");
     assert_eq!(final_payload["status"], "closed");
 
-    // ── 9. The approval row exists with status 'rejected' (context-set tx) ──
+    // ── 11. The approval row exists with status 'approved' (context-set tx) ──
     {
         let mut tx = pool.begin().await.expect("begin verify tx");
         sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
@@ -4372,7 +4825,7 @@ async fn workflow_engine_checkpoint_resume() {
             .fetch_one(&mut *tx)
             .await
             .expect("approval row must exist");
-        assert_eq!(status, "rejected", "the decision persisted as rejected");
+        assert_eq!(status, "approved", "the decision persisted as approved");
         assert_eq!(
             required_role, "quality_engineer",
             "the approval was role-gated to quality_engineer"
@@ -4394,6 +4847,93 @@ async fn workflow_engine_checkpoint_resume() {
         );
         tx.commit().await.expect("verify commit");
     }
+
+    // ── 12. Optimistic concurrency (sixteenth audit item 48): the CAS form ──
+    //       the workflow is at version 6 — a transition at expected 6
+    //       succeeds (7) ...
+    record_transition_expected(
+        &pool,
+        tenant_id,
+        &workflow_id,
+        "corrective_action.investigate",
+        6,
+        WorkflowStatus::Running,
+        "closed",
+        "archived",
+        None,
+        &serde_json::json!({ "status": "archived" }),
+    )
+    .await
+    .expect("a CAS transition at the current version must succeed");
+    let (versioned_checkpoint, versioned_step, _) =
+        latest_checkpoint(&pool, tenant_id, &workflow_id)
+            .await
+            .expect("archived workflow has a latest checkpoint")
+            .expect("checkpoints exist");
+    assert_eq!(versioned_checkpoint, 7, "the CAS transition advanced to 7");
+    assert_eq!(
+        versioned_step, "archived",
+        "the CAS transition recorded its step"
+    );
+    //       ... while a transition at a STALE version 6 fails (0 rows).
+    let err = record_transition_expected(
+        &pool,
+        tenant_id,
+        &workflow_id,
+        "corrective_action.investigate",
+        6,
+        WorkflowStatus::Running,
+        "archived",
+        "purged",
+        None,
+        &serde_json::json!({}),
+    )
+    .await
+    .expect_err("a stale-version transition must be rejected (0 rows)");
+    assert!(
+        err.contains("optimistic concurrency"),
+        "the CAS failure message: {err}"
+    );
+
+    // ── 13. Rejection is DURABLE (sixteenth audit item 51): the repair
+    //        action survives a crash because the 'compensated' checkpoint
+    //        IS the durable record ──
+    let second_condition = uuid::Uuid::new_v4();
+    let second_workflow = start_investigation(&pool, tenant_id, second_condition, actor_id)
+        .await
+        .expect("second investigation must start");
+    propose_countermeasure(
+        &pool,
+        tenant_id,
+        &second_workflow,
+        serde_json::json!({ "action": "replace roller 7 bearing" }),
+        "bearing shows visible wear",
+    )
+    .await
+    .expect("second proposal must succeed");
+    let compensation = decide_approval(
+        &pool,
+        tenant_id,
+        &second_workflow,
+        false,
+        Some(actor_id),
+        &["quality_engineer".to_string()],
+    )
+    .await
+    .expect("a rejection with the required role must decide");
+    assert_eq!(
+        compensation,
+        Compensation::RevertStep,
+        "a rejection yields the RevertStep compensation action"
+    );
+    let (_, compensated_step, _) = latest_checkpoint(&pool, tenant_id, &second_workflow)
+        .await
+        .expect("compensated workflow has a latest checkpoint")
+        .expect("checkpoints exist");
+    assert_eq!(
+        compensated_step, "compensated",
+        "the rejection's repair action is durable: step compensated survives"
+    );
 }
 
 /// Role-specific analytics (fifteenth audit 48-68 + A14): the
@@ -4538,6 +5078,249 @@ async fn role_analytics_are_scoped_and_structured() {
             .iter()
             .any(|l| l.label.contains(andon_number)),
         "the andon must NOT be abnormal outside the caller's work center"
+    );
+}
+
+/// Sixteenth audit items 29-32: (a) the pitch gap is ELAPSED TIME vs the
+/// standard's takt — a 30-minute-old WO at a 60s takt expects ~30 units,
+/// so completed=30 is ON plan (never a "behind" false positive) while
+/// completed=5 is behind; (b) an unscoped operator call DENIES instead of
+/// returning tenant-wide data; (c) the active role is selected by the
+/// EXPLICIT priority, not the vector order; (d) 'buyer' carries its own
+/// past-due-PO analytics.
+#[tokio::test]
+async fn role_analytics_elapsed_pitch_and_scope_deny() {
+    let _serial = DB_LOCK.lock().await;
+    let Some(pool) = connect().await else { return };
+    sqlx::query(
+        r#"DO $$ DECLARE r RECORD; BEGIN
+             FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname = 'public') LOOP
+                 EXECUTE format('DROP TABLE IF EXISTS %I CASCADE', r.tablename);
+             END LOOP;
+         END $$"#,
+    )
+    .execute(&pool)
+    .await
+    .expect("drop all tables");
+    sensei_db::migrations::run_migrations(&pool)
+        .await
+        .expect("the ENTIRE migration chain must apply to an empty database");
+
+    let tenant_id = uuid::Uuid::new_v4();
+    let site_id = uuid::Uuid::new_v4();
+    sqlx::query("INSERT INTO tenants (id, name, slug) VALUES ($1, 'ra-ep', 'ra-ep')")
+        .bind(tenant_id)
+        .execute(&pool)
+        .await
+        .expect("tenant insert");
+    sqlx::query(
+        "INSERT INTO sites (id, tenant_id, site_code, name) VALUES ($1, $2, 'SITE-EP', 'Site EP')",
+    )
+    .bind(site_id)
+    .bind(tenant_id)
+    .execute(&pool)
+    .await
+    .expect("site insert");
+
+    // One standard with a 60-second takt, bound to both work orders.
+    let standard_id = uuid::Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO standard_work_documents (id, tenant_id, title, document_number, status, takt_time_seconds, created_by) \
+         VALUES ($1, $2, 'Pitch standard', 'SW-EP', 'effective', 60, $3)",
+    )
+    .bind(standard_id)
+    .bind(tenant_id)
+    .bind(uuid::Uuid::new_v4())
+    .execute(&pool)
+    .await
+    .expect("standard insert");
+
+    let product_id = uuid::Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO products (id, tenant_id, product_number, name, standard_cost) \
+         VALUES ($1, $2, 'P-EP', 'Pitch product', 10)",
+    )
+    .bind(product_id)
+    .bind(tenant_id)
+    .execute(&pool)
+    .await
+    .expect("product insert");
+
+    // (a) TWO work centers so the pitch lines are unambiguous: one ON
+    // plan (30 completed in 30 min at a 60s takt → ~30 expected) and one
+    // BEHIND (only 5 completed in the same elapsed window).
+    let wc_plan = uuid::Uuid::new_v4();
+    let wc_behind = uuid::Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO work_centers (id, tenant_id, name, work_center_number, is_active, capacity_per_shift, created_at, updated_at) \
+         VALUES ($1, $2, 'WC-PLAN', 'WC-EP-PLAN', TRUE, 8, NOW(), NOW())",
+    )
+    .bind(wc_plan)
+    .bind(tenant_id)
+    .execute(&pool)
+    .await
+    .expect("plan work center insert");
+    sqlx::query(
+        "INSERT INTO work_centers (id, tenant_id, name, work_center_number, is_active, capacity_per_shift, created_at, updated_at) \
+         VALUES ($1, $2, 'WC-BEHIND', 'WC-EP-BEHIND', TRUE, 8, NOW(), NOW())",
+    )
+    .bind(wc_behind)
+    .bind(tenant_id)
+    .execute(&pool)
+    .await
+    .expect("behind work center insert");
+
+    sqlx::query(
+        "INSERT INTO work_orders (id, tenant_id, wo_number, product_id, product_name, quantity, quantity_completed, status, work_center_id, site_id, actual_start, standard_work_id) \
+         VALUES ($1, $2, 'WO-EP-PLAN', $3, 'Pitch product', 100, 30, 'released', $4, $5, NOW() - interval '30 minutes', $6)",
+    )
+    .bind(uuid::Uuid::new_v4())
+    .bind(tenant_id)
+    .bind(product_id)
+    .bind(wc_plan)
+    .bind(site_id)
+    .bind(standard_id)
+    .execute(&pool)
+    .await
+    .expect("on-plan work order insert");
+    sqlx::query(
+        "INSERT INTO work_orders (id, tenant_id, wo_number, product_id, product_name, quantity, quantity_completed, status, work_center_id, site_id, actual_start, standard_work_id) \
+         VALUES ($1, $2, 'WO-EP-BEHIND', $3, 'Pitch product', 100, 5, 'in_progress', $4, $5, NOW() - interval '30 minutes', $6)",
+    )
+    .bind(uuid::Uuid::new_v4())
+    .bind(tenant_id)
+    .bind(product_id)
+    .bind(wc_behind)
+    .bind(site_id)
+    .bind(standard_id)
+    .execute(&pool)
+    .await
+    .expect("behind work order insert");
+
+    // The on-plan WO: target ≈ 30 (1800s / 60s per unit), actual 30,
+    // delta ≈ 0 — present in NOW but NOT in ABNORMAL (no "behind" false
+    // positive just because the WO is unfinished).
+    let plan = sensei_services::tps::role_analytics::build_role_analytics(
+        &pool,
+        tenant_id,
+        "team_lead",
+        Some(site_id),
+        Some(wc_plan),
+    )
+    .await
+    .expect("on-plan team-lead analytics must build");
+    let plan_pitch = plan
+        .now
+        .iter()
+        .find(|l| l.label.starts_with("pitch gap"))
+        .expect("the elapsed-time pitch-gap line exists in NOW");
+    let plan_target = plan_pitch
+        .target
+        .expect("a bound standard gives a pitch target");
+    assert!(
+        (plan_target - 30.0).abs() < 1.0,
+        "30 minutes elapsed at a 60s takt expects ~30 units, got {plan_target}"
+    );
+    assert_eq!(plan_pitch.actual, 30.0, "the on-plan WO completed 30 units");
+    let plan_delta = plan_pitch.delta.expect("delta exists");
+    assert!(
+        plan_delta.abs() < 1.0,
+        "on-plan WO has delta ~0 (NOT a behind false positive), got {plan_delta}"
+    );
+    assert!(
+        !plan
+            .abnormal
+            .iter()
+            .any(|l| l.label.starts_with("pitch gap")),
+        "the on-plan WO must NOT be flagged behind in ABNORMAL"
+    );
+
+    // The behind WO: 5 completed vs ~30 expected → negative delta and the
+    // pitch-gap line IS abnormal.
+    let behind = sensei_services::tps::role_analytics::build_role_analytics(
+        &pool,
+        tenant_id,
+        "team_lead",
+        Some(site_id),
+        Some(wc_behind),
+    )
+    .await
+    .expect("behind team-lead analytics must build");
+    let behind_pitch = behind
+        .abnormal
+        .iter()
+        .find(|l| l.label.starts_with("pitch gap"))
+        .expect("the behind WO is abnormal");
+    assert!(
+        behind_pitch.delta.is_some_and(|d| d < 0.0),
+        "5 completed vs ~30 expected → negative delta = behind"
+    );
+
+    // (b) SCOPED ROLES DENY WHEN UNSCOPED: operator without a work-center
+    // scope is an error, never tenant-wide results.
+    let denied = sensei_services::tps::role_analytics::build_role_analytics(
+        &pool,
+        tenant_id,
+        "operator",
+        Some(site_id),
+        None,
+    )
+    .await;
+    assert!(
+        denied.is_err(),
+        "operator without a work-center scope must be denied"
+    );
+
+    // (c) ACTIVE ROLE CONTEXT: priority, not vector order.
+    let active = sensei_services::tps::role_analytics::select_active_role;
+    assert_eq!(
+        active(&["quality".to_string(), "operator".to_string()]),
+        Some("quality".to_string()),
+        "quality outranks operator regardless of vector order"
+    );
+    assert_eq!(
+        active(&["operator".to_string()]),
+        Some("operator".to_string())
+    );
+
+    // (d) 'buyer' has its own analytics: a past-due PO is its abnormal.
+    let supplier_id = uuid::Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO suppliers (id, tenant_id, supplier_number, name) \
+         VALUES ($1, $2, 'SUP-EP', 'Supplier EP')",
+    )
+    .bind(supplier_id)
+    .bind(tenant_id)
+    .execute(&pool)
+    .await
+    .expect("supplier insert");
+    sqlx::query(
+        "INSERT INTO purchase_orders (id, tenant_id, po_number, supplier_id, status, expected_delivery) \
+         VALUES ($1, $2, 'PO-EP', $3, 'sent', NOW() - interval '3 days')",
+    )
+    .bind(uuid::Uuid::new_v4())
+    .bind(tenant_id)
+    .bind(supplier_id)
+    .execute(&pool)
+    .await
+    .expect("purchase order insert");
+
+    let buyer = sensei_services::tps::role_analytics::build_role_analytics(
+        &pool,
+        tenant_id,
+        "buyer",
+        Some(site_id),
+        None,
+    )
+    .await
+    .expect("buyer analytics must build");
+    assert!(
+        buyer.abnormal.iter().any(|l| l.label.contains("past due")),
+        "the past-due PO is abnormal for the buyer"
+    );
+    assert!(
+        buyer.next.iter().any(|n| n.contains("PO-EP")),
+        "NEXT expedites the past-due PO"
     );
 }
 
@@ -4813,16 +5596,36 @@ async fn turnover_risk_flags_single_point_concentration() {
     )
     .await
     .expect("create critical skill");
-    sensei_services::tps::skills::record_qualification(
-        &pool,
-        tenant_id,
-        alice,
-        aoi,
+    // The ladder is a controlled state machine (sixteenth audit item 34):
+    // every promotion walks adjacent levels and the evidence references
+    // the exact standard revision with a non-self assessor (items 34-36).
+    let evidence = |assessor: uuid::Uuid| {
+        serde_json::json!({
+            "standard_revision": "AOI-OP-01/r1",
+            "assessor_id": assessor.to_string(),
+            "observed_cycles": 4,
+            "checks_passed": ["program loads"],
+            "type": "certification",
+        })
+    };
+    for level in [
+        sensei_services::tps::skills::SkillLevel::Learning,
+        sensei_services::tps::skills::SkillLevel::Supervised,
+        sensei_services::tps::skills::SkillLevel::Independent,
         sensei_services::tps::skills::SkillLevel::Trainer,
-        serde_json::json!({"type": "certification", "ref": "AOI-CERT-2026-0417"}),
-    )
-    .await
-    .expect("alice trainer qualification");
+    ] {
+        sensei_services::tps::skills::record_qualification(
+            &pool,
+            tenant_id,
+            alice,
+            aoi,
+            level,
+            evidence(bob),
+            None,
+        )
+        .await
+        .expect("alice walks the ladder to trainer");
+    }
 
     // Skill 2 (CRITICAL): two independent people — the healthy case.
     let reflow = sensei_services::tps::skills::create_skill(
@@ -4836,17 +5639,24 @@ async fn turnover_risk_flags_single_point_concentration() {
     )
     .await
     .expect("create critical skill");
-    for (uid, ref_) in [(alice, "RF-CERT-2026-0501"), (bob, "RF-CERT-2026-0515")] {
-        sensei_services::tps::skills::record_qualification(
-            &pool,
-            tenant_id,
-            uid,
-            reflow,
+    for (uid, assessor) in [(alice, bob), (bob, alice)] {
+        for level in [
+            sensei_services::tps::skills::SkillLevel::Learning,
+            sensei_services::tps::skills::SkillLevel::Supervised,
             sensei_services::tps::skills::SkillLevel::Independent,
-            serde_json::json!({"type": "certification", "ref": ref_}),
-        )
-        .await
-        .expect("independent qualification");
+        ] {
+            sensei_services::tps::skills::record_qualification(
+                &pool,
+                tenant_id,
+                uid,
+                reflow,
+                level,
+                evidence(assessor),
+                None,
+            )
+            .await
+            .expect("principal walks the ladder to independent");
+        }
     }
 
     // Skill 3 (CRITICAL): NO qualifications at all — untrained gap.
@@ -5079,6 +5889,255 @@ async fn process_mining_detects_hidden_loop() {
     );
 }
 
+/// Sixteenth audit 44/96: the process-mining conformance check is a
+/// PER-OBJECT DIRECTLY-FOLLOWS analysis. Events are grouped by case key
+/// (the object each event touches, recovered from the objects JSONB),
+/// each case's events are ordered by occurred_at, and the directly-follows
+/// pairs (e_i -> e_{i+1}) are aggregated ACROSS cases. Hidden loops are
+/// detected WITHIN one case's own sequence (per-case reopen) — repeated
+/// event names across DIFFERENT objects must never aggregate into a loop.
+#[tokio::test]
+async fn process_mining_directly_follows_per_case() {
+    let _serial = DB_LOCK.lock().await;
+    let Some(pool) = connect().await else { return };
+    sqlx::query(
+        r#"DO $$ DECLARE r RECORD; BEGIN
+             FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname = 'public') LOOP
+                 EXECUTE format('DROP TABLE IF EXISTS %I CASCADE', r.tablename);
+             END LOOP;
+         END $$"#,
+    )
+    .execute(&pool)
+    .await
+    .expect("drop all tables");
+    sensei_db::migrations::run_migrations(&pool)
+        .await
+        .expect("the ENTIRE migration chain must apply to an empty database");
+
+    let tenant_id = uuid::Uuid::new_v4();
+    sqlx::query("INSERT INTO tenants (id, name, slug) VALUES ($1, 'pm-df', 'pm-directly-follows')")
+        .bind(tenant_id)
+        .execute(&pool)
+        .await
+        .expect("tenant insert");
+
+    // Three andon cases. Case A: raised -> acknowledged -> closed
+    // (contained SKIPPED — a deviation). Case B: raised -> acknowledged ->
+    // contained -> verified -> closed (conformant). Case C: raised ->
+    // closed -> raised (a REOPEN — the only hidden loop).
+    let case_a = uuid::Uuid::new_v4();
+    let case_b = uuid::Uuid::new_v4();
+    let case_c = uuid::Uuid::new_v4();
+    let objects_a = serde_json::json!([{ "object_type": "andon", "object_id": case_a }]);
+    let objects_b = serde_json::json!([{ "object_type": "andon", "object_id": case_b }]);
+    let objects_c = serde_json::json!([{ "object_type": "andon", "object_id": case_c }]);
+    let base = chrono::Utc::now() - chrono::Duration::days(3);
+
+    let insert_event = |pool: sqlx::PgPool,
+                        tenant_id: uuid::Uuid,
+                        event_type: String,
+                        occurred_at: chrono::DateTime<chrono::Utc>,
+                        objects: serde_json::Value| async move {
+        sqlx::query(
+            "INSERT INTO operational_events \
+                (id, tenant_id, event_type, occurred_at, recorded_at, scope_site_id, actor_id, \
+                 objects, source_system, source_id, sensitivity, payload, sequence) \
+             VALUES ($1, $2, $3, $4, NOW(), NULL, NULL, $5, 'sensei', NULL, 'internal', '{}', 1)",
+        )
+        .bind(uuid::Uuid::new_v4())
+        .bind(tenant_id)
+        .bind(event_type)
+        .bind(occurred_at)
+        .bind(objects)
+        .execute(&pool)
+        .await
+        .expect("event insert");
+    };
+
+    // Case A: raised -> acknowledged -> closed (contained skipped).
+    insert_event(
+        pool.clone(),
+        tenant_id,
+        "andon.raised".to_string(),
+        base,
+        objects_a.clone(),
+    )
+    .await;
+    insert_event(
+        pool.clone(),
+        tenant_id,
+        "andon.acknowledged".to_string(),
+        base + chrono::Duration::minutes(1),
+        objects_a.clone(),
+    )
+    .await;
+    insert_event(
+        pool.clone(),
+        tenant_id,
+        "andon.closed".to_string(),
+        base + chrono::Duration::minutes(2),
+        objects_a.clone(),
+    )
+    .await;
+    // Case B: raised -> acknowledged -> contained -> verified -> closed.
+    insert_event(
+        pool.clone(),
+        tenant_id,
+        "andon.raised".to_string(),
+        base + chrono::Duration::minutes(10),
+        objects_b.clone(),
+    )
+    .await;
+    insert_event(
+        pool.clone(),
+        tenant_id,
+        "andon.acknowledged".to_string(),
+        base + chrono::Duration::minutes(11),
+        objects_b.clone(),
+    )
+    .await;
+    insert_event(
+        pool.clone(),
+        tenant_id,
+        "andon.contained".to_string(),
+        base + chrono::Duration::minutes(12),
+        objects_b.clone(),
+    )
+    .await;
+    insert_event(
+        pool.clone(),
+        tenant_id,
+        "andon.verified".to_string(),
+        base + chrono::Duration::minutes(13),
+        objects_b.clone(),
+    )
+    .await;
+    insert_event(
+        pool.clone(),
+        tenant_id,
+        "andon.closed".to_string(),
+        base + chrono::Duration::minutes(14),
+        objects_b.clone(),
+    )
+    .await;
+    // Case C: raised -> closed -> raised (reopen).
+    insert_event(
+        pool.clone(),
+        tenant_id,
+        "andon.raised".to_string(),
+        base + chrono::Duration::minutes(20),
+        objects_c.clone(),
+    )
+    .await;
+    insert_event(
+        pool.clone(),
+        tenant_id,
+        "andon.closed".to_string(),
+        base + chrono::Duration::minutes(21),
+        objects_c.clone(),
+    )
+    .await;
+    insert_event(
+        pool.clone(),
+        tenant_id,
+        "andon.raised".to_string(),
+        base + chrono::Duration::minutes(22),
+        objects_c,
+    )
+    .await;
+
+    let report =
+        sensei_services::tps::process_mining::conformance_report(&pool, tenant_id, "andon", 30)
+            .await
+            .expect("conformance report must build");
+
+    // DIRECTLY-FOLLOWS transitions aggregated across cases: A's
+    // acknowledged -> closed (a deviation — contained was skipped) and C's
+    // raised -> closed (the reopen jump) must both be present.
+    assert!(
+        report
+            .actual_transitions
+            .iter()
+            .any(|(from, to, _)| from == "acknowledged" && to == "closed"),
+        "acknowledged -> closed must be a directly-follows transition (from case A), got: {:?}",
+        report.actual_transitions
+    );
+    assert!(
+        report
+            .actual_transitions
+            .iter()
+            .any(|(from, to, _)| from == "raised" && to == "closed"),
+        "raised -> closed must be a directly-follows transition (from case C), got: {:?}",
+        report.actual_transitions
+    );
+    assert!(
+        report
+            .deviations
+            .iter()
+            .any(|d| d.contains("acknowledged -> closed")),
+        "acknowledged -> closed must be a deviation, got: {:?}",
+        report.deviations
+    );
+
+    // VARIANTS: the three distinct per-case sequences, each walked once.
+    let mut variants: Vec<Vec<String>> = report
+        .variants
+        .iter()
+        .filter(|(_, n)| *n == 1)
+        .map(|(seq, _)| seq.clone())
+        .collect();
+    variants.sort();
+    let mut expected_variants = vec![
+        vec!["raised", "acknowledged", "closed"],
+        vec!["raised", "acknowledged", "contained", "verified", "closed"],
+        vec!["raised", "closed", "raised"],
+    ];
+    expected_variants.sort();
+    assert_eq!(
+        variants, expected_variants,
+        "variants must be the 3 distinct per-case sequences"
+    );
+
+    // HIDDEN LOOPS: ONLY case C reopened (raised twice IN ITS OWN
+    // sequence) — reopen_count 1. The per-case keying fix: A and B each
+    // raised once, so the aggregate must NOT count 3 reopen loops (the
+    // old cross-case aggregation bug).
+    assert_eq!(
+        report.hidden_loops.len(),
+        1,
+        "exactly ONE hidden loop — only case C reopened, got: {:?}",
+        report.hidden_loops
+    );
+    assert_eq!(
+        report.hidden_loops[0].condition_key, "andon.raised",
+        "the reopened condition is andon.raised"
+    );
+    assert_eq!(
+        report.hidden_loops[0].reopen_count, 1,
+        "case C reopened once (per-case count, not cross-case aggregation), got: {:?}",
+        report.hidden_loops
+    );
+    assert!(
+        report
+            .hidden_loops
+            .iter()
+            .all(|l| l.guidance.contains("this condition keeps recurring")
+                && !l.guidance.contains("practicing TPS")),
+        "loop guidance speaks about the CONDITION, never TPS"
+    );
+
+    // TRANSITION DURATIONS: raised -> acknowledged is walked by A and B,
+    // and the elapsed time must be positive.
+    assert!(
+        report
+            .transition_durations
+            .iter()
+            .any(|(from, to, avg)| from == "raised" && to == "acknowledged" && *avg > 0.0),
+        "raised -> acknowledged must have a positive average duration, got: {:?}",
+        report.transition_durations
+    );
+}
+
 /// Fifteenth audit items 46-47 + law A19 (lessons + yokoten): explicit
 /// lesson objects carry a context_signature and an APPLICABILITY rule.
 /// Cross-site transfer is an EXPERIMENT, never blind replication — a
@@ -5147,8 +6206,13 @@ async fn lesson_lifecycle_yokoten_experiment() {
         observed_result: serde_json::json!({ "result": "reduced" }),
         confidence: Some(0.9),
         applicability: serde_json::json!({
-            "machine_families": [machine_family],
-            "processes": ["smt"],
+            "required_matches": [
+                { "key": "machine_family", "value": machine_family },
+                { "key": "process", "value": "smt" },
+            ],
+            "weighted_matches": [ { "key": "paste_family", "weight": 1.0 } ],
+            "incompatible_conditions": [ { "key": "failure_mechanism", "value": "feeder_wear" } ],
+            "minimum_similarity": 0.5,
         }),
         origin_site_id: None,
     };
@@ -5507,12 +6571,14 @@ async fn country_policy_bundle_is_data_not_code() {
     assert_eq!(locale_for_policy(&germany), "de-Germany");
 }
 
-/// Fifteenth audit 29/46/66-67 + A19/A24 (corporate federation): the
-/// mix-normalized cross-site analytics and the causal HYPOTHESIS chain
-/// must execute against the migrated schema. Comparing Bizerte vs
-/// Tangier FPY without product-complexity adjustment is forbidden —
-/// `mix_normalized` is always true, and "Why is Bizerte better at
-/// changeovers?" returns hypotheses with evidence, never facts.
+/// Fifteenth audit 29/46/66-67 + A19/A24 + sixteenth audit items 25-28
+/// (corporate federation): the STRATIFIED cross-site analytics and the
+/// causal HYPOTHESIS chain must execute against the migrated schema.
+/// FPY is the documented FIRST-PASS PROXY (completed without scrap /
+/// completed) and the comparison is stratified by product family —
+/// comparing Bizerte vs Tangier FPY across families is forbidden.
+/// "Why is Bizerte better at changeovers?" returns hypotheses with
+/// evidence, never facts.
 #[tokio::test]
 async fn corporate_cross_site_analytics_and_causal() {
     let _serial = DB_LOCK.lock().await;
@@ -5562,12 +6628,13 @@ async fn corporate_cross_site_analytics_and_causal() {
     .await
     .expect("sites insert");
 
-    // A work order per site — Bizerte scraped 10 of 100, Tangier none.
+    // A work order per site — Bizerte completed 100 and scraped 10 of
+    // them, Tangier completed 100 without scrap.
     sqlx::query(
         "INSERT INTO work_orders (id, tenant_id, wo_number, product_id, quantity, \
-                                  quantity_scrapped, status, site_id) \
-         VALUES ($1, $2, 'WO-BIZ', $3, 100, 10, 'completed', $4), \
-                ($5, $2, 'WO-TAN', $3, 100, 0, 'completed', $6)",
+                                  quantity_completed, quantity_scrapped, status, site_id) \
+         VALUES ($1, $2, 'WO-BIZ', $3, 100, 100, 10, 'completed', $4), \
+                ($5, $2, 'WO-TAN', $3, 100, 100, 0, 'completed', $6)",
     )
     .bind(uuid::Uuid::new_v4())
     .bind(tenant_id)
@@ -5596,12 +6663,15 @@ async fn corporate_cross_site_analytics_and_causal() {
     .await
     .expect("episode insert");
 
-    // ── Cross-site analytics: mix-normalized, never a naive leaderboard ──
+    // ── Cross-site analytics: STRATIFIED, never a naive leaderboard ──
     use sensei_services::tps::corporate::{causal_candidates, cross_site_analytics};
     let analytics = cross_site_analytics(&pool, tenant_id)
         .await
         .expect("cross_site_analytics must run on the migrated schema");
-    assert!(analytics.mix_normalized, "mix normalization is always on");
+    assert!(
+        !analytics.stratified.is_empty(),
+        "the stratified rows must be present"
+    );
     assert_eq!(
         analytics.site_rows.len(),
         2,
@@ -5611,8 +6681,8 @@ async fn corporate_cross_site_analytics_and_causal() {
         analytics
             .guidance
             .iter()
-            .any(|g| g.contains("mix-normalized") && g.contains("naive leaderboard")),
-        "guidance must carry the mix-normalized warning"
+            .any(|g| g.contains("stratified") && g.contains("naive leaderboard")),
+        "guidance must carry the stratified-comparison warning"
     );
     let bizerte_row = analytics
         .site_rows
@@ -5626,19 +6696,40 @@ async fn corporate_cross_site_analytics_and_causal() {
         .expect("Tangier row");
     assert!(
         (bizerte_row.fpy - 0.9).abs() < 1e-9,
-        "Bizerte fpy = 1 − 10/100 scrap"
+        "Bizerte fpy = (100 − 10)/100 completed without scrap"
     );
     assert!(
         (tangier_row.fpy - 1.0).abs() < 1e-9,
-        "Tangier fpy = 1 − 0 scrap"
+        "Tangier fpy = 100/100 completed without scrap"
+    );
+    // The stratified comparison reports FPY per site WITHIN the same
+    // product family (the product has no family — the unassigned
+    // stratum) — the dimensionally invalid mix-adjusted leaderboard is
+    // gone.
+    let bizerte_stratum = analytics
+        .stratified
+        .iter()
+        .find(|s| s.site_id == bizerte)
+        .expect("Bizerte stratum");
+    let tangier_stratum = analytics
+        .stratified
+        .iter()
+        .find(|s| s.site_id == tangier)
+        .expect("Tangier stratum");
+    assert!(
+        (bizerte_stratum.fpy - 0.9).abs() < 1e-9 && bizerte_stratum.sample_size == 100,
+        "Bizerte stratum fpy must match the per-site FPY"
     );
     assert!(
-        bizerte_row.fpy_mix_adjusted.is_finite() && bizerte_row.fpy_mix_adjusted > 0.0,
-        "fpy_mix_adjusted must be computed (deterministic normalization)"
+        (tangier_stratum.fpy - 1.0).abs() < 1e-9 && tangier_stratum.sample_size == 100,
+        "Tangier stratum fpy must match the per-site FPY"
     );
     assert!(
-        tangier_row.fpy_mix_adjusted.is_finite() && tangier_row.fpy_mix_adjusted > 0.0,
-        "fpy_mix_adjusted must be computed for the no-scrap site too"
+        analytics
+            .definitions
+            .iter()
+            .any(|d| d.metric_id == "fpy" && d.definition_note.contains("first-pass proxy")),
+        "the fpy definition note must document the approximation honestly"
     );
 
     // ── Causal chain: hypotheses with evidence, never facts ──
@@ -5672,11 +6763,12 @@ async fn corporate_cross_site_analytics_and_causal() {
     );
 }
 
-/// Site-edge replication (fifteenth audit 29/A15): the durable queue is
-/// the local-first boundary — sites enqueue AUTHORIZED state projections
-/// without depending on the corporate link; corporate pulls them ONCE
-/// (durable once, no double projection) and the projection JSON
-/// round-trips.
+/// Site-edge replication (fifteenth audit 29/A15 + sixteenth audit
+/// items 15-17): the durable queue is the local-first boundary — sites
+/// enqueue AUTHORIZED state projections without depending on the
+/// corporate link; corporate CLAIMS them (lease), applies, and ACKs — a
+/// crash after claim loses only the lease, never the projection (durable
+/// once, no double projection) and the projection JSON round-trips.
 #[tokio::test]
 async fn site_replication_log_durable_projection() {
     let _serial = DB_LOCK.lock().await;
@@ -5710,15 +6802,36 @@ async fn site_replication_log_durable_projection() {
 
     // Site-local enqueue of two AUTHORIZED projections for two different
     // entity types (one without a site / source event — the nullable
-    // contract).
+    // contract), each with its versioned envelope.
+    let envelope_a = replication::ReplicationEnvelope {
+        schema_version: 1,
+        source_event_id: Some("evt-wo-1".to_string()),
+        source_site: Some(site_id),
+        projection_type: "work_order".to_string(),
+        projection_revision: 1,
+        data_policy: "internal".to_string(),
+        payload: serde_json::json!({ "status": "completed", "qty": 120 }),
+    };
+    let envelope_b = replication::ReplicationEnvelope {
+        schema_version: 1,
+        source_event_id: None,
+        source_site: None,
+        projection_type: "andon".to_string(),
+        projection_revision: 1,
+        data_policy: "internal".to_string(),
+        payload: serde_json::json!({ "status": "resolved", "site": site_id }),
+    };
     replication::enqueue_projection(
         &pool,
         tenant_id,
         Some(site_id),
         "work_order",
         entity_a,
-        serde_json::json!({ "status": "completed", "qty": 120 }),
-        Some("evt-wo-1"),
+        envelope_a.payload.clone(),
+        envelope_a.source_event_id.as_deref(),
+        &envelope_a,
+        None,
+        None,
     )
     .await
     .expect("enqueue must succeed site-locally");
@@ -5728,21 +6841,28 @@ async fn site_replication_log_durable_projection() {
         None,
         "andon",
         entity_b,
-        serde_json::json!({ "status": "resolved", "site": site_id }),
+        envelope_b.payload.clone(),
+        envelope_b.source_event_id.as_deref(),
+        &envelope_b,
+        None,
         None,
     )
     .await
     .expect("enqueue must succeed site-locally");
 
     // Corporate pull: both pending entries, in created_at order, with the
-    // projection JSON round-tripped.
-    let pulled = replication::pull_pending(&pool, tenant_id, 100)
+    // projection JSON round-tripped and a lease token on each.
+    let pulled = replication::claim_batch(&pool, tenant_id, 100)
         .await
         .expect("corporate pull must work");
     assert_eq!(pulled.len(), 2, "both projections must be pulled");
     let mut types: Vec<&str> = pulled.iter().map(|e| e.entity_type.as_str()).collect();
     types.sort_unstable();
     assert_eq!(types, vec!["andon", "work_order"]);
+    assert!(
+        pulled.iter().all(|e| e.claim_token.is_some()),
+        "every claimed entry carries its lease token"
+    );
 
     let wo = pulled
         .iter()
@@ -5764,8 +6884,20 @@ async fn site_replication_log_durable_projection() {
     assert_eq!(andon.projection["status"], "resolved");
     assert_eq!(andon.projection["site"], site_id.to_string());
 
-    // Second pull: empty — the claim was atomic, durable once.
-    let again = replication::pull_pending(&pool, tenant_id, 100)
+    // Apply, then ACK with the owned token (claim -> apply -> ACK).
+    for entry in &pulled {
+        replication::ack(
+            &pool,
+            tenant_id,
+            entry.id,
+            entry.claim_token.expect("token"),
+        )
+        .await
+        .expect("ack after apply must succeed");
+    }
+
+    // Second pull: empty — the claim was exclusive, durable once.
+    let again = replication::claim_batch(&pool, tenant_id, 100)
         .await
         .expect("second pull must work");
     assert!(again.is_empty(), "durable once — no double projection");
@@ -5889,7 +7021,12 @@ async fn recommender_and_departure_forecast() {
             countermeasure: "increase rejection threshold after oven verification".to_string(),
             observed_result: serde_json::json!({ "false_calls": "reduced" }),
             confidence: Some(0.85),
-            applicability: serde_json::json!({ "machine_families": ["AOI"] }),
+            applicability: serde_json::json!({
+                "required_matches": [ { "key": "machine_family", "value": "AOI" } ],
+                "weighted_matches": [],
+                "incompatible_conditions": [],
+                "minimum_similarity": 0.5,
+            }),
             origin_site_id: None,
         },
     )
@@ -5911,7 +7048,12 @@ async fn recommender_and_departure_forecast() {
             countermeasure: "recalibrate crimp head each shift".to_string(),
             observed_result: serde_json::json!({ "result": "stable" }),
             confidence: Some(0.9),
-            applicability: serde_json::json!({ "processes": ["crimp"] }),
+            applicability: serde_json::json!({
+                "required_matches": [ { "key": "process", "value": "crimp" } ],
+                "weighted_matches": [],
+                "incompatible_conditions": [],
+                "minimum_similarity": 0.5,
+            }),
             origin_site_id: None,
         },
     )
@@ -5984,36 +7126,45 @@ async fn recommender_and_departure_forecast() {
     .await
     .expect("create critical skill 2");
 
-    record_qualification(
-        &pool,
-        tenant_id,
-        p,
-        skill1,
-        SkillLevel::Trainer,
-        serde_json::json!({ "evidence": "cert-s1" }),
-    )
-    .await
-    .expect("P is the only independent+trainer on skill1");
-    record_qualification(
-        &pool,
-        tenant_id,
-        p,
-        skill2,
-        SkillLevel::Trainer,
-        serde_json::json!({ "evidence": "cert-s2" }),
-    )
-    .await
-    .expect("P qualifies skill2");
-    record_qualification(
-        &pool,
-        tenant_id,
-        second,
-        skill2,
-        SkillLevel::Independent,
-        serde_json::json!({ "evidence": "cert-s2b" }),
-    )
-    .await
-    .expect("second independent on skill2");
+    // The ladder is a controlled state machine (sixteenth audit item 34):
+    // every promotion walks adjacent levels; evidence references the
+    // exact standard revision with a non-self assessor (items 34-36).
+    let evidence = |assessor: uuid::Uuid| {
+        serde_json::json!({
+            "standard_revision": "rev-1",
+            "assessor_id": assessor.to_string(),
+            "observed_cycles": 4,
+            "checks_passed": ["program loads"],
+            "evidence": "cert",
+        })
+    };
+    for (principal, skill, target, assessor) in [
+        (p, skill1, SkillLevel::Trainer, second),
+        (p, skill2, SkillLevel::Trainer, second),
+        (second, skill2, SkillLevel::Independent, p),
+    ] {
+        for level in [
+            SkillLevel::Learning,
+            SkillLevel::Supervised,
+            SkillLevel::Independent,
+            SkillLevel::Trainer,
+        ] {
+            if level.rank() > target.rank() {
+                break;
+            }
+            record_qualification(
+                &pool,
+                tenant_id,
+                principal,
+                skill,
+                level,
+                evidence(assessor),
+                None,
+            )
+            .await
+            .expect("principal walks the ladder");
+        }
+    }
 
     let forecast = forecast_departure(&pool, tenant_id, p)
         .await
@@ -6049,5 +7200,694 @@ async fn recommender_and_departure_forecast() {
             .any(|g| g.contains("AOI Programming") && g.contains("cross-train")),
         "guidance must carry the cross-train warning for skill1: {:?}",
         forecast.guidance
+    );
+}
+
+/// Replication claim -> apply -> ACK (sixteenth audit items 15-17):
+/// at-least-once delivery with idempotent application — a claim is
+/// exclusive (SKIP LOCKED), ownership is token-checked (a stale worker's
+/// ACK is rejected), a failed row becomes claimable again after its retry
+/// window, and the (tenant_id, source_event_id, projection_type) key
+/// makes a duplicate enqueue a hard UNIQUE rejection.
+#[tokio::test]
+async fn replication_claim_ack_at_least_once() {
+    let _serial = DB_LOCK.lock().await;
+    let Some(pool) = connect().await else { return };
+    sqlx::query(
+        r#"DO $$ DECLARE r RECORD; BEGIN
+             FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname = 'public') LOOP
+                 EXECUTE format('DROP TABLE IF EXISTS %I CASCADE', r.tablename);
+             END LOOP;
+         END $$"#,
+    )
+    .execute(&pool)
+    .await
+    .expect("drop all tables");
+    sensei_db::migrations::run_migrations(&pool)
+        .await
+        .expect("the ENTIRE migration chain must apply to an empty database");
+
+    let tenant_id = uuid::Uuid::new_v4();
+    sqlx::query("INSERT INTO tenants (id, name, slug) VALUES ($1, 'repclaim', 'repclaim')")
+        .bind(tenant_id)
+        .execute(&pool)
+        .await
+        .expect("tenant insert");
+
+    use sensei_services::tps::replication;
+
+    async fn status_of(pool: &sqlx::PgPool, tenant_id: uuid::Uuid, id: uuid::Uuid) -> String {
+        let mut tx = pool.begin().await.expect("status tx begin");
+        sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
+            .bind(tenant_id.to_string())
+            .execute(&mut *tx)
+            .await
+            .expect("set tenant context");
+        let s: String = sqlx::query_scalar("SELECT status FROM site_replication_log WHERE id = $1")
+            .bind(id)
+            .fetch_one(&mut *tx)
+            .await
+            .expect("status read");
+        tx.commit().await.expect("status tx commit");
+        s
+    }
+
+    let site_id = uuid::Uuid::new_v4();
+    let entity_a = uuid::Uuid::new_v4();
+    let entity_b = uuid::Uuid::new_v4();
+
+    let envelope_a = replication::ReplicationEnvelope {
+        schema_version: 1,
+        source_event_id: Some("evt-claim-a".to_string()),
+        source_site: Some(site_id),
+        projection_type: "work_order".to_string(),
+        projection_revision: 1,
+        data_policy: "internal".to_string(),
+        payload: serde_json::json!({ "status": "completed" }),
+    };
+    let envelope_b = replication::ReplicationEnvelope {
+        schema_version: 1,
+        source_event_id: Some("evt-claim-b".to_string()),
+        source_site: None,
+        projection_type: "andon".to_string(),
+        projection_revision: 1,
+        data_policy: "internal".to_string(),
+        payload: serde_json::json!({ "status": "resolved" }),
+    };
+
+    replication::enqueue_projection(
+        &pool,
+        tenant_id,
+        Some(site_id),
+        "work_order",
+        entity_a,
+        envelope_a.payload.clone(),
+        envelope_a.source_event_id.as_deref(),
+        &envelope_a,
+        None,
+        None,
+    )
+    .await
+    .expect("enqueue A must succeed");
+    replication::enqueue_projection(
+        &pool,
+        tenant_id,
+        None,
+        "andon",
+        entity_b,
+        envelope_b.payload.clone(),
+        envelope_b.source_event_id.as_deref(),
+        &envelope_b,
+        None,
+        None,
+    )
+    .await
+    .expect("enqueue B must succeed");
+
+    // Claim: both rows come back with a lease token and status 'claimed'.
+    let claimed = replication::claim_batch(&pool, tenant_id, 100)
+        .await
+        .expect("claim batch must work");
+    assert_eq!(claimed.len(), 2, "both projections must be claimable");
+    let a = claimed
+        .iter()
+        .find(|e| e.entity_type == "work_order")
+        .expect("A claimed");
+    let b = claimed
+        .iter()
+        .find(|e| e.entity_type == "andon")
+        .expect("B claimed");
+    let a_token = a.claim_token.expect("A has a lease token");
+    let b_token = b.claim_token.expect("B has a lease token");
+    assert_ne!(a_token, b_token, "each claim gets its own token");
+    assert_eq!(status_of(&pool, tenant_id, a.id).await, "claimed");
+    assert_eq!(status_of(&pool, tenant_id, b.id).await, "claimed");
+
+    // Exclusive claim: a second worker gets nothing.
+    let second = replication::claim_batch(&pool, tenant_id, 100)
+        .await
+        .expect("second claim must work");
+    assert!(second.is_empty(), "the claim is exclusive (SKIP LOCKED)");
+
+    // ACK with the OWNED token is accepted; a stale worker's token is
+    // rejected and the row stays claimed.
+    replication::ack(&pool, tenant_id, a.id, a_token)
+        .await
+        .expect("ack with the owned token must be accepted");
+    assert_eq!(status_of(&pool, tenant_id, a.id).await, "acked");
+    replication::ack(&pool, tenant_id, b.id, uuid::Uuid::new_v4())
+        .await
+        .expect_err("a stale worker's ack must be rejected");
+    assert_eq!(
+        status_of(&pool, tenant_id, b.id).await,
+        "claimed",
+        "wrong-token ack leaves the row claimed"
+    );
+
+    // Fail with a retry window: once next_attempt_at passes, the row is
+    // claimable again, and the retry worker's claim + ack succeed.
+    replication::fail(&pool, tenant_id, b.id, b_token, "transient apply error", 1)
+        .await
+        .expect("fail with retry must be accepted");
+    assert_eq!(status_of(&pool, tenant_id, b.id).await, "failed");
+    tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
+    let retried = replication::claim_batch(&pool, tenant_id, 100)
+        .await
+        .expect("retry claim must work");
+    assert_eq!(retried.len(), 1, "the failed row is claimable again");
+    assert_eq!(retried[0].id, b.id, "the retried row is B");
+    let retried_token = retried[0].claim_token.expect("retry lease token");
+    replication::ack(&pool, tenant_id, b.id, retried_token)
+        .await
+        .expect("retry ack must be accepted");
+    assert_eq!(status_of(&pool, tenant_id, b.id).await, "acked");
+
+    // Idempotency key: the same source_event_id + projection_type is a
+    // hard UNIQUE rejection, even though the original row is acked.
+    replication::enqueue_projection(
+        &pool,
+        tenant_id,
+        Some(site_id),
+        "work_order",
+        entity_a,
+        envelope_a.payload.clone(),
+        envelope_a.source_event_id.as_deref(),
+        &envelope_a,
+        None,
+        None,
+    )
+    .await
+    .expect_err("duplicate source_event_id + projection_type must be rejected");
+
+    // Residency gate (item 17): restricted data may not cross countries;
+    // internal data may.
+    assert!(!replication::may_replicate(
+        "restricted",
+        Some("ma"),
+        Some("tn")
+    ));
+    assert!(replication::may_replicate(
+        "internal",
+        Some("ma"),
+        Some("tn")
+    ));
+    assert!(replication::may_replicate(
+        "restricted",
+        Some("ma"),
+        Some("ma")
+    ));
+}
+
+/// Sixteenth audit items 25-28 (metric engine convergence): the TRUE
+/// definitions — FPY = first-pass proxy (completed without scrap /
+/// completed), OTD = delivered / (delivered + pending_due), lead time =
+/// delivered_at − created_at — must execute identically in the metric
+/// engine AND the corporate rollup. The metric registry DESCRIBES; Rust
+/// COMPUTES; API, dashboard, AI and corporate surfaces call the SAME
+/// engine.
+#[tokio::test]
+async fn metric_engine_matches_corporate_rollup() {
+    let _serial = DB_LOCK.lock().await;
+    let Some(pool) = connect().await else { return };
+    sqlx::query(
+        r#"DO $$ DECLARE r RECORD; BEGIN
+             FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname = 'public') LOOP
+                 EXECUTE format('DROP TABLE IF EXISTS %I CASCADE', r.tablename);
+             END LOOP;
+         END $$"#,
+    )
+    .execute(&pool)
+    .await
+    .expect("drop all tables");
+    sensei_db::migrations::run_migrations(&pool)
+        .await
+        .expect("the ENTIRE migration chain must apply to an empty database");
+
+    let tenant_id = uuid::Uuid::new_v4();
+    let site_id = uuid::Uuid::new_v4();
+    let product_id = uuid::Uuid::new_v4();
+    let customer_id = uuid::Uuid::new_v4();
+    sqlx::query("INSERT INTO tenants (id, name, slug) VALUES ($1, 'metric', 'metric')")
+        .bind(tenant_id)
+        .execute(&pool)
+        .await
+        .expect("tenant insert");
+    sqlx::query(
+        "INSERT INTO sites (id, tenant_id, site_code, name) VALUES ($1, $2, 'MET', 'Metric Site')",
+    )
+    .bind(site_id)
+    .bind(tenant_id)
+    .execute(&pool)
+    .await
+    .expect("site insert");
+    sqlx::query(
+        "INSERT INTO products (id, tenant_id, product_number, name, unit_of_measure) \
+         VALUES ($1, $2, 'P-MET', 'Metric Product', 'pcs')",
+    )
+    .bind(product_id)
+    .bind(tenant_id)
+    .execute(&pool)
+    .await
+    .expect("product insert");
+    // The sales order's customer must satisfy the same-tenant FK
+    // (migration 063 references accounts).
+    sqlx::query(
+        "INSERT INTO accounts (id, tenant_id, name, account_type, status, created_at, updated_at) \
+         VALUES ($1, $2, 'Metric Customer', 'customer', 'active', NOW(), NOW())",
+    )
+    .bind(customer_id)
+    .bind(tenant_id)
+    .execute(&pool)
+    .await
+    .expect("customer account insert");
+    // quantity 100, completed 100, scrapped 5 → FPY proxy = 95/100.
+    sqlx::query(
+        "INSERT INTO work_orders (id, tenant_id, wo_number, product_id, quantity, \
+                                  quantity_completed, quantity_scrapped, status, site_id) \
+         VALUES ($1, $2, 'WO-MET', $3, 100, 100, 5, 'completed', $4)",
+    )
+    .bind(uuid::Uuid::new_v4())
+    .bind(tenant_id)
+    .bind(product_id)
+    .bind(site_id)
+    .execute(&pool)
+    .await
+    .expect("work order insert");
+    // A delivered sales order with a committed delivery_date in the past
+    // → OTD = 1.0 (1 delivered of 1 eligible).
+    sqlx::query(
+        "INSERT INTO sales_orders (id, tenant_id, so_number, customer_id, status, \
+                                   order_date, delivery_date) \
+         VALUES ($1, $2, 'SO-MET', $3, 'delivered', $4, $5)",
+    )
+    .bind(uuid::Uuid::new_v4())
+    .bind(tenant_id)
+    .bind(customer_id)
+    .bind(chrono::Utc::now() - chrono::Duration::days(30))
+    .bind(chrono::Utc::now() - chrono::Duration::days(3))
+    .execute(&pool)
+    .await
+    .expect("sales order insert");
+
+    use sensei_services::tps::metric_engine::compute_metric;
+
+    let fpy = compute_metric(&pool, tenant_id, "fpy", Some(site_id))
+        .await
+        .expect("fpy must compute on the migrated schema");
+    assert_eq!(
+        fpy.value,
+        RDecimal::from_str_exact("0.95").unwrap(),
+        "FPY = (100 − 5)/100 completed without scrap"
+    );
+    assert_eq!(fpy.sample_size, 100, "sample = completed units");
+    assert!(
+        (fpy.coverage - 1.0).abs() < 1e-9,
+        "one in-scope work order with production data"
+    );
+
+    let otd = compute_metric(&pool, tenant_id, "otd", None)
+        .await
+        .expect("otd must compute on the migrated schema");
+    assert_eq!(otd.value, RDecimal::ONE, "1 delivered of 1 eligible");
+    assert_eq!(otd.sample_size, 1, "one eligible delivery");
+
+    let bogus = compute_metric(&pool, tenant_id, "bogus", None).await;
+    assert!(bogus.is_err(), "unknown metric ids must be rejected");
+
+    // Convergence: the corporate rollup FPY for the same site MUST equal
+    // the engine's FPY — every surface calls the same definition.
+    use sensei_services::tps::corporate::cross_site_analytics;
+    let analytics = cross_site_analytics(&pool, tenant_id)
+        .await
+        .expect("cross_site_analytics must run on the migrated schema");
+    let row = analytics
+        .site_rows
+        .iter()
+        .find(|r| r.site_id == site_id)
+        .expect("the site row must exist");
+    let engine_fpy: f64 = fpy
+        .value
+        .to_string()
+        .parse()
+        .expect("the engine FPY decimal must parse as f64");
+    assert!(
+        (row.fpy - engine_fpy).abs() < 1e-9,
+        "corporate rollup FPY must equal the engine FPY: {} vs {engine_fpy}",
+        row.fpy
+    );
+    assert!(
+        analytics
+            .guidance
+            .iter()
+            .any(|g| g.contains("stratified") && g.contains("naive leaderboard")),
+        "guidance must carry the stratified-comparison warning"
+    );
+}
+
+/// Sixteenth audit 22/96: the canonical operational event ('andon.raised')
+/// is created ATOMICALLY with the Andon — ONE transaction. If the event
+/// insert failed after the Andon committed, a retry would duplicate the
+/// Andon; here the Andon + event commit (or roll back) together.
+#[tokio::test]
+async fn andon_and_event_commit_atomically() {
+    let _serial = DB_LOCK.lock().await;
+    let Some(pool) = connect().await else { return };
+    sqlx::query(
+        r#"DO $$ DECLARE r RECORD; BEGIN
+             FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname = 'public') LOOP
+                 EXECUTE format('DROP TABLE IF EXISTS %I CASCADE', r.tablename);
+             END LOOP;
+         END $$"#,
+    )
+    .execute(&pool)
+    .await
+    .expect("drop all tables");
+    sensei_db::migrations::run_migrations(&pool)
+        .await
+        .expect("the ENTIRE migration chain must apply to an empty database");
+
+    let tenant_id = uuid::Uuid::new_v4();
+    let user_id = uuid::Uuid::new_v4();
+    let site_id = uuid::Uuid::new_v4();
+    let wc_id = uuid::Uuid::new_v4();
+    sqlx::query("INSERT INTO tenants (id, name, slug) VALUES ($1, 'atomic', 'atomic')")
+        .bind(tenant_id)
+        .execute(&pool)
+        .await
+        .expect("tenant insert");
+    sqlx::query(
+        "INSERT INTO users (id, tenant_id, email, name, password_hash)  VALUES ($1, $2, 'atomic@svc.local', 'At', 'x')",
+    )
+    .bind(user_id)
+    .bind(tenant_id)
+    .execute(&pool)
+    .await
+    .expect("user insert");
+    sqlx::query(
+        "INSERT INTO sites (id, tenant_id, site_code, name)  VALUES ($1, $2, 'AT', 'Atomic')",
+    )
+    .bind(site_id)
+    .bind(tenant_id)
+    .execute(&pool)
+    .await
+    .expect("site insert");
+    sqlx::query(
+        "INSERT INTO work_centers (id, tenant_id, name, work_center_number, is_active, capacity_per_shift, created_at, updated_at)  VALUES ($1, $2, 'WC', 'WC-AT', TRUE, 8, NOW(), NOW())",
+    )
+    .bind(wc_id)
+    .bind(tenant_id)
+    .execute(&pool)
+    .await
+    .expect("work center insert");
+
+    use sensei_services::ops::OperationsService;
+    let ops_service = sensei_services::ops::DatabaseOperationsService::new(pool.clone());
+
+    let make_andon =
+        |issue_type: &str, severity: &str, description: &str| sensei_services::ops::Andon {
+            id: uuid::Uuid::new_v4(),
+            tenant_id,
+            site_id: Some(site_id),
+            andon_number: String::new(),
+            work_center_id: wc_id,
+            issue_type: issue_type.to_string(),
+            severity: severity.to_string(),
+            description: description.to_string(),
+            status: String::new(),
+            raised_by: user_id,
+            acknowledged_by: None,
+            resolved_by: None,
+            resolution: None,
+            response_time_seconds: None,
+            resolution_time_seconds: None,
+            created_at: chrono::Utc::now(),
+            acknowledged_at: None,
+            resolved_at: None,
+            restart_authorized_by: None,
+            restart_authorized_at: None,
+            abnormal_condition_observed_at: None,
+            contained_at: None,
+            contained_by: None,
+            contained_note: None,
+            escalated: false,
+            escalated_at: None,
+        };
+
+    let andon = ops_service
+        .raise_andon(tenant_id, make_andon("quality", "high", "atomic raise"))
+        .await
+        .expect("raise_andon must work");
+    assert_eq!(andon.status, "active");
+
+    // BOTH rows must exist — the event rode the andon's transaction, so
+    // occurred_at == the andon's created_at (the same timestamp).
+    let (andon_created_at,): (chrono::DateTime<chrono::Utc>,) = {
+        let mut tx = pool.begin().await.expect("andon read tx begin");
+        sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
+            .bind(tenant_id.to_string())
+            .execute(&mut *tx)
+            .await
+            .expect("set tenant context");
+        let row = sqlx::query_as("SELECT created_at FROM andons WHERE id = $1")
+            .bind(andon.id)
+            .fetch_one(&mut *tx)
+            .await
+            .expect("andon row must exist");
+        tx.commit().await.expect("andon read tx commit");
+        row
+    };
+    let (event_count, event_type, ev_occurred, scope_site_id, actor_id): (
+        i64,
+        String,
+        chrono::DateTime<chrono::Utc>,
+        Option<uuid::Uuid>,
+        Option<uuid::Uuid>,
+    ) = {
+        let mut tx = pool.begin().await.expect("event read tx begin");
+        sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
+            .bind(tenant_id.to_string())
+            .execute(&mut *tx)
+            .await
+            .expect("set tenant context");
+        let row = sqlx::query_as(
+            "SELECT COUNT(*), COALESCE(MAX(event_type), ''), COALESCE(MAX(occurred_at), NOW()), \
+                    (SELECT scope_site_id FROM operational_events WHERE tenant_id = $1 AND event_type = 'andon.raised' LIMIT 1), \
+                    (SELECT actor_id FROM operational_events WHERE tenant_id = $1 AND event_type = 'andon.raised' LIMIT 1) \
+             FROM operational_events WHERE tenant_id = $1 AND event_type = 'andon.raised'",
+        )
+        .bind(tenant_id)
+        .fetch_one(&mut *tx)
+        .await
+        .expect("event read");
+        tx.commit().await.expect("event read tx commit");
+        row
+    };
+    assert_eq!(event_count, 1, "one raise ⇒ exactly one event row");
+    assert_eq!(event_type, "andon.raised", "the canonical event type");
+    assert_eq!(
+        ev_occurred, andon_created_at,
+        "occurred_at == the andon's created_at (bitemporal: the event happened THEN)"
+    );
+    assert_eq!(
+        scope_site_id,
+        Some(site_id),
+        "scope_site_id = the andon's site"
+    );
+    assert_eq!(actor_id, Some(user_id), "actor_id = the andon's raiser");
+
+    // A SECOND raise must yield exactly TWO event rows — no duplicates
+    // from any route-level insert.
+    ops_service
+        .raise_andon(tenant_id, make_andon("material", "medium", "second raise"))
+        .await
+        .expect("second raise_andon must work");
+    let total: i64 = {
+        let mut tx = pool.begin().await.expect("event total tx begin");
+        sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
+            .bind(tenant_id.to_string())
+            .execute(&mut *tx)
+            .await
+            .expect("set tenant context");
+        let n = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM operational_events WHERE tenant_id = $1 AND event_type = 'andon.raised'",
+        )
+        .bind(tenant_id)
+        .fetch_one(&mut *tx)
+        .await
+        .expect("event total read");
+        tx.commit().await.expect("event total tx commit");
+        n
+    };
+    let andons_total: i64 = {
+        let mut tx = pool.begin().await.expect("andon total tx begin");
+        sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
+            .bind(tenant_id.to_string())
+            .execute(&mut *tx)
+            .await
+            .expect("set tenant context");
+        let n = sqlx::query_scalar("SELECT COUNT(*) FROM andons WHERE tenant_id = $1")
+            .bind(tenant_id)
+            .fetch_one(&mut *tx)
+            .await
+            .expect("andon total read");
+        tx.commit().await.expect("andon total tx commit");
+        n
+    };
+    assert_eq!(
+        total, 2,
+        "two raises ⇒ exactly two event rows (no duplicates)"
+    );
+    assert_eq!(andons_total, 2, "two raises ⇒ exactly two andon rows");
+}
+
+/// Sixteenth audit items 42-43: adopted lessons are IMMUTABLE — a
+/// re-record becomes a NEW REVISION (lesson_id-rN) with 'proposed'
+/// status while the original stays 'adopted'; and applicability is a
+/// STRUCTURED rule — one equal key is not enough, incompatible
+/// conditions block, weighted similarity gates the match.
+#[tokio::test]
+async fn lesson_revision_and_structured_applicability() {
+    let _serial = DB_LOCK.lock().await;
+    let Some(pool) = connect().await else { return };
+    sqlx::query(
+        r#"DO $$ DECLARE r RECORD; BEGIN
+             FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname = 'public') LOOP
+                 EXECUTE format('DROP TABLE IF EXISTS %I CASCADE', r.tablename);
+             END LOOP;
+         END $$"#,
+    )
+    .execute(&pool)
+    .await
+    .expect("drop all tables");
+    sensei_db::migrations::run_migrations(&pool)
+        .await
+        .expect("the ENTIRE migration chain must apply to an empty database");
+    let tenant_id = uuid::Uuid::new_v4();
+    let user_id = uuid::Uuid::new_v4();
+    sqlx::query("INSERT INTO tenants (id, name, slug) VALUES ($1, 'lra', 'lessonrev')")
+        .bind(tenant_id)
+        .execute(&pool)
+        .await
+        .expect("tenant");
+    sqlx::query(
+        "INSERT INTO users (id, tenant_id, email, name, password_hash)  VALUES ($1, $2, 'lra@x.local', 'L', 'x')",
+    )
+    .bind(user_id)
+    .bind(tenant_id)
+    .execute(&pool)
+    .await
+    .expect("user");
+
+    use sensei_services::tps::lessons::*;
+    let rule = serde_json::json!({
+        "required_matches": [
+            { "key": "process_family", "value": "SMT" },
+            { "key": "failure_mechanism", "value": "insufficient_paste" },
+        ],
+        "weighted_matches": [ { "key": "machine_family", "weight": 1.0 } ],
+        "incompatible_conditions": [ { "key": "failure_mechanism", "value": "feeder_wear" } ],
+        "minimum_similarity": 0.5,
+    });
+    let lesson = NewLesson {
+        lesson_id: "LESSON-1".to_string(),
+        title: "Paste viscosity".to_string(),
+        source_problem_id: None,
+        context_signature: serde_json::json!({ "process_family": "SMT" }),
+        hypothesis: None,
+        countermeasure: "reduce dwell time".to_string(),
+        observed_result: serde_json::json!({}),
+        confidence: Some(0.9),
+        applicability: rule.clone(),
+        origin_site_id: None,
+    };
+    let first = record_lesson(&pool, tenant_id, lesson)
+        .await
+        .expect("record");
+    mark_verified(&pool, tenant_id, first, true)
+        .await
+        .expect("verify");
+    adopt(&pool, tenant_id, first).await.expect("adopt");
+
+    // Re-recording the SAME id creates a REVISION — the adopted original
+    // is untouched.
+    let revised = NewLesson {
+        lesson_id: "LESSON-1".to_string(),
+        title: "Paste viscosity (revised)".to_string(),
+        source_problem_id: None,
+        context_signature: serde_json::json!({ "process_family": "SMT" }),
+        hypothesis: None,
+        countermeasure: "change stencil angle".to_string(),
+        observed_result: serde_json::json!({}),
+        confidence: Some(0.8),
+        applicability: rule.clone(),
+        origin_site_id: None,
+    };
+    let second = record_lesson(&pool, tenant_id, revised)
+        .await
+        .expect("revised record");
+    assert_ne!(second, first, "a new revision is a new record");
+    let second_row = get_lesson(&pool, tenant_id, second).await.expect("row");
+    assert!(
+        second_row.lesson_id.starts_with("LESSON-1-r"),
+        "revision id"
+    );
+    assert_eq!(second_row.status, "proposed");
+    let first_row = get_lesson(&pool, tenant_id, first).await.expect("orig row");
+    assert_eq!(
+        first_row.status, "adopted",
+        "the adopted original is immutable"
+    );
+    assert_eq!(
+        first_row.countermeasure, "reduce dwell time",
+        "original evidence/history preserved"
+    );
+
+    // Structured applicability: matching requires ALL required + weighted
+    // similarity; incompatible conditions block; one-key is not enough.
+    let rule_parsed: ApplicabilityRule = serde_json::from_value(rule).expect("rule parses");
+    assert!(
+        applicability_matches(
+            &rule_parsed,
+            &serde_json::json!({
+                "process_family": "SMT",
+                "failure_mechanism": "insufficient_paste",
+                "machine_family": "AOI-X",
+            })
+        ),
+        "required all match + weighted similarity 1.0"
+    );
+    assert!(
+        !applicability_matches(
+            &rule_parsed,
+            &serde_json::json!({
+                "process_family": "SMT",
+                "failure_mechanism": "feeder_wear",
+            })
+        ),
+        "incompatible condition blocks"
+    );
+    assert!(
+        !applicability_matches(
+            &rule_parsed,
+            &serde_json::json!({ "process_family": "SMT" })
+        ),
+        "missing required failure_mechanism blocks — one key is not enough"
+    );
+    // A legacy unstructured applicability is REJECTED at record time.
+    let bad = NewLesson {
+        lesson_id: "LESSON-2".to_string(),
+        title: "x".to_string(),
+        source_problem_id: None,
+        context_signature: serde_json::json!({}),
+        hypothesis: None,
+        countermeasure: "y".to_string(),
+        observed_result: serde_json::json!({}),
+        confidence: None,
+        applicability: serde_json::json!({ "machine_families": ["AOI"] }),
+        origin_site_id: None,
+    };
+    assert!(
+        record_lesson(&pool, tenant_id, bad).await.is_err(),
+        "unstructured applicability is rejected"
     );
 }

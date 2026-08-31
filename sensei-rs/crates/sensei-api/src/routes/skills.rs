@@ -160,6 +160,7 @@ pub async fn qualify(
         skill_uuid,
         req.level,
         req.evidence,
+        None,
     )
     .await?;
     Ok(Json(

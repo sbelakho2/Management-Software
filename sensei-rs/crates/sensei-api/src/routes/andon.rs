@@ -199,69 +199,21 @@ pub async fn raise_andon(
             source_entity_id: andon.id,
             created_by: user.user_id,
         };
-        let _ =
+        if let Err(e) =
             sensei_services::tps::conditions::open_condition(pool.as_ref(), tenant_id, &cond_input)
-                .await;
-    }
-    // Fifteenth audit 31-33: the operational event envelope — ONE row in
-    // the event log (the organizational nervous system), bitemporal
-    // (occurred_at = when it happened, recorded_at = when we learned it)
-    // and linking MANY objects (the andon AND its work center). The write
-    // is transactional and tenant-scoped because the envelope is
-    // FORCE-RLS fail-closed; errors propagate — a raised Andon must never
-    // silently lack its log entry.
-    if let Some(pool) = state.db_pool.as_ref() {
-        let objects = serde_json::json!([
-            { "object_type": "andon", "object_id": andon.id },
-            { "object_type": "work_center", "object_id": andon.work_center_id },
-        ]);
-        let payload = serde_json::json!({
-            "issue_type": andon.issue_type,
-            "severity": andon.severity,
-        });
-        let mut tx = pool.begin().await.map_err(|e| {
-            sensei_core::error::SenseiError::Database(format!("Event log tx begin failed: {e}"))
-        })?;
-        sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
-            .bind(tenant_id.to_string())
-            .execute(&mut *tx)
-            .await
-            .map_err(|e| {
-                sensei_core::error::SenseiError::Database(format!(
-                    "Event log tenant context failed: {e}"
-                ))
-            })?;
-        sqlx::query(
-            "INSERT INTO operational_events \
-                     (id, tenant_id, event_type, occurred_at, recorded_at, scope_site_id, actor_id, \
-                      objects, source_system, source_id, sensitivity, payload, sequence) \
-             VALUES ($1, $2, 'andon.raised', $3, NOW(), $4, $5, $6, 'sensei', NULL, 'internal', $7, 1)",
-        )
-        .bind(Uuid::new_v4())
-        .bind(tenant_id)
-        .bind(andon.created_at)
-        .bind(andon.site_id)
-        .bind(user.user_id)
-        .bind(objects)
-        .bind(payload)
-        .execute(&mut *tx)
-        .await
-        .map_err(|e| {
-            tracing::error!(error = %e, andon_id = %andon.id, "Event log write failed");
-            sensei_core::error::SenseiError::Internal(format!("Andon raised but event log write failed: {e}"))
-        })?;
-        tx.commit().await.map_err(|e| {
-            sensei_core::error::SenseiError::Database(format!("Event log tx commit failed: {e}"))
-        })?;
+                .await
+        {
+            tracing::error!(error = %e, andon_id = %andon.id, "OperationalCondition projection failed");
+        }
     }
     // Item 63/73: the graph edge is a DERIVED PROJECTION of the
-    // authoritative Andon row. The write error is NOT ignored — a failed
-    // projection is logged loudly, and the graph is rebuildable from
-    // authoritative sources (the rebuild endpoint). The Andon itself is
-    // the source of truth; the edge can never lose it.
+    // authoritative Andon row — the Andon itself is the source of truth.
+    // A failed projection is logged loudly and REBUILDABLE (the rebuild
+    // endpoint reconstructs it from the Andon rows), so it never breaks
+    // the raise response.
     if let Some(pool) = state.db_pool.as_ref() {
         let wc = andon.work_center_id;
-        sqlx::query(
+        if let Err(e) = sqlx::query(
             "INSERT INTO knowledge_graph_edges                     (tenant_id, source_type, source_id, relation, target_type, target_id, created_by)                  VALUES ($1, 'abnormality', $2, 'occurred_at', 'work_center', $3, $4)                  ON CONFLICT DO NOTHING",
         )
         .bind(tenant_id)
@@ -270,10 +222,9 @@ pub async fn raise_andon(
         .bind(user.user_id)
         .execute(pool.as_ref())
         .await
-        .map_err(|e| {
+        {
             tracing::error!(error = %e, andon_id = %andon.id, "Graph projection failed");
-            sensei_core::error::SenseiError::Internal(format!("Andon raised but graph projection failed: {e}"))
-        })?;
+        }
     }
     Ok(Json(andon))
 }

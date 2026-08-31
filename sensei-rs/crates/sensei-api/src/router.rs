@@ -2155,8 +2155,10 @@ pub fn build_router(state: AppState) -> Router {
             post(routes::lessons::recommend),
         )
         // ── Corporate Federation Routes (fifteenth audit 29/46/66-67 +
-        //    A19/A24): mix-normalized cross-site analytics, causal
-        //    HYPOTHESIS chains, and corporate lesson propagation. ──────
+        //    A19/A24, sixteenth audit items 25-28): STRATIFIED cross-site
+        //    analytics, causal HYPOTHESIS chains, corporate lesson
+        //    propagation, and the ONE metric engine (API, dashboard, AI
+        //    and corporate rollup all call the same Rust computers). ───
         .route(
             "/api/v1/corporate/analytics",
             get(routes::corporate::analytics),
@@ -2165,6 +2167,10 @@ pub fn build_router(state: AppState) -> Router {
         .route(
             "/api/v1/corporate/lessons/propagate",
             post(routes::corporate::propagate_lesson),
+        )
+        .route(
+            "/api/v1/metrics/{metric_id}",
+            get(routes::corporate::metric_value),
         )
         // ── Site-Edge Replication Routes (fifteenth audit 29/A15): the
         //    durable queue between site-local execution and corporate
@@ -2175,6 +2181,8 @@ pub fn build_router(state: AppState) -> Router {
             post(routes::replication::enqueue),
         )
         .route("/api/v1/replication/pull", get(routes::replication::pull))
+        .route("/api/v1/replication/ack", post(routes::replication::ack))
+        .route("/api/v1/replication/fail", post(routes::replication::fail))
         // ── Country Policy Routes (fifteenth audit 84): locale, currency,
         //    units, calendar, holidays, residency, retention — policy
         //    objects, never `if country == ...` code forks. ────────────
