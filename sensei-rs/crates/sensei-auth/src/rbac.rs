@@ -392,6 +392,7 @@ impl RbacService {
                 "production:start",
                 "production:complete",
                 "production:short-close",
+                "tps:read",
                 "tps:andon:raise",
                 "tps:andon:ack",
                 "tps:andon:contain",
@@ -493,6 +494,12 @@ impl RbacService {
                 "system:state-machines:read",
                 "attachments:read",
                 "system:audit:read",
+                "federation:lesson:offer",
+                "federation:lesson:accept",
+                "federation:replication:publish",
+                "federation:replication:consume",
+                "system:country-policy:read",
+                "system:country-policy:manage",
                 "inventory:read",
             ],
         );
@@ -595,6 +602,7 @@ impl RbacService {
                 "learning:manage",
                 "users:list",
                 "users:update",
+                "tps:read",
             ],
         );
         self.add_role(

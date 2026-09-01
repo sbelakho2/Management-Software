@@ -73,12 +73,11 @@ pub async fn list_andons(
 /// else.
 #[derive(Debug, Clone, serde::Deserialize)]
 pub struct RaiseAndonRequest {
-    /// The work center is server-resolved from the caller's assignment
-    /// when absent (thirteenth audit P0): the operator never supplies an
-    /// id, and a client cannot forge a work center it does not work at.
-    pub work_center_id: Option<Uuid>,
+    /// Sixteenth audit item 6: the operator NEVER supplies organization
+    /// scope — the server resolves site + work center from the caller's
+    /// assignment and DENIES when there is none.
     pub issue_type: String, // quality, safety, maintenance, material, other
-    pub severity: String,   // low, medium, high, critical
+    pub severity: String, // low, medium, high, critical
     pub description: String,
     /// When the abnormal condition was OBSERVED (item 47): the operator's
     /// honest observation time — detection latency becomes measurable.
@@ -108,22 +107,19 @@ pub async fn raise_andon(
     // caller's operational assignment — never accepted as a forged id.
     // The site is captured from the same context (fifteenth audit A1):
     // the Andon is explicitly scoped, never implicitly company-wide.
-    let mut site_id = None;
-    let work_center_id = match req.work_center_id {
-        Some(wc) => wc,
-        None => {
-            // The agent context resolves the caller's site/work center.
-            let ctx = crate::routes::agent::build_context(&user, &state).await;
-            site_id = ctx.site_id;
-            ctx.work_center_id.ok_or_else(|| {
-                sensei_core::error::SenseiError::Validation(
-                    "Cannot raise help: the caller has no work center assigned — \
-                     contact your team lead"
-                        .to_string(),
-                )
-            })?
-        }
-    };
+    let ctx = crate::routes::agent::build_context(&user, &state).await;
+    let work_center_id = ctx.work_center_id.ok_or_else(|| {
+        sensei_core::error::SenseiError::Forbidden(
+            "No work-center assignment — raising help requires an active operational \
+             assignment"
+                .to_string(),
+        )
+    })?;
+    let site_id = Some(ctx.site_id.ok_or_else(|| {
+        sensei_core::error::SenseiError::Forbidden(
+            "No site assignment — raising help requires an active site assignment".to_string(),
+        )
+    })?);
     let andon = Andon {
         id: Uuid::new_v4(),
         tenant_id,

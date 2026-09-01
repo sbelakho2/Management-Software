@@ -45,9 +45,9 @@ pub struct EnqueueRequest {
     pub projection_type: Option<String>,
     #[serde(default = "default_projection_revision")]
     pub projection_revision: u64,
-    #[serde(default = "default_data_policy")]
-    pub data_policy: String,
-    /// Residency gate inputs (item 17).
+    /// Residency gate inputs (item 17). The data policy itself is DERIVED
+    /// server-side from the site manifest + country policy bundle — the
+    /// client never declares its own classification.
     pub source_country: Option<String>,
     pub destination_country: Option<String>,
 }
@@ -58,10 +58,6 @@ fn default_schema_version() -> u32 {
 
 fn default_projection_revision() -> u64 {
     1
-}
-
-fn default_data_policy() -> String {
-    "internal".to_string()
 }
 
 /// Query parameters for `GET /api/v1/replication/pull`.
@@ -114,9 +110,14 @@ pub async fn enqueue(
     State(state): State<AppState>,
     Json(req): Json<EnqueueRequest>,
 ) -> Result<Json<serde_json::Value>> {
-    user.require_permission("integration:status:read")?;
+    user.require_permission("federation:replication:publish")?;
+    let p = pool(&state)?;
+    // SERVER-DERIVED POLICY (sixteenth audit item 29): the classification
+    // comes from the site manifest's country and the tenant's country
+    // policy bundle — the client's word is never trusted.
+    let data_policy = replication::derive_data_policy(p, user.tenant_id, req.site_id).await?;
     if !replication::may_replicate(
-        &req.data_policy,
+        &data_policy,
         req.source_country.as_deref(),
         req.destination_country.as_deref(),
     ) {
@@ -135,10 +136,9 @@ pub async fn enqueue(
         source_site: req.source_site,
         projection_type,
         projection_revision: req.projection_revision,
-        data_policy: req.data_policy.clone(),
+        data_policy,
         payload: req.payload.clone(),
     };
-    let p = pool(&state)?;
     replication::enqueue_projection(
         p,
         user.tenant_id,
@@ -165,7 +165,7 @@ pub async fn pull(
     State(state): State<AppState>,
     Query(query): Query<PullQuery>,
 ) -> Result<Json<PullResponse>> {
-    user.require_permission("system:audit:read")?;
+    user.require_permission("federation:replication:consume")?;
     let p = pool(&state)?;
     let entries = replication::claim_batch(p, user.tenant_id, query.limit).await?;
     Ok(Json(PullResponse { entries }))
@@ -179,7 +179,7 @@ pub async fn ack(
     State(state): State<AppState>,
     Json(req): Json<AckRequest>,
 ) -> Result<Json<serde_json::Value>> {
-    user.require_permission("system:audit:read")?;
+    user.require_permission("federation:replication:consume")?;
     let p = pool(&state)?;
     replication::ack(p, user.tenant_id, req.id, req.claim_token).await?;
     Ok(Json(serde_json::json!({ "ok": true })))
@@ -192,7 +192,7 @@ pub async fn fail(
     State(state): State<AppState>,
     Json(req): Json<FailRequest>,
 ) -> Result<Json<serde_json::Value>> {
-    user.require_permission("system:audit:read")?;
+    user.require_permission("federation:replication:consume")?;
     let p = pool(&state)?;
     replication::fail(
         p,

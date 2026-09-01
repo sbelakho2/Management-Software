@@ -2,3 +2,4 @@
 //! tenant-domain code touches RLS-protected tables.
 
 pub mod tenant_tx;
+pub use tenant_tx::TenantTx;

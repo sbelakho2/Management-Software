@@ -97,6 +97,49 @@ pub fn may_replicate(
     !(destination_set_and_different && matches!(data_policy, "restricted" | "personal"))
 }
 
+/// DERIVE the replication data policy SERVER-SIDE (sixteenth audit item
+/// 29): from the source site's country manifest (site_manifests.country)
+/// and the tenant's country policy bundle (country_policies.data_residency).
+/// FAIL-CLOSED: an unknown country or a missing policy bundle is a
+/// Validation error, never a silent downgrade to a weaker label.
+pub async fn derive_data_policy(
+    pool: &sqlx::PgPool,
+    tenant_id: Uuid,
+    site_id: Option<Uuid>,
+) -> Result<String> {
+    let Some(site_id) = site_id else {
+        // Tenant-level envelope (no site): the default classification is
+        // "internal" — the least permissive label that still replicates.
+        return Ok("internal".to_string());
+    };
+    let country: Option<String> = sqlx::query_scalar(
+        "SELECT sm.country FROM site_manifests sm          WHERE sm.tenant_id = $1 AND sm.site_id = $2",
+    )
+    .bind(tenant_id)
+    .bind(site_id)
+    .fetch_optional(pool)
+    .await
+    .map_err(|e| SenseiError::Database(format!("replication: manifest lookup: {e}")))?;
+    let Some(country) = country else {
+        return Err(SenseiError::Validation(
+            "replication: site has no manifest — cannot derive data policy".to_string(),
+        ));
+    };
+    let residency: Option<String> = sqlx::query_scalar(
+        "SELECT cp.data_residency FROM country_policies cp          WHERE cp.tenant_id = $1 AND cp.country = $2",
+    )
+    .bind(tenant_id)
+    .bind(&country)
+    .fetch_optional(pool)
+    .await
+    .map_err(|e| SenseiError::Database(format!("replication: policy lookup: {e}")))?;
+    residency.ok_or_else(|| {
+        SenseiError::Validation(format!(
+            "replication: no country policy for {country} — a country is a policy RECORD,              not a code fork"
+        ))
+    })
+}
+
 /// Enqueue an AUTHORIZED state projection — SITE-LOCAL, never dependent
 /// on the corporate link. The site's operations keep running while the
 /// queue is durable in its own tenant-scoped transaction. The envelope's
@@ -172,6 +215,19 @@ pub async fn claim_batch(
 ) -> Result<Vec<ReplicationEntry>> {
     with_tenant_tx(pool, tenant_id, move |tx| {
         Box::pin(async move {
+            // AUTO-RECLAIM (sixteenth audit item 29): a worker that
+            // disappeared mid-apply leaves an expired lease behind; the
+            // claim pass recycles those rows instead of waiting for a
+            // separate sweep.
+            sqlx::query(
+                "UPDATE site_replication_log \
+                 SET status = 'pending', claim_token = NULL \
+                 WHERE status = 'claimed' AND lease_expires_at < NOW()",
+            )
+            .execute(&mut **tx)
+            .await
+            .map_err(|e| SenseiError::Database(format!("replication: auto-reclaim: {e}")))?;
+
             let mut rows: Vec<ReplicationEntry> = sqlx::query_as(
                 "SELECT id, site_id, entity_type, entity_id, projection, source_event_id, \
                         created_at, NULL::uuid AS claim_token \

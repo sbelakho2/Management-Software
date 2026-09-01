@@ -21,6 +21,7 @@
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
+
 use sensei_core::error::{Result, SenseiError};
 use sqlx::PgPool;
 use uuid::Uuid;
@@ -153,16 +154,19 @@ async fn work_order_scope(
         .map_err(|e| SenseiError::Database(format!("metric engine: work-order scope: {e}")))
 }
 
-/// FIRST-PASS YIELD (audit item 25): `units completed without scrap /
-/// units completed` — a documented FIRST-PASS PROXY, because the schema
-/// has no unit-level first-pass quality signal. The old `1 − scrap ratio`
-/// is gone: rework is NOT scrap, and scrap is NOT a first-pass pass.
+/// PROCESS YIELD PROXY (sixteenth audit item 25):
+/// `completed / (completed + scrapped)`.
+///
+/// quantity_completed is GOOD output and quantity_scrapped is a SEPARATE
+/// count; the old (good − scrap)/good subtracted scrap twice. True
+/// first-pass yield still needs unit-level first-pass data, so the metric
+/// is named honestly — not called FPY.
 pub struct FpyV1;
 
 #[async_trait]
 impl MetricComputer for FpyV1 {
     fn id(&self) -> &'static str {
-        "fpy"
+        "process_yield_proxy"
     }
 
     fn version(&self) -> u32 {
@@ -180,7 +184,7 @@ impl MetricComputer for FpyV1 {
         with_tenant_tx(pool, tenant_id, |tx| {
             Box::pin(async move {
                 let (
-                    good_units,
+                    _good_units,
                     completed_units,
                     _scrapped,
                     sample_units,
@@ -189,13 +193,7 @@ impl MetricComputer for FpyV1 {
                     period_start,
                     period_end,
                 ) = work_order_scope(tx, tenant_id, site_id).await?;
-                let value = if completed_units > Decimal::ZERO {
-                    good_units
-                        .checked_div(completed_units)
-                        .unwrap_or(Decimal::ZERO)
-                } else {
-                    Decimal::ZERO
-                };
+                let value = process_yield_ratio(completed_units, _scrapped);
                 let sample_size = sample_units.max(0) as u64;
                 let coverage = if rows_in_scope > 0 {
                     rows_valid as f64 / rows_in_scope as f64
@@ -252,13 +250,7 @@ impl MetricComputer for ScrapRateV1 {
                     period_start,
                     period_end,
                 ) = work_order_scope(tx, tenant_id, site_id).await?;
-                let value = if completed_units > Decimal::ZERO {
-                    scrapped
-                        .checked_div(completed_units)
-                        .unwrap_or(Decimal::ZERO)
-                } else {
-                    Decimal::ZERO
-                };
+                let value = scrap_ratio(scrapped, completed_units);
                 let sample_size = sample_units.max(0) as u64;
                 let coverage = if rows_in_scope > 0 {
                     rows_valid as f64 / rows_in_scope as f64
@@ -317,8 +309,9 @@ impl MetricComputer for OtdV1 {
                     Option<DateTime<Utc>>,
                     Option<DateTime<Utc>>,
                 ) = sqlx::query_as(
-                    "SELECT COUNT(*) FILTER (WHERE so.status IN ('shipped','delivered'))::bigint, \
-                            COUNT(*) FILTER (WHERE so.status NOT IN ('cancelled','draft'))::bigint, \
+                    "SELECT COUNT(*) FILTER (WHERE so.delivered_at IS NOT NULL)::bigint, \
+                            COUNT(*) FILTER (WHERE so.status NOT IN ('cancelled','draft') \
+                                             AND so.confirmed_at IS NOT NULL)::bigint, \
                             COUNT(*) FILTER (WHERE so.status <> 'cancelled')::bigint, \
                             MIN(so.created_at), \
                             MAX(so.updated_at) \
@@ -330,7 +323,9 @@ impl MetricComputer for OtdV1 {
                 .await
                 .map_err(|e| SenseiError::Database(format!("metric engine: otd: {e}")))?;
                 let value = if eligible > 0 {
-                    Decimal::from(delivered).checked_div(Decimal::from(eligible)).unwrap_or(Decimal::ZERO)
+                    Decimal::from(delivered)
+                        .checked_div(Decimal::from(eligible))
+                        .unwrap_or(Decimal::ZERO)
                 } else {
                     Decimal::ZERO
                 };
@@ -391,7 +386,8 @@ impl MetricComputer for LeadTimeV1 {
                     Option<DateTime<Utc>>,
                 ) = sqlx::query_as(
                     "SELECT COALESCE(AVG(EXTRACT(EPOCH FROM \
-                                               (so.updated_at - so.created_at)) / 86400.0), 0)::numeric, \
+                                               (COALESCE(so.shipped_at, so.updated_at) \
+                                                - so.created_at)) / 86400.0), 0)::numeric, \
                             COUNT(*)::bigint, \
                             (SELECT COUNT(*) FROM sales_orders so2 \
                              WHERE so2.tenant_id = $1 AND so2.status <> 'cancelled')::bigint, \
@@ -441,20 +437,79 @@ pub fn registry() -> Vec<Box<dyn MetricComputer>> {
 /// Compute ONE metric with its TRUE definition. Unknown metric ids are a
 /// Validation error — a metric with no executable definition must never
 /// silently fall back to anything.
+/// completed / (completed + scrapped) — scrap is a separate count, never
+/// a subset of completed (sixteenth audit item 25).
+fn process_yield_ratio(completed: Decimal, scrapped: Decimal) -> Decimal {
+    let produced = completed + scrapped;
+    if produced > Decimal::ZERO {
+        completed.checked_div(produced).unwrap_or(Decimal::ZERO)
+    } else {
+        Decimal::ZERO
+    }
+}
+
+/// scrapped / (completed + scrapped) — the SAME denominator as the yield
+/// proxy so the two always sum to 1.
+fn scrap_ratio(scrapped: Decimal, completed: Decimal) -> Decimal {
+    let produced = completed + scrapped;
+    if produced > Decimal::ZERO {
+        scrapped.checked_div(produced).unwrap_or(Decimal::ZERO)
+    } else {
+        Decimal::ZERO
+    }
+}
+
+fn computer_for(metric_id: &str) -> Option<Box<dyn MetricComputer>> {
+    registry()
+        .into_iter()
+        .find(|c| c.id() == metric_id || (metric_id == "fpy" && c.id() == "process_yield_proxy"))
+}
+
 pub async fn compute_metric(
     pool: &PgPool,
     tenant_id: Uuid,
     metric_id: &str,
     site_id: Option<Uuid>,
 ) -> Result<MetricResult> {
-    let computer = registry()
-        .into_iter()
-        .find(|c| c.id() == metric_id)
-        .ok_or_else(|| {
-            SenseiError::Validation(format!(
-                "Unknown metric id '{metric_id}' — the metric engine computes: \
-                 'fpy', 'otd', 'scrap_rate', 'lead_time'"
-            ))
-        })?;
+    let computer = computer_for(metric_id).ok_or_else(|| {
+        SenseiError::Validation(format!(
+            "Unknown metric id '{metric_id}' — the metric engine computes: \
+             'process_yield_proxy' (alias 'fpy'), 'otd', 'scrap_rate', 'lead_time'"
+        ))
+    })?;
     computer.compute(pool, tenant_id, site_id).await
+}
+
+#[cfg(test)]
+mod metric_semantics_tests {
+    use super::*;
+    use std::str::FromStr;
+
+    #[test]
+    fn yield_and_scrap_share_the_denominator() {
+        let y = process_yield_ratio(Decimal::from(100), Decimal::from(10));
+        let r = scrap_ratio(Decimal::from(10), Decimal::from(100));
+        assert!(
+            y > Decimal::from_str("0.90909090909").unwrap()
+                && y < Decimal::from_str("0.90909090910").unwrap()
+        );
+        assert_eq!(y + r, Decimal::ONE);
+    }
+
+    #[test]
+    fn no_production_means_zero_not_nan() {
+        assert_eq!(
+            process_yield_ratio(Decimal::ZERO, Decimal::ZERO),
+            Decimal::ZERO
+        );
+        assert_eq!(scrap_ratio(Decimal::ZERO, Decimal::ZERO), Decimal::ZERO);
+    }
+
+    #[test]
+    fn old_double_subtraction_is_gone() {
+        // Old (good − scrap)/good with good=100 scrap=10 gave 0.9;
+        // the honest proxy is 100/110 ≈ 0.909091 — never 0.9.
+        let y = process_yield_ratio(Decimal::from(100), Decimal::from(10));
+        assert_ne!(y, Decimal::from_str("0.9").unwrap());
+    }
 }

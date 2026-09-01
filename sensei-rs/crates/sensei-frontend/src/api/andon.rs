@@ -28,7 +28,6 @@ pub struct RaiseAndonData {
 /// server derives actor/tenant/status (item 40).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RaiseAndonCommandRequest {
-    pub work_center_id: Option<String>,
     pub issue_type: String,
     pub severity: String,
     pub description: String,

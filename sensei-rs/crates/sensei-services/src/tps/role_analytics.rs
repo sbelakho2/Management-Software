@@ -42,6 +42,11 @@ pub struct RoleAnalytics {
 /// plan-vs-actual contract (delta = actual − target, negative = behind);
 /// `first_divergence` and `check_date` anchor the line to observable
 /// evidence, never to per-person comparison.
+/// A deterministic analytic line. `epistemic_status` distinguishes
+/// MEASURED facts from INFERENCES: takt-derived expectations ("the line
+/// is losing pitch") are hypotheses drawn from standard work, never
+/// facts — a hypothesis must be confirmed at the line before acting
+/// (sixteenth audit item: no fabricated pitch).
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct AnalyticLine {
     pub label: String,
@@ -52,6 +57,12 @@ pub struct AnalyticLine {
     pub first_divergence: Option<String>,
     pub owner: Option<String>,
     pub check_date: Option<String>,
+    #[serde(default = "default_epistemic_status")]
+    pub epistemic_status: String,
+}
+
+fn default_epistemic_status() -> String {
+    "fact".to_string()
 }
 
 impl AnalyticLine {
@@ -65,6 +76,16 @@ impl AnalyticLine {
             first_divergence: None,
             owner: None,
             check_date: None,
+            epistemic_status: "fact".to_string(),
+        }
+    }
+
+    /// An INFERENCE from standard work (takt × elapsed time) — the label
+    /// itself states the hypothesis so the reader can verify at the line.
+    fn hypothesis(label: impl Into<String>, actual: f64, unit: impl Into<String>) -> Self {
+        Self {
+            epistemic_status: "hypothesis".to_string(),
+            ..Self::fact(label, actual, unit)
         }
     }
 
@@ -382,10 +403,11 @@ async fn collect_work_center_view(
                 let gap = actual - target;
                 if gap < -BEHIND_TOLERANCE_UNITS {
                     a.abnormal.push(line.clone());
-                    a.why.push(AnalyticLine::fact(
+                    a.why.push(AnalyticLine::hypothesis(
                         format!(
-                            "WO {wo_number} ({product_name}) is behind pitch: {completed} units \
-                             completed vs ~{target:.1} expected at a {:.0}s takt — the line is losing pitch",
+                            "HYPOTHESIS — WO {wo_number} ({product_name}) is behind pitch: \
+                             {completed} units completed vs ~{target:.1} expected at a {:.0}s takt; \
+                             verify the line before acting",
                             takt.filter(|t| *t > 0).unwrap_or(60) as f64,
                         ),
                         actual,

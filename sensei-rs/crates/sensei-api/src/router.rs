@@ -2173,8 +2173,16 @@ pub fn build_router(state: AppState) -> Router {
         )
         .route("/api/v1/corporate/causal", get(routes::corporate::causal))
         .route(
-            "/api/v1/corporate/lessons/propagate",
-            post(routes::corporate::propagate_lesson),
+            "/api/v1/corporate/lessons/offer",
+            post(routes::corporate::offer_lesson),
+        )
+        .route(
+            "/api/v1/corporate/lesson-offers",
+            get(routes::corporate::lesson_offers),
+        )
+        .route(
+            "/api/v1/corporate/lesson-offers/{id}/import",
+            post(routes::corporate::import_lesson_offer),
         )
         .route(
             "/api/v1/metrics/{metric_id}",

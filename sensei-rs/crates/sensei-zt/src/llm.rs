@@ -121,6 +121,7 @@ impl LlamaRunner {
     /// When the Zig library is linked, delegates to
     /// [`sensei_llm_init`]. When not, or when initialisation fails,
     /// returns a software fallback runner.
+    #[allow(unused_variables)]
     pub fn new(config: LlamaConfig, weights: &[f32]) -> Result<Self, SenseiError> {
         #[cfg(not(no_zig))]
         {
@@ -158,11 +159,11 @@ impl LlamaRunner {
     /// answers are never presented as AI output.
     pub fn generate(
         &mut self,
-        prompt: &str,
-        max_tokens: usize,
-        temperature: f32,
-        top_k: u32,
-        top_p: f32,
+        #[cfg_attr(no_zig, allow(unused_variables))] prompt: &str,
+        #[cfg_attr(no_zig, allow(unused_variables))] max_tokens: usize,
+        #[cfg_attr(no_zig, allow(unused_variables))] temperature: f32,
+        #[cfg_attr(no_zig, allow(unused_variables))] top_k: u32,
+        #[cfg_attr(no_zig, allow(unused_variables))] top_p: f32,
     ) -> Result<String, SenseiError> {
         #[cfg(not(no_zig))]
         if self.has_zig {

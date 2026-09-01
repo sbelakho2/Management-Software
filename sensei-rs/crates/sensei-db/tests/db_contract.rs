@@ -8591,22 +8591,58 @@ async fn invariant_cross_tenant_target_cannot_bypass_federation() {
     // (d) The sanctioned path is an OFFER: propagate_lesson lands a
     //     'proposed' copy in the target — never 'adopted' — and the
     //     source's adopted row is untouched.
-    use sensei_services::tps::corporate::propagate_lesson;
-    let offer_id = propagate_lesson(&pool, tenant_a, tenant_b, lesson)
+    use sensei_services::tps::corporate::{import_lesson_offer, list_lesson_offers, offer_lesson};
+    offer_lesson(&pool, tenant_a, tenant_b, lesson)
         .await
         .expect("the sanctioned offer path must work");
-    let offer = lessons::get_lesson(&pool, tenant_b, offer_id)
-        .await
-        .expect("the target copy must be readable under B's context");
-    assert_eq!(
-        offer.status, "proposed",
-        "a cross-tenant transfer is an OFFER — the target must still verify and adopt locally"
-    );
-    assert_eq!(offer.lesson_id, "L-FED");
+    // The source row is untouched — no direct cross-tenant write ever
+    // reaches the target's lessons table.
     let source = lessons::get_lesson(&pool, tenant_a, lesson)
         .await
         .expect("the source row must survive");
     assert_eq!(source.status, "adopted", "the source lesson is immutable");
+    // The target sees an OFFER row (never an adopted lesson).
+    let offers = list_lesson_offers(&pool, tenant_b)
+        .await
+        .expect("offers are visible under B's context");
+    assert_eq!(offers.len(), 1, "exactly one offer row under B");
+    let offer_id: uuid::Uuid = offers[0]["id"]
+        .as_str()
+        .expect("offer id is a uuid string")
+        .parse()
+        .expect("offer id parses");
+    // A foreign tenant's import is blocked by RLS: tenant A cannot
+    // consume B's offer.
+    let foreign_import = import_lesson_offer(&pool, tenant_a, offer_id).await;
+    assert!(
+        foreign_import.is_err(),
+        "a foreign tenant cannot import another tenant's offer (RLS)"
+    );
+    // The TARGET explicitly imports: the copy lands as 'proposed' only.
+    import_lesson_offer(&pool, tenant_b, offer_id)
+        .await
+        .expect("the explicit target import must work");
+    // The imported lesson's lesson_id is derived from the offer id; find
+    // its row id under B's context.
+    sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
+        .bind(tenant_b.to_string())
+        .execute(&pool)
+        .await
+        .expect("tenant context");
+    let (imported_id,): (uuid::Uuid,) =
+        sqlx::query_as("SELECT id FROM lessons WHERE tenant_id = $1 AND lesson_id = $2")
+            .bind(tenant_b)
+            .bind(format!("offer-{offer_id}"))
+            .fetch_one(&pool)
+            .await
+            .expect("the imported copy exists under B's context");
+    let imported = lessons::get_lesson(&pool, tenant_b, imported_id)
+        .await
+        .expect("the imported copy must be readable under B's context");
+    assert_eq!(
+        imported.status, "proposed",
+        "a cross-tenant transfer is an OFFER — the target must still verify and adopt locally"
+    );
     assert_eq!(
         source.countermeasure, "lower preheat slope",
         "the source's evidence is untouched"
@@ -8642,7 +8678,8 @@ async fn invariant_context_sensitivity_is_typed() {
     };
     use sensei_agent_core::context_kernel::{build_context_bundle, ContextBundle};
 
-    let make_item = |sensitivity: &str| ContextItem {
+    use sensei_agent_core::context::DataClass;
+    let make_item = |sensitivity: DataClass| ContextItem {
         payload: serde_json::json!({ "live_state": "running" }),
         provenance: Provenance {
             source: "sensor-7".to_string(),
@@ -8651,11 +8688,11 @@ async fn invariant_context_sensitivity_is_typed() {
             recorded_at: chrono::Utc::now(),
             authority: AuthorityRank::VerifiedObservation,
         },
-        sensitivity: sensitivity.to_string(),
+        sensitivity,
         token_cost: 1,
         epistemic_status: EpistemicStatus::RecordedFact,
     };
-    let make_request = |ceiling: &str| ContextRequest {
+    let make_request = |ceiling: DataClass| ContextRequest {
         principal_id: uuid::Uuid::new_v4(),
         roles: vec!["operator".to_string()],
         site_id: None,
@@ -8664,52 +8701,61 @@ async fn invariant_context_sensitivity_is_typed() {
         task: TaskKind::General,
         focal_objects: vec![],
         max_tokens: 100,
-        sensitivity_ceiling: ceiling.to_string(),
+        sensitivity_ceiling: ceiling,
         trace_id: "invariant-sensitivity".to_string(),
     };
     fn item_count(bundle: &ContextBundle) -> usize {
         bundle.sections.iter().map(|(_, items)| items.len()).sum()
     }
 
-    // The boundary value is the canonical typed ceiling string the API sets.
+    // The boundary value is the canonical typed ceiling the API sets.
     assert_eq!(
-        make_request("internal").sensitivity_ceiling,
-        "internal",
+        make_request(DataClass::Internal).sensitivity_ceiling,
+        DataClass::Internal,
         "the request carries the canonical ceiling value"
     );
 
     // A REAL typed level filters: sensitivity level 5 exceeds ceiling 1
     // and is excluded; ceiling 5 admits it.
-    let items = vec![make_item("5")];
+    let items = vec![make_item(DataClass::Restricted)];
     let budget = TokenBudget::default_for(100);
-    let under_1 = build_context_bundle(&make_request("1"), items.clone(), budget);
+    let under_1 = build_context_bundle(&make_request(DataClass::Internal), items.clone(), budget);
     assert_eq!(
         item_count(&under_1),
         0,
         "sensitivity level 5 must be excluded by ceiling 1 — the ceiling is a typed level"
     );
-    let under_5 = build_context_bundle(&make_request("5"), items.clone(), budget);
+    let under_5 = build_context_bundle(&make_request(DataClass::Restricted), items.clone(), budget);
     assert_eq!(
         item_count(&under_5),
         1,
         "ceiling 5 admits sensitivity level 5"
     );
 
-    // An unknown string can never become a ceiling: "bogus" parses to NO
-    // level (None) — it is never interpreted as any level, so it cannot
-    // filter. Unknown strings do not exist in the ceiling type.
-    let bogus = build_context_bundle(&make_request("bogus"), items.clone(), budget);
-    assert_eq!(
-        item_count(&bogus),
-        1,
-        "'bogus' derives no ceiling level — it cannot act as a ceiling"
+    // DataClass is EXHAUSTIVE — unknown strings cannot exist (a
+    // deserialization failure is fail-closed, never a silent level), and
+    // the ordering is strict: a Confidential item is admitted at a
+    // Restricted ceiling but never at an Internal one.
+    let item_conf = make_item(DataClass::Confidential);
+    let under_internal = build_context_bundle(
+        &make_request(DataClass::Internal),
+        vec![item_conf.clone()],
+        budget,
     );
-    // An unknown item sensitivity is likewise no level at all.
-    let unknown_item = build_context_bundle(&make_request("5"), vec![make_item("bogus")], budget);
     assert_eq!(
-        item_count(&unknown_item),
+        item_count(&under_internal),
+        0,
+        "Confidential exceeds an Internal ceiling — excluded"
+    );
+    let under_restricted = build_context_bundle(
+        &make_request(DataClass::Restricted),
+        vec![item_conf],
+        budget,
+    );
+    assert_eq!(
+        item_count(&under_restricted),
         1,
-        "an unparseable item sensitivity is not a level either — it cannot be compared"
+        "a Restricted ceiling admits Confidential items"
     );
 }
 

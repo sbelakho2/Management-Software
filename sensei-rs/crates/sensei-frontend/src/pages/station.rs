@@ -40,7 +40,6 @@ pub fn StationPage() -> impl IntoView {
                     // plain-language category + note; the server derives
                     // actor/tenant/status/work center.
                     let req = crate::api::andon::RaiseAndonCommandRequest {
-                        work_center_id: None, // server resolves from the caller
                         issue_type: normalize_help_category(&help_category.get_untracked()),
                         severity: "medium".to_string(),
                         description: help_note.get_untracked(),

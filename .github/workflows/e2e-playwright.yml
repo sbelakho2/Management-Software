@@ -38,20 +38,25 @@ jobs:
           version: latest
 
       - name: Build frontend (trunk — the REAL bundle the router serves)
-        working-directory: crates/sensei-frontend
+        working-directory: sensei-rs/crates/sensei-frontend
         run: |
           trunk build --release
           cp -r dist ../../dist-frontend
 
       - name: Build API
+        working-directory: sensei-rs
         run: cargo build -p sensei-api --release
+        env:
+          SENSEI_NO_ZIG: "1" 
 
       - name: Run migrations + seed
+        working-directory: sensei-rs
         run: |
           DATABASE_URL_TEST=$DATABASE_URL cargo test -p sensei-db --test db_contract every_tenant
           cargo run -p sensei-api --release --bin sensei-api -- --migrate-only
 
       - name: Start API + frontend
+        working-directory: sensei-rs
         run: |
           cargo run -p sensei-api --release &
           python3 -m http.server 8080 -d dist-frontend &
@@ -67,13 +72,13 @@ jobs:
 
       - name: Install Playwright
         run: |
-          cd e2e
+          cd sensei-rs/e2e
           npm ci
           npx playwright install --with-deps chromium
 
       - name: Run E2E + axe
         run: |
-          cd e2e
+          cd sensei-rs/e2e
           E2E_ADMIN_EMAIL=admin@sensei.local \
           E2E_ADMIN_PASSWORD=Test@1234 \
           npx playwright test --reporter=line

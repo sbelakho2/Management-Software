@@ -502,6 +502,76 @@ pub async fn run_departure(
     .await
     .map_err(|e| SenseiError::Database(format!("Departure: slots held failed: {e}")))?;
 
+    // Sixteenth audit item 3: the departure is a COMPLETE security
+    // revocation, atomic with the organizational changes — disable the
+    // user, invalidate every credential/session/token, clear roles,
+    // bump the principal revision, all in the SAME transaction.
+    let user_rows = sqlx::query(
+        "UPDATE users SET is_active = FALSE, credential_version = credential_version + 1, \
+                updated_at = NOW() \
+         WHERE id = $1 AND tenant_id = $2",
+    )
+    .bind(req.principal_id)
+    .bind(tenant_id)
+    .execute(&mut *tx)
+    .await
+    .map_err(|e| SenseiError::Database(format!("Departure: disable user failed: {e}")))?;
+    if user_rows.rows_affected() == 0 {
+        return Err(SenseiError::NotFound(format!(
+            "Principal {} not found",
+            req.principal_id
+        )));
+    }
+    // Clear security roles (the users table holds roles as an array).
+    sqlx::query("UPDATE users SET roles = '{}'::text[] WHERE id = $1 AND tenant_id = $2")
+        .bind(req.principal_id)
+        .bind(tenant_id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| SenseiError::Database(format!("Departure: clear roles failed: {e}")))?;
+    // Revoke every refresh token (token revocation, not deletion-based
+    // only: the rows are removed so no stale token survives).
+    sqlx::query("DELETE FROM refresh_tokens WHERE user_id = $1")
+        .bind(req.principal_id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| {
+            SenseiError::Database(format!("Departure: refresh token revoke failed: {e}"))
+        })?;
+    // Revoke active sessions.
+    sqlx::query("UPDATE sessions SET revoked_at = NOW() WHERE user_id = $1 AND revoked_at IS NULL")
+        .bind(req.principal_id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| SenseiError::Database(format!("Departure: session revoke failed: {e}")))?;
+    // Bump the principal authorization revision INSIDE the transaction —
+    // a revoked principal invalidates every authorization-derived cache.
+    sqlx::query(
+        "INSERT INTO authorization_revisions (tenant_id, policy_revision, relationship_revision, principal_revision) \
+         VALUES ($1, 1, 1, 1) \
+         ON CONFLICT (tenant_id) DO UPDATE SET principal_revision = authorization_revisions.principal_revision + 1, \
+             updated_at = NOW()",
+    )
+    .bind(tenant_id)
+    .execute(&mut *tx)
+    .await
+    .map_err(|e| SenseiError::Database(format!("Departure: principal revision failed: {e}")))?;
+    // The departure is itself a durable event via the transactional outbox.
+    sensei_db::outbox::enqueue_outbox(
+        &mut tx,
+        tenant_id,
+        "hr",
+        req.principal_id,
+        "hr.principal_departed",
+        serde_json::json!({
+            "principal": req.principal_id,
+            "effective_at": chrono::Utc::now(),
+            "successor": req.target_principal_id,
+        }),
+    )
+    .await
+    .map_err(|e| SenseiError::Database(format!("Departure: outbox failed: {e}")))?;
+
     tx.commit()
         .await
         .map_err(|e| SenseiError::Database(format!("Departure commit failed: {e}")))?;
@@ -512,8 +582,8 @@ pub async fn run_departure(
     // Every authorization-derived cache key embeds the snapshot salt, so
     // this invalidates them atomically (retrieval can never run under one
     // permission state and execution under another).
-    sensei_services::tps::authorization_revisions::bump_principal(pool, tenant_id).await?;
-
+    // (the principal revision was bumped INSIDE the departure tx above —
+    // security-changing state commits together, or not at all)
     let transferred_to_slot = (!slot_id.is_nil()).then(|| {
         serde_json::json!({ "slot_id": slot_id, "role_name": slot_role_name, "slot_name": slot_name })
     });

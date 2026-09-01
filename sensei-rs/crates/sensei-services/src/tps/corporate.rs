@@ -11,6 +11,7 @@
 //! answers: every candidate carries `epistemic_status = "hypothesis"` so
 //! the corporate layer can never present a guess as a fact.
 
+use rust_decimal::prelude::ToPrimitive;
 use sensei_core::error::{Result, SenseiError};
 use sqlx::PgPool;
 use uuid::Uuid;
@@ -209,7 +210,7 @@ fn metric_definitions() -> Vec<MetricDefinitionNote> {
 /// Andon response counts per site are reported in `guidance` as a
 /// responsiveness signal.
 pub async fn cross_site_analytics(pool: &PgPool, tenant_id: Uuid) -> Result<CrossSiteAnalytics> {
-    with_tenant_tx(pool, tenant_id, |tx| {
+    let (sites, analytics) = with_tenant_tx(pool, tenant_id, |tx| {
         Box::pin(async move {
             let sites: Vec<(Uuid, String)> = sqlx::query_as(
                 "SELECT s.id, s.name FROM sites s \
@@ -224,8 +225,9 @@ pub async fn cross_site_analytics(pool: &PgPool, tenant_id: Uuid) -> Result<Cros
             // schema, so the honest value is computed ONCE and reported
             // identically for every site row.
             let (delivered, eligible): (i64, i64) = sqlx::query_as(
-                "SELECT COUNT(*) FILTER (WHERE status IN ('shipped','delivered'))::bigint, \
-                        COUNT(*) FILTER (WHERE status NOT IN ('cancelled','draft'))::bigint \
+                "SELECT COUNT(*) FILTER (WHERE delivered_at IS NOT NULL), \
+                        COUNT(*) FILTER (WHERE status NOT IN ('cancelled','draft') \
+                                         AND confirmed_at IS NOT NULL) \
                  FROM sales_orders \
                  WHERE tenant_id = $1",
             )
@@ -239,13 +241,13 @@ pub async fn cross_site_analytics(pool: &PgPool, tenant_id: Uuid) -> Result<Cros
                 0.0
             };
 
-            // Tenant-level lead time: manufacturing lead time proxy,
-            // delivered_at (updated_at) − created_at, in days.
+            // Tenant-level lead time: shipped_at (immutable) − created_at,
+            // in days — updated_at can be rewritten by later edits.
             let lead_time_days: f64 = sqlx::query_scalar(
-                "SELECT COALESCE(AVG(EXTRACT(EPOCH FROM (so.updated_at - so.created_at)) \
+                "SELECT COALESCE(AVG(EXTRACT(EPOCH FROM (so.shipped_at - so.created_at)) \
                                      / 86400.0), 0)::float8 \
                  FROM sales_orders so \
-                 WHERE so.tenant_id = $1 AND so.status IN ('shipped','delivered')",
+                 WHERE so.tenant_id = $1 AND so.shipped_at IS NOT NULL",
             )
             .bind(tenant_id)
             .fetch_one(&mut **tx)
@@ -258,35 +260,23 @@ pub async fn cross_site_analytics(pool: &PgPool, tenant_id: Uuid) -> Result<Cros
                 // Deterministic work-order aggregate: completed-without-
                 // scrap units, completed units, scrapped units and the
                 // complexity proxy (informational only).
-                let (good_units, completed_units, scrapped_units, complexity): (
-                    i64,
-                    i64,
-                    i64,
-                    f64,
-                ) = sqlx::query_as(
-                    "SELECT COALESCE(SUM(GREATEST(wo.quantity_completed \
-                                                       - wo.quantity_scrapped, 0)), 0)::bigint, \
-                                COALESCE(SUM(wo.quantity_completed), 0)::bigint, \
-                                COALESCE(SUM(wo.quantity_scrapped), 0)::bigint, \
-                                COALESCE((SELECT AVG(r.standard_time) \
-                                          FROM routings r \
-                                          WHERE r.tenant_id = $1 \
-                                            AND r.product_id IN ( \
-                                                SELECT DISTINCT w.product_id \
-                                                FROM work_orders w \
-                                                WHERE w.tenant_id = $1 \
-                                                  AND w.site_id = $2)) \
-                                         , 0)::float8 \
-                         FROM work_orders wo \
-                         WHERE wo.tenant_id = $1 AND wo.site_id = $2 \
-                           AND wo.status <> 'cancelled'",
+                let complexity: f64 = sqlx::query_scalar(
+                    "SELECT COALESCE((SELECT AVG(r.standard_time) \
+                                      FROM routings r \
+                                      WHERE r.tenant_id = $1 \
+                                        AND r.product_id IN ( \
+                                            SELECT DISTINCT w.product_id \
+                                            FROM work_orders w \
+                                            WHERE w.tenant_id = $1 \
+                                              AND w.site_id = $2)) \
+                                     , 0)::float8",
                 )
                 .bind(tenant_id)
                 .bind(site_id)
                 .fetch_one(&mut **tx)
                 .await
                 .map_err(|e| {
-                    SenseiError::Database(format!("corporate: work orders for {site_name}: {e}"))
+                    SenseiError::Database(format!("corporate: routings for {site_name}: {e}"))
                 })?;
 
                 // Andon response count per site (a responsiveness signal).
@@ -303,22 +293,14 @@ pub async fn cross_site_analytics(pool: &PgPool, tenant_id: Uuid) -> Result<Cros
                     SenseiError::Database(format!("corporate: andons for {site_name}: {e}"))
                 })?;
 
-                let fpy = if completed_units > 0 {
-                    good_units as f64 / completed_units as f64
-                } else {
-                    0.0
-                };
-                let scrap_rate = if completed_units > 0 {
-                    scrapped_units as f64 / completed_units as f64
-                } else {
-                    0.0
-                };
-
+                // THE ENGINE IS THE SINGLE SOURCE OF TRUTH (sixteenth
+                // audit item 25 convergence): corporate must not re-derive
+                // metrics by hand with slightly different denominators.
                 site_rows.push(SiteRow {
                     site_id: *site_id,
                     site_name: site_name.clone(),
-                    fpy,
-                    scrap_rate,
+                    fpy: 0.0,
+                    scrap_rate: 0.0,
                     otd,
                     lead_time_days,
                     complexity_index: complexity,
@@ -368,15 +350,43 @@ pub async fn cross_site_analytics(pool: &PgPool, tenant_id: Uuid) -> Result<Cros
                 guidance.push("insufficient sites for comparison".to_string());
             }
 
-            Ok(CrossSiteAnalytics {
-                site_rows,
-                stratified,
-                definitions: metric_definitions(),
-                guidance,
-            })
+            Ok((
+                sites,
+                CrossSiteAnalytics {
+                    site_rows,
+                    stratified,
+                    definitions: metric_definitions(),
+                    guidance,
+                },
+            ))
         })
     })
-    .await
+    .await?;
+
+    // THE ENGINE IS THE SINGLE SOURCE OF TRUTH (sixteenth audit item 25
+    // convergence): corporate must not re-derive metrics by hand with
+    // slightly different denominators.
+    let mut metrics: Vec<(Uuid, f64, f64)> = Vec::with_capacity(sites.len());
+    for (site_id, _) in &sites {
+        let fpy = super::metric_engine::compute_metric(pool, tenant_id, "fpy", Some(*site_id))
+            .await
+            .map(|m| m.value.to_f64().unwrap_or(0.0))
+            .unwrap_or(0.0);
+        let scrap_rate =
+            super::metric_engine::compute_metric(pool, tenant_id, "scrap_rate", Some(*site_id))
+                .await
+                .map(|m| m.value.to_f64().unwrap_or(0.0))
+                .unwrap_or(0.0);
+        metrics.push((*site_id, fpy, scrap_rate));
+    }
+    let mut result = analytics;
+    for row in &mut result.site_rows {
+        if let Some((_, fpy, scrap_rate)) = metrics.iter().find(|(id, _, _)| *id == row.site_id) {
+            row.fpy = *fpy;
+            row.scrap_rate = *scrap_rate;
+        }
+    }
+    Ok(result)
 }
 
 /// Deterministic hypothesis generation for a metric gap (item 67): the
@@ -707,65 +717,198 @@ pub async fn causal_candidates(
     })
 }
 
-/// Corporate yokoten propagation (item 46 / law A19): copy a lesson from
-/// THIS tenant into the TARGET tenant as `proposed` with `origin_site_id`
-/// set to the source site — the transfer is an OFFER, and the target
-/// tenant verifies applicability locally via its own lesson endpoints.
-/// RLS forbids cross-tenant reads, so the copy runs in two tenant-scoped
-/// transactions: the read under the SOURCE context, the insert under the
-/// TARGET context. Idempotent on (tenant_id, lesson_id) via upsert.
-pub async fn propagate_lesson(
+/// Federation authority (sixteenth audit item 1): the target is chosen
+/// by AUTHORIZATION — the explicit federation graph + capabilities — not
+/// by arbitrary caller input.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct FederationAuthority {
+    pub source_tenant: Uuid,
+    pub allowed_targets: std::collections::BTreeSet<Uuid>,
+    pub capabilities: Vec<String>,
+}
+
+impl FederationAuthority {
+    pub fn require_target(&self, target: Uuid) -> Result<()> {
+        if self.allowed_targets.contains(&target) {
+            Ok(())
+        } else {
+            Err(SenseiError::Forbidden(format!(
+                "Tenant {target} is not a federation member — target selection is \
+                 authorization, not caller input"
+            )))
+        }
+    }
+
+    pub fn require_capability(&self, capability: &str) -> Result<()> {
+        if self.capabilities.iter().any(|c| c == capability) {
+            Ok(())
+        } else {
+            Err(SenseiError::Forbidden(format!(
+                "The federation relationship does not grant capability '{capability}'"
+            )))
+        }
+    }
+}
+
+/// Resolve the source tenant's federation authority from the graph.
+pub async fn resolve_federation_authority(
+    pool: &PgPool,
+    tenant_id: Uuid,
+) -> Result<FederationAuthority> {
+    let rows: Vec<(Uuid, serde_json::Value)> = with_tenant_tx(pool, tenant_id, |tx| {
+        Box::pin(async move {
+            sqlx::query_as(
+                "SELECT peer_tenant_id, capabilities FROM federation_memberships \
+                 WHERE tenant_id = $1",
+            )
+            .bind(tenant_id)
+            .fetch_all(&mut **tx)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Federation read failed: {e}")))
+        })
+    })
+    .await?;
+    let mut allowed_targets = std::collections::BTreeSet::new();
+    let mut capabilities = Vec::new();
+    for (peer, caps) in rows {
+        allowed_targets.insert(peer);
+        if let Some(arr) = caps.as_array() {
+            for c in arr.iter().filter_map(|c| c.as_str()) {
+                if !capabilities.iter().any(|x| x == c) {
+                    capabilities.push(c.to_string());
+                }
+            }
+        }
+    }
+    Ok(FederationAuthority {
+        source_tenant: tenant_id,
+        allowed_targets,
+        capabilities,
+    })
+}
+
+/// The ONLY cross-tenant lesson transfer: create an OFFER in the target's
+/// offers table — never a direct write into the target's lessons. The
+/// target explicitly imports the offer into its own proposed state.
+pub async fn offer_lesson(
     pool: &PgPool,
     source_tenant_id: Uuid,
     target_tenant_id: Uuid,
     lesson_id: Uuid,
-) -> Result<Uuid> {
-    // Transaction 1: read the lesson under the SOURCE tenant's context.
+) -> Result<()> {
+    let authority = resolve_federation_authority(pool, source_tenant_id).await?;
+    authority.require_target(target_tenant_id)?;
+    authority.require_capability("lesson_transfer")?;
+
     let lesson = lessons::get_lesson(pool, source_tenant_id, lesson_id).await?;
 
-    // Transaction 2: insert the copy under the TARGET tenant's context.
-    let id = Uuid::new_v4();
-    let lesson_id = lesson.lesson_id.clone();
-    let title = lesson.title.clone();
     with_tenant_tx(pool, target_tenant_id, move |tx| {
         Box::pin(async move {
             sqlx::query(
-                "INSERT INTO lessons \
-                     (id, tenant_id, lesson_id, title, source_problem_id, context_signature, \
-                      hypothesis, countermeasure, observed_result, confidence, applicability, \
-                      status, origin_site_id) \
-                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'proposed', $12) \
-                 ON CONFLICT (tenant_id, lesson_id) DO UPDATE SET \
-                     title = EXCLUDED.title, \
-                     source_problem_id = EXCLUDED.source_problem_id, \
-                     context_signature = EXCLUDED.context_signature, \
-                     hypothesis = EXCLUDED.hypothesis, \
-                     countermeasure = EXCLUDED.countermeasure, \
-                     observed_result = EXCLUDED.observed_result, \
-                     confidence = EXCLUDED.confidence, \
-                     applicability = EXCLUDED.applicability, \
-                     origin_site_id = EXCLUDED.origin_site_id, \
-                     status = 'proposed', \
-                     updated_at = NOW()",
+                "INSERT INTO corporate_lesson_offers \
+                     (id, tenant_id, offer_tenant_id, lesson_id, lesson_title, countermeasure, \
+                      context_signature, applicability, status) \
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'offered') \
+                 ON CONFLICT (tenant_id, offer_tenant_id, lesson_id) DO NOTHING",
             )
-            .bind(id)
+            .bind(Uuid::new_v4())
             .bind(target_tenant_id)
-            .bind(&lesson_id)
-            .bind(&title)
-            .bind(lesson.source_problem_id)
-            .bind(lesson.context_signature.clone())
-            .bind(&lesson.hypothesis)
+            .bind(source_tenant_id)
+            .bind(lesson_id)
+            .bind(&lesson.title)
             .bind(&lesson.countermeasure)
-            .bind(lesson.observed_result.clone())
-            .bind(lesson.confidence)
-            .bind(lesson.applicability.clone())
-            .bind(lesson.origin_site_id)
+            .bind(&lesson.context_signature)
+            .bind(&lesson.applicability)
             .execute(&mut **tx)
             .await
-            .map_err(|e| {
-                SenseiError::Database(format!("corporate: propagate lesson failed: {e}"))
-            })?;
-            Ok(id)
+            .map_err(|e| SenseiError::Database(format!("Lesson offer failed: {e}")))?;
+            Ok(())
+        })
+    })
+    .await?;
+    Ok(())
+}
+
+/// The target EXPLICITLY imports an offer into its own proposed lessons.
+pub async fn import_lesson_offer(pool: &PgPool, tenant_id: Uuid, offer_id: Uuid) -> Result<()> {
+    with_tenant_tx(pool, tenant_id, move |tx| {
+        Box::pin(async move {
+            let row: Option<(Uuid, String, String, serde_json::Value, serde_json::Value)> =
+                sqlx::query_as(
+                    "SELECT offer_tenant_id, lesson_title, countermeasure, \
+                            context_signature, applicability \
+                     FROM corporate_lesson_offers \
+                     WHERE tenant_id = $1 AND id = $2 AND status = 'offered'",
+                )
+                .bind(tenant_id)
+                .bind(offer_id)
+                .fetch_optional(&mut **tx)
+                .await
+                .map_err(|e| SenseiError::Database(format!("Offer read failed: {e}")))?;
+            let Some((offer_tenant_id, title, countermeasure, context_signature, applicability)) =
+                row
+            else {
+                return Err(SenseiError::NotFound(format!("Lesson offer {offer_id}")));
+            };
+            let new_lesson_id = format!("offer-{offer_id}");
+            sqlx::query(
+                "INSERT INTO lessons \
+                     (id, tenant_id, lesson_id, title, context_signature, countermeasure, \
+                      applicability, status, origin_site_id) \
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, 'proposed', $8) \
+                 ON CONFLICT (tenant_id, lesson_id) DO NOTHING",
+            )
+            .bind(Uuid::new_v4())
+            .bind(tenant_id)
+            .bind(&new_lesson_id)
+            .bind(&title)
+            .bind(&context_signature)
+            .bind(&countermeasure)
+            .bind(&applicability)
+            .bind(offer_tenant_id)
+            .execute(&mut **tx)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Offer import failed: {e}")))?;
+            sqlx::query(
+                "UPDATE corporate_lesson_offers SET status = 'imported' \
+                 WHERE tenant_id = $1 AND id = $2",
+            )
+            .bind(tenant_id)
+            .bind(offer_id)
+            .execute(&mut **tx)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Offer mark failed: {e}")))?;
+            Ok(())
+        })
+    })
+    .await?;
+    Ok(())
+}
+
+/// The target's offers (status 'offered').
+pub async fn list_lesson_offers(pool: &PgPool, tenant_id: Uuid) -> Result<Vec<serde_json::Value>> {
+    with_tenant_tx(pool, tenant_id, |tx| {
+        Box::pin(async move {
+            let rows: Vec<(Uuid, Uuid, String, String)> = sqlx::query_as(
+                "SELECT id, offer_tenant_id, lesson_title, status \
+                 FROM corporate_lesson_offers WHERE tenant_id = $1 AND status = 'offered' \
+                 ORDER BY created_at DESC",
+            )
+            .bind(tenant_id)
+            .fetch_all(&mut **tx)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Offers read failed: {e}")))?;
+            Ok(rows
+                .into_iter()
+                .map(|(id, offer_tenant_id, lesson_title, status)| {
+                    serde_json::json!({
+                        "id": id,
+                        "offer_tenant_id": offer_tenant_id,
+                        "lesson_title": lesson_title,
+                        "status": status,
+                    })
+                })
+                .collect())
         })
     })
     .await

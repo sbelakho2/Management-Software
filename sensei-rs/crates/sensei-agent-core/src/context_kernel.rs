@@ -33,13 +33,11 @@ pub fn build_context_bundle(
     budget: TokenBudget,
 ) -> ContextBundle {
     let plan = plan_context(req);
-    let ceiling = parse_sensitivity(&req.sensitivity_ceiling);
+    let ceiling = req.sensitivity_ceiling;
 
     let mut candidates: Vec<ContextItem> = items
         .into_iter()
-        .filter(|i| {
-            ceiling.is_none_or(|c| parse_sensitivity(&i.sensitivity).is_none_or(|s| s <= c))
-        })
+        .filter(|i| i.sensitivity <= ceiling)
         .collect();
 
     // Deterministic greedy order: highest authority first, then most recent,
@@ -144,10 +142,6 @@ pub fn build_context_bundle(
     }
 }
 
-fn parse_sensitivity(s: &str) -> Option<u32> {
-    s.trim().parse::<u32>().ok()
-}
-
 fn section_of(item: &ContextItem, required: &[String]) -> String {
     if let Some(obj) = item.payload.as_object() {
         for name in required {
@@ -187,6 +181,7 @@ fn estimate_tokens(s: &str) -> u32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::context::DataClass;
     use crate::context::{
         budget_allocation, contradiction_candidates, has_contradiction, AuthorityRank,
         EpistemicStatus, TaskKind, TokenBudget,
@@ -205,7 +200,7 @@ mod tests {
             task,
             focal_objects: vec![],
             max_tokens,
-            sensitivity_ceiling: "3".to_string(),
+            sensitivity_ceiling: DataClass::Restricted,
             trace_id: "test-trace".to_string(),
         }
     }
@@ -226,7 +221,7 @@ mod tests {
                 recorded_at: Utc::now(),
                 authority,
             },
-            sensitivity: "1".to_string(),
+            sensitivity: DataClass::Internal,
             token_cost,
             epistemic_status: EpistemicStatus::RecordedFact,
         }

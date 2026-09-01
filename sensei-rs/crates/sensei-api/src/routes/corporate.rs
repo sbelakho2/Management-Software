@@ -23,7 +23,7 @@ use crate::state::AppState;
 use sensei_services::tps::corporate::{
     causal_candidates, cross_site_analytics, CausalChain, CrossSiteAnalytics,
 };
-use sensei_services::tps::lessons::{self, Lesson};
+
 use sensei_services::tps::metric_engine::{compute_metric, MetricResult};
 
 fn pool(state: &AppState) -> Result<&sqlx::PgPool> {
@@ -48,11 +48,12 @@ fn default_changeover() -> String {
     "changeover".to_string()
 }
 
-/// Body for `POST /api/v1/corporate/lessons/propagate` — the corporate
-/// yokoten act: copy THIS tenant's lesson to the target tenant as a
-/// `proposed` offer.
+/// Body for `POST /api/v1/corporate/lessons/offer` — the corporate
+/// yokoten act: THIS tenant OFFERS its lesson to a FEDERATION MEMBER
+/// (capability 'lesson_transfer'); the target's lessons table is never
+/// written — the target explicitly imports the offer.
 #[derive(Debug, Deserialize)]
-pub struct PropagateRequest {
+pub struct OfferRequest {
     pub lesson_id: Uuid,
     pub target_tenant_id: Uuid,
 }
@@ -117,21 +118,48 @@ pub async fn causal(
 /// The copy runs in two tenant-scoped transactions (source read, target
 /// insert); the target tenant then verifies locally via its own lesson
 /// endpoints — the transfer is an experiment, never blind replication.
-pub async fn propagate_lesson(
+/// Offer a lesson to a federation member (sixteenth audit item 1): the
+/// membership + capability gates are SERVER-side — an arbitrary
+/// target_tenant_id from the caller cannot bypass them.
+pub async fn offer_lesson(
     user: AuthenticatedUser,
     State(state): State<AppState>,
-    Json(req): Json<PropagateRequest>,
-) -> Result<Json<Lesson>> {
-    user.require_permission("system:audit:read")?;
+    Json(req): Json<OfferRequest>,
+) -> Result<Json<serde_json::Value>> {
+    user.require_permission("federation:lesson:offer")?;
     let p = pool(&state)?;
-    let id = sensei_services::tps::corporate::propagate_lesson(
+    sensei_services::tps::corporate::offer_lesson(
         p,
         user.tenant_id,
         req.target_tenant_id,
         req.lesson_id,
     )
     .await?;
-    lessons::get_lesson(p, req.target_tenant_id, id)
-        .await
-        .map(Json)
+    Ok(Json(serde_json::json!({
+        "status": "offered",
+        "target_tenant_id": req.target_tenant_id,
+    })))
+}
+
+/// The target tenant's pending offers — the EXPLICIT import path.
+pub async fn lesson_offers(
+    user: AuthenticatedUser,
+    State(state): State<AppState>,
+) -> Result<Json<Vec<serde_json::Value>>> {
+    user.require_permission("federation:lesson:accept")?;
+    let p = pool(&state)?;
+    let offers = sensei_services::tps::corporate::list_lesson_offers(p, user.tenant_id).await?;
+    Ok(Json(offers))
+}
+
+/// The target EXPLICITLY imports an offer into its own proposed lessons.
+pub async fn import_lesson_offer(
+    user: AuthenticatedUser,
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<serde_json::Value>> {
+    user.require_permission("federation:lesson:accept")?;
+    let p = pool(&state)?;
+    sensei_services::tps::corporate::import_lesson_offer(p, user.tenant_id, id).await?;
+    Ok(Json(serde_json::json!({ "status": "imported" })))
 }

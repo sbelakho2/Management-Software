@@ -176,7 +176,7 @@ pub async fn chat(
         task: sensei_agent_core::context::TaskKind::General,
         focal_objects: Vec::new(),
         max_tokens: 4096,
-        sensitivity_ceiling: "internal".to_string(),
+        sensitivity_ceiling: sensei_agent_core::context::DataClass::Internal,
         trace_id: req.conversation_id.clone().unwrap_or_default(),
     };
     let context_plan = sensei_agent_core::context::plan_context(&context_request);

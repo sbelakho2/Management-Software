@@ -35,13 +35,20 @@ impl AuthzSnapshot {
     /// depends on sensei-auth, so a services dependency here would be
     /// circular. The authorization_revisions table is tenant-scoped and
     /// the read runs under the request's own tenant.
+    /// TOCTOU guard. Reads through TenantTx — authorization_revisions has
+    /// FORCE RLS, so the read must carry the tenant context (a raw-pool
+    /// read can silently return nothing under the intended non-owner role).
     pub async fn is_still_current(&self, pool: &sqlx::PgPool) -> bool {
+        let mut db = match sensei_core::db::TenantTx::begin(pool, self.tenant).await {
+            Ok(db) => db,
+            Err(_) => return false,
+        };
         let row: std::result::Result<Option<(i64, i64, i64)>, sqlx::Error> = sqlx::query_as(
             "SELECT policy_revision, relationship_revision, principal_revision \
              FROM authorization_revisions WHERE tenant_id = $1",
         )
         .bind(self.tenant)
-        .fetch_optional(pool)
+        .fetch_optional(&mut **db.tx())
         .await;
         match row {
             Ok(Some((policy, relationship, principal))) => {

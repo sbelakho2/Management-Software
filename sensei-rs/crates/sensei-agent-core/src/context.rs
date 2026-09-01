@@ -45,6 +45,41 @@ impl AgentContext {
     }
 }
 
+/// Data classification (sixteenth audit items 9/85): ONE core type —
+/// never a free-form string ("internal".parse::<u32>() failing open is
+/// the exact bug this fixes).
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize,
+)]
+#[repr(u8)]
+#[serde(rename_all = "snake_case")]
+pub enum DataClass {
+    Public = 0,
+    Internal = 1,
+    Confidential = 2,
+    Restricted = 3,
+}
+
+impl DataClass {
+    pub fn parse(s: &str) -> Option<Self> {
+        match s.trim().to_lowercase().as_str() {
+            "public" | "0" => Some(Self::Public),
+            "internal" | "1" => Some(Self::Internal),
+            "confidential" | "2" => Some(Self::Confidential),
+            "restricted" | "3" => Some(Self::Restricted),
+            _ => None,
+        }
+    }
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Public => "public",
+            Self::Internal => "internal",
+            Self::Confidential => "confidential",
+            Self::Restricted => "restricted",
+        }
+    }
+}
+
 /// The context request envelope (fifteenth audit item 7): the system
 /// knows more than the user's words — there is NO "search query string".
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -57,7 +92,9 @@ pub struct ContextRequest {
     pub task: TaskKind,
     pub focal_objects: Vec<serde_json::Value>,
     pub max_tokens: u32,
-    pub sensitivity_ceiling: String,
+    /// Sixteenth audit items 9/85: TYPED — an unknown string can never
+    /// silently disable the filter.
+    pub sensitivity_ceiling: DataClass,
     pub trace_id: String,
 }
 
@@ -90,7 +127,7 @@ pub struct Provenance {
 pub struct ContextItem {
     pub payload: serde_json::Value,
     pub provenance: Provenance,
-    pub sensitivity: String,
+    pub sensitivity: DataClass,
     pub token_cost: u32,
     pub epistemic_status: EpistemicStatus,
 }
@@ -386,7 +423,7 @@ mod tests {
                 recorded_at: chrono::Utc::now(),
                 authority: AuthorityRank::VerifiedObservation,
             },
-            sensitivity: "1".to_string(),
+            sensitivity: DataClass::Internal,
             token_cost: 12,
             epistemic_status: EpistemicStatus::RecordedFact,
         };

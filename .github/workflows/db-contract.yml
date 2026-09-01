@@ -42,3 +42,5 @@ jobs:
         run: cargo test -p sensei-api --test authorization_matrix_test
       - name: Workspace tests
         run: cargo test --workspace --no-fail-fast
+        env:
+          SENSEI_NO_ZIG: "1"  # pure-Rust variant — no Zig toolchain on CI

@@ -594,9 +594,20 @@ impl SupplyChainService for DatabaseSupplyChainService {
         id: Uuid,
         status: &str,
     ) -> Result<SalesOrder> {
+        // Status transitions STAMP the immutable shipment timestamps
+        // (migration 133) — confirmed on first confirm, shipped on first
+        // ship, delivered on first deliver; the anchors are NEVER
+        // rewritten by later transitions.
+        let stamp = "CASE                        WHEN $1 = 'confirmed' AND confirmed_at IS NULL THEN NOW()                        WHEN $1 IN ('shipped') AND shipped_at IS NULL THEN NOW()                        WHEN $1 IN ('delivered') AND delivered_at IS NULL THEN NOW()                      END";
         let row = sqlx::query_as::<_, SalesOrderRow>(
-            r#"UPDATE sales_orders SET status=$1 WHERE id=$2 AND tenant_id=$3
-               RETURNING id, tenant_id, order_number, customer_id, customer_name, status, line_items, total_amount, currency, delivery_date, shipping_address, created_by, created_at"#,
+            &format!(
+                r#"UPDATE sales_orders SET status=$1,
+                       confirmed_at = COALESCE(confirmed_at, {stamp}),
+                       shipped_at   = COALESCE(shipped_at, {stamp}),
+                       delivered_at = COALESCE(delivered_at, {stamp})
+                   WHERE id=$2 AND tenant_id=$3
+                   RETURNING id, tenant_id, order_number, customer_id, customer_name, status, line_items, total_amount, currency, delivery_date, shipping_address, created_by, created_at"#
+            ),
         ).bind(status).bind(id).bind(tenant_id).fetch_optional(&self.pool).await
             .map_err(|e| SenseiError::Database(format!("Failed to update sales order status: {e}")))?
             .ok_or_else(|| SenseiError::NotFound(format!("Sales order {id} not found")))?;
