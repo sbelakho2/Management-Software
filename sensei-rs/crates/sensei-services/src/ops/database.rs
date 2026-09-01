@@ -521,9 +521,16 @@ impl OperationsService for DatabaseOperationsService {
     async fn acknowledge_andon(
         &self,
         tenant_id: Uuid,
+        authorized_sites: &[Uuid],
         id: Uuid,
         acknowledged_by: Uuid,
     ) -> Result<Andon> {
+        if authorized_sites.is_empty() {
+            return Err(SenseiError::Forbidden(
+                "no operational scope — no Andon is authorized".to_string(),
+            ));
+        }
+        let sites = authorized_sites.to_vec();
         let now = Utc::now();
         let row = with_tenant_tx(&self.pool, tenant_id, |tx| {
             Box::pin(async move {
@@ -531,9 +538,10 @@ impl OperationsService for DatabaseOperationsService {
                     r#"UPDATE andons SET status='acknowledged', acknowledged_by=$1, acknowledged_at=$2,
                         response_time_seconds=EXTRACT(EPOCH FROM ($2 - created_at))::bigint
                        WHERE id=$3 AND tenant_id=$4 AND status='active'
+                         AND site_id = ANY($5)
                        RETURNING id, tenant_id, andon_number, site_id, work_center_id, issue_type, severity, description, status, raised_by, acknowledged_by, resolved_by, resolution, response_time_seconds, resolution_time_seconds, created_at, acknowledged_at, resolved_at, restart_authorized_by, restart_authorized_at, abnormal_condition_observed_at, contained_at, contained_by, contained_note, escalated, escalated_at, request_key"#,
                 )
-                .bind(acknowledged_by).bind(now).bind(id).bind(tenant_id)
+                .bind(acknowledged_by).bind(now).bind(id).bind(tenant_id).bind(&sites)
                 .fetch_optional(&mut **tx)
                 .await.map_err(|e| SenseiError::Database(format!("Failed to acknowledge andon: {e}")))?
                 .ok_or_else(|| SenseiError::NotFound(format!("Andon {id} not found or not active")))
@@ -560,7 +568,19 @@ impl OperationsService for DatabaseOperationsService {
         return Ok(a);
     }
 
-    async fn escalate_andon(&self, tenant_id: Uuid, id: Uuid, escalated_by: Uuid) -> Result<Andon> {
+    async fn escalate_andon(
+        &self,
+        tenant_id: Uuid,
+        authorized_sites: &[Uuid],
+        id: Uuid,
+        escalated_by: Uuid,
+    ) -> Result<Andon> {
+        if authorized_sites.is_empty() {
+            return Err(SenseiError::Forbidden(
+                "no operational scope — no Andon is authorized".to_string(),
+            ));
+        }
+        let sites = authorized_sites.to_vec();
         // Item 41: escalation is a REAL state transition through the same
         // command path — active Andons are acknowledged AND flagged for
         // tier review; already-acknowledged ones are flagged in place.
@@ -576,7 +596,7 @@ impl OperationsService for DatabaseOperationsService {
                        WHERE id=$3 AND tenant_id=$4 AND status NOT IN ('resolved','voided')
                        RETURNING id, tenant_id, andon_number, site_id, work_center_id, issue_type, severity, description, status, raised_by, acknowledged_by, resolved_by, resolution, response_time_seconds, resolution_time_seconds, created_at, acknowledged_at, resolved_at, restart_authorized_by, restart_authorized_at, abnormal_condition_observed_at, contained_at, contained_by, contained_note, escalated, escalated_at, request_key, escalated, escalated_at"#,
                 )
-                .bind(now).bind(escalated_by).bind(id).bind(tenant_id)
+                .bind(now).bind(escalated_by).bind(id).bind(tenant_id).bind(&sites)
                 .fetch_optional(&mut **tx)
                 .await.map_err(|e| SenseiError::Database(format!("Failed to escalate andon: {e}")))?
                 .ok_or_else(|| SenseiError::NotFound(format!("Andon {id} not found or already closed")))
@@ -606,16 +626,23 @@ impl OperationsService for DatabaseOperationsService {
     async fn resolve_andon(
         &self,
         tenant_id: Uuid,
+        authorized_sites: &[Uuid],
         id: Uuid,
         resolved_by: Uuid,
         resolution: &str,
     ) -> Result<Andon> {
+        if authorized_sites.is_empty() {
+            return Err(SenseiError::Forbidden(
+                "no operational scope — no Andon is authorized".to_string(),
+            ));
+        }
         // HARD RULE, enforced ATOMICALLY in SQL: a critical-safety Andon
         // can only be resolved when a restart authorization exists — the
         // condition is part of the UPDATE's WHERE, so there is no
         // read/check/write race between replicas.
         let now = Utc::now();
         let resolution_owned = resolution.to_string();
+        let sites = authorized_sites.to_vec();
         let resolution_for_event = resolution_owned.clone();
         let row = with_tenant_tx(&self.pool, tenant_id, |tx| {
             Box::pin(async move {
@@ -625,9 +652,10 @@ impl OperationsService for DatabaseOperationsService {
                         response_time_seconds=COALESCE(response_time_seconds, EXTRACT(EPOCH FROM ($3 - created_at))::bigint)
                        WHERE id=$4 AND tenant_id=$5 AND status NOT IN ('resolved','closed')
                          AND (severity != 'critical' OR issue_type != 'safety' OR restart_authorized_by IS NOT NULL)
+                         AND site_id = ANY($6)
                        RETURNING id, tenant_id, andon_number, site_id, work_center_id, issue_type, severity, description, status, raised_by, acknowledged_by, resolved_by, resolution, response_time_seconds, resolution_time_seconds, created_at, acknowledged_at, resolved_at, restart_authorized_by, restart_authorized_at, abnormal_condition_observed_at, contained_at, contained_by, contained_note, escalated, escalated_at, request_key"#,
                 )
-                .bind(resolved_by).bind(&resolution_owned).bind(now).bind(id).bind(tenant_id)
+                .bind(resolved_by).bind(&resolution_owned).bind(now).bind(id).bind(tenant_id).bind(&sites)
                 .fetch_optional(&mut **tx)
                 .await.map_err(|e| SenseiError::Database(format!("Failed to resolve andon: {e}")))?;
 
@@ -693,14 +721,21 @@ impl OperationsService for DatabaseOperationsService {
     async fn authorize_restart(
         &self,
         tenant_id: Uuid,
+        authorized_sites: &[Uuid],
         id: Uuid,
         authorized_by: Uuid,
     ) -> Result<Andon> {
+        if authorized_sites.is_empty() {
+            return Err(SenseiError::Forbidden(
+                "no operational scope — no Andon is authorized".to_string(),
+            ));
+        }
+        let sites = authorized_sites.to_vec();
         let row = with_tenant_tx(&self.pool, tenant_id, |tx| {
             Box::pin(async move {
                 sqlx::query_as::<_, AndonRow>(
                     "UPDATE andons SET restart_authorized_by = $3, restart_authorized_at = NOW() \
-                     WHERE id = $1 AND tenant_id = $2 \
+                     WHERE id = $1 AND tenant_id = $2 AND site_id = ANY($4) \
                      RETURNING id, tenant_id, andon_number, site_id, work_center_id, issue_type, severity, \
                                description, status, raised_by, acknowledged_by, resolved_by, resolution, \
                                response_time_seconds, resolution_time_seconds, created_at, \
@@ -709,6 +744,7 @@ impl OperationsService for DatabaseOperationsService {
                 .bind(id)
                 .bind(tenant_id)
                 .bind(authorized_by)
+                .bind(&sites)
                 .fetch_optional(&mut **tx)
                 .await
                 .map_err(|e| SenseiError::Database(format!("Failed to authorize restart: {e}")))?
@@ -1214,14 +1250,33 @@ impl OperationsService for DatabaseOperationsService {
 
     // ── Update/Delete for Andon ─────────────────────────────────────────
 
-    async fn update_andon(&self, tenant_id: Uuid, id: Uuid, andon: Andon) -> Result<Andon> {
+    async fn update_andon(
+        &self,
+        tenant_id: Uuid,
+        authorized_sites: &[Uuid],
+        id: Uuid,
+        andon: Andon,
+    ) -> Result<Andon> {
+        // Eighteenth audit P0-2: the client never sends a whole Andon —
+        // this repository command only accepts explicit, narrow fields
+        // (severity/description), and the site guard lives INSIDE the
+        // mutation transaction.
+        if authorized_sites.is_empty() {
+            return Err(SenseiError::Forbidden(
+                "no operational scope — no Andon is authorized".to_string(),
+            ));
+        }
+        let sites = authorized_sites.to_vec();
         let row = with_tenant_tx(&self.pool, tenant_id, |tx| {
             Box::pin(async move {
                 sqlx::query_as::<_, AndonRow>(
-                    r#"UPDATE andons SET issue_type=$1, severity=$2, description=$3 WHERE id=$4 AND tenant_id=$5
+                    r#"UPDATE andons SET issue_type=$1, severity=$2, description=$3
+                       WHERE id=$4 AND tenant_id=$5
+                         AND site_id = ANY($6)
                        RETURNING id, tenant_id, andon_number, site_id, work_center_id, issue_type, severity, description, status, raised_by, acknowledged_by, resolved_by, resolution, response_time_seconds, resolution_time_seconds, created_at, acknowledged_at, resolved_at, restart_authorized_by, restart_authorized_at, abnormal_condition_observed_at, contained_at, contained_by, contained_note, escalated, escalated_at, request_key"#,
                 )
                 .bind(&andon.issue_type).bind(&andon.severity).bind(&andon.description).bind(id).bind(tenant_id)
+                .bind(&sites)
                 .fetch_optional(&mut **tx)
                 .await.map_err(|e| SenseiError::Database(format!("Failed to update andon: {e}")))?
                 .ok_or_else(|| SenseiError::NotFound(format!("Andon {id} not found")))
@@ -1234,10 +1289,17 @@ impl OperationsService for DatabaseOperationsService {
     async fn void_andon(
         &self,
         tenant_id: Uuid,
+        authorized_sites: &[Uuid],
         id: Uuid,
         actor_id: Uuid,
         reason: &str,
     ) -> Result<Andon> {
+        if authorized_sites.is_empty() {
+            return Err(SenseiError::Forbidden(
+                "no operational scope — no Andon is authorized".to_string(),
+            ));
+        }
+        let sites = authorized_sites.to_vec();
         // The critical-safety rule applies to voiding too: a safety Andon
         // cannot avoid the resolve guard by going down the void path.
         let reason_owned = format!("VOIDED: {reason}");
@@ -1246,7 +1308,7 @@ impl OperationsService for DatabaseOperationsService {
             Box::pin(async move {
                 let row = sqlx::query_as::<_, AndonRow>(
                     "UPDATE andons SET status = 'voided', resolved_by = $3, resolution = $4 \
-                     WHERE id = $1 AND tenant_id = $2 \
+                     WHERE id = $1 AND tenant_id = $2 AND site_id = ANY($5) \
                        AND (severity != 'critical' OR issue_type != 'safety' OR restart_authorized_by IS NOT NULL) \
                      RETURNING id, tenant_id, andon_number, site_id, work_center_id, issue_type, severity, \
                                description, status, raised_by, acknowledged_by, resolved_by, \
@@ -1257,6 +1319,7 @@ impl OperationsService for DatabaseOperationsService {
                 .bind(tenant_id)
                 .bind(actor_id)
                 .bind(&reason_owned)
+                .bind(&sites)
                 .fetch_optional(&mut **tx)
                 .await
                 .map_err(|e| SenseiError::Database(format!("Failed to void andon: {e}")))?;

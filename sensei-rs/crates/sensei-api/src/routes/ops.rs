@@ -14,6 +14,7 @@ use sensei_services::ops::{Andon, Project, Risk, A3};
 use serde::Deserialize;
 use uuid::Uuid;
 
+use crate::routes::andon::caller_sites;
 use crate::state::AppState;
 
 // ── Query / Request DTOs ───────────────────────────────────────────────────
@@ -159,11 +160,22 @@ pub async fn acknowledge_andon(
 ) -> Result<Json<Andon>> {
     user.require_permission("tps:andon:ack")?;
     let tenant_id = user.tenant_id;
+    let sites = caller_sites(&user, &state).await?;
     let andon = state
         .ops_service
-        .acknowledge_andon(tenant_id, id, user.user_id)
+        .acknowledge_andon(tenant_id, &sites, id, user.user_id)
         .await?;
     Ok(Json(andon))
+}
+
+/// Explicit update command (eighteenth audit P0-2): narrow, client-safe
+/// mutation fields — never a whole Andon object.
+#[derive(Debug, serde::Deserialize)]
+pub struct UpdateAndonCommand {
+    #[serde(default)]
+    pub issue_type: Option<String>,
+    pub severity: String,
+    pub description: String,
 }
 
 /// Resolve an Andon event.
@@ -178,9 +190,10 @@ pub async fn resolve_andon(
 ) -> Result<Json<Andon>> {
     user.require_permission("tps:andon:resolve")?;
     let tenant_id = user.tenant_id;
+    let sites = caller_sites(&user, &state).await?;
     let andon = state
         .ops_service
-        .resolve_andon(tenant_id, id, user.user_id, &req.resolution)
+        .resolve_andon(tenant_id, &sites, id, user.user_id, &req.resolution)
         .await?;
     Ok(Json(andon))
 }
@@ -360,11 +373,46 @@ pub async fn update_andon(
     user: AuthenticatedUser,
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
-    Json(req): Json<Andon>,
+    Json(req): Json<UpdateAndonCommand>,
 ) -> Result<Json<Andon>> {
     user.require_permission("tps:andon:manage")?;
     let tenant_id = user.tenant_id;
-    let andon = state.ops_service.update_andon(tenant_id, id, req).await?;
+    let sites = caller_sites(&user, &state).await?;
+    // Eighteenth audit P0-2: the client NEVER sends a whole Andon — the
+    // command carries only the mutable fields the repository accepts.
+    let narrow = sensei_services::ops::Andon {
+        issue_type: req.issue_type.unwrap_or_default(),
+        severity: req.severity,
+        description: req.description,
+        id: Uuid::nil(),
+        tenant_id,
+        site_id: None,
+        andon_number: String::new(),
+        work_center_id: Uuid::nil(),
+        status: String::new(),
+        abnormal_condition_observed_at: None,
+        raised_by: Uuid::nil(),
+        acknowledged_by: None,
+        resolved_by: None,
+        resolution: None,
+        response_time_seconds: None,
+        resolution_time_seconds: None,
+        created_at: chrono::Utc::now(),
+        acknowledged_at: None,
+        resolved_at: None,
+        restart_authorized_by: None,
+        restart_authorized_at: None,
+        contained_at: None,
+        contained_by: None,
+        contained_note: None,
+        escalated: false,
+        escalated_at: None,
+        request_key: None,
+    };
+    let andon = state
+        .ops_service
+        .update_andon(tenant_id, &sites, id, narrow)
+        .await?;
     Ok(Json(andon))
 }
 
@@ -377,9 +425,10 @@ pub async fn void_andon(
 ) -> Result<Json<Andon>> {
     user.require_permission("tps:andon:contain")?;
     let tenant_id = user.tenant_id;
+    let sites = caller_sites(&user, &state).await?;
     let andon = state
         .ops_service
-        .void_andon(tenant_id, id, user.user_id, &req.reason)
+        .void_andon(tenant_id, &sites, id, user.user_id, &req.reason)
         .await?;
     Ok(Json(andon))
 }

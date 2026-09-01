@@ -5,5 +5,6 @@
 
 pub mod entities;
 pub mod events;
+pub mod request_context;
 pub mod scope;
 pub mod value_objects;

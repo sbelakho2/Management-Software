@@ -180,7 +180,9 @@ pub async fn raise_andon(
     if let Some(pool) = state.db_pool.as_ref() {
         let cond_input = sensei_services::tps::conditions::OpenConditionInput {
             scope_work_center_id: Some(andon.work_center_id),
-            scope_site_id: None,
+            // Eighteenth audit P0-2: the condition's scope AGREEES with
+            // the Andon's scope — never None while the Andon has a site.
+            scope_site_id: andon.site_id,
             scope_value_stream_id: None,
             scope_shift_id: None,
             subject_type: sensei_services::tps::conditions::ConditionSubject::Operation,
@@ -275,6 +277,32 @@ pub async fn get_andon(
 ///
 /// The actor is taken from the authenticated token; client-supplied actor
 /// ids are never trusted.
+/// Server-derived entitlement sites for Andon commands (eighteenth audit
+/// P0-2): the caller's scope comes from their ACTIVE role-slot
+/// assignments + agent context — never from client input. A caller with
+/// no entitlement gets an EMPTY set, which the repository command turns
+/// into zero matched rows.
+pub(crate) async fn caller_sites(user: &AuthenticatedUser, state: &AppState) -> Result<Vec<Uuid>> {
+    let Some(pool) = state.db_pool.as_ref() else {
+        return Err(sensei_core::error::SenseiError::Database(
+            "scope resolution requires the database".to_string(),
+        ));
+    };
+    let ctx = crate::routes::agent::build_context(user, state).await;
+    let rc = sensei_core::domain::request_context::RequestContext::build(
+        pool,
+        user.tenant_id,
+        user.user_id,
+        ctx.site_id,
+        ctx.value_stream_id,
+        ctx.work_center_id,
+        ctx.shift_id,
+        String::new(),
+    )
+    .await?;
+    Ok(rc.authorized_sites().to_vec())
+}
+
 pub async fn acknowledge_andon(
     user: AuthenticatedUser,
     State(state): State<AppState>,
@@ -283,9 +311,10 @@ pub async fn acknowledge_andon(
 ) -> Result<Json<Andon>> {
     user.require_permission("tps:andon:ack")?;
     let tenant_id = user.tenant_id;
+    let sites = caller_sites(&user, &state).await?;
     let andon = state
         .ops_service
-        .acknowledge_andon(tenant_id, id, user.user_id)
+        .acknowledge_andon(tenant_id, &sites, id, user.user_id)
         .await?;
     Ok(Json(andon))
 }
@@ -302,9 +331,10 @@ pub async fn resolve_andon(
 ) -> Result<Json<Andon>> {
     user.require_permission("tps:andon:resolve")?;
     let tenant_id = user.tenant_id;
+    let sites = caller_sites(&user, &state).await?;
     let andon = state
         .ops_service
-        .resolve_andon(tenant_id, id, user.user_id, &req.resolution)
+        .resolve_andon(tenant_id, &sites, id, user.user_id, &req.resolution)
         .await?;
     Ok(Json(andon))
 }
@@ -318,23 +348,67 @@ pub async fn escalate_andon(
 ) -> Result<Json<Andon>> {
     user.require_permission("tps:andon:resolve")?;
     let tenant_id = user.tenant_id;
+    let sites = caller_sites(&user, &state).await?;
     let andon = state
         .ops_service
-        .escalate_andon(tenant_id, id, user.user_id)
+        .escalate_andon(tenant_id, &sites, id, user.user_id)
         .await?;
     Ok(Json(andon))
 }
 
 /// Update an existing Andon event.
+/// Explicit update command (eighteenth audit P0-2): the client sends
+/// ONLY the mutable fields the repository accepts — never a whole Andon.
+#[derive(Debug, serde::Deserialize)]
+pub struct UpdateAndonCommand {
+    #[serde(default)]
+    pub issue_type: Option<String>,
+    pub severity: String,
+    pub description: String,
+}
+
 pub async fn update_andon(
     user: AuthenticatedUser,
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
-    Json(req): Json<Andon>,
+    Json(req): Json<UpdateAndonCommand>,
 ) -> Result<Json<Andon>> {
     user.require_permission("tps:andon:contain")?;
     let tenant_id = user.tenant_id;
-    let andon = state.ops_service.update_andon(tenant_id, id, req).await?;
+    let sites = caller_sites(&user, &state).await?;
+    let narrow = Andon {
+        issue_type: req.issue_type.unwrap_or_default(),
+        severity: req.severity,
+        description: req.description,
+        id: Uuid::nil(),
+        tenant_id,
+        site_id: None,
+        andon_number: String::new(),
+        work_center_id: Uuid::nil(),
+        status: String::new(),
+        abnormal_condition_observed_at: None,
+        raised_by: Uuid::nil(),
+        acknowledged_by: None,
+        resolved_by: None,
+        resolution: None,
+        response_time_seconds: None,
+        resolution_time_seconds: None,
+        created_at: chrono::Utc::now(),
+        acknowledged_at: None,
+        resolved_at: None,
+        restart_authorized_by: None,
+        restart_authorized_at: None,
+        contained_at: None,
+        contained_by: None,
+        contained_note: None,
+        escalated: false,
+        escalated_at: None,
+        request_key: None,
+    };
+    let andon = state
+        .ops_service
+        .update_andon(tenant_id, &sites, id, narrow)
+        .await?;
     Ok(Json(andon))
 }
 
@@ -348,9 +422,10 @@ pub async fn authorize_restart(
 ) -> Result<Json<Andon>> {
     user.require_permission("tps:andon:restart")?;
     let tenant_id = user.tenant_id;
+    let sites = caller_sites(&user, &state).await?;
     let andon = state
         .ops_service
-        .authorize_restart(tenant_id, id, user.user_id)
+        .authorize_restart(tenant_id, &sites, id, user.user_id)
         .await?;
     Ok(Json(andon))
 }
@@ -366,9 +441,10 @@ pub async fn void_andon(
 ) -> Result<Json<Andon>> {
     user.require_permission("tps:andon:contain")?;
     let tenant_id = user.tenant_id;
+    let sites = caller_sites(&user, &state).await?;
     let andon = state
         .ops_service
-        .void_andon(tenant_id, id, user.user_id, &req.reason)
+        .void_andon(tenant_id, &sites, id, user.user_id, &req.reason)
         .await?;
     Ok(Json(andon))
 }
@@ -420,12 +496,29 @@ pub async fn list_events(
         serde_json::Value,
         i64,
     );
+    // Eighteenth audit P0-2: the event log is scope-intersected. A
+    // site-scoped caller sees ONLY events carrying their site scope; a
+    // caller with no entitlement sees nothing at all.
+    let ctx = crate::routes::agent::build_context(&user, &state).await;
+    let authorized_sites: Vec<Uuid> = if let Some(site) = ctx.site_id {
+        vec![site]
+    } else {
+        Vec::new()
+    };
     let rows: Vec<EventRow> = sqlx::query_as(
         "SELECT id, tenant_id, event_type, occurred_at, recorded_at, scope_site_id, actor_id, \
                 objects, source_system, source_id, sensitivity, payload, sequence \
-         FROM operational_events WHERE tenant_id = $1 ORDER BY occurred_at DESC LIMIT 100",
+         FROM operational_events WHERE tenant_id = $1 \
+           AND ($2::uuid[]::text[] IS NULL OR scope_site_id::text = ANY($2)) \
+         ORDER BY occurred_at DESC LIMIT 100",
     )
     .bind(user.tenant_id)
+    .bind(
+        authorized_sites
+            .iter()
+            .map(|s| s.to_string())
+            .collect::<Vec<String>>(),
+    )
     .fetch_all(&mut *tx)
     .await
     .map_err(|e| {

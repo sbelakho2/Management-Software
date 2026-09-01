@@ -25,31 +25,26 @@ fn pool(state: &AppState) -> Result<&sqlx::PgPool> {
 
 /// Body for `POST /api/v1/replication/enqueue` — the site-local durable
 /// enqueue of an AUTHORIZED state projection plus its versioned envelope.
-/// `source_country`/`destination_country` drive the deterministic
-/// residency gate (item 17): when the destination differs from the source,
-/// `restricted`/`personal` projections are rejected with 422.
+/// Eighteenth audit P0-3: the client describes NO security properties of
+/// the data it wants to export. It names the SOURCE EVENT (a canonical
+/// operational event); the server derives the site, jurisdiction, data
+/// class and policy revision into an [`AuthorizedProjection`], and the
+/// artifact is what gets enqueued.
 #[derive(Debug, Deserialize)]
 pub struct EnqueueRequest {
-    pub site_id: Option<Uuid>,
+    pub source_event_id: Uuid,
     pub entity_type: String,
     pub entity_id: Uuid,
     /// The projection payload (`projection` is accepted as an alias).
     #[serde(default, alias = "projection")]
     pub payload: serde_json::Value,
-    pub source_event_id: Option<String>,
     /// Envelope: versioned, typed projections (item 15).
     #[serde(default = "default_schema_version")]
     pub schema_version: u32,
-    pub source_site: Option<Uuid>,
     #[serde(default)]
     pub projection_type: Option<String>,
     #[serde(default = "default_projection_revision")]
     pub projection_revision: u64,
-    /// Residency gate inputs (item 17). The data policy itself is DERIVED
-    /// server-side from the site manifest + country policy bundle — the
-    /// client never declares its own classification.
-    pub source_country: Option<String>,
-    pub destination_country: Option<String>,
 }
 
 fn default_schema_version() -> u32 {
@@ -112,17 +107,18 @@ pub async fn enqueue(
 ) -> Result<Json<serde_json::Value>> {
     user.require_permission("federation:replication:publish")?;
     let p = pool(&state)?;
-    // SERVER-DERIVED POLICY (sixteenth audit item 29): the classification
-    // comes from the site manifest's country and the tenant's country
-    // policy bundle — the client's word is never trusted.
-    let data_policy = replication::derive_data_policy(p, user.tenant_id, req.site_id).await?;
-    let policy = replication::DataPolicy::parse(&data_policy)
+    // Eighteenth audit P0-3: EVERYTHING is derived server-side from the
+    // source event. The endpoint never asks the caller to describe the
+    // security properties of the data it wants to export — a malicious
+    // publisher cannot influence the residency decision by supplying
+    // matching countries, omitting the destination, or omitting the site
+    // (site omission is now an ERROR, never a silent "internal").
+    let artifact =
+        replication::authorize_projection(p, user.tenant_id, req.source_event_id, &req.entity_type)
+            .await?;
+    let policy = replication::DataPolicy::parse(&artifact.data_class)
         .map_err(sensei_core::error::SenseiError::Validation)?;
-    if !replication::may_replicate(
-        policy,
-        req.source_country.as_deref(),
-        req.destination_country.as_deref(),
-    ) {
+    if !replication::may_replicate(policy, Some(&artifact.source_jurisdiction), None) {
         return Err(SenseiError::HttpError {
             status: 422,
             message: "data residency policy blocks this projection".to_string(),
@@ -134,27 +130,30 @@ pub async fn enqueue(
         .unwrap_or_else(|| req.entity_type.clone());
     let envelope = ReplicationEnvelope {
         schema_version: req.schema_version,
-        source_event_id: req.source_event_id.clone(),
-        source_site: req.source_site,
+        source_event_id: Some(artifact.source_event_id.to_string()),
+        source_site: artifact.source_site,
         projection_type,
         projection_revision: req.projection_revision,
-        data_policy,
+        data_policy: artifact.data_class.clone(),
         payload: req.payload.clone(),
     };
     replication::enqueue_projection(
         p,
         user.tenant_id,
-        req.site_id,
+        artifact.source_site,
         &req.entity_type,
         req.entity_id,
         req.payload,
-        req.source_event_id.as_deref(),
+        Some(&artifact.source_event_id.to_string()),
         &envelope,
-        req.source_country.as_deref(),
-        req.destination_country.as_deref(),
+        Some(&artifact.source_jurisdiction),
+        None,
     )
     .await?;
-    Ok(Json(serde_json::json!({ "ok": true })))
+    Ok(Json(serde_json::json!({
+        "ok": true,
+        "authorized_projection": artifact,
+    })))
 }
 
 /// `GET /api/v1/replication/pull?limit=100` — the corporate claim.

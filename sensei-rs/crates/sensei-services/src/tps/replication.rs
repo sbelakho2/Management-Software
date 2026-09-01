@@ -77,6 +77,108 @@ where
     Ok(result)
 }
 
+/// A country jurisdiction (eighteenth audit P0-3): the residency
+/// dimension is a JURISDICTION ("ma", "tn"), never a data
+/// classification. `country_policies.data_residency` holds these codes.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize)]
+pub enum Jurisdiction {
+    MA,
+    TN,
+    FR,
+    US,
+    DE,
+    ES,
+    IT,
+    GB,
+    Other(String),
+}
+
+impl Jurisdiction {
+    pub fn as_str(&self) -> &str {
+        match self {
+            Self::MA => "ma",
+            Self::TN => "tn",
+            Self::FR => "fr",
+            Self::US => "us",
+            Self::DE => "de",
+            Self::ES => "es",
+            Self::IT => "it",
+            Self::GB => "gb",
+            Self::Other(s) => s.as_str(),
+        }
+    }
+
+    /// FAIL-CLOSED: unknown codes cannot become a jurisdiction.
+    pub fn parse(value: &str) -> std::result::Result<Self, String> {
+        match value.to_ascii_lowercase().as_str() {
+            "ma" | "morocco" => Ok(Self::MA),
+            "tn" | "tunisia" => Ok(Self::TN),
+            "fr" | "france" => Ok(Self::FR),
+            "us" | "usa" => Ok(Self::US),
+            "de" | "germany" => Ok(Self::DE),
+            "es" | "spain" => Ok(Self::ES),
+            "it" | "italy" => Ok(Self::IT),
+            "gb" | "uk" => Ok(Self::GB),
+            other => Err(format!(
+                "unknown jurisdiction '{other}' — residency codes are typed, not free-form"
+            )),
+        }
+    }
+
+    /// Deserialize never fails: unknown codes are preserved as
+    /// `Other` so stored configs stay round-trippable; the FAIL-CLOSED
+    /// parse above is what security checks use.
+    fn from_string(other: String) -> Self {
+        match other.to_ascii_lowercase().as_str() {
+            "ma" | "morocco" => Self::MA,
+            "tn" | "tunisia" => Self::TN,
+            "fr" | "france" => Self::FR,
+            "us" | "usa" => Self::US,
+            "de" | "germany" => Self::DE,
+            "es" | "spain" => Self::ES,
+            "it" | "italy" => Self::IT,
+            "gb" | "uk" => Self::GB,
+            _ => Self::Other(other),
+        }
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for Jurisdiction {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        Ok(Self::from_string(value))
+    }
+}
+
+/// The residency POLICY of a country (eighteenth audit P0-3): what may
+/// leave the source jurisdiction. Derived server-side from the country
+/// policy bundle — never declared by the client.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum ResidencyPolicy {
+    /// Data never leaves the source jurisdiction.
+    LocalOnly,
+    /// Data may replicate to the listed jurisdictions.
+    AllowedCountries(Vec<Jurisdiction>),
+    /// Data may replicate anywhere within the corporate group.
+    CorporateAllowed,
+}
+
+impl ResidencyPolicy {
+    pub fn allows(&self, source: &Jurisdiction, target: &Jurisdiction) -> bool {
+        if source == target {
+            return true;
+        }
+        match self {
+            Self::LocalOnly => false,
+            Self::AllowedCountries(list) => list.contains(target),
+            Self::CorporateAllowed => true,
+        }
+    }
+}
+
 /// TYPED data policy (seventeenth audit item 6): one enum, never a
 /// free-form string. Unknown strings cannot become a policy — parsing is
 /// fail-closed.
@@ -126,12 +228,19 @@ impl DataPolicy {
 /// enqueue (422), and `enqueue_projection` enforces it again as a second
 /// line of defense. Takes the TYPED policy — an unparsed string cannot
 /// reach the gate.
+/// DETERMINISTIC residency gate (sixteenth audit item 17 + eighteenth
+/// audit P0-3): a projection whose DATA CLASS is `restricted` or
+/// `personal` may never cross a country border — blocked when the
+/// TYPED target jurisdiction differs from the TYPED source jurisdiction
+/// (or the target is unknown). All other classes replicate freely.
+/// Both jurisdictions are server-derived; an unparsed string cannot
+/// reach the gate.
 pub fn may_replicate(
     data_policy: DataPolicy,
-    source_country: Option<&str>,
-    destination_country: Option<&str>,
+    source_jurisdiction: Option<&Jurisdiction>,
+    target_jurisdiction: Option<&Jurisdiction>,
 ) -> bool {
-    let destination_set_and_different = match (source_country, destination_country) {
+    let destination_set_and_different = match (source_jurisdiction, target_jurisdiction) {
         (Some(src), Some(dst)) => src != dst,
         (None, Some(_)) => true,
         _ => false,
@@ -140,46 +249,117 @@ pub fn may_replicate(
         && matches!(data_policy, DataPolicy::Restricted | DataPolicy::Personal))
 }
 
-/// DERIVE the replication data policy SERVER-SIDE (sixteenth audit item
-/// 29): from the source site's country manifest (site_manifests.country)
-/// and the tenant's country policy bundle (country_policies.data_residency).
-/// FAIL-CLOSED: an unknown country or a missing policy bundle is a
-/// Validation error, never a silent downgrade to a weaker label.
-pub async fn derive_data_policy(
+/// The SERVER-DERIVED authorization artifact (eighteenth audit P0-3):
+/// everything the residency decision needs, produced from the source
+/// EVENT + site manifests + country policy bundle. The client never
+/// describes the security properties of the data it wants to export —
+/// it can only name the source event.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct AuthorizedProjection {
+    pub source_event_id: Uuid,
+    pub source_site: Option<Uuid>,
+    pub source_jurisdiction: Jurisdiction,
+    pub data_class: String,
+    pub projection_schema: String,
+    pub policy_revision: u64,
+}
+
+/// DERIVE the projection authorization SERVER-SIDE (eighteenth audit
+/// P0-3): from the source EVENT's sensitivity (the data class), its
+/// scope site's manifest country (the source jurisdiction —
+/// `country_policies.data_residency` holds JURISDICTION codes such as
+/// "ma"/"tn", never data classifications), and the country policy
+/// revision. FAIL-CLOSED at every step:
+/// - no source event -> error (the artifact always names a real event)
+/// - unparseable sensitivity -> error (never a silent downgrade)
+/// - missing manifest / unknown jurisdiction -> error
+pub async fn authorize_projection(
     pool: &sqlx::PgPool,
     tenant_id: Uuid,
-    site_id: Option<Uuid>,
-) -> Result<String> {
-    let Some(site_id) = site_id else {
-        // Tenant-level envelope (no site): the default classification is
-        // "internal" — the least permissive label that still replicates.
-        return Ok("internal".to_string());
+    source_event_id: Uuid,
+    projection_schema: &str,
+) -> Result<AuthorizedProjection> {
+    // 1. The source event must EXIST in this tenant (FORCE RLS makes the
+    //    raw-pool read fail-closed — a foreign event id resolves to
+    //    nothing).
+    type EvRow = (Option<Uuid>, String, String);
+    let event: Option<EvRow> = sqlx::query_as(
+        "SELECT scope_site_id, sensitivity, event_type FROM operational_events          WHERE id = $1 AND tenant_id = $2",
+    )
+    .bind(source_event_id)
+    .bind(tenant_id)
+    .fetch_optional(pool)
+    .await
+    .map_err(|e| SenseiError::Database(format!("replication: source event: {e}")))?;
+    let Some((scope_site_id, sensitivity, _event_type)) = event else {
+        return Err(SenseiError::Validation(
+            "replication: source_event_id must reference an EXISTING canonical event              in this tenant — an artifact without a real source event is refused"
+                .to_string(),
+        ));
     };
-    let country: Option<String> = sqlx::query_scalar(
-        "SELECT sm.country FROM site_manifests sm          WHERE sm.tenant_id = $1 AND sm.site_id = $2",
+    let data_class = DataPolicy::parse(&sensitivity).map_err(SenseiError::Validation)?;
+
+    // 2. Source jurisdiction: the event's scope site manifest country ->
+    //    the country policy's data_residency JURISDICTION code.
+    let site_id = scope_site_id;
+    let source_jurisdiction = match site_id {
+        Some(site_id) => {
+            let country: Option<String> = sqlx::query_scalar(
+                "SELECT sm.country FROM site_manifests sm                  WHERE sm.tenant_id = $1 AND sm.site_id = $2",
+            )
+            .bind(tenant_id)
+            .bind(site_id)
+            .fetch_optional(pool)
+            .await
+            .map_err(|e| SenseiError::Database(format!("replication: manifest lookup: {e}")))?;
+            let Some(country) = country else {
+                return Err(SenseiError::Validation(
+                    "replication: the source site has no manifest — its jurisdiction                      cannot be derived, so nothing may leave it"
+                        .to_string(),
+                ));
+            };
+            let residency: Option<String> = sqlx::query_scalar(
+                "SELECT cp.data_residency FROM country_policies cp                  WHERE cp.tenant_id = $1 AND cp.country = $2",
+            )
+            .bind(tenant_id)
+            .bind(&country)
+            .fetch_optional(pool)
+            .await
+            .map_err(|e| SenseiError::Database(format!("replication: policy lookup: {e}")))?;
+            let Some(residency) = residency else {
+                return Err(SenseiError::Validation(format!(
+                    "replication: no country policy for {country} — a country is a policy                      RECORD, not a code fork"
+                )));
+            };
+            Jurisdiction::parse(&residency).map_err(SenseiError::Validation)?
+        }
+        None => {
+            return Err(SenseiError::Validation(
+                "replication: the source event has no site scope — its jurisdiction is                  unknown, so it cannot be authorized for replication"
+                    .to_string(),
+            ))
+        }
+    };
+
+    // 3. Policy revision: the country policy revision governing the
+    //    source jurisdiction (the artifact pins the decision to a
+    //    revision).
+    let policy_revision: i64 = sqlx::query_scalar(
+        "SELECT COALESCE(MAX(revision), 0) FROM country_policy_versions          WHERE tenant_id = $1 AND country =              (SELECT country FROM site_manifests WHERE tenant_id = $1 AND site_id = $2)",
     )
     .bind(tenant_id)
     .bind(site_id)
-    .fetch_optional(pool)
+    .fetch_one(pool)
     .await
-    .map_err(|e| SenseiError::Database(format!("replication: manifest lookup: {e}")))?;
-    let Some(country) = country else {
-        return Err(SenseiError::Validation(
-            "replication: site has no manifest — cannot derive data policy".to_string(),
-        ));
-    };
-    let residency: Option<String> = sqlx::query_scalar(
-        "SELECT cp.data_residency FROM country_policies cp          WHERE cp.tenant_id = $1 AND cp.country = $2",
-    )
-    .bind(tenant_id)
-    .bind(&country)
-    .fetch_optional(pool)
-    .await
-    .map_err(|e| SenseiError::Database(format!("replication: policy lookup: {e}")))?;
-    residency.ok_or_else(|| {
-        SenseiError::Validation(format!(
-            "replication: no country policy for {country} — a country is a policy RECORD,              not a code fork"
-        ))
+    .map_err(|e| SenseiError::Database(format!("replication: policy revision: {e}")))?;
+
+    Ok(AuthorizedProjection {
+        source_event_id,
+        source_site: site_id,
+        source_jurisdiction,
+        data_class: data_class.as_str().to_string(),
+        projection_schema: projection_schema.to_string(),
+        policy_revision: policy_revision as u64,
     })
 }
 
@@ -199,11 +379,11 @@ pub async fn enqueue_projection(
     projection: serde_json::Value,
     source_event_id: Option<&str>,
     envelope: &ReplicationEnvelope,
-    source_country: Option<&str>,
-    destination_country: Option<&str>,
+    source_jurisdiction: Option<&Jurisdiction>,
+    target_jurisdiction: Option<&Jurisdiction>,
 ) -> Result<()> {
     let policy = DataPolicy::parse(&envelope.data_policy).map_err(SenseiError::Validation)?;
-    if !may_replicate(policy, source_country, destination_country) {
+    if !may_replicate(policy, source_jurisdiction, target_jurisdiction) {
         return Err(SenseiError::Validation(
             "data residency policy blocks this projection".to_string(),
         ));

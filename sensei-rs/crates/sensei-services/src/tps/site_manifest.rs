@@ -780,6 +780,7 @@ pub async fn advance_site_lifecycle(
     to: &str,
 ) -> Result<()> {
     let to = to.to_string();
+    let pool_for_validation = pool.clone();
     with_tenant_tx(pool, tenant_id, move |tx| {
         Box::pin(async move {
             let current: String = sqlx::query_scalar(
@@ -792,7 +793,19 @@ pub async fn advance_site_lifecycle(
             .map_err(|e| SenseiError::Database(format!("Site status read failed: {e}")))?;
             match (current.as_str(), to.as_str()) {
                 ("draft", "validated") => {
-                    advance_lifecycle(tx, tenant_id, site_id, "draft", "validated").await?;
+                    // Eighteenth audit P0-4: draft -> validated is
+                    // IMPOSSIBLE without a real validation — the
+                    // transition RUNS validate_site (which stores the
+                    // report AND advances only when ready) instead of a
+                    // blind status bump. The ladder cannot move without
+                    // the report by construction.
+                    let report = validate_site(&pool_for_validation, tenant_id, site_id).await?;
+                    if !report.ready {
+                        return Err(SenseiError::Validation(
+                            "site is not ready — the validation report lists the failing                              checks; draft -> validated requires a READY report"
+                                .to_string(),
+                        ));
+                    }
                 }
                 ("validated", "provisioning") => {
                     let report_ready: bool = sqlx::query_scalar(

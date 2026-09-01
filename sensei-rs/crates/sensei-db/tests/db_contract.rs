@@ -567,13 +567,14 @@ async fn andon_service_rls_and_safety_rule_work_on_migrated_schema() {
     use sensei_services::ops::OperationsService;
     let service = sensei_services::ops::DatabaseOperationsService::new(pool.clone());
 
+    let site_a_rls = uuid::Uuid::new_v4();
     let raised = service
         .raise_andon(
             tenant_id,
             sensei_services::ops::Andon {
                 id: uuid::Uuid::new_v4(),
                 tenant_id,
-                site_id: None,
+                site_id: Some(site_a_rls),
                 andon_number: String::new(),
                 work_center_id: uuid::Uuid::new_v4(),
                 issue_type: "safety".to_string(),
@@ -603,10 +604,11 @@ async fn andon_service_rls_and_safety_rule_work_on_migrated_schema() {
         .await
         .expect("raise_andon must work with the fail-closed RLS policy");
     assert_eq!(raised.status, "active");
+    let sites = vec![site_a_rls];
 
     // The safety rule: resolving WITHOUT restart authorization fails.
     let blocked = service
-        .resolve_andon(tenant_id, raised.id, raised_by, "trying to resolve")
+        .resolve_andon(tenant_id, &sites, raised.id, raised_by, "trying to resolve")
         .await;
     assert!(
         blocked.is_err(),
@@ -615,12 +617,13 @@ async fn andon_service_rls_and_safety_rule_work_on_migrated_schema() {
 
     // Authorize restart, then resolve succeeds.
     service
-        .authorize_restart(tenant_id, raised.id, raised_by)
+        .authorize_restart(tenant_id, &sites, raised.id, raised_by)
         .await
         .expect("authorize_restart must work");
     let resolved = service
         .resolve_andon(
             tenant_id,
+            &sites,
             raised.id,
             raised_by,
             "restarted after authorization",
@@ -7472,18 +7475,18 @@ async fn replication_claim_ack_at_least_once() {
     // internal data may.
     assert!(!replication::may_replicate(
         replication::DataPolicy::Restricted,
-        Some("ma"),
-        Some("tn")
+        Some(&replication::Jurisdiction::MA),
+        Some(&replication::Jurisdiction::TN)
     ));
     assert!(replication::may_replicate(
         replication::DataPolicy::Internal,
-        Some("ma"),
-        Some("tn")
+        Some(&replication::Jurisdiction::MA),
+        Some(&replication::Jurisdiction::TN)
     ));
     assert!(replication::may_replicate(
         replication::DataPolicy::Restricted,
-        Some("ma"),
-        Some("ma")
+        Some(&replication::Jurisdiction::MA),
+        Some(&replication::Jurisdiction::MA)
     ));
 }
 
@@ -11018,6 +11021,7 @@ async fn seventeenth_audit_full_path_invariants() {
         .raise_andon_idempotent(tenant_id, andon_base.clone(), Some("cmd-key-1".to_string()))
         .await
         .expect("first raise");
+    let sites = vec![site_a];
     let replay = ops_service
         .raise_andon_idempotent(tenant_id, andon_base.clone(), Some("cmd-key-1".to_string()))
         .await
@@ -11069,11 +11073,11 @@ async fn seventeenth_audit_full_path_invariants() {
     //       appends andon.resolved with the deterministic idempotency
     //       key — the process-mining path is reconstructible.
     ops_service
-        .authorize_restart(tenant_id, first.id, user_id)
+        .authorize_restart(tenant_id, &sites, first.id, user_id)
         .await
         .expect("restart authorization");
     ops_service
-        .resolve_andon(tenant_id, first.id, user_id, "fixed")
+        .resolve_andon(tenant_id, &sites, first.id, user_id, "fixed")
         .await
         .expect("resolve");
     let (raised, resolved, ack_keys): (i64, i64, i64) = sqlx::query_as(
@@ -11420,4 +11424,121 @@ async fn twi_shift_id_is_a_real_scope_dimension() {
         "shift B coverage NEVER sees a shift-A qualification — the slot-name \
          substring approximation is gone"
     );
+}
+
+/// Eighteenth audit P0-2: an Andon mutation is scoped INSIDE the
+/// repository command — a Site-A caller can never acknowledge/resolve/
+/// void a Site-B Andon even with a known UUID, and a caller with NO
+/// entitlement can act on NOTHING.
+#[tokio::test]
+async fn andon_mutations_cannot_cross_sites() {
+    let _serial = DB_LOCK.lock().await;
+    let Some(pool) = connect().await else { return };
+    sensei_db::migrations::run_migrations(&pool)
+        .await
+        .expect("migration chain");
+
+    let tenant_id = uuid::Uuid::new_v4();
+    let site_a = uuid::Uuid::new_v4();
+    let site_b = uuid::Uuid::new_v4();
+    let user = uuid::Uuid::new_v4();
+    sqlx::query("INSERT INTO tenants (id, name, slug) VALUES ($1, 'xand', 'xand')")
+        .bind(tenant_id)
+        .execute(&pool)
+        .await
+        .expect("tenant");
+    sqlx::query(
+        "INSERT INTO sites (id, tenant_id, site_code, name) VALUES \
+         ($1, $2, 'XA', 'A'), ($3, $4, 'XB', 'B')",
+    )
+    .bind(site_a)
+    .bind(tenant_id)
+    .bind(site_b)
+    .bind(tenant_id)
+    .execute(&pool)
+    .await
+    .expect("sites");
+    sqlx::query(
+        "INSERT INTO users (id, tenant_id, email, name, password_hash) \
+         VALUES ($1, $2, 'xand@starzforge.local', 'X', 'x')",
+    )
+    .bind(user)
+    .bind(tenant_id)
+    .execute(&pool)
+    .await
+    .expect("user");
+
+    use sensei_services::ops::OperationsService;
+    let service = sensei_services::ops::DatabaseOperationsService::new(pool.clone());
+
+    let make = |site: uuid::Uuid| sensei_services::ops::Andon {
+        id: uuid::Uuid::new_v4(),
+        tenant_id,
+        site_id: Some(site),
+        andon_number: String::new(),
+        work_center_id: uuid::Uuid::new_v4(),
+        issue_type: "quality".to_string(),
+        severity: "medium".to_string(),
+        description: "cross-site guard".to_string(),
+        status: String::new(),
+        raised_by: user,
+        acknowledged_by: None,
+        resolved_by: None,
+        resolution: None,
+        response_time_seconds: None,
+        resolution_time_seconds: None,
+        created_at: chrono::Utc::now(),
+        acknowledged_at: None,
+        resolved_at: None,
+        restart_authorized_by: None,
+        restart_authorized_at: None,
+        abnormal_condition_observed_at: None,
+        contained_at: None,
+        contained_by: None,
+        contained_note: None,
+        escalated: false,
+        escalated_at: None,
+        request_key: None,
+    };
+    let on_a = service
+        .raise_andon(tenant_id, make(site_a))
+        .await
+        .expect("raise A");
+    let on_b = service
+        .raise_andon(tenant_id, make(site_b))
+        .await
+        .expect("raise B");
+
+    service
+        .acknowledge_andon(tenant_id, &[site_a], on_a.id, user)
+        .await
+        .expect("A caller acknowledges A andon");
+
+    let cross = service
+        .acknowledge_andon(tenant_id, &[site_a], on_b.id, user)
+        .await;
+    assert!(
+        cross.is_err(),
+        "a Site-A caller must never acknowledge a Site-B andon"
+    );
+    let cross_void = service
+        .void_andon(tenant_id, &[site_a], on_b.id, user, "nope")
+        .await;
+    assert!(
+        cross_void.is_err(),
+        "a Site-A caller must never void a Site-B andon"
+    );
+
+    let no_scope = service
+        .acknowledge_andon(tenant_id, &[], on_a.id, user)
+        .await;
+    assert!(
+        no_scope.is_err(),
+        "no entitlement -> no scope -> no data (fail-closed)"
+    );
+
+    let state_a = service.get_andon(tenant_id, on_a.id).await.expect("read A");
+    assert_eq!(state_a.status, "acknowledged");
+    let state_b = service.get_andon(tenant_id, on_b.id).await.expect("read B");
+    assert_eq!(state_b.status, "active", "the B andon was never touched");
 }

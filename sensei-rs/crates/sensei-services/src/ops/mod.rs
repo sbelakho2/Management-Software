@@ -206,20 +206,33 @@ pub trait OperationsService: Send + Sync {
         andon: Andon,
         request_key: Option<String>,
     ) -> Result<Andon>;
-    /// Acknowledge an Andon signal.
+    /// Acknowledge an Andon signal. `authorized_sites` is the caller's
+    /// entitlement scope — the UPDATE embeds `site_id = ANY($n)` in the
+    /// SAME transaction (eighteenth audit P0-2): a Site-A employee can
+    /// never acknowledge a Site-B Andon, whatever UUID they know.
     async fn acknowledge_andon(
         &self,
         tenant_id: Uuid,
+        authorized_sites: &[Uuid],
         id: Uuid,
         acknowledged_by: Uuid,
     ) -> Result<Andon>;
     /// Escalate an Andon to tier review (item 41): a real state
-    /// transition through the same command path.
-    async fn escalate_andon(&self, tenant_id: Uuid, id: Uuid, escalated_by: Uuid) -> Result<Andon>;
-    /// Resolve an Andon signal with a resolution description.
+    /// transition through the same command path, scoped like
+    /// [`Self::acknowledge_andon`].
+    async fn escalate_andon(
+        &self,
+        tenant_id: Uuid,
+        authorized_sites: &[Uuid],
+        id: Uuid,
+        escalated_by: Uuid,
+    ) -> Result<Andon>;
+    /// Resolve an Andon signal with a resolution description, scoped like
+    /// [`Self::acknowledge_andon`].
     async fn resolve_andon(
         &self,
         tenant_id: Uuid,
+        authorized_sites: &[Uuid],
         id: Uuid,
         resolved_by: Uuid,
         resolution: &str,
@@ -227,10 +240,12 @@ pub trait OperationsService: Send + Sync {
     /// Get an Andon signal by ID.
     async fn get_andon(&self, tenant_id: Uuid, id: Uuid) -> Result<Andon>;
     /// Authorize the restart of a line after a critical-safety Andon (hard
-    /// rule: resolution requires this authorization).
+    /// rule: resolution requires this authorization), scoped like
+    /// [`Self::acknowledge_andon`].
     async fn authorize_restart(
         &self,
         tenant_id: Uuid,
+        authorized_sites: &[Uuid],
         id: Uuid,
         authorized_by: Uuid,
     ) -> Result<Andon>;
@@ -312,12 +327,22 @@ pub trait OperationsService: Send + Sync {
     ) -> Result<PaginatedResponse<Risk>>;
     /// Mitigate a risk (move to mitigated status).
     async fn mitigate_risk(&self, tenant_id: Uuid, id: Uuid) -> Result<Risk>;
-    /// Update an Andon signal.
-    async fn update_andon(&self, tenant_id: Uuid, id: Uuid, andon: Andon) -> Result<Andon>;
-    /// Delete an Andon signal.
+    /// Update an Andon signal (eighteenth audit P0-2: the client never
+    /// sends a whole Andon — explicit command DTOs only), scoped like
+    /// [`Self::acknowledge_andon`].
+    async fn update_andon(
+        &self,
+        tenant_id: Uuid,
+        authorized_sites: &[Uuid],
+        id: Uuid,
+        andon: Andon,
+    ) -> Result<Andon>;
+    /// Void an Andon signal with a reason, scoped like
+    /// [`Self::acknowledge_andon`].
     async fn void_andon(
         &self,
         tenant_id: Uuid,
+        authorized_sites: &[Uuid],
         id: Uuid,
         actor_id: Uuid,
         reason: &str,
@@ -493,13 +518,27 @@ impl OperationsService for InMemoryOperationsService {
     async fn acknowledge_andon(
         &self,
         tenant_id: Uuid,
+        authorized_sites: &[Uuid],
         id: Uuid,
         acknowledged_by: Uuid,
     ) -> Result<Andon> {
+        if authorized_sites.is_empty() {
+            return Err(SenseiError::Forbidden(
+                "no operational scope — no Andon is authorized".to_string(),
+            ));
+        }
         let mut store = self.andons.write().await;
         let andon = store
             .get_mut(&id)
             .ok_or_else(|| SenseiError::NotFound(format!("Andon {id} not found")))?;
+        if andon
+            .site_id
+            .is_some_and(|site| !authorized_sites.contains(&site))
+        {
+            return Err(SenseiError::Forbidden(
+                "Andon is outside the caller's authorized site scope".to_string(),
+            ));
+        }
 
         if andon.status != "active" {
             return Err(SenseiError::Validation(format!(
@@ -524,7 +563,18 @@ impl OperationsService for InMemoryOperationsService {
         Ok(result)
     }
 
-    async fn escalate_andon(&self, tenant_id: Uuid, id: Uuid, escalated_by: Uuid) -> Result<Andon> {
+    async fn escalate_andon(
+        &self,
+        tenant_id: Uuid,
+        authorized_sites: &[Uuid],
+        id: Uuid,
+        escalated_by: Uuid,
+    ) -> Result<Andon> {
+        if authorized_sites.is_empty() {
+            return Err(SenseiError::Forbidden(
+                "no operational scope — no Andon is authorized".to_string(),
+            ));
+        }
         let mut store = self.andons.write().await;
         let andon = store
             .get_mut(&id)
@@ -553,10 +603,16 @@ impl OperationsService for InMemoryOperationsService {
     async fn resolve_andon(
         &self,
         tenant_id: Uuid,
+        authorized_sites: &[Uuid],
         id: Uuid,
         resolved_by: Uuid,
         resolution: &str,
     ) -> Result<Andon> {
+        if authorized_sites.is_empty() {
+            return Err(SenseiError::Forbidden(
+                "no operational scope — no Andon is authorized".to_string(),
+            ));
+        }
         let mut store = self.andons.write().await;
         let andon = store
             .get_mut(&id)
@@ -950,7 +1006,18 @@ impl OperationsService for InMemoryOperationsService {
     }
     // ── New: Update / Delete ─────────────────────────────────────────────
 
-    async fn update_andon(&self, _tenant_id: Uuid, id: Uuid, andon: Andon) -> Result<Andon> {
+    async fn update_andon(
+        &self,
+        _tenant_id: Uuid,
+        authorized_sites: &[Uuid],
+        id: Uuid,
+        andon: Andon,
+    ) -> Result<Andon> {
+        if authorized_sites.is_empty() {
+            return Err(SenseiError::Forbidden(
+                "no operational scope — no Andon is authorized".to_string(),
+            ));
+        }
         let mut store = self.andons.write().await;
         let existing = store
             .get_mut(&id)
@@ -969,6 +1036,7 @@ impl OperationsService for InMemoryOperationsService {
     async fn authorize_restart(
         &self,
         _tenant_id: Uuid,
+        authorized_sites: &[Uuid],
         id: Uuid,
         authorized_by: Uuid,
     ) -> Result<Andon> {
@@ -984,6 +1052,7 @@ impl OperationsService for InMemoryOperationsService {
     async fn void_andon(
         &self,
         _tenant_id: Uuid,
+        authorized_sites: &[Uuid],
         id: Uuid,
         actor_id: Uuid,
         reason: &str,
@@ -1123,11 +1192,12 @@ mod tests {
         let tenant_id = Uuid::new_v4();
         let work_center_id = Uuid::new_v4();
         let user_id = Uuid::new_v4();
+        let site = Uuid::new_v4();
 
         let andon = Andon {
             id: Uuid::nil(),
             tenant_id,
-            site_id: None,
+            site_id: Some(site),
             andon_number: String::new(),
             work_center_id,
             issue_type: "quality".to_string(),
@@ -1161,8 +1231,9 @@ mod tests {
         assert!(raised.andon_number.starts_with("AND-"));
         assert_eq!(raised.status, "active");
 
+        let sites = vec![site];
         let ack = service
-            .acknowledge_andon(tenant_id, raised.id, user_id)
+            .acknowledge_andon(tenant_id, &sites, raised.id, user_id)
             .await
             .unwrap();
         assert_eq!(ack.status, "acknowledged");
@@ -1171,6 +1242,7 @@ mod tests {
         let resolved = service
             .resolve_andon(
                 tenant_id,
+                &sites,
                 raised.id,
                 user_id,
                 "Rebooted controller, temperature normalised",
