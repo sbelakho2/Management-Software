@@ -77,15 +77,57 @@ where
     Ok(result)
 }
 
+/// TYPED data policy (seventeenth audit item 6): one enum, never a
+/// free-form string. Unknown strings cannot become a policy — parsing is
+/// fail-closed.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize,
+)]
+pub enum DataPolicy {
+    Public,
+    Internal,
+    Confidential,
+    Restricted,
+    Personal,
+}
+
+impl DataPolicy {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Public => "public",
+            Self::Internal => "internal",
+            Self::Confidential => "confidential",
+            Self::Restricted => "restricted",
+            Self::Personal => "personal",
+        }
+    }
+
+    /// FAIL-CLOSED parse: an unknown label is a Validation error, never a
+    /// silent downgrade to a weaker classification.
+    pub fn parse(value: &str) -> std::result::Result<Self, String> {
+        match value {
+            "public" => Ok(Self::Public),
+            "internal" => Ok(Self::Internal),
+            "confidential" => Ok(Self::Confidential),
+            "restricted" => Ok(Self::Restricted),
+            "personal" => Ok(Self::Personal),
+            other => Err(format!(
+                "unknown data policy '{other}' — policies are typed, not free-form"
+            )),
+        }
+    }
+}
+
 /// DETERMINISTIC residency gate (sixteenth audit item 17): a projection
 /// whose `data_policy` is `restricted` or `personal` may never cross a
 /// country border — it is blocked when the destination country is set and
 /// differs from the source country (or the source is unknown). All other
 /// policies replicate freely. Pure function: the route calls it BEFORE
 /// enqueue (422), and `enqueue_projection` enforces it again as a second
-/// line of defense.
+/// line of defense. Takes the TYPED policy — an unparsed string cannot
+/// reach the gate.
 pub fn may_replicate(
-    data_policy: &str,
+    data_policy: DataPolicy,
     source_country: Option<&str>,
     destination_country: Option<&str>,
 ) -> bool {
@@ -94,7 +136,8 @@ pub fn may_replicate(
         (None, Some(_)) => true,
         _ => false,
     };
-    !(destination_set_and_different && matches!(data_policy, "restricted" | "personal"))
+    !(destination_set_and_different
+        && matches!(data_policy, DataPolicy::Restricted | DataPolicy::Personal))
 }
 
 /// DERIVE the replication data policy SERVER-SIDE (sixteenth audit item
@@ -159,7 +202,8 @@ pub async fn enqueue_projection(
     source_country: Option<&str>,
     destination_country: Option<&str>,
 ) -> Result<()> {
-    if !may_replicate(&envelope.data_policy, source_country, destination_country) {
+    let policy = DataPolicy::parse(&envelope.data_policy).map_err(SenseiError::Validation)?;
+    if !may_replicate(policy, source_country, destination_country) {
         return Err(SenseiError::Validation(
             "data residency policy blocks this projection".to_string(),
         ));

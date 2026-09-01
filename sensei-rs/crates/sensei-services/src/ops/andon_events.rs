@@ -26,6 +26,18 @@ pub async fn write_andon_stream_event(
     payload: serde_json::Value,
 ) -> Result<()> {
     let event_id = Uuid::new_v4();
+    // Stream sequence is the next slot on the andon's stream — the
+    // (stream_type, stream_id, stream_sequence) unique index is the
+    // ordering guarantee (seventeenth audit item 11).
+    let stream_sequence: i64 = sqlx::query_scalar(
+        "SELECT COALESCE(MAX(stream_sequence), 0) + 1 FROM operational_events \
+         WHERE tenant_id = $1 AND stream_type = 'andon' AND stream_id = $2",
+    )
+    .bind(tenant_id)
+    .bind(andon_id.to_string())
+    .fetch_one(&mut **tx)
+    .await
+    .map_err(|e| SenseiError::Database(format!("Failed to read andon stream sequence: {e}")))?;
     let objects = serde_json::json!([
         { "object_type": "andon", "object_id": andon_id, "role": "subject" },
         {
@@ -40,7 +52,7 @@ pub async fn write_andon_stream_event(
               objects, source_system, source_id, sensitivity, payload, sequence, \
               event_schema_version, stream_type, stream_id, stream_sequence, idempotency_key) \
          VALUES ($1, $2, $3, $4, NOW(), $5, $6, $7, 'starz_forge', NULL, 'internal', $8, 1, \
-                 1, 'andon', $9, 1, $10)",
+                 1, 'andon', $9, $10, $11)",
     )
     .bind(event_id)
     .bind(tenant_id)
@@ -51,6 +63,7 @@ pub async fn write_andon_stream_event(
     .bind(objects.clone())
     .bind(payload)
     .bind(andon_id)
+    .bind(stream_sequence)
     .bind(format!("{andon_id}:{event_type}"))
     .execute(&mut **tx)
     .await

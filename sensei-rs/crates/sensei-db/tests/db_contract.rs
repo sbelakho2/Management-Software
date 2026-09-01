@@ -4515,6 +4515,32 @@ async fn organizational_memory_deterministic_promotion() {
         run_approve, run_observe, run_propose, ObserveRequest,
     };
 
+    // Seventeenth audit item 10: provenance ids must resolve against the
+    // canonical event log — seed REAL events (FORCE RLS: inside a
+    // tenant-context tx) for the observation tests.
+    {
+        let mut tx = pool.begin().await.expect("seed tx");
+        sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
+            .bind(tenant_id.to_string())
+            .execute(&mut *tx)
+            .await
+            .expect("set tenant context");
+        for evt in ["evt-mem-1", "evt-mem-2", "evt-mem-3", "evt-mem-4"] {
+            let evt_id = uuid::Uuid::new_v5(&uuid::Uuid::NAMESPACE_DNS, evt.as_bytes());
+            sqlx::query(
+                "INSERT INTO operational_events \
+                     (id, tenant_id, event_type, occurred_at, recorded_at, source_system) \
+                 VALUES ($1, $2, 'quality.inspection.completed', NOW(), NOW(), 'starz_forge')",
+            )
+            .bind(evt_id)
+            .bind(tenant_id)
+            .execute(&mut *tx)
+            .await
+            .expect("seed event");
+        }
+        tx.commit().await.expect("seed commit");
+    }
+
     let signature = serde_json::json!({ "problem": "soldering_joint_voids" });
     let request = |sig: serde_json::Value, provenance: Vec<String>| ObserveRequest {
         tier: "role".to_string(),
@@ -4528,11 +4554,12 @@ async fn organizational_memory_deterministic_promotion() {
         context_signature: sig,
     };
 
+    let evt_id = |name: &str| uuid::Uuid::new_v5(&uuid::Uuid::NAMESPACE_DNS, name.as_bytes());
     // First occurrence: a plain observation (one source event).
     run_observe(
         &pool,
         tenant_id,
-        request(signature.clone(), vec!["evt-mem-1".to_string()]),
+        request(signature.clone(), vec![evt_id("evt-mem-1").to_string()]),
         Some(operator),
     )
     .await
@@ -4551,7 +4578,7 @@ async fn organizational_memory_deterministic_promotion() {
     run_observe(
         &pool,
         tenant_id,
-        request(signature.clone(), vec!["evt-mem-2".to_string()]),
+        request(signature.clone(), vec![evt_id("evt-mem-2").to_string()]),
         Some(operator),
     )
     .await
@@ -4570,7 +4597,7 @@ async fn organizational_memory_deterministic_promotion() {
         tenant_id,
         request(
             serde_json::json!({ "problem": "capacitor_polarity" }),
-            vec!["evt-mem-3".to_string()],
+            vec![evt_id("evt-mem-3").to_string()],
         ),
         Some(operator),
     )
@@ -7429,17 +7456,17 @@ async fn replication_claim_ack_at_least_once() {
     // Residency gate (item 17): restricted data may not cross countries;
     // internal data may.
     assert!(!replication::may_replicate(
-        "restricted",
+        replication::DataPolicy::Restricted,
         Some("ma"),
         Some("tn")
     ));
     assert!(replication::may_replicate(
-        "internal",
+        replication::DataPolicy::Internal,
         Some("ma"),
         Some("tn")
     ));
     assert!(replication::may_replicate(
-        "restricted",
+        replication::DataPolicy::Restricted,
         Some("ma"),
         Some("ma")
     ));
@@ -7520,12 +7547,12 @@ async fn metric_engine_matches_corporate_rollup() {
     .execute(&pool)
     .await
     .expect("work order insert");
-    // A delivered sales order with a committed delivery_date in the past
-    // → OTD = 1.0 (1 delivered of 1 eligible).
+    // A delivered sales order with committed immutable shipment
+    // timestamps (migration 133) → OTD = 1.0 (1 delivered of 1 eligible).
     sqlx::query(
         "INSERT INTO sales_orders (id, tenant_id, so_number, customer_id, status, \
-                                   order_date, delivery_date) \
-         VALUES ($1, $2, 'SO-MET', $3, 'delivered', $4, $5)",
+                                   order_date, delivery_date, confirmed_at, delivered_at) \
+         VALUES ($1, $2, 'SO-MET', $3, 'delivered', $4, $5, $4, $5)",
     )
     .bind(uuid::Uuid::new_v4())
     .bind(tenant_id)
@@ -7541,10 +7568,11 @@ async fn metric_engine_matches_corporate_rollup() {
     let fpy = compute_metric(&pool, tenant_id, "fpy", Some(site_id))
         .await
         .expect("fpy must compute on the migrated schema");
-    assert_eq!(
-        fpy.value,
-        RDecimal::from_str_exact("0.95238095238095238095").unwrap(),
-        "process_yield_proxy = completed/(completed+scrapped) = 100/105"
+    let expected = RDecimal::from(100u64) / RDecimal::from(105u64);
+    assert!(
+        (fpy.value - expected).abs() < RDecimal::from_str_exact("0.000000000000000001").unwrap(),
+        "process_yield_proxy = completed/(completed+scrapped) = 100/105 (got {})",
+        fpy.value
     );
     assert_eq!(fpy.sample_size, 100, "sample = completed units");
     assert!(
@@ -7985,6 +8013,30 @@ async fn memory_anchor_and_corroboration_requirements() {
     .execute(&pool)
     .await
     .expect("user insert");
+    // Seventeenth audit item 10: seed REAL canonical events (FORCE RLS:
+    // inside a tenant-context tx) so the provenance validation passes.
+    {
+        let mut tx = pool.begin().await.expect("seed tx");
+        sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
+            .bind(tenant_id.to_string())
+            .execute(&mut *tx)
+            .await
+            .expect("set tenant context");
+        for evt in ["evt-p-1", "evt-p-2", "evt-r-1"] {
+            let evt_id = uuid::Uuid::new_v5(&uuid::Uuid::NAMESPACE_DNS, evt.as_bytes());
+            sqlx::query(
+                "INSERT INTO operational_events \
+                     (id, tenant_id, event_type, occurred_at, recorded_at, source_system) \
+                 VALUES ($1, $2, 'quality.inspection.completed', NOW(), NOW(), 'starz_forge')",
+            )
+            .bind(evt_id)
+            .bind(tenant_id)
+            .execute(&mut *tx)
+            .await
+            .expect("seed event");
+        }
+        tx.commit().await.expect("seed commit");
+    }
 
     async fn read_memory(pool: &sqlx::PgPool, tenant_id: uuid::Uuid) -> Vec<(String, i32)> {
         let mut tx = pool.begin().await.expect("begin read tx");
@@ -8038,7 +8090,7 @@ async fn memory_anchor_and_corroboration_requirements() {
         None,
         Some(principal),
         None,
-        vec!["evt-p-1".to_string()],
+        vec![uuid::Uuid::new_v5(&uuid::Uuid::NAMESPACE_DNS, b"evt-p-1").to_string()],
         kind,
         content,
         signature.clone(),
@@ -8056,7 +8108,7 @@ async fn memory_anchor_and_corroboration_requirements() {
         None,
         None,
         None,
-        vec!["evt-r-1".to_string()],
+        vec![uuid::Uuid::new_v5(&uuid::Uuid::NAMESPACE_DNS, b"evt-r-1").to_string()],
         kind,
         content,
         serde_json::json!({ "symptom": "role_issue" }),
@@ -8078,7 +8130,7 @@ async fn memory_anchor_and_corroboration_requirements() {
         None,
         Some(principal),
         None,
-        vec!["evt-p-1".to_string()],
+        vec![uuid::Uuid::new_v5(&uuid::Uuid::NAMESPACE_DNS, b"evt-p-1").to_string()],
         kind,
         content,
         signature.clone(),
@@ -8101,7 +8153,7 @@ async fn memory_anchor_and_corroboration_requirements() {
         None,
         Some(principal),
         None,
-        vec!["evt-p-2".to_string()],
+        vec![uuid::Uuid::new_v5(&uuid::Uuid::NAMESPACE_DNS, b"evt-p-2").to_string()],
         kind,
         content,
         signature.clone(),
@@ -8832,14 +8884,14 @@ async fn invariant_cache_key_differs_for_distinct_effective_scopes() {
 
     // Distinct effective SCOPES (site scope is part of the access digest)
     // must yield distinct access digests.
-    let digest_a = CacheDomain::digest(&roles, Some(site_a), "internal");
-    let digest_b = CacheDomain::digest(&roles, Some(site_b), "internal");
+    let digest_a = CacheDomain::digest(&roles, Some(site_a), "internal", &[]);
+    let digest_b = CacheDomain::digest(&roles, Some(site_b), "internal", &[]);
     assert_ne!(
         digest_a, digest_b,
         "materials differing ONLY in the effective site scope must differ"
     );
     assert_eq!(
-        CacheDomain::digest(&roles, Some(site_a), "internal"),
+        CacheDomain::digest(&roles, Some(site_a), "internal", &[]),
         digest_a,
         "identical scope material yields the identical digest"
     );
@@ -9508,10 +9560,11 @@ async fn invariant_metric_engine_matches_ceo_rollup() {
     let fpy = compute_metric(&pool, tenant_id, "fpy", Some(site_id))
         .await
         .expect("the engine must compute fpy");
-    assert_eq!(
-        fpy.value,
-        RDecimal::from_str_exact("0.95238095238095238095").unwrap(),
-        "process_yield_proxy = completed/(completed+scrapped) = 100/105"
+    let expected = RDecimal::from(100u64) / RDecimal::from(105u64);
+    assert!(
+        (fpy.value - expected).abs() < RDecimal::from_str_exact("0.000000000000000001").unwrap(),
+        "process_yield_proxy = completed/(completed+scrapped) = 100/105 (got {})",
+        fpy.value
     );
     assert_eq!(fpy.sample_size, 100, "sample = completed units");
 
@@ -10178,7 +10231,7 @@ async fn site_bootstrap_lifecycle_validation() {
             languages: vec!["fr".to_string()],
             currency: "MAD".to_string(),
             capabilities: vec!["SMT".to_string()],
-            integrations: vec![],
+            integrations: vec![serde_json::json!({"kind": "erp", "name": "starz-erp"})],
             policy_bundle: None,
         },
     )
@@ -10272,10 +10325,12 @@ async fn site_bootstrap_lifecycle_validation() {
     .execute(&mut *tx)
     .await
     .expect("country policy insert");
+    let slot_id = uuid::Uuid::new_v4();
     sqlx::query(
-        "INSERT INTO role_slots (tenant_id, role_name, slot_name, scope_site_id) \
-         VALUES ($1, 'production_planner', 'Planner_Lifecycle_A', $2)",
+        "INSERT INTO role_slots (id, tenant_id, role_name, slot_name, scope_site_id) \
+         VALUES ($1, $2, 'production_planner', 'Planner_Lifecycle_A', $3)",
     )
+    .bind(slot_id)
     .bind(tenant_id)
     .bind(site_id)
     .execute(&mut *tx)
@@ -10308,7 +10363,7 @@ async fn site_bootstrap_lifecycle_validation() {
     .await
     .expect("shift insert");
     sqlx::query(
-        "INSERT INTO users (id, tenant_id, email, password_hash, full_name) \
+        "INSERT INTO users (id, tenant_id, email, password_hash, name) \
          VALUES ($1, $2, 'lc@starzforge.local', 'x', 'Lifecycle User')",
     )
     .bind(user_id)
@@ -10348,6 +10403,18 @@ async fn site_bootstrap_lifecycle_validation() {
     .execute(&pool)
     .await
     .expect("qualification insert");
+    // The principal must hold an ACTIVE role-slot assignment for the
+    // skill-coverage join (the slot was created in the seeding tx above).
+    sqlx::query(
+        "INSERT INTO principal_assignments (tenant_id, principal_id, slot_id) \
+         VALUES ($1, $2, $3)",
+    )
+    .bind(tenant_id)
+    .bind(user_id)
+    .bind(slot_id)
+    .execute(&pool)
+    .await
+    .expect("principal assignment insert");
 
     let report = validate_site(&pool, tenant_id, site_id)
         .await
@@ -10860,7 +10927,7 @@ async fn seventeenth_audit_full_path_invariants() {
     .await
     .expect("work centers");
     sqlx::query(
-        "INSERT INTO users (id, tenant_id, email, password_hash, full_name) \
+        "INSERT INTO users (id, tenant_id, email, password_hash, name) \
          VALUES ($1, $2, 'u17@starzforge.local', 'x', 'User 17')",
     )
     .bind(user_id)
@@ -10996,7 +11063,7 @@ async fn seventeenth_audit_full_path_invariants() {
         "SELECT COUNT(*) FILTER (WHERE event_type = 'andon.raised'), \
                 COUNT(*) FILTER (WHERE event_type = 'andon.resolved'), \
                 COUNT(*) FILTER (WHERE idempotency_key = $1)::bigint \
-         FROM operational_events WHERE tenant_id = $2 AND stream_id = $3",
+         FROM operational_events WHERE tenant_id = $2 AND stream_id = $3::text",
     )
     .bind(format!("{}:andon.resolved", first.id))
     .bind(tenant_id)
@@ -11025,7 +11092,7 @@ async fn seventeenth_audit_full_path_invariants() {
             observed_result: serde_json::Value::Null,
             confidence: Some(0.8),
             applicability: serde_json::json!({
-                "required_matches": [{"dimension": "site", "value": site_a.to_string()}]
+                "required_matches": [{"key": "site", "value": site_a.to_string()}]
             }),
             origin_site_id: Some(site_a),
         };
@@ -11045,7 +11112,7 @@ async fn seventeenth_audit_full_path_invariants() {
             observed_result: serde_json::Value::Null,
             confidence: Some(0.9),
             applicability: serde_json::json!({
-                "required_matches": [{"dimension": "site", "value": site_a.to_string()}]
+                "required_matches": [{"key": "site", "value": site_a.to_string()}]
             }),
             origin_site_id: Some(site_a),
         };
@@ -11152,9 +11219,27 @@ async fn seventeenth_audit_full_path_invariants() {
     //       activation rung requires operational_qualification.
     {
         use sensei_services::tps::site_manifest;
-        site_manifest::advance_site_lifecycle(&pool, tenant_id, site_a, "validated")
+        // draft -> validated with a READY report stored (the gate for
+        // validated -> provisioning reads it).
+        {
+            let mut tx = pool.begin().await.expect("report tx");
+            sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
+                .bind(tenant_id.to_string())
+                .execute(&mut *tx)
+                .await
+                .expect("ctx");
+            sqlx::query(
+                "UPDATE site_manifests SET status = 'validated', \
+                     validation_report = '{\"ready\": true}'::jsonb \
+                 WHERE tenant_id = $1 AND site_id = $2",
+            )
+            .bind(tenant_id)
+            .bind(site_a)
+            .execute(&mut *tx)
             .await
-            .expect("draft -> validated");
+            .expect("advance + report");
+            tx.commit().await.expect("commit");
+        }
         let skip = site_manifest::advance_site_lifecycle(&pool, tenant_id, site_a, "active").await;
         assert!(
             skip.is_err(),

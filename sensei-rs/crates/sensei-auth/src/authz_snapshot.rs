@@ -26,8 +26,12 @@ impl AuthzSnapshot {
     /// digest and invalidates every derived cache key.
     pub fn cache_salt(&self) -> String {
         format!(
-            "{}-{}-{}",
-            self.policy_revision, self.relationship_revision, self.principal_revision
+            "{}-{}-{}-{}-{}",
+            self.policy_revision,
+            self.relationship_revision,
+            self.principal_revision,
+            self.scope_site.unwrap_or_default(),
+            hex::encode(self.permission_digest)
         )
     }
 

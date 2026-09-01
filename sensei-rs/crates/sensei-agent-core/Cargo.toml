@@ -8,6 +8,7 @@ description = "Tool-bound agent security core: context, tool specs, evidence, cl
 
 [dependencies]
 serde = { workspace = true }
+sha2 = { workspace = true }
 serde_json = { workspace = true }
 uuid = { workspace = true }
 chrono = { workspace = true }

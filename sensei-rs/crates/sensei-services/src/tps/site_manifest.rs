@@ -488,13 +488,14 @@ pub async fn validate_site(
             ));
 
             // 3c. Skill coverage — qualified principals assigned to this
-            // site's slots (sixteenth audit: skills are site-aware).
+            // site's slots (sixteenth audit: skills are site-aware). The
+            // qualification level lives on skill_qualifications.
             let skills: i64 = sqlx::query_scalar(
-                "SELECT COUNT(DISTINCT s.skill_id) FROM skills s \
-                 JOIN principal_assignments pa ON pa.principal_id = s.owner_principal_id \
+                "SELECT COUNT(DISTINCT sq.skill_id) FROM skill_qualifications sq \
+                 JOIN principal_assignments pa ON pa.principal_id = sq.principal_id \
                  JOIN role_slots rs ON rs.id = pa.slot_id \
-                 WHERE s.tenant_id = $1 AND rs.scope_site_id = $2 AND pa.ended_at IS NULL \
-                   AND s.status = 'qualified'",
+                 WHERE sq.tenant_id = $1 AND rs.scope_site_id = $2 AND pa.ended_at IS NULL \
+                   AND sq.level IN ('independent', 'trainer')",
             )
             .bind(tenant_id)
             .bind(site_id)
@@ -523,8 +524,8 @@ pub async fn validate_site(
                 )
                 .unwrap_or_default();
                 let failures: i64 = sqlx::query_scalar(
-                    "SELECT COUNT(*) FROM integration_status \
-                     WHERE tenant_id = $1 AND site_id = $2 AND status = 'failed'",
+                    "SELECT COUNT(*) FROM integration_dead_letter \
+                     WHERE tenant_id = $1",
                 )
                 .bind(tenant_id)
                 .bind(site_id)
@@ -751,11 +752,11 @@ async fn site_qualification_checks(
         ));
     }
     let skills: i64 = sqlx::query_scalar(
-        "SELECT COUNT(DISTINCT s.skill_id) FROM skills s \
-         JOIN principal_assignments pa ON pa.principal_id = s.owner_principal_id \
+        "SELECT COUNT(DISTINCT sq.skill_id) FROM skill_qualifications sq \
+         JOIN principal_assignments pa ON pa.principal_id = sq.principal_id \
          JOIN role_slots rs ON rs.id = pa.slot_id \
-         WHERE s.tenant_id = $1 AND rs.scope_site_id = $2 AND pa.ended_at IS NULL \
-           AND s.status = 'qualified'",
+         WHERE sq.tenant_id = $1 AND rs.scope_site_id = $2 AND pa.ended_at IS NULL \
+           AND sq.level IN ('independent', 'trainer')",
     )
     .bind(tenant_id)
     .bind(site_id)
@@ -795,7 +796,7 @@ pub async fn advance_site_lifecycle(
                 }
                 ("validated", "provisioning") => {
                     let report_ready: bool = sqlx::query_scalar(
-                        "SELECT (validation_report->>'ready')::boolean \
+                        "SELECT COALESCE((validation_report->>'ready')::boolean, false) \
                          FROM site_manifests WHERE tenant_id = $1 AND site_id = $2",
                     )
                     .bind(tenant_id)
@@ -816,14 +817,16 @@ pub async fn advance_site_lifecycle(
                         .await?;
                 }
                 ("ready_for_training", "operational_qualification") => {
-                    // At least one training/qualification evidence record
-                    // must exist for this site's principals.
+                    // At least one QUALIFIED skill must exist for this
+                    // site's principals (the qualification table is
+                    // skill_qualifications).
                     let evidence: i64 = sqlx::query_scalar(
-                        "SELECT COUNT(*) FROM skill_evidence se \
-                         JOIN principal_assignments pa ON pa.principal_id = se.principal_id \
+                        "SELECT COUNT(*) FROM skill_qualifications sq \
+                         JOIN principal_assignments pa ON pa.principal_id = sq.principal_id \
                          JOIN role_slots rs ON rs.id = pa.slot_id \
-                         WHERE se.tenant_id = $1 AND rs.scope_site_id = $2 \
-                           AND pa.ended_at IS NULL",
+                         WHERE sq.tenant_id = $1 AND rs.scope_site_id = $2 \
+                           AND pa.ended_at IS NULL \
+                           AND sq.level IN ('independent', 'trainer')",
                     )
                     .bind(tenant_id)
                     .bind(site_id)
@@ -862,8 +865,8 @@ pub async fn advance_site_lifecycle(
                         ));
                     }
                     let integ_failed: i64 = sqlx::query_scalar(
-                        "SELECT COUNT(*) FROM integration_status \
-                         WHERE tenant_id = $1 AND site_id = $2 AND status = 'failed'",
+                        "SELECT COUNT(*) FROM integration_dead_letter \
+                         WHERE tenant_id = $1",
                     )
                     .bind(tenant_id)
                     .bind(site_id)

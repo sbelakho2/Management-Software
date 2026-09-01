@@ -116,8 +116,10 @@ pub async fn enqueue(
     // comes from the site manifest's country and the tenant's country
     // policy bundle — the client's word is never trusted.
     let data_policy = replication::derive_data_policy(p, user.tenant_id, req.site_id).await?;
+    let policy = replication::DataPolicy::parse(&data_policy)
+        .map_err(sensei_core::error::SenseiError::Validation)?;
     if !replication::may_replicate(
-        &data_policy,
+        policy,
         req.source_country.as_deref(),
         req.destination_country.as_deref(),
     ) {

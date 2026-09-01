@@ -14,32 +14,33 @@ pub struct CacheDomain {
 }
 
 impl CacheDomain {
-    /// Deterministic access digest: salted hash of the principal's roles,
-    /// site scope and sensitivity ceiling — identical for identical
-    /// authorization states, different for different ones.
+    /// Deterministic access digest — CRYPTOGRAPHIC (seventeenth audit
+    /// item: FNV is non-cryptographic and is no longer used for cache
+    /// security). SHA-256 over the sorted roles, site scope, sensitivity
+    /// ceiling AND the caller's effective permissions: identical inputs
+    /// give identical digests; any authorization change shifts it.
     pub fn digest(
         roles: &[String],
         site_id: Option<uuid::Uuid>,
         sensitivity_ceiling: &str,
+        permissions: &[String],
     ) -> [u8; 32] {
-        let mut input =
-            format!("{:?}|{}", roles, site_id.unwrap_or(uuid::Uuid::nil())).into_bytes();
-        input.extend_from_slice(sensitivity_ceiling.as_bytes());
-        // FNV-1a 64 expanded to 32 bytes — change detection, not crypto.
-        let mut h: u64 = 0xcbf29ce484222325;
-        for b in &input {
-            h ^= *b as u64;
-            h = h.wrapping_mul(0x100000001b3);
-        }
-        let mut out = [0u8; 32];
-        for (i, chunk) in out.chunks_mut(8).enumerate() {
-            chunk.copy_from_slice(
-                &(h.wrapping_add(i as u64)
-                    .wrapping_mul(0x9E3779B97F4A7C15)
-                    .to_le_bytes()),
-            );
-        }
-        out
+        use sha2::{Digest, Sha256};
+        let mut hasher = Sha256::new();
+        let mut sorted_roles = roles.to_vec();
+        sorted_roles.sort();
+        sorted_roles.dedup();
+        let mut sorted_perms = permissions.to_vec();
+        sorted_perms.sort();
+        sorted_perms.dedup();
+        hasher.update(format!(
+            "roles={:?}|site={}|ceiling={}|perms={:?}",
+            sorted_roles,
+            site_id.unwrap_or(uuid::Uuid::nil()),
+            sensitivity_ceiling,
+            sorted_perms
+        ));
+        hasher.finalize().into()
     }
 }
 
@@ -137,15 +138,15 @@ mod tests {
         CacheDomain {
             org_id: "org-1".into(),
             policy_revision,
-            access_digest: CacheDomain::digest(&roles, None, "restricted"),
+            access_digest: CacheDomain::digest(&roles, None, "restricted", &[]),
             data_class: data_class.into(),
         }
     }
 
     #[test]
     fn different_roles_produce_different_digests() {
-        let plant_manager = CacheDomain::digest(&["plant_manager".into()], None, "restricted");
-        let auditor = CacheDomain::digest(&["auditor".into()], None, "restricted");
+        let plant_manager = CacheDomain::digest(&["plant_manager".into()], None, "restricted", &[]);
+        let auditor = CacheDomain::digest(&["auditor".into()], None, "restricted", &[]);
         assert_ne!(plant_manager, auditor);
     }
 
@@ -155,11 +156,13 @@ mod tests {
             &["plant_manager".into(), "operator".into()],
             Some(uuid::Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap()),
             "restricted",
+            &[],
         );
         let b = CacheDomain::digest(
             &["plant_manager".into(), "operator".into()],
             Some(uuid::Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap()),
             "restricted",
+            &[],
         );
         assert_eq!(a, b);
     }

@@ -485,6 +485,24 @@ impl OperationsService for DatabaseOperationsService {
                 .await
                 .map_err(|e| SenseiError::Database(format!("Failed to raise idempotent andon: {e}")))?;
                 let _ = res;
+                // The canonical andon.raised event rides the SAME tx
+                // (seventeenth audit item 11) — a replay has no event, a
+                // fresh raise always does.
+                crate::ops::andon_events::write_andon_stream_event(
+                    tx,
+                    tenant_id,
+                    "andon.raised",
+                    id,
+                    andon.site_id,
+                    andon.work_center_id,
+                    andon.raised_by,
+                    now,
+                    serde_json::json!({
+                        "issue_type": andon.issue_type,
+                        "severity": andon.severity,
+                    }),
+                )
+                .await?;
                 sqlx::query_as::<_, AndonRow>(
                     "SELECT id, tenant_id, andon_number, site_id, work_center_id, issue_type, severity, description, status, raised_by, acknowledged_by, resolved_by, resolution, response_time_seconds, resolution_time_seconds, created_at, acknowledged_at, resolved_at, restart_authorized_by, restart_authorized_at, abnormal_condition_observed_at, contained_at, contained_by, contained_note, escalated, escalated_at, request_key \
                      FROM andons WHERE id = $1 AND tenant_id = $2",
