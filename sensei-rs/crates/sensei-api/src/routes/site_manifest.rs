@@ -134,6 +134,30 @@ pub async fn validate_site(
 
 /// `POST /api/v1/sites/{site_id}/activate` — the guarded ladder step
 /// validated → active; a site in any other status is rejected.
+/// `POST /api/v1/sites/{site_id}/lifecycle` — advance ONE guarded step:
+/// draft → validated → provisioning → ready_for_training →
+/// operational_qualification → active. The gate for the step runs in the
+/// SAME transaction as the transition (seventeenth audit item 12 — the
+/// six-stage ladder is real, not documentation).
+#[derive(Debug, serde::Deserialize)]
+pub struct LifecycleAdvanceRequest {
+    pub to: String,
+}
+
+pub async fn advance_lifecycle(
+    user: AuthenticatedUser,
+    State(state): State<AppState>,
+    Path(site_id): Path<Uuid>,
+    Json(req): Json<LifecycleAdvanceRequest>,
+) -> Result<Json<serde_json::Value>> {
+    user.require_permission("system:site:manage")?;
+    let p = pool(&state)?;
+    site_manifest::advance_site_lifecycle(p, user.tenant_id, site_id, &req.to).await?;
+    Ok(Json(
+        serde_json::json!({ "site_id": site_id, "to": req.to }),
+    ))
+}
+
 pub async fn activate_site(
     user: AuthenticatedUser,
     State(state): State<AppState>,

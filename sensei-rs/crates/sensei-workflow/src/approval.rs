@@ -101,15 +101,18 @@ pub async fn decide_approval(
     workflow_id: &str,
     approved: bool,
     decided_by: Option<Uuid>,
-    decider_roles: &[String],
+    authz: &sensei_auth::authz_snapshot::AuthzSnapshot,
 ) -> Result<Compensation, String> {
     let workflow_id = workflow_id.to_string();
-    let decider_roles = decider_roles.to_vec();
+    let authz_roles = authz.roles.clone();
     with_tenant_tx(pool, tenant_id, |tx| {
         Box::pin(async move {
-            // 1. Authorization: the decider must hold the approval's
-            //    required_role. Checked BEFORE the decision write, so a
-            //    rejected caller leaves the approval pending.
+            // 1. Authorization (seventeenth audit item): the decider's
+            //    roles resolve from the AUTHORIZATION SNAPSHOT — they are
+            //    never a caller-supplied argument. The decider must hold
+            //    the approval's required_role; checked BEFORE the
+            //    decision write, so a rejected caller leaves the approval
+            //    pending.
             let required_role: Option<String> = sqlx::query_scalar(
                 "SELECT required_role FROM workflow_approvals \
                  WHERE tenant_id = $1 AND workflow_id = $2 AND status = 'pending' \
@@ -122,7 +125,7 @@ pub async fn decide_approval(
             .map_err(|e| format!("failed to read pending approval for workflow {workflow_id}: {e}"))?;
             let required_role = required_role
                 .ok_or_else(|| format!("no pending approval for workflow {workflow_id}"))?;
-            if !decider_roles.iter().any(|r| r == &required_role) {
+            if !authz_roles.iter().any(|r| r == &required_role) {
                 return Err(format!(
                     "approver does not hold the required role {required_role} — required_role is enforced, not descriptive"
                 ));

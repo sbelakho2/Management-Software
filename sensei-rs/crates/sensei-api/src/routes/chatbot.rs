@@ -154,6 +154,7 @@ pub async fn chat(
             Some(AuthzSnapshot {
                 tenant: user.tenant_id,
                 principal: user.user_id,
+                roles: user.roles.clone(),
                 policy_revision: revisions.policy_revision,
                 relationship_revision: revisions.relationship_revision,
                 principal_revision: revisions.principal_revision,
@@ -173,15 +174,21 @@ pub async fn chat(
         site_id: ctx.site_id,
         value_stream_id: ctx.value_stream_id,
         work_center_id: ctx.work_center_id,
-        task: sensei_agent_core::context::TaskKind::General,
+        task: classify_task(&req.message),
         focal_objects: Vec::new(),
         max_tokens: 4096,
         sensitivity_ceiling: sensei_agent_core::context::DataClass::Internal,
         trace_id: req.conversation_id.clone().unwrap_or_default(),
     };
     let context_plan = sensei_agent_core::context::plan_context(&context_request);
-    // Authorized retrieval of the plan's required sections, tenant-scoped
-    // (RLS fail-closed) — the plan is the source of the model's context.
+    // Seventeenth audit item 7: the live chat runs through the ACTUAL
+    // Context Kernel. The section lines are wrapped in typed ContextItems
+    // (provenance = the section source, authority = live transactional
+    // state, sensitivity = Internal, epistemic = RecordedFact) and
+    // build_context_bundle applies the REAL kernel semantics: FactAddress
+    // contradiction handling, authority ordering, provenance-based
+    // selection, sensitivity filtering and the normal-budget token
+    // allocation with the reserved contradiction budget.
     let context_used = match &state.db_pool {
         Some(pool) => {
             sensei_services::tps::context_sections::build_compact_context(
@@ -195,6 +202,43 @@ pub async fn chat(
         }
         None => Vec::new(),
     };
+    let kernel_items: Vec<sensei_agent_core::context::ContextItem> = context_used
+        .iter()
+        .filter_map(|line| {
+            let (section, content) = line.split_once(" [live]: ")?;
+            Some(sensei_agent_core::context::ContextItem {
+                payload: serde_json::json!({ "section": section, "text": content }),
+                provenance: sensei_agent_core::context::Provenance {
+                    source: format!("section:{section}"),
+                    source_revision: None,
+                    observed_at: Some(chrono::Utc::now()),
+                    recorded_at: chrono::Utc::now(),
+                    authority: sensei_agent_core::context::AuthorityRank::TransactionalState,
+                },
+                sensitivity: sensei_agent_core::context::DataClass::Internal,
+                token_cost: (content.len() as u32 / 4).max(1),
+                epistemic_status: sensei_agent_core::context::EpistemicStatus::RecordedFact,
+            })
+        })
+        .collect();
+    let kernel_bundle = sensei_agent_core::context_kernel::build_context_bundle(
+        &context_request,
+        kernel_items,
+        sensei_agent_core::context::TokenBudget::default_for(4096),
+    );
+    let context_used: Vec<String> = kernel_bundle
+        .sections
+        .iter()
+        .flat_map(|(_, items)| {
+            items.iter().map(|item| {
+                item.payload
+                    .get("text")
+                    .and_then(|t| t.as_str())
+                    .unwrap_or("")
+                    .to_string()
+            })
+        })
+        .collect();
     let system_context = if context_used.is_empty() {
         None
     } else {
@@ -245,15 +289,84 @@ pub async fn chat(
     );
     let effective_tools = policy.effective_tools(&ctx);
     let verification = verify_chat_response(&response, &ctx, &policy, &effective_tools);
+    // Seventeenth audit item 7 — verifier failure BLOCKS/REPAIRS output:
+    // an unverifiable factual reply is never delivered as-is. The
+    // content is REPAIRED into an honest answer that does not assert the
+    // unverified claims (the client sees verdict 'repaired' with the
+    // original issues).
+    let (final_content, verdict_label) = if verification["verdict"].as_str() == Some("pass") {
+        (response.message.content, "pass".to_string())
+    } else {
+        let repaired = format!(
+            "I can only answer with claims verified against the plant systems.              The previous reply contained statements I could not verify against              live tenant data ({} issue(s)). Ask me to query a specific metric,              work order, quality record or andon through the tool surface —              or rephrase so the answer is labeled a hypothesis, not a fact.",
+            verification["issues"]
+                .as_array()
+                .map(|a| a.len())
+                .unwrap_or(0)
+        );
+        (repaired, "repaired".to_string())
+    };
+    let mut verification_out = verification;
+    if verdict_label == "repaired" {
+        verification_out["verdict"] = serde_json::json!("repaired");
+    }
     Ok(Json(ChatResponseBody {
-        response: response.message.content,
+        response: final_content,
         conversation_id: response.conversation_id,
         is_fallback: response.is_fallback,
-        verification: Some(verification),
+        verification: Some(verification_out),
         context_plan: Some(context_plan),
         context_used: Some(context_used),
         snapshot_ok: true,
     }))
+}
+
+/// Deterministic task classification (seventeenth audit item 7): the
+/// message selects the Context Kernel task instead of hardcoding
+/// TaskKind::General — the plan (and therefore the retrieved sections)
+/// follows the operational intent.
+fn classify_task(message: &str) -> sensei_agent_core::context::TaskKind {
+    use sensei_agent_core::context::TaskKind;
+    let lower = message.to_lowercase();
+    if lower.contains("andon")
+        || lower.contains("escalat")
+        || lower.contains("contain")
+        || lower.contains("safety")
+    {
+        TaskKind::OperatorAssist
+    } else if lower.contains("quality")
+        || lower.contains("ncr")
+        || lower.contains("capa")
+        || lower.contains("defect")
+        || lower.contains("inspection")
+    {
+        TaskKind::QualityInvestigation
+    } else if lower.contains("schedule")
+        || lower.contains("plan")
+        || lower.contains("takt")
+        || lower.contains("pitch")
+        || lower.contains("demand")
+    {
+        TaskKind::PlannerDecision
+    } else if lower.contains("executive")
+        || lower.contains("summary")
+        || lower.contains("trend")
+        || lower.contains("dashboard")
+        || lower.contains("kpi")
+        || lower.contains("metric")
+        || lower.contains("overview")
+    {
+        TaskKind::ExecutiveAnalysis
+    } else if lower.contains("fix")
+        || lower.contains("error")
+        || lower.contains("why")
+        || lower.contains("fault")
+        || lower.contains("broken")
+    {
+        TaskKind::Troubleshoot
+    } else {
+        TaskKind::General
+    }
 }
 
 /// Run the REAL claims/evidence verifier over the assistant's reply
@@ -445,11 +558,28 @@ pub async fn chat_stream(
                     sensei_agent_core::tools::ToolRisk::ReadOnly,
                 );
                 let effective_tools = policy.effective_tools(&ctx);
-                let verification =
+                let mut verification =
                     verify_chat_response(&chat_response, &ctx, &policy, &effective_tools);
+                // Seventeenth audit item 7: the stream's buffered reply is
+                // REPAIRED when verification fails — unverified factual
+                // claims are never released to the client. The repaired
+                // answer says what CAN be verified, with the issues
+                // attached.
+                let released = if verification["verdict"].as_str() == Some("pass") {
+                    buffered.clone()
+                } else {
+                    let issue_count = verification["issues"]
+                        .as_array()
+                        .map(|a| a.len())
+                        .unwrap_or(0);
+                    verification["verdict"] = serde_json::json!("repaired");
+                    format!(
+                        "I can only answer with claims verified against the plant systems.                          The reply contained {issue_count} statement(s) I could not verify                          against live tenant data — ask for a specific metric, work order,                          quality record or andon through the tool surface."
+                    )
+                };
                 // Release tokens only after verification completed.
                 sse_manager
-                    .publish(&channel_clone, "token", &buffered)
+                    .publish(&channel_clone, "token", &released)
                     .await;
                 sse_manager
                     .publish(

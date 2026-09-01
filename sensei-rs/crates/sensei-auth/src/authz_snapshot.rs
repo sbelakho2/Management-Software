@@ -9,6 +9,11 @@
 pub struct AuthzSnapshot {
     pub tenant: uuid::Uuid,
     pub principal: uuid::Uuid,
+    /// The caller's roles AT SNAPSHOT TIME — role checks in guarded
+    /// operations (workflow approvals) resolve from the snapshot, never
+    /// from caller-supplied strings (seventeenth audit item: decider
+    /// roles are not an argument).
+    pub roles: Vec<String>,
     pub policy_revision: u64,
     pub relationship_revision: u64,
     pub principal_revision: u64,

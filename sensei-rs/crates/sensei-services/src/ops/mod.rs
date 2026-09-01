@@ -12,6 +12,7 @@
 //! database-backed implementations while keeping the in-memory
 //! implementation for unit tests and demos.
 
+pub mod andon_events;
 mod database;
 pub mod search;
 pub use database::DatabaseOperationsService;
@@ -83,6 +84,10 @@ pub struct Andon {
     pub escalated: bool,
     #[serde(default)]
     pub escalated_at: Option<DateTime<Utc>>,
+    /// Client command key (seventeenth audit item 11): set when the andon
+    /// was raised with an Idempotency-Key — retries replay the original.
+    #[serde(default)]
+    pub request_key: Option<String>,
 }
 
 /// A continuous improvement or kaizen project.
@@ -190,6 +195,17 @@ pub trait OperationsService: Send + Sync {
     // ── Andon ───────────────────────────────────────────────────────────
     /// Raise a new Andon signal.
     async fn raise_andon(&self, tenant_id: Uuid, andon: Andon) -> Result<Andon>;
+
+    /// Request-level idempotent raise (seventeenth audit item 11): the
+    /// client's command key is generated once per raise; a retry after a
+    /// dropped connection REPLAYS the original andon instead of creating
+    /// a duplicate. `request_key = None` keeps the plain behavior.
+    async fn raise_andon_idempotent(
+        &self,
+        tenant_id: Uuid,
+        andon: Andon,
+        request_key: Option<String>,
+    ) -> Result<Andon>;
     /// Acknowledge an Andon signal.
     async fn acknowledge_andon(
         &self,
@@ -222,6 +238,20 @@ pub trait OperationsService: Send + Sync {
     async fn list_andons(
         &self,
         tenant_id: Uuid,
+        status: Option<&str>,
+        work_center_id: Option<Uuid>,
+        page: Option<usize>,
+        per_page: Option<usize>,
+    ) -> Result<PaginatedResponse<Andon>>;
+
+    /// Scope-intersected listing (seventeenth audit item 4): `scope_site`
+    /// is the caller's authorized site — when set, ONLY that site's
+    /// andons are returned. The unscoped variant must never be exposed
+    /// for ordinary callers.
+    async fn list_andons_scoped(
+        &self,
+        tenant_id: Uuid,
+        scope_site: Option<Uuid>,
         status: Option<&str>,
         work_center_id: Option<Uuid>,
         page: Option<usize>,
@@ -430,6 +460,36 @@ impl OperationsService for InMemoryOperationsService {
         Ok(andon)
     }
 
+    async fn raise_andon_idempotent(
+        &self,
+        tenant_id: Uuid,
+        andon: Andon,
+        request_key: Option<String>,
+    ) -> Result<Andon> {
+        let Some(key) = request_key else {
+            return self.raise_andon(tenant_id, andon).await;
+        };
+        // Replay: the same command key returns the ORIGINAL andon.
+        {
+            let store = self.andons.read().await;
+            if let Some(existing) = store.values().find(|a| {
+                a.tenant_id == tenant_id && a.request_key.as_deref() == Some(key.as_str())
+            }) {
+                return Ok(existing.clone());
+            }
+        }
+        let mut raised = self.raise_andon(tenant_id, andon).await?;
+        // Stamp the key atomically with the create (best-effort in-memory).
+        {
+            let mut store = self.andons.write().await;
+            if let Some(row) = store.get_mut(&raised.id) {
+                row.request_key = Some(key.clone());
+            }
+        }
+        raised.request_key = Some(key);
+        Ok(raised)
+    }
+
     async fn acknowledge_andon(
         &self,
         tenant_id: Uuid,
@@ -560,6 +620,29 @@ impl OperationsService for InMemoryOperationsService {
             .values()
             .filter(|a| {
                 a.tenant_id == tenant_id
+                    && status.is_none_or(|s| a.status == s)
+                    && work_center_id.is_none_or(|wc| a.work_center_id == wc)
+            })
+            .cloned()
+            .collect();
+        Ok(PaginatedResponse::new(items, page, per_page))
+    }
+
+    async fn list_andons_scoped(
+        &self,
+        tenant_id: Uuid,
+        scope_site: Option<Uuid>,
+        status: Option<&str>,
+        work_center_id: Option<Uuid>,
+        page: Option<usize>,
+        per_page: Option<usize>,
+    ) -> Result<PaginatedResponse<Andon>> {
+        let store = self.andons.read().await;
+        let items: Vec<_> = store
+            .values()
+            .filter(|a| {
+                a.tenant_id == tenant_id
+                    && scope_site.is_none_or(|site| a.site_id == Some(site))
                     && status.is_none_or(|s| a.status == s)
                     && work_center_id.is_none_or(|wc| a.work_center_id == wc)
             })
@@ -1068,6 +1151,7 @@ mod tests {
             contained_note: None,
             escalated: false,
             escalated_at: None,
+            request_key: None,
         };
 
         let raised = service
@@ -1272,6 +1356,7 @@ mod tests {
             contained_note: None,
             escalated: false,
             escalated_at: None,
+            request_key: None,
         };
         let a2 = Andon {
             id: Uuid::nil(),
@@ -1300,6 +1385,7 @@ mod tests {
             contained_note: None,
             escalated: false,
             escalated_at: None,
+            request_key: None,
         };
 
         service.raise_andon(tenant_id, a1).await.unwrap();

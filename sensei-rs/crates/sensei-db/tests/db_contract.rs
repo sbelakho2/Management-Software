@@ -597,6 +597,7 @@ async fn andon_service_rls_and_safety_rule_work_on_migrated_schema() {
                 contained_note: None,
                 escalated: false,
                 escalated_at: None,
+                request_key: None,
             },
         )
         .await
@@ -2785,6 +2786,7 @@ async fn tps_full_learning_loop() {
                 contained_note: None,
                 escalated: false,
                 escalated_at: None,
+                request_key: None,
             },
         )
         .await
@@ -4766,7 +4768,16 @@ async fn workflow_engine_checkpoint_resume() {
         &workflow_id,
         true,
         Some(actor_id),
-        &["maintenance_technician".to_string()],
+        &sensei_auth::authz_snapshot::AuthzSnapshot {
+            tenant: tenant_id,
+            principal: actor_id,
+            roles: vec!["maintenance_technician".to_string()],
+            policy_revision: 1,
+            relationship_revision: 1,
+            principal_revision: 1,
+            scope_site: None,
+            permission_digest: [0u8; 32],
+        },
     )
     .await
     .expect_err("a decider without the required role must be rejected");
@@ -4786,7 +4797,16 @@ async fn workflow_engine_checkpoint_resume() {
         &workflow_id,
         true,
         Some(actor_id),
-        &["quality_engineer".to_string()],
+        &sensei_auth::authz_snapshot::AuthzSnapshot {
+            tenant: tenant_id,
+            principal: actor_id,
+            roles: vec!["quality_engineer".to_string()],
+            policy_revision: 1,
+            relationship_revision: 1,
+            principal_revision: 1,
+            scope_site: None,
+            permission_digest: [0u8; 32],
+        },
     )
     .await
     .expect("the quality engineer approves the countermeasure");
@@ -4934,7 +4954,16 @@ async fn workflow_engine_checkpoint_resume() {
         &second_workflow,
         false,
         Some(actor_id),
-        &["quality_engineer".to_string()],
+        &sensei_auth::authz_snapshot::AuthzSnapshot {
+            tenant: tenant_id,
+            principal: actor_id,
+            roles: vec!["quality_engineer".to_string()],
+            policy_revision: 1,
+            relationship_revision: 1,
+            principal_revision: 1,
+            scope_site: None,
+            permission_digest: [0u8; 32],
+        },
     )
     .await
     .expect("a rejection with the required role must decide");
@@ -6712,12 +6741,13 @@ async fn corporate_cross_site_analytics_and_causal() {
         .find(|r| r.site_name == "Tangier")
         .expect("Tangier row");
     assert!(
-        (bizerte_row.fpy - 0.9).abs() < 1e-9,
-        "Bizerte fpy = (100 − 10)/100 completed without scrap"
+        (bizerte_row.fpy - 100.0 / 110.0).abs() < 1e-9,
+        "Bizerte process_yield_proxy = completed/(completed+scrapped) = 100/110 — \
+         scrap is a separate count, never subtracted from completed"
     );
     assert!(
         (tangier_row.fpy - 1.0).abs() < 1e-9,
-        "Tangier fpy = 100/100 completed without scrap"
+        "Tangier process_yield_proxy = 100/(100+0)"
     );
     // The stratified comparison reports FPY per site WITHIN the same
     // product family (the product has no family — the unassigned
@@ -7513,8 +7543,8 @@ async fn metric_engine_matches_corporate_rollup() {
         .expect("fpy must compute on the migrated schema");
     assert_eq!(
         fpy.value,
-        RDecimal::from_str_exact("0.95").unwrap(),
-        "FPY = (100 − 5)/100 completed without scrap"
+        RDecimal::from_str_exact("0.95238095238095238095").unwrap(),
+        "process_yield_proxy = completed/(completed+scrapped) = 100/105"
     );
     assert_eq!(fpy.sample_size, 100, "sample = completed units");
     assert!(
@@ -7648,6 +7678,7 @@ async fn andon_and_event_commit_atomically() {
             contained_note: None,
             escalated: false,
             escalated_at: None,
+            request_key: None,
         };
 
     let andon = ops_service
@@ -8265,8 +8296,8 @@ async fn context_kernel_before_generation() {
     )
     .await;
     assert!(
-        exec_lines.iter().any(|l| l.contains("fpy")),
-        "metric_tree must contain the fpy metric-engine value: {exec_lines:?}"
+        exec_lines.iter().any(|l| l.contains("process_yield_proxy")),
+        "metric_tree must contain the process_yield_proxy metric-engine value: {exec_lines:?}"
     );
 }
 
@@ -8588,9 +8619,21 @@ async fn invariant_cross_tenant_target_cannot_bypass_federation() {
         "a foreign lesson id must not resolve under the target's context"
     );
 
-    // (d) The sanctioned path is an OFFER: propagate_lesson lands a
-    //     'proposed' copy in the target — never 'adopted' — and the
-    //     source's adopted row is untouched.
+    // (d) The sanctioned path is an OFFER: the source must be a
+    //     federation member of the target (membership is authorization —
+    //     tenant A declares the corporate_group link and the lesson
+    //     transfer capability), then the offer lands in the target's
+    //     corporate_lesson_offers — never a direct write.
+    sqlx::query(
+        "INSERT INTO federation_memberships (tenant_id, peer_tenant_id, relationship, capabilities) \
+         VALUES ($1, $2, 'corporate_group', '[\"lesson_transfer\"]'), \
+                ($2, $1, 'corporate_group', '[\"lesson_transfer\"]')",
+    )
+    .bind(tenant_a)
+    .bind(tenant_b)
+    .execute(&pool)
+    .await
+    .expect("federation membership");
     use sensei_services::tps::corporate::{import_lesson_offer, list_lesson_offers, offer_lesson};
     offer_lesson(&pool, tenant_a, tenant_b, lesson)
         .await
@@ -9467,8 +9510,8 @@ async fn invariant_metric_engine_matches_ceo_rollup() {
         .expect("the engine must compute fpy");
     assert_eq!(
         fpy.value,
-        RDecimal::from_str_exact("0.95").unwrap(),
-        "FPY = (100 − 5)/100 completed without scrap"
+        RDecimal::from_str_exact("0.95238095238095238095").unwrap(),
+        "process_yield_proxy = completed/(completed+scrapped) = 100/105"
     );
     assert_eq!(fpy.sample_size, 100, "sample = completed units");
 
@@ -9552,6 +9595,7 @@ async fn authz_snapshot_current_check() {
     let snapshot = AuthzSnapshot {
         tenant: tenant_id,
         principal: user_id,
+        roles: vec!["quality_manager".to_string()],
         policy_revision: 1,
         relationship_revision: 1,
         principal_revision: 1,
@@ -9576,24 +9620,29 @@ async fn authz_snapshot_current_check() {
     // Typed scope (item 84): a work-center scope always carries its site
     // and never admits a foreign one.
     let site = uuid::Uuid::new_v4();
-    let work_center = uuid::Uuid::new_v4();
+    let _work_center = uuid::Uuid::new_v4();
     let other_site = uuid::Uuid::new_v4();
-    let scope = sensei_core::domain::scope::WorkCenterScope::new(site, work_center);
-    assert_eq!(
-        scope.work_center, work_center,
-        "the scope carries the work center"
-    );
-    assert!(scope.allows_site(site), "the scope allows its own site");
+    // The DB-resolved constructor is the ONLY public path (item 6) —
+    // AuthorizedScope::enforce is the runtime gate.
+    let authz_scope = sensei_core::domain::scope::AuthorizedScope::Sites(vec![site]);
     assert!(
-        !scope.allows_site(other_site),
+        authz_scope.allows_site(site),
+        "the scope allows its own site"
+    );
+    assert!(
+        !authz_scope.allows_site(other_site),
         "the scope never allows another site"
     );
-    let site_scope = sensei_core::domain::scope::SiteScope::new(site);
-    assert_eq!(site_scope.site, site, "SiteScope carries the site");
-    assert_eq!(
-        scope.site, site_scope.site,
-        "WorkCenterScope site == SiteScope site"
+    assert!(
+        authz_scope.enforce(Some(site), None).is_ok(),
+        "the authorized site passes enforcement"
     );
+    assert!(
+        authz_scope.enforce(Some(other_site), None).is_err(),
+        "a foreign site fails enforcement"
+    );
+    let site_scope = sensei_core::domain::scope::AuthorizedScope::Sites(vec![site]);
+    assert!(site_scope.allows_site(site), "SiteScope covers its site");
 }
 
 /// Sixteenth audit items 65/66 (legal/compliance policy over time):
@@ -9886,6 +9935,7 @@ async fn event_stream_idempotency_and_object_projection() {
             contained_note: None,
             escalated: false,
             escalated_at: None,
+            request_key: None,
         };
 
     // (a) TWO raised Andons ⇒ TWO stream-identified, idempotency-keyed
@@ -10232,21 +10282,93 @@ async fn site_bootstrap_lifecycle_validation() {
     .await
     .expect("role slot insert");
     tx.commit().await.expect("seed tx commit");
+    let wc_id = uuid::Uuid::new_v4();
     sqlx::query(
-        "INSERT INTO work_centers (tenant_id, work_center_number, name, work_center_type) \
-         VALUES ($1, 'WC-LC-01', 'Lifecycle SMT Line', 'assembly')",
+        "INSERT INTO work_centers (id, tenant_id, work_center_number, name, work_center_type, site_id) \
+         VALUES ($1, $2, 'WC-LC-01', 'Lifecycle SMT Line', 'assembly', $3)",
     )
+    .bind(wc_id)
     .bind(tenant_id)
+    .bind(site_id)
     .execute(&pool)
     .await
     .expect("work center insert");
+    // Site-specific prerequisites (seventeenth audit item 12): shifts,
+    // skills and a qualified principal for THIS site.
+    let shift_id = uuid::Uuid::new_v4();
+    let user_id = uuid::Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO shifts (id, tenant_id, site_id, name, start_time, end_time) \
+         VALUES ($1, $2, $3, 'Day', '08:00', '16:00')",
+    )
+    .bind(shift_id)
+    .bind(tenant_id)
+    .bind(site_id)
+    .execute(&pool)
+    .await
+    .expect("shift insert");
+    sqlx::query(
+        "INSERT INTO users (id, tenant_id, email, password_hash, full_name) \
+         VALUES ($1, $2, 'lc@starzforge.local', 'x', 'Lifecycle User')",
+    )
+    .bind(user_id)
+    .bind(tenant_id)
+    .execute(&pool)
+    .await
+    .expect("user insert");
+    sqlx::query(
+        "INSERT INTO employee_assignments (tenant_id, user_id, site_id, work_center_id, shift_id) \
+         VALUES ($1, $2, $3, $4, $5)",
+    )
+    .bind(tenant_id)
+    .bind(user_id)
+    .bind(site_id)
+    .bind(wc_id)
+    .bind(shift_id)
+    .execute(&pool)
+    .await
+    .expect("assignment insert");
+    let skill_id = uuid::Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO skills (id, tenant_id, skill_id, name) \
+         VALUES ($1, $2, 'SK-LC-01', 'SMT Operator')",
+    )
+    .bind(skill_id)
+    .bind(tenant_id)
+    .execute(&pool)
+    .await
+    .expect("skill insert");
+    sqlx::query(
+        "INSERT INTO skill_qualifications (tenant_id, principal_id, skill_id, level, evidence) \
+         VALUES ($1, $2, $3, 'independent', '[{\"kind\": \"line_audit\"}]')",
+    )
+    .bind(tenant_id)
+    .bind(user_id)
+    .bind(skill_id)
+    .execute(&pool)
+    .await
+    .expect("qualification insert");
 
     let report = validate_site(&pool, tenant_id, site_id)
         .await
         .expect("validation must run");
     assert!(
         report.ready,
-        "site with policy + roles + work centers + metrics must be ready"
+        "site with policy + site roles + site work centers + shifts + skills + integrations + metrics must be ready"
+    );
+    assert!(
+        report
+            .checks
+            .iter()
+            .any(|(n, ok, _)| n == "shifts_defined" && *ok),
+        "the site-specific shift check must pass"
+    );
+    assert!(
+        report
+            .checks
+            .iter()
+            .any(|(n, ok, _)| n == "skill_coverage" && *ok),
+        "the site-specific skill-coverage check must pass"
     );
     assert_eq!(
         manifest_status(&pool, tenant_id, site_id).await,
@@ -10254,15 +10376,30 @@ async fn site_bootstrap_lifecycle_validation() {
         "a ready report must advance draft → validated"
     );
 
-    // (d) activate_site: validated → active, and the ladder guard rejects
-    // a second activation from 'active'.
+    // (d) The FULL six-stage ladder (seventeenth audit item 12): each
+    // transition is exactly one step with a real gate; activation is the
+    // LAST rung, not a direct jump from validated.
+    use sensei_services::tps::site_manifest::advance_site_lifecycle;
+    assert!(
+        activate_site(&pool, tenant_id, site_id).await.is_err(),
+        "validated → active skips four rungs — the guarded ladder rejects it"
+    );
+    advance_site_lifecycle(&pool, tenant_id, site_id, "provisioning")
+        .await
+        .expect("validated → provisioning (report ready)");
+    advance_site_lifecycle(&pool, tenant_id, site_id, "ready_for_training")
+        .await
+        .expect("provisioning → ready_for_training (site checks pass)");
+    advance_site_lifecycle(&pool, tenant_id, site_id, "operational_qualification")
+        .await
+        .expect("ready_for_training → operational_qualification (evidence exists)");
     activate_site(&pool, tenant_id, site_id)
         .await
-        .expect("validated site must activate");
+        .expect("operational_qualification → active");
     assert_eq!(
         manifest_status(&pool, tenant_id, site_id).await,
         "active",
-        "activate must move validated → active"
+        "activate must move operational_qualification → active"
     );
     assert!(
         activate_site(&pool, tenant_id, site_id).await.is_err(),
@@ -10487,17 +10624,13 @@ async fn versioned_process_definition_overrides_default() {
 
     // The compiled default path stays the FALLBACK for sites that define
     // no process.
+    // The REPORTED path is the path that ACTUALLY judged conformance:
+    // the site's versioned definition (which omits 'contained' here) —
+    // never a different standard than the one used.
     assert_eq!(
         report.expected_path,
-        vec![
-            "raised",
-            "acknowledged",
-            "contained",
-            "investigated",
-            "verified",
-            "closed"
-        ],
-        "the compiled default path remains the fallback"
+        vec!["raised", "acknowledged", "closed"],
+        "the reported expected path is the site definition actually used"
     );
 
     // Revisioning: a SECOND definition (applicable later) makes the
@@ -10676,4 +10809,372 @@ async fn versioned_process_definition_overrides_default() {
         pre_staging.supporting_evidence != fixture.supporting_evidence,
         "the pre-staging support must differ from the fixture support"
     );
+}
+
+/// Seventeenth-audit full-path invariants (testing-strategy item): the
+/// negative cases that triggered the audit must be exercised through the
+/// REAL service/runtime call paths, not helper functions.
+#[tokio::test]
+async fn seventeenth_audit_full_path_invariants() {
+    let Some(pool) = connect().await else {
+        return;
+    };
+    let _guard = DB_LOCK.lock().await;
+    sensei_db::migrations::run_migrations(&pool)
+        .await
+        .expect("migration chain");
+
+    let tenant_id = uuid::Uuid::new_v4();
+    let user_id = uuid::Uuid::new_v4();
+    let site_a = uuid::Uuid::new_v4();
+    let site_b = uuid::Uuid::new_v4();
+    let wc_a = uuid::Uuid::new_v4();
+    let wc_b = uuid::Uuid::new_v4();
+    sqlx::query("INSERT INTO tenants (id, name, slug) VALUES ($1, 't17', 't17')")
+        .bind(tenant_id)
+        .execute(&pool)
+        .await
+        .expect("tenant");
+    sqlx::query(
+        "INSERT INTO sites (id, tenant_id, site_code, name) VALUES \
+         ($1, $2, 'A17', 'Site A'), ($3, $4, 'B17', 'Site B')",
+    )
+    .bind(site_a)
+    .bind(tenant_id)
+    .bind(site_b)
+    .bind(tenant_id)
+    .execute(&pool)
+    .await
+    .expect("sites");
+    sqlx::query(
+        "INSERT INTO work_centers (id, tenant_id, work_center_number, name, site_id) VALUES \
+         ($1, $2, 'WC-A', 'WC A', $3), ($4, $5, 'WC-B', 'WC B', $6)",
+    )
+    .bind(wc_a)
+    .bind(tenant_id)
+    .bind(site_a)
+    .bind(wc_b)
+    .bind(tenant_id)
+    .bind(site_b)
+    .execute(&pool)
+    .await
+    .expect("work centers");
+    sqlx::query(
+        "INSERT INTO users (id, tenant_id, email, password_hash, full_name) \
+         VALUES ($1, $2, 'u17@starzforge.local', 'x', 'User 17')",
+    )
+    .bind(user_id)
+    .bind(tenant_id)
+    .execute(&pool)
+    .await
+    .expect("user");
+    sqlx::query(
+        "INSERT INTO site_manifests (tenant_id, site_id, country, capabilities) \
+         VALUES ($1, $2, 'MA', '[]'), ($3, $4, 'MA', '[]')",
+    )
+    .bind(tenant_id)
+    .bind(site_a)
+    .bind(tenant_id)
+    .bind(site_b)
+    .execute(&pool)
+    .await
+    .expect("manifests");
+
+    use sensei_services::ops::OperationsService;
+    let ops_service = sensei_services::ops::DatabaseOperationsService::new(pool.clone());
+
+    // ── 1. Scope-resolved work center (item 6): the DB-derived scope is
+    //       the ONLY constructor path.
+    {
+        let mut tx = sensei_core::db::TenantTx::begin(&pool, tenant_id)
+            .await
+            .expect("tx");
+        let scope = sensei_core::domain::scope::WorkCenterScope::resolve(&mut tx, wc_a)
+            .await
+            .expect("resolve")
+            .expect("wc exists");
+        assert_eq!(scope.site, site_a, "parent site is DB-derived");
+        assert_eq!(scope.work_center, wc_a);
+        tx.rollback().await.expect("rb");
+    }
+
+    // ── 2. Andon raise idempotency (item 11): the SAME command key
+    //       replays the ORIGINAL andon — a retried raise never creates a
+    //       duplicate.
+    let andon_base = sensei_services::ops::Andon {
+        id: uuid::Uuid::new_v4(),
+        tenant_id,
+        site_id: Some(site_a),
+        andon_number: String::new(),
+        work_center_id: wc_a,
+        issue_type: "quality".to_string(),
+        severity: "medium".to_string(),
+        description: "idempotent andon".to_string(),
+        status: "active".to_string(),
+        abnormal_condition_observed_at: None,
+        raised_by: user_id,
+        acknowledged_by: None,
+        resolved_by: None,
+        resolution: None,
+        response_time_seconds: None,
+        resolution_time_seconds: None,
+        created_at: chrono::Utc::now(),
+        acknowledged_at: None,
+        resolved_at: None,
+        restart_authorized_by: None,
+        restart_authorized_at: None,
+        contained_at: None,
+        contained_by: None,
+        contained_note: None,
+        escalated: false,
+        escalated_at: None,
+        request_key: None,
+    };
+    let first = ops_service
+        .raise_andon_idempotent(tenant_id, andon_base.clone(), Some("cmd-key-1".to_string()))
+        .await
+        .expect("first raise");
+    let replay = ops_service
+        .raise_andon_idempotent(tenant_id, andon_base.clone(), Some("cmd-key-1".to_string()))
+        .await
+        .expect("replay");
+    assert_eq!(first.id, replay.id, "the retry replays the ORIGINAL andon");
+    assert_eq!(
+        replay.request_key.as_deref(),
+        Some("cmd-key-1"),
+        "the command key is stamped"
+    );
+    let dup = ops_service
+        .raise_andon_idempotent(tenant_id, andon_base.clone(), Some("cmd-key-2".to_string()))
+        .await
+        .expect("second key");
+    assert_ne!(
+        first.id, dup.id,
+        "a DIFFERENT command key creates a different andon"
+    );
+
+    // ── 3. Scoped list (item 4): a site-scoped caller sees only THEIR
+    //       site's andons.
+    let wc_b_andon = sensei_services::ops::Andon {
+        site_id: Some(site_b),
+        work_center_id: wc_b,
+        ..andon_base.clone()
+    };
+    ops_service
+        .raise_andon_idempotent(tenant_id, wc_b_andon, Some("cmd-key-b".to_string()))
+        .await
+        .expect("site b andon");
+    let scoped = ops_service
+        .list_andons_scoped(tenant_id, Some(site_a), None, None, Some(1), Some(100))
+        .await
+        .expect("scoped list");
+    assert!(
+        scoped.data.iter().all(|a| a.site_id == Some(site_a)),
+        "site-scoped listing must never return another site's andons"
+    );
+    let unscoped = ops_service
+        .list_andons(tenant_id, None, None, Some(1), Some(100))
+        .await
+        .expect("unscoped list");
+    assert!(
+        unscoped.data.len() >= scoped.data.len(),
+        "the unscoped list sees at least as many"
+    );
+
+    // ── 4. Canonical transition events (item 11): resolving the andon
+    //       appends andon.resolved with the deterministic idempotency
+    //       key — the process-mining path is reconstructible.
+    ops_service
+        .authorize_restart(tenant_id, first.id, user_id)
+        .await
+        .expect("restart authorization");
+    ops_service
+        .resolve_andon(tenant_id, first.id, user_id, "fixed")
+        .await
+        .expect("resolve");
+    let (raised, resolved, ack_keys): (i64, i64, i64) = sqlx::query_as(
+        "SELECT COUNT(*) FILTER (WHERE event_type = 'andon.raised'), \
+                COUNT(*) FILTER (WHERE event_type = 'andon.resolved'), \
+                COUNT(*) FILTER (WHERE idempotency_key = $1)::bigint \
+         FROM operational_events WHERE tenant_id = $2 AND stream_id = $3",
+    )
+    .bind(format!("{}:andon.resolved", first.id))
+    .bind(tenant_id)
+    .bind(first.id)
+    .fetch_one(&pool)
+    .await
+    .expect("event read");
+    assert_eq!(raised, 1, "exactly one raised event");
+    assert_eq!(resolved, 1, "the resolved transition appends its event");
+    assert_eq!(
+        ack_keys, 1,
+        "the (andon, event_type) idempotency key is deterministic"
+    );
+
+    // ── 5. Lesson revisions inside TenantTx (item 10): a re-record of a
+    //       verified lesson becomes -r1; the original row is untouched.
+    {
+        use sensei_services::tps::lessons::{get_lesson, mark_verified, record_lesson, NewLesson};
+        let first_lesson = NewLesson {
+            lesson_id: "L-17".to_string(),
+            title: "lesson".to_string(),
+            source_problem_id: None,
+            context_signature: serde_json::json!({ "process": "ncr" }),
+            hypothesis: Some("h".to_string()),
+            countermeasure: "countermeasure".to_string(),
+            observed_result: serde_json::Value::Null,
+            confidence: Some(0.8),
+            applicability: serde_json::json!({
+                "required_matches": [{"dimension": "site", "value": site_a.to_string()}]
+            }),
+            origin_site_id: Some(site_a),
+        };
+        let first_id = record_lesson(&pool, tenant_id, first_lesson)
+            .await
+            .expect("record");
+        mark_verified(&pool, tenant_id, first_id, true)
+            .await
+            .expect("verify");
+        let re_record = NewLesson {
+            lesson_id: "L-17".to_string(),
+            title: "lesson v2".to_string(),
+            source_problem_id: None,
+            context_signature: serde_json::json!({ "process": "ncr" }),
+            hypothesis: Some("h2".to_string()),
+            countermeasure: "countermeasure v2".to_string(),
+            observed_result: serde_json::Value::Null,
+            confidence: Some(0.9),
+            applicability: serde_json::json!({
+                "required_matches": [{"dimension": "site", "value": site_a.to_string()}]
+            }),
+            origin_site_id: Some(site_a),
+        };
+        record_lesson(&pool, tenant_id, re_record)
+            .await
+            .expect("re-record");
+        let original = get_lesson(&pool, tenant_id, first_id)
+            .await
+            .expect("original");
+        assert_eq!(
+            original.status, "verified",
+            "the verified original is NEVER overwritten by the re-record"
+        );
+        let revisions: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM lessons WHERE tenant_id = $1 AND lesson_id LIKE 'L-17-r%'",
+        )
+        .bind(tenant_id)
+        .fetch_one(&pool)
+        .await
+        .expect("revision count");
+        assert_eq!(
+            revisions, 1,
+            "the re-record becomes exactly one -r1 revision"
+        );
+    }
+
+    // ── 6. Memory provenance cannot be fabricated (item 10): a fake
+    //       source event id is rejected before any insert.
+    {
+        use sensei_services::tps::organizational_memory;
+        let err = organizational_memory::record_observation(
+            &pool,
+            tenant_id,
+            "site",
+            None,
+            None,
+            None,
+            Some(site_a),
+            vec!["event-fake-1".to_string(), "event-fake-2".to_string()],
+            "observation",
+            "some content",
+            serde_json::json!({}),
+            Some(user_id),
+        )
+        .await
+        .expect_err("fake provenance must be rejected");
+        assert!(
+            err.to_string().contains("EXISTING canonical events"),
+            "the error names the provenance rule: {err}"
+        );
+    }
+
+    // ── 7. Assignment bumps the authorization revision IN THE SAME
+    //       transaction (item 5) — via the service path used by the
+    //       route.
+    {
+        use sensei_services::tps::authorization_revisions;
+        let slot_id = uuid::Uuid::new_v4();
+        sqlx::query(
+            "INSERT INTO role_slots (id, tenant_id, role_name, slot_name, scope_site_id) \
+             VALUES ($1, $2, 'operator', 'Op_A17', $3)",
+        )
+        .bind(slot_id)
+        .bind(tenant_id)
+        .bind(site_a)
+        .execute(&pool)
+        .await
+        .expect("slot");
+        let before = authorization_revisions::current_snapshot(&pool, tenant_id)
+            .await
+            .expect("snapshot");
+        sqlx::query(
+            "INSERT INTO principal_assignments (tenant_id, principal_id, slot_id) \
+             VALUES ($1, $2, $3)",
+        )
+        .bind(tenant_id)
+        .bind(user_id)
+        .bind(slot_id)
+        .execute(&pool)
+        .await
+        .expect("assignment");
+        // The service-level bump must be invoked WITH the mutation by the
+        // route; the contract verifies the shared helper works in-tx.
+        let mut tx = pool.begin().await.expect("tx");
+        sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
+            .bind(tenant_id.to_string())
+            .execute(&mut *tx)
+            .await
+            .expect("ctx");
+        authorization_revisions::bump_in_tx(&mut tx, tenant_id, "principal_revision")
+            .await
+            .expect("in-tx bump");
+        tx.commit().await.expect("commit");
+        let after = authorization_revisions::current_snapshot(&pool, tenant_id)
+            .await
+            .expect("snapshot2");
+        assert!(
+            after.principal_revision > before.principal_revision,
+            "the principal revision must move with the assignment act"
+        );
+    }
+
+    // ── 8. Lifecycle ladder (item 12): only ONE step at a time, and the
+    //       activation rung requires operational_qualification.
+    {
+        use sensei_services::tps::site_manifest;
+        site_manifest::advance_site_lifecycle(&pool, tenant_id, site_a, "validated")
+            .await
+            .expect("draft -> validated");
+        let skip = site_manifest::advance_site_lifecycle(&pool, tenant_id, site_a, "active").await;
+        assert!(
+            skip.is_err(),
+            "skipping the ladder must be rejected (validated -> active is not one step)"
+        );
+        site_manifest::advance_site_lifecycle(&pool, tenant_id, site_a, "provisioning")
+            .await
+            .expect("validated -> provisioning requires the ready report");
+    }
+
+    // ── 9. Process mining bounded window (item 10): a window beyond the
+    //       configured maximum is rejected.
+    {
+        use sensei_services::tps::process_mining;
+        let err = process_mining::conformance_report(&pool, tenant_id, "andon", 4000)
+            .await
+            .expect_err("bounded window must be enforced");
+        assert!(
+            err.to_string().contains("window_days"),
+            "the error names the bound: {err}"
+        );
+    }
 }

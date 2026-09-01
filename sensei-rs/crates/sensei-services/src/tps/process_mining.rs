@@ -149,6 +149,15 @@ pub async fn upsert_process_definition(
         .map_err(|e| SenseiError::Internal(format!("states JSON encode failed: {e}")))?;
     let transitions_json = serde_json::to_value(&allowed_transitions)
         .map_err(|e| SenseiError::Internal(format!("transitions JSON encode failed: {e}")))?;
+    // Seventeenth audit item 10: transaction-scoped advisory lock per
+    // (tenant, process) — concurrent upserts cannot allocate the same
+    // next revision.
+    sqlx::query("SELECT pg_advisory_xact_lock(hashtext($1 || ':' || $2))")
+        .bind(tenant_id.to_string())
+        .bind(process_id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| SenseiError::Database(format!("Process definition lock failed: {e}")))?;
     sqlx::query(
         "INSERT INTO process_definitions \
              (tenant_id, process_id, revision, applicable_from, states, allowed_transitions) \
@@ -415,6 +424,15 @@ async fn load_events_tx(
     object_type: &str,
     window_days: i64,
 ) -> Result<Vec<LoggedEvent>> {
+    // Seventeenth audit item: the window is BOUNDED — a huge historical
+    // interval can no longer load every matching event into memory.
+    // 365 days is the configured maximum; anything larger is rejected.
+    const MAX_WINDOW_DAYS: i64 = 365;
+    if window_days > MAX_WINDOW_DAYS {
+        return Err(SenseiError::Validation(format!(
+            "window_days must be <= {MAX_WINDOW_DAYS} — use a narrower window or the              operational_event_objects projection for historical mining"
+        )));
+    }
     let window_days = if window_days <= 0 { 30 } else { window_days };
     type MiningEventRow = (
         Uuid,
@@ -506,12 +524,26 @@ pub async fn discover_actual_path(
 /// more than once (per-case reopen — never cross-case aggregation);
 /// transition_durations are the average seconds between each pair's
 /// events.
+/// The process-definition revision applicable AT a timestamp: definitions
+/// are sorted by (applicable_from ASC, revision ASC), so the LAST
+/// revision whose applicability window has started governs.
+fn definition_at(
+    at: chrono::DateTime<chrono::Utc>,
+    definitions: &[LoadedDefinition],
+) -> Option<&LoadedDefinition> {
+    definitions.iter().rev().find(|d| d.applicable_from <= at)
+}
+
 pub async fn conformance_report(
     pool: &sqlx::PgPool,
     tenant_id: Uuid,
     object_type: &str,
     window_days: i64,
 ) -> Result<ConformanceReport> {
+    // Seventeenth audit item: the expected path REPORTED is the path
+    // ACTUALLY used to judge conformance. When the site defines a
+    // versioned process, its states are the standard; the compiled
+    // default is used (and reported) only when the site defines none.
     let canonical = expected_path(object_type);
     let mut tx = pool
         .begin()
@@ -529,6 +561,19 @@ pub async fn conformance_report(
     tx.commit()
         .await
         .map_err(|e| SenseiError::Database(format!("Conformance commit failed: {e}")))?;
+
+    // The definition applicable at the LATEST event time in the window —
+    // the site's own standard when it defines the process, else None
+    // (compiled default). Resolved ONCE and used for BOTH the conformance
+    // judgement and the reported expected path (seventeenth audit item:
+    // the reported path must be the judged path).
+    let reference_time = events
+        .iter()
+        .map(|e| e.occurred_at)
+        .max()
+        .unwrap_or_else(chrono::Utc::now);
+    let process_definition =
+        definition_at(reference_time, &definitions).map(|loaded| loaded.def.clone());
 
     // Strip the object-type prefix ("andon.raised" -> "raised") so the
     // actual steps line up with the canonical path.
@@ -556,20 +601,23 @@ pub async fn conformance_report(
     // event type (condition_key -> (occurrences, first, last)).
     let mut hidden_loops: Vec<LoopFinding> = Vec::new();
 
-    // Expected adjacent pairs from the canonical path (the compiled
-    // default — a site-defined revision overrides it when applicable).
+    // Expected adjacent pairs from the path that ACTUALLY applies: the
+    // site's versioned definition when one is applicable at the reference
+    // time, else the compiled default — the same source reported as
+    // expected_path (seventeenth audit item).
     let mut expected_adjacent: std::collections::HashSet<(String, String)> =
         std::collections::HashSet::new();
-    for pair in canonical.windows(2) {
+    let conformance_path: Vec<String> = process_definition
+        .as_ref()
+        .map(|def| def.states.clone())
+        .unwrap_or_else(|| canonical.clone());
+    for pair in conformance_path.windows(2) {
         expected_adjacent.insert((pair[0].clone(), pair[1].clone()));
     }
 
     // The revision applicable AT a given event time: the latest revision
     // whose applicability window has started (definitions are sorted by
     // applicable_from ASC, revision ASC).
-    let definition_at = |at: chrono::DateTime<chrono::Utc>| -> Option<&LoadedDefinition> {
-        definitions.iter().rev().find(|d| d.applicable_from <= at)
-    };
 
     // `load_events` sorts by (case_key, occurred_at, id); walk each case's
     // events as one contiguous chunk.
@@ -601,7 +649,7 @@ pub async fn conformance_report(
             // applicable when the transition completed. A transition the
             // applicable definition ALLOWS is never a deviation, even if
             // the compiled default would flag it.
-            let allowed = match definition_at(pair[1].occurred_at) {
+            let allowed = match definition_at(pair[1].occurred_at, &definitions) {
                 Some(loaded) => {
                     if !loaded.def.allowed_transitions.is_empty() {
                         loaded
@@ -689,19 +737,16 @@ pub async fn conformance_report(
 
     hidden_loops.sort_by(|a, b| a.condition_key.cmp(&b.condition_key));
 
-    // The definition applicable at the LATEST event time in the window —
-    // the site's own standard when it defines the process, else None
-    // (compiled default).
-    let reference_time = events
-        .iter()
-        .map(|e| e.occurred_at)
-        .max()
-        .unwrap_or_else(chrono::Utc::now);
-    let process_definition = definition_at(reference_time).map(|loaded| loaded.def.clone());
+    // The reported expected path is the versioned definition's states
+    // when one applied — never a different standard than the one used.
+    let reported_expected = process_definition
+        .as_ref()
+        .map(|def| def.states.clone())
+        .unwrap_or(canonical);
 
     Ok(ConformanceReport {
         object_type: object_type.to_string(),
-        expected_path: canonical,
+        expected_path: reported_expected,
         actual_transitions,
         transition_durations,
         variants,

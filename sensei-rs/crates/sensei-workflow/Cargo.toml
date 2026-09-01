@@ -12,3 +12,4 @@ uuid.workspace = true
 chrono.workspace = true
 tokio.workspace = true
 sqlx.workspace = true
+sensei-auth = { path = "../sensei-auth" }

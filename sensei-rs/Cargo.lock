@@ -6916,6 +6916,7 @@ name = "sensei-workflow"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "sensei-auth",
  "serde",
  "serde_json",
  "sqlx",

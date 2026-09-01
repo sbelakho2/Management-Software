@@ -486,7 +486,16 @@ mod tests {
             &workflow_id,
             true,
             Some(actor_id),
-            &[COUNTERMEASURE_APPROVER_ROLE.to_string()],
+            &sensei_auth::authz_snapshot::AuthzSnapshot {
+                tenant: tenant_id,
+                principal: actor_id,
+                roles: vec![COUNTERMEASURE_APPROVER_ROLE.to_string()],
+                policy_revision: 1,
+                relationship_revision: 1,
+                principal_revision: 1,
+                scope_site: None,
+                permission_digest: [0u8; 32],
+            },
         )
         .await
         .expect("the quality engineer approves the countermeasure");
@@ -544,7 +553,16 @@ mod tests {
             &workflow_id,
             true,
             Some(actor_id),
-            &[COUNTERMEASURE_APPROVER_ROLE.to_string()],
+            &sensei_auth::authz_snapshot::AuthzSnapshot {
+                tenant: tenant_id,
+                principal: actor_id,
+                roles: vec![COUNTERMEASURE_APPROVER_ROLE.to_string()],
+                policy_revision: 1,
+                relationship_revision: 1,
+                principal_revision: 1,
+                scope_site: None,
+                permission_digest: [0u8; 32],
+            },
         )
         .await
         .expect("the quality engineer approves the countermeasure");
@@ -588,7 +606,16 @@ mod tests {
             &workflow_id,
             true,
             Some(actor_id),
-            &[COUNTERMEASURE_APPROVER_ROLE.to_string()],
+            &sensei_auth::authz_snapshot::AuthzSnapshot {
+                tenant: tenant_id,
+                principal: actor_id,
+                roles: vec![COUNTERMEASURE_APPROVER_ROLE.to_string()],
+                policy_revision: 1,
+                relationship_revision: 1,
+                principal_revision: 1,
+                scope_site: None,
+                permission_digest: [0u8; 32],
+            },
         )
         .await
         .expect("approval must succeed");
@@ -659,7 +686,16 @@ mod tests {
             &workflow_id,
             false,
             Some(actor_id),
-            &[COUNTERMEASURE_APPROVER_ROLE.to_string()],
+            &sensei_auth::authz_snapshot::AuthzSnapshot {
+                tenant: tenant_id,
+                principal: actor_id,
+                roles: vec![COUNTERMEASURE_APPROVER_ROLE.to_string()],
+                policy_revision: 1,
+                relationship_revision: 1,
+                principal_revision: 1,
+                scope_site: None,
+                permission_digest: [0u8; 32],
+            },
         )
         .await
         .expect("a rejection with the required role must decide");

@@ -54,10 +54,20 @@ pub async fn list_andons(
 ) -> Result<Json<PaginatedResponse<Andon>>> {
     user.require_permission("tps:andon:raise")?;
     let tenant_id = user.tenant_id;
+    // Seventeenth audit item 4: the tenant-wide list is INTERSECTED with
+    // the caller's authorized scope — a site-scoped caller never sees
+    // another site's andons. Site scope comes from the agent context
+    // (server-derived from the caller's assignment); a caller with no
+    // site (bootstrap/admin) sees the tenant list.
+    let scope_site = crate::routes::agent::build_context(&user, &state)
+        .await
+        .site_id;
+    let scope_filter = scope_site;
     let andons = state
         .ops_service
-        .list_andons(
+        .list_andons_scoped(
             tenant_id,
+            scope_filter,
             params.status.as_deref(),
             params.work_center_id,
             params.page,
@@ -90,10 +100,19 @@ pub struct RaiseAndonRequest {
 pub async fn raise_andon(
     user: AuthenticatedUser,
     State(state): State<AppState>,
+    headers: axum::http::HeaderMap,
     Json(req): Json<RaiseAndonRequest>,
 ) -> Result<Json<Andon>> {
     user.require_permission("tps:andon:raise")?;
     let tenant_id = user.tenant_id;
+    // Seventeenth audit item 11: the client generates ONE command key per
+    // raise (Idempotency-Key); a retry after a dropped connection replays
+    // the ORIGINAL andon instead of creating a duplicate.
+    let request_key = headers
+        .get("idempotency-key")
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
     // Item 47: a future observation timestamp is rejected (a clock-skewed
     // client cannot backdate an observation into the future).
     if let Some(observed) = req.observed_at {
@@ -148,8 +167,12 @@ pub async fn raise_andon(
         contained_note: None,
         escalated: false,
         escalated_at: None,
+        request_key: None,
     };
-    let andon = state.ops_service.raise_andon(tenant_id, andon).await?;
+    let andon = state
+        .ops_service
+        .raise_andon_idempotent(tenant_id, andon, request_key)
+        .await?;
     // Thirteenth audit: the abnormality ALSO opens/reinforces ONE
     // OperationalCondition — the same work center + issue type within
     // the window reuses the same condition (recurrence signature), so a
@@ -234,6 +257,17 @@ pub async fn get_andon(
     user.require_permission("tps:andon:raise")?;
     let tenant_id = user.tenant_id;
     let andon = state.ops_service.get_andon(tenant_id, id).await?;
+    // Seventeenth audit item 4: a site-scoped caller can only read andons
+    // inside their scope — the row's site is intersected with the
+    // caller's agent context before the resource is returned.
+    let ctx = crate::routes::agent::build_context(&user, &state).await;
+    if let Some(scope_site) = ctx.site_id {
+        if andon.site_id.is_some_and(|s| s != scope_site) {
+            return Err(sensei_core::error::SenseiError::Forbidden(
+                "Andon is outside the caller's authorized site scope".to_string(),
+            ));
+        }
+    }
     Ok(Json(andon))
 }
 

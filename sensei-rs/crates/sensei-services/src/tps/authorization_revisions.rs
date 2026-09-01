@@ -101,6 +101,46 @@ pub async fn bump_relationship(pool: &PgPool, tenant_id: Uuid) -> Result<()> {
     bump(pool, tenant_id, "relationship_revision").await
 }
 
+/// IN-TX bump (seventeenth audit item 5): every authorization mutation
+/// (assignment, unassignment, policy change) bumps the revision in the
+/// SAME transaction that performs the mutation — an authorization state
+/// change without a revision change is impossible. The caller owns the
+/// transaction (tenant context already set); the revision row is lazily
+/// seeded in the same statement.
+pub async fn bump_in_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    tenant_id: Uuid,
+    column: &str,
+) -> Result<()> {
+    let column = match column {
+        "policy_revision" | "relationship_revision" | "principal_revision" => column,
+        _ => {
+            return Err(SenseiError::Validation(format!(
+                "invalid revision column: {column}"
+            )))
+        }
+    };
+    sqlx::query(
+        "INSERT INTO authorization_revisions (tenant_id, policy_revision, \
+             relationship_revision, principal_revision) \
+         VALUES ($1, 1, 1, 1) \
+         ON CONFLICT (tenant_id) DO NOTHING",
+    )
+    .bind(tenant_id)
+    .execute(&mut **tx)
+    .await
+    .map_err(|e| SenseiError::Database(format!("Revision seed failed: {e}")))?;
+    sqlx::query(&format!(
+        "UPDATE authorization_revisions SET {column} = {column} + 1, updated_at = NOW() \
+         WHERE tenant_id = $1",
+    ))
+    .bind(tenant_id)
+    .execute(&mut **tx)
+    .await
+    .map_err(|e| SenseiError::Database(format!("In-tx revision bump failed: {e}")))?;
+    Ok(())
+}
+
 /// Increment the policy revision (policy objects change).
 pub async fn bump_policy(pool: &PgPool, tenant_id: Uuid) -> Result<()> {
     bump(pool, tenant_id, "policy_revision").await

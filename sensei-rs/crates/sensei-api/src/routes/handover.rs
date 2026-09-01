@@ -176,6 +176,14 @@ pub async fn create_slot(
         }
         SenseiError::Database(format!("Slot create failed: {e}"))
     })?;
+    // Seventeenth audit item 5: a role slot is a policy/relationship
+    // object — its creation bumps the revision in the SAME transaction.
+    sensei_services::tps::authorization_revisions::bump_in_tx(
+        &mut tx,
+        tenant_id,
+        "relationship_revision",
+    )
+    .await?;
     tx.commit()
         .await
         .map_err(|e| SenseiError::Database(format!("Slot create commit failed: {e}")))?;
@@ -261,6 +269,21 @@ pub async fn assign_principal(
     .fetch_one(&mut *tx)
     .await
     .map_err(|e| SenseiError::Database(format!("Assignment failed: {e}")))?;
+    // Seventeenth audit item 5: the authorization revision bump is IN the
+    // mutation transaction — the assignment and its revision are
+    // inseparable.
+    sensei_services::tps::authorization_revisions::bump_in_tx(
+        &mut tx,
+        tenant_id,
+        "relationship_revision",
+    )
+    .await?;
+    sensei_services::tps::authorization_revisions::bump_in_tx(
+        &mut tx,
+        tenant_id,
+        "principal_revision",
+    )
+    .await?;
     tx.commit()
         .await
         .map_err(|e| SenseiError::Database(format!("Assign commit failed: {e}")))?;
@@ -299,6 +322,20 @@ pub async fn unassign_principal(
     .execute(&mut *tx)
     .await
     .map_err(|e| SenseiError::Database(format!("Unassign failed: {e}")))?;
+    if ended.rows_affected() > 0 {
+        sensei_services::tps::authorization_revisions::bump_in_tx(
+            &mut tx,
+            tenant_id,
+            "relationship_revision",
+        )
+        .await?;
+        sensei_services::tps::authorization_revisions::bump_in_tx(
+            &mut tx,
+            tenant_id,
+            "principal_revision",
+        )
+        .await?;
+    }
     tx.commit()
         .await
         .map_err(|e| SenseiError::Database(format!("Unassign commit failed: {e}")))?;

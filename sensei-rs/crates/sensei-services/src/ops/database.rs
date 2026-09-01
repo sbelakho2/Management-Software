@@ -93,6 +93,7 @@ struct AndonRow {
     contained_note: Option<String>,
     escalated: bool,
     escalated_at: Option<chrono::DateTime<Utc>>,
+    request_key: Option<String>,
 }
 
 #[derive(Debug, Clone, sqlx::FromRow)]
@@ -197,6 +198,7 @@ fn andon_row_to_domain(r: AndonRow) -> Andon {
         contained_note: r.contained_note,
         escalated: r.escalated,
         escalated_at: r.escalated_at,
+        request_key: r.request_key,
     }
 }
 
@@ -334,9 +336,9 @@ impl OperationsService for DatabaseOperationsService {
         let row = with_tenant_tx(&self.pool, tenant_id, |tx| {
             Box::pin(async move {
                 let row = sqlx::query_as::<_, AndonRow>(
-                    r#"INSERT INTO andons (id, tenant_id, andon_number, site_id, work_center_id, issue_type, severity, description, status, raised_by, acknowledged_by, resolved_by, resolution, response_time_seconds, resolution_time_seconds, created_at, acknowledged_at, resolved_at, restart_authorized_by, restart_authorized_at, abnormal_condition_observed_at, contained_at, contained_by, contained_note, escalated, escalated_at)
-                       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'active',$9,NULL,NULL,NULL,NULL,NULL,$10,NULL,NULL,NULL,NULL,$11,$12,$13,$14,FALSE,NULL)
-                       RETURNING id, tenant_id, andon_number, site_id, work_center_id, issue_type, severity, description, status, raised_by, acknowledged_by, resolved_by, resolution, response_time_seconds, resolution_time_seconds, created_at, acknowledged_at, resolved_at, restart_authorized_by, restart_authorized_at, abnormal_condition_observed_at, contained_at, contained_by, contained_note, escalated, escalated_at"#,
+                    r#"INSERT INTO andons (id, tenant_id, andon_number, site_id, work_center_id, issue_type, severity, description, status, raised_by, acknowledged_by, resolved_by, resolution, response_time_seconds, resolution_time_seconds, created_at, acknowledged_at, resolved_at, restart_authorized_by, restart_authorized_at, abnormal_condition_observed_at, contained_at, contained_by, contained_note, escalated, escalated_at, request_key)
+                       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'active',$9,NULL,NULL,NULL,NULL,NULL,$10,NULL,NULL,NULL,NULL,$11,$12,$13,$14,FALSE,NULL,$15)
+                       RETURNING id, tenant_id, andon_number, site_id, work_center_id, issue_type, severity, description, status, raised_by, acknowledged_by, resolved_by, resolution, response_time_seconds, resolution_time_seconds, created_at, acknowledged_at, resolved_at, restart_authorized_by, restart_authorized_at, abnormal_condition_observed_at, contained_at, contained_by, contained_note, escalated, escalated_at, request_key"#,
                 )
                 .bind(id).bind(tenant_id).bind(&andon_number).bind(andon.site_id).bind(andon.work_center_id)
                 .bind(&andon.issue_type).bind(&andon.severity).bind(&andon.description)
@@ -345,6 +347,7 @@ impl OperationsService for DatabaseOperationsService {
                 .bind(andon.contained_at)
                 .bind(andon.contained_by)
                 .bind(&andon.contained_note)
+                .bind(andon.request_key)
                 .fetch_one(&mut **tx)
                 .await.map_err(|e| SenseiError::Database(format!("Failed to raise andon: {e}")))?;
 
@@ -420,6 +423,83 @@ impl OperationsService for DatabaseOperationsService {
         Ok(andon_row_to_domain(row))
     }
 
+    /// Request-level idempotent raise (seventeenth audit item 11): with a
+    /// client command key, the SAME transaction first replays an existing
+    /// andon for that key — a retried raise after a dropped connection
+    /// returns the ORIGINAL andon. The (tenant_id, request_key) UNIQUE
+    /// index makes a concurrent duplicate raise fail and fall back to the
+    /// replay read instead of double-creating.
+    async fn raise_andon_idempotent(
+        &self,
+        tenant_id: Uuid,
+        andon: Andon,
+        request_key: Option<String>,
+    ) -> Result<Andon> {
+        let Some(request_key) = request_key else {
+            return self.raise_andon(tenant_id, andon).await;
+        };
+        let key_for_replay = request_key.clone();
+        let key_for_insert = request_key.clone();
+        // Replay path: the command key already produced an andon.
+        let existing = with_tenant_tx(&self.pool, tenant_id, move |tx| {
+            Box::pin(async move {
+                sqlx::query_as::<_, AndonRow>(
+                    "SELECT id, tenant_id, andon_number, site_id, work_center_id, issue_type, severity, description, status, raised_by, acknowledged_by, resolved_by, resolution, response_time_seconds, resolution_time_seconds, created_at, acknowledged_at, resolved_at, restart_authorized_by, restart_authorized_at, abnormal_condition_observed_at, contained_at, contained_by, contained_note, escalated, escalated_at, request_key \
+                     FROM andons WHERE tenant_id = $1 AND request_key = $2",
+                )
+                .bind(tenant_id)
+                .bind(&key_for_replay)
+                .fetch_optional(&mut **tx)
+                .await
+                .map_err(|e| SenseiError::Database(format!("Failed to replay andon: {e}")))
+            })
+        })
+        .await?;
+        if let Some(row) = existing {
+            return Ok(andon_row_to_domain(row));
+        }
+        // Fresh raise: create with the key stamped in the SAME statement.
+        let now = Utc::now();
+        let id = Uuid::new_v4();
+        let andon_number = format!(
+            "AND-{}-{}",
+            now.format("%Y%m%d"),
+            &id.as_simple().encode_lower(&mut Uuid::encode_buffer())[..8]
+        );
+        let row = with_tenant_tx(&self.pool, tenant_id, move |tx| {
+            Box::pin(async move {
+                let res = sqlx::query(
+                    r#"INSERT INTO andons (id, tenant_id, andon_number, site_id, work_center_id, issue_type, severity, description, status, raised_by, acknowledged_by, resolved_by, resolution, response_time_seconds, resolution_time_seconds, created_at, acknowledged_at, resolved_at, restart_authorized_by, restart_authorized_at, abnormal_condition_observed_at, contained_at, contained_by, contained_note, escalated, escalated_at, request_key)
+                       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'active',$9,NULL,NULL,NULL,NULL,NULL,$10,NULL,NULL,NULL,NULL,$11,$12,$13,$14,FALSE,NULL,$15)
+                       RETURNING id"#,
+                )
+                .bind(id).bind(tenant_id).bind(&andon_number).bind(andon.site_id).bind(andon.work_center_id)
+                .bind(&andon.issue_type).bind(&andon.severity).bind(&andon.description)
+                .bind(andon.raised_by).bind(now)
+                .bind(andon.abnormal_condition_observed_at)
+                .bind(andon.contained_at)
+                .bind(andon.contained_by)
+                .bind(&andon.contained_note)
+                .bind(&key_for_insert)
+                .execute(&mut **tx)
+                .await
+                .map_err(|e| SenseiError::Database(format!("Failed to raise idempotent andon: {e}")))?;
+                let _ = res;
+                sqlx::query_as::<_, AndonRow>(
+                    "SELECT id, tenant_id, andon_number, site_id, work_center_id, issue_type, severity, description, status, raised_by, acknowledged_by, resolved_by, resolution, response_time_seconds, resolution_time_seconds, created_at, acknowledged_at, resolved_at, restart_authorized_by, restart_authorized_at, abnormal_condition_observed_at, contained_at, contained_by, contained_note, escalated, escalated_at, request_key \
+                     FROM andons WHERE id = $1 AND tenant_id = $2",
+                )
+                .bind(id)
+                .bind(tenant_id)
+                .fetch_one(&mut **tx)
+                .await
+                .map_err(|e| SenseiError::Database(format!("Failed to read raised andon: {e}")))
+            })
+        })
+        .await?;
+        Ok(andon_row_to_domain(row))
+    }
+
     async fn acknowledge_andon(
         &self,
         tenant_id: Uuid,
@@ -433,7 +513,7 @@ impl OperationsService for DatabaseOperationsService {
                     r#"UPDATE andons SET status='acknowledged', acknowledged_by=$1, acknowledged_at=$2,
                         response_time_seconds=EXTRACT(EPOCH FROM ($2 - created_at))::bigint
                        WHERE id=$3 AND tenant_id=$4 AND status='active'
-                       RETURNING id, tenant_id, andon_number, site_id, work_center_id, issue_type, severity, description, status, raised_by, acknowledged_by, resolved_by, resolution, response_time_seconds, resolution_time_seconds, created_at, acknowledged_at, resolved_at, restart_authorized_by, restart_authorized_at, abnormal_condition_observed_at, contained_at, contained_by, contained_note, escalated, escalated_at"#,
+                       RETURNING id, tenant_id, andon_number, site_id, work_center_id, issue_type, severity, description, status, raised_by, acknowledged_by, resolved_by, resolution, response_time_seconds, resolution_time_seconds, created_at, acknowledged_at, resolved_at, restart_authorized_by, restart_authorized_at, abnormal_condition_observed_at, contained_at, contained_by, contained_note, escalated, escalated_at, request_key"#,
                 )
                 .bind(acknowledged_by).bind(now).bind(id).bind(tenant_id)
                 .fetch_optional(&mut **tx)
@@ -441,8 +521,25 @@ impl OperationsService for DatabaseOperationsService {
                 .ok_or_else(|| SenseiError::NotFound(format!("Andon {id} not found or not active")))
             })
         }).await?;
-
-        Ok(andon_row_to_domain(row))
+        let a = andon_row_to_domain(row);
+        with_tenant_tx(&self.pool, tenant_id, move |tx| {
+            Box::pin(async move {
+                crate::ops::andon_events::write_andon_stream_event(
+                    tx,
+                    tenant_id,
+                    "andon.acknowledged",
+                    a.id,
+                    a.site_id,
+                    a.work_center_id,
+                    acknowledged_by,
+                    a.acknowledged_at.unwrap_or(now),
+                    serde_json::json!({ "response_time_seconds": a.response_time_seconds }),
+                )
+                .await
+            })
+        })
+        .await?;
+        return Ok(a);
     }
 
     async fn escalate_andon(&self, tenant_id: Uuid, id: Uuid, escalated_by: Uuid) -> Result<Andon> {
@@ -459,7 +556,7 @@ impl OperationsService for DatabaseOperationsService {
                            acknowledged_at=COALESCE(acknowledged_at, $1),
                            response_time_seconds=COALESCE(response_time_seconds, EXTRACT(EPOCH FROM ($1 - created_at))::bigint)
                        WHERE id=$3 AND tenant_id=$4 AND status NOT IN ('resolved','voided')
-                       RETURNING id, tenant_id, andon_number, site_id, work_center_id, issue_type, severity, description, status, raised_by, acknowledged_by, resolved_by, resolution, response_time_seconds, resolution_time_seconds, created_at, acknowledged_at, resolved_at, restart_authorized_by, restart_authorized_at, abnormal_condition_observed_at, contained_at, contained_by, contained_note, escalated, escalated_at, escalated, escalated_at"#,
+                       RETURNING id, tenant_id, andon_number, site_id, work_center_id, issue_type, severity, description, status, raised_by, acknowledged_by, resolved_by, resolution, response_time_seconds, resolution_time_seconds, created_at, acknowledged_at, resolved_at, restart_authorized_by, restart_authorized_at, abnormal_condition_observed_at, contained_at, contained_by, contained_note, escalated, escalated_at, request_key, escalated, escalated_at"#,
                 )
                 .bind(now).bind(escalated_by).bind(id).bind(tenant_id)
                 .fetch_optional(&mut **tx)
@@ -467,8 +564,25 @@ impl OperationsService for DatabaseOperationsService {
                 .ok_or_else(|| SenseiError::NotFound(format!("Andon {id} not found or already closed")))
             })
         }).await?;
-
-        Ok(andon_row_to_domain(row))
+        let a = andon_row_to_domain(row);
+        with_tenant_tx(&self.pool, tenant_id, move |tx| {
+            Box::pin(async move {
+                crate::ops::andon_events::write_andon_stream_event(
+                    tx,
+                    tenant_id,
+                    "andon.escalated",
+                    a.id,
+                    a.site_id,
+                    a.work_center_id,
+                    escalated_by,
+                    a.escalated_at.unwrap_or(now),
+                    serde_json::json!({}),
+                )
+                .await
+            })
+        })
+        .await?;
+        return Ok(a);
     }
 
     async fn resolve_andon(
@@ -484,6 +598,7 @@ impl OperationsService for DatabaseOperationsService {
         // read/check/write race between replicas.
         let now = Utc::now();
         let resolution_owned = resolution.to_string();
+        let resolution_for_event = resolution_owned.clone();
         let row = with_tenant_tx(&self.pool, tenant_id, |tx| {
             Box::pin(async move {
                 let row = sqlx::query_as::<_, AndonRow>(
@@ -492,7 +607,7 @@ impl OperationsService for DatabaseOperationsService {
                         response_time_seconds=COALESCE(response_time_seconds, EXTRACT(EPOCH FROM ($3 - created_at))::bigint)
                        WHERE id=$4 AND tenant_id=$5 AND status NOT IN ('resolved','closed')
                          AND (severity != 'critical' OR issue_type != 'safety' OR restart_authorized_by IS NOT NULL)
-                       RETURNING id, tenant_id, andon_number, site_id, work_center_id, issue_type, severity, description, status, raised_by, acknowledged_by, resolved_by, resolution, response_time_seconds, resolution_time_seconds, created_at, acknowledged_at, resolved_at, restart_authorized_by, restart_authorized_at, abnormal_condition_observed_at, contained_at, contained_by, contained_note, escalated, escalated_at"#,
+                       RETURNING id, tenant_id, andon_number, site_id, work_center_id, issue_type, severity, description, status, raised_by, acknowledged_by, resolved_by, resolution, response_time_seconds, resolution_time_seconds, created_at, acknowledged_at, resolved_at, restart_authorized_by, restart_authorized_at, abnormal_condition_observed_at, contained_at, contained_by, contained_note, escalated, escalated_at, request_key"#,
                 )
                 .bind(resolved_by).bind(&resolution_owned).bind(now).bind(id).bind(tenant_id)
                 .fetch_optional(&mut **tx)
@@ -536,8 +651,25 @@ impl OperationsService for DatabaseOperationsService {
             })
         })
         .await?;
-
-        Ok(andon_row_to_domain(row))
+        let a = andon_row_to_domain(row);
+        with_tenant_tx(&self.pool, tenant_id, move |tx| {
+            Box::pin(async move {
+                crate::ops::andon_events::write_andon_stream_event(
+                    tx,
+                    tenant_id,
+                    "andon.resolved",
+                    a.id,
+                    a.site_id,
+                    a.work_center_id,
+                    resolved_by,
+                    a.resolved_at.unwrap_or(now),
+                    serde_json::json!({ "resolution": resolution_for_event }),
+                )
+                .await
+            })
+        })
+        .await?;
+        return Ok(a);
     }
 
     async fn authorize_restart(
@@ -554,7 +686,7 @@ impl OperationsService for DatabaseOperationsService {
                      RETURNING id, tenant_id, andon_number, site_id, work_center_id, issue_type, severity, \
                                description, status, raised_by, acknowledged_by, resolved_by, resolution, \
                                response_time_seconds, resolution_time_seconds, created_at, \
-                               acknowledged_at, resolved_at, restart_authorized_by, restart_authorized_at, abnormal_condition_observed_at, contained_at, contained_by, contained_note, escalated, escalated_at",
+                               acknowledged_at, resolved_at, restart_authorized_by, restart_authorized_at, abnormal_condition_observed_at, contained_at, contained_by, contained_note, escalated, escalated_at, request_key",
                 )
                 .bind(id)
                 .bind(tenant_id)
@@ -565,14 +697,32 @@ impl OperationsService for DatabaseOperationsService {
                 .ok_or_else(|| SenseiError::NotFound(format!("Andon {id} not found")))
             })
         }).await?;
-        Ok(andon_row_to_domain(row))
+        let a = andon_row_to_domain(row);
+        with_tenant_tx(&self.pool, tenant_id, move |tx| {
+            Box::pin(async move {
+                crate::ops::andon_events::write_andon_stream_event(
+                    tx,
+                    tenant_id,
+                    "andon.restart_authorized",
+                    a.id,
+                    a.site_id,
+                    a.work_center_id,
+                    authorized_by,
+                    a.restart_authorized_at.unwrap_or(Utc::now()),
+                    serde_json::json!({}),
+                )
+                .await
+            })
+        })
+        .await?;
+        return Ok(a);
     }
 
     async fn get_andon(&self, tenant_id: Uuid, id: Uuid) -> Result<Andon> {
         let row = with_tenant_tx(&self.pool, tenant_id, |tx| {
             Box::pin(async move {
                 sqlx::query_as::<_, AndonRow>(
-                    "SELECT id, tenant_id, andon_number, site_id, work_center_id, issue_type, severity, description, status, raised_by, acknowledged_by, resolved_by, resolution, response_time_seconds, resolution_time_seconds, created_at, acknowledged_at, resolved_at, restart_authorized_by, restart_authorized_at, abnormal_condition_observed_at, contained_at, contained_by, contained_note, escalated, escalated_at FROM andons WHERE id = $1 AND tenant_id = $2",
+                    "SELECT id, tenant_id, andon_number, site_id, work_center_id, issue_type, severity, description, status, raised_by, acknowledged_by, resolved_by, resolution, response_time_seconds, resolution_time_seconds, created_at, acknowledged_at, resolved_at, restart_authorized_by, restart_authorized_at, abnormal_condition_observed_at, contained_at, contained_by, contained_note, escalated, escalated_at, request_key FROM andons WHERE id = $1 AND tenant_id = $2",
                 )
                 .bind(id).bind(tenant_id)
                 .fetch_optional(&mut **tx)
@@ -600,7 +750,7 @@ impl OperationsService for DatabaseOperationsService {
         let (items, count) = with_tenant_tx(&self.pool, tenant_id, |tx| {
             Box::pin(async move {
                 let items: Vec<AndonRow> = sqlx::query_as(
-                    r#"SELECT id, tenant_id, andon_number, site_id, work_center_id, issue_type, severity, description, status, raised_by, acknowledged_by, resolved_by, resolution, response_time_seconds, resolution_time_seconds, created_at, acknowledged_at, resolved_at, restart_authorized_by, restart_authorized_at, abnormal_condition_observed_at, contained_at, contained_by, contained_note, escalated, escalated_at
+                    r#"SELECT id, tenant_id, andon_number, site_id, work_center_id, issue_type, severity, description, status, raised_by, acknowledged_by, resolved_by, resolution, response_time_seconds, resolution_time_seconds, created_at, acknowledged_at, resolved_at, restart_authorized_by, restart_authorized_at, abnormal_condition_observed_at, contained_at, contained_by, contained_note, escalated, escalated_at, request_key
                        FROM andons WHERE tenant_id=$1 AND ($2::text IS NULL OR status=$2) AND ($3::uuid IS NULL OR work_center_id=$3)
                        ORDER BY created_at DESC LIMIT $4 OFFSET $5"#,
                 )
@@ -613,6 +763,54 @@ impl OperationsService for DatabaseOperationsService {
                 )
                 .bind(tenant_id).bind(&status_owned).bind(work_center_id).fetch_one(&mut **tx).await
                 .map_err(|e| SenseiError::Database(format!("Failed to count andons: {e}")))?;
+                Ok((items, count))
+            })
+        }).await?;
+
+        Ok(paginate(
+            items.into_iter().map(andon_row_to_domain).collect(),
+            count,
+            page,
+            per_page,
+        ))
+    }
+
+    /// Scope-intersected listing (seventeenth audit item 4): when
+    /// `scope_site` is set the query is narrowed with `AND site_id = $2`,
+    /// so a site-scoped caller can never enumerate another site's andons.
+    async fn list_andons_scoped(
+        &self,
+        tenant_id: Uuid,
+        scope_site: Option<Uuid>,
+        status: Option<&str>,
+        work_center_id: Option<Uuid>,
+        page: Option<usize>,
+        per_page: Option<usize>,
+    ) -> Result<PaginatedResponse<Andon>> {
+        let page = page.unwrap_or(1).max(1);
+        let per_page = per_page.unwrap_or(20).clamp(1, 100);
+        let offset = (page - 1) * per_page;
+        let status_owned = status.map(|s| s.to_string());
+
+        let (items, count) = with_tenant_tx(&self.pool, tenant_id, |tx| {
+            Box::pin(async move {
+                let items: Vec<AndonRow> = sqlx::query_as(
+                    r#"SELECT id, tenant_id, andon_number, site_id, work_center_id, issue_type, severity, description, status, raised_by, acknowledged_by, resolved_by, resolution, response_time_seconds, resolution_time_seconds, created_at, acknowledged_at, resolved_at, restart_authorized_by, restart_authorized_at, abnormal_condition_observed_at, contained_at, contained_by, contained_note, escalated, escalated_at, request_key
+                       FROM andons WHERE tenant_id=$1
+                         AND ($2::uuid IS NULL OR site_id=$2)
+                         AND ($3::text IS NULL OR status=$3)
+                         AND ($4::uuid IS NULL OR work_center_id=$4)
+                       ORDER BY created_at DESC LIMIT $5 OFFSET $6"#,
+                )
+                .bind(tenant_id).bind(scope_site).bind(&status_owned).bind(work_center_id).bind(per_page as i64).bind(offset as i64)
+                .fetch_all(&mut **tx)
+                .await.map_err(|e| SenseiError::Database(format!("Failed to list scoped andons: {e}")))?;
+
+                let count: i64 = sqlx::query_scalar(
+                    "SELECT COUNT(*) FROM andons WHERE tenant_id=$1                         AND ($2::uuid IS NULL OR site_id=$2)                         AND ($3::text IS NULL OR status=$3)                         AND ($4::uuid IS NULL OR work_center_id=$4)",
+                )
+                .bind(tenant_id).bind(scope_site).bind(&status_owned).bind(work_center_id).fetch_one(&mut **tx).await
+                .map_err(|e| SenseiError::Database(format!("Failed to count scoped andons: {e}")))?;
                 Ok((items, count))
             })
         }).await?;
@@ -1003,7 +1201,7 @@ impl OperationsService for DatabaseOperationsService {
             Box::pin(async move {
                 sqlx::query_as::<_, AndonRow>(
                     r#"UPDATE andons SET issue_type=$1, severity=$2, description=$3 WHERE id=$4 AND tenant_id=$5
-                       RETURNING id, tenant_id, andon_number, site_id, work_center_id, issue_type, severity, description, status, raised_by, acknowledged_by, resolved_by, resolution, response_time_seconds, resolution_time_seconds, created_at, acknowledged_at, resolved_at, restart_authorized_by, restart_authorized_at, abnormal_condition_observed_at, contained_at, contained_by, contained_note, escalated, escalated_at"#,
+                       RETURNING id, tenant_id, andon_number, site_id, work_center_id, issue_type, severity, description, status, raised_by, acknowledged_by, resolved_by, resolution, response_time_seconds, resolution_time_seconds, created_at, acknowledged_at, resolved_at, restart_authorized_by, restart_authorized_at, abnormal_condition_observed_at, contained_at, contained_by, contained_note, escalated, escalated_at, request_key"#,
                 )
                 .bind(&andon.issue_type).bind(&andon.severity).bind(&andon.description).bind(id).bind(tenant_id)
                 .fetch_optional(&mut **tx)
@@ -1025,6 +1223,7 @@ impl OperationsService for DatabaseOperationsService {
         // The critical-safety rule applies to voiding too: a safety Andon
         // cannot avoid the resolve guard by going down the void path.
         let reason_owned = format!("VOIDED: {reason}");
+        let reason_for_event = reason_owned.clone();
         let row = with_tenant_tx(&self.pool, tenant_id, |tx| {
             Box::pin(async move {
                 let row = sqlx::query_as::<_, AndonRow>(
@@ -1071,7 +1270,25 @@ impl OperationsService for DatabaseOperationsService {
                 Ok(row)
             })
         }).await?;
-        Ok(andon_row_to_domain(row))
+        let a = andon_row_to_domain(row);
+        with_tenant_tx(&self.pool, tenant_id, move |tx| {
+            Box::pin(async move {
+                crate::ops::andon_events::write_andon_stream_event(
+                    tx,
+                    tenant_id,
+                    "andon.voided",
+                    a.id,
+                    a.site_id,
+                    a.work_center_id,
+                    actor_id,
+                    a.resolved_at.unwrap_or(Utc::now()),
+                    serde_json::json!({ "resolution": reason_for_event }),
+                )
+                .await
+            })
+        })
+        .await?;
+        return Ok(a);
     }
 
     // ── Update/Delete for Project ───────────────────────────────────────

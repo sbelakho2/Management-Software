@@ -112,6 +112,10 @@ pub const ANALYTICS_ROLE_PRIORITY: &[&str] = &[
     "quality",
     "planner",
     "supervisor",
+    "buyer",
+    "material_controller",
+    "npi",
+    "finance",
     "team_lead",
     "operator",
 ];
@@ -324,8 +328,10 @@ async fn collect_work_center_view(
     // unfinished units is NOT behind pitch; it is behind only when
     // completed < expected. The standard's takt comes from the WO's
     // standard_work_id -> standard_work_documents join; a standard row
-    // with no takt falls back to 60s; a MISSING standard means no pitch
-    // target exists at all (STANDARD UNAVAILABLE guidance).
+    // with no usable takt means NO target (seventeenth audit item 14 —
+    // an invented 60s expectation is never presented as plan-vs-actual),
+    // and a MISSING standard means no pitch target exists at all
+    // (STANDARD UNAVAILABLE guidance).
     // BEHIND_TOLERANCE_UNITS absorbs clock skew between the DB NOW() used
     // at insert and the service clock at read (a sub-second skew must
     // never manufacture a "behind" false positive).
@@ -377,10 +383,12 @@ async fn collect_work_center_view(
     ) in &pitch_gaps
     {
         let started = actual_start.or(*scheduled_start).or(Some(*created_at));
-        // Standard missing -> no pitch target; standard present -> takt
-        // (60s fallback when the standard carries no takt).
-        let expected = standard_id.map(|_| {
-            let takt_seconds = takt.filter(|t| *t > 0).unwrap_or(60) as f64;
+        // Seventeenth audit item 14: never manufacture a standard — a
+        // missing standard OR a missing usable takt yields NO target
+        // (the WHY line states the target is unavailable, so the UI can
+        // never present an invented 60s expectation as plan-vs-actual).
+        let expected = standard_id.zip(takt.filter(|t| *t > 0)).map(|(_, takt)| {
+            let takt_seconds = takt as f64;
             started
                 .map(|s| now.signed_duration_since(s).num_seconds().max(0) as f64 / takt_seconds)
                 .unwrap_or(0.0)

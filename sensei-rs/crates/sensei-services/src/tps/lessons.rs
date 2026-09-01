@@ -164,42 +164,14 @@ pub async fn record_lesson(
             "lesson_id and countermeasure are required".to_string(),
         ));
     }
-    // Sixteenth audit item 42: verified/adopted lessons are IMMUTABLE —
-    // a re-record of the same lesson_id becomes a NEW REVISION
-    // (lesson_id-rN) with status 'proposed'; the original evidence and
-    // history are never overwritten. Drafts (proposed/rejected) may be
-    // corrected in place.
-    let existing_status: Option<String> =
-        sqlx::query_scalar("SELECT status FROM lessons WHERE tenant_id = $1 AND lesson_id = $2")
-            .bind(tenant_id)
-            .bind(&lesson.lesson_id)
-            .fetch_optional(pool)
-            .await
-            .map_err(|e| SenseiError::Database(format!("Lesson lookup failed: {e}")))?;
-    let revision_id = match existing_status.as_deref() {
-        Some("verified") | Some("adopted") => {
-            let revision: i64 = sqlx::query_scalar(
-                "SELECT COUNT(*) FROM lessons WHERE tenant_id = $1 AND lesson_id LIKE $2",
-            )
-            .bind(tenant_id)
-            .bind(format!("{}-r%", lesson.lesson_id))
-            .fetch_one(pool)
-            .await
-            .unwrap_or(0);
-            let new_id = format!("{}-r{}", lesson.lesson_id, revision + 1);
-            let mut sig = lesson.context_signature.clone();
-            if let Some(obj) = sig.as_object_mut() {
-                obj.insert(
-                    "supersedes_lesson_id".to_string(),
-                    serde_json::json!(lesson.lesson_id),
-                );
-            }
-            // Continue with the revision id + supersedes signature.
-            (new_id, sig)
-        }
-        _ => (lesson.lesson_id.clone(), lesson.context_signature.clone()),
-    };
-    let (lesson_id, context_signature) = revision_id;
+    // Sixteenth audit item 42 + seventeenth audit item 10: verified/
+    // adopted lessons are IMMUTABLE — a re-record of the same lesson_id
+    // becomes a NEW REVISION (lesson_id-rN) with status 'proposed'. The
+    // ENTIRE decision (read the existing status + revision count + insert)
+    // runs inside ONE TenantTx: the FORCE-RLS lessons table is read
+    // through the tenant handle (a raw-pool read can fail to see the row,
+    // letting the later upsert silently overwrite a verified lesson), and
+    // the revision count is locked against concurrent writers.
 
     // Sixteenth audit item 43: NEW lessons require a STRUCTURED
     // applicability rule — one-key matching is too permissive.
@@ -217,8 +189,53 @@ pub async fn record_lesson(
 
     let id = Uuid::new_v4();
     let title = lesson.title.clone();
+    let lesson_id_in = lesson.lesson_id.clone();
+    let sig_in = lesson.context_signature.clone();
     with_tenant_tx(pool, tenant_id, move |tx| {
         Box::pin(async move {
+            // SERIALIZED immutable-lesson revision (seventeenth audit
+            // item 10): a transaction-scoped advisory lock per
+            // (tenant, lesson_id) makes concurrent revision counters
+            // impossible.
+            sqlx::query("SELECT pg_advisory_xact_lock(hashtext($1 || ':' || $2))")
+                .bind(tenant_id.to_string())
+                .bind(&lesson_id_in)
+                .execute(&mut **tx)
+                .await
+                .map_err(|e| SenseiError::Database(format!("Lesson lock failed: {e}")))?;
+
+            let existing_status: Option<String> = sqlx::query_scalar(
+                "SELECT status FROM lessons WHERE tenant_id = $1 AND lesson_id = $2",
+            )
+            .bind(tenant_id)
+            .bind(&lesson_id_in)
+            .fetch_optional(&mut **tx)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Lesson lookup failed: {e}")))?;
+
+            let (lesson_id, context_signature) = match existing_status.as_deref() {
+                Some("verified") | Some("adopted") => {
+                    let revision: i64 = sqlx::query_scalar(
+                        "SELECT COUNT(*) FROM lessons WHERE tenant_id = $1 AND lesson_id LIKE $2",
+                    )
+                    .bind(tenant_id)
+                    .bind(format!("{}-r%", lesson_id_in))
+                    .fetch_one(&mut **tx)
+                    .await
+                    .unwrap_or(0);
+                    let new_id = format!("{}-r{}", lesson_id_in, revision + 1);
+                    let mut sig = sig_in.clone();
+                    if let Some(obj) = sig.as_object_mut() {
+                        obj.insert(
+                            "supersedes_lesson_id".to_string(),
+                            serde_json::json!(lesson_id_in),
+                        );
+                    }
+                    (new_id, sig)
+                }
+                _ => (lesson_id_in.clone(), sig_in.clone()),
+            };
+
             sqlx::query(
                 "INSERT INTO lessons \
                      (id, tenant_id, lesson_id, title, source_problem_id, context_signature, \

@@ -13,7 +13,7 @@ use sensei_core::error::{Result, SenseiError};
 use crate::state::AppState;
 
 use sensei_services::tps::country_policy::{
-    self, locale_for_policy, upsert_country_policy, CountryPolicy,
+    self, locale_for_policy, publish_policy_version, CountryPolicy,
 };
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
@@ -55,16 +55,19 @@ pub async fn get_country(
     })))
 }
 
-/// `POST /api/v1/policies/country` — upsert a country policy bundle. A
-/// country without a record is a validation failure everywhere else in
-/// the system; adding one here is a policy act, never a code fork.
+/// `POST /api/v1/policies/country` — PUBLISH a country policy revision.
+/// Seventeenth audit item 13: the versioned publish operation is the ONLY
+/// write path — every change creates the historical compliance record
+/// (`country_policy_versions`); the unversioned upsert is never exposed.
+/// The caller needs the dedicated management permission, not the
+/// read-only audit permission.
 pub async fn upsert(
     user: AuthenticatedUser,
     State(state): State<AppState>,
     Json(policy): Json<CountryPolicy>,
 ) -> Result<Json<CountryPolicy>> {
-    user.require_permission("system:audit:read")?;
+    user.require_permission("system:country-policy:manage")?;
     let p = pool(&state)?;
-    upsert_country_policy(p, user.tenant_id, policy.clone()).await?;
+    publish_policy_version(p, user.tenant_id, policy.clone(), Some(user.user_id)).await?;
     Ok(Json(policy))
 }

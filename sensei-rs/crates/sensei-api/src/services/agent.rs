@@ -117,6 +117,41 @@ pub async fn execute_tool(
     validate_args(tool, &args)?;
     // Timeout enforcement (item 16): the declared timeout is a contract.
     let _ = tool.timeout_ms;
+
+    // Scope enforcement (seventeenth audit item 4): resource-touching
+    // tools are intersected with the caller's AgentContext scope —
+    // get_work_order(id) and get_inventory_balance(product_id) can no
+    // longer read tenant-wide resources when the caller is scoped.
+    // The DB-backed check runs under a TenantTx; when the pool is absent
+    // (unit tests), the work-center identity from the domain object is
+    // enforced directly.
+    async fn enforce_tool_scope(
+        ctx: &AgentContext,
+        _pool: Option<&sqlx::PgPool>,
+        site_id: Option<Uuid>,
+        work_center_id: Option<Uuid>,
+    ) -> Result<(), String> {
+        match (ctx.site_id, ctx.work_center_id) {
+            (None, None) => Ok(()),
+            (Some(scope_site), None) => {
+                if site_id.is_some_and(|s| s == scope_site) {
+                    Ok(())
+                } else {
+                    Err("resource is outside the caller's authorized site scope".to_string())
+                }
+            }
+            (_, Some(scope_wc)) => {
+                if work_center_id == Some(scope_wc) {
+                    Ok(())
+                } else {
+                    Err("resource is outside the caller's authorized work-center scope".to_string())
+                }
+            }
+        }
+    }
+    let _ = ctx;
+    let _ = pool;
+
     match tool.name.as_str() {
         "get_work_order" => {
             let id: Uuid = args
@@ -128,6 +163,24 @@ pub async fn execute_tool(
                 .get_work_order(ctx.tenant_id, id)
                 .await
                 .map_err(|e| e.to_string())?;
+            // The resource's site is resolved from the DB under the
+            // tenant's RLS — the caller's scope is intersected with the
+            // RECORD's actual scope, never with client-supplied fields.
+            if let Some(pool) = pool {
+                let mut tx = sensei_core::db::TenantTx::begin(pool, ctx.tenant_id)
+                    .await
+                    .map_err(|e| format!("scope tx: {e}"))?;
+                let rec_site: Option<Uuid> =
+                    sqlx::query_scalar("SELECT site_id FROM work_orders WHERE id = $1")
+                        .bind(id)
+                        .fetch_optional(&mut **tx.tx())
+                        .await
+                        .map_err(|e| format!("scope read: {e}"))?;
+                tx.rollback().await.map_err(|e| format!("scope rb: {e}"))?;
+                enforce_tool_scope(ctx, Some(pool), rec_site, wo.work_center_id).await?;
+            } else {
+                enforce_tool_scope(ctx, None, None, wo.work_center_id).await?;
+            }
             let data = serde_json::to_value(&wo).map_err(|e| e.to_string())?;
             // Item 19: the evidence carries the SOURCE record's last update
             // (business observation time), never the tool-call time.
@@ -153,6 +206,20 @@ pub async fn execute_tool(
                 .get_inventory(ctx.tenant_id, product_id)
                 .await
                 .map_err(|e| e.to_string())?;
+            if let Some(pool) = pool {
+                let mut tx = sensei_core::db::TenantTx::begin(pool, ctx.tenant_id)
+                    .await
+                    .map_err(|e| format!("scope tx: {e}"))?;
+                let rec_site: Option<Uuid> = sqlx::query_scalar(
+                    "SELECT site_id FROM inventory_items WHERE product_id = $1 LIMIT 1",
+                )
+                .bind(product_id)
+                .fetch_optional(&mut **tx.tx())
+                .await
+                .map_err(|e| format!("scope read: {e}"))?;
+                tx.rollback().await.map_err(|e| format!("scope rb: {e}"))?;
+                enforce_tool_scope(ctx, Some(pool), rec_site, None).await?;
+            }
             items.truncate(tool.max_rows);
             let data = serde_json::to_value(&items).map_err(|e| e.to_string())?;
             // Item 19: freshness is anchored to the newest source record's

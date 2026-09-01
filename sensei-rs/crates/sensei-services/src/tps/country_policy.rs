@@ -193,6 +193,19 @@ pub async fn publish_policy_version(
 ) -> Result<()> {
     with_tenant_tx(pool, tenant_id, move |tx| {
         Box::pin(async move {
+            // SERIALIZED revision allocation (seventeenth audit item 10):
+            // a transaction-scoped advisory lock per (tenant, country)
+            // makes concurrent MAX(revision)+1 writers impossible — two
+            // publishers cannot select the same next revision.
+            sqlx::query("SELECT pg_advisory_xact_lock(hashtext($1 || ':' || $2))")
+                .bind(tenant_id.to_string())
+                .bind(&policy.country)
+                .execute(&mut **tx)
+                .await
+                .map_err(|e| {
+                    SenseiError::Database(format!("Failed to lock policy revision: {e}"))
+                })?;
+
             // Close the previously-latest open version (valid_until IS NULL).
             sqlx::query(
                 "UPDATE country_policy_versions SET valid_until = NOW() \
@@ -239,6 +252,10 @@ pub async fn publish_policy_version(
             .execute(&mut **tx)
             .await
             .map_err(|e| SenseiError::Database(format!("Failed to publish policy version: {e}")))?;
+            // Seventeenth audit item 5: the policy revision bump is IN
+            // the publish transaction — a policy change without a
+            // revision change is impossible.
+            super::authorization_revisions::bump_in_tx(tx, tenant_id, "policy_revision").await?;
             Ok(())
         })
     })
@@ -333,6 +350,16 @@ pub async fn add_holiday(
     let name = name.to_string();
     with_tenant_tx(pool, tenant_id, move |tx| {
         Box::pin(async move {
+            // Seventeenth audit item 10: advisory lock per
+            // (tenant, jurisdiction, date) — no concurrent same-revision
+            // holidays.
+            sqlx::query("SELECT pg_advisory_xact_lock(hashtext($1 || ':' || $2 || ':' || $3))")
+                .bind(tenant_id.to_string())
+                .bind(&jurisdiction)
+                .bind(date.to_string())
+                .execute(&mut **tx)
+                .await
+                .map_err(|e| SenseiError::Database(format!("Holiday lock failed: {e}")))?;
             let revision = sqlx::query_scalar::<_, i64>(
                 "SELECT COALESCE(MAX(revision), 0) + 1 FROM jurisdiction_holidays \
                  WHERE tenant_id = $1 AND jurisdiction = $2 AND holiday_date = $3",

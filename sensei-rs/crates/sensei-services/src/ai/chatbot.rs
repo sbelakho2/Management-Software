@@ -53,7 +53,7 @@ fn default_top_p() -> f32 {
     0.9
 }
 fn default_system_prompt() -> String {
-    "You are Sensei AI, a helpful manufacturing operations assistant. You help users with quality management, maintenance, production, supply chain, finance, HR, and continuous improvement topics.".to_string()
+    "You are Starz Forge AI, the manufacturing operations assistant of the Starz group. You help users with quality management, maintenance, production, supply chain, finance, HR, and continuous improvement topics.".to_string()
 }
 
 impl Default for ChatbotConfig {
@@ -588,7 +588,7 @@ struct FallbackPattern {
 const FALLBACK_PATTERNS: &[FallbackPattern] = &[
     FallbackPattern {
         keywords: &["hello", "hi", "hey", "greetings"],
-        response: "Hello! I'm Sensei AI, your manufacturing assistant. How can I help you today?",
+        response: "Hello! I'm Starz Forge AI, your manufacturing assistant. How can I help you today?",
     },
     FallbackPattern {
         keywords: &["help", "what can you do", "capabilities"],
@@ -636,7 +636,7 @@ const FALLBACK_PATTERNS: &[FallbackPattern] = &[
     },
 ];
 
-const DEFAULT_FALLBACK: &str = "I'm Sensei AI, your manufacturing operations assistant. I can help with quality, maintenance, production, supply chain, finance, HR, and continuous improvement topics. What would you like to know more about?";
+const DEFAULT_FALLBACK: &str = "I'm Starz Forge AI, your manufacturing operations assistant. I can help with quality, maintenance, production, supply chain, finance, HR, and continuous improvement topics. What would you like to know more about?";
 
 /// Generate a fallback response using keyword matching.
 pub(crate) fn fallback_chat(input: &str) -> String {

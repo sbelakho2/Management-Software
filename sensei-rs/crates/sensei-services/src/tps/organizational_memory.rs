@@ -150,6 +150,29 @@ pub async fn record_observation(
         .map_err(|e| SenseiError::Database(format!("Failed to begin memory tx: {e}")))?;
     set_tenant_context(&mut tx, tenant_id).await?;
 
+    // Seventeenth audit item 10 — provenance CANNOT be fabricated: every
+    // claimed source event id must EXIST in this tenant's canonical
+    // operational_events log. Fake ids ("event-fake-1") are rejected
+    // before any insert/reinforce, so a caller cannot promote an
+    // observation to `repeated` with invented corroboration.
+    if !provenance_event_ids.is_empty() {
+        let existing_count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM operational_events WHERE tenant_id = $1              AND id::text = ANY($2)",
+        )
+        .bind(tenant_id)
+        .bind(&provenance_event_ids)
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(|e| SenseiError::Database(format!("Provenance lookup failed: {e}")))?;
+        if existing_count != provenance_event_ids.len() as i64 {
+            return Err(SenseiError::Validation(format!(
+                "provenance_event_ids must reference EXISTING canonical events in this tenant                  ({} of {} resolved)",
+                existing_count,
+                provenance_event_ids.len()
+            )));
+        }
+    }
+
     // The SAME signature (tier + kind + context_signature + anchors) is the
     // SAME memory: reinforce its occurrence count instead of duplicating.
     let existing: Option<MemoryRecord> = sqlx::query_as(

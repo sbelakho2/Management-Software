@@ -437,30 +437,110 @@ pub async fn validate_site(
                 )),
             }
 
-            // 2. Roles defined — at least one role slot for the tenant.
-            let role_slots: i64 =
-                sqlx::query_scalar("SELECT COUNT(*) FROM role_slots WHERE tenant_id = $1")
-                    .bind(tenant_id)
-                    .fetch_one(&mut **tx)
-                    .await
-                    .map_err(|e| SenseiError::Database(format!("Role slot count failed: {e}")))?;
+            // 2. Roles defined — at least one role slot SCOPED TO THIS
+            // SITE (seventeenth audit item 12: tenant-level slots from
+            // another site must not pass this site's readiness).
+            let role_slots: i64 = sqlx::query_scalar(
+                "SELECT COUNT(*) FROM role_slots WHERE tenant_id = $1 AND scope_site_id = $2",
+            )
+            .bind(tenant_id)
+            .bind(site_id)
+            .fetch_one(&mut **tx)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Role slot count failed: {e}")))?;
             checks.push((
                 "roles_defined".into(),
                 role_slots > 0,
-                format!("{role_slots} role slot(s) defined"),
+                format!("{role_slots} role slot(s) scoped to this site"),
             ));
 
-            // 3. Work centers created — at least one for the tenant.
-            let work_centers: i64 =
-                sqlx::query_scalar("SELECT COUNT(*) FROM work_centers WHERE tenant_id = $1")
-                    .bind(tenant_id)
-                    .fetch_one(&mut **tx)
-                    .await
-                    .map_err(|e| SenseiError::Database(format!("Work center count failed: {e}")))?;
+            // 3. Work centers created — at least one FOR THIS SITE
+            // (work_centers.site_id, migration 134).
+            let work_centers: i64 = sqlx::query_scalar(
+                "SELECT COUNT(*) FROM work_centers WHERE tenant_id = $1 AND site_id = $2",
+            )
+            .bind(tenant_id)
+            .bind(site_id)
+            .fetch_one(&mut **tx)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Work center count failed: {e}")))?;
             checks.push((
                 "work_centers_created".into(),
                 work_centers > 0,
-                format!("{work_centers} work center(s) created"),
+                format!("{work_centers} work center(s) in this site"),
+            ));
+
+            // 3b. Shifts/calendar — the site's employee assignments define
+            // at least one shift (seventeenth audit item 12).
+            let shifts: i64 = sqlx::query_scalar(
+                "SELECT COUNT(DISTINCT shift_id) FROM employee_assignments \
+                 WHERE tenant_id = $1 AND site_id = $2 AND shift_id IS NOT NULL",
+            )
+            .bind(tenant_id)
+            .bind(site_id)
+            .fetch_one(&mut **tx)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Shift count failed: {e}")))?;
+            checks.push((
+                "shifts_defined".into(),
+                shifts > 0,
+                format!("{shifts} shift(s) assigned in this site"),
+            ));
+
+            // 3c. Skill coverage — qualified principals assigned to this
+            // site's slots (sixteenth audit: skills are site-aware).
+            let skills: i64 = sqlx::query_scalar(
+                "SELECT COUNT(DISTINCT s.skill_id) FROM skills s \
+                 JOIN principal_assignments pa ON pa.principal_id = s.owner_principal_id \
+                 JOIN role_slots rs ON rs.id = pa.slot_id \
+                 WHERE s.tenant_id = $1 AND rs.scope_site_id = $2 AND pa.ended_at IS NULL \
+                   AND s.status = 'qualified'",
+            )
+            .bind(tenant_id)
+            .bind(site_id)
+            .fetch_one(&mut **tx)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Skill coverage failed: {e}")))?;
+            checks.push((
+                "skill_coverage".into(),
+                skills > 0,
+                format!("{skills} qualified skill(s) on this site's principals"),
+            ));
+
+            // 3d. Integrations healthy — the manifest declares
+            // integrations and none is marked failed in this site's log.
+            let integrations_ok: bool = {
+                let declared: Vec<serde_json::Value> = serde_json::from_value(
+                    sqlx::query_scalar::<_, serde_json::Value>(
+                        "SELECT integrations FROM site_manifests \
+                         WHERE tenant_id = $1 AND site_id = $2",
+                    )
+                    .bind(tenant_id)
+                    .bind(site_id)
+                    .fetch_one(&mut **tx)
+                    .await
+                    .map_err(|e| SenseiError::Database(format!("Integrations read failed: {e}")))?,
+                )
+                .unwrap_or_default();
+                let failures: i64 = sqlx::query_scalar(
+                    "SELECT COUNT(*) FROM integration_status \
+                     WHERE tenant_id = $1 AND site_id = $2 AND status = 'failed'",
+                )
+                .bind(tenant_id)
+                .bind(site_id)
+                .fetch_one(&mut **tx)
+                .await
+                .unwrap_or(0);
+                !declared.is_empty() && failures == 0
+            };
+            checks.push((
+                "integrations_healthy".into(),
+                integrations_ok,
+                if integrations_ok {
+                    "integrations declared and healthy".to_string()
+                } else {
+                    "no declared integrations or a failed integration".to_string()
+                },
             ));
 
             // 4. Capabilities mapped — the manifest declares at least one.
@@ -489,11 +569,31 @@ pub async fn validate_site(
                 format!("{metrics} metric definition(s) seeded (need >= 5)"),
             ));
 
-            // 6. Replication policy valid — no constraints declared.
+            // 6. Replication policy valid — the site's replication log
+            // must exist and contain no rows stuck in failed state with
+            // no retry scheduled (seventeenth audit item 12: this is no
+            // longer hardcoded true).
+            let (rep_entries, rep_failed): (i64, i64) = sqlx::query_as(
+                "SELECT COUNT(*)::bigint, \
+                        COUNT(*) FILTER (WHERE status = 'failed' \
+                                         AND next_attempt_at <= NOW())::bigint \
+                 FROM site_replication_log \
+                 WHERE tenant_id = $1 AND site_id = $2",
+            )
+            .bind(tenant_id)
+            .bind(site_id)
+            .fetch_one(&mut **tx)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Replication check failed: {e}")))?;
+            let rep_valid = rep_failed == 0;
             checks.push((
                 "replication_policy_valid".into(),
-                true,
-                "no replication constraints declared".to_string(),
+                rep_valid,
+                if rep_entries == 0 {
+                    "no replication entries — queue is idle".to_string()
+                } else {
+                    format!("{rep_entries} replication entry(ies), {rep_failed} retry-due failed")
+                },
             ));
 
             let ready = checks.iter().all(|(_, ok, _)| *ok);
@@ -541,27 +641,263 @@ pub async fn validate_site(
 /// Move a VALIDATED site to 'active' — the guarded ladder step
 /// validated → active. A site in any other status is rejected, so a site
 /// can never skip its operational qualification.
-pub async fn activate_site(pool: &PgPool, tenant_id: Uuid, site_id: Uuid) -> Result<()> {
-    with_tenant_tx(pool, tenant_id, |tx| {
+/// The FULL six-stage lifecycle ladder (seventeenth audit item 12): the
+/// previous implementation accepted only draft → validated → active and
+/// let the intermediate stages exist only in the CHECK constraint. Every
+/// transition now has a REAL gate — a site can only advance one step,
+/// and the step's prerequisite must hold:
+///
+/// - validated → provisioning: the validation report exists and is ready
+/// - provisioning → ready_for_training: skills + shifts + roles + work
+///   centers exist FOR THIS SITE (the qualification checks)
+/// - ready_for_training → operational_qualification: at least one
+///   training/qualification evidence record exists
+/// - operational_qualification → active: the site's replication policy
+///   passes and no failed integration exists
+fn lifecycle_order() -> &'static [&'static str] {
+    &[
+        "draft",
+        "validated",
+        "provisioning",
+        "ready_for_training",
+        "operational_qualification",
+        "active",
+    ]
+}
+
+async fn advance_lifecycle(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    tenant_id: Uuid,
+    site_id: Uuid,
+    from: &str,
+    to: &str,
+) -> Result<()> {
+    let order = lifecycle_order();
+    let from_idx = order
+        .iter()
+        .position(|s| *s == from)
+        .ok_or_else(|| SenseiError::Validation(format!("unknown lifecycle state {from}")))?;
+    let to_idx = order
+        .iter()
+        .position(|s| *s == to)
+        .ok_or_else(|| SenseiError::Validation(format!("unknown lifecycle state {to}")))?;
+    if to_idx != from_idx + 1 {
+        return Err(SenseiError::Validation(format!(
+            "lifecycle is a one-step guarded ladder: {from} → {to} is not the next step"
+        )));
+    }
+    let updated = sqlx::query(
+        "UPDATE site_manifests SET status = $3, updated_at = NOW() \
+         WHERE tenant_id = $1 AND site_id = $2 AND status = $4",
+    )
+    .bind(tenant_id)
+    .bind(site_id)
+    .bind(to)
+    .bind(from)
+    .execute(&mut **tx)
+    .await
+    .map_err(|e| SenseiError::Database(format!("Lifecycle advance failed: {e}")))?;
+    if updated.rows_affected() == 0 {
+        return Err(SenseiError::Validation(format!(
+            "site {site_id} is not in state '{from}' — the ladder is strictly sequential"
+        )));
+    }
+    Ok(())
+}
+
+async fn site_qualification_checks(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    tenant_id: Uuid,
+    site_id: Uuid,
+) -> Result<()> {
+    let role_slots: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM role_slots WHERE tenant_id = $1 AND scope_site_id = $2",
+    )
+    .bind(tenant_id)
+    .bind(site_id)
+    .fetch_one(&mut **tx)
+    .await
+    .map_err(|e| SenseiError::Database(format!("Role slot count failed: {e}")))?;
+    if role_slots == 0 {
+        return Err(SenseiError::Validation(
+            "no role slots scoped to this site".to_string(),
+        ));
+    }
+    let work_centers: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM work_centers WHERE tenant_id = $1 AND site_id = $2",
+    )
+    .bind(tenant_id)
+    .bind(site_id)
+    .fetch_one(&mut **tx)
+    .await
+    .map_err(|e| SenseiError::Database(format!("Work center count failed: {e}")))?;
+    if work_centers == 0 {
+        return Err(SenseiError::Validation(
+            "no work centers in this site".to_string(),
+        ));
+    }
+    let shifts: i64 = sqlx::query_scalar(
+        "SELECT COUNT(DISTINCT shift_id) FROM employee_assignments \
+         WHERE tenant_id = $1 AND site_id = $2 AND shift_id IS NOT NULL",
+    )
+    .bind(tenant_id)
+    .bind(site_id)
+    .fetch_one(&mut **tx)
+    .await
+    .map_err(|e| SenseiError::Database(format!("Shift count failed: {e}")))?;
+    if shifts == 0 {
+        return Err(SenseiError::Validation(
+            "no shifts assigned in this site".to_string(),
+        ));
+    }
+    let skills: i64 = sqlx::query_scalar(
+        "SELECT COUNT(DISTINCT s.skill_id) FROM skills s \
+         JOIN principal_assignments pa ON pa.principal_id = s.owner_principal_id \
+         JOIN role_slots rs ON rs.id = pa.slot_id \
+         WHERE s.tenant_id = $1 AND rs.scope_site_id = $2 AND pa.ended_at IS NULL \
+           AND s.status = 'qualified'",
+    )
+    .bind(tenant_id)
+    .bind(site_id)
+    .fetch_one(&mut **tx)
+    .await
+    .map_err(|e| SenseiError::Database(format!("Skill coverage failed: {e}")))?;
+    if skills == 0 {
+        return Err(SenseiError::Validation(
+            "no qualified skills on this site's principals".to_string(),
+        ));
+    }
+    Ok(())
+}
+
+/// Advance a site one step on the guarded ladder. The gate for each step
+/// is checked INSIDE the same transaction as the transition.
+pub async fn advance_site_lifecycle(
+    pool: &PgPool,
+    tenant_id: Uuid,
+    site_id: Uuid,
+    to: &str,
+) -> Result<()> {
+    let to = to.to_string();
+    with_tenant_tx(pool, tenant_id, move |tx| {
         Box::pin(async move {
-            let updated = sqlx::query(
-                "UPDATE site_manifests
-                    SET status = 'active', updated_at = NOW()
-                  WHERE tenant_id = $1 AND site_id = $2 AND status = 'validated'",
+            let current: String = sqlx::query_scalar(
+                "SELECT status FROM site_manifests WHERE tenant_id = $1 AND site_id = $2",
             )
             .bind(tenant_id)
             .bind(site_id)
-            .execute(&mut **tx)
+            .fetch_one(&mut **tx)
             .await
-            .map_err(|e| SenseiError::Database(format!("Site activation failed: {e}")))?;
-            if updated.rows_affected() == 0 {
-                return Err(SenseiError::Validation(format!(
-                    "site {site_id} cannot be activated: only a 'validated' site \
-                     advances to 'active' (guarded ladder draft → validated → active)"
-                )));
+            .map_err(|e| SenseiError::Database(format!("Site status read failed: {e}")))?;
+            match (current.as_str(), to.as_str()) {
+                ("draft", "validated") => {
+                    advance_lifecycle(tx, tenant_id, site_id, "draft", "validated").await?;
+                }
+                ("validated", "provisioning") => {
+                    let report_ready: bool = sqlx::query_scalar(
+                        "SELECT (validation_report->>'ready')::boolean \
+                         FROM site_manifests WHERE tenant_id = $1 AND site_id = $2",
+                    )
+                    .bind(tenant_id)
+                    .bind(site_id)
+                    .fetch_one(&mut **tx)
+                    .await
+                    .map_err(|e| SenseiError::Database(format!("Report read failed: {e}")))?;
+                    if !report_ready {
+                        return Err(SenseiError::Validation(
+                            "validation report is not ready — run validate_site first".to_string(),
+                        ));
+                    }
+                    advance_lifecycle(tx, tenant_id, site_id, "validated", "provisioning").await?;
+                }
+                ("provisioning", "ready_for_training") => {
+                    site_qualification_checks(tx, tenant_id, site_id).await?;
+                    advance_lifecycle(tx, tenant_id, site_id, "provisioning", "ready_for_training")
+                        .await?;
+                }
+                ("ready_for_training", "operational_qualification") => {
+                    // At least one training/qualification evidence record
+                    // must exist for this site's principals.
+                    let evidence: i64 = sqlx::query_scalar(
+                        "SELECT COUNT(*) FROM skill_evidence se \
+                         JOIN principal_assignments pa ON pa.principal_id = se.principal_id \
+                         JOIN role_slots rs ON rs.id = pa.slot_id \
+                         WHERE se.tenant_id = $1 AND rs.scope_site_id = $2 \
+                           AND pa.ended_at IS NULL",
+                    )
+                    .bind(tenant_id)
+                    .bind(site_id)
+                    .fetch_one(&mut **tx)
+                    .await
+                    .map_err(|e| SenseiError::Database(format!("Evidence count failed: {e}")))?;
+                    if evidence == 0 {
+                        return Err(SenseiError::Validation(
+                            "no qualification evidence for this site's principals".to_string(),
+                        ));
+                    }
+                    advance_lifecycle(
+                        tx,
+                        tenant_id,
+                        site_id,
+                        "ready_for_training",
+                        "operational_qualification",
+                    )
+                    .await?;
+                }
+                ("operational_qualification", "active") => {
+                    let failed: i64 = sqlx::query_scalar(
+                        "SELECT COUNT(*) FROM site_replication_log \
+                         WHERE tenant_id = $1 AND site_id = $2 \
+                           AND status = 'failed' AND next_attempt_at <= NOW()",
+                    )
+                    .bind(tenant_id)
+                    .bind(site_id)
+                    .fetch_one(&mut **tx)
+                    .await
+                    .unwrap_or(0);
+                    if failed > 0 {
+                        return Err(SenseiError::Validation(
+                            "replication has retry-due failed entries — activation blocked"
+                                .to_string(),
+                        ));
+                    }
+                    let integ_failed: i64 = sqlx::query_scalar(
+                        "SELECT COUNT(*) FROM integration_status \
+                         WHERE tenant_id = $1 AND site_id = $2 AND status = 'failed'",
+                    )
+                    .bind(tenant_id)
+                    .bind(site_id)
+                    .fetch_one(&mut **tx)
+                    .await
+                    .unwrap_or(0);
+                    if integ_failed > 0 {
+                        return Err(SenseiError::Validation(
+                            "a site integration is failed — activation blocked".to_string(),
+                        ));
+                    }
+                    advance_lifecycle(
+                        tx,
+                        tenant_id,
+                        site_id,
+                        "operational_qualification",
+                        "active",
+                    )
+                    .await?;
+                }
+                _ => {
+                    return Err(SenseiError::Validation(format!(
+                        "no guarded transition from '{current}' to '{to}'"
+                    )))
+                }
             }
             Ok(())
         })
     })
     .await
+}
+
+/// Kept for API compatibility: activation is now the LAST rung of the
+/// guarded ladder — only an 'operational_qualification' site activates.
+pub async fn activate_site(pool: &PgPool, tenant_id: Uuid, site_id: Uuid) -> Result<()> {
+    advance_site_lifecycle(pool, tenant_id, site_id, "active").await
 }

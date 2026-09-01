@@ -2109,6 +2109,10 @@ pub fn build_router(state: AppState) -> Router {
             post(routes::site_manifest::validate_site),
         )
         .route(
+            "/api/v1/sites/{site_id}/lifecycle",
+            post(routes::site_manifest::advance_lifecycle),
+        )
+        .route(
             "/api/v1/sites/{site_id}/activate",
             post(routes::site_manifest::activate_site),
         )
