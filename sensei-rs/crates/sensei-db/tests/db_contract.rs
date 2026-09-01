@@ -3998,6 +3998,7 @@ async fn twi_skill_graph_coverage_and_bus_factor() {
             level,
             evidence(bob),
             None,
+            None,
         )
         .await
         .expect("alice walks the qualification ladder to trainer");
@@ -4009,6 +4010,7 @@ async fn twi_skill_graph_coverage_and_bus_factor() {
         skill_uuid,
         sensei_services::tps::skills::SkillLevel::Learning,
         evidence(alice),
+        None,
         None,
     )
     .await
@@ -4045,6 +4047,7 @@ async fn twi_skill_graph_coverage_and_bus_factor() {
             skill_uuid,
             level,
             evidence(alice),
+            None,
             None,
         )
         .await
@@ -4168,6 +4171,7 @@ async fn twi_qualification_ladder_enforced() {
         sensei_services::tps::skills::SkillLevel::Independent,
         evidence(user2),
         None,
+        None,
     )
     .await;
     assert!(
@@ -4184,6 +4188,7 @@ async fn twi_qualification_ladder_enforced() {
         sensei_services::tps::skills::SkillLevel::Learning,
         evidence(user2),
         None,
+        None,
     )
     .await
     .expect("unexposed -> learning is an adjacent move");
@@ -4196,6 +4201,7 @@ async fn twi_qualification_ladder_enforced() {
         skill_uuid,
         sensei_services::tps::skills::SkillLevel::Trainer,
         evidence(user2),
+        None,
         None,
     )
     .await;
@@ -4218,6 +4224,7 @@ async fn twi_qualification_ladder_enforced() {
             level,
             evidence(user1),
             None,
+            None,
         )
         .await
         .expect("adjacent promotion on the ladder");
@@ -4232,6 +4239,7 @@ async fn twi_qualification_ladder_enforced() {
         skill_uuid,
         sensei_services::tps::skills::SkillLevel::Learning,
         evidence(user1),
+        None,
         None,
     )
     .await;
@@ -4254,6 +4262,7 @@ async fn twi_qualification_ladder_enforced() {
             "standard_revision": "rev",
             "observed_cycles": 3,
         })),
+        None,
     )
     .await;
     assert!(
@@ -4275,6 +4284,7 @@ async fn twi_qualification_ladder_enforced() {
             "standard_revision": "AOI-OP-01/r7",
             "observed_cycles": 5,
         })),
+        None,
     )
     .await
     .expect("prior competence bypass allows the jump");
@@ -4305,6 +4315,7 @@ async fn twi_qualification_ladder_enforced() {
             level,
             evidence(user1),
             None,
+            None,
         )
         .await
         .expect("user2 walks skill2 to independent");
@@ -4322,6 +4333,7 @@ async fn twi_qualification_ladder_enforced() {
             skill2,
             level,
             evidence(user1),
+            None,
             None,
         )
         .await
@@ -5695,6 +5707,7 @@ async fn turnover_risk_flags_single_point_concentration() {
             level,
             evidence(bob),
             None,
+            None,
         )
         .await
         .expect("alice walks the ladder to trainer");
@@ -5725,6 +5738,7 @@ async fn turnover_risk_flags_single_point_concentration() {
                 reflow,
                 level,
                 evidence(assessor),
+                None,
                 None,
             )
             .await
@@ -7233,6 +7247,7 @@ async fn recommender_and_departure_forecast() {
                 skill,
                 level,
                 evidence(assessor),
+                None,
                 None,
             )
             .await
@@ -9445,6 +9460,7 @@ async fn invariant_expired_trainer_does_not_count() {
             "standard_revision": "CP-01/r1",
             "observed_cycles": 5,
         })),
+        None,
     )
     .await
     .expect("user1 qualifies as trainer");
@@ -9461,6 +9477,7 @@ async fn invariant_expired_trainer_does_not_count() {
             "standard_revision": "CP-01/r1",
             "observed_cycles": 5,
         })),
+        None,
     )
     .await
     .expect("user2 qualifies as independent");
@@ -11262,4 +11279,145 @@ async fn seventeenth_audit_full_path_invariants() {
             "the error names the bound: {err}"
         );
     }
+}
+
+/// Seventeenth audit item (TWI shift scoping): shift_id is a REAL scope
+/// dimension — a qualification is anchored to the shift it was
+/// demonstrated on and coverage queries filter on that dimension, never
+/// on slot-name substring matching.
+#[tokio::test]
+async fn twi_shift_id_is_a_real_scope_dimension() {
+    let _serial = DB_LOCK.lock().await;
+    let Some(pool) = connect().await else { return };
+    sensei_db::migrations::run_migrations(&pool)
+        .await
+        .expect("migration chain");
+
+    let tenant_id = uuid::Uuid::new_v4();
+    let site_id = uuid::Uuid::new_v4();
+    let shift_a = uuid::Uuid::new_v4();
+    let shift_b = uuid::Uuid::new_v4();
+    let principal = uuid::Uuid::new_v4();
+    sqlx::query("INSERT INTO tenants (id, name, slug) VALUES ($1, 'shift', 'shift')")
+        .bind(tenant_id)
+        .execute(&pool)
+        .await
+        .expect("tenant");
+    sqlx::query(
+        "INSERT INTO sites (id, tenant_id, site_code, name) VALUES ($1, $2, 'SH', 'Shift Site')",
+    )
+    .bind(site_id)
+    .bind(tenant_id)
+    .execute(&pool)
+    .await
+    .expect("site");
+    sqlx::query(
+        "INSERT INTO shifts (id, tenant_id, site_id, name, start_time, end_time) VALUES \
+         ($1, $2, $3, 'Day', '08:00', '16:00'), ($4, $5, $6, 'Night', '20:00', '04:00')",
+    )
+    .bind(shift_a)
+    .bind(tenant_id)
+    .bind(site_id)
+    .bind(shift_b)
+    .bind(tenant_id)
+    .bind(site_id)
+    .execute(&pool)
+    .await
+    .expect("shifts");
+    sqlx::query(
+        "INSERT INTO users (id, tenant_id, email, name, password_hash) \
+         VALUES ($1, $2, 'shift@starzforge.local', 'S', 'x')",
+    )
+    .bind(principal)
+    .bind(tenant_id)
+    .execute(&pool)
+    .await
+    .expect("user");
+    let skill_id = uuid::Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO skills (id, tenant_id, skill_id, name, critical) \
+         VALUES ($1, $2, 'SK-SHIFT', 'SMT Operator', FALSE)",
+    )
+    .bind(skill_id)
+    .bind(tenant_id)
+    .execute(&pool)
+    .await
+    .expect("skill");
+
+    // The principal must hold an active slot assignment on the site for
+    // the coverage JOIN (assignment is the scope source).
+    let slot_id = uuid::Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO role_slots (id, tenant_id, role_name, slot_name, scope_site_id) \
+         VALUES ($1, $2, 'operator', 'Op_Shift_A', $3)",
+    )
+    .bind(slot_id)
+    .bind(tenant_id)
+    .bind(site_id)
+    .execute(&pool)
+    .await
+    .expect("slot");
+    sqlx::query(
+        "INSERT INTO principal_assignments (tenant_id, principal_id, slot_id) \
+         VALUES ($1, $2, $3)",
+    )
+    .bind(tenant_id)
+    .bind(principal)
+    .bind(slot_id)
+    .execute(&pool)
+    .await
+    .expect("assignment");
+
+    use sensei_services::tps::skills::{record_qualification, skill_coverage_at, SkillLevel};
+
+    // Demonstrate the skill on shift A.
+    record_qualification(
+        &pool,
+        tenant_id,
+        principal,
+        skill_id,
+        SkillLevel::Independent,
+        serde_json::json!({
+            "standard_revision": "rev",
+            "assessor_id": uuid::Uuid::new_v4().to_string(),
+            "observed_cycles": 3,
+            "checks_passed": ["wiring", "soldering"],
+        }),
+        // RecognitionOfPriorCompetence: the jump Unexposed -> Independent
+        // is justified by a DIFFERENT assessor.
+        Some(serde_json::json!({
+            "justification": "5 years SMT operator experience",
+            "assessor_id": uuid::Uuid::new_v4().to_string(),
+            "standard_revision": "rev",
+            "observed_cycles": 3,
+        })),
+        Some(shift_a),
+    )
+    .await
+    .expect("qualify on shift A");
+
+    // Shift-A coverage sees the qualification; shift-B coverage does not.
+    let cov_a = skill_coverage_at(&pool, tenant_id, Some(site_id), Some(shift_a))
+        .await
+        .expect("coverage A");
+    assert_eq!(
+        cov_a
+            .iter()
+            .find(|c| c.skill_id == "SK-SHIFT")
+            .map(|c| c.bus_factor),
+        Some(1),
+        "shift A coverage counts the shift-A qualification"
+    );
+    let cov_b = skill_coverage_at(&pool, tenant_id, Some(site_id), Some(shift_b))
+        .await
+        .expect("coverage B");
+    assert_eq!(
+        cov_b
+            .iter()
+            .find(|c| c.skill_id == "SK-SHIFT")
+            .map(|c| c.bus_factor),
+        Some(0),
+        "shift B coverage NEVER sees a shift-A qualification — the slot-name \
+         substring approximation is gone"
+    );
 }

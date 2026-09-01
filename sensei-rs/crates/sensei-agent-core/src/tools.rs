@@ -223,14 +223,14 @@ pub struct ToolExecutor {
     /// The persisted execution log (in-memory for now, item 59): keyed by
     /// the execution key string; a retry with the SAME key replays the
     /// stored result instead of executing again.
-    execution_results: std::collections::HashMap<String, serde_json::Value>,
+    execution_results: super::cache::BoundedMap<serde_json::Value>,
 }
 
 impl ToolExecutor {
     pub fn new(policy: PolicyEngine) -> Self {
         Self {
             policy,
-            execution_results: std::collections::HashMap::new(),
+            execution_results: super::cache::BoundedMap::new(512),
         }
     }
 

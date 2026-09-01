@@ -44,11 +44,73 @@ impl CacheDomain {
     }
 }
 
+/// Capacity-bound cache helper: insertion-order eviction keeps every
+/// cache bounded (seventeenth audit performance item) — the L0/L1/L2
+/// maps and the tool replay store can no longer grow without limit.
+#[derive(Debug, Clone)]
+pub struct BoundedMap<V> {
+    entries: std::collections::HashMap<String, V>,
+    order: std::collections::VecDeque<String>,
+    capacity: usize,
+}
+
+impl<V> BoundedMap<V> {
+    pub fn new(capacity: usize) -> Self {
+        Self {
+            entries: std::collections::HashMap::new(),
+            order: std::collections::VecDeque::new(),
+            capacity: capacity.max(1),
+        }
+    }
+
+    pub fn get(&self, key: &str) -> Option<&V> {
+        self.entries.get(key)
+    }
+
+    pub fn insert(&mut self, key: String, value: V) {
+        match self.entries.entry(key.clone()) {
+            std::collections::hash_map::Entry::Occupied(mut e) => {
+                e.insert(value);
+                return;
+            }
+            std::collections::hash_map::Entry::Vacant(v) => {
+                v.insert(value);
+            }
+        }
+        self.order.push_back(key);
+        while self.order.len() > self.capacity {
+            if let Some(evicted) = self.order.pop_front() {
+                self.entries.remove(&evicted);
+            }
+        }
+    }
+
+    pub fn remove(&mut self, key: &str) {
+        self.entries.remove(key);
+        self.order.retain(|k| k != key);
+    }
+
+    pub fn len(&self) -> usize {
+        self.entries.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
+}
+
 /// L0 — serialized canonical context sections (item 4): model-independent
-/// prompt sections keyed by section id + revision. Cheap RAM.
-#[derive(Debug, Default)]
+/// prompt sections keyed by section id + revision. Cheap RAM, bounded.
+#[derive(Debug)]
 pub struct L0Cache {
-    entries: std::collections::HashMap<String, String>,
+    entries: BoundedMap<String>,
+}
+impl Default for L0Cache {
+    fn default() -> Self {
+        Self {
+            entries: BoundedMap::new(4096),
+        }
+    }
 }
 impl L0Cache {
     pub fn get(&self, section_id: &str, revision: u64) -> Option<&str> {
@@ -64,9 +126,16 @@ impl L0Cache {
 
 /// L1 — retrieval cache: resolved context references (query shape +
 /// scope + knowledge revisions → source ids). Invalidate aggressively.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct L1Cache {
-    entries: std::collections::HashMap<String, Vec<String>>,
+    entries: BoundedMap<Vec<String>>,
+}
+impl Default for L1Cache {
+    fn default() -> Self {
+        Self {
+            entries: BoundedMap::new(2048),
+        }
+    }
 }
 impl L1Cache {
     pub fn get(&self, key: &str) -> Option<&Vec<String>> {
@@ -83,10 +152,17 @@ impl L1Cache {
 /// L2 — assembled context bundle cache (item 4/23): keyed by the SECURITY
 /// DOMAIN (salt) + source revision set + policy revision. A bundle is
 /// reused only when the full key matches — restricted context never
-/// crosses principals.
-#[derive(Debug, Default)]
+/// crosses principals. Bounded.
+#[derive(Debug)]
 pub struct L2Cache {
-    entries: std::collections::HashMap<String, serde_json::Value>,
+    entries: BoundedMap<serde_json::Value>,
+}
+impl Default for L2Cache {
+    fn default() -> Self {
+        Self {
+            entries: BoundedMap::new(1024),
+        }
+    }
 }
 impl L2Cache {
     pub fn key(domain: &CacheDomain, source_revisions: &[String]) -> String {

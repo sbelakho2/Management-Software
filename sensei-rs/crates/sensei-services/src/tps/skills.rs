@@ -314,6 +314,7 @@ pub async fn record_qualification(
     level: SkillLevel,
     evidence: serde_json::Value,
     prior_competence: Option<serde_json::Value>,
+    shift_id: Option<Uuid>,
 ) -> Result<()> {
     let level_str = level.as_str().to_string();
     let principal_str = principal_id.to_string();
@@ -454,12 +455,13 @@ pub async fn record_qualification(
 
             sqlx::query(
                 "INSERT INTO skill_qualifications \
-                    (id, tenant_id, principal_id, skill_id, level, demonstrated_at, evidence) \
-                 VALUES ($1, $2, $3, $4, $5, NOW(), $6) \
+                    (id, tenant_id, principal_id, skill_id, level, demonstrated_at, evidence, shift_id) \
+                 VALUES ($1, $2, $3, $4, $5, NOW(), $6, $7) \
                  ON CONFLICT (tenant_id, principal_id, skill_id) DO UPDATE \
                  SET level = EXCLUDED.level, \
                      demonstrated_at = NOW(), \
                      evidence = EXCLUDED.evidence, \
+                     shift_id = EXCLUDED.shift_id, \
                      updated_at = NOW()",
             )
             .bind(Uuid::new_v4())
@@ -468,6 +470,7 @@ pub async fn record_qualification(
             .bind(skill_id)
             .bind(&level_str)
             .bind(&evidence)
+            .bind(shift_id)
             .execute(&mut **tx)
             .await
             .map_err(|e| SenseiError::Database(format!("Failed to record qualification: {e}")))?;
@@ -530,31 +533,34 @@ pub async fn skill_coverage_at(
     pool: &sqlx::PgPool,
     tenant_id: Uuid,
     site_id: Option<Uuid>,
-    shift: Option<&str>,
+    shift_id: Option<Uuid>,
 ) -> Result<Vec<SkillCoverage>> {
-    let shift = shift.map(str::to_string);
     with_tenant_tx(pool, tenant_id, move |tx| {
         Box::pin(async move {
             let rows: Vec<(String, String, bool, i64, i64)> = sqlx::query_as(
                 r#"SELECT s.skill_id, s.name, s.critical,
                           COUNT(*) FILTER (WHERE q.level IN ('independent','trainer')
-                                           AND (q.expires_at IS NULL OR q.expires_at > NOW())),
+                                           AND (q.expires_at IS NULL OR q.expires_at > NOW())
+                                           AND ($2::uuid IS NULL OR pa.principal_id IS NOT NULL)),
                           COUNT(*) FILTER (WHERE q.level = 'trainer'
-                                           AND (q.expires_at IS NULL OR q.expires_at > NOW()))
+                                           AND (q.expires_at IS NULL OR q.expires_at > NOW())
+                                           AND ($2::uuid IS NULL OR pa.principal_id IS NOT NULL))
                    FROM skills s
                    LEFT JOIN skill_qualifications q ON q.skill_id = s.id AND q.tenant_id = s.tenant_id
+                         AND ($3::uuid IS NULL OR q.shift_id = $3)
                    LEFT JOIN principal_assignments pa
                           ON pa.principal_id = q.principal_id AND pa.tenant_id = q.tenant_id
                          AND pa.ended_at IS NULL
-                   LEFT JOIN role_slots rs ON rs.id = pa.slot_id AND rs.tenant_id = pa.tenant_id
+                         AND ($2::uuid IS NULL OR pa.principal_id IN (
+                             SELECT pa2.principal_id FROM principal_assignments pa2
+                             JOIN role_slots rs2 ON rs2.id = pa2.slot_id
+                             WHERE pa2.ended_at IS NULL AND rs2.scope_site_id = $2))
                    WHERE s.tenant_id = $1
-                     AND ($2::uuid IS NULL OR rs.scope_site_id = $2)
-                     AND ($3::text IS NULL OR rs.slot_name LIKE '%' || $3 || '%')
                    GROUP BY s.id, s.skill_id, s.name, s.critical"#,
             )
             .bind(tenant_id)
             .bind(site_id)
-            .bind(shift.as_deref())
+            .bind(shift_id)
             .fetch_all(&mut **tx)
             .await
             .map_err(|e| SenseiError::Database(format!("Site skill coverage failed: {e}")))?;

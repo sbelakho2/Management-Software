@@ -54,6 +54,11 @@ pub struct CreateJobStandardRequest {
 /// skill ladder).
 #[derive(Debug, Deserialize)]
 pub struct QualifyRequest {
+    /// The shift the qualification was demonstrated on (seventeenth
+    /// audit item: shift_id is a REAL scope dimension, never a
+    /// slot-name substring).
+    #[serde(default)]
+    pub shift_id: Option<Uuid>,
     pub principal_id: Uuid,
     pub level: SkillLevel,
     /// The demonstration evidence (certification ref, observation record,
@@ -161,6 +166,7 @@ pub async fn qualify(
         req.level,
         req.evidence,
         None,
+        req.shift_id,
     )
     .await?;
     Ok(Json(
