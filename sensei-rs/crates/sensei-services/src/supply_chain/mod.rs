@@ -243,10 +243,28 @@ pub trait SupplyChainService: Send + Sync {
     async fn create_sales_order(&self, tenant_id: Uuid, order: SalesOrder) -> Result<SalesOrder>;
     /// Get a sales order by ID.
     async fn get_sales_order(&self, tenant_id: Uuid, id: Uuid) -> Result<SalesOrder>;
+
+    /// Scoped get (twenty-second audit): foreign == nonexistent.
+    async fn get_sales_order_scoped(
+        &self,
+        tenant_id: Uuid,
+        authorized_sites: &[Uuid],
+        id: Uuid,
+    ) -> Result<SalesOrder>;
     /// List sales orders with optional status filter and pagination.
     async fn list_sales_orders(
         &self,
         tenant_id: Uuid,
+        status: Option<&str>,
+        page: Option<usize>,
+        per_page: Option<usize>,
+    ) -> Result<PaginatedResponse<SalesOrder>>;
+
+    /// Scope-intersected listing by fulfilling_site_id.
+    async fn list_sales_orders_scoped(
+        &self,
+        tenant_id: Uuid,
+        authorized_sites: &[Uuid],
         status: Option<&str>,
         page: Option<usize>,
         per_page: Option<usize>,
@@ -289,10 +307,28 @@ pub trait SupplyChainService: Send + Sync {
     ) -> Result<PurchaseOrder>;
     /// Get a purchase order by ID.
     async fn get_purchase_order(&self, tenant_id: Uuid, id: Uuid) -> Result<PurchaseOrder>;
+
+    /// Scoped get by receiving_site_id (foreign == nonexistent).
+    async fn get_purchase_order_scoped(
+        &self,
+        tenant_id: Uuid,
+        authorized_sites: &[Uuid],
+        id: Uuid,
+    ) -> Result<PurchaseOrder>;
     /// List purchase orders with optional status filter and pagination.
     async fn list_purchase_orders(
         &self,
         tenant_id: Uuid,
+        status: Option<&str>,
+        page: Option<usize>,
+        per_page: Option<usize>,
+    ) -> Result<PaginatedResponse<PurchaseOrder>>;
+
+    /// Scope-intersected listing by receiving_site_id.
+    async fn list_purchase_orders_scoped(
+        &self,
+        tenant_id: Uuid,
+        authorized_sites: &[Uuid],
         status: Option<&str>,
         page: Option<usize>,
         per_page: Option<usize>,
@@ -777,6 +813,104 @@ impl SupplyChainService for InMemorySupplyChainService {
     }
 
     // ── Sales Orders ────────────────────────────────────────────────────
+
+    async fn get_sales_order_scoped(
+        &self,
+        tenant_id: Uuid,
+        authorized_sites: &[Uuid],
+        id: Uuid,
+    ) -> Result<SalesOrder> {
+        if authorized_sites.is_empty() {
+            return Err(SenseiError::Forbidden(
+                "no operational scope — no sales order is authorized".to_string(),
+            ));
+        }
+        let store = self.sales_orders.read().await;
+        match store.get(&id) {
+            Some(so)
+                if so.tenant_id == tenant_id
+                    && so
+                        .fulfilling_site_id
+                        .is_none_or(|site| authorized_sites.contains(&site)) =>
+            {
+                Ok(so.clone())
+            }
+            _ => Err(SenseiError::NotFound(format!("Sales order {id} not found"))),
+        }
+    }
+
+    async fn list_sales_orders_scoped(
+        &self,
+        tenant_id: Uuid,
+        authorized_sites: &[Uuid],
+        status: Option<&str>,
+        page: Option<usize>,
+        per_page: Option<usize>,
+    ) -> Result<PaginatedResponse<SalesOrder>> {
+        let store = self.sales_orders.read().await;
+        let items: Vec<_> = store
+            .values()
+            .filter(|so| {
+                so.tenant_id == tenant_id
+                    && so
+                        .fulfilling_site_id
+                        .is_none_or(|site| authorized_sites.contains(&site))
+                    && status.is_none_or(|st| so.status == st)
+            })
+            .cloned()
+            .collect();
+        Ok(PaginatedResponse::new(items, page, per_page))
+    }
+
+    async fn get_purchase_order_scoped(
+        &self,
+        tenant_id: Uuid,
+        authorized_sites: &[Uuid],
+        id: Uuid,
+    ) -> Result<PurchaseOrder> {
+        if authorized_sites.is_empty() {
+            return Err(SenseiError::Forbidden(
+                "no operational scope — no purchase order is authorized".to_string(),
+            ));
+        }
+        let store = self.purchase_orders.read().await;
+        match store.get(&id) {
+            Some(po)
+                if po.tenant_id == tenant_id
+                    && po
+                        .receiving_site_id
+                        .is_none_or(|site| authorized_sites.contains(&site)) =>
+            {
+                Ok(po.clone())
+            }
+            _ => Err(SenseiError::NotFound(format!(
+                "Purchase order {id} not found"
+            ))),
+        }
+    }
+
+    async fn list_purchase_orders_scoped(
+        &self,
+        tenant_id: Uuid,
+        authorized_sites: &[Uuid],
+        status: Option<&str>,
+        page: Option<usize>,
+        per_page: Option<usize>,
+    ) -> Result<PaginatedResponse<PurchaseOrder>> {
+        let store = self.purchase_orders.read().await;
+        let items: Vec<_> = store
+            .values()
+            .filter(|po| {
+                po.tenant_id == tenant_id
+                    && po
+                        .receiving_site_id
+                        .is_none_or(|site| authorized_sites.contains(&site))
+                    && status.is_none_or(|st| po.status == st)
+            })
+            .cloned()
+            .collect();
+        Ok(PaginatedResponse::new(items, page, per_page))
+    }
 
     async fn create_sales_order(
         &self,

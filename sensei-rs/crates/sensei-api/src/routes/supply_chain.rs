@@ -189,6 +189,12 @@ async fn caller_scope(
 /// otherwise Forbidden. Without a scope authority (in-memory mode) the
 /// caller is not site-bound. When no site was requested, the caller's
 /// ACTIVE site is used.
+/// The caller's entitlement site set — None scope (in-memory/dev mode)
+/// means the caller is not site-bound (permissive dev behavior).
+fn entitlement_of(scope: &Option<RequestContext>) -> Option<&[Uuid]> {
+    scope.as_ref().map(|rc| rc.authorized_sites())
+}
+
 fn resolve_site(
     scope: &Option<RequestContext>,
     requested_site_id: Option<Uuid>,
@@ -413,15 +419,24 @@ pub async fn list_sales_orders(
     user.require_permission("sales:order:create")?;
 
     let tenant_id = user.tenant_id;
-    let orders = state
-        .supply_chain_service
-        .list_sales_orders(
-            tenant_id,
-            params.status.as_deref(),
-            params.page,
-            params.per_page,
-        )
-        .await?;
+    // Twenty-second audit P0/P1: ordinary reads are scope-intersected —
+    // a site-bound caller lists only their sites' orders; zero
+    // entitlement lists nothing.
+    let scope = caller_scope(&user, &state).await?;
+    let orders = if entitlement_of(&scope).is_none_or(|sites| sites.is_empty()) {
+        sensei_core::pagination::PaginatedResponse::new(Vec::new(), params.page, params.per_page)
+    } else {
+        state
+            .supply_chain_service
+            .list_sales_orders_scoped(
+                tenant_id,
+                entitlement_of(&scope).unwrap_or(&[]),
+                params.status.as_deref(),
+                params.page,
+                params.per_page,
+            )
+            .await?
+    };
     Ok(Json(orders))
 }
 
@@ -477,10 +492,17 @@ pub async fn get_sales_order(
     user.require_permission("sales:order:create")?;
 
     let tenant_id = user.tenant_id;
-    let order = state
-        .supply_chain_service
-        .get_sales_order(tenant_id, id)
-        .await?;
+    let scope = caller_scope(&user, &state).await?;
+    let order = if entitlement_of(&scope).is_none_or(|sites| sites.is_empty()) {
+        return Err(sensei_core::error::SenseiError::NotFound(format!(
+            "Sales order {id} not found"
+        )));
+    } else {
+        state
+            .supply_chain_service
+            .get_sales_order_scoped(tenant_id, entitlement_of(&scope).unwrap_or(&[]), id)
+            .await?
+    };
     Ok(Json(order))
 }
 
@@ -526,15 +548,21 @@ pub async fn list_purchase_orders(
 ) -> Result<Json<PaginatedResponse<PurchaseOrder>>> {
     user.require_permission("purchasing:po:create")?;
     let tenant_id = user.tenant_id;
-    let orders = state
-        .supply_chain_service
-        .list_purchase_orders(
-            tenant_id,
-            params.status.as_deref(),
-            params.page,
-            params.per_page,
-        )
-        .await?;
+    let scope = caller_scope(&user, &state).await?;
+    let orders = if entitlement_of(&scope).is_none_or(|sites| sites.is_empty()) {
+        sensei_core::pagination::PaginatedResponse::new(Vec::new(), params.page, params.per_page)
+    } else {
+        state
+            .supply_chain_service
+            .list_purchase_orders_scoped(
+                tenant_id,
+                entitlement_of(&scope).unwrap_or(&[]),
+                params.status.as_deref(),
+                params.page,
+                params.per_page,
+            )
+            .await?
+    };
     Ok(Json(orders))
 }
 
@@ -589,10 +617,17 @@ pub async fn get_purchase_order(
 ) -> Result<Json<PurchaseOrder>> {
     user.require_permission("purchasing:po:read")?;
     let tenant_id = user.tenant_id;
-    let order = state
-        .supply_chain_service
-        .get_purchase_order(tenant_id, id)
-        .await?;
+    let scope = caller_scope(&user, &state).await?;
+    let order = if entitlement_of(&scope).is_none_or(|sites| sites.is_empty()) {
+        return Err(sensei_core::error::SenseiError::NotFound(format!(
+            "Purchase order {id} not found"
+        )));
+    } else {
+        state
+            .supply_chain_service
+            .get_purchase_order_scoped(tenant_id, entitlement_of(&scope).unwrap_or(&[]), id)
+            .await?
+    };
     Ok(Json(order))
 }
 

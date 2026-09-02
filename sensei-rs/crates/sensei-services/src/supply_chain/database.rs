@@ -536,6 +536,124 @@ impl SupplyChainService for DatabaseSupplyChainService {
 
     // ── Sales Orders ────────────────────────────────────────────────────
 
+    async fn get_sales_order_scoped(
+        &self,
+        tenant_id: Uuid,
+        authorized_sites: &[Uuid],
+        id: Uuid,
+    ) -> Result<SalesOrder> {
+        if authorized_sites.is_empty() {
+            return Err(SenseiError::Forbidden(
+                "no operational scope — no sales order is authorized".to_string(),
+            ));
+        }
+        let row = sqlx::query_as::<_, SalesOrderRow>(
+            "SELECT id, tenant_id, order_number, customer_id, customer_name, status, line_items, total_amount, currency, delivery_date, shipping_address, created_by, created_at, fulfilling_site_id FROM sales_orders WHERE id=$1 AND tenant_id=$2 AND fulfilling_site_id = ANY($3)",
+        ).bind(id).bind(tenant_id).bind(authorized_sites).fetch_optional(&self.pool).await
+            .map_err(|e| SenseiError::Database(format!("Failed to get scoped sales order: {e}")))?
+            .ok_or_else(|| SenseiError::NotFound(format!("Sales order {id} not found")))?;
+        Ok(so_row_to_domain(row))
+    }
+
+    async fn list_sales_orders_scoped(
+        &self,
+        tenant_id: Uuid,
+        authorized_sites: &[Uuid],
+        status: Option<&str>,
+        page: Option<usize>,
+        per_page: Option<usize>,
+    ) -> Result<PaginatedResponse<SalesOrder>> {
+        if authorized_sites.is_empty() {
+            let page = page.unwrap_or(1).max(1);
+            let per_page = per_page.unwrap_or(20).clamp(1, 100);
+            return Ok(paginate(Vec::new(), 0, page, per_page));
+        }
+        let page = page.unwrap_or(1).max(1);
+        let per_page = per_page.unwrap_or(20).clamp(1, 100);
+        let offset = (page - 1) * per_page;
+        let status_owned = status.map(|x| x.to_string());
+        let items: Vec<SalesOrderRow> = sqlx::query_as(
+            "SELECT id, tenant_id, order_number, customer_id, customer_name, status, line_items, total_amount, currency, delivery_date, shipping_address, created_by, created_at, fulfilling_site_id FROM sales_orders \
+             WHERE tenant_id=$1 AND fulfilling_site_id = ANY($2) \
+               AND ($3::text IS NULL OR status=$3) \
+             ORDER BY created_at DESC LIMIT $4 OFFSET $5",
+        ).bind(tenant_id).bind(authorized_sites).bind(&status_owned).bind(per_page as i64).bind(offset as i64)
+            .fetch_all(&self.pool).await
+            .map_err(|e| SenseiError::Database(format!("Failed to list scoped sales orders: {e}")))?;
+        let count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM sales_orders WHERE tenant_id=$1 AND fulfilling_site_id = ANY($2) \
+             AND ($3::text IS NULL OR status=$3)",
+        )
+        .bind(tenant_id).bind(authorized_sites).bind(&status_owned)
+        .fetch_one(&self.pool).await
+        .map_err(|e| SenseiError::Database(format!("Failed to count scoped sales orders: {e}")))?;
+        Ok(paginate(
+            items.into_iter().map(so_row_to_domain).collect(),
+            count,
+            page,
+            per_page,
+        ))
+    }
+
+    async fn get_purchase_order_scoped(
+        &self,
+        tenant_id: Uuid,
+        authorized_sites: &[Uuid],
+        id: Uuid,
+    ) -> Result<PurchaseOrder> {
+        if authorized_sites.is_empty() {
+            return Err(SenseiError::Forbidden(
+                "no operational scope — no purchase order is authorized".to_string(),
+            ));
+        }
+        let row = sqlx::query_as::<_, PurchaseOrderRow>(
+            "SELECT id, tenant_id, po_number, supplier_id, supplier_name, status, line_items, total_amount, currency, expected_delivery, created_by, created_at, receiving_site_id FROM purchase_orders WHERE id=$1 AND tenant_id=$2 AND receiving_site_id = ANY($3)",
+        ).bind(id).bind(tenant_id).bind(authorized_sites).fetch_optional(&self.pool).await
+            .map_err(|e| SenseiError::Database(format!("Failed to get scoped purchase order: {e}")))?
+            .ok_or_else(|| SenseiError::NotFound(format!("Purchase order {id} not found")))?;
+        Ok(po_row_to_domain(row))
+    }
+
+    async fn list_purchase_orders_scoped(
+        &self,
+        tenant_id: Uuid,
+        authorized_sites: &[Uuid],
+        status: Option<&str>,
+        page: Option<usize>,
+        per_page: Option<usize>,
+    ) -> Result<PaginatedResponse<PurchaseOrder>> {
+        if authorized_sites.is_empty() {
+            let page = page.unwrap_or(1).max(1);
+            let per_page = per_page.unwrap_or(20).clamp(1, 100);
+            return Ok(paginate(Vec::new(), 0, page, per_page));
+        }
+        let page = page.unwrap_or(1).max(1);
+        let per_page = per_page.unwrap_or(20).clamp(1, 100);
+        let offset = (page - 1) * per_page;
+        let status_owned = status.map(|x| x.to_string());
+        let items: Vec<PurchaseOrderRow> = sqlx::query_as(
+            "SELECT id, tenant_id, po_number, supplier_id, supplier_name, status, line_items, total_amount, currency, expected_delivery, created_by, created_at, receiving_site_id FROM purchase_orders \
+             WHERE tenant_id=$1 AND receiving_site_id = ANY($2) \
+               AND ($3::text IS NULL OR status=$3) \
+             ORDER BY created_at DESC LIMIT $4 OFFSET $5",
+        ).bind(tenant_id).bind(authorized_sites).bind(&status_owned).bind(per_page as i64).bind(offset as i64)
+            .fetch_all(&self.pool).await
+            .map_err(|e| SenseiError::Database(format!("Failed to list scoped purchase orders: {e}")))?;
+        let count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM purchase_orders WHERE tenant_id=$1 AND receiving_site_id = ANY($2) \
+             AND ($3::text IS NULL OR status=$3)",
+        )
+        .bind(tenant_id).bind(authorized_sites).bind(&status_owned)
+        .fetch_one(&self.pool).await
+        .map_err(|e| SenseiError::Database(format!("Failed to count scoped purchase orders: {e}")))?;
+        Ok(paginate(
+            items.into_iter().map(po_row_to_domain).collect(),
+            count,
+            page,
+            per_page,
+        ))
+    }
+
     async fn create_sales_order(&self, tenant_id: Uuid, order: SalesOrder) -> Result<SalesOrder> {
         let now = Utc::now();
         let (id, suffix) = gen_id();
