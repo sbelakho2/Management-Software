@@ -606,7 +606,8 @@ fn verify_chat_response(
         "defect",
         "production",
         "output",
-        "staffing",
+        "staff",
+        "headcount",
         "team",
         "shift",
         "maintenance",
@@ -615,10 +616,6 @@ fn verify_chat_response(
         "calibration",
         "order",
         "capacity",
-        "bizerte",
-        "tangier",
-        "morocco",
-        "tunisia",
     ];
     // Twenty-first audit item 7: subject-family classification. A claim
     // about staffing/quality/inventory etc. can only be MEASURED by
@@ -626,21 +623,6 @@ fn verify_chat_response(
     /// The named SITE in a sentence/evidence text, when one is named
     /// (twenty-second audit: family equality is NOT enough — a Tangier
     /// staffing claim cannot be measured by Bizerte staffing evidence).
-    fn named_site(text: &str) -> Option<&'static str> {
-        let t = text.to_lowercase();
-        if t.contains("tangier") {
-            Some("tangier")
-        } else if t.contains("bizerte") {
-            Some("bizerte")
-        } else if t.contains("morocco") || t.contains(" ma ") {
-            Some("morocco")
-        } else if t.contains("tunisia") || t.contains(" tn ") {
-            Some("tunisia")
-        } else {
-            None
-        }
-    }
-
     fn subject_family(text: &str) -> Option<&'static str> {
         let t = text.to_lowercase();
         if [
@@ -810,41 +792,28 @@ fn verify_chat_response(
         // token matcher remains only for crafted items without scope —
         // new plants need zero Rust changes.
         let context_site = ctx.site_id;
-        let claim_site = named_site(s);
+        // SITE MATCHING IS STRUCTURAL ONLY (twenty-fourth audit): the
+        // claim's site is the REQUEST's active site; evidence sites come
+        // from ContextItem.site_scope. No geographic vocabulary exists in
+        // the verifier — onboarding a new plant requires zero Rust edits.
+        // Scoped-less test items (no site_scope) are matched only by
+        // family (legacy path for crafted items).
         let evidence_scopes: Vec<Option<uuid::Uuid>> = matched_refs
             .iter()
             .filter_map(|r| evidence_by_id.get(r.as_str()))
             .map(|item| item.site_scope)
             .collect();
-        let structural_sites_match = match (context_site, evidence_scopes.as_slice()) {
-            (Some(scope), scopes) => !scopes.is_empty() && scopes.iter().all(|x| *x == Some(scope)),
-            (None, scopes) => scopes.iter().all(|x| x.is_none()),
-        };
-        let evidence_sites: Vec<Option<&'static str>> = matched_refs
-            .iter()
-            .filter_map(|r| evidence_by_id.get(r.as_str()))
-            .map(|item| {
-                let from_address = item.fact_address.as_deref().and_then(named_site);
-                let from_text = item
-                    .payload
-                    .get("text")
-                    .and_then(|t| t.as_str())
-                    .and_then(named_site);
-                from_address.or(from_text)
-            })
-            .collect();
-        // Family equality AND structural site equality (token hints only
-        // when the items carry no scope): a Tangier-scoped claim cited
-        // against Bizerte evidence is REJECTED even without the word
-        // 'Tangier' in the sentence.
-        let token_site_matches = match (claim_site, evidence_sites.as_slice()) {
-            (Some(site), sites) => !sites.is_empty() && sites.iter().all(|x| *x == Some(site)),
-            (None, _) => true,
-        };
-        let site_matches = if evidence_scopes.iter().all(|x| x.is_none()) {
-            token_site_matches
+        let all_scoped = evidence_scopes.iter().any(|x| x.is_some());
+        let site_matches = if all_scoped {
+            match (context_site, evidence_scopes.as_slice()) {
+                (Some(scope), scopes) => {
+                    !scopes.is_empty() && scopes.iter().all(|x| *x == Some(scope))
+                }
+                (None, _) => false, // scoped evidence without a request site never matches
+            }
         } else {
-            structural_sites_match
+            // Crafted, site-less items: no site claim can be made.
+            true
         };
         let compatible = match (claim_family, evidence_families.as_slice()) {
             (Some(fam), fams) => {
@@ -875,12 +844,10 @@ fn verify_chat_response(
         }
         if !response.is_fallback && !incompatible_issued.is_empty() {
             for r in &incompatible_issued {
-                let reason = if claim_site.is_some() && !site_matches {
-                    format!(
-                        "the evidence speaks about a DIFFERENT site than the claim \
-                         ('{}') — wrong-site evidence cannot measure the claim",
-                        claim_site.unwrap_or("?")
-                    )
+                let reason = if !site_matches {
+                    "the evidence's site scope differs from the request's active \
+                     site — wrong-site evidence cannot measure the claim"
+                        .to_string()
                 } else {
                     "inventory evidence cannot measure a staffing claim".to_string()
                 };
@@ -911,10 +878,26 @@ fn verify_chat_response(
                 ));
             }
         } else {
+            // Measured claims carry the STRUCTURAL fact addresses of the
+            // evidence that measured them (site scope + source address) —
+            // never an empty list (twenty-fourth audit).
+            let fact_addresses: Vec<String> = matched_refs
+                .iter()
+                .filter_map(|r| evidence_by_id.get(r.as_str()))
+                .map(|item| {
+                    format!(
+                        "site:{}/address:{}",
+                        item.site_scope
+                            .map(|s| s.to_string())
+                            .unwrap_or_else(|| "unknown".to_string()),
+                        item.fact_address.as_deref().unwrap_or("unknown")
+                    )
+                })
+                .collect();
             claims.push(Claim {
                 statement: s.to_string(),
                 epistemic_status: "measured".to_string(),
-                fact_addresses: Vec::new(),
+                fact_addresses,
                 evidence_refs: matched_refs,
                 confidence: None,
                 valid_at: None,
@@ -1427,16 +1410,20 @@ mod tests {
     fn tangier_staffing_claim_cannot_cite_bizerte_staffing_evidence() {
         // Twenty-second audit: family equality alone is not enough — the
         // SITE must match too.
-        let bizerte = kernel_item(
+        let mut ctx = test_ctx();
+        ctx.site_id = Some(uuid::Uuid::from_u128(1));
+        let bizerte = kernel_item_at(
             "section:staffing",
             "Bizerte SMT line staffing: 8 operators on shift A.",
+            Some(uuid::Uuid::from_u128(2)),
         );
-        let v = verify(
+        let v = verify_ctx(
             &format!(
                 "Tangier is severely understaffed [evidence: {}].",
                 bizerte.evidence_id
             ),
             std::slice::from_ref(&bizerte),
+            &ctx,
         );
         assert_eq!(
             v["verdict"], "needs_evidence",
@@ -1444,7 +1431,7 @@ mod tests {
         );
         let issues: Vec<String> = serde_json::from_value(v["issues"].clone()).unwrap();
         assert!(
-            issues.iter().any(|i| i.contains("DIFFERENT site")),
+            issues.iter().any(|i| i.contains("site scope differs")),
             "the issue names the site mismatch: {:?}",
             issues
         );
