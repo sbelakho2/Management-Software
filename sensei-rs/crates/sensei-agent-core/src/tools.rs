@@ -220,10 +220,15 @@ pub fn validate_output(
 /// (item 59).
 pub struct ToolExecutor {
     policy: PolicyEngine,
-    /// The persisted execution log (in-memory for now, item 59): keyed by
-    /// the execution key string; a retry with the SAME key replays the
-    /// stored result instead of executing again.
+    /// The bounded RAM replay map (performance cache — it may forget).
     execution_results: super::cache::BoundedMap<serde_json::Value>,
+    /// The DURABLE system of record (eighteenth audit P1-14): when
+    /// configured, the journal is checked FIRST and written after every
+    /// idempotent execution — a retry replays the journaled result even
+    /// after the RAM entry was evicted. For mutating tools a failed
+    /// journal write fails the execution: the cache may forget, the
+    /// journal may not.
+    journal: Option<std::sync::Arc<dyn super::journal::ExecutionJournal>>,
 }
 
 impl ToolExecutor {
@@ -231,6 +236,18 @@ impl ToolExecutor {
         Self {
             policy,
             execution_results: super::cache::BoundedMap::new(512),
+            journal: None,
+        }
+    }
+
+    pub fn with_journal(
+        policy: PolicyEngine,
+        journal: std::sync::Arc<dyn super::journal::ExecutionJournal>,
+    ) -> Self {
+        Self {
+            policy,
+            execution_results: super::cache::BoundedMap::new(512),
+            journal: Some(journal),
         }
     }
 
@@ -256,10 +273,17 @@ impl ToolExecutor {
                 tool: tool.name.clone(),
             });
         }
-        // Idempotency (item 59): the same execution key replays the stored
-        // result — mechanical, the dispatch never runs twice.
+        // Idempotency (item 59 + eighteenth audit P1-14): the same
+        // execution key replays the stored result — the DURABLE journal
+        // is checked first (it is the system of record), then the RAM
+        // cache. The dispatch never runs twice.
         let key = execution.key.key();
         if tool.idempotent {
+            if let Some(journal) = &self.journal {
+                if let Some(journaled) = journal.load(ctx.tenant_id, &key).await {
+                    return Ok(journaled);
+                }
+            }
             if let Some(cached) = self.execution_results.get(&key) {
                 return Ok(cached.clone());
             }
@@ -289,7 +313,19 @@ impl ToolExecutor {
             }
         })?;
         if tool.idempotent {
-            self.execution_results.insert(key, output.clone());
+            self.execution_results.insert(key.clone(), output.clone());
+            // The journal write is part of correctness for mutating
+            // tools: a failed write FAILS the execution so the record
+            // never silently disappears.
+            if let Some(journal) = &self.journal {
+                journal
+                    .store(ctx.tenant_id, &key, &tool.name, &output)
+                    .await
+                    .map_err(|message| ToolError::Dispatch {
+                        tool: tool.name.clone(),
+                        message,
+                    })?;
+            }
         }
         Ok(output)
     }

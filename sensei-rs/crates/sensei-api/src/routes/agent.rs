@@ -199,3 +199,18 @@ pub async fn build_context_with_locale(
         conversation_id: None,
     }
 }
+
+/// Deterministic execution key for the command journal (eighteenth
+/// audit P1-14): tool name + canonical args JSON. The same call with
+/// the same args always produces the same key.
+pub fn execution_key(
+    tool: &sensei_agent_core::tools::ToolSpec,
+    args: &serde_json::Value,
+) -> String {
+    use sha2::{Digest, Sha256};
+    let mut hasher = Sha256::new();
+    hasher.update(tool.name.as_bytes());
+    hasher.update(b"|");
+    hasher.update(serde_json::to_string(args).unwrap_or_default().as_bytes());
+    hex::encode(hasher.finalize())
+}

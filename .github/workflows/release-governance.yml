@@ -1,0 +1,76 @@
+name: release-governance
+
+on:
+  pull_request:
+    types: [opened, synchronize, labeled, unlabeled, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  sensitive-path-approval:
+    name: Two-person approval gate for sensitive paths
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect sensitive-path changes
+        id: sensitive
+        run: |
+          BASE="${{ github.event.pull_request.base.sha }}"
+          HEAD="${{ github.event.pull_request.head.sha }}"
+          # Sensitive paths: RBAC, replication/residency, money/currency,
+          # standard work, audit logs, site lifecycle, migrations.
+          SENSITIVE=$(git diff --name-only "$BASE...$HEAD" | \
+            grep -E '(rbac|replication|residency|money|currency|standard_work|audit|site_manifest|lifecycle|migrations/)' || true)
+          echo "files<<EOF" >> "$GITHUB_OUTPUT"
+          echo "$SENSITIVE" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+          if [ -n "$SENSITIVE" ]; then
+            echo "touched=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "touched=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Require the two-person approval label on sensitive changes
+        if: steps.sensitive.outputs.touched == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          LABELS=$(gh pr view "$PR" --json labels --jq '.labels[].name')
+          if ! echo "$LABELS" | grep -q '^approval:two-person$'; then
+            echo "::error::This PR changes sensitive paths (RBAC, replication/residency, money, standard work, audit, site lifecycle, or migrations) and requires the 'approval:two-person' label before merge. A second qualified approver must review and apply the label."
+            exit 1
+          fi
+          echo "Sensitive-path changes carry the two-person approval label."
+
+      - name: Migration changes require the migration gate label
+        if: steps.sensitive.outputs.touched == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          FILES="${{ steps.sensitive.outputs.files }}"
+          if echo "$FILES" | grep -q 'migrations/'; then
+            LABELS=$(gh pr view "$PR" --json labels --jq '.labels[].name')
+            if ! echo "$LABELS" | grep -q '^approval:migration-gate$'; then
+              echo "::error::This PR adds/changes database migrations and requires the 'approval:migration-gate' label (schema compatibility reviewed) before merge."
+              exit 1
+            fi
+          fi
+          echo "Migration changes carry the migration-gate approval label."
+
+  full-gate-battery:
+    name: Required status checks (the gate the branch protection must enforce)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Notify
+        run: |
+          echo "Branch protection on 'main' must require: db-contract-gate, release-governance/full-gate-battery, e2e-playwright, clippy-d-warnings, fmt-check, wasm32-build — see .github/workflows/db-contract.yml and sensei-rs-ci.yml for the definitions. This job is the governance marker: protected production promotion requires these checks to pass."

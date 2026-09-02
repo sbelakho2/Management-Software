@@ -10281,32 +10281,22 @@ impl I18nKey {
             I18nKey::Search => "Search...",
             I18nKey::Syncing => "Syncing...",
             I18nKey::A3DetailExportProtocol => "a3.detail.exportProtocol",
-            I18nKey::A3DetailImplementationCountermeasures => {
-                "a3.detail.implementation.countermeasures"
-            }
+            I18nKey::A3DetailImplementationCountermeasures => "a3.detail.implementation.countermeasures",
             I18nKey::A3DetailImplementationGreeting => "a3.detail.implementation.greeting",
-            I18nKey::A3DetailImplementationGreetingFallback => {
-                "a3.detail.implementation.greetingFallback"
-            }
+            I18nKey::A3DetailImplementationGreetingFallback => "a3.detail.implementation.greetingFallback",
             I18nKey::A3DetailImplementationSubtitle => "a3.detail.implementation.subtitle",
             I18nKey::A3DetailImplementationTimeline => "a3.detail.implementation.timeline",
             I18nKey::A3DetailImplementationTitle => "a3.detail.implementation.title",
             I18nKey::A3DetailNotFound => "a3.detail.notFound",
-            I18nKey::A3DetailProtocolVelocityExecutionPulse => {
-                "a3.detail.protocolVelocity.executionPulse"
-            }
+            I18nKey::A3DetailProtocolVelocityExecutionPulse => "a3.detail.protocolVelocity.executionPulse",
             I18nKey::A3DetailProtocolVelocityLogicType => "a3.detail.protocolVelocity.logicType",
-            I18nKey::A3DetailProtocolVelocityPriorityLayer => {
-                "a3.detail.protocolVelocity.priorityLayer"
-            }
+            I18nKey::A3DetailProtocolVelocityPriorityLayer => "a3.detail.protocolVelocity.priorityLayer",
             I18nKey::A3DetailProtocolVelocityStatusNode => "a3.detail.protocolVelocity.statusNode",
             I18nKey::A3DetailProtocolVelocityTitle => "a3.detail.protocolVelocity.title",
             I18nKey::A3DetailRefineAnalysis => "a3.detail.refineAnalysis",
             I18nKey::A3DetailSectionsBackground => "a3.detail.sections.background",
             I18nKey::A3DetailSectionsCurrentState => "a3.detail.sections.currentState",
-            I18nKey::A3DetailSectionsRootCauseIntelligence => {
-                "a3.detail.sections.rootCauseIntelligence"
-            }
+            I18nKey::A3DetailSectionsRootCauseIntelligence => "a3.detail.sections.rootCauseIntelligence",
             I18nKey::A3DetailSectionsStrategicTargets => "a3.detail.sections.strategicTargets",
             I18nKey::A3DetailStructuralAnalysisSubtitle => "a3.detail.structuralAnalysis.subtitle",
             I18nKey::A3DetailStructuralAnalysisTitle => "a3.detail.structuralAnalysis.title",
@@ -10331,9 +10321,7 @@ impl I18nKey {
             I18nKey::A3NewBasicInformationA3Title => "a3.new.basicInformation.a3Title",
             I18nKey::A3NewBasicInformationDescription => "a3.new.basicInformation.description",
             I18nKey::A3NewBasicInformationTitle => "a3.new.basicInformation.title",
-            I18nKey::A3NewBasicInformationTitlePlaceholder => {
-                "a3.new.basicInformation.titlePlaceholder"
-            }
+            I18nKey::A3NewBasicInformationTitlePlaceholder => "a3.new.basicInformation.titlePlaceholder",
             I18nKey::A3NewCreateA3 => "a3.new.createA3",
             I18nKey::A3NewInitializing => "a3.new.initializing",
             I18nKey::A3NewSubtitle => "a3.new.subtitle",
@@ -10342,334 +10330,150 @@ impl I18nKey {
             I18nKey::A3SectionsBackgroundNumber => "a3.sections.background.number",
             I18nKey::A3SectionsBackgroundPlaceholder => "a3.sections.background.placeholder",
             I18nKey::A3SectionsBackgroundTitle => "a3.sections.background.title",
-            I18nKey::A3SectionsCountermeasuresDescription => {
-                "a3.sections.countermeasures.description"
-            }
+            I18nKey::A3SectionsCountermeasuresDescription => "a3.sections.countermeasures.description",
             I18nKey::A3SectionsCountermeasuresNumber => "a3.sections.countermeasures.number",
-            I18nKey::A3SectionsCountermeasuresPlaceholder => {
-                "a3.sections.countermeasures.placeholder"
-            }
+            I18nKey::A3SectionsCountermeasuresPlaceholder => "a3.sections.countermeasures.placeholder",
             I18nKey::A3SectionsCountermeasuresTitle => "a3.sections.countermeasures.title",
-            I18nKey::A3SectionsCurrentConditionDescription => {
-                "a3.sections.currentCondition.description"
-            }
+            I18nKey::A3SectionsCurrentConditionDescription => "a3.sections.currentCondition.description",
             I18nKey::A3SectionsCurrentConditionNumber => "a3.sections.currentCondition.number",
-            I18nKey::A3SectionsCurrentConditionPlaceholder => {
-                "a3.sections.currentCondition.placeholder"
-            }
+            I18nKey::A3SectionsCurrentConditionPlaceholder => "a3.sections.currentCondition.placeholder",
             I18nKey::A3SectionsCurrentConditionTitle => "a3.sections.currentCondition.title",
             I18nKey::A3SectionsGoalDescription => "a3.sections.goal.description",
             I18nKey::A3SectionsGoalNumber => "a3.sections.goal.number",
             I18nKey::A3SectionsGoalPlaceholder => "a3.sections.goal.placeholder",
             I18nKey::A3SectionsGoalTitle => "a3.sections.goal.title",
-            I18nKey::A3SectionsImplementationDescription => {
-                "a3.sections.implementation.description"
-            }
+            I18nKey::A3SectionsImplementationDescription => "a3.sections.implementation.description",
             I18nKey::A3SectionsImplementationNumber => "a3.sections.implementation.number",
-            I18nKey::A3SectionsImplementationPlaceholder => {
-                "a3.sections.implementation.placeholder"
-            }
+            I18nKey::A3SectionsImplementationPlaceholder => "a3.sections.implementation.placeholder",
             I18nKey::A3SectionsImplementationTitle => "a3.sections.implementation.title",
             I18nKey::A3SectionsRootCauseDescription => "a3.sections.rootCause.description",
             I18nKey::A3SectionsRootCauseNumber => "a3.sections.rootCause.number",
             I18nKey::A3SectionsRootCausePlaceholder => "a3.sections.rootCause.placeholder",
             I18nKey::A3SectionsRootCauseTitle => "a3.sections.rootCause.title",
-            I18nKey::A3SectionsTeamAddTeamMembersPlaceholder => {
-                "a3.sections.team.addTeamMembersPlaceholder"
-            }
+            I18nKey::A3SectionsTeamAddTeamMembersPlaceholder => "a3.sections.team.addTeamMembersPlaceholder",
             I18nKey::A3SectionsTeamContributors => "a3.sections.team.contributors",
             I18nKey::A3SectionsTeamReportOwner => "a3.sections.team.reportOwner",
-            I18nKey::A3SectionsTeamSearchUsersPlaceholder => {
-                "a3.sections.team.searchUsersPlaceholder"
-            }
+            I18nKey::A3SectionsTeamSearchUsersPlaceholder => "a3.sections.team.searchUsersPlaceholder",
             I18nKey::A3SectionsTeamTitle => "a3.sections.team.title",
             I18nKey::A3StatsActiveProtocols => "a3.stats.activeProtocols",
             I18nKey::A3StatsAggregatedRegistry => "a3.stats.aggregatedRegistry",
             I18nKey::A3StatsEmailDraftingActionsAdd => "a3.stats.emailDrafting.actions.add",
             I18nKey::A3StatsEmailDraftingActionsApply => "a3.stats.emailDrafting.actions.apply",
             I18nKey::A3StatsEmailDraftingActionsEdit => "a3.stats.emailDrafting.actions.edit",
-            I18nKey::A3StatsEmailDraftingActionsGenerateDraft => {
-                "a3.stats.emailDrafting.actions.generateDraft"
-            }
-            I18nKey::A3StatsEmailDraftingActionsGenerating => {
-                "a3.stats.emailDrafting.actions.generating"
-            }
-            I18nKey::A3StatsEmailDraftingActionsRegenerate => {
-                "a3.stats.emailDrafting.actions.regenerate"
-            }
+            I18nKey::A3StatsEmailDraftingActionsGenerateDraft => "a3.stats.emailDrafting.actions.generateDraft",
+            I18nKey::A3StatsEmailDraftingActionsGenerating => "a3.stats.emailDrafting.actions.generating",
+            I18nKey::A3StatsEmailDraftingActionsRegenerate => "a3.stats.emailDrafting.actions.regenerate",
             I18nKey::A3StatsEmailDraftingActionsSend => "a3.stats.emailDrafting.actions.send",
-            I18nKey::A3StatsEmailDraftingAlternativesTitle => {
-                "a3.stats.emailDrafting.alternatives.title"
-            }
-            I18nKey::A3StatsEmailDraftingAriaAddKeyPoint => {
-                "a3.stats.emailDrafting.aria.addKeyPoint"
-            }
+            I18nKey::A3StatsEmailDraftingAlternativesTitle => "a3.stats.emailDrafting.alternatives.title",
+            I18nKey::A3StatsEmailDraftingAriaAddKeyPoint => "a3.stats.emailDrafting.aria.addKeyPoint",
             I18nKey::A3StatsEmailDraftingAriaClose => "a3.stats.emailDrafting.aria.close",
-            I18nKey::A3StatsEmailDraftingAriaCopyToClipboard => {
-                "a3.stats.emailDrafting.aria.copyToClipboard"
-            }
+            I18nKey::A3StatsEmailDraftingAriaCopyToClipboard => "a3.stats.emailDrafting.aria.copyToClipboard",
             I18nKey::A3StatsEmailDraftingAriaDraftsList => "a3.stats.emailDrafting.aria.draftsList",
-            I18nKey::A3StatsEmailDraftingAriaEditSubject => {
-                "a3.stats.emailDrafting.aria.editSubject"
-            }
-            I18nKey::A3StatsEmailDraftingAriaKeyPointsList => {
-                "a3.stats.emailDrafting.aria.keyPointsList"
-            }
-            I18nKey::A3StatsEmailDraftingAriaRecipientEmail => {
-                "a3.stats.emailDrafting.aria.recipientEmail"
-            }
-            I18nKey::A3StatsEmailDraftingAriaRecipientName => {
-                "a3.stats.emailDrafting.aria.recipientName"
-            }
-            I18nKey::A3StatsEmailDraftingAriaRemoveKeyPoint => {
-                "a3.stats.emailDrafting.aria.removeKeyPoint"
-            }
-            I18nKey::A3StatsEmailDraftingAriaSelectLanguage => {
-                "a3.stats.emailDrafting.aria.selectLanguage"
-            }
-            I18nKey::A3StatsEmailDraftingAriaSelectPurpose => {
-                "a3.stats.emailDrafting.aria.selectPurpose"
-            }
+            I18nKey::A3StatsEmailDraftingAriaEditSubject => "a3.stats.emailDrafting.aria.editSubject",
+            I18nKey::A3StatsEmailDraftingAriaKeyPointsList => "a3.stats.emailDrafting.aria.keyPointsList",
+            I18nKey::A3StatsEmailDraftingAriaRecipientEmail => "a3.stats.emailDrafting.aria.recipientEmail",
+            I18nKey::A3StatsEmailDraftingAriaRecipientName => "a3.stats.emailDrafting.aria.recipientName",
+            I18nKey::A3StatsEmailDraftingAriaRemoveKeyPoint => "a3.stats.emailDrafting.aria.removeKeyPoint",
+            I18nKey::A3StatsEmailDraftingAriaSelectLanguage => "a3.stats.emailDrafting.aria.selectLanguage",
+            I18nKey::A3StatsEmailDraftingAriaSelectPurpose => "a3.stats.emailDrafting.aria.selectPurpose",
             I18nKey::A3StatsEmailDraftingAriaToneGroup => "a3.stats.emailDrafting.aria.toneGroup",
             I18nKey::A3StatsEmailDraftingComplianceNone => "a3.stats.emailDrafting.compliance.none",
-            I18nKey::A3StatsEmailDraftingComplianceTitle => {
-                "a3.stats.emailDrafting.compliance.title"
-            }
-            I18nKey::A3StatsEmailDraftingDefaultsCompanyName => {
-                "a3.stats.emailDrafting.defaults.companyName"
-            }
-            I18nKey::A3StatsEmailDraftingDefaultsSenderEmail => {
-                "a3.stats.emailDrafting.defaults.senderEmail"
-            }
-            I18nKey::A3StatsEmailDraftingDefaultsSenderName => {
-                "a3.stats.emailDrafting.defaults.senderName"
-            }
-            I18nKey::A3StatsEmailDraftingEmptyDescription => {
-                "a3.stats.emailDrafting.empty.description"
-            }
+            I18nKey::A3StatsEmailDraftingComplianceTitle => "a3.stats.emailDrafting.compliance.title",
+            I18nKey::A3StatsEmailDraftingDefaultsCompanyName => "a3.stats.emailDrafting.defaults.companyName",
+            I18nKey::A3StatsEmailDraftingDefaultsSenderEmail => "a3.stats.emailDrafting.defaults.senderEmail",
+            I18nKey::A3StatsEmailDraftingDefaultsSenderName => "a3.stats.emailDrafting.defaults.senderName",
+            I18nKey::A3StatsEmailDraftingEmptyDescription => "a3.stats.emailDrafting.empty.description",
             I18nKey::A3StatsEmailDraftingEmptyList => "a3.stats.emailDrafting.empty.list",
             I18nKey::A3StatsEmailDraftingEmptyTitle => "a3.stats.emailDrafting.empty.title",
-            I18nKey::A3StatsEmailDraftingFieldsCompanyName => {
-                "a3.stats.emailDrafting.fields.companyName"
-            }
-            I18nKey::A3StatsEmailDraftingFieldsReferenceNumberOptional => {
-                "a3.stats.emailDrafting.fields.referenceNumberOptional"
-            }
-            I18nKey::A3StatsEmailDraftingFieldsSenderEmail => {
-                "a3.stats.emailDrafting.fields.senderEmail"
-            }
-            I18nKey::A3StatsEmailDraftingFieldsSenderName => {
-                "a3.stats.emailDrafting.fields.senderName"
-            }
-            I18nKey::A3StatsEmailDraftingFieldsSenderTitle => {
-                "a3.stats.emailDrafting.fields.senderTitle"
-            }
-            I18nKey::A3StatsEmailDraftingFieldsSubjectHintOptional => {
-                "a3.stats.emailDrafting.fields.subjectHintOptional"
-            }
-            I18nKey::A3StatsEmailDraftingFieldsThreadEntityId => {
-                "a3.stats.emailDrafting.fields.threadEntityId"
-            }
-            I18nKey::A3StatsEmailDraftingFieldsThreadEntityType => {
-                "a3.stats.emailDrafting.fields.threadEntityType"
-            }
+            I18nKey::A3StatsEmailDraftingFieldsCompanyName => "a3.stats.emailDrafting.fields.companyName",
+            I18nKey::A3StatsEmailDraftingFieldsReferenceNumberOptional => "a3.stats.emailDrafting.fields.referenceNumberOptional",
+            I18nKey::A3StatsEmailDraftingFieldsSenderEmail => "a3.stats.emailDrafting.fields.senderEmail",
+            I18nKey::A3StatsEmailDraftingFieldsSenderName => "a3.stats.emailDrafting.fields.senderName",
+            I18nKey::A3StatsEmailDraftingFieldsSenderTitle => "a3.stats.emailDrafting.fields.senderTitle",
+            I18nKey::A3StatsEmailDraftingFieldsSubjectHintOptional => "a3.stats.emailDrafting.fields.subjectHintOptional",
+            I18nKey::A3StatsEmailDraftingFieldsThreadEntityId => "a3.stats.emailDrafting.fields.threadEntityId",
+            I18nKey::A3StatsEmailDraftingFieldsThreadEntityType => "a3.stats.emailDrafting.fields.threadEntityType",
             I18nKey::A3StatsEmailDraftingLanguageArabic => "a3.stats.emailDrafting.language.arabic",
-            I18nKey::A3StatsEmailDraftingLanguageChinese => {
-                "a3.stats.emailDrafting.language.chinese"
-            }
-            I18nKey::A3StatsEmailDraftingLanguageEnglish => {
-                "a3.stats.emailDrafting.language.english"
-            }
+            I18nKey::A3StatsEmailDraftingLanguageChinese => "a3.stats.emailDrafting.language.chinese",
+            I18nKey::A3StatsEmailDraftingLanguageEnglish => "a3.stats.emailDrafting.language.english",
             I18nKey::A3StatsEmailDraftingLanguageFrench => "a3.stats.emailDrafting.language.french",
             I18nKey::A3StatsEmailDraftingLanguageGerman => "a3.stats.emailDrafting.language.german",
-            I18nKey::A3StatsEmailDraftingLanguageItalian => {
-                "a3.stats.emailDrafting.language.italian"
-            }
-            I18nKey::A3StatsEmailDraftingLanguageJapanese => {
-                "a3.stats.emailDrafting.language.japanese"
-            }
+            I18nKey::A3StatsEmailDraftingLanguageItalian => "a3.stats.emailDrafting.language.italian",
+            I18nKey::A3StatsEmailDraftingLanguageJapanese => "a3.stats.emailDrafting.language.japanese",
             I18nKey::A3StatsEmailDraftingLanguageKorean => "a3.stats.emailDrafting.language.korean",
-            I18nKey::A3StatsEmailDraftingLanguagePortuguese => {
-                "a3.stats.emailDrafting.language.portuguese"
-            }
-            I18nKey::A3StatsEmailDraftingLanguageSpanish => {
-                "a3.stats.emailDrafting.language.spanish"
-            }
-            I18nKey::A3StatsEmailDraftingNotificationsCopied => {
-                "a3.stats.emailDrafting.notifications.copied"
-            }
-            I18nKey::A3StatsEmailDraftingPlaceholdersCompanyName => {
-                "a3.stats.emailDrafting.placeholders.companyName"
-            }
-            I18nKey::A3StatsEmailDraftingPlaceholdersKeyPoint => {
-                "a3.stats.emailDrafting.placeholders.keyPoint"
-            }
-            I18nKey::A3StatsEmailDraftingPlaceholdersRecipientEmail => {
-                "a3.stats.emailDrafting.placeholders.recipientEmail"
-            }
-            I18nKey::A3StatsEmailDraftingPlaceholdersRecipientNameOptional => {
-                "a3.stats.emailDrafting.placeholders.recipientNameOptional"
-            }
-            I18nKey::A3StatsEmailDraftingPlaceholdersReferenceNumber => {
-                "a3.stats.emailDrafting.placeholders.referenceNumber"
-            }
-            I18nKey::A3StatsEmailDraftingPlaceholdersSelectPurpose => {
-                "a3.stats.emailDrafting.placeholders.selectPurpose"
-            }
-            I18nKey::A3StatsEmailDraftingPlaceholdersSenderEmail => {
-                "a3.stats.emailDrafting.placeholders.senderEmail"
-            }
-            I18nKey::A3StatsEmailDraftingPlaceholdersSenderName => {
-                "a3.stats.emailDrafting.placeholders.senderName"
-            }
-            I18nKey::A3StatsEmailDraftingPlaceholdersSenderTitle => {
-                "a3.stats.emailDrafting.placeholders.senderTitle"
-            }
-            I18nKey::A3StatsEmailDraftingPlaceholdersSubjectHint => {
-                "a3.stats.emailDrafting.placeholders.subjectHint"
-            }
-            I18nKey::A3StatsEmailDraftingPlaceholdersThreadEntityId => {
-                "a3.stats.emailDrafting.placeholders.threadEntityId"
-            }
-            I18nKey::A3StatsEmailDraftingPlaceholdersThreadEntityType => {
-                "a3.stats.emailDrafting.placeholders.threadEntityType"
-            }
-            I18nKey::A3StatsEmailDraftingPreviewConfidence => {
-                "a3.stats.emailDrafting.preview.confidence"
-            }
-            I18nKey::A3StatsEmailDraftingPreviewGeneratedIn => {
-                "a3.stats.emailDrafting.preview.generatedIn"
-            }
-            I18nKey::A3StatsEmailDraftingPreviewSubjectLabel => {
-                "a3.stats.emailDrafting.preview.subjectLabel"
-            }
+            I18nKey::A3StatsEmailDraftingLanguagePortuguese => "a3.stats.emailDrafting.language.portuguese",
+            I18nKey::A3StatsEmailDraftingLanguageSpanish => "a3.stats.emailDrafting.language.spanish",
+            I18nKey::A3StatsEmailDraftingNotificationsCopied => "a3.stats.emailDrafting.notifications.copied",
+            I18nKey::A3StatsEmailDraftingPlaceholdersCompanyName => "a3.stats.emailDrafting.placeholders.companyName",
+            I18nKey::A3StatsEmailDraftingPlaceholdersKeyPoint => "a3.stats.emailDrafting.placeholders.keyPoint",
+            I18nKey::A3StatsEmailDraftingPlaceholdersRecipientEmail => "a3.stats.emailDrafting.placeholders.recipientEmail",
+            I18nKey::A3StatsEmailDraftingPlaceholdersRecipientNameOptional => "a3.stats.emailDrafting.placeholders.recipientNameOptional",
+            I18nKey::A3StatsEmailDraftingPlaceholdersReferenceNumber => "a3.stats.emailDrafting.placeholders.referenceNumber",
+            I18nKey::A3StatsEmailDraftingPlaceholdersSelectPurpose => "a3.stats.emailDrafting.placeholders.selectPurpose",
+            I18nKey::A3StatsEmailDraftingPlaceholdersSenderEmail => "a3.stats.emailDrafting.placeholders.senderEmail",
+            I18nKey::A3StatsEmailDraftingPlaceholdersSenderName => "a3.stats.emailDrafting.placeholders.senderName",
+            I18nKey::A3StatsEmailDraftingPlaceholdersSenderTitle => "a3.stats.emailDrafting.placeholders.senderTitle",
+            I18nKey::A3StatsEmailDraftingPlaceholdersSubjectHint => "a3.stats.emailDrafting.placeholders.subjectHint",
+            I18nKey::A3StatsEmailDraftingPlaceholdersThreadEntityId => "a3.stats.emailDrafting.placeholders.threadEntityId",
+            I18nKey::A3StatsEmailDraftingPlaceholdersThreadEntityType => "a3.stats.emailDrafting.placeholders.threadEntityType",
+            I18nKey::A3StatsEmailDraftingPreviewConfidence => "a3.stats.emailDrafting.preview.confidence",
+            I18nKey::A3StatsEmailDraftingPreviewGeneratedIn => "a3.stats.emailDrafting.preview.generatedIn",
+            I18nKey::A3StatsEmailDraftingPreviewSubjectLabel => "a3.stats.emailDrafting.preview.subjectLabel",
             I18nKey::A3StatsEmailDraftingPreviewTitle => "a3.stats.emailDrafting.preview.title",
             I18nKey::A3StatsEmailDraftingPurposeApology => "a3.stats.emailDrafting.purpose.apology",
             I18nKey::A3StatsEmailDraftingPurposeCustom => "a3.stats.emailDrafting.purpose.custom",
-            I18nKey::A3StatsEmailDraftingPurposeEscalation => {
-                "a3.stats.emailDrafting.purpose.escalation"
-            }
-            I18nKey::A3StatsEmailDraftingPurposeIntroduction => {
-                "a3.stats.emailDrafting.purpose.introduction"
-            }
-            I18nKey::A3StatsEmailDraftingPurposeIssueNotification => {
-                "a3.stats.emailDrafting.purpose.issueNotification"
-            }
-            I18nKey::A3StatsEmailDraftingPurposeMeetingConfirmation => {
-                "a3.stats.emailDrafting.purpose.meetingConfirmation"
-            }
-            I18nKey::A3StatsEmailDraftingPurposeMeetingRequest => {
-                "a3.stats.emailDrafting.purpose.meetingRequest"
-            }
-            I18nKey::A3StatsEmailDraftingPurposeMeetingReschedule => {
-                "a3.stats.emailDrafting.purpose.meetingReschedule"
-            }
-            I18nKey::A3StatsEmailDraftingPurposeMissingInfoRequest => {
-                "a3.stats.emailDrafting.purpose.missingInfoRequest"
-            }
-            I18nKey::A3StatsEmailDraftingPurposeQuoteFollowup => {
-                "a3.stats.emailDrafting.purpose.quoteFollowup"
-            }
-            I18nKey::A3StatsEmailDraftingPurposeQuoteSubmission => {
-                "a3.stats.emailDrafting.purpose.quoteSubmission"
-            }
-            I18nKey::A3StatsEmailDraftingPurposeStatusUpdate => {
-                "a3.stats.emailDrafting.purpose.statusUpdate"
-            }
-            I18nKey::A3StatsEmailDraftingPurposeSupplierInquiry => {
-                "a3.stats.emailDrafting.purpose.supplierInquiry"
-            }
-            I18nKey::A3StatsEmailDraftingPurposeThankYou => {
-                "a3.stats.emailDrafting.purpose.thankYou"
-            }
-            I18nKey::A3StatsEmailDraftingSectionsKeyPoints => {
-                "a3.stats.emailDrafting.sections.keyPoints"
-            }
-            I18nKey::A3StatsEmailDraftingSectionsLanguage => {
-                "a3.stats.emailDrafting.sections.language"
-            }
-            I18nKey::A3StatsEmailDraftingSectionsPurpose => {
-                "a3.stats.emailDrafting.sections.purpose"
-            }
-            I18nKey::A3StatsEmailDraftingSectionsRecipient => {
-                "a3.stats.emailDrafting.sections.recipient"
-            }
+            I18nKey::A3StatsEmailDraftingPurposeEscalation => "a3.stats.emailDrafting.purpose.escalation",
+            I18nKey::A3StatsEmailDraftingPurposeIntroduction => "a3.stats.emailDrafting.purpose.introduction",
+            I18nKey::A3StatsEmailDraftingPurposeIssueNotification => "a3.stats.emailDrafting.purpose.issueNotification",
+            I18nKey::A3StatsEmailDraftingPurposeMeetingConfirmation => "a3.stats.emailDrafting.purpose.meetingConfirmation",
+            I18nKey::A3StatsEmailDraftingPurposeMeetingRequest => "a3.stats.emailDrafting.purpose.meetingRequest",
+            I18nKey::A3StatsEmailDraftingPurposeMeetingReschedule => "a3.stats.emailDrafting.purpose.meetingReschedule",
+            I18nKey::A3StatsEmailDraftingPurposeMissingInfoRequest => "a3.stats.emailDrafting.purpose.missingInfoRequest",
+            I18nKey::A3StatsEmailDraftingPurposeQuoteFollowup => "a3.stats.emailDrafting.purpose.quoteFollowup",
+            I18nKey::A3StatsEmailDraftingPurposeQuoteSubmission => "a3.stats.emailDrafting.purpose.quoteSubmission",
+            I18nKey::A3StatsEmailDraftingPurposeStatusUpdate => "a3.stats.emailDrafting.purpose.statusUpdate",
+            I18nKey::A3StatsEmailDraftingPurposeSupplierInquiry => "a3.stats.emailDrafting.purpose.supplierInquiry",
+            I18nKey::A3StatsEmailDraftingPurposeThankYou => "a3.stats.emailDrafting.purpose.thankYou",
+            I18nKey::A3StatsEmailDraftingSectionsKeyPoints => "a3.stats.emailDrafting.sections.keyPoints",
+            I18nKey::A3StatsEmailDraftingSectionsLanguage => "a3.stats.emailDrafting.sections.language",
+            I18nKey::A3StatsEmailDraftingSectionsPurpose => "a3.stats.emailDrafting.sections.purpose",
+            I18nKey::A3StatsEmailDraftingSectionsRecipient => "a3.stats.emailDrafting.sections.recipient",
             I18nKey::A3StatsEmailDraftingSectionsSender => "a3.stats.emailDrafting.sections.sender",
-            I18nKey::A3StatsEmailDraftingSectionsThreadContext => {
-                "a3.stats.emailDrafting.sections.threadContext"
-            }
+            I18nKey::A3StatsEmailDraftingSectionsThreadContext => "a3.stats.emailDrafting.sections.threadContext",
             I18nKey::A3StatsEmailDraftingSectionsTone => "a3.stats.emailDrafting.sections.tone",
             I18nKey::A3StatsEmailDraftingStatusApproved => "a3.stats.emailDrafting.status.approved",
-            I18nKey::A3StatsEmailDraftingStatusDiscarded => {
-                "a3.stats.emailDrafting.status.discarded"
-            }
+            I18nKey::A3StatsEmailDraftingStatusDiscarded => "a3.stats.emailDrafting.status.discarded",
             I18nKey::A3StatsEmailDraftingStatusFailed => "a3.stats.emailDrafting.status.failed",
-            I18nKey::A3StatsEmailDraftingStatusGenerating => {
-                "a3.stats.emailDrafting.status.generating"
-            }
+            I18nKey::A3StatsEmailDraftingStatusGenerating => "a3.stats.emailDrafting.status.generating",
             I18nKey::A3StatsEmailDraftingStatusReady => "a3.stats.emailDrafting.status.ready",
             I18nKey::A3StatsEmailDraftingStatusReviewed => "a3.stats.emailDrafting.status.reviewed",
             I18nKey::A3StatsEmailDraftingStatusSent => "a3.stats.emailDrafting.status.sent",
-            I18nKey::A3StatsEmailDraftingSuggestionsTitle => {
-                "a3.stats.emailDrafting.suggestions.title"
-            }
-            I18nKey::A3StatsEmailDraftingThreadEntityTypeInvoice => {
-                "a3.stats.emailDrafting.thread.entityType.invoice"
-            }
-            I18nKey::A3StatsEmailDraftingThreadEntityTypeNonConformance => {
-                "a3.stats.emailDrafting.thread.entityType.nonConformance"
-            }
-            I18nKey::A3StatsEmailDraftingThreadEntityTypeOpportunity => {
-                "a3.stats.emailDrafting.thread.entityType.opportunity"
-            }
-            I18nKey::A3StatsEmailDraftingThreadEntityTypeQuote => {
-                "a3.stats.emailDrafting.thread.entityType.quote"
-            }
-            I18nKey::A3StatsEmailDraftingThreadEntityTypeRfq => {
-                "a3.stats.emailDrafting.thread.entityType.rfq"
-            }
-            I18nKey::A3StatsEmailDraftingThreadEntityTypeShipment => {
-                "a3.stats.emailDrafting.thread.entityType.shipment"
-            }
-            I18nKey::A3StatsEmailDraftingThreadEntityTypeWorkOrder => {
-                "a3.stats.emailDrafting.thread.entityType.workOrder"
-            }
+            I18nKey::A3StatsEmailDraftingSuggestionsTitle => "a3.stats.emailDrafting.suggestions.title",
+            I18nKey::A3StatsEmailDraftingThreadEntityTypeInvoice => "a3.stats.emailDrafting.thread.entityType.invoice",
+            I18nKey::A3StatsEmailDraftingThreadEntityTypeNonConformance => "a3.stats.emailDrafting.thread.entityType.nonConformance",
+            I18nKey::A3StatsEmailDraftingThreadEntityTypeOpportunity => "a3.stats.emailDrafting.thread.entityType.opportunity",
+            I18nKey::A3StatsEmailDraftingThreadEntityTypeQuote => "a3.stats.emailDrafting.thread.entityType.quote",
+            I18nKey::A3StatsEmailDraftingThreadEntityTypeRfq => "a3.stats.emailDrafting.thread.entityType.rfq",
+            I18nKey::A3StatsEmailDraftingThreadEntityTypeShipment => "a3.stats.emailDrafting.thread.entityType.shipment",
+            I18nKey::A3StatsEmailDraftingThreadEntityTypeWorkOrder => "a3.stats.emailDrafting.thread.entityType.workOrder",
             I18nKey::A3StatsEmailDraftingThreadHelper => "a3.stats.emailDrafting.thread.helper",
-            I18nKey::A3StatsEmailDraftingThreadLoadFailed => {
-                "a3.stats.emailDrafting.thread.loadFailed"
-            }
+            I18nKey::A3StatsEmailDraftingThreadLoadFailed => "a3.stats.emailDrafting.thread.loadFailed",
             I18nKey::A3StatsEmailDraftingThreadLoading => "a3.stats.emailDrafting.thread.loading",
-            I18nKey::A3StatsEmailDraftingThreadReasoningId => {
-                "a3.stats.emailDrafting.thread.reasoningId"
-            }
-            I18nKey::A3StatsEmailDraftingThreadTraceStats => {
-                "a3.stats.emailDrafting.thread.traceStats"
-            }
-            I18nKey::A3StatsEmailDraftingThreadTraceTitle => {
-                "a3.stats.emailDrafting.thread.traceTitle"
-            }
+            I18nKey::A3StatsEmailDraftingThreadReasoningId => "a3.stats.emailDrafting.thread.reasoningId",
+            I18nKey::A3StatsEmailDraftingThreadTraceStats => "a3.stats.emailDrafting.thread.traceStats",
+            I18nKey::A3StatsEmailDraftingThreadTraceTitle => "a3.stats.emailDrafting.thread.traceTitle",
             I18nKey::A3StatsEmailDraftingTitle => "a3.stats.emailDrafting.title",
             I18nKey::A3StatsEmailDraftingToneApologetic => "a3.stats.emailDrafting.tone.apologetic",
-            I18nKey::A3StatsEmailDraftingToneAppreciative => {
-                "a3.stats.emailDrafting.tone.appreciative"
-            }
+            I18nKey::A3StatsEmailDraftingToneAppreciative => "a3.stats.emailDrafting.tone.appreciative",
             I18nKey::A3StatsEmailDraftingToneConcise => "a3.stats.emailDrafting.tone.concise",
             I18nKey::A3StatsEmailDraftingToneFormal => "a3.stats.emailDrafting.tone.formal",
             I18nKey::A3StatsEmailDraftingToneFriendly => "a3.stats.emailDrafting.tone.friendly",
-            I18nKey::A3StatsEmailDraftingToneProfessional => {
-                "a3.stats.emailDrafting.tone.professional"
-            }
+            I18nKey::A3StatsEmailDraftingToneProfessional => "a3.stats.emailDrafting.tone.professional",
             I18nKey::A3StatsEmailDraftingToneUrgent => "a3.stats.emailDrafting.tone.urgent",
-            I18nKey::A3StatsEmailDraftingUnitsMilliseconds => {
-                "a3.stats.emailDrafting.units.milliseconds"
-            }
+            I18nKey::A3StatsEmailDraftingUnitsMilliseconds => "a3.stats.emailDrafting.units.milliseconds",
             I18nKey::A3StatsEmailDraftingUnitsSeconds => "a3.stats.emailDrafting.units.seconds",
-            I18nKey::A3StatsEmailDraftingValidationEmailInvalid => {
-                "a3.stats.emailDrafting.validation.emailInvalid"
-            }
-            I18nKey::A3StatsEmailDraftingValidationEmailRequired => {
-                "a3.stats.emailDrafting.validation.emailRequired"
-            }
+            I18nKey::A3StatsEmailDraftingValidationEmailInvalid => "a3.stats.emailDrafting.validation.emailInvalid",
+            I18nKey::A3StatsEmailDraftingValidationEmailRequired => "a3.stats.emailDrafting.validation.emailRequired",
             I18nKey::A3StatsExecutionPulse => "a3.stats.executionPulse",
             I18nKey::A3StatsHorizonOverdue => "a3.stats.horizonOverdue",
             I18nKey::A3StatsPendingApprovals => "a3.stats.pendingApprovals",
@@ -10721,45 +10525,23 @@ impl I18nKey {
             I18nKey::AndonActionsSyncSupervisor => "andon.actions.syncSupervisor",
             I18nKey::AndonActionsTechnicianNode => "andon.actions.technicianNode",
             I18nKey::AndonAnalyticsValue => "andon.analytics._value",
-            I18nKey::AndonAnalyticsAnomalousNodesCumulativeDelay => {
-                "andon.analytics.anomalousNodes.cumulativeDelay"
-            }
+            I18nKey::AndonAnalyticsAnomalousNodesCumulativeDelay => "andon.analytics.anomalousNodes.cumulativeDelay",
             I18nKey::AndonAnalyticsAnomalousNodesEmpty => "andon.analytics.anomalousNodes.empty",
-            I18nKey::AndonAnalyticsAnomalousNodesStrategicSignals => {
-                "andon.analytics.anomalousNodes.strategicSignals"
-            }
-            I18nKey::AndonAnalyticsAnomalousNodesSubtitle => {
-                "andon.analytics.anomalousNodes.subtitle"
-            }
+            I18nKey::AndonAnalyticsAnomalousNodesStrategicSignals => "andon.analytics.anomalousNodes.strategicSignals",
+            I18nKey::AndonAnalyticsAnomalousNodesSubtitle => "andon.analytics.anomalousNodes.subtitle",
             I18nKey::AndonAnalyticsAnomalousNodesTitle => "andon.analytics.anomalousNodes.title",
             I18nKey::AndonAnalyticsExportIntel => "andon.analytics.exportIntel",
             I18nKey::AndonAnalyticsSignalTaxonomyEmpty => "andon.analytics.signalTaxonomy.empty",
-            I18nKey::AndonAnalyticsSignalTaxonomySubtitle => {
-                "andon.analytics.signalTaxonomy.subtitle"
-            }
+            I18nKey::AndonAnalyticsSignalTaxonomySubtitle => "andon.analytics.signalTaxonomy.subtitle",
             I18nKey::AndonAnalyticsSignalTaxonomyTitle => "andon.analytics.signalTaxonomy.title",
-            I18nKey::AndonAnalyticsStatsAggregatedAcrossNodes => {
-                "andon.analytics.stats.aggregatedAcrossNodes"
-            }
-            I18nKey::AndonAnalyticsStatsEstimatedOperationalLeakage => {
-                "andon.analytics.stats.estimatedOperationalLeakage"
-            }
-            I18nKey::AndonAnalyticsStatsFullProtocolLifecycle => {
-                "andon.analytics.stats.fullProtocolLifecycle"
-            }
-            I18nKey::AndonAnalyticsStatsGlobalUptimeImpact => {
-                "andon.analytics.stats.globalUptimeImpact"
-            }
-            I18nKey::AndonAnalyticsStatsMeanAcknowledgePulse => {
-                "andon.analytics.stats.meanAcknowledgePulse"
-            }
-            I18nKey::AndonAnalyticsStatsMeanResolutionVelocity => {
-                "andon.analytics.stats.meanResolutionVelocity"
-            }
+            I18nKey::AndonAnalyticsStatsAggregatedAcrossNodes => "andon.analytics.stats.aggregatedAcrossNodes",
+            I18nKey::AndonAnalyticsStatsEstimatedOperationalLeakage => "andon.analytics.stats.estimatedOperationalLeakage",
+            I18nKey::AndonAnalyticsStatsFullProtocolLifecycle => "andon.analytics.stats.fullProtocolLifecycle",
+            I18nKey::AndonAnalyticsStatsGlobalUptimeImpact => "andon.analytics.stats.globalUptimeImpact",
+            I18nKey::AndonAnalyticsStatsMeanAcknowledgePulse => "andon.analytics.stats.meanAcknowledgePulse",
+            I18nKey::AndonAnalyticsStatsMeanResolutionVelocity => "andon.analytics.stats.meanResolutionVelocity",
             I18nKey::AndonAnalyticsStatsTemporalGap => "andon.analytics.stats.temporalGap",
-            I18nKey::AndonAnalyticsStatsTotalIntelligenceSignals => {
-                "andon.analytics.stats.totalIntelligenceSignals"
-            }
+            I18nKey::AndonAnalyticsStatsTotalIntelligenceSignals => "andon.analytics.stats.totalIntelligenceSignals",
             I18nKey::AndonAnalyticsSubtitle => "andon.analytics.subtitle",
             I18nKey::AndonAnalyticsTitle => "andon.analytics.title",
             I18nKey::AndonControlStation => "andon.controlStation",
@@ -10787,52 +10569,22 @@ impl I18nKey {
             I18nKey::AndonSectionsIntelligenceNodes => "andon.sections.intelligenceNodes",
             I18nKey::AndonSectionsStrategicControls => "andon.sections.strategicControls",
             I18nKey::AndonSettingsCalibrating => "andon.settings.calibrating",
-            I18nKey::AndonSettingsNotificationIntelligenceCriticalEscalation => {
-                "andon.settings.notificationIntelligence.criticalEscalation"
-            }
-            I18nKey::AndonSettingsNotificationIntelligenceCriticalEscalationDesc => {
-                "andon.settings.notificationIntelligence.criticalEscalationDesc"
-            }
-            I18nKey::AndonSettingsNotificationIntelligenceMaintenanceDispatch => {
-                "andon.settings.notificationIntelligence.maintenanceDispatch"
-            }
-            I18nKey::AndonSettingsNotificationIntelligenceMaintenanceDispatchDesc => {
-                "andon.settings.notificationIntelligence.maintenanceDispatchDesc"
-            }
-            I18nKey::AndonSettingsNotificationIntelligenceQualityAbnormalities => {
-                "andon.settings.notificationIntelligence.qualityAbnormalities"
-            }
-            I18nKey::AndonSettingsNotificationIntelligenceQualityAbnormalitiesDesc => {
-                "andon.settings.notificationIntelligence.qualityAbnormalitiesDesc"
-            }
-            I18nKey::AndonSettingsNotificationIntelligenceSubtitle => {
-                "andon.settings.notificationIntelligence.subtitle"
-            }
-            I18nKey::AndonSettingsNotificationIntelligenceTitle => {
-                "andon.settings.notificationIntelligence.title"
-            }
-            I18nKey::AndonSettingsProtocolChannelsMobileSmsGateway => {
-                "andon.settings.protocolChannels.mobileSmsGateway"
-            }
-            I18nKey::AndonSettingsProtocolChannelsMobileSmsGatewayDesc => {
-                "andon.settings.protocolChannels.mobileSmsGatewayDesc"
-            }
-            I18nKey::AndonSettingsProtocolChannelsOsIntelligencePush => {
-                "andon.settings.protocolChannels.osIntelligencePush"
-            }
-            I18nKey::AndonSettingsProtocolChannelsOsIntelligencePushDesc => {
-                "andon.settings.protocolChannels.osIntelligencePushDesc"
-            }
-            I18nKey::AndonSettingsProtocolChannelsSubtitle => {
-                "andon.settings.protocolChannels.subtitle"
-            }
+            I18nKey::AndonSettingsNotificationIntelligenceCriticalEscalation => "andon.settings.notificationIntelligence.criticalEscalation",
+            I18nKey::AndonSettingsNotificationIntelligenceCriticalEscalationDesc => "andon.settings.notificationIntelligence.criticalEscalationDesc",
+            I18nKey::AndonSettingsNotificationIntelligenceMaintenanceDispatch => "andon.settings.notificationIntelligence.maintenanceDispatch",
+            I18nKey::AndonSettingsNotificationIntelligenceMaintenanceDispatchDesc => "andon.settings.notificationIntelligence.maintenanceDispatchDesc",
+            I18nKey::AndonSettingsNotificationIntelligenceQualityAbnormalities => "andon.settings.notificationIntelligence.qualityAbnormalities",
+            I18nKey::AndonSettingsNotificationIntelligenceQualityAbnormalitiesDesc => "andon.settings.notificationIntelligence.qualityAbnormalitiesDesc",
+            I18nKey::AndonSettingsNotificationIntelligenceSubtitle => "andon.settings.notificationIntelligence.subtitle",
+            I18nKey::AndonSettingsNotificationIntelligenceTitle => "andon.settings.notificationIntelligence.title",
+            I18nKey::AndonSettingsProtocolChannelsMobileSmsGateway => "andon.settings.protocolChannels.mobileSmsGateway",
+            I18nKey::AndonSettingsProtocolChannelsMobileSmsGatewayDesc => "andon.settings.protocolChannels.mobileSmsGatewayDesc",
+            I18nKey::AndonSettingsProtocolChannelsOsIntelligencePush => "andon.settings.protocolChannels.osIntelligencePush",
+            I18nKey::AndonSettingsProtocolChannelsOsIntelligencePushDesc => "andon.settings.protocolChannels.osIntelligencePushDesc",
+            I18nKey::AndonSettingsProtocolChannelsSubtitle => "andon.settings.protocolChannels.subtitle",
             I18nKey::AndonSettingsProtocolChannelsTitle => "andon.settings.protocolChannels.title",
-            I18nKey::AndonSettingsProtocolChannelsVisualCommandMesh => {
-                "andon.settings.protocolChannels.visualCommandMesh"
-            }
-            I18nKey::AndonSettingsProtocolChannelsVisualCommandMeshDesc => {
-                "andon.settings.protocolChannels.visualCommandMeshDesc"
-            }
+            I18nKey::AndonSettingsProtocolChannelsVisualCommandMesh => "andon.settings.protocolChannels.visualCommandMesh",
+            I18nKey::AndonSettingsProtocolChannelsVisualCommandMeshDesc => "andon.settings.protocolChannels.visualCommandMeshDesc",
             I18nKey::AndonSettingsSaveConfiguration => "andon.settings.saveConfiguration",
             I18nKey::AndonSettingsSubtitle => "andon.settings.subtitle",
             I18nKey::AndonSettingsTitle => "andon.settings.title",
@@ -10952,53 +10704,25 @@ impl I18nKey {
             I18nKey::CommonDisabled => "common.disabled",
             I18nKey::CommonDiscard => "common.discard",
             I18nKey::CommonDisciplinesEeFormDfmFindings => "common.disciplines.ee.form.dfmFindings",
-            I18nKey::CommonDisciplinesEeFormDfmPlaceholder => {
-                "common.disciplines.ee.form.dfmPlaceholder"
-            }
-            I18nKey::CommonDisciplinesEeFormMinFinePitch => {
-                "common.disciplines.ee.form.minFinePitch"
-            }
-            I18nKey::CommonDisciplinesEeFormRequiresXray => {
-                "common.disciplines.ee.form.requiresXray"
-            }
+            I18nKey::CommonDisciplinesEeFormDfmPlaceholder => "common.disciplines.ee.form.dfmPlaceholder",
+            I18nKey::CommonDisciplinesEeFormMinFinePitch => "common.disciplines.ee.form.minFinePitch",
+            I18nKey::CommonDisciplinesEeFormRequiresXray => "common.disciplines.ee.form.requiresXray",
             I18nKey::CommonDisciplinesEeTitle => "common.disciplines.ee.title",
-            I18nKey::CommonDisciplinesEmbeddedFormFixtureNeeded => {
-                "common.disciplines.embedded.form.fixtureNeeded"
-            }
-            I18nKey::CommonDisciplinesEmbeddedFormIpConstraints => {
-                "common.disciplines.embedded.form.ipConstraints"
-            }
-            I18nKey::CommonDisciplinesEmbeddedFormProgrammingMinutes => {
-                "common.disciplines.embedded.form.programmingMinutes"
-            }
+            I18nKey::CommonDisciplinesEmbeddedFormFixtureNeeded => "common.disciplines.embedded.form.fixtureNeeded",
+            I18nKey::CommonDisciplinesEmbeddedFormIpConstraints => "common.disciplines.embedded.form.ipConstraints",
+            I18nKey::CommonDisciplinesEmbeddedFormProgrammingMinutes => "common.disciplines.embedded.form.programmingMinutes",
             I18nKey::CommonDisciplinesEmbeddedTitle => "common.disciplines.embedded.title",
-            I18nKey::CommonDisciplinesMeFormEnclosureRisks => {
-                "common.disciplines.me.form.enclosureRisks"
-            }
-            I18nKey::CommonDisciplinesMeFormLabelingMethod => {
-                "common.disciplines.me.form.labelingMethod"
-            }
+            I18nKey::CommonDisciplinesMeFormEnclosureRisks => "common.disciplines.me.form.enclosureRisks",
+            I18nKey::CommonDisciplinesMeFormLabelingMethod => "common.disciplines.me.form.labelingMethod",
             I18nKey::CommonDisciplinesMeTitle => "common.disciplines.me.title",
-            I18nKey::CommonDisciplinesMfgeFormLineAssignment => {
-                "common.disciplines.mfge.form.lineAssignment"
-            }
-            I18nKey::CommonDisciplinesMfgeFormSpecialTraining => {
-                "common.disciplines.mfge.form.specialTraining"
-            }
+            I18nKey::CommonDisciplinesMfgeFormLineAssignment => "common.disciplines.mfge.form.lineAssignment",
+            I18nKey::CommonDisciplinesMfgeFormSpecialTraining => "common.disciplines.mfge.form.specialTraining",
             I18nKey::CommonDisciplinesMfgeTitle => "common.disciplines.mfge.title",
-            I18nKey::CommonDisciplinesPurchasingFormLongLeadMitigation => {
-                "common.disciplines.purchasing.form.longLeadMitigation"
-            }
-            I18nKey::CommonDisciplinesPurchasingFormTopCostDrivers => {
-                "common.disciplines.purchasing.form.topCostDrivers"
-            }
+            I18nKey::CommonDisciplinesPurchasingFormLongLeadMitigation => "common.disciplines.purchasing.form.longLeadMitigation",
+            I18nKey::CommonDisciplinesPurchasingFormTopCostDrivers => "common.disciplines.purchasing.form.topCostDrivers",
             I18nKey::CommonDisciplinesPurchasingTitle => "common.disciplines.purchasing.title",
-            I18nKey::CommonDisciplinesQeFormComplianceDocs => {
-                "common.disciplines.qe.form.complianceDocs"
-            }
-            I18nKey::CommonDisciplinesQeFormInspectionLevel => {
-                "common.disciplines.qe.form.inspectionLevel"
-            }
+            I18nKey::CommonDisciplinesQeFormComplianceDocs => "common.disciplines.qe.form.complianceDocs",
+            I18nKey::CommonDisciplinesQeFormInspectionLevel => "common.disciplines.qe.form.inspectionLevel",
             I18nKey::CommonDisciplinesQeTitle => "common.disciplines.qe.title",
             I18nKey::CommonDiscontinued => "common.discontinued",
             I18nKey::CommonDiscount => "common.discount",
@@ -11075,155 +10799,61 @@ impl I18nKey {
             I18nKey::CommonQuality => "common.quality",
             I18nKey::CommonQuantity => "common.quantity",
             I18nKey::CommonQuotingHelperPacketActions => "common.quotingHelper.packet.actions",
-            I18nKey::CommonQuotingHelperPacketAssignedToYou => {
-                "common.quotingHelper.packet.assignedToYou"
-            }
+            I18nKey::CommonQuotingHelperPacketAssignedToYou => "common.quotingHelper.packet.assignedToYou",
             I18nKey::CommonQuotingHelperPacketAuditLog => "common.quotingHelper.packet.auditLog",
-            I18nKey::CommonQuotingHelperPacketBackToWorkbench => {
-                "common.quotingHelper.packet.backToWorkbench"
-            }
+            I18nKey::CommonQuotingHelperPacketBackToWorkbench => "common.quotingHelper.packet.backToWorkbench",
             I18nKey::CommonQuotingHelperPacketCreated => "common.quotingHelper.packet.created",
-            I18nKey::CommonQuotingHelperPacketFlagBlocker => {
-                "common.quotingHelper.packet.flagBlocker"
-            }
-            I18nKey::CommonQuotingHelperPacketGenericDiscipline => {
-                "common.quotingHelper.packet.genericDiscipline"
-            }
-            I18nKey::CommonQuotingHelperPacketInternalNotes => {
-                "common.quotingHelper.packet.internalNotes"
-            }
-            I18nKey::CommonQuotingHelperPacketNoDeadline => {
-                "common.quotingHelper.packet.noDeadline"
-            }
-            I18nKey::CommonQuotingHelperPacketNotesPlaceholder => {
-                "common.quotingHelper.packet.notesPlaceholder"
-            }
+            I18nKey::CommonQuotingHelperPacketFlagBlocker => "common.quotingHelper.packet.flagBlocker",
+            I18nKey::CommonQuotingHelperPacketGenericDiscipline => "common.quotingHelper.packet.genericDiscipline",
+            I18nKey::CommonQuotingHelperPacketInternalNotes => "common.quotingHelper.packet.internalNotes",
+            I18nKey::CommonQuotingHelperPacketNoDeadline => "common.quotingHelper.packet.noDeadline",
+            I18nKey::CommonQuotingHelperPacketNotesPlaceholder => "common.quotingHelper.packet.notesPlaceholder",
             I18nKey::CommonQuotingHelperPacketOwner => "common.quotingHelper.packet.owner",
-            I18nKey::CommonQuotingHelperPacketPacketNotFound => {
-                "common.quotingHelper.packet.packetNotFound"
-            }
-            I18nKey::CommonQuotingHelperPacketReviewPacket => {
-                "common.quotingHelper.packet.reviewPacket"
-            }
-            I18nKey::CommonQuotingHelperPacketSaveProgress => {
-                "common.quotingHelper.packet.saveProgress"
-            }
+            I18nKey::CommonQuotingHelperPacketPacketNotFound => "common.quotingHelper.packet.packetNotFound",
+            I18nKey::CommonQuotingHelperPacketReviewPacket => "common.quotingHelper.packet.reviewPacket",
+            I18nKey::CommonQuotingHelperPacketSaveProgress => "common.quotingHelper.packet.saveProgress",
             I18nKey::CommonQuotingHelperPacketSignOff => "common.quotingHelper.packet.signOff",
             I18nKey::CommonQuotingHelperPacketSla => "common.quotingHelper.packet.sla",
-            I18nKey::CommonQuotingHelperPacketStructuredContribution => {
-                "common.quotingHelper.packet.structuredContribution"
-            }
-            I18nKey::CommonQuotingHelperPacketTechnicalInputs => {
-                "common.quotingHelper.packet.technicalInputs"
-            }
-            I18nKey::CommonQuotingHelperWorkbenchActiveRisks => {
-                "common.quotingHelper.workbench.activeRisks"
-            }
-            I18nKey::CommonQuotingHelperWorkbenchAiMatch => {
-                "common.quotingHelper.workbench.aiMatch"
-            }
-            I18nKey::CommonQuotingHelperWorkbenchAttachedFiles => {
-                "common.quotingHelper.workbench.attachedFiles"
-            }
-            I18nKey::CommonQuotingHelperWorkbenchConvertToNpi => {
-                "common.quotingHelper.workbench.convertToNpi"
-            }
-            I18nKey::CommonQuotingHelperWorkbenchCostBuild => {
-                "common.quotingHelper.workbench.costBuild"
-            }
-            I18nKey::CommonQuotingHelperWorkbenchDeadline => {
-                "common.quotingHelper.workbench.deadline"
-            }
-            I18nKey::CommonQuotingHelperWorkbenchEstimatedTotal => {
-                "common.quotingHelper.workbench.estimatedTotal"
-            }
-            I18nKey::CommonQuotingHelperWorkbenchExportPackage => {
-                "common.quotingHelper.workbench.exportPackage"
-            }
-            I18nKey::CommonQuotingHelperWorkbenchGatesComplete => {
-                "common.quotingHelper.workbench.gatesComplete"
-            }
-            I18nKey::CommonQuotingHelperWorkbenchGenerateQuote => {
-                "common.quotingHelper.workbench.generateQuote"
-            }
-            I18nKey::CommonQuotingHelperWorkbenchGrossMargin => {
-                "common.quotingHelper.workbench.grossMargin"
-            }
-            I18nKey::CommonQuotingHelperWorkbenchHealthy => {
-                "common.quotingHelper.workbench.healthy"
-            }
-            I18nKey::CommonQuotingHelperWorkbenchHistoricalAssumptions => {
-                "common.quotingHelper.workbench.historicalAssumptions"
-            }
-            I18nKey::CommonQuotingHelperWorkbenchInitialize => {
-                "common.quotingHelper.workbench.initialize"
-            }
+            I18nKey::CommonQuotingHelperPacketStructuredContribution => "common.quotingHelper.packet.structuredContribution",
+            I18nKey::CommonQuotingHelperPacketTechnicalInputs => "common.quotingHelper.packet.technicalInputs",
+            I18nKey::CommonQuotingHelperWorkbenchActiveRisks => "common.quotingHelper.workbench.activeRisks",
+            I18nKey::CommonQuotingHelperWorkbenchAiMatch => "common.quotingHelper.workbench.aiMatch",
+            I18nKey::CommonQuotingHelperWorkbenchAttachedFiles => "common.quotingHelper.workbench.attachedFiles",
+            I18nKey::CommonQuotingHelperWorkbenchConvertToNpi => "common.quotingHelper.workbench.convertToNpi",
+            I18nKey::CommonQuotingHelperWorkbenchCostBuild => "common.quotingHelper.workbench.costBuild",
+            I18nKey::CommonQuotingHelperWorkbenchDeadline => "common.quotingHelper.workbench.deadline",
+            I18nKey::CommonQuotingHelperWorkbenchEstimatedTotal => "common.quotingHelper.workbench.estimatedTotal",
+            I18nKey::CommonQuotingHelperWorkbenchExportPackage => "common.quotingHelper.workbench.exportPackage",
+            I18nKey::CommonQuotingHelperWorkbenchGatesComplete => "common.quotingHelper.workbench.gatesComplete",
+            I18nKey::CommonQuotingHelperWorkbenchGenerateQuote => "common.quotingHelper.workbench.generateQuote",
+            I18nKey::CommonQuotingHelperWorkbenchGrossMargin => "common.quotingHelper.workbench.grossMargin",
+            I18nKey::CommonQuotingHelperWorkbenchHealthy => "common.quotingHelper.workbench.healthy",
+            I18nKey::CommonQuotingHelperWorkbenchHistoricalAssumptions => "common.quotingHelper.workbench.historicalAssumptions",
+            I18nKey::CommonQuotingHelperWorkbenchInitialize => "common.quotingHelper.workbench.initialize",
             I18nKey::CommonQuotingHelperWorkbenchLabor => "common.quotingHelper.workbench.labor",
-            I18nKey::CommonQuotingHelperWorkbenchMarginAnalysis => {
-                "common.quotingHelper.workbench.marginAnalysis"
-            }
-            I18nKey::CommonQuotingHelperWorkbenchMaterial => {
-                "common.quotingHelper.workbench.material"
-            }
-            I18nKey::CommonQuotingHelperWorkbenchNoPackets => {
-                "common.quotingHelper.workbench.noPackets"
-            }
-            I18nKey::CommonQuotingHelperWorkbenchNreTooling => {
-                "common.quotingHelper.workbench.nreTooling"
-            }
-            I18nKey::CommonQuotingHelperWorkbenchOpenPacket => {
-                "common.quotingHelper.workbench.openPacket"
-            }
-            I18nKey::CommonQuotingHelperWorkbenchParallelContribution => {
-                "common.quotingHelper.workbench.parallelContribution"
-            }
-            I18nKey::CommonQuotingHelperWorkbenchQuantityLadder => {
-                "common.quotingHelper.workbench.quantityLadder"
-            }
-            I18nKey::CommonQuotingHelperWorkbenchQuoteMemory => {
-                "common.quotingHelper.workbench.quoteMemory"
-            }
-            I18nKey::CommonQuotingHelperWorkbenchReceived => {
-                "common.quotingHelper.workbench.received"
-            }
+            I18nKey::CommonQuotingHelperWorkbenchMarginAnalysis => "common.quotingHelper.workbench.marginAnalysis",
+            I18nKey::CommonQuotingHelperWorkbenchMaterial => "common.quotingHelper.workbench.material",
+            I18nKey::CommonQuotingHelperWorkbenchNoPackets => "common.quotingHelper.workbench.noPackets",
+            I18nKey::CommonQuotingHelperWorkbenchNreTooling => "common.quotingHelper.workbench.nreTooling",
+            I18nKey::CommonQuotingHelperWorkbenchOpenPacket => "common.quotingHelper.workbench.openPacket",
+            I18nKey::CommonQuotingHelperWorkbenchParallelContribution => "common.quotingHelper.workbench.parallelContribution",
+            I18nKey::CommonQuotingHelperWorkbenchQuantityLadder => "common.quotingHelper.workbench.quantityLadder",
+            I18nKey::CommonQuotingHelperWorkbenchQuoteMemory => "common.quotingHelper.workbench.quoteMemory",
+            I18nKey::CommonQuotingHelperWorkbenchReceived => "common.quotingHelper.workbench.received",
             I18nKey::CommonQuotingHelperWorkbenchReview => "common.quotingHelper.workbench.review",
-            I18nKey::CommonQuotingHelperWorkbenchRfqPackage => {
-                "common.quotingHelper.workbench.rfqPackage"
-            }
-            I18nKey::CommonQuotingHelperWorkbenchRisksBomObsolescenceDesc => {
-                "common.quotingHelper.workbench.risks.bomObsolescence.desc"
-            }
-            I18nKey::CommonQuotingHelperWorkbenchRisksBomObsolescenceTitle => {
-                "common.quotingHelper.workbench.risks.bomObsolescence.title"
-            }
-            I18nKey::CommonQuotingHelperWorkbenchRisksLongLeadDesc => {
-                "common.quotingHelper.workbench.risks.longLead.desc"
-            }
-            I18nKey::CommonQuotingHelperWorkbenchRisksLongLeadTitle => {
-                "common.quotingHelper.workbench.risks.longLead.title"
-            }
-            I18nKey::CommonQuotingHelperWorkbenchRisksMissingCentroidDesc => {
-                "common.quotingHelper.workbench.risks.missingCentroid.desc"
-            }
-            I18nKey::CommonQuotingHelperWorkbenchRisksMissingCentroidTitle => {
-                "common.quotingHelper.workbench.risks.missingCentroid.title"
-            }
-            I18nKey::CommonQuotingHelperWorkbenchStageGateWorkflow => {
-                "common.quotingHelper.workbench.stageGateWorkflow"
-            }
-            I18nKey::CommonQuotingHelperWorkbenchSubtitle => {
-                "common.quotingHelper.workbench.subtitle"
-            }
-            I18nKey::CommonQuotingHelperWorkbenchTargetMargin => {
-                "common.quotingHelper.workbench.targetMargin"
-            }
-            I18nKey::CommonQuotingHelperWorkbenchTestLevels => {
-                "common.quotingHelper.workbench.testLevels"
-            }
+            I18nKey::CommonQuotingHelperWorkbenchRfqPackage => "common.quotingHelper.workbench.rfqPackage",
+            I18nKey::CommonQuotingHelperWorkbenchRisksBomObsolescenceDesc => "common.quotingHelper.workbench.risks.bomObsolescence.desc",
+            I18nKey::CommonQuotingHelperWorkbenchRisksBomObsolescenceTitle => "common.quotingHelper.workbench.risks.bomObsolescence.title",
+            I18nKey::CommonQuotingHelperWorkbenchRisksLongLeadDesc => "common.quotingHelper.workbench.risks.longLead.desc",
+            I18nKey::CommonQuotingHelperWorkbenchRisksLongLeadTitle => "common.quotingHelper.workbench.risks.longLead.title",
+            I18nKey::CommonQuotingHelperWorkbenchRisksMissingCentroidDesc => "common.quotingHelper.workbench.risks.missingCentroid.desc",
+            I18nKey::CommonQuotingHelperWorkbenchRisksMissingCentroidTitle => "common.quotingHelper.workbench.risks.missingCentroid.title",
+            I18nKey::CommonQuotingHelperWorkbenchStageGateWorkflow => "common.quotingHelper.workbench.stageGateWorkflow",
+            I18nKey::CommonQuotingHelperWorkbenchSubtitle => "common.quotingHelper.workbench.subtitle",
+            I18nKey::CommonQuotingHelperWorkbenchTargetMargin => "common.quotingHelper.workbench.targetMargin",
+            I18nKey::CommonQuotingHelperWorkbenchTestLevels => "common.quotingHelper.workbench.testLevels",
             I18nKey::CommonQuotingHelperWorkbenchTitle => "common.quotingHelper.workbench.title",
-            I18nKey::CommonQuotingHelperWorkbenchVariance => {
-                "common.quotingHelper.workbench.variance"
-            }
+            I18nKey::CommonQuotingHelperWorkbenchVariance => "common.quotingHelper.workbench.variance",
             I18nKey::CommonReceived => "common.received",
             I18nKey::CommonRefresh => "common.refresh",
             I18nKey::CommonReject => "common.reject",
@@ -11303,171 +10933,101 @@ impl I18nKey {
             I18nKey::ComponentsComingSoonDefaultMessage => "components.comingSoon.defaultMessage",
             I18nKey::ComponentsComingSoonGoBack => "components.comingSoon.goBack",
             I18nKey::ComponentsCommandPaletteAriaLabel => "components.commandPalette.ariaLabel",
-            I18nKey::ComponentsCommandPaletteNoCommandsFound => {
-                "components.commandPalette.noCommandsFound"
-            }
+            I18nKey::ComponentsCommandPaletteNoCommandsFound => "components.commandPalette.noCommandsFound",
             I18nKey::ComponentsCommandPalettePlaceholder => "components.commandPalette.placeholder",
-            I18nKey::ComponentsCommandPaletteSearchAriaLabel => {
-                "components.commandPalette.searchAriaLabel"
-            }
+            I18nKey::ComponentsCommandPaletteSearchAriaLabel => "components.commandPalette.searchAriaLabel",
             I18nKey::ComponentsCommandPaletteToToggle => "components.commandPalette.toToggle",
-            I18nKey::ComponentsCommandPaletteTryDifferentSearch => {
-                "components.commandPalette.tryDifferentSearch"
-            }
+            I18nKey::ComponentsCommandPaletteTryDifferentSearch => "components.commandPalette.tryDifferentSearch",
             I18nKey::ComponentsCorrectionRejectionFailed => "components.correction.rejectionFailed",
-            I18nKey::ComponentsCorrectionSubmissionFailed => {
-                "components.correction.submissionFailed"
-            }
+            I18nKey::ComponentsCorrectionSubmissionFailed => "components.correction.submissionFailed",
             I18nKey::ComponentsDataVisualizationNoData => "components.dataVisualization.noData",
-            I18nKey::ComponentsDesignSystemAuditPanelTitle => {
-                "components.designSystem.auditPanelTitle"
-            }
-            I18nKey::ComponentsDesignSystemCloseAuditPanel => {
-                "components.designSystem.closeAuditPanel"
-            }
-            I18nKey::ComponentsDesignSystemDesignSystemAudit => {
-                "components.designSystem.designSystemAudit"
-            }
+            I18nKey::ComponentsDesignSystemAuditPanelTitle => "components.designSystem.auditPanelTitle",
+            I18nKey::ComponentsDesignSystemCloseAuditPanel => "components.designSystem.closeAuditPanel",
+            I18nKey::ComponentsDesignSystemDesignSystemAudit => "components.designSystem.designSystemAudit",
             I18nKey::ComponentsDesignSystemFontSizes => "components.designSystem.fontSizes",
             I18nKey::ComponentsDesignSystemFontWeights => "components.designSystem.fontWeights",
-            I18nKey::ComponentsDesignSystemHorizontalScale => {
-                "components.designSystem.horizontalScale"
-            }
-            I18nKey::ComponentsDesignSystemOpenAuditPanel => {
-                "components.designSystem.openAuditPanel"
-            }
+            I18nKey::ComponentsDesignSystemHorizontalScale => "components.designSystem.horizontalScale",
+            I18nKey::ComponentsDesignSystemOpenAuditPanel => "components.designSystem.openAuditPanel",
             I18nKey::ComponentsDesignSystemVerticalScale => "components.designSystem.verticalScale",
             I18nKey::ComponentsEmptyStateA3Action => "components.emptyState.a3.action",
             I18nKey::ComponentsEmptyStateA3Description => "components.emptyState.a3.description",
             I18nKey::ComponentsEmptyStateA3Hint => "components.emptyState.a3.hint",
             I18nKey::ComponentsEmptyStateA3Title => "components.emptyState.a3.title",
             I18nKey::ComponentsEmptyStateAccountAction => "components.emptyState.account.action",
-            I18nKey::ComponentsEmptyStateAccountDescription => {
-                "components.emptyState.account.description"
-            }
+            I18nKey::ComponentsEmptyStateAccountDescription => "components.emptyState.account.description",
             I18nKey::ComponentsEmptyStateAccountHint => "components.emptyState.account.hint",
             I18nKey::ComponentsEmptyStateAccountTitle => "components.emptyState.account.title",
             I18nKey::ComponentsEmptyStateAndonAction => "components.emptyState.andon.action",
-            I18nKey::ComponentsEmptyStateAndonDescription => {
-                "components.emptyState.andon.description"
-            }
+            I18nKey::ComponentsEmptyStateAndonDescription => "components.emptyState.andon.description",
             I18nKey::ComponentsEmptyStateAndonHint => "components.emptyState.andon.hint",
             I18nKey::ComponentsEmptyStateAndonTitle => "components.emptyState.andon.title",
             I18nKey::ComponentsEmptyStateContactAction => "components.emptyState.contact.action",
-            I18nKey::ComponentsEmptyStateContactDescription => {
-                "components.emptyState.contact.description"
-            }
+            I18nKey::ComponentsEmptyStateContactDescription => "components.emptyState.contact.description",
             I18nKey::ComponentsEmptyStateContactHint => "components.emptyState.contact.hint",
             I18nKey::ComponentsEmptyStateContactTitle => "components.emptyState.contact.title",
             I18nKey::ComponentsEmptyStateDefaultTitle => "components.emptyState.defaultTitle",
             I18nKey::ComponentsEmptyStateErrorAction => "components.emptyState.error.action",
-            I18nKey::ComponentsEmptyStateErrorDescription => {
-                "components.emptyState.error.description"
-            }
+            I18nKey::ComponentsEmptyStateErrorDescription => "components.emptyState.error.description",
             I18nKey::ComponentsEmptyStateErrorTitle => "components.emptyState.error.title",
-            I18nKey::ComponentsEmptyStateExceptionAction => {
-                "components.emptyState.exception.action"
-            }
-            I18nKey::ComponentsEmptyStateExceptionDescription => {
-                "components.emptyState.exception.description"
-            }
+            I18nKey::ComponentsEmptyStateExceptionAction => "components.emptyState.exception.action",
+            I18nKey::ComponentsEmptyStateExceptionDescription => "components.emptyState.exception.description",
             I18nKey::ComponentsEmptyStateExceptionHint => "components.emptyState.exception.hint",
             I18nKey::ComponentsEmptyStateExceptionTitle => "components.emptyState.exception.title",
             I18nKey::ComponentsEmptyStateFilterAction => "components.emptyState.filter.action",
-            I18nKey::ComponentsEmptyStateFilterDescription => {
-                "components.emptyState.filter.description"
-            }
+            I18nKey::ComponentsEmptyStateFilterDescription => "components.emptyState.filter.description",
             I18nKey::ComponentsEmptyStateFilterHint => "components.emptyState.filter.hint",
             I18nKey::ComponentsEmptyStateFilterTitle => "components.emptyState.filter.title",
-            I18nKey::ComponentsEmptyStateMaintenanceAction => {
-                "components.emptyState.maintenance.action"
-            }
-            I18nKey::ComponentsEmptyStateMaintenanceDescription => {
-                "components.emptyState.maintenance.description"
-            }
-            I18nKey::ComponentsEmptyStateMaintenanceHint => {
-                "components.emptyState.maintenance.hint"
-            }
-            I18nKey::ComponentsEmptyStateMaintenanceTitle => {
-                "components.emptyState.maintenance.title"
-            }
+            I18nKey::ComponentsEmptyStateMaintenanceAction => "components.emptyState.maintenance.action",
+            I18nKey::ComponentsEmptyStateMaintenanceDescription => "components.emptyState.maintenance.description",
+            I18nKey::ComponentsEmptyStateMaintenanceHint => "components.emptyState.maintenance.hint",
+            I18nKey::ComponentsEmptyStateMaintenanceTitle => "components.emptyState.maintenance.title",
             I18nKey::ComponentsEmptyStateNoActiveJobs => "components.emptyState.noActiveJobs",
             I18nKey::ComponentsEmptyStateNoItemsYet => "components.emptyState.noItemsYet",
             I18nKey::ComponentsEmptyStateNoQuotesCreated => "components.emptyState.noQuotesCreated",
             I18nKey::ComponentsEmptyStateNoResultsFound => "components.emptyState.noResultsFound",
             I18nKey::ComponentsEmptyStateNoRfqsInQueue => "components.emptyState.noRfqsInQueue",
-            I18nKey::ComponentsEmptyStateNotFoundDescription => {
-                "components.emptyState.notFound.description"
-            }
+            I18nKey::ComponentsEmptyStateNotFoundDescription => "components.emptyState.notFound.description",
             I18nKey::ComponentsEmptyStateNotFoundGoBack => "components.emptyState.notFound.goBack",
             I18nKey::ComponentsEmptyStateNotFoundGoHome => "components.emptyState.notFound.goHome",
             I18nKey::ComponentsEmptyStateNotFoundTitle => "components.emptyState.notFound.title",
             I18nKey::ComponentsEmptyStateObeyaAction => "components.emptyState.obeya.action",
-            I18nKey::ComponentsEmptyStateObeyaDescription => {
-                "components.emptyState.obeya.description"
-            }
+            I18nKey::ComponentsEmptyStateObeyaDescription => "components.emptyState.obeya.description",
             I18nKey::ComponentsEmptyStateObeyaHint => "components.emptyState.obeya.hint",
             I18nKey::ComponentsEmptyStateObeyaTitle => "components.emptyState.obeya.title",
             I18nKey::ComponentsEmptyStateProductAction => "components.emptyState.product.action",
-            I18nKey::ComponentsEmptyStateProductDescription => {
-                "components.emptyState.product.description"
-            }
+            I18nKey::ComponentsEmptyStateProductDescription => "components.emptyState.product.description",
             I18nKey::ComponentsEmptyStateProductHint => "components.emptyState.product.hint",
             I18nKey::ComponentsEmptyStateProductTitle => "components.emptyState.product.title",
             I18nKey::ComponentsEmptyStateProjectAction => "components.emptyState.project.action",
-            I18nKey::ComponentsEmptyStateProjectDescription => {
-                "components.emptyState.project.description"
-            }
+            I18nKey::ComponentsEmptyStateProjectDescription => "components.emptyState.project.description",
             I18nKey::ComponentsEmptyStateProjectHint => "components.emptyState.project.hint",
             I18nKey::ComponentsEmptyStateProjectTitle => "components.emptyState.project.title",
             I18nKey::ComponentsEmptyStateQuoteAction => "components.emptyState.quote.action",
-            I18nKey::ComponentsEmptyStateQuoteDescription => {
-                "components.emptyState.quote.description"
-            }
+            I18nKey::ComponentsEmptyStateQuoteDescription => "components.emptyState.quote.description",
             I18nKey::ComponentsEmptyStateQuoteHint => "components.emptyState.quote.hint",
             I18nKey::ComponentsEmptyStateQuoteTitle => "components.emptyState.quote.title",
             I18nKey::ComponentsEmptyStateRfqAction => "components.emptyState.rfq.action",
             I18nKey::ComponentsEmptyStateRfqDescription => "components.emptyState.rfq.description",
             I18nKey::ComponentsEmptyStateRfqHint => "components.emptyState.rfq.hint",
             I18nKey::ComponentsEmptyStateRfqTitle => "components.emptyState.rfq.title",
-            I18nKey::ComponentsEmptyStateSearchAdjustSearch => {
-                "components.emptyState.search.adjustSearch"
-            }
+            I18nKey::ComponentsEmptyStateSearchAdjustSearch => "components.emptyState.search.adjustSearch",
             I18nKey::ComponentsEmptyStateSearchHint => "components.emptyState.search.hint",
-            I18nKey::ComponentsEmptyStateSearchNoResultsFor => {
-                "components.emptyState.search.noResultsFor"
-            }
-            I18nKey::ComponentsEmptyStateSearchYourSearch => {
-                "components.emptyState.search.yourSearch"
-            }
+            I18nKey::ComponentsEmptyStateSearchNoResultsFor => "components.emptyState.search.noResultsFor",
+            I18nKey::ComponentsEmptyStateSearchYourSearch => "components.emptyState.search.yourSearch",
             I18nKey::ComponentsEmptyStateTaskAction => "components.emptyState.task.action",
-            I18nKey::ComponentsEmptyStateTaskDescription => {
-                "components.emptyState.task.description"
-            }
+            I18nKey::ComponentsEmptyStateTaskDescription => "components.emptyState.task.description",
             I18nKey::ComponentsEmptyStateTaskHint => "components.emptyState.task.hint",
             I18nKey::ComponentsEmptyStateTaskTitle => "components.emptyState.task.title",
             I18nKey::ComponentsEmptyStateTrainingAction => "components.emptyState.training.action",
-            I18nKey::ComponentsEmptyStateTrainingDescription => {
-                "components.emptyState.training.description"
-            }
+            I18nKey::ComponentsEmptyStateTrainingDescription => "components.emptyState.training.description",
             I18nKey::ComponentsEmptyStateTrainingHint => "components.emptyState.training.hint",
             I18nKey::ComponentsEmptyStateTrainingTitle => "components.emptyState.training.title",
-            I18nKey::ComponentsEmptyStateWorkCenterAction => {
-                "components.emptyState.workCenter.action"
-            }
-            I18nKey::ComponentsEmptyStateWorkCenterDescription => {
-                "components.emptyState.workCenter.description"
-            }
+            I18nKey::ComponentsEmptyStateWorkCenterAction => "components.emptyState.workCenter.action",
+            I18nKey::ComponentsEmptyStateWorkCenterDescription => "components.emptyState.workCenter.description",
             I18nKey::ComponentsEmptyStateWorkCenterHint => "components.emptyState.workCenter.hint",
-            I18nKey::ComponentsEmptyStateWorkCenterTitle => {
-                "components.emptyState.workCenter.title"
-            }
-            I18nKey::ComponentsEmptyStateWorkOrderAction => {
-                "components.emptyState.workOrder.action"
-            }
-            I18nKey::ComponentsEmptyStateWorkOrderDescription => {
-                "components.emptyState.workOrder.description"
-            }
+            I18nKey::ComponentsEmptyStateWorkCenterTitle => "components.emptyState.workCenter.title",
+            I18nKey::ComponentsEmptyStateWorkOrderAction => "components.emptyState.workOrder.action",
+            I18nKey::ComponentsEmptyStateWorkOrderDescription => "components.emptyState.workOrder.description",
             I18nKey::ComponentsEmptyStateWorkOrderHint => "components.emptyState.workOrder.hint",
             I18nKey::ComponentsEmptyStateWorkOrderTitle => "components.emptyState.workOrder.title",
             I18nKey::ComponentsErrorDismissBtn => "components.error.dismissBtn",
@@ -11478,18 +11038,12 @@ impl I18nKey {
             I18nKey::ComponentsErrorResolveConflicts => "components.error.resolveConflicts",
             I18nKey::ComponentsErrorServerVersion => "components.error.serverVersion",
             I18nKey::ComponentsErrorSomethingWentWrong => "components.error.somethingWentWrong",
-            I18nKey::ComponentsErrorTechnicalDifficulties => {
-                "components.error.technicalDifficulties"
-            }
+            I18nKey::ComponentsErrorTechnicalDifficulties => "components.error.technicalDifficulties",
             I18nKey::ComponentsErrorYourChanges => "components.error.yourChanges",
             I18nKey::ComponentsErrorStateAccessDenied => "components.errorState.accessDenied",
-            I18nKey::ComponentsErrorStateAccessDeniedDesc => {
-                "components.errorState.accessDeniedDesc"
-            }
+            I18nKey::ComponentsErrorStateAccessDeniedDesc => "components.errorState.accessDeniedDesc",
             I18nKey::ComponentsErrorStateConnectionError => "components.errorState.connectionError",
-            I18nKey::ComponentsErrorStateConnectionErrorDesc => {
-                "components.errorState.connectionErrorDesc"
-            }
+            I18nKey::ComponentsErrorStateConnectionErrorDesc => "components.errorState.connectionErrorDesc",
             I18nKey::ComponentsErrorStateError => "components.errorState.error",
             I18nKey::ComponentsErrorStateErrorDesc => "components.errorState.errorDesc",
             I18nKey::ComponentsErrorStateNoData => "components.errorState.noData",
@@ -11499,22 +11053,12 @@ impl I18nKey {
             I18nKey::ComponentsErrorStateServerError => "components.errorState.serverError",
             I18nKey::ComponentsErrorStateServerErrorDesc => "components.errorState.serverErrorDesc",
             I18nKey::ComponentsErrorStateTryAgain => "components.errorState.tryAgain",
-            I18nKey::ComponentsFactoryFloorCommandReceived => {
-                "components.factoryFloor.commandReceived"
-            }
+            I18nKey::ComponentsFactoryFloorCommandReceived => "components.factoryFloor.commandReceived",
             I18nKey::ComponentsFactoryFloorErrorOccurred => "components.factoryFloor.errorOccurred",
-            I18nKey::ComponentsFactoryFloorMachineStatusMaintenanceRequired => {
-                "components.factoryFloor.machineStatus.maintenanceRequired"
-            }
-            I18nKey::ComponentsFactoryFloorMachineStatusProductionIssue => {
-                "components.factoryFloor.machineStatus.productionIssue"
-            }
-            I18nKey::ComponentsFactoryFloorMachineStatusQualityAlert => {
-                "components.factoryFloor.machineStatus.qualityAlert"
-            }
-            I18nKey::ComponentsFactoryFloorMachineStatusSafetyAlert => {
-                "components.factoryFloor.machineStatus.safetyAlert"
-            }
+            I18nKey::ComponentsFactoryFloorMachineStatusMaintenanceRequired => "components.factoryFloor.machineStatus.maintenanceRequired",
+            I18nKey::ComponentsFactoryFloorMachineStatusProductionIssue => "components.factoryFloor.machineStatus.productionIssue",
+            I18nKey::ComponentsFactoryFloorMachineStatusQualityAlert => "components.factoryFloor.machineStatus.qualityAlert",
+            I18nKey::ComponentsFactoryFloorMachineStatusSafetyAlert => "components.factoryFloor.machineStatus.safetyAlert",
             I18nKey::ComponentsFactoryFloorProcessing => "components.factoryFloor.processing",
             I18nKey::ComponentsFactoryFloorVoiceDisabled => "components.factoryFloor.voiceDisabled",
             I18nKey::ComponentsGanttChartNoTasks => "components.ganttChart.noTasks",
@@ -11537,18 +11081,14 @@ impl I18nKey {
             I18nKey::ComponentsOnboardingCloseHelpPanel => "components.onboarding.closeHelpPanel",
             I18nKey::ComponentsOnboardingCloseTour => "components.onboarding.closeTour",
             I18nKey::ComponentsOnboardingDismiss => "components.onboarding.dismiss",
-            I18nKey::ComponentsOnboardingDismissSuggestion => {
-                "components.onboarding.dismissSuggestion"
-            }
+            I18nKey::ComponentsOnboardingDismissSuggestion => "components.onboarding.dismissSuggestion",
             I18nKey::ComponentsOnboardingHelpPanel => "components.onboarding.helpPanel",
             I18nKey::ComponentsOnboardingProductTour => "components.onboarding.productTour",
             I18nKey::ComponentsOnboardingSearchHelp => "components.onboarding.searchHelp",
             I18nKey::ComponentsOnboardingToggleAssistant => "components.onboarding.toggleAssistant",
             I18nKey::ComponentsPageGuardAccessRestricted => "components.pageGuard.accessRestricted",
             I18nKey::ComponentsPageGuardNoPermission => "components.pageGuard.noPermission",
-            I18nKey::ComponentsPageGuardReturnToDashboard => {
-                "components.pageGuard.returnToDashboard"
-            }
+            I18nKey::ComponentsPageGuardReturnToDashboard => "components.pageGuard.returnToDashboard",
             I18nKey::ComponentsPdfPreviewByAuthor => "components.pdfPreview.byAuthor",
             I18nKey::ComponentsPdfPreviewClose => "components.pdfPreview.close",
             I18nKey::ComponentsPdfPreviewCloseEscape => "components.pdfPreview.closeEscape",
@@ -11556,21 +11096,15 @@ impl I18nKey {
             I18nKey::ComponentsPdfPreviewCreatedLabel => "components.pdfPreview.createdLabel",
             I18nKey::ComponentsPdfPreviewCurrentPage => "components.pdfPreview.currentPage",
             I18nKey::ComponentsPdfPreviewCurrentVersion => "components.pdfPreview.currentVersion",
-            I18nKey::ComponentsPdfPreviewCurrentlyViewing => {
-                "components.pdfPreview.currentlyViewing"
-            }
-            I18nKey::ComponentsPdfPreviewDescriptionLabel => {
-                "components.pdfPreview.descriptionLabel"
-            }
+            I18nKey::ComponentsPdfPreviewCurrentlyViewing => "components.pdfPreview.currentlyViewing",
+            I18nKey::ComponentsPdfPreviewDescriptionLabel => "components.pdfPreview.descriptionLabel",
             I18nKey::ComponentsPdfPreviewDocumentInfo => "components.pdfPreview.documentInfo",
             I18nKey::ComponentsPdfPreviewDownload => "components.pdfPreview.download",
             I18nKey::ComponentsPdfPreviewEntityLabel => "components.pdfPreview.entityLabel",
             I18nKey::ComponentsPdfPreviewFailedToLoad => "components.pdfPreview.failedToLoad",
             I18nKey::ComponentsPdfPreviewFullscreen => "components.pdfPreview.fullscreen",
             I18nKey::ComponentsPdfPreviewHashLabel => "components.pdfPreview.hashLabel",
-            I18nKey::ComponentsPdfPreviewImmutableVersion => {
-                "components.pdfPreview.immutableVersion"
-            }
+            I18nKey::ComponentsPdfPreviewImmutableVersion => "components.pdfPreview.immutableVersion",
             I18nKey::ComponentsPdfPreviewLoadingPdf => "components.pdfPreview.loadingPdf",
             I18nKey::ComponentsPdfPreviewMetadata => "components.pdfPreview.metadata",
             I18nKey::ComponentsPdfPreviewMetadataHeading => "components.pdfPreview.metadataHeading",
@@ -11592,9 +11126,7 @@ impl I18nKey {
             I18nKey::ComponentsPdfPreviewVersionLabel => "components.pdfPreview.versionLabel",
             I18nKey::ComponentsPdfPreviewZoomIn => "components.pdfPreview.zoomIn",
             I18nKey::ComponentsPdfPreviewZoomOut => "components.pdfPreview.zoomOut",
-            I18nKey::ComponentsPrintExportBarcodeAriaLabel => {
-                "components.printExport.barcodeAriaLabel"
-            }
+            I18nKey::ComponentsPrintExportBarcodeAriaLabel => "components.printExport.barcodeAriaLabel",
             I18nKey::ComponentsPrintExportBarcodeType => "components.printExport.barcodeType",
             I18nKey::ComponentsPrintExportBarcodeValue => "components.printExport.barcodeValue",
             I18nKey::ComponentsPrintExportCancel => "components.printExport.cancel",
@@ -11604,32 +11136,20 @@ impl I18nKey {
             I18nKey::ComponentsPrintExportDataMatrix => "components.printExport.dataMatrix",
             I18nKey::ComponentsPrintExportDocument => "components.printExport.document",
             I18nKey::ComponentsPrintExportDownloadAsCsv => "components.printExport.downloadAsCsv",
-            I18nKey::ComponentsPrintExportDownloadAsExcel => {
-                "components.printExport.downloadAsExcel"
-            }
+            I18nKey::ComponentsPrintExportDownloadAsExcel => "components.printExport.downloadAsExcel",
             I18nKey::ComponentsPrintExportDownloadAsPdf => "components.printExport.downloadAsPdf",
-            I18nKey::ComponentsPrintExportDownloadComplete => {
-                "components.printExport.downloadComplete"
-            }
+            I18nKey::ComponentsPrintExportDownloadComplete => "components.printExport.downloadComplete",
             I18nKey::ComponentsPrintExportDownloading => "components.printExport.downloading",
-            I18nKey::ComponentsPrintExportEnterBarcodeValue => {
-                "components.printExport.enterBarcodeValue"
-            }
+            I18nKey::ComponentsPrintExportEnterBarcodeValue => "components.printExport.enterBarcodeValue",
             I18nKey::ComponentsPrintExportExport => "components.printExport.export",
             I18nKey::ComponentsPrintExportExportFailed => "components.printExport.exportFailed",
-            I18nKey::ComponentsPrintExportGeneratingFormat => {
-                "components.printExport.generatingFormat"
-            }
+            I18nKey::ComponentsPrintExportGeneratingFormat => "components.printExport.generatingFormat",
             I18nKey::ComponentsPrintExportLabelPreview => "components.printExport.labelPreview",
             I18nKey::ComponentsPrintExportLabelSize => "components.printExport.labelSize",
-            I18nKey::ComponentsPrintExportPreparingDocument => {
-                "components.printExport.preparingDocument"
-            }
+            I18nKey::ComponentsPrintExportPreparingDocument => "components.printExport.preparingDocument",
             I18nKey::ComponentsPrintExportPreview => "components.printExport.preview",
             I18nKey::ComponentsPrintExportPrint => "components.printExport.print",
-            I18nKey::ComponentsPrintExportPrintCountLabels => {
-                "components.printExport.printCountLabels"
-            }
+            I18nKey::ComponentsPrintExportPrintCountLabels => "components.printExport.printCountLabels",
             I18nKey::ComponentsPrintExportPrintLabel => "components.printExport.printLabel",
             I18nKey::ComponentsPrintExportPrintLabels => "components.printExport.printLabels",
             I18nKey::ComponentsPrintExportPrinted => "components.printExport.printed",
@@ -11640,9 +11160,7 @@ impl I18nKey {
             I18nKey::ComponentsPrintExportUnknownError => "components.printExport.unknownError",
             I18nKey::ComponentsQuickActionsConfirmAction => "components.quickActions.confirmAction",
             I18nKey::ComponentsScannerAllowCameraAccess => "components.scanner.allowCameraAccess",
-            I18nKey::ComponentsScannerBrowserNotSupported => {
-                "components.scanner.browserNotSupported"
-            }
+            I18nKey::ComponentsScannerBrowserNotSupported => "components.scanner.browserNotSupported",
             I18nKey::ComponentsScannerCameraAccessDenied => "components.scanner.cameraAccessDenied",
             I18nKey::ComponentsScannerCameraNotActive => "components.scanner.cameraNotActive",
             I18nKey::ComponentsScannerCapture => "components.scanner.capture",
@@ -11654,9 +11172,7 @@ impl I18nKey {
             I18nKey::ComponentsScannerScanAnother => "components.scanner.scanAnother",
             I18nKey::ComponentsScannerScanBarcode => "components.scanner.scanBarcode",
             I18nKey::ComponentsScannerScanComplete => "components.scanner.scanComplete",
-            I18nKey::ComponentsScannerScannerNotSupported => {
-                "components.scanner.scannerNotSupported"
-            }
+            I18nKey::ComponentsScannerScannerNotSupported => "components.scanner.scannerNotSupported",
             I18nKey::ComponentsScannerStartScanner => "components.scanner.startScanner",
             I18nKey::ComponentsScannerStop => "components.scanner.stop",
             I18nKey::ComponentsScannerStopScanner => "components.scanner.stopScanner",
@@ -11665,9 +11181,7 @@ impl I18nKey {
             I18nKey::ComponentsScannerTryAgain => "components.scanner.tryAgain",
             I18nKey::ComponentsSecurityAllActions => "components.security.allActions",
             I18nKey::ComponentsSecurityNoPermission => "components.security.noPermission",
-            I18nKey::ComponentsSessionDismissNotification => {
-                "components.session.dismissNotification"
-            }
+            I18nKey::ComponentsSessionDismissNotification => "components.session.dismissNotification",
             I18nKey::ComponentsSessionNotifications => "components.session.notifications",
             I18nKey::ComponentsSidebarAdministration => "components.sidebar.administration",
             I18nKey::ComponentsSidebarSenseiHome => "components.sidebar.senseiHome",
@@ -11681,25 +11195,13 @@ impl I18nKey {
             I18nKey::ComponentsSpatialUiPathSteps => "components.spatialUi.pathSteps",
             I18nKey::ComponentsSpatialUiProcessTime => "components.spatialUi.processTime",
             I18nKey::ComponentsSpatialUiResetView => "components.spatialUi.resetView",
-            I18nKey::ComponentsSpatialUiSelectCellDetails => {
-                "components.spatialUi.selectCellDetails"
-            }
-            I18nKey::ComponentsSpatialUiWarRoomActiveAlerts => {
-                "components.spatialUi.warRoom.activeAlerts"
-            }
+            I18nKey::ComponentsSpatialUiSelectCellDetails => "components.spatialUi.selectCellDetails",
+            I18nKey::ComponentsSpatialUiWarRoomActiveAlerts => "components.spatialUi.warRoom.activeAlerts",
             I18nKey::ComponentsSpatialUiWarRoomKpi => "components.spatialUi.warRoom.kpi",
-            I18nKey::ComponentsSpatialUiWarRoomProductionStatus => {
-                "components.spatialUi.warRoom.productionStatus"
-            }
-            I18nKey::ComponentsSpatialUiWarRoomQualityMetrics => {
-                "components.spatialUi.warRoom.qualityMetrics"
-            }
-            I18nKey::ComponentsSpatialUiWarRoomSalesPipeline => {
-                "components.spatialUi.warRoom.salesPipeline"
-            }
-            I18nKey::ComponentsSpatialUiWarRoomTodaysTimeline => {
-                "components.spatialUi.warRoom.todaysTimeline"
-            }
+            I18nKey::ComponentsSpatialUiWarRoomProductionStatus => "components.spatialUi.warRoom.productionStatus",
+            I18nKey::ComponentsSpatialUiWarRoomQualityMetrics => "components.spatialUi.warRoom.qualityMetrics",
+            I18nKey::ComponentsSpatialUiWarRoomSalesPipeline => "components.spatialUi.warRoom.salesPipeline",
+            I18nKey::ComponentsSpatialUiWarRoomTodaysTimeline => "components.spatialUi.warRoom.todaysTimeline",
             I18nKey::ComponentsSpatialUiWasteRatio => "components.spatialUi.wasteRatio",
             I18nKey::ComponentsSpatialUiZoomIn => "components.spatialUi.zoomIn",
             I18nKey::ComponentsSpatialUiZoomOut => "components.spatialUi.zoomOut",
@@ -11748,15 +11250,11 @@ impl I18nKey {
             I18nKey::EmailDraftingEmptyList => "emailDrafting.empty.list",
             I18nKey::EmailDraftingEmptyTitle => "emailDrafting.empty.title",
             I18nKey::EmailDraftingFieldsCompanyName => "emailDrafting.fields.companyName",
-            I18nKey::EmailDraftingFieldsReferenceNumberOptional => {
-                "emailDrafting.fields.referenceNumberOptional"
-            }
+            I18nKey::EmailDraftingFieldsReferenceNumberOptional => "emailDrafting.fields.referenceNumberOptional",
             I18nKey::EmailDraftingFieldsSenderEmail => "emailDrafting.fields.senderEmail",
             I18nKey::EmailDraftingFieldsSenderName => "emailDrafting.fields.senderName",
             I18nKey::EmailDraftingFieldsSenderTitle => "emailDrafting.fields.senderTitle",
-            I18nKey::EmailDraftingFieldsSubjectHintOptional => {
-                "emailDrafting.fields.subjectHintOptional"
-            }
+            I18nKey::EmailDraftingFieldsSubjectHintOptional => "emailDrafting.fields.subjectHintOptional",
             I18nKey::EmailDraftingFieldsThreadEntityId => "emailDrafting.fields.threadEntityId",
             I18nKey::EmailDraftingFieldsThreadEntityType => "emailDrafting.fields.threadEntityType",
             I18nKey::EmailDraftingLanguageArabic => "emailDrafting.language.arabic",
@@ -11770,38 +11268,18 @@ impl I18nKey {
             I18nKey::EmailDraftingLanguagePortuguese => "emailDrafting.language.portuguese",
             I18nKey::EmailDraftingLanguageSpanish => "emailDrafting.language.spanish",
             I18nKey::EmailDraftingNotificationsCopied => "emailDrafting.notifications.copied",
-            I18nKey::EmailDraftingPlaceholdersCompanyName => {
-                "emailDrafting.placeholders.companyName"
-            }
+            I18nKey::EmailDraftingPlaceholdersCompanyName => "emailDrafting.placeholders.companyName",
             I18nKey::EmailDraftingPlaceholdersKeyPoint => "emailDrafting.placeholders.keyPoint",
-            I18nKey::EmailDraftingPlaceholdersRecipientEmail => {
-                "emailDrafting.placeholders.recipientEmail"
-            }
-            I18nKey::EmailDraftingPlaceholdersRecipientNameOptional => {
-                "emailDrafting.placeholders.recipientNameOptional"
-            }
-            I18nKey::EmailDraftingPlaceholdersReferenceNumber => {
-                "emailDrafting.placeholders.referenceNumber"
-            }
-            I18nKey::EmailDraftingPlaceholdersSelectPurpose => {
-                "emailDrafting.placeholders.selectPurpose"
-            }
-            I18nKey::EmailDraftingPlaceholdersSenderEmail => {
-                "emailDrafting.placeholders.senderEmail"
-            }
+            I18nKey::EmailDraftingPlaceholdersRecipientEmail => "emailDrafting.placeholders.recipientEmail",
+            I18nKey::EmailDraftingPlaceholdersRecipientNameOptional => "emailDrafting.placeholders.recipientNameOptional",
+            I18nKey::EmailDraftingPlaceholdersReferenceNumber => "emailDrafting.placeholders.referenceNumber",
+            I18nKey::EmailDraftingPlaceholdersSelectPurpose => "emailDrafting.placeholders.selectPurpose",
+            I18nKey::EmailDraftingPlaceholdersSenderEmail => "emailDrafting.placeholders.senderEmail",
             I18nKey::EmailDraftingPlaceholdersSenderName => "emailDrafting.placeholders.senderName",
-            I18nKey::EmailDraftingPlaceholdersSenderTitle => {
-                "emailDrafting.placeholders.senderTitle"
-            }
-            I18nKey::EmailDraftingPlaceholdersSubjectHint => {
-                "emailDrafting.placeholders.subjectHint"
-            }
-            I18nKey::EmailDraftingPlaceholdersThreadEntityId => {
-                "emailDrafting.placeholders.threadEntityId"
-            }
-            I18nKey::EmailDraftingPlaceholdersThreadEntityType => {
-                "emailDrafting.placeholders.threadEntityType"
-            }
+            I18nKey::EmailDraftingPlaceholdersSenderTitle => "emailDrafting.placeholders.senderTitle",
+            I18nKey::EmailDraftingPlaceholdersSubjectHint => "emailDrafting.placeholders.subjectHint",
+            I18nKey::EmailDraftingPlaceholdersThreadEntityId => "emailDrafting.placeholders.threadEntityId",
+            I18nKey::EmailDraftingPlaceholdersThreadEntityType => "emailDrafting.placeholders.threadEntityType",
             I18nKey::EmailDraftingPreviewConfidence => "emailDrafting.preview.confidence",
             I18nKey::EmailDraftingPreviewGeneratedIn => "emailDrafting.preview.generatedIn",
             I18nKey::EmailDraftingPreviewSubjectLabel => "emailDrafting.preview.subjectLabel",
@@ -11810,19 +11288,11 @@ impl I18nKey {
             I18nKey::EmailDraftingPurposeCustom => "emailDrafting.purpose.custom",
             I18nKey::EmailDraftingPurposeEscalation => "emailDrafting.purpose.escalation",
             I18nKey::EmailDraftingPurposeIntroduction => "emailDrafting.purpose.introduction",
-            I18nKey::EmailDraftingPurposeIssueNotification => {
-                "emailDrafting.purpose.issueNotification"
-            }
-            I18nKey::EmailDraftingPurposeMeetingConfirmation => {
-                "emailDrafting.purpose.meetingConfirmation"
-            }
+            I18nKey::EmailDraftingPurposeIssueNotification => "emailDrafting.purpose.issueNotification",
+            I18nKey::EmailDraftingPurposeMeetingConfirmation => "emailDrafting.purpose.meetingConfirmation",
             I18nKey::EmailDraftingPurposeMeetingRequest => "emailDrafting.purpose.meetingRequest",
-            I18nKey::EmailDraftingPurposeMeetingReschedule => {
-                "emailDrafting.purpose.meetingReschedule"
-            }
-            I18nKey::EmailDraftingPurposeMissingInfoRequest => {
-                "emailDrafting.purpose.missingInfoRequest"
-            }
+            I18nKey::EmailDraftingPurposeMeetingReschedule => "emailDrafting.purpose.meetingReschedule",
+            I18nKey::EmailDraftingPurposeMissingInfoRequest => "emailDrafting.purpose.missingInfoRequest",
             I18nKey::EmailDraftingPurposeQuoteFollowup => "emailDrafting.purpose.quoteFollowup",
             I18nKey::EmailDraftingPurposeQuoteSubmission => "emailDrafting.purpose.quoteSubmission",
             I18nKey::EmailDraftingPurposeStatusUpdate => "emailDrafting.purpose.statusUpdate",
@@ -11843,23 +11313,13 @@ impl I18nKey {
             I18nKey::EmailDraftingStatusReviewed => "emailDrafting.status.reviewed",
             I18nKey::EmailDraftingStatusSent => "emailDrafting.status.sent",
             I18nKey::EmailDraftingSuggestionsTitle => "emailDrafting.suggestions.title",
-            I18nKey::EmailDraftingThreadEntityTypeInvoice => {
-                "emailDrafting.thread.entityType.invoice"
-            }
-            I18nKey::EmailDraftingThreadEntityTypeNonConformance => {
-                "emailDrafting.thread.entityType.nonConformance"
-            }
-            I18nKey::EmailDraftingThreadEntityTypeOpportunity => {
-                "emailDrafting.thread.entityType.opportunity"
-            }
+            I18nKey::EmailDraftingThreadEntityTypeInvoice => "emailDrafting.thread.entityType.invoice",
+            I18nKey::EmailDraftingThreadEntityTypeNonConformance => "emailDrafting.thread.entityType.nonConformance",
+            I18nKey::EmailDraftingThreadEntityTypeOpportunity => "emailDrafting.thread.entityType.opportunity",
             I18nKey::EmailDraftingThreadEntityTypeQuote => "emailDrafting.thread.entityType.quote",
             I18nKey::EmailDraftingThreadEntityTypeRfq => "emailDrafting.thread.entityType.rfq",
-            I18nKey::EmailDraftingThreadEntityTypeShipment => {
-                "emailDrafting.thread.entityType.shipment"
-            }
-            I18nKey::EmailDraftingThreadEntityTypeWorkOrder => {
-                "emailDrafting.thread.entityType.workOrder"
-            }
+            I18nKey::EmailDraftingThreadEntityTypeShipment => "emailDrafting.thread.entityType.shipment",
+            I18nKey::EmailDraftingThreadEntityTypeWorkOrder => "emailDrafting.thread.entityType.workOrder",
             I18nKey::EmailDraftingThreadHelper => "emailDrafting.thread.helper",
             I18nKey::EmailDraftingThreadLoadFailed => "emailDrafting.thread.loadFailed",
             I18nKey::EmailDraftingThreadLoading => "emailDrafting.thread.loading",
@@ -11877,9 +11337,7 @@ impl I18nKey {
             I18nKey::EmailDraftingUnitsMilliseconds => "emailDrafting.units.milliseconds",
             I18nKey::EmailDraftingUnitsSeconds => "emailDrafting.units.seconds",
             I18nKey::EmailDraftingValidationEmailInvalid => "emailDrafting.validation.emailInvalid",
-            I18nKey::EmailDraftingValidationEmailRequired => {
-                "emailDrafting.validation.emailRequired"
-            }
+            I18nKey::EmailDraftingValidationEmailRequired => "emailDrafting.validation.emailRequired",
             I18nKey::ErrorsBadRequest => "errors.badRequest",
             I18nKey::ErrorsBoundaryFallback => "errors.boundaryFallback",
             I18nKey::ErrorsConflict => "errors.conflict",
@@ -11902,16 +11360,10 @@ impl I18nKey {
             I18nKey::ExecutiveNorthStar => "executive.northStar",
             I18nKey::ExecutiveRiskDashboard => "executive.riskDashboard",
             I18nKey::ExecutiveStrategicDirectivesActive => "executive.strategicDirectives.active",
-            I18nKey::ExecutiveStrategicDirectivesAddDirective => {
-                "executive.strategicDirectives.addDirective"
-            }
-            I18nKey::ExecutiveStrategicDirectivesCompleted => {
-                "executive.strategicDirectives.completed"
-            }
+            I18nKey::ExecutiveStrategicDirectivesAddDirective => "executive.strategicDirectives.addDirective",
+            I18nKey::ExecutiveStrategicDirectivesCompleted => "executive.strategicDirectives.completed",
             I18nKey::ExecutiveStrategicDirectivesOnHold => "executive.strategicDirectives.onHold",
-            I18nKey::ExecutiveStrategicDirectivesProgress => {
-                "executive.strategicDirectives.progress"
-            }
+            I18nKey::ExecutiveStrategicDirectivesProgress => "executive.strategicDirectives.progress",
             I18nKey::ExecutiveStrategicDirectivesStatus => "executive.strategicDirectives.status",
             I18nKey::ExecutiveStrategicDirectivesTitle => "executive.strategicDirectives.title",
             I18nKey::ExecutiveTitle => "executive.title",
@@ -12015,21 +11467,11 @@ impl I18nKey {
             I18nKey::MaintenanceAssetsSerialNumber => "maintenance.assets.serialNumber",
             I18nKey::MaintenanceAssetsStatus => "maintenance.assets.status",
             I18nKey::MaintenanceAssetsTitle => "maintenance.assets.title",
-            I18nKey::MaintenancePreventiveMaintenanceFrequency => {
-                "maintenance.preventiveMaintenance.frequency"
-            }
-            I18nKey::MaintenancePreventiveMaintenanceLastCompleted => {
-                "maintenance.preventiveMaintenance.lastCompleted"
-            }
-            I18nKey::MaintenancePreventiveMaintenanceNextDue => {
-                "maintenance.preventiveMaintenance.nextDue"
-            }
-            I18nKey::MaintenancePreventiveMaintenanceSchedule => {
-                "maintenance.preventiveMaintenance.schedule"
-            }
-            I18nKey::MaintenancePreventiveMaintenanceTitle => {
-                "maintenance.preventiveMaintenance.title"
-            }
+            I18nKey::MaintenancePreventiveMaintenanceFrequency => "maintenance.preventiveMaintenance.frequency",
+            I18nKey::MaintenancePreventiveMaintenanceLastCompleted => "maintenance.preventiveMaintenance.lastCompleted",
+            I18nKey::MaintenancePreventiveMaintenanceNextDue => "maintenance.preventiveMaintenance.nextDue",
+            I18nKey::MaintenancePreventiveMaintenanceSchedule => "maintenance.preventiveMaintenance.schedule",
+            I18nKey::MaintenancePreventiveMaintenanceTitle => "maintenance.preventiveMaintenance.title",
             I18nKey::MaintenanceTabsAssets => "maintenance.tabs.assets",
             I18nKey::MaintenanceTabsBudgets => "maintenance.tabs.budgets",
             I18nKey::MaintenanceTabsFieldReturns => "maintenance.tabs.fieldReturns",
@@ -12093,89 +11535,41 @@ impl I18nKey {
             I18nKey::ModulesMaintenanceVendors => "modules.maintenance.vendors",
             I18nKey::ModulesMaintenanceWorkOrders => "modules.maintenance.workOrders",
             I18nKey::ModulesProductionCapacity => "modules.production.capacity",
-            I18nKey::ModulesProductionDetailActiveOperativesAssigned => {
-                "modules.production.detail.activeOperativesAssigned"
-            }
-            I18nKey::ModulesProductionDetailAggregationPulse => {
-                "modules.production.detail.aggregationPulse"
-            }
+            I18nKey::ModulesProductionDetailActiveOperativesAssigned => "modules.production.detail.activeOperativesAssigned",
+            I18nKey::ModulesProductionDetailAggregationPulse => "modules.production.detail.aggregationPulse",
             I18nKey::ModulesProductionDetailDays => "modules.production.detail.days",
-            I18nKey::ModulesProductionDetailDocumentation => {
-                "modules.production.detail.documentation"
-            }
-            I18nKey::ModulesProductionDetailEfficiencyRating => {
-                "modules.production.detail.efficiencyRating"
-            }
-            I18nKey::ModulesProductionDetailEscalateAnomaly => {
-                "modules.production.detail.escalateAnomaly"
-            }
-            I18nKey::ModulesProductionDetailExecutionVelocity => {
-                "modules.production.detail.executionVelocity"
-            }
+            I18nKey::ModulesProductionDetailDocumentation => "modules.production.detail.documentation",
+            I18nKey::ModulesProductionDetailEfficiencyRating => "modules.production.detail.efficiencyRating",
+            I18nKey::ModulesProductionDetailEscalateAnomaly => "modules.production.detail.escalateAnomaly",
+            I18nKey::ModulesProductionDetailExecutionVelocity => "modules.production.detail.executionVelocity",
             I18nKey::ModulesProductionDetailExportSpec => "modules.production.detail.exportSpec",
-            I18nKey::ModulesProductionDetailGateVerified => {
-                "modules.production.detail.gateVerified"
-            }
-            I18nKey::ModulesProductionDetailInitiateExecution => {
-                "modules.production.detail.initiateExecution"
-            }
+            I18nKey::ModulesProductionDetailGateVerified => "modules.production.detail.gateVerified",
+            I18nKey::ModulesProductionDetailInitiateExecution => "modules.production.detail.initiateExecution",
             I18nKey::ModulesProductionDetailLoadingBom => "modules.production.detail.loadingBom",
             I18nKey::ModulesProductionDetailNode => "modules.production.detail.node",
             I18nKey::ModulesProductionDetailQuality => "modules.production.detail.quality",
-            I18nKey::ModulesProductionDetailResourceAllocation => {
-                "modules.production.detail.resourceAllocation"
-            }
+            I18nKey::ModulesProductionDetailResourceAllocation => "modules.production.detail.resourceAllocation",
             I18nKey::ModulesProductionDetailSafety => "modules.production.detail.safety",
-            I18nKey::ModulesProductionDetailScrapDeviation => {
-                "modules.production.detail.scrapDeviation"
-            }
-            I18nKey::ModulesProductionDetailShiftConfiguration => {
-                "modules.production.detail.shiftConfiguration"
-            }
-            I18nKey::ModulesProductionDetailStandardLeadTime => {
-                "modules.production.detail.standardLeadTime"
-            }
-            I18nKey::ModulesProductionDetailStandardWorkProtocol => {
-                "modules.production.detail.standardWorkProtocol"
-            }
-            I18nKey::ModulesProductionDetailStartHorizon => {
-                "modules.production.detail.startHorizon"
-            }
+            I18nKey::ModulesProductionDetailScrapDeviation => "modules.production.detail.scrapDeviation",
+            I18nKey::ModulesProductionDetailShiftConfiguration => "modules.production.detail.shiftConfiguration",
+            I18nKey::ModulesProductionDetailStandardLeadTime => "modules.production.detail.standardLeadTime",
+            I18nKey::ModulesProductionDetailStandardWorkProtocol => "modules.production.detail.standardWorkProtocol",
+            I18nKey::ModulesProductionDetailStartHorizon => "modules.production.detail.startHorizon",
             I18nKey::ModulesProductionDetailStation => "modules.production.detail.station",
-            I18nKey::ModulesProductionDetailStatusActive => {
-                "modules.production.detail.status.active"
-            }
-            I18nKey::ModulesProductionDetailStatusCompleted => {
-                "modules.production.detail.status.completed"
-            }
-            I18nKey::ModulesProductionDetailStatusHalted => {
-                "modules.production.detail.status.halted"
-            }
-            I18nKey::ModulesProductionDetailStatusMaintenance => {
-                "modules.production.detail.status.maintenance"
-            }
-            I18nKey::ModulesProductionDetailSuspendProtocol => {
-                "modules.production.detail.suspendProtocol"
-            }
+            I18nKey::ModulesProductionDetailStatusActive => "modules.production.detail.status.active",
+            I18nKey::ModulesProductionDetailStatusCompleted => "modules.production.detail.status.completed",
+            I18nKey::ModulesProductionDetailStatusHalted => "modules.production.detail.status.halted",
+            I18nKey::ModulesProductionDetailStatusMaintenance => "modules.production.detail.status.maintenance",
+            I18nKey::ModulesProductionDetailSuspendProtocol => "modules.production.detail.suspendProtocol",
             I18nKey::ModulesProductionDetailTabsBom => "modules.production.detail.tabs.bom",
             I18nKey::ModulesProductionDetailTabsHistory => "modules.production.detail.tabs.history",
-            I18nKey::ModulesProductionDetailTabsOperations => {
-                "modules.production.detail.tabs.operations"
-            }
+            I18nKey::ModulesProductionDetailTabsOperations => "modules.production.detail.tabs.operations",
             I18nKey::ModulesProductionDetailTabsQuality => "modules.production.detail.tabs.quality",
-            I18nKey::ModulesProductionDetailTargetMagnitude => {
-                "modules.production.detail.targetMagnitude"
-            }
-            I18nKey::ModulesProductionDetailTargetTerminal => {
-                "modules.production.detail.targetTerminal"
-            }
-            I18nKey::ModulesProductionDetailTemporalSchedule => {
-                "modules.production.detail.temporalSchedule"
-            }
+            I18nKey::ModulesProductionDetailTargetMagnitude => "modules.production.detail.targetMagnitude",
+            I18nKey::ModulesProductionDetailTargetTerminal => "modules.production.detail.targetTerminal",
+            I18nKey::ModulesProductionDetailTemporalSchedule => "modules.production.detail.temporalSchedule",
             I18nKey::ModulesProductionDetailTitle => "modules.production.detail.title",
-            I18nKey::ModulesProductionDetailUnknownProduct => {
-                "modules.production.detail.unknownProduct"
-            }
+            I18nKey::ModulesProductionDetailUnknownProduct => "modules.production.detail.unknownProduct",
             I18nKey::ModulesProductionDetailViewHistory => "modules.production.detail.viewHistory",
             I18nKey::ModulesProductionDowntime => "modules.production.downtime",
             I18nKey::ModulesProductionEfficiency => "modules.production.efficiency",
@@ -12187,22 +11581,16 @@ impl I18nKey {
             I18nKey::ModulesProductionYield => "modules.production.yield",
             I18nKey::ModulesProductsActionsNewProduct => "modules.products.actions.newProduct",
             I18nKey::ModulesProductsAllStock => "modules.products.allStock",
-            I18nKey::ModulesProductsDetailAuthorizedInventory => {
-                "modules.products.detail.authorizedInventory"
-            }
+            I18nKey::ModulesProductsDetailAuthorizedInventory => "modules.products.detail.authorizedInventory",
             I18nKey::ModulesProductsDetailBomCost => "modules.products.detail.bomCost",
             I18nKey::ModulesProductsDetailCreated => "modules.products.detail.created",
             I18nKey::ModulesProductsDetailCurrentLevel => "modules.products.detail.currentLevel",
             I18nKey::ModulesProductsDetailFiscalMargin => "modules.products.detail.fiscalMargin",
-            I18nKey::ModulesProductsDetailFiscalParameters => {
-                "modules.products.detail.fiscalParameters"
-            }
+            I18nKey::ModulesProductsDetailFiscalParameters => "modules.products.detail.fiscalParameters",
             I18nKey::ModulesProductsDetailInventory => "modules.products.detail.inventory",
             I18nKey::ModulesProductsDetailMeta => "modules.products.detail.meta",
             I18nKey::ModulesProductsDetailNomenclature => "modules.products.detail.nomenclature",
-            I18nKey::ModulesProductsDetailOperationalOverhead => {
-                "modules.products.detail.operationalOverhead"
-            }
+            I18nKey::ModulesProductsDetailOperationalOverhead => "modules.products.detail.operationalOverhead",
             I18nKey::ModulesProductsDetailReorderPoint => "modules.products.detail.reorderPoint",
             I18nKey::ModulesProductsDetailRevision => "modules.products.detail.revision",
             I18nKey::ModulesProductsDetailSku => "modules.products.detail.sku",
@@ -12215,12 +11603,8 @@ impl I18nKey {
             I18nKey::ModulesProductsDetailsInventory => "modules.products.details.inventory",
             I18nKey::ModulesProductsDetailsOverview => "modules.products.details.overview",
             I18nKey::ModulesProductsDetailsRouting => "modules.products.details.routing",
-            I18nKey::ModulesProductsDetailsSpecifications => {
-                "modules.products.details.specifications"
-            }
-            I18nKey::ModulesProductsEmptyStateDescription => {
-                "modules.products.emptyState.description"
-            }
+            I18nKey::ModulesProductsDetailsSpecifications => "modules.products.details.specifications",
+            I18nKey::ModulesProductsEmptyStateDescription => "modules.products.emptyState.description",
             I18nKey::ModulesProductsEmptyStateTitle => "modules.products.emptyState.title",
             I18nKey::ModulesProductsExportIntel => "modules.products.exportIntel",
             I18nKey::ModulesProductsImport => "modules.products.import",
@@ -12232,12 +11616,8 @@ impl I18nKey {
             I18nKey::ModulesProductsNewCreateError => "modules.products.new.createError",
             I18nKey::ModulesProductsNewCreateSuccess => "modules.products.new.createSuccess",
             I18nKey::ModulesProductsNewDescription => "modules.products.new.description",
-            I18nKey::ModulesProductsNewEstablishedSuccess => {
-                "modules.products.new.establishedSuccess"
-            }
-            I18nKey::ModulesProductsNewFailedToEstablish => {
-                "modules.products.new.failedToEstablish"
-            }
+            I18nKey::ModulesProductsNewEstablishedSuccess => "modules.products.new.establishedSuccess",
+            I18nKey::ModulesProductsNewFailedToEstablish => "modules.products.new.failedToEstablish",
             I18nKey::ModulesProductsNewGlobalIdentity => "modules.products.new.globalIdentity",
             I18nKey::ModulesProductsNewLeadTime => "modules.products.new.leadTime",
             I18nKey::ModulesProductsNewLocation => "modules.products.new.location",
@@ -12247,37 +11627,17 @@ impl I18nKey {
             I18nKey::ModulesProductsNewNodeSynchronized => "modules.products.new.nodeSynchronized",
             I18nKey::ModulesProductsNewNomenclature => "modules.products.new.nomenclature",
             I18nKey::ModulesProductsNewPartNumber => "modules.products.new.partNumber",
-            I18nKey::ModulesProductsNewPlaceholdersDescription => {
-                "modules.products.new.placeholders.description"
-            }
-            I18nKey::ModulesProductsNewPlaceholdersLeadTime => {
-                "modules.products.new.placeholders.leadTime"
-            }
-            I18nKey::ModulesProductsNewPlaceholdersLocation => {
-                "modules.products.new.placeholders.location"
-            }
-            I18nKey::ModulesProductsNewPlaceholdersMaxStock => {
-                "modules.products.new.placeholders.maxStock"
-            }
-            I18nKey::ModulesProductsNewPlaceholdersMinStock => {
-                "modules.products.new.placeholders.minStock"
-            }
-            I18nKey::ModulesProductsNewPlaceholdersNomenclature => {
-                "modules.products.new.placeholders.nomenclature"
-            }
-            I18nKey::ModulesProductsNewPlaceholdersPartNumber => {
-                "modules.products.new.placeholders.partNumber"
-            }
-            I18nKey::ModulesProductsNewPlaceholdersSupplier => {
-                "modules.products.new.placeholders.supplier"
-            }
-            I18nKey::ModulesProductsNewPlaceholdersUnitCost => {
-                "modules.products.new.placeholders.unitCost"
-            }
+            I18nKey::ModulesProductsNewPlaceholdersDescription => "modules.products.new.placeholders.description",
+            I18nKey::ModulesProductsNewPlaceholdersLeadTime => "modules.products.new.placeholders.leadTime",
+            I18nKey::ModulesProductsNewPlaceholdersLocation => "modules.products.new.placeholders.location",
+            I18nKey::ModulesProductsNewPlaceholdersMaxStock => "modules.products.new.placeholders.maxStock",
+            I18nKey::ModulesProductsNewPlaceholdersMinStock => "modules.products.new.placeholders.minStock",
+            I18nKey::ModulesProductsNewPlaceholdersNomenclature => "modules.products.new.placeholders.nomenclature",
+            I18nKey::ModulesProductsNewPlaceholdersPartNumber => "modules.products.new.placeholders.partNumber",
+            I18nKey::ModulesProductsNewPlaceholdersSupplier => "modules.products.new.placeholders.supplier",
+            I18nKey::ModulesProductsNewPlaceholdersUnitCost => "modules.products.new.placeholders.unitCost",
             I18nKey::ModulesProductsNewPlaceholdersUom => "modules.products.new.placeholders.uom",
-            I18nKey::ModulesProductsNewProvidePartAndName => {
-                "modules.products.new.providePartAndName"
-            }
+            I18nKey::ModulesProductsNewProvidePartAndName => "modules.products.new.providePartAndName",
             I18nKey::ModulesProductsNewRequiredParams => "modules.products.new.requiredParams",
             I18nKey::ModulesProductsNewSubtitle => "modules.products.new.subtitle",
             I18nKey::ModulesProductsNewSupplier => "modules.products.new.supplier",
@@ -12289,20 +11649,14 @@ impl I18nKey {
             I18nKey::ModulesProductsNewUom => "modules.products.new.uom",
             I18nKey::ModulesProductsOutOfStock => "modules.products.outOfStock",
             I18nKey::ModulesProductsStation => "modules.products.station",
-            I18nKey::ModulesProductsStatsActiveInventoryNodes => {
-                "modules.products.stats.activeInventoryNodes"
-            }
+            I18nKey::ModulesProductsStatsActiveInventoryNodes => "modules.products.stats.activeInventoryNodes",
             I18nKey::ModulesProductsStatsActiveProducts => "modules.products.stats.activeProducts",
-            I18nKey::ModulesProductsStatsAggregatedRevenue => {
-                "modules.products.stats.aggregatedRevenue"
-            }
+            I18nKey::ModulesProductsStatsAggregatedRevenue => "modules.products.stats.aggregatedRevenue",
             I18nKey::ModulesProductsStatsAvgLeadTime => "modules.products.stats.avgLeadTime",
             I18nKey::ModulesProductsStatsBomsDefined => "modules.products.stats.bomsDefined",
             I18nKey::ModulesProductsStatsMeanMarginKPI => "modules.products.stats.meanMarginKPI",
             I18nKey::ModulesProductsStatsRoutingsActive => "modules.products.stats.routingsActive",
-            I18nKey::ModulesProductsStatsStockAbnormalities => {
-                "modules.products.stats.stockAbnormalities"
-            }
+            I18nKey::ModulesProductsStatsStockAbnormalities => "modules.products.stats.stockAbnormalities",
             I18nKey::ModulesProductsStatusDiscontinued => "modules.products.status.discontinued",
             I18nKey::ModulesProductsStockLevel => "modules.products.stockLevel",
             I18nKey::ModulesProductsSubtitle => "modules.products.subtitle",
@@ -12329,252 +11683,112 @@ impl I18nKey {
             I18nKey::ModulesPurchaseTitle => "modules.purchase.title",
             I18nKey::ModulesQualityAudit => "modules.quality.audit",
             I18nKey::ModulesQualityCapaDetailAddNode => "modules.quality.capa.detail.addNode",
-            I18nKey::ModulesQualityCapaDetailCommitAction => {
-                "modules.quality.capa.detail.commitAction"
-            }
-            I18nKey::ModulesQualityCapaDetailCountermeasureNodes => {
-                "modules.quality.capa.detail.countermeasureNodes"
-            }
-            I18nKey::ModulesQualityCapaDetailExportProtocol => {
-                "modules.quality.capa.detail.exportProtocol"
-            }
-            I18nKey::ModulesQualityCapaDetailImplementationMagnitude => {
-                "modules.quality.capa.detail.implementationMagnitude"
-            }
-            I18nKey::ModulesQualityCapaDetailProblemStatement => {
-                "modules.quality.capa.detail.problemStatement"
-            }
+            I18nKey::ModulesQualityCapaDetailCommitAction => "modules.quality.capa.detail.commitAction",
+            I18nKey::ModulesQualityCapaDetailCountermeasureNodes => "modules.quality.capa.detail.countermeasureNodes",
+            I18nKey::ModulesQualityCapaDetailExportProtocol => "modules.quality.capa.detail.exportProtocol",
+            I18nKey::ModulesQualityCapaDetailImplementationMagnitude => "modules.quality.capa.detail.implementationMagnitude",
+            I18nKey::ModulesQualityCapaDetailProblemStatement => "modules.quality.capa.detail.problemStatement",
             I18nKey::ModulesQualityCapaDetailRefineCapa => "modules.quality.capa.detail.refineCapa",
-            I18nKey::ModulesQualityCapaDetailRootCauseAnalysis => {
-                "modules.quality.capa.detail.rootCauseAnalysis"
-            }
+            I18nKey::ModulesQualityCapaDetailRootCauseAnalysis => "modules.quality.capa.detail.rootCauseAnalysis",
             I18nKey::ModulesQualityCapaDetailSubtitle => "modules.quality.capa.detail.subtitle",
             I18nKey::ModulesQualityCapaDetailSyncPulse => "modules.quality.capa.detail.syncPulse",
-            I18nKey::ModulesQualityCapaDetailTabsActionProtocol => {
-                "modules.quality.capa.detail.tabs.actionProtocol"
-            }
-            I18nKey::ModulesQualityCapaDetailTabsEffectivenessSync => {
-                "modules.quality.capa.detail.tabs.effectivenessSync"
-            }
-            I18nKey::ModulesQualityCapaDetailTabsRelatedAnomalies => {
-                "modules.quality.capa.detail.tabs.relatedAnomalies"
-            }
-            I18nKey::ModulesQualityCapaDetailTerminateNode => {
-                "modules.quality.capa.detail.terminateNode"
-            }
-            I18nKey::ModulesQualityCapaDetailVerifyEffectiveness => {
-                "modules.quality.capa.detail.verifyEffectiveness"
-            }
-            I18nKey::ModulesQualityCapaNewActionPlanParameters => {
-                "modules.quality.capa.new.actionPlanParameters"
-            }
-            I18nKey::ModulesQualityCapaNewAssignedOperative => {
-                "modules.quality.capa.new.assignedOperative"
-            }
+            I18nKey::ModulesQualityCapaDetailTabsActionProtocol => "modules.quality.capa.detail.tabs.actionProtocol",
+            I18nKey::ModulesQualityCapaDetailTabsEffectivenessSync => "modules.quality.capa.detail.tabs.effectivenessSync",
+            I18nKey::ModulesQualityCapaDetailTabsRelatedAnomalies => "modules.quality.capa.detail.tabs.relatedAnomalies",
+            I18nKey::ModulesQualityCapaDetailTerminateNode => "modules.quality.capa.detail.terminateNode",
+            I18nKey::ModulesQualityCapaDetailVerifyEffectiveness => "modules.quality.capa.detail.verifyEffectiveness",
+            I18nKey::ModulesQualityCapaNewActionPlanParameters => "modules.quality.capa.new.actionPlanParameters",
+            I18nKey::ModulesQualityCapaNewAssignedOperative => "modules.quality.capa.new.assignedOperative",
             I18nKey::ModulesQualityCapaNewCapaCreated => "modules.quality.capa.new.capaCreated",
             I18nKey::ModulesQualityCapaNewCapaIdentity => "modules.quality.capa.new.capaIdentity",
             I18nKey::ModulesQualityCapaNewCreateFailed => "modules.quality.capa.new.createFailed",
             I18nKey::ModulesQualityCapaNewEstablishCapa => "modules.quality.capa.new.establishCapa",
-            I18nKey::ModulesQualityCapaNewInitiatedSuccess => {
-                "modules.quality.capa.new.initiatedSuccess"
-            }
+            I18nKey::ModulesQualityCapaNewInitiatedSuccess => "modules.quality.capa.new.initiatedSuccess",
             I18nKey::ModulesQualityCapaNewOriginNode => "modules.quality.capa.new.originNode",
-            I18nKey::ModulesQualityCapaNewPriorityCritical => {
-                "modules.quality.capa.new.priority.critical"
-            }
+            I18nKey::ModulesQualityCapaNewPriorityCritical => "modules.quality.capa.new.priority.critical",
             I18nKey::ModulesQualityCapaNewPriorityHigh => "modules.quality.capa.new.priority.high",
             I18nKey::ModulesQualityCapaNewPriorityLow => "modules.quality.capa.new.priority.low",
-            I18nKey::ModulesQualityCapaNewPriorityMedium => {
-                "modules.quality.capa.new.priority.medium"
-            }
+            I18nKey::ModulesQualityCapaNewPriorityMedium => "modules.quality.capa.new.priority.medium",
             I18nKey::ModulesQualityCapaNewPriorityLayer => "modules.quality.capa.new.priorityLayer",
-            I18nKey::ModulesQualityCapaNewRootCauseCountermeasures => {
-                "modules.quality.capa.new.rootCauseCountermeasures"
-            }
+            I18nKey::ModulesQualityCapaNewRootCauseCountermeasures => "modules.quality.capa.new.rootCauseCountermeasures",
             I18nKey::ModulesQualityCapaNewSourceAudit => "modules.quality.capa.new.source.audit",
-            I18nKey::ModulesQualityCapaNewSourceCustomer => {
-                "modules.quality.capa.new.source.customer"
-            }
+            I18nKey::ModulesQualityCapaNewSourceCustomer => "modules.quality.capa.new.source.customer",
             I18nKey::ModulesQualityCapaNewSourceNcr => "modules.quality.capa.new.source.ncr",
-            I18nKey::ModulesQualityCapaNewSourcePreventive => {
-                "modules.quality.capa.new.source.preventive"
-            }
+            I18nKey::ModulesQualityCapaNewSourcePreventive => "modules.quality.capa.new.source.preventive",
             I18nKey::ModulesQualityCapaNewSubtitle => "modules.quality.capa.new.subtitle",
             I18nKey::ModulesQualityCapaNewTargetHorizon => "modules.quality.capa.new.targetHorizon",
             I18nKey::ModulesQualityCapaNewTitle => "modules.quality.capa.new.title",
             I18nKey::ModulesQualityCertifications => "modules.quality.certifications",
             I18nKey::ModulesQualityCompliance => "modules.quality.compliance",
             I18nKey::ModulesQualityDefects => "modules.quality.defects",
-            I18nKey::ModulesQualityInspectionDetailAssignmentTelemetry => {
-                "modules.quality.inspection.detail.assignmentTelemetry"
-            }
-            I18nKey::ModulesQualityInspectionDetailChecklist => {
-                "modules.quality.inspection.detail.checklist"
-            }
-            I18nKey::ModulesQualityInspectionDetailCommitSync => {
-                "modules.quality.inspection.detail.commitSync"
-            }
-            I18nKey::ModulesQualityInspectionDetailInspectionIntelligence => {
-                "modules.quality.inspection.detail.inspectionIntelligence"
-            }
-            I18nKey::ModulesQualityInspectionDetailLeadInspector => {
-                "modules.quality.inspection.detail.leadInspector"
-            }
-            I18nKey::ModulesQualityInspectionDetailPrintEvidence => {
-                "modules.quality.inspection.detail.printEvidence"
-            }
-            I18nKey::ModulesQualityInspectionDetailResultsAnalytics => {
-                "modules.quality.inspection.detail.resultsAnalytics"
-            }
-            I18nKey::ModulesQualityInspectionDetailScheduledSync => {
-                "modules.quality.inspection.detail.scheduledSync"
-            }
-            I18nKey::ModulesQualityInspectionNewAssignedInspector => {
-                "modules.quality.inspection.new.assignedInspector"
-            }
-            I18nKey::ModulesQualityInspectionNewAssociatedWoSync => {
-                "modules.quality.inspection.new.associatedWoSync"
-            }
-            I18nKey::ModulesQualityInspectionNewCreateFailed => {
-                "modules.quality.inspection.new.createFailed"
-            }
-            I18nKey::ModulesQualityInspectionNewEstablishInspection => {
-                "modules.quality.inspection.new.establishInspection"
-            }
-            I18nKey::ModulesQualityInspectionNewGateParameters => {
-                "modules.quality.inspection.new.gateParameters"
-            }
-            I18nKey::ModulesQualityInspectionNewInitialObservation => {
-                "modules.quality.inspection.new.initialObservation"
-            }
-            I18nKey::ModulesQualityInspectionNewInitializedSuccess => {
-                "modules.quality.inspection.new.initializedSuccess"
-            }
-            I18nKey::ModulesQualityInspectionNewInspectionStarted => {
-                "modules.quality.inspection.new.inspectionStarted"
-            }
-            I18nKey::ModulesQualityInspectionNewPhaseNode => {
-                "modules.quality.inspection.new.phaseNode"
-            }
-            I18nKey::ModulesQualityInspectionNewPlaceholdersNotes => {
-                "modules.quality.inspection.new.placeholders.notes"
-            }
-            I18nKey::ModulesQualityInspectionNewPlaceholdersOperatorIdentity => {
-                "modules.quality.inspection.new.placeholders.operatorIdentity"
-            }
-            I18nKey::ModulesQualityInspectionNewPlaceholdersPartNumber => {
-                "modules.quality.inspection.new.placeholders.partNumber"
-            }
-            I18nKey::ModulesQualityInspectionNewPlaceholdersProtocolIdentity => {
-                "modules.quality.inspection.new.placeholders.protocolIdentity"
-            }
-            I18nKey::ModulesQualityInspectionNewPlaceholdersWoNumber => {
-                "modules.quality.inspection.new.placeholders.woNumber"
-            }
-            I18nKey::ModulesQualityInspectionNewProductPartNode => {
-                "modules.quality.inspection.new.productPartNode"
-            }
-            I18nKey::ModulesQualityInspectionNewProtocolIdentity => {
-                "modules.quality.inspection.new.protocolIdentity"
-            }
-            I18nKey::ModulesQualityInspectionNewSubtitle => {
-                "modules.quality.inspection.new.subtitle"
-            }
+            I18nKey::ModulesQualityInspectionDetailAssignmentTelemetry => "modules.quality.inspection.detail.assignmentTelemetry",
+            I18nKey::ModulesQualityInspectionDetailChecklist => "modules.quality.inspection.detail.checklist",
+            I18nKey::ModulesQualityInspectionDetailCommitSync => "modules.quality.inspection.detail.commitSync",
+            I18nKey::ModulesQualityInspectionDetailInspectionIntelligence => "modules.quality.inspection.detail.inspectionIntelligence",
+            I18nKey::ModulesQualityInspectionDetailLeadInspector => "modules.quality.inspection.detail.leadInspector",
+            I18nKey::ModulesQualityInspectionDetailPrintEvidence => "modules.quality.inspection.detail.printEvidence",
+            I18nKey::ModulesQualityInspectionDetailResultsAnalytics => "modules.quality.inspection.detail.resultsAnalytics",
+            I18nKey::ModulesQualityInspectionDetailScheduledSync => "modules.quality.inspection.detail.scheduledSync",
+            I18nKey::ModulesQualityInspectionNewAssignedInspector => "modules.quality.inspection.new.assignedInspector",
+            I18nKey::ModulesQualityInspectionNewAssociatedWoSync => "modules.quality.inspection.new.associatedWoSync",
+            I18nKey::ModulesQualityInspectionNewCreateFailed => "modules.quality.inspection.new.createFailed",
+            I18nKey::ModulesQualityInspectionNewEstablishInspection => "modules.quality.inspection.new.establishInspection",
+            I18nKey::ModulesQualityInspectionNewGateParameters => "modules.quality.inspection.new.gateParameters",
+            I18nKey::ModulesQualityInspectionNewInitialObservation => "modules.quality.inspection.new.initialObservation",
+            I18nKey::ModulesQualityInspectionNewInitializedSuccess => "modules.quality.inspection.new.initializedSuccess",
+            I18nKey::ModulesQualityInspectionNewInspectionStarted => "modules.quality.inspection.new.inspectionStarted",
+            I18nKey::ModulesQualityInspectionNewPhaseNode => "modules.quality.inspection.new.phaseNode",
+            I18nKey::ModulesQualityInspectionNewPlaceholdersNotes => "modules.quality.inspection.new.placeholders.notes",
+            I18nKey::ModulesQualityInspectionNewPlaceholdersOperatorIdentity => "modules.quality.inspection.new.placeholders.operatorIdentity",
+            I18nKey::ModulesQualityInspectionNewPlaceholdersPartNumber => "modules.quality.inspection.new.placeholders.partNumber",
+            I18nKey::ModulesQualityInspectionNewPlaceholdersProtocolIdentity => "modules.quality.inspection.new.placeholders.protocolIdentity",
+            I18nKey::ModulesQualityInspectionNewPlaceholdersWoNumber => "modules.quality.inspection.new.placeholders.woNumber",
+            I18nKey::ModulesQualityInspectionNewProductPartNode => "modules.quality.inspection.new.productPartNode",
+            I18nKey::ModulesQualityInspectionNewProtocolIdentity => "modules.quality.inspection.new.protocolIdentity",
+            I18nKey::ModulesQualityInspectionNewSubtitle => "modules.quality.inspection.new.subtitle",
             I18nKey::ModulesQualityInspectionNewTitle => "modules.quality.inspection.new.title",
-            I18nKey::ModulesQualityInspectionNewTypeFai => {
-                "modules.quality.inspection.new.type.fai"
-            }
-            I18nKey::ModulesQualityInspectionNewTypeFinal => {
-                "modules.quality.inspection.new.type.final"
-            }
-            I18nKey::ModulesQualityInspectionNewTypeInProcess => {
-                "modules.quality.inspection.new.type.inProcess"
-            }
-            I18nKey::ModulesQualityInspectionNewTypeReceiving => {
-                "modules.quality.inspection.new.type.receiving"
-            }
+            I18nKey::ModulesQualityInspectionNewTypeFai => "modules.quality.inspection.new.type.fai",
+            I18nKey::ModulesQualityInspectionNewTypeFinal => "modules.quality.inspection.new.type.final",
+            I18nKey::ModulesQualityInspectionNewTypeInProcess => "modules.quality.inspection.new.type.inProcess",
+            I18nKey::ModulesQualityInspectionNewTypeReceiving => "modules.quality.inspection.new.type.receiving",
             I18nKey::ModulesQualityInspections => "modules.quality.inspections",
             I18nKey::ModulesQualityNcrDetailAssignCapa => "modules.quality.ncr.detail.assignCapa",
             I18nKey::ModulesQualityNcrDetailComment => "modules.quality.ncr.detail.comment",
-            I18nKey::ModulesQualityNcrDetailDiscrepancyIntelligence => {
-                "modules.quality.ncr.detail.discrepancyIntelligence"
-            }
-            I18nKey::ModulesQualityNcrDetailInvestigationProtocol => {
-                "modules.quality.ncr.detail.investigationProtocol"
-            }
-            I18nKey::ModulesQualityNcrDetailNoDescription => {
-                "modules.quality.ncr.detail.noDescription"
-            }
-            I18nKey::ModulesQualityNcrDetailRefineProtocol => {
-                "modules.quality.ncr.detail.refineProtocol"
-            }
-            I18nKey::ModulesQualityNcrDetailSubjectiveData => {
-                "modules.quality.ncr.detail.subjectiveData"
-            }
+            I18nKey::ModulesQualityNcrDetailDiscrepancyIntelligence => "modules.quality.ncr.detail.discrepancyIntelligence",
+            I18nKey::ModulesQualityNcrDetailInvestigationProtocol => "modules.quality.ncr.detail.investigationProtocol",
+            I18nKey::ModulesQualityNcrDetailNoDescription => "modules.quality.ncr.detail.noDescription",
+            I18nKey::ModulesQualityNcrDetailRefineProtocol => "modules.quality.ncr.detail.refineProtocol",
+            I18nKey::ModulesQualityNcrDetailSubjectiveData => "modules.quality.ncr.detail.subjectiveData",
             I18nKey::ModulesQualityNcrDetailSubtitle => "modules.quality.ncr.detail.subtitle",
-            I18nKey::ModulesQualityNcrDetailTabsDisposition => {
-                "modules.quality.ncr.detail.tabs.disposition"
-            }
-            I18nKey::ModulesQualityNcrDetailTabsEventLog => {
-                "modules.quality.ncr.detail.tabs.eventLog"
-            }
-            I18nKey::ModulesQualityNcrDetailTabsEvidence => {
-                "modules.quality.ncr.detail.tabs.evidence"
-            }
-            I18nKey::ModulesQualityNcrDetailTabsRootCause => {
-                "modules.quality.ncr.detail.tabs.rootCause"
-            }
-            I18nKey::ModulesQualityNcrDetailTerminateNode => {
-                "modules.quality.ncr.detail.terminateNode"
-            }
+            I18nKey::ModulesQualityNcrDetailTabsDisposition => "modules.quality.ncr.detail.tabs.disposition",
+            I18nKey::ModulesQualityNcrDetailTabsEventLog => "modules.quality.ncr.detail.tabs.eventLog",
+            I18nKey::ModulesQualityNcrDetailTabsEvidence => "modules.quality.ncr.detail.tabs.evidence",
+            I18nKey::ModulesQualityNcrDetailTabsRootCause => "modules.quality.ncr.detail.tabs.rootCause",
+            I18nKey::ModulesQualityNcrDetailTerminateNode => "modules.quality.ncr.detail.terminateNode",
             I18nKey::ModulesQualityNcrDetailViewLogs => "modules.quality.ncr.detail.viewLogs",
             I18nKey::ModulesQualityNcrNewAssociatedWo => "modules.quality.ncr.new.associatedWo",
             I18nKey::ModulesQualityNcrNewCreateFailed => "modules.quality.ncr.new.createFailed",
             I18nKey::ModulesQualityNcrNewDetectionNode => "modules.quality.ncr.new.detectionNode",
-            I18nKey::ModulesQualityNcrNewDiscrepancyIntelligence => {
-                "modules.quality.ncr.new.discrepancyIntelligence"
-            }
+            I18nKey::ModulesQualityNcrNewDiscrepancyIntelligence => "modules.quality.ncr.new.discrepancyIntelligence",
             I18nKey::ModulesQualityNcrNewEstablishNcr => "modules.quality.ncr.new.establishNcr",
-            I18nKey::ModulesQualityNcrNewIssueTitleProtocol => {
-                "modules.quality.ncr.new.issueTitleProtocol"
-            }
+            I18nKey::ModulesQualityNcrNewIssueTitleProtocol => "modules.quality.ncr.new.issueTitleProtocol",
             I18nKey::ModulesQualityNcrNewNcrCreated => "modules.quality.ncr.new.ncrCreated",
             I18nKey::ModulesQualityNcrNewNcrParameters => "modules.quality.ncr.new.ncrParameters",
-            I18nKey::ModulesQualityNcrNewPlaceholdersDescription => {
-                "modules.quality.ncr.new.placeholders.description"
-            }
-            I18nKey::ModulesQualityNcrNewPlaceholdersLocation => {
-                "modules.quality.ncr.new.placeholders.location"
-            }
-            I18nKey::ModulesQualityNcrNewPlaceholdersPartNumber => {
-                "modules.quality.ncr.new.placeholders.partNumber"
-            }
-            I18nKey::ModulesQualityNcrNewPlaceholdersTitle => {
-                "modules.quality.ncr.new.placeholders.title"
-            }
-            I18nKey::ModulesQualityNcrNewPlaceholdersWoNumber => {
-                "modules.quality.ncr.new.placeholders.woNumber"
-            }
-            I18nKey::ModulesQualityNcrNewRecordedSuccess => {
-                "modules.quality.ncr.new.recordedSuccess"
-            }
+            I18nKey::ModulesQualityNcrNewPlaceholdersDescription => "modules.quality.ncr.new.placeholders.description",
+            I18nKey::ModulesQualityNcrNewPlaceholdersLocation => "modules.quality.ncr.new.placeholders.location",
+            I18nKey::ModulesQualityNcrNewPlaceholdersPartNumber => "modules.quality.ncr.new.placeholders.partNumber",
+            I18nKey::ModulesQualityNcrNewPlaceholdersTitle => "modules.quality.ncr.new.placeholders.title",
+            I18nKey::ModulesQualityNcrNewPlaceholdersWoNumber => "modules.quality.ncr.new.placeholders.woNumber",
+            I18nKey::ModulesQualityNcrNewRecordedSuccess => "modules.quality.ncr.new.recordedSuccess",
             I18nKey::ModulesQualityNcrNewRelatedProduct => "modules.quality.ncr.new.relatedProduct",
-            I18nKey::ModulesQualityNcrNewSeverityCritical => {
-                "modules.quality.ncr.new.severity.critical"
-            }
+            I18nKey::ModulesQualityNcrNewSeverityCritical => "modules.quality.ncr.new.severity.critical",
             I18nKey::ModulesQualityNcrNewSeverityMajor => "modules.quality.ncr.new.severity.major",
             I18nKey::ModulesQualityNcrNewSeverityMinor => "modules.quality.ncr.new.severity.minor",
-            I18nKey::ModulesQualityNcrNewSeverityMagnitude => {
-                "modules.quality.ncr.new.severityMagnitude"
-            }
+            I18nKey::ModulesQualityNcrNewSeverityMagnitude => "modules.quality.ncr.new.severityMagnitude",
             I18nKey::ModulesQualityNcrNewSubtitle => "modules.quality.ncr.new.subtitle",
             I18nKey::ModulesQualityNcrNewTitle => "modules.quality.ncr.new.title",
-            I18nKey::ModulesQualityNcrNewTitleDescRequired => {
-                "modules.quality.ncr.new.titleDescRequired"
-            }
-            I18nKey::ModulesQualityNcrNewValidationError => {
-                "modules.quality.ncr.new.validationError"
-            }
+            I18nKey::ModulesQualityNcrNewTitleDescRequired => "modules.quality.ncr.new.titleDescRequired",
+            I18nKey::ModulesQualityNcrNewValidationError => "modules.quality.ncr.new.validationError",
             I18nKey::ModulesQualityPassRate => "modules.quality.passRate",
             I18nKey::ModulesQualityTitle => "modules.quality.title",
             I18nKey::ModulesSalesForecast => "modules.sales.forecast",
@@ -12699,23 +11913,17 @@ impl I18nKey {
             I18nKey::PagesA3ToastUpdated => "pages.a3.toast.updated",
             I18nKey::PagesA3ToastUpdatedDesc => "pages.a3.toast.updatedDesc",
             I18nKey::PagesAdminApprovalsActionsDelete => "pages.admin.approvals.actions.delete",
-            I18nKey::PagesAdminApprovalsActionsDuplicate => {
-                "pages.admin.approvals.actions.duplicate"
-            }
+            I18nKey::PagesAdminApprovalsActionsDuplicate => "pages.admin.approvals.actions.duplicate",
             I18nKey::PagesAdminApprovalsActionsEdit => "pages.admin.approvals.actions.edit",
             I18nKey::PagesAdminApprovalsDescription => "pages.admin.approvals.description",
-            I18nKey::PagesAdminApprovalsInitializeWorkflow => {
-                "pages.admin.approvals.initializeWorkflow"
-            }
+            I18nKey::PagesAdminApprovalsInitializeWorkflow => "pages.admin.approvals.initializeWorkflow",
             I18nKey::PagesAdminApprovalsTableApprovers => "pages.admin.approvals.table.approvers",
             I18nKey::PagesAdminApprovalsTableEscalation => "pages.admin.approvals.table.escalation",
             I18nKey::PagesAdminApprovalsTableScope => "pages.admin.approvals.table.scope",
             I18nKey::PagesAdminApprovalsTableStatus => "pages.admin.approvals.table.status",
             I18nKey::PagesAdminApprovalsTableThreshold => "pages.admin.approvals.table.threshold",
             I18nKey::PagesAdminApprovalsTableWorkflowId => "pages.admin.approvals.table.workflowId",
-            I18nKey::PagesAdminApprovalsTableWorkflowName => {
-                "pages.admin.approvals.table.workflowName"
-            }
+            I18nKey::PagesAdminApprovalsTableWorkflowName => "pages.admin.approvals.table.workflowName",
             I18nKey::PagesAdminApprovalsTitle => "pages.admin.approvals.title",
             I18nKey::PagesAdminAuditDescription => "pages.admin.audit.description",
             I18nKey::PagesAdminAuditEmpty => "pages.admin.audit.empty",
@@ -12728,12 +11936,8 @@ impl I18nKey {
             I18nKey::PagesAdminAuditTitle => "pages.admin.audit.title",
             I18nKey::PagesAdminCoreConfigSynced => "pages.admin.coreConfigSynced",
             I18nKey::PagesAdminFeaturesCategoriesCore => "pages.admin.features.categories.core",
-            I18nKey::PagesAdminFeaturesCategoriesIntegrations => {
-                "pages.admin.features.categories.integrations"
-            }
-            I18nKey::PagesAdminFeaturesCategoriesMlCapabilities => {
-                "pages.admin.features.categories.mlCapabilities"
-            }
+            I18nKey::PagesAdminFeaturesCategoriesIntegrations => "pages.admin.features.categories.integrations",
+            I18nKey::PagesAdminFeaturesCategoriesMlCapabilities => "pages.admin.features.categories.mlCapabilities",
             I18nKey::PagesAdminFeaturesDescription => "pages.admin.features.description",
             I18nKey::PagesAdminFeaturesTitle => "pages.admin.features.title",
             I18nKey::PagesAdminGatesActionsDelete => "pages.admin.gates.actions.delete",
@@ -12759,9 +11963,7 @@ impl I18nKey {
             I18nKey::PagesAdminLearningBadgeMandatory => "pages.admin.learning.badge.mandatory",
             I18nKey::PagesAdminLearningBadgeOptional => "pages.admin.learning.badge.optional",
             I18nKey::PagesAdminLearningDescription => "pages.admin.learning.description",
-            I18nKey::PagesAdminLearningInitializeCadence => {
-                "pages.admin.learning.initializeCadence"
-            }
+            I18nKey::PagesAdminLearningInitializeCadence => "pages.admin.learning.initializeCadence",
             I18nKey::PagesAdminLearningTableCompliance => "pages.admin.learning.table.compliance",
             I18nKey::PagesAdminLearningTableDuration => "pages.admin.learning.table.duration",
             I18nKey::PagesAdminLearningTableFrequency => "pages.admin.learning.table.frequency",
@@ -12792,9 +11994,7 @@ impl I18nKey {
             I18nKey::PagesAdminSaveConfiguration => "pages.admin.saveConfiguration",
             I18nKey::PagesAdminSecurityCommitPolicies => "pages.admin.security.commitPolicies",
             I18nKey::PagesAdminSecurityDownloadManifest => "pages.admin.security.downloadManifest",
-            I18nKey::PagesAdminSecurityHardeningDescription => {
-                "pages.admin.security.hardening.description"
-            }
+            I18nKey::PagesAdminSecurityHardeningDescription => "pages.admin.security.hardening.description",
             I18nKey::PagesAdminSecurityHardeningTitle => "pages.admin.security.hardening.title",
             I18nKey::PagesAdminSecuritySsoDescription => "pages.admin.security.sso.description",
             I18nKey::PagesAdminSecuritySsoTitle => "pages.admin.security.sso.title",
@@ -12811,9 +12011,7 @@ impl I18nKey {
             I18nKey::PagesAdminTabsQualityGates => "pages.admin.tabs.qualityGates",
             I18nKey::PagesAdminTabsSystemLogs => "pages.admin.tabs.systemLogs",
             I18nKey::PagesAdminTemplatesDescription => "pages.admin.templates.description",
-            I18nKey::PagesAdminTemplatesInitializeTemplate => {
-                "pages.admin.templates.initializeTemplate"
-            }
+            I18nKey::PagesAdminTemplatesInitializeTemplate => "pages.admin.templates.initializeTemplate",
             I18nKey::PagesAdminTemplatesTitle => "pages.admin.templates.title",
             I18nKey::PagesAdminTitle => "pages.admin.title",
             I18nKey::PagesAnalyticsAlpha => "pages.analytics.alpha",
@@ -12821,16 +12019,10 @@ impl I18nKey {
             I18nKey::PagesAnalyticsExportIntel => "pages.analytics.exportIntel",
             I18nKey::PagesAnalyticsGateAnalytics => "pages.analytics.gateAnalytics",
             I18nKey::PagesAnalyticsHighImpact => "pages.analytics.highImpact",
-            I18nKey::PagesAnalyticsInsightsHighImpactProtocol => {
-                "pages.analytics.insights.highImpactProtocol"
-            }
-            I18nKey::PagesAnalyticsInsightsStrategicCountermeasures => {
-                "pages.analytics.insights.strategicCountermeasures"
-            }
+            I18nKey::PagesAnalyticsInsightsHighImpactProtocol => "pages.analytics.insights.highImpactProtocol",
+            I18nKey::PagesAnalyticsInsightsStrategicCountermeasures => "pages.analytics.insights.strategicCountermeasures",
             I18nKey::PagesAnalyticsInsightsSynthesizing => "pages.analytics.insights.synthesizing",
-            I18nKey::PagesAnalyticsMlInsightsActionItems => {
-                "pages.analytics.mlInsights.actionItems"
-            }
+            I18nKey::PagesAnalyticsMlInsightsActionItems => "pages.analytics.mlInsights.actionItems",
             I18nKey::PagesAnalyticsMlInsightsConfidence => "pages.analytics.mlInsights.confidence",
             I18nKey::PagesAnalyticsMlInsightsImpact => "pages.analytics.mlInsights.impact",
             I18nKey::PagesAnalyticsMlInsightsModel => "pages.analytics.mlInsights.model",
@@ -12845,41 +12037,21 @@ impl I18nKey {
             I18nKey::PagesAnalyticsModelsRecall => "pages.analytics.models.recall",
             I18nKey::PagesAnalyticsModelsWarming => "pages.analytics.models.warming",
             I18nKey::PagesAnalyticsOverviewBaseline => "pages.analytics.overview.baseline",
-            I18nKey::PagesAnalyticsOverviewConfidenceSignal => {
-                "pages.analytics.overview.confidenceSignal"
-            }
+            I18nKey::PagesAnalyticsOverviewConfidenceSignal => "pages.analytics.overview.confidenceSignal",
             I18nKey::PagesAnalyticsOverviewForecast7d => "pages.analytics.overview.forecast7d",
-            I18nKey::PagesAnalyticsOverviewHistoricalAvg => {
-                "pages.analytics.overview.historicalAvg"
-            }
-            I18nKey::PagesAnalyticsOverviewInferencesToday => {
-                "pages.analytics.overview.inferencesToday"
-            }
+            I18nKey::PagesAnalyticsOverviewHistoricalAvg => "pages.analytics.overview.historicalAvg",
+            I18nKey::PagesAnalyticsOverviewInferencesToday => "pages.analytics.overview.inferencesToday",
             I18nKey::PagesAnalyticsOverviewModelHealth => "pages.analytics.overview.modelHealth",
-            I18nKey::PagesAnalyticsOverviewModelHealthDesc => {
-                "pages.analytics.overview.modelHealthDesc"
-            }
+            I18nKey::PagesAnalyticsOverviewModelHealthDesc => "pages.analytics.overview.modelHealthDesc",
             I18nKey::PagesAnalyticsOverviewModelNode => "pages.analytics.overview.modelNode",
             I18nKey::PagesAnalyticsOverviewNoInsights => "pages.analytics.overview.noInsights",
-            I18nKey::PagesAnalyticsOverviewPredictiveMetrics => {
-                "pages.analytics.overview.predictiveMetrics"
-            }
-            I18nKey::PagesAnalyticsOverviewPredictiveMetricsDesc => {
-                "pages.analytics.overview.predictiveMetricsDesc"
-            }
+            I18nKey::PagesAnalyticsOverviewPredictiveMetrics => "pages.analytics.overview.predictiveMetrics",
+            I18nKey::PagesAnalyticsOverviewPredictiveMetricsDesc => "pages.analytics.overview.predictiveMetricsDesc",
             I18nKey::PagesAnalyticsOverviewReasoning => "pages.analytics.overview.reasoning",
-            I18nKey::PagesAnalyticsOverviewSenseiActions => {
-                "pages.analytics.overview.senseiActions"
-            }
-            I18nKey::PagesAnalyticsOverviewStrategicIntelFeed => {
-                "pages.analytics.overview.strategicIntelFeed"
-            }
-            I18nKey::PagesAnalyticsOverviewStrategicIntelFeedDesc => {
-                "pages.analytics.overview.strategicIntelFeedDesc"
-            }
-            I18nKey::PagesAnalyticsOverviewWarmingClusters => {
-                "pages.analytics.overview.warmingClusters"
-            }
+            I18nKey::PagesAnalyticsOverviewSenseiActions => "pages.analytics.overview.senseiActions",
+            I18nKey::PagesAnalyticsOverviewStrategicIntelFeed => "pages.analytics.overview.strategicIntelFeed",
+            I18nKey::PagesAnalyticsOverviewStrategicIntelFeedDesc => "pages.analytics.overview.strategicIntelFeedDesc",
+            I18nKey::PagesAnalyticsOverviewWarmingClusters => "pages.analytics.overview.warmingClusters",
             I18nKey::PagesAnalyticsPeriods24h => "pages.analytics.periods.24h",
             I18nKey::PagesAnalyticsPeriods30d => "pages.analytics.periods.30d",
             I18nKey::PagesAnalyticsPeriods7d => "pages.analytics.periods.7d",
@@ -12896,24 +12068,12 @@ impl I18nKey {
             I18nKey::PagesAnalyticsStatusOptimal => "pages.analytics.statusOptimal",
             I18nKey::PagesAnalyticsSubtitle => "pages.analytics.subtitle",
             I18nKey::PagesAnalyticsSystemHealthAccuracy => "pages.analytics.systemHealth.accuracy",
-            I18nKey::PagesAnalyticsSystemHealthActiveModels => {
-                "pages.analytics.systemHealth.activeModels"
-            }
-            I18nKey::PagesAnalyticsSystemHealthDegradedState => {
-                "pages.analytics.systemHealth.degradedState"
-            }
-            I18nKey::PagesAnalyticsSystemHealthLastTrained => {
-                "pages.analytics.systemHealth.lastTrained"
-            }
-            I18nKey::PagesAnalyticsSystemHealthModelName => {
-                "pages.analytics.systemHealth.modelName"
-            }
-            I18nKey::PagesAnalyticsSystemHealthOptimalVelocity => {
-                "pages.analytics.systemHealth.optimalVelocity"
-            }
-            I18nKey::PagesAnalyticsSystemHealthOverallHealth => {
-                "pages.analytics.systemHealth.overallHealth"
-            }
+            I18nKey::PagesAnalyticsSystemHealthActiveModels => "pages.analytics.systemHealth.activeModels",
+            I18nKey::PagesAnalyticsSystemHealthDegradedState => "pages.analytics.systemHealth.degradedState",
+            I18nKey::PagesAnalyticsSystemHealthLastTrained => "pages.analytics.systemHealth.lastTrained",
+            I18nKey::PagesAnalyticsSystemHealthModelName => "pages.analytics.systemHealth.modelName",
+            I18nKey::PagesAnalyticsSystemHealthOptimalVelocity => "pages.analytics.systemHealth.optimalVelocity",
+            I18nKey::PagesAnalyticsSystemHealthOverallHealth => "pages.analytics.systemHealth.overallHealth",
             I18nKey::PagesAnalyticsSystemHealthStatus => "pages.analytics.systemHealth.status",
             I18nKey::PagesAnalyticsSystemHealthSubtitle => "pages.analytics.systemHealth.subtitle",
             I18nKey::PagesAnalyticsSystemHealthTitle => "pages.analytics.systemHealth.title",
@@ -12932,22 +12092,12 @@ impl I18nKey {
             I18nKey::PagesAnalyticsTrendsPrevious => "pages.analytics.trends.previous",
             I18nKey::PagesAnalyticsTrendsSubtitle => "pages.analytics.trends.subtitle",
             I18nKey::PagesAnalyticsTrendsTitle => "pages.analytics.trends.title",
-            I18nKey::PagesAnalyticsTrendsTabCurrentMagnitude => {
-                "pages.analytics.trendsTab.currentMagnitude"
-            }
-            I18nKey::PagesAnalyticsTrendsTabInferenceStream => {
-                "pages.analytics.trendsTab.inferenceStream"
-            }
-            I18nKey::PagesAnalyticsTrendsTabProjection30d => {
-                "pages.analytics.trendsTab.projection30d"
-            }
-            I18nKey::PagesAnalyticsTrendsTabProjection7d => {
-                "pages.analytics.trendsTab.projection7d"
-            }
+            I18nKey::PagesAnalyticsTrendsTabCurrentMagnitude => "pages.analytics.trendsTab.currentMagnitude",
+            I18nKey::PagesAnalyticsTrendsTabInferenceStream => "pages.analytics.trendsTab.inferenceStream",
+            I18nKey::PagesAnalyticsTrendsTabProjection30d => "pages.analytics.trendsTab.projection30d",
+            I18nKey::PagesAnalyticsTrendsTabProjection7d => "pages.analytics.trendsTab.projection7d",
             I18nKey::PagesAnalyticsTrendsTabProtocol => "pages.analytics.trendsTab.protocol",
-            I18nKey::PagesAnalyticsTrendsTabTemporalModel => {
-                "pages.analytics.trendsTab.temporalModel"
-            }
+            I18nKey::PagesAnalyticsTrendsTabTemporalModel => "pages.analytics.trendsTab.temporalModel",
             I18nKey::PagesAnalyticsTrendsTabTraining => "pages.analytics.trendsTab.training",
             I18nKey::PagesAndonActionsAnalytics => "pages.andon.actions.analytics",
             I18nKey::PagesAndonActionsEnableAlerts => "pages.andon.actions.enableAlerts",
@@ -12980,9 +12130,7 @@ impl I18nKey {
             I18nKey::PagesAuditorInitializeProtocol => "pages.auditor.initializeProtocol",
             I18nKey::PagesAuditorOpenFindings => "pages.auditor.openFindings",
             I18nKey::PagesAuditorOptimal => "pages.auditor.optimal",
-            I18nKey::PagesAuditorOrganizationalComplianceMagnitude => {
-                "pages.auditor.organizationalComplianceMagnitude"
-            }
+            I18nKey::PagesAuditorOrganizationalComplianceMagnitude => "pages.auditor.organizationalComplianceMagnitude",
             I18nKey::PagesAuditorRecentAudits => "pages.auditor.recentAudits",
             I18nKey::PagesAuditorSecurityProtocol => "pages.auditor.securityProtocol",
             I18nKey::PagesAuditorStation => "pages.auditor.station",
@@ -12993,15 +12141,9 @@ impl I18nKey {
             I18nKey::PagesAuditorStatsOpenFindings => "pages.auditor.stats.openFindings",
             I18nKey::PagesAuditorStatsPendingAudits => "pages.auditor.stats.pendingAudits",
             I18nKey::PagesAuditorStatsResolutionRate => "pages.auditor.stats.resolutionRate",
-            I18nKey::PagesAuditorStatsResolutionVelocity => {
-                "pages.auditor.stats.resolutionVelocity"
-            }
-            I18nKey::PagesAuditorStatsScheduledProtocols => {
-                "pages.auditor.stats.scheduledProtocols"
-            }
-            I18nKey::PagesAuditorStatsUnresolvedFindings => {
-                "pages.auditor.stats.unresolvedFindings"
-            }
+            I18nKey::PagesAuditorStatsResolutionVelocity => "pages.auditor.stats.resolutionVelocity",
+            I18nKey::PagesAuditorStatsScheduledProtocols => "pages.auditor.stats.scheduledProtocols",
+            I18nKey::PagesAuditorStatsUnresolvedFindings => "pages.auditor.stats.unresolvedFindings",
             I18nKey::PagesAuditorSubtitle => "pages.auditor.subtitle",
             I18nKey::PagesAuditorTabsAudits => "pages.auditor.tabs.audits",
             I18nKey::PagesAuditorTabsControls => "pages.auditor.tabs.controls",
@@ -13108,23 +12250,15 @@ impl I18nKey {
             I18nKey::PagesCustomersDetailActivate => "pages.customers.detail.activate",
             I18nKey::PagesCustomersDetailAddContact => "pages.customers.detail.addContact",
             I18nKey::PagesCustomersDetailAddress => "pages.customers.detail.address",
-            I18nKey::PagesCustomersDetailBackToCustomers => {
-                "pages.customers.detail.backToCustomers"
-            }
+            I18nKey::PagesCustomersDetailBackToCustomers => "pages.customers.detail.backToCustomers",
             I18nKey::PagesCustomersDetailCompanyInfo => "pages.customers.detail.companyInfo",
             I18nKey::PagesCustomersDetailContacts => "pages.customers.detail.contacts",
             I18nKey::PagesCustomersDetailContactsCount => "pages.customers.detail.contactsCount",
             I18nKey::PagesCustomersDetailCreated => "pages.customers.detail.created",
             I18nKey::PagesCustomersDetailDeactivate => "pages.customers.detail.deactivate",
-            I18nKey::PagesCustomersDetailDeactivateDialogConfirm => {
-                "pages.customers.detail.deactivateDialog.confirm"
-            }
-            I18nKey::PagesCustomersDetailDeactivateDialogDescription => {
-                "pages.customers.detail.deactivateDialog.description"
-            }
-            I18nKey::PagesCustomersDetailDeactivateDialogTitle => {
-                "pages.customers.detail.deactivateDialog.title"
-            }
+            I18nKey::PagesCustomersDetailDeactivateDialogConfirm => "pages.customers.detail.deactivateDialog.confirm",
+            I18nKey::PagesCustomersDetailDeactivateDialogDescription => "pages.customers.detail.deactivateDialog.description",
+            I18nKey::PagesCustomersDetailDeactivateDialogTitle => "pages.customers.detail.deactivateDialog.title",
             I18nKey::PagesCustomersDetailLastUpdated => "pages.customers.detail.lastUpdated",
             I18nKey::PagesCustomersDetailManageContacts => "pages.customers.detail.manageContacts",
             I18nKey::PagesCustomersDetailNewRfq => "pages.customers.detail.newRfq",
@@ -13137,20 +12271,14 @@ impl I18nKey {
             I18nKey::PagesCustomersDetailRecentRfqsDesc => "pages.customers.detail.recentRfqsDesc",
             I18nKey::PagesCustomersDetailStatsAvgOrder => "pages.customers.detail.stats.avgOrder",
             I18nKey::PagesCustomersDetailStatsOpenRfqs => "pages.customers.detail.stats.openRfqs",
-            I18nKey::PagesCustomersDetailStatsPipelineMagnitude => {
-                "pages.customers.detail.stats.pipelineMagnitude"
-            }
-            I18nKey::PagesCustomersDetailStatsTotalRevenue => {
-                "pages.customers.detail.stats.totalRevenue"
-            }
+            I18nKey::PagesCustomersDetailStatsPipelineMagnitude => "pages.customers.detail.stats.pipelineMagnitude",
+            I18nKey::PagesCustomersDetailStatsTotalRevenue => "pages.customers.detail.stats.totalRevenue",
             I18nKey::PagesCustomersDetailStatsTotalRfqs => "pages.customers.detail.stats.totalRfqs",
             I18nKey::PagesCustomersDetailStatsWinRate => "pages.customers.detail.stats.winRate",
             I18nKey::PagesCustomersDetailViewAll => "pages.customers.detail.viewAll",
             I18nKey::PagesCustomersDetailViewAllRfqs => "pages.customers.detail.viewAllRfqs",
             I18nKey::PagesCustomersDetailWebsite => "pages.customers.detail.website",
-            I18nKey::PagesCustomersEmptyStateDescription => {
-                "pages.customers.emptyState.description"
-            }
+            I18nKey::PagesCustomersEmptyStateDescription => "pages.customers.emptyState.description",
             I18nKey::PagesCustomersEmptyStateTitle => "pages.customers.emptyState.title",
             I18nKey::PagesCustomersExportIntel => "pages.customers.exportIntel",
             I18nKey::PagesCustomersFiltersActive => "pages.customers.filters.active",
@@ -13171,36 +12299,24 @@ impl I18nKey {
             I18nKey::PagesCustomersNewCity => "pages.customers.new.city",
             I18nKey::PagesCustomersNewCompanyInfo => "pages.customers.new.companyInfo",
             I18nKey::PagesCustomersNewCompanyName => "pages.customers.new.companyName",
-            I18nKey::PagesCustomersNewCompanyNamePlaceholder => {
-                "pages.customers.new.companyNamePlaceholder"
-            }
+            I18nKey::PagesCustomersNewCompanyNamePlaceholder => "pages.customers.new.companyNamePlaceholder",
             I18nKey::PagesCustomersNewContact => "pages.customers.new.contact",
             I18nKey::PagesCustomersNewContacts => "pages.customers.new.contacts",
-            I18nKey::PagesCustomersNewContactsDescription => {
-                "pages.customers.new.contactsDescription"
-            }
+            I18nKey::PagesCustomersNewContactsDescription => "pages.customers.new.contactsDescription",
             I18nKey::PagesCustomersNewCountry => "pages.customers.new.country",
             I18nKey::PagesCustomersNewCustomerCode => "pages.customers.new.customerCode",
             I18nKey::PagesCustomersNewEditTitle => "pages.customers.new.editTitle",
-            I18nKey::PagesCustomersNewEditingDescription => {
-                "pages.customers.new.editingDescription"
-            }
+            I18nKey::PagesCustomersNewEditingDescription => "pages.customers.new.editingDescription",
             I18nKey::PagesCustomersNewEmail => "pages.customers.new.email",
             I18nKey::PagesCustomersNewEmailPlaceholder => "pages.customers.new.emailPlaceholder",
             I18nKey::PagesCustomersNewFullName => "pages.customers.new.fullName",
-            I18nKey::PagesCustomersNewFullNamePlaceholder => {
-                "pages.customers.new.fullNamePlaceholder"
-            }
+            I18nKey::PagesCustomersNewFullNamePlaceholder => "pages.customers.new.fullNamePlaceholder",
             I18nKey::PagesCustomersNewGenerate => "pages.customers.new.generate",
             I18nKey::PagesCustomersNewIndustry => "pages.customers.new.industry",
             I18nKey::PagesCustomersNewInternalNotes => "pages.customers.new.internalNotes",
-            I18nKey::PagesCustomersNewInternalNotesDescription => {
-                "pages.customers.new.internalNotesDescription"
-            }
+            I18nKey::PagesCustomersNewInternalNotesDescription => "pages.customers.new.internalNotesDescription",
             I18nKey::PagesCustomersNewJobTitle => "pages.customers.new.jobTitle",
-            I18nKey::PagesCustomersNewJobTitlePlaceholder => {
-                "pages.customers.new.jobTitlePlaceholder"
-            }
+            I18nKey::PagesCustomersNewJobTitlePlaceholder => "pages.customers.new.jobTitlePlaceholder",
             I18nKey::PagesCustomersNewNewDescription => "pages.customers.new.newDescription",
             I18nKey::PagesCustomersNewNewTitle => "pages.customers.new.newTitle",
             I18nKey::PagesCustomersNewNoContacts => "pages.customers.new.noContacts",
@@ -13220,59 +12336,33 @@ impl I18nKey {
             I18nKey::PagesCustomersNewTip2 => "pages.customers.new.tip2",
             I18nKey::PagesCustomersNewTip3 => "pages.customers.new.tip3",
             I18nKey::PagesCustomersNewTips => "pages.customers.new.tips",
-            I18nKey::PagesCustomersNewToastCustomerCreated => {
-                "pages.customers.new.toast.customerCreated"
-            }
-            I18nKey::PagesCustomersNewToastCustomerUpdated => {
-                "pages.customers.new.toast.customerUpdated"
-            }
+            I18nKey::PagesCustomersNewToastCustomerCreated => "pages.customers.new.toast.customerCreated",
+            I18nKey::PagesCustomersNewToastCustomerUpdated => "pages.customers.new.toast.customerUpdated",
             I18nKey::PagesCustomersNewToastErrorSaving => "pages.customers.new.toast.errorSaving",
             I18nKey::PagesCustomersNewToastFixErrors => "pages.customers.new.toast.fixErrors",
             I18nKey::PagesCustomersNewToastTryAgain => "pages.customers.new.toast.tryAgain",
-            I18nKey::PagesCustomersNewToastValidationError => {
-                "pages.customers.new.toast.validationError"
-            }
-            I18nKey::PagesCustomersNewValidationCompanyNameRequired => {
-                "pages.customers.new.validation.companyNameRequired"
-            }
-            I18nKey::PagesCustomersNewValidationContactEmailRequired => {
-                "pages.customers.new.validation.contactEmailRequired"
-            }
-            I18nKey::PagesCustomersNewValidationContactNameRequired => {
-                "pages.customers.new.validation.contactNameRequired"
-            }
-            I18nKey::PagesCustomersNewValidationContactRequired => {
-                "pages.customers.new.validation.contactRequired"
-            }
-            I18nKey::PagesCustomersNewValidationCustomerCodeRequired => {
-                "pages.customers.new.validation.customerCodeRequired"
-            }
-            I18nKey::PagesCustomersNewValidationIndustryRequired => {
-                "pages.customers.new.validation.industryRequired"
-            }
+            I18nKey::PagesCustomersNewToastValidationError => "pages.customers.new.toast.validationError",
+            I18nKey::PagesCustomersNewValidationCompanyNameRequired => "pages.customers.new.validation.companyNameRequired",
+            I18nKey::PagesCustomersNewValidationContactEmailRequired => "pages.customers.new.validation.contactEmailRequired",
+            I18nKey::PagesCustomersNewValidationContactNameRequired => "pages.customers.new.validation.contactNameRequired",
+            I18nKey::PagesCustomersNewValidationContactRequired => "pages.customers.new.validation.contactRequired",
+            I18nKey::PagesCustomersNewValidationCustomerCodeRequired => "pages.customers.new.validation.customerCodeRequired",
+            I18nKey::PagesCustomersNewValidationIndustryRequired => "pages.customers.new.validation.industryRequired",
             I18nKey::PagesCustomersNewWebsite => "pages.customers.new.website",
             I18nKey::PagesCustomersNodeId => "pages.customers.nodeId",
             I18nKey::PagesCustomersSearchPlaceholder => "pages.customers.searchPlaceholder",
             I18nKey::PagesCustomersStatsActiveNodes => "pages.customers.stats.activeNodes",
-            I18nKey::PagesCustomersStatsAggregatedRevenue => {
-                "pages.customers.stats.aggregatedRevenue"
-            }
+            I18nKey::PagesCustomersStatsAggregatedRevenue => "pages.customers.stats.aggregatedRevenue",
             I18nKey::PagesCustomersStatsConversionRate => "pages.customers.stats.conversionRate",
-            I18nKey::PagesCustomersStatsMeanConversionPulse => {
-                "pages.customers.stats.meanConversionPulse"
-            }
-            I18nKey::PagesCustomersStatsProspectivePartners => {
-                "pages.customers.stats.prospectivePartners"
-            }
+            I18nKey::PagesCustomersStatsMeanConversionPulse => "pages.customers.stats.meanConversionPulse",
+            I18nKey::PagesCustomersStatsProspectivePartners => "pages.customers.stats.prospectivePartners",
             I18nKey::PagesCustomersStatsProspects => "pages.customers.stats.prospects",
             I18nKey::PagesCustomersStatsRevenue => "pages.customers.stats.revenue",
             I18nKey::PagesCustomersStatusActive => "pages.customers.status.active",
             I18nKey::PagesCustomersStatusInactive => "pages.customers.status.inactive",
             I18nKey::PagesCustomersStatusProspect => "pages.customers.status.prospect",
             I18nKey::PagesCustomersSubtitle => "pages.customers.subtitle",
-            I18nKey::PagesCustomersTableAccountIdentifier => {
-                "pages.customers.table.accountIdentifier"
-            }
+            I18nKey::PagesCustomersTableAccountIdentifier => "pages.customers.table.accountIdentifier",
             I18nKey::PagesCustomersTableIndustryCat => "pages.customers.table.industryCat",
             I18nKey::PagesCustomersTableLocationNode => "pages.customers.table.locationNode",
             I18nKey::PagesCustomersTablePrimaryContact => "pages.customers.table.primaryContact",
@@ -13287,19 +12377,13 @@ impl I18nKey {
             I18nKey::PagesExceptionsCriticalOpenNodes => "pages.exceptions.criticalOpenNodes",
             I18nKey::PagesExceptionsEscalatedNodes => "pages.exceptions.escalatedNodes",
             I18nKey::PagesExceptionsExportProtocol => "pages.exceptions.exportProtocol",
-            I18nKey::PagesExceptionsFiltersAllCategories => {
-                "pages.exceptions.filters.allCategories"
-            }
-            I18nKey::PagesExceptionsFiltersAllSeverities => {
-                "pages.exceptions.filters.allSeverities"
-            }
+            I18nKey::PagesExceptionsFiltersAllCategories => "pages.exceptions.filters.allCategories",
+            I18nKey::PagesExceptionsFiltersAllSeverities => "pages.exceptions.filters.allSeverities",
             I18nKey::PagesExceptionsFiltersAllStatuses => "pages.exceptions.filters.allStatuses",
             I18nKey::PagesExceptionsFiltersCritical => "pages.exceptions.filters.critical",
             I18nKey::PagesExceptionsFiltersDelivery => "pages.exceptions.filters.delivery",
             I18nKey::PagesExceptionsFiltersHigh => "pages.exceptions.filters.high",
-            I18nKey::PagesExceptionsFiltersInvestigating => {
-                "pages.exceptions.filters.investigating"
-            }
+            I18nKey::PagesExceptionsFiltersInvestigating => "pages.exceptions.filters.investigating",
             I18nKey::PagesExceptionsFiltersLow => "pages.exceptions.filters.low",
             I18nKey::PagesExceptionsFiltersMedium => "pages.exceptions.filters.medium",
             I18nKey::PagesExceptionsFiltersOpen => "pages.exceptions.filters.open",
@@ -13308,9 +12392,7 @@ impl I18nKey {
             I18nKey::PagesExceptionsFiltersQuality => "pages.exceptions.filters.quality",
             I18nKey::PagesExceptionsFiltersResolved => "pages.exceptions.filters.resolved",
             I18nKey::PagesExceptionsFiltersSafety => "pages.exceptions.filters.safety",
-            I18nKey::PagesExceptionsHighUrgencyDeviations => {
-                "pages.exceptions.highUrgencyDeviations"
-            }
+            I18nKey::PagesExceptionsHighUrgencyDeviations => "pages.exceptions.highUrgencyDeviations",
             I18nKey::PagesExceptionsMeanResolution => "pages.exceptions.meanResolution",
             I18nKey::PagesExceptionsOverdueProtocols => "pages.exceptions.overdueProtocols",
             I18nKey::PagesExceptionsStatsCritical => "pages.exceptions.stats.critical",
@@ -13320,9 +12402,7 @@ impl I18nKey {
             I18nKey::PagesExceptionsSyncIntel => "pages.exceptions.syncIntel",
             I18nKey::PagesExceptionsSynchronizing => "pages.exceptions.synchronizing",
             I18nKey::PagesExceptionsTableCategoryNode => "pages.exceptions.table.categoryNode",
-            I18nKey::PagesExceptionsTableDescriptionProtocol => {
-                "pages.exceptions.table.descriptionProtocol"
-            }
+            I18nKey::PagesExceptionsTableDescriptionProtocol => "pages.exceptions.table.descriptionProtocol",
             I18nKey::PagesExceptionsTableHorizon => "pages.exceptions.table.horizon",
             I18nKey::PagesExceptionsTableOwnerSync => "pages.exceptions.table.ownerSync",
             I18nKey::PagesExceptionsTablePulseDetection => "pages.exceptions.table.pulseDetection",
@@ -13338,36 +12418,16 @@ impl I18nKey {
             I18nKey::PagesExecutiveAggregatingMetrics => "pages.executive.aggregatingMetrics",
             I18nKey::PagesExecutiveAllSystemsNominal => "pages.executive.allSystemsNominal",
             I18nKey::PagesExecutiveAnomaliesDetected => "pages.executive.anomaliesDetected",
-            I18nKey::PagesExecutiveDataThreadAiDecisionPaths => {
-                "pages.executive.dataThread.aiDecisionPaths"
-            }
-            I18nKey::PagesExecutiveDataThreadAllMetricsNominal => {
-                "pages.executive.dataThread.allMetricsNominal"
-            }
-            I18nKey::PagesExecutiveDataThreadCognitiveWarnings => {
-                "pages.executive.dataThread.cognitiveWarnings"
-            }
-            I18nKey::PagesExecutiveDataThreadCrossDomainTraces => {
-                "pages.executive.dataThread.crossDomainTraces"
-            }
-            I18nKey::PagesExecutiveDataThreadExportedRecords => {
-                "pages.executive.dataThread.exportedRecords"
-            }
-            I18nKey::PagesExecutiveDataThreadLineageLinks => {
-                "pages.executive.dataThread.lineageLinks"
-            }
-            I18nKey::PagesExecutiveDataThreadNoSnapshotYet => {
-                "pages.executive.dataThread.noSnapshotYet"
-            }
-            I18nKey::PagesExecutiveDataThreadReasoningTraces => {
-                "pages.executive.dataThread.reasoningTraces"
-            }
-            I18nKey::PagesExecutiveDataThreadSnapshotPrefix => {
-                "pages.executive.dataThread.snapshotPrefix"
-            }
-            I18nKey::PagesExecutiveDataThreadTrendBreachesPredicted => {
-                "pages.executive.dataThread.trendBreachesPredicted"
-            }
+            I18nKey::PagesExecutiveDataThreadAiDecisionPaths => "pages.executive.dataThread.aiDecisionPaths",
+            I18nKey::PagesExecutiveDataThreadAllMetricsNominal => "pages.executive.dataThread.allMetricsNominal",
+            I18nKey::PagesExecutiveDataThreadCognitiveWarnings => "pages.executive.dataThread.cognitiveWarnings",
+            I18nKey::PagesExecutiveDataThreadCrossDomainTraces => "pages.executive.dataThread.crossDomainTraces",
+            I18nKey::PagesExecutiveDataThreadExportedRecords => "pages.executive.dataThread.exportedRecords",
+            I18nKey::PagesExecutiveDataThreadLineageLinks => "pages.executive.dataThread.lineageLinks",
+            I18nKey::PagesExecutiveDataThreadNoSnapshotYet => "pages.executive.dataThread.noSnapshotYet",
+            I18nKey::PagesExecutiveDataThreadReasoningTraces => "pages.executive.dataThread.reasoningTraces",
+            I18nKey::PagesExecutiveDataThreadSnapshotPrefix => "pages.executive.dataThread.snapshotPrefix",
+            I18nKey::PagesExecutiveDataThreadTrendBreachesPredicted => "pages.executive.dataThread.trendBreachesPredicted",
             I18nKey::PagesExecutiveExportIntelligence => "pages.executive.exportIntelligence",
             I18nKey::PagesExecutiveKpiActiveAnomalies => "pages.executive.kpi.activeAnomalies",
             I18nKey::PagesExecutiveKpiActiveGateBlocks => "pages.executive.kpi.activeGateBlocks",
@@ -13389,60 +12449,40 @@ impl I18nKey {
             I18nKey::PagesExecutiveMonitoringActive => "pages.executive.monitoringActive",
             I18nKey::PagesExecutiveNl2sqlCommandInput => "pages.executive.nl2sql.commandInput",
             I18nKey::PagesExecutiveNl2sqlDataOutput => "pages.executive.nl2sql.dataOutput",
-            I18nKey::PagesExecutiveNl2sqlExecuteInference => {
-                "pages.executive.nl2sql.executeInference"
-            }
+            I18nKey::PagesExecutiveNl2sqlExecuteInference => "pages.executive.nl2sql.executeInference",
             I18nKey::PagesExecutiveNl2sqlGeneratedLogic => "pages.executive.nl2sql.generatedLogic",
             I18nKey::PagesExecutiveNl2sqlPlaceholder => "pages.executive.nl2sql.placeholder",
             I18nKey::PagesExecutiveNl2sqlProtocol => "pages.executive.nl2sql.protocol",
-            I18nKey::PagesExecutiveNl2sqlReasoningInProgress => {
-                "pages.executive.nl2sql.reasoningInProgress"
-            }
-            I18nKey::PagesExecutiveNl2sqlSenseiReasoning => {
-                "pages.executive.nl2sql.senseiReasoning"
-            }
+            I18nKey::PagesExecutiveNl2sqlReasoningInProgress => "pages.executive.nl2sql.reasoningInProgress",
+            I18nKey::PagesExecutiveNl2sqlSenseiReasoning => "pages.executive.nl2sql.senseiReasoning",
             I18nKey::PagesExecutiveNl2sqlTitle => "pages.executive.nl2sql.title",
             I18nKey::PagesExecutiveOperationalOverview => "pages.executive.operationalOverview",
             I18nKey::PagesExecutiveOpsActiveUsers => "pages.executive.ops.activeUsers",
             I18nKey::PagesExecutiveOpsOpenWorkOrders => "pages.executive.ops.openWorkOrders",
             I18nKey::PagesExecutiveOpsPendingApprovals => "pages.executive.ops.pendingApprovals",
-            I18nKey::PagesExecutiveOpsProductionEfficiency => {
-                "pages.executive.ops.productionEfficiency"
-            }
+            I18nKey::PagesExecutiveOpsProductionEfficiency => "pages.executive.ops.productionEfficiency",
             I18nKey::PagesExecutiveRiskAnalystReasoning => "pages.executive.risk.analystReasoning",
             I18nKey::PagesExecutiveRiskBurnoutMagnitude => "pages.executive.risk.burnoutMagnitude",
             I18nKey::PagesExecutiveRiskBurnoutThreshold => "pages.executive.risk.burnoutThreshold",
             I18nKey::PagesExecutiveRiskDepartmentNode => "pages.executive.risk.departmentNode",
             I18nKey::PagesExecutiveRiskDeptPlaceholder => "pages.executive.risk.deptPlaceholder",
             I18nKey::PagesExecutiveRiskEmployeeIdentity => "pages.executive.risk.employeeIdentity",
-            I18nKey::PagesExecutiveRiskExecutePredictiveModel => {
-                "pages.executive.risk.executePredictiveModel"
-            }
+            I18nKey::PagesExecutiveRiskExecutePredictiveModel => "pages.executive.risk.executePredictiveModel",
             I18nKey::PagesExecutiveRiskNamePlaceholder => "pages.executive.risk.namePlaceholder",
             I18nKey::PagesExecutiveRiskNoRiskFactors => "pages.executive.risk.noRiskFactors",
             I18nKey::PagesExecutiveRiskOvertimeVelocity => "pages.executive.risk.overtimeVelocity",
-            I18nKey::PagesExecutiveRiskPeerComparisonDelta => {
-                "pages.executive.risk.peerComparisonDelta"
-            }
+            I18nKey::PagesExecutiveRiskPeerComparisonDelta => "pages.executive.risk.peerComparisonDelta",
             I18nKey::PagesExecutiveRiskProtocol => "pages.executive.risk.protocol",
             I18nKey::PagesExecutiveRiskRetentionIndex => "pages.executive.risk.retentionIndex",
-            I18nKey::PagesExecutiveRiskRetentionProtocol => {
-                "pages.executive.risk.retentionProtocol"
-            }
-            I18nKey::PagesExecutiveRiskRiskFactorsIdentified => {
-                "pages.executive.risk.riskFactorsIdentified"
-            }
+            I18nKey::PagesExecutiveRiskRetentionProtocol => "pages.executive.risk.retentionProtocol",
+            I18nKey::PagesExecutiveRiskRiskFactorsIdentified => "pages.executive.risk.riskFactorsIdentified",
             I18nKey::PagesExecutiveRiskScoreConfidence => "pages.executive.risk.scoreConfidence",
             I18nKey::PagesExecutiveRiskSkipRateIntel => "pages.executive.risk.skipRateIntel",
             I18nKey::PagesExecutiveRiskTenureProtocol => "pages.executive.risk.tenureProtocol",
             I18nKey::PagesExecutiveRiskTitle => "pages.executive.risk.title",
             I18nKey::PagesExecutiveSectionsAiStrategist => "pages.executive.sections.aiStrategist",
-            I18nKey::PagesExecutiveSectionsBusinessIntel => {
-                "pages.executive.sections.businessIntel"
-            }
-            I18nKey::PagesExecutiveSectionsStrategicKpis => {
-                "pages.executive.sections.strategicKpis"
-            }
+            I18nKey::PagesExecutiveSectionsBusinessIntel => "pages.executive.sections.businessIntel",
+            I18nKey::PagesExecutiveSectionsStrategicKpis => "pages.executive.sections.strategicKpis",
             I18nKey::PagesExecutiveSqdcpCost => "pages.executive.sqdcp.cost",
             I18nKey::PagesExecutiveSqdcpDelivery => "pages.executive.sqdcp.delivery",
             I18nKey::PagesExecutiveSqdcpPeople => "pages.executive.sqdcp.people",
@@ -13453,27 +12493,13 @@ impl I18nKey {
             I18nKey::PagesExecutiveStatsGrossMargin => "pages.executive.stats.grossMargin",
             I18nKey::PagesExecutiveStatsOpsHealth => "pages.executive.stats.opsHealth",
             I18nKey::PagesExecutiveStatsRevenuePulse => "pages.executive.stats.revenuePulse",
-            I18nKey::PagesExecutiveStrategicDirectivesDirective1Desc => {
-                "pages.executive.strategicDirectives.directive1Desc"
-            }
-            I18nKey::PagesExecutiveStrategicDirectivesDirective1Title => {
-                "pages.executive.strategicDirectives.directive1Title"
-            }
-            I18nKey::PagesExecutiveStrategicDirectivesDirective2Desc => {
-                "pages.executive.strategicDirectives.directive2Desc"
-            }
-            I18nKey::PagesExecutiveStrategicDirectivesDirective2Title => {
-                "pages.executive.strategicDirectives.directive2Title"
-            }
-            I18nKey::PagesExecutiveStrategicDirectivesPriorityAlpha => {
-                "pages.executive.strategicDirectives.priorityAlpha"
-            }
-            I18nKey::PagesExecutiveStrategicDirectivesPriorityBeta => {
-                "pages.executive.strategicDirectives.priorityBeta"
-            }
-            I18nKey::PagesExecutiveStrategicDirectivesTitle => {
-                "pages.executive.strategicDirectives.title"
-            }
+            I18nKey::PagesExecutiveStrategicDirectivesDirective1Desc => "pages.executive.strategicDirectives.directive1Desc",
+            I18nKey::PagesExecutiveStrategicDirectivesDirective1Title => "pages.executive.strategicDirectives.directive1Title",
+            I18nKey::PagesExecutiveStrategicDirectivesDirective2Desc => "pages.executive.strategicDirectives.directive2Desc",
+            I18nKey::PagesExecutiveStrategicDirectivesDirective2Title => "pages.executive.strategicDirectives.directive2Title",
+            I18nKey::PagesExecutiveStrategicDirectivesPriorityAlpha => "pages.executive.strategicDirectives.priorityAlpha",
+            I18nKey::PagesExecutiveStrategicDirectivesPriorityBeta => "pages.executive.strategicDirectives.priorityBeta",
+            I18nKey::PagesExecutiveStrategicDirectivesTitle => "pages.executive.strategicDirectives.title",
             I18nKey::PagesExecutiveSubtitle => "pages.executive.subtitle",
             I18nKey::PagesExecutiveTabsFinance => "pages.executive.tabs.finance",
             I18nKey::PagesExecutiveTabsNorthStar => "pages.executive.tabs.northStar",
@@ -13486,9 +12512,7 @@ impl I18nKey {
             I18nKey::PagesExecutiveTitle => "pages.executive.title",
             I18nKey::PagesFinanceAllSystemsNominal => "pages.finance.allSystemsNominal",
             I18nKey::PagesFinanceBankingAccountName => "pages.finance.banking.accountName",
-            I18nKey::PagesFinanceBankingAccountNamePlaceholder => {
-                "pages.finance.banking.accountNamePlaceholder"
-            }
+            I18nKey::PagesFinanceBankingAccountNamePlaceholder => "pages.finance.banking.accountNamePlaceholder",
             I18nKey::PagesFinanceBankingAccountNumber => "pages.finance.banking.accountNumber",
             I18nKey::PagesFinanceBankingAccountType => "pages.finance.banking.accountType",
             I18nKey::PagesFinanceBankingAddAccount => "pages.finance.banking.addAccount",
@@ -13510,9 +12534,7 @@ impl I18nKey {
             I18nKey::PagesFinanceBankingDate => "pages.finance.banking.date",
             I18nKey::PagesFinanceBankingDeposit => "pages.finance.banking.deposit",
             I18nKey::PagesFinanceBankingDescription => "pages.finance.banking.description",
-            I18nKey::PagesFinanceBankingDescriptionPlaceholder => {
-                "pages.finance.banking.descriptionPlaceholder"
-            }
+            I18nKey::PagesFinanceBankingDescriptionPlaceholder => "pages.finance.banking.descriptionPlaceholder",
             I18nKey::PagesFinanceBankingFee => "pages.finance.banking.fee",
             I18nKey::PagesFinanceBankingIban => "pages.finance.banking.iban",
             I18nKey::PagesFinanceBankingInterest => "pages.finance.banking.interest",
@@ -13520,13 +12542,9 @@ impl I18nKey {
             I18nKey::PagesFinanceBankingNoTransactions => "pages.finance.banking.noTransactions",
             I18nKey::PagesFinanceBankingReconcile => "pages.finance.banking.reconcile",
             I18nKey::PagesFinanceBankingReference => "pages.finance.banking.reference",
-            I18nKey::PagesFinanceBankingReferencePlaceholder => {
-                "pages.finance.banking.referencePlaceholder"
-            }
+            I18nKey::PagesFinanceBankingReferencePlaceholder => "pages.finance.banking.referencePlaceholder",
             I18nKey::PagesFinanceBankingSavings => "pages.finance.banking.savings",
-            I18nKey::PagesFinanceBankingSearchTransactions => {
-                "pages.finance.banking.searchTransactions"
-            }
+            I18nKey::PagesFinanceBankingSearchTransactions => "pages.finance.banking.searchTransactions",
             I18nKey::PagesFinanceBankingSelectAccount => "pages.finance.banking.selectAccount",
             I18nKey::PagesFinanceBankingSubtitle => "pages.finance.banking.subtitle",
             I18nKey::PagesFinanceBankingTitle => "pages.finance.banking.title",
@@ -13536,14 +12554,10 @@ impl I18nKey {
             I18nKey::PagesFinanceBankingType => "pages.finance.banking.type",
             I18nKey::PagesFinanceBankingWithdrawal => "pages.finance.banking.withdrawal",
             I18nKey::PagesFinanceCostDriversEnergy => "pages.finance.costDrivers.energy",
-            I18nKey::PagesFinanceCostDriversImpactOnMargin => {
-                "pages.finance.costDrivers.impactOnMargin"
-            }
+            I18nKey::PagesFinanceCostDriversImpactOnMargin => "pages.finance.costDrivers.impactOnMargin",
             I18nKey::PagesFinanceCostDriversLogistics => "pages.finance.costDrivers.logistics",
             I18nKey::PagesFinanceCostDriversOvertime => "pages.finance.costDrivers.overtime",
-            I18nKey::PagesFinanceCostDriversRawMaterials => {
-                "pages.finance.costDrivers.rawMaterials"
-            }
+            I18nKey::PagesFinanceCostDriversRawMaterials => "pages.finance.costDrivers.rawMaterials",
             I18nKey::PagesFinanceCostDriversTitle => "pages.finance.costDrivers.title",
             I18nKey::PagesFinanceCostingActualCost => "pages.finance.costing.actualCost",
             I18nKey::PagesFinanceCostingActualLabor => "pages.finance.costing.actualLabor",
@@ -13557,20 +12571,14 @@ impl I18nKey {
             I18nKey::PagesFinanceCostingEffectiveDate => "pages.finance.costing.effectiveDate",
             I18nKey::PagesFinanceCostingFinishedSku => "pages.finance.costing.finishedSku",
             I18nKey::PagesFinanceCostingLaborUnitCost => "pages.finance.costing.laborUnitCost",
-            I18nKey::PagesFinanceCostingMaterialUnitCost => {
-                "pages.finance.costing.materialUnitCost"
-            }
+            I18nKey::PagesFinanceCostingMaterialUnitCost => "pages.finance.costing.materialUnitCost",
             I18nKey::PagesFinanceCostingNoRollups => "pages.finance.costing.noRollups",
             I18nKey::PagesFinanceCostingNoStandardCosts => "pages.finance.costing.noStandardCosts",
-            I18nKey::PagesFinanceCostingOverheadUnitCost => {
-                "pages.finance.costing.overheadUnitCost"
-            }
+            I18nKey::PagesFinanceCostingOverheadUnitCost => "pages.finance.costing.overheadUnitCost",
             I18nKey::PagesFinanceCostingPlannedQty => "pages.finance.costing.plannedQty",
             I18nKey::PagesFinanceCostingRecordRollup => "pages.finance.costing.recordRollup",
             I18nKey::PagesFinanceCostingRelievedCost => "pages.finance.costing.relievedCost",
-            I18nKey::PagesFinanceCostingSaveStandardCost => {
-                "pages.finance.costing.saveStandardCost"
-            }
+            I18nKey::PagesFinanceCostingSaveStandardCost => "pages.finance.costing.saveStandardCost",
             I18nKey::PagesFinanceCostingSku => "pages.finance.costing.sku",
             I18nKey::PagesFinanceCostingStandardCost => "pages.finance.costing.standardCost",
             I18nKey::PagesFinanceCostingStandardCosts => "pages.finance.costing.standardCosts",
@@ -13578,50 +12586,30 @@ impl I18nKey {
             I18nKey::PagesFinanceCostingTitle => "pages.finance.costing.title",
             I18nKey::PagesFinanceCostingTotalUnit => "pages.finance.costing.totalUnit",
             I18nKey::PagesFinanceCostingVariance => "pages.finance.costing.variance",
-            I18nKey::PagesFinanceCostingVarianceAnalysis => {
-                "pages.finance.costing.varianceAnalysis"
-            }
+            I18nKey::PagesFinanceCostingVarianceAnalysis => "pages.finance.costing.varianceAnalysis",
             I18nKey::PagesFinanceCostingVarianceLabor => "pages.finance.costing.varianceLabor",
-            I18nKey::PagesFinanceCostingVarianceMaterial => {
-                "pages.finance.costing.varianceMaterial"
-            }
-            I18nKey::PagesFinanceCostingVarianceOverhead => {
-                "pages.finance.costing.varianceOverhead"
-            }
+            I18nKey::PagesFinanceCostingVarianceMaterial => "pages.finance.costing.varianceMaterial",
+            I18nKey::PagesFinanceCostingVarianceOverhead => "pages.finance.costing.varianceOverhead",
             I18nKey::PagesFinanceCostingVarianceTotal => "pages.finance.costing.varianceTotal",
             I18nKey::PagesFinanceCostingWorkOrder => "pages.finance.costing.workOrder",
             I18nKey::PagesFinanceCurrencyAddFxRate => "pages.finance.currency.addFxRate",
-            I18nKey::PagesFinanceCurrencyAllowedCurrencies => {
-                "pages.finance.currency.allowedCurrencies"
-            }
-            I18nKey::PagesFinanceCurrencyAllowedCurrenciesPlaceholder => {
-                "pages.finance.currency.allowedCurrenciesPlaceholder"
-            }
+            I18nKey::PagesFinanceCurrencyAllowedCurrencies => "pages.finance.currency.allowedCurrencies",
+            I18nKey::PagesFinanceCurrencyAllowedCurrenciesPlaceholder => "pages.finance.currency.allowedCurrenciesPlaceholder",
             I18nKey::PagesFinanceCurrencyAsOf => "pages.finance.currency.asOf",
-            I18nKey::PagesFinanceCurrencyAutoUpdateFxRates => {
-                "pages.finance.currency.autoUpdateFxRates"
-            }
+            I18nKey::PagesFinanceCurrencyAutoUpdateFxRates => "pages.finance.currency.autoUpdateFxRates",
             I18nKey::PagesFinanceCurrencyBaseCurrency => "pages.finance.currency.baseCurrency",
             I18nKey::PagesFinanceCurrencyConversion => "pages.finance.currency.conversion",
-            I18nKey::PagesFinanceCurrencyCurrencyConfiguration => {
-                "pages.finance.currency.currencyConfiguration"
-            }
+            I18nKey::PagesFinanceCurrencyCurrencyConfiguration => "pages.finance.currency.currencyConfiguration",
             I18nKey::PagesFinanceCurrencyExchangeRates => "pages.finance.currency.exchangeRates",
             I18nKey::PagesFinanceCurrencyFrom => "pages.finance.currency.from",
-            I18nKey::PagesFinanceCurrencyFromPlaceholder => {
-                "pages.finance.currency.fromPlaceholder"
-            }
+            I18nKey::PagesFinanceCurrencyFromPlaceholder => "pages.finance.currency.fromPlaceholder",
             I18nKey::PagesFinanceCurrencyFxRates => "pages.finance.currency.fxRates",
             I18nKey::PagesFinanceCurrencyFxSource => "pages.finance.currency.fxSource",
-            I18nKey::PagesFinanceCurrencyManualPlaceholder => {
-                "pages.finance.currency.manualPlaceholder"
-            }
+            I18nKey::PagesFinanceCurrencyManualPlaceholder => "pages.finance.currency.manualPlaceholder",
             I18nKey::PagesFinanceCurrencyNoFxRates => "pages.finance.currency.noFxRates",
             I18nKey::PagesFinanceCurrencyPair => "pages.finance.currency.pair",
             I18nKey::PagesFinanceCurrencyRate => "pages.finance.currency.rate",
-            I18nKey::PagesFinanceCurrencyReportingCurrency => {
-                "pages.finance.currency.reportingCurrency"
-            }
+            I18nKey::PagesFinanceCurrencyReportingCurrency => "pages.finance.currency.reportingCurrency",
             I18nKey::PagesFinanceCurrencySaveRate => "pages.finance.currency.saveRate",
             I18nKey::PagesFinanceCurrencySaveSettings => "pages.finance.currency.saveSettings",
             I18nKey::PagesFinanceCurrencySubtitle => "pages.finance.currency.subtitle",
@@ -13650,64 +12638,32 @@ impl I18nKey {
             I18nKey::PagesFinanceLedgerTotalLiabilities => "pages.finance.ledger.totalLiabilities",
             I18nKey::PagesFinanceLedgerType => "pages.finance.ledger.type",
             I18nKey::PagesFinancePaymentTermsActive => "pages.finance.paymentTerms.active",
-            I18nKey::PagesFinancePaymentTermsAddFirstPaymentTerm => {
-                "pages.finance.paymentTerms.addFirstPaymentTerm"
-            }
-            I18nKey::PagesFinancePaymentTermsAddPaymentTerm => {
-                "pages.finance.paymentTerms.addPaymentTerm"
-            }
+            I18nKey::PagesFinancePaymentTermsAddFirstPaymentTerm => "pages.finance.paymentTerms.addFirstPaymentTerm",
+            I18nKey::PagesFinancePaymentTermsAddPaymentTerm => "pages.finance.paymentTerms.addPaymentTerm",
             I18nKey::PagesFinancePaymentTermsCode => "pages.finance.paymentTerms.code",
-            I18nKey::PagesFinancePaymentTermsCodePlaceholder => {
-                "pages.finance.paymentTerms.codePlaceholder"
-            }
+            I18nKey::PagesFinancePaymentTermsCodePlaceholder => "pages.finance.paymentTerms.codePlaceholder",
             I18nKey::PagesFinancePaymentTermsDays => "pages.finance.paymentTerms.days",
             I18nKey::PagesFinancePaymentTermsDaysDue => "pages.finance.paymentTerms.daysDue",
-            I18nKey::PagesFinancePaymentTermsDescription => {
-                "pages.finance.paymentTerms.description"
-            }
-            I18nKey::PagesFinancePaymentTermsDescriptionPlaceholder => {
-                "pages.finance.paymentTerms.descriptionPlaceholder"
-            }
+            I18nKey::PagesFinancePaymentTermsDescription => "pages.finance.paymentTerms.description",
+            I18nKey::PagesFinancePaymentTermsDescriptionPlaceholder => "pages.finance.paymentTerms.descriptionPlaceholder",
             I18nKey::PagesFinancePaymentTermsDiscount => "pages.finance.paymentTerms.discount",
-            I18nKey::PagesFinancePaymentTermsDiscountDays => {
-                "pages.finance.paymentTerms.discountDays"
-            }
-            I18nKey::PagesFinancePaymentTermsEarlyDiscount => {
-                "pages.finance.paymentTerms.earlyDiscount"
-            }
-            I18nKey::PagesFinancePaymentTermsEditPaymentTerm => {
-                "pages.finance.paymentTerms.editPaymentTerm"
-            }
+            I18nKey::PagesFinancePaymentTermsDiscountDays => "pages.finance.paymentTerms.discountDays",
+            I18nKey::PagesFinancePaymentTermsEarlyDiscount => "pages.finance.paymentTerms.earlyDiscount",
+            I18nKey::PagesFinancePaymentTermsEditPaymentTerm => "pages.finance.paymentTerms.editPaymentTerm",
             I18nKey::PagesFinancePaymentTermsInactive => "pages.finance.paymentTerms.inactive",
             I18nKey::PagesFinancePaymentTermsName => "pages.finance.paymentTerms.name",
-            I18nKey::PagesFinancePaymentTermsNamePlaceholder => {
-                "pages.finance.paymentTerms.namePlaceholder"
-            }
-            I18nKey::PagesFinancePaymentTermsNoEarlyDiscount => {
-                "pages.finance.paymentTerms.noEarlyDiscount"
-            }
-            I18nKey::PagesFinancePaymentTermsNoPaymentTerms => {
-                "pages.finance.paymentTerms.noPaymentTerms"
-            }
-            I18nKey::PagesFinancePaymentTermsSaveChanges => {
-                "pages.finance.paymentTerms.saveChanges"
-            }
+            I18nKey::PagesFinancePaymentTermsNamePlaceholder => "pages.finance.paymentTerms.namePlaceholder",
+            I18nKey::PagesFinancePaymentTermsNoEarlyDiscount => "pages.finance.paymentTerms.noEarlyDiscount",
+            I18nKey::PagesFinancePaymentTermsNoPaymentTerms => "pages.finance.paymentTerms.noPaymentTerms",
+            I18nKey::PagesFinancePaymentTermsSaveChanges => "pages.finance.paymentTerms.saveChanges",
             I18nKey::PagesFinancePaymentTermsSubtitle => "pages.finance.paymentTerms.subtitle",
             I18nKey::PagesFinancePaymentTermsTitle => "pages.finance.paymentTerms.title",
             I18nKey::PagesFinanceQuarter => "pages.finance.quarter",
-            I18nKey::PagesFinanceRevenueByProductAftermarketServices => {
-                "pages.finance.revenueByProduct.aftermarketServices"
-            }
-            I18nKey::PagesFinanceRevenueByProductAssemblySystems => {
-                "pages.finance.revenueByProduct.assemblySystems"
-            }
-            I18nKey::PagesFinanceRevenueByProductPrecisionComponents => {
-                "pages.finance.revenueByProduct.precisionComponents"
-            }
+            I18nKey::PagesFinanceRevenueByProductAftermarketServices => "pages.finance.revenueByProduct.aftermarketServices",
+            I18nKey::PagesFinanceRevenueByProductAssemblySystems => "pages.finance.revenueByProduct.assemblySystems",
+            I18nKey::PagesFinanceRevenueByProductPrecisionComponents => "pages.finance.revenueByProduct.precisionComponents",
             I18nKey::PagesFinanceRevenueByProductTitle => "pages.finance.revenueByProduct.title",
-            I18nKey::PagesFinanceSectionsAccountsReceivable => {
-                "pages.finance.sections.accountsReceivable"
-            }
+            I18nKey::PagesFinanceSectionsAccountsReceivable => "pages.finance.sections.accountsReceivable",
             I18nKey::PagesFinanceSectionsBudgetAnalysis => "pages.finance.sections.budgetAnalysis",
             I18nKey::PagesFinanceSectionsDelete => "pages.finance.sections.delete",
             I18nKey::PagesFinanceSectionsEdit => "pages.finance.sections.edit",
@@ -13745,13 +12701,9 @@ impl I18nKey {
             I18nKey::PagesFinanceTaxRecordTransaction => "pages.finance.tax.recordTransaction",
             I18nKey::PagesFinanceTaxReference => "pages.finance.tax.reference",
             I18nKey::PagesFinanceTaxReferenceId => "pages.finance.tax.referenceId",
-            I18nKey::PagesFinanceTaxReferenceIdPlaceholder => {
-                "pages.finance.tax.referenceIdPlaceholder"
-            }
+            I18nKey::PagesFinanceTaxReferenceIdPlaceholder => "pages.finance.tax.referenceIdPlaceholder",
             I18nKey::PagesFinanceTaxReferenceType => "pages.finance.tax.referenceType",
-            I18nKey::PagesFinanceTaxReferenceTypePlaceholder => {
-                "pages.finance.tax.referenceTypePlaceholder"
-            }
+            I18nKey::PagesFinanceTaxReferenceTypePlaceholder => "pages.finance.tax.referenceTypePlaceholder",
             I18nKey::PagesFinanceTaxRegion => "pages.finance.tax.region",
             I18nKey::PagesFinanceTaxRegionPlaceholder => "pages.finance.tax.regionPlaceholder",
             I18nKey::PagesFinanceTaxSaveJurisdiction => "pages.finance.tax.saveJurisdiction",
@@ -13858,9 +12810,7 @@ impl I18nKey {
             I18nKey::PagesItDiskSaturation => "pages.it.diskSaturation",
             I18nKey::PagesItDistributedWafActive => "pages.it.distributedWafActive",
             I18nKey::PagesItFirewallArchitecture => "pages.it.firewallArchitecture",
-            I18nKey::PagesItGlobalInfrastructureSynchronized => {
-                "pages.it.globalInfrastructureSynchronized"
-            }
+            I18nKey::PagesItGlobalInfrastructureSynchronized => "pages.it.globalInfrastructureSynchronized",
             I18nKey::PagesItIntelligenceNodeCluster => "pages.it.intelligenceNodeCluster",
             I18nKey::PagesItLatency => "pages.it.latency",
             I18nKey::PagesItLiveLogs => "pages.it.liveLogs",
@@ -13891,9 +12841,7 @@ impl I18nKey {
             I18nKey::PagesItUpdateSecurityPolicies => "pages.it.updateSecurityPolicies",
             I18nKey::PagesItUptime => "pages.it.uptime",
             I18nKey::PagesItValidNode => "pages.it.validNode",
-            I18nKey::PagesMaintenanceActionsNewWorkOrder => {
-                "pages.maintenance.actions.newWorkOrder"
-            }
+            I18nKey::PagesMaintenanceActionsNewWorkOrder => "pages.maintenance.actions.newWorkOrder",
             I18nKey::PagesMaintenanceActiveCheckouts => "pages.maintenance.activeCheckouts",
             I18nKey::PagesMaintenanceActiveLocks => "pages.maintenance.activeLocks",
             I18nKey::PagesMaintenanceAssetWarranties => "pages.maintenance.assetWarranties",
@@ -13915,31 +12863,19 @@ impl I18nKey {
             I18nKey::PagesMaintenanceLotoProcedures => "pages.maintenance.lotoProcedures",
             I18nKey::PagesMaintenanceMaintenanceBudget => "pages.maintenance.maintenanceBudget",
             I18nKey::PagesMaintenanceMobileActiveLOTO => "pages.maintenance.mobile.activeLOTO",
-            I18nKey::PagesMaintenanceMobileLaunchScanner => {
-                "pages.maintenance.mobile.launchScanner"
-            }
+            I18nKey::PagesMaintenanceMobileLaunchScanner => "pages.maintenance.mobile.launchScanner",
             I18nKey::PagesMaintenanceMobileLogDowntime => "pages.maintenance.mobile.logDowntime",
-            I18nKey::PagesMaintenanceMobileOpenWorkOrders => {
-                "pages.maintenance.mobile.openWorkOrders"
-            }
+            I18nKey::PagesMaintenanceMobileOpenWorkOrders => "pages.maintenance.mobile.openWorkOrders",
             I18nKey::PagesMaintenanceMobilePmDue => "pages.maintenance.mobile.pmDue",
-            I18nKey::PagesMaintenanceMobileQuickIncidentLog => {
-                "pages.maintenance.mobile.quickIncidentLog"
-            }
+            I18nKey::PagesMaintenanceMobileQuickIncidentLog => "pages.maintenance.mobile.quickIncidentLog",
             I18nKey::PagesMaintenanceMobileReviewPMs => "pages.maintenance.mobile.reviewPMs",
-            I18nKey::PagesMaintenanceMobileScanAssetTool => {
-                "pages.maintenance.mobile.scanAssetTool"
-            }
-            I18nKey::PagesMaintenanceMobileScanDescription => {
-                "pages.maintenance.mobile.scanDescription"
-            }
+            I18nKey::PagesMaintenanceMobileScanAssetTool => "pages.maintenance.mobile.scanAssetTool",
+            I18nKey::PagesMaintenanceMobileScanDescription => "pages.maintenance.mobile.scanDescription",
             I18nKey::PagesMaintenanceMobileStopScanner => "pages.maintenance.mobile.stopScanner",
             I18nKey::PagesMaintenanceMobileSubtitle => "pages.maintenance.mobile.subtitle",
             I18nKey::PagesMaintenanceMobileTitle => "pages.maintenance.mobile.title",
             I18nKey::PagesMaintenanceMobileViewLOTO => "pages.maintenance.mobile.viewLOTO",
-            I18nKey::PagesMaintenanceMobileViewWorkOrders => {
-                "pages.maintenance.mobile.viewWorkOrders"
-            }
+            I18nKey::PagesMaintenanceMobileViewWorkOrders => "pages.maintenance.mobile.viewWorkOrders",
             I18nKey::PagesMaintenanceMobileMode => "pages.maintenance.mobileMode",
             I18nKey::PagesMaintenanceNoActiveCheckouts => "pages.maintenance.noActiveCheckouts",
             I18nKey::PagesMaintenanceNoActiveLocks => "pages.maintenance.noActiveLocks",
@@ -13947,9 +12883,7 @@ impl I18nKey {
             I18nKey::PagesMaintenanceNoAssetsFound => "pages.maintenance.noAssetsFound",
             I18nKey::PagesMaintenanceNoBudgetsFound => "pages.maintenance.noBudgetsFound",
             I18nKey::PagesMaintenanceNoFieldReturnsFound => "pages.maintenance.noFieldReturnsFound",
-            I18nKey::PagesMaintenanceNoLotoProceduresFound => {
-                "pages.maintenance.noLotoProceduresFound"
-            }
+            I18nKey::PagesMaintenanceNoLotoProceduresFound => "pages.maintenance.noLotoProceduresFound",
             I18nKey::PagesMaintenanceNoPMRouteItems => "pages.maintenance.noPMRouteItems",
             I18nKey::PagesMaintenanceNoPMSchedulesFound => "pages.maintenance.noPMSchedulesFound",
             I18nKey::PagesMaintenanceNoToolsFound => "pages.maintenance.noToolsFound",
@@ -13960,12 +12894,8 @@ impl I18nKey {
             I18nKey::PagesMaintenanceStation => "pages.maintenance.station",
             I18nKey::PagesMaintenanceStatsAnomalousDown => "pages.maintenance.stats.anomalousDown",
             I18nKey::PagesMaintenanceStatsAssetNodes => "pages.maintenance.stats.assetNodes",
-            I18nKey::PagesMaintenanceStatsEfficiencyPulse => {
-                "pages.maintenance.stats.efficiencyPulse"
-            }
-            I18nKey::PagesMaintenanceStatsThresholdOverdue => {
-                "pages.maintenance.stats.thresholdOverdue"
-            }
+            I18nKey::PagesMaintenanceStatsEfficiencyPulse => "pages.maintenance.stats.efficiencyPulse",
+            I18nKey::PagesMaintenanceStatsThresholdOverdue => "pages.maintenance.stats.thresholdOverdue",
             I18nKey::PagesMaintenanceSubtitle => "pages.maintenance.subtitle",
             I18nKey::PagesMaintenanceTableActual => "pages.maintenance.table.actual",
             I18nKey::PagesMaintenanceTableApplied => "pages.maintenance.table.applied",
@@ -14029,9 +12959,7 @@ impl I18nKey {
             I18nKey::PagesMrpMpsTablePeriodRange => "pages.mrp.mps.table.periodRange",
             I18nKey::PagesMrpMpsTablePlanIdentity => "pages.mrp.mps.table.planIdentity",
             I18nKey::PagesMrpMpsTablePlanLineExposure => "pages.mrp.mps.table.planLineExposure",
-            I18nKey::PagesMrpMpsTablePlanProtocolRegistry => {
-                "pages.mrp.mps.table.planProtocolRegistry"
-            }
+            I18nKey::PagesMrpMpsTablePlanProtocolRegistry => "pages.mrp.mps.table.planProtocolRegistry",
             I18nKey::PagesMrpMpsTableProductNode => "pages.mrp.mps.table.productNode",
             I18nKey::PagesMrpMpsTableProductPrefix => "pages.mrp.mps.table.productPrefix",
             I18nKey::PagesMrpMpsTableQuantity => "pages.mrp.mps.table.quantity",
@@ -14050,18 +12978,10 @@ impl I18nKey {
             I18nKey::PagesObeyaBadgesAiSync => "pages.obeya.badges.aiSync",
             I18nKey::PagesObeyaBadgesPrescriptive => "pages.obeya.badges.prescriptive",
             I18nKey::PagesObeyaEmptyStatesPendingAction => "pages.obeya.emptyStates.pendingAction",
-            I18nKey::PagesObeyaEmptyStatesProductionMixLeveled => {
-                "pages.obeya.emptyStates.productionMixLeveled"
-            }
-            I18nKey::PagesObeyaEmptyStatesSkillNodesOptimized => {
-                "pages.obeya.emptyStates.skillNodesOptimized"
-            }
-            I18nKey::PagesObeyaEmptyStatesZeroActiveSiloAlerts => {
-                "pages.obeya.emptyStates.zeroActiveSiloAlerts"
-            }
-            I18nKey::PagesObeyaEmptyStatesZeroCriticalExceptions => {
-                "pages.obeya.emptyStates.zeroCriticalExceptions"
-            }
+            I18nKey::PagesObeyaEmptyStatesProductionMixLeveled => "pages.obeya.emptyStates.productionMixLeveled",
+            I18nKey::PagesObeyaEmptyStatesSkillNodesOptimized => "pages.obeya.emptyStates.skillNodesOptimized",
+            I18nKey::PagesObeyaEmptyStatesZeroActiveSiloAlerts => "pages.obeya.emptyStates.zeroActiveSiloAlerts",
+            I18nKey::PagesObeyaEmptyStatesZeroCriticalExceptions => "pages.obeya.emptyStates.zeroCriticalExceptions",
             I18nKey::PagesObeyaExceptionsTitle => "pages.obeya.exceptionsTitle",
             I18nKey::PagesObeyaHeijunkaLeveling => "pages.obeya.heijunkaLeveling",
             I18nKey::PagesObeyaHeijunkaTips => "pages.obeya.heijunkaTips",
@@ -14076,9 +12996,7 @@ impl I18nKey {
             I18nKey::PagesObeyaLabelsHorizon => "pages.obeya.labels.horizon",
             I18nKey::PagesObeyaLabelsImprovement => "pages.obeya.labels.improvement",
             I18nKey::PagesObeyaLabelsMuraReduction => "pages.obeya.labels.muraReduction",
-            I18nKey::PagesObeyaLabelsRecommendedOperators => {
-                "pages.obeya.labels.recommendedOperators"
-            }
+            I18nKey::PagesObeyaLabelsRecommendedOperators => "pages.obeya.labels.recommendedOperators",
             I18nKey::PagesObeyaLabelsSensorFusion => "pages.obeya.labels.sensorFusion",
             I18nKey::PagesObeyaLabelsSuggestedPattern => "pages.obeya.labels.suggestedPattern",
             I18nKey::PagesObeyaParameters => "pages.obeya.parameters",
@@ -14096,16 +13014,10 @@ impl I18nKey {
             I18nKey::PagesObeyaStatusColorGreen => "pages.obeya.statusColor.green",
             I18nKey::PagesObeyaStatusColorRed => "pages.obeya.statusColor.red",
             I18nKey::PagesObeyaStatusColorYellow => "pages.obeya.statusColor.yellow",
-            I18nKey::PagesObeyaStatusesInterDeptFriction => {
-                "pages.obeya.statuses.interDeptFriction"
-            }
+            I18nKey::PagesObeyaStatusesInterDeptFriction => "pages.obeya.statuses.interDeptFriction",
             I18nKey::PagesObeyaStatusesSkillGapNodes => "pages.obeya.statuses.skillGapNodes",
-            I18nKey::PagesObeyaStatusesSmoothingProtocols => {
-                "pages.obeya.statuses.smoothingProtocols"
-            }
-            I18nKey::PagesObeyaStatusesTrendingTowardRed => {
-                "pages.obeya.statuses.trendingTowardRed"
-            }
+            I18nKey::PagesObeyaStatusesSmoothingProtocols => "pages.obeya.statuses.smoothingProtocols",
+            I18nKey::PagesObeyaStatusesTrendingTowardRed => "pages.obeya.statuses.trendingTowardRed",
             I18nKey::PagesObeyaSubtitle => "pages.obeya.subtitle",
             I18nKey::PagesObeyaSyncIntel => "pages.obeya.syncIntel",
             I18nKey::PagesObeyaTabsActions => "pages.obeya.tabs.actions",
@@ -14132,27 +13044,19 @@ impl I18nKey {
             I18nKey::PagesObeyaDetailNotFound => "pages.obeyaDetail.notFound",
             I18nKey::PagesObeyaDetailNotFoundDescription => "pages.obeyaDetail.notFoundDescription",
             I18nKey::PagesObeyaNewBoardIdentity => "pages.obeyaNew.boardIdentity",
-            I18nKey::PagesObeyaNewBoardIdentityPlaceholder => {
-                "pages.obeyaNew.boardIdentityPlaceholder"
-            }
+            I18nKey::PagesObeyaNewBoardIdentityPlaceholder => "pages.obeyaNew.boardIdentityPlaceholder",
             I18nKey::PagesObeyaNewDepartmentNode => "pages.obeyaNew.departmentNode",
             I18nKey::PagesObeyaNewDescription => "pages.obeyaNew.description",
             I18nKey::PagesObeyaNewEstablishBoard => "pages.obeyaNew.establishBoard",
             I18nKey::PagesObeyaNewIdentifyTeam => "pages.obeyaNew.identifyTeam",
             I18nKey::PagesObeyaNewIntelligenceModules => "pages.obeyaNew.intelligenceModules",
-            I18nKey::PagesObeyaNewIntelligenceModulesDescription => {
-                "pages.obeyaNew.intelligenceModulesDescription"
-            }
+            I18nKey::PagesObeyaNewIntelligenceModulesDescription => "pages.obeyaNew.intelligenceModulesDescription",
             I18nKey::PagesObeyaNewPrimaryCustodian => "pages.obeyaNew.primaryCustodian",
             I18nKey::PagesObeyaNewProtocolConfiguration => "pages.obeyaNew.protocolConfiguration",
-            I18nKey::PagesObeyaNewProtocolConfigurationDescription => {
-                "pages.obeyaNew.protocolConfigurationDescription"
-            }
+            I18nKey::PagesObeyaNewProtocolConfigurationDescription => "pages.obeyaNew.protocolConfigurationDescription",
             I18nKey::PagesObeyaNewSearchUserNodes => "pages.obeyaNew.searchUserNodes",
             I18nKey::PagesObeyaNewStrategicContext => "pages.obeyaNew.strategicContext",
-            I18nKey::PagesObeyaNewStrategicContextPlaceholder => {
-                "pages.obeyaNew.strategicContextPlaceholder"
-            }
+            I18nKey::PagesObeyaNewStrategicContextPlaceholder => "pages.obeyaNew.strategicContextPlaceholder",
             I18nKey::PagesObeyaNewTitle => "pages.obeyaNew.title",
             I18nKey::PagesOfflineBranding => "pages.offline.branding",
             I18nKey::PagesOfflineCachedData => "pages.offline.cachedData",
@@ -14176,12 +13080,8 @@ impl I18nKey {
             I18nKey::PagesOrdersGenerateInvoice => "pages.orders.generateInvoice",
             I18nKey::PagesOrdersNewOrder => "pages.orders.newOrder",
             I18nKey::PagesOrdersQuickActionsInvoicing => "pages.orders.quickActions.invoicing",
-            I18nKey::PagesOrdersQuickActionsManageCustomers => {
-                "pages.orders.quickActions.manageCustomers"
-            }
-            I18nKey::PagesOrdersQuickActionsManageInvoices => {
-                "pages.orders.quickActions.manageInvoices"
-            }
+            I18nKey::PagesOrdersQuickActionsManageCustomers => "pages.orders.quickActions.manageCustomers",
+            I18nKey::PagesOrdersQuickActionsManageInvoices => "pages.orders.quickActions.manageInvoices",
             I18nKey::PagesOrdersQuickActionsViewQuotes => "pages.orders.quickActions.viewQuotes",
             I18nKey::PagesOrdersReleaseToWarehouse => "pages.orders.releaseToWarehouse",
             I18nKey::PagesOrdersSourceQuote => "pages.orders.sourceQuote",
@@ -14209,9 +13109,7 @@ impl I18nKey {
             I18nKey::PagesOrdersTableTotalValue => "pages.orders.table.totalValue",
             I18nKey::PagesOrdersTitle => "pages.orders.title",
             I18nKey::PagesPipelineActionsAnalyze => "pages.pipeline.actions.analyze",
-            I18nKey::PagesPipelineActionsInitializeQuote => {
-                "pages.pipeline.actions.initializeQuote"
-            }
+            I18nKey::PagesPipelineActionsInitializeQuote => "pages.pipeline.actions.initializeQuote",
             I18nKey::PagesPipelineActionsNewRfq => "pages.pipeline.actions.newRfq",
             I18nKey::PagesPipelineActionsResetFilters => "pages.pipeline.actions.resetFilters",
             I18nKey::PagesPipelineActionsTerminateNode => "pages.pipeline.actions.terminateNode",
@@ -14226,58 +13124,26 @@ impl I18nKey {
             I18nKey::PagesPipelineNewEstablishProtocol => "pages.pipeline.new.establishProtocol",
             I18nKey::PagesPipelineNewLabelsAddNode => "pages.pipeline.new.labels.addNode",
             I18nKey::PagesPipelineNewLabelsCustomerNode => "pages.pipeline.new.labels.customerNode",
-            I18nKey::PagesPipelineNewLabelsDetailedContext => {
-                "pages.pipeline.new.labels.detailedContext"
-            }
-            I18nKey::PagesPipelineNewLabelsEstimatedMagnitude => {
-                "pages.pipeline.new.labels.estimatedMagnitude"
-            }
-            I18nKey::PagesPipelineNewLabelsIngestionDate => {
-                "pages.pipeline.new.labels.ingestionDate"
-            }
-            I18nKey::PagesPipelineNewLabelsLineIntelligence => {
-                "pages.pipeline.new.labels.lineIntelligence"
-            }
+            I18nKey::PagesPipelineNewLabelsDetailedContext => "pages.pipeline.new.labels.detailedContext",
+            I18nKey::PagesPipelineNewLabelsEstimatedMagnitude => "pages.pipeline.new.labels.estimatedMagnitude",
+            I18nKey::PagesPipelineNewLabelsIngestionDate => "pages.pipeline.new.labels.ingestionDate",
+            I18nKey::PagesPipelineNewLabelsLineIntelligence => "pages.pipeline.new.labels.lineIntelligence",
             I18nKey::PagesPipelineNewLabelsMagnitude => "pages.pipeline.new.labels.magnitude",
             I18nKey::PagesPipelineNewLabelsPartNode => "pages.pipeline.new.labels.partNode",
-            I18nKey::PagesPipelineNewLabelsPriorityLayer => {
-                "pages.pipeline.new.labels.priorityLayer"
-            }
-            I18nKey::PagesPipelineNewLabelsProtocolNotes => {
-                "pages.pipeline.new.labels.protocolNotes"
-            }
-            I18nKey::PagesPipelineNewLabelsSpecification => {
-                "pages.pipeline.new.labels.specification"
-            }
-            I18nKey::PagesPipelineNewLabelsStrategicDeadline => {
-                "pages.pipeline.new.labels.strategicDeadline"
-            }
-            I18nKey::PagesPipelineNewLabelsStrategicTitle => {
-                "pages.pipeline.new.labels.strategicTitle"
-            }
-            I18nKey::PagesPipelineNewLabelsTargetValuation => {
-                "pages.pipeline.new.labels.targetValuation"
-            }
-            I18nKey::PagesPipelineNewLabelsTemporalHorizon => {
-                "pages.pipeline.new.labels.temporalHorizon"
-            }
+            I18nKey::PagesPipelineNewLabelsPriorityLayer => "pages.pipeline.new.labels.priorityLayer",
+            I18nKey::PagesPipelineNewLabelsProtocolNotes => "pages.pipeline.new.labels.protocolNotes",
+            I18nKey::PagesPipelineNewLabelsSpecification => "pages.pipeline.new.labels.specification",
+            I18nKey::PagesPipelineNewLabelsStrategicDeadline => "pages.pipeline.new.labels.strategicDeadline",
+            I18nKey::PagesPipelineNewLabelsStrategicTitle => "pages.pipeline.new.labels.strategicTitle",
+            I18nKey::PagesPipelineNewLabelsTargetValuation => "pages.pipeline.new.labels.targetValuation",
+            I18nKey::PagesPipelineNewLabelsTemporalHorizon => "pages.pipeline.new.labels.temporalHorizon",
             I18nKey::PagesPipelineNewLabelsUnitProtocol => "pages.pipeline.new.labels.unitProtocol",
-            I18nKey::PagesPipelineNewOpportunityParameters => {
-                "pages.pipeline.new.opportunityParameters"
-            }
-            I18nKey::PagesPipelineNewPlaceholdersCustomer => {
-                "pages.pipeline.new.placeholders.customer"
-            }
-            I18nKey::PagesPipelineNewPlaceholdersDescription => {
-                "pages.pipeline.new.placeholders.description"
-            }
-            I18nKey::PagesPipelineNewPlaceholdersItemDescription => {
-                "pages.pipeline.new.placeholders.itemDescription"
-            }
+            I18nKey::PagesPipelineNewOpportunityParameters => "pages.pipeline.new.opportunityParameters",
+            I18nKey::PagesPipelineNewPlaceholdersCustomer => "pages.pipeline.new.placeholders.customer",
+            I18nKey::PagesPipelineNewPlaceholdersDescription => "pages.pipeline.new.placeholders.description",
+            I18nKey::PagesPipelineNewPlaceholdersItemDescription => "pages.pipeline.new.placeholders.itemDescription",
             I18nKey::PagesPipelineNewPlaceholdersNotes => "pages.pipeline.new.placeholders.notes",
-            I18nKey::PagesPipelineNewPlaceholdersPartNumber => {
-                "pages.pipeline.new.placeholders.partNumber"
-            }
+            I18nKey::PagesPipelineNewPlaceholdersPartNumber => "pages.pipeline.new.placeholders.partNumber",
             I18nKey::PagesPipelineNewPlaceholdersTitle => "pages.pipeline.new.placeholders.title",
             I18nKey::PagesPipelineNewPlaceholdersUnit => "pages.pipeline.new.placeholders.unit",
             I18nKey::PagesPipelineNewPriorityHigh => "pages.pipeline.new.priority.high",
@@ -14287,19 +13153,11 @@ impl I18nKey {
             I18nKey::PagesPipelineNewStation => "pages.pipeline.new.station",
             I18nKey::PagesPipelineNewSubtitle => "pages.pipeline.new.subtitle",
             I18nKey::PagesPipelineNewTitle => "pages.pipeline.new.title",
-            I18nKey::PagesPipelineNewToastRfqCreateFailed => {
-                "pages.pipeline.new.toast.rfqCreateFailed"
-            }
+            I18nKey::PagesPipelineNewToastRfqCreateFailed => "pages.pipeline.new.toast.rfqCreateFailed",
             I18nKey::PagesPipelineNewToastRfqCreated => "pages.pipeline.new.toast.rfqCreated",
-            I18nKey::PagesPipelineNewToastRfqCreatedDescription => {
-                "pages.pipeline.new.toast.rfqCreatedDescription"
-            }
-            I18nKey::PagesPipelineNewValidationProvideTitleAndCustomer => {
-                "pages.pipeline.new.validation.provideTitleAndCustomer"
-            }
-            I18nKey::PagesPipelineNewValidationRequiredFieldsMissing => {
-                "pages.pipeline.new.validation.requiredFieldsMissing"
-            }
+            I18nKey::PagesPipelineNewToastRfqCreatedDescription => "pages.pipeline.new.toast.rfqCreatedDescription",
+            I18nKey::PagesPipelineNewValidationProvideTitleAndCustomer => "pages.pipeline.new.validation.provideTitleAndCustomer",
+            I18nKey::PagesPipelineNewValidationRequiredFieldsMissing => "pages.pipeline.new.validation.requiredFieldsMissing",
             I18nKey::PagesPipelineNewOpportunity => "pages.pipeline.newOpportunity",
             I18nKey::PagesPipelineNewQuote => "pages.pipeline.newQuote",
             I18nKey::PagesPipelineNoAttachments => "pages.pipeline.noAttachments",
@@ -14323,20 +13181,12 @@ impl I18nKey {
             I18nKey::PagesPipelineStatsActiveIntelNodes => "pages.pipeline.stats.activeIntelNodes",
             I18nKey::PagesPipelineStatsAvgResponseTime => "pages.pipeline.stats.avgResponseTime",
             I18nKey::PagesPipelineStatsConversionRate => "pages.pipeline.stats.conversionRate",
-            I18nKey::PagesPipelineStatsCriticalThresholds => {
-                "pages.pipeline.stats.criticalThresholds"
-            }
+            I18nKey::PagesPipelineStatsCriticalThresholds => "pages.pipeline.stats.criticalThresholds",
             I18nKey::PagesPipelineStatsOpenRfqs => "pages.pipeline.stats.openRfqs",
-            I18nKey::PagesPipelineStatsOptimalRangeIdentified => {
-                "pages.pipeline.stats.optimalRangeIdentified"
-            }
-            I18nKey::PagesPipelineStatsPipelineMagnitude => {
-                "pages.pipeline.stats.pipelineMagnitude"
-            }
+            I18nKey::PagesPipelineStatsOptimalRangeIdentified => "pages.pipeline.stats.optimalRangeIdentified",
+            I18nKey::PagesPipelineStatsPipelineMagnitude => "pages.pipeline.stats.pipelineMagnitude",
             I18nKey::PagesPipelineStatsPipelineValue => "pages.pipeline.stats.pipelineValue",
-            I18nKey::PagesPipelineStatsProtocolAlphaVariance => {
-                "pages.pipeline.stats.protocolAlphaVariance"
-            }
+            I18nKey::PagesPipelineStatsProtocolAlphaVariance => "pages.pipeline.stats.protocolAlphaVariance",
             I18nKey::PagesPipelineStatsResponseVelocity => "pages.pipeline.stats.responseVelocity",
             I18nKey::PagesPipelineStatusBadgesCancelled => "pages.pipeline.statusBadges.cancelled",
             I18nKey::PagesPipelineStatusBadgesLost => "pages.pipeline.statusBadges.lost",
@@ -14351,29 +13201,15 @@ impl I18nKey {
             I18nKey::PagesPipelineTablePartNumber => "pages.pipeline.table.partNumber",
             I18nKey::PagesPipelineTableTargetPrice => "pages.pipeline.table.targetPrice",
             I18nKey::PagesPipelineTableUom => "pages.pipeline.table.uom",
-            I18nKey::PagesPipelineTableHeadersCompleteness => {
-                "pages.pipeline.tableHeaders.completeness"
-            }
-            I18nKey::PagesPipelineTableHeadersCustomerNode => {
-                "pages.pipeline.tableHeaders.customerNode"
-            }
+            I18nKey::PagesPipelineTableHeadersCompleteness => "pages.pipeline.tableHeaders.completeness",
+            I18nKey::PagesPipelineTableHeadersCustomerNode => "pages.pipeline.tableHeaders.customerNode",
             I18nKey::PagesPipelineTableHeadersEstValue => "pages.pipeline.tableHeaders.estValue",
-            I18nKey::PagesPipelineTableHeadersOpportunityTitle => {
-                "pages.pipeline.tableHeaders.opportunityTitle"
-            }
-            I18nKey::PagesPipelineTableHeadersPriorityLvl => {
-                "pages.pipeline.tableHeaders.priorityLvl"
-            }
+            I18nKey::PagesPipelineTableHeadersOpportunityTitle => "pages.pipeline.tableHeaders.opportunityTitle",
+            I18nKey::PagesPipelineTableHeadersPriorityLvl => "pages.pipeline.tableHeaders.priorityLvl",
             I18nKey::PagesPipelineTableHeadersRfqNumber => "pages.pipeline.tableHeaders.rfqNumber",
-            I18nKey::PagesPipelineTableHeadersStatusState => {
-                "pages.pipeline.tableHeaders.statusState"
-            }
-            I18nKey::PagesPipelineTableHeadersThresholdDate => {
-                "pages.pipeline.tableHeaders.thresholdDate"
-            }
-            I18nKey::PagesPipelineTableHeadersTriageScore => {
-                "pages.pipeline.tableHeaders.triageScore"
-            }
+            I18nKey::PagesPipelineTableHeadersStatusState => "pages.pipeline.tableHeaders.statusState",
+            I18nKey::PagesPipelineTableHeadersThresholdDate => "pages.pipeline.tableHeaders.thresholdDate",
+            I18nKey::PagesPipelineTableHeadersTriageScore => "pages.pipeline.tableHeaders.triageScore",
             I18nKey::PagesPipelineTitle => "pages.pipeline.title",
             I18nKey::PagesPipelineUnknown => "pages.pipeline.unknown",
             I18nKey::PagesPipelineViewCustomer => "pages.pipeline.viewCustomer",
@@ -14389,14 +13225,10 @@ impl I18nKey {
             I18nKey::PagesProductionFiltersAllStatus => "pages.production.filters.allStatus",
             I18nKey::PagesProductionFiltersStatusState => "pages.production.filters.statusState",
             I18nKey::PagesProductionFiltersWorkCenter => "pages.production.filters.workCenter",
-            I18nKey::PagesProductionProtocolProductionNode => {
-                "pages.production.protocolProductionNode"
-            }
+            I18nKey::PagesProductionProtocolProductionNode => "pages.production.protocolProductionNode",
             I18nKey::PagesProductionStation => "pages.production.station",
             I18nKey::PagesProductionStatsActiveOrders => "pages.production.stats.activeOrders",
-            I18nKey::PagesProductionStatsOperationalVelocity => {
-                "pages.production.stats.operationalVelocity"
-            }
+            I18nKey::PagesProductionStatsOperationalVelocity => "pages.production.stats.operationalVelocity",
             I18nKey::PagesProductionStatsOverdueHorizon => "pages.production.stats.overdueHorizon",
             I18nKey::PagesProductionStatsSuspendedNodes => "pages.production.stats.suspendedNodes",
             I18nKey::PagesProductionStatusCancelled => "pages.production.status.cancelled",
@@ -14421,499 +13253,189 @@ impl I18nKey {
             I18nKey::PagesProductionViewsKanban => "pages.production.views.kanban",
             I18nKey::PagesProductionViewsSchedule => "pages.production.views.schedule",
             I18nKey::PagesProductionWorkCenter => "pages.production.workCenter",
-            I18nKey::PagesProjectManagementActionsCreateFirst => {
-                "pages.projectManagement.actions.createFirst"
-            }
-            I18nKey::PagesProjectManagementActionsCreateProject => {
-                "pages.projectManagement.actions.createProject"
-            }
-            I18nKey::PagesProjectManagementActionsNewInitiative => {
-                "pages.projectManagement.actions.newInitiative"
-            }
-            I18nKey::PagesProjectManagementActivityLoading => {
-                "pages.projectManagement.activity.loading"
-            }
-            I18nKey::PagesProjectManagementActivityNoRecentActivity => {
-                "pages.projectManagement.activity.noRecentActivity"
-            }
-            I18nKey::PagesProjectManagementActivityTitle => {
-                "pages.projectManagement.activity.title"
-            }
-            I18nKey::PagesProjectManagementCreateDialogDescription => {
-                "pages.projectManagement.createDialog.description"
-            }
-            I18nKey::PagesProjectManagementCreateDialogDescriptionPlaceholder => {
-                "pages.projectManagement.createDialog.descriptionPlaceholder"
-            }
-            I18nKey::PagesProjectManagementCreateDialogName => {
-                "pages.projectManagement.createDialog.name"
-            }
-            I18nKey::PagesProjectManagementCreateDialogNamePlaceholder => {
-                "pages.projectManagement.createDialog.namePlaceholder"
-            }
-            I18nKey::PagesProjectManagementCreateDialogStatus => {
-                "pages.projectManagement.createDialog.status"
-            }
-            I18nKey::PagesProjectManagementCreateDialogTitle => {
-                "pages.projectManagement.createDialog.title"
-            }
-            I18nKey::PagesProjectManagementCreateDialogType => {
-                "pages.projectManagement.createDialog.type"
-            }
-            I18nKey::PagesProjectManagementCreateDialogVisibility => {
-                "pages.projectManagement.createDialog.visibility"
-            }
-            I18nKey::PagesProjectManagementCreateDialogVisibilityDescription => {
-                "pages.projectManagement.createDialog.visibilityDescription"
-            }
-            I18nKey::PagesProjectManagementDashboardActiveSprint => {
-                "pages.projectManagement.dashboard.activeSprint"
-            }
-            I18nKey::PagesProjectManagementDashboardAdminUser => {
-                "pages.projectManagement.dashboard.adminUser"
-            }
-            I18nKey::PagesProjectManagementDashboardHighPriority => {
-                "pages.projectManagement.dashboard.highPriority"
-            }
-            I18nKey::PagesProjectManagementDashboardIssueSeverity => {
-                "pages.projectManagement.dashboard.issueSeverity"
-            }
-            I18nKey::PagesProjectManagementDashboardIssueSeverityDesc => {
-                "pages.projectManagement.dashboard.issueSeverityDesc"
-            }
-            I18nKey::PagesProjectManagementDashboardNoActiveSprint => {
-                "pages.projectManagement.dashboard.noActiveSprint"
-            }
-            I18nKey::PagesProjectManagementDashboardOpenIssues => {
-                "pages.projectManagement.dashboard.openIssues"
-            }
-            I18nKey::PagesProjectManagementDashboardOverallProgress => {
-                "pages.projectManagement.dashboard.overallProgress"
-            }
-            I18nKey::PagesProjectManagementDashboardOwner => {
-                "pages.projectManagement.dashboard.owner"
-            }
-            I18nKey::PagesProjectManagementDashboardProjectContext => {
-                "pages.projectManagement.dashboard.projectContext"
-            }
-            I18nKey::PagesProjectManagementDashboardProjectContextDesc => {
-                "pages.projectManagement.dashboard.projectContextDesc"
-            }
-            I18nKey::PagesProjectManagementDashboardProjectType => {
-                "pages.projectManagement.dashboard.projectType"
-            }
-            I18nKey::PagesProjectManagementDashboardStoriesDone => {
-                "pages.projectManagement.dashboard.storiesDone"
-            }
-            I18nKey::PagesProjectManagementDashboardStoryPoints => {
-                "pages.projectManagement.dashboard.storyPoints"
-            }
-            I18nKey::PagesProjectManagementDashboardTimeline => {
-                "pages.projectManagement.dashboard.timeline"
-            }
-            I18nKey::PagesProjectManagementDashboardVelocityTracking => {
-                "pages.projectManagement.dashboard.velocityTracking"
-            }
-            I18nKey::PagesProjectManagementDashboardWorkDistribution => {
-                "pages.projectManagement.dashboard.workDistribution"
-            }
-            I18nKey::PagesProjectManagementDashboardWorkDistributionDesc => {
-                "pages.projectManagement.dashboard.workDistributionDesc"
-            }
-            I18nKey::PagesProjectManagementDetailActivity => {
-                "pages.projectManagement.detail.activity"
-            }
-            I18nKey::PagesProjectManagementDetailBackToProjects => {
-                "pages.projectManagement.detail.backToProjects"
-            }
-            I18nKey::PagesProjectManagementDetailBacklog => {
-                "pages.projectManagement.detail.backlog"
-            }
+            I18nKey::PagesProjectManagementActionsCreateFirst => "pages.projectManagement.actions.createFirst",
+            I18nKey::PagesProjectManagementActionsCreateProject => "pages.projectManagement.actions.createProject",
+            I18nKey::PagesProjectManagementActionsNewInitiative => "pages.projectManagement.actions.newInitiative",
+            I18nKey::PagesProjectManagementActivityLoading => "pages.projectManagement.activity.loading",
+            I18nKey::PagesProjectManagementActivityNoRecentActivity => "pages.projectManagement.activity.noRecentActivity",
+            I18nKey::PagesProjectManagementActivityTitle => "pages.projectManagement.activity.title",
+            I18nKey::PagesProjectManagementCreateDialogDescription => "pages.projectManagement.createDialog.description",
+            I18nKey::PagesProjectManagementCreateDialogDescriptionPlaceholder => "pages.projectManagement.createDialog.descriptionPlaceholder",
+            I18nKey::PagesProjectManagementCreateDialogName => "pages.projectManagement.createDialog.name",
+            I18nKey::PagesProjectManagementCreateDialogNamePlaceholder => "pages.projectManagement.createDialog.namePlaceholder",
+            I18nKey::PagesProjectManagementCreateDialogStatus => "pages.projectManagement.createDialog.status",
+            I18nKey::PagesProjectManagementCreateDialogTitle => "pages.projectManagement.createDialog.title",
+            I18nKey::PagesProjectManagementCreateDialogType => "pages.projectManagement.createDialog.type",
+            I18nKey::PagesProjectManagementCreateDialogVisibility => "pages.projectManagement.createDialog.visibility",
+            I18nKey::PagesProjectManagementCreateDialogVisibilityDescription => "pages.projectManagement.createDialog.visibilityDescription",
+            I18nKey::PagesProjectManagementDashboardActiveSprint => "pages.projectManagement.dashboard.activeSprint",
+            I18nKey::PagesProjectManagementDashboardAdminUser => "pages.projectManagement.dashboard.adminUser",
+            I18nKey::PagesProjectManagementDashboardHighPriority => "pages.projectManagement.dashboard.highPriority",
+            I18nKey::PagesProjectManagementDashboardIssueSeverity => "pages.projectManagement.dashboard.issueSeverity",
+            I18nKey::PagesProjectManagementDashboardIssueSeverityDesc => "pages.projectManagement.dashboard.issueSeverityDesc",
+            I18nKey::PagesProjectManagementDashboardNoActiveSprint => "pages.projectManagement.dashboard.noActiveSprint",
+            I18nKey::PagesProjectManagementDashboardOpenIssues => "pages.projectManagement.dashboard.openIssues",
+            I18nKey::PagesProjectManagementDashboardOverallProgress => "pages.projectManagement.dashboard.overallProgress",
+            I18nKey::PagesProjectManagementDashboardOwner => "pages.projectManagement.dashboard.owner",
+            I18nKey::PagesProjectManagementDashboardProjectContext => "pages.projectManagement.dashboard.projectContext",
+            I18nKey::PagesProjectManagementDashboardProjectContextDesc => "pages.projectManagement.dashboard.projectContextDesc",
+            I18nKey::PagesProjectManagementDashboardProjectType => "pages.projectManagement.dashboard.projectType",
+            I18nKey::PagesProjectManagementDashboardStoriesDone => "pages.projectManagement.dashboard.storiesDone",
+            I18nKey::PagesProjectManagementDashboardStoryPoints => "pages.projectManagement.dashboard.storyPoints",
+            I18nKey::PagesProjectManagementDashboardTimeline => "pages.projectManagement.dashboard.timeline",
+            I18nKey::PagesProjectManagementDashboardVelocityTracking => "pages.projectManagement.dashboard.velocityTracking",
+            I18nKey::PagesProjectManagementDashboardWorkDistribution => "pages.projectManagement.dashboard.workDistribution",
+            I18nKey::PagesProjectManagementDashboardWorkDistributionDesc => "pages.projectManagement.dashboard.workDistributionDesc",
+            I18nKey::PagesProjectManagementDetailActivity => "pages.projectManagement.detail.activity",
+            I18nKey::PagesProjectManagementDetailBackToProjects => "pages.projectManagement.detail.backToProjects",
+            I18nKey::PagesProjectManagementDetailBacklog => "pages.projectManagement.detail.backlog",
             I18nKey::PagesProjectManagementDetailEpics => "pages.projectManagement.detail.epics",
             I18nKey::PagesProjectManagementDetailIssues => "pages.projectManagement.detail.issues",
-            I18nKey::PagesProjectManagementDetailMilestones => {
-                "pages.projectManagement.detail.milestones"
-            }
-            I18nKey::PagesProjectManagementDetailNotFound => {
-                "pages.projectManagement.detail.notFound"
-            }
-            I18nKey::PagesProjectManagementDetailSprints => {
-                "pages.projectManagement.detail.sprints"
-            }
+            I18nKey::PagesProjectManagementDetailMilestones => "pages.projectManagement.detail.milestones",
+            I18nKey::PagesProjectManagementDetailNotFound => "pages.projectManagement.detail.notFound",
+            I18nKey::PagesProjectManagementDetailSprints => "pages.projectManagement.detail.sprints",
             I18nKey::PagesProjectManagementDetailWiki => "pages.projectManagement.detail.wiki",
-            I18nKey::PagesProjectManagementDistributionDescription => {
-                "pages.projectManagement.distributionDescription"
-            }
+            I18nKey::PagesProjectManagementDistributionDescription => "pages.projectManagement.distributionDescription",
             I18nKey::PagesProjectManagementEmptyState => "pages.projectManagement.emptyState",
-            I18nKey::PagesProjectManagementEpicsCreateEpic => {
-                "pages.projectManagement.epics.createEpic"
-            }
-            I18nKey::PagesProjectManagementEpicsCreateNewEpic => {
-                "pages.projectManagement.epics.createNewEpic"
-            }
-            I18nKey::PagesProjectManagementEpicsCreating => {
-                "pages.projectManagement.epics.creating"
-            }
-            I18nKey::PagesProjectManagementEpicsDescriptionPlaceholder => {
-                "pages.projectManagement.epics.descriptionPlaceholder"
-            }
+            I18nKey::PagesProjectManagementEpicsCreateEpic => "pages.projectManagement.epics.createEpic",
+            I18nKey::PagesProjectManagementEpicsCreateNewEpic => "pages.projectManagement.epics.createNewEpic",
+            I18nKey::PagesProjectManagementEpicsCreating => "pages.projectManagement.epics.creating",
+            I18nKey::PagesProjectManagementEpicsDescriptionPlaceholder => "pages.projectManagement.epics.descriptionPlaceholder",
             I18nKey::PagesProjectManagementEpicsNewEpic => "pages.projectManagement.epics.newEpic",
-            I18nKey::PagesProjectManagementEpicsNoEpicsFound => {
-                "pages.projectManagement.epics.noEpicsFound"
-            }
-            I18nKey::PagesProjectManagementEpicsProgress => {
-                "pages.projectManagement.epics.progress"
-            }
+            I18nKey::PagesProjectManagementEpicsNoEpicsFound => "pages.projectManagement.epics.noEpicsFound",
+            I18nKey::PagesProjectManagementEpicsProgress => "pages.projectManagement.epics.progress",
             I18nKey::PagesProjectManagementEpicsStories => "pages.projectManagement.epics.stories",
-            I18nKey::PagesProjectManagementEpicsSubjectPlaceholder => {
-                "pages.projectManagement.epics.subjectPlaceholder"
-            }
-            I18nKey::PagesProjectManagementEpicsSubtitle => {
-                "pages.projectManagement.epics.subtitle"
-            }
-            I18nKey::PagesProjectManagementErrorsLoadingProject => {
-                "pages.projectManagement.errors.loadingProject"
-            }
-            I18nKey::PagesProjectManagementErrorsNameRequired => {
-                "pages.projectManagement.errors.nameRequired"
-            }
-            I18nKey::PagesProjectManagementInitializeInitiative => {
-                "pages.projectManagement.initializeInitiative"
-            }
-            I18nKey::PagesProjectManagementIssuesAddComment => {
-                "pages.projectManagement.issues.addComment"
-            }
-            I18nKey::PagesProjectManagementIssuesAddDescription => {
-                "pages.projectManagement.issues.addDescription"
-            }
-            I18nKey::PagesProjectManagementIssuesComments => {
-                "pages.projectManagement.issues.comments"
-            }
-            I18nKey::PagesProjectManagementIssuesCreateDescription => {
-                "pages.projectManagement.issues.createDescription"
-            }
-            I18nKey::PagesProjectManagementIssuesCreateIssue => {
-                "pages.projectManagement.issues.createIssue"
-            }
-            I18nKey::PagesProjectManagementIssuesCreateNewIssue => {
-                "pages.projectManagement.issues.createNewIssue"
-            }
-            I18nKey::PagesProjectManagementIssuesCreating => {
-                "pages.projectManagement.issues.creating"
-            }
-            I18nKey::PagesProjectManagementIssuesDescription => {
-                "pages.projectManagement.issues.description"
-            }
-            I18nKey::PagesProjectManagementIssuesDescriptionPlaceholder => {
-                "pages.projectManagement.issues.descriptionPlaceholder"
-            }
-            I18nKey::PagesProjectManagementIssuesNewIssue => {
-                "pages.projectManagement.issues.newIssue"
-            }
-            I18nKey::PagesProjectManagementIssuesNoIssuesFound => {
-                "pages.projectManagement.issues.noIssuesFound"
-            }
-            I18nKey::PagesProjectManagementIssuesSearchPlaceholder => {
-                "pages.projectManagement.issues.searchPlaceholder"
-            }
-            I18nKey::PagesProjectManagementIssuesSeveritiesCritical => {
-                "pages.projectManagement.issues.severities.critical"
-            }
-            I18nKey::PagesProjectManagementIssuesSeveritiesImportant => {
-                "pages.projectManagement.issues.severities.important"
-            }
-            I18nKey::PagesProjectManagementIssuesSeveritiesMinor => {
-                "pages.projectManagement.issues.severities.minor"
-            }
-            I18nKey::PagesProjectManagementIssuesSeveritiesNormal => {
-                "pages.projectManagement.issues.severities.normal"
-            }
-            I18nKey::PagesProjectManagementIssuesSeveritiesWishlist => {
-                "pages.projectManagement.issues.severities.wishlist"
-            }
-            I18nKey::PagesProjectManagementIssuesSeverity => {
-                "pages.projectManagement.issues.severity"
-            }
+            I18nKey::PagesProjectManagementEpicsSubjectPlaceholder => "pages.projectManagement.epics.subjectPlaceholder",
+            I18nKey::PagesProjectManagementEpicsSubtitle => "pages.projectManagement.epics.subtitle",
+            I18nKey::PagesProjectManagementErrorsLoadingProject => "pages.projectManagement.errors.loadingProject",
+            I18nKey::PagesProjectManagementErrorsNameRequired => "pages.projectManagement.errors.nameRequired",
+            I18nKey::PagesProjectManagementInitializeInitiative => "pages.projectManagement.initializeInitiative",
+            I18nKey::PagesProjectManagementIssuesAddComment => "pages.projectManagement.issues.addComment",
+            I18nKey::PagesProjectManagementIssuesAddDescription => "pages.projectManagement.issues.addDescription",
+            I18nKey::PagesProjectManagementIssuesComments => "pages.projectManagement.issues.comments",
+            I18nKey::PagesProjectManagementIssuesCreateDescription => "pages.projectManagement.issues.createDescription",
+            I18nKey::PagesProjectManagementIssuesCreateIssue => "pages.projectManagement.issues.createIssue",
+            I18nKey::PagesProjectManagementIssuesCreateNewIssue => "pages.projectManagement.issues.createNewIssue",
+            I18nKey::PagesProjectManagementIssuesCreating => "pages.projectManagement.issues.creating",
+            I18nKey::PagesProjectManagementIssuesDescription => "pages.projectManagement.issues.description",
+            I18nKey::PagesProjectManagementIssuesDescriptionPlaceholder => "pages.projectManagement.issues.descriptionPlaceholder",
+            I18nKey::PagesProjectManagementIssuesNewIssue => "pages.projectManagement.issues.newIssue",
+            I18nKey::PagesProjectManagementIssuesNoIssuesFound => "pages.projectManagement.issues.noIssuesFound",
+            I18nKey::PagesProjectManagementIssuesSearchPlaceholder => "pages.projectManagement.issues.searchPlaceholder",
+            I18nKey::PagesProjectManagementIssuesSeveritiesCritical => "pages.projectManagement.issues.severities.critical",
+            I18nKey::PagesProjectManagementIssuesSeveritiesImportant => "pages.projectManagement.issues.severities.important",
+            I18nKey::PagesProjectManagementIssuesSeveritiesMinor => "pages.projectManagement.issues.severities.minor",
+            I18nKey::PagesProjectManagementIssuesSeveritiesNormal => "pages.projectManagement.issues.severities.normal",
+            I18nKey::PagesProjectManagementIssuesSeveritiesWishlist => "pages.projectManagement.issues.severities.wishlist",
+            I18nKey::PagesProjectManagementIssuesSeverity => "pages.projectManagement.issues.severity",
             I18nKey::PagesProjectManagementIssuesStatus => "pages.projectManagement.issues.status",
-            I18nKey::PagesProjectManagementIssuesStatusesClosed => {
-                "pages.projectManagement.issues.statuses.closed"
-            }
-            I18nKey::PagesProjectManagementIssuesStatusesInProgress => {
-                "pages.projectManagement.issues.statuses.inProgress"
-            }
-            I18nKey::PagesProjectManagementIssuesStatusesNew => {
-                "pages.projectManagement.issues.statuses.new"
-            }
-            I18nKey::PagesProjectManagementIssuesStatusesPostponed => {
-                "pages.projectManagement.issues.statuses.postponed"
-            }
-            I18nKey::PagesProjectManagementIssuesStatusesReadyForTest => {
-                "pages.projectManagement.issues.statuses.readyForTest"
-            }
-            I18nKey::PagesProjectManagementIssuesStatusesRejected => {
-                "pages.projectManagement.issues.statuses.rejected"
-            }
-            I18nKey::PagesProjectManagementIssuesSubject => {
-                "pages.projectManagement.issues.subject"
-            }
-            I18nKey::PagesProjectManagementIssuesSubjectPlaceholder => {
-                "pages.projectManagement.issues.subjectPlaceholder"
-            }
+            I18nKey::PagesProjectManagementIssuesStatusesClosed => "pages.projectManagement.issues.statuses.closed",
+            I18nKey::PagesProjectManagementIssuesStatusesInProgress => "pages.projectManagement.issues.statuses.inProgress",
+            I18nKey::PagesProjectManagementIssuesStatusesNew => "pages.projectManagement.issues.statuses.new",
+            I18nKey::PagesProjectManagementIssuesStatusesPostponed => "pages.projectManagement.issues.statuses.postponed",
+            I18nKey::PagesProjectManagementIssuesStatusesReadyForTest => "pages.projectManagement.issues.statuses.readyForTest",
+            I18nKey::PagesProjectManagementIssuesStatusesRejected => "pages.projectManagement.issues.statuses.rejected",
+            I18nKey::PagesProjectManagementIssuesSubject => "pages.projectManagement.issues.subject",
+            I18nKey::PagesProjectManagementIssuesSubjectPlaceholder => "pages.projectManagement.issues.subjectPlaceholder",
             I18nKey::PagesProjectManagementIssuesType => "pages.projectManagement.issues.type",
-            I18nKey::PagesProjectManagementIssuesTypesBug => {
-                "pages.projectManagement.issues.types.bug"
-            }
-            I18nKey::PagesProjectManagementIssuesTypesImprovement => {
-                "pages.projectManagement.issues.types.improvement"
-            }
-            I18nKey::PagesProjectManagementIssuesTypesIncident => {
-                "pages.projectManagement.issues.types.incident"
-            }
-            I18nKey::PagesProjectManagementIssuesTypesNcr => {
-                "pages.projectManagement.issues.types.ncr"
-            }
-            I18nKey::PagesProjectManagementIssuesTypesQuestion => {
-                "pages.projectManagement.issues.types.question"
-            }
-            I18nKey::PagesProjectManagementIssuesTypesSafety => {
-                "pages.projectManagement.issues.types.safety"
-            }
-            I18nKey::PagesProjectManagementIssuesTypesTask => {
-                "pages.projectManagement.issues.types.task"
-            }
-            I18nKey::PagesProjectManagementKanbanColumnsDone => {
-                "pages.projectManagement.kanban.columns.done"
-            }
-            I18nKey::PagesProjectManagementKanbanColumnsInProgress => {
-                "pages.projectManagement.kanban.columns.inProgress"
-            }
-            I18nKey::PagesProjectManagementKanbanColumnsNew => {
-                "pages.projectManagement.kanban.columns.new"
-            }
-            I18nKey::PagesProjectManagementKanbanColumnsReady => {
-                "pages.projectManagement.kanban.columns.ready"
-            }
-            I18nKey::PagesProjectManagementKanbanColumnsReadyForTest => {
-                "pages.projectManagement.kanban.columns.readyForTest"
-            }
-            I18nKey::PagesProjectManagementLabelsPrivateProtocol => {
-                "pages.projectManagement.labels.privateProtocol"
-            }
+            I18nKey::PagesProjectManagementIssuesTypesBug => "pages.projectManagement.issues.types.bug",
+            I18nKey::PagesProjectManagementIssuesTypesImprovement => "pages.projectManagement.issues.types.improvement",
+            I18nKey::PagesProjectManagementIssuesTypesIncident => "pages.projectManagement.issues.types.incident",
+            I18nKey::PagesProjectManagementIssuesTypesNcr => "pages.projectManagement.issues.types.ncr",
+            I18nKey::PagesProjectManagementIssuesTypesQuestion => "pages.projectManagement.issues.types.question",
+            I18nKey::PagesProjectManagementIssuesTypesSafety => "pages.projectManagement.issues.types.safety",
+            I18nKey::PagesProjectManagementIssuesTypesTask => "pages.projectManagement.issues.types.task",
+            I18nKey::PagesProjectManagementKanbanColumnsDone => "pages.projectManagement.kanban.columns.done",
+            I18nKey::PagesProjectManagementKanbanColumnsInProgress => "pages.projectManagement.kanban.columns.inProgress",
+            I18nKey::PagesProjectManagementKanbanColumnsNew => "pages.projectManagement.kanban.columns.new",
+            I18nKey::PagesProjectManagementKanbanColumnsReady => "pages.projectManagement.kanban.columns.ready",
+            I18nKey::PagesProjectManagementKanbanColumnsReadyForTest => "pages.projectManagement.kanban.columns.readyForTest",
+            I18nKey::PagesProjectManagementLabelsPrivateProtocol => "pages.projectManagement.labels.privateProtocol",
             I18nKey::PagesProjectManagementLabelsPulse => "pages.projectManagement.labels.pulse",
-            I18nKey::PagesProjectManagementLabelsSharedIntelligence => {
-                "pages.projectManagement.labels.sharedIntelligence"
-            }
-            I18nKey::PagesProjectManagementLabelsVelocityOptimal => {
-                "pages.projectManagement.labels.velocityOptimal"
-            }
-            I18nKey::PagesProjectManagementMilestonesAddKeyDates => {
-                "pages.projectManagement.milestones.addKeyDates"
-            }
-            I18nKey::PagesProjectManagementMilestonesCompletedMilestones => {
-                "pages.projectManagement.milestones.completedMilestones"
-            }
-            I18nKey::PagesProjectManagementMilestonesCreateMilestone => {
-                "pages.projectManagement.milestones.createMilestone"
-            }
-            I18nKey::PagesProjectManagementMilestonesCreateNewMilestone => {
-                "pages.projectManagement.milestones.createNewMilestone"
-            }
-            I18nKey::PagesProjectManagementMilestonesCreating => {
-                "pages.projectManagement.milestones.creating"
-            }
-            I18nKey::PagesProjectManagementMilestonesDescription => {
-                "pages.projectManagement.milestones.description"
-            }
-            I18nKey::PagesProjectManagementMilestonesDetailsPlaceholder => {
-                "pages.projectManagement.milestones.detailsPlaceholder"
-            }
-            I18nKey::PagesProjectManagementMilestonesDueDate => {
-                "pages.projectManagement.milestones.dueDate"
-            }
-            I18nKey::PagesProjectManagementMilestonesName => {
-                "pages.projectManagement.milestones.name"
-            }
-            I18nKey::PagesProjectManagementMilestonesNamePlaceholder => {
-                "pages.projectManagement.milestones.namePlaceholder"
-            }
-            I18nKey::PagesProjectManagementMilestonesNewMilestone => {
-                "pages.projectManagement.milestones.newMilestone"
-            }
-            I18nKey::PagesProjectManagementMilestonesNoMilestonesDefined => {
-                "pages.projectManagement.milestones.noMilestonesDefined"
-            }
-            I18nKey::PagesProjectManagementMilestonesOverdue => {
-                "pages.projectManagement.milestones.overdue"
-            }
-            I18nKey::PagesProjectManagementMilestonesSubtitle => {
-                "pages.projectManagement.milestones.subtitle"
-            }
-            I18nKey::PagesProjectManagementMilestonesType => {
-                "pages.projectManagement.milestones.type"
-            }
-            I18nKey::PagesProjectManagementMilestonesTypesAudit => {
-                "pages.projectManagement.milestones.types.audit"
-            }
-            I18nKey::PagesProjectManagementMilestonesTypesDeadline => {
-                "pages.projectManagement.milestones.types.deadline"
-            }
-            I18nKey::PagesProjectManagementMilestonesTypesPhaseGate => {
-                "pages.projectManagement.milestones.types.phaseGate"
-            }
-            I18nKey::PagesProjectManagementMilestonesTypesRelease => {
-                "pages.projectManagement.milestones.types.release"
-            }
-            I18nKey::PagesProjectManagementMilestonesTypesSprint => {
-                "pages.projectManagement.milestones.types.sprint"
-            }
+            I18nKey::PagesProjectManagementLabelsSharedIntelligence => "pages.projectManagement.labels.sharedIntelligence",
+            I18nKey::PagesProjectManagementLabelsVelocityOptimal => "pages.projectManagement.labels.velocityOptimal",
+            I18nKey::PagesProjectManagementMilestonesAddKeyDates => "pages.projectManagement.milestones.addKeyDates",
+            I18nKey::PagesProjectManagementMilestonesCompletedMilestones => "pages.projectManagement.milestones.completedMilestones",
+            I18nKey::PagesProjectManagementMilestonesCreateMilestone => "pages.projectManagement.milestones.createMilestone",
+            I18nKey::PagesProjectManagementMilestonesCreateNewMilestone => "pages.projectManagement.milestones.createNewMilestone",
+            I18nKey::PagesProjectManagementMilestonesCreating => "pages.projectManagement.milestones.creating",
+            I18nKey::PagesProjectManagementMilestonesDescription => "pages.projectManagement.milestones.description",
+            I18nKey::PagesProjectManagementMilestonesDetailsPlaceholder => "pages.projectManagement.milestones.detailsPlaceholder",
+            I18nKey::PagesProjectManagementMilestonesDueDate => "pages.projectManagement.milestones.dueDate",
+            I18nKey::PagesProjectManagementMilestonesName => "pages.projectManagement.milestones.name",
+            I18nKey::PagesProjectManagementMilestonesNamePlaceholder => "pages.projectManagement.milestones.namePlaceholder",
+            I18nKey::PagesProjectManagementMilestonesNewMilestone => "pages.projectManagement.milestones.newMilestone",
+            I18nKey::PagesProjectManagementMilestonesNoMilestonesDefined => "pages.projectManagement.milestones.noMilestonesDefined",
+            I18nKey::PagesProjectManagementMilestonesOverdue => "pages.projectManagement.milestones.overdue",
+            I18nKey::PagesProjectManagementMilestonesSubtitle => "pages.projectManagement.milestones.subtitle",
+            I18nKey::PagesProjectManagementMilestonesType => "pages.projectManagement.milestones.type",
+            I18nKey::PagesProjectManagementMilestonesTypesAudit => "pages.projectManagement.milestones.types.audit",
+            I18nKey::PagesProjectManagementMilestonesTypesDeadline => "pages.projectManagement.milestones.types.deadline",
+            I18nKey::PagesProjectManagementMilestonesTypesPhaseGate => "pages.projectManagement.milestones.types.phaseGate",
+            I18nKey::PagesProjectManagementMilestonesTypesRelease => "pages.projectManagement.milestones.types.release",
+            I18nKey::PagesProjectManagementMilestonesTypesSprint => "pages.projectManagement.milestones.types.sprint",
             I18nKey::PagesProjectManagementNoDescription => "pages.projectManagement.noDescription",
             I18nKey::PagesProjectManagementPortfolio => "pages.projectManagement.portfolio",
-            I18nKey::PagesProjectManagementSearchPlaceholder => {
-                "pages.projectManagement.search.placeholder"
-            }
-            I18nKey::PagesProjectManagementSearchPlaceholder2 => {
-                "pages.projectManagement.searchPlaceholder"
-            }
-            I18nKey::PagesProjectManagementSectionsDistribution => {
-                "pages.projectManagement.sections.distribution"
-            }
-            I18nKey::PagesProjectManagementSectionsHealthIndex => {
-                "pages.projectManagement.sections.healthIndex"
-            }
-            I18nKey::PagesProjectManagementSprintsActiveSprint => {
-                "pages.projectManagement.sprints.activeSprint"
-            }
-            I18nKey::PagesProjectManagementSprintsCompletedSprints => {
-                "pages.projectManagement.sprints.completedSprints"
-            }
-            I18nKey::PagesProjectManagementSprintsCreateNewSprint => {
-                "pages.projectManagement.sprints.createNewSprint"
-            }
-            I18nKey::PagesProjectManagementSprintsCreateSprint => {
-                "pages.projectManagement.sprints.createSprint"
-            }
-            I18nKey::PagesProjectManagementSprintsCreating => {
-                "pages.projectManagement.sprints.creating"
-            }
-            I18nKey::PagesProjectManagementSprintsDaysRemaining => {
-                "pages.projectManagement.sprints.daysRemaining"
-            }
-            I18nKey::PagesProjectManagementSprintsEndDate => {
-                "pages.projectManagement.sprints.endDate"
-            }
-            I18nKey::PagesProjectManagementSprintsNewSprint => {
-                "pages.projectManagement.sprints.newSprint"
-            }
-            I18nKey::PagesProjectManagementSprintsNoSprintsFound => {
-                "pages.projectManagement.sprints.noSprintsFound"
-            }
-            I18nKey::PagesProjectManagementSprintsPlannedSprints => {
-                "pages.projectManagement.sprints.plannedSprints"
-            }
-            I18nKey::PagesProjectManagementSprintsProgress => {
-                "pages.projectManagement.sprints.progress"
-            }
-            I18nKey::PagesProjectManagementSprintsSprintName => {
-                "pages.projectManagement.sprints.sprintName"
-            }
-            I18nKey::PagesProjectManagementSprintsStartDate => {
-                "pages.projectManagement.sprints.startDate"
-            }
-            I18nKey::PagesProjectManagementSprintsStatusActive => {
-                "pages.projectManagement.sprints.statusActive"
-            }
-            I18nKey::PagesProjectManagementSprintsStatusCancelled => {
-                "pages.projectManagement.sprints.statusCancelled"
-            }
-            I18nKey::PagesProjectManagementSprintsStatusCompleted => {
-                "pages.projectManagement.sprints.statusCompleted"
-            }
-            I18nKey::PagesProjectManagementSprintsStatusPlanned => {
-                "pages.projectManagement.sprints.statusPlanned"
-            }
-            I18nKey::PagesProjectManagementSprintsStories => {
-                "pages.projectManagement.sprints.stories"
-            }
-            I18nKey::PagesProjectManagementSprintsSubtitle => {
-                "pages.projectManagement.sprints.subtitle"
-            }
+            I18nKey::PagesProjectManagementSearchPlaceholder => "pages.projectManagement.search.placeholder",
+            I18nKey::PagesProjectManagementSearchPlaceholder2 => "pages.projectManagement.searchPlaceholder",
+            I18nKey::PagesProjectManagementSectionsDistribution => "pages.projectManagement.sections.distribution",
+            I18nKey::PagesProjectManagementSectionsHealthIndex => "pages.projectManagement.sections.healthIndex",
+            I18nKey::PagesProjectManagementSprintsActiveSprint => "pages.projectManagement.sprints.activeSprint",
+            I18nKey::PagesProjectManagementSprintsCompletedSprints => "pages.projectManagement.sprints.completedSprints",
+            I18nKey::PagesProjectManagementSprintsCreateNewSprint => "pages.projectManagement.sprints.createNewSprint",
+            I18nKey::PagesProjectManagementSprintsCreateSprint => "pages.projectManagement.sprints.createSprint",
+            I18nKey::PagesProjectManagementSprintsCreating => "pages.projectManagement.sprints.creating",
+            I18nKey::PagesProjectManagementSprintsDaysRemaining => "pages.projectManagement.sprints.daysRemaining",
+            I18nKey::PagesProjectManagementSprintsEndDate => "pages.projectManagement.sprints.endDate",
+            I18nKey::PagesProjectManagementSprintsNewSprint => "pages.projectManagement.sprints.newSprint",
+            I18nKey::PagesProjectManagementSprintsNoSprintsFound => "pages.projectManagement.sprints.noSprintsFound",
+            I18nKey::PagesProjectManagementSprintsPlannedSprints => "pages.projectManagement.sprints.plannedSprints",
+            I18nKey::PagesProjectManagementSprintsProgress => "pages.projectManagement.sprints.progress",
+            I18nKey::PagesProjectManagementSprintsSprintName => "pages.projectManagement.sprints.sprintName",
+            I18nKey::PagesProjectManagementSprintsStartDate => "pages.projectManagement.sprints.startDate",
+            I18nKey::PagesProjectManagementSprintsStatusActive => "pages.projectManagement.sprints.statusActive",
+            I18nKey::PagesProjectManagementSprintsStatusCancelled => "pages.projectManagement.sprints.statusCancelled",
+            I18nKey::PagesProjectManagementSprintsStatusCompleted => "pages.projectManagement.sprints.statusCompleted",
+            I18nKey::PagesProjectManagementSprintsStatusPlanned => "pages.projectManagement.sprints.statusPlanned",
+            I18nKey::PagesProjectManagementSprintsStories => "pages.projectManagement.sprints.stories",
+            I18nKey::PagesProjectManagementSprintsSubtitle => "pages.projectManagement.sprints.subtitle",
             I18nKey::PagesProjectManagementStation => "pages.projectManagement.station",
             I18nKey::PagesProjectManagementStatusActive => "pages.projectManagement.status.active",
-            I18nKey::PagesProjectManagementStatusArchived => {
-                "pages.projectManagement.status.archived"
-            }
-            I18nKey::PagesProjectManagementStatusCancelled => {
-                "pages.projectManagement.status.cancelled"
-            }
-            I18nKey::PagesProjectManagementStatusCompleted => {
-                "pages.projectManagement.status.completed"
-            }
+            I18nKey::PagesProjectManagementStatusArchived => "pages.projectManagement.status.archived",
+            I18nKey::PagesProjectManagementStatusCancelled => "pages.projectManagement.status.cancelled",
+            I18nKey::PagesProjectManagementStatusCompleted => "pages.projectManagement.status.completed",
             I18nKey::PagesProjectManagementStatusOnHold => "pages.projectManagement.status.onHold",
-            I18nKey::PagesProjectManagementStatusPlanning => {
-                "pages.projectManagement.status.planning"
-            }
+            I18nKey::PagesProjectManagementStatusPlanning => "pages.projectManagement.status.planning",
             I18nKey::PagesProjectManagementSubtitle => "pages.projectManagement.subtitle",
             I18nKey::PagesProjectManagementTitle => "pages.projectManagement.title",
-            I18nKey::PagesProjectManagementToastSaveFailed => {
-                "pages.projectManagement.toast.saveFailed"
-            }
-            I18nKey::PagesProjectManagementToastSaveFailedDesc => {
-                "pages.projectManagement.toast.saveFailedDesc"
-            }
-            I18nKey::PagesProjectManagementToastSettingsSaved => {
-                "pages.projectManagement.toast.settingsSaved"
-            }
-            I18nKey::PagesProjectManagementToastSettingsSavedDesc => {
-                "pages.projectManagement.toast.settingsSavedDesc"
-            }
+            I18nKey::PagesProjectManagementToastSaveFailed => "pages.projectManagement.toast.saveFailed",
+            I18nKey::PagesProjectManagementToastSaveFailedDesc => "pages.projectManagement.toast.saveFailedDesc",
+            I18nKey::PagesProjectManagementToastSettingsSaved => "pages.projectManagement.toast.settingsSaved",
+            I18nKey::PagesProjectManagementToastSettingsSavedDesc => "pages.projectManagement.toast.settingsSavedDesc",
             I18nKey::PagesProjectManagementTypesA3 => "pages.projectManagement.types.a3",
             I18nKey::PagesProjectManagementTypesHybrid => "pages.projectManagement.types.hybrid",
             I18nKey::PagesProjectManagementTypesKaizen => "pages.projectManagement.types.kaizen",
             I18nKey::PagesProjectManagementTypesKanban => "pages.projectManagement.types.kanban",
-            I18nKey::PagesProjectManagementTypesMaintenance => {
-                "pages.projectManagement.types.maintenance"
-            }
+            I18nKey::PagesProjectManagementTypesMaintenance => "pages.projectManagement.types.maintenance",
             I18nKey::PagesProjectManagementTypesNpi => "pages.projectManagement.types.npi",
             I18nKey::PagesProjectManagementTypesScrum => "pages.projectManagement.types.scrum",
-            I18nKey::PagesProjectManagementTypesStandard => {
-                "pages.projectManagement.types.standard"
-            }
+            I18nKey::PagesProjectManagementTypesStandard => "pages.projectManagement.types.standard",
             I18nKey::PagesProjectManagementViewsList => "pages.projectManagement.views.list",
-            I18nKey::PagesProjectManagementViewsPortfolio => {
-                "pages.projectManagement.views.portfolio"
-            }
-            I18nKey::PagesProjectManagementWikiContentPlaceholder => {
-                "pages.projectManagement.wiki.contentPlaceholder"
-            }
-            I18nKey::PagesProjectManagementWikiCreateFirstPage => {
-                "pages.projectManagement.wiki.createFirstPage"
-            }
-            I18nKey::PagesProjectManagementWikiLastUpdated => {
-                "pages.projectManagement.wiki.lastUpdated"
-            }
-            I18nKey::PagesProjectManagementWikiNoPageSelected => {
-                "pages.projectManagement.wiki.noPageSelected"
-            }
-            I18nKey::PagesProjectManagementWikiNoPagesFound => {
-                "pages.projectManagement.wiki.noPagesFound"
-            }
+            I18nKey::PagesProjectManagementViewsPortfolio => "pages.projectManagement.views.portfolio",
+            I18nKey::PagesProjectManagementWikiContentPlaceholder => "pages.projectManagement.wiki.contentPlaceholder",
+            I18nKey::PagesProjectManagementWikiCreateFirstPage => "pages.projectManagement.wiki.createFirstPage",
+            I18nKey::PagesProjectManagementWikiLastUpdated => "pages.projectManagement.wiki.lastUpdated",
+            I18nKey::PagesProjectManagementWikiNoPageSelected => "pages.projectManagement.wiki.noPageSelected",
+            I18nKey::PagesProjectManagementWikiNoPagesFound => "pages.projectManagement.wiki.noPagesFound",
             I18nKey::PagesProjectManagementWikiPages => "pages.projectManagement.wiki.pages",
-            I18nKey::PagesProjectManagementWikiSearchPlaceholder => {
-                "pages.projectManagement.wiki.searchPlaceholder"
-            }
-            I18nKey::PagesProjectManagementWikiSelectAPage => {
-                "pages.projectManagement.wiki.selectAPage"
-            }
-            I18nKey::PagesProjectManagementWikiTitlePlaceholder => {
-                "pages.projectManagement.wiki.titlePlaceholder"
-            }
+            I18nKey::PagesProjectManagementWikiSearchPlaceholder => "pages.projectManagement.wiki.searchPlaceholder",
+            I18nKey::PagesProjectManagementWikiSelectAPage => "pages.projectManagement.wiki.selectAPage",
+            I18nKey::PagesProjectManagementWikiTitlePlaceholder => "pages.projectManagement.wiki.titlePlaceholder",
             I18nKey::PagesProjectManagementWikiVersion => "pages.projectManagement.wiki.version",
             I18nKey::PagesPurchaseActionsApproveGate => "pages.purchase.actions.approveGate",
             I18nKey::PagesPurchaseActionsNewRequisition => "pages.purchase.actions.newRequisition",
             I18nKey::PagesPurchaseActionsRecordReceipt => "pages.purchase.actions.recordReceipt",
-            I18nKey::PagesPurchaseActionsTransmitToSupplier => {
-                "pages.purchase.actions.transmitToSupplier"
-            }
+            I18nKey::PagesPurchaseActionsTransmitToSupplier => "pages.purchase.actions.transmitToSupplier",
             I18nKey::PagesPurchaseFiltersAllStatus => "pages.purchase.filters.allStatus",
             I18nKey::PagesPurchaseFiltersApprovedSync => "pages.purchase.filters.approvedSync",
             I18nKey::PagesPurchaseFiltersConverted => "pages.purchase.filters.converted",
@@ -14925,138 +13447,56 @@ impl I18nKey {
             I18nKey::PagesPurchaseFiltersTransmitted => "pages.purchase.filters.transmitted",
             I18nKey::PagesPurchaseInitializeRequisition => "pages.purchase.initializeRequisition",
             I18nKey::PagesPurchaseOrders => "pages.purchase.orders",
-            I18nKey::PagesPurchaseQuickActionsConvertToPrs => {
-                "pages.purchase.quickActions.convertToPrs"
-            }
-            I18nKey::PagesPurchaseQuickActionsGoodsReceipt => {
-                "pages.purchase.quickActions.goodsReceipt"
-            }
-            I18nKey::PagesPurchaseQuickActionsMrpIntelligence => {
-                "pages.purchase.quickActions.mrpIntelligence"
-            }
-            I18nKey::PagesPurchaseQuickActionsPoGrnInvoiceSync => {
-                "pages.purchase.quickActions.poGrnInvoiceSync"
-            }
-            I18nKey::PagesPurchaseQuickActionsRecordShipments => {
-                "pages.purchase.quickActions.recordShipments"
-            }
-            I18nKey::PagesPurchaseQuickActionsThreeWayMatching => {
-                "pages.purchase.quickActions.threeWayMatching"
-            }
-            I18nKey::PagesPurchaseRequisitionNewAddLineItemError => {
-                "pages.purchase.requisitionNew.addLineItemError"
-            }
+            I18nKey::PagesPurchaseQuickActionsConvertToPrs => "pages.purchase.quickActions.convertToPrs",
+            I18nKey::PagesPurchaseQuickActionsGoodsReceipt => "pages.purchase.quickActions.goodsReceipt",
+            I18nKey::PagesPurchaseQuickActionsMrpIntelligence => "pages.purchase.quickActions.mrpIntelligence",
+            I18nKey::PagesPurchaseQuickActionsPoGrnInvoiceSync => "pages.purchase.quickActions.poGrnInvoiceSync",
+            I18nKey::PagesPurchaseQuickActionsRecordShipments => "pages.purchase.quickActions.recordShipments",
+            I18nKey::PagesPurchaseQuickActionsThreeWayMatching => "pages.purchase.quickActions.threeWayMatching",
+            I18nKey::PagesPurchaseRequisitionNewAddLineItemError => "pages.purchase.requisitionNew.addLineItemError",
             I18nKey::PagesPurchaseRequisitionNewAddNode => "pages.purchase.requisitionNew.addNode",
-            I18nKey::PagesPurchaseRequisitionNewBusinessJustification => {
-                "pages.purchase.requisitionNew.businessJustification"
-            }
-            I18nKey::PagesPurchaseRequisitionNewCreateFailed => {
-                "pages.purchase.requisitionNew.createFailed"
-            }
+            I18nKey::PagesPurchaseRequisitionNewBusinessJustification => "pages.purchase.requisitionNew.businessJustification",
+            I18nKey::PagesPurchaseRequisitionNewCreateFailed => "pages.purchase.requisitionNew.createFailed",
             I18nKey::PagesPurchaseRequisitionNewError => "pages.purchase.requisitionNew.error",
-            I18nKey::PagesPurchaseRequisitionNewEstimatedProtocolTotal => {
-                "pages.purchase.requisitionNew.estimatedProtocolTotal"
-            }
-            I18nKey::PagesPurchaseRequisitionNewFiscalSummary => {
-                "pages.purchase.requisitionNew.fiscalSummary"
-            }
-            I18nKey::PagesPurchaseRequisitionNewInitializeItemsUsing => {
-                "pages.purchase.requisitionNew.initializeItemsUsing"
-            }
-            I18nKey::PagesPurchaseRequisitionNewJustificationPlaceholder => {
-                "pages.purchase.requisitionNew.justificationPlaceholder"
-            }
-            I18nKey::PagesPurchaseRequisitionNewNodeInjection => {
-                "pages.purchase.requisitionNew.nodeInjection"
-            }
-            I18nKey::PagesPurchaseRequisitionNewNodeInjectionDesc => {
-                "pages.purchase.requisitionNew.nodeInjectionDesc"
-            }
-            I18nKey::PagesPurchaseRequisitionNewOrDefineManualSpec => {
-                "pages.purchase.requisitionNew.orDefineManualSpec"
-            }
-            I18nKey::PagesPurchaseRequisitionNewPrioritiesHigh => {
-                "pages.purchase.requisitionNew.priorities.high"
-            }
-            I18nKey::PagesPurchaseRequisitionNewPrioritiesLow => {
-                "pages.purchase.requisitionNew.priorities.low"
-            }
-            I18nKey::PagesPurchaseRequisitionNewPrioritiesMedium => {
-                "pages.purchase.requisitionNew.priorities.medium"
-            }
-            I18nKey::PagesPurchaseRequisitionNewPrioritiesUrgent => {
-                "pages.purchase.requisitionNew.priorities.urgent"
-            }
-            I18nKey::PagesPurchaseRequisitionNewPriorityLayer => {
-                "pages.purchase.requisitionNew.priorityLayer"
-            }
-            I18nKey::PagesPurchaseRequisitionNewRequisitionParameters => {
-                "pages.purchase.requisitionNew.requisitionParameters"
-            }
-            I18nKey::PagesPurchaseRequisitionNewResourceLineIntel => {
-                "pages.purchase.requisitionNew.resourceLineIntel"
-            }
-            I18nKey::PagesPurchaseRequisitionNewResourceNodes => {
-                "pages.purchase.requisitionNew.resourceNodes"
-            }
-            I18nKey::PagesPurchaseRequisitionNewSaveDraft => {
-                "pages.purchase.requisitionNew.saveDraft"
-            }
-            I18nKey::PagesPurchaseRequisitionNewSavedAsDraft => {
-                "pages.purchase.requisitionNew.savedAsDraft"
-            }
-            I18nKey::PagesPurchaseRequisitionNewSearchProductNodes => {
-                "pages.purchase.requisitionNew.searchProductNodes"
-            }
-            I18nKey::PagesPurchaseRequisitionNewSelectProductNode => {
-                "pages.purchase.requisitionNew.selectProductNode"
-            }
+            I18nKey::PagesPurchaseRequisitionNewEstimatedProtocolTotal => "pages.purchase.requisitionNew.estimatedProtocolTotal",
+            I18nKey::PagesPurchaseRequisitionNewFiscalSummary => "pages.purchase.requisitionNew.fiscalSummary",
+            I18nKey::PagesPurchaseRequisitionNewInitializeItemsUsing => "pages.purchase.requisitionNew.initializeItemsUsing",
+            I18nKey::PagesPurchaseRequisitionNewJustificationPlaceholder => "pages.purchase.requisitionNew.justificationPlaceholder",
+            I18nKey::PagesPurchaseRequisitionNewNodeInjection => "pages.purchase.requisitionNew.nodeInjection",
+            I18nKey::PagesPurchaseRequisitionNewNodeInjectionDesc => "pages.purchase.requisitionNew.nodeInjectionDesc",
+            I18nKey::PagesPurchaseRequisitionNewOrDefineManualSpec => "pages.purchase.requisitionNew.orDefineManualSpec",
+            I18nKey::PagesPurchaseRequisitionNewPrioritiesHigh => "pages.purchase.requisitionNew.priorities.high",
+            I18nKey::PagesPurchaseRequisitionNewPrioritiesLow => "pages.purchase.requisitionNew.priorities.low",
+            I18nKey::PagesPurchaseRequisitionNewPrioritiesMedium => "pages.purchase.requisitionNew.priorities.medium",
+            I18nKey::PagesPurchaseRequisitionNewPrioritiesUrgent => "pages.purchase.requisitionNew.priorities.urgent",
+            I18nKey::PagesPurchaseRequisitionNewPriorityLayer => "pages.purchase.requisitionNew.priorityLayer",
+            I18nKey::PagesPurchaseRequisitionNewRequisitionParameters => "pages.purchase.requisitionNew.requisitionParameters",
+            I18nKey::PagesPurchaseRequisitionNewResourceLineIntel => "pages.purchase.requisitionNew.resourceLineIntel",
+            I18nKey::PagesPurchaseRequisitionNewResourceNodes => "pages.purchase.requisitionNew.resourceNodes",
+            I18nKey::PagesPurchaseRequisitionNewSaveDraft => "pages.purchase.requisitionNew.saveDraft",
+            I18nKey::PagesPurchaseRequisitionNewSavedAsDraft => "pages.purchase.requisitionNew.savedAsDraft",
+            I18nKey::PagesPurchaseRequisitionNewSearchProductNodes => "pages.purchase.requisitionNew.searchProductNodes",
+            I18nKey::PagesPurchaseRequisitionNewSelectProductNode => "pages.purchase.requisitionNew.selectProductNode",
             I18nKey::PagesPurchaseRequisitionNewStation => "pages.purchase.requisitionNew.station",
-            I18nKey::PagesPurchaseRequisitionNewSubmitForApproval => {
-                "pages.purchase.requisitionNew.submitForApproval"
-            }
-            I18nKey::PagesPurchaseRequisitionNewSubmittedForApproval => {
-                "pages.purchase.requisitionNew.submittedForApproval"
-            }
-            I18nKey::PagesPurchaseRequisitionNewSubtitle => {
-                "pages.purchase.requisitionNew.subtitle"
-            }
+            I18nKey::PagesPurchaseRequisitionNewSubmitForApproval => "pages.purchase.requisitionNew.submitForApproval",
+            I18nKey::PagesPurchaseRequisitionNewSubmittedForApproval => "pages.purchase.requisitionNew.submittedForApproval",
+            I18nKey::PagesPurchaseRequisitionNewSubtitle => "pages.purchase.requisitionNew.subtitle",
             I18nKey::PagesPurchaseRequisitionNewSuccess => "pages.purchase.requisitionNew.success",
-            I18nKey::PagesPurchaseRequisitionNewTableHeadersEstPrice => {
-                "pages.purchase.requisitionNew.tableHeaders.estPrice"
-            }
-            I18nKey::PagesPurchaseRequisitionNewTableHeadersMagnitude => {
-                "pages.purchase.requisitionNew.tableHeaders.magnitude"
-            }
-            I18nKey::PagesPurchaseRequisitionNewTableHeadersProductNodeDesc => {
-                "pages.purchase.requisitionNew.tableHeaders.productNodeDesc"
-            }
-            I18nKey::PagesPurchaseRequisitionNewTableHeadersSubtotal => {
-                "pages.purchase.requisitionNew.tableHeaders.subtotal"
-            }
-            I18nKey::PagesPurchaseRequisitionNewTableHeadersUom => {
-                "pages.purchase.requisitionNew.tableHeaders.uom"
-            }
-            I18nKey::PagesPurchaseRequisitionNewThresholdDate => {
-                "pages.purchase.requisitionNew.thresholdDate"
-            }
+            I18nKey::PagesPurchaseRequisitionNewTableHeadersEstPrice => "pages.purchase.requisitionNew.tableHeaders.estPrice",
+            I18nKey::PagesPurchaseRequisitionNewTableHeadersMagnitude => "pages.purchase.requisitionNew.tableHeaders.magnitude",
+            I18nKey::PagesPurchaseRequisitionNewTableHeadersProductNodeDesc => "pages.purchase.requisitionNew.tableHeaders.productNodeDesc",
+            I18nKey::PagesPurchaseRequisitionNewTableHeadersSubtotal => "pages.purchase.requisitionNew.tableHeaders.subtotal",
+            I18nKey::PagesPurchaseRequisitionNewTableHeadersUom => "pages.purchase.requisitionNew.tableHeaders.uom",
+            I18nKey::PagesPurchaseRequisitionNewThresholdDate => "pages.purchase.requisitionNew.thresholdDate",
             I18nKey::PagesPurchaseRequisitionNewTitle => "pages.purchase.requisitionNew.title",
-            I18nKey::PagesPurchaseRequisitionNewTotalMagnitude => {
-                "pages.purchase.requisitionNew.totalMagnitude"
-            }
-            I18nKey::PagesPurchaseRequisitionNewZeroNodesFound => {
-                "pages.purchase.requisitionNew.zeroNodesFound"
-            }
-            I18nKey::PagesPurchaseRequisitionNewZeroResourceNodes => {
-                "pages.purchase.requisitionNew.zeroResourceNodes"
-            }
+            I18nKey::PagesPurchaseRequisitionNewTotalMagnitude => "pages.purchase.requisitionNew.totalMagnitude",
+            I18nKey::PagesPurchaseRequisitionNewZeroNodesFound => "pages.purchase.requisitionNew.zeroNodesFound",
+            I18nKey::PagesPurchaseRequisitionNewZeroResourceNodes => "pages.purchase.requisitionNew.zeroResourceNodes",
             I18nKey::PagesPurchaseRequisitions => "pages.purchase.requisitions",
             I18nKey::PagesPurchaseSearchOrders => "pages.purchase.search.orders",
             I18nKey::PagesPurchaseSearchRequisitions => "pages.purchase.search.requisitions",
             I18nKey::PagesPurchaseStation => "pages.purchase.station",
-            I18nKey::PagesPurchaseStatsActiveTransmissions => {
-                "pages.purchase.stats.activeTransmissions"
-            }
+            I18nKey::PagesPurchaseStatsActiveTransmissions => "pages.purchase.stats.activeTransmissions",
             I18nKey::PagesPurchaseStatsDueHorizonToday => "pages.purchase.stats.dueHorizonToday",
             I18nKey::PagesPurchaseStatsGateSyncRequired => "pages.purchase.stats.gateSyncRequired",
             I18nKey::PagesPurchaseStatsOpenRequisitions => "pages.purchase.stats.openRequisitions",
@@ -15073,12 +13513,8 @@ impl I18nKey {
             I18nKey::PagesPurchaseStatusSubmitted => "pages.purchase.status.submitted",
             I18nKey::PagesPurchaseSubtitle => "pages.purchase.subtitle",
             I18nKey::PagesPurchaseSuppliers => "pages.purchase.suppliers",
-            I18nKey::PagesPurchaseTableInitializeFirstRequisition => {
-                "pages.purchase.table.initializeFirstRequisition"
-            }
-            I18nKey::PagesPurchaseTableInitializeRequisitionFirst => {
-                "pages.purchase.table.initializeRequisitionFirst"
-            }
+            I18nKey::PagesPurchaseTableInitializeFirstRequisition => "pages.purchase.table.initializeFirstRequisition",
+            I18nKey::PagesPurchaseTableInitializeRequisitionFirst => "pages.purchase.table.initializeRequisitionFirst",
             I18nKey::PagesPurchaseTableJustificationLog => "pages.purchase.table.justificationLog",
             I18nKey::PagesPurchaseTableLines => "pages.purchase.table.lines",
             I18nKey::PagesPurchaseTableOrderId => "pages.purchase.table.orderId",
@@ -15086,21 +13522,13 @@ impl I18nKey {
             I18nKey::PagesPurchaseTableReqNumber => "pages.purchase.table.reqNumber",
             I18nKey::PagesPurchaseTableStatusState => "pages.purchase.table.statusState",
             I18nKey::PagesPurchaseTableSupplierNode => "pages.purchase.table.supplierNode",
-            I18nKey::PagesPurchaseTableSynchronizingOrders => {
-                "pages.purchase.table.synchronizingOrders"
-            }
-            I18nKey::PagesPurchaseTableSynchronizingRequisitions => {
-                "pages.purchase.table.synchronizingRequisitions"
-            }
+            I18nKey::PagesPurchaseTableSynchronizingOrders => "pages.purchase.table.synchronizingOrders",
+            I18nKey::PagesPurchaseTableSynchronizingRequisitions => "pages.purchase.table.synchronizingRequisitions",
             I18nKey::PagesPurchaseTableTimestamp => "pages.purchase.table.timestamp",
             I18nKey::PagesPurchaseTableTotalValue => "pages.purchase.table.totalValue",
             I18nKey::PagesPurchaseTableUnknownSupplier => "pages.purchase.table.unknownSupplier",
-            I18nKey::PagesPurchaseTableZeroOrdersIdentified => {
-                "pages.purchase.table.zeroOrdersIdentified"
-            }
-            I18nKey::PagesPurchaseTableZeroRequisitionsIdentified => {
-                "pages.purchase.table.zeroRequisitionsIdentified"
-            }
+            I18nKey::PagesPurchaseTableZeroOrdersIdentified => "pages.purchase.table.zeroOrdersIdentified",
+            I18nKey::PagesPurchaseTableZeroRequisitionsIdentified => "pages.purchase.table.zeroRequisitionsIdentified",
             I18nKey::PagesPurchaseTabsPurchaseOrders => "pages.purchase.tabs.purchaseOrders",
             I18nKey::PagesPurchaseTabsRequisitions => "pages.purchase.tabs.requisitions",
             I18nKey::PagesPurchaseTabsSuppliers => "pages.purchase.tabs.suppliers",
@@ -15123,9 +13551,7 @@ impl I18nKey {
             I18nKey::PagesQualityAqlLot => "pages.quality.aql.lot",
             I18nKey::PagesQualityAqlLotInspections => "pages.quality.aql.lotInspections",
             I18nKey::PagesQualityAqlLotNumber => "pages.quality.aql.lotNumber",
-            I18nKey::PagesQualityAqlLotNumberPlaceholder => {
-                "pages.quality.aql.lotNumberPlaceholder"
-            }
+            I18nKey::PagesQualityAqlLotNumberPlaceholder => "pages.quality.aql.lotNumberPlaceholder",
             I18nKey::PagesQualityAqlLotRange => "pages.quality.aql.lotRange",
             I18nKey::PagesQualityAqlLotSize => "pages.quality.aql.lotSize",
             I18nKey::PagesQualityAqlLotSizeMax => "pages.quality.aql.lotSizeMax",
@@ -15148,72 +13574,38 @@ impl I18nKey {
             I18nKey::PagesQualityAqlStandard => "pages.quality.aql.standard",
             I18nKey::PagesQualityAriaCloseComplaint => "pages.quality.aria.closeComplaint",
             I18nKey::PagesQualityAriaCloseFAI => "pages.quality.aria.closeFAI",
-            I18nKey::PagesQualityAriaCloseSelfInspection => {
-                "pages.quality.aria.closeSelfInspection"
-            }
-            I18nKey::PagesQualityCapabilityAddMeasurement => {
-                "pages.quality.capability.addMeasurement"
-            }
-            I18nKey::PagesQualityCapabilityAddMeasurementButton => {
-                "pages.quality.capability.addMeasurementButton"
-            }
-            I18nKey::PagesQualityCapabilityCharacteristic => {
-                "pages.quality.capability.characteristic"
-            }
-            I18nKey::PagesQualityCapabilityCharacteristicPlaceholder => {
-                "pages.quality.capability.characteristicPlaceholder"
-            }
+            I18nKey::PagesQualityAriaCloseSelfInspection => "pages.quality.aria.closeSelfInspection",
+            I18nKey::PagesQualityCapabilityAddMeasurement => "pages.quality.capability.addMeasurement",
+            I18nKey::PagesQualityCapabilityAddMeasurementButton => "pages.quality.capability.addMeasurementButton",
+            I18nKey::PagesQualityCapabilityCharacteristic => "pages.quality.capability.characteristic",
+            I18nKey::PagesQualityCapabilityCharacteristicPlaceholder => "pages.quality.capability.characteristicPlaceholder",
             I18nKey::PagesQualityCapabilityComputeCpCpk => "pages.quality.capability.computeCpCpk",
             I18nKey::PagesQualityCapabilityCpk => "pages.quality.capability.cpk",
             I18nKey::PagesQualityCapabilityCreateStudy => "pages.quality.capability.createStudy",
-            I18nKey::PagesQualityCapabilityCreateStudyButton => {
-                "pages.quality.capability.createStudyButton"
-            }
+            I18nKey::PagesQualityCapabilityCreateStudyButton => "pages.quality.capability.createStudyButton",
             I18nKey::PagesQualityCapabilityLsl => "pages.quality.capability.lsl",
-            I18nKey::PagesQualityCapabilityLslPlaceholder => {
-                "pages.quality.capability.lslPlaceholder"
-            }
-            I18nKey::PagesQualityCapabilityMeasuredValue => {
-                "pages.quality.capability.measuredValue"
-            }
-            I18nKey::PagesQualityCapabilityMeasurementPlaceholder => {
-                "pages.quality.capability.measurementPlaceholder"
-            }
+            I18nKey::PagesQualityCapabilityLslPlaceholder => "pages.quality.capability.lslPlaceholder",
+            I18nKey::PagesQualityCapabilityMeasuredValue => "pages.quality.capability.measuredValue",
+            I18nKey::PagesQualityCapabilityMeasurementPlaceholder => "pages.quality.capability.measurementPlaceholder",
             I18nKey::PagesQualityCapabilityNotes => "pages.quality.capability.notes",
-            I18nKey::PagesQualityCapabilityNotesPlaceholder => {
-                "pages.quality.capability.notesPlaceholder"
-            }
-            I18nKey::PagesQualityCapabilityOptionalNotes => {
-                "pages.quality.capability.optionalNotes"
-            }
+            I18nKey::PagesQualityCapabilityNotesPlaceholder => "pages.quality.capability.notesPlaceholder",
+            I18nKey::PagesQualityCapabilityOptionalNotes => "pages.quality.capability.optionalNotes",
             I18nKey::PagesQualityCapabilityProcess => "pages.quality.capability.process",
-            I18nKey::PagesQualityCapabilityProcessPlaceholder => {
-                "pages.quality.capability.processPlaceholder"
-            }
+            I18nKey::PagesQualityCapabilityProcessPlaceholder => "pages.quality.capability.processPlaceholder",
             I18nKey::PagesQualityCapabilitySampleLabel => "pages.quality.capability.sampleLabel",
-            I18nKey::PagesQualityCapabilitySampleLabelPlaceholder => {
-                "pages.quality.capability.sampleLabelPlaceholder"
-            }
+            I18nKey::PagesQualityCapabilitySampleLabelPlaceholder => "pages.quality.capability.sampleLabelPlaceholder",
             I18nKey::PagesQualityCapabilitySamples => "pages.quality.capability.samples",
             I18nKey::PagesQualityCapabilitySelectStudy => "pages.quality.capability.selectStudy",
             I18nKey::PagesQualityCapabilitySpecs => "pages.quality.capability.specs",
             I18nKey::PagesQualityCapabilityStudyLabel => "pages.quality.capability.studyLabel",
             I18nKey::PagesQualityCapabilityStudyName => "pages.quality.capability.studyName",
-            I18nKey::PagesQualityCapabilityStudyNamePlaceholder => {
-                "pages.quality.capability.studyNamePlaceholder"
-            }
+            I18nKey::PagesQualityCapabilityStudyNamePlaceholder => "pages.quality.capability.studyNamePlaceholder",
             I18nKey::PagesQualityCapabilityTarget => "pages.quality.capability.target",
-            I18nKey::PagesQualityCapabilityTargetPlaceholder => {
-                "pages.quality.capability.targetPlaceholder"
-            }
+            I18nKey::PagesQualityCapabilityTargetPlaceholder => "pages.quality.capability.targetPlaceholder",
             I18nKey::PagesQualityCapabilityUnit => "pages.quality.capability.unit",
-            I18nKey::PagesQualityCapabilityUnitPlaceholder => {
-                "pages.quality.capability.unitPlaceholder"
-            }
+            I18nKey::PagesQualityCapabilityUnitPlaceholder => "pages.quality.capability.unitPlaceholder",
             I18nKey::PagesQualityCapabilityUsl => "pages.quality.capability.usl",
-            I18nKey::PagesQualityCapabilityUslPlaceholder => {
-                "pages.quality.capability.uslPlaceholder"
-            }
+            I18nKey::PagesQualityCapabilityUslPlaceholder => "pages.quality.capability.uslPlaceholder",
             I18nKey::PagesQualityCapasAllStatuses => "pages.quality.capas.allStatuses",
             I18nKey::PagesQualityCapasAllTypes => "pages.quality.capas.allTypes",
             I18nKey::PagesQualityCapasCapa => "pages.quality.capas.capa",
@@ -15226,9 +13618,7 @@ impl I18nKey {
             I18nKey::PagesQualityCapasSearchPlaceholder => "pages.quality.capas.searchPlaceholder",
             I18nKey::PagesQualityCapasSourceNCR => "pages.quality.capas.sourceNCR",
             I18nKey::PagesQualityCapasStatusClosed => "pages.quality.capas.statusClosed",
-            I18nKey::PagesQualityCapasStatusImplementing => {
-                "pages.quality.capas.statusImplementing"
-            }
+            I18nKey::PagesQualityCapasStatusImplementing => "pages.quality.capas.statusImplementing",
             I18nKey::PagesQualityCapasStatusOpen => "pages.quality.capas.statusOpen",
             I18nKey::PagesQualityCapasStatusVerifying => "pages.quality.capas.statusVerifying",
             I18nKey::PagesQualityCapasSubtitle => "pages.quality.capas.subtitle",
@@ -15236,60 +13626,36 @@ impl I18nKey {
             I18nKey::PagesQualityCapasTitleColumn => "pages.quality.capas.title_column",
             I18nKey::PagesQualityCapasTypeCorrective => "pages.quality.capas.typeCorrective",
             I18nKey::PagesQualityCapasTypePreventive => "pages.quality.capas.typePreventive",
-            I18nKey::PagesQualityChangePointAddObservation => {
-                "pages.quality.changePoint.addObservation"
-            }
-            I18nKey::PagesQualityChangePointAddObservationButton => {
-                "pages.quality.changePoint.addObservationButton"
-            }
-            I18nKey::PagesQualityChangePointCharacteristic => {
-                "pages.quality.changePoint.characteristic"
-            }
-            I18nKey::PagesQualityChangePointCharacteristicPlaceholder => {
-                "pages.quality.changePoint.characteristicPlaceholder"
-            }
+            I18nKey::PagesQualityChangePointAddObservation => "pages.quality.changePoint.addObservation",
+            I18nKey::PagesQualityChangePointAddObservationButton => "pages.quality.changePoint.addObservationButton",
+            I18nKey::PagesQualityChangePointCharacteristic => "pages.quality.changePoint.characteristic",
+            I18nKey::PagesQualityChangePointCharacteristicPlaceholder => "pages.quality.changePoint.characteristicPlaceholder",
             I18nKey::PagesQualityChangePointConfidence => "pages.quality.changePoint.confidence",
             I18nKey::PagesQualityChangePointCreateStudy => "pages.quality.changePoint.createStudy",
-            I18nKey::PagesQualityChangePointCreateStudyButton => {
-                "pages.quality.changePoint.createStudyButton"
-            }
-            I18nKey::PagesQualityChangePointDetectChangePoint => {
-                "pages.quality.changePoint.detectChangePoint"
-            }
+            I18nKey::PagesQualityChangePointCreateStudyButton => "pages.quality.changePoint.createStudyButton",
+            I18nKey::PagesQualityChangePointDetectChangePoint => "pages.quality.changePoint.detectChangePoint",
             I18nKey::PagesQualityChangePointDetected => "pages.quality.changePoint.detected",
-            I18nKey::PagesQualityChangePointDetectedEvents => {
-                "pages.quality.changePoint.detectedEvents"
-            }
+            I18nKey::PagesQualityChangePointDetectedEvents => "pages.quality.changePoint.detectedEvents",
             I18nKey::PagesQualityChangePointIndex => "pages.quality.changePoint.index",
             I18nKey::PagesQualityChangePointMagnitude => "pages.quality.changePoint.magnitude",
             I18nKey::PagesQualityChangePointMethod => "pages.quality.changePoint.method",
             I18nKey::PagesQualityChangePointNoEvents => "pages.quality.changePoint.noEvents",
-            I18nKey::PagesQualityChangePointNoObservations => {
-                "pages.quality.changePoint.noObservations"
-            }
+            I18nKey::PagesQualityChangePointNoObservations => "pages.quality.changePoint.noObservations",
             I18nKey::PagesQualityChangePointNoStudies => "pages.quality.changePoint.noStudies",
             I18nKey::PagesQualityChangePointNotes => "pages.quality.changePoint.notes",
-            I18nKey::PagesQualityChangePointObservations => {
-                "pages.quality.changePoint.observations"
-            }
+            I18nKey::PagesQualityChangePointObservations => "pages.quality.changePoint.observations",
             I18nKey::PagesQualityChangePointObserved => "pages.quality.changePoint.observed",
             I18nKey::PagesQualityChangePointProcess => "pages.quality.changePoint.process",
             I18nKey::PagesQualityChangePointProcessName => "pages.quality.changePoint.processName",
-            I18nKey::PagesQualityChangePointProcessNamePlaceholder => {
-                "pages.quality.changePoint.processNamePlaceholder"
-            }
+            I18nKey::PagesQualityChangePointProcessNamePlaceholder => "pages.quality.changePoint.processNamePlaceholder",
             I18nKey::PagesQualityChangePointSample => "pages.quality.changePoint.sample",
-            I18nKey::PagesQualityChangePointSampleIdPlaceholder => {
-                "pages.quality.changePoint.sampleIdPlaceholder"
-            }
+            I18nKey::PagesQualityChangePointSampleIdPlaceholder => "pages.quality.changePoint.sampleIdPlaceholder",
             I18nKey::PagesQualityChangePointSampleLabel => "pages.quality.changePoint.sampleLabel",
             I18nKey::PagesQualityChangePointSensitivity => "pages.quality.changePoint.sensitivity",
             I18nKey::PagesQualityChangePointStudies => "pages.quality.changePoint.studies",
             I18nKey::PagesQualityChangePointStudy => "pages.quality.changePoint.study",
             I18nKey::PagesQualityChangePointStudyName => "pages.quality.changePoint.studyName",
-            I18nKey::PagesQualityChangePointStudyNamePlaceholder => {
-                "pages.quality.changePoint.studyNamePlaceholder"
-            }
+            I18nKey::PagesQualityChangePointStudyNamePlaceholder => "pages.quality.changePoint.studyNamePlaceholder",
             I18nKey::PagesQualityChangePointValue => "pages.quality.changePoint.value",
             I18nKey::PagesQualityCreateAqlPlan => "pages.quality.createAqlPlan",
             I18nKey::PagesQualityCreateComplaint => "pages.quality.createComplaint",
@@ -15301,83 +13667,37 @@ impl I18nKey {
             I18nKey::PagesQualityCreateSurvey => "pages.quality.createSurvey",
             I18nKey::PagesQualityErrorLoading => "pages.quality.errorLoading",
             I18nKey::PagesQualityFiltersAllStatuses => "pages.quality.filters.allStatuses",
-            I18nKey::PagesQualityInspectionsNewInspection => {
-                "pages.quality.inspections.newInspection"
-            }
-            I18nKey::PagesQualityInspectionsSearchPlaceholder => {
-                "pages.quality.inspections.searchPlaceholder"
-            }
+            I18nKey::PagesQualityInspectionsNewInspection => "pages.quality.inspections.newInspection",
+            I18nKey::PagesQualityInspectionsSearchPlaceholder => "pages.quality.inspections.searchPlaceholder",
             I18nKey::PagesQualityInspectionsSubtitle => "pages.quality.inspections.subtitle",
             I18nKey::PagesQualityInspectionsTitle => "pages.quality.inspections.title",
             I18nKey::PagesQualityLogComplaint => "pages.quality.logComplaint",
-            I18nKey::PagesQualityManagementReviewActionItems => {
-                "pages.quality.managementReview.actionItems"
-            }
-            I18nKey::PagesQualityManagementReviewActionTitlePlaceholder => {
-                "pages.quality.managementReview.actionTitlePlaceholder"
-            }
-            I18nKey::PagesQualityManagementReviewAddActionItem => {
-                "pages.quality.managementReview.addActionItem"
-            }
-            I18nKey::PagesQualityManagementReviewAddActionItemButton => {
-                "pages.quality.managementReview.addActionItemButton"
-            }
-            I18nKey::PagesQualityManagementReviewAssigneeId => {
-                "pages.quality.managementReview.assigneeId"
-            }
-            I18nKey::PagesQualityManagementReviewAttendees => {
-                "pages.quality.managementReview.attendees"
-            }
-            I18nKey::PagesQualityManagementReviewAttendeesPlaceholder => {
-                "pages.quality.managementReview.attendeesPlaceholder"
-            }
+            I18nKey::PagesQualityManagementReviewActionItems => "pages.quality.managementReview.actionItems",
+            I18nKey::PagesQualityManagementReviewActionTitlePlaceholder => "pages.quality.managementReview.actionTitlePlaceholder",
+            I18nKey::PagesQualityManagementReviewAddActionItem => "pages.quality.managementReview.addActionItem",
+            I18nKey::PagesQualityManagementReviewAddActionItemButton => "pages.quality.managementReview.addActionItemButton",
+            I18nKey::PagesQualityManagementReviewAssigneeId => "pages.quality.managementReview.assigneeId",
+            I18nKey::PagesQualityManagementReviewAttendees => "pages.quality.managementReview.attendees",
+            I18nKey::PagesQualityManagementReviewAttendeesPlaceholder => "pages.quality.managementReview.attendeesPlaceholder",
             I18nKey::PagesQualityManagementReviewDue => "pages.quality.managementReview.due",
-            I18nKey::PagesQualityManagementReviewDueDate => {
-                "pages.quality.managementReview.dueDate"
-            }
-            I18nKey::PagesQualityManagementReviewManagementReviews => {
-                "pages.quality.managementReview.managementReviews"
-            }
-            I18nKey::PagesQualityManagementReviewNoActions => {
-                "pages.quality.managementReview.noActions"
-            }
-            I18nKey::PagesQualityManagementReviewNoReviews => {
-                "pages.quality.managementReview.noReviews"
-            }
+            I18nKey::PagesQualityManagementReviewDueDate => "pages.quality.managementReview.dueDate",
+            I18nKey::PagesQualityManagementReviewManagementReviews => "pages.quality.managementReview.managementReviews",
+            I18nKey::PagesQualityManagementReviewNoActions => "pages.quality.managementReview.noActions",
+            I18nKey::PagesQualityManagementReviewNoReviews => "pages.quality.managementReview.noReviews",
             I18nKey::PagesQualityManagementReviewPeriod => "pages.quality.managementReview.period",
-            I18nKey::PagesQualityManagementReviewPeriodEnd => {
-                "pages.quality.managementReview.periodEnd"
-            }
-            I18nKey::PagesQualityManagementReviewPeriodStart => {
-                "pages.quality.managementReview.periodStart"
-            }
+            I18nKey::PagesQualityManagementReviewPeriodEnd => "pages.quality.managementReview.periodEnd",
+            I18nKey::PagesQualityManagementReviewPeriodStart => "pages.quality.managementReview.periodStart",
             I18nKey::PagesQualityManagementReviewReview => "pages.quality.managementReview.review",
-            I18nKey::PagesQualityManagementReviewScheduleReview => {
-                "pages.quality.managementReview.scheduleReview"
-            }
-            I18nKey::PagesQualityManagementReviewScheduleReviewButton => {
-                "pages.quality.managementReview.scheduleReviewButton"
-            }
-            I18nKey::PagesQualityManagementReviewScheduled => {
-                "pages.quality.managementReview.scheduled"
-            }
-            I18nKey::PagesQualityManagementReviewScheduledFor => {
-                "pages.quality.managementReview.scheduledFor"
-            }
-            I18nKey::PagesQualityManagementReviewSelectReview => {
-                "pages.quality.managementReview.selectReview"
-            }
+            I18nKey::PagesQualityManagementReviewScheduleReview => "pages.quality.managementReview.scheduleReview",
+            I18nKey::PagesQualityManagementReviewScheduleReviewButton => "pages.quality.managementReview.scheduleReviewButton",
+            I18nKey::PagesQualityManagementReviewScheduled => "pages.quality.managementReview.scheduled",
+            I18nKey::PagesQualityManagementReviewScheduledFor => "pages.quality.managementReview.scheduledFor",
+            I18nKey::PagesQualityManagementReviewSelectReview => "pages.quality.managementReview.selectReview",
             I18nKey::PagesQualityManagementReviewTitle => "pages.quality.managementReview.title",
-            I18nKey::PagesQualityManagementReviewTitlePlaceholder => {
-                "pages.quality.managementReview.titlePlaceholder"
-            }
-            I18nKey::PagesQualityManagementReviewUserIdPlaceholder => {
-                "pages.quality.managementReview.userIdPlaceholder"
-            }
+            I18nKey::PagesQualityManagementReviewTitlePlaceholder => "pages.quality.managementReview.titlePlaceholder",
+            I18nKey::PagesQualityManagementReviewUserIdPlaceholder => "pages.quality.managementReview.userIdPlaceholder",
             I18nKey::PagesQualityMsaAddMeasurement => "pages.quality.msa.addMeasurement",
-            I18nKey::PagesQualityMsaAddMeasurementButton => {
-                "pages.quality.msa.addMeasurementButton"
-            }
+            I18nKey::PagesQualityMsaAddMeasurementButton => "pages.quality.msa.addMeasurementButton",
             I18nKey::PagesQualityMsaComputeGRR => "pages.quality.msa.computeGRR",
             I18nKey::PagesQualityMsaCreateStudy => "pages.quality.msa.createStudy",
             I18nKey::PagesQualityMsaCreateStudyButton => "pages.quality.msa.createStudyButton",
@@ -15400,9 +13720,7 @@ impl I18nKey {
             I18nKey::PagesQualityMsaSelectType => "pages.quality.msa.selectType",
             I18nKey::PagesQualityMsaStudy => "pages.quality.msa.study",
             I18nKey::PagesQualityMsaStudyName => "pages.quality.msa.studyName",
-            I18nKey::PagesQualityMsaStudyNamePlaceholder => {
-                "pages.quality.msa.studyNamePlaceholder"
-            }
+            I18nKey::PagesQualityMsaStudyNamePlaceholder => "pages.quality.msa.studyNamePlaceholder",
             I18nKey::PagesQualityMsaStudyType => "pages.quality.msa.studyType",
             I18nKey::PagesQualityMsaTrial => "pages.quality.msa.trial",
             I18nKey::PagesQualityMsaTrials => "pages.quality.msa.trials",
@@ -15420,40 +13738,24 @@ impl I18nKey {
             I18nKey::PagesQualityNcrsSeverityMinor => "pages.quality.ncrs.severityMinor",
             I18nKey::PagesQualityNcrsSource => "pages.quality.ncrs.source",
             I18nKey::PagesQualityNcrsStatusClosed => "pages.quality.ncrs.statusClosed",
-            I18nKey::PagesQualityNcrsStatusDispositioned => {
-                "pages.quality.ncrs.statusDispositioned"
-            }
+            I18nKey::PagesQualityNcrsStatusDispositioned => "pages.quality.ncrs.statusDispositioned",
             I18nKey::PagesQualityNcrsStatusEscalated => "pages.quality.ncrs.statusEscalated",
-            I18nKey::PagesQualityNcrsStatusInvestigating => {
-                "pages.quality.ncrs.statusInvestigating"
-            }
+            I18nKey::PagesQualityNcrsStatusInvestigating => "pages.quality.ncrs.statusInvestigating",
             I18nKey::PagesQualityNcrsStatusOpen => "pages.quality.ncrs.statusOpen",
-            I18nKey::PagesQualityNcrsStatusPendingDisposition => {
-                "pages.quality.ncrs.statusPendingDisposition"
-            }
+            I18nKey::PagesQualityNcrsStatusPendingDisposition => "pages.quality.ncrs.statusPendingDisposition",
             I18nKey::PagesQualityNcrsSubtitle => "pages.quality.ncrs.subtitle",
             I18nKey::PagesQualityNcrsTitle => "pages.quality.ncrs.title",
             I18nKey::PagesQualityNcrsTitleColumn => "pages.quality.ncrs.title_column",
             I18nKey::PagesQualityNpsScore => "pages.quality.npsScore",
             I18nKey::PagesQualityOpenComplaints => "pages.quality.openComplaints",
             I18nKey::PagesQualityPlaceholderActual => "pages.quality.placeholder.actual",
-            I18nKey::PagesQualityPlaceholderCharacteristic => {
-                "pages.quality.placeholder.characteristic"
-            }
-            I18nKey::PagesQualityPlaceholderCharacteristicNumber => {
-                "pages.quality.placeholder.characteristicNumber"
-            }
+            I18nKey::PagesQualityPlaceholderCharacteristic => "pages.quality.placeholder.characteristic",
+            I18nKey::PagesQualityPlaceholderCharacteristicNumber => "pages.quality.placeholder.characteristicNumber",
             I18nKey::PagesQualityPlaceholderComment => "pages.quality.placeholder.comment",
-            I18nKey::PagesQualityPlaceholderComplaintTitle => {
-                "pages.quality.placeholder.complaintTitle"
-            }
+            I18nKey::PagesQualityPlaceholderComplaintTitle => "pages.quality.placeholder.complaintTitle",
             I18nKey::PagesQualityPlaceholderCustomerId => "pages.quality.placeholder.customerId",
-            I18nKey::PagesQualityPlaceholderDrawingNumber => {
-                "pages.quality.placeholder.drawingNumber"
-            }
-            I18nKey::PagesQualityPlaceholderInspectionNumber => {
-                "pages.quality.placeholder.inspectionNumber"
-            }
+            I18nKey::PagesQualityPlaceholderDrawingNumber => "pages.quality.placeholder.drawingNumber",
+            I18nKey::PagesQualityPlaceholderInspectionNumber => "pages.quality.placeholder.inspectionNumber",
             I18nKey::PagesQualityPlaceholderLotNumber => "pages.quality.placeholder.lotNumber",
             I18nKey::PagesQualityPlaceholderLowerSpec => "pages.quality.placeholder.lowerSpec",
             I18nKey::PagesQualityPlaceholderMethod => "pages.quality.placeholder.method",
@@ -15461,47 +13763,27 @@ impl I18nKey {
             I18nKey::PagesQualityPlaceholderNominal => "pages.quality.placeholder.nominal",
             I18nKey::PagesQualityPlaceholderNotes => "pages.quality.placeholder.notes",
             I18nKey::PagesQualityPlaceholderNpsScore => "pages.quality.placeholder.npsScore",
-            I18nKey::PagesQualityPlaceholderOptionalNotes => {
-                "pages.quality.placeholder.optionalNotes"
-            }
+            I18nKey::PagesQualityPlaceholderOptionalNotes => "pages.quality.placeholder.optionalNotes",
             I18nKey::PagesQualityPlaceholderPartNumber => "pages.quality.placeholder.partNumber",
             I18nKey::PagesQualityPlaceholderProductId => "pages.quality.placeholder.productId",
             I18nKey::PagesQualityPlaceholderRequirement => "pages.quality.placeholder.requirement",
-            I18nKey::PagesQualityPlaceholderRespondentEmail => {
-                "pages.quality.placeholder.respondentEmail"
-            }
-            I18nKey::PagesQualityPlaceholderRespondentName => {
-                "pages.quality.placeholder.respondentName"
-            }
+            I18nKey::PagesQualityPlaceholderRespondentEmail => "pages.quality.placeholder.respondentEmail",
+            I18nKey::PagesQualityPlaceholderRespondentName => "pages.quality.placeholder.respondentName",
             I18nKey::PagesQualityPlaceholderResult => "pages.quality.placeholder.result",
             I18nKey::PagesQualityPlaceholderResultValue => "pages.quality.placeholder.resultValue",
             I18nKey::PagesQualityPlaceholderRevision => "pages.quality.placeholder.revision",
             I18nKey::PagesQualityPlaceholderRmaNumber => "pages.quality.placeholder.rmaNumber",
-            I18nKey::PagesQualityPlaceholderSampleNumber => {
-                "pages.quality.placeholder.sampleNumber"
-            }
+            I18nKey::PagesQualityPlaceholderSampleNumber => "pages.quality.placeholder.sampleNumber",
             I18nKey::PagesQualityPlaceholderSelectFAI => "pages.quality.placeholder.selectFAI",
-            I18nKey::PagesQualityPlaceholderSelectInspection => {
-                "pages.quality.placeholder.selectInspection"
-            }
-            I18nKey::PagesQualityPlaceholderSelectMethod => {
-                "pages.quality.placeholder.selectMethod"
-            }
-            I18nKey::PagesQualityPlaceholderSelectSample => {
-                "pages.quality.placeholder.selectSample"
-            }
+            I18nKey::PagesQualityPlaceholderSelectInspection => "pages.quality.placeholder.selectInspection",
+            I18nKey::PagesQualityPlaceholderSelectMethod => "pages.quality.placeholder.selectMethod",
+            I18nKey::PagesQualityPlaceholderSelectSample => "pages.quality.placeholder.selectSample",
             I18nKey::PagesQualityPlaceholderSelectStudy => "pages.quality.placeholder.selectStudy",
-            I18nKey::PagesQualityPlaceholderSelectSurvey => {
-                "pages.quality.placeholder.selectSurvey"
-            }
-            I18nKey::PagesQualityPlaceholderSpecification => {
-                "pages.quality.placeholder.specification"
-            }
+            I18nKey::PagesQualityPlaceholderSelectSurvey => "pages.quality.placeholder.selectSurvey",
+            I18nKey::PagesQualityPlaceholderSpecification => "pages.quality.placeholder.specification",
             I18nKey::PagesQualityPlaceholderStandard => "pages.quality.placeholder.standard",
             I18nKey::PagesQualityPlaceholderSurveyTitle => "pages.quality.placeholder.surveyTitle",
-            I18nKey::PagesQualityPlaceholderTargetResponses => {
-                "pages.quality.placeholder.targetResponses"
-            }
+            I18nKey::PagesQualityPlaceholderTargetResponses => "pages.quality.placeholder.targetResponses",
             I18nKey::PagesQualityPlaceholderTargetValue => "pages.quality.placeholder.targetValue",
             I18nKey::PagesQualityPlaceholderTolerance => "pages.quality.placeholder.tolerance",
             I18nKey::PagesQualityPlaceholderToolId => "pages.quality.placeholder.toolId",
@@ -15519,9 +13801,7 @@ impl I18nKey {
             I18nKey::PagesQualityStatsActiveSyncGates => "pages.quality.stats.activeSyncGates",
             I18nKey::PagesQualityStatsFirstPassVelocity => "pages.quality.stats.firstPassVelocity",
             I18nKey::PagesQualityStatsGlobalAnomalies => "pages.quality.stats.globalAnomalies",
-            I18nKey::PagesQualityStatsResolutionProtocols => {
-                "pages.quality.stats.resolutionProtocols"
-            }
+            I18nKey::PagesQualityStatsResolutionProtocols => "pages.quality.stats.resolutionProtocols",
             I18nKey::PagesQualityStatusCapa => "pages.quality.status.capa",
             I18nKey::PagesQualityStatusClosed => "pages.quality.status.closed",
             I18nKey::PagesQualityStatusContain => "pages.quality.status.contain",
@@ -15566,9 +13846,7 @@ impl I18nKey {
             I18nKey::PagesQualityTabsCapas => "pages.quality.tabs.capas",
             I18nKey::PagesQualityTabsChangePoint => "pages.quality.tabs.changePoint",
             I18nKey::PagesQualityTabsCustomer => "pages.quality.tabs.customer",
-            I18nKey::PagesQualityTabsCustomerSatisfaction => {
-                "pages.quality.tabs.customerSatisfaction"
-            }
+            I18nKey::PagesQualityTabsCustomerSatisfaction => "pages.quality.tabs.customerSatisfaction",
             I18nKey::PagesQualityTabsFai => "pages.quality.tabs.fai",
             I18nKey::PagesQualityTabsInspections => "pages.quality.tabs.inspections",
             I18nKey::PagesQualityTabsLab => "pages.quality.tabs.lab",
@@ -15581,54 +13859,32 @@ impl I18nKey {
             I18nKey::PagesQualityTabsTraceability => "pages.quality.tabs.traceability",
             I18nKey::PagesQualityTitle => "pages.quality.title",
             I18nKey::PagesQualityTraceabilityAddLink => "pages.quality.traceability.addLink",
-            I18nKey::PagesQualityTraceabilityAddLinkButton => {
-                "pages.quality.traceability.addLinkButton"
-            }
-            I18nKey::PagesQualityTraceabilityCreateMatrix => {
-                "pages.quality.traceability.createMatrix"
-            }
-            I18nKey::PagesQualityTraceabilityCreateMatrixButton => {
-                "pages.quality.traceability.createMatrixButton"
-            }
-            I18nKey::PagesQualityTraceabilityDescription => {
-                "pages.quality.traceability.description"
-            }
-            I18nKey::PagesQualityTraceabilityDescriptionPlaceholder => {
-                "pages.quality.traceability.descriptionPlaceholder"
-            }
+            I18nKey::PagesQualityTraceabilityAddLinkButton => "pages.quality.traceability.addLinkButton",
+            I18nKey::PagesQualityTraceabilityCreateMatrix => "pages.quality.traceability.createMatrix",
+            I18nKey::PagesQualityTraceabilityCreateMatrixButton => "pages.quality.traceability.createMatrixButton",
+            I18nKey::PagesQualityTraceabilityDescription => "pages.quality.traceability.description",
+            I18nKey::PagesQualityTraceabilityDescriptionPlaceholder => "pages.quality.traceability.descriptionPlaceholder",
             I18nKey::PagesQualityTraceabilityLinks => "pages.quality.traceability.links",
             I18nKey::PagesQualityTraceabilityMatrices => "pages.quality.traceability.matrices",
             I18nKey::PagesQualityTraceabilityMatrix => "pages.quality.traceability.matrix",
             I18nKey::PagesQualityTraceabilityMatrixName => "pages.quality.traceability.matrixName",
-            I18nKey::PagesQualityTraceabilityMatrixNamePlaceholder => {
-                "pages.quality.traceability.matrixNamePlaceholder"
-            }
+            I18nKey::PagesQualityTraceabilityMatrixNamePlaceholder => "pages.quality.traceability.matrixNamePlaceholder",
             I18nKey::PagesQualityTraceabilityNoLinks => "pages.quality.traceability.noLinks",
             I18nKey::PagesQualityTraceabilityNoMatrices => "pages.quality.traceability.noMatrices",
             I18nKey::PagesQualityTraceabilityNotes => "pages.quality.traceability.notes",
             I18nKey::PagesQualityTraceabilityProduct => "pages.quality.traceability.product",
             I18nKey::PagesQualityTraceabilityProductId => "pages.quality.traceability.productId",
-            I18nKey::PagesQualityTraceabilityProductIdPlaceholder => {
-                "pages.quality.traceability.productIdPlaceholder"
-            }
-            I18nKey::PagesQualityTraceabilitySelectMatrix => {
-                "pages.quality.traceability.selectMatrix"
-            }
+            I18nKey::PagesQualityTraceabilityProductIdPlaceholder => "pages.quality.traceability.productIdPlaceholder",
+            I18nKey::PagesQualityTraceabilitySelectMatrix => "pages.quality.traceability.selectMatrix",
             I18nKey::PagesQualityTraceabilitySource => "pages.quality.traceability.source",
             I18nKey::PagesQualityTraceabilitySourceRef => "pages.quality.traceability.sourceRef",
-            I18nKey::PagesQualityTraceabilitySourceRefPlaceholder => {
-                "pages.quality.traceability.sourceRefPlaceholder"
-            }
+            I18nKey::PagesQualityTraceabilitySourceRefPlaceholder => "pages.quality.traceability.sourceRefPlaceholder",
             I18nKey::PagesQualityTraceabilitySourceType => "pages.quality.traceability.sourceType",
             I18nKey::PagesQualityTraceabilityTarget => "pages.quality.traceability.target",
             I18nKey::PagesQualityTraceabilityTargetRef => "pages.quality.traceability.targetRef",
-            I18nKey::PagesQualityTraceabilityTargetRefPlaceholder => {
-                "pages.quality.traceability.targetRefPlaceholder"
-            }
+            I18nKey::PagesQualityTraceabilityTargetRefPlaceholder => "pages.quality.traceability.targetRefPlaceholder",
             I18nKey::PagesQualityTraceabilityTargetType => "pages.quality.traceability.targetType",
-            I18nKey::PagesQualityTraceabilityTraceabilityLinks => {
-                "pages.quality.traceability.traceabilityLinks"
-            }
+            I18nKey::PagesQualityTraceabilityTraceabilityLinks => "pages.quality.traceability.traceabilityLinks",
             I18nKey::PagesQuotesActionsAnalyze => "pages.quotes.actions.analyze",
             I18nKey::PagesQuotesActionsCloneProtocol => "pages.quotes.actions.cloneProtocol",
             I18nKey::PagesQuotesActionsExportProtocol => "pages.quotes.actions.exportProtocol",
@@ -15643,33 +13899,19 @@ impl I18nKey {
             I18nKey::PagesQuotesDetailCreated => "pages.quotes.detail.created",
             I18nKey::PagesQuotesDetailCreatedBy => "pages.quotes.detail.createdBy",
             I18nKey::PagesQuotesDetailCustomer => "pages.quotes.detail.customer",
-            I18nKey::PagesQuotesDetailDialogsApproveDescription => {
-                "pages.quotes.detail.dialogs.approveDescription"
-            }
-            I18nKey::PagesQuotesDetailDialogsLostDescription => {
-                "pages.quotes.detail.dialogs.lostDescription"
-            }
+            I18nKey::PagesQuotesDetailDialogsApproveDescription => "pages.quotes.detail.dialogs.approveDescription",
+            I18nKey::PagesQuotesDetailDialogsLostDescription => "pages.quotes.detail.dialogs.lostDescription",
             I18nKey::PagesQuotesDetailDialogsMarkAsLost => "pages.quotes.detail.dialogs.markAsLost",
             I18nKey::PagesQuotesDetailDialogsMarkAsWon => "pages.quotes.detail.dialogs.markAsWon",
             I18nKey::PagesQuotesDetailDialogsMarkLost => "pages.quotes.detail.dialogs.markLost",
             I18nKey::PagesQuotesDetailDialogsMarkWon => "pages.quotes.detail.dialogs.markWon",
-            I18nKey::PagesQuotesDetailDialogsReasonPlaceholder => {
-                "pages.quotes.detail.dialogs.reasonPlaceholder"
-            }
+            I18nKey::PagesQuotesDetailDialogsReasonPlaceholder => "pages.quotes.detail.dialogs.reasonPlaceholder",
             I18nKey::PagesQuotesDetailDialogsReject => "pages.quotes.detail.dialogs.reject",
-            I18nKey::PagesQuotesDetailDialogsRejectDescription => {
-                "pages.quotes.detail.dialogs.rejectDescription"
-            }
-            I18nKey::PagesQuotesDetailDialogsRejectQuote => {
-                "pages.quotes.detail.dialogs.rejectQuote"
-            }
+            I18nKey::PagesQuotesDetailDialogsRejectDescription => "pages.quotes.detail.dialogs.rejectDescription",
+            I18nKey::PagesQuotesDetailDialogsRejectQuote => "pages.quotes.detail.dialogs.rejectQuote",
             I18nKey::PagesQuotesDetailDialogsSubmit => "pages.quotes.detail.dialogs.submit",
-            I18nKey::PagesQuotesDetailDialogsSubmitForApproval => {
-                "pages.quotes.detail.dialogs.submitForApproval"
-            }
-            I18nKey::PagesQuotesDetailDialogsWonDescription => {
-                "pages.quotes.detail.dialogs.wonDescription"
-            }
+            I18nKey::PagesQuotesDetailDialogsSubmitForApproval => "pages.quotes.detail.dialogs.submitForApproval",
+            I18nKey::PagesQuotesDetailDialogsWonDescription => "pages.quotes.detail.dialogs.wonDescription",
             I18nKey::PagesQuotesDetailDiscount => "pages.quotes.detail.discount",
             I18nKey::PagesQuotesDetailExportPdf => "pages.quotes.detail.exportPdf",
             I18nKey::PagesQuotesDetailInternalNotes => "pages.quotes.detail.internalNotes",
@@ -15699,9 +13941,7 @@ impl I18nKey {
             I18nKey::PagesQuotesDetailVersionHistory => "pages.quotes.detail.versionHistory",
             I18nKey::PagesQuotesDetailViewHistory => "pages.quotes.detail.viewHistory",
             I18nKey::PagesQuotesEmptyStateAdjustFilters => "pages.quotes.emptyState.adjustFilters",
-            I18nKey::PagesQuotesEmptyStateInitializeFirst => {
-                "pages.quotes.emptyState.initializeFirst"
-            }
+            I18nKey::PagesQuotesEmptyStateInitializeFirst => "pages.quotes.emptyState.initializeFirst",
             I18nKey::PagesQuotesEmptyStateTitle => "pages.quotes.emptyState.title",
             I18nKey::PagesQuotesFiltersAccepted => "pages.quotes.filters.accepted",
             I18nKey::PagesQuotesFiltersAllProtocols => "pages.quotes.filters.allProtocols",
@@ -15716,22 +13956,16 @@ impl I18nKey {
             I18nKey::PagesQuotesNewAddFirstItem => "pages.quotes.new.addFirstItem",
             I18nKey::PagesQuotesNewAddItem => "pages.quotes.new.addItem",
             I18nKey::PagesQuotesNewAddItemsToQuote => "pages.quotes.new.addItemsToQuote",
-            I18nKey::PagesQuotesNewAddProductsAndPricing => {
-                "pages.quotes.new.addProductsAndPricing"
-            }
+            I18nKey::PagesQuotesNewAddProductsAndPricing => "pages.quotes.new.addProductsAndPricing",
             I18nKey::PagesQuotesNewAddProductsPricing => "pages.quotes.new.addProductsPricing",
             I18nKey::PagesQuotesNewAssumptionsVerified => "pages.quotes.new.assumptionsVerified",
             I18nKey::PagesQuotesNewDiscount => "pages.quotes.new.discount",
             I18nKey::PagesQuotesNewForRfq => "pages.quotes.new.forRfq",
             I18nKey::PagesQuotesNewGrossProfit => "pages.quotes.new.grossProfit",
             I18nKey::PagesQuotesNewIncompletePricing => "pages.quotes.new.incompletePricing",
-            I18nKey::PagesQuotesNewInternalCostingAnalysis => {
-                "pages.quotes.new.internalCostingAnalysis"
-            }
+            I18nKey::PagesQuotesNewInternalCostingAnalysis => "pages.quotes.new.internalCostingAnalysis",
             I18nKey::PagesQuotesNewInternalNotes => "pages.quotes.new.internalNotes",
-            I18nKey::PagesQuotesNewInternalNotesPlaceholder => {
-                "pages.quotes.new.internalNotesPlaceholder"
-            }
+            I18nKey::PagesQuotesNewInternalNotesPlaceholder => "pages.quotes.new.internalNotesPlaceholder",
             I18nKey::PagesQuotesNewLaborCost => "pages.quotes.new.laborCost",
             I18nKey::PagesQuotesNewLineItemNotes => "pages.quotes.new.lineItemNotes",
             I18nKey::PagesQuotesNewLineItems => "pages.quotes.new.lineItems",
@@ -15745,9 +13979,7 @@ impl I18nKey {
             I18nKey::PagesQuotesNewQuickActions => "pages.quotes.new.quickActions",
             I18nKey::PagesQuotesNewQuoteSummary => "pages.quotes.new.quoteSummary",
             I18nKey::PagesQuotesNewSaveDraft => "pages.quotes.new.saveDraft",
-            I18nKey::PagesQuotesNewSubmitDialogDescription => {
-                "pages.quotes.new.submitDialog.description"
-            }
+            I18nKey::PagesQuotesNewSubmitDialogDescription => "pages.quotes.new.submitDialog.description",
             I18nKey::PagesQuotesNewSubmitDialogTitle => "pages.quotes.new.submitDialog.title",
             I18nKey::PagesQuotesNewSubmitForApproval => "pages.quotes.new.submitForApproval",
             I18nKey::PagesQuotesNewSubtotal => "pages.quotes.new.subtotal",
@@ -15794,12 +14026,8 @@ impl I18nKey {
             I18nKey::PagesQuotesToastSubmitted => "pages.quotes.toast.submitted",
             I18nKey::PagesQuotesToastTryAgain => "pages.quotes.toast.tryAgain",
             I18nKey::PagesQuotingHelperNoQuoteFound => "pages.quotingHelper.noQuoteFound",
-            I18nKey::PagesQuotingHelperToastHandoffFailed => {
-                "pages.quotingHelper.toast.handoffFailed"
-            }
-            I18nKey::PagesQuotingHelperToastHandoffSuccess => {
-                "pages.quotingHelper.toast.handoffSuccess"
-            }
+            I18nKey::PagesQuotingHelperToastHandoffFailed => "pages.quotingHelper.toast.handoffFailed",
+            I18nKey::PagesQuotingHelperToastHandoffSuccess => "pages.quotingHelper.toast.handoffSuccess",
             I18nKey::PagesSalesActive => "pages.sales.active",
             I18nKey::PagesSalesActivity => "pages.sales.activity",
             I18nKey::PagesSalesAllPriority => "pages.sales.allPriority",
@@ -15904,20 +14132,14 @@ impl I18nKey {
             I18nKey::PagesSettingsProfileActionsSave => "pages.settings.profile.actions.save",
             I18nKey::PagesSettingsProfileLabelsBio => "pages.settings.profile.labels.bio",
             I18nKey::PagesSettingsProfileLabelsEmail => "pages.settings.profile.labels.email",
-            I18nKey::PagesSettingsProfileLabelsFirstName => {
-                "pages.settings.profile.labels.firstName"
-            }
+            I18nKey::PagesSettingsProfileLabelsFirstName => "pages.settings.profile.labels.firstName",
             I18nKey::PagesSettingsProfileLabelsLastName => "pages.settings.profile.labels.lastName",
             I18nKey::PagesSettingsProfileLabelsPhone => "pages.settings.profile.labels.phone",
             I18nKey::PagesSettingsProfileSectionsAvatar => "pages.settings.profile.sections.avatar",
-            I18nKey::PagesSettingsProfileSectionsBasicInfo => {
-                "pages.settings.profile.sections.basicInfo"
-            }
+            I18nKey::PagesSettingsProfileSectionsBasicInfo => "pages.settings.profile.sections.basicInfo",
             I18nKey::PagesSettingsProfileSubtitle => "pages.settings.profile.subtitle",
             I18nKey::PagesSettingsProfileTitle => "pages.settings.profile.title",
-            I18nKey::PagesSettingsSectionsOrganizational => {
-                "pages.settings.sections.organizational"
-            }
+            I18nKey::PagesSettingsSectionsOrganizational => "pages.settings.sections.organizational",
             I18nKey::PagesSettingsSectionsPersonal => "pages.settings.sections.personal",
             I18nKey::PagesSettingsSectionsSystem => "pages.settings.sections.system",
             I18nKey::PagesSettingsSecuritySubtitle => "pages.settings.security.subtitle",
@@ -15929,62 +14151,30 @@ impl I18nKey {
             I18nKey::PagesSettingsTeamSubtitle => "pages.settings.team.subtitle",
             I18nKey::PagesSettingsTeamTitle => "pages.settings.team.title",
             I18nKey::PagesSettingsTitle => "pages.settings.title",
-            I18nKey::PagesSupplyChainActionsRunSimulation => {
-                "pages.supplyChain.actions.runSimulation"
-            }
+            I18nKey::PagesSupplyChainActionsRunSimulation => "pages.supplyChain.actions.runSimulation",
             I18nKey::PagesSupplyChainDisruptionsTitle => "pages.supplyChain.disruptions.title",
-            I18nKey::PagesSupplyChainInitializeSimulation => {
-                "pages.supplyChain.initializeSimulation"
-            }
+            I18nKey::PagesSupplyChainInitializeSimulation => "pages.supplyChain.initializeSimulation",
             I18nKey::PagesSupplyChainLoading => "pages.supplyChain.loading",
             I18nKey::PagesSupplyChainOverviewTitle => "pages.supplyChain.overview.title",
-            I18nKey::PagesSupplyChainScenariosCostIncrease => {
-                "pages.supplyChain.scenarios.costIncrease"
-            }
-            I18nKey::PagesSupplyChainScenariosDelayImpact => {
-                "pages.supplyChain.scenarios.delayImpact"
-            }
+            I18nKey::PagesSupplyChainScenariosCostIncrease => "pages.supplyChain.scenarios.costIncrease",
+            I18nKey::PagesSupplyChainScenariosDelayImpact => "pages.supplyChain.scenarios.delayImpact",
             I18nKey::PagesSupplyChainScenariosLoading => "pages.supplyChain.scenarios.loading",
-            I18nKey::PagesSupplyChainScenariosNoScenarios => {
-                "pages.supplyChain.scenarios.noScenarios"
-            }
-            I18nKey::PagesSupplyChainScenariosProbability => {
-                "pages.supplyChain.scenarios.probability"
-            }
-            I18nKey::PagesSupplyChainScenariosSearchPlaceholder => {
-                "pages.supplyChain.scenarios.searchPlaceholder"
-            }
+            I18nKey::PagesSupplyChainScenariosNoScenarios => "pages.supplyChain.scenarios.noScenarios",
+            I18nKey::PagesSupplyChainScenariosProbability => "pages.supplyChain.scenarios.probability",
+            I18nKey::PagesSupplyChainScenariosSearchPlaceholder => "pages.supplyChain.scenarios.searchPlaceholder",
             I18nKey::PagesSupplyChainStation => "pages.supplyChain.station",
-            I18nKey::PagesSupplyChainStatsActiveSuppliers => {
-                "pages.supplyChain.stats.activeSuppliers"
-            }
-            I18nKey::PagesSupplyChainStatsActiveSyncNodes => {
-                "pages.supplyChain.stats.activeSyncNodes"
-            }
+            I18nKey::PagesSupplyChainStatsActiveSuppliers => "pages.supplyChain.stats.activeSuppliers",
+            I18nKey::PagesSupplyChainStatsActiveSyncNodes => "pages.supplyChain.stats.activeSyncNodes",
             I18nKey::PagesSupplyChainStatsAtRisk => "pages.supplyChain.stats.atRisk",
-            I18nKey::PagesSupplyChainStatsGlobalRiskIndex => {
-                "pages.supplyChain.stats.globalRiskIndex"
-            }
+            I18nKey::PagesSupplyChainStatsGlobalRiskIndex => "pages.supplyChain.stats.globalRiskIndex",
             I18nKey::PagesSupplyChainStatsIntelNodes => "pages.supplyChain.stats.intelNodes",
-            I18nKey::PagesSupplyChainStatsMitigationReadiness => {
-                "pages.supplyChain.stats.mitigationReadiness"
-            }
-            I18nKey::PagesSupplyChainStatsOnTimeDelivery => {
-                "pages.supplyChain.stats.onTimeDelivery"
-            }
-            I18nKey::PagesSupplyChainStatsOptimalReserve => {
-                "pages.supplyChain.stats.optimalReserve"
-            }
-            I18nKey::PagesSupplyChainStatsProtocolVerifications => {
-                "pages.supplyChain.stats.protocolVerifications"
-            }
+            I18nKey::PagesSupplyChainStatsMitigationReadiness => "pages.supplyChain.stats.mitigationReadiness",
+            I18nKey::PagesSupplyChainStatsOnTimeDelivery => "pages.supplyChain.stats.onTimeDelivery",
+            I18nKey::PagesSupplyChainStatsOptimalReserve => "pages.supplyChain.stats.optimalReserve",
+            I18nKey::PagesSupplyChainStatsProtocolVerifications => "pages.supplyChain.stats.protocolVerifications",
             I18nKey::PagesSupplyChainStatsQualityScore => "pages.supplyChain.stats.qualityScore",
-            I18nKey::PagesSupplyChainStatsSimulationCycles => {
-                "pages.supplyChain.stats.simulationCycles"
-            }
-            I18nKey::PagesSupplyChainStatsThresholdExceeded => {
-                "pages.supplyChain.stats.thresholdExceeded"
-            }
+            I18nKey::PagesSupplyChainStatsSimulationCycles => "pages.supplyChain.stats.simulationCycles",
+            I18nKey::PagesSupplyChainStatsThresholdExceeded => "pages.supplyChain.stats.thresholdExceeded",
             I18nKey::PagesSupplyChainSubtitle => "pages.supplyChain.subtitle",
             I18nKey::PagesSupplyChainSyncPulse => "pages.supplyChain.syncPulse",
             I18nKey::PagesSupplyChainTabsDisruptions => "pages.supplyChain.tabs.disruptions",
@@ -16005,9 +14195,7 @@ impl I18nKey {
             I18nKey::PagesTasksNewAssignmentTitle => "pages.tasks.new.assignmentTitle",
             I18nKey::PagesTasksNewConfigureMetadata => "pages.tasks.new.configureMetadata",
             I18nKey::PagesTasksNewCreateAssignment => "pages.tasks.new.createAssignment",
-            I18nKey::PagesTasksNewDescriptionPlaceholder => {
-                "pages.tasks.new.descriptionPlaceholder"
-            }
+            I18nKey::PagesTasksNewDescriptionPlaceholder => "pages.tasks.new.descriptionPlaceholder",
             I18nKey::PagesTasksNewDiscard => "pages.tasks.new.discard",
             I18nKey::PagesTasksNewProtocolParameters => "pages.tasks.new.protocolParameters",
             I18nKey::PagesTasksNewStation => "pages.tasks.new.station",
@@ -16015,9 +14203,7 @@ impl I18nKey {
             I18nKey::PagesTasksNewSynchronizing => "pages.tasks.new.synchronizing",
             I18nKey::PagesTasksNewTaskCreateError => "pages.tasks.new.taskCreateError",
             I18nKey::PagesTasksNewTaskCreated => "pages.tasks.new.taskCreated",
-            I18nKey::PagesTasksNewTaskCreatedDescription => {
-                "pages.tasks.new.taskCreatedDescription"
-            }
+            I18nKey::PagesTasksNewTaskCreatedDescription => "pages.tasks.new.taskCreatedDescription",
             I18nKey::PagesTasksNewTitle => "pages.tasks.new.title",
             I18nKey::PagesTasksNewTitlePlaceholder => "pages.tasks.new.titlePlaceholder",
             I18nKey::PagesTasksPriorityCritical => "pages.tasks.priority.critical",
@@ -16062,46 +14248,22 @@ impl I18nKey {
             I18nKey::PagesTodayDrillYourResponse => "pages.today.drill.yourResponse",
             I18nKey::PagesTodayErrorLoading => "pages.today.errorLoading",
             I18nKey::PagesTodayExecuteAnswer => "pages.today.executeAnswer",
-            I18nKey::PagesTodayFallbackActivityQuoteSentToAcme => {
-                "pages.today.fallback.activity.quoteSentToAcme"
-            }
-            I18nKey::PagesTodayFallbackActivityRfqStatusUpdated => {
-                "pages.today.fallback.activity.rfqStatusUpdated"
-            }
+            I18nKey::PagesTodayFallbackActivityQuoteSentToAcme => "pages.today.fallback.activity.quoteSentToAcme",
+            I18nKey::PagesTodayFallbackActivityRfqStatusUpdated => "pages.today.fallback.activity.rfqStatusUpdated",
             I18nKey::PagesTodayFallbackDrillHint => "pages.today.fallback.drill.hint",
             I18nKey::PagesTodayFallbackDrillQuestion => "pages.today.fallback.drill.question",
             I18nKey::PagesTodayFallbackKpisOee => "pages.today.fallback.kpis.oee",
-            I18nKey::PagesTodayFallbackKpisOnTimeDelivery => {
-                "pages.today.fallback.kpis.onTimeDelivery"
-            }
+            I18nKey::PagesTodayFallbackKpisOnTimeDelivery => "pages.today.fallback.kpis.onTimeDelivery",
             I18nKey::PagesTodayFallbackKpisOpenRfqs => "pages.today.fallback.kpis.openRfqs",
-            I18nKey::PagesTodayFallbackKpisPendingQuotes => {
-                "pages.today.fallback.kpis.pendingQuotes"
-            }
-            I18nKey::PagesTodayFallbackPrioritiesAnalyzeCriticalExceptions => {
-                "pages.today.fallback.priorities.analyzeCriticalExceptions"
-            }
-            I18nKey::PagesTodayFallbackPrioritiesCloseRfqBlockers => {
-                "pages.today.fallback.priorities.closeRfqBlockers"
-            }
-            I18nKey::PagesTodayFallbackPrioritiesConfirmProductionScheduleRisks => {
-                "pages.today.fallback.priorities.confirmProductionScheduleRisks"
-            }
-            I18nKey::PagesTodayFallbackPrioritiesReviewMonthlyTargets => {
-                "pages.today.fallback.priorities.reviewMonthlyTargets"
-            }
-            I18nKey::PagesTodayFallbackPrioritiesReviewTopQualityAbnormalities => {
-                "pages.today.fallback.priorities.reviewTopQualityAbnormalities"
-            }
-            I18nKey::PagesTodayFallbackTasksApproveDraftQuote => {
-                "pages.today.fallback.tasks.approveDraftQuote"
-            }
-            I18nKey::PagesTodayFallbackTasksReviewOpenRfqs => {
-                "pages.today.fallback.tasks.reviewOpenRfqs"
-            }
-            I18nKey::PagesTodayFallbackTrendFromLastWeek => {
-                "pages.today.fallback.trendFromLastWeek"
-            }
+            I18nKey::PagesTodayFallbackKpisPendingQuotes => "pages.today.fallback.kpis.pendingQuotes",
+            I18nKey::PagesTodayFallbackPrioritiesAnalyzeCriticalExceptions => "pages.today.fallback.priorities.analyzeCriticalExceptions",
+            I18nKey::PagesTodayFallbackPrioritiesCloseRfqBlockers => "pages.today.fallback.priorities.closeRfqBlockers",
+            I18nKey::PagesTodayFallbackPrioritiesConfirmProductionScheduleRisks => "pages.today.fallback.priorities.confirmProductionScheduleRisks",
+            I18nKey::PagesTodayFallbackPrioritiesReviewMonthlyTargets => "pages.today.fallback.priorities.reviewMonthlyTargets",
+            I18nKey::PagesTodayFallbackPrioritiesReviewTopQualityAbnormalities => "pages.today.fallback.priorities.reviewTopQualityAbnormalities",
+            I18nKey::PagesTodayFallbackTasksApproveDraftQuote => "pages.today.fallback.tasks.approveDraftQuote",
+            I18nKey::PagesTodayFallbackTasksReviewOpenRfqs => "pages.today.fallback.tasks.reviewOpenRfqs",
+            I18nKey::PagesTodayFallbackTrendFromLastWeek => "pages.today.fallback.trendFromLastWeek",
             I18nKey::PagesTodayGreeting => "pages.today.greeting",
             I18nKey::PagesTodayGreetingFallback => "pages.today.greetingFallback",
             I18nKey::PagesTodayGreetingsAfternoon => "pages.today.greetings.afternoon",
@@ -16125,9 +14287,7 @@ impl I18nKey {
             I18nKey::PagesTodayMyWorkCriticalAnomalies => "pages.today.myWork.criticalAnomalies",
             I18nKey::PagesTodayMyWorkNoAssignments => "pages.today.myWork.noAssignments",
             I18nKey::PagesTodayMyWorkStrategicClarity => "pages.today.myWork.strategicClarity",
-            I18nKey::PagesTodayMyWorkStrategicUserStories => {
-                "pages.today.myWork.strategicUserStories"
-            }
+            I18nKey::PagesTodayMyWorkStrategicUserStories => "pages.today.myWork.strategicUserStories",
             I18nKey::PagesTodayPriorityRfqs => "pages.today.priorityRfqs",
             I18nKey::PagesTodayRecently => "pages.today.recently",
             I18nKey::PagesTodayRfqAtRisk => "pages.today.rfqAtRisk",
@@ -16148,54 +14308,32 @@ impl I18nKey {
             I18nKey::PagesTodaySubtitle => "pages.today.subtitle",
             I18nKey::PagesTodayTargetToday => "pages.today.targetToday",
             I18nKey::PagesTodayTopPriorities => "pages.today.topPriorities",
-            I18nKey::PagesTrainingCertificationsNewCertification => {
-                "pages.training.certifications.newCertification"
-            }
-            I18nKey::PagesTrainingCertificationsNoSkillsFound => {
-                "pages.training.certifications.noSkillsFound"
-            }
+            I18nKey::PagesTrainingCertificationsNewCertification => "pages.training.certifications.newCertification",
+            I18nKey::PagesTrainingCertificationsNoSkillsFound => "pages.training.certifications.noSkillsFound",
             I18nKey::PagesTrainingCertificationsSafety => "pages.training.certifications.safety",
-            I18nKey::PagesTrainingCertificationsSearchPlaceholder => {
-                "pages.training.certifications.searchPlaceholder"
-            }
-            I18nKey::PagesTrainingCertificationsSubtitle => {
-                "pages.training.certifications.subtitle"
-            }
+            I18nKey::PagesTrainingCertificationsSearchPlaceholder => "pages.training.certifications.searchPlaceholder",
+            I18nKey::PagesTrainingCertificationsSubtitle => "pages.training.certifications.subtitle",
             I18nKey::PagesTrainingCertificationsTitle => "pages.training.certifications.title",
-            I18nKey::PagesTrainingCertificationsValidMonths => {
-                "pages.training.certifications.validMonths"
-            }
-            I18nKey::PagesTrainingCertificationsViewCertifiedEmployees => {
-                "pages.training.certifications.viewCertifiedEmployees"
-            }
+            I18nKey::PagesTrainingCertificationsValidMonths => "pages.training.certifications.validMonths",
+            I18nKey::PagesTrainingCertificationsViewCertifiedEmployees => "pages.training.certifications.viewCertifiedEmployees",
             I18nKey::PagesTrainingMatrixSubtitle => "pages.training.matrix.subtitle",
             I18nKey::PagesTrainingMatrixTitle => "pages.training.matrix.title",
             I18nKey::PagesTrainingProgramsAllTypes => "pages.training.programs.allTypes",
             I18nKey::PagesTrainingProgramsNewProgram => "pages.training.programs.newProgram",
-            I18nKey::PagesTrainingProgramsNoProgramsFound => {
-                "pages.training.programs.noProgramsFound"
-            }
-            I18nKey::PagesTrainingProgramsSearchPlaceholder => {
-                "pages.training.programs.searchPlaceholder"
-            }
+            I18nKey::PagesTrainingProgramsNoProgramsFound => "pages.training.programs.noProgramsFound",
+            I18nKey::PagesTrainingProgramsSearchPlaceholder => "pages.training.programs.searchPlaceholder",
             I18nKey::PagesTrainingProgramsSubtitle => "pages.training.programs.subtitle",
             I18nKey::PagesTrainingProgramsTableDates => "pages.training.programs.table.dates",
             I18nKey::PagesTrainingProgramsTableProgram => "pages.training.programs.table.program",
             I18nKey::PagesTrainingProgramsTitle => "pages.training.programs.title",
             I18nKey::PagesTrainingRecordsNoRecordsFound => "pages.training.records.noRecordsFound",
-            I18nKey::PagesTrainingRecordsSearchPlaceholder => {
-                "pages.training.records.searchPlaceholder"
-            }
+            I18nKey::PagesTrainingRecordsSearchPlaceholder => "pages.training.records.searchPlaceholder",
             I18nKey::PagesTrainingRecordsTableEmployee => "pages.training.records.table.employee",
             I18nKey::PagesTrainingRecordsTableScore => "pages.training.records.table.score",
             I18nKey::PagesTrainingRecordsTableTraining => "pages.training.records.table.training",
             I18nKey::PagesTrainingStatsActiveSkillNodes => "pages.training.stats.activeSkillNodes",
-            I18nKey::PagesTrainingStatsIntelligenceProtocols => {
-                "pages.training.stats.intelligenceProtocols"
-            }
-            I18nKey::PagesTrainingStatsSynchronizationPulse => {
-                "pages.training.stats.synchronizationPulse"
-            }
+            I18nKey::PagesTrainingStatsIntelligenceProtocols => "pages.training.stats.intelligenceProtocols",
+            I18nKey::PagesTrainingStatsSynchronizationPulse => "pages.training.stats.synchronizationPulse",
             I18nKey::PagesTrainingStatsThresholdAlerts => "pages.training.stats.thresholdAlerts",
             I18nKey::PagesTrainingSubtitle => "pages.training.subtitle",
             I18nKey::PagesTrainingTabsCertifications => "pages.training.tabs.certifications",
@@ -16226,24 +14364,16 @@ impl I18nKey {
             I18nKey::PagesWarehouseSectionsMovements => "pages.warehouse.sections.movements",
             I18nKey::PagesWarehouseShipDate => "pages.warehouse.shipDate",
             I18nKey::PagesWarehouseStation => "pages.warehouse.station",
-            I18nKey::PagesWarehouseStatsAbnormalStockLevels => {
-                "pages.warehouse.stats.abnormalStockLevels"
-            }
+            I18nKey::PagesWarehouseStatsAbnormalStockLevels => "pages.warehouse.stats.abnormalStockLevels",
             I18nKey::PagesWarehouseStatsInboundSync => "pages.warehouse.stats.inboundSync",
             I18nKey::PagesWarehouseStatsInventoryNodes => "pages.warehouse.stats.inventoryNodes",
             I18nKey::PagesWarehouseStatsLowStock => "pages.warehouse.stats.lowStock",
-            I18nKey::PagesWarehouseStatsOutboundVelocity => {
-                "pages.warehouse.stats.outboundVelocity"
-            }
+            I18nKey::PagesWarehouseStatsOutboundVelocity => "pages.warehouse.stats.outboundVelocity",
             I18nKey::PagesWarehouseStatsPendingReceipts => "pages.warehouse.stats.pendingReceipts",
-            I18nKey::PagesWarehouseStatsPendingShipments => {
-                "pages.warehouse.stats.pendingShipments"
-            }
+            I18nKey::PagesWarehouseStatsPendingShipments => "pages.warehouse.stats.pendingShipments",
             I18nKey::PagesWarehouseStatsTotalSkus => "pages.warehouse.stats.totalSkus",
             I18nKey::PagesWarehouseStatusAllStockNormal => "pages.warehouse.status.allStockNormal",
-            I18nKey::PagesWarehouseStatusItemsOutOfStock => {
-                "pages.warehouse.status.itemsOutOfStock"
-            }
+            I18nKey::PagesWarehouseStatusItemsOutOfStock => "pages.warehouse.status.itemsOutOfStock",
             I18nKey::PagesWarehouseSubtitle => "pages.warehouse.subtitle",
             I18nKey::PagesWarehouseSyncStock => "pages.warehouse.syncStock",
             I18nKey::PagesWarehouseTabsInventory => "pages.warehouse.tabs.inventory",
@@ -16330,9 +14460,7 @@ impl I18nKey {
             I18nKey::ProductsDetailBillOfMaterials => "products.detail.billOfMaterials",
             I18nKey::ProductsDetailBomDescription => "products.detail.bomDescription",
             I18nKey::ProductsDetailCloneNode => "products.detail.cloneNode",
-            I18nKey::ProductsDetailContextualIntelligence => {
-                "products.detail.contextualIntelligence"
-            }
+            I18nKey::ProductsDetailContextualIntelligence => "products.detail.contextualIntelligence",
             I18nKey::ProductsDetailDeauthorize => "products.detail.deauthorize",
             I18nKey::ProductsDetailFiscalParameters => "products.detail.fiscalParameters",
             I18nKey::ProductsDetailMagnitudePulse => "products.detail.magnitudePulse",
@@ -16408,14 +14536,10 @@ impl I18nKey {
             I18nKey::QualityAnalyticsFirstPassYield => "quality.analytics.firstPassYield",
             I18nKey::QualityAnalyticsIgnoreRisk => "quality.analytics.ignoreRisk",
             I18nKey::QualityAnalyticsImplementationPhase => "quality.analytics.implementationPhase",
-            I18nKey::QualityAnalyticsInspectionGateOutcomes => {
-                "quality.analytics.inspectionGateOutcomes"
-            }
+            I18nKey::QualityAnalyticsInspectionGateOutcomes => "quality.analytics.inspectionGateOutcomes",
             I18nKey::QualityAnalyticsMeanInspectionPulse => "quality.analytics.meanInspectionPulse",
             I18nKey::QualityAnalyticsNcrRootCause => "quality.analytics.ncrRootCause",
-            I18nKey::QualityAnalyticsPredictiveIntelligence => {
-                "quality.analytics.predictiveIntelligence"
-            }
+            I18nKey::QualityAnalyticsPredictiveIntelligence => "quality.analytics.predictiveIntelligence",
             I18nKey::QualityAnalyticsResolutionProtocols => "quality.analytics.resolutionProtocols",
             I18nKey::QualityAnalyticsStrategicWindow => "quality.analytics.strategicWindow",
             I18nKey::QualityAnalyticsSubtitle => "quality.analytics.subtitle",
@@ -16529,9 +14653,7 @@ impl I18nKey {
             I18nKey::RtlSelectPlaceholder => "rtl.selectPlaceholder",
             I18nKey::SettingsAccountChangePasswordDesc => "settings.account.changePasswordDesc",
             I18nKey::SettingsAccountCredentialRotation => "settings.account.credentialRotation",
-            I18nKey::SettingsAccountCredentialRotationDesc => {
-                "settings.account.credentialRotationDesc"
-            }
+            I18nKey::SettingsAccountCredentialRotationDesc => "settings.account.credentialRotationDesc",
             I18nKey::SettingsAccountCurrentPassword => "settings.account.currentPassword",
             I18nKey::SettingsAccountDeleteAccount => "settings.account.deleteAccount",
             I18nKey::SettingsAccountDeleteAccountDesc => "settings.account.deleteAccountDesc",
@@ -16562,9 +14684,7 @@ impl I18nKey {
             I18nKey::SettingsAppearanceCompact => "settings.appearance.compact",
             I18nKey::SettingsAppearanceCompactDesc => "settings.appearance.compactDesc",
             I18nKey::SettingsAppearanceCompactNavigation => "settings.appearance.compactNavigation",
-            I18nKey::SettingsAppearanceCompactNavigationDesc => {
-                "settings.appearance.compactNavigationDesc"
-            }
+            I18nKey::SettingsAppearanceCompactNavigationDesc => "settings.appearance.compactNavigationDesc",
             I18nKey::SettingsAppearanceDarkMode => "settings.appearance.darkMode",
             I18nKey::SettingsAppearanceDarkModeDesc => "settings.appearance.darkModeDesc",
             I18nKey::SettingsAppearanceDensity => "settings.appearance.density",
@@ -16572,24 +14692,16 @@ impl I18nKey {
             I18nKey::SettingsAppearanceFontSizeLarge => "settings.appearance.fontSizeLarge",
             I18nKey::SettingsAppearanceFontSizeLargeDesc => "settings.appearance.fontSizeLargeDesc",
             I18nKey::SettingsAppearanceFontSizeMedium => "settings.appearance.fontSizeMedium",
-            I18nKey::SettingsAppearanceFontSizeMediumDesc => {
-                "settings.appearance.fontSizeMediumDesc"
-            }
+            I18nKey::SettingsAppearanceFontSizeMediumDesc => "settings.appearance.fontSizeMediumDesc",
             I18nKey::SettingsAppearanceFontSizeSmall => "settings.appearance.fontSizeSmall",
             I18nKey::SettingsAppearanceFontSizeSmallDesc => "settings.appearance.fontSizeSmallDesc",
             I18nKey::SettingsAppearanceLightMode => "settings.appearance.lightMode",
             I18nKey::SettingsAppearanceLightModeDesc => "settings.appearance.lightModeDesc",
             I18nKey::SettingsAppearanceLivePreview => "settings.appearance.livePreview",
-            I18nKey::SettingsAppearancePreviewPrimaryAction => {
-                "settings.appearance.preview.primaryAction"
-            }
-            I18nKey::SettingsAppearancePreviewSecondaryAction => {
-                "settings.appearance.preview.secondaryAction"
-            }
+            I18nKey::SettingsAppearancePreviewPrimaryAction => "settings.appearance.preview.primaryAction",
+            I18nKey::SettingsAppearancePreviewSecondaryAction => "settings.appearance.preview.secondaryAction",
             I18nKey::SettingsAppearancePreviewSubtitle => "settings.appearance.preview.subtitle",
-            I18nKey::SettingsAppearancePreviewTertiaryAction => {
-                "settings.appearance.preview.tertiaryAction"
-            }
+            I18nKey::SettingsAppearancePreviewTertiaryAction => "settings.appearance.preview.tertiaryAction",
             I18nKey::SettingsAppearancePreviewTitle => "settings.appearance.preview.title",
             I18nKey::SettingsAppearanceReducedMotion => "settings.appearance.reducedMotion",
             I18nKey::SettingsAppearanceReducedMotionDesc => "settings.appearance.reducedMotionDesc",
@@ -16607,28 +14719,14 @@ impl I18nKey {
             I18nKey::SettingsAudit => "settings.audit",
             I18nKey::SettingsBackup => "settings.backup",
             I18nKey::SettingsBilling => "settings.billing",
-            I18nKey::SettingsCompanyBrandingActiveAccent => {
-                "settings.company.branding.activeAccent"
-            }
-            I18nKey::SettingsCompanyBrandingInterfaceAccentSync => {
-                "settings.company.branding.interfaceAccentSync"
-            }
-            I18nKey::SettingsCompanyBrandingLogoPlaceholder => {
-                "settings.company.branding.logoPlaceholder"
-            }
-            I18nKey::SettingsCompanyBrandingPrimaryLogoNode => {
-                "settings.company.branding.primaryLogoNode"
-            }
-            I18nKey::SettingsCompanyBrandingUpdateStream => {
-                "settings.company.branding.updateStream"
-            }
+            I18nKey::SettingsCompanyBrandingActiveAccent => "settings.company.branding.activeAccent",
+            I18nKey::SettingsCompanyBrandingInterfaceAccentSync => "settings.company.branding.interfaceAccentSync",
+            I18nKey::SettingsCompanyBrandingLogoPlaceholder => "settings.company.branding.logoPlaceholder",
+            I18nKey::SettingsCompanyBrandingPrimaryLogoNode => "settings.company.branding.primaryLogoNode",
+            I18nKey::SettingsCompanyBrandingUpdateStream => "settings.company.branding.updateStream",
             I18nKey::SettingsCompanyBrandingSync => "settings.company.brandingSync",
-            I18nKey::SettingsCompanyDefaultsLegalEntityIdentity => {
-                "settings.company.defaults.legalEntityIdentity"
-            }
-            I18nKey::SettingsCompanyDefaultsRegisteredOffice => {
-                "settings.company.defaults.registeredOffice"
-            }
+            I18nKey::SettingsCompanyDefaultsLegalEntityIdentity => "settings.company.defaults.legalEntityIdentity",
+            I18nKey::SettingsCompanyDefaultsRegisteredOffice => "settings.company.defaults.registeredOffice",
             I18nKey::SettingsCompanyDefaultsTaxIdVat => "settings.company.defaults.taxIdVat",
             I18nKey::SettingsCompanyDescription => "settings.company.description",
             I18nKey::SettingsCompanyLegalEntityIdentity => "settings.company.legalEntityIdentity",
@@ -16664,16 +14762,12 @@ impl I18nKey {
             I18nKey::SettingsDataPruningProtocol => "settings.data.pruningProtocol",
             I18nKey::SettingsDataPruningProtocolDesc => "settings.data.pruningProtocolDesc",
             I18nKey::SettingsDataTitle => "settings.data.title",
-            I18nKey::SettingsEmailDefaultsDispatchIdentity => {
-                "settings.email.defaults.dispatchIdentity"
-            }
+            I18nKey::SettingsEmailDefaultsDispatchIdentity => "settings.email.defaults.dispatchIdentity",
             I18nKey::SettingsEmailDefaultsRelayReplyTo => "settings.email.defaults.relayReplyTo",
             I18nKey::SettingsEmailDescription => "settings.email.description",
             I18nKey::SettingsEmailDispatchIdentity => "settings.email.dispatchIdentity",
             I18nKey::SettingsEmailIntelligenceBroadcast => "settings.email.intelligenceBroadcast",
-            I18nKey::SettingsEmailIntelligenceBroadcastDesc => {
-                "settings.email.intelligenceBroadcastDesc"
-            }
+            I18nKey::SettingsEmailIntelligenceBroadcastDesc => "settings.email.intelligenceBroadcastDesc",
             I18nKey::SettingsEmailRelayReplyTo => "settings.email.relayReplyTo",
             I18nKey::SettingsEmailServerSync => "settings.email.serverSync",
             I18nKey::SettingsEmailSmtpDetails => "settings.email.smtpDetails",
@@ -16682,42 +14776,26 @@ impl I18nKey {
             I18nKey::SettingsGeneral => "settings.general",
             I18nKey::SettingsIntegrationsValue => "settings.integrations._value",
             I18nKey::SettingsIntegrationsDescription => "settings.integrations.description",
-            I18nKey::SettingsIntegrationsItemsPowerbiDesc => {
-                "settings.integrations.items.powerbi.desc"
-            }
-            I18nKey::SettingsIntegrationsItemsPowerbiName => {
-                "settings.integrations.items.powerbi.name"
-            }
+            I18nKey::SettingsIntegrationsItemsPowerbiDesc => "settings.integrations.items.powerbi.desc",
+            I18nKey::SettingsIntegrationsItemsPowerbiName => "settings.integrations.items.powerbi.name",
             I18nKey::SettingsIntegrationsItemsSapDesc => "settings.integrations.items.sap.desc",
             I18nKey::SettingsIntegrationsItemsSapName => "settings.integrations.items.sap.name",
             I18nKey::SettingsIntegrationsItemsSlackDesc => "settings.integrations.items.slack.desc",
             I18nKey::SettingsIntegrationsItemsSlackName => "settings.integrations.items.slack.name",
             I18nKey::SettingsIntegrationsItemsTeamsDesc => "settings.integrations.items.teams.desc",
             I18nKey::SettingsIntegrationsItemsTeamsName => "settings.integrations.items.teams.name",
-            I18nKey::SettingsIntegrationsStatusConnected => {
-                "settings.integrations.status.connected"
-            }
-            I18nKey::SettingsIntegrationsStatusDisconnected => {
-                "settings.integrations.status.disconnected"
-            }
+            I18nKey::SettingsIntegrationsStatusConnected => "settings.integrations.status.connected",
+            I18nKey::SettingsIntegrationsStatusDisconnected => "settings.integrations.status.disconnected",
             I18nKey::SettingsIntegrationsTitle => "settings.integrations.title",
             I18nKey::SettingsLanguage => "settings.language",
             I18nKey::SettingsLocalizationAutoSyncActive => "settings.localization.autoSyncActive",
             I18nKey::SettingsLocalizationCurrency => "settings.localization.currency",
             I18nKey::SettingsLocalizationDateFormat => "settings.localization.dateFormat",
             I18nKey::SettingsLocalizationDescription => "settings.localization.description",
-            I18nKey::SettingsLocalizationEfficiencyPercentage => {
-                "settings.localization.efficiencyPercentage"
-            }
-            I18nKey::SettingsLocalizationIntelligenceLanguage => {
-                "settings.localization.intelligenceLanguage"
-            }
-            I18nKey::SettingsLocalizationMeasurementUnits => {
-                "settings.localization.measurementUnits"
-            }
-            I18nKey::SettingsLocalizationNumericPrecisionPreview => {
-                "settings.localization.numericPrecisionPreview"
-            }
+            I18nKey::SettingsLocalizationEfficiencyPercentage => "settings.localization.efficiencyPercentage",
+            I18nKey::SettingsLocalizationIntelligenceLanguage => "settings.localization.intelligenceLanguage",
+            I18nKey::SettingsLocalizationMeasurementUnits => "settings.localization.measurementUnits",
+            I18nKey::SettingsLocalizationNumericPrecisionPreview => "settings.localization.numericPrecisionPreview",
             I18nKey::SettingsLocalizationPreview => "settings.localization.preview",
             I18nKey::SettingsLocalizationRtlActive => "settings.localization.rtlActive",
             I18nKey::SettingsLocalizationStandardMetric => "settings.localization.standardMetric",
@@ -16729,126 +14807,56 @@ impl I18nKey {
             I18nKey::SettingsMobileBiometricSyncDesc => "settings.mobile.biometricSyncDesc",
             I18nKey::SettingsMobileDescription => "settings.mobile.description",
             I18nKey::SettingsMobileOfflineIntelligence => "settings.mobile.offlineIntelligence",
-            I18nKey::SettingsMobileOfflineIntelligenceDesc => {
-                "settings.mobile.offlineIntelligenceDesc"
-            }
+            I18nKey::SettingsMobileOfflineIntelligenceDesc => "settings.mobile.offlineIntelligenceDesc",
             I18nKey::SettingsMobileTelemetryPush => "settings.mobile.telemetryPush",
             I18nKey::SettingsMobileTelemetryPushDesc => "settings.mobile.telemetryPushDesc",
             I18nKey::SettingsMobileTitle => "settings.mobile.title",
-            I18nKey::SettingsNotificationsAbnormalityDetected => {
-                "settings.notifications.abnormalityDetected"
-            }
-            I18nKey::SettingsNotificationsAbnormalityDetectedDesc => {
-                "settings.notifications.abnormalityDetectedDesc"
-            }
-            I18nKey::SettingsNotificationsAndonEscalation => {
-                "settings.notifications.andonEscalation"
-            }
-            I18nKey::SettingsNotificationsAndonEscalationDesc => {
-                "settings.notifications.andonEscalationDesc"
-            }
-            I18nKey::SettingsNotificationsApprovalRequest => {
-                "settings.notifications.approvalRequest"
-            }
-            I18nKey::SettingsNotificationsApprovalRequestDesc => {
-                "settings.notifications.approvalRequestDesc"
-            }
+            I18nKey::SettingsNotificationsAbnormalityDetected => "settings.notifications.abnormalityDetected",
+            I18nKey::SettingsNotificationsAbnormalityDetectedDesc => "settings.notifications.abnormalityDetectedDesc",
+            I18nKey::SettingsNotificationsAndonEscalation => "settings.notifications.andonEscalation",
+            I18nKey::SettingsNotificationsAndonEscalationDesc => "settings.notifications.andonEscalationDesc",
+            I18nKey::SettingsNotificationsApprovalRequest => "settings.notifications.approvalRequest",
+            I18nKey::SettingsNotificationsApprovalRequestDesc => "settings.notifications.approvalRequestDesc",
             I18nKey::SettingsNotificationsCalibrating => "settings.notifications.calibrating",
-            I18nKey::SettingsNotificationsCommerceOutcome => {
-                "settings.notifications.commerceOutcome"
-            }
-            I18nKey::SettingsNotificationsCommerceOutcomeDesc => {
-                "settings.notifications.commerceOutcomeDesc"
-            }
-            I18nKey::SettingsNotificationsDailyCommandSummary => {
-                "settings.notifications.dailyCommandSummary"
-            }
-            I18nKey::SettingsNotificationsDailyCommandSummaryDesc => {
-                "settings.notifications.dailyCommandSummaryDesc"
-            }
+            I18nKey::SettingsNotificationsCommerceOutcome => "settings.notifications.commerceOutcome",
+            I18nKey::SettingsNotificationsCommerceOutcomeDesc => "settings.notifications.commerceOutcomeDesc",
+            I18nKey::SettingsNotificationsDailyCommandSummary => "settings.notifications.dailyCommandSummary",
+            I18nKey::SettingsNotificationsDailyCommandSummaryDesc => "settings.notifications.dailyCommandSummaryDesc",
             I18nKey::SettingsNotificationsDigest => "settings.notifications.digest",
             I18nKey::SettingsNotificationsDigestDesc => "settings.notifications.digestDesc",
-            I18nKey::SettingsNotificationsDigestTimeOptions0600 => {
-                "settings.notifications.digestTimeOptions.0600"
-            }
-            I18nKey::SettingsNotificationsDigestTimeOptions0700 => {
-                "settings.notifications.digestTimeOptions.0700"
-            }
-            I18nKey::SettingsNotificationsDigestTimeOptions0800 => {
-                "settings.notifications.digestTimeOptions.0800"
-            }
-            I18nKey::SettingsNotificationsDigestTimeOptions0900 => {
-                "settings.notifications.digestTimeOptions.0900"
-            }
-            I18nKey::SettingsNotificationsDigestTimeOptions1800 => {
-                "settings.notifications.digestTimeOptions.1800"
-            }
-            I18nKey::SettingsNotificationsDispatchSynchronization => {
-                "settings.notifications.dispatchSynchronization"
-            }
-            I18nKey::SettingsNotificationsDispatchSynchronizationDesc => {
-                "settings.notifications.dispatchSynchronizationDesc"
-            }
-            I18nKey::SettingsNotificationsEmailNotifications => {
-                "settings.notifications.emailNotifications"
-            }
-            I18nKey::SettingsNotificationsInAppNotifications => {
-                "settings.notifications.inAppNotifications"
-            }
-            I18nKey::SettingsNotificationsInboundRfqSignal => {
-                "settings.notifications.inboundRfqSignal"
-            }
-            I18nKey::SettingsNotificationsInboundRfqSignalDesc => {
-                "settings.notifications.inboundRfqSignalDesc"
-            }
-            I18nKey::SettingsNotificationsInspectionThreshold => {
-                "settings.notifications.inspectionThreshold"
-            }
-            I18nKey::SettingsNotificationsInspectionThresholdDesc => {
-                "settings.notifications.inspectionThresholdDesc"
-            }
+            I18nKey::SettingsNotificationsDigestTimeOptions0600 => "settings.notifications.digestTimeOptions.0600",
+            I18nKey::SettingsNotificationsDigestTimeOptions0700 => "settings.notifications.digestTimeOptions.0700",
+            I18nKey::SettingsNotificationsDigestTimeOptions0800 => "settings.notifications.digestTimeOptions.0800",
+            I18nKey::SettingsNotificationsDigestTimeOptions0900 => "settings.notifications.digestTimeOptions.0900",
+            I18nKey::SettingsNotificationsDigestTimeOptions1800 => "settings.notifications.digestTimeOptions.1800",
+            I18nKey::SettingsNotificationsDispatchSynchronization => "settings.notifications.dispatchSynchronization",
+            I18nKey::SettingsNotificationsDispatchSynchronizationDesc => "settings.notifications.dispatchSynchronizationDesc",
+            I18nKey::SettingsNotificationsEmailNotifications => "settings.notifications.emailNotifications",
+            I18nKey::SettingsNotificationsInAppNotifications => "settings.notifications.inAppNotifications",
+            I18nKey::SettingsNotificationsInboundRfqSignal => "settings.notifications.inboundRfqSignal",
+            I18nKey::SettingsNotificationsInboundRfqSignalDesc => "settings.notifications.inboundRfqSignalDesc",
+            I18nKey::SettingsNotificationsInspectionThreshold => "settings.notifications.inspectionThreshold",
+            I18nKey::SettingsNotificationsInspectionThresholdDesc => "settings.notifications.inspectionThresholdDesc",
             I18nKey::SettingsNotificationsMarketing => "settings.notifications.marketing",
             I18nKey::SettingsNotificationsMarketingDesc => "settings.notifications.marketingDesc",
             I18nKey::SettingsNotificationsMentions => "settings.notifications.mentions",
             I18nKey::SettingsNotificationsMentionsDesc => "settings.notifications.mentionsDesc",
-            I18nKey::SettingsNotificationsPipelineCommerce => {
-                "settings.notifications.pipelineCommerce"
-            }
-            I18nKey::SettingsNotificationsProductionFloorTelemetry => {
-                "settings.notifications.productionFloorTelemetry"
-            }
-            I18nKey::SettingsNotificationsPushNotifications => {
-                "settings.notifications.pushNotifications"
-            }
-            I18nKey::SettingsNotificationsQualityAssuranceAlerts => {
-                "settings.notifications.qualityAssuranceAlerts"
-            }
-            I18nKey::SettingsNotificationsResolutionProtocol => {
-                "settings.notifications.resolutionProtocol"
-            }
-            I18nKey::SettingsNotificationsResolutionProtocolDesc => {
-                "settings.notifications.resolutionProtocolDesc"
-            }
+            I18nKey::SettingsNotificationsPipelineCommerce => "settings.notifications.pipelineCommerce",
+            I18nKey::SettingsNotificationsProductionFloorTelemetry => "settings.notifications.productionFloorTelemetry",
+            I18nKey::SettingsNotificationsPushNotifications => "settings.notifications.pushNotifications",
+            I18nKey::SettingsNotificationsQualityAssuranceAlerts => "settings.notifications.qualityAssuranceAlerts",
+            I18nKey::SettingsNotificationsResolutionProtocol => "settings.notifications.resolutionProtocol",
+            I18nKey::SettingsNotificationsResolutionProtocolDesc => "settings.notifications.resolutionProtocolDesc",
             I18nKey::SettingsNotificationsSaveRouting => "settings.notifications.saveRouting",
-            I18nKey::SettingsNotificationsStrategicSummaries => {
-                "settings.notifications.strategicSummaries"
-            }
+            I18nKey::SettingsNotificationsStrategicSummaries => "settings.notifications.strategicSummaries",
             I18nKey::SettingsNotificationsSubtitle => "settings.notifications.subtitle",
             I18nKey::SettingsNotificationsTitle => "settings.notifications.title",
             I18nKey::SettingsNotificationsUpdates => "settings.notifications.updates",
             I18nKey::SettingsNotificationsUpdatesDesc => "settings.notifications.updatesDesc",
-            I18nKey::SettingsNotificationsWeeklyPerformanceIntelligence => {
-                "settings.notifications.weeklyPerformanceIntelligence"
-            }
-            I18nKey::SettingsNotificationsWeeklyPerformanceIntelligenceDesc => {
-                "settings.notifications.weeklyPerformanceIntelligenceDesc"
-            }
-            I18nKey::SettingsNotificationsWorkOrderEvolution => {
-                "settings.notifications.workOrderEvolution"
-            }
-            I18nKey::SettingsNotificationsWorkOrderEvolutionDesc => {
-                "settings.notifications.workOrderEvolutionDesc"
-            }
+            I18nKey::SettingsNotificationsWeeklyPerformanceIntelligence => "settings.notifications.weeklyPerformanceIntelligence",
+            I18nKey::SettingsNotificationsWeeklyPerformanceIntelligenceDesc => "settings.notifications.weeklyPerformanceIntelligenceDesc",
+            I18nKey::SettingsNotificationsWorkOrderEvolution => "settings.notifications.workOrderEvolution",
+            I18nKey::SettingsNotificationsWorkOrderEvolutionDesc => "settings.notifications.workOrderEvolutionDesc",
             I18nKey::SettingsOrganization => "settings.organization",
             I18nKey::SettingsPermissions => "settings.permissions",
             I18nKey::SettingsPreferences => "settings.preferences",
@@ -16858,28 +14866,16 @@ impl I18nKey {
             I18nKey::SettingsProfileChangeAvatar => "settings.profile.changeAvatar",
             I18nKey::SettingsProfileCommunicationNodes => "settings.profile.communicationNodes",
             I18nKey::SettingsProfileDepartment => "settings.profile.department",
-            I18nKey::SettingsProfileDepartmentsEngineering => {
-                "settings.profile.departments.engineering"
-            }
+            I18nKey::SettingsProfileDepartmentsEngineering => "settings.profile.departments.engineering",
             I18nKey::SettingsProfileDepartmentsFinance => "settings.profile.departments.finance",
-            I18nKey::SettingsProfileDepartmentsHumanResources => {
-                "settings.profile.departments.humanResources"
-            }
+            I18nKey::SettingsProfileDepartmentsHumanResources => "settings.profile.departments.humanResources",
             I18nKey::SettingsProfileDepartmentsIt => "settings.profile.departments.it",
-            I18nKey::SettingsProfileDepartmentsManagement => {
-                "settings.profile.departments.management"
-            }
-            I18nKey::SettingsProfileDepartmentsOperations => {
-                "settings.profile.departments.operations"
-            }
-            I18nKey::SettingsProfileDepartmentsProduction => {
-                "settings.profile.departments.production"
-            }
+            I18nKey::SettingsProfileDepartmentsManagement => "settings.profile.departments.management",
+            I18nKey::SettingsProfileDepartmentsOperations => "settings.profile.departments.operations",
+            I18nKey::SettingsProfileDepartmentsProduction => "settings.profile.departments.production",
             I18nKey::SettingsProfileDepartmentsQuality => "settings.profile.departments.quality",
             I18nKey::SettingsProfileDepartmentsSales => "settings.profile.departments.sales",
-            I18nKey::SettingsProfileDepartmentsWarehouse => {
-                "settings.profile.departments.warehouse"
-            }
+            I18nKey::SettingsProfileDepartmentsWarehouse => "settings.profile.departments.warehouse",
             I18nKey::SettingsProfileEmail => "settings.profile.email",
             I18nKey::SettingsProfileEmailAddress => "settings.profile.emailAddress",
             I18nKey::SettingsProfileFirstName => "settings.profile.firstName",
@@ -16890,9 +14886,7 @@ impl I18nKey {
             I18nKey::SettingsProfileOrganizationalRole => "settings.profile.organizationalRole",
             I18nKey::SettingsProfilePersonalInfo => "settings.profile.personalInfo",
             I18nKey::SettingsProfilePersonnelSummary => "settings.profile.personnelSummary",
-            I18nKey::SettingsProfilePersonnelSummaryPlaceholder => {
-                "settings.profile.personnelSummaryPlaceholder"
-            }
+            I18nKey::SettingsProfilePersonnelSummaryPlaceholder => "settings.profile.personnelSummaryPlaceholder",
             I18nKey::SettingsProfilePhone => "settings.profile.phone",
             I18nKey::SettingsProfilePhoneNumber => "settings.profile.phoneNumber",
             I18nKey::SettingsProfileRemoveAvatar => "settings.profile.removeAvatar",
@@ -16902,564 +14896,204 @@ impl I18nKey {
             I18nKey::SettingsProfileSubtitle => "settings.profile.subtitle",
             I18nKey::SettingsProfileSynchronizing => "settings.profile.synchronizing",
             I18nKey::SettingsProfileTimezoneSync => "settings.profile.timezoneSync",
-            I18nKey::SettingsProfileTimezonesAfricaCasablanca => {
-                "settings.profile.timezones.africaCasablanca"
-            }
-            I18nKey::SettingsProfileTimezonesAmericaLosAngeles => {
-                "settings.profile.timezones.americaLosAngeles"
-            }
-            I18nKey::SettingsProfileTimezonesAmericaNewYork => {
-                "settings.profile.timezones.americaNewYork"
-            }
-            I18nKey::SettingsProfileTimezonesEuropeLondon => {
-                "settings.profile.timezones.europeLondon"
-            }
-            I18nKey::SettingsProfileTimezonesEuropeParis => {
-                "settings.profile.timezones.europeParis"
-            }
+            I18nKey::SettingsProfileTimezonesAfricaCasablanca => "settings.profile.timezones.africaCasablanca",
+            I18nKey::SettingsProfileTimezonesAmericaLosAngeles => "settings.profile.timezones.americaLosAngeles",
+            I18nKey::SettingsProfileTimezonesAmericaNewYork => "settings.profile.timezones.americaNewYork",
+            I18nKey::SettingsProfileTimezonesEuropeLondon => "settings.profile.timezones.europeLondon",
+            I18nKey::SettingsProfileTimezonesEuropeParis => "settings.profile.timezones.europeParis",
             I18nKey::SettingsProfileTitle => "settings.profile.title",
-            I18nKey::SettingsProfileToastFailedDescription => {
-                "settings.profile.toast.failed.description"
-            }
+            I18nKey::SettingsProfileToastFailedDescription => "settings.profile.toast.failed.description",
             I18nKey::SettingsProfileToastFailedTitle => "settings.profile.toast.failed.title",
-            I18nKey::SettingsProfileToastUpdatedDescription => {
-                "settings.profile.toast.updated.description"
-            }
+            I18nKey::SettingsProfileToastUpdatedDescription => "settings.profile.toast.updated.description",
             I18nKey::SettingsProfileToastUpdatedTitle => "settings.profile.toast.updated.title",
-            I18nKey::SettingsRoleInsightsAuditActionsBulkUpdate => {
-                "settings.roleInsights.audit.actions.bulkUpdate"
-            }
-            I18nKey::SettingsRoleInsightsAuditActionsGrant => {
-                "settings.roleInsights.audit.actions.grant"
-            }
-            I18nKey::SettingsRoleInsightsAuditActionsRevoke => {
-                "settings.roleInsights.audit.actions.revoke"
-            }
-            I18nKey::SettingsRoleInsightsAuditDescription => {
-                "settings.roleInsights.audit.description"
-            }
-            I18nKey::SettingsRoleInsightsAuditHeadersAction => {
-                "settings.roleInsights.audit.headers.action"
-            }
-            I18nKey::SettingsRoleInsightsAuditHeadersInsight => {
-                "settings.roleInsights.audit.headers.insight"
-            }
-            I18nKey::SettingsRoleInsightsAuditHeadersPerformedBy => {
-                "settings.roleInsights.audit.headers.performedBy"
-            }
-            I18nKey::SettingsRoleInsightsAuditHeadersReason => {
-                "settings.roleInsights.audit.headers.reason"
-            }
-            I18nKey::SettingsRoleInsightsAuditHeadersRole => {
-                "settings.roleInsights.audit.headers.role"
-            }
-            I18nKey::SettingsRoleInsightsAuditHeadersTimestamp => {
-                "settings.roleInsights.audit.headers.timestamp"
-            }
-            I18nKey::SettingsRoleInsightsAuditSampleReasonsDataSensitivity => {
-                "settings.roleInsights.audit.sampleReasons.dataSensitivity"
-            }
-            I18nKey::SettingsRoleInsightsAuditSampleReasonsExpandedMaintenance => {
-                "settings.roleInsights.audit.sampleReasons.expandedMaintenance"
-            }
-            I18nKey::SettingsRoleInsightsAuditSampleReasonsQualityImprovement => {
-                "settings.roleInsights.audit.sampleReasons.qualityImprovement"
-            }
+            I18nKey::SettingsRoleInsightsAuditActionsBulkUpdate => "settings.roleInsights.audit.actions.bulkUpdate",
+            I18nKey::SettingsRoleInsightsAuditActionsGrant => "settings.roleInsights.audit.actions.grant",
+            I18nKey::SettingsRoleInsightsAuditActionsRevoke => "settings.roleInsights.audit.actions.revoke",
+            I18nKey::SettingsRoleInsightsAuditDescription => "settings.roleInsights.audit.description",
+            I18nKey::SettingsRoleInsightsAuditHeadersAction => "settings.roleInsights.audit.headers.action",
+            I18nKey::SettingsRoleInsightsAuditHeadersInsight => "settings.roleInsights.audit.headers.insight",
+            I18nKey::SettingsRoleInsightsAuditHeadersPerformedBy => "settings.roleInsights.audit.headers.performedBy",
+            I18nKey::SettingsRoleInsightsAuditHeadersReason => "settings.roleInsights.audit.headers.reason",
+            I18nKey::SettingsRoleInsightsAuditHeadersRole => "settings.roleInsights.audit.headers.role",
+            I18nKey::SettingsRoleInsightsAuditHeadersTimestamp => "settings.roleInsights.audit.headers.timestamp",
+            I18nKey::SettingsRoleInsightsAuditSampleReasonsDataSensitivity => "settings.roleInsights.audit.sampleReasons.dataSensitivity",
+            I18nKey::SettingsRoleInsightsAuditSampleReasonsExpandedMaintenance => "settings.roleInsights.audit.sampleReasons.expandedMaintenance",
+            I18nKey::SettingsRoleInsightsAuditSampleReasonsQualityImprovement => "settings.roleInsights.audit.sampleReasons.qualityImprovement",
             I18nKey::SettingsRoleInsightsAuditTitle => "settings.roleInsights.audit.title",
-            I18nKey::SettingsRoleInsightsCategoriesFinancialDescription => {
-                "settings.roleInsights.categories.financial.description"
-            }
-            I18nKey::SettingsRoleInsightsCategoriesFinancialName => {
-                "settings.roleInsights.categories.financial.name"
-            }
-            I18nKey::SettingsRoleInsightsCategoriesInventoryDescription => {
-                "settings.roleInsights.categories.inventory.description"
-            }
-            I18nKey::SettingsRoleInsightsCategoriesInventoryName => {
-                "settings.roleInsights.categories.inventory.name"
-            }
-            I18nKey::SettingsRoleInsightsCategoriesMaintenanceDescription => {
-                "settings.roleInsights.categories.maintenance.description"
-            }
-            I18nKey::SettingsRoleInsightsCategoriesMaintenanceName => {
-                "settings.roleInsights.categories.maintenance.name"
-            }
-            I18nKey::SettingsRoleInsightsCategoriesProductionDescription => {
-                "settings.roleInsights.categories.production.description"
-            }
-            I18nKey::SettingsRoleInsightsCategoriesProductionName => {
-                "settings.roleInsights.categories.production.name"
-            }
-            I18nKey::SettingsRoleInsightsCategoriesQualityDescription => {
-                "settings.roleInsights.categories.quality.description"
-            }
-            I18nKey::SettingsRoleInsightsCategoriesQualityName => {
-                "settings.roleInsights.categories.quality.name"
-            }
-            I18nKey::SettingsRoleInsightsCategoriesSalesDescription => {
-                "settings.roleInsights.categories.sales.description"
-            }
-            I18nKey::SettingsRoleInsightsCategoriesSalesName => {
-                "settings.roleInsights.categories.sales.name"
-            }
-            I18nKey::SettingsRoleInsightsCategoriesStrategicDescription => {
-                "settings.roleInsights.categories.strategic.description"
-            }
-            I18nKey::SettingsRoleInsightsCategoriesStrategicName => {
-                "settings.roleInsights.categories.strategic.name"
-            }
-            I18nKey::SettingsRoleInsightsCategoriesWorkforceDescription => {
-                "settings.roleInsights.categories.workforce.description"
-            }
-            I18nKey::SettingsRoleInsightsCategoriesWorkforceName => {
-                "settings.roleInsights.categories.workforce.name"
-            }
+            I18nKey::SettingsRoleInsightsCategoriesFinancialDescription => "settings.roleInsights.categories.financial.description",
+            I18nKey::SettingsRoleInsightsCategoriesFinancialName => "settings.roleInsights.categories.financial.name",
+            I18nKey::SettingsRoleInsightsCategoriesInventoryDescription => "settings.roleInsights.categories.inventory.description",
+            I18nKey::SettingsRoleInsightsCategoriesInventoryName => "settings.roleInsights.categories.inventory.name",
+            I18nKey::SettingsRoleInsightsCategoriesMaintenanceDescription => "settings.roleInsights.categories.maintenance.description",
+            I18nKey::SettingsRoleInsightsCategoriesMaintenanceName => "settings.roleInsights.categories.maintenance.name",
+            I18nKey::SettingsRoleInsightsCategoriesProductionDescription => "settings.roleInsights.categories.production.description",
+            I18nKey::SettingsRoleInsightsCategoriesProductionName => "settings.roleInsights.categories.production.name",
+            I18nKey::SettingsRoleInsightsCategoriesQualityDescription => "settings.roleInsights.categories.quality.description",
+            I18nKey::SettingsRoleInsightsCategoriesQualityName => "settings.roleInsights.categories.quality.name",
+            I18nKey::SettingsRoleInsightsCategoriesSalesDescription => "settings.roleInsights.categories.sales.description",
+            I18nKey::SettingsRoleInsightsCategoriesSalesName => "settings.roleInsights.categories.sales.name",
+            I18nKey::SettingsRoleInsightsCategoriesStrategicDescription => "settings.roleInsights.categories.strategic.description",
+            I18nKey::SettingsRoleInsightsCategoriesStrategicName => "settings.roleInsights.categories.strategic.name",
+            I18nKey::SettingsRoleInsightsCategoriesWorkforceDescription => "settings.roleInsights.categories.workforce.description",
+            I18nKey::SettingsRoleInsightsCategoriesWorkforceName => "settings.roleInsights.categories.workforce.name",
             I18nKey::SettingsRoleInsightsExport => "settings.roleInsights.export",
-            I18nKey::SettingsRoleInsightsExportFilePrefix => {
-                "settings.roleInsights.exportFilePrefix"
-            }
-            I18nKey::SettingsRoleInsightsFiltersAllRoles => {
-                "settings.roleInsights.filters.allRoles"
-            }
-            I18nKey::SettingsRoleInsightsFiltersAllSensitivities => {
-                "settings.roleInsights.filters.allSensitivities"
-            }
-            I18nKey::SettingsRoleInsightsFiltersRolePlaceholder => {
-                "settings.roleInsights.filters.rolePlaceholder"
-            }
-            I18nKey::SettingsRoleInsightsFiltersSearchPlaceholder => {
-                "settings.roleInsights.filters.searchPlaceholder"
-            }
-            I18nKey::SettingsRoleInsightsFiltersSensitivityPlaceholder => {
-                "settings.roleInsights.filters.sensitivityPlaceholder"
-            }
+            I18nKey::SettingsRoleInsightsExportFilePrefix => "settings.roleInsights.exportFilePrefix",
+            I18nKey::SettingsRoleInsightsFiltersAllRoles => "settings.roleInsights.filters.allRoles",
+            I18nKey::SettingsRoleInsightsFiltersAllSensitivities => "settings.roleInsights.filters.allSensitivities",
+            I18nKey::SettingsRoleInsightsFiltersRolePlaceholder => "settings.roleInsights.filters.rolePlaceholder",
+            I18nKey::SettingsRoleInsightsFiltersSearchPlaceholder => "settings.roleInsights.filters.searchPlaceholder",
+            I18nKey::SettingsRoleInsightsFiltersSensitivityPlaceholder => "settings.roleInsights.filters.sensitivityPlaceholder",
             I18nKey::SettingsRoleInsightsInfoBody => "settings.roleInsights.infoBody",
             I18nKey::SettingsRoleInsightsInfoTitle => "settings.roleInsights.infoTitle",
-            I18nKey::SettingsRoleInsightsInsightsAssetLifecycleDescription => {
-                "settings.roleInsights.insights.asset_lifecycle.description"
-            }
-            I18nKey::SettingsRoleInsightsInsightsAssetLifecycleName => {
-                "settings.roleInsights.insights.asset_lifecycle.name"
-            }
-            I18nKey::SettingsRoleInsightsInsightsAttendancePatternsDescription => {
-                "settings.roleInsights.insights.attendance_patterns.description"
-            }
-            I18nKey::SettingsRoleInsightsInsightsAttendancePatternsName => {
-                "settings.roleInsights.insights.attendance_patterns.name"
-            }
-            I18nKey::SettingsRoleInsightsInsightsAuditReadinessDescription => {
-                "settings.roleInsights.insights.audit_readiness.description"
-            }
-            I18nKey::SettingsRoleInsightsInsightsAuditReadinessName => {
-                "settings.roleInsights.insights.audit_readiness.name"
-            }
-            I18nKey::SettingsRoleInsightsInsightsCapacityUtilizationDescription => {
-                "settings.roleInsights.insights.capacity_utilization.description"
-            }
-            I18nKey::SettingsRoleInsightsInsightsCapacityUtilizationName => {
-                "settings.roleInsights.insights.capacity_utilization.name"
-            }
-            I18nKey::SettingsRoleInsightsInsightsCashFlowInsightsDescription => {
-                "settings.roleInsights.insights.cash_flow_insights.description"
-            }
-            I18nKey::SettingsRoleInsightsInsightsCashFlowInsightsName => {
-                "settings.roleInsights.insights.cash_flow_insights.name"
-            }
-            I18nKey::SettingsRoleInsightsInsightsCompensationInsightsDescription => {
-                "settings.roleInsights.insights.compensation_insights.description"
-            }
-            I18nKey::SettingsRoleInsightsInsightsCompensationInsightsName => {
-                "settings.roleInsights.insights.compensation_insights.name"
-            }
-            I18nKey::SettingsRoleInsightsInsightsCompetitiveAnalysisDescription => {
-                "settings.roleInsights.insights.competitive_analysis.description"
-            }
-            I18nKey::SettingsRoleInsightsInsightsCompetitiveAnalysisName => {
-                "settings.roleInsights.insights.competitive_analysis.name"
-            }
-            I18nKey::SettingsRoleInsightsInsightsComplianceStatusDescription => {
-                "settings.roleInsights.insights.compliance_status.description"
-            }
-            I18nKey::SettingsRoleInsightsInsightsComplianceStatusName => {
-                "settings.roleInsights.insights.compliance_status.name"
-            }
-            I18nKey::SettingsRoleInsightsInsightsCostAnalysisDescription => {
-                "settings.roleInsights.insights.cost_analysis.description"
-            }
-            I18nKey::SettingsRoleInsightsInsightsCostAnalysisName => {
-                "settings.roleInsights.insights.cost_analysis.name"
-            }
-            I18nKey::SettingsRoleInsightsInsightsCostOptimizationDescription => {
-                "settings.roleInsights.insights.cost_optimization.description"
-            }
-            I18nKey::SettingsRoleInsightsInsightsCostOptimizationName => {
-                "settings.roleInsights.insights.cost_optimization.name"
-            }
-            I18nKey::SettingsRoleInsightsInsightsCustomerInsightsDescription => {
-                "settings.roleInsights.insights.customer_insights.description"
-            }
-            I18nKey::SettingsRoleInsightsInsightsCustomerInsightsName => {
-                "settings.roleInsights.insights.customer_insights.name"
-            }
-            I18nKey::SettingsRoleInsightsInsightsDefectPredictionsDescription => {
-                "settings.roleInsights.insights.defect_predictions.description"
-            }
-            I18nKey::SettingsRoleInsightsInsightsDefectPredictionsName => {
-                "settings.roleInsights.insights.defect_predictions.name"
-            }
-            I18nKey::SettingsRoleInsightsInsightsDowntimeAnalysisDescription => {
-                "settings.roleInsights.insights.downtime_analysis.description"
-            }
-            I18nKey::SettingsRoleInsightsInsightsDowntimeAnalysisName => {
-                "settings.roleInsights.insights.downtime_analysis.name"
-            }
-            I18nKey::SettingsRoleInsightsInsightsEquipmentHealthDescription => {
-                "settings.roleInsights.insights.equipment_health.description"
-            }
-            I18nKey::SettingsRoleInsightsInsightsEquipmentHealthName => {
-                "settings.roleInsights.insights.equipment_health.name"
-            }
-            I18nKey::SettingsRoleInsightsInsightsInventoryLevelsDescription => {
-                "settings.roleInsights.insights.inventory_levels.description"
-            }
-            I18nKey::SettingsRoleInsightsInsightsInventoryLevelsName => {
-                "settings.roleInsights.insights.inventory_levels.name"
-            }
-            I18nKey::SettingsRoleInsightsInsightsKpiDashboardDescription => {
-                "settings.roleInsights.insights.kpi_dashboard.description"
-            }
-            I18nKey::SettingsRoleInsightsInsightsKpiDashboardName => {
-                "settings.roleInsights.insights.kpi_dashboard.name"
-            }
-            I18nKey::SettingsRoleInsightsInsightsMaintenanceCostsDescription => {
-                "settings.roleInsights.insights.maintenance_costs.description"
-            }
-            I18nKey::SettingsRoleInsightsInsightsMaintenanceCostsName => {
-                "settings.roleInsights.insights.maintenance_costs.name"
-            }
-            I18nKey::SettingsRoleInsightsInsightsMarginTrendsDescription => {
-                "settings.roleInsights.insights.margin_trends.description"
-            }
-            I18nKey::SettingsRoleInsightsInsightsMarginTrendsName => {
-                "settings.roleInsights.insights.margin_trends.name"
-            }
-            I18nKey::SettingsRoleInsightsInsightsMarketTrendsDescription => {
-                "settings.roleInsights.insights.market_trends.description"
-            }
-            I18nKey::SettingsRoleInsightsInsightsMarketTrendsName => {
-                "settings.roleInsights.insights.market_trends.name"
-            }
-            I18nKey::SettingsRoleInsightsInsightsPredictiveMaintenanceDescription => {
-                "settings.roleInsights.insights.predictive_maintenance.description"
-            }
-            I18nKey::SettingsRoleInsightsInsightsPredictiveMaintenanceName => {
-                "settings.roleInsights.insights.predictive_maintenance.name"
-            }
-            I18nKey::SettingsRoleInsightsInsightsProductionBottlenecksDescription => {
-                "settings.roleInsights.insights.production_bottlenecks.description"
-            }
-            I18nKey::SettingsRoleInsightsInsightsProductionBottlenecksName => {
-                "settings.roleInsights.insights.production_bottlenecks.name"
-            }
-            I18nKey::SettingsRoleInsightsInsightsProductionEfficiencyDescription => {
-                "settings.roleInsights.insights.production_efficiency.description"
-            }
-            I18nKey::SettingsRoleInsightsInsightsProductionEfficiencyName => {
-                "settings.roleInsights.insights.production_efficiency.name"
-            }
-            I18nKey::SettingsRoleInsightsInsightsProductionForecastsDescription => {
-                "settings.roleInsights.insights.production_forecasts.description"
-            }
-            I18nKey::SettingsRoleInsightsInsightsProductionForecastsName => {
-                "settings.roleInsights.insights.production_forecasts.name"
-            }
-            I18nKey::SettingsRoleInsightsInsightsProfitabilityDescription => {
-                "settings.roleInsights.insights.profitability.description"
-            }
-            I18nKey::SettingsRoleInsightsInsightsProfitabilityName => {
-                "settings.roleInsights.insights.profitability.name"
-            }
-            I18nKey::SettingsRoleInsightsInsightsQualityMetricsDescription => {
-                "settings.roleInsights.insights.quality_metrics.description"
-            }
-            I18nKey::SettingsRoleInsightsInsightsQualityMetricsName => {
-                "settings.roleInsights.insights.quality_metrics.name"
-            }
-            I18nKey::SettingsRoleInsightsInsightsQuoteOptimizationDescription => {
-                "settings.roleInsights.insights.quote_optimization.description"
-            }
-            I18nKey::SettingsRoleInsightsInsightsQuoteOptimizationName => {
-                "settings.roleInsights.insights.quote_optimization.name"
-            }
-            I18nKey::SettingsRoleInsightsInsightsReliabilityMetricsDescription => {
-                "settings.roleInsights.insights.reliability_metrics.description"
-            }
-            I18nKey::SettingsRoleInsightsInsightsReliabilityMetricsName => {
-                "settings.roleInsights.insights.reliability_metrics.name"
-            }
-            I18nKey::SettingsRoleInsightsInsightsReorderRecommendationsDescription => {
-                "settings.roleInsights.insights.reorder_recommendations.description"
-            }
-            I18nKey::SettingsRoleInsightsInsightsReorderRecommendationsName => {
-                "settings.roleInsights.insights.reorder_recommendations.name"
-            }
-            I18nKey::SettingsRoleInsightsInsightsRetentionRisksDescription => {
-                "settings.roleInsights.insights.retention_risks.description"
-            }
-            I18nKey::SettingsRoleInsightsInsightsRetentionRisksName => {
-                "settings.roleInsights.insights.retention_risks.name"
-            }
-            I18nKey::SettingsRoleInsightsInsightsRevenueForecastsDescription => {
-                "settings.roleInsights.insights.revenue_forecasts.description"
-            }
-            I18nKey::SettingsRoleInsightsInsightsRevenueForecastsName => {
-                "settings.roleInsights.insights.revenue_forecasts.name"
-            }
-            I18nKey::SettingsRoleInsightsInsightsRiskAssessmentDescription => {
-                "settings.roleInsights.insights.risk_assessment.description"
-            }
-            I18nKey::SettingsRoleInsightsInsightsRiskAssessmentName => {
-                "settings.roleInsights.insights.risk_assessment.name"
-            }
-            I18nKey::SettingsRoleInsightsInsightsSalesPipelineDescription => {
-                "settings.roleInsights.insights.sales_pipeline.description"
-            }
-            I18nKey::SettingsRoleInsightsInsightsSalesPipelineName => {
-                "settings.roleInsights.insights.sales_pipeline.name"
-            }
-            I18nKey::SettingsRoleInsightsInsightsScenarioPlanningDescription => {
-                "settings.roleInsights.insights.scenario_planning.description"
-            }
-            I18nKey::SettingsRoleInsightsInsightsScenarioPlanningName => {
-                "settings.roleInsights.insights.scenario_planning.name"
-            }
-            I18nKey::SettingsRoleInsightsInsightsSkillGapsDescription => {
-                "settings.roleInsights.insights.skill_gaps.description"
-            }
-            I18nKey::SettingsRoleInsightsInsightsSkillGapsName => {
-                "settings.roleInsights.insights.skill_gaps.name"
-            }
-            I18nKey::SettingsRoleInsightsInsightsSpcAnalysisDescription => {
-                "settings.roleInsights.insights.spc_analysis.description"
-            }
-            I18nKey::SettingsRoleInsightsInsightsSpcAnalysisName => {
-                "settings.roleInsights.insights.spc_analysis.name"
-            }
-            I18nKey::SettingsRoleInsightsInsightsStrategicRecommendationsDescription => {
-                "settings.roleInsights.insights.strategic_recommendations.description"
-            }
-            I18nKey::SettingsRoleInsightsInsightsStrategicRecommendationsName => {
-                "settings.roleInsights.insights.strategic_recommendations.name"
-            }
-            I18nKey::SettingsRoleInsightsInsightsSupplierPerformanceDescription => {
-                "settings.roleInsights.insights.supplier_performance.description"
-            }
-            I18nKey::SettingsRoleInsightsInsightsSupplierPerformanceName => {
-                "settings.roleInsights.insights.supplier_performance.name"
-            }
-            I18nKey::SettingsRoleInsightsInsightsSupplyChainRisksDescription => {
-                "settings.roleInsights.insights.supply_chain_risks.description"
-            }
-            I18nKey::SettingsRoleInsightsInsightsSupplyChainRisksName => {
-                "settings.roleInsights.insights.supply_chain_risks.name"
-            }
-            I18nKey::SettingsRoleInsightsInsightsWinLossAnalysisDescription => {
-                "settings.roleInsights.insights.win_loss_analysis.description"
-            }
-            I18nKey::SettingsRoleInsightsInsightsWinLossAnalysisName => {
-                "settings.roleInsights.insights.win_loss_analysis.name"
-            }
-            I18nKey::SettingsRoleInsightsInsightsWorkforceProductivityDescription => {
-                "settings.roleInsights.insights.workforce_productivity.description"
-            }
-            I18nKey::SettingsRoleInsightsInsightsWorkforceProductivityName => {
-                "settings.roleInsights.insights.workforce_productivity.name"
-            }
-            I18nKey::SettingsRoleInsightsRoleCardEditMappings => {
-                "settings.roleInsights.roleCard.editMappings"
-            }
-            I18nKey::SettingsRoleInsightsRoleCardFullAccess => {
-                "settings.roleInsights.roleCard.fullAccess"
-            }
-            I18nKey::SettingsRoleInsightsRoleCardInsightsAccess => {
-                "settings.roleInsights.roleCard.insightsAccess"
-            }
-            I18nKey::SettingsRoleInsightsRoleCardLevelBadge => {
-                "settings.roleInsights.roleCard.levelBadge"
-            }
-            I18nKey::SettingsRoleInsightsRolesAccountantDescription => {
-                "settings.roleInsights.roles.accountant.description"
-            }
-            I18nKey::SettingsRoleInsightsRolesAccountantName => {
-                "settings.roleInsights.roles.accountant.name"
-            }
-            I18nKey::SettingsRoleInsightsRolesAdminDescription => {
-                "settings.roleInsights.roles.admin.description"
-            }
+            I18nKey::SettingsRoleInsightsInsightsAssetLifecycleDescription => "settings.roleInsights.insights.asset_lifecycle.description",
+            I18nKey::SettingsRoleInsightsInsightsAssetLifecycleName => "settings.roleInsights.insights.asset_lifecycle.name",
+            I18nKey::SettingsRoleInsightsInsightsAttendancePatternsDescription => "settings.roleInsights.insights.attendance_patterns.description",
+            I18nKey::SettingsRoleInsightsInsightsAttendancePatternsName => "settings.roleInsights.insights.attendance_patterns.name",
+            I18nKey::SettingsRoleInsightsInsightsAuditReadinessDescription => "settings.roleInsights.insights.audit_readiness.description",
+            I18nKey::SettingsRoleInsightsInsightsAuditReadinessName => "settings.roleInsights.insights.audit_readiness.name",
+            I18nKey::SettingsRoleInsightsInsightsCapacityUtilizationDescription => "settings.roleInsights.insights.capacity_utilization.description",
+            I18nKey::SettingsRoleInsightsInsightsCapacityUtilizationName => "settings.roleInsights.insights.capacity_utilization.name",
+            I18nKey::SettingsRoleInsightsInsightsCashFlowInsightsDescription => "settings.roleInsights.insights.cash_flow_insights.description",
+            I18nKey::SettingsRoleInsightsInsightsCashFlowInsightsName => "settings.roleInsights.insights.cash_flow_insights.name",
+            I18nKey::SettingsRoleInsightsInsightsCompensationInsightsDescription => "settings.roleInsights.insights.compensation_insights.description",
+            I18nKey::SettingsRoleInsightsInsightsCompensationInsightsName => "settings.roleInsights.insights.compensation_insights.name",
+            I18nKey::SettingsRoleInsightsInsightsCompetitiveAnalysisDescription => "settings.roleInsights.insights.competitive_analysis.description",
+            I18nKey::SettingsRoleInsightsInsightsCompetitiveAnalysisName => "settings.roleInsights.insights.competitive_analysis.name",
+            I18nKey::SettingsRoleInsightsInsightsComplianceStatusDescription => "settings.roleInsights.insights.compliance_status.description",
+            I18nKey::SettingsRoleInsightsInsightsComplianceStatusName => "settings.roleInsights.insights.compliance_status.name",
+            I18nKey::SettingsRoleInsightsInsightsCostAnalysisDescription => "settings.roleInsights.insights.cost_analysis.description",
+            I18nKey::SettingsRoleInsightsInsightsCostAnalysisName => "settings.roleInsights.insights.cost_analysis.name",
+            I18nKey::SettingsRoleInsightsInsightsCostOptimizationDescription => "settings.roleInsights.insights.cost_optimization.description",
+            I18nKey::SettingsRoleInsightsInsightsCostOptimizationName => "settings.roleInsights.insights.cost_optimization.name",
+            I18nKey::SettingsRoleInsightsInsightsCustomerInsightsDescription => "settings.roleInsights.insights.customer_insights.description",
+            I18nKey::SettingsRoleInsightsInsightsCustomerInsightsName => "settings.roleInsights.insights.customer_insights.name",
+            I18nKey::SettingsRoleInsightsInsightsDefectPredictionsDescription => "settings.roleInsights.insights.defect_predictions.description",
+            I18nKey::SettingsRoleInsightsInsightsDefectPredictionsName => "settings.roleInsights.insights.defect_predictions.name",
+            I18nKey::SettingsRoleInsightsInsightsDowntimeAnalysisDescription => "settings.roleInsights.insights.downtime_analysis.description",
+            I18nKey::SettingsRoleInsightsInsightsDowntimeAnalysisName => "settings.roleInsights.insights.downtime_analysis.name",
+            I18nKey::SettingsRoleInsightsInsightsEquipmentHealthDescription => "settings.roleInsights.insights.equipment_health.description",
+            I18nKey::SettingsRoleInsightsInsightsEquipmentHealthName => "settings.roleInsights.insights.equipment_health.name",
+            I18nKey::SettingsRoleInsightsInsightsInventoryLevelsDescription => "settings.roleInsights.insights.inventory_levels.description",
+            I18nKey::SettingsRoleInsightsInsightsInventoryLevelsName => "settings.roleInsights.insights.inventory_levels.name",
+            I18nKey::SettingsRoleInsightsInsightsKpiDashboardDescription => "settings.roleInsights.insights.kpi_dashboard.description",
+            I18nKey::SettingsRoleInsightsInsightsKpiDashboardName => "settings.roleInsights.insights.kpi_dashboard.name",
+            I18nKey::SettingsRoleInsightsInsightsMaintenanceCostsDescription => "settings.roleInsights.insights.maintenance_costs.description",
+            I18nKey::SettingsRoleInsightsInsightsMaintenanceCostsName => "settings.roleInsights.insights.maintenance_costs.name",
+            I18nKey::SettingsRoleInsightsInsightsMarginTrendsDescription => "settings.roleInsights.insights.margin_trends.description",
+            I18nKey::SettingsRoleInsightsInsightsMarginTrendsName => "settings.roleInsights.insights.margin_trends.name",
+            I18nKey::SettingsRoleInsightsInsightsMarketTrendsDescription => "settings.roleInsights.insights.market_trends.description",
+            I18nKey::SettingsRoleInsightsInsightsMarketTrendsName => "settings.roleInsights.insights.market_trends.name",
+            I18nKey::SettingsRoleInsightsInsightsPredictiveMaintenanceDescription => "settings.roleInsights.insights.predictive_maintenance.description",
+            I18nKey::SettingsRoleInsightsInsightsPredictiveMaintenanceName => "settings.roleInsights.insights.predictive_maintenance.name",
+            I18nKey::SettingsRoleInsightsInsightsProductionBottlenecksDescription => "settings.roleInsights.insights.production_bottlenecks.description",
+            I18nKey::SettingsRoleInsightsInsightsProductionBottlenecksName => "settings.roleInsights.insights.production_bottlenecks.name",
+            I18nKey::SettingsRoleInsightsInsightsProductionEfficiencyDescription => "settings.roleInsights.insights.production_efficiency.description",
+            I18nKey::SettingsRoleInsightsInsightsProductionEfficiencyName => "settings.roleInsights.insights.production_efficiency.name",
+            I18nKey::SettingsRoleInsightsInsightsProductionForecastsDescription => "settings.roleInsights.insights.production_forecasts.description",
+            I18nKey::SettingsRoleInsightsInsightsProductionForecastsName => "settings.roleInsights.insights.production_forecasts.name",
+            I18nKey::SettingsRoleInsightsInsightsProfitabilityDescription => "settings.roleInsights.insights.profitability.description",
+            I18nKey::SettingsRoleInsightsInsightsProfitabilityName => "settings.roleInsights.insights.profitability.name",
+            I18nKey::SettingsRoleInsightsInsightsQualityMetricsDescription => "settings.roleInsights.insights.quality_metrics.description",
+            I18nKey::SettingsRoleInsightsInsightsQualityMetricsName => "settings.roleInsights.insights.quality_metrics.name",
+            I18nKey::SettingsRoleInsightsInsightsQuoteOptimizationDescription => "settings.roleInsights.insights.quote_optimization.description",
+            I18nKey::SettingsRoleInsightsInsightsQuoteOptimizationName => "settings.roleInsights.insights.quote_optimization.name",
+            I18nKey::SettingsRoleInsightsInsightsReliabilityMetricsDescription => "settings.roleInsights.insights.reliability_metrics.description",
+            I18nKey::SettingsRoleInsightsInsightsReliabilityMetricsName => "settings.roleInsights.insights.reliability_metrics.name",
+            I18nKey::SettingsRoleInsightsInsightsReorderRecommendationsDescription => "settings.roleInsights.insights.reorder_recommendations.description",
+            I18nKey::SettingsRoleInsightsInsightsReorderRecommendationsName => "settings.roleInsights.insights.reorder_recommendations.name",
+            I18nKey::SettingsRoleInsightsInsightsRetentionRisksDescription => "settings.roleInsights.insights.retention_risks.description",
+            I18nKey::SettingsRoleInsightsInsightsRetentionRisksName => "settings.roleInsights.insights.retention_risks.name",
+            I18nKey::SettingsRoleInsightsInsightsRevenueForecastsDescription => "settings.roleInsights.insights.revenue_forecasts.description",
+            I18nKey::SettingsRoleInsightsInsightsRevenueForecastsName => "settings.roleInsights.insights.revenue_forecasts.name",
+            I18nKey::SettingsRoleInsightsInsightsRiskAssessmentDescription => "settings.roleInsights.insights.risk_assessment.description",
+            I18nKey::SettingsRoleInsightsInsightsRiskAssessmentName => "settings.roleInsights.insights.risk_assessment.name",
+            I18nKey::SettingsRoleInsightsInsightsSalesPipelineDescription => "settings.roleInsights.insights.sales_pipeline.description",
+            I18nKey::SettingsRoleInsightsInsightsSalesPipelineName => "settings.roleInsights.insights.sales_pipeline.name",
+            I18nKey::SettingsRoleInsightsInsightsScenarioPlanningDescription => "settings.roleInsights.insights.scenario_planning.description",
+            I18nKey::SettingsRoleInsightsInsightsScenarioPlanningName => "settings.roleInsights.insights.scenario_planning.name",
+            I18nKey::SettingsRoleInsightsInsightsSkillGapsDescription => "settings.roleInsights.insights.skill_gaps.description",
+            I18nKey::SettingsRoleInsightsInsightsSkillGapsName => "settings.roleInsights.insights.skill_gaps.name",
+            I18nKey::SettingsRoleInsightsInsightsSpcAnalysisDescription => "settings.roleInsights.insights.spc_analysis.description",
+            I18nKey::SettingsRoleInsightsInsightsSpcAnalysisName => "settings.roleInsights.insights.spc_analysis.name",
+            I18nKey::SettingsRoleInsightsInsightsStrategicRecommendationsDescription => "settings.roleInsights.insights.strategic_recommendations.description",
+            I18nKey::SettingsRoleInsightsInsightsStrategicRecommendationsName => "settings.roleInsights.insights.strategic_recommendations.name",
+            I18nKey::SettingsRoleInsightsInsightsSupplierPerformanceDescription => "settings.roleInsights.insights.supplier_performance.description",
+            I18nKey::SettingsRoleInsightsInsightsSupplierPerformanceName => "settings.roleInsights.insights.supplier_performance.name",
+            I18nKey::SettingsRoleInsightsInsightsSupplyChainRisksDescription => "settings.roleInsights.insights.supply_chain_risks.description",
+            I18nKey::SettingsRoleInsightsInsightsSupplyChainRisksName => "settings.roleInsights.insights.supply_chain_risks.name",
+            I18nKey::SettingsRoleInsightsInsightsWinLossAnalysisDescription => "settings.roleInsights.insights.win_loss_analysis.description",
+            I18nKey::SettingsRoleInsightsInsightsWinLossAnalysisName => "settings.roleInsights.insights.win_loss_analysis.name",
+            I18nKey::SettingsRoleInsightsInsightsWorkforceProductivityDescription => "settings.roleInsights.insights.workforce_productivity.description",
+            I18nKey::SettingsRoleInsightsInsightsWorkforceProductivityName => "settings.roleInsights.insights.workforce_productivity.name",
+            I18nKey::SettingsRoleInsightsRoleCardEditMappings => "settings.roleInsights.roleCard.editMappings",
+            I18nKey::SettingsRoleInsightsRoleCardFullAccess => "settings.roleInsights.roleCard.fullAccess",
+            I18nKey::SettingsRoleInsightsRoleCardInsightsAccess => "settings.roleInsights.roleCard.insightsAccess",
+            I18nKey::SettingsRoleInsightsRoleCardLevelBadge => "settings.roleInsights.roleCard.levelBadge",
+            I18nKey::SettingsRoleInsightsRolesAccountantDescription => "settings.roleInsights.roles.accountant.description",
+            I18nKey::SettingsRoleInsightsRolesAccountantName => "settings.roleInsights.roles.accountant.name",
+            I18nKey::SettingsRoleInsightsRolesAdminDescription => "settings.roleInsights.roles.admin.description",
             I18nKey::SettingsRoleInsightsRolesAdminName => "settings.roleInsights.roles.admin.name",
-            I18nKey::SettingsRoleInsightsRolesAuditorDescription => {
-                "settings.roleInsights.roles.auditor.description"
-            }
-            I18nKey::SettingsRoleInsightsRolesAuditorName => {
-                "settings.roleInsights.roles.auditor.name"
-            }
-            I18nKey::SettingsRoleInsightsRolesCeoDescription => {
-                "settings.roleInsights.roles.ceo.description"
-            }
+            I18nKey::SettingsRoleInsightsRolesAuditorDescription => "settings.roleInsights.roles.auditor.description",
+            I18nKey::SettingsRoleInsightsRolesAuditorName => "settings.roleInsights.roles.auditor.name",
+            I18nKey::SettingsRoleInsightsRolesCeoDescription => "settings.roleInsights.roles.ceo.description",
             I18nKey::SettingsRoleInsightsRolesCeoName => "settings.roleInsights.roles.ceo.name",
-            I18nKey::SettingsRoleInsightsRolesEngineeringDescription => {
-                "settings.roleInsights.roles.engineering.description"
-            }
-            I18nKey::SettingsRoleInsightsRolesEngineeringName => {
-                "settings.roleInsights.roles.engineering.name"
-            }
-            I18nKey::SettingsRoleInsightsRolesEstimatorDescription => {
-                "settings.roleInsights.roles.estimator.description"
-            }
-            I18nKey::SettingsRoleInsightsRolesEstimatorName => {
-                "settings.roleInsights.roles.estimator.name"
-            }
-            I18nKey::SettingsRoleInsightsRolesExecDescription => {
-                "settings.roleInsights.roles.exec.description"
-            }
+            I18nKey::SettingsRoleInsightsRolesEngineeringDescription => "settings.roleInsights.roles.engineering.description",
+            I18nKey::SettingsRoleInsightsRolesEngineeringName => "settings.roleInsights.roles.engineering.name",
+            I18nKey::SettingsRoleInsightsRolesEstimatorDescription => "settings.roleInsights.roles.estimator.description",
+            I18nKey::SettingsRoleInsightsRolesEstimatorName => "settings.roleInsights.roles.estimator.name",
+            I18nKey::SettingsRoleInsightsRolesExecDescription => "settings.roleInsights.roles.exec.description",
             I18nKey::SettingsRoleInsightsRolesExecName => "settings.roleInsights.roles.exec.name",
-            I18nKey::SettingsRoleInsightsRolesFinanceDescription => {
-                "settings.roleInsights.roles.finance.description"
-            }
-            I18nKey::SettingsRoleInsightsRolesFinanceName => {
-                "settings.roleInsights.roles.finance.name"
-            }
-            I18nKey::SettingsRoleInsightsRolesGmDescription => {
-                "settings.roleInsights.roles.gm.description"
-            }
+            I18nKey::SettingsRoleInsightsRolesFinanceDescription => "settings.roleInsights.roles.finance.description",
+            I18nKey::SettingsRoleInsightsRolesFinanceName => "settings.roleInsights.roles.finance.name",
+            I18nKey::SettingsRoleInsightsRolesGmDescription => "settings.roleInsights.roles.gm.description",
             I18nKey::SettingsRoleInsightsRolesGmName => "settings.roleInsights.roles.gm.name",
-            I18nKey::SettingsRoleInsightsRolesHrDescription => {
-                "settings.roleInsights.roles.hr.description"
-            }
+            I18nKey::SettingsRoleInsightsRolesHrDescription => "settings.roleInsights.roles.hr.description",
             I18nKey::SettingsRoleInsightsRolesHrName => "settings.roleInsights.roles.hr.name",
-            I18nKey::SettingsRoleInsightsRolesItDescription => {
-                "settings.roleInsights.roles.it.description"
-            }
+            I18nKey::SettingsRoleInsightsRolesItDescription => "settings.roleInsights.roles.it.description",
             I18nKey::SettingsRoleInsightsRolesItName => "settings.roleInsights.roles.it.name",
-            I18nKey::SettingsRoleInsightsRolesLogisticsDescription => {
-                "settings.roleInsights.roles.logistics.description"
-            }
-            I18nKey::SettingsRoleInsightsRolesLogisticsName => {
-                "settings.roleInsights.roles.logistics.name"
-            }
-            I18nKey::SettingsRoleInsightsRolesMaintenanceDescription => {
-                "settings.roleInsights.roles.maintenance.description"
-            }
-            I18nKey::SettingsRoleInsightsRolesMaintenanceName => {
-                "settings.roleInsights.roles.maintenance.name"
-            }
-            I18nKey::SettingsRoleInsightsRolesOperatorDescription => {
-                "settings.roleInsights.roles.operator.description"
-            }
-            I18nKey::SettingsRoleInsightsRolesOperatorName => {
-                "settings.roleInsights.roles.operator.name"
-            }
-            I18nKey::SettingsRoleInsightsRolesOpsDescription => {
-                "settings.roleInsights.roles.ops.description"
-            }
+            I18nKey::SettingsRoleInsightsRolesLogisticsDescription => "settings.roleInsights.roles.logistics.description",
+            I18nKey::SettingsRoleInsightsRolesLogisticsName => "settings.roleInsights.roles.logistics.name",
+            I18nKey::SettingsRoleInsightsRolesMaintenanceDescription => "settings.roleInsights.roles.maintenance.description",
+            I18nKey::SettingsRoleInsightsRolesMaintenanceName => "settings.roleInsights.roles.maintenance.name",
+            I18nKey::SettingsRoleInsightsRolesOperatorDescription => "settings.roleInsights.roles.operator.description",
+            I18nKey::SettingsRoleInsightsRolesOperatorName => "settings.roleInsights.roles.operator.name",
+            I18nKey::SettingsRoleInsightsRolesOpsDescription => "settings.roleInsights.roles.ops.description",
             I18nKey::SettingsRoleInsightsRolesOpsName => "settings.roleInsights.roles.ops.name",
-            I18nKey::SettingsRoleInsightsRolesPurchasingDescription => {
-                "settings.roleInsights.roles.purchasing.description"
-            }
-            I18nKey::SettingsRoleInsightsRolesPurchasingName => {
-                "settings.roleInsights.roles.purchasing.name"
-            }
-            I18nKey::SettingsRoleInsightsRolesQualityDescription => {
-                "settings.roleInsights.roles.quality.description"
-            }
-            I18nKey::SettingsRoleInsightsRolesQualityName => {
-                "settings.roleInsights.roles.quality.name"
-            }
-            I18nKey::SettingsRoleInsightsRolesSalesDescription => {
-                "settings.roleInsights.roles.sales.description"
-            }
+            I18nKey::SettingsRoleInsightsRolesPurchasingDescription => "settings.roleInsights.roles.purchasing.description",
+            I18nKey::SettingsRoleInsightsRolesPurchasingName => "settings.roleInsights.roles.purchasing.name",
+            I18nKey::SettingsRoleInsightsRolesQualityDescription => "settings.roleInsights.roles.quality.description",
+            I18nKey::SettingsRoleInsightsRolesQualityName => "settings.roleInsights.roles.quality.name",
+            I18nKey::SettingsRoleInsightsRolesSalesDescription => "settings.roleInsights.roles.sales.description",
             I18nKey::SettingsRoleInsightsRolesSalesName => "settings.roleInsights.roles.sales.name",
-            I18nKey::SettingsRoleInsightsRolesSalesEngineerDescription => {
-                "settings.roleInsights.roles.sales_engineer.description"
-            }
-            I18nKey::SettingsRoleInsightsRolesSalesEngineerName => {
-                "settings.roleInsights.roles.sales_engineer.name"
-            }
-            I18nKey::SettingsRoleInsightsRolesSupervisorDescription => {
-                "settings.roleInsights.roles.supervisor.description"
-            }
-            I18nKey::SettingsRoleInsightsRolesSupervisorName => {
-                "settings.roleInsights.roles.supervisor.name"
-            }
-            I18nKey::SettingsRoleInsightsRolesSupplyChainDescription => {
-                "settings.roleInsights.roles.supply_chain.description"
-            }
-            I18nKey::SettingsRoleInsightsRolesSupplyChainName => {
-                "settings.roleInsights.roles.supply_chain.name"
-            }
-            I18nKey::SettingsRoleInsightsRolesTeamLeadDescription => {
-                "settings.roleInsights.roles.team_lead.description"
-            }
-            I18nKey::SettingsRoleInsightsRolesTeamLeadName => {
-                "settings.roleInsights.roles.team_lead.name"
-            }
-            I18nKey::SettingsRoleInsightsRolesViewerDescription => {
-                "settings.roleInsights.roles.viewer.description"
-            }
-            I18nKey::SettingsRoleInsightsRolesViewerName => {
-                "settings.roleInsights.roles.viewer.name"
-            }
-            I18nKey::SettingsRoleInsightsRolesWarehouseDescription => {
-                "settings.roleInsights.roles.warehouse.description"
-            }
-            I18nKey::SettingsRoleInsightsRolesWarehouseName => {
-                "settings.roleInsights.roles.warehouse.name"
-            }
+            I18nKey::SettingsRoleInsightsRolesSalesEngineerDescription => "settings.roleInsights.roles.sales_engineer.description",
+            I18nKey::SettingsRoleInsightsRolesSalesEngineerName => "settings.roleInsights.roles.sales_engineer.name",
+            I18nKey::SettingsRoleInsightsRolesSupervisorDescription => "settings.roleInsights.roles.supervisor.description",
+            I18nKey::SettingsRoleInsightsRolesSupervisorName => "settings.roleInsights.roles.supervisor.name",
+            I18nKey::SettingsRoleInsightsRolesSupplyChainDescription => "settings.roleInsights.roles.supply_chain.description",
+            I18nKey::SettingsRoleInsightsRolesSupplyChainName => "settings.roleInsights.roles.supply_chain.name",
+            I18nKey::SettingsRoleInsightsRolesTeamLeadDescription => "settings.roleInsights.roles.team_lead.description",
+            I18nKey::SettingsRoleInsightsRolesTeamLeadName => "settings.roleInsights.roles.team_lead.name",
+            I18nKey::SettingsRoleInsightsRolesViewerDescription => "settings.roleInsights.roles.viewer.description",
+            I18nKey::SettingsRoleInsightsRolesViewerName => "settings.roleInsights.roles.viewer.name",
+            I18nKey::SettingsRoleInsightsRolesWarehouseDescription => "settings.roleInsights.roles.warehouse.description",
+            I18nKey::SettingsRoleInsightsRolesWarehouseName => "settings.roleInsights.roles.warehouse.name",
             I18nKey::SettingsRoleInsightsSaveChanges => "settings.roleInsights.saveChanges",
-            I18nKey::SettingsRoleInsightsSaveDialogCancel => {
-                "settings.roleInsights.saveDialog.cancel"
-            }
-            I18nKey::SettingsRoleInsightsSaveDialogDescription => {
-                "settings.roleInsights.saveDialog.description"
-            }
-            I18nKey::SettingsRoleInsightsSaveDialogReasonLabel => {
-                "settings.roleInsights.saveDialog.reasonLabel"
-            }
-            I18nKey::SettingsRoleInsightsSaveDialogReasonPlaceholder => {
-                "settings.roleInsights.saveDialog.reasonPlaceholder"
-            }
-            I18nKey::SettingsRoleInsightsSaveDialogSaveAudit => {
-                "settings.roleInsights.saveDialog.saveAudit"
-            }
-            I18nKey::SettingsRoleInsightsSaveDialogTitle => {
-                "settings.roleInsights.saveDialog.title"
-            }
-            I18nKey::SettingsRoleInsightsSensitivityCritical => {
-                "settings.roleInsights.sensitivity.critical"
-            }
-            I18nKey::SettingsRoleInsightsSensitivityCriticalDesc => {
-                "settings.roleInsights.sensitivity.criticalDesc"
-            }
-            I18nKey::SettingsRoleInsightsSensitivityHigh => {
-                "settings.roleInsights.sensitivity.high"
-            }
-            I18nKey::SettingsRoleInsightsSensitivityHighDesc => {
-                "settings.roleInsights.sensitivity.highDesc"
-            }
+            I18nKey::SettingsRoleInsightsSaveDialogCancel => "settings.roleInsights.saveDialog.cancel",
+            I18nKey::SettingsRoleInsightsSaveDialogDescription => "settings.roleInsights.saveDialog.description",
+            I18nKey::SettingsRoleInsightsSaveDialogReasonLabel => "settings.roleInsights.saveDialog.reasonLabel",
+            I18nKey::SettingsRoleInsightsSaveDialogReasonPlaceholder => "settings.roleInsights.saveDialog.reasonPlaceholder",
+            I18nKey::SettingsRoleInsightsSaveDialogSaveAudit => "settings.roleInsights.saveDialog.saveAudit",
+            I18nKey::SettingsRoleInsightsSaveDialogTitle => "settings.roleInsights.saveDialog.title",
+            I18nKey::SettingsRoleInsightsSensitivityCritical => "settings.roleInsights.sensitivity.critical",
+            I18nKey::SettingsRoleInsightsSensitivityCriticalDesc => "settings.roleInsights.sensitivity.criticalDesc",
+            I18nKey::SettingsRoleInsightsSensitivityHigh => "settings.roleInsights.sensitivity.high",
+            I18nKey::SettingsRoleInsightsSensitivityHighDesc => "settings.roleInsights.sensitivity.highDesc",
             I18nKey::SettingsRoleInsightsSensitivityLow => "settings.roleInsights.sensitivity.low",
-            I18nKey::SettingsRoleInsightsSensitivityLowDesc => {
-                "settings.roleInsights.sensitivity.lowDesc"
-            }
-            I18nKey::SettingsRoleInsightsSensitivityMedium => {
-                "settings.roleInsights.sensitivity.medium"
-            }
-            I18nKey::SettingsRoleInsightsSensitivityMediumDesc => {
-                "settings.roleInsights.sensitivity.mediumDesc"
-            }
+            I18nKey::SettingsRoleInsightsSensitivityLowDesc => "settings.roleInsights.sensitivity.lowDesc",
+            I18nKey::SettingsRoleInsightsSensitivityMedium => "settings.roleInsights.sensitivity.medium",
+            I18nKey::SettingsRoleInsightsSensitivityMediumDesc => "settings.roleInsights.sensitivity.mediumDesc",
             I18nKey::SettingsRoleInsightsSubtitle => "settings.roleInsights.subtitle",
-            I18nKey::SettingsRoleInsightsTableInsightHeader => {
-                "settings.roleInsights.table.insightHeader"
-            }
+            I18nKey::SettingsRoleInsightsTableInsightHeader => "settings.roleInsights.table.insightHeader",
             I18nKey::SettingsRoleInsightsTabsAudit => "settings.roleInsights.tabs.audit",
             I18nKey::SettingsRoleInsightsTabsMatrix => "settings.roleInsights.tabs.matrix",
             I18nKey::SettingsRoleInsightsTabsRoles => "settings.roleInsights.tabs.roles",
@@ -17468,27 +15102,15 @@ impl I18nKey {
             I18nKey::SettingsRoleInsightsTooltipLocked => "settings.roleInsights.tooltip.locked",
             I18nKey::SettingsSecurityAccessPassword => "settings.security.accessPassword",
             I18nKey::SettingsSecurityActive => "settings.security.active",
-            I18nKey::SettingsSecurityActiveIntelligenceNodes => {
-                "settings.security.activeIntelligenceNodes"
-            }
-            I18nKey::SettingsSecurityActivityLoginFailed => {
-                "settings.security.activity.loginFailed"
-            }
-            I18nKey::SettingsSecurityActivityLoginSuccess => {
-                "settings.security.activity.loginSuccess"
-            }
+            I18nKey::SettingsSecurityActiveIntelligenceNodes => "settings.security.activeIntelligenceNodes",
+            I18nKey::SettingsSecurityActivityLoginFailed => "settings.security.activity.loginFailed",
+            I18nKey::SettingsSecurityActivityLoginSuccess => "settings.security.activity.loginSuccess",
             I18nKey::SettingsSecurityActivityLogout => "settings.security.activity.logout",
-            I18nKey::SettingsSecurityActivityPasswordChanged => {
-                "settings.security.activity.passwordChanged"
-            }
-            I18nKey::SettingsSecurityActivityTwoFactorEnabled => {
-                "settings.security.activity.twoFactorEnabled"
-            }
+            I18nKey::SettingsSecurityActivityPasswordChanged => "settings.security.activity.passwordChanged",
+            I18nKey::SettingsSecurityActivityTwoFactorEnabled => "settings.security.activity.twoFactorEnabled",
             I18nKey::SettingsSecurityAtRisk => "settings.security.atRisk",
             I18nKey::SettingsSecurityAuthenticationKeys => "settings.security.authenticationKeys",
-            I18nKey::SettingsSecurityAuthenticatorProtocol => {
-                "settings.security.authenticatorProtocol"
-            }
+            I18nKey::SettingsSecurityAuthenticatorProtocol => "settings.security.authenticatorProtocol",
             I18nKey::SettingsSecurityCancelProtocol => "settings.security.cancelProtocol",
             I18nKey::SettingsSecurityChangePassword => "settings.security.changePassword",
             I18nKey::SettingsSecurityChangePasswordDesc => "settings.security.changePasswordDesc",
@@ -17502,49 +15124,27 @@ impl I18nKey {
             I18nKey::SettingsSecurityLastActive => "settings.security.lastActive",
             I18nKey::SettingsSecurityLastRotated => "settings.security.lastRotated",
             I18nKey::SettingsSecurityNewPassword => "settings.security.newPassword",
-            I18nKey::SettingsSecurityPasswordStrengthHint => {
-                "settings.security.passwordStrengthHint"
-            }
-            I18nKey::SettingsSecurityPasswordVisibilityHide => {
-                "settings.security.passwordVisibility.hide"
-            }
-            I18nKey::SettingsSecurityPasswordVisibilityLabel => {
-                "settings.security.passwordVisibility.label"
-            }
-            I18nKey::SettingsSecurityPasswordVisibilityShow => {
-                "settings.security.passwordVisibility.show"
-            }
+            I18nKey::SettingsSecurityPasswordStrengthHint => "settings.security.passwordStrengthHint",
+            I18nKey::SettingsSecurityPasswordVisibilityHide => "settings.security.passwordVisibility.hide",
+            I18nKey::SettingsSecurityPasswordVisibilityLabel => "settings.security.passwordVisibility.label",
+            I18nKey::SettingsSecurityPasswordVisibilityShow => "settings.security.passwordVisibility.show",
             I18nKey::SettingsSecurityPasswordsDoNotMatch => "settings.security.passwordsDoNotMatch",
             I18nKey::SettingsSecurityPrimaryNode => "settings.security.primaryNode",
             I18nKey::SettingsSecurityPulse => "settings.security.pulse",
             I18nKey::SettingsSecurityRevokeAllSessions => "settings.security.revokeAllSessions",
             I18nKey::SettingsSecurityRevokeSession => "settings.security.revokeSession",
-            I18nKey::SettingsSecuritySecurityRecommendation1 => {
-                "settings.security.securityRecommendation1"
-            }
-            I18nKey::SettingsSecuritySecurityRecommendation2 => {
-                "settings.security.securityRecommendation2"
-            }
-            I18nKey::SettingsSecuritySecurityRecommendation3 => {
-                "settings.security.securityRecommendation3"
-            }
-            I18nKey::SettingsSecuritySecuritySyncRecommendations => {
-                "settings.security.securitySyncRecommendations"
-            }
+            I18nKey::SettingsSecuritySecurityRecommendation1 => "settings.security.securityRecommendation1",
+            I18nKey::SettingsSecuritySecurityRecommendation2 => "settings.security.securityRecommendation2",
+            I18nKey::SettingsSecuritySecurityRecommendation3 => "settings.security.securityRecommendation3",
+            I18nKey::SettingsSecuritySecuritySyncRecommendations => "settings.security.securitySyncRecommendations",
             I18nKey::SettingsSecuritySessions => "settings.security.sessions",
             I18nKey::SettingsSecuritySessionsDesc => "settings.security.sessionsDesc",
             I18nKey::SettingsSecuritySubtitle => "settings.security.subtitle",
             I18nKey::SettingsSecuritySyncedWithToken => "settings.security.syncedWithToken",
-            I18nKey::SettingsSecurityTerminateAllRemoteSessions => {
-                "settings.security.terminateAllRemoteSessions"
-            }
+            I18nKey::SettingsSecurityTerminateAllRemoteSessions => "settings.security.terminateAllRemoteSessions",
             I18nKey::SettingsSecurityTerminateNode => "settings.security.terminateNode",
-            I18nKey::SettingsSecurityTerminateNodeAuthorization => {
-                "settings.security.terminateNodeAuthorization"
-            }
-            I18nKey::SettingsSecurityTerminateNodeDescription => {
-                "settings.security.terminateNodeDescription"
-            }
+            I18nKey::SettingsSecurityTerminateNodeAuthorization => "settings.security.terminateNodeAuthorization",
+            I18nKey::SettingsSecurityTerminateNodeDescription => "settings.security.terminateNodeDescription",
             I18nKey::SettingsSecurityThisDevice => "settings.security.thisDevice",
             I18nKey::SettingsSecurityTitle => "settings.security.title",
             I18nKey::SettingsSecurityTwoFactor => "settings.security.twoFactor",
@@ -17566,22 +15166,12 @@ impl I18nKey {
             I18nKey::SettingsSitesInitializeSiteNode => "settings.sites.initializeSiteNode",
             I18nKey::SettingsSitesNodeCommonName => "settings.sites.nodeCommonName",
             I18nKey::SettingsSitesPhysicalAddressNode => "settings.sites.physicalAddressNode",
-            I18nKey::SettingsSitesPlaceholdersCountrySync => {
-                "settings.sites.placeholders.countrySync"
-            }
-            I18nKey::SettingsSitesPlaceholdersCurrencyNode => {
-                "settings.sites.placeholders.currencyNode"
-            }
-            I18nKey::SettingsSitesPlaceholdersNodeCommonName => {
-                "settings.sites.placeholders.nodeCommonName"
-            }
-            I18nKey::SettingsSitesPlaceholdersPhysicalAddressNode => {
-                "settings.sites.placeholders.physicalAddressNode"
-            }
+            I18nKey::SettingsSitesPlaceholdersCountrySync => "settings.sites.placeholders.countrySync",
+            I18nKey::SettingsSitesPlaceholdersCurrencyNode => "settings.sites.placeholders.currencyNode",
+            I18nKey::SettingsSitesPlaceholdersNodeCommonName => "settings.sites.placeholders.nodeCommonName",
+            I18nKey::SettingsSitesPlaceholdersPhysicalAddressNode => "settings.sites.placeholders.physicalAddressNode",
             I18nKey::SettingsSitesPlaceholdersSiteCode => "settings.sites.placeholders.siteCode",
-            I18nKey::SettingsSitesPlaceholdersTemporalAlignment => {
-                "settings.sites.placeholders.temporalAlignment"
-            }
+            I18nKey::SettingsSitesPlaceholdersTemporalAlignment => "settings.sites.placeholders.temporalAlignment",
             I18nKey::SettingsSitesSiteCode => "settings.sites.siteCode",
             I18nKey::SettingsSitesSiteCodeIdentifier => "settings.sites.siteCodeIdentifier",
             I18nKey::SettingsSitesSiteName => "settings.sites.siteName",
@@ -17607,9 +15197,7 @@ impl I18nKey {
             I18nKey::SettingsTeamActionsRefineNode => "settings.team.actions.refineNode",
             I18nKey::SettingsTeamActionsResendSync => "settings.team.actions.resendSync",
             I18nKey::SettingsTeamActionsRotateRole => "settings.team.actions.rotateRole",
-            I18nKey::SettingsTeamActionsTerminateProtocol => {
-                "settings.team.actions.terminateProtocol"
-            }
+            I18nKey::SettingsTeamActionsTerminateProtocol => "settings.team.actions.terminateProtocol",
             I18nKey::SettingsTeamActiveOperatives => "settings.team.activeOperatives",
             I18nKey::SettingsTeamDepartmentsEngineering => "settings.team.departments.engineering",
             I18nKey::SettingsTeamDepartmentsManagement => "settings.team.departments.management",
@@ -17622,23 +15210,13 @@ impl I18nKey {
             I18nKey::SettingsTeamFiltersRole => "settings.team.filters.role",
             I18nKey::SettingsTeamFiltersStatus => "settings.team.filters.status",
             I18nKey::SettingsTeamIntelligenceNodes => "settings.team.intelligenceNodes",
-            I18nKey::SettingsTeamInviteDialogDepartmentLabel => {
-                "settings.team.inviteDialog.departmentLabel"
-            }
-            I18nKey::SettingsTeamInviteDialogDepartmentPlaceholder => {
-                "settings.team.inviteDialog.departmentPlaceholder"
-            }
-            I18nKey::SettingsTeamInviteDialogDescription => {
-                "settings.team.inviteDialog.description"
-            }
+            I18nKey::SettingsTeamInviteDialogDepartmentLabel => "settings.team.inviteDialog.departmentLabel",
+            I18nKey::SettingsTeamInviteDialogDepartmentPlaceholder => "settings.team.inviteDialog.departmentPlaceholder",
+            I18nKey::SettingsTeamInviteDialogDescription => "settings.team.inviteDialog.description",
             I18nKey::SettingsTeamInviteDialogEmailLabel => "settings.team.inviteDialog.emailLabel",
-            I18nKey::SettingsTeamInviteDialogEmailPlaceholder => {
-                "settings.team.inviteDialog.emailPlaceholder"
-            }
+            I18nKey::SettingsTeamInviteDialogEmailPlaceholder => "settings.team.inviteDialog.emailPlaceholder",
             I18nKey::SettingsTeamInviteDialogRoleLabel => "settings.team.inviteDialog.roleLabel",
-            I18nKey::SettingsTeamInviteDialogSendInvitation => {
-                "settings.team.inviteDialog.sendInvitation"
-            }
+            I18nKey::SettingsTeamInviteDialogSendInvitation => "settings.team.inviteDialog.sendInvitation",
             I18nKey::SettingsTeamInviteDialogTitle => "settings.team.inviteDialog.title",
             I18nKey::SettingsTeamInviteProtocol => "settings.team.inviteProtocol",
             I18nKey::SettingsTeamInvitedAt => "settings.team.invitedAt",
@@ -17666,9 +15244,7 @@ impl I18nKey {
             I18nKey::SettingsTeamTotalRegistry => "settings.team.totalRegistry",
             I18nKey::SettingsTeamValueUnavailable => "settings.team.valueUnavailable",
             I18nKey::SettingsTeamWaitingForGate => "settings.team.waitingForGate",
-            I18nKey::SettingsTeamZeroOperativesIdentified => {
-                "settings.team.zeroOperativesIdentified"
-            }
+            I18nKey::SettingsTeamZeroOperativesIdentified => "settings.team.zeroOperativesIdentified",
             I18nKey::SettingsTitle => "settings.title",
             I18nKey::SettingsWebhooks => "settings.webhooks",
             I18nKey::TablesAscending => "tables.ascending",
@@ -17717,72 +15293,34 @@ impl I18nKey {
             I18nKey::TourProductTour => "tour.productTour",
             I18nKey::TourStepOf => "tour.stepOf",
             I18nKey::TrainingCertificationsCompleted => "training.certifications.completed",
-            I18nKey::TrainingCertificationsDetailAwardedTo => {
-                "training.certifications.detail.awardedTo"
-            }
-            I18nKey::TrainingCertificationsDetailCertificateOfAchievement => {
-                "training.certifications.detail.certificateOfAchievement"
-            }
-            I18nKey::TrainingCertificationsDetailDownloadCertificate => {
-                "training.certifications.detail.downloadCertificate"
-            }
-            I18nKey::TrainingCertificationsDetailExpiresOn => {
-                "training.certifications.detail.expiresOn"
-            }
-            I18nKey::TrainingCertificationsDetailFinalScore => {
-                "training.certifications.detail.finalScore"
-            }
-            I18nKey::TrainingCertificationsDetailIssueDate => {
-                "training.certifications.detail.issueDate"
-            }
-            I18nKey::TrainingCertificationsDetailScopeOfCertification => {
-                "training.certifications.detail.scopeOfCertification"
-            }
+            I18nKey::TrainingCertificationsDetailAwardedTo => "training.certifications.detail.awardedTo",
+            I18nKey::TrainingCertificationsDetailCertificateOfAchievement => "training.certifications.detail.certificateOfAchievement",
+            I18nKey::TrainingCertificationsDetailDownloadCertificate => "training.certifications.detail.downloadCertificate",
+            I18nKey::TrainingCertificationsDetailExpiresOn => "training.certifications.detail.expiresOn",
+            I18nKey::TrainingCertificationsDetailFinalScore => "training.certifications.detail.finalScore",
+            I18nKey::TrainingCertificationsDetailIssueDate => "training.certifications.detail.issueDate",
+            I18nKey::TrainingCertificationsDetailScopeOfCertification => "training.certifications.detail.scopeOfCertification",
             I18nKey::TrainingCertificationsDetailTitle => "training.certifications.detail.title",
             I18nKey::TrainingCertificationsEnrolled => "training.certifications.enrolled",
             I18nKey::TrainingCertificationsExpired => "training.certifications.expired",
             I18nKey::TrainingCertificationsExpiryDate => "training.certifications.expiryDate",
             I18nKey::TrainingCertificationsInProgress => "training.certifications.inProgress",
             I18nKey::TrainingCertificationsName => "training.certifications.name",
-            I18nKey::TrainingCertificationsNewCertificationDetails => {
-                "training.certifications.new.certificationDetails"
-            }
-            I18nKey::TrainingCertificationsNewCertificationTitle => {
-                "training.certifications.new.certificationTitle"
-            }
-            I18nKey::TrainingCertificationsNewDefaultIssuer => {
-                "training.certifications.new.defaultIssuer"
-            }
-            I18nKey::TrainingCertificationsNewExpiryDate => {
-                "training.certifications.new.expiryDate"
-            }
-            I18nKey::TrainingCertificationsNewFinalScore => {
-                "training.certifications.new.finalScore"
-            }
+            I18nKey::TrainingCertificationsNewCertificationDetails => "training.certifications.new.certificationDetails",
+            I18nKey::TrainingCertificationsNewCertificationTitle => "training.certifications.new.certificationTitle",
+            I18nKey::TrainingCertificationsNewDefaultIssuer => "training.certifications.new.defaultIssuer",
+            I18nKey::TrainingCertificationsNewExpiryDate => "training.certifications.new.expiryDate",
+            I18nKey::TrainingCertificationsNewFinalScore => "training.certifications.new.finalScore",
             I18nKey::TrainingCertificationsNewIssueDate => "training.certifications.new.issueDate",
-            I18nKey::TrainingCertificationsNewIssuingAuthority => {
-                "training.certifications.new.issuingAuthority"
-            }
-            I18nKey::TrainingCertificationsNewRegisterCertification => {
-                "training.certifications.new.registerCertification"
-            }
-            I18nKey::TrainingCertificationsNewScorePlaceholder => {
-                "training.certifications.new.scorePlaceholder"
-            }
+            I18nKey::TrainingCertificationsNewIssuingAuthority => "training.certifications.new.issuingAuthority",
+            I18nKey::TrainingCertificationsNewRegisterCertification => "training.certifications.new.registerCertification",
+            I18nKey::TrainingCertificationsNewScorePlaceholder => "training.certifications.new.scorePlaceholder",
             I18nKey::TrainingCertificationsNewSubtitle => "training.certifications.new.subtitle",
-            I18nKey::TrainingCertificationsNewTeamMember => {
-                "training.certifications.new.teamMember"
-            }
-            I18nKey::TrainingCertificationsNewTeamMemberPlaceholder => {
-                "training.certifications.new.teamMemberPlaceholder"
-            }
+            I18nKey::TrainingCertificationsNewTeamMember => "training.certifications.new.teamMember",
+            I18nKey::TrainingCertificationsNewTeamMemberPlaceholder => "training.certifications.new.teamMemberPlaceholder",
             I18nKey::TrainingCertificationsNewTitle => "training.certifications.new.title",
-            I18nKey::TrainingCertificationsNewToastSuccessDescription => {
-                "training.certifications.new.toast.success.description"
-            }
-            I18nKey::TrainingCertificationsNewToastSuccessTitle => {
-                "training.certifications.new.toast.success.title"
-            }
+            I18nKey::TrainingCertificationsNewToastSuccessDescription => "training.certifications.new.toast.success.description",
+            I18nKey::TrainingCertificationsNewToastSuccessTitle => "training.certifications.new.toast.success.title",
             I18nKey::TrainingCertificationsStatus => "training.certifications.status",
             I18nKey::TrainingCertificationsTitle => "training.certifications.title",
             I18nKey::TrainingEnrollConfigureParams => "training.enroll.configureParams",
@@ -17794,9 +15332,7 @@ impl I18nKey {
             I18nKey::TrainingEnrollStrategicProgramNode => "training.enroll.strategicProgramNode",
             I18nKey::TrainingEnrollSubtitle => "training.enroll.subtitle",
             I18nKey::TrainingEnrollTitle => "training.enroll.title",
-            I18nKey::TrainingEnrollToastSuccessDescription => {
-                "training.enroll.toast.success.description"
-            }
+            I18nKey::TrainingEnrollToastSuccessDescription => "training.enroll.toast.success.description",
             I18nKey::TrainingEnrollToastSuccessTitle => "training.enroll.toast.success.title",
             I18nKey::TrainingEnrollEmployee => "training.enrollEmployee",
             I18nKey::TrainingInitializeActivity => "training.initializeActivity",
@@ -17811,36 +15347,24 @@ impl I18nKey {
             I18nKey::TrainingNewCertification => "training.newCertification",
             I18nKey::TrainingNewTrainingProgram => "training.newTrainingProgram",
             I18nKey::TrainingProgramsAddProgram => "training.programs.addProgram",
-            I18nKey::TrainingProgramsDetailContinueLearning => {
-                "training.programs.detail.continueLearning"
-            }
+            I18nKey::TrainingProgramsDetailContinueLearning => "training.programs.detail.continueLearning",
             I18nKey::TrainingProgramsDetailCurriculum => "training.programs.detail.curriculum",
             I18nKey::TrainingProgramsDetailDetails => "training.programs.detail.details",
-            I18nKey::TrainingProgramsDetailProgramDescription => {
-                "training.programs.detail.programDescription"
-            }
+            I18nKey::TrainingProgramsDetailProgramDescription => "training.programs.detail.programDescription",
             I18nKey::TrainingProgramsDuration => "training.programs.duration",
             I18nKey::TrainingProgramsName => "training.programs.name",
             I18nKey::TrainingProgramsNewCategory => "training.programs.new.category",
             I18nKey::TrainingProgramsNewCreateProgram => "training.programs.new.createProgram",
-            I18nKey::TrainingProgramsNewDurationPlaceholder => {
-                "training.programs.new.durationPlaceholder"
-            }
-            I18nKey::TrainingProgramsNewEstimatedDuration => {
-                "training.programs.new.estimatedDuration"
-            }
+            I18nKey::TrainingProgramsNewDurationPlaceholder => "training.programs.new.durationPlaceholder",
+            I18nKey::TrainingProgramsNewEstimatedDuration => "training.programs.new.estimatedDuration",
             I18nKey::TrainingProgramsNewInstructor => "training.programs.new.instructor",
             I18nKey::TrainingProgramsNewProgramDetails => "training.programs.new.programDetails",
             I18nKey::TrainingProgramsNewProgramTitle => "training.programs.new.programTitle",
             I18nKey::TrainingProgramsNewSkillLevel => "training.programs.new.skillLevel",
             I18nKey::TrainingProgramsNewSubtitle => "training.programs.new.subtitle",
             I18nKey::TrainingProgramsNewTitle => "training.programs.new.title",
-            I18nKey::TrainingProgramsNewToastSuccessDescription => {
-                "training.programs.new.toast.success.description"
-            }
-            I18nKey::TrainingProgramsNewToastSuccessTitle => {
-                "training.programs.new.toast.success.title"
-            }
+            I18nKey::TrainingProgramsNewToastSuccessDescription => "training.programs.new.toast.success.description",
+            I18nKey::TrainingProgramsNewToastSuccessTitle => "training.programs.new.toast.success.title",
             I18nKey::TrainingProgramsParticipants => "training.programs.participants",
             I18nKey::TrainingProgramsTitle => "training.programs.title",
             I18nKey::TrainingRecordsCompletedDate => "training.records.completedDate",

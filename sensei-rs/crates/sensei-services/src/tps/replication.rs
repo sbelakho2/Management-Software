@@ -57,7 +57,7 @@ async fn set_tenant_context(
 }
 
 /// Run `f` inside a transaction with the RLS tenant context set.
-async fn with_tenant_tx<T, F>(pool: &sqlx::PgPool, tenant_id: Uuid, f: F) -> Result<T>
+pub(crate) async fn with_tenant_tx<T, F>(pool: &sqlx::PgPool, tenant_id: Uuid, f: F) -> Result<T>
 where
     F: for<'t> FnOnce(
         &'t mut sqlx::Transaction<'_, sqlx::Postgres>,

@@ -11,6 +11,7 @@ pub mod claims;
 pub mod context;
 pub mod context_kernel;
 pub mod evidence;
+pub mod journal;
 pub mod retrieval;
 pub mod tools;
 pub mod verifier;

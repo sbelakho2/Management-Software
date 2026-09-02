@@ -12,6 +12,7 @@
 pub mod analytics;
 pub mod anomaly;
 pub mod cbm_predictor;
+pub mod command_journal;
 pub mod database;
 pub mod embedding;
 pub mod enhanced_ml_pipeline;

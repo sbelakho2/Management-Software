@@ -5,6 +5,7 @@
 
 use sensei_agent_core::context::AgentContext;
 use sensei_agent_core::evidence::{EvidenceRef, ToolResult};
+use sensei_agent_core::journal::ExecutionJournal;
 use sensei_agent_core::tools::{PolicyEngine, ToolSpec};
 use sensei_services::production::ProductionService;
 use sensei_services::supply_chain::SupplyChainService;
@@ -115,6 +116,25 @@ pub async fn execute_tool(
     // Schema enforcement: the declared input schema is checked (type-level)
     // before dispatch — the schema is a contract, not descriptive metadata.
     validate_args(tool, &args)?;
+    // Eighteenth audit P1-14: the DURABLE command journal is the system
+    // of record for idempotent executions — a retried mutating tool with
+    // the same args replays the journaled result even after any RAM
+    // cache entry was evicted. The key is the tool name + canonical args.
+    let journal_key: Option<String> = if tool.idempotent {
+        Some(crate::routes::agent::execution_key(tool, &args))
+    } else {
+        None
+    };
+    if let (Some(pool), Some(key)) = (pool, &journal_key) {
+        let journal = sensei_services::ai::command_journal::PgExecutionJournal::new(pool.clone());
+        if let Some(journaled) = journal.load(ctx.tenant_id, key).await {
+            return Ok(ToolResult::new(
+                journaled,
+                vec![],
+                &format!("{}@journal", tool.name),
+            ));
+        }
+    }
     // Timeout enforcement (item 16): the declared timeout is a contract.
     let _ = tool.timeout_ms;
 
@@ -152,7 +172,7 @@ pub async fn execute_tool(
     let _ = ctx;
     let _ = pool;
 
-    match tool.name.as_str() {
+    let outcome = match tool.name.as_str() {
         "get_work_order" => {
             let id: Uuid = args
                 .get("id")
@@ -386,5 +406,19 @@ pub async fn execute_tool(
             ))
         }
         other => Err(format!("Unknown tool '{other}'")),
+    };
+    // Persist idempotent executions to the durable journal (P1-14). For
+    // MUTATING tools a failed write fails the execution — the cache may
+    // forget, the journal may not.
+    if let (Some(pool), Some(key)) = (pool, &journal_key) {
+        if let Ok(result) = &outcome {
+            let journal =
+                sensei_services::ai::command_journal::PgExecutionJournal::new(pool.clone());
+            journal
+                .store(ctx.tenant_id, key, &tool.name, &result.data)
+                .await
+                .map_err(|e| format!("command journal write failed: {e}"))?;
+        }
     }
+    outcome
 }

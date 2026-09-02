@@ -602,6 +602,30 @@ pub async fn validate_site(
             // must exist and contain no rows stuck in failed state with
             // no retry scheduled (seventeenth audit item 12: this is no
             // longer hardcoded true).
+            // Eighteenth audit P1-12: a tenant with unreconciled work
+            // centers (site_id NULL or topology_state
+            // needs_reconciliation) can never pass validation — unknown
+            // topology is never certified as ready.
+            let unreconciled: i64 = sqlx::query_scalar(
+                "SELECT COUNT(*) FROM work_centers WHERE tenant_id = $1 \
+                 AND (site_id IS NULL OR topology_state = 'needs_reconciliation')",
+            )
+            .bind(tenant_id)
+            .fetch_one(&mut **tx)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Topology check failed: {e}")))?;
+            checks.push((
+                "topology_reconciled".into(),
+                unreconciled == 0,
+                if unreconciled == 0 {
+                    "all work centers are site-resolved".to_string()
+                } else {
+                    format!(
+                        "{unreconciled} work center(s) need topology reconciliation —                          unknown lineage is never assigned to a plant"
+                    )
+                },
+            ));
+
             let (rep_entries, rep_failed): (i64, i64) = sqlx::query_as(
                 "SELECT COUNT(*)::bigint, \
                         COUNT(*) FILTER (WHERE status = 'failed' \

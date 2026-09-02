@@ -185,6 +185,7 @@ pub async fn record_observation(
            AND slot_id IS NOT DISTINCT FROM $5 AND process IS NOT DISTINCT FROM $6 \
            AND owner_principal_id IS NOT DISTINCT FROM $7 \
            AND scope_site_id IS NOT DISTINCT FROM $8 \
+           AND quarantined = FALSE \
          ORDER BY created_at DESC LIMIT 1",
     )
     .bind(tenant_id)
@@ -311,6 +312,7 @@ pub async fn find_memory_by_signature(
            AND slot_id IS NOT DISTINCT FROM $5 AND process IS NOT DISTINCT FROM $6 \
            AND owner_principal_id IS NOT DISTINCT FROM $7 \
            AND scope_site_id IS NOT DISTINCT FROM $8 \
+           AND quarantined = FALSE \
          ORDER BY created_at DESC LIMIT 1",
     )
     .bind(tenant_id)
@@ -351,6 +353,7 @@ pub async fn list_memory(
          FROM organizational_memory \
          WHERE tenant_id = $1 AND ($2::text IS NULL OR tier = $2) \
            AND ($3::text IS NULL OR status = $3) \
+           AND quarantined = FALSE \
          ORDER BY updated_at DESC LIMIT 500",
     )
     .bind(tenant_id)
@@ -447,4 +450,31 @@ pub async fn approve_memory(
     id: Uuid,
 ) -> Result<MemoryRecord> {
     transition_memory(pool, tenant_id, id, "approved", &["proposed"]).await
+}
+
+/// Eighteenth audit P1-13: explicit quarantine reconciliation. Rows
+/// without a valid anchor were quarantined by migration 141 and are
+/// excluded from every context-serving read; the ONLY admissible
+/// outcomes are repair (backfill the anchor) or DISCARD. This function
+/// discards the quarantined rows for the tenant and returns how many
+/// were removed — after it reports 0 remaining, the anchor CHECK can be
+/// VALIDATED (the final stage of the rolling migration).
+pub async fn reconcile_quarantined_memory(pool: &sqlx::PgPool, tenant_id: Uuid) -> Result<i64> {
+    let mut tx = pool
+        .begin()
+        .await
+        .map_err(|e| SenseiError::Database(format!("Failed to begin reconcile tx: {e}")))?;
+    set_tenant_context(&mut tx, tenant_id).await?;
+    let removed = sqlx::query(
+        "DELETE FROM organizational_memory \
+         WHERE tenant_id = $1 AND quarantined = TRUE",
+    )
+    .bind(tenant_id)
+    .execute(&mut *tx)
+    .await
+    .map_err(|e| SenseiError::Database(format!("Failed to discard quarantined memory: {e}")))?;
+    tx.commit()
+        .await
+        .map_err(|e| SenseiError::Database(format!("Failed to commit reconcile: {e}")))?;
+    Ok(removed.rows_affected() as i64)
 }
