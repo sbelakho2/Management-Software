@@ -269,10 +269,14 @@ pub trait SupplyChainService: Send + Sync {
         page: Option<usize>,
         per_page: Option<usize>,
     ) -> Result<PaginatedResponse<SalesOrder>>;
-    /// Update the status of a sales order.
+    /// Update the status of a sales order. Twenty-third audit P0: the
+    /// mutation is site-scope-enforced — only an order whose fulfilling
+    /// site is inside `authorized_sites` can be touched; a foreign or
+    /// site-less order is indistinguishable from a nonexistent one.
     async fn update_sales_order_status(
         &self,
         tenant_id: Uuid,
+        authorized_sites: &[Uuid],
         id: Uuid,
         status: &str,
     ) -> Result<SalesOrder>;
@@ -281,19 +285,26 @@ pub trait SupplyChainService: Send + Sync {
     /// site, and the confirmation path refuses a NULL anchor, so the
     /// conversion is a dead end until the site is assigned. The
     /// fulfilling site is IMMUTABLE once set: assigning the same site is
-    /// a no-op, assigning a DIFFERENT site is refused.
+    /// a no-op, assigning a DIFFERENT site is refused. Twenty-third
+    /// audit P0: the caller's site boundary is enforced — a NULL anchor
+    /// may only be filled with a site inside `authorized_sites`, and an
+    /// order already anchored OUTSIDE the caller's scope is
+    /// indistinguishable from a nonexistent order.
     async fn assign_fulfillment_site(
         &self,
         tenant_id: Uuid,
+        authorized_sites: &[Uuid],
         order_id: Uuid,
         site_id: Uuid,
     ) -> Result<SalesOrder>;
     /// Confirm a sales order naming its fulfilling site in ONE service
     /// call: assign the site (only when unset) then transition to
-    /// 'confirmed'.
+    /// 'confirmed'. The whole command is scope-enforced (twenty-third
+    /// audit P0) through its internals.
     async fn confirm_sales_order_with_site(
         &self,
         tenant_id: Uuid,
+        authorized_sites: &[Uuid],
         order_id: Uuid,
         site_id: Uuid,
     ) -> Result<SalesOrder>;
@@ -334,10 +345,13 @@ pub trait SupplyChainService: Send + Sync {
         per_page: Option<usize>,
     ) -> Result<PaginatedResponse<PurchaseOrder>>;
     /// Receive a line item against a purchase order, updating received
-    /// quantity and inventory.
+    /// quantity and inventory. Twenty-third audit P0: the receipt
+    /// REJECTS a PO whose receiving site is outside `authorized_sites`
+    /// BEFORE any stock movement or line update happens.
     async fn receive_po_line(
         &self,
         tenant_id: Uuid,
+        authorized_sites: &[Uuid],
         po_id: Uuid,
         product_id: Uuid,
         quantity_received: i64,
@@ -393,32 +407,57 @@ pub trait SupplyChainService: Send + Sync {
     async fn accept_quote(&self, tenant_id: Uuid, id: Uuid) -> Result<Quote>;
     /// Reject a quote.
     async fn reject_quote(&self, tenant_id: Uuid, id: Uuid) -> Result<Quote>;
-    /// Update a sales order.
+    /// Update a sales order. Twenty-third audit P0: only orders whose
+    /// fulfilling site is inside `authorized_sites` can be edited.
     async fn update_sales_order(
         &self,
         tenant_id: Uuid,
+        authorized_sites: &[Uuid],
         id: Uuid,
         order: SalesOrder,
     ) -> Result<SalesOrder>;
-    /// Delete a sales order.
-    async fn delete_sales_order(&self, tenant_id: Uuid, id: Uuid) -> Result<()>;
-    /// Update a purchase order.
+    /// Delete a sales order (scope-enforced, twenty-third audit P0).
+    async fn delete_sales_order(
+        &self,
+        tenant_id: Uuid,
+        authorized_sites: &[Uuid],
+        id: Uuid,
+    ) -> Result<()>;
+    /// Update a purchase order. Twenty-third audit P0: only POs whose
+    /// receiving site is inside `authorized_sites` can be edited.
     async fn update_purchase_order(
         &self,
         tenant_id: Uuid,
+        authorized_sites: &[Uuid],
         id: Uuid,
         po: PurchaseOrder,
     ) -> Result<PurchaseOrder>;
-    /// Delete a purchase order.
-    async fn delete_purchase_order(&self, tenant_id: Uuid, id: Uuid) -> Result<()>;
-    /// Receive all line items on a purchase order.
-    async fn receive_full_po(&self, tenant_id: Uuid, id: Uuid) -> Result<PurchaseOrder>;
+    /// Delete a purchase order (scope-enforced, twenty-third audit P0).
+    async fn delete_purchase_order(
+        &self,
+        tenant_id: Uuid,
+        authorized_sites: &[Uuid],
+        id: Uuid,
+    ) -> Result<()>;
+    /// Receive all line items on a purchase order. Twenty-third audit
+    /// P0: the full receipt REJECTS a PO whose receiving site is outside
+    /// `authorized_sites` BEFORE any stock movement or line update.
+    async fn receive_full_po(
+        &self,
+        tenant_id: Uuid,
+        authorized_sites: &[Uuid],
+        id: Uuid,
+    ) -> Result<PurchaseOrder>;
     /// Assign the SITE a purchase order is received FOR (twenty-second
     /// audit P1): the receiving-site anchor. Immutable once set — the
-    /// same site is a no-op, a different site is refused.
+    /// same site is a no-op, a different site is refused. Twenty-third
+    /// audit P0: a NULL anchor may only be filled with a site inside
+    /// `authorized_sites`; a PO anchored OUTSIDE the caller's scope is
+    /// indistinguishable from a nonexistent one.
     async fn assign_receiving_site(
         &self,
         tenant_id: Uuid,
+        authorized_sites: &[Uuid],
         po_id: Uuid,
         site_id: Uuid,
     ) -> Result<PurchaseOrder>;
@@ -433,6 +472,77 @@ pub trait SupplyChainService: Send + Sync {
     async fn delete_inventory(&self, tenant_id: Uuid, id: Uuid) -> Result<()>;
     /// Delete a stock movement.
     async fn delete_stock_move(&self, tenant_id: Uuid, id: Uuid) -> Result<()>;
+
+    // ── Site-entitled inventory (twenty-third audit P0/P1) ─────────────
+    //
+    // Every scoped inventory operation intersects the affected
+    // `inventory_items` rows with the caller's RequestContext site
+    // entitlement: the row's `site_id` must be inside `authorized_sites`
+    // (SQL `site_id = ANY(authorized_sites)` in the DB implementation;
+    // the in-memory rows carry no site, so nothing matches). An EMPTY
+    // entitlement matches NOTHING — zero rows, never a tenant-wide
+    // fallback — and a foreign (or site-less) row is indistinguishable
+    // from a nonexistent one: reads simply do not return it, mutations
+    // fail with NotFound BEFORE any quantity change.
+    /// Get inventory for a product — only rows whose site is among
+    /// `authorized_sites` (empty entitlement returns an empty Vec).
+    async fn get_inventory_scoped(
+        &self,
+        tenant_id: Uuid,
+        authorized_sites: &[Uuid],
+        product_id: Uuid,
+    ) -> Result<Vec<InventoryItem>>;
+    /// List inventory — only rows whose site is among `authorized_sites`
+    /// (empty entitlement returns an empty page).
+    async fn list_inventory_scoped(
+        &self,
+        tenant_id: Uuid,
+        authorized_sites: &[Uuid],
+        location: Option<&str>,
+        page: Option<usize>,
+        per_page: Option<usize>,
+    ) -> Result<PaginatedResponse<InventoryItem>>;
+    /// Adjust inventory — the affected row's site must be inside
+    /// `authorized_sites` BEFORE any quantity change (foreign/site-less
+    /// is NotFound).
+    async fn adjust_inventory_scoped(
+        &self,
+        tenant_id: Uuid,
+        authorized_sites: &[Uuid],
+        product_id: Uuid,
+        location: &str,
+        quantity_change: i64,
+        reason: &str,
+    ) -> Result<InventoryItem>;
+    /// Create a stock move — authority derives through the sites of the
+    /// source/destination inventory rows it touches: every affected
+    /// row's site must be inside `authorized_sites` BEFORE any quantity
+    /// change (foreign/site-less is NotFound).
+    async fn create_stock_move_scoped(
+        &self,
+        tenant_id: Uuid,
+        authorized_sites: &[Uuid],
+        stock_move: StockMove,
+    ) -> Result<StockMove>;
+    /// Update an inventory item — the affected row's site must be inside
+    /// `authorized_sites` BEFORE the write (foreign/site-less is
+    /// NotFound).
+    async fn update_inventory_scoped(
+        &self,
+        tenant_id: Uuid,
+        authorized_sites: &[Uuid],
+        id: Uuid,
+        item: InventoryItem,
+    ) -> Result<InventoryItem>;
+    /// Delete an inventory item — the affected row's site must be inside
+    /// `authorized_sites` BEFORE the delete (foreign/site-less is
+    /// NotFound).
+    async fn delete_inventory_scoped(
+        &self,
+        tenant_id: Uuid,
+        authorized_sites: &[Uuid],
+        id: Uuid,
+    ) -> Result<()>;
 }
 
 // ---------------------------------------------------------------------------
@@ -974,12 +1084,22 @@ impl SupplyChainService for InMemorySupplyChainService {
     async fn update_sales_order_status(
         &self,
         _tenant_id: Uuid,
+        authorized_sites: &[Uuid],
         id: Uuid,
         status: &str,
     ) -> Result<SalesOrder> {
+        if authorized_sites.is_empty() {
+            return Err(SenseiError::Forbidden(
+                "no operational scope — no sales order is authorized".to_string(),
+            ));
+        }
         let mut store = self.sales_orders.write().await;
         let order = store
             .get_mut(&id)
+            .filter(|o| {
+                o.fulfilling_site_id
+                    .is_some_and(|site| authorized_sites.contains(&site))
+            })
             .ok_or_else(|| SenseiError::NotFound(format!("Sales order {id} not found")))?;
         order.status = status.to_string();
         Ok(order.clone())
@@ -988,27 +1108,46 @@ impl SupplyChainService for InMemorySupplyChainService {
     async fn assign_fulfillment_site(
         &self,
         tenant_id: Uuid,
+        authorized_sites: &[Uuid],
         order_id: Uuid,
         site_id: Uuid,
     ) -> Result<SalesOrder> {
+        if authorized_sites.is_empty() {
+            return Err(SenseiError::Forbidden(
+                "no operational scope — no sales order is authorized".to_string(),
+            ));
+        }
         let mut store = self.sales_orders.write().await;
         let order = store
             .get_mut(&order_id)
+            .filter(|o| o.tenant_id == tenant_id)
             .ok_or_else(|| SenseiError::NotFound(format!("Sales order {order_id} not found")))?;
-        if order.tenant_id != tenant_id {
-            return Err(SenseiError::NotFound(format!(
-                "Sales order {order_id} not found"
-            )));
-        }
-        if let Some(existing) = order.fulfilling_site_id {
-            if existing != site_id {
-                return Err(SenseiError::Validation(format!(
-                    "sales order {order_id} already names fulfilling site {existing} — \
-                     the fulfilling site is immutable"
-                )));
+        match order.fulfilling_site_id {
+            Some(existing) => {
+                // An order anchored OUTSIDE the caller's scope is
+                // indistinguishable from a nonexistent order.
+                if !authorized_sites.contains(&existing) {
+                    return Err(SenseiError::NotFound(format!(
+                        "Sales order {order_id} not found"
+                    )));
+                }
+                if existing != site_id {
+                    return Err(SenseiError::Validation(format!(
+                        "sales order {order_id} already names fulfilling site {existing} — \
+                         the fulfilling site is immutable"
+                    )));
+                }
             }
-        } else {
-            order.fulfilling_site_id = Some(site_id);
+            None => {
+                // A NULL anchor may only be filled with a site inside the
+                // caller's boundary.
+                if !authorized_sites.contains(&site_id) {
+                    return Err(SenseiError::NotFound(format!(
+                        "Sales order {order_id} not found"
+                    )));
+                }
+                order.fulfilling_site_id = Some(site_id);
+            }
         }
         Ok(order.clone())
     }
@@ -1016,39 +1155,55 @@ impl SupplyChainService for InMemorySupplyChainService {
     async fn confirm_sales_order_with_site(
         &self,
         tenant_id: Uuid,
+        authorized_sites: &[Uuid],
         order_id: Uuid,
         site_id: Uuid,
     ) -> Result<SalesOrder> {
-        self.assign_fulfillment_site(tenant_id, order_id, site_id)
+        self.assign_fulfillment_site(tenant_id, authorized_sites, order_id, site_id)
             .await?;
-        self.update_sales_order_status(tenant_id, order_id, "confirmed")
+        self.update_sales_order_status(tenant_id, authorized_sites, order_id, "confirmed")
             .await
     }
 
     async fn assign_receiving_site(
         &self,
         tenant_id: Uuid,
+        authorized_sites: &[Uuid],
         po_id: Uuid,
         site_id: Uuid,
     ) -> Result<PurchaseOrder> {
+        if authorized_sites.is_empty() {
+            return Err(SenseiError::Forbidden(
+                "no operational scope — no purchase order is authorized".to_string(),
+            ));
+        }
         let mut store = self.purchase_orders.write().await;
         let po = store
             .get_mut(&po_id)
+            .filter(|o| o.tenant_id == tenant_id)
             .ok_or_else(|| SenseiError::NotFound(format!("Purchase order {po_id} not found")))?;
-        if po.tenant_id != tenant_id {
-            return Err(SenseiError::NotFound(format!(
-                "Purchase order {po_id} not found"
-            )));
-        }
-        if let Some(existing) = po.receiving_site_id {
-            if existing != site_id {
-                return Err(SenseiError::Validation(format!(
-                    "purchase order {po_id} already names receiving site {existing} — \
-                     the receiving site is immutable"
-                )));
+        match po.receiving_site_id {
+            Some(existing) => {
+                if !authorized_sites.contains(&existing) {
+                    return Err(SenseiError::NotFound(format!(
+                        "Purchase order {po_id} not found"
+                    )));
+                }
+                if existing != site_id {
+                    return Err(SenseiError::Validation(format!(
+                        "purchase order {po_id} already names receiving site {existing} — \
+                         the receiving site is immutable"
+                    )));
+                }
             }
-        } else {
-            po.receiving_site_id = Some(site_id);
+            None => {
+                if !authorized_sites.contains(&site_id) {
+                    return Err(SenseiError::NotFound(format!(
+                        "Purchase order {po_id} not found"
+                    )));
+                }
+                po.receiving_site_id = Some(site_id);
+            }
         }
         Ok(po.clone())
     }
@@ -1117,10 +1272,16 @@ impl SupplyChainService for InMemorySupplyChainService {
     async fn receive_po_line(
         &self,
         tenant_id: Uuid,
+        authorized_sites: &[Uuid],
         po_id: Uuid,
         product_id: Uuid,
         quantity_received: i64,
     ) -> Result<PurchaseOrder> {
+        if authorized_sites.is_empty() {
+            return Err(SenseiError::Forbidden(
+                "no operational scope — no purchase order is authorized".to_string(),
+            ));
+        }
         if quantity_received <= 0 {
             return Err(SenseiError::Validation(
                 "Received quantity must be positive".to_string(),
@@ -1132,9 +1293,17 @@ impl SupplyChainService for InMemorySupplyChainService {
         // lock-order inversion is possible with `receive_full_po`.
         let product_name = {
             let mut store = self.purchase_orders.write().await;
-            let po = store.get_mut(&po_id).ok_or_else(|| {
-                SenseiError::NotFound(format!("Purchase order {po_id} not found"))
-            })?;
+            let po = store
+                .get_mut(&po_id)
+                .filter(|po| {
+                    po.tenant_id == tenant_id
+                        && po
+                            .receiving_site_id
+                            .is_some_and(|site| authorized_sites.contains(&site))
+                })
+                .ok_or_else(|| {
+                    SenseiError::NotFound(format!("Purchase order {po_id} not found"))
+                })?;
 
             // Find and update the matching line item
             let mut found_product_name = String::new();
@@ -1514,13 +1683,24 @@ impl SupplyChainService for InMemorySupplyChainService {
 
     async fn update_sales_order(
         &self,
-        _tenant_id: Uuid,
+        tenant_id: Uuid,
+        authorized_sites: &[Uuid],
         id: Uuid,
         order: SalesOrder,
     ) -> Result<SalesOrder> {
+        if authorized_sites.is_empty() {
+            return Err(SenseiError::Forbidden(
+                "no operational scope — no sales order is authorized".to_string(),
+            ));
+        }
         let mut store = self.sales_orders.write().await;
         let existing = store
             .get_mut(&id)
+            .filter(|o| {
+                o.tenant_id == tenant_id
+                    && o.fulfilling_site_id
+                        .is_some_and(|site| authorized_sites.contains(&site))
+            })
             .ok_or_else(|| SenseiError::NotFound(format!("SalesOrder {id} not found")))?;
         existing.customer_id = order.customer_id;
         existing.customer_name = order.customer_name;
@@ -1534,23 +1714,51 @@ impl SupplyChainService for InMemorySupplyChainService {
         Ok(existing.clone())
     }
 
-    async fn delete_sales_order(&self, _tenant_id: Uuid, id: Uuid) -> Result<()> {
+    async fn delete_sales_order(
+        &self,
+        tenant_id: Uuid,
+        authorized_sites: &[Uuid],
+        id: Uuid,
+    ) -> Result<()> {
+        if authorized_sites.is_empty() {
+            return Err(SenseiError::Forbidden(
+                "no operational scope — no sales order is authorized".to_string(),
+            ));
+        }
         let mut store = self.sales_orders.write().await;
-        store
-            .remove(&id)
-            .ok_or_else(|| SenseiError::NotFound(format!("SalesOrder {id} not found")))?;
+        let scoped = store.get(&id).is_some_and(|o| {
+            o.tenant_id == tenant_id
+                && o.fulfilling_site_id
+                    .is_some_and(|site| authorized_sites.contains(&site))
+        });
+        if !scoped {
+            return Err(SenseiError::NotFound(format!("SalesOrder {id} not found")));
+        }
+        store.remove(&id);
         Ok(())
     }
 
     async fn update_purchase_order(
         &self,
-        _tenant_id: Uuid,
+        tenant_id: Uuid,
+        authorized_sites: &[Uuid],
         id: Uuid,
         po: PurchaseOrder,
     ) -> Result<PurchaseOrder> {
+        if authorized_sites.is_empty() {
+            return Err(SenseiError::Forbidden(
+                "no operational scope — no purchase order is authorized".to_string(),
+            ));
+        }
         let mut store = self.purchase_orders.write().await;
         let existing = store
             .get_mut(&id)
+            .filter(|po| {
+                po.tenant_id == tenant_id
+                    && po
+                        .receiving_site_id
+                        .is_some_and(|site| authorized_sites.contains(&site))
+            })
             .ok_or_else(|| SenseiError::NotFound(format!("PurchaseOrder {id} not found")))?;
         existing.supplier_id = po.supplier_id;
         existing.supplier_name = po.supplier_name;
@@ -1563,15 +1771,44 @@ impl SupplyChainService for InMemorySupplyChainService {
         Ok(existing.clone())
     }
 
-    async fn delete_purchase_order(&self, _tenant_id: Uuid, id: Uuid) -> Result<()> {
+    async fn delete_purchase_order(
+        &self,
+        tenant_id: Uuid,
+        authorized_sites: &[Uuid],
+        id: Uuid,
+    ) -> Result<()> {
+        if authorized_sites.is_empty() {
+            return Err(SenseiError::Forbidden(
+                "no operational scope — no purchase order is authorized".to_string(),
+            ));
+        }
         let mut store = self.purchase_orders.write().await;
-        store
-            .remove(&id)
-            .ok_or_else(|| SenseiError::NotFound(format!("PurchaseOrder {id} not found")))?;
+        let scoped = store.get(&id).is_some_and(|po| {
+            po.tenant_id == tenant_id
+                && po
+                    .receiving_site_id
+                    .is_some_and(|site| authorized_sites.contains(&site))
+        });
+        if !scoped {
+            return Err(SenseiError::NotFound(format!(
+                "PurchaseOrder {id} not found"
+            )));
+        }
+        store.remove(&id);
         Ok(())
     }
 
-    async fn receive_full_po(&self, tenant_id: Uuid, id: Uuid) -> Result<PurchaseOrder> {
+    async fn receive_full_po(
+        &self,
+        tenant_id: Uuid,
+        authorized_sites: &[Uuid],
+        id: Uuid,
+    ) -> Result<PurchaseOrder> {
+        if authorized_sites.is_empty() {
+            return Err(SenseiError::Forbidden(
+                "no operational scope — no purchase order is authorized".to_string(),
+            ));
+        }
         // Capture the remaining quantity per line BEFORE marking lines as
         // received, then apply inventory deltas for those real quantities.
         let mut remaining: Vec<(Uuid, String, i64)> = Vec::new();
@@ -1579,13 +1816,14 @@ impl SupplyChainService for InMemorySupplyChainService {
             let mut store = self.purchase_orders.write().await;
             let po = store
                 .get_mut(&id)
+                .filter(|po| {
+                    po.tenant_id == tenant_id
+                        && po
+                            .receiving_site_id
+                            .is_some_and(|site| authorized_sites.contains(&site))
+                })
                 .ok_or_else(|| SenseiError::NotFound(format!("PurchaseOrder {id} not found")))?;
 
-            if po.tenant_id != tenant_id {
-                return Err(SenseiError::NotFound(format!(
-                    "PurchaseOrder {id} not found"
-                )));
-            }
             if po.status == "received" || po.status == "cancelled" {
                 return Err(SenseiError::Validation(format!(
                     "Cannot receive PO with status: {}",
@@ -1663,6 +1901,85 @@ impl SupplyChainService for InMemorySupplyChainService {
             .remove(&id)
             .ok_or_else(|| SenseiError::NotFound(format!("StockMove {id} not found")))?;
         Ok(())
+    }
+
+    // ── Site-entitled inventory (twenty-third audit P0/P1) ─────────────
+    //
+    // In-memory inventory rows carry NO site (`InventoryItem` has no
+    // site column — like the DB rows the service itself creates, whose
+    // `site_id` is NULL). Under a site entitlement nothing can ever be
+    // entitled, which is exactly the DB behavior for the rows this
+    // service creates: scoped reads return nothing and scoped mutations
+    // are NotFound. The site-entitled path is a DB-mode path; these
+    // implementations keep the trait total and fail closed.
+
+    async fn get_inventory_scoped(
+        &self,
+        _tenant_id: Uuid,
+        _authorized_sites: &[Uuid],
+        _product_id: Uuid,
+    ) -> Result<Vec<InventoryItem>> {
+        Ok(Vec::new())
+    }
+
+    async fn list_inventory_scoped(
+        &self,
+        _tenant_id: Uuid,
+        _authorized_sites: &[Uuid],
+        _location: Option<&str>,
+        page: Option<usize>,
+        per_page: Option<usize>,
+    ) -> Result<PaginatedResponse<InventoryItem>> {
+        Ok(PaginatedResponse::new(Vec::new(), page, per_page))
+    }
+
+    async fn adjust_inventory_scoped(
+        &self,
+        _tenant_id: Uuid,
+        _authorized_sites: &[Uuid],
+        product_id: Uuid,
+        location: &str,
+        _quantity_change: i64,
+        _reason: &str,
+    ) -> Result<InventoryItem> {
+        Err(SenseiError::NotFound(format!(
+            "Inventory for product {product_id} at location '{location}' not found"
+        )))
+    }
+
+    async fn create_stock_move_scoped(
+        &self,
+        _tenant_id: Uuid,
+        _authorized_sites: &[Uuid],
+        stock_move: StockMove,
+    ) -> Result<StockMove> {
+        Err(SenseiError::NotFound(format!(
+            "No inventory row of product {} is inside the caller's site scope",
+            stock_move.product_id
+        )))
+    }
+
+    async fn update_inventory_scoped(
+        &self,
+        _tenant_id: Uuid,
+        _authorized_sites: &[Uuid],
+        id: Uuid,
+        _item: InventoryItem,
+    ) -> Result<InventoryItem> {
+        Err(SenseiError::NotFound(format!(
+            "InventoryItem {id} not found"
+        )))
+    }
+
+    async fn delete_inventory_scoped(
+        &self,
+        _tenant_id: Uuid,
+        _authorized_sites: &[Uuid],
+        id: Uuid,
+    ) -> Result<()> {
+        Err(SenseiError::NotFound(format!(
+            "InventoryItem {id} not found"
+        )))
     }
 }
 
@@ -1776,6 +2093,7 @@ mod tests {
         let service = InMemorySupplyChainService::default();
         let tenant_id = Uuid::new_v4();
         let product_id = Uuid::new_v4();
+        let site_id = Uuid::new_v4();
 
         let po = PurchaseOrder {
             id: Uuid::nil(),
@@ -1798,7 +2116,7 @@ mod tests {
             expected_delivery: Some(Utc::now() + chrono::Duration::days(14)),
             created_by: Uuid::new_v4(),
             created_at: Utc::now(),
-            receiving_site_id: None,
+            receiving_site_id: Some(site_id),
         };
 
         let created_po = service.create_purchase_order(tenant_id, po).await.unwrap();
@@ -1806,15 +2124,24 @@ mod tests {
 
         // Receive partial delivery
         let partial = service
-            .receive_po_line(tenant_id, created_po.id, product_id, 500)
+            .receive_po_line(tenant_id, &[site_id], created_po.id, product_id, 500)
             .await
             .unwrap();
         assert_eq!(partial.status, "partially_received");
         assert_eq!(partial.line_items[0].quantity_received, 500);
 
+        // A caller scoped to another site cannot touch this PO at all.
+        assert!(
+            service
+                .receive_po_line(tenant_id, &[Uuid::new_v4()], created_po.id, product_id, 1)
+                .await
+                .is_err(),
+            "receiving a PO outside the caller's site scope is rejected"
+        );
+
         // Receive the rest
         let full = service
-            .receive_po_line(tenant_id, created_po.id, product_id, 500)
+            .receive_po_line(tenant_id, &[site_id], created_po.id, product_id, 500)
             .await
             .unwrap();
         assert_eq!(full.status, "received");
@@ -1990,7 +2317,7 @@ mod tests {
         // A bare confirm is refused once the site anchor is enforced by
         // the DB implementation; the site-bound confirm must succeed.
         let confirmed = service
-            .confirm_sales_order_with_site(tenant_id, order.id, site_id)
+            .confirm_sales_order_with_site(tenant_id, &[site_id], order.id, site_id)
             .await
             .expect("confirm-with-site succeeds");
         assert_eq!(confirmed.status, "confirmed");
@@ -1999,12 +2326,12 @@ mod tests {
         // The fulfilling site is IMMUTABLE: re-assigning the same site is
         // a no-op, a different site is refused.
         let again = service
-            .assign_fulfillment_site(tenant_id, order.id, site_id)
+            .assign_fulfillment_site(tenant_id, &[site_id], order.id, site_id)
             .await
             .expect("re-assigning the same site is a no-op");
         assert_eq!(again.fulfilling_site_id, Some(site_id));
         let refused = service
-            .assign_fulfillment_site(tenant_id, order.id, Uuid::new_v4())
+            .assign_fulfillment_site(tenant_id, &[site_id], order.id, Uuid::new_v4())
             .await;
         assert!(
             refused.is_err(),
@@ -2035,16 +2362,112 @@ mod tests {
         };
         let po = service.create_purchase_order(tenant_id, po).await.unwrap();
         let assigned = service
-            .assign_receiving_site(tenant_id, po.id, site_id)
+            .assign_receiving_site(tenant_id, &[site_id], po.id, site_id)
             .await
             .expect("assign receiving site");
         assert_eq!(assigned.receiving_site_id, Some(site_id));
         let refused = service
-            .assign_receiving_site(tenant_id, po.id, Uuid::new_v4())
+            .assign_receiving_site(tenant_id, &[site_id], po.id, Uuid::new_v4())
             .await;
         assert!(
             refused.is_err(),
             "re-anchoring to a different site is refused"
+        );
+    }
+
+    // Twenty-third audit P0/P1: the site-entitled inventory operations
+    // fail CLOSED in the in-memory service — inventory rows carry no
+    // site, so under any entitlement nothing is ever entitled: reads
+    // return nothing, mutations are NotFound, and the unscoped paths
+    // (dev mode) still work.
+    #[tokio::test]
+    async fn test_site_entitled_inventory_fails_closed_in_memory() {
+        let service = InMemorySupplyChainService::default();
+        let tenant_id = Uuid::new_v4();
+        let product_id = Uuid::new_v4();
+        let site_id = Uuid::new_v4();
+
+        let receipt = StockMove {
+            id: Uuid::new_v4(),
+            tenant_id,
+            product_id,
+            product_name: "Widget".to_string(),
+            quantity: 100,
+            move_type: "receipt".to_string(),
+            from_location: None,
+            to_location: "main".to_string(),
+            reference_type: None,
+            reference_id: None,
+            created_by: Uuid::new_v4(),
+            created_at: Utc::now(),
+        };
+        service
+            .create_stock_move(tenant_id, receipt)
+            .await
+            .expect("unscoped dev receipt still works");
+
+        // Reads under a scope return nothing (even for the caller's own
+        // "site" — in-memory rows carry no site to entitle).
+        assert!(
+            service
+                .get_inventory_scoped(tenant_id, &[site_id], product_id)
+                .await
+                .expect("scoped get")
+                .is_empty(),
+            "no in-memory row can be entitled"
+        );
+        assert!(service
+            .get_inventory_scoped(tenant_id, &[], product_id)
+            .await
+            .expect("scoped get, empty")
+            .is_empty());
+        assert!(
+            service
+                .list_inventory_scoped(tenant_id, &[site_id], None, None, None)
+                .await
+                .expect("scoped list")
+                .data
+                .is_empty(),
+            "empty entitlement and no site on rows -> empty"
+        );
+
+        // Mutations under a scope are NotFound; the unscoped read still
+        // sees the row (nothing was changed).
+        let adjust = service
+            .adjust_inventory_scoped(tenant_id, &[site_id], product_id, "main", 10, "why")
+            .await;
+        assert!(
+            matches!(adjust, Err(SenseiError::NotFound(_))),
+            "scoped adjust of an unentitled row is NotFound"
+        );
+        let inv = service
+            .get_inventory(tenant_id, product_id)
+            .await
+            .expect("unscoped read");
+        assert_eq!(inv[0].quantity_on_hand, 100, "no quantity changed");
+        let transfer = service
+            .create_stock_move_scoped(
+                tenant_id,
+                &[site_id],
+                StockMove {
+                    id: Uuid::new_v4(),
+                    tenant_id,
+                    product_id,
+                    product_name: "Widget".to_string(),
+                    quantity: 5,
+                    move_type: "transfer".to_string(),
+                    from_location: Some("main".to_string()),
+                    to_location: "line".to_string(),
+                    reference_type: None,
+                    reference_id: None,
+                    created_by: Uuid::new_v4(),
+                    created_at: Utc::now(),
+                },
+            )
+            .await;
+        assert!(
+            matches!(transfer, Err(SenseiError::NotFound(_))),
+            "scoped stock move cannot touch unentitled rows"
         );
     }
 }

@@ -82,21 +82,33 @@ fn default_retry_seconds() -> i64 {
 }
 
 /// `POST /api/v1/replication/enqueue` — site-local durable enqueue.
-/// Never depends on the corporate link; each entry is durably queued in
-/// the tenant's own transaction. Twentieth audit P0: the destination is
-/// NO LONGER a single `LIMIT 1` guess over the federation peers — the
-/// route loads EVERY FederationEdge the caller's tenant holds (membership
-/// row + peer site manifest + peer country policy, all server-derived)
-/// and enqueues ONE ROW PER EDGE that permits the projection, evaluating
-/// `may_replicate` with THAT EDGE's own residency policy and
-/// `allowed_data_classes`; twenty-second audit P0/P1-4: each edge names
-/// the exact peer site, so every row records its own target_site_id. The
-/// response returns the number of edges enqueued; a Restricted/Personal
-/// projection that no edge permits is a 422 (fail-closed — it is never
-/// silently dropped). Twenty-second audit P0/P1-5: the request carries
-/// ONLY `source_event_id` — entity identity (subject object), projection
-/// type (event type), schema version (1) and projection revision (1) are
-/// all derived server-side from that one id.
+/// Never depends on the corporate link; the WHOLE fanout is durably
+/// queued in ONE tenant-scoped transaction. Twentieth audit P0: the
+/// destination is NO LONGER a single `LIMIT 1` guess over the federation
+/// peers — the route loads EVERY FederationEdge the caller's tenant holds
+/// (membership row + peer site manifest + peer country policy, all
+/// server-derived) and enqueues ONE ROW PER EDGE that permits the
+/// projection, evaluating `may_replicate` with THAT EDGE's own residency
+/// policy and `allowed_data_classes`; twenty-second audit P0/P1-4: each
+/// edge names the exact peer site, so every row records its own
+/// target_site_id. Twenty-third audit P1 (fanout idempotency): every
+/// validation happens BEFORE anything is written — the route authorizes
+/// the event, derives the EXACT subject identity, and loads the edges,
+/// and ONLY THEN calls the fanout function once; inside it every edge is
+/// screened first and the inserts run
+/// `ON CONFLICT (tenant_id, source_event_id, target_tenant_id,
+/// target_site_id) DO NOTHING`, so repeated publishes of the same command
+/// converge to the same complete set instead of 500-ing on the first
+/// duplicate, and a mid-way failure rolls back atomically (no partial
+/// success). The response carries the fanout report — `replication::FanoutReport`:
+/// `enqueued_edges`
+/// (newly enqueued), `already_present` (idempotent duplicates) and
+/// `blocked` (edges the residency/class gate denied). A
+/// Restricted/Personal projection that NO edge permits is a 422
+/// (fail-closed — it is never silently dropped). Twenty-second audit
+/// P0/P1-5: the request carries ONLY `source_event_id` — entity identity
+/// (subject object), projection type (event type), schema version (1) and
+/// projection revision (1) are all derived server-side from that one id.
 pub async fn enqueue(
     user: AuthenticatedUser,
     State(state): State<AppState>,
@@ -120,24 +132,21 @@ pub async fn enqueue(
 
     // Twenty-second audit P0/P1-5: the entity identity derives from the
     // source event's subject object — and ONLY from it. The request no
-    // longer carries a client entity_type/entity_id fallback, so an event
-    // without a subject object is refused: nothing client-supplied may
-    // stand in for the identity the queue row is keyed on.
+    // longer carries a client entity_type/entity_id fallback.
+    // Twenty-third audit P1 (subject-count strictness): derivation is
+    // EXACT — an event with NO subject object is a Validation error, and
+    // an event projecting MULTIPLE subjects is a Validation error too
+    // (multiple subjects require explicit projector semantics, none are
+    // defined yet); exactly one subject yields the identity. Both errors
+    // surface BEFORE anything is enqueued.
     let (entity_type, entity_id) =
-        replication::derive_projection_identity(p, user.tenant_id, req.source_event_id)
-            .await?
-            .ok_or_else(|| {
-                SenseiError::Validation(
-                    "replication: the source event carries no subject object — the projection \
-             identity cannot be derived, so it cannot be enqueued"
-                        .to_string(),
-                )
-            })?;
+        replication::derive_projection_identity(p, user.tenant_id, req.source_event_id).await?;
 
     // Twentieth audit P0: EVERY edge of the caller's federation graph is
     // loaded (NO LIMIT 1 — one edge per membership row's peer site, so
-    // the gate below never checks an arbitrary country), and the gate is
-    // evaluated once PER EDGE with the edge's OWN residency policy.
+    // the gate below never checks an arbitrary country). This read and
+    // every derivation above complete BEFORE the fanout starts — nothing
+    // is written on a validation error.
     let edges = replication::load_federation_edges(p, user.tenant_id, artifact.source_site).await?;
     // Twenty-second audit P0/P1-5: the projection type is the source
     // EVENT's own type (server-derived inside authorize_projection — the
@@ -153,37 +162,30 @@ pub async fn enqueue(
         data_policy: artifact.data_class.clone(),
         payload: artifact.projected_payload.clone(),
     };
-    let mut enqueued_edges: u64 = 0;
-    for edge in &edges {
-        if !edge.allowed_data_classes.contains(&policy) {
-            continue;
-        }
-        if !replication::may_replicate(
-            policy,
-            Some(&artifact.source_jurisdiction),
-            Some(&edge.target_jurisdiction),
-            &edge.residency_policy,
-        ) {
-            continue;
-        }
-        replication::enqueue_projection(
-            p,
-            user.tenant_id,
-            artifact.source_site,
-            &entity_type,
-            entity_id,
-            artifact.projected_payload.clone(),
-            Some(&artifact.source_event_id.to_string()),
-            &envelope,
-            Some(&artifact.source_jurisdiction),
-            edge,
-        )
-        .await?;
-        enqueued_edges += 1;
-    }
-    // Restricted/Personal must never be silently dropped: with NO edge
-    // permitting the projection the request is refused outright.
-    if enqueued_edges == 0
+    // Twenty-third audit P1: ONE fanout call, ONE transaction over ALL
+    // edges. Per-edge gate denials come back as `blocked`; duplicates of
+    // an already-published row come back as `already_present` (DO NOTHING
+    // — idempotent convergence); a mid-way failure rolls back atomically.
+    let report = replication::enqueue_projection_fanout(
+        p,
+        user.tenant_id,
+        artifact.source_site,
+        &entity_type,
+        entity_id,
+        artifact.projected_payload.clone(),
+        &artifact.source_event_id.to_string(),
+        &envelope,
+        &artifact.source_jurisdiction,
+        &edges,
+    )
+    .await?;
+    // Restricted/Personal must never be silently dropped: with NO row
+    // enqueued AND none already present (a fresh publish every edge
+    // refused/blocked) the request is refused outright. An idempotent
+    // retry of a publish that previously SUCCEEDED reports
+    // already_present > 0 and stays a 200 — the duplicate never 500s.
+    if report.newly_enqueued == 0
+        && report.already_present == 0
         && matches!(
             policy,
             replication::DataPolicy::Restricted | replication::DataPolicy::Personal
@@ -198,7 +200,9 @@ pub async fn enqueue(
     }
     Ok(Json(serde_json::json!({
         "ok": true,
-        "enqueued_edges": enqueued_edges,
+        "enqueued_edges": report.newly_enqueued,
+        "already_present": report.already_present,
+        "blocked_edges": report.blocked,
         "authorized_projection": artifact,
     })))
 }

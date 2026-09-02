@@ -47,21 +47,63 @@ jobs:
           SENSEI_NO_ZIG: "1"
           DATABASE_URL_TEST: postgres://sensei:sensei_test@localhost:5433/sensei_test
 
-  # Twenty-second audit P0/P1: the gate above proves the migrated schema
-  # against a SUPERUSER connection. RLS (FORCE ROW LEVEL SECURITY, migration
-  # 098) is only a real barrier when the application connects as a
-  # NON-OWNER, least-privilege role — exactly how docker-compose.prod
-  # connects (docker/postgres-init/01-app-role.sh). This second job runs
-  # the SAME db_contract suite on its own fresh database (the suite applies
-  # the full migration chain, dropping/recreating per test), then creates a
-  # REAL `sensei_app` application role with only the audited grants, and
-  # finally SMOKE-TESTS that role over its own psql connection:
-  #   (a) one tenant-scoped service path — FORCE RLS hides every row when
-  #       app.tenant_id is unset, and exactly the context tenant's rows are
-  #       visible inside a transaction that sets it;
-  #   (b) the role is NOBYPASSRLS / NOSUPERUSER / NOCREATEDB / NOCREATEROLE.
+  # Twenty-second audit P0/P1 + twenty-third audit P1: the gate above
+  # proves the migrated schema against a SUPERUSER connection. RLS (FORCE
+  # ROW LEVEL SECURITY, migration 098) is only a real barrier when the
+  # application connects as a NON-OWNER, least-privilege role — exactly
+  # how docker-compose.prod connects. This job runs the SAME db_contract
+  # suite on its own fresh database (the suite applies the full migration
+  # chain, dropping/recreating per test), then creates a REAL `sensei_app`
+  # application role by LITERALLY executing the canonical production grant
+  # script (docker/postgres-init/01-app-role.sh — the ONE source of the
+  # production app grants; this job no longer maintains its own grant
+  # list, and the old GRANT EXECUTE ON ALL FUNCTIONS is gone), and finally
+  # runs an app-role SERVICE-PATH smoke over its own psql connection:
+  #   (a) the role is NOBYPASSRLS / NOSUPERUSER / NOCREATEDB /
+  #       NOCREATEROLE and the tenant-scoped service path is RLS-gated —
+  #       FORCE RLS hides every row without app.tenant_id, and exactly the
+  #       context tenant's rows are visible inside a transaction that
+  #       sets it (reads AND writes — tenant-scoped INSERT/UPDATE/DELETE
+  #       succeed, a cross-tenant write is denied);
+  #   (b) the federation governance channel works with ONLY the audited
+  #       EXECUTE grant on the no-argument form —
+  #       federation_governance_edges() returns the source tenant's peer
+  #       rows under app.tenant_id, and the migration/admin-only
+  #       federation_governance_edges_for(uuid) variant is REFUSED
+  #       (permission denied) — the explicit-grant discipline holds;
+  #   (c) the replication fanout queue table is writable under the tenant
+  #       context (the twenty-third-audit fanout INSERT path).
+  #
+  # WHY the db_contract SUITE is NOT re-invoked with DATABASE_URL_TEST
+  # pointing at sensei_app (twenty-third audit P1 item 4 — documented
+  # choice): the suite is written for a superuser harness. Every test
+  # seeds its fixtures with RAW SQL on FORCE-RLS tables (sites,
+  # site_manifests, country_policies, federation_memberships,
+  # operational_events, ...) OUTSIDE any app.tenant_id transaction — FORCE
+  # RLS denies those writes for ANY non-BYPASSRLS role, including the
+  # table OWNER (that is what FORCE means), so the curated candidates fail
+  # at their first seed, not at any grant boundary:
+  #   - federation_edges_load_under_non_owner_role seeds peer manifests +
+  #     policies + memberships raw, and its SECURITY DEFINER governance
+  #     function only crosses the tenant boundary when it stays owned by
+  #     the RLS-bypassing migration owner (a NOBYPASSRLS sensei_app that
+  #     re-runs the migration chain would own the function and the FORCE
+  #     policies of the peer tables would hide every peer row);
+  #   - integration_producer_reconcile_and_epistemics /
+  #     andon_mutations_cannot_cross_sites seed sites (FORCE RLS) raw;
+  #   - the suite also DROPs every table per test (owner-only) and
+  #     provisions probe LOGIN roles (CREATEROLE).
+  # Running the suite under sensei_app was verified locally to fail at the
+  # first FORCE-RLS seed (error 42501 "new row violates row-level security
+  # policy") even with the app role owning a fresh database and running
+  # the migration chain itself. The full suite therefore stays on the
+  # superuser connection of this job (and of the fresh-database-gate job),
+  # and the app-role service-path smoke below is the executable
+  # least-privilege gate: it proves the REAL production role with the REAL
+  # canonical grants can run the service path (RLS-scoped CRUD + the
+  # federation governance channel + the fanout queue write).
   least-privilege-app-role-gate:
-    name: Least-privilege sensei_app role + RLS smoke gate
+    name: Least-privilege sensei_app role + RLS service-path gate
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -102,18 +144,24 @@ jobs:
             sudo apt-get install -y -qq postgresql-client
           fi
           psql --version
-      # The suite above leaves a fully migrated schema. Create the REAL
-      # least-privilege application role (mirrors the production script
-      # docker/postgres-init/01-app-role.sh) with ONLY schema usage, table
-      # DML and function execute — no DDL, no owner rights, no RLS bypass.
-      - name: Create least-privilege sensei_app role and grants
+      # Twenty-third audit P1 (grant unification): the audited app grants
+      # live in ONE canonical script — docker/postgres-init/01-app-role.sh
+      # — and this CI job executes THAT file instead of maintaining its own
+      # grant list. The script grants table DML on the tenant tables plus
+      # EXECUTE ONLY on federation_governance_edges() — it never runs
+      # GRANT EXECUTE ON ALL FUNCTIONS (that would hand the app role every
+      # migration/admin function) and never grants
+      # federation_governance_edges_for(uuid) (migration/admin-only).
+      # The suite above left a fully migrated schema on this database, so
+      # the script's grants apply to every table and function it names.
+      - name: Create least-privilege sensei_app from the canonical grant script
         run: |
           set -euo pipefail
           export PGHOST=localhost PGPORT=5434 PGDATABASE=sensei_test
           export PGUSER=sensei PGPASSWORD=sensei_test
+          # Idempotent reset: fresh CI containers have no role; a re-run on
+          # a database where the role owns grants must drop them first.
           psql -X -q -v ON_ERROR_STOP=1 <<'SQL'
-          -- Idempotent reset: fresh CI containers have no role; a re-run on
-          -- a database where the role owns grants must drop them first.
           DO $$
           BEGIN
               IF EXISTS (SELECT FROM pg_roles WHERE rolname = 'sensei_app') THEN
@@ -122,23 +170,26 @@ jobs:
               END IF;
           END
           $$;
-          CREATE ROLE sensei_app LOGIN PASSWORD 'x'
-              NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE;
-          GRANT CONNECT ON DATABASE sensei_test TO sensei_app;
-          GRANT USAGE ON SCHEMA public TO sensei_app;
-          GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO sensei_app;
-          GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO sensei_app;
-          ALTER DEFAULT PRIVILEGES IN SCHEMA public
-              GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO sensei_app;
-          ALTER DEFAULT PRIVILEGES IN SCHEMA public
-              GRANT EXECUTE ON FUNCTIONS TO sensei_app;
           SQL
-      # Seed two tenants' fixture rows AS the superuser (the app role may
-      # never create rows outside its RLS context; the db-contract suite
-      # itself seeds identically). products carries the migration-098
-      # fail-closed FORCE RLS policy (the tenants table has no tenant_id
-      # column, so it is not RLS-isolated — products is the audited probe).
-      - name: Seed tenant fixtures (superuser)
+          # Execute the PRODUCTION script verbatim (repo checkout root):
+          # docker/postgres-init/01-app-role.sh. It connects with
+          # --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" against the
+          # service on PGHOST/PGPORT and reads SENSEI_APP_PASSWORD.
+          POSTGRES_USER=sensei \
+          POSTGRES_PASSWORD=sensei_test \
+          POSTGRES_DB=sensei_test \
+          SENSEI_APP_PASSWORD=x \
+          bash "$GITHUB_WORKSPACE/docker/postgres-init/01-app-role.sh"
+      # Seed tenant fixtures AS the superuser (the app role may never
+      # create rows outside its RLS context; the db-contract suite itself
+      # seeds identically). products carries the migration-098 fail-closed
+      # FORCE RLS policy (the tenants table has no tenant_id column, so it
+      # is not RLS-isolated — products is the audited probe). The
+      # federation fixtures (membership + peer site manifest + country
+      # policy + version) let the app-role smoke prove the governance
+      # function channel: under app.tenant_id the no-argument function
+      # returns the peer row.
+      - name: Seed tenant + federation fixtures (superuser)
         run: |
           set -euo pipefail
           export PGHOST=localhost PGPORT=5434 PGDATABASE=sensei_test
@@ -154,10 +205,27 @@ jobs:
                  ('10000000-0000-4000-8000-00000000000b',
                   '00000000-0000-4000-8000-00000000000b', 'APP-B-1', 'B',
                   'pcs', TRUE, 'finished_good', NOW(), NOW());
+          -- Federation governance fixtures (peer B hosts one Morocco site).
+          INSERT INTO sites (id, tenant_id, site_code, name)
+          VALUES ('20000000-0000-4000-8000-00000000000b',
+                  '00000000-0000-4000-8000-00000000000b', 'BMA', 'Peer B Morocco');
+          INSERT INTO site_manifests (tenant_id, site_id, country, capabilities)
+          VALUES ('00000000-0000-4000-8000-00000000000b',
+                  '20000000-0000-4000-8000-00000000000b', 'Morocco', '["SMT"]');
+          INSERT INTO country_policies (tenant_id, country, language, currency, unit_system, week_start, holiday_schedule, timezone, data_residency, retention_days, employment_data_visibility, local_document_requirements)
+          VALUES ('00000000-0000-4000-8000-00000000000b', 'Morocco', 'fr', 'MAD',
+                  'metric', 'monday', '[]'::jsonb, 'Africa/Casablanca', 'ma',
+                  365, 'restricted', '[]'::jsonb);
+          INSERT INTO country_policy_versions (tenant_id, country, revision, language, currency, data_residency)
+          VALUES ('00000000-0000-4000-8000-00000000000b', 'Morocco', 1, 'fr', 'MAD', 'ma');
+          INSERT INTO federation_memberships (tenant_id, peer_tenant_id)
+          VALUES ('00000000-0000-4000-8000-00000000000a',
+                  '00000000-0000-4000-8000-00000000000b');
           SQL
-      # App-role smoke: every psql below connects AS sensei_app (its own
-      # LOGIN, password 'x') — the audited grants are all it has.
-      - name: App-role smoke — tenant-scoped service path + NOBYPASSRLS
+      # App-role service-path smoke: every psql below connects AS
+      # sensei_app (its own LOGIN, password 'x') — the canonical grants are
+      # all it has.
+      - name: App-role service path — RLS-scoped CRUD + federation governance channel
         run: |
           set -euo pipefail
           export PGHOST=localhost PGPORT=5434 PGDATABASE=sensei_test
@@ -167,23 +235,74 @@ jobs:
           # (a) identity: the probe really runs AS the app role.
           CURRENT="$(psql -X -q -tAc 'SELECT current_user')"
           [ "$CURRENT" = "sensei_app" ] || { echo "expected sensei_app, got '$CURRENT'"; exit 1; }
-          # (b) least-privilege flags: NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE.
+          # (b) least-privilege flags: NOSUPERUSER NOBYPASSRLS NOCREATEDB
+          #     NOCREATEROLE (the canonical script creates the role with
+          #     no attributes — PostgreSQL defaults are all NO*).
           FLAGS="$(psql -X -q -tAc "SELECT rolsuper || '/' || rolbypassrls || '/' || rolcreatedb || '/' || rolcreaterole FROM pg_roles WHERE rolname = current_user")"
           [ "$FLAGS" = "false/false/false/false" ] || { echo "role is not least-privilege: '$FLAGS'"; exit 1; }
-          # Tenant-scoped service path WITHOUT app.tenant_id: FORCE RLS
-          # hides every row (the WHERE clause alone is not enough).
+          # (c) tenant-scoped service path WITHOUT app.tenant_id: FORCE RLS
+          #     hides every row (the WHERE clause alone is not enough).
           HIDDEN="$(psql -X -q -tAc "SELECT COUNT(*) FROM products WHERE tenant_id = '$TA'")"
           [ "$HIDDEN" = "0" ] || { echo "RLS did not hide rows without app.tenant_id (count=$HIDDEN)"; exit 1; }
-          # The same path INSIDE a transaction that sets app.tenant_id
-          # (the service convention): own-tenant rows visible, the other
-          # tenant's rows still hidden. psql -c runs the multi-statement
-          # string in ONE implicit transaction, so the LOCAL context set
-          # by set_config(..., true) applies to the final count.
+          # (d) The service path INSIDE a transaction that sets
+          #     app.tenant_id (set_config(..., true) — the service
+          #     convention): own-tenant rows visible, the other tenant's
+          #     rows still hidden, and tenant-scoped WRITES succeed while
+          #     a cross-tenant write is denied. psql -c runs the
+          #     multi-statement string in ONE transaction, so the LOCAL
+          #     context set by set_config applies to the whole block.
           VISIBLE_A="$(psql -X -q -tAc "SELECT set_config('app.tenant_id', '$TA', true); SELECT COUNT(*) FROM products WHERE tenant_id = '$TA'")"
           [ "$VISIBLE_A" = "1" ] || { echo "own-tenant row invisible with app.tenant_id (count=$VISIBLE_A)"; exit 1; }
           VISIBLE_B="$(psql -X -q -tAc "SELECT set_config('app.tenant_id', '$TA', true); SELECT COUNT(*) FROM products WHERE tenant_id = '$TB'")"
           [ "$VISIBLE_B" = "0" ] || { echo "cross-tenant row visible under tenant-A context (count=$VISIBLE_B)"; exit 1; }
-          echo "app-role smoke OK: current_user=$CURRENT flags=$FLAGS"
+          # Service-path write under the tenant context: INSERT, UPDATE,
+          # DELETE of OWN-tenant rows all succeed inside the context tx.
+          psql -X -q -v ON_ERROR_STOP=1 -tAc "
+            SELECT set_config('app.tenant_id', '$TA', true);
+            INSERT INTO products (id, tenant_id, product_number, name, unit_of_measure, is_active, product_type, created_at, updated_at)
+            VALUES ('30000000-0000-4000-8000-00000000000a', '$TA', 'APP-A-W1', 'W', 'pcs', TRUE, 'finished_good', NOW(), NOW());
+            UPDATE products SET name = 'W-updated' WHERE tenant_id = '$TA' AND product_number = 'APP-A-W1';
+            DELETE FROM products WHERE tenant_id = '$TA' AND product_number = 'APP-A-W1';"
+          WROTE="$(psql -X -q -tAc "SELECT set_config('app.tenant_id', '$TA', true); SELECT COUNT(*) FROM products WHERE tenant_id = '$TA' AND product_number = 'APP-A-W1'")"
+          [ "$WROTE" = "0" ] || { echo "tenant-scoped write/delete did not persist (count=$WROTE)"; exit 1; }
+          # A cross-tenant write under tenant-A context is DENIED by the
+          # FORCEd policy (fail-closed, even for INSERT).
+          CROSS_WRITE="$(psql -X -q -v ON_ERROR_STOP=1 -tAc "SELECT set_config('app.tenant_id', '$TA', true); INSERT INTO products (id, tenant_id, product_number, name, unit_of_measure, is_active, product_type, created_at, updated_at) VALUES ('30000000-0000-4000-8000-00000000000b', '$TB', 'X-1', 'X', 'pcs', TRUE, 'finished_good', NOW(), NOW())" 2>&1 || true)"
+          case "$CROSS_WRITE" in
+            *"violates row-level security policy"*) : ;;
+            *) echo "cross-tenant write was not denied: '$CROSS_WRITE'"; exit 1;;
+          esac
+          # (e) FEDERATION GOVERNANCE CHANNEL (twenty-third audit P1 grant
+          #     unification): the canonical grants give the app role
+          #     EXECUTE ONLY on the no-argument function. Under
+          #     app.tenant_id = tenant A the function returns tenant A's
+          #     peer rows (the seed above) — the SECURITY DEFINER owner
+          #     does the cross-tenant read; the app role supplies only the
+          #     session context. The caller-supplied-tenant escape hatch
+          #     federation_governance_edges_for(uuid) is REFUSED: it is
+          #     revoked from PUBLIC and the canonical script never grants
+          #     it — permission denied proves the explicit-grant
+          #     discipline (no ON ALL FUNCTIONS anywhere).
+          GOV="$(psql -X -q -tAc "SELECT set_config('app.tenant_id', '$TA', true); SELECT peer_country FROM federation_governance_edges() ORDER BY peer_country")"
+          [ "$GOV" = "Morocco" ] || { echo "governance function did not return the peer under tenant context (got '$GOV')"; exit 1; }
+          GOV_NONE="$(psql -X -q -tAc "SELECT peer_country FROM federation_governance_edges()")"
+          [ -z "$GOV_NONE" ] || { echo "governance function exposed peers without app.tenant_id (got '$GOV_NONE')"; exit 1; }
+          GOV_FOR="$(psql -X -q -v ON_ERROR_STOP=1 -tAc "SELECT peer_country FROM federation_governance_edges_for('$TA')" 2>&1 || true)"
+          case "$GOV_FOR" in
+            *"permission denied"*) : ;;
+            *) echo "federation_governance_edges_for(uuid) was not denied for the app role: '$GOV_FOR'"; exit 1;;
+          esac
+          # (f) REPLICATION FANOUT QUEUE PATH (twenty-third audit P1): the
+          #     site_replication_log row the enqueue fanout writes is
+          #     reachable by the app role under the tenant context —
+          #     table DML from the canonical grants + FORCE RLS scoping.
+          psql -X -q -v ON_ERROR_STOP=1 -tAc "
+            SELECT set_config('app.tenant_id', '$TA', true);
+            INSERT INTO site_replication_log (tenant_id, site_id, entity_type, entity_id, projection, source_event_id, schema_version, projection_type, projection_revision, data_policy, status, target_tenant_id, target_site_id, target_jurisdiction, edge_policy)
+            VALUES ('$TA', NULL, 'work_order', '40000000-0000-4000-8000-00000000000a', '{}'::jsonb, 'evt-smoke-1', 1, 'work_order', 1, 'internal', 'pending', '$TB', '20000000-0000-4000-8000-00000000000b', 'ma', '{}'::jsonb);
+            DELETE FROM site_replication_log WHERE tenant_id = '$TA' AND source_event_id = 'evt-smoke-1';"
+          echo "app-role service path OK: current_user=$CURRENT flags=$FLAGS"
           echo "  rows without app.tenant_id context: $HIDDEN (must be 0)"
           echo "  with tenant-A context: A rows=$VISIBLE_A B rows=$VISIBLE_B"
-
+          echo "  governance peer under tenant-A context: $GOV"
+          echo "  governance _for(uuid) variant: permission denied (as required)"

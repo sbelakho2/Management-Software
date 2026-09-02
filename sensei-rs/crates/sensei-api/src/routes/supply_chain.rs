@@ -520,20 +520,25 @@ pub async fn update_sales_order_status(
     // order conversions name no site) is a dead end — the handler's
     // confirm path accepts an optional site (entitlement-intersected,
     // else 403) and confirms through the one-call service command.
+    // Twenty-third audit P0: EVERY status transition carries the
+    // caller's full site entitlement into the service, so the mutation
+    // predicate itself is site-scoped — a foreign order is
+    // indistinguishable from a nonexistent one.
+    let scope = caller_scope(&user, &state).await?;
+    let sites = entitlement_of(&scope).unwrap_or(&[]);
     if req.status == "confirmed" {
-        let scope = caller_scope(&user, &state).await?;
         let site_id = resolve_site(&scope, req.requested_site_id)?;
         if let Some(site_id) = site_id {
             let order = state
                 .supply_chain_service
-                .confirm_sales_order_with_site(tenant_id, id, site_id)
+                .confirm_sales_order_with_site(tenant_id, sites, id, site_id)
                 .await?;
             return Ok(Json(order));
         }
     }
     let order = state
         .supply_chain_service
-        .update_sales_order_status(tenant_id, id, &req.status)
+        .update_sales_order_status(tenant_id, sites, id, &req.status)
         .await?;
     Ok(Json(order))
 }
@@ -641,9 +646,20 @@ pub async fn receive_po_line(
     user.require_permission("purchasing:po:approve")?;
 
     let tenant_id = user.tenant_id;
+    // Twenty-third audit P0: the receipt carries the caller's site
+    // entitlement; a PO whose receiving site is outside that scope is
+    // indistinguishable from a nonexistent PO.
+    let scope = caller_scope(&user, &state).await?;
+    let sites = entitlement_of(&scope).unwrap_or(&[]);
     let order = state
         .supply_chain_service
-        .receive_po_line(tenant_id, po_id, req.product_id, req.quantity_received)
+        .receive_po_line(
+            tenant_id,
+            sites,
+            po_id,
+            req.product_id,
+            req.quantity_received,
+        )
         .await?;
     Ok(Json(order))
 }
@@ -651,6 +667,13 @@ pub async fn receive_po_line(
 // ── Inventory ──────────────────────────────────────────────────────────────
 
 /// List all inventory items with optional filters.
+///
+/// Twenty-third audit P0/P1 (command scope): the listing is intersected
+/// with the caller's RequestContext site entitlement INSIDE the service
+/// (`list_inventory_scoped`) — only rows whose `site_id` is among the
+/// caller's entitlement sites are returned, and an EMPTY entitlement
+/// (or no RequestContext possible) lists nothing, never a tenant-wide
+/// fallback.
 pub async fn list_inventory(
     user: AuthenticatedUser,
     State(state): State<AppState>,
@@ -658,19 +681,31 @@ pub async fn list_inventory(
 ) -> Result<Json<PaginatedResponse<InventoryItem>>> {
     user.require_permission("inventory:read")?;
     let tenant_id = user.tenant_id;
-    let items = state
-        .supply_chain_service
-        .list_inventory(
-            tenant_id,
-            params.location.as_deref(),
-            params.page,
-            params.per_page,
-        )
-        .await?;
+    let scope = caller_scope(&user, &state).await?;
+    let items = if entitlement_of(&scope).is_none_or(|sites| sites.is_empty()) {
+        sensei_core::pagination::PaginatedResponse::new(Vec::new(), params.page, params.per_page)
+    } else {
+        state
+            .supply_chain_service
+            .list_inventory_scoped(
+                tenant_id,
+                entitlement_of(&scope).unwrap_or(&[]),
+                params.location.as_deref(),
+                params.page,
+                params.per_page,
+            )
+            .await?
+    };
     Ok(Json(items))
 }
 
 /// Get inventory for a specific product across all locations.
+///
+/// Twenty-third audit P0/P1 (command scope): the read is intersected
+/// with the caller's RequestContext site entitlement inside the service
+/// (`get_inventory_scoped`) — only rows whose `site_id` is among the
+/// caller's entitlement sites are returned (a foreign-site row is
+/// indistinguishable from an absent one: it simply does not appear).
 pub async fn get_inventory(
     user: AuthenticatedUser,
     State(state): State<AppState>,
@@ -678,14 +713,26 @@ pub async fn get_inventory(
 ) -> Result<Json<Vec<InventoryItem>>> {
     user.require_permission("inventory:read")?;
     let tenant_id = user.tenant_id;
-    let items = state
-        .supply_chain_service
-        .get_inventory(tenant_id, product_id)
-        .await?;
+    let scope = caller_scope(&user, &state).await?;
+    let items = if entitlement_of(&scope).is_none_or(|sites| sites.is_empty()) {
+        Vec::new()
+    } else {
+        state
+            .supply_chain_service
+            .get_inventory_scoped(tenant_id, entitlement_of(&scope).unwrap_or(&[]), product_id)
+            .await?
+    };
     Ok(Json(items))
 }
 
 /// Adjust inventory quantity for a product at a location.
+///
+/// Twenty-third audit P0/P1 (command scope): the affected inventory
+/// row's site must be inside the caller's RequestContext entitlement
+/// BEFORE any quantity change — a row whose site is foreign (or which
+/// has no entitled site) is indistinguishable from a nonexistent one
+/// (NotFound). With no RequestContext possible (in-memory dev mode)
+/// there are no sites to entangle and the unscoped service is used.
 pub async fn adjust_inventory(
     user: AuthenticatedUser,
     State(state): State<AppState>,
@@ -694,22 +741,46 @@ pub async fn adjust_inventory(
     user.require_permission("inventory:adjust")?;
 
     let tenant_id = user.tenant_id;
-    let item = state
-        .supply_chain_service
-        .adjust_inventory(
-            tenant_id,
-            req.product_id,
-            &req.location,
-            req.quantity_change,
-            &req.reason,
-        )
-        .await?;
+    let scope = caller_scope(&user, &state).await?;
+    let item = if scope.is_none() {
+        state
+            .supply_chain_service
+            .adjust_inventory(
+                tenant_id,
+                req.product_id,
+                &req.location,
+                req.quantity_change,
+                &req.reason,
+            )
+            .await?
+    } else {
+        state
+            .supply_chain_service
+            .adjust_inventory_scoped(
+                tenant_id,
+                entitlement_of(&scope).unwrap_or(&[]),
+                req.product_id,
+                &req.location,
+                req.quantity_change,
+                &req.reason,
+            )
+            .await?
+    };
     Ok(Json(item))
 }
 
 // ── Stock Moves ────────────────────────────────────────────────────────────
 
 /// Create a stock movement.
+///
+/// Twenty-third audit P0/P1 (command scope): a stock move's authority
+/// derives through the source/destination INVENTORY ROW sites — the
+/// move is applied only when every inventory row it touches has its
+/// site inside the caller's RequestContext entitlement (a foreign or
+/// site-less row is indistinguishable from a nonexistent one:
+/// NotFound, and NO quantity changes). With no RequestContext possible
+/// (in-memory dev mode) there are no sites to entangle and the
+/// unscoped service is used.
 pub async fn create_stock_move(
     user: AuthenticatedUser,
     State(state): State<AppState>,
@@ -718,10 +789,18 @@ pub async fn create_stock_move(
     user.require_permission("inventory:move")?;
 
     let tenant_id = user.tenant_id;
-    let stock_move = state
-        .supply_chain_service
-        .create_stock_move(tenant_id, req)
-        .await?;
+    let scope = caller_scope(&user, &state).await?;
+    let stock_move = if scope.is_none() {
+        state
+            .supply_chain_service
+            .create_stock_move(tenant_id, req)
+            .await?
+    } else {
+        state
+            .supply_chain_service
+            .create_stock_move_scoped(tenant_id, entitlement_of(&scope).unwrap_or(&[]), req)
+            .await?
+    };
     Ok(Json(stock_move))
 }
 
@@ -890,10 +969,13 @@ pub async fn update_sales_order(
     // Twenty-second audit P2: a typed update body can only touch the
     // mutable business fields — identity, status (status endpoint),
     // timestamps and the IMMUTABLE fulfilling site stay with the
-    // existing row (read-merge-write).
+    // existing row (read-merge-write). Twenty-third audit P0: both the
+    // merge read and the write carry the caller's site entitlement.
+    let scope = caller_scope(&user, &state).await?;
+    let sites = entitlement_of(&scope).unwrap_or(&[]);
     let mut order = state
         .supply_chain_service
-        .get_sales_order(tenant_id, id)
+        .get_sales_order_scoped(tenant_id, sites, id)
         .await?;
     order.customer_id = req.customer_id;
     order.customer_name = req.customer_name;
@@ -908,7 +990,7 @@ pub async fn update_sales_order(
         .sum();
     let order = state
         .supply_chain_service
-        .update_sales_order(tenant_id, id, order)
+        .update_sales_order(tenant_id, sites, id, order)
         .await?;
     Ok(Json(order))
 }
@@ -921,9 +1003,12 @@ pub async fn delete_sales_order(
 ) -> Result<Json<()>> {
     user.require_permission("sales:order:delete")?;
     let tenant_id = user.tenant_id;
+    // Twenty-third audit P0: the delete is site-scope-enforced.
+    let scope = caller_scope(&user, &state).await?;
+    let sites = entitlement_of(&scope).unwrap_or(&[]);
     state
         .supply_chain_service
-        .delete_sales_order(tenant_id, id)
+        .delete_sales_order(tenant_id, sites, id)
         .await?;
     Ok(Json(()))
 }
@@ -941,10 +1026,13 @@ pub async fn update_purchase_order(
     // Twenty-second audit P2: a typed update body can only touch the
     // mutable business fields — identity, status, timestamps and the
     // IMMUTABLE receiving site stay with the existing row
-    // (read-merge-write).
+    // (read-merge-write). Twenty-third audit P0: both the merge read and
+    // the write carry the caller's site entitlement.
+    let scope = caller_scope(&user, &state).await?;
+    let sites = entitlement_of(&scope).unwrap_or(&[]);
     let mut po = state
         .supply_chain_service
-        .get_purchase_order(tenant_id, id)
+        .get_purchase_order_scoped(tenant_id, sites, id)
         .await?;
     po.supplier_id = req.supplier_id;
     po.supplier_name = req.supplier_name;
@@ -958,7 +1046,7 @@ pub async fn update_purchase_order(
         .sum();
     let po = state
         .supply_chain_service
-        .update_purchase_order(tenant_id, id, po)
+        .update_purchase_order(tenant_id, sites, id, po)
         .await?;
     Ok(Json(po))
 }
@@ -972,9 +1060,12 @@ pub async fn delete_purchase_order(
     user.require_permission("purchasing:po:create")?;
 
     let tenant_id = user.tenant_id;
+    // Twenty-third audit P0: the delete is site-scope-enforced.
+    let scope = caller_scope(&user, &state).await?;
+    let sites = entitlement_of(&scope).unwrap_or(&[]);
     state
         .supply_chain_service
-        .delete_purchase_order(tenant_id, id)
+        .delete_purchase_order(tenant_id, sites, id)
         .await?;
     Ok(Json(()))
 }
@@ -987,14 +1078,26 @@ pub async fn receive_full_po(
 ) -> Result<Json<PurchaseOrder>> {
     user.require_permission("purchasing:po:approve")?;
     let tenant_id = user.tenant_id;
+    // Twenty-third audit P0: the full receipt carries the caller's site
+    // entitlement; a PO whose receiving site is outside that scope is
+    // rejected before any stock movement.
+    let scope = caller_scope(&user, &state).await?;
+    let sites = entitlement_of(&scope).unwrap_or(&[]);
     let po = state
         .supply_chain_service
-        .receive_full_po(tenant_id, id)
+        .receive_full_po(tenant_id, sites, id)
         .await?;
     Ok(Json(po))
 }
 
 /// Update an inventory item.
+///
+/// Twenty-third audit P0/P1 (command scope): the affected inventory
+/// row's site must be inside the caller's RequestContext entitlement
+/// BEFORE the write — a foreign-site row is indistinguishable from a
+/// nonexistent one (NotFound). With no RequestContext possible
+/// (in-memory dev mode) there are no sites to entangle and the
+/// unscoped service is used.
 pub async fn update_inventory(
     user: AuthenticatedUser,
     State(state): State<AppState>,
@@ -1003,14 +1106,29 @@ pub async fn update_inventory(
 ) -> Result<Json<InventoryItem>> {
     user.require_permission("inventory:adjust")?;
     let tenant_id = user.tenant_id;
-    let item = state
-        .supply_chain_service
-        .update_inventory(tenant_id, id, req)
-        .await?;
+    let scope = caller_scope(&user, &state).await?;
+    let item = if scope.is_none() {
+        state
+            .supply_chain_service
+            .update_inventory(tenant_id, id, req)
+            .await?
+    } else {
+        state
+            .supply_chain_service
+            .update_inventory_scoped(tenant_id, entitlement_of(&scope).unwrap_or(&[]), id, req)
+            .await?
+    };
     Ok(Json(item))
 }
 
 /// Delete an inventory item.
+///
+/// Twenty-third audit P0/P1 (command scope): the affected inventory
+/// row's site must be inside the caller's RequestContext entitlement
+/// BEFORE the delete — a foreign-site row is indistinguishable from a
+/// nonexistent one (NotFound). With no RequestContext possible
+/// (in-memory dev mode) there are no sites to entangle and the
+/// unscoped service is used.
 pub async fn delete_inventory(
     user: AuthenticatedUser,
     State(state): State<AppState>,
@@ -1018,10 +1136,18 @@ pub async fn delete_inventory(
 ) -> Result<Json<()>> {
     user.require_permission("inventory:adjust")?;
     let tenant_id = user.tenant_id;
-    state
-        .supply_chain_service
-        .delete_inventory(tenant_id, id)
-        .await?;
+    let scope = caller_scope(&user, &state).await?;
+    if scope.is_none() {
+        state
+            .supply_chain_service
+            .delete_inventory(tenant_id, id)
+            .await?;
+    } else {
+        state
+            .supply_chain_service
+            .delete_inventory_scoped(tenant_id, entitlement_of(&scope).unwrap_or(&[]), id)
+            .await?;
+    }
     Ok(Json(()))
 }
 

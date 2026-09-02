@@ -15,6 +15,8 @@ use sensei_core::error::{Result, SenseiError};
 use sqlx::PgPool;
 use uuid::Uuid;
 
+use super::integration::reconcile_instances_tx;
+
 /// Declarative per-site configuration record.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct SiteManifest {
@@ -169,6 +171,12 @@ pub fn validate_manifest_codes(manifest: &SiteManifest) -> std::result::Result<(
 /// is bumped and the qualification is invalidated (validation_report
 /// reset to an empty report + status back to 'draft' — the ladder forces
 /// revalidation).
+///
+/// Twenty-third audit P1 (automatic reconciliation): the manifest write
+/// and the integration-instance reconciliation run in the SAME tenant
+/// transaction — declared kinds are provisioned/enabled at the new
+/// manifest version and kinds removed from the policy are decommissioned
+/// immediately, so instance state NEVER lags the manifest.
 pub async fn upsert_manifest(pool: &PgPool, tenant_id: Uuid, manifest: SiteManifest) -> Result<()> {
     validate_manifest_codes(&manifest).map_err(SenseiError::Validation)?;
     validate(&manifest)?;
@@ -225,6 +233,9 @@ pub async fn upsert_manifest(pool: &PgPool, tenant_id: Uuid, manifest: SiteManif
             .execute(&mut **tx)
             .await
             .map_err(|e| SenseiError::Database(format!("Site manifest upsert failed: {e}")))?;
+            // Automatic reconciliation (twenty-third audit P1): instance
+            // state follows the manifest in the SAME transaction.
+            reconcile_instances_tx(tx, tenant_id, manifest.site_id).await?;
             Ok(())
         })
     })
@@ -318,6 +329,12 @@ pub async fn get_manifest(
 /// (RequalificationRequired), so the guarded ladder forces the site to be
 /// re-validated against the new manifest before it can proceed. An
 /// identical re-bootstrap leaves version/status/report untouched.
+///
+/// Twenty-third audit P1 (automatic reconciliation): the SAME transaction
+/// also reconciles the integration instances against the bootstrapped
+/// manifest (declared kinds provisioned + enabled at the current
+/// manifest version, removed kinds decommissioned) — a site can never
+/// exist whose instance state lags its manifest.
 pub async fn bootstrap_site(pool: &PgPool, tenant_id: Uuid, manifest: SiteManifest) -> Result<()> {
     validate_manifest_codes(&manifest).map_err(SenseiError::Validation)?;
     validate(&manifest)?;
@@ -399,6 +416,9 @@ pub async fn bootstrap_site(pool: &PgPool, tenant_id: Uuid, manifest: SiteManife
             .execute(&mut **tx)
             .await
             .map_err(|e| SenseiError::Database(format!("Canonical metric seed failed: {e}")))?;
+            // Automatic reconciliation (twenty-third audit P1): instance
+            // state follows the manifest in the SAME transaction.
+            reconcile_instances_tx(tx, tenant_id, manifest.site_id).await?;
             Ok(())
         })
     })
@@ -458,26 +478,34 @@ fn capability_requirements(capability: &str) -> Vec<&'static str> {
 
 /// Positive, PER-INSTANCE integration evidence for one site (twenty-first
 /// audit item 5 + twenty-second audit P1): integration_checkpoints are
-/// keyed (tenant, source_system, source_table) — a checkpoint has NO site
-/// or instance anchor, so one healthy SAP checkpoint could certify BOTH
-/// Tangier's and Bizerte's SAP. Readiness is therefore proven per
-/// integration INSTANCE: the manifest declares the kinds the plant needs;
-/// `integration_instances` materializes them PER SITE; and every ENABLED,
-/// REQUIRED instance row of THIS site must show its OWN checkpoint
-/// (instance_id) from the last 24h.
+/// keyed by instance — a checkpoint has NO site-global anchor, so one
+/// healthy SAP checkpoint can never certify BOTH Tangier's and Bizerte's
+/// SAP. Readiness is therefore proven per integration INSTANCE: the
+/// manifest declares the kinds the plant needs; `integration_instances`
+/// materializes them PER SITE; and every ENABLED, REQUIRED instance row
+/// of THIS site must show its OWN checkpoint (instance_id) from the last
+/// 24h.
 ///
-/// Lifecycle semantics (twenty-second audit P1):
-/// - a DISABLED (decommissioned) or non-required instance never blocks
-///   readiness — only instances with enabled = TRUE AND required = TRUE
-///   demand proof;
+/// Lifecycle semantics (twenty-second audit P1 + twenty-third audit P1
+/// closure):
+/// - a DISABLED (decommissioned) or non-required instance never BLOCKS
+///   readiness, but it can no longer SATISFY a declared requirement:
+///   every declared kind must exist as an instance of this site with
+///   enabled = TRUE AND required = TRUE AND
+///   configuration_revision = <manifest_version> — a disabled or stale
+///   (revision-lagged) instance cannot certify a declared kind;
+/// - per required enabled instance, the readiness proof demands a
+///   checkpoint within 24h AND last_verified_revision =
+///   configuration_revision: when the configuration_revision advanced
+///   (a manifest change reconciled into the instance), the old checkpoint
+///   no longer certifies — readiness fails until a fresh bridge run
+///   stamps the new revision (write_checkpoint updates
+///   last_verified_revision in the same transaction);
 /// - an EXPLICITLY empty integration policy (`integrations` = '[]') means
 ///   "no integrations required" and passes with the message
 ///   'no integrations required (explicit)';
 /// - a manifest whose `integrations` column is NULL at all has NO
-///   integration policy — that is 'policy not configured' and FAILS;
-/// - a declared kind with no instance row for this site is a provisioning
-///   failure — the manifest can never be certified through a kind that
-///   was never provisioned here.
+///   integration policy — that is 'policy not configured' and FAILS.
 ///
 /// Ok(None) = every instance of this site is healthy. Ok(Some(msg)) =
 /// healthy with a specific pass message (the explicit-empty policy). Err
@@ -488,21 +516,29 @@ async fn site_integration_instances_proven(
     tenant_id: Uuid,
     site_id: Uuid,
 ) -> Result<Option<String>> {
-    // The manifest's declared kinds (what the plant needs). NULL and '[]'
+    // The manifest's declared kinds (what the plant needs) AND the
+    // manifest version the proof binds to, in ONE read. NULL and '[]'
     // are DISTINCT states: a NULL integrations policy is NOT configured
     // (fail closed); an explicit '[]' means the site requires NO
     // integrations (passes). Reading the raw column as Option<Value>
     // distinguishes the two before any decoding.
-    let integrations: Option<serde_json::Value> = sqlx::query_scalar(
-        "SELECT integrations FROM site_manifests \
+    let row: Option<(Option<serde_json::Value>, i32)> = sqlx::query_as(
+        "SELECT integrations, manifest_version FROM site_manifests \
          WHERE tenant_id = $1 AND site_id = $2",
     )
     .bind(tenant_id)
     .bind(site_id)
     .fetch_optional(&mut **tx)
     .await
-    .map_err(|e| SenseiError::Database(format!("Integrations read failed: {e}")))?
-    .flatten();
+    .map_err(|e| SenseiError::Database(format!("Integrations read failed: {e}")))?;
+    let Some((integrations, manifest_version)) = row else {
+        return Err(SenseiError::Validation(
+            "integration policy not configured — the site manifest has no \
+             integrations data (NULL); declare an explicit [] policy or \
+             provision declared kinds"
+                .to_string(),
+        ));
+    };
     let kinds: Vec<String> = match integrations {
         None => {
             return Err(SenseiError::Validation(
@@ -539,13 +575,49 @@ async fn site_integration_instances_proven(
             .unwrap_or_default(),
     };
 
-    // The materialized instances of THIS site (tenant + site scope).
-    // Lifecycle: only ENABLED and REQUIRED instances demand proof — a
-    // decommissioned (disabled) or optional instance must NOT keep
-    // blocking a plant that no longer needs it.
-    type InstanceRow = (Uuid, String);
+    // Reconcile declared kinds against provisioned instances (twenty-third
+    // audit P1): a declared kind is only satisfiable by an ENABLED +
+    // REQUIRED instance whose configuration_revision equals the CURRENT
+    // manifest version — a disabled (decommissioned) instance or one
+    // reconciled at an older revision can never certify a declared
+    // requirement. (The manifest version is known here — the site row
+    // that declared the kinds is the row the proof reads.)
+    for kind in &kinds {
+        let provisioned: bool = sqlx::query_scalar(
+            "SELECT EXISTS ( \
+                SELECT 1 FROM integration_instances \
+                WHERE tenant_id = $1 AND site_id = $2 \
+                  AND integration_type = $3 \
+                  AND enabled = TRUE AND required = TRUE \
+                  AND configuration_revision = $4)",
+        )
+        .bind(tenant_id)
+        .bind(site_id)
+        .bind(kind)
+        .bind(manifest_version)
+        .fetch_one(&mut **tx)
+        .await
+        .map_err(|e| SenseiError::Database(format!("Integration instance read failed: {e}")))?;
+        if !provisioned {
+            return Err(SenseiError::Validation(format!(
+                "integration instance '{kind}' is not provisioned for this site \
+                 (no enabled, required instance at configuration_revision \
+                 {manifest_version})"
+            )));
+        }
+    }
+
+    // Per-instance proof: each ENABLED + REQUIRED instance's OWN
+    // checkpoint within 24h AND verified against the CURRENT
+    // configuration revision (twenty-third audit P1): a checkpoint whose
+    // last_verified_revision lags the instance's configuration_revision
+    // was certified against an OLDER manifest — it cannot certify the
+    // current configuration. Readiness fails until a fresh bridge run
+    // (write_checkpoint) stamps the new revision.
+    type InstanceRow = (Uuid, String, i32, Option<i32>);
     let instances: Vec<InstanceRow> = sqlx::query_as(
-        "SELECT id, integration_type FROM integration_instances \
+        "SELECT id, integration_type, configuration_revision, last_verified_revision \
+         FROM integration_instances \
          WHERE tenant_id = $1 AND site_id = $2 AND enabled = TRUE AND required = TRUE",
     )
     .bind(tenant_id)
@@ -553,34 +625,11 @@ async fn site_integration_instances_proven(
     .fetch_all(&mut **tx)
     .await
     .map_err(|e| SenseiError::Database(format!("Integration instance read failed: {e}")))?;
-
-    // Reconcile declared kinds against provisioned instances: a declared
-    // kind this site has never provisioned cannot be proven. (A DISABLED
-    // row still counts as provisioned — decommissioning an instance does
-    // not un-provision the kind; it simply stops demanding proof from it.)
-    let all_instances: Vec<String> = sqlx::query_scalar(
-        "SELECT integration_type FROM integration_instances \
-         WHERE tenant_id = $1 AND site_id = $2",
-    )
-    .bind(tenant_id)
-    .bind(site_id)
-    .fetch_all(&mut **tx)
-    .await
-    .map_err(|e| SenseiError::Database(format!("Integration instance read failed: {e}")))?;
-    for kind in &kinds {
-        if !all_instances
-            .iter()
-            .any(|integration_type| integration_type == kind)
-        {
-            return Err(SenseiError::Validation(format!(
-                "integration instance '{kind}' is not provisioned for this site"
-            )));
-        }
-    }
-
-    // Per-instance proof: each ENABLED + REQUIRED instance's OWN
-    // checkpoint within 24h.
-    for (instance_id, integration_type) in &instances {
+    for (instance_id, integration_type, configuration_revision, last_verified_revision) in
+        &instances
+    {
+        // First the epistemics: an instance with NO recent checkpoint is
+        // NEVER RUN — the check names that state, never a stale stamp.
         let proven: i64 = sqlx::query_scalar(
             "SELECT COUNT(*) FROM integration_checkpoints \
              WHERE tenant_id = $1 AND instance_id = $2 \
@@ -599,6 +648,20 @@ async fn site_integration_instances_proven(
             return Err(SenseiError::Validation(format!(
                 "integration instance '{integration_type}' has no checkpoint \
                  in the last 24h — this site's own instance evidence is required"
+            )));
+        }
+        // Then currency: a recent checkpoint whose last_verified_revision
+        // lags the instance's configuration_revision was certified against
+        // an OLDER manifest — it cannot certify the current configuration.
+        if last_verified_revision.as_ref() != Some(configuration_revision) {
+            return Err(SenseiError::Validation(format!(
+                "integration instance '{integration_type}' verification is stale — \
+                 configuration_revision is {configuration_revision} but the checkpoint \
+                 certifies revision {}; the manifest changed and the old proof no longer \
+                 certifies — re-run the bridge to stamp the new revision",
+                last_verified_revision
+                    .map(|v| v.to_string())
+                    .unwrap_or_else(|| "never (unverified)".to_string())
             )));
         }
     }
@@ -739,13 +802,16 @@ pub async fn validate_site(
             // (twenty-first audit item 5 + twenty-second audit P1):
             // every ENABLED + REQUIRED integration instance provisioned
             // for THIS site must show its own checkpoint (instance_id)
-            // from the last 24h, and every manifest-declared kind must be
-            // provisioned as an instance of this site. A disabled /
-            // decommissioned instance never blocks; an EXPLICIT [] policy
-            // passes ('no integrations required'); a NULL policy is 'not
-            // configured' and fails. A tenant-global checkpoint can never
-            // certify another site's instance. DB failures propagate:
-            // UNKNOWN -> NOT READY.
+            // from the last 24h, verified against the CURRENT
+            // configuration revision (twenty-third audit P1), and every
+            // manifest-declared kind must be provisioned as an ENABLED,
+            // REQUIRED instance of this site at the current manifest
+            // revision. A disabled / decommissioned instance never blocks
+            // but can no longer satisfy a declared requirement; an
+            // EXPLICIT [] policy passes ('no integrations required'); a
+            // NULL policy is 'not configured' and fails. A tenant-global
+            // checkpoint can never certify another site's instance. DB
+            // failures propagate: UNKNOWN -> NOT READY.
             let (integrations_ok, integration_detail) =
                 match site_integration_instances_proven(tx, tenant_id, site_id).await {
                     Ok(None) => (
@@ -1357,16 +1423,20 @@ pub async fn advance_site_lifecycle(
                                 .to_string(),
                         ));
                     }
-                    // Twenty-first audit item 5 / twenty-second audit P1:
-                    // activation requires POSITIVE, PER-INSTANCE evidence
-                    // — every ENABLED + REQUIRED integration instance
-                    // provisioned for THIS site must show its own
-                    // checkpoint (instance_id) in the last 24h, and every
-                    // manifest-declared kind must be provisioned as an
-                    // instance of this site. A tenant-global checkpoint can
-                    // never certify a site whose own instances never ran.
-                    // (Disabled/decommissioned instances never block; an
-                    // explicit [] policy passes.)
+                    // Twenty-first audit item 5 / twenty-second audit P1 /
+                    // twenty-third audit P1: activation requires POSITIVE,
+                    // PER-INSTANCE evidence — every ENABLED + REQUIRED
+                    // integration instance provisioned for THIS site must
+                    // show its own checkpoint (instance_id) in the last
+                    // 24h, verified against the CURRENT configuration
+                    // revision, and every manifest-declared kind must be
+                    // provisioned as an enabled, required instance at the
+                    // current manifest revision. A tenant-global
+                    // checkpoint can never certify a site whose own
+                    // instances never ran; a stale (revision-lagged)
+                    // checkpoint stops certifying until the bridge stamps
+                    // the new revision. (Disabled/decommissioned instances
+                    // never block; an explicit [] policy passes.)
                     site_integration_instances_proven(tx, tenant_id, site_id).await?;
                     advance_lifecycle(
                         tx,

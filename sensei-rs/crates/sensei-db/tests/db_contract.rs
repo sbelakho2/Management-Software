@@ -10293,6 +10293,7 @@ async fn site_bootstrap_lifecycle_validation() {
     .await
     .expect("sites insert");
 
+    use sensei_services::tps::integration::write_checkpoint;
     use sensei_services::tps::site_manifest::{
         activate_site, bootstrap_site, validate_site, SiteManifest,
     };
@@ -10548,33 +10549,45 @@ async fn site_bootstrap_lifecycle_validation() {
     .await
     .expect("competency projection insert");
     // Positive integration evidence — the manifest-declared 'erp'
-    // integration is PROVISIONED as an integration INSTANCE of this
-    // site and the RECENT checkpoint proves THAT instance ran
-    // (twenty-first audit item 5: readiness is per instance, so the
-    // checkpoint carries the instance_id — absence of dead letters
-    // alone is not readiness).
-    let erp_instance_id = uuid::Uuid::new_v4();
-    sqlx::query(
-        "INSERT INTO integration_instances \
-             (id, tenant_id, site_id, integration_type, endpoint, configuration_revision) \
-         VALUES ($1, $2, $3, 'erp', 'https://starz-erp.internal', 1)",
+    // integration was PROVISIONED as an integration INSTANCE of this
+    // site BY BOOTSTRAP (twenty-third audit P1: bootstrap reconciles
+    // instance state with the manifest in the same transaction), and the
+    // bridge's own checkpoint write proves THAT instance ran at its
+    // current configuration_revision — the write stamps
+    // last_verified_revision, so a raw checkpoint insert could never
+    // certify readiness (twenty-first audit item 5: readiness is per
+    // instance; absence of dead letters alone is not readiness).
+    let erp_instance_id: uuid::Uuid = {
+        let mut tx = pool.begin().await.expect("erp instance read tx");
+        sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
+            .bind(tenant_id.to_string())
+            .execute(&mut *tx)
+            .await
+            .expect("set tenant context");
+        let id: uuid::Uuid = sqlx::query_scalar(
+            "SELECT id FROM integration_instances \
+             WHERE tenant_id = $1 AND site_id = $2 AND integration_type = 'erp'",
+        )
+        .bind(tenant_id)
+        .bind(site_id)
+        .fetch_one(&mut *tx)
+        .await
+        .expect("the auto-reconciled erp instance must exist after bootstrap");
+        tx.commit().await.expect("erp instance read tx commit");
+        id
+    };
+    write_checkpoint(
+        &pool,
+        tenant_id,
+        erp_instance_id,
+        Some("erp".to_string()),
+        Some("sales_orders".to_string()),
+        chrono::Utc::now(),
+        None,
+        "run-lc".to_string(),
     )
-    .bind(erp_instance_id)
-    .bind(tenant_id)
-    .bind(site_id)
-    .execute(&pool)
     .await
-    .expect("integration instance insert");
-    sqlx::query(
-        "INSERT INTO integration_checkpoints \
-             (tenant_id, source_system, source_table, instance_id, last_run_at) \
-         VALUES ($1, 'erp', 'sales_orders', $2, NOW())",
-    )
-    .bind(tenant_id)
-    .bind(erp_instance_id)
-    .execute(&pool)
-    .await
-    .expect("integration checkpoint");
+    .expect("the erp instance's own checkpoint write must succeed");
 
     // The principal must hold an ACTIVE role-slot assignment for the
     // skill-coverage join (the slot was created in the seeding tx above).
@@ -11800,6 +11813,11 @@ async fn otd_is_on_time_over_immutable_commitment() {
     let late_committed = now - chrono::Duration::days(5);
     let on_time_id = uuid::Uuid::new_v4();
     let late_id = uuid::Uuid::new_v4();
+    let created_by = uuid::Uuid::new_v4();
+    // Both OTD fixtures name the same fulfilling site; the status
+    // mutations below must be scoped to that site (twenty-third audit
+    // P0: mutations are site-scope-enforced, not just reads).
+    let fulfilling_site = uuid::Uuid::new_v4();
     sqlx::query(
         "INSERT INTO sales_orders (id, tenant_id, so_number, order_number, customer_id, status, \
                                    order_date, delivery_date, confirmed_at, delivered_at, \
@@ -11816,8 +11834,8 @@ async fn otd_is_on_time_over_immutable_commitment() {
     .bind(late_committed)
     .bind(late_id)
     .bind(now - chrono::Duration::days(1))
-    .bind(uuid::Uuid::new_v4())
-    .bind(uuid::Uuid::new_v4())
+    .bind(created_by)
+    .bind(fulfilling_site)
     .execute(&pool)
     .await
     .expect("sales order inserts");
@@ -11841,7 +11859,7 @@ async fn otd_is_on_time_over_immutable_commitment() {
             .expect("read the late order's committed_date");
     use sensei_services::supply_chain::SupplyChainService;
     let svc = sensei_services::supply_chain::DatabaseSupplyChainService::new(pool.clone());
-    svc.update_sales_order_status(tenant_id, late_id, "confirmed")
+    svc.update_sales_order_status(tenant_id, &[fulfilling_site], late_id, "confirmed")
         .await
         .expect("re-confirmation transition must apply");
     let committed_after: chrono::DateTime<chrono::Utc> =
@@ -11858,7 +11876,7 @@ async fn otd_is_on_time_over_immutable_commitment() {
 
     // Restore the delivered status the re-confirmation replaced, then
     // confirm the metric still reads the immutable anchor: 0.5.
-    svc.update_sales_order_status(tenant_id, late_id, "delivered")
+    svc.update_sales_order_status(tenant_id, &[fulfilling_site], late_id, "delivered")
         .await
         .expect("re-delivery transition must apply");
     let otd_again = compute_metric(&pool, tenant_id, "otd", None)
@@ -12035,14 +12053,15 @@ async fn nineteenth_audit_adversarial_gate() {
         .execute(&pool)
         .await
         .expect("order");
-        // The REAL confirmation path stamps the promise.
+        // The REAL confirmation path stamps the promise. The mutation is
+        // scoped to the order's fulfilling site (twenty-third audit P0).
         let _ = sc
-            .update_sales_order_status(tenant_id, order_id, "confirmed")
+            .update_sales_order_status(tenant_id, &[site_id], order_id, "confirmed")
             .await
             .expect("confirm");
         // Delivered today (before the Sep-20 promise).
         let _ = sc
-            .update_sales_order_status(tenant_id, order_id, "delivered")
+            .update_sales_order_status(tenant_id, &[site_id], order_id, "delivered")
             .await
             .expect("deliver");
         let committed: chrono::DateTime<chrono::Utc> = sqlx::query_scalar(
@@ -12605,6 +12624,21 @@ async fn twentieth_audit_adversarial_gate_v3() {
 ///    Tunisia 'tn', with TWO version rows for Morocco to prove the
 ///    lateral `ORDER BY revision DESC LIMIT 1` never duplicates an edge)
 ///    ⇒ exactly TWO edges with DISTINCT target_site values.
+///
+/// Twenty-third audit P1 extensions (still under the non-owner gate):
+///  - FANOUT IDEMPOTENCY — the same edges are published through
+///    `enqueue_projection_fanout` (ONE transaction, `ON CONFLICT
+///    (tenant_id, source_event_id, target_tenant_id, target_site_id) DO
+///    NOTHING`): the first publish inserts one row per permitting edge, a
+///    REPEATED publish of the same command converges (newly_enqueued 0 /
+///    already_present N — the old per-edge loop 500'd on this retry), and
+///    an edge that DENIES the projection (LocalOnly + cross-border) is
+///    counted as blocked, never enqueued and never an error.
+///  - SUBJECT-COUNT STRICTNESS — `derive_projection_identity` is exact:
+///    zero subjects is a Validation error, MORE THAN ONE subject is a
+///    Validation error (multiple subjects require explicit projector
+///    semantics), exactly one subject (the single-subject seed event)
+///    derives the identity.
 #[tokio::test]
 async fn federation_edges_load_under_non_owner_role() {
     let _serial = DB_LOCK.lock().await;
@@ -12928,6 +12962,205 @@ async fn federation_edges_load_under_non_owner_role() {
         "FORCE RLS hides every federation_memberships row from the app role's direct read"
     );
 
+    // ── 3) FANOUT IDEMPOTENCY (twenty-third audit P1): one publish of one
+    //    source event across EVERY federation edge runs in ONE transaction
+    //    with ON CONFLICT (tenant_id, source_event_id, target_tenant_id,
+    //    target_site_id) DO NOTHING. The edges loaded above (one per peer
+    //    site) are the fanout set: the FIRST publish inserts one row per
+    //    permitting edge; a REPEATED publish of the same command must NOT
+    //    fail on the first duplicate — it converges (newly_enqueued 0,
+    //    already_present N), and an edge the residency/class gate denies
+    //    is counted separately as blocked, never enqueued, never an error.
+    let source_event = uuid::Uuid::new_v4();
+    let wo_entity = uuid::Uuid::new_v4();
+    let fanout_envelope = replication::ReplicationEnvelope {
+        schema_version: 1,
+        source_event_id: Some(source_event.to_string()),
+        source_site: None,
+        projection_type: "work_order".to_string(),
+        projection_revision: 1,
+        data_policy: "internal".to_string(),
+        payload: serde_json::json!({ "status": "planned", "qty": 10 }),
+    };
+    let fanout_edges = vec![ma_edge.clone(), tn_edge.clone()];
+    let report = replication::enqueue_projection_fanout(
+        &pool,
+        tenant_a,
+        None,
+        "work_order",
+        wo_entity,
+        fanout_envelope.payload.clone(),
+        &source_event.to_string(),
+        &fanout_envelope,
+        &Jurisdiction::MA,
+        &fanout_edges,
+    )
+    .await
+    .expect("fanout enqueue must succeed");
+    assert_eq!(report.newly_enqueued, 2, "one row per permitting edge");
+    assert_eq!(
+        report.already_present, 0,
+        "first publish — nothing pre-existing"
+    );
+    assert_eq!(report.blocked, 0, "both edges permit internal data");
+    // The rows are claimable with the per-edge targets recorded.
+    let fanout_pulled = replication::claim_batch(&pool, tenant_a, 100)
+        .await
+        .expect("claim the fanout rows");
+    assert_eq!(
+        fanout_pulled.len(),
+        2,
+        "both fanout rows are durable and claimable"
+    );
+    // The RETRY — the exact failure mode of the old per-edge loop: the
+    // first duplicate used to 500 mid-way. DO NOTHING makes the retry
+    // converge to the SAME complete set instead.
+    let retry = replication::enqueue_projection_fanout(
+        &pool,
+        tenant_a,
+        None,
+        "work_order",
+        wo_entity,
+        fanout_envelope.payload.clone(),
+        &source_event.to_string(),
+        &fanout_envelope,
+        &Jurisdiction::MA,
+        &fanout_edges,
+    )
+    .await
+    .expect("the retry must NOT fail on the first duplicate");
+    assert_eq!(retry.newly_enqueued, 0, "idempotent — nothing new inserted");
+    assert_eq!(
+        retry.already_present, 2,
+        "both rows were already present — convergence, not an error"
+    );
+    assert_eq!(retry.blocked, 0);
+    // A mixed fanout: one permitting edge + one edge that DENIES the
+    // projection (LocalOnly residency against a cross-border move). The
+    // denied edge is counted, the permitting edge still enqueues.
+    let denied_edge = replication::FederationEdge {
+        source_tenant: tenant_a,
+        source_site: None,
+        target_tenant: uuid::Uuid::new_v4(),
+        target_site: Some(uuid::Uuid::new_v4()),
+        target_jurisdiction: Jurisdiction::TN,
+        allowed_data_classes: vec![
+            DataPolicy::Public,
+            DataPolicy::Internal,
+            DataPolicy::Confidential,
+            DataPolicy::Restricted,
+            DataPolicy::Personal,
+        ],
+        residency_policy: ResidencyPolicy::LocalOnly,
+        policy_revision: 1,
+    };
+    let second_event = uuid::Uuid::new_v4();
+    let second_entity = uuid::Uuid::new_v4();
+    let second_envelope = replication::ReplicationEnvelope {
+        source_event_id: Some(second_event.to_string()),
+        payload: serde_json::json!({ "status": "completed", "qty": 20 }),
+        ..fanout_envelope.clone()
+    };
+    let mixed = replication::enqueue_projection_fanout(
+        &pool,
+        tenant_a,
+        None,
+        "work_order",
+        second_entity,
+        second_envelope.payload.clone(),
+        &second_event.to_string(),
+        &second_envelope,
+        &Jurisdiction::MA,
+        &[ma_edge.clone(), denied_edge],
+    )
+    .await
+    .expect("a blocked edge is not an error — it is counted");
+    assert_eq!(mixed.newly_enqueued, 1, "the permitting edge enqueues");
+    assert_eq!(mixed.blocked, 1, "the LocalOnly edge denies the move");
+    assert_eq!(mixed.already_present, 0);
+
+    // ── 4) SUBJECT-COUNT STRICTNESS (twenty-third audit P1):
+    //    derive_projection_identity is EXACT — zero subjects and MORE THAN
+    //    ONE subject are both Validation errors (an ambiguous projection
+    //    needs explicit projector semantics, none defined yet); exactly
+    //    one subject yields the entity identity. (The audited route
+    //    refuses everything else BEFORE anything is enqueued.)
+    //    (a) an event carrying NO subject object is refused.
+    let no_subject_event = uuid::Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO operational_events \
+             (id, tenant_id, event_type, occurred_at, recorded_at, source_system, \
+              source_id, sensitivity, payload, sequence) \
+         VALUES ($1, $2, 'work_order', NOW(), NOW(), 't23', 'no-subject', 'internal', '{}', 1)",
+    )
+    .bind(no_subject_event)
+    .bind(tenant_a)
+    .execute(&pool)
+    .await
+    .expect("subject-less event insert");
+    let no_subject = replication::derive_projection_identity(&pool, tenant_a, no_subject_event)
+        .await
+        .expect_err("an event without a subject object must be refused");
+    assert!(
+        matches!(no_subject, sensei_core::error::SenseiError::Validation(_)),
+        "zero subjects is a Validation error: {no_subject}"
+    );
+    //    (b) EXACTLY one subject derives the identity — the single-subject
+    //        test event seeds one subject object.
+    let single_subject_event = uuid::Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO operational_events \
+             (id, tenant_id, event_type, occurred_at, recorded_at, source_system, \
+              source_id, sensitivity, payload, sequence) \
+         VALUES ($1, $2, 'work_order', NOW(), NOW(), 't23', 'one-subject', 'internal', '{}', 1)",
+    )
+    .bind(single_subject_event)
+    .bind(tenant_a)
+    .execute(&pool)
+    .await
+    .expect("single-subject event insert");
+    sqlx::query(
+        "INSERT INTO operational_event_objects \
+             (tenant_id, event_id, object_type, object_id, role) \
+         VALUES ($1, $2, 'work_order', $3, 'subject')",
+    )
+    .bind(tenant_a)
+    .bind(single_subject_event)
+    .bind(wo_entity)
+    .execute(&pool)
+    .await
+    .expect("single subject object insert");
+    let (subject_type, subject_id) =
+        replication::derive_projection_identity(&pool, tenant_a, single_subject_event)
+            .await
+            .expect("exactly one subject must derive the projection identity");
+    assert_eq!(subject_type, "work_order");
+    assert_eq!(subject_id, wo_entity);
+    //    (c) MORE THAN ONE subject is refused — no LIMIT 1 guess may pick
+    //        one of two subject objects as the identity.
+    sqlx::query(
+        "INSERT INTO operational_event_objects \
+             (tenant_id, event_id, object_type, object_id, role) \
+         VALUES ($1, $2, 'shift', $3, 'subject')",
+    )
+    .bind(tenant_a)
+    .bind(single_subject_event)
+    .bind(uuid::Uuid::new_v4())
+    .execute(&pool)
+    .await
+    .expect("second subject object insert");
+    let ambiguous = replication::derive_projection_identity(&pool, tenant_a, single_subject_event)
+        .await
+        .expect_err("an event projecting TWO subjects must be refused");
+    assert!(
+        matches!(ambiguous, sensei_core::error::SenseiError::Validation(_))
+            && ambiguous
+                .to_string()
+                .contains("multiple subjects require explicit projector semantics"),
+        "two subjects is a Validation error demanding explicit projector semantics: \
+         {ambiguous}"
+    );
+
     // ── Cleanup: DROP ROLE is impossible while its pool is open — close
     //    the pool first, then drop the role.
     pool_app.close().await;
@@ -12941,16 +13174,18 @@ async fn federation_edges_load_under_non_owner_role() {
         .expect("drop role");
 }
 
-/// Twenty-first audit item 5 (per-site integration INSTANCES): site
-/// readiness must be proven per integration INSTANCE, never per kind.
-/// integration_checkpoints are keyed (tenant, source_system, source_table)
-/// — they carry NO site or instance anchor, so one healthy SAP checkpoint
-/// could certify BOTH Tangier's and Bizerte's SAP. `integration_instances`
-/// materializes the manifest-declared kinds PER SITE, and
-/// `validate_site`'s integrations_healthy check requires every instance of
-/// THIS site to show its OWN checkpoint (instance_id) from the last 24h:
-/// B's SAP instance cannot be certified by A's checkpoint, and a declared
-/// kind with no instance row for the site fails as not provisioned.
+/// Twenty-first audit item 5 + twenty-third audit P1 closure (per-site
+/// integration INSTANCES): site readiness must be proven per integration
+/// INSTANCE, never per kind. `integration_instances` materializes the
+/// manifest-declared kinds PER SITE — bootstrap now AUTOMATICALLY
+/// reconciles every site's declared kinds into enabled, required
+/// instances at the current manifest revision — and `validate_site`'s
+/// integrations_healthy check requires every enabled + required instance
+/// of THIS site to show its OWN checkpoint (instance_id) from the last
+/// 24h, VERIFIED against its current configuration_revision: B's SAP
+/// instance cannot be certified by A's checkpoint, and a checkpoint that
+/// never ran through the bridge (no last_verified_revision stamp) can
+/// never certify an instance.
 #[tokio::test]
 async fn integration_readiness_is_per_site_instance() {
     let _serial = DB_LOCK.lock().await;
@@ -12985,6 +13220,7 @@ async fn integration_readiness_is_per_site_instance() {
     let ev_a = uuid::Uuid::new_v4();
     let ev_b = uuid::Uuid::new_v4();
 
+    use sensei_services::tps::integration::write_checkpoint;
     use sensei_services::tps::site_manifest::{bootstrap_site, validate_site, SiteManifest};
 
     sqlx::query("INSERT INTO tenants (id, name, slug) VALUES ($1, 'inst', 'inst')")
@@ -13075,8 +13311,10 @@ async fn integration_readiness_is_per_site_instance() {
     .expect("skill insert");
 
     // Per-site readiness fixture: role slot + work center + shift +
-    // assignment + qualification evidence + competency projection, plus
-    // the site's own provisioned SAP integration INSTANCE.
+    // assignment + qualification evidence + competency projection. (The
+    // site's SAP integration INSTANCE was ALREADY provisioned by
+    // bootstrap — twenty-third audit P1 reconciles declared kinds
+    // automatically, so the fixture never inserts instance rows.)
     #[allow(clippy::too_many_arguments)]
     async fn seed_instance_site(
         pool: &sqlx::PgPool,
@@ -13090,7 +13328,6 @@ async fn integration_readiness_is_per_site_instance() {
         principal: uuid::Uuid,
         assessor: uuid::Uuid,
         skill_id: uuid::Uuid,
-        endpoint: &str,
     ) {
         let mut tx = pool.begin().await.expect("slot tx");
         sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
@@ -13109,19 +13346,6 @@ async fn integration_readiness_is_per_site_instance() {
         .execute(&mut *tx)
         .await
         .expect("role slot insert");
-        // The site's integration INSTANCE (integration_instances is
-        // fail-closed RLS — provisioned inside the tenant context).
-        sqlx::query(
-            "INSERT INTO integration_instances \
-                 (tenant_id, site_id, integration_type, endpoint, configuration_revision) \
-             VALUES ($1, $2, 'sap', $3, 1)",
-        )
-        .bind(tenant_id)
-        .bind(site_id)
-        .bind(endpoint)
-        .execute(&mut *tx)
-        .await
-        .expect("integration instance insert");
         let per_site_gauge = uuid::Uuid::new_v4();
         sqlx::query(
             "INSERT INTO gauges (id, tenant_id, gauge_id, name, gauge_type, site_id) \
@@ -13219,33 +13443,13 @@ async fn integration_readiness_is_per_site_instance() {
     }
 
     seed_instance_site(
-        &pool,
-        tenant_id,
-        site_a,
-        "INSA",
-        slot_a,
-        wc_a,
-        shift_a,
-        ev_a,
-        principal,
-        assessor,
+        &pool, tenant_id, site_a, "INSA", slot_a, wc_a, shift_a, ev_a, principal, assessor,
         skill_id,
-        "https://a",
     )
     .await;
     seed_instance_site(
-        &pool,
-        tenant_id,
-        site_b,
-        "INSB",
-        slot_b,
-        wc_b,
-        shift_b,
-        ev_b,
-        principal,
-        assessor,
+        &pool, tenant_id, site_b, "INSB", slot_b, wc_b, shift_b, ev_b, principal, assessor,
         skill_id,
-        "https://b",
     )
     .await;
 
@@ -13302,27 +13506,51 @@ async fn integration_readiness_is_per_site_instance() {
     .await
     .expect("calibration event insert");
 
-    // ONLY site A's SAP instance has its own recent checkpoint. The
-    // legacy UNIQUE (tenant_id, source_system, source_table) survives
-    // migration 154, so the per-instance fixture rows use distinct
-    // source_table names (the per-instance readiness proof reads
-    // instance_id, never source_system/source_table).
-    sqlx::query(
-        "INSERT INTO integration_checkpoints \
-             (tenant_id, source_system, source_table, instance_id, last_run_at) \
-         SELECT $1, 'sap', 'material_master', id, NOW() - INTERVAL '1 hour' \
-         FROM integration_instances \
-         WHERE tenant_id = $1 AND site_id = $2 AND integration_type = 'sap'",
-    )
-    .bind(tenant_id)
-    .bind(site_a)
-    .execute(&pool)
-    .await
-    .expect("site A checkpoint insert");
+    // The bootstrap-reconciled SAP instance of one site (read under the
+    // tenant context — integration_instances is fail-closed RLS).
+    async fn site_sap_instance(
+        pool: &sqlx::PgPool,
+        tenant_id: uuid::Uuid,
+        site_id: uuid::Uuid,
+    ) -> uuid::Uuid {
+        let mut tx = pool.begin().await.expect("instance id tx");
+        sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
+            .bind(tenant_id.to_string())
+            .execute(&mut *tx)
+            .await
+            .expect("set tenant context");
+        let id: uuid::Uuid = sqlx::query_scalar(
+            "SELECT id FROM integration_instances \
+             WHERE tenant_id = $1 AND site_id = $2 AND integration_type = 'sap'",
+        )
+        .bind(tenant_id)
+        .bind(site_id)
+        .fetch_one(&mut *tx)
+        .await
+        .expect("the bootstrap-reconciled sap instance must exist");
+        tx.commit().await.expect("instance id tx commit");
+        id
+    }
 
-    // Site B declares SAP and HAS a provisioned SAP instance — but that
-    // instance never ran. A's checkpoint must NOT certify B: readiness is
-    // per instance, not per kind.
+    // ONLY site A's SAP instance has run — through the BRIDGE (twenty-
+    // third audit P1: only write_checkpoint stamps last_verified_revision,
+    // so readiness can never be certified by a raw checkpoint row).
+    write_checkpoint(
+        &pool,
+        tenant_id,
+        site_sap_instance(&pool, tenant_id, site_a).await,
+        Some("sap".to_string()),
+        Some("material_master".to_string()),
+        chrono::Utc::now(),
+        None,
+        "run-a".to_string(),
+    )
+    .await
+    .expect("site A's own checkpoint write must succeed");
+
+    // Site B declares SAP and HAS a provisioned SAP instance (bootstrap
+    // reconciled it) — but that instance never ran. A's checkpoint must
+    // NOT certify B: readiness is per instance, not per kind.
     let report_b = validate_site(&pool, tenant_id, site_b)
         .await
         .expect("validate site B before its checkpoint");
@@ -13365,8 +13593,11 @@ async fn integration_readiness_is_per_site_instance() {
     );
     assert!(report_a.ready, "site A must be fully ready");
 
-    // Site C declares SAP but never provisioned an instance for itself —
-    // the declared kind cannot be proven: not provisioned.
+    // Site C declares SAP and bootstrap reconciled an instance for it —
+    // but that instance NEVER RAN through the bridge: the provisioned
+    // kind exists (enabled + required + current revision) yet nothing
+    // certifies it, so readiness still fails (no evidence, never a fake
+    // zero).
     let report_c = validate_site(&pool, tenant_id, site_c)
         .await
         .expect("validate site C");
@@ -13377,26 +13608,30 @@ async fn integration_readiness_is_per_site_instance() {
         .expect("report must carry integrations_healthy");
     assert!(
         !healthy_c.1,
-        "a declared kind with no instance row for the site must fail readiness"
+        "a provisioned instance that never ran through the bridge must fail readiness"
     );
-    assert_eq!(
-        healthy_c.2, "integration instance 'sap' is not provisioned for this site",
-        "the check must report the provisioning gap for site C"
+    assert!(
+        healthy_c
+            .2
+            .contains("integration instance 'sap' has no checkpoint in the last 24h"),
+        "the check must report C's own never-ran instance, got: {}",
+        healthy_c.2
     );
 
-    // Give B's OWN instance a checkpoint → B validates healthy (ready).
-    sqlx::query(
-        "INSERT INTO integration_checkpoints \
-             (tenant_id, source_system, source_table, instance_id, last_run_at) \
-         SELECT $1, 'sap', 'goods_movements', id, NOW() - INTERVAL '1 hour' \
-         FROM integration_instances \
-         WHERE tenant_id = $1 AND site_id = $2 AND integration_type = 'sap'",
+    // Give B's OWN instance a checkpoint THROUGH THE BRIDGE → B validates
+    // healthy (ready).
+    write_checkpoint(
+        &pool,
+        tenant_id,
+        site_sap_instance(&pool, tenant_id, site_b).await,
+        Some("sap".to_string()),
+        Some("goods_movements".to_string()),
+        chrono::Utc::now(),
+        None,
+        "run-b".to_string(),
     )
-    .bind(tenant_id)
-    .bind(site_b)
-    .execute(&pool)
     .await
-    .expect("site B checkpoint insert");
+    .expect("site B's own checkpoint write must succeed");
     let report_b_after = validate_site(&pool, tenant_id, site_b)
         .await
         .expect("re-validate site B with its own checkpoint");
@@ -13489,12 +13724,14 @@ async fn twenty_first_audit_producer_consumer_paths() {
         .await
         .expect("service-created order");
     assert_eq!(created.fulfilling_site_id, Some(site_a));
+    // The status mutations are scoped to the order's fulfilling site
+    // (twenty-third audit P0: mutations must be scope-enforced).
     let _ = sc
-        .update_sales_order_status(tenant_id, created.id, "confirmed")
+        .update_sales_order_status(tenant_id, &[site_a], created.id, "confirmed")
         .await
         .expect("confirm with a site anchor");
     let _ = sc
-        .update_sales_order_status(tenant_id, created.id, "delivered")
+        .update_sales_order_status(tenant_id, &[site_a], created.id, "delivered")
         .await
         .expect("deliver");
     let otd =
@@ -13516,7 +13753,7 @@ async fn twenty_first_audit_producer_consumer_paths() {
         .await
         .expect("order without site");
     let refused = sc
-        .update_sales_order_status(tenant_id, created2.id, "confirmed")
+        .update_sales_order_status(tenant_id, &[site_a], created2.id, "confirmed")
         .await;
     assert!(
         refused.is_err(),
@@ -13778,16 +14015,24 @@ async fn material_starvation_is_bom_exploded_component_shortage() {
     );
 }
 
-/// Twenty-second audit P1 (integration producer + epistemics): the
-/// integration INSTANCE is the unit of readiness and lifecycle.
-/// `reconcile_instances` reads the site manifest's declared integration
-/// kinds and materializes one `integration_instances` row per declared
-/// kind FOR THIS SITE; the checkpoint producer advances ONE instance
-/// (instance_id — unknown instance is NotFound/404, a disabled instance
-/// is Conflict/409); a missing checkpoint is NEVER RUN (None), never a
-/// fabricated `Utc::now()`; and a decommissioned (disabled) instance
-/// never blocks readiness — only enabled AND required instances demand
-/// proof.
+/// Twenty-second audit P1 + twenty-third audit P1 closure (integration
+/// producer + epistemics + lifecycle): the integration INSTANCE is the
+/// unit of readiness and lifecycle. Bootstrap AUTOMATICALLY reconciles
+/// the manifest's declared kinds into one `integration_instances` row
+/// per declared kind FOR THIS SITE; the producer (`reconcile_instances`)
+/// is idempotent and CLOSES the lifecycle — a row whose kind the
+/// manifest no longer declares is DISABLED (decommissioned:
+/// enabled/required FALSE, never advanceable — Conflict/409 — and never
+/// blocking readiness), a missing declared-kind row is re-created, and
+/// the run reports (created, enabled, disabled) counts. The checkpoint
+/// producer advances ONE instance (instance_id — unknown instance is
+/// NotFound/404, a disabled instance is Conflict/409) and stamps
+/// last_verified_revision = configuration_revision in the SAME
+/// transaction: when a manifest change advances the instance's
+/// configuration revision, the OLD checkpoint stops certifying
+/// (readiness fails) until a fresh bridge run stamps the new revision. A
+/// missing checkpoint is NEVER RUN (None), never a fabricated
+/// `Utc::now()`.
 #[tokio::test]
 async fn integration_producer_reconcile_and_epistemics() {
     let _serial = DB_LOCK.lock().await;
@@ -13810,7 +14055,9 @@ async fn integration_producer_reconcile_and_epistemics() {
     use sensei_services::tps::integration::{
         get_checkpoint, reconcile_instances, write_checkpoint,
     };
-    use sensei_services::tps::site_manifest::{bootstrap_site, validate_site, SiteManifest};
+    use sensei_services::tps::site_manifest::{
+        bootstrap_site, upsert_manifest, validate_site, SiteManifest,
+    };
 
     let tenant_id = uuid::Uuid::new_v4();
     let site_id = uuid::Uuid::new_v4();
@@ -14010,47 +14257,181 @@ async fn integration_producer_reconcile_and_epistemics() {
     .await
     .expect("calibration event insert");
 
-    // ── The PRODUCER: reconcile the manifest's declared kinds into
-    // integration instances FOR THIS SITE (idempotent upsert).
-    let count = reconcile_instances(&pool, tenant_id, site_id)
-        .await
-        .expect("reconcile must provision the declared kind");
-    assert_eq!(
-        count, 1,
-        "one declared kind ('sap') must materialize exactly one instance"
-    );
-    let reconciled_again = reconcile_instances(&pool, tenant_id, site_id)
-        .await
-        .expect("re-reconcile must be idempotent");
-    assert_eq!(
-        reconciled_again, 1,
-        "re-reconciling must not duplicate instances"
-    );
-    // Read the instance back (tenant-context tx — integration_instances
-    // is fail-closed RLS) and verify the lifecycle defaults (migration
-    // 157: enabled + required default TRUE).
-    let (instance_id, enabled, required): (uuid::Uuid, bool, bool) = {
+    // ── Automatic reconciliation (twenty-third audit P1): bootstrap ran
+    // the producer INSIDE its transaction, so the declared kind is
+    // ALREADY materialized — instance state never lags the manifest.
+    // Read the row back (tenant-context tx — integration_instances is
+    // fail-closed RLS): enabled + required + configuration_revision 1
+    // (the manifest version it was reconciled from).
+    let (instance_id, enabled, required, config_revision): (uuid::Uuid, bool, bool, i32) = {
         let mut tx = pool.begin().await.expect("instance read tx");
         sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
             .bind(tenant_id.to_string())
             .execute(&mut *tx)
             .await
             .expect("set tenant context");
-        let row: (uuid::Uuid, bool, bool) = sqlx::query_as(
-            "SELECT id, enabled, required FROM integration_instances \
+        let row: (uuid::Uuid, bool, bool, i32) = sqlx::query_as(
+            "SELECT id, enabled, required, configuration_revision \
+             FROM integration_instances \
              WHERE tenant_id = $1 AND site_id = $2 AND integration_type = 'sap'",
         )
         .bind(tenant_id)
         .bind(site_id)
         .fetch_one(&mut *tx)
         .await
-        .expect("instance row must exist after reconcile");
+        .expect("bootstrap must reconcile the declared kind into an instance");
         tx.commit().await.expect("instance read tx commit");
         row
     };
-    assert!(enabled, "reconciled instances default to enabled");
-    assert!(required, "reconciled instances default to required");
+    assert!(enabled, "reconciled instances are enabled");
+    assert!(required, "reconciled instances are required");
+    assert_eq!(
+        config_revision, 1,
+        "the instance tracks the manifest version"
+    );
 
+    // ── The producer is IDEMPOTENT and reports its counts: a follow-up
+    // run creates nothing and decommissions nothing.
+    let counts = reconcile_instances(&pool, tenant_id, site_id)
+        .await
+        .expect("reconcile must run");
+    assert_eq!(
+        counts.created, 0,
+        "bootstrap already materialized the declared kind"
+    );
+    assert_eq!(counts.enabled, 1, "one declared kind stays enabled");
+    assert_eq!(counts.disabled, 0, "no kind was removed");
+    let again = reconcile_instances(&pool, tenant_id, site_id)
+        .await
+        .expect("re-reconcile must be idempotent");
+    assert_eq!(
+        again.created, 0,
+        "re-reconciling must not duplicate instances"
+    );
+    assert_eq!(again.enabled, 1, "re-reconciling keeps the kind enabled");
+    assert_eq!(again.disabled, 0, "re-reconciling decommissions nothing");
+
+    // ── Lifecycle closure (audit item 1): a row whose kind the manifest
+    // does NOT declare — here a legacy drift instance provisioned
+    // outside the manifest — is DECOMMISSIONED by the run: enabled =
+    // FALSE, required = FALSE (reported in `disabled`), and it can never
+    // be advanced again (Conflict — route 409).
+    let legacy_instance_id: uuid::Uuid = {
+        let mut tx = pool.begin().await.expect("legacy drift tx");
+        sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
+            .bind(tenant_id.to_string())
+            .execute(&mut *tx)
+            .await
+            .expect("set tenant context");
+        let id: uuid::Uuid = sqlx::query_scalar(
+            "INSERT INTO integration_instances (tenant_id, site_id, integration_type) \
+             VALUES ($1, $2, 'legacy_crm') RETURNING id",
+        )
+        .bind(tenant_id)
+        .bind(site_id)
+        .fetch_one(&mut *tx)
+        .await
+        .expect("legacy drift insert");
+        tx.commit().await.expect("legacy drift tx commit");
+        id
+    };
+    let counts_after_drift = reconcile_instances(&pool, tenant_id, site_id)
+        .await
+        .expect("reconcile must run over the drift");
+    assert_eq!(counts_after_drift.created, 0);
+    assert_eq!(
+        counts_after_drift.enabled, 1,
+        "the declared kind stays enabled"
+    );
+    assert_eq!(
+        counts_after_drift.disabled, 1,
+        "the undeclared legacy row must be decommissioned by the run"
+    );
+    {
+        let mut tx = pool.begin().await.expect("legacy state tx");
+        sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
+            .bind(tenant_id.to_string())
+            .execute(&mut *tx)
+            .await
+            .expect("set tenant context");
+        let (legacy_enabled, legacy_required): (bool, bool) = sqlx::query_as(
+            "SELECT enabled, required FROM integration_instances \
+             WHERE tenant_id = $1 AND id = $2",
+        )
+        .bind(tenant_id)
+        .bind(legacy_instance_id)
+        .fetch_one(&mut *tx)
+        .await
+        .expect("legacy instance state read");
+        tx.commit().await.expect("legacy state tx commit");
+        assert!(
+            !legacy_enabled && !legacy_required,
+            "a decommissioned instance is disabled AND non-required"
+        );
+    }
+    let decommissioned_err = write_checkpoint(
+        &pool,
+        tenant_id,
+        legacy_instance_id,
+        Some("legacy_crm".to_string()),
+        Some("customers".to_string()),
+        chrono::Utc::now(),
+        None,
+        "run-legacy".to_string(),
+    )
+    .await
+    .expect_err("a decommissioned instance must refuse advancement");
+    assert!(
+        matches!(decommissioned_err, SenseiError::Conflict(_)),
+        "decommissioned instance write must be Conflict (route 409), got: {decommissioned_err}"
+    );
+
+    // ── Drift repair the other direction: a DECLARED kind whose row was
+    // deleted out-of-band is re-created by the run (`created`).
+    {
+        let mut tx = pool.begin().await.expect("drift delete tx");
+        sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
+            .bind(tenant_id.to_string())
+            .execute(&mut *tx)
+            .await
+            .expect("set tenant context");
+        sqlx::query("DELETE FROM integration_instances WHERE tenant_id = $1 AND id = $2")
+            .bind(tenant_id)
+            .bind(instance_id)
+            .execute(&mut *tx)
+            .await
+            .expect("drift delete");
+        tx.commit().await.expect("drift delete tx commit");
+    }
+    let repaired = reconcile_instances(&pool, tenant_id, site_id)
+        .await
+        .expect("reconcile must repair the drift");
+    assert_eq!(
+        repaired.created, 1,
+        "the deleted declared-kind row is re-created"
+    );
+    assert_eq!(repaired.enabled, 1, "the re-created row is enabled");
+    assert_eq!(repaired.disabled, 0, "legacy_crm is already decommissioned");
+    // The re-created row is a NEW instance id — re-read it.
+    let instance_id: uuid::Uuid = {
+        let mut tx = pool.begin().await.expect("instance refetch tx");
+        sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
+            .bind(tenant_id.to_string())
+            .execute(&mut *tx)
+            .await
+            .expect("set tenant context");
+        let id: uuid::Uuid = sqlx::query_scalar(
+            "SELECT id FROM integration_instances \
+             WHERE tenant_id = $1 AND site_id = $2 AND integration_type = 'sap'",
+        )
+        .bind(tenant_id)
+        .bind(site_id)
+        .fetch_one(&mut *tx)
+        .await
+        .expect("the re-created sap instance must exist");
+        tx.commit().await.expect("instance refetch tx commit");
+        id
+    };
     // ── Epistemics: an instance that NEVER RAN is None (NeverRun),
     // never a fabricated Utc::now().
     let never_ran = get_checkpoint(&pool, tenant_id, instance_id)
@@ -14082,7 +14463,9 @@ async fn integration_producer_reconcile_and_epistemics() {
         "unknown instance must be NotFound (route 404), got: {ghost_err}"
     );
 
-    // A real write advances THIS instance's own cursor.
+    // A real write advances THIS instance's own cursor AND stamps the
+    // verification (audit item 3): last_verified_revision =
+    // configuration_revision, in the same transaction.
     let watermark = chrono::Utc::now();
     write_checkpoint(
         &pool,
@@ -14104,9 +14487,34 @@ async fn integration_producer_reconcile_and_epistemics() {
         (proven.watermark - watermark).num_seconds().abs() < 10,
         "the written watermark must be the readable watermark"
     );
+    let stamped: Option<i32> = {
+        let mut tx = pool.begin().await.expect("stamp read tx");
+        sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
+            .bind(tenant_id.to_string())
+            .execute(&mut *tx)
+            .await
+            .expect("set tenant context");
+        let rev: Option<i32> = sqlx::query_scalar(
+            "SELECT last_verified_revision FROM integration_instances \
+             WHERE tenant_id = $1 AND id = $2",
+        )
+        .bind(tenant_id)
+        .bind(instance_id)
+        .fetch_one(&mut *tx)
+        .await
+        .expect("verification stamp read");
+        tx.commit().await.expect("stamp read tx commit");
+        rev
+    };
+    assert_eq!(
+        stamped,
+        Some(1),
+        "write_checkpoint must stamp last_verified_revision = configuration_revision"
+    );
 
-    // The full readiness ladder: every ENABLED + REQUIRED instance of
-    // this site proven by its OWN checkpoint → ready.
+    // The full readiness ladder: the ENABLED + REQUIRED instance of this
+    // site proven by its OWN checkpoint (verified at revision 1) →
+    // ready.
     let report = validate_site(&pool, tenant_id, site_id)
         .await
         .expect("validation must run");
@@ -14118,27 +14526,80 @@ async fn integration_producer_reconcile_and_epistemics() {
         .expect("report must carry integrations_healthy");
     assert!(healthy.1, "the proven instance must certify readiness");
 
-    // ── Decommission: a DISABLED instance can never be advanced again
-    // (Conflict — route 409) ...
+    // ── Manifest change (audit items 2-4): a manifest update runs the
+    // producer IN ITS transaction — the declared kind stays enabled and
+    // its configuration_revision ADVANCES to the new manifest version
+    // (2). The OLD checkpoint certified revision 1, so it no longer
+    // certifies: readiness fails until a fresh bridge run stamps the new
+    // revision.
+    upsert_manifest(
+        &pool,
+        tenant_id,
+        SiteManifest {
+            site_id,
+            country: "Morocco".to_string(),
+            timezone: "Africa/Casablanca".to_string(),
+            languages: vec!["fr".to_string()],
+            currency: "MAD".to_string(),
+            capabilities: vec!["SMT".to_string()],
+            integrations: vec![serde_json::json!({"kind": "sap", "name": "sap-2"})],
+            policy_bundle: None,
+        },
+    )
+    .await
+    .expect("manifest revision 2");
     {
-        let mut tx = pool.begin().await.expect("disable tx");
+        let mut tx = pool.begin().await.expect("advanced state tx");
         sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
             .bind(tenant_id.to_string())
             .execute(&mut *tx)
             .await
             .expect("set tenant context");
-        sqlx::query(
-            "UPDATE integration_instances SET enabled = FALSE \
-             WHERE tenant_id = $1 AND id = $2",
+        let (still_enabled, still_required, advanced_revision): (bool, bool, i32) = sqlx::query_as(
+            "SELECT enabled, required, configuration_revision \
+                 FROM integration_instances WHERE tenant_id = $1 AND id = $2",
         )
         .bind(tenant_id)
         .bind(instance_id)
-        .execute(&mut *tx)
+        .fetch_one(&mut *tx)
         .await
-        .expect("disable instance");
-        tx.commit().await.expect("disable tx commit");
+        .expect("advanced instance state read");
+        tx.commit().await.expect("advanced state tx commit");
+        assert!(
+            still_enabled && still_required,
+            "the declared kind stays enabled + required after the manifest change"
+        );
+        assert_eq!(
+            advanced_revision, 2,
+            "the manifest update auto-reconciled the instance to the new revision"
+        );
     }
-    let disabled_err = write_checkpoint(
+    let counts_v2 = reconcile_instances(&pool, tenant_id, site_id)
+        .await
+        .expect("reconcile must run after the manifest change");
+    assert_eq!(counts_v2.created, 0);
+    assert_eq!(counts_v2.enabled, 1);
+    assert_eq!(counts_v2.disabled, 0);
+    let stale_report = validate_site(&pool, tenant_id, site_id)
+        .await
+        .expect("validation must run against the advanced revision");
+    assert!(
+        !stale_report.ready,
+        "the old checkpoint certifies revision 1 — it must NOT certify revision 2"
+    );
+    let stale_healthy = stale_report
+        .checks
+        .iter()
+        .find(|(name, _, _)| name == "integrations_healthy")
+        .expect("report must carry integrations_healthy");
+    assert!(
+        !stale_healthy.1 && stale_healthy.2.contains("verification is stale"),
+        "the failing check must name the stale verification, got: {}",
+        stale_healthy.2
+    );
+    // A fresh bridge run stamps revision 2 → the instance is proven
+    // again.
+    write_checkpoint(
         &pool,
         tenant_id,
         instance_id,
@@ -14149,56 +14610,729 @@ async fn integration_producer_reconcile_and_epistemics() {
         "run-2".to_string(),
     )
     .await
-    .expect_err("a disabled instance must refuse advancement");
+    .expect("the fresh run must succeed");
+    let revalidated = validate_site(&pool, tenant_id, site_id)
+        .await
+        .expect("re-validation must run");
     assert!(
-        matches!(disabled_err, SenseiError::Conflict(_)),
-        "disabled instance write must be Conflict (route 409), got: {disabled_err}"
-    );
-    // Its history stays readable — disabled is not deleted.
-    assert!(
-        get_checkpoint(&pool, tenant_id, instance_id)
-            .await
-            .expect("checkpoint read must succeed")
-            .is_some(),
-        "a disabled instance keeps its checkpoint history"
+        revalidated.ready,
+        "a checkpoint stamped at the current revision certifies readiness"
     );
 
-    // ── ... but it never BLOCKS readiness: the site is re-validated
-    // after the decommission (status reset simulates the revalidation
-    // trigger a lifecycle change causes) and the disabled instance is
-    // not required to prove itself.
+    // ── Decommission from the manifest: when the policy becomes '[]',
+    // the manifest update's own reconcile DISABLES the sap instance
+    // (enabled = FALSE, required = FALSE) ...
+    upsert_manifest(
+        &pool,
+        tenant_id,
+        SiteManifest {
+            site_id,
+            country: "Morocco".to_string(),
+            timezone: "Africa/Casablanca".to_string(),
+            languages: vec!["fr".to_string()],
+            currency: "MAD".to_string(),
+            capabilities: vec!["SMT".to_string()],
+            integrations: vec![],
+            policy_bundle: None,
+        },
+    )
+    .await
+    .expect("manifest with an explicit empty policy");
     {
-        let mut tx = pool.begin().await.expect("reset tx");
+        let mut tx = pool.begin().await.expect("decommissioned state tx");
         sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
             .bind(tenant_id.to_string())
             .execute(&mut *tx)
             .await
             .expect("set tenant context");
-        sqlx::query(
-            "UPDATE site_manifests SET status = 'draft' \
-             WHERE tenant_id = $1 AND site_id = $2",
+        let (now_enabled, now_required): (bool, bool) = sqlx::query_as(
+            "SELECT enabled, required FROM integration_instances \
+             WHERE tenant_id = $1 AND id = $2",
         )
         .bind(tenant_id)
-        .bind(site_id)
-        .execute(&mut *tx)
+        .bind(instance_id)
+        .fetch_one(&mut *tx)
         .await
-        .expect("reset to draft");
-        tx.commit().await.expect("reset tx commit");
+        .expect("decommissioned instance state read");
+        tx.commit().await.expect("decommissioned state tx commit");
+        assert!(
+            !now_enabled && !now_required,
+            "removing the kind from the manifest decommissions the instance"
+        );
     }
-    let report_after = validate_site(&pool, tenant_id, site_id)
+    let counts_empty = reconcile_instances(&pool, tenant_id, site_id)
         .await
-        .expect("re-validation must run");
-    assert!(
-        report_after.ready,
-        "a decommissioned (disabled) instance must not block readiness"
+        .expect("reconcile must run over the empty policy");
+    assert_eq!(counts_empty.created, 0);
+    assert_eq!(counts_empty.enabled, 0, "no kind is declared");
+    assert_eq!(
+        counts_empty.disabled, 0,
+        "the manifest update's hook already decommissioned the instance"
     );
-    let healthy_after = report_after
+    // ... it can never be advanced again (Conflict = 409) ...
+    let decommissioned_again = write_checkpoint(
+        &pool,
+        tenant_id,
+        instance_id,
+        Some("sap".to_string()),
+        Some("material_master".to_string()),
+        chrono::Utc::now(),
+        None,
+        "run-3".to_string(),
+    )
+    .await
+    .expect_err("a decommissioned instance must refuse advancement");
+    assert!(
+        matches!(decommissioned_again, SenseiError::Conflict(_)),
+        "decommissioned instance write must be Conflict (route 409), got: {decommissioned_again}"
+    );
+    // ... its history stays readable (disabled is not deleted) ...
+    assert!(
+        get_checkpoint(&pool, tenant_id, instance_id)
+            .await
+            .expect("checkpoint read must succeed")
+            .is_some(),
+        "a decommissioned instance keeps its checkpoint history"
+    );
+    // ... and it never BLOCKS readiness: the explicit empty policy
+    // passes and the site validates ready.
+    let final_report = validate_site(&pool, tenant_id, site_id)
+        .await
+        .expect("final validation must run");
+    assert!(
+        final_report.ready,
+        "an explicit [] policy requires no integrations — the site is ready"
+    );
+    let final_healthy = final_report
         .checks
         .iter()
         .find(|(name, _, _)| name == "integrations_healthy")
         .expect("report must carry integrations_healthy");
     assert!(
-        healthy_after.1,
-        "the disabled instance demands no proof — readiness passes"
+        final_healthy.1,
+        "the decommissioned instance demands no proof — readiness passes"
     );
+}
+
+/// Twenty-third audit P0/P1 (Work Center command scope): the ROUTE-level
+/// mutation scoping builds on repository primitives that MUST hold at the
+/// DB boundary:
+///   - `get_scoped` is the proof the verify-topology / deactivate /
+///     capacity handlers run BEFORE acting: a work center whose CURRENT
+///     site is foreign — or a site-less (`needs_reconciliation`) row —
+///     is indistinguishable from a nonexistent one (NotFound), and an
+///     EMPTY entitlement matches nothing;
+///   - `list_scoped` / `metrics_scoped` intersect the row set with the
+///     entitlement in the SQL (site-less rows never appear);
+///   - the repository commands the scoped routes delegate to (verify,
+///     deactivate, metrics) work against the entitled rows.
+#[tokio::test]
+async fn twenty_third_audit_work_center_command_scope() {
+    let _serial = DB_LOCK.lock().await;
+    let Some(pool) = connect().await else { return };
+    sensei_db::migrations::run_migrations(&pool)
+        .await
+        .expect("migration chain");
+
+    let tenant_id = uuid::Uuid::new_v4();
+    let site_a = uuid::Uuid::new_v4();
+    let site_b = uuid::Uuid::new_v4();
+    let user = uuid::Uuid::new_v4();
+    sqlx::query("INSERT INTO tenants (id, name, slug) VALUES ($1, 't23wc', 't23wc')")
+        .bind(tenant_id)
+        .execute(&pool)
+        .await
+        .expect("tenant");
+    sqlx::query(
+        "INSERT INTO sites (id, tenant_id, site_code, name) VALUES \
+         ($1, $2, 'T23A', 'T23 A'), ($3, $4, 'T23B', 'T23 B')",
+    )
+    .bind(site_a)
+    .bind(tenant_id)
+    .bind(site_b)
+    .bind(tenant_id)
+    .execute(&pool)
+    .await
+    .expect("sites");
+    sqlx::query(
+        "INSERT INTO users (id, tenant_id, email, name, password_hash) \
+         VALUES ($1, $2, 'u23wc@starzforge.local', 'U', 'x')",
+    )
+    .bind(user)
+    .bind(tenant_id)
+    .execute(&pool)
+    .await
+    .expect("user");
+
+    use sensei_services::tps::work_center_repository::{self, NewWorkCenter, UpdateWorkCenter};
+
+    // A work center CREATED at site A, one at site B, and one site-less
+    // (unknown lineage, needs_reconciliation).
+    let number_a = work_center_repository::next_number(&pool, tenant_id)
+        .await
+        .expect("next number");
+    let wc_a = work_center_repository::create(
+        &pool,
+        tenant_id,
+        &NewWorkCenter {
+            id: uuid::Uuid::new_v4(),
+            site_id: Some(site_a),
+            work_center_number: number_a,
+            name: "A Line".to_string(),
+            work_center_type: "assembly".to_string(),
+        },
+    )
+    .await
+    .expect("create at site A");
+    let wc_b = work_center_repository::create(
+        &pool,
+        tenant_id,
+        &NewWorkCenter {
+            id: uuid::Uuid::new_v4(),
+            site_id: Some(site_b),
+            work_center_number: work_center_repository::next_number(&pool, tenant_id)
+                .await
+                .expect("next number"),
+            name: "B Line".to_string(),
+            work_center_type: "assembly".to_string(),
+        },
+    )
+    .await
+    .expect("create at site B");
+    let wc_unassigned = work_center_repository::create(
+        &pool,
+        tenant_id,
+        &NewWorkCenter {
+            id: uuid::Uuid::new_v4(),
+            site_id: None,
+            work_center_number: work_center_repository::next_number(&pool, tenant_id)
+                .await
+                .expect("next number"),
+            name: "Unknown Line".to_string(),
+            work_center_type: "assembly".to_string(),
+        },
+    )
+    .await
+    .expect("create without a site");
+
+    // get_scoped = the proof the high-authority commands run BEFORE
+    // acting: own site visible, foreign site / empty entitlement /
+    // site-less row all NotFound (foreign == nonexistent).
+    assert_eq!(
+        work_center_repository::get_scoped(&pool, tenant_id, wc_a.id, &[site_a])
+            .await
+            .expect("own-site row is visible")
+            .id,
+        wc_a.id
+    );
+    for (label, sites, id) in [
+        ("foreign site", vec![site_b], wc_a.id),
+        ("empty entitlement", vec![], wc_a.id),
+        ("site-less row", vec![site_a], wc_unassigned.id),
+        ("nonexistent id", vec![site_a], uuid::Uuid::new_v4()),
+    ] {
+        assert!(
+            matches!(
+                work_center_repository::get_scoped(&pool, tenant_id, id, &sites)
+                    .await
+                    .expect_err("must not resolve"),
+                sensei_core::error::SenseiError::NotFound(_)
+            ),
+            "{label} must be indistinguishable from nonexistent"
+        );
+    }
+
+    // list_scoped intersects in the SQL; site-less rows never appear;
+    // an empty entitlement lists nothing.
+    let list_a = work_center_repository::list_scoped(&pool, tenant_id, None, &[site_a])
+        .await
+        .expect("list A");
+    assert_eq!(list_a.len(), 1, "site A scope sees only its own row");
+    assert_eq!(list_a[0].id, wc_a.id);
+    let list_ab = work_center_repository::list_scoped(&pool, tenant_id, None, &[site_a, site_b])
+        .await
+        .expect("list A+B");
+    assert_eq!(
+        list_ab.len(),
+        2,
+        "multi-site scope sees exactly the entitled rows, never the site-less one"
+    );
+    let list_none = work_center_repository::list_scoped(&pool, tenant_id, None, &[])
+        .await
+        .expect("list empty");
+    assert!(list_none.is_empty(), "empty entitlement lists nothing");
+
+    // metrics_scoped powers the capacity + efficiency-report endpoints.
+    let metrics_a = work_center_repository::metrics_scoped(&pool, tenant_id, &[site_a])
+        .await
+        .expect("metrics A");
+    assert_eq!(metrics_a.len(), 1);
+    assert_eq!(metrics_a[0].id, wc_a.id, "foreign rows are not projected");
+    assert!(
+        work_center_repository::metrics_scoped(&pool, tenant_id, &[])
+            .await
+            .expect("metrics empty")
+            .is_empty(),
+        "empty entitlement projects nothing"
+    );
+    let metrics_b = work_center_repository::metrics_scoped(&pool, tenant_id, &[site_b])
+        .await
+        .expect("metrics B");
+    assert_eq!(metrics_b[0].id, wc_b.id);
+
+    // The scoped route delegates deactivation AFTER the get_scoped proof:
+    // the command itself keeps working on the entitled row.
+    let _deactivated = work_center_repository::deactivate(&pool, tenant_id, wc_a.id)
+        .await
+        .expect("deactivate");
+    let after = work_center_repository::metrics_scoped(&pool, tenant_id, &[site_a])
+        .await
+        .expect("metrics after deactivate");
+    assert!(
+        !after[0].is_active,
+        "the deactivated entitled row is projected with is_active = false"
+    );
+
+    // verify_topology is the ONLY certifier; the route proves scope via
+    // get_scoped first, then delegates the stamp.
+    let verified = work_center_repository::verify_topology(
+        &pool,
+        tenant_id,
+        wc_a.id,
+        user,
+        "manual_reconciliation",
+    )
+    .await
+    .expect("verify");
+    assert_eq!(verified.topology_state, "resolved");
+    assert_eq!(
+        verified.topology_assignment_source.as_deref(),
+        Some("manual_reconciliation")
+    );
+
+    // The repository's update command stays unscoped (the ROUTE enforces
+    // the target-site entitlement before calling it); a reassignment
+    // write still invalidates verification.
+    let reassigned = work_center_repository::update(
+        &pool,
+        tenant_id,
+        wc_a.id,
+        &UpdateWorkCenter {
+            site_id: Some(Some(site_b)),
+            name: None,
+            work_center_type: None,
+        },
+    )
+    .await
+    .expect("reassign");
+    assert_eq!(reassigned.site_id, Some(site_b));
+    assert_eq!(reassigned.topology_state, "needs_reconciliation");
+}
+
+/// Twenty-third audit P0/P1 (inventory + stock-move command scope): the
+/// site-entitled service operations filter `inventory_items` rows by
+/// `site_id = ANY(authorized_sites)` IN THE SQL:
+///   - list/get return ONLY rows whose site is entitled (empty
+///     entitlement -> empty; site-less rows never appear);
+///   - adjust / update / delete prove the affected row's site is
+///     entitled BEFORE any change (foreign == nonexistent -> NotFound);
+///   - create_stock_move derives its authority through the sites of the
+///     source/destination inventory ROWS it touches — a move that would
+///     touch a foreign or site-less row is rejected with NO quantity
+///     change.
+#[tokio::test]
+async fn twenty_third_audit_inventory_and_stock_moves_are_site_entitled() {
+    let _serial = DB_LOCK.lock().await;
+    let Some(pool) = connect().await else { return };
+    sensei_db::migrations::run_migrations(&pool)
+        .await
+        .expect("migration chain");
+
+    let tenant_id = uuid::Uuid::new_v4();
+    let site_a = uuid::Uuid::new_v4();
+    let site_b = uuid::Uuid::new_v4();
+    let site_foreign = uuid::Uuid::new_v4();
+    let user = uuid::Uuid::new_v4();
+    sqlx::query("INSERT INTO tenants (id, name, slug) VALUES ($1, 't23inv', 't23inv')")
+        .bind(tenant_id)
+        .execute(&pool)
+        .await
+        .expect("tenant");
+    sqlx::query(
+        "INSERT INTO sites (id, tenant_id, site_code, name) VALUES \
+         ($1, $2, 'T23I', 'T23 I'), ($3, $4, 'T23J', 'T23 J'), \
+         ($5, $6, 'T23K', 'T23 K')",
+    )
+    .bind(site_a)
+    .bind(tenant_id)
+    .bind(site_b)
+    .bind(tenant_id)
+    .bind(site_foreign)
+    .bind(tenant_id)
+    .execute(&pool)
+    .await
+    .expect("sites");
+    sqlx::query(
+        "INSERT INTO users (id, tenant_id, email, name, password_hash) \
+         VALUES ($1, $2, 'u23inv@starzforge.local', 'U', 'x')",
+    )
+    .bind(user)
+    .bind(tenant_id)
+    .execute(&pool)
+    .await
+    .expect("user");
+    let product = uuid::Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO products (id, tenant_id, product_number, name, unit_of_measure, reorder_point) \
+         VALUES ($1, $2, 'P-23INV', 'Widget', 'pcs', 3)",
+    )
+    .bind(product)
+    .bind(tenant_id)
+    .execute(&pool)
+    .await
+    .expect("product");
+
+    // Inventory rows: site A at 'main' and 'line', site B at 'bw_main'
+    // (production layouts name locations per site), and a site-less row
+    // at 'unowned' (stock the service itself created historically —
+    // never entitled).
+    let row_a = uuid::Uuid::new_v4();
+    let row_a_line = uuid::Uuid::new_v4();
+    let row_b = uuid::Uuid::new_v4();
+    let row_unowned = uuid::Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO inventory_items \
+            (id, tenant_id, product_id, site_id, location, quantity_on_hand, \
+             quantity_reserved, quantity_available) \
+         VALUES ($1, $2, $3, $4, 'main', 100, 0, 100), \
+                ($5, $6, $7, $8, 'line', 0, 0, 0), \
+                ($9, $10, $11, $12, 'bw_main', 50, 0, 50), \
+                ($13, $14, $15, NULL, 'unowned', 30, 0, 30)",
+    )
+    .bind(row_a)
+    .bind(tenant_id)
+    .bind(product)
+    .bind(site_a)
+    .bind(row_a_line)
+    .bind(tenant_id)
+    .bind(product)
+    .bind(site_a)
+    .bind(row_b)
+    .bind(tenant_id)
+    .bind(product)
+    .bind(site_b)
+    .bind(row_unowned)
+    .bind(tenant_id)
+    .bind(product)
+    .execute(&pool)
+    .await
+    .expect("inventory rows");
+
+    use sensei_services::supply_chain::{
+        DatabaseSupplyChainService, StockMove, SupplyChainService,
+    };
+    let sc = DatabaseSupplyChainService::new(pool.clone());
+
+    async fn qty(pool: &sqlx::PgPool, id: uuid::Uuid) -> i64 {
+        sqlx::query_scalar("SELECT quantity_on_hand::bigint FROM inventory_items WHERE id = $1")
+            .bind(id)
+            .fetch_one(pool)
+            .await
+            .expect("read quantity")
+    }
+
+    // ── Reads: only entitled rows surface; empty -> empty ─────────────
+    let all_a = sc
+        .list_inventory_scoped(tenant_id, &[site_a], None, None, None)
+        .await
+        .expect("list A");
+    let a_ids: Vec<uuid::Uuid> = all_a.data.iter().map(|i| i.id).collect();
+    assert_eq!(a_ids.len(), 2, "site A sees its two rows");
+    assert!(
+        a_ids.contains(&row_a) && a_ids.contains(&row_a_line),
+        "site A listing carries exactly its own rows"
+    );
+    assert!(
+        !a_ids.contains(&row_b) && !a_ids.contains(&row_unowned),
+        "foreign and site-less rows never surface"
+    );
+    let all_ab = sc
+        .list_inventory_scoped(tenant_id, &[site_a, site_b], None, None, None)
+        .await
+        .expect("list A+B");
+    assert_eq!(
+        all_ab.data.len(),
+        3,
+        "multi-site scope sees three entitled rows"
+    );
+    let none = sc
+        .list_inventory_scoped(tenant_id, &[], None, None, None)
+        .await
+        .expect("list empty");
+    assert!(none.data.is_empty(), "empty entitlement -> empty");
+
+    let got_a = sc
+        .get_inventory_scoped(tenant_id, &[site_a], product)
+        .await
+        .expect("get A");
+    assert_eq!(got_a.len(), 2);
+    let got_b = sc
+        .get_inventory_scoped(tenant_id, &[site_b], product)
+        .await
+        .expect("get B");
+    assert_eq!(got_b.len(), 1);
+    assert_eq!(got_b[0].id, row_b);
+    assert!(
+        sc.get_inventory_scoped(tenant_id, &[], product)
+            .await
+            .expect("get empty")
+            .is_empty(),
+        "empty entitlement -> empty"
+    );
+
+    // ── adjust: the affected row's site must be entitled ───────────────
+    let adjusted = sc
+        .adjust_inventory_scoped(tenant_id, &[site_a], product, "main", 10, "cycle count")
+        .await
+        .expect("adjust own-site row");
+    assert_eq!(adjusted.quantity_on_hand, 110);
+    // A foreign entitlement cannot touch the row (NotFound, NO change).
+    let foreign_err = sc
+        .adjust_inventory_scoped(tenant_id, &[site_foreign], product, "main", 5, "sneaky")
+        .await
+        .expect_err("foreign scope must not adjust");
+    assert!(
+        matches!(foreign_err, sensei_core::error::SenseiError::NotFound(_)),
+        "foreign row is indistinguishable from nonexistent: {foreign_err}"
+    );
+    assert_eq!(qty(&pool, row_a).await, 110, "no quantity change on denial");
+    // An empty entitlement adjusts nothing.
+    assert!(
+        sc.adjust_inventory_scoped(tenant_id, &[], product, "main", 5, "empty")
+            .await
+            .is_err(),
+        "empty entitlement must be denied"
+    );
+    assert_eq!(qty(&pool, row_a).await, 110);
+    // A site-less row is never entitled.
+    let unowned_err = sc
+        .adjust_inventory_scoped(tenant_id, &[site_a], product, "unowned", 5, "unowned")
+        .await
+        .expect_err("site-less row must not adjust");
+    assert!(
+        matches!(unowned_err, sensei_core::error::SenseiError::NotFound(_)),
+        "site-less row is indistinguishable from nonexistent: {unowned_err}"
+    );
+    // An entitled row that cannot absorb the change is an insufficiency
+    // (Validation), not a disappearance.
+    let insufficient = sc
+        .adjust_inventory_scoped(tenant_id, &[site_a], product, "main", -100000, "deep cut")
+        .await
+        .expect_err("negative below balance at own site");
+    assert!(
+        matches!(insufficient, sensei_core::error::SenseiError::Validation(_)),
+        "insufficiency at the entitled row stays a Validation error: {insufficient}"
+    );
+    assert_eq!(qty(&pool, row_a).await, 110);
+
+    // ── update / delete by id: the row's site gates the write ──────────
+    let updated = sc
+        .update_inventory_scoped(
+            tenant_id,
+            &[site_a],
+            row_a,
+            sensei_services::supply_chain::InventoryItem {
+                id: row_a,
+                tenant_id,
+                product_id: product,
+                product_name: "Widget".to_string(),
+                quantity_on_hand: 110,
+                quantity_reserved: 0,
+                quantity_available: 110,
+                location: "main".to_string(),
+                lot_number: None,
+                reorder_point: 999,
+                reorder_quantity: 999,
+                updated_at: chrono::Utc::now(),
+            },
+        )
+        .await
+        .expect("update own-site row");
+    assert_eq!(
+        updated.reorder_point, 3,
+        "reorder fields are a PRODUCT-level read in this schema — the touch \
+         must not fabricate the payload's values"
+    );
+    let foreign_update = sc
+        .update_inventory_scoped(
+            tenant_id,
+            &[site_b],
+            row_a,
+            sensei_services::supply_chain::InventoryItem {
+                id: row_a,
+                tenant_id,
+                product_id: product,
+                product_name: "Widget".to_string(),
+                quantity_on_hand: 110,
+                quantity_reserved: 0,
+                quantity_available: 110,
+                location: "main".to_string(),
+                lot_number: None,
+                reorder_point: 999,
+                reorder_quantity: 999,
+                updated_at: chrono::Utc::now(),
+            },
+        )
+        .await
+        .expect_err("foreign update must not apply");
+    assert!(
+        matches!(foreign_update, sensei_core::error::SenseiError::NotFound(_)),
+        "foreign update is indistinguishable from nonexistent: {foreign_update}"
+    );
+    let reorder_check: f64 = sqlx::query_scalar("SELECT reorder_point FROM products WHERE id = $1")
+        .bind(product)
+        .fetch_one(&pool)
+        .await
+        .expect("reorder unchanged");
+    assert_eq!(reorder_check, 3.0, "foreign update changed nothing");
+    let foreign_delete = sc
+        .delete_inventory_scoped(tenant_id, &[site_a], row_b)
+        .await
+        .expect_err("foreign delete must not apply");
+    assert!(
+        matches!(foreign_delete, sensei_core::error::SenseiError::NotFound(_)),
+        "foreign delete is indistinguishable from nonexistent: {foreign_delete}"
+    );
+    sc.delete_inventory_scoped(tenant_id, &[site_b], row_b)
+        .await
+        .expect("delete own-site row");
+    let gone: Option<i32> = sqlx::query_scalar("SELECT 1 FROM inventory_items WHERE id = $1")
+        .bind(row_b)
+        .fetch_optional(&pool)
+        .await
+        .expect("row gone");
+    assert!(gone.is_none(), "the entitled delete removed the row");
+
+    // ── stock moves: authority through the touched rows' sites ─────────
+    // A transfer main(a) -> line(a) under scope [a] is authorized.
+    let transfer = StockMove {
+        id: uuid::Uuid::new_v4(),
+        tenant_id,
+        product_id: product,
+        product_name: "Widget".to_string(),
+        quantity: 10,
+        move_type: "transfer".to_string(),
+        from_location: Some("main".to_string()),
+        to_location: "line".to_string(),
+        reference_type: None,
+        reference_id: None,
+        created_by: user,
+        created_at: chrono::Utc::now(),
+    };
+    let _moved = sc
+        .create_stock_move_scoped(tenant_id, &[site_a], transfer)
+        .await
+        .expect("entitled transfer applies");
+    assert_eq!(qty(&pool, row_a).await, 100, "source debited");
+    assert_eq!(qty(&pool, row_a_line).await, 10, "destination credited");
+
+    // A scope that owns the SOURCE row (site B's 'bw_main') but not the
+    // DESTINATION row (site A's 'line') is rejected: NotFound, and NO
+    // quantity moved.
+    let row_b2 = uuid::Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO inventory_items \
+            (id, tenant_id, product_id, site_id, location, quantity_on_hand, \
+             quantity_reserved, quantity_available) \
+         VALUES ($1, $2, $3, $4, 'bw_main', 60, 0, 60)",
+    )
+    .bind(row_b2)
+    .bind(tenant_id)
+    .bind(product)
+    .bind(site_b)
+    .execute(&pool)
+    .await
+    .expect("site B main row");
+    let transfer_b = StockMove {
+        id: uuid::Uuid::new_v4(),
+        tenant_id,
+        product_id: product,
+        product_name: "Widget".to_string(),
+        quantity: 5,
+        move_type: "transfer".to_string(),
+        from_location: Some("bw_main".to_string()),
+        to_location: "line".to_string(),
+        reference_type: None,
+        reference_id: None,
+        created_by: user,
+        created_at: chrono::Utc::now(),
+    };
+    let denied = sc
+        .create_stock_move_scoped(tenant_id, &[site_b], transfer_b)
+        .await
+        .expect_err("destination outside the scope must deny");
+    assert!(
+        matches!(denied, sensei_core::error::SenseiError::NotFound(_)),
+        "a move touching an unentitled row is NotFound: {denied}"
+    );
+    assert_eq!(qty(&pool, row_a).await, 100, "denied move changed nothing");
+    assert_eq!(qty(&pool, row_a_line).await, 10);
+    assert_eq!(
+        qty(&pool, row_b2).await,
+        60,
+        "denied move left the source untouched"
+    );
+
+    // A receipt into a location with NO entitled row is denied (the
+    // move cannot derive authority from a nonexistent row).
+    let receipt_dock = StockMove {
+        id: uuid::Uuid::new_v4(),
+        tenant_id,
+        product_id: product,
+        product_name: "Widget".to_string(),
+        quantity: 20,
+        move_type: "receipt".to_string(),
+        from_location: None,
+        to_location: "dock".to_string(),
+        reference_type: None,
+        reference_id: None,
+        created_by: user,
+        created_at: chrono::Utc::now(),
+    };
+    let denied_dock = sc
+        .create_stock_move_scoped(tenant_id, &[site_a], receipt_dock)
+        .await
+        .expect_err("receipt into a location without an entitled row must deny");
+    assert!(
+        matches!(denied_dock, sensei_core::error::SenseiError::NotFound(_)),
+        "no entitled row to authorize against: {denied_dock}"
+    );
+    let dock_rows: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM inventory_items WHERE tenant_id = $1 AND location = 'dock'",
+    )
+    .bind(tenant_id)
+    .fetch_one(&pool)
+    .await
+    .expect("dock count");
+    assert_eq!(dock_rows, 0, "no stock was created by the denied receipt");
+
+    // A receipt INTO an entitled row refills it.
+    let receipt_main = StockMove {
+        id: uuid::Uuid::new_v4(),
+        tenant_id,
+        product_id: product,
+        product_name: "Widget".to_string(),
+        quantity: 5,
+        move_type: "receipt".to_string(),
+        from_location: None,
+        to_location: "main".to_string(),
+        reference_type: None,
+        reference_id: None,
+        created_by: user,
+        created_at: chrono::Utc::now(),
+    };
+    sc.create_stock_move_scoped(tenant_id, &[site_a], receipt_main)
+        .await
+        .expect("receipt into the entitled row applies");
+    assert_eq!(qty(&pool, row_a).await, 105);
 }

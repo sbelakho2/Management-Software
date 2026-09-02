@@ -41,6 +41,28 @@ pub struct ReplicationEntry {
     pub claim_token: Option<Uuid>,
 }
 
+/// The FANOUT outcome (twenty-third audit P1): one publish of one source
+/// event across ALL its federation edges, counted by what the single
+/// transaction actually did.
+///
+/// - `newly_enqueued`: queue rows INSERTed by this call (edges whose
+///   (tenant, source_event_id, target_tenant, target_site) key was free).
+/// - `already_present`: edges whose row already existed — the
+///   `ON CONFLICT ... DO NOTHING` skip. A retry of a fully-published
+///   event reports `newly_enqueued = 0` and `already_present = N`, so
+///   repeated publishes CONVERGE to the same complete set instead of
+///   500-ing on the first duplicate.
+/// - `blocked`: edges the residency/class gate denied (the projection
+///   may not cross that edge). Blocked edges are counted separately —
+///   they are not enqueue failures, and the count lets the route decide
+///   whether a restricted/personal projection was refused outright.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct FanoutReport {
+    pub newly_enqueued: i64,
+    pub already_present: i64,
+    pub blocked: i64,
+}
+
 /// Transaction-scoped tenant context for the RLS policy (FAIL-CLOSED:
 /// missing context = no rows), same convention as
 /// `crates/sensei-services/src/tps/lessons.rs`.
@@ -491,29 +513,52 @@ pub async fn authorize_projection(
 /// from the source event (no client fallback), and this read runs inside
 /// a tenant transaction — `operational_event_objects` is FORCE RLS, so
 /// under a NOSUPERUSER/NOBYPASSRLS app role a raw pooled read would find
-/// no subject. Returns `None` only when the event carries no subject
-/// object (the caller then refuses — nothing client-supplied may stand in
-/// for the identity).
+/// no subject.
+///
+/// Twenty-third audit P1 (subject-count strictness): identity is exact —
+/// there is no `LIMIT 1` guess over the subject objects anymore:
+/// - ZERO subjects is a Validation error (nothing names the entity the
+///   queue row would be keyed on — nothing client-supplied may stand in);
+/// - MORE THAN ONE subject is a Validation error TOO: a projection that
+///   would claim two entities at once requires EXPLICIT projector
+///   semantics (which entity is the identity?), and none are defined yet —
+///   so it is refused, never guessed;
+/// - EXACTLY one subject is used.
 pub async fn derive_projection_identity(
     pool: &sqlx::PgPool,
     tenant_id: Uuid,
     event_id: Uuid,
-) -> Result<Option<(String, Uuid)>> {
+) -> Result<(String, Uuid)> {
     with_tenant_tx(pool, tenant_id, move |tx| {
         Box::pin(async move {
             type SubjectRow = (String, Uuid);
-            let subject: Option<SubjectRow> = sqlx::query_as(
+            // NO LIMIT 1: the subject set must be counted EXACTLY, so the
+            // derivation can reject both the empty set and the ambiguous
+            // multi-subject set instead of picking an arbitrary one.
+            let subjects: Vec<SubjectRow> = sqlx::query_as(
                 "SELECT object_type, object_id FROM operational_event_objects \
                  WHERE tenant_id = $1 AND event_id = $2 AND role = 'subject' \
-                 ORDER BY object_type ASC, object_id ASC \
-                 LIMIT 1",
+                 ORDER BY object_type ASC, object_id ASC",
             )
             .bind(tenant_id)
             .bind(event_id)
-            .fetch_optional(&mut **tx)
+            .fetch_all(&mut **tx)
             .await
             .map_err(|e| SenseiError::Database(format!("replication: subject derivation: {e}")))?;
-            Ok(subject)
+            match subjects.len() {
+                0 => Err(SenseiError::Validation(
+                    "replication: the source event carries no subject object — the projection \
+                     identity cannot be derived, so it cannot be enqueued"
+                        .to_string(),
+                )),
+                1 => Ok(subjects.into_iter().next().expect("exactly one subject")),
+                _ => Err(SenseiError::Validation(
+                    "replication: the source event projects MULTIPLE subject objects — multiple \
+                     subjects require explicit projector semantics (none defined yet), so the \
+                     projection identity cannot be derived"
+                        .to_string(),
+                )),
+            }
         })
     })
     .await
@@ -799,6 +844,129 @@ pub async fn enqueue_projection(
             .await
             .map_err(|e| SenseiError::Database(format!("replication: enqueue failed: {e}")))?;
             Ok(())
+        })
+    })
+    .await
+}
+
+/// Enqueue ONE AUTHORIZED state projection across EVERY federation edge
+/// in a SINGLE transaction (twenty-third audit P1 — fanout idempotency).
+/// The route pre-authorizes (the source event exists, its jurisdiction
+/// derives, its subject identity is EXACTLY one object) and then calls
+/// this once; this function runs ONE [`with_tenant_tx`] over ALL edges:
+///
+/// - every edge is screened with the SAME gate as a per-edge enqueue —
+///   the edge's own `allowed_data_classes` and its own `residency_policy`
+///   via [`may_replicate`] (the route-level second line of defense); an
+///   edge the gate denies is counted in `blocked`, never enqueued;
+/// - every permitted edge is inserted with
+///   `ON CONFLICT (tenant_id, source_event_id, target_tenant_id,
+///   target_site_id) DO NOTHING` — the plain unique index added by
+///   migration 159 (the migration-148 dedupe index is expression-based
+///   and cannot be inferred by a plain conflict target). A row that
+///   already exists (a previous publish, or a retry after a mid-way
+///   failure) is skipped and counted in `already_present`, so repeated
+///   publishes of the same command converge to the same complete set —
+///   a retry NEVER 500s on the first duplicate, and an error mid-fanout
+///   rolls the WHOLE transaction back (no partial success).
+///
+/// Returns the [`FanoutReport`] counting newly-enqueued vs already-present
+/// vs blocked edges. Nothing is written until every edge has been
+/// screened, and the single transaction commits (or rolls back) as one.
+#[allow(clippy::too_many_arguments)]
+pub async fn enqueue_projection_fanout(
+    pool: &sqlx::PgPool,
+    tenant_id: Uuid,
+    site_id: Option<Uuid>,
+    entity_type: &str,
+    entity_id: Uuid,
+    projection: serde_json::Value,
+    source_event_id: &str,
+    envelope: &ReplicationEnvelope,
+    source_jurisdiction: &Jurisdiction,
+    edges: &[FederationEdge],
+) -> Result<FanoutReport> {
+    let policy = DataPolicy::parse(&envelope.data_policy).map_err(SenseiError::Validation)?;
+    // ALL edges of one fanout share the identity, projection content and
+    // envelope — only the per-edge target/governance differs.
+    let entity_type = entity_type.to_string();
+    let projection_type = if envelope.projection_type.is_empty() {
+        entity_type.clone()
+    } else {
+        envelope.projection_type.clone()
+    };
+    let source_event_id = source_event_id.to_string();
+    let data_policy = envelope.data_policy.clone();
+    let schema_version = envelope.schema_version as i32;
+    let projection_revision = envelope.projection_revision as i64;
+    let source_jurisdiction = source_jurisdiction.clone();
+    // The tenant transaction closure owns every input (edge count is
+    // small — a fanout spans a handful of edges).
+    let edges = edges.to_vec();
+    with_tenant_tx(pool, tenant_id, move |tx| {
+        Box::pin(async move {
+            let mut report = FanoutReport {
+                newly_enqueued: 0,
+                already_present: 0,
+                blocked: 0,
+            };
+            for edge in &edges {
+                // The gate is evaluated ONCE PER EDGE against THAT edge's
+                // own policy record (twentieth audit P0): an edge whose
+                // allowed classes exclude the projection, or whose
+                // residency policy denies the move, is BLOCKED — counted,
+                // not enqueued, and never an error.
+                if !edge.allowed_data_classes.contains(&policy)
+                    || !may_replicate(
+                        policy,
+                        Some(&source_jurisdiction),
+                        Some(&edge.target_jurisdiction),
+                        &edge.residency_policy,
+                    )
+                {
+                    report.blocked += 1;
+                    continue;
+                }
+                let edge_policy = edge.policy_snapshot();
+                let res = sqlx::query(
+                    "INSERT INTO site_replication_log \
+                         (tenant_id, site_id, entity_type, entity_id, projection, source_event_id, \
+                          schema_version, projection_type, projection_revision, data_policy, \
+                          status, target_tenant_id, target_site_id, target_jurisdiction, \
+                          edge_policy) \
+                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'pending', \
+                             $11, $12, $13, $14) \
+                     ON CONFLICT (tenant_id, source_event_id, target_tenant_id, target_site_id) \
+                     DO NOTHING",
+                )
+                .bind(tenant_id)
+                .bind(site_id)
+                .bind(&entity_type)
+                .bind(entity_id)
+                .bind(projection.clone())
+                .bind(source_event_id.as_str())
+                .bind(schema_version)
+                .bind(&projection_type)
+                .bind(projection_revision)
+                .bind(&data_policy)
+                .bind(edge.target_tenant)
+                .bind(edge.target_site)
+                .bind(edge.target_jurisdiction.as_str())
+                .bind(edge_policy)
+                .execute(&mut **tx)
+                .await
+                .map_err(|e| {
+                    SenseiError::Database(format!("replication: fanout enqueue failed: {e}"))
+                })?;
+                // rows_affected counts ONLY rows the statement actually
+                // inserted — a row skipped by DO NOTHING counts 0.
+                if res.rows_affected() == 1 {
+                    report.newly_enqueued += 1;
+                } else {
+                    report.already_present += 1;
+                }
+            }
+            Ok(report)
         })
     })
     .await

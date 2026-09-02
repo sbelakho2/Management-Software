@@ -1,26 +1,48 @@
 //! Integration INSTANCE lifecycle + checkpoint producer (twenty-second
-//! audit P1): the integration instance is the unit of readiness — the
-//! bridge advances ONE instance (instance_id), never a tenant-global
-//! (source_system, source_table) cursor, so one healthy SAP checkpoint
-//! can never certify another site's SAP.
+//! audit P1 + twenty-third audit P1 closure): the integration instance is
+//! the unit of readiness — the bridge advances ONE instance
+//! (instance_id), never a tenant-global (source_system, source_table)
+//! cursor, so one healthy SAP checkpoint can never certify another site's
+//! SAP.
 //!
 //! - `reconcile_instances` is the PRODUCER: it reads the site manifest's
 //!   declared integration kinds and materializes one
 //!   `integration_instances` row per declared kind FOR THIS SITE
-//!   (fail-closed RLS like every tenant-owned table).
+//!   (fail-closed RLS like every tenant-owned table). Twenty-third audit
+//!   P1: reconciliation is a CLOSURE, not an additive upsert — a kind
+//!   REMOVED from the manifest is DISABLED (decommissioned:
+//!   enabled = FALSE, required = FALSE; it never blocks readiness and can
+//!   never be advanced), and every declared kind is re-asserted as
+//!   enabled = TRUE, required = TRUE at the CURRENT
+//!   `configuration_revision` (= manifest_version). The run reports
+//!   (created, enabled, disabled) counts.
+//! - `reconcile_instances_tx` is the pub(crate) hook bootstrap/manifest
+//!   writes invoke IN THE SAME tenant transaction (twenty-third audit
+//!   P1): instance state never lags the manifest.
 //! - `write_checkpoint` advances ONE instance's durable watermark
 //!   (instance_id): the instance must be visible under the caller's
 //!   tenant (unknown → NotFound = 404) and must be ENABLED (disabled →
 //!   Conflict = 409 — a decommissioned instance can never be advanced).
+//!   Twenty-third audit P1: the write ALSO stamps
+//!   `last_verified_revision = configuration_revision` on the instance —
+//!   a checkpoint only certifies the configuration revision it verified;
+//!   when the manifest advances the revision, the OLD checkpoint stops
+//!   certifying until a fresh run stamps the new revision.
 //! - `get_checkpoint` reads that instance's watermark: `None` means the
 //!   instance NEVER RAN (NeverRun/Unknown) — never a fabricated
-//!   `Utc::now()`.
+//!   `Utc::now()`. `get_site_checkpoint` resolves the instance by
+//!   (tenant, site, integration_type) for the instance-keyed legacy read.
+//! - `read_integration_state` reads the tenant's integration-layer
+//!   counters (dead letters, open reconciliations, tombstones, latest
+//!   checkpoint) inside ONE tenant-scoped transaction — under a missing
+//!   RLS context the raw pool fabricates zeros; the tenant tx returns the
+//!   correct values.
 
 use sensei_core::error::{Result, SenseiError};
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use super::site_manifest::with_tenant_tx;
+use super::replication::with_tenant_tx;
 
 /// The durable cursor of ONE integration instance (NeverRun when absent).
 #[derive(Debug, Clone, serde::Serialize)]
@@ -31,95 +53,193 @@ pub struct CheckpointState {
     pub last_run_at: chrono::DateTime<chrono::Utc>,
 }
 
-/// The instance producer: read the site manifest's declared integration
-/// kinds (`site_manifests.integrations`, a JSONB array of `{kind}`) and
-/// UPSERT one `integration_instances` row per declared kind for THIS
-/// site. Re-running is idempotent: the row's `configuration_revision`
-/// follows the manifest revision (an INSERT seeds it from the current
-/// `manifest_version`; the ON CONFLICT update refreshes it to the
-/// EXCLUDED revision so a re-reconciled site tracks the manifest it was
-/// reconciled from).
+/// The outcome of ONE reconcile run (twenty-third audit P1):
+/// - `created`: rows materialized in THIS run for kinds that had no
+///   instance row yet;
+/// - `enabled`: declared-kind rows enabled + required + current
+///   (`configuration_revision` = the manifest version) afterwards;
+/// - `disabled`: rows decommissioned in THIS run because their kind is no
+///   longer declared by the manifest (an already-decommissioned row is
+///   not counted again).
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct ReconcileCounts {
+    pub created: i64,
+    pub enabled: i64,
+    pub disabled: i64,
+}
+
+/// The manifest's distinct declared kinds (empty string / missing `kind`
+/// entries are not provisionable and never count).
+fn declared_kinds(integrations: &serde_json::Value) -> Vec<String> {
+    let mut seen = std::collections::HashSet::new();
+    let mut kinds = Vec::new();
+    if let Some(items) = integrations.as_array() {
+        for v in items {
+            if let Some(kind) = v.get("kind").and_then(|k| k.as_str()) {
+                if !kind.is_empty() && seen.insert(kind.to_string()) {
+                    kinds.push(kind.to_string());
+                }
+            }
+        }
+    }
+    kinds
+}
+
+/// Reconcile the integration instances of one site against its CURRENT
+/// manifest — the transaction-scoped form (`reconcile_instances` wraps it
+/// in a tenant tx; the site bootstrap / manifest-update hooks call it IN
+/// the same transaction as the manifest write, so instance state never
+/// lags the manifest):
 ///
-/// Returns the number of integration instances that exist for this site
-/// after reconciliation.
+/// (a) every DECLARED kind is upserted as enabled = TRUE, required = TRUE
+///     with `configuration_revision` = the manifest's current version
+///     (re-asserting lifecycle state on re-declared kinds);
+/// (b) every instance row whose kind is NO LONGER declared is
+///     DECOMMISSIONED — enabled = FALSE, required = FALSE (it can never
+///     be advanced by the bridge and never blocks readiness);
+/// (c) returns (created, enabled, disabled) counts for the run.
 ///
 /// - A site with NO manifest row is an error (bootstrap first).
 /// - A manifest whose `integrations` is NULL has no integration policy —
 ///   nothing can be provisioned from it (fail closed).
-/// - An EXPLICIT empty `[]` policy provisions nothing and returns 0.
-pub async fn reconcile_instances(pool: &PgPool, tenant_id: Uuid, site_id: Uuid) -> Result<i64> {
+/// - An EXPLICIT empty `[]` policy decommissions every instance (the site
+///   no longer requires any integration) and returns enabled = 0.
+pub(crate) async fn reconcile_instances_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    tenant_id: Uuid,
+    site_id: Uuid,
+) -> Result<ReconcileCounts> {
+    let row: Option<(Option<serde_json::Value>, i32)> = sqlx::query_as(
+        "SELECT integrations, manifest_version FROM site_manifests \
+         WHERE tenant_id = $1 AND site_id = $2",
+    )
+    .bind(tenant_id)
+    .bind(site_id)
+    .fetch_optional(&mut **tx)
+    .await
+    .map_err(|e| SenseiError::Database(format!("Site manifest read failed: {e}")))?;
+    let (integrations, manifest_version) = row.ok_or_else(|| {
+        SenseiError::Validation(format!(
+            "no site manifest for site {site_id} — bootstrap the site first"
+        ))
+    })?;
+    let integrations = integrations.ok_or_else(|| {
+        SenseiError::Validation(
+            "integration policy not configured — the site manifest's \
+             integrations column is NULL; declare an explicit [] policy \
+             or provision declared kinds"
+                .to_string(),
+        )
+    })?;
+    if !integrations.is_array() {
+        return Err(SenseiError::Validation(
+            "integration policy is malformed — site_manifests.integrations \
+             must be a JSON array of {kind} objects"
+                .to_string(),
+        ));
+    }
+    let kinds = declared_kinds(&integrations);
+    let declared_sql = r#"(SELECT elem->>'kind'
+                            FROM jsonb_array_elements($3::jsonb) AS elem
+                            WHERE elem->>'kind' IS NOT NULL AND elem->>'kind' <> '')"#;
+
+    // Rows that already exist for DECLARED kinds — these are refreshed by
+    // the upsert, never counted as created.
+    let existing: i64 = sqlx::query_scalar(&format!(
+        "SELECT COUNT(*) FROM integration_instances \
+             WHERE tenant_id = $1 AND site_id = $2 \
+               AND integration_type IN {declared_sql}"
+    ))
+    .bind(tenant_id)
+    .bind(site_id)
+    .bind(&integrations)
+    .fetch_one(&mut **tx)
+    .await
+    .map_err(|e| SenseiError::Database(format!("Instance count failed: {e}")))?;
+
+    // (a) Upsert every declared kind: enabled + required re-asserted and
+    // the configuration revision follows the manifest version it was
+    // reconciled from.
+    sqlx::query(
+        "INSERT INTO integration_instances \
+             (tenant_id, site_id, integration_type, endpoint, \
+              configuration_revision, enabled, required) \
+         SELECT $1, $2, elem->>'kind', NULL, $3, TRUE, TRUE \
+         FROM jsonb_array_elements($4::jsonb) AS elem \
+         WHERE elem->>'kind' IS NOT NULL AND elem->>'kind' <> '' \
+         ON CONFLICT (tenant_id, site_id, integration_type) \
+         DO UPDATE SET \
+             configuration_revision = EXCLUDED.configuration_revision, \
+             enabled = TRUE, \
+             required = TRUE",
+    )
+    .bind(tenant_id)
+    .bind(site_id)
+    .bind(manifest_version)
+    .bind(&integrations)
+    .execute(&mut **tx)
+    .await
+    .map_err(|e| SenseiError::Database(format!("Integration instance reconcile failed: {e}")))?;
+
+    // Enabled rows whose kind is NOT declared: decommissioned BY THIS RUN.
+    let to_disable: i64 = sqlx::query_scalar(&format!(
+        "SELECT COUNT(*) FROM integration_instances \
+             WHERE tenant_id = $1 AND site_id = $2 AND enabled = TRUE \
+               AND NOT (integration_type IN {declared_sql})"
+    ))
+    .bind(tenant_id)
+    .bind(site_id)
+    .bind(&integrations)
+    .fetch_one(&mut **tx)
+    .await
+    .map_err(|e| SenseiError::Database(format!("Instance count failed: {e}")))?;
+
+    // (b) Decommission removed kinds — never blocks readiness, never
+    // advanceable.
+    sqlx::query(&format!(
+        "UPDATE integration_instances \
+                SET enabled = FALSE, required = FALSE \
+              WHERE tenant_id = $1 AND site_id = $2 \
+                AND NOT (integration_type IN {declared_sql})"
+    ))
+    .bind(tenant_id)
+    .bind(site_id)
+    .bind(&integrations)
+    .execute(&mut **tx)
+    .await
+    .map_err(|e| SenseiError::Database(format!("Integration instance decommission failed: {e}")))?;
+
+    // (c) The enabled population afterwards: declared kinds only (the
+    // disable above removed every other row from the enabled set).
+    let enabled: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM integration_instances \
+         WHERE tenant_id = $1 AND site_id = $2 AND enabled = TRUE AND required = TRUE",
+    )
+    .bind(tenant_id)
+    .bind(site_id)
+    .fetch_one(&mut **tx)
+    .await
+    .map_err(|e| SenseiError::Database(format!("Instance count failed: {e}")))?;
+
+    let created = (kinds.len() as i64 - existing).max(0);
+    Ok(ReconcileCounts {
+        created,
+        enabled,
+        disabled: to_disable,
+    })
+}
+
+/// Reconcile the integration instances of one site against its CURRENT
+/// manifest, inside ONE tenant-scoped transaction. See
+/// [`reconcile_instances_tx`] for the semantics; returns the
+/// (created, enabled, disabled) counts of the run.
+pub async fn reconcile_instances(
+    pool: &PgPool,
+    tenant_id: Uuid,
+    site_id: Uuid,
+) -> Result<ReconcileCounts> {
     with_tenant_tx(pool, tenant_id, |tx| {
-        Box::pin(async move {
-            let row: Option<(Option<serde_json::Value>, i32)> = sqlx::query_as(
-                "SELECT integrations, manifest_version FROM site_manifests \
-                 WHERE tenant_id = $1 AND site_id = $2",
-            )
-            .bind(tenant_id)
-            .bind(site_id)
-            .fetch_optional(&mut **tx)
-            .await
-            .map_err(|e| SenseiError::Database(format!("Site manifest read failed: {e}")))?;
-            let (integrations, manifest_version) = row.ok_or_else(|| {
-                SenseiError::Validation(format!(
-                    "no site manifest for site {site_id} — bootstrap the site first"
-                ))
-            })?;
-            match &integrations {
-                None => {
-                    return Err(SenseiError::Validation(
-                        "integration policy not configured — the site manifest's \
-                         integrations column is NULL; declare an explicit [] policy \
-                         or provision declared kinds"
-                            .to_string(),
-                    ));
-                }
-                Some(v) if !v.is_array() => {
-                    return Err(SenseiError::Validation(
-                        "integration policy is malformed — site_manifests.integrations \
-                         must be a JSON array of {kind} objects"
-                            .to_string(),
-                    ));
-                }
-                Some(v) => {
-                    if v.as_array().map(|a| a.is_empty()).unwrap_or(false) {
-                        // Explicit '[]' policy: the site requires no
-                        // integrations — nothing to provision.
-                    } else {
-                        sqlx::query(
-                            "INSERT INTO integration_instances \
-                                 (tenant_id, site_id, integration_type, endpoint, \
-                                  configuration_revision) \
-                             SELECT $1, $2, elem->>'kind', NULL, $3 \
-                             FROM jsonb_array_elements($4::jsonb) AS elem \
-                             WHERE elem->>'kind' IS NOT NULL AND elem->>'kind' <> '' \
-                             ON CONFLICT (tenant_id, site_id, integration_type) \
-                             DO UPDATE SET configuration_revision = EXCLUDED.configuration_revision",
-                        )
-                        .bind(tenant_id)
-                        .bind(site_id)
-                        .bind(manifest_version)
-                        .bind(v)
-                        .execute(&mut **tx)
-                        .await
-                        .map_err(|e| {
-                            SenseiError::Database(format!(
-                                "Integration instance reconcile failed: {e}"
-                            ))
-                        })?;
-                    }
-                }
-            }
-            let count: i64 = sqlx::query_scalar(
-                "SELECT COUNT(*) FROM integration_instances \
-                 WHERE tenant_id = $1 AND site_id = $2",
-            )
-            .bind(tenant_id)
-            .bind(site_id)
-            .fetch_one(&mut **tx)
-            .await
-            .map_err(|e| SenseiError::Database(format!("Instance count failed: {e}")))?;
-            Ok(count)
-        })
+        Box::pin(async move { reconcile_instances_tx(tx, tenant_id, site_id).await })
     })
     .await
 }
@@ -131,6 +251,13 @@ pub async fn reconcile_instances(pool: &PgPool, tenant_id: Uuid, site_id: Uuid) 
 /// advancement (Conflict). `source_system`/`source_table` are OPTIONAL
 /// legacy metadata: the readiness proof is `instance_id`, so a write
 /// never needs them.
+///
+/// Twenty-third audit P1: the write ALSO stamps
+/// `last_verified_revision = configuration_revision` on the instance IN
+/// THE SAME TRANSACTION — the checkpoint certifies exactly the
+/// configuration revision it verified. When a manifest change advances
+/// the instance's configuration_revision, the old checkpoint stops
+/// certifying until a fresh write stamps the new revision.
 #[allow(clippy::too_many_arguments)]
 pub async fn write_checkpoint(
     pool: &PgPool,
@@ -191,10 +318,58 @@ pub async fn write_checkpoint(
             .execute(&mut **tx)
             .await
             .map_err(|e| SenseiError::Database(format!("Checkpoint write failed: {e}")))?;
+            // The verification stamp: this checkpoint certifies the
+            // instance's CURRENT configuration revision — nothing older.
+            sqlx::query(
+                "UPDATE integration_instances \
+                    SET last_verified_revision = configuration_revision \
+                  WHERE tenant_id = $1 AND id = $2",
+            )
+            .bind(tenant_id)
+            .bind(instance_id)
+            .execute(&mut **tx)
+            .await
+            .map_err(|e| {
+                SenseiError::Database(format!("Instance verification stamp failed: {e}"))
+            })?;
             Ok(())
         })
     })
     .await
+}
+
+/// Read ONE instance's checkpoint row inside an open tenant transaction.
+/// `Ok(None)` is NEVER RUN — the caller decides what an absent instance
+/// means (NotFound) vs an absent checkpoint (NeverRun).
+async fn read_instance_checkpoint(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    tenant_id: Uuid,
+    instance_id: Uuid,
+) -> Result<Option<CheckpointState>> {
+    type CheckpointRow = (
+        chrono::DateTime<chrono::Utc>,
+        Option<String>,
+        Option<String>,
+        chrono::DateTime<chrono::Utc>,
+    );
+    let row: Option<CheckpointRow> = sqlx::query_as(
+        "SELECT watermark, watermark_id, last_run_id, last_run_at \
+         FROM integration_checkpoints \
+         WHERE tenant_id = $1 AND instance_id = $2",
+    )
+    .bind(tenant_id)
+    .bind(instance_id)
+    .fetch_optional(&mut **tx)
+    .await
+    .map_err(|e| SenseiError::Database(format!("Checkpoint read failed: {e}")))?;
+    Ok(row.map(
+        |(watermark, watermark_id, last_run_id, last_run_at)| CheckpointState {
+            watermark,
+            watermark_id,
+            last_run_id,
+            last_run_at,
+        },
+    ))
 }
 
 /// Read one integration instance's checkpoint. `Ok(None)` is NEVER
@@ -224,30 +399,135 @@ pub async fn get_checkpoint(
                     "integration instance {instance_id} not found for this tenant"
                 )));
             }
-            type CheckpointRow = (
-                chrono::DateTime<chrono::Utc>,
-                Option<String>,
-                Option<String>,
-                chrono::DateTime<chrono::Utc>,
-            );
-            let row: Option<CheckpointRow> = sqlx::query_as(
-                "SELECT watermark, watermark_id, last_run_id, last_run_at \
-                 FROM integration_checkpoints \
-                 WHERE tenant_id = $1 AND instance_id = $2",
+            read_instance_checkpoint(tx, tenant_id, instance_id).await
+        })
+    })
+    .await
+}
+
+/// Resolve ONE site's instance of an integration kind and return ITS
+/// checkpoint (twenty-third audit P1 — the legacy
+/// checkpoint/{system}/{source_table} read is routed through the
+/// instance): the instance is (tenant, site, integration_type), so the
+/// returned cursor is instance-keyed and site-scoped. A site with no
+/// instance of the kind, or an instance that never ran, is `Ok(None)`
+/// (NeverRun) — never a fabricated `Utc::now()`.
+pub async fn get_site_checkpoint(
+    pool: &PgPool,
+    tenant_id: Uuid,
+    site_id: Uuid,
+    integration_type: &str,
+) -> Result<Option<CheckpointState>> {
+    let integration_type = integration_type.to_string();
+    with_tenant_tx(pool, tenant_id, |tx| {
+        Box::pin(async move {
+            let instance_id: Option<Uuid> = sqlx::query_scalar(
+                "SELECT id FROM integration_instances \
+                 WHERE tenant_id = $1 AND site_id = $2 AND integration_type = $3",
             )
             .bind(tenant_id)
-            .bind(instance_id)
+            .bind(site_id)
+            .bind(&integration_type)
+            .fetch_optional(&mut **tx)
+            .await
+            .map_err(|e| {
+                SenseiError::Database(format!("Integration instance lookup failed: {e}"))
+            })?;
+            let Some(instance_id) = instance_id else {
+                return Ok(None);
+            };
+            read_instance_checkpoint(tx, tenant_id, instance_id).await
+        })
+    })
+    .await
+}
+
+/// The tenant's integration-layer state snapshot — every counter read
+/// inside ONE tenant-scoped transaction (twenty-third audit P1):
+/// integration tables are FORCE RLS, so reads on the raw pool under a
+/// wrong/missing tenant context fabricate zeros; the tenant tx returns
+/// the CORRECT values (and one error budget: any query failure
+/// propagates, never a fake zero).
+#[derive(Debug, Clone)]
+pub struct IntegrationState {
+    pub entity_map_count: i64,
+    pub dead_letter_count: i64,
+    pub reconciliation_open: i64,
+    /// (watermark, last_run_id, last_run_at) of the tenant's most recent
+    /// checkpoint, if any.
+    pub last_checkpoint: Option<(
+        chrono::DateTime<chrono::Utc>,
+        Option<String>,
+        chrono::DateTime<chrono::Utc>,
+    )>,
+    pub tombstone_count: i64,
+    pub oldest_unresolved: Option<chrono::DateTime<chrono::Utc>>,
+}
+
+/// Read the integration-layer state snapshot of one tenant inside ONE
+/// tenant-scoped transaction. See [`IntegrationState`].
+pub async fn read_integration_state(pool: &PgPool, tenant_id: Uuid) -> Result<IntegrationState> {
+    with_tenant_tx(pool, tenant_id, |tx| {
+        Box::pin(async move {
+            let (map_count,): (i64,) =
+                sqlx::query_as("SELECT COUNT(*) FROM integration_entity_map WHERE tenant_id = $1")
+                    .bind(tenant_id)
+                    .fetch_one(&mut **tx)
+                    .await
+                    .map_err(|e| SenseiError::Database(format!("Entity map count failed: {e}")))?;
+            let (dead_count,): (i64,) =
+                sqlx::query_as("SELECT COUNT(*) FROM integration_dead_letter WHERE tenant_id = $1")
+                    .bind(tenant_id)
+                    .fetch_one(&mut **tx)
+                    .await
+                    .map_err(|e| SenseiError::Database(format!("Dead letter count failed: {e}")))?;
+            let (open_rec,): (i64,) = sqlx::query_as(
+                "SELECT COUNT(*) FROM integration_reconciliation \
+                 WHERE tenant_id = $1 AND status = 'open'",
+            )
+            .bind(tenant_id)
+            .fetch_one(&mut **tx)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Reconciliation count failed: {e}")))?;
+            // Source watermarks + run id: Unknown is NOT zero — each is
+            // Option (None = nothing recorded yet).
+            let last_checkpoint: Option<(
+                chrono::DateTime<chrono::Utc>,
+                Option<String>,
+                chrono::DateTime<chrono::Utc>,
+            )> = sqlx::query_as(
+                "SELECT watermark, last_run_id, last_run_at \
+                 FROM integration_checkpoints \
+                 WHERE tenant_id = $1 ORDER BY last_run_at DESC LIMIT 1",
+            )
+            .bind(tenant_id)
             .fetch_optional(&mut **tx)
             .await
             .map_err(|e| SenseiError::Database(format!("Checkpoint read failed: {e}")))?;
-            Ok(row.map(
-                |(watermark, watermark_id, last_run_id, last_run_at)| CheckpointState {
-                    watermark,
-                    watermark_id,
-                    last_run_id,
-                    last_run_at,
-                },
-            ))
+            let (tombstones,): (i64,) = sqlx::query_as(
+                "SELECT COUNT(*) FROM integration_entity_map \
+                 WHERE tenant_id = $1 AND tombstoned = TRUE",
+            )
+            .bind(tenant_id)
+            .fetch_one(&mut **tx)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Tombstone count failed: {e}")))?;
+            let oldest_unresolved: Option<chrono::DateTime<chrono::Utc>> = sqlx::query_scalar(
+                "SELECT MIN(created_at) FROM integration_reconciliation \
+                 WHERE tenant_id = $1 AND status = 'open'",
+            )
+            .bind(tenant_id)
+            .fetch_optional(&mut **tx)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Oldest unresolved read failed: {e}")))?;
+            Ok(IntegrationState {
+                entity_map_count: map_count,
+                dead_letter_count: dead_count,
+                reconciliation_open: open_rec,
+                last_checkpoint,
+                tombstone_count: tombstones,
+                oldest_unresolved,
+            })
         })
     })
     .await

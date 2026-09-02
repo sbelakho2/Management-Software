@@ -498,6 +498,47 @@ pub async fn deactivate(pool: &PgPool, tenant_id: Uuid, id: Uuid) -> Result<Rela
     })
 }
 
+/// Capacity/efficiency projection of every entitled work center
+/// (twenty-third audit P0/P1): ONLY work centers whose CURRENT site is
+/// among `authorized_sites` appear — the site predicate lives in the
+/// SQL, an EMPTY entitlement matches nothing (zero rows, never a
+/// tenant-wide fallback), and site-less (`needs_reconciliation`) rows
+/// belong to no entitled site and are never projected.
+pub async fn metrics_scoped(
+    pool: &PgPool,
+    tenant_id: Uuid,
+    authorized_sites: &[Uuid],
+) -> Result<Vec<WorkCenterMetrics>> {
+    let sites = authorized_sites.to_vec();
+    type MetricsRow = (Uuid, String, bool, Option<f64>, Option<i32>, Option<f64>);
+    let rows: Vec<MetricsRow> = sqlx::query_as(
+        "SELECT id, name, is_active, capacity_per_shift, shifts_per_day, efficiency \
+         FROM work_centers \
+         WHERE tenant_id = $1 AND site_id = ANY($2) \
+         ORDER BY work_center_number",
+    )
+    .bind(tenant_id)
+    .bind(sites)
+    .fetch_all(pool)
+    .await
+    .map_err(|e| db_err(e, "metrics_scoped"))?;
+    Ok(rows
+        .into_iter()
+        .map(
+            |(id, name, is_active, capacity_per_shift, shifts_per_day, efficiency)| {
+                WorkCenterMetrics {
+                    id,
+                    name,
+                    is_active,
+                    capacity_per_shift,
+                    shifts_per_day,
+                    efficiency,
+                }
+            },
+        )
+        .collect())
+}
+
 /// Capacity/efficiency projection of every work center in the tenant,
 /// straight from the relational columns.
 pub async fn metrics(pool: &PgPool, tenant_id: Uuid) -> Result<Vec<WorkCenterMetrics>> {

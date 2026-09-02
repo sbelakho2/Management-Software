@@ -267,6 +267,13 @@ pub async fn save_checkpoint(
 /// Read a saved checkpoint watermark (the bridge resumes incrementally).
 /// Twenty-second audit P1: a checkpoint that does not exist is NEVER RUN
 /// (Unknown) — `watermark` is None, never a fabricated `Utc::now()`.
+/// Twenty-third audit P1: the legacy (system, source_table) cursor is
+/// RETIRED — checkpoints are instance-keyed, so this read resolves the
+/// caller's ACTIVE-SITE instance of the legacy system
+/// (tenant, site, integration_type) through the one authoritative
+/// RequestContext/agent-context builder (server-derived, never client
+/// input) and returns the INSTANCE's checkpoint. A caller with no active
+/// site has no instance to resume — fail closed.
 #[derive(Debug, serde::Serialize)]
 pub struct CheckpointReadResponse {
     pub watermark: Option<chrono::DateTime<chrono::Utc>>,
@@ -277,27 +284,39 @@ pub struct CheckpointReadResponse {
 pub async fn get_checkpoint(
     user: AuthenticatedUser,
     State(state): State<AppState>,
-    Path((system, source_table)): Path<(String, String)>,
+    Path((system, _source_table)): Path<(String, String)>,
 ) -> Result<Json<CheckpointReadResponse>> {
     user.require_permission("integration:status:read")?;
     let pool = state
         .db_pool
         .as_ref()
         .ok_or_else(|| SenseiError::Database("Checkpoints require the database".to_string()))?;
-    let row: Option<(chrono::DateTime<chrono::Utc>, Option<String>)> = sqlx::query_as(
-        "SELECT watermark, watermark_id FROM integration_checkpoints \
-         WHERE tenant_id = $1 AND source_system = $2 AND source_table = $3",
+    // The active site comes from the caller's agent context (built on the
+    // RequestContext entitlement/topology proof) — integration instances
+    // are site-scoped, so a checkpoint can only be resolved for the site
+    // the caller operates in.
+    let ctx = crate::routes::agent::build_context(&user, &state).await;
+    let site_id = ctx.site_id.ok_or_else(|| {
+        SenseiError::Forbidden(
+            "no active site context — integration checkpoints are instance-keyed \
+             per site; set the caller's active site before reading a checkpoint"
+                .to_string(),
+        )
+    })?;
+    // The service resolves the instance (tenant, site, integration_type =
+    // the legacy system) and reads ITS checkpoint inside one tenant-scoped
+    // transaction; no raw-pool legacy (system, source_table) read remains.
+    let checkpoint = sensei_services::tps::integration::get_site_checkpoint(
+        pool,
+        user.tenant_id,
+        site_id,
+        &system,
     )
-    .bind(user.tenant_id)
-    .bind(&system)
-    .bind(&source_table)
-    .fetch_optional(pool.as_ref())
-    .await
-    .map_err(|e| SenseiError::Database(format!("Checkpoint read failed: {e}")))?;
-    // A DB error above PROPAGATES (Unknown), and a missing checkpoint is
-    // None — never Utc::now(): a run that never happened has no cursor.
-    let (watermark, watermark_id) = row
-        .map(|(wm, wm_id)| (Some(wm), wm_id))
+    .await?;
+    // A missing instance/checkpoint is None — never Utc::now(): a run
+    // that never happened has no cursor.
+    let (watermark, watermark_id) = checkpoint
+        .map(|state| (Some(state.watermark), state.watermark_id))
         .unwrap_or((None, None));
     Ok(Json(CheckpointReadResponse {
         watermark,
@@ -359,9 +378,14 @@ fn degraded_integration_status(detail: String) -> IntegrationStatus {
     }
 }
 
-/// The read model of the integration layer, read under ONE error budget:
-/// every query failure PROPAGATES (map_err → SenseiError) so the caller
-/// can degrade — a count query that fails can never masquerade as 0.
+/// The read model of the integration layer, read under ONE error budget
+/// and inside ONE tenant-scoped transaction (twenty-third audit P1): the
+/// counts live in `sensei_services::tps::integration::read_integration_state`
+/// (a with_tenant_tx transaction) — integration tables are FORCE RLS, so
+/// the raw-pool reads they replace fabricated zeros under a wrong/missing
+/// tenant context. Every query failure PROPAGATES (map_err →
+/// SenseiError) so the caller can degrade — a count query that fails can
+/// never masquerade as 0.
 struct IntegrationSnapshot {
     map_count: i64,
     dead_letter_count: i64,
@@ -375,65 +399,19 @@ struct IntegrationSnapshot {
     oldest_unresolved: Option<chrono::DateTime<chrono::Utc>>,
 }
 
-async fn read_integration_state(
-    pool: &sqlx::PgPool,
-    tenant_id: Uuid,
-) -> std::result::Result<IntegrationSnapshot, SenseiError> {
-    let (map_count,): (i64,) =
-        sqlx::query_as("SELECT COUNT(*) FROM integration_entity_map WHERE tenant_id = $1")
-            .bind(tenant_id)
-            .fetch_one(pool)
-            .await
-            .map_err(|e| SenseiError::Database(format!("Entity map count failed: {e}")))?;
-    let (dead_count,): (i64,) =
-        sqlx::query_as("SELECT COUNT(*) FROM integration_dead_letter WHERE tenant_id = $1")
-            .bind(tenant_id)
-            .fetch_one(pool)
-            .await
-            .map_err(|e| SenseiError::Database(format!("Dead letter count failed: {e}")))?;
-    let (open_rec,): (i64,) = sqlx::query_as(
-        "SELECT COUNT(*) FROM integration_reconciliation WHERE tenant_id = $1 AND status = 'open'",
-    )
-    .bind(tenant_id)
-    .fetch_one(pool)
-    .await
-    .map_err(|e| SenseiError::Database(format!("Reconciliation count failed: {e}")))?;
-    // Item 24: source watermarks + run id + mapper version — Unknown is
-    // NOT zero: each is Option (None = nothing recorded yet).
-    let last_checkpoint: Option<(
-        chrono::DateTime<chrono::Utc>,
-        Option<String>,
-        chrono::DateTime<chrono::Utc>,
-    )> = sqlx::query_as(
-        "SELECT watermark, last_run_id, last_run_at FROM integration_checkpoints \
-             WHERE tenant_id = $1 ORDER BY last_run_at DESC LIMIT 1",
-    )
-    .bind(tenant_id)
-    .fetch_optional(pool)
-    .await
-    .map_err(|e| SenseiError::Database(format!("Checkpoint read failed: {e}")))?;
-    let (tombstones,): (i64,) = sqlx::query_as(
-        "SELECT COUNT(*) FROM integration_entity_map WHERE tenant_id = $1 AND tombstoned = TRUE",
-    )
-    .bind(tenant_id)
-    .fetch_one(pool)
-    .await
-    .map_err(|e| SenseiError::Database(format!("Tombstone count failed: {e}")))?;
-    let oldest_unresolved: Option<chrono::DateTime<chrono::Utc>> = sqlx::query_scalar(
-        "SELECT MIN(created_at) FROM integration_reconciliation WHERE tenant_id = $1 AND status = 'open'",
-    )
-    .bind(tenant_id)
-    .fetch_optional(pool)
-    .await
-    .map_err(|e| SenseiError::Database(format!("Oldest unresolved read failed: {e}")))?;
-    Ok(IntegrationSnapshot {
-        map_count,
-        dead_letter_count: dead_count,
-        reconciliation_open: open_rec,
-        last_checkpoint,
-        tombstones,
-        oldest_unresolved,
-    })
+impl IntegrationSnapshot {
+    async fn read(pool: &sqlx::PgPool, tenant_id: Uuid) -> std::result::Result<Self, SenseiError> {
+        let state =
+            sensei_services::tps::integration::read_integration_state(pool, tenant_id).await?;
+        Ok(Self {
+            map_count: state.entity_map_count,
+            dead_letter_count: state.dead_letter_count,
+            reconciliation_open: state.reconciliation_open,
+            last_checkpoint: state.last_checkpoint,
+            tombstones: state.tombstone_count,
+            oldest_unresolved: state.oldest_unresolved,
+        })
+    }
 }
 
 pub async fn integration_status(
@@ -451,7 +429,9 @@ pub async fn integration_status(
     // One error budget: ANY count/watermark query failure degrades the
     // whole report (every epistemic value None) — a DB error can never
     // read as 0 dead letters / 0 open reconciliations / no checkpoint.
-    let snapshot = match read_integration_state(pool, user.tenant_id).await {
+    // The reads themselves run in ONE tenant-scoped transaction (the
+    // service), so RLS can never fabricate zeros.
+    let snapshot = match IntegrationSnapshot::read(pool, user.tenant_id).await {
         Ok(snapshot) => snapshot,
         Err(e) => {
             return Ok(Json(degraded_integration_status(format!(

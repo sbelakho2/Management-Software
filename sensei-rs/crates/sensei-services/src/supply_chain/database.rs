@@ -217,7 +217,9 @@ struct StockMoveRow {
     to_location: String,
     reference_type: Option<String>,
     reference_id: Option<Uuid>,
-    created_by: Uuid,
+    /// The real schema stores the actor in the nullable `moved_by`
+    /// column (moves recorded by PO receipts have no actor).
+    created_by: Option<Uuid>,
     created_at: chrono::DateTime<Utc>,
 }
 
@@ -328,7 +330,9 @@ fn sm_row_to_domain(r: StockMoveRow) -> StockMove {
         to_location: r.to_location,
         reference_type: r.reference_type,
         reference_id: r.reference_id,
-        created_by: r.created_by,
+        // NULL moved_by (receipt-recorded moves) surfaces as the nil
+        // actor rather than fabricating one.
+        created_by: r.created_by.unwrap_or_default(),
         created_at: r.created_at,
     }
 }
@@ -714,9 +718,16 @@ impl SupplyChainService for DatabaseSupplyChainService {
     async fn update_sales_order_status(
         &self,
         tenant_id: Uuid,
+        authorized_sites: &[Uuid],
         id: Uuid,
         status: &str,
     ) -> Result<SalesOrder> {
+        if authorized_sites.is_empty() {
+            return Err(SenseiError::Forbidden(
+                "no operational scope — no sales order is authorized".to_string(),
+            ));
+        }
+        let sites = authorized_sites.to_vec();
         // Status transitions STAMP the immutable shipment timestamps
         // (migration 133) — confirmed on first confirm, shipped on first
         // ship, delivered on first deliver; the anchors are NEVER
@@ -732,24 +743,11 @@ impl SupplyChainService for DatabaseSupplyChainService {
         // delivery metrics must carry its fulfilling site from the FIRST
         // confirmation — without the site anchor the order cannot
         // contribute to any site's OTD and confirmation is refused.
-        if status == "confirmed" || status == "shipped" || status == "delivered" {
-            let site_anchor: Option<Uuid> = sqlx::query_scalar(
-                "SELECT fulfilling_site_id FROM sales_orders WHERE id = $1 AND tenant_id = $2",
-            )
-            .bind(id)
-            .bind(tenant_id)
-            .fetch_optional(&self.pool)
-            .await
-            .map_err(|e| SenseiError::Database(format!("Failed to read order site anchor: {e}")))?
-            .flatten();
-            if site_anchor.is_none() {
-                return Err(SenseiError::Validation(format!(
-                    "order {id} has no fulfilling site — plant delivery orders must name \
-                     the fulfilling site before '{status}'; site-scoped OTD cannot \
-                     include sited orders otherwise"
-                )));
-            }
-        }
+        // Twenty-third audit P0: the caller's site boundary is part of
+        // THE SAME predicate as the write — an order whose fulfilling
+        // site is NULL or outside `authorized_sites` is indistinguishable
+        // from a nonexistent order, so the transition can never be
+        // applied to a foreign row.
         let stamp = "CASE                        WHEN $1 = 'confirmed' AND confirmed_at IS NULL THEN NOW()                        WHEN $1 IN ('shipped') AND shipped_at IS NULL THEN NOW()                        WHEN $1 IN ('delivered') AND delivered_at IS NULL THEN NOW()                      END";
         let row = sqlx::query_as::<_, SalesOrderRow>(
             &format!(
@@ -762,10 +760,10 @@ impl SupplyChainService for DatabaseSupplyChainService {
                        commitment_revision   = CASE WHEN $1 = 'confirmed' THEN 1 ELSE commitment_revision END,
                        actual_ship_date      = COALESCE(actual_ship_date, CASE WHEN $1 = 'shipped' THEN NOW() END),
                        actual_delivery_date  = COALESCE(actual_delivery_date, CASE WHEN $1 = 'delivered' THEN NOW() END)
-                   WHERE id=$2 AND tenant_id=$3
+                   WHERE id=$2 AND tenant_id=$3 AND fulfilling_site_id = ANY($4)
                    RETURNING id, tenant_id, order_number, customer_id, customer_name, status, line_items, total_amount, currency, delivery_date, shipping_address, created_by, created_at, fulfilling_site_id"#
             ),
-        ).bind(status).bind(id).bind(tenant_id).fetch_optional(&self.pool).await
+        ).bind(status).bind(id).bind(tenant_id).bind(&sites).fetch_optional(&self.pool).await
             .map_err(|e| SenseiError::Database(format!("Failed to update sales order status: {e}")))?
             .ok_or_else(|| SenseiError::NotFound(format!("Sales order {id} not found")))?;
         Ok(so_row_to_domain(row))
@@ -774,48 +772,95 @@ impl SupplyChainService for DatabaseSupplyChainService {
     async fn assign_fulfillment_site(
         &self,
         tenant_id: Uuid,
+        authorized_sites: &[Uuid],
         order_id: Uuid,
         site_id: Uuid,
     ) -> Result<SalesOrder> {
+        if authorized_sites.is_empty() {
+            return Err(SenseiError::Forbidden(
+                "no operational scope — no sales order is authorized".to_string(),
+            ));
+        }
+        let sites = authorized_sites.to_vec();
         // The fulfilling site is IMMUTABLE once set (SalesOrder doc): a
         // re-anchor to a DIFFERENT site is refused, re-assigning the
         // SAME site is a no-op, and only a NULL anchor is filled.
-        let existing: Option<Uuid> = sqlx::query_scalar(
-            "SELECT fulfilling_site_id FROM sales_orders WHERE id = $1 AND tenant_id = $2",
+        // Twenty-third audit P0: the caller's site boundary is embedded
+        // in the same predicate as the write — a NULL anchor may only be
+        // filled with a site inside `authorized_sites`, and an order
+        // already anchored OUTSIDE the caller's scope is
+        // indistinguishable from a nonexistent order.
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to begin transaction: {e}")))?;
+        // Read the row's site INSIDE the tx under FOR UPDATE; the read is
+        // itself scoped so a foreign anchor never even surfaces.
+        let existing: Option<Option<Uuid>> = sqlx::query_scalar(
+            "SELECT fulfilling_site_id FROM sales_orders \
+             WHERE id = $1 AND tenant_id = $2 \
+               AND (fulfilling_site_id IS NULL OR fulfilling_site_id = ANY($3)) \
+             FOR UPDATE",
         )
         .bind(order_id)
         .bind(tenant_id)
-        .fetch_optional(&self.pool)
+        .bind(&sites)
+        .fetch_optional(&mut *tx)
         .await
-        .map_err(|e| SenseiError::Database(format!("Failed to read order site anchor: {e}")))?
-        .flatten();
-        if let Some(existing) = existing {
-            if existing != site_id {
-                return Err(SenseiError::Validation(format!(
-                    "sales order {order_id} already names fulfilling site {existing} — \
-                     the fulfilling site is immutable"
-                )));
+        .map_err(|e| SenseiError::Database(format!("Failed to read order site anchor: {e}")))?;
+        match existing {
+            None => Err(SenseiError::NotFound(format!(
+                "Sales order {order_id} not found"
+            ))),
+            Some(Some(existing_site)) => {
+                if existing_site != site_id {
+                    return Err(SenseiError::Validation(format!(
+                        "sales order {order_id} already names fulfilling site {existing_site} — \
+                         the fulfilling site is immutable"
+                    )));
+                }
+                // Same-site no-op: return the locked row.
+                let row = sqlx::query_as::<_, SalesOrderRow>(
+                    "SELECT id, tenant_id, order_number, customer_id, customer_name, status, line_items, total_amount, currency, delivery_date, shipping_address, created_by, created_at, fulfilling_site_id FROM sales_orders WHERE id=$1 AND tenant_id=$2",
+                ).bind(order_id).bind(tenant_id).fetch_one(&mut *tx).await
+                    .map_err(|e| SenseiError::Database(format!("Failed to reload sales order: {e}")))?;
+                tx.commit()
+                    .await
+                    .map_err(|e| SenseiError::Database(format!("Failed to commit tx: {e}")))?;
+                Ok(so_row_to_domain(row))
             }
-            return self.get_sales_order(tenant_id, order_id).await;
+            Some(None) => {
+                // NULL anchor: fill it with the requested site ONLY when
+                // that site is inside the caller's entitlement — the
+                // boundary is in the same predicate as the UPDATE.
+                let row = sqlx::query_as::<_, SalesOrderRow>(
+                    r#"UPDATE sales_orders SET fulfilling_site_id=$3
+                       WHERE id=$1 AND tenant_id=$2 AND fulfilling_site_id IS NULL
+                         AND $3::uuid = ANY($4)
+                       RETURNING id, tenant_id, order_number, customer_id, customer_name, status, line_items, total_amount, currency, delivery_date, shipping_address, created_by, created_at, fulfilling_site_id"#,
+                ).bind(order_id).bind(tenant_id).bind(site_id).bind(&sites)
+                    .fetch_optional(&mut *tx).await
+                    .map_err(|e| SenseiError::Database(format!("Failed to assign fulfilling site: {e}")))?
+                    .ok_or_else(|| SenseiError::NotFound(format!("Sales order {order_id} not found")))?;
+                tx.commit()
+                    .await
+                    .map_err(|e| SenseiError::Database(format!("Failed to commit tx: {e}")))?;
+                Ok(so_row_to_domain(row))
+            }
         }
-        let row = sqlx::query_as::<_, SalesOrderRow>(
-            r#"UPDATE sales_orders SET fulfilling_site_id=$3 WHERE id=$1 AND tenant_id=$2
-               RETURNING id, tenant_id, order_number, customer_id, customer_name, status, line_items, total_amount, currency, delivery_date, shipping_address, created_by, created_at, fulfilling_site_id"#,
-        ).bind(order_id).bind(tenant_id).bind(site_id).fetch_optional(&self.pool).await
-            .map_err(|e| SenseiError::Database(format!("Failed to assign fulfilling site: {e}")))?
-            .ok_or_else(|| SenseiError::NotFound(format!("Sales order {order_id} not found")))?;
-        Ok(so_row_to_domain(row))
     }
 
     async fn confirm_sales_order_with_site(
         &self,
         tenant_id: Uuid,
+        authorized_sites: &[Uuid],
         order_id: Uuid,
         site_id: Uuid,
     ) -> Result<SalesOrder> {
-        self.assign_fulfillment_site(tenant_id, order_id, site_id)
+        self.assign_fulfillment_site(tenant_id, authorized_sites, order_id, site_id)
             .await?;
-        self.update_sales_order_status(tenant_id, order_id, "confirmed")
+        self.update_sales_order_status(tenant_id, authorized_sites, order_id, "confirmed")
             .await
     }
 
@@ -885,10 +930,17 @@ impl SupplyChainService for DatabaseSupplyChainService {
     async fn receive_po_line(
         &self,
         tenant_id: Uuid,
+        authorized_sites: &[Uuid],
         po_id: Uuid,
         product_id: Uuid,
         quantity_received: i64,
     ) -> Result<PurchaseOrder> {
+        if authorized_sites.is_empty() {
+            return Err(SenseiError::Forbidden(
+                "no operational scope — no purchase order is authorized".to_string(),
+            ));
+        }
+        let sites = authorized_sites.to_vec();
         if quantity_received <= 0 {
             return Err(SenseiError::Validation(
                 "Received quantity must be positive".to_string(),
@@ -901,14 +953,21 @@ impl SupplyChainService for DatabaseSupplyChainService {
             .map_err(|e| SenseiError::Database(format!("Failed to begin transaction: {e}")))?;
 
         // Load the PO's JSONB line items and supplier, then update them.
+        // Twenty-third audit P0: the scope boundary is part of the guard
+        // read — a PO whose receiving site is NULL or outside
+        // `authorized_sites` is indistinguishable from a nonexistent PO,
+        // so no line update, stock movement or inventory effect can
+        // happen for it.
         let row: PurchaseOrderRow = sqlx::query_as(
             r#"SELECT id, tenant_id, po_number, supplier_id, supplier_name, status,
                       line_items, total_amount, currency, expected_delivery, created_by, created_at,
                       receiving_site_id
-               FROM purchase_orders WHERE id=$1 AND tenant_id=$2 FOR UPDATE"#,
+               FROM purchase_orders WHERE id=$1 AND tenant_id=$2
+                 AND receiving_site_id = ANY($3) FOR UPDATE"#,
         )
         .bind(po_id)
         .bind(tenant_id)
+        .bind(&sites)
         .fetch_optional(&mut *tx)
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to get PO: {e}")))?
@@ -953,8 +1012,10 @@ impl SupplyChainService for DatabaseSupplyChainService {
             SenseiError::Database(format!("Failed to serialize PO line items: {e}"))
         })?;
 
-        sqlx::query("UPDATE purchase_orders SET line_items=$1, status=$2, updated_at=NOW() WHERE id=$3 AND tenant_id=$4")
-            .bind(&li_json).bind(new_status).bind(po_id).bind(tenant_id)
+        // Effects apply only to the scoped row: the same site boundary is
+        // repeated in the state UPDATE.
+        sqlx::query("UPDATE purchase_orders SET line_items=$1, status=$2, updated_at=NOW() WHERE id=$3 AND tenant_id=$4 AND receiving_site_id = ANY($5)")
+            .bind(&li_json).bind(new_status).bind(po_id).bind(tenant_id).bind(&sites)
             .execute(&mut *tx).await
             .map_err(|e| SenseiError::Database(format!("Failed to receive PO line: {e}")))?;
 
@@ -1015,9 +1076,13 @@ impl SupplyChainService for DatabaseSupplyChainService {
 
     async fn get_inventory(&self, tenant_id: Uuid, product_id: Uuid) -> Result<Vec<InventoryItem>> {
         let rows = sqlx::query_as::<_, InventoryRow>(
-            "SELECT id, tenant_id, product_id, product_name, \
+            "SELECT id, tenant_id, product_id, \
+                    (SELECT name FROM products WHERE products.id = inventory_items.product_id) \
+                        AS product_name, \
+                    COALESCE((SELECT reorder_point FROM products WHERE products.id = inventory_items.product_id), 0)::bigint AS reorder_point, \
+                    0::bigint AS reorder_quantity, \
                     quantity_on_hand::bigint, quantity_reserved::bigint, quantity_available::bigint, \
-                    location, lot_number, reorder_point::bigint, reorder_quantity::bigint, updated_at \
+                    location, lot_number, updated_at \
              FROM inventory_items WHERE product_id=$1 AND tenant_id=$2",
         ).bind(product_id).bind(tenant_id).fetch_all(&self.pool).await
             .map_err(|e| SenseiError::Database(format!("Failed to get inventory: {e}")))?;
@@ -1035,9 +1100,13 @@ impl SupplyChainService for DatabaseSupplyChainService {
         let per_page = per_page.unwrap_or(20).clamp(1, 100);
         let offset = (page - 1) * per_page;
         let items: Vec<InventoryRow> = sqlx::query_as(
-            r#"SELECT id, tenant_id, product_id, product_name,
+            r#"SELECT id, tenant_id, product_id,
+                      (SELECT name FROM products WHERE products.id = inventory_items.product_id)
+                          AS product_name,
+                      COALESCE((SELECT reorder_point FROM products WHERE products.id = inventory_items.product_id), 0)::bigint AS reorder_point,
+                      0::bigint AS reorder_quantity,
                       quantity_on_hand::bigint, quantity_reserved::bigint, quantity_available::bigint,
-                      location, lot_number, reorder_point::bigint, reorder_quantity::bigint, updated_at
+                      location, lot_number, updated_at
                FROM inventory_items
                WHERE tenant_id=$1 AND ($2::text IS NULL OR location=$2) ORDER BY product_name LIMIT $3 OFFSET $4"#,
         ).bind(tenant_id).bind(location).bind(per_page as i64).bind(offset as i64).fetch_all(&self.pool).await
@@ -1079,9 +1148,13 @@ impl SupplyChainService for DatabaseSupplyChainService {
                    quantity_available = quantity_on_hand + $1::double precision - quantity_reserved
                WHERE product_id=$2 AND tenant_id=$3 AND location=$4
                  AND quantity_on_hand + $1::double precision >= 0
-               RETURNING id, tenant_id, product_id, product_name,
+               RETURNING id, tenant_id, product_id,
+                         (SELECT name FROM products WHERE products.id = inventory_items.product_id)
+                             AS product_name,
+                         COALESCE((SELECT reorder_point FROM products WHERE products.id = inventory_items.product_id), 0)::bigint AS reorder_point,
+                         0::bigint AS reorder_quantity,
                          quantity_on_hand::bigint, quantity_reserved::bigint, quantity_available::bigint,
-                         location, lot_number, reorder_point::bigint, reorder_quantity::bigint, updated_at"#,
+                         location, lot_number, updated_at"#,
         ).bind(quantity_change).bind(product_id).bind(tenant_id).bind(location)
             .fetch_optional(&mut *tx).await
             .map_err(|e| SenseiError::Database(format!("Failed to adjust inventory: {e}")))?
@@ -1099,21 +1172,21 @@ impl SupplyChainService for DatabaseSupplyChainService {
             })?;
 
         // The ledger row: inventory never changes without a corresponding
-        // stock transaction.
+        // stock transaction. The real stock_moves schema has no
+        // product_name/created_by columns — the move records the id,
+        // quantity and locations (product_name is read from products).
         sqlx::query(
             "INSERT INTO stock_moves \
-                (id, tenant_id, product_id, product_name, quantity, move_type, \
-                 from_location, to_location, reference_type, reference_id, created_by, created_at) \
-             VALUES ($1, $2, $3, $4, $5, 'adjustment', $6, $7, 'inventory_adjustment', NULL, NULL, $8)",
+                (id, tenant_id, product_id, quantity, move_type, \
+                 from_location, to_location, reference_type, reference_id, moved_at, created_at) \
+             VALUES ($1, $2, $3, $4, 'adjustment', $5, $6, 'inventory_adjustment', NULL, NOW(), NOW())",
         )
         .bind(Uuid::new_v4())
         .bind(tenant_id)
         .bind(product_id)
-        .bind(&row.product_name)
         .bind(quantity_change.abs())
         .bind(location)
         .bind(location)
-        .bind(Utc::now())
         .execute(&mut *tx)
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to record adjustment ledger: {e}")))?;
@@ -1166,13 +1239,26 @@ impl SupplyChainService for DatabaseSupplyChainService {
             .map_err(|e| SenseiError::Database(format!("Failed to begin transaction: {e}")))?;
         set_tenant_context(&mut tx, tenant_id).await?;
 
+        // The real stock_moves schema stores no product_name (it is read
+        // from products) and its move_type CHECK admits receipt/issue/
+        // transfer/adjustment — a 'delivery' is stored as its schema
+        // equivalent 'issue' (identical semantics in the branch below).
+        let stored_move_type: &str = if stock_move.move_type == "delivery" {
+            "issue"
+        } else {
+            &stock_move.move_type
+        };
         let row = sqlx::query_as::<_, StockMoveRow>(
-            r#"INSERT INTO stock_moves (id, tenant_id, product_id, quantity, move_type, from_location, to_location, reference_type, reference_id, created_by, created_at)
-               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
-               RETURNING id, tenant_id, product_id, product_name, quantity, move_type, from_location, to_location, reference_type, reference_id, created_by, created_at"#,
-        ).bind(id).bind(tenant_id).bind(stock_move.product_id)            .bind(stock_move.quantity).bind(&stock_move.move_type).bind(&stock_move.from_location)
+            r#"INSERT INTO stock_moves (id, tenant_id, product_id, quantity, move_type, from_location, to_location, reference_type, reference_id, moved_by, moved_at, created_at)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+               RETURNING id, tenant_id, product_id,
+                         (SELECT name FROM products WHERE products.id = stock_moves.product_id) AS product_name,
+                         quantity::bigint, move_type, from_location, to_location, reference_type, reference_id,
+                         moved_by AS created_by, created_at"#,
+        ).bind(id).bind(tenant_id).bind(stock_move.product_id)
+            .bind(stock_move.quantity).bind(stored_move_type).bind(&stock_move.from_location)
             .bind(&stock_move.to_location).bind(&stock_move.reference_type).bind(stock_move.reference_id)
-            .bind(stock_move.created_by).bind(now)
+            .bind(stock_move.created_by).bind(now).bind(now)
             .fetch_one(&mut *tx).await.map_err(|e| SenseiError::Database(format!("Failed to create stock move: {e}")))?;
 
         // Apply the inventory effect inside the same transaction, honouring
@@ -1292,7 +1378,11 @@ impl SupplyChainService for DatabaseSupplyChainService {
         let per_page = per_page.unwrap_or(20).clamp(1, 100);
         let offset = (page - 1) * per_page;
         let items: Vec<StockMoveRow> = sqlx::query_as(
-            r#"SELECT id, tenant_id, product_id, product_name, quantity, move_type, from_location, to_location, reference_type, reference_id, created_by, created_at FROM stock_moves
+            r#"SELECT id, tenant_id, product_id,
+                      (SELECT name FROM products WHERE products.id = stock_moves.product_id) AS product_name,
+                      quantity::bigint, move_type, from_location, to_location, reference_type, reference_id,
+                      moved_by AS created_by, created_at
+               FROM stock_moves
                WHERE tenant_id=$1 AND ($2::uuid IS NULL OR product_id=$2) ORDER BY created_at DESC LIMIT $3 OFFSET $4"#,
         ).bind(tenant_id).bind(product_id).bind(per_page as i64).bind(offset as i64).fetch_all(&self.pool).await
             .map_err(|e| SenseiError::Database(format!("Failed to list stock moves: {e}")))?;
@@ -1396,9 +1486,16 @@ impl SupplyChainService for DatabaseSupplyChainService {
     async fn update_sales_order(
         &self,
         tenant_id: Uuid,
+        authorized_sites: &[Uuid],
         id: Uuid,
         order: SalesOrder,
     ) -> Result<SalesOrder> {
+        if authorized_sites.is_empty() {
+            return Err(SenseiError::Forbidden(
+                "no operational scope — no sales order is authorized".to_string(),
+            ));
+        }
+        let sites = authorized_sites.to_vec();
         let li_json =
             serde_json::to_value(&order.line_items).unwrap_or(serde_json::Value::Array(vec![]));
         let total: rust_decimal::Decimal = order
@@ -1407,18 +1504,30 @@ impl SupplyChainService for DatabaseSupplyChainService {
             .map(|li| rust_decimal::Decimal::from(li.quantity) * li.unit_price)
             .sum();
         let row = sqlx::query_as::<_, SalesOrderRow>(
-            r#"UPDATE sales_orders SET customer_id=$1, customer_name=$2, line_items=$3, total_amount=$4, currency=$5, delivery_date=$6, shipping_address=$7 WHERE id=$8 AND tenant_id=$9
+            r#"UPDATE sales_orders SET customer_id=$1, customer_name=$2, line_items=$3, total_amount=$4, currency=$5, delivery_date=$6, shipping_address=$7 WHERE id=$8 AND tenant_id=$9 AND fulfilling_site_id = ANY($10)
                RETURNING id, tenant_id, order_number, customer_id, customer_name, status, line_items, total_amount, currency, delivery_date, shipping_address, created_by, created_at, fulfilling_site_id"#,
-        ).bind(order.customer_id).bind(&order.customer_name).bind(&li_json).bind(total).bind(&order.currency).bind(order.delivery_date).bind(&order.shipping_address).bind(id).bind(tenant_id)
+        ).bind(order.customer_id).bind(&order.customer_name).bind(&li_json).bind(total).bind(&order.currency).bind(order.delivery_date).bind(&order.shipping_address).bind(id).bind(tenant_id).bind(&sites)
             .fetch_optional(&self.pool).await.map_err(|e| SenseiError::Database(format!("Failed to update sales order: {e}")))?
             .ok_or_else(|| SenseiError::NotFound(format!("Sales order {id} not found")))?;
         Ok(so_row_to_domain(row))
     }
 
-    async fn delete_sales_order(&self, tenant_id: Uuid, id: Uuid) -> Result<()> {
-        let r = sqlx::query("DELETE FROM sales_orders WHERE id=$1 AND tenant_id=$2")
+    async fn delete_sales_order(
+        &self,
+        tenant_id: Uuid,
+        authorized_sites: &[Uuid],
+        id: Uuid,
+    ) -> Result<()> {
+        if authorized_sites.is_empty() {
+            return Err(SenseiError::Forbidden(
+                "no operational scope — no sales order is authorized".to_string(),
+            ));
+        }
+        let sites = authorized_sites.to_vec();
+        let r = sqlx::query("DELETE FROM sales_orders WHERE id=$1 AND tenant_id=$2 AND fulfilling_site_id = ANY($3)")
             .bind(id)
             .bind(tenant_id)
+            .bind(&sites)
             .execute(&self.pool)
             .await
             .map_err(|e| SenseiError::Database(format!("Failed to delete sales order: {e}")))?;
@@ -1433,9 +1542,16 @@ impl SupplyChainService for DatabaseSupplyChainService {
     async fn update_purchase_order(
         &self,
         tenant_id: Uuid,
+        authorized_sites: &[Uuid],
         id: Uuid,
         po: PurchaseOrder,
     ) -> Result<PurchaseOrder> {
+        if authorized_sites.is_empty() {
+            return Err(SenseiError::Forbidden(
+                "no operational scope — no purchase order is authorized".to_string(),
+            ));
+        }
+        let sites = authorized_sites.to_vec();
         let li_json =
             serde_json::to_value(&po.line_items).unwrap_or(serde_json::Value::Array(vec![]));
         let total: rust_decimal::Decimal = po
@@ -1444,18 +1560,30 @@ impl SupplyChainService for DatabaseSupplyChainService {
             .map(|li| rust_decimal::Decimal::from(li.quantity_ordered) * li.unit_price)
             .sum();
         let row = sqlx::query_as::<_, PurchaseOrderRow>(
-            r#"UPDATE purchase_orders SET supplier_id=$1, supplier_name=$2, line_items=$3, total_amount=$4, currency=$5, expected_delivery=$6 WHERE id=$7 AND tenant_id=$8
+            r#"UPDATE purchase_orders SET supplier_id=$1, supplier_name=$2, line_items=$3, total_amount=$4, currency=$5, expected_delivery=$6 WHERE id=$7 AND tenant_id=$8 AND receiving_site_id = ANY($9)
                RETURNING id, tenant_id, po_number, supplier_id, supplier_name, status, line_items, total_amount, currency, expected_delivery, created_by, created_at, receiving_site_id"#,
-        ).bind(po.supplier_id).bind(&po.supplier_name).bind(&li_json).bind(total).bind(&po.currency).bind(po.expected_delivery).bind(id).bind(tenant_id)
+        ).bind(po.supplier_id).bind(&po.supplier_name).bind(&li_json).bind(total).bind(&po.currency).bind(po.expected_delivery).bind(id).bind(tenant_id).bind(&sites)
             .fetch_optional(&self.pool).await.map_err(|e| SenseiError::Database(format!("Failed to update PO: {e}")))?
             .ok_or_else(|| SenseiError::NotFound(format!("Purchase order {id} not found")))?;
         Ok(po_row_to_domain(row))
     }
 
-    async fn delete_purchase_order(&self, tenant_id: Uuid, id: Uuid) -> Result<()> {
-        let r = sqlx::query("DELETE FROM purchase_orders WHERE id=$1 AND tenant_id=$2")
+    async fn delete_purchase_order(
+        &self,
+        tenant_id: Uuid,
+        authorized_sites: &[Uuid],
+        id: Uuid,
+    ) -> Result<()> {
+        if authorized_sites.is_empty() {
+            return Err(SenseiError::Forbidden(
+                "no operational scope — no purchase order is authorized".to_string(),
+            ));
+        }
+        let sites = authorized_sites.to_vec();
+        let r = sqlx::query("DELETE FROM purchase_orders WHERE id=$1 AND tenant_id=$2 AND receiving_site_id = ANY($3)")
             .bind(id)
             .bind(tenant_id)
+            .bind(&sites)
             .execute(&self.pool)
             .await
             .map_err(|e| SenseiError::Database(format!("Failed to delete PO: {e}")))?;
@@ -1467,21 +1595,39 @@ impl SupplyChainService for DatabaseSupplyChainService {
         Ok(())
     }
 
-    async fn receive_full_po(&self, tenant_id: Uuid, id: Uuid) -> Result<PurchaseOrder> {
+    async fn receive_full_po(
+        &self,
+        tenant_id: Uuid,
+        authorized_sites: &[Uuid],
+        id: Uuid,
+    ) -> Result<PurchaseOrder> {
+        if authorized_sites.is_empty() {
+            return Err(SenseiError::Forbidden(
+                "no operational scope — no purchase order is authorized".to_string(),
+            ));
+        }
+        let sites = authorized_sites.to_vec();
         let mut tx = self
             .pool
             .begin()
             .await
             .map_err(|e| SenseiError::Database(format!("Failed to begin transaction: {e}")))?;
 
+        // Twenty-third audit P0: the scope boundary is part of the guard
+        // read — a PO whose receiving site is NULL or outside
+        // `authorized_sites` is indistinguishable from a nonexistent PO,
+        // so the full receipt is rejected BEFORE any line update, stock
+        // movement or inventory effect happens.
         let row: PurchaseOrderRow = sqlx::query_as(
             r#"SELECT id, tenant_id, po_number, supplier_id, supplier_name, status,
                       line_items, total_amount, currency, expected_delivery, created_by, created_at,
                       receiving_site_id
-               FROM purchase_orders WHERE id=$1 AND tenant_id=$2 FOR UPDATE"#,
+               FROM purchase_orders WHERE id=$1 AND tenant_id=$2
+                 AND receiving_site_id = ANY($3) FOR UPDATE"#,
         )
         .bind(id)
         .bind(tenant_id)
+        .bind(&sites)
         .fetch_optional(&mut *tx)
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to get PO: {e}")))?
@@ -1512,8 +1658,10 @@ impl SupplyChainService for DatabaseSupplyChainService {
         let li_json = serde_json::to_value(&items).map_err(|e| {
             SenseiError::Database(format!("Failed to serialize PO line items: {e}"))
         })?;
-        sqlx::query("UPDATE purchase_orders SET line_items=$1, status='received', updated_at=NOW() WHERE id=$2 AND tenant_id=$3")
-            .bind(&li_json).bind(id).bind(tenant_id)
+        // Effects apply only to the scoped row: the same site boundary is
+        // repeated in the state UPDATE.
+        sqlx::query("UPDATE purchase_orders SET line_items=$1, status='received', updated_at=NOW() WHERE id=$2 AND tenant_id=$3 AND receiving_site_id = ANY($4)")
+            .bind(&li_json).bind(id).bind(tenant_id).bind(&sites)
             .execute(&mut *tx).await
             .map_err(|e| SenseiError::Database(format!("Failed to receive full PO: {e}")))?;
 
@@ -1574,37 +1722,83 @@ impl SupplyChainService for DatabaseSupplyChainService {
     async fn assign_receiving_site(
         &self,
         tenant_id: Uuid,
+        authorized_sites: &[Uuid],
         po_id: Uuid,
         site_id: Uuid,
     ) -> Result<PurchaseOrder> {
+        if authorized_sites.is_empty() {
+            return Err(SenseiError::Forbidden(
+                "no operational scope — no purchase order is authorized".to_string(),
+            ));
+        }
+        let sites = authorized_sites.to_vec();
         // The receiving site is IMMUTABLE once set (PurchaseOrder doc):
         // re-anchoring to a DIFFERENT site is refused, re-assigning the
         // SAME site is a no-op, and only a NULL anchor is filled.
-        let existing: Option<Uuid> = sqlx::query_scalar(
-            "SELECT receiving_site_id FROM purchase_orders WHERE id = $1 AND tenant_id = $2",
+        // Twenty-third audit P0: the caller's site boundary is embedded
+        // in the same predicate as the write — a NULL anchor may only be
+        // filled with a site inside `authorized_sites`, and a PO already
+        // anchored OUTSIDE the caller's scope is indistinguishable from a
+        // nonexistent PO.
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to begin transaction: {e}")))?;
+        // Read the row's site INSIDE the tx under FOR UPDATE; the read is
+        // itself scoped so a foreign anchor never even surfaces.
+        let existing: Option<Option<Uuid>> = sqlx::query_scalar(
+            "SELECT receiving_site_id FROM purchase_orders \
+             WHERE id = $1 AND tenant_id = $2 \
+               AND (receiving_site_id IS NULL OR receiving_site_id = ANY($3)) \
+             FOR UPDATE",
         )
         .bind(po_id)
         .bind(tenant_id)
-        .fetch_optional(&self.pool)
+        .bind(&sites)
+        .fetch_optional(&mut *tx)
         .await
-        .map_err(|e| SenseiError::Database(format!("Failed to read PO receiving site: {e}")))?
-        .flatten();
-        if let Some(existing) = existing {
-            if existing != site_id {
-                return Err(SenseiError::Validation(format!(
-                    "purchase order {po_id} already names receiving site {existing} — \
-                     the receiving site is immutable"
-                )));
+        .map_err(|e| SenseiError::Database(format!("Failed to read PO receiving site: {e}")))?;
+        match existing {
+            None => Err(SenseiError::NotFound(format!(
+                "Purchase order {po_id} not found"
+            ))),
+            Some(Some(existing_site)) => {
+                if existing_site != site_id {
+                    return Err(SenseiError::Validation(format!(
+                        "purchase order {po_id} already names receiving site {existing_site} — \
+                         the receiving site is immutable"
+                    )));
+                }
+                // Same-site no-op: return the locked row.
+                let row = sqlx::query_as::<_, PurchaseOrderRow>(
+                    "SELECT id, tenant_id, po_number, supplier_id, supplier_name, status, line_items, total_amount, currency, expected_delivery, created_by, created_at, receiving_site_id FROM purchase_orders WHERE id=$1 AND tenant_id=$2",
+                ).bind(po_id).bind(tenant_id).fetch_one(&mut *tx).await
+                    .map_err(|e| SenseiError::Database(format!("Failed to reload PO: {e}")))?;
+                tx.commit()
+                    .await
+                    .map_err(|e| SenseiError::Database(format!("Failed to commit tx: {e}")))?;
+                Ok(po_row_to_domain(row))
             }
-            return self.get_purchase_order(tenant_id, po_id).await;
+            Some(None) => {
+                // NULL anchor: fill it with the requested site ONLY when
+                // that site is inside the caller's entitlement — the
+                // boundary is in the same predicate as the UPDATE.
+                let row = sqlx::query_as::<_, PurchaseOrderRow>(
+                    r#"UPDATE purchase_orders SET receiving_site_id=$3
+                       WHERE id=$1 AND tenant_id=$2 AND receiving_site_id IS NULL
+                         AND $3::uuid = ANY($4)
+                       RETURNING id, tenant_id, po_number, supplier_id, supplier_name, status, line_items, total_amount, currency, expected_delivery, created_by, created_at, receiving_site_id"#,
+                ).bind(po_id).bind(tenant_id).bind(site_id).bind(&sites)
+                    .fetch_optional(&mut *tx).await
+                    .map_err(|e| SenseiError::Database(format!("Failed to assign receiving site: {e}")))?
+                    .ok_or_else(|| SenseiError::NotFound(format!("Purchase order {po_id} not found")))?;
+                tx.commit()
+                    .await
+                    .map_err(|e| SenseiError::Database(format!("Failed to commit tx: {e}")))?;
+                Ok(po_row_to_domain(row))
+            }
         }
-        let row = sqlx::query_as::<_, PurchaseOrderRow>(
-            r#"UPDATE purchase_orders SET receiving_site_id=$3 WHERE id=$1 AND tenant_id=$2
-               RETURNING id, tenant_id, po_number, supplier_id, supplier_name, status, line_items, total_amount, currency, expected_delivery, created_by, created_at, receiving_site_id"#,
-        ).bind(po_id).bind(tenant_id).bind(site_id).fetch_optional(&self.pool).await
-            .map_err(|e| SenseiError::Database(format!("Failed to assign receiving site: {e}")))?
-            .ok_or_else(|| SenseiError::NotFound(format!("Purchase order {po_id} not found")))?;
-        Ok(po_row_to_domain(row))
     }
 
     // ── Inventory Mutations ─────────────────────────────────────────────
@@ -1613,14 +1807,25 @@ impl SupplyChainService for DatabaseSupplyChainService {
         &self,
         tenant_id: Uuid,
         id: Uuid,
-        item: InventoryItem,
+        _item: InventoryItem,
     ) -> Result<InventoryItem> {
+        // The real `inventory_items` row has no writable attributes
+        // beyond the quantities (adjust) and its location — the domain's
+        // reorder fields live on `products`, which is NOT rewritten from
+        // an inventory update. The update is therefore a scope-checked
+        // touch: it proves the row exists (NotFound otherwise) and
+        // returns the truthful projection.
         let row = sqlx::query_as::<_, InventoryRow>(
-            r#"UPDATE inventory_items SET product_name=$1, reorder_point=$2, reorder_quantity=$3 WHERE id=$4 AND tenant_id=$5
-               RETURNING id, tenant_id, product_id, product_name,
+            r#"UPDATE inventory_items SET updated_at = NOW()
+               WHERE id=$1 AND tenant_id=$2
+               RETURNING id, tenant_id, product_id,
+                         (SELECT name FROM products WHERE products.id = inventory_items.product_id)
+                             AS product_name,
+                         COALESCE((SELECT reorder_point FROM products WHERE products.id = inventory_items.product_id), 0)::bigint AS reorder_point,
+                         0::bigint AS reorder_quantity,
                          quantity_on_hand::bigint, quantity_reserved::bigint, quantity_available::bigint,
-                         location, lot_number, reorder_point::bigint, reorder_quantity::bigint, updated_at"#,
-        ).bind(&item.product_name).bind(item.reorder_point).bind(item.reorder_quantity).bind(id).bind(tenant_id)
+                         location, lot_number, updated_at"#,
+        ).bind(id).bind(tenant_id)
             .fetch_optional(&self.pool).await.map_err(|e| SenseiError::Database(format!("Failed to update inventory: {e}")))?
             .ok_or_else(|| SenseiError::NotFound(format!("Inventory item {id} not found")))?;
         Ok(inv_row_to_domain(row))
@@ -1652,6 +1857,448 @@ impl SupplyChainService for DatabaseSupplyChainService {
             .map_err(|e| SenseiError::Database(format!("Failed to delete stock move: {e}")))?;
         if r.rows_affected() == 0 {
             return Err(SenseiError::NotFound(format!("Stock move {id} not found")));
+        }
+        Ok(())
+    }
+
+    // ── Site-entitled inventory (twenty-third audit P0/P1) ─────────────
+    //
+    // Every scoped operation intersects the affected inventory_items
+    // rows with the caller's RequestContext site entitlement via
+    // `site_id = ANY(authorized_sites)`. The predicate lives in the
+    // SQL — an EMPTY entitlement matches NOTHING (never a tenant-wide
+    // fallback) — and a row whose site is NULL (created outside any
+    // site context) or FOREIGN is indistinguishable from a nonexistent
+    // row: reads never return it, mutations fail with NotFound BEFORE
+    // any quantity change.
+
+    async fn get_inventory_scoped(
+        &self,
+        tenant_id: Uuid,
+        authorized_sites: &[Uuid],
+        product_id: Uuid,
+    ) -> Result<Vec<InventoryItem>> {
+        if authorized_sites.is_empty() {
+            return Ok(Vec::new());
+        }
+        let sites = authorized_sites.to_vec();
+        let rows = sqlx::query_as::<_, InventoryRow>(
+            "SELECT id, tenant_id, product_id, \
+                    (SELECT name FROM products WHERE products.id = inventory_items.product_id) \
+                        AS product_name, \
+                    COALESCE((SELECT reorder_point FROM products WHERE products.id = inventory_items.product_id), 0)::bigint AS reorder_point, \
+                    0::bigint AS reorder_quantity, \
+                    quantity_on_hand::bigint, quantity_reserved::bigint, quantity_available::bigint, \
+                    location, lot_number, updated_at \
+             FROM inventory_items \
+             WHERE product_id=$1 AND tenant_id=$2 AND site_id = ANY($3)",
+        ).bind(product_id).bind(tenant_id).bind(&sites).fetch_all(&self.pool).await
+            .map_err(|e| SenseiError::Database(format!("Failed to get scoped inventory: {e}")))?;
+        Ok(rows.into_iter().map(inv_row_to_domain).collect())
+    }
+
+    async fn list_inventory_scoped(
+        &self,
+        tenant_id: Uuid,
+        authorized_sites: &[Uuid],
+        location: Option<&str>,
+        page: Option<usize>,
+        per_page: Option<usize>,
+    ) -> Result<PaginatedResponse<InventoryItem>> {
+        let page = page.unwrap_or(1).max(1);
+        let per_page = per_page.unwrap_or(20).clamp(1, 100);
+        if authorized_sites.is_empty() {
+            return Ok(paginate(Vec::new(), 0, page, per_page));
+        }
+        let offset = (page - 1) * per_page;
+        let sites = authorized_sites.to_vec();
+        let items: Vec<InventoryRow> = sqlx::query_as(
+            r#"SELECT id, tenant_id, product_id,
+                      (SELECT name FROM products WHERE products.id = inventory_items.product_id)
+                          AS product_name,
+                      COALESCE((SELECT reorder_point FROM products WHERE products.id = inventory_items.product_id), 0)::bigint AS reorder_point,
+                      0::bigint AS reorder_quantity,
+                      quantity_on_hand::bigint, quantity_reserved::bigint, quantity_available::bigint,
+                      location, lot_number, updated_at
+               FROM inventory_items
+               WHERE tenant_id=$1 AND site_id = ANY($2)
+                 AND ($3::text IS NULL OR location=$3) ORDER BY product_name LIMIT $4 OFFSET $5"#,
+        ).bind(tenant_id).bind(&sites).bind(location).bind(per_page as i64).bind(offset as i64).fetch_all(&self.pool).await
+            .map_err(|e| SenseiError::Database(format!("Failed to list scoped inventory: {e}")))?;
+        let count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM inventory_items WHERE tenant_id=$1 AND site_id = ANY($2) AND ($3::text IS NULL OR location=$3)",
+        )
+        .bind(tenant_id).bind(&sites).bind(location).fetch_one(&self.pool).await
+            .map_err(|e| SenseiError::Database(format!("Failed to count scoped inventory: {e}")))?;
+        Ok(paginate(
+            items.into_iter().map(inv_row_to_domain).collect(),
+            count,
+            page,
+            per_page,
+        ))
+    }
+
+    async fn adjust_inventory_scoped(
+        &self,
+        tenant_id: Uuid,
+        authorized_sites: &[Uuid],
+        product_id: Uuid,
+        location: &str,
+        quantity_change: i64,
+        reason: &str,
+    ) -> Result<InventoryItem> {
+        // An adjustment without a reason is not an inventory transaction.
+        if reason.trim().is_empty() {
+            return Err(SenseiError::Validation(
+                "An inventory adjustment requires a reason".to_string(),
+            ));
+        }
+        // Empty entitlement matches nothing: no row can be authorized.
+        if authorized_sites.is_empty() {
+            return Err(SenseiError::NotFound(format!(
+                "Inventory for product {product_id} at {location} not found"
+            )));
+        }
+        let sites = authorized_sites.to_vec();
+        let mut tx =
+            self.pool.begin().await.map_err(|e| {
+                SenseiError::Database(format!("Failed to begin adjustment tx: {e}"))
+            })?;
+
+        let maybe_row = sqlx::query_as::<_, InventoryRow>(
+            r#"UPDATE inventory_items
+               SET quantity_on_hand = quantity_on_hand + $1::double precision,
+                   quantity_available = quantity_on_hand + $1::double precision - quantity_reserved
+               WHERE product_id=$2 AND tenant_id=$3 AND location=$4
+                 AND site_id = ANY($5)
+                 AND quantity_on_hand + $1::double precision >= 0
+               RETURNING id, tenant_id, product_id,
+                         (SELECT name FROM products WHERE products.id = inventory_items.product_id)
+                             AS product_name,
+                         COALESCE((SELECT reorder_point FROM products WHERE products.id = inventory_items.product_id), 0)::bigint AS reorder_point,
+                         0::bigint AS reorder_quantity,
+                         quantity_on_hand::bigint, quantity_reserved::bigint, quantity_available::bigint,
+                         location, lot_number, updated_at"#,
+        ).bind(quantity_change).bind(product_id).bind(tenant_id).bind(location).bind(&sites)
+            .fetch_optional(&mut *tx).await
+            .map_err(|e| SenseiError::Database(format!("Failed to adjust scoped inventory: {e}")))?;
+        let row = match maybe_row {
+            Some(row) => row,
+            None => {
+                // The negativity guard above failed OR no entitled row
+                // matched. Prove which: an ENTITLED row that exists but
+                // cannot absorb the change is an insufficiency
+                // (Validation); anything else (foreign site, NULL site,
+                // no row at all) is indistinguishable from a nonexistent
+                // row (NotFound).
+                let entitled: Option<Uuid> = sqlx::query_scalar(
+                    "SELECT id FROM inventory_items \
+                     WHERE product_id=$1 AND tenant_id=$2 AND location=$3 \
+                       AND site_id = ANY($4) LIMIT 1",
+                )
+                .bind(product_id)
+                .bind(tenant_id)
+                .bind(location)
+                .bind(&sites)
+                .fetch_optional(&mut *tx)
+                .await
+                .map_err(|e| {
+                    SenseiError::Database(format!("Failed to probe scoped inventory row: {e}"))
+                })?;
+                return Err(match entitled {
+                    Some(_) if quantity_change < 0 => SenseiError::Validation(format!(
+                        "Insufficient stock at '{location}' for product {product_id}: \
+                         {quantity_change} would drive the balance negative"
+                    )),
+                    _ => SenseiError::NotFound(format!(
+                        "Inventory for product {product_id} at {location} not found"
+                    )),
+                });
+            }
+        };
+
+        // The ledger row: inventory never changes without a corresponding
+        // stock transaction (schema-true columns — no product_name or
+        // created_by on stock_moves).
+        sqlx::query(
+            "INSERT INTO stock_moves \
+                (id, tenant_id, product_id, quantity, move_type, \
+                 from_location, to_location, reference_type, reference_id, moved_at, created_at) \
+             VALUES ($1, $2, $3, $4, 'adjustment', $5, $6, 'inventory_adjustment', NULL, NOW(), NOW())",
+        )
+        .bind(Uuid::new_v4())
+        .bind(tenant_id)
+        .bind(product_id)
+        .bind(quantity_change.abs())
+        .bind(location)
+        .bind(location)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| SenseiError::Database(format!("Failed to record adjustment ledger: {e}")))?;
+
+        tx.commit()
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to commit adjustment tx: {e}")))?;
+        Ok(inv_row_to_domain(row))
+    }
+
+    async fn create_stock_move_scoped(
+        &self,
+        tenant_id: Uuid,
+        authorized_sites: &[Uuid],
+        stock_move: StockMove,
+    ) -> Result<StockMove> {
+        // Validation BEFORE any write (mirrors create_stock_move).
+        if stock_move.quantity <= 0 {
+            return Err(SenseiError::Validation(
+                "Stock move quantity must be positive".to_string(),
+            ));
+        }
+        match stock_move.move_type.as_str() {
+            "receipt" | "delivery" | "issue" | "transfer" | "adjustment" => {}
+            other => {
+                return Err(SenseiError::Validation(format!(
+                    "Unknown stock move type '{other}'"
+                )));
+            }
+        }
+        if stock_move.move_type == "transfer"
+            && (stock_move
+                .from_location
+                .as_deref()
+                .is_none_or(|l| l.is_empty())
+                || stock_move.to_location.is_empty())
+        {
+            return Err(SenseiError::Validation(
+                "A transfer requires both a source and a destination location".to_string(),
+            ));
+        }
+        if authorized_sites.is_empty() {
+            return Err(SenseiError::NotFound(format!(
+                "No inventory row of product {} is inside the caller's site scope",
+                stock_move.product_id
+            )));
+        }
+        let sites = authorized_sites.to_vec();
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to begin transaction: {e}")))?;
+        set_tenant_context(&mut tx, tenant_id).await?;
+
+        let now = Utc::now();
+        let id = Uuid::new_v4();
+        // A 'delivery' is stored as its schema equivalent 'issue' (the
+        // stock_moves move_type CHECK admits receipt/issue/transfer/
+        // adjustment); product_name is read from products.
+        let stored_move_type: &str = if stock_move.move_type == "delivery" {
+            "issue"
+        } else {
+            &stock_move.move_type
+        };
+        let row = sqlx::query_as::<_, StockMoveRow>(
+            r#"INSERT INTO stock_moves (id, tenant_id, product_id, quantity, move_type, from_location, to_location, reference_type, reference_id, moved_by, moved_at, created_at)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+               RETURNING id, tenant_id, product_id,
+                         (SELECT name FROM products WHERE products.id = stock_moves.product_id) AS product_name,
+                         quantity::bigint, move_type, from_location, to_location, reference_type, reference_id,
+                         moved_by AS created_by, created_at"#,
+        ).bind(id).bind(tenant_id).bind(stock_move.product_id)
+            .bind(stock_move.quantity).bind(stored_move_type).bind(&stock_move.from_location)
+            .bind(&stock_move.to_location).bind(&stock_move.reference_type).bind(stock_move.reference_id)
+            .bind(stock_move.created_by).bind(now).bind(now)
+            .fetch_one(&mut *tx).await.map_err(|e| SenseiError::Database(format!("Failed to create scoped stock move: {e}")))?;
+
+        // SITE SCOPE FIRST: the move's authority derives through the
+        // source/destination inventory ROW sites. Every row the move will
+        // touch must already exist with its site inside `authorized_sites`
+        // (foreign / site-less / absent row -> NotFound, and NO quantity
+        // change happens — the transaction rolls back).
+        let from_location = stock_move.from_location.as_deref().map(str::to_string);
+        let to_location = stock_move.to_location.clone();
+
+        // Prove the row at (product, location) is entitled.
+        let require_entitled = async |tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+                                      location: &str|
+               -> std::result::Result<(), SenseiError> {
+            let probe: Option<Uuid> = sqlx::query_scalar(
+                "SELECT id FROM inventory_items \
+                 WHERE tenant_id = $1 AND product_id = $2 AND location = $3 \
+                   AND site_id = ANY($4) LIMIT 1",
+            )
+            .bind(tenant_id)
+            .bind(stock_move.product_id)
+            .bind(location)
+            .bind(&sites)
+            .fetch_optional(&mut **tx)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to scope inventory row: {e}")))?;
+            if probe.is_none() {
+                return Err(SenseiError::NotFound(format!(
+                    "Inventory for product {} at location '{location}' is outside the \
+                     caller's site scope",
+                    stock_move.product_id
+                )));
+            }
+            Ok(())
+        };
+
+        match stock_move.move_type.as_str() {
+            "receipt" => {
+                let location = match to_location.as_str() {
+                    "" => {
+                        self.resolve_stock_location(&mut tx, tenant_id, stock_move.product_id)
+                            .await?
+                    }
+                    l => l.to_string(),
+                };
+                require_entitled(&mut tx, &location).await?;
+                self.apply_inventory_delta(
+                    &mut tx,
+                    tenant_id,
+                    stock_move.product_id,
+                    &location,
+                    stock_move.quantity,
+                )
+                .await?;
+            }
+            "delivery" | "issue" => {
+                let location = match from_location {
+                    Some(l) if !l.is_empty() => l,
+                    _ => {
+                        self.resolve_stock_location(&mut tx, tenant_id, stock_move.product_id)
+                            .await?
+                    }
+                };
+                require_entitled(&mut tx, &location).await?;
+                self.apply_inventory_delta(
+                    &mut tx,
+                    tenant_id,
+                    stock_move.product_id,
+                    &location,
+                    -stock_move.quantity,
+                )
+                .await?;
+            }
+            "transfer" => {
+                // Hard rule (item 126): an inventory transfer must balance
+                // (Σ location deltas = 0). The rule is the gate.
+                crate::tps::rules::check_transfer_balance(&[
+                    (stock_move.product_id, -stock_move.quantity),
+                    (stock_move.product_id, stock_move.quantity),
+                ])
+                .map_err(|v| SenseiError::Validation(v.message().to_string()))?;
+                let from = from_location.clone().unwrap_or_default();
+                require_entitled(&mut tx, &from).await?;
+                let to = match to_location.as_str() {
+                    "" => {
+                        self.resolve_stock_location(&mut tx, tenant_id, stock_move.product_id)
+                            .await?
+                    }
+                    l => l.to_string(),
+                };
+                require_entitled(&mut tx, &to).await?;
+                self.apply_inventory_delta(
+                    &mut tx,
+                    tenant_id,
+                    stock_move.product_id,
+                    &from,
+                    -stock_move.quantity,
+                )
+                .await?;
+                self.apply_inventory_delta(
+                    &mut tx,
+                    tenant_id,
+                    stock_move.product_id,
+                    &to,
+                    stock_move.quantity,
+                )
+                .await?;
+            }
+            "adjustment" => {
+                let location = match from_location {
+                    Some(l) if !l.is_empty() => l,
+                    _ => to_location,
+                };
+                require_entitled(&mut tx, &location).await?;
+                self.apply_inventory_delta(
+                    &mut tx,
+                    tenant_id,
+                    stock_move.product_id,
+                    &location,
+                    stock_move.quantity,
+                )
+                .await?;
+            }
+            other => {
+                return Err(SenseiError::Validation(format!(
+                    "Unsupported stock move type '{other}'"
+                )));
+            }
+        }
+
+        tx.commit()
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to commit stock move: {e}")))?;
+
+        Ok(sm_row_to_domain(row))
+    }
+
+    async fn update_inventory_scoped(
+        &self,
+        tenant_id: Uuid,
+        authorized_sites: &[Uuid],
+        id: Uuid,
+        _item: InventoryItem,
+    ) -> Result<InventoryItem> {
+        if authorized_sites.is_empty() {
+            return Err(SenseiError::NotFound(format!(
+                "Inventory item {id} not found"
+            )));
+        }
+        let sites = authorized_sites.to_vec();
+        let row = sqlx::query_as::<_, InventoryRow>(
+            r#"UPDATE inventory_items SET updated_at = NOW()
+               WHERE id=$1 AND tenant_id=$2 AND site_id = ANY($3)
+               RETURNING id, tenant_id, product_id,
+                         (SELECT name FROM products WHERE products.id = inventory_items.product_id)
+                             AS product_name,
+                         COALESCE((SELECT reorder_point FROM products WHERE products.id = inventory_items.product_id), 0)::bigint AS reorder_point,
+                         0::bigint AS reorder_quantity,
+                         quantity_on_hand::bigint, quantity_reserved::bigint, quantity_available::bigint,
+                         location, lot_number, updated_at"#,
+        ).bind(id).bind(tenant_id).bind(&sites)
+            .fetch_optional(&self.pool).await.map_err(|e| SenseiError::Database(format!("Failed to update scoped inventory: {e}")))?
+            .ok_or_else(|| SenseiError::NotFound(format!("Inventory item {id} not found")))?;
+        Ok(inv_row_to_domain(row))
+    }
+
+    async fn delete_inventory_scoped(
+        &self,
+        tenant_id: Uuid,
+        authorized_sites: &[Uuid],
+        id: Uuid,
+    ) -> Result<()> {
+        if authorized_sites.is_empty() {
+            return Err(SenseiError::NotFound(format!(
+                "Inventory item {id} not found"
+            )));
+        }
+        let sites = authorized_sites.to_vec();
+        let r = sqlx::query(
+            "DELETE FROM inventory_items WHERE id=$1 AND tenant_id=$2 AND site_id = ANY($3)",
+        )
+        .bind(id)
+        .bind(tenant_id)
+        .bind(&sites)
+        .execute(&self.pool)
+        .await
+        .map_err(|e| SenseiError::Database(format!("Failed to delete scoped inventory: {e}")))?;
+        if r.rows_affected() == 0 {
+            return Err(SenseiError::NotFound(format!(
+                "Inventory item {id} not found"
+            )));
         }
         Ok(())
     }

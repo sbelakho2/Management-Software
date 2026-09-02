@@ -27,6 +27,15 @@
 //! Work Center READS are scope-aware: list/get are intersected with the
 //! caller's RequestContext site entitlement — a zero-entitlement caller
 //! sees nothing (empty list / 404), never a tenant-wide fallback.
+//!
+//! Twenty-third audit P0/P1 (command scope): Work Center MUTATIONS are
+//! RequestContext-scoped too. create and update intersect the SUBMITTED
+//! site with the caller's entitlement (a foreign site is 403 BEFORE the
+//! repository runs); the high-authority verify-topology command, and
+//! deactivate, prove the work center's CURRENT site is entitled via
+//! `get_scoped` (foreign/site-less/absent are all NotFound); capacity
+//! and the efficiency report filter by the entitlement inside
+//! `metrics_scoped`.
 
 use axum::{
     extract::{Path, Query, State},
@@ -208,6 +217,13 @@ pub async fn get_work_center(
 }
 
 /// Create a new work center in the relational `work_centers` table.
+///
+/// Twenty-third audit P0/P1 (command scope): a create that ASSERTS a
+/// site may only assert one of the caller's RequestContext entitlement
+/// sites — the submitted site is intersected with the caller's scope in
+/// the ROUTE (a foreign site is Forbidden/403 BEFORE the repository is
+/// called). A site-less create (unknown lineage, `needs_reconciliation`)
+/// carries no site claim and needs no entitlement.
 pub async fn create_work_center(
     user: AuthenticatedUser,
     State(state): State<AppState>,
@@ -216,6 +232,19 @@ pub async fn create_work_center(
     user.require_permission("tps:work-center:manage")?;
     let tenant_id = user.tenant_id;
     let pool = pool(&state)?;
+
+    // Fail-closed command scope: with NO database the entitlement is
+    // EMPTY and no site can be asserted; with a database the submitted
+    // site must be among the caller's entitlement sites (else 403).
+    let sites = entitlement_sites(&user, &state).await;
+    if let Some(site) = req.site_id {
+        if !sites.contains(&site) {
+            return Err(SenseiError::Forbidden(format!(
+                "site {site} is not among the caller's entitlement sites — a work center \
+                 can only be created at an entitled site"
+            )));
+        }
+    }
 
     // Per-tenant numbering (same WC-xxxxx rule as before, now computed
     // over the relational table).
@@ -237,6 +266,13 @@ pub async fn create_work_center(
 }
 
 /// Update a work center's editable fields and/or site assignment.
+///
+/// Twenty-third audit P0/P1 (command scope): a REASSIGNMENT to a target
+/// site is rejected in the ROUTE when that site is outside the caller's
+/// RequestContext entitlement (Forbidden/403 BEFORE the repository is
+/// called — the same entitlement intersect as create). Unassigning
+/// (`null`) or leaving the assignment untouched carries no target site
+/// and needs no entitlement.
 pub async fn update_work_center(
     user: AuthenticatedUser,
     State(state): State<AppState>,
@@ -246,6 +282,16 @@ pub async fn update_work_center(
     user.require_permission("tps:work-center:manage")?;
     let tenant_id = user.tenant_id;
     let pool = pool(&state)?;
+
+    let sites = entitlement_sites(&user, &state).await;
+    if let Some(Some(site)) = req.site_id {
+        if !sites.contains(&site) {
+            return Err(SenseiError::Forbidden(format!(
+                "site {site} is not among the caller's entitlement sites — a work center \
+                 can only be re-assigned to an entitled site"
+            )));
+        }
+    }
 
     let wc = work_center_repository::update(
         pool,
@@ -268,6 +314,14 @@ pub async fn update_work_center(
 /// (never a client-supplied actor); the source must be a real provenance
 /// (`manifest`, `employee_history` or `manual_reconciliation`).
 /// Same manage authority as create/update.
+///
+/// Twenty-third audit P0/P1 (command scope): certification is a
+/// HIGH-AUTHORITY write, so it gets a STRONGER scope than an ordinary
+/// read — before certifying, the route proves the work center's CURRENT
+/// site is inside the caller's RequestContext entitlement via
+/// `get_scoped` (a foreign-site id, a site-less row and a nonexistent
+/// id are all indistinguishable NotFound/404). A caller can never
+/// certify a work center that lives outside their own sites.
 pub async fn verify_work_center_topology(
     user: AuthenticatedUser,
     State(state): State<AppState>,
@@ -277,6 +331,11 @@ pub async fn verify_work_center_topology(
     user.require_permission("tps:work-center:manage")?;
     let tenant_id = user.tenant_id;
     let pool = pool(&state)?;
+
+    let sites = entitlement_sites(&user, &state).await;
+    // Prove the CURRENT assignment is entitled (NotFound when the row is
+    // foreign, site-less or absent — zero entitlement matches nothing).
+    let _scoped = work_center_repository::get_scoped(pool, tenant_id, id, &sites).await?;
 
     let wc =
         work_center_repository::verify_topology(pool, tenant_id, id, user.user_id, &req.source)
@@ -289,6 +348,10 @@ pub async fn verify_work_center_topology(
 ///
 /// Flips `is_active` in the relational table; the topology assignment is
 /// untouched (a deactivated work center is still part of the plant).
+/// Twenty-third audit P0/P1 (command scope): deactivation is scoped via
+/// `get_scoped` BEFORE acting — a work center whose CURRENT site is
+/// outside the caller's entitlement (or which is site-less) is
+/// indistinguishable from a nonexistent one (NotFound/404).
 pub async fn deactivate_work_center(
     user: AuthenticatedUser,
     State(state): State<AppState>,
@@ -296,7 +359,10 @@ pub async fn deactivate_work_center(
 ) -> Result<Json<RelationalWorkCenter>> {
     user.require_permission("tps:work-center:manage")?;
     let pool = pool(&state)?;
-    let wc = work_center_repository::deactivate(pool, user.tenant_id, id).await?;
+    let tenant_id = user.tenant_id;
+    let sites = entitlement_sites(&user, &state).await;
+    let _scoped = work_center_repository::get_scoped(pool, tenant_id, id, &sites).await?;
+    let wc = work_center_repository::deactivate(pool, tenant_id, id).await?;
     Ok(Json(wc))
 }
 
@@ -307,6 +373,12 @@ pub async fn deactivate_work_center(
 /// relational `efficiency` is a fraction (default 1.0 = 100%). There is
 /// no scheduled-hours input on the relational row, so utilization cannot
 /// be asserted and is reported as 0 — never fabricated.
+///
+/// Twenty-third audit P0/P1 (command scope): the projection is
+/// intersected with the caller's RequestContext entitlement INSIDE the
+/// repository (`metrics_scoped`) — a work center whose site is foreign,
+/// or a site-less row, is indistinguishable from a nonexistent one
+/// (NotFound/404), and a zero-entitlement caller gets 404 for every id.
 pub async fn get_work_center_capacity(
     user: AuthenticatedUser,
     State(state): State<AppState>,
@@ -315,8 +387,9 @@ pub async fn get_work_center_capacity(
     user.require_permission("tps:work-center:read")?;
     let tenant_id = user.tenant_id;
     let pool = pool(&state)?;
+    let sites = entitlement_sites(&user, &state).await;
 
-    let all = work_center_repository::metrics(pool, tenant_id).await?;
+    let all = work_center_repository::metrics_scoped(pool, tenant_id, &sites).await?;
     let wc = all
         .into_iter()
         .find(|wc| wc.id == id)
@@ -341,6 +414,12 @@ pub async fn get_work_center_capacity(
 /// Read from the relational columns only. `efficiency` is reported as a
 /// percentage (relational fraction × 100); utilization has no
 /// relational input and is reported as 0.
+///
+/// Twenty-third audit P0/P1 (command scope): the report is intersected
+/// with the caller's RequestContext entitlement INSIDE the repository
+/// (`metrics_scoped`) — a site-scoped caller sees ONLY their sites'
+/// active work centers, and a zero-entitlement caller gets an empty
+/// report (never a tenant-wide fallback).
 pub async fn get_efficiency_report(
     user: AuthenticatedUser,
     State(state): State<AppState>,
@@ -348,8 +427,9 @@ pub async fn get_efficiency_report(
     user.require_permission("tps:work-center:read")?;
     let tenant_id = user.tenant_id;
     let pool = pool(&state)?;
+    let sites = entitlement_sites(&user, &state).await;
 
-    let all = work_center_repository::metrics(pool, tenant_id).await?;
+    let all = work_center_repository::metrics_scoped(pool, tenant_id, &sites).await?;
     let report: Vec<EfficiencyReport> = all
         .into_iter()
         .filter(|wc| wc.is_active)
