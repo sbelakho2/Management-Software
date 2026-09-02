@@ -431,6 +431,34 @@ pub fn has_contradiction(items: &[ContextItem], fact_key: &str) -> bool {
     !contradiction_candidates(items, fact_key).is_empty()
 }
 
+/// Extract the SOURCE observation time from a context line when the line
+/// carries an RFC3339 timestamp (the section builders stamp event/record
+/// times). Returns None when no timestamp is exposed — retrieval time is
+/// NEVER substituted for observation time (twentieth audit P1).
+pub fn parse_observed_at(text: &str) -> Option<chrono::DateTime<chrono::Utc>> {
+    // Look for RFC3339 timestamps (ISO-8601 with T and timezone) inside
+    // the text; take the LAST one (the most specific statement time).
+    let mut found = None;
+    let bytes = text.as_bytes();
+    let mut i = 0;
+    while i + 19 <= bytes.len() {
+        // candidate at i: 4-2-2 T 2:2:2 (19 chars) followed by Z or offset
+        if bytes[i + 4] == b'-' && bytes[i + 7] == b'-' && bytes[i + 10] == b'T' {
+            let end = (i + 19..text.len().min(i + 32))
+                .find(|&j| bytes[j] == b' ' || bytes[j] == 10 || bytes[j] == b')')
+                .unwrap_or(text.len());
+            let cand = &text[i..end];
+            if let Ok(ts) = chrono::DateTime::parse_from_rfc3339(cand) {
+                found = Some(ts.with_timezone(&chrono::Utc));
+                i = end;
+                continue;
+            }
+        }
+        i += 1;
+    }
+    found
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

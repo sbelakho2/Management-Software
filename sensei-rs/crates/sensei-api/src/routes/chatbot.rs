@@ -238,12 +238,18 @@ pub(crate) async fn prepare_inference(
         .iter()
         .filter_map(|line| {
             let (section, content) = line.split_once(" [live]: ")?;
+            // Twentieth audit P1: the SOURCE observation timestamp is
+            // preserved when the context line carries one (the section
+            // builders stamp "as of <time>"); when no source time is
+            // exposed, observed_at stays None — retrieval time is NEVER
+            // substituted for observation time.
+            let observed_at = sensei_agent_core::context::parse_observed_at(content);
             let mut item = sensei_agent_core::context::ContextItem {
                 payload: serde_json::json!({ "section": section, "text": content }),
                 provenance: sensei_agent_core::context::Provenance {
                     source: format!("section:{section}"),
                     source_revision: None,
-                    observed_at: Some(chrono::Utc::now()),
+                    observed_at,
                     recorded_at: chrono::Utc::now(),
                     authority: sensei_agent_core::context::AuthorityRank::TransactionalState,
                 },
@@ -276,11 +282,37 @@ pub(crate) async fn prepare_inference(
     let context_used: Vec<String> = kernel_items
         .iter()
         .map(|item| {
-            item.payload
+            let text = item
+                .payload
                 .get("text")
                 .and_then(|t| t.as_str())
                 .unwrap_or("")
-                .to_string()
+                .to_string();
+            // Twentieth audit P1: the typed envelope reaches the model —
+            // evidence id, authority, observation time and text. The
+            // verifier only accepts ev:* ids that appear here.
+            let observed = item
+                .provenance
+                .observed_at
+                .map(|t| t.to_rfc3339())
+                .unwrap_or_else(|| "unknown".to_string());
+            let authority = match item.provenance.authority {
+                sensei_agent_core::context::AuthorityRank::VerifiedObservation => {
+                    "verified_observation"
+                }
+                sensei_agent_core::context::AuthorityRank::TransactionalState => {
+                    "transactional_state"
+                }
+                _ => "derived",
+            };
+            if item.evidence_id.is_empty() {
+                text
+            } else {
+                format!(
+                    "[EVIDENCE {}] authority={} observed_at={}\n{text}",
+                    item.evidence_id, authority, observed
+                )
+            }
         })
         .collect();
     let system_context = if context_used.is_empty() {
@@ -497,53 +529,169 @@ fn verify_chat_response(
     // (quantities, counts, statuses, ids) in an assertive way. These are
     // ObservedFact claims and REQUIRE evidence — the assistant produced
     // none here, so they are violations.
-    let factual_markers = [
-        "is ",
-        "are ",
-        "stands at ",
-        "currently ",
-        "has ",
-        "there are ",
-        "total ",
-        "count ",
-        "units ",
+    // Twentieth audit P1: factual detection is no longer "digit AND
+    // data-looking marker". ANY declarative assertion about an
+    // operational subject is a CLAIM — qualitative assertions like "the
+    // line is unstable" or "Tangier is understaffed" must enter the
+    // evidence system; only hedged, interrogative or meta statements
+    // are exempt. The marker gate existed because numeric sentences
+    // without markers were the visible class of fabrication; it let
+    // consequential qualitative assertions escape entirely.
+    let hedge_prefixes = [
+        "i ",
+        "i'm ",
+        "i am ",
+        "please",
+        "can you",
+        "could you",
+        "should ",
+        "would you",
+        "ask ",
+        "check ",
+        "look up",
+        "query ",
+        "hypothesis",
+        "note:",
+        "guidance",
+        "treat ",
+        "as a hypothesis",
+    ];
+    let operational_subjects = [
+        "line",
+        "process",
+        "operator",
+        "supplier",
+        "plant",
+        "site",
         "inventory",
-        "ncr",
-        "capa",
-        "andon",
-        "work order",
-        "production",
+        "stock",
+        "delivery",
+        "shipment",
         "quality",
-        "defect",
+        "yield",
         "scrap",
+        "defect",
+        "production",
+        "output",
+        "staffing",
+        "team",
+        "shift",
+        "maintenance",
+        "machine",
+        "equipment",
+        "calibration",
+        "order",
+        "capacity",
+        "bizerte",
+        "tangier",
+        "morocco",
+        "tunisia",
     ];
     for sentence in split_sentences(&content) {
         let s = sentence.trim();
         if s.len() < 12 {
             continue;
         }
-        // Eighteenth audit P1-7: the marker check runs against the CURRENT
-        // sentence's lowercased text — the previous implementation checked
-        // the WHOLE response, so one marker in a single sentence flagged
-        // every numeric sentence in the reply.
         let sentence_lower = s.to_lowercase();
-        let has_number = s.chars().any(|c| c.is_ascii_digit());
-        let mentions_data = factual_markers.iter().any(|m| sentence_lower.contains(m));
-        if !(has_number && mentions_data) {
+        let ends_interrogative = s.ends_with('?');
+        let hedged = hedge_prefixes.iter().any(|p| sentence_lower.starts_with(p));
+        let subject_matter = operational_subjects
+            .iter()
+            .any(|m| sentence_lower.contains(m));
+        if ends_interrogative || hedged {
+            continue;
+        }
+        // A sentence about an operational subject that states a
+        // predicate (copula or action verb) is a claim even without a
+        // digit — "Production is running." is a live-state claim; "the
+        // supplier is unreliable" is a claim about the supplier.
+        let states_predicate = [
+            " is ",
+            " are ",
+            " has ",
+            " have ",
+            " was ",
+            " were ",
+            " runs ",
+            " operates ",
+            " produces ",
+            " delivers ",
+            " fails ",
+            " exceeds ",
+            " under ",
+            " behind ",
+            " on time",
+            " stable",
+            " unstable",
+            " qualified",
+            " unqualified",
+            " unreliable",
+            " understaffed",
+            " overstaffed",
+            " in control",
+            " out of control",
+            " stands at ",
+            " currently ",
+            " units ",
+            " inventory",
+            " ncr",
+            " capa",
+            " andon",
+            " scrap",
+            " defect",
+            " yield of ",
+            " order ",
+        ]
+        .iter()
+        .any(|p| sentence_lower.contains(p));
+        if !(subject_matter && states_predicate) {
             continue;
         }
 
-        // Evidence markers: "[evidence: <evidence_id>]" — the id must BE a
-        // kernel-issued evidence id of a prepared item. A marker whose id
-        // is NOT in the set is an unverified evidence reference (an issue);
-        // a sentence whose markers all verify is a MEASURED claim.
+        // Evidence markers: "[evidence: <evidence_id>]" — the id must BE
+        // a kernel-issued evidence id of a prepared item. Marker
+        // validation happens on EVERY sentence regardless of detection
+        // (a fabricated citation can never hide inside a sentence that
+        // fails the claim detector); the claim object is created only
+        // for sentences that are factual claims.
         let evidence_refs = evidence_refs_in(s);
         let matched_refs: Vec<String> = evidence_refs
             .iter()
             .filter(|r| evidence_ids.contains(r.as_str()))
             .cloned()
             .collect();
-        if !matched_refs.is_empty() {
+        let unmatched_refs: Vec<String> = evidence_refs
+            .iter()
+            .filter(|r| !evidence_ids.contains(r.as_str()))
+            .cloned()
+            .collect();
+        if !response.is_fallback && !unmatched_refs.is_empty() {
+            for r in &unmatched_refs {
+                issues.push(format!(
+                    "Unverified evidence reference: '{r}' — not an evidence id \
+                     issued by the Context Kernel for this request."
+                ));
+            }
+        }
+        if matched_refs.is_empty() {
+            // No citation at all (or only invalid citations): an
+            // unverified claim — evidence was attempted but failed.
+            claims.push(Claim {
+                statement: s.to_string(),
+                epistemic_status: "unverified".to_string(),
+                fact_addresses: Vec::new(),
+                evidence_refs: Vec::new(),
+                confidence: None,
+                valid_at: None,
+            });
+            if !response.is_fallback && unmatched_refs.is_empty() {
+                issues.push(format!(
+                    "Unverified factual claim: '{s}' — no EvidenceRef. \
+                     Facts about live tenant data must be queried through the \
+                     tool surface, stated as unavailable, or labeled a hypothesis."
+                ));
+            }
+        } else {
             claims.push(Claim {
                 statement: s.to_string(),
                 epistemic_status: "measured".to_string(),
@@ -552,36 +700,6 @@ fn verify_chat_response(
                 confidence: None,
                 valid_at: None,
             });
-            continue;
-        }
-        claims.push(Claim {
-            statement: s.to_string(),
-            epistemic_status: "unverified".to_string(),
-            fact_addresses: Vec::new(),
-            evidence_refs: Vec::new(),
-            confidence: None,
-            valid_at: None,
-        });
-        if !response.is_fallback {
-            let unmatched_refs: Vec<String> = evidence_refs
-                .iter()
-                .filter(|r| !evidence_ids.contains(r.as_str()))
-                .cloned()
-                .collect();
-            if unmatched_refs.is_empty() {
-                issues.push(format!(
-                    "Unverified factual claim: '{s}' — no EvidenceRef. \
-                     Facts about live tenant data must be queried through the \
-                     tool surface, stated as unavailable, or labeled a hypothesis."
-                ));
-            } else {
-                for r in unmatched_refs {
-                    issues.push(format!(
-                        "Unverified evidence reference: '{r}' — not an evidence id \
-                         issued by the Context Kernel for this request."
-                    ));
-                }
-            }
         }
     }
 
@@ -971,18 +1089,35 @@ mod tests {
     }
 
     #[test]
-    fn verifier_does_not_flag_sentences_without_markers() {
-        // Regression (P1-7): the marker check must run against the CURRENT
-        // sentence — "Production is running." (no digits) must not cause
-        // "Delivery will arrive in 30 days." (digit, no marker) to be
-        // flagged. The previous whole-response check flagged it.
+    fn verifier_flags_qualitative_live_state_claims() {
+        // Twentieth audit P1: "Production is running." is a LIVE-STATE
+        // claim — no digit is required for a consequential assertion to
+        // enter the evidence system. Both sentences fail verification
+        // because neither cites kernel-issued evidence.
         let v = verify(
-            "Production is running. Delivery will arrive in 30 days.",
+            "Production is running. The order will be delivered on time.",
             &[],
         );
-        assert_eq!(v["verdict"], "pass");
+        assert_eq!(v["verdict"], "needs_evidence");
         let claims: Vec<Claim> = serde_json::from_value(v["claims"].clone()).unwrap();
-        assert!(claims.is_empty());
+        assert_eq!(claims.len(), 2, "both sentences are unverified claims");
+        assert!(
+            claims.iter().all(|c| c.epistemic_status == "unverified"),
+            "qualitative claims without evidence are unverified"
+        );
+    }
+
+    #[test]
+    fn verifier_flags_qualitative_assertions_about_entities() {
+        // The audit's canonical examples: "the line is unstable" /
+        // "Tangier is understaffed" fail verification without a digit.
+        let v = verify("The Tangier line is severely understaffed.", &[]);
+        assert_eq!(v["verdict"], "needs_evidence");
+        let claims: Vec<Claim> = serde_json::from_value(v["claims"].clone()).unwrap();
+        assert_eq!(claims.len(), 1);
+        assert_eq!(claims[0].epistemic_status, "unverified");
+        let v2 = verify("The process is under control.", &[]);
+        assert_eq!(v2["verdict"], "needs_evidence");
     }
 
     #[test]

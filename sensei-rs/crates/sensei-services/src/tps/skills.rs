@@ -418,7 +418,7 @@ pub async fn record_qualification(
             let scoped_current: Option<String> = sqlx::query_scalar(
                 "SELECT cp.level FROM competency_projection cp \
                  WHERE cp.tenant_id = $1 AND cp.principal_id = $2 AND cp.skill_id = $3 \
-                   AND cp.site_id = $4 \
+                   AND cp.site_id IS NOT DISTINCT FROM $4 \
                    AND cp.shift_id IS NOT DISTINCT FROM $5 \
                    AND cp.valid_until > NOW() AND cp.revoked_at IS NULL \
                  ORDER BY cp.updated_at DESC LIMIT 1",
@@ -433,22 +433,14 @@ pub async fn record_qualification(
             .map_err(|e| {
                 SenseiError::Database(format!("Failed to read scoped qualification: {e}"))
             })?;
+            // Twentieth audit P1: the transition state is the SCOPED
+            // projection ONLY — the global skill_qualifications row never
+            // controls scoped transitions (a Trainer on Shift A cannot
+            // block an Independent demonstration on Shift B; a fresh
+            // scope starts at Unexposed and must earn its own state).
             let current: SkillLevel = match scoped_current {
                 Some(level) => SkillLevel::from_stored(&level),
-                None => match sqlx::query_scalar::<_, String>(
-                    "SELECT level FROM skill_qualifications \
-                         WHERE tenant_id = $1 AND principal_id = $2 AND skill_id = $3",
-                )
-                .bind(tenant_id)
-                .bind(principal_id)
-                .bind(skill_id)
-                .fetch_optional(&mut **tx)
-                .await
-                .map_err(|e| SenseiError::Database(format!("Failed to read qualification: {e}")))?
-                {
-                    Some(level) => SkillLevel::from_stored(&level),
-                    None => SkillLevel::Unexposed,
-                },
+                None => SkillLevel::Unexposed,
             };
 
             // The demonstration SHIFT context (eighteenth audit P1-9): the

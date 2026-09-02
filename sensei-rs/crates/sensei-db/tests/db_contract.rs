@@ -10434,20 +10434,24 @@ async fn site_bootstrap_lifecycle_validation() {
     .expect("role slot insert");
     tx.commit().await.expect("seed tx commit");
     let wc_id = uuid::Uuid::new_v4();
+    let user_id = uuid::Uuid::new_v4();
     sqlx::query(
-        "INSERT INTO work_centers (id, tenant_id, work_center_number, name, work_center_type, site_id) \
-         VALUES ($1, $2, 'WC-LC-01', 'Lifecycle SMT Line', 'assembly', $3)",
+        "INSERT INTO work_centers (id, tenant_id, work_center_number, name, work_center_type, site_id, \
+                                   topology_state, topology_assignment_source, \
+                                   topology_verified_at, topology_verified_by) \
+         VALUES ($1, $2, 'WC-LC-01', 'Lifecycle SMT Line', 'assembly', $3, 'resolved', \
+                 'manual_reconciliation', NOW(), $4)",
     )
     .bind(wc_id)
     .bind(tenant_id)
     .bind(site_id)
+    .bind(user_id)
     .execute(&pool)
     .await
     .expect("work center insert");
     // Site-specific prerequisites (seventeenth audit item 12): shifts,
     // skills and a qualified principal for THIS site.
     let shift_id = uuid::Uuid::new_v4();
-    let user_id = uuid::Uuid::new_v4();
     sqlx::query(
         "INSERT INTO shifts (id, tenant_id, site_id, name, start_time, end_time) \
          VALUES ($1, $2, $3, 'Day', '08:00', '16:00')",
@@ -12146,5 +12150,362 @@ async fn nineteenth_audit_adversarial_gate() {
             .await
             .expect("in-scope escalation works");
         assert!(ok_esc.escalated);
+    }
+}
+
+/// Twentieth-audit adversarial gate v3: two federation edges make two
+/// independent decisions; LocalOnly blocks even Internal export; an
+/// expired/revoked competency leaves coverage and lifecycle gates;
+/// Trainer on Shift A with Independent on Shift B is valid; Tangier OTD
+/// excludes Tunisia orders.
+#[tokio::test]
+async fn twentieth_audit_adversarial_gate_v3() {
+    let _serial = DB_LOCK.lock().await;
+    let Some(pool) = connect().await else { return };
+    sensei_db::migrations::run_migrations(&pool)
+        .await
+        .expect("migration chain");
+
+    use sensei_services::tps::replication::{
+        may_replicate, DataPolicy, Jurisdiction, ResidencyPolicy,
+    };
+
+    // 1) Two federation peers -> INDEPENDENT per-edge decisions: the FR
+    //    edge (CorporateAllowed) permits Internal; the US edge
+    //    (LocalOnly) blocks the SAME projection.
+    let internal = DataPolicy::Internal;
+    let fr_edge = ResidencyPolicy::CorporateAllowed;
+    let us_edge = ResidencyPolicy::LocalOnly;
+    assert!(
+        may_replicate(
+            internal,
+            Some(&Jurisdiction::MA),
+            Some(&Jurisdiction::FR),
+            &fr_edge,
+        ),
+        "the FR edge permits Internal export"
+    );
+    assert!(
+        !may_replicate(
+            internal,
+            Some(&Jurisdiction::MA),
+            Some(&Jurisdiction::US),
+            &us_edge,
+        ),
+        "LocalOnly blocks Internal export to the US — residency policy governs"
+    );
+    // AllowedCountries accepts exactly its allowlist.
+    let eu = ResidencyPolicy::AllowedCountries(vec![Jurisdiction::FR, Jurisdiction::DE]);
+    assert!(may_replicate(
+        internal,
+        Some(&Jurisdiction::MA),
+        Some(&Jurisdiction::FR),
+        &eu,
+    ));
+    assert!(!may_replicate(
+        internal,
+        Some(&Jurisdiction::MA),
+        Some(&Jurisdiction::US),
+        &eu,
+    ));
+
+    // 2) Expired / revoked competency drops out of coverage and cannot
+    //    advance lifecycle gates; Trainer-Shift-A + Independent-Shift-B
+    //    is valid (scoped transitions).
+    let tenant_id = uuid::Uuid::new_v4();
+    let site_a = uuid::Uuid::new_v4();
+    let site_b = uuid::Uuid::new_v4();
+    let user = uuid::Uuid::new_v4();
+    let assessor = uuid::Uuid::new_v4();
+    let skill_id = uuid::Uuid::new_v4();
+    let wc = uuid::Uuid::new_v4();
+    sqlx::query("INSERT INTO tenants (id, name, slug) VALUES ($1, 't20', 't20')")
+        .bind(tenant_id)
+        .execute(&pool)
+        .await
+        .expect("tenant");
+    sqlx::query(
+        "INSERT INTO sites (id, tenant_id, site_code, name) VALUES \
+         ($1, $2, 'T20A', 'A'), ($3, $4, 'T20B', 'B')",
+    )
+    .bind(site_a)
+    .bind(tenant_id)
+    .bind(site_b)
+    .bind(tenant_id)
+    .execute(&pool)
+    .await
+    .expect("sites");
+    sqlx::query(
+        "INSERT INTO users (id, tenant_id, email, name, password_hash) VALUES \
+         ($1, $2, 'u20@starzforge.local', 'U', 'x'), \
+         ($3, $4, 'as20@starzforge.local', 'A', 'x')",
+    )
+    .bind(user)
+    .bind(tenant_id)
+    .bind(assessor)
+    .bind(tenant_id)
+    .execute(&pool)
+    .await
+    .expect("users");
+    sqlx::query(
+        "INSERT INTO skills (id, tenant_id, skill_id, name, critical) \
+         VALUES ($1, $2, 'SK-20', 'SMT Ops', FALSE)",
+    )
+    .bind(skill_id)
+    .bind(tenant_id)
+    .execute(&pool)
+    .await
+    .expect("skill");
+    sqlx::query(
+        "INSERT INTO shifts (id, tenant_id, site_id, name, start_time, end_time) VALUES \
+         ($1, $2, $3, 'A1', '08:00', '16:00'), ($4, $5, $6, 'B1', '08:00', '16:00')",
+    )
+    .bind(uuid::Uuid::new_v4())
+    .bind(tenant_id)
+    .bind(site_a)
+    .bind(uuid::Uuid::new_v4())
+    .bind(tenant_id)
+    .bind(site_b)
+    .execute(&pool)
+    .await
+    .expect("shifts");
+    sqlx::query(
+        "INSERT INTO work_centers (id, tenant_id, work_center_number, name, site_id, \
+                                   topology_state, topology_assignment_source, \
+                                   topology_verified_at, topology_verified_by) \
+         VALUES ($1, $2, 'WC-20', 'SMT Line', $3, 'resolved', 'manual_reconciliation', \
+                 NOW(), $4)",
+    )
+    .bind(wc)
+    .bind(tenant_id)
+    .bind(site_a)
+    .bind(user)
+    .execute(&pool)
+    .await
+    .expect("wc");
+    let slot_a = uuid::Uuid::new_v4();
+    let slot_b = uuid::Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO role_slots (id, tenant_id, role_name, slot_name, scope_site_id) VALUES \
+         ($1, $2, 'operator', 'Op20A', $3), ($4, $5, 'operator', 'Op20B', $6)",
+    )
+    .bind(slot_a)
+    .bind(tenant_id)
+    .bind(site_a)
+    .bind(slot_b)
+    .bind(tenant_id)
+    .bind(site_b)
+    .execute(&pool)
+    .await
+    .expect("slots");
+    sqlx::query(
+        "INSERT INTO principal_assignments (tenant_id, principal_id, slot_id) VALUES \
+         ($1, $2, $3), ($1, $2, $4)",
+    )
+    .bind(tenant_id)
+    .bind(user)
+    .bind(slot_a)
+    .bind(slot_b)
+    .execute(&pool)
+    .await
+    .expect("assignments");
+
+    use sensei_services::tps::skills::{record_qualification, skill_coverage_at, SkillLevel};
+    let shift_sites = sqlx::query_as::<_, (uuid::Uuid, uuid::Uuid)>(
+        "SELECT id, site_id FROM shifts WHERE tenant_id = $1 ORDER BY name",
+    )
+    .bind(tenant_id)
+    .fetch_all(&pool)
+    .await
+    .expect("shift rows");
+    let shift_a = shift_sites[0].0;
+    let shift_b = shift_sites[1].0;
+    // Trainer on Shift A (site A), then INDEPENDENT on Shift B (site B):
+    // scoped transitions make this legal, not a demotion.
+    let evidence = |assessor: uuid::Uuid| {
+        serde_json::json!({
+            "standard_revision": "rev1",
+            "assessor_id": assessor.to_string(),
+            "observed_cycles": 5,
+            "checks_passed": ["soldering"],
+        })
+    };
+    record_qualification(
+        &pool,
+        tenant_id,
+        user,
+        skill_id,
+        SkillLevel::Trainer,
+        evidence(assessor),
+        // Unexposed -> Trainer requires documented RecognitionOfPriorCompetence.
+        Some(serde_json::json!({
+            "justification": "10 years SMT training across sites",
+            "assessor_id": assessor.to_string(),
+            "standard_revision": "rev1",
+            "observed_cycles": 5,
+        })),
+        Some(shift_a),
+    )
+    .await
+    .expect("trainer shift A");
+    record_qualification(
+        &pool,
+        tenant_id,
+        user,
+        skill_id,
+        SkillLevel::Independent,
+        evidence(assessor),
+        // Scope B is fresh (Unexposed) — the documented competence for
+        // THIS scope justifies the jump; scope A's Trainer is irrelevant
+        // to scope B's state machine.
+        Some(serde_json::json!({
+            "justification": "qualified on SMT at site B through the plant's own program",
+            "assessor_id": assessor.to_string(),
+            "standard_revision": "rev1",
+            "observed_cycles": 5,
+        })),
+        Some(shift_b),
+    )
+    .await
+    .expect("independent shift B is NOT a demotion in scope B");
+
+    // Coverage on site B / shift B sees the principal once.
+    let cov_b = skill_coverage_at(&pool, tenant_id, Some(site_b), Some(shift_b))
+        .await
+        .expect("coverage B");
+    assert_eq!(
+        cov_b
+            .iter()
+            .find(|c| c.skill_id == "SK-20")
+            .map(|c| c.bus_factor),
+        Some(1),
+        "shift-B coverage counts the shift-B independent"
+    );
+
+    // Expire the shift-B competency: coverage must drop to 0.
+    {
+        let mut tx = pool.begin().await.expect("expire tx");
+        sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
+            .bind(tenant_id.to_string())
+            .execute(&mut *tx)
+            .await
+            .expect("ctx");
+        sqlx::query(
+            "UPDATE competency_projection SET valid_until = NOW() - INTERVAL '1 day' \
+             WHERE tenant_id = $1 AND principal_id = $2 AND skill_id = $3 AND shift_id = $4",
+        )
+        .bind(tenant_id)
+        .bind(user)
+        .bind(skill_id)
+        .bind(shift_b)
+        .execute(&mut *tx)
+        .await
+        .expect("expire");
+        tx.commit().await.expect("commit");
+    }
+    let cov_b_after = skill_coverage_at(&pool, tenant_id, Some(site_b), Some(shift_b))
+        .await
+        .expect("coverage B after expiry");
+    assert_eq!(
+        cov_b_after
+            .iter()
+            .find(|c| c.skill_id == "SK-20")
+            .map(|c| c.bus_factor),
+        Some(0),
+        "an EXPIRED competency disappears from bus-factor coverage"
+    );
+
+    // 3) A topology row claiming 'resolved' WITHOUT provenance is
+    //    rejected by the database (migration 151).
+    let bad_wc = uuid::Uuid::new_v4();
+    let attempt = sqlx::query(
+        "INSERT INTO work_centers (id, tenant_id, work_center_number, name, site_id, \
+                                   topology_state, topology_assignment_source) \
+         VALUES ($1, $2, 'WC-UNPROVEN', 'Ghost', $3, 'resolved', NULL)",
+    )
+    .bind(bad_wc)
+    .bind(tenant_id)
+    .bind(site_a)
+    .execute(&pool)
+    .await;
+    assert!(
+        attempt.is_err(),
+        "'resolved' topology without provenance is rejected structurally"
+    );
+
+    // 4) Tangier OTD excludes Tunisia orders: two tenants, one order in
+    //    each, site-scoped metric counts only the requested site's rows.
+    {
+        use sensei_services::tps::metric_engine::compute_metric;
+        let tenant_tn = uuid::Uuid::new_v4();
+        let site_tn = uuid::Uuid::new_v4();
+        let site_ma = uuid::Uuid::new_v4();
+        sqlx::query("INSERT INTO tenants (id, name, slug) VALUES ($1, 't20b', 't20b')")
+            .bind(tenant_tn)
+            .execute(&pool)
+            .await
+            .expect("tenant tn");
+        sqlx::query(
+            "INSERT INTO sites (id, tenant_id, site_code, name) VALUES \
+             ($1, $2, 'TN20', 'TN'), ($3, $4, 'MA20', 'MA')",
+        )
+        .bind(site_tn)
+        .bind(tenant_tn)
+        .bind(site_ma)
+        .bind(tenant_tn)
+        .execute(&pool)
+        .await
+        .expect("sites tn");
+        let customer_tn = uuid::Uuid::new_v4();
+        sqlx::query(
+            "INSERT INTO accounts (id, tenant_id, account_type, name) \
+             VALUES ($1, $2, 'customer', 'TN-C')",
+        )
+        .bind(customer_tn)
+        .bind(tenant_tn)
+        .execute(&pool)
+        .await
+        .expect("account tn");
+        for (site, on_time) in [(site_tn, true), (site_ma, false)] {
+            sqlx::query(
+                "INSERT INTO sales_orders (id, tenant_id, so_number, order_number, \
+                                           customer_id, status, order_date, delivery_date, \
+                                           committed_date, actual_delivery_date, \
+                                           fulfilling_site_id, shipping_address, line_items, \
+                                           created_by) \
+                 VALUES ($1, $2, $3, $3, $4, 'delivered', $5, $6, $6, $7, $8, 'a', '[]'::jsonb, $4)",
+            )
+            .bind(uuid::Uuid::new_v4())
+            .bind(tenant_tn)
+            .bind(format!("SO-{}", if on_time { "A" } else { "B" }))
+            .bind(customer_tn)
+            .bind(chrono::Utc::now() - chrono::Duration::days(10))
+            .bind(chrono::Utc::now() - chrono::Duration::days(2))
+            .bind(if on_time {
+                chrono::Utc::now() - chrono::Duration::days(2)
+            } else {
+                chrono::Utc::now() + chrono::Duration::days(2)
+            })
+            .bind(site)
+            .execute(&pool)
+            .await
+            .expect("order");
+        }
+        let ma_otd = compute_metric(&pool, tenant_tn, "otd", Some(site_ma))
+            .await
+            .expect("ma otd");
+        assert_eq!(
+            ma_otd.value,
+            rust_decimal::Decimal::ZERO,
+            "Tangier OTD excludes the Tunisia order — site-scoped OTD"
+        );
+        let tn_otd = compute_metric(&pool, tenant_tn, "otd", Some(site_tn))
+            .await
+            .expect("tn otd");
+        assert_eq!(
+            tn_otd.value,
+            rust_decimal::Decimal::ONE,
+            "the Tunisia site sees only its own on-time order"
+        );
     }
 }

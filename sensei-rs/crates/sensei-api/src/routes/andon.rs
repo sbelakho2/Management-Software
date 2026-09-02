@@ -54,26 +54,54 @@ pub async fn list_andons(
 ) -> Result<Json<PaginatedResponse<Andon>>> {
     user.require_permission("tps:andon:raise")?;
     let tenant_id = user.tenant_id;
-    // Seventeenth audit item 4: the tenant-wide list is INTERSECTED with
-    // the caller's authorized scope — a site-scoped caller never sees
-    // another site's andons. Site scope comes from the agent context
-    // (server-derived from the caller's assignment); a caller with no
-    // site (bootstrap/admin) sees the tenant list.
-    let scope_site = crate::routes::agent::build_context(&user, &state)
-        .await
-        .site_id;
-    let scope_filter = scope_site;
-    let andons = state
-        .ops_service
-        .list_andons_scoped(
-            tenant_id,
-            scope_filter,
-            params.status.as_deref(),
-            params.work_center_id,
-            params.page,
-            params.per_page,
-        )
-        .await?;
+    // Twentieth audit P1: the tenant-wide list is INTERSECTED with the
+    // FULL RequestContext entitlement. list_andons_scoped takes ONE site
+    // filter — for multi-site entitlement we call it per entitled site
+    // and merge (page semantics preserved on the merged set).
+    let sites = caller_sites(&user, &state).await?;
+    let andons = if sites.len() <= 1 {
+        state
+            .ops_service
+            .list_andons_scoped(
+                tenant_id,
+                sites.first().copied(),
+                params.status.as_deref(),
+                params.work_center_id,
+                params.page,
+                params.per_page,
+            )
+            .await?
+    } else {
+        let mut merged = Vec::new();
+        for site in &sites {
+            let page = state
+                .ops_service
+                .list_andons_scoped(
+                    tenant_id,
+                    Some(*site),
+                    params.status.as_deref(),
+                    params.work_center_id,
+                    None,
+                    Some(1000),
+                )
+                .await?;
+            merged.extend(page.data);
+        }
+        merged.sort_by_key(|a| std::cmp::Reverse(a.created_at));
+        let page = params.page.unwrap_or(1).max(1);
+        let per_page = params.per_page.unwrap_or(20).clamp(1, 100);
+        let total = merged.len();
+        let start = ((page - 1) * per_page).min(total);
+        let items: Vec<sensei_services::ops::Andon> =
+            merged.into_iter().skip(start).take(per_page).collect();
+        sensei_core::pagination::PaginatedResponse {
+            data: items,
+            total,
+            total_pages: (total as f64 / per_page.max(1) as f64).ceil() as usize,
+            page,
+            per_page,
+        }
+    };
     Ok(Json(andons))
 }
 
@@ -259,16 +287,16 @@ pub async fn get_andon(
     user.require_permission("tps:andon:raise")?;
     let tenant_id = user.tenant_id;
     let andon = state.ops_service.get_andon(tenant_id, id).await?;
-    // Seventeenth audit item 4: a site-scoped caller can only read andons
-    // inside their scope — the row's site is intersected with the
-    // caller's agent context before the resource is returned.
-    let ctx = crate::routes::agent::build_context(&user, &state).await;
-    if let Some(scope_site) = ctx.site_id {
-        if andon.site_id.is_some_and(|s| s != scope_site) {
-            return Err(sensei_core::error::SenseiError::Forbidden(
-                "Andon is outside the caller's authorized site scope".to_string(),
-            ));
-        }
+    // Twentieth audit P1: reads are intersected with the FULL
+    // RequestContext entitlement (every site the principal may access),
+    // not a single legacy active site — a multi-site manager can read
+    // every site they are entitled to, and a caller with no entitlement
+    // sees a foreign-site Andon as NotFound-equivalent.
+    let sites = caller_sites(&user, &state).await?;
+    if !sites.is_empty() && andon.site_id.is_some_and(|s| !sites.contains(&s)) {
+        return Err(sensei_core::error::SenseiError::Forbidden(
+            "Andon is outside the caller's authorized site scope".to_string(),
+        ));
     }
     Ok(Json(andon))
 }
