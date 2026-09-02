@@ -21,9 +21,13 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required}
       POSTGRES_DB: ${POSTGRES_DB:-sensei}
       # Creates the non-owner sensei_app role (RLS depends on the app NOT
-      # being the table owner) and the sensei_migrator migration-owner role
-      # (twenty-fourth audit P0: the migrate service runs the chain as the
-      # object owner; the app role never DDLs).
+      # being the table owner), the DEPLOYMENT-ONLY sensei_migrator role
+      # (twenty-fourth audit P0; twenty-fifth audit P0: NOSUPERUSER
+      # BYPASSRLS NOCREATEDB — FORCE RLS binds the table owner too, so the
+      # migrator needs the RLS bypass for the chain's cross-tenant
+      # FORCE-RLS seeds; databases are created by the initdb superuser,
+      # never by the migrator) and the NOLOGIN sensei_governance_definer
+      # role that owns the federation-governance functions.
       SENSEI_APP_PASSWORD: ${SENSEI_APP_PASSWORD:?SENSEI_APP_PASSWORD required}
       SENSEI_MIGRATOR_PASSWORD: ${SENSEI_MIGRATOR_PASSWORD:?SENSEI_MIGRATOR_PASSWORD required}
     volumes:
@@ -41,12 +45,16 @@ services:
       timeout: 5s
       retries: 5
 
-  # One-shot migration-owner bootstrap (twenty-fourth audit P0): connects AS
-  # sensei_migrator (CREATEDB, owner of every object the chain creates) and
-  # applies the full migration chain via `--migrate-only`, then exits 0.
+  # One-shot migration-owner bootstrap (twenty-fourth audit P0;
+  # twenty-fifth audit P0: the role is deployment-only — BYPASSRLS
+  # NOCREATEDB, NOT CREATEDB): connects AS sensei_migrator (BYPASSRLS so
+  # the chain can seed/backfill the FORCE-RLS tables cross-tenant without
+  # app.tenant_id; owner of every object the chain creates) and applies
+  # the full migration chain via `--migrate-only`, then exits 0.
   # The API/workers depend on this service COMPLETING SUCCESSFULLY, so they
   # never start against an un-migrated schema and never attempt DDL as the
-  # non-owner sensei_app.
+  # non-owner sensei_app. sensei_migrator is NEVER the runtime app
+  # identity — only this bootstrap uses it.
   migrate:
     build:
       context: ./sensei-rs

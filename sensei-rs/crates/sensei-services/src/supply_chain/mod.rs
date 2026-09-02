@@ -175,6 +175,13 @@ pub struct InventoryItem {
 }
 
 /// A stock movement recording inventory transfers between locations.
+///
+/// Twenty-fifth audit P1: a stock move is a PUBLIC LEDGER row — it
+/// exposes its `site_id`, its ledger `status` ('posted' or 'reversed')
+/// and the reversal linkage: `reversed_by`/`reversed_at`/
+/// `reversal_reason` (who reversed it and why), `reversal_of` (the
+/// original move this POSTED compensating move undoes) and
+/// `reversed_by_move` (the compensating move that undid this move).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StockMove {
     pub id: Uuid,
@@ -189,6 +196,56 @@ pub struct StockMove {
     pub reference_id: Option<Uuid>,
     pub created_by: Uuid,
     pub created_at: DateTime<Utc>,
+    /// The SITE the move physically happened at (NULL only for
+    /// pre-site legacy rows, which are never visible to scoped callers).
+    #[serde(default)]
+    pub site_id: Option<Uuid>,
+    /// Ledger state: 'posted' or 'reversed'.
+    #[serde(default = "default_posted_status")]
+    pub status: String,
+    /// Actor who reversed this move (set on the reversed row and on its
+    /// compensating entry).
+    #[serde(default)]
+    pub reversed_by: Option<Uuid>,
+    /// When this move was reversed.
+    #[serde(default)]
+    pub reversed_at: Option<DateTime<Utc>>,
+    /// Why this move was reversed.
+    #[serde(default)]
+    pub reversal_reason: Option<String>,
+    /// For a POSTED compensating move: the id of the original move it
+    /// undoes.
+    #[serde(default)]
+    pub reversal_of: Option<Uuid>,
+    /// For a reversed move: the id of the compensating move that undid
+    /// its inventory effect.
+    #[serde(default)]
+    pub reversed_by_move: Option<Uuid>,
+}
+
+fn default_posted_status() -> String {
+    "posted".to_string()
+}
+
+/// Command for a MANUAL first receipt (twenty-fifth audit P1): stock is
+/// received directly at the caller's single authorized ACTIVE site — the
+/// site is resolved server-side, never taken from client input. An empty
+/// `location` (or the literal site-local 'receiving' default) lands the
+/// receipt on the site's configured receiving location.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReceiveStockCommand {
+    pub product_id: Uuid,
+    /// Receiving location; empty/None resolves to the SITE's receiving
+    /// location ('receiving' unless the site manifest configures one).
+    #[serde(default)]
+    pub location: Option<String>,
+    pub quantity: i64,
+    /// Optional lot number recorded on the row and the ledger move.
+    #[serde(default)]
+    pub lot: Option<String>,
+    /// Why the stock was received manually — a manual inventory event
+    /// without a reason is not a transaction.
+    pub reason: String,
 }
 
 // ---------------------------------------------------------------------------
@@ -481,11 +538,20 @@ pub trait SupplyChainService: Send + Sync {
     ) -> Result<InventoryItem>;
     /// Delete an inventory item.
     async fn delete_inventory(&self, tenant_id: Uuid, id: Uuid) -> Result<()>;
-    /// Reverse a stock movement (twenty-fourth audit P0): stock moves are
-    /// LEDGER rows — never erased. Reversal flips the move to 'reversed'
-    /// and stamps the actor/timestamp/reason; the move's site must be
-    /// inside `authorized_sites` (a foreign, site-less or already-reversed
-    /// move is indistinguishable from a nonexistent one: NotFound).
+    /// Reverse a stock movement (twenty-fourth audit P0; twenty-fifth
+    /// audit P1 compensation): stock moves are LEDGER rows — never
+    /// erased. Reversal flips the original move to 'reversed', stamps
+    /// the actor/timestamp/reason, and posts a NEW compensating move of
+    /// the OPPOSITE direction (`reversal_of` = original id) whose
+    /// inventory delta returns the balance — a receipt's reversal is a
+    /// compensating issue at the SAME site/location, never a silent
+    /// metadata-only flip. The move's site must be inside
+    /// `authorized_sites` (a foreign, site-less or already-reversed move
+    /// is indistinguishable from a nonexistent one: NotFound, and
+    /// nothing changes). If the inverse physical move is impossible
+    /// (insufficient stock at the site), the reversal FAILS with a
+    /// Validation error naming the controlled discrepancy — never a
+    /// silent divergence between the ledger and the balance.
     async fn reverse_stock_move(
         &self,
         tenant_id: Uuid,
@@ -494,6 +560,19 @@ pub trait SupplyChainService: Send + Sync {
         actor: Uuid,
         reason: &str,
     ) -> Result<()>;
+    /// MANUAL first receipt (twenty-fifth audit P1): receive stock
+    /// directly at the caller's single authorized ACTIVE site — the site
+    /// is resolved SERVER-SIDE from `authorized_sites` (empty or
+    /// ambiguous -> Validation; the client never names a site). The
+    /// receipt creates the inventory row at the site (at the command's
+    /// location, or the site-local receiving location when none is
+    /// named) and posts a 'receipt' stock move stamped with the site.
+    async fn receive_stock(
+        &self,
+        tenant_id: Uuid,
+        authorized_sites: &[Uuid],
+        req: ReceiveStockCommand,
+    ) -> Result<StockMove>;
 
     // ── Site-entitled inventory (twenty-third audit P0/P1) ─────────────
     //
@@ -1464,6 +1543,15 @@ impl SupplyChainService for InMemorySupplyChainService {
         }
         stock_move.tenant_id = tenant_id;
         stock_move.created_at = Utc::now();
+        // In-memory rows carry no site and every created move enters the
+        // ledger 'posted' with no reversal linkage.
+        stock_move.site_id = None;
+        stock_move.status = "posted".to_string();
+        stock_move.reversed_by = None;
+        stock_move.reversed_at = None;
+        stock_move.reversal_reason = None;
+        stock_move.reversal_of = None;
+        stock_move.reversed_by_move = None;
 
         let id = stock_move.id;
         let move_type = stock_move.move_type.clone();
@@ -1935,24 +2023,230 @@ impl SupplyChainService for InMemorySupplyChainService {
         _tenant_id: Uuid,
         authorized_sites: &[Uuid],
         id: Uuid,
-        _actor: Uuid,
-        _reason: &str,
+        actor: Uuid,
+        reason: &str,
     ) -> Result<()> {
-        // The in-memory store keeps NO reversal state (StockMove has no
-        // status field) and its rows carry no site. With an entitlement
-        // the row cannot be authorized (fail closed, like every other
+        // In-memory rows carry no site — with an entitlement the row
+        // cannot be authorized (fail closed, like every other
         // site-entitled in-memory mutation); without one (dev mode —
-        // routes reach the in-memory service only with no site scope) the
-        // reversal removes the dev row, preserving the pre-audit dev
-        // behavior of the delete route.
+        // routes reach the in-memory service only with no site scope)
+        // the reversal flips the row to 'reversed' and posts a
+        // compensating move of the opposite direction, mirroring the DB
+        // compensation contract (the dev row is never erased).
         if !authorized_sites.is_empty() {
             return Err(SenseiError::NotFound(format!("StockMove {id} not found")));
         }
+        if reason.trim().is_empty() {
+            return Err(SenseiError::Validation(
+                "A stock move reversal requires a reason".to_string(),
+            ));
+        }
+        let now = Utc::now();
+        let reason_owned = reason.trim().to_string();
         let mut store = self.stock_moves.write().await;
-        store
-            .remove(&id)
+        let original = store
+            .get(&id)
+            .cloned()
             .ok_or_else(|| SenseiError::NotFound(format!("StockMove {id} not found")))?;
+        if original.status == "reversed" {
+            return Err(SenseiError::NotFound(format!("StockMove {id} not found")));
+        }
+        let quantity = original.quantity;
+        let product_id = original.product_id;
+        let product_name = original.product_name.clone();
+        let move_type = original.move_type.clone();
+        let from_location = original.from_location.clone();
+        let to_location = original.to_location.clone();
+
+        // Compensating move of the OPPOSITE direction: the mirror
+        // locations of the schema move types (a 'receipt' compensates as
+        // an 'issue' and vice versa; a transfer swaps source/destination).
+        let (comp_type, comp_from, comp_to) = match move_type.as_str() {
+            "receipt" => (
+                "issue".to_string(),
+                Some(to_location.clone()),
+                String::new(),
+            ),
+            "issue" | "delivery" => (
+                "receipt".to_string(),
+                None,
+                from_location.clone().unwrap_or_default(),
+            ),
+            "transfer" => (
+                "transfer".to_string(),
+                Some(to_location.clone()),
+                from_location.clone().unwrap_or_default(),
+            ),
+            // adjustment (and anything else): a reversal withdraws what
+            // the original adjustment deposited at its location.
+            _ => (
+                "issue".to_string(),
+                Some(to_location.clone()),
+                String::new(),
+            ),
+        };
+
+        // The inventory delta inverse (dev store clamps at zero, exactly
+        // like its creation path clamps negative quantities).
+        match move_type.as_str() {
+            "receipt" => {
+                self.apply_inventory_delta(
+                    _tenant_id,
+                    product_id,
+                    &product_name,
+                    &to_location,
+                    -quantity,
+                )
+                .await;
+            }
+            "issue" | "delivery" => {
+                if let Some(from) = from_location {
+                    self.apply_inventory_delta(
+                        _tenant_id,
+                        product_id,
+                        &product_name,
+                        &from,
+                        quantity,
+                    )
+                    .await;
+                }
+            }
+            "transfer" => {
+                if let Some(from) = from_location.as_deref() {
+                    self.apply_inventory_delta(
+                        _tenant_id,
+                        product_id,
+                        &product_name,
+                        from,
+                        quantity,
+                    )
+                    .await;
+                }
+                self.apply_inventory_delta(
+                    _tenant_id,
+                    product_id,
+                    &product_name,
+                    &to_location,
+                    -quantity,
+                )
+                .await;
+            }
+            _ => {}
+        }
+
+        let comp_id = Uuid::new_v4();
+        store.insert(
+            comp_id,
+            StockMove {
+                id: comp_id,
+                tenant_id: original.tenant_id,
+                product_id,
+                product_name,
+                quantity,
+                move_type: comp_type,
+                from_location: comp_from,
+                to_location: comp_to,
+                reference_type: Some("reversal".to_string()),
+                reference_id: Some(original.id),
+                created_by: actor,
+                created_at: now,
+                site_id: None,
+                status: "posted".to_string(),
+                reversed_by: Some(actor),
+                reversed_at: Some(now),
+                reversal_reason: Some(reason_owned.clone()),
+                reversal_of: Some(original.id),
+                reversed_by_move: None,
+            },
+        );
+        let original = store.get_mut(&id).expect("original still present");
+        original.status = "reversed".to_string();
+        original.reversed_by = Some(actor);
+        original.reversed_at = Some(now);
+        original.reversal_reason = Some(reason_owned);
+        original.reversed_by_move = Some(comp_id);
         Ok(())
+    }
+
+    async fn receive_stock(
+        &self,
+        tenant_id: Uuid,
+        _authorized_sites: &[Uuid],
+        req: ReceiveStockCommand,
+    ) -> Result<StockMove> {
+        // In-memory rows carry no site, so the scoped site resolution is
+        // a no-op here (dev mode): the receipt behaves like the unscoped
+        // create_stock_move receipt path, landing on the product's first
+        // known location or the dev default.
+        if req.quantity <= 0 {
+            return Err(SenseiError::Validation(
+                "Stock move quantity must be positive".to_string(),
+            ));
+        }
+        if req.reason.trim().is_empty() {
+            return Err(SenseiError::Validation(
+                "A manual stock receipt requires a reason".to_string(),
+            ));
+        }
+        let id = Uuid::new_v4();
+        let location = match req.location.as_deref() {
+            Some(l) if !l.trim().is_empty() => l.trim().to_string(),
+            _ => self.resolve_stock_location(tenant_id, req.product_id).await,
+        };
+        let product_name = {
+            let inventory = self.inventory.read().await;
+            inventory
+                .values()
+                .find(|i| {
+                    i.tenant_id == tenant_id
+                        && i.product_id == req.product_id
+                        && i.location == location
+                })
+                .map(|i| i.product_name.clone())
+                .unwrap_or_else(|| "Product".to_string())
+        };
+        self.apply_inventory_delta(
+            tenant_id,
+            req.product_id,
+            &product_name,
+            &location,
+            req.quantity,
+        )
+        .await;
+        let now = Utc::now();
+        let move_row = StockMove {
+            id,
+            tenant_id,
+            product_id: req.product_id,
+            product_name,
+            quantity: req.quantity,
+            move_type: "receipt".to_string(),
+            from_location: None,
+            to_location: location.clone(),
+            reference_type: Some("manual_receipt".to_string()),
+            reference_id: None,
+            created_by: Uuid::nil(),
+            created_at: now,
+            site_id: None,
+            status: "posted".to_string(),
+            reversed_by: None,
+            reversed_at: None,
+            reversal_reason: None,
+            reversal_of: None,
+            reversed_by_move: None,
+        };
+        self.stock_moves.write().await.insert(id, move_row.clone());
+        self.publish_event(StockMoveCreatedEvent::new(
+            tenant_id,
+            id,
+            req.product_id,
+            req.quantity as f64,
+            Uuid::nil(),
+            Self::location_id(tenant_id, &location),
+            "receipt".to_string(),
+        ))
+        .await;
+        Ok(move_row)
     }
 
     // ── Site-entitled inventory (twenty-third audit P0/P1) ─────────────
@@ -2227,6 +2521,13 @@ mod tests {
             reference_id: None,
             created_by: Uuid::new_v4(),
             created_at: Utc::now(),
+            site_id: None,
+            status: "posted".to_string(),
+            reversed_by: None,
+            reversed_at: None,
+            reversal_reason: None,
+            reversal_of: None,
+            reversed_by_move: None,
         };
         service.create_stock_move(tenant_id, receipt).await.unwrap();
 
@@ -2264,6 +2565,13 @@ mod tests {
             reference_id: Some(Uuid::new_v4()),
             created_by: Uuid::new_v4(),
             created_at: Utc::now(),
+            site_id: None,
+            status: "posted".to_string(),
+            reversed_by: None,
+            reversed_at: None,
+            reversal_reason: None,
+            reversal_of: None,
+            reversed_by_move: None,
         };
 
         let created = service.create_stock_move(tenant_id, sm).await.unwrap();
@@ -2295,6 +2603,13 @@ mod tests {
             reference_id: None,
             created_by: Uuid::new_v4(),
             created_at: Utc::now(),
+            site_id: None,
+            status: "posted".to_string(),
+            reversed_by: None,
+            reversed_at: None,
+            reversal_reason: None,
+            reversal_of: None,
+            reversed_by_move: None,
         };
         service.create_stock_move(tenant_id, sm1).await.unwrap();
 
@@ -2312,6 +2627,13 @@ mod tests {
             reference_id: None,
             created_by: Uuid::new_v4(),
             created_at: Utc::now(),
+            site_id: None,
+            status: "posted".to_string(),
+            reversed_by: None,
+            reversed_at: None,
+            reversal_reason: None,
+            reversal_of: None,
+            reversed_by_move: None,
         };
         service.create_stock_move(tenant_id, sm2).await.unwrap();
 
@@ -2452,6 +2774,13 @@ mod tests {
             reference_id: None,
             created_by: Uuid::new_v4(),
             created_at: Utc::now(),
+            site_id: None,
+            status: "posted".to_string(),
+            reversed_by: None,
+            reversed_at: None,
+            reversal_reason: None,
+            reversal_of: None,
+            reversed_by_move: None,
         };
         service
             .create_stock_move(tenant_id, receipt)
@@ -2514,6 +2843,13 @@ mod tests {
                     reference_id: None,
                     created_by: Uuid::new_v4(),
                     created_at: Utc::now(),
+                    site_id: None,
+                    status: "posted".to_string(),
+                    reversed_by: None,
+                    reversed_at: None,
+                    reversal_reason: None,
+                    reversal_of: None,
+                    reversed_by_move: None,
                 },
             )
             .await;

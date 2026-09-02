@@ -1283,6 +1283,10 @@ pub fn build_router(state: AppState) -> Router {
             "/api/v1/supply-chain/stock-moves/{id}",
             delete(routes::supply_chain::delete_stock_move),
         )
+        .route(
+            "/api/v1/supply-chain/stock-moves/receive",
+            post(routes::supply_chain::receive_stock),
+        )
         // ── Operations Routes ─────────────────────────────────────
         .route(
             "/api/v1/ops/andons",

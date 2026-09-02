@@ -239,6 +239,25 @@ pub struct AdjustInventoryRequest {
     pub reason: String,
 }
 
+/// Request body for the MANUAL receipt endpoint (twenty-fifth audit P1):
+/// ONLY the business facts — product, quantity, optional location and
+/// lot, and the reason. The SITE is resolved server-side from the
+/// caller's RequestContext (their single active site); the client never
+/// names a site.
+#[derive(Debug, Deserialize)]
+pub struct ReceiveStockRequest {
+    pub product_id: Uuid,
+    pub quantity: i64,
+    /// Receiving location; empty/absent resolves to the SITE's receiving
+    /// location ('receiving' unless the site manifest configures one).
+    #[serde(default)]
+    pub location: Option<String>,
+    /// Optional lot number for the received row.
+    #[serde(default)]
+    pub lot: Option<String>,
+    pub reason: String,
+}
+
 // ── RFQs ───────────────────────────────────────────────────────────────────
 
 /// Client input for creating an RFQ: only editable business fields. The
@@ -1209,4 +1228,44 @@ pub async fn delete_stock_move(
         )
         .await?;
     Ok(Json(()))
+}
+
+/// MANUAL first receipt (twenty-fifth audit P1): receive stock at the
+/// caller's ACTIVE site — the site is resolved SERVER-SIDE from the
+/// RequestContext, never taken from the client. A site-bound caller
+/// without an active site (or entitled to several) cannot attribute the
+/// receipt and is refused with Validation; without a RequestContext
+/// (in-memory dev mode) the unscoped in-memory service applies its dev
+/// semantics.
+pub async fn receive_stock(
+    user: AuthenticatedUser,
+    State(state): State<AppState>,
+    Json(req): Json<ReceiveStockRequest>,
+) -> Result<Json<StockMove>> {
+    user.require_permission("inventory:adjust")?;
+    let tenant_id = user.tenant_id;
+    let scope = caller_scope(&user, &state).await?;
+    // Server-side site resolution: the caller's ACTIVE site when they
+    // have one; a caller entitled to exactly one site is that site;
+    // anything else (none or several, no active site) reaches the
+    // service and is refused there with Validation.
+    let sites: Vec<Uuid> = match &scope {
+        None => Vec::new(),
+        Some(rc) => match rc.active_site {
+            Some(active) => vec![active],
+            None => rc.authorized_sites().to_vec(),
+        },
+    };
+    let command = sensei_services::supply_chain::ReceiveStockCommand {
+        product_id: req.product_id,
+        location: req.location,
+        quantity: req.quantity,
+        lot: req.lot,
+        reason: req.reason,
+    };
+    let move_row = state
+        .supply_chain_service
+        .receive_stock(tenant_id, &sites, command)
+        .await?;
+    Ok(Json(move_row))
 }

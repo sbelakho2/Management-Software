@@ -12,8 +12,8 @@ use sqlx::PgPool;
 use uuid::Uuid;
 
 use super::{
-    InventoryItem, POItem, PurchaseOrder, Quote, QuoteLineItem, RFQItem, SalesOrder,
-    SalesOrderItem, StockMove, SupplyChainService, RFQ,
+    InventoryItem, POItem, PurchaseOrder, Quote, QuoteLineItem, RFQItem, ReceiveStockCommand,
+    SalesOrder, SalesOrderItem, StockMove, SupplyChainService, RFQ,
 };
 use crate::tps::replication::with_tenant_tx;
 
@@ -44,6 +44,22 @@ async fn apply_inventory_delta(
     location: &str,
     delta: i64,
 ) -> Result<()> {
+    apply_inventory_delta_with_lot(tx, tenant_id, site_id, product_id, location, None, delta).await
+}
+
+/// Lot-aware signed delta (twenty-fifth audit P1): like
+/// [`apply_inventory_delta`] but the affected row may carry a specific
+/// `lot_number` (the manual receipt command and the compensating
+/// reversal both preserve the lot identity of the row they touch).
+async fn apply_inventory_delta_with_lot(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    tenant_id: Uuid,
+    site_id: Uuid,
+    product_id: Uuid,
+    location: &str,
+    lot_number: Option<&str>,
+    delta: i64,
+) -> Result<()> {
     // The unique index on (tenant, site, product, location, lot_number)
     // treats NULL lot numbers as distinct, so update-then-insert is used
     // instead of ON CONFLICT.
@@ -54,7 +70,8 @@ async fn apply_inventory_delta(
         "UPDATE inventory_items \
          SET quantity_on_hand = quantity_on_hand + $1::double precision, \
              quantity_available = quantity_on_hand + $1::double precision - quantity_reserved \
-         WHERE tenant_id = $2 AND site_id = $3 AND product_id = $4 AND location = $5 AND lot_number IS NULL \
+         WHERE tenant_id = $2 AND site_id = $3 AND product_id = $4 AND location = $5 \
+           AND lot_number IS NOT DISTINCT FROM $6 \
            AND quantity_on_hand + $1::double precision >= 0",
     )
     .bind(delta)
@@ -62,12 +79,13 @@ async fn apply_inventory_delta(
     .bind(site_id)
     .bind(product_id)
     .bind(location)
+    .bind(lot_number)
     .execute(&mut **tx)
     .await
     .map_err(|e| SenseiError::Database(format!("Failed to update inventory: {e}")))?;
 
     if updated.rows_affected() == 0 {
-        // No row exists for (tenant, site, product, location): only a
+        // No row exists for (tenant, site, product, location, lot): only a
         // positive (receipt-like) delta may create stock. Issuing from
         // nothing is a rejected transaction.
         if delta < 0 {
@@ -79,7 +97,7 @@ async fn apply_inventory_delta(
         sqlx::query(
             "INSERT INTO inventory_items \
              (id, tenant_id, site_id, product_id, location, quantity_on_hand, quantity_reserved, quantity_available, lot_number) \
-             VALUES ($1, $2, $3, $4, $5, $6, 0, $6, NULL)",
+             VALUES ($1, $2, $3, $4, $5, $6, 0, $6, $7)",
         )
         .bind(Uuid::new_v4())
         .bind(tenant_id)
@@ -87,6 +105,7 @@ async fn apply_inventory_delta(
         .bind(product_id)
         .bind(location)
         .bind(delta)
+        .bind(lot_number)
         .execute(&mut **tx)
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to create inventory row: {e}")))?;
@@ -94,11 +113,36 @@ async fn apply_inventory_delta(
     Ok(())
 }
 
+/// The SITE's receiving location (twenty-fifth audit P1): the site's
+/// CONFIGURED default receiving location from `site_manifests` when one
+/// exists, else the literal site-local label 'receiving'. A receiving
+/// location is a property OF THE SITE — it is NEVER a label discovered
+/// tenant-wide from another plant's inventory rows.
+async fn site_receiving_location(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    tenant_id: Uuid,
+    site_id: Uuid,
+) -> Result<String> {
+    let configured: Option<String> = sqlx::query_scalar(
+        "SELECT default_receiving_location FROM site_manifests \
+         WHERE tenant_id = $1 AND site_id = $2",
+    )
+    .bind(tenant_id)
+    .bind(site_id)
+    .fetch_optional(&mut **tx)
+    .await
+    .map_err(|e| SenseiError::Database(format!("Failed to read site receiving location: {e}")))?;
+    Ok(configured
+        .filter(|l| !l.trim().is_empty())
+        .unwrap_or_else(|| "receiving".to_string()))
+}
+
 /// Resolve the receiving location for a SITE: the product's first known
-/// inventory location at that site, falling back to any location (then
-/// the warehouse default `main`) when the site has no row — a receipt
-/// still lands on a site-owned row because [`apply_inventory_delta`]
-/// stamps the site on creation.
+/// inventory location AT THAT SITE, falling back to the SITE's receiving
+/// location ([`site_receiving_location`]) when the site has no row — a
+/// receipt still lands on a site-owned row because
+/// [`apply_inventory_delta`] stamps the site on creation. There is NO
+/// tenant-wide fallback: another plant's label is never borrowed.
 async fn resolve_stock_location(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     tenant_id: Uuid,
@@ -119,17 +163,7 @@ async fn resolve_stock_location(
     if let Some(location) = location {
         return Ok(location);
     }
-    let location: Option<String> = sqlx::query_scalar(
-        "SELECT location FROM inventory_items \
-         WHERE tenant_id = $1 AND product_id = $2 \
-         ORDER BY created_at LIMIT 1",
-    )
-    .bind(tenant_id)
-    .bind(product_id)
-    .fetch_optional(&mut **tx)
-    .await
-    .map_err(|e| SenseiError::Database(format!("Failed to resolve stock location: {e}")))?;
-    Ok(location.unwrap_or_else(|| "main".to_string()))
+    site_receiving_location(tx, tenant_id, site_id).await
 }
 
 pub struct DatabaseSupplyChainService {
@@ -340,6 +374,15 @@ struct StockMoveRow {
     /// column (moves recorded by PO receipts have no actor).
     created_by: Option<Uuid>,
     created_at: chrono::DateTime<Utc>,
+    /// Twenty-fifth audit P1: the public ledger state — the move's site,
+    /// its status and the full reversal linkage.
+    site_id: Option<Uuid>,
+    status: String,
+    reversed_by: Option<Uuid>,
+    reversed_at: Option<chrono::DateTime<Utc>>,
+    reversal_reason: Option<String>,
+    reversal_of: Option<Uuid>,
+    reversed_by_move: Option<Uuid>,
 }
 
 // ---------------------------------------------------------------------------
@@ -453,6 +496,13 @@ fn sm_row_to_domain(r: StockMoveRow) -> StockMove {
         // actor rather than fabricating one.
         created_by: r.created_by.unwrap_or_default(),
         created_at: r.created_at,
+        site_id: r.site_id,
+        status: r.status,
+        reversed_by: r.reversed_by,
+        reversed_at: r.reversed_at,
+        reversal_reason: r.reversal_reason,
+        reversal_of: r.reversal_of,
+        reversed_by_move: r.reversed_by_move,
     }
 }
 
@@ -1558,7 +1608,7 @@ impl SupplyChainService for DatabaseSupplyChainService {
                RETURNING id, tenant_id, product_id,
                          (SELECT name FROM products WHERE products.id = stock_moves.product_id) AS product_name,
                          quantity::bigint, move_type, from_location, to_location, reference_type, reference_id,
-                         moved_by AS created_by, created_at"#,
+                         moved_by AS created_by, created_at, site_id, status, reversed_by, reversed_at, reversal_reason, reversal_of, reversed_by_move"#,
         ).bind(id).bind(tenant_id).bind(site_id).bind(product_id)
             .bind(stock_move.quantity).bind(stored_move_type).bind(&stock_move.from_location)
             .bind(&stock_move.to_location).bind(&stock_move.reference_type).bind(stock_move.reference_id)
@@ -1670,7 +1720,8 @@ impl SupplyChainService for DatabaseSupplyChainService {
                     r#"SELECT id, tenant_id, product_id,
                               (SELECT name FROM products WHERE products.id = stock_moves.product_id) AS product_name,
                               quantity::bigint, move_type, from_location, to_location, reference_type, reference_id,
-                              moved_by AS created_by, created_at
+                              moved_by AS created_by, created_at,
+                              site_id, status, reversed_by, reversed_at, reversal_reason, reversal_of, reversed_by_move
                        FROM stock_moves
                        WHERE tenant_id=$1 AND ($2::uuid IS NULL OR product_id=$2) ORDER BY created_at DESC LIMIT $3 OFFSET $4"#,
                 ).bind(tenant_id).bind(product_id).bind(per_page as i64).bind(offset as i64).fetch_all(&mut **tx).await
@@ -1712,7 +1763,8 @@ impl SupplyChainService for DatabaseSupplyChainService {
                     r#"SELECT id, tenant_id, product_id,
                               (SELECT name FROM products WHERE products.id = stock_moves.product_id) AS product_name,
                               quantity::bigint, move_type, from_location, to_location, reference_type, reference_id,
-                              moved_by AS created_by, created_at
+                              moved_by AS created_by, created_at,
+                              site_id, status, reversed_by, reversed_at, reversal_reason, reversal_of, reversed_by_move
                        FROM stock_moves
                        WHERE tenant_id=$1 AND site_id = ANY($2)
                          AND ($3::uuid IS NULL OR product_id=$3)
@@ -2207,12 +2259,29 @@ impl SupplyChainService for DatabaseSupplyChainService {
 
     // ── Stock Move Mutations ────────────────────────────────────────────
 
-    /// Reverse a stock movement (twenty-fourth audit P0): a stock move is
-    /// a LEDGER row — never erased. Reversal flips the move to
-    /// 'reversed' and stamps the actor, timestamp and reason; the move's
-    /// site must be inside `authorized_sites` (a foreign, site-less or
-    /// already-reversed move is indistinguishable from a nonexistent one:
-    /// NotFound, and nothing changes).
+    /// Reverse a stock movement (twenty-fourth audit P0; twenty-fifth
+    /// audit P1 compensating reversal): a stock move is a LEDGER row —
+    /// never erased. The reversal is ONE transaction that:
+    ///
+    ///   1. loads the original move scoped — its site must be inside
+    ///      `authorized_sites` and it must still be 'posted' (a foreign,
+    ///      site-less or already-reversed move is indistinguishable from
+    ///      a nonexistent one: NotFound, and nothing changes);
+    ///   2. posts a NEW compensating move of the OPPOSITE direction at
+    ///      the SAME site (receipt → issue, issue → receipt, transfer
+    ///      with source/destination swapped, adjustment → issue), with
+    ///      `reversal_of` = original id and the reversal's actor/
+    ///      timestamp/reason stamped on the compensating row, and marks
+    ///      the ORIGINAL row 'reversed' with the same stamps plus
+    ///      `reversed_by_move` = the compensating id;
+    ///   3. applies the INVERSE inventory delta to the same
+    ///      site/product/location/lot so the balance returns — a
+    ///      receipt of +10 reversed is a compensating −10 at its own
+    ///      location. If the inverse physical move is impossible
+    ///      (insufficient stock at that row), the reversal FAILS with a
+    ///      Validation error naming the controlled discrepancy — the
+    ///      ledger and the balance are never allowed to diverge
+    ///      silently.
     async fn reverse_stock_move(
         &self,
         tenant_id: Uuid,
@@ -2235,15 +2304,119 @@ impl SupplyChainService for DatabaseSupplyChainService {
         let reason_owned = reason.trim().to_string();
         with_tenant_tx(&self.pool, tenant_id, move |tx| {
             Box::pin(async move {
+                // (1) The scoped guard read: the original move must be
+                // posted and inside the caller's site entitlement.
+                let original: Option<(Uuid, Uuid, Option<String>, String, i64, String, Option<String>)> =
+                    sqlx::query_as(
+                        "SELECT site_id, product_id, from_location, to_location, quantity::bigint, \
+                                move_type, lot_number \
+                         FROM stock_moves \
+                         WHERE id = $1 AND tenant_id = $2 AND site_id = ANY($3) \
+                           AND status = 'posted' \
+                         FOR UPDATE",
+                    )
+                    .bind(move_id)
+                    .bind(tenant_id)
+                    .bind(&sites)
+                    .fetch_optional(&mut **tx)
+                    .await
+                    .map_err(|e| {
+                        SenseiError::Database(format!("Failed to load stock move for reversal: {e}"))
+                    })?;
+                let (site_id, product_id, from_location, to_location, quantity, move_type, lot_number) =
+                    original.ok_or_else(|| {
+                        SenseiError::NotFound(format!("Stock move {move_id} not found"))
+                    })?;
+                // The compensating delta returns the balance at the same
+                // site/product/location/lot — a lot-bearing original is
+                // required to still be resolvable, never silently dropped.
+                let (delta_location, delta_lot) = (to_location.clone(), lot_number.clone());
+                if lot_number.as_deref().is_some_and(|l| l.trim().is_empty()) {
+                    return Err(SenseiError::Validation(format!(
+                        "Stock move {move_id} carries a blank lot number — \
+                         the reversal cannot be attributed to a lot row"
+                    )));
+                }
+
+                // (2) The compensating move: the OPPOSITE direction of the
+                // schema move types (the stock_moves CHECK admits
+                // receipt/issue/transfer/adjustment — 'delivery' rows are
+                // stored as 'issue'). A transfer compensation swaps its
+                // source and destination; a receipt compensates as an
+                // issue out of the location it filled (and vice versa);
+                // an adjustment (which deposited at its location)
+                // compensates as an issue from that location.
+                let (comp_type, comp_from, comp_to): (String, Option<String>, String) =
+                    match move_type.as_str() {
+                        "receipt" => ("issue".to_string(), Some(to_location.clone()), String::new()),
+                        "issue" => (
+                            "receipt".to_string(),
+                            None,
+                            from_location.clone().unwrap_or_else(|| to_location.clone()),
+                        ),
+                        "transfer" => {
+                            let source = from_location.clone().ok_or_else(|| {
+                                SenseiError::Validation(format!(
+                                    "Stock move {move_id} is a transfer without a source \
+                                     location — its reversal cannot be compensated"
+                                ))
+                            })?;
+                            (
+                                "transfer".to_string(),
+                                Some(to_location.clone()),
+                                source,
+                            )
+                        }
+                        // 'adjustment' and any unmapped type: withdraw what
+                        // the original deposited at its location.
+                        _ => ("issue".to_string(), Some(to_location.clone()), String::new()),
+                    };
+                let comp_id = Uuid::new_v4();
+                let now = chrono::Utc::now();
+                sqlx::query(
+                    "INSERT INTO stock_moves \
+                        (id, tenant_id, site_id, product_id, from_location, to_location, quantity, \
+                         move_type, lot_number, reference_type, reference_id, moved_by, moved_at, created_at, \
+                         status, reversed_by, reversed_at, reversal_reason, reversal_of) \
+                     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,'posted',$15,$16,$17,$18)",
+                )
+                .bind(comp_id)
+                .bind(tenant_id)
+                .bind(site_id)
+                .bind(product_id)
+                .bind(&comp_from)
+                .bind(&comp_to)
+                .bind(quantity)
+                .bind(&comp_type)
+                .bind(&lot_number)
+                .bind("reversal")
+                .bind(move_id)
+                .bind(actor)
+                .bind(now)
+                .bind(now)
+                .bind(actor)
+                .bind(now)
+                .bind(&reason_owned)
+                .bind(move_id)
+                .execute(&mut **tx)
+                .await
+                .map_err(|e| {
+                    SenseiError::Database(format!("Failed to post compensating move: {e}"))
+                })?;
+
+                // Mark the ORIGINAL row reversed, linked to the
+                // compensating entry that undid its effect.
                 let r = sqlx::query(
                     "UPDATE stock_moves \
                      SET status = 'reversed', reversed_by = $1, \
-                         reversed_at = NOW(), reversal_reason = $2 \
-                     WHERE id = $3 AND tenant_id = $4 AND site_id = ANY($5) \
-                       AND status <> 'reversed'",
+                         reversed_at = NOW(), reversal_reason = $2, \
+                         reversed_by_move = $3 \
+                     WHERE id = $4 AND tenant_id = $5 AND site_id = ANY($6) \
+                       AND status = 'posted'",
                 )
                 .bind(actor)
                 .bind(&reason_owned)
+                .bind(comp_id)
                 .bind(move_id)
                 .bind(tenant_id)
                 .bind(&sites)
@@ -2255,7 +2428,192 @@ impl SupplyChainService for DatabaseSupplyChainService {
                         "Stock move {move_id} not found"
                     )));
                 }
+
+                // (3) The INVERSE inventory delta on the SAME
+                // site/product/location/lot, so the balance returns. An
+                // impossible inverse physical move (insufficient stock)
+                // FAILS the reversal with the controlled-discrepancy
+                // message; the whole transaction rolls back — the ledger
+                // and the balance can never silently disagree.
+                match move_type.as_str() {
+                    "receipt" => {
+                        apply_inventory_delta_with_lot(
+                            tx,
+                            tenant_id,
+                            site_id,
+                            product_id,
+                            &delta_location,
+                            delta_lot.as_deref(),
+                            -quantity,
+                        )
+                        .await
+                        .map_err(|e| {
+                            SenseiError::Validation(format!(
+                                "Cannot reverse receipt move {move_id}: {e}"
+                            ))
+                        })?;
+                    }
+                    "issue" => {
+                        let loc = from_location
+                            .clone()
+                            .unwrap_or_else(|| to_location.clone());
+                        apply_inventory_delta_with_lot(
+                            tx,
+                            tenant_id,
+                            site_id,
+                            product_id,
+                            &loc,
+                            delta_lot.as_deref(),
+                            quantity,
+                        )
+                        .await?;
+                    }
+                    "transfer" => {
+                        // +q back at the source, −q back out of the
+                        // destination (the destination debit may fail on
+                        // insufficiency — the source credit has already
+                        // been applied inside the same transaction, so a
+                        // failure rolls BOTH back).
+                        apply_inventory_delta_with_lot(
+                            tx,
+                            tenant_id,
+                            site_id,
+                            product_id,
+                            &from_location.clone().unwrap_or_default(),
+                            delta_lot.as_deref(),
+                            quantity,
+                        )
+                        .await?;
+                        apply_inventory_delta_with_lot(
+                            tx,
+                            tenant_id,
+                            site_id,
+                            product_id,
+                            &delta_location,
+                            delta_lot.as_deref(),
+                            -quantity,
+                        )
+                        .await
+                        .map_err(|e| {
+                            SenseiError::Validation(format!(
+                                "Cannot reverse transfer move {move_id}: {e}"
+                            ))
+                        })?;
+                    }
+                    // 'adjustment' and any unmapped type: withdraw what
+                    // the original deposited at its location.
+                    _ => {
+                        apply_inventory_delta_with_lot(
+                            tx,
+                            tenant_id,
+                            site_id,
+                            product_id,
+                            &delta_location,
+                            delta_lot.as_deref(),
+                            -quantity,
+                        )
+                        .await
+                        .map_err(|e| {
+                            SenseiError::Validation(format!(
+                                "Cannot reverse adjustment move {move_id}: {e}"
+                            ))
+                        })?;
+                    }
+                }
                 Ok(())
+            })
+        })
+        .await
+    }
+
+    /// MANUAL first receipt (twenty-fifth audit P1): receive stock at the
+    /// caller's SINGLE authorized ACTIVE site — resolved server-side from
+    /// `authorized_sites` (empty or ambiguous -> Validation, never a
+    /// client-named site). The receipt creates the inventory row at that
+    /// site (at the command's location, or the site-local receiving
+    /// location when none is named) and posts a 'receipt' stock move
+    /// stamped with the site, all in one transaction.
+    async fn receive_stock(
+        &self,
+        tenant_id: Uuid,
+        authorized_sites: &[Uuid],
+        req: ReceiveStockCommand,
+    ) -> Result<StockMove> {
+        let site_id = match authorized_sites {
+            [site] => *site,
+            [] => {
+                return Err(SenseiError::Validation(
+                    "No authorized site is available — a manual stock receipt \
+                     must be attributed to the caller's active site"
+                        .to_string(),
+                ))
+            }
+            _ => {
+                return Err(SenseiError::Validation(format!(
+                    "The caller is authorized at {} sites — a manual stock \
+                     receipt must be attributed to the single ACTIVE site",
+                    authorized_sites.len()
+                )))
+            }
+        };
+        if req.quantity <= 0 {
+            return Err(SenseiError::Validation(
+                "Received quantity must be positive".to_string(),
+            ));
+        }
+        if req.reason.trim().is_empty() {
+            return Err(SenseiError::Validation(
+                "A manual stock receipt requires a reason".to_string(),
+            ));
+        }
+        let lot = req
+            .lot
+            .as_deref()
+            .map(str::trim)
+            .filter(|l| !l.is_empty())
+            .map(str::to_string);
+        let product_id = req.product_id;
+        let quantity = req.quantity;
+        with_tenant_tx(&self.pool, tenant_id, move |tx| {
+            Box::pin(async move {
+                // The receiving location: the command's location when it
+                // names one, else the SITE's receiving location
+                // (site-configured or the site-local 'receiving' label) —
+                // never a label discovered tenant-wide.
+                let location = match req.location.as_deref() {
+                    Some(l) if !l.trim().is_empty() => l.trim().to_string(),
+                    _ => resolve_stock_location(&mut *tx, tenant_id, site_id, product_id).await?,
+                };
+                apply_inventory_delta_with_lot(
+                    &mut *tx,
+                    tenant_id,
+                    site_id,
+                    product_id,
+                    &location,
+                    lot.as_deref(),
+                    quantity,
+                )
+                .await?;
+                let row = sqlx::query_as::<_, StockMoveRow>(
+                    r#"INSERT INTO stock_moves (id, tenant_id, site_id, product_id, quantity, move_type, from_location, to_location, lot_number, reference_type, reference_id, moved_at, created_at)
+                       VALUES ($1,$2,$3,$4,$5,'receipt',NULL,$6,$7,'manual_receipt',NULL,NOW(),NOW())
+                       RETURNING id, tenant_id, product_id,
+                                 (SELECT name FROM products WHERE products.id = stock_moves.product_id) AS product_name,
+                                 quantity::bigint, move_type, from_location, to_location, reference_type, reference_id,
+                                 moved_by AS created_by, created_at,
+                                 site_id, status, reversed_by, reversed_at, reversal_reason, reversal_of, reversed_by_move"#,
+                )
+                .bind(Uuid::new_v4())
+                .bind(tenant_id)
+                .bind(site_id)
+                .bind(product_id)
+                .bind(quantity)
+                .bind(&location)
+                .bind(&lot)
+                .fetch_one(&mut **tx)
+                .await
+                .map_err(|e| SenseiError::Database(format!("Failed to record stock receipt: {e}")))?;
+                Ok(sm_row_to_domain(row))
             })
         })
         .await
@@ -2638,7 +2996,7 @@ impl SupplyChainService for DatabaseSupplyChainService {
                RETURNING id, tenant_id, product_id,
                          (SELECT name FROM products WHERE products.id = stock_moves.product_id) AS product_name,
                          quantity::bigint, move_type, from_location, to_location, reference_type, reference_id,
-                         moved_by AS created_by, created_at"#,
+                         moved_by AS created_by, created_at, site_id, status, reversed_by, reversed_at, reversal_reason, reversal_of, reversed_by_move"#,
         ).bind(id).bind(tenant_id).bind(site_id).bind(product_id)
             .bind(stock_move.quantity).bind(stored_move_type).bind(&stock_move.from_location)
             .bind(&stock_move.to_location).bind(&stock_move.reference_type).bind(stock_move.reference_id)

@@ -5,6 +5,16 @@
 //! at-least-once — a crash after claim loses only the lease, never the
 //! projection — and application is idempotent via the
 //! (tenant_id, source_event_id, projection_type) key.
+//!
+//! Twenty-fifth audit P0/P1: the claimed entry carries the FULL
+//! authorization context of the queue row (destination tenant/site/
+//! jurisdiction + envelope schema/revision/policy — audit item 1),
+//! target-side apply is deduped against a durable `replication_applied`
+//! record inserted atomically before the apply (audit item 2), and the
+//! fanout INSERT is conditioned on the CURRENT governance state still
+//! containing an identical edge (audit item 3 — a policy change between
+//! the fanout's re-read and its INSERT can no longer persist a stale
+//! authorization).
 
 use sensei_core::error::{Result, SenseiError};
 use serde::{Deserialize, Serialize};
@@ -29,7 +39,17 @@ pub struct ReplicationEnvelope {
 /// site enqueued for corporate federation. `claim_token` is the lease:
 /// only the worker holding it may ack/fail the row, so a stale worker's
 /// ACK is rejected by ownership check.
-#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
+///
+/// Twenty-fifth audit P0/P1-1 (the destination survives consume): the
+/// claimed entry ALSO carries the destination and envelope columns of
+/// the queue row — `target_tenant_id`/`target_site_id` (which federation
+/// edge the row was authorized for), `target_jurisdiction` (the typed
+/// residency code the decision was made against), `schema_version` +
+/// `projection_type` + `projection_revision` + `data_policy` (the
+/// versioned envelope the target apply must dedupe and evaluate on). The
+/// consume side no longer loses the destination when a row leaves the
+/// queue.
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ReplicationEntry {
     pub id: Uuid,
     pub site_id: Option<Uuid>,
@@ -39,6 +59,44 @@ pub struct ReplicationEntry {
     pub source_event_id: Option<String>,
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub claim_token: Option<Uuid>,
+    pub target_tenant_id: Option<Uuid>,
+    pub target_site_id: Option<Uuid>,
+    pub target_jurisdiction: Option<String>,
+    pub schema_version: u32,
+    pub projection_type: String,
+    pub projection_revision: u64,
+    pub data_policy: String,
+}
+
+/// Manual `FromRow`: Postgres has no native unsigned integer types, so
+/// sqlx decodes `schema_version`/`projection_revision` as their signed
+/// storage types (INT4/INT8) and this mapping converts them to the
+/// envelope's `u32`/`u64` types. The queue columns are NOT NULL with
+/// defaults (`schema_version` 1, `projection_revision` 1, `data_policy`
+/// 'internal'), and `projection_type` is COALESCEd to `entity_type` in
+/// the SELECT — the same fallback enqueue applies — so legacy rows
+/// decode too.
+impl<'r> sqlx::FromRow<'r, sqlx::postgres::PgRow> for ReplicationEntry {
+    fn from_row(row: &'r sqlx::postgres::PgRow) -> std::result::Result<Self, sqlx::Error> {
+        use sqlx::Row;
+        Ok(Self {
+            id: row.try_get("id")?,
+            site_id: row.try_get("site_id")?,
+            entity_type: row.try_get("entity_type")?,
+            entity_id: row.try_get("entity_id")?,
+            projection: row.try_get("projection")?,
+            source_event_id: row.try_get("source_event_id")?,
+            created_at: row.try_get("created_at")?,
+            claim_token: row.try_get("claim_token")?,
+            target_tenant_id: row.try_get("target_tenant_id")?,
+            target_site_id: row.try_get("target_site_id")?,
+            target_jurisdiction: row.try_get("target_jurisdiction")?,
+            schema_version: row.try_get::<i32, _>("schema_version")? as u32,
+            projection_type: row.try_get("projection_type")?,
+            projection_revision: row.try_get::<i64, _>("projection_revision")? as u64,
+            data_policy: row.try_get("data_policy")?,
+        })
+    }
 }
 
 /// The FANOUT outcome (twenty-third audit P1): one publish of one source
@@ -914,7 +972,20 @@ pub async fn enqueue_projection(
 ///   failure) is skipped and counted in `already_present`, so repeated
 ///   publishes of the same command converge to the same complete set —
 ///   a retry NEVER 500s on the first duplicate, and an error mid-fanout
-///   rolls the WHOLE transaction back (no partial success).
+///   rolls the WHOLE transaction back (no partial success);
+/// - twenty-fifth audit P0/P1-3 (FINAL governance race): the in-tx
+///   revalidation above is a READ COMMITTED SELECT with no lock — a
+///   membership/policy change committing between that re-read and the
+///   INSERT used to be invisible to it. The INSERT is now conditioned on
+///   the CURRENT governance state still containing an IDENTICAL edge:
+///   `INSERT ... SELECT ... WHERE (SELECT count(*) FROM
+///   federation_governance_edges() g WHERE g.peer_tenant_id = <target>
+///   AND g.peer_site_id = <site> AND g.peer_policy_revision =
+///   <revision>) = 1` — the guard re-reads governance IN THE SAME
+///   STATEMENT as the write (READ COMMITTED gives each statement a fresh
+///   snapshot), so no window remains between check and insert. A row the
+///   guard denies (0 rows, after the duplicate pre-check) is counted in
+///   `blocked`, never enqueued.
 ///
 /// Returns the [`FanoutReport`] counting newly-enqueued vs already-present
 /// vs blocked edges. Nothing is written until every edge has been
@@ -1001,14 +1072,68 @@ pub async fn enqueue_projection_fanout(
                     continue;
                 }
                 let edge_policy = edge.policy_snapshot();
+                // Duplicate pre-check (twenty-fifth audit P0/P1-3): with
+                // the atomic revision guard below, a 0-row INSERT is
+                // ambiguous (guard-denied OR already present), so the
+                // duplicate is identified HERE — a row for this exact
+                // fanout key already existing is `already_present` and is
+                // not inserted again (its edge_policy snapshot was
+                // recorded when IT was enqueued).
+                let already_exists: bool = sqlx::query_scalar(
+                    "SELECT EXISTS ( \
+                         SELECT 1 FROM site_replication_log \
+                         WHERE tenant_id = $1 AND source_event_id = $2 \
+                           AND target_tenant_id = $3 \
+                           AND target_site_id IS NOT DISTINCT FROM $4 \
+                     )",
+                )
+                .bind(tenant_id)
+                .bind(source_event_id.as_str())
+                .bind(edge.target_tenant)
+                .bind(edge.target_site)
+                .fetch_one(&mut **tx)
+                .await
+                .map_err(|e| {
+                    SenseiError::Database(format!("replication: fanout duplicate check: {e}"))
+                })?;
+                if already_exists {
+                    report.already_present += 1;
+                    continue;
+                }
+                // TWENTY-FIFTH AUDIT P0/P1-3 — FINAL GOVERNANCE RACE:
+                // the fanout revalidation above ran in READ COMMITTED
+                // with no lock — a membership/policy change committing
+                // between that re-read and this INSERT was invisible to
+                // it, so the stale authorization could still be written.
+                // The INSERT is therefore CONDITIONED on the CURRENT
+                // governance state still containing an IDENTICAL edge
+                // (peer tenant, peer site and policy revision — the
+                // revision is bumped by every country-policy change):
+                //   INSERT ... SELECT ... WHERE (SELECT count(*) FROM
+                //   federation_governance_edges() g WHERE
+                //   g.peer_tenant_id = <target> AND g.peer_site_id =
+                //   <site> AND g.peer_policy_revision = <revision>) = 1
+                // READ COMMITTED gives every statement a FRESH snapshot,
+                // so the guard re-reads governance atomically IN THE SAME
+                // STATEMENT as the write — no window remains between the
+                // check and the insert. A row failing the guard is
+                // counted as `blocked` (the edge changed under the
+                // fanout; its authorization is not persisted under a
+                // stale snapshot). The in-tx re-read comparison above is
+                // KEPT — it classifies most stale edges before the
+                // write; the statement-level guard closes the last race.
                 let res = sqlx::query(
                     "INSERT INTO site_replication_log \
                          (tenant_id, site_id, entity_type, entity_id, projection, source_event_id, \
                           schema_version, projection_type, projection_revision, data_policy, \
                           status, target_tenant_id, target_site_id, target_jurisdiction, \
                           edge_policy) \
-                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'pending', \
-                             $11, $12, $13, $14) \
+                     SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'pending', \
+                            $11, $12, $13, $14 \
+                     WHERE (SELECT count(*) FROM federation_governance_edges() g \
+                            WHERE g.peer_tenant_id = $11 \
+                              AND g.peer_site_id = $12 \
+                              AND g.peer_policy_revision = $15) = 1 \
                      ON CONFLICT (tenant_id, source_event_id, target_tenant_id, target_site_id) \
                      DO NOTHING",
                 )
@@ -1026,17 +1151,22 @@ pub async fn enqueue_projection_fanout(
                 .bind(edge.target_site)
                 .bind(edge.target_jurisdiction.as_str())
                 .bind(edge_policy)
+                .bind(edge.policy_revision as i64)
                 .execute(&mut **tx)
                 .await
                 .map_err(|e| {
                     SenseiError::Database(format!("replication: fanout enqueue failed: {e}"))
                 })?;
                 // rows_affected counts ONLY rows the statement actually
-                // inserted — a row skipped by DO NOTHING counts 0.
+                // inserted: 1 = enqueued; 0 after the duplicate pre-check
+                // can only mean the atomic governance guard DENIED the
+                // row (the edge no longer exists in the CURRENT state) —
+                // counted as blocked, never silently dropped, never
+                // mislabeled as a duplicate.
                 if res.rows_affected() == 1 {
                     report.newly_enqueued += 1;
                 } else {
-                    report.already_present += 1;
+                    report.blocked += 1;
                 }
             }
             Ok(report)
@@ -1122,7 +1252,11 @@ pub async fn claim_batch(
 
             let mut rows: Vec<ReplicationEntry> = sqlx::query_as(
                 "SELECT id, site_id, entity_type, entity_id, projection, source_event_id, \
-                        created_at, NULL::uuid AS claim_token \
+                        created_at, NULL::uuid AS claim_token, \
+                        target_tenant_id, target_site_id, target_jurisdiction, \
+                        schema_version, \
+                        COALESCE(projection_type, entity_type) AS projection_type, \
+                        projection_revision, data_policy \
                  FROM site_replication_log \
                  WHERE (status = 'pending' OR (status = 'failed' AND next_attempt_at <= NOW())) \
                  ORDER BY created_at ASC, id ASC \
@@ -1162,13 +1296,222 @@ pub async fn claim_batch(
     .await
 }
 
+/// TARGET-SIDE APPLY IDEMPOTENCY (twenty-fifth audit P0/P1-2): the
+/// durable `replication_applied` record (migration 163) is the apply
+/// dedupe key — `(tenant_id, source_event_id, projection_type,
+/// projection_revision, target_tenant_id, target_site_id)`. The worker
+/// that APPLIES a projection records the mark FIRST, in its OWN tenant
+/// transaction, and a duplicate mark (`false`) REFUSES the retried
+/// apply: at-least-once queue delivery (crash after claim loses only the
+/// lease, the row is redelivered) can never become double application.
+///
+/// `tenant_id` is the tenant under whose RLS slice the apply happens —
+/// the same tenant context the queue row is claimed under — and the
+/// record is FORCE-RLS isolated to it, exactly like the queue table.
+#[allow(clippy::too_many_arguments)]
+async fn insert_target_applied_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    tenant_id: Uuid,
+    source_tenant_id: Uuid,
+    source_site_id: Option<Uuid>,
+    source_event_id: Uuid,
+    projection_type: &str,
+    projection_revision: u64,
+    target_tenant_id: Uuid,
+    target_site_id: Option<Uuid>,
+) -> Result<bool> {
+    // ATOMIC refusal: ON CONFLICT DO NOTHING makes a duplicate mark a
+    // no-op that returns no row — `false` — never an error and never a
+    // second record. The unique index is the arbiter: two workers (or a
+    // redelivery) racing the same key cannot both win.
+    let row: Option<(Uuid,)> = sqlx::query_as(
+        "INSERT INTO replication_applied \
+             (tenant_id, source_tenant_id, source_site_id, source_event_id, \
+              projection_type, projection_revision, target_tenant_id, target_site_id) \
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8) \
+         ON CONFLICT (tenant_id, source_event_id, projection_type, projection_revision, \
+                      target_tenant_id, target_site_id) \
+         DO NOTHING \
+         RETURNING id",
+    )
+    .bind(tenant_id)
+    .bind(source_tenant_id)
+    .bind(source_site_id)
+    .bind(source_event_id)
+    .bind(projection_type)
+    .bind(projection_revision as i64)
+    .bind(target_tenant_id)
+    .bind(target_site_id)
+    .fetch_optional(&mut **tx)
+    .await
+    .map_err(|e| SenseiError::Database(format!("replication: mark target applied failed: {e}")))?;
+    Ok(row.is_some())
+}
+
+/// Mark ONE projection apply as landed under the applying tenant's
+/// context (twenty-fifth audit P0/P1-2): `true` when the record was
+/// newly inserted, `false` when the SAME key is already recorded — the
+/// retried apply is refused atomically. Callers invoke this BEFORE the
+/// side-effecting apply: `true` -> apply, `false` -> skip (the
+/// projection already landed).
+#[allow(clippy::too_many_arguments)]
+pub async fn mark_target_applied(
+    pool: &sqlx::PgPool,
+    tenant_id: Uuid,
+    source_tenant_id: Uuid,
+    source_site_id: Option<Uuid>,
+    source_event_id: Uuid,
+    projection_type: &str,
+    projection_revision: u64,
+    target_tenant_id: Uuid,
+    target_site_id: Option<Uuid>,
+) -> Result<bool> {
+    let projection_type = projection_type.to_string();
+    with_tenant_tx(pool, tenant_id, move |tx| {
+        Box::pin(async move {
+            insert_target_applied_tx(
+                tx,
+                tenant_id,
+                source_tenant_id,
+                source_site_id,
+                source_event_id,
+                &projection_type,
+                projection_revision,
+                target_tenant_id,
+                target_site_id,
+            )
+            .await
+        })
+    })
+    .await
+}
+
+/// Has this projection ALREADY been applied under the applying tenant's
+/// context (twenty-fifth audit P0/P1-2)? Read-only form of
+/// [`mark_target_applied`] — used by the apply path to decide before the
+/// guarded mark, and by operations to inspect the durable dedupe state.
+/// The same tenant-scoped key as the unique index; the FORCE-RLS policy
+/// keeps the answer tenant-local.
+#[allow(clippy::too_many_arguments)]
+pub async fn is_target_applied(
+    pool: &sqlx::PgPool,
+    tenant_id: Uuid,
+    source_event_id: Uuid,
+    projection_type: &str,
+    projection_revision: u64,
+    target_tenant_id: Uuid,
+    target_site_id: Option<Uuid>,
+) -> Result<bool> {
+    let projection_type = projection_type.to_string();
+    with_tenant_tx(pool, tenant_id, move |tx| {
+        Box::pin(async move {
+            let applied: bool = sqlx::query_scalar(
+                "SELECT EXISTS ( \
+                     SELECT 1 FROM replication_applied \
+                     WHERE tenant_id = $1 AND source_event_id = $2 \
+                       AND projection_type = $3 AND projection_revision = $4 \
+                       AND target_tenant_id = $5 \
+                       AND target_site_id IS NOT DISTINCT FROM $6 \
+                 )",
+            )
+            .bind(tenant_id)
+            .bind(source_event_id)
+            .bind(&projection_type)
+            .bind(projection_revision as i64)
+            .bind(target_tenant_id)
+            .bind(target_site_id)
+            .fetch_one(&mut **tx)
+            .await
+            .map_err(|e| SenseiError::Database(format!("replication: is target applied: {e}")))?;
+            Ok(applied)
+        })
+    })
+    .await
+}
+
 /// Corporate ACK after applying the projection: marks the row `acked`.
 /// The `claim_token` is the ownership check — a stale worker (or one that
 /// never held the lease) is rejected, and the row stays claimed for the
 /// real worker.
+///
+/// Twenty-fifth audit P0/P1-2 (the no-real-apply wiring): this entry→ack
+/// path is where a claimed entry is consumed in this workspace (the
+/// claim's caller pulls and the same worker acks; no projection-apply
+/// step exists yet), so the consume transaction ALSO records the durable
+/// target-apply marker in the SAME transaction as the status flip. An
+/// entry carrying a keyable `source_event_id` (a UUID) and a named
+/// destination gets its `replication_applied` record inserted first
+/// (`ON CONFLICT DO NOTHING` — a duplicate mark is skipped, never
+/// recorded twice); entries without a keyable event/destination (legacy
+/// envelopes) are still acked — there is no idempotency key to record.
+/// The future apply step inserts the SAME record in its OWN transaction
+/// before applying, which is what makes a retried apply refuse.
 pub async fn ack(pool: &sqlx::PgPool, tenant_id: Uuid, id: Uuid, claim_token: Uuid) -> Result<()> {
     with_tenant_tx(pool, tenant_id, move |tx| {
         Box::pin(async move {
+            // The ownership + idempotency-key read: no row with this id
+            // and claim token under this tenant -> the same rejection as
+            // before (a stale worker's ACK never reaches the status
+            // flip). The key columns are the row's own — source_event_id
+            // (the queue stores it as VARCHAR), the source site, the
+            // destination edge and the projection envelope identity.
+            type AckKey = (
+                Option<String>,
+                Option<Uuid>,
+                Option<Uuid>,
+                Option<Uuid>,
+                String,
+                i64,
+            );
+            let key: Option<AckKey> = sqlx::query_as(
+                "SELECT source_event_id, site_id, target_tenant_id, target_site_id, \
+                        COALESCE(projection_type, entity_type), projection_revision \
+                 FROM site_replication_log \
+                 WHERE id = $1 AND tenant_id = $2 AND claim_token = $3",
+            )
+            .bind(id)
+            .bind(tenant_id)
+            .bind(claim_token)
+            .fetch_optional(&mut **tx)
+            .await
+            .map_err(|e| SenseiError::Database(format!("replication: ack key read: {e}")))?;
+            let Some((
+                source_event_id,
+                source_site_id,
+                target_tenant_id,
+                target_site_id,
+                projection_type,
+                projection_revision,
+            )) = key
+            else {
+                return Err(SenseiError::NotFound(
+                    "replication: ack rejected — no row with this id and claim token".to_string(),
+                ));
+            };
+            // Durable target-apply marker (twenty-fifth audit P0/P1-2):
+            // only keyable rows — a UUID source event AND a named
+            // destination edge — carry an idempotency key worth
+            // recording; the duplicate case (the marker already exists
+            // from an earlier delivery/apply) skips, and the row is still
+            // consumed. Legacy rows without the key are recorded nowhere.
+            if let (Some(event), Some(target_tenant)) =
+                (source_event_id.as_deref(), target_tenant_id)
+            {
+                if let Ok(event_uuid) = Uuid::parse_str(event) {
+                    insert_target_applied_tx(
+                        tx,
+                        tenant_id,
+                        tenant_id,
+                        source_site_id,
+                        event_uuid,
+                        &projection_type,
+                        projection_revision as u64,
+                        target_tenant,
+                        target_site_id,
+                    )
+                    .await?;
+                }
+            }
             let res = sqlx::query(
                 "UPDATE site_replication_log SET status = 'acked', acked_at = NOW() \
                  WHERE id = $1 AND tenant_id = $2 AND claim_token = $3",

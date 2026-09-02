@@ -6994,6 +6994,20 @@ async fn site_replication_log_durable_projection() {
     assert_eq!(wo.source_event_id.as_deref(), Some("evt-wo-1"));
     assert_eq!(wo.projection["status"], "completed");
     assert_eq!(wo.projection["qty"], 120);
+    // Twenty-fifth audit P0/P1-1: the DESTINATION and the envelope
+    // SURVIVE the consume — the claimed entry carries the target edge
+    // and the versioned envelope columns the apply side must dedupe and
+    // evaluate on (the queue no longer loses them when a row leaves).
+    assert_eq!(wo.target_tenant_id, Some(edge.target_tenant));
+    assert_eq!(
+        wo.target_site_id, None,
+        "the fabricated edge names no peer site"
+    );
+    assert_eq!(wo.target_jurisdiction.as_deref(), Some("ma"));
+    assert_eq!(wo.schema_version, 1);
+    assert_eq!(wo.projection_type, "work_order");
+    assert_eq!(wo.projection_revision, 1);
+    assert_eq!(wo.data_policy, "internal");
 
     let andon = pulled
         .iter()
@@ -7004,6 +7018,9 @@ async fn site_replication_log_durable_projection() {
     assert!(andon.source_event_id.is_none());
     assert_eq!(andon.projection["status"], "resolved");
     assert_eq!(andon.projection["site"], site_id.to_string());
+    assert_eq!(andon.target_tenant_id, Some(edge.target_tenant));
+    assert_eq!(andon.target_jurisdiction.as_deref(), Some("ma"));
+    assert_eq!(andon.projection_type, "andon");
 
     // Apply, then ACK with the owned token (claim -> apply -> ACK).
     for entry in &pulled {
@@ -7022,6 +7039,260 @@ async fn site_replication_log_durable_projection() {
         .await
         .expect("second pull must work");
     assert!(again.is_empty(), "durable once — no double projection");
+}
+
+/// Twenty-fifth audit P0/P1-2 (target-side apply idempotency): the
+/// durable `replication_applied` record (migration 163) is the
+/// TARGET-apply dedupe key. `mark_target_applied` returns `true` when
+/// the record is newly inserted and `false` when the SAME key is already
+/// recorded — a retried apply is refused ATOMICALLY (INSERT ... ON
+/// CONFLICT DO NOTHING RETURNING id — the unique index is the arbiter,
+/// never a check-then-insert window). The at-least-once redelivery
+/// (apply recorded, crash BEFORE the ack, lease expiry, same projection
+/// claimed again) skips the duplicate apply, still completes the consume
+/// (the ack path's own guard mark is the duplicate and is skipped), and
+/// leaves EXACTLY ONE durable record — a retried apply can never become
+/// a double application.
+#[tokio::test]
+async fn replication_target_apply_idempotency_guard() {
+    let _serial = DB_LOCK.lock().await;
+    let Some(pool) = connect().await else { return };
+    sqlx::query(
+        r#"DO $$ DECLARE r RECORD; BEGIN
+             FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname = 'public') LOOP
+                 EXECUTE format('DROP TABLE IF EXISTS %I CASCADE', r.tablename);
+             END LOOP;
+         END $$"#,
+    )
+    .execute(&pool)
+    .await
+    .expect("drop all tables");
+    sensei_db::migrations::run_migrations(&pool)
+        .await
+        .expect("the ENTIRE migration chain must apply to an empty database");
+
+    let source_tenant = uuid::Uuid::new_v4();
+    sqlx::query("INSERT INTO tenants (id, name, slug) VALUES ($1, 't25apply', 't25apply')")
+        .bind(source_tenant)
+        .execute(&pool)
+        .await
+        .expect("tenant insert");
+
+    use sensei_services::tps::replication;
+
+    let site_id = uuid::Uuid::new_v4();
+    let entity_a = uuid::Uuid::new_v4();
+    let source_event = uuid::Uuid::new_v4();
+    // The destination edge is named by the fabricated membership — the
+    // peer tenant/site carry no tenants/sites rows (no FK on the queue's
+    // target columns): the idempotency key is what is exercised.
+    let target_tenant = uuid::Uuid::new_v4();
+    let target_site = uuid::Uuid::new_v4();
+
+    let envelope = replication::ReplicationEnvelope {
+        schema_version: 1,
+        source_event_id: Some(source_event.to_string()),
+        source_site: Some(site_id),
+        projection_type: "work_order".to_string(),
+        projection_revision: 1,
+        data_policy: "internal".to_string(),
+        payload: serde_json::json!({ "status": "completed", "qty": 5 }),
+    };
+    let edge = replication::FederationEdge {
+        source_tenant,
+        source_site: Some(site_id),
+        target_tenant,
+        target_site: Some(target_site),
+        target_jurisdiction: replication::Jurisdiction::MA,
+        allowed_data_classes: vec![
+            replication::DataPolicy::Public,
+            replication::DataPolicy::Internal,
+            replication::DataPolicy::Confidential,
+            replication::DataPolicy::Restricted,
+            replication::DataPolicy::Personal,
+        ],
+        residency_policy: replication::ResidencyPolicy::CorporateAllowed,
+        policy_revision: 1,
+    };
+    replication::enqueue_projection(
+        &pool,
+        source_tenant,
+        Some(site_id),
+        "work_order",
+        entity_a,
+        envelope.payload.clone(),
+        envelope.source_event_id.as_deref(),
+        &envelope,
+        Some(&replication::Jurisdiction::MA),
+        &edge,
+    )
+    .await
+    .expect("enqueue must succeed site-locally");
+
+    // The worker claims the projection — the claimed entry carries the
+    // full target + envelope context (P0/P1-1) the apply needs.
+    let claimed = replication::claim_batch(&pool, source_tenant, 10)
+        .await
+        .expect("claim must work");
+    assert_eq!(claimed.len(), 1, "exactly one claimable projection");
+    let entry = &claimed[0];
+    assert_eq!(entry.target_tenant_id, Some(target_tenant));
+    assert_eq!(entry.target_site_id, Some(target_site));
+    assert_eq!(entry.target_jurisdiction.as_deref(), Some("ma"));
+    assert_eq!(entry.schema_version, 1);
+    assert_eq!(entry.projection_type, "work_order");
+    assert_eq!(entry.projection_revision, 1);
+    assert_eq!(entry.data_policy, "internal");
+    let event_uuid =
+        uuid::Uuid::parse_str(entry.source_event_id.as_deref().expect("source event id"))
+            .expect("the enqueued source event id is a UUID");
+    let edge_target = entry.target_tenant_id.expect("target tenant");
+
+    // FIRST apply: the durable target-apply mark is newly inserted under
+    // the applying tenant's context.
+    let first = replication::mark_target_applied(
+        &pool,
+        source_tenant,
+        source_tenant,
+        entry.site_id,
+        event_uuid,
+        &entry.projection_type,
+        entry.projection_revision,
+        edge_target,
+        entry.target_site_id,
+    )
+    .await
+    .expect("first apply mark must succeed");
+    assert!(first, "the first apply inserts the durable record");
+    let applied = replication::is_target_applied(
+        &pool,
+        source_tenant,
+        event_uuid,
+        &entry.projection_type,
+        entry.projection_revision,
+        edge_target,
+        entry.target_site_id,
+    )
+    .await
+    .expect("is-target-applied read must succeed");
+    assert!(applied, "the apply is recorded as landed");
+
+    // RETRIED apply of the SAME projection: refused atomically — the
+    // duplicate mark is a no-op (false), never an error and never a
+    // second record.
+    let retried = replication::mark_target_applied(
+        &pool,
+        source_tenant,
+        source_tenant,
+        entry.site_id,
+        event_uuid,
+        &entry.projection_type,
+        entry.projection_revision,
+        edge_target,
+        entry.target_site_id,
+    )
+    .await
+    .expect("the retried apply mark must not error");
+    assert!(
+        !retried,
+        "a retried apply of the same (event, type, revision, target) is refused"
+    );
+
+    // The worker crashes AFTER the apply but BEFORE the ACK: the lease
+    // expires and the SAME projection is redelivered (at-least-once).
+    {
+        let mut tx = pool.begin().await.expect("expire tx begin");
+        sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
+            .bind(source_tenant.to_string())
+            .execute(&mut *tx)
+            .await
+            .expect("set tenant context");
+        sqlx::query(
+            "UPDATE site_replication_log SET lease_expires_at = NOW() - INTERVAL '1 minute' \
+             WHERE id = $1",
+        )
+        .bind(entry.id)
+        .execute(&mut *tx)
+        .await
+        .expect("expire the lease");
+        tx.commit().await.expect("expire tx commit");
+    }
+    let released = replication::release_expired(&pool, source_tenant)
+        .await
+        .expect("release expired must work");
+    assert_eq!(released, 1, "the crashed lease is released");
+    let redelivered = replication::claim_batch(&pool, source_tenant, 10)
+        .await
+        .expect("re-claim must work");
+    assert_eq!(redelivered.len(), 1, "the projection is redelivered");
+    assert_eq!(redelivered[0].id, entry.id, "the SAME projection returns");
+
+    // The redelivered apply is REFUSED — the durable record says the
+    // projection already landed, so the side effect is skipped.
+    let refused = replication::mark_target_applied(
+        &pool,
+        source_tenant,
+        source_tenant,
+        redelivered[0].site_id,
+        event_uuid,
+        &redelivered[0].projection_type,
+        redelivered[0].projection_revision,
+        redelivered[0].target_tenant_id.expect("target tenant"),
+        redelivered[0].target_site_id,
+    )
+    .await
+    .expect("the redelivered apply mark must not error");
+    assert!(
+        !refused,
+        "the redelivered apply is refused — no double application"
+    );
+
+    // The consume completes: the ACK path (the entry->ack wiring) records
+    // its OWN guard mark in the same transaction — that mark is the
+    // duplicate and is skipped, never recorded twice.
+    replication::ack(
+        &pool,
+        source_tenant,
+        redelivered[0].id,
+        redelivered[0].claim_token.expect("fresh lease token"),
+    )
+    .await
+    .expect("the fresh token acks");
+    {
+        let mut tx = pool.begin().await.expect("record tx begin");
+        sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
+            .bind(source_tenant.to_string())
+            .execute(&mut *tx)
+            .await
+            .expect("set tenant context");
+        let records: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM replication_applied \
+             WHERE tenant_id = $1 AND source_event_id = $2 \
+               AND projection_type = $3 AND projection_revision = $4 \
+               AND target_tenant_id = $5 AND target_site_id = $6",
+        )
+        .bind(source_tenant)
+        .bind(event_uuid)
+        .bind("work_order")
+        .bind(1i64)
+        .bind(target_tenant)
+        .bind(target_site)
+        .fetch_one(&mut *tx)
+        .await
+        .expect("durable record count");
+        let status: String =
+            sqlx::query_scalar("SELECT status FROM site_replication_log WHERE id = $1")
+                .bind(entry.id)
+                .fetch_one(&mut *tx)
+                .await
+                .expect("queue row status");
+        tx.commit().await.expect("record tx commit");
+        assert_eq!(
+            records, 1,
+            "apply + redelivery + ack leave EXACTLY ONE durable apply record"
+        );
+        assert_eq!(status, "acked", "the consume completes exactly once");
+    }
 }
 
 /// AUTHORIZATION SNAPSHOTS (fifteenth audit 24/A5): every AI execution
@@ -13014,6 +13285,53 @@ async fn federation_edges_load_under_non_owner_role() {
         2,
         "both fanout rows are durable and claimable"
     );
+    // Twenty-fifth audit P0/P1-1 (the destination survives consume): the
+    // CLAIMED rows carry the exact per-edge target — the peer tenant,
+    // the peer SITE the row was authorized for, the typed jurisdiction
+    // — plus the envelope identity the target apply dedupes on.
+    assert!(
+        fanout_pulled
+            .iter()
+            .all(|e| e.target_tenant_id == Some(tenant_b)),
+        "every claimed row names tenant B as its target tenant"
+    );
+    let mut claimed_sites: Vec<Option<uuid::Uuid>> =
+        fanout_pulled.iter().map(|e| e.target_site_id).collect();
+    claimed_sites.sort_unstable();
+    // The expected set is sorted too — the two peer-site UUIDs are
+    // random per run, so the claim order (and the raw vec literal) is
+    // never a stable ordering to assert against.
+    let mut expected_sites = vec![Some(site_b_ma), Some(site_b_tn)];
+    expected_sites.sort_unstable();
+    assert_eq!(
+        claimed_sites, expected_sites,
+        "each claimed row records the exact peer site it was authorized for"
+    );
+    let mut claimed_jurisdictions: Vec<&str> = fanout_pulled
+        .iter()
+        .map(|e| {
+            e.target_jurisdiction
+                .as_deref()
+                .expect("target jurisdiction")
+        })
+        .collect();
+    claimed_jurisdictions.sort_unstable();
+    assert_eq!(
+        claimed_jurisdictions,
+        vec!["ma", "tn"],
+        "each claimed row carries the typed jurisdiction of its destination"
+    );
+    let fanout_event_id = source_event.to_string();
+    assert!(
+        fanout_pulled.iter().all(|e| {
+            e.schema_version == 1
+                && e.projection_type == "work_order"
+                && e.projection_revision == 1
+                && e.data_policy == "internal"
+                && e.source_event_id.as_deref() == Some(fanout_event_id.as_str())
+        }),
+        "the envelope identity rides the claimed row unchanged"
+    );
     // The RETRY — the exact failure mode of the old per-edge loop: the
     // first duplicate used to 500 mid-way. DO NOTHING makes the retry
     // converge to the SAME complete set instead.
@@ -13080,6 +13398,106 @@ async fn federation_edges_load_under_non_owner_role() {
     assert_eq!(mixed.newly_enqueued, 1, "the permitting edge enqueues");
     assert_eq!(mixed.blocked, 1, "the LocalOnly edge denies the move");
     assert_eq!(mixed.already_present, 0);
+
+    // ── 3b) POLICY-CHANGE GUARD (twenty-fifth audit P0/P1-3): the
+    //    fanout only persists an edge whose governance is STILL CURRENT
+    //    at persist time — a country-policy revision advancing after the
+    //    route loaded the edge must BLOCK it, never write the projection
+    //    under the stale authorization. The guard is enforced twice: the
+    //    in-transaction re-read compares the loaded edge against the
+    //    CURRENT governance rows, and the INSERT itself is conditioned on
+    //    the CURRENT state still containing an identical edge
+    //    (`WHERE (SELECT count(*) FROM federation_governance_edges() g
+    //    WHERE g.peer_tenant_id = ... AND g.peer_site_id = ... AND
+    //    g.peer_policy_revision = <loaded revision>) = 1`), so even a
+    //    change landing between the re-read and the write — READ
+    //    COMMITTED gives each statement a fresh snapshot — cannot persist
+    //    a stale authorization. Both paths count the refused edge in
+    //    `blocked`.
+    //    Morocco advances to revision 3 AFTER ma_edge (pinned to
+    //    revision 2) was loaded; Tunisia (revision 1) is untouched.
+    sqlx::query(
+        "INSERT INTO country_policy_versions \
+             (tenant_id, country, revision, language, currency, data_residency) \
+         VALUES ($1, 'Morocco', 3, 'fr', 'MAD', 'ma')",
+    )
+    .bind(tenant_b)
+    .execute(&pool)
+    .await
+    .expect("Morocco policy revision 3");
+    let guarded_event = uuid::Uuid::new_v4();
+    let guarded_entity = uuid::Uuid::new_v4();
+    let guarded_envelope = replication::ReplicationEnvelope {
+        source_event_id: Some(guarded_event.to_string()),
+        payload: serde_json::json!({ "status": "planned", "qty": 30 }),
+        ..fanout_envelope.clone()
+    };
+    // The STALE Morocco edge (revision 2, loaded before the bump) is
+    // refused; the still-current Tunisia edge enqueues.
+    let guarded = replication::enqueue_projection_fanout(
+        &pool,
+        tenant_a,
+        None,
+        "work_order",
+        guarded_entity,
+        guarded_envelope.payload.clone(),
+        &guarded_event.to_string(),
+        &guarded_envelope,
+        &Jurisdiction::MA,
+        &[ma_edge.clone(), tn_edge.clone()],
+    )
+    .await
+    .expect("the policy-change guard refuses, never errors");
+    assert_eq!(
+        guarded.newly_enqueued, 1,
+        "the unchanged Tunisia edge still enqueues"
+    );
+    assert_eq!(
+        guarded.blocked, 1,
+        "the Morocco edge whose policy revision advanced is blocked — a \
+         stale authorization is never persisted"
+    );
+    assert_eq!(guarded.already_present, 0);
+    // And a CURRENTLY-loaded edge (pinned to revision 3) is still
+    // permitted — the guard blocks only STALE governance, never the
+    // identical current state.
+    let fresh_edges = replication::load_federation_edges(&pool, tenant_a, None)
+        .await
+        .expect("re-load the current edges");
+    let fresh_ma_edge = fresh_edges
+        .iter()
+        .find(|e| e.target_site == Some(site_b_ma))
+        .expect("the Morocco edge at the CURRENT revision");
+    assert_eq!(
+        fresh_ma_edge.policy_revision, 3,
+        "the re-loaded Morocco edge is pinned to the current revision"
+    );
+    let current_event = uuid::Uuid::new_v4();
+    let current_entity = uuid::Uuid::new_v4();
+    let current_envelope = replication::ReplicationEnvelope {
+        source_event_id: Some(current_event.to_string()),
+        payload: serde_json::json!({ "status": "completed", "qty": 40 }),
+        ..fanout_envelope.clone()
+    };
+    let current_state = replication::enqueue_projection_fanout(
+        &pool,
+        tenant_a,
+        None,
+        "work_order",
+        current_entity,
+        current_envelope.payload.clone(),
+        &current_event.to_string(),
+        &current_envelope,
+        &Jurisdiction::MA,
+        &[fresh_ma_edge.clone(), tn_edge.clone()],
+    )
+    .await
+    .expect("the current-state fanout must succeed");
+    assert_eq!(
+        current_state.newly_enqueued, 2,
+        "current edges still enqueue"
+    );
+    assert_eq!(current_state.blocked, 0, "nothing stale in this fanout");
 
     // ── 4) SUBJECT-COUNT STRICTNESS (twenty-third audit P1):
     //    derive_projection_identity is EXACT — zero subjects and MORE THAN
@@ -15249,6 +15667,13 @@ async fn twenty_third_audit_inventory_and_stock_moves_are_site_entitled() {
         reference_id: None,
         created_by: user,
         created_at: chrono::Utc::now(),
+        site_id: None,
+        status: "posted".to_string(),
+        reversed_by: None,
+        reversed_at: None,
+        reversal_reason: None,
+        reversal_of: None,
+        reversed_by_move: None,
     };
     let _moved = sc
         .create_stock_move_scoped(tenant_id, &[site_a], transfer)
@@ -15287,6 +15712,13 @@ async fn twenty_third_audit_inventory_and_stock_moves_are_site_entitled() {
         reference_id: None,
         created_by: user,
         created_at: chrono::Utc::now(),
+        site_id: None,
+        status: "posted".to_string(),
+        reversed_by: None,
+        reversed_at: None,
+        reversal_reason: None,
+        reversal_of: None,
+        reversed_by_move: None,
     };
     let denied = sc
         .create_stock_move_scoped(tenant_id, &[site_b], transfer_b)
@@ -15319,6 +15751,13 @@ async fn twenty_third_audit_inventory_and_stock_moves_are_site_entitled() {
         reference_id: None,
         created_by: user,
         created_at: chrono::Utc::now(),
+        site_id: None,
+        status: "posted".to_string(),
+        reversed_by: None,
+        reversed_at: None,
+        reversal_reason: None,
+        reversal_of: None,
+        reversed_by_move: None,
     };
     let denied_dock = sc
         .create_stock_move_scoped(tenant_id, &[site_a], receipt_dock)
@@ -15351,6 +15790,13 @@ async fn twenty_third_audit_inventory_and_stock_moves_are_site_entitled() {
         reference_id: None,
         created_by: user,
         created_at: chrono::Utc::now(),
+        site_id: None,
+        status: "posted".to_string(),
+        reversed_by: None,
+        reversed_at: None,
+        reversal_reason: None,
+        reversal_of: None,
+        reversed_by_move: None,
     };
     sc.create_stock_move_scoped(tenant_id, &[site_a], receipt_main)
         .await
@@ -15371,7 +15817,10 @@ async fn twenty_third_audit_inventory_and_stock_moves_are_site_entitled() {
 ///  3. list_stock_moves_scoped for site A never shows site B rows.
 ///  4. delete_stock_move is gone from the service trait; reversing a
 ///     move flips status='reversed' with the actor/timestamp/reason and
-///     leaves the ledger row in place.
+///     leaves the ledger row in place. Twenty-fifth audit P1: the
+///     reversal POSTS a compensating move of the opposite direction at
+///     the same site and the inventory balance RETURNS (a receipt of
+///     +10 reversed applies −10) — never a silent metadata-only flip.
 #[tokio::test]
 async fn twenty_fourth_audit_po_receipts_are_site_bound_and_moves_reverse() {
     let _serial = DB_LOCK.lock().await;
@@ -15599,8 +16048,10 @@ async fn twenty_fourth_audit_po_receipts_are_site_bound_and_moves_reverse() {
     );
     assert_eq!(y_qty, 7);
     assert_eq!(
-        y_loc, "main",
-        "receipt fell back to the warehouse default location"
+        y_loc, "receiving",
+        "a receipt with no site row falls back to the SITE's receiving \
+         location — never a tenant-wide label borrowed from another plant \
+         (twenty-fifth audit P1)"
     );
 
     // ── 3. Scoped stock-move lists never cross sites ─────────────────────
@@ -15618,6 +16069,13 @@ async fn twenty_fourth_audit_po_receipts_are_site_bound_and_moves_reverse() {
         reference_id: None,
         created_by: user,
         created_at: chrono::Utc::now(),
+        site_id: None,
+        status: "posted".to_string(),
+        reversed_by: None,
+        reversed_at: None,
+        reversal_reason: None,
+        reversal_of: None,
+        reversed_by_move: None,
     };
     let move_b = sc
         .create_stock_move_scoped(tenant_id, &[site_b], receipt_b)
@@ -15678,9 +16136,12 @@ async fn twenty_fourth_audit_po_receipts_are_site_bound_and_moves_reverse() {
         "product Y's site-A receipt move is visible"
     );
 
-    // ── 4. Reversal replaces deletion ────────────────────────────────────
+    // ── 4. Reversal posts a COMPENSATING move and the balance returns ───
     // The delete_stock_move method is GONE from the service (compile-time);
     // the reversal is site-scoped, stamps the metadata and keeps the row.
+    // Twenty-fifth audit P1: a reversal is never a silent metadata flip —
+    // it posts a compensating move of the OPPOSITE direction whose delta
+    // returns the balance.
     let wrong_scope = sc
         .reverse_stock_move(tenant_id, &[site_a], move_b.id, user, "not ours")
         .await
@@ -15728,10 +16189,69 @@ async fn twenty_fourth_audit_po_receipts_are_site_bound_and_moves_reverse() {
         still_there.is_some(),
         "reversal never deletes the ledger row"
     );
+
+    // ── 4b. The compensating entry and the returned balance ─────────────
+    // The reversal of the +10 site-B receipt posts a compensating −10
+    // 'issue' AT SITE B and the balance RETURNS to 50 — the ledger and
+    // the balance can never silently disagree (twenty-fifth audit P1).
+    type CompRow = (
+        uuid::Uuid,
+        String,
+        Option<uuid::Uuid>,
+        String,
+        String,
+        i64,
+        Option<uuid::Uuid>,
+        Option<uuid::Uuid>,
+        Option<uuid::Uuid>,
+    );
+    let comp: CompRow = sqlx::query_as(
+        "SELECT id, status, site_id, move_type, from_location, quantity::bigint, \
+                reversal_of, reversed_by, reversed_by_move \
+         FROM stock_moves WHERE reversal_of = $1",
+    )
+    .bind(move_b.id)
+    .fetch_one(&pool)
+    .await
+    .expect("compensating move exists");
+    assert_eq!(
+        comp.1, "posted",
+        "the compensating move is a REAL posted ledger entry"
+    );
+    assert_eq!(comp.2, Some(site_b), "the compensation stays at site B");
+    assert_eq!(comp.3, "issue", "a receipt compensates as an issue");
+    assert_eq!(
+        comp.4, "main",
+        "the compensation issues from the filled location"
+    );
+    assert_eq!(comp.5, 10, "the compensation carries the original quantity");
+    assert_eq!(comp.6, Some(move_b.id), "reversal_of names the original");
+    assert_eq!(
+        comp.7,
+        Some(user),
+        "the actor is stamped on the compensation"
+    );
+    let original_link: Option<uuid::Uuid> =
+        sqlx::query_scalar("SELECT reversed_by_move FROM stock_moves WHERE id = $1")
+            .bind(move_b.id)
+            .fetch_one(&pool)
+            .await
+            .expect("original linkage");
+    assert_eq!(
+        original_link,
+        Some(comp.0),
+        "the original row is linked to its compensating move"
+    );
     assert_eq!(
         qty(&pool, row_b).await,
-        60,
-        "reversal does not unwind quantities"
+        50,
+        "the compensating delta returns the balance — a receipt of +10 \
+         reversed applies −10 at the same site"
+    );
+    assert_eq!(
+        qty(&pool, row_a).await,
+        125,
+        "the compensation touched ONLY site B's row"
     );
 
     // An already-reversed move cannot be reversed again (== nonexistent).
@@ -15759,5 +16279,510 @@ async fn twenty_fourth_audit_po_receipts_are_site_bound_and_moves_reverse() {
     assert!(
         matches!(no_reason, sensei_core::error::SenseiError::Validation(_)),
         "reversal requires a reason: {no_reason}"
+    );
+}
+
+/// Twenty-fifth audit P1: the manual-receipt command, compensating
+/// stock-move reversals, site-local receiving locations, the public
+/// ledger, and the site/status-aware finance aging clock.
+///
+///  1. A manual receipt at a FRESH site (no manifest, no inventory
+///     row) creates the row at the SITE-LOCAL 'receiving' location; a
+///     site whose manifest configures a default receiving location
+///     receives there instead — never a tenant-wide label borrowed
+///     from another plant.
+///  2. Site A and site B both stock product X at 'main'; a manual
+///     receipt at site A mutates ONLY site A's row.
+///  3. Reversing a receipt posts a compensating move (`reversal_of`)
+///     of the OPPOSITE direction at the SAME site and the balance
+///     returns; a reversal whose inverse physical move is impossible
+///     (insufficient stock) is refused with Validation naming the
+///     controlled discrepancy — never a silent divergence.
+///  4. Public StockMove exposes site_id/status/reversal fields.
+///  5. Finance aging is site- and status-aware: another site's moves
+///     and reversed history never refresh the aging clock.
+#[tokio::test]
+async fn twenty_fifth_audit_manual_receipt_compensation_and_public_ledger() {
+    let _serial = DB_LOCK.lock().await;
+    let Some(pool) = connect().await else { return };
+    sensei_db::migrations::run_migrations(&pool)
+        .await
+        .expect("migration chain");
+
+    let tenant_id = uuid::Uuid::new_v4();
+    let site_a = uuid::Uuid::new_v4();
+    let site_b = uuid::Uuid::new_v4();
+    let user = uuid::Uuid::new_v4();
+    sqlx::query("INSERT INTO tenants (id, name, slug) VALUES ($1, 't25', 't25')")
+        .bind(tenant_id)
+        .execute(&pool)
+        .await
+        .expect("tenant");
+    sqlx::query(
+        "INSERT INTO sites (id, tenant_id, site_code, name) VALUES \
+         ($1, $2, 'T25A', 'T25 A'), ($3, $4, 'T25B', 'T25 B')",
+    )
+    .bind(site_a)
+    .bind(tenant_id)
+    .bind(site_b)
+    .bind(tenant_id)
+    .execute(&pool)
+    .await
+    .expect("sites");
+    sqlx::query(
+        "INSERT INTO users (id, tenant_id, email, name, password_hash) \
+         VALUES ($1, $2, 'u25@starzforge.local', 'U', 'x')",
+    )
+    .bind(user)
+    .bind(tenant_id)
+    .execute(&pool)
+    .await
+    .expect("user");
+    // Site B CONFIGURES its receiving dock in its manifest; site A does
+    // not (the schema default applies).
+    sqlx::query(
+        "INSERT INTO site_manifests (id, tenant_id, site_id, country, default_receiving_location) \
+         VALUES ($1, $2, $3, 'MA', 'dock_b')",
+    )
+    .bind(uuid::Uuid::new_v4())
+    .bind(tenant_id)
+    .bind(site_b)
+    .execute(&pool)
+    .await
+    .expect("site B manifest");
+    let product_x = uuid::Uuid::new_v4();
+    let product_y = uuid::Uuid::new_v4();
+    let product_z = uuid::Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO products \
+            (id, tenant_id, product_number, name, unit_of_measure, reorder_point, standard_cost) \
+         VALUES ($1, $2, 'P-25X', 'X', 'pcs', 3, 2), \
+                ($3, $4, 'P-25Y', 'Y', 'pcs', 3, 1), \
+                ($5, $6, 'P-25Z', 'Z', 'pcs', 3, 1)",
+    )
+    .bind(product_x)
+    .bind(tenant_id)
+    .bind(product_y)
+    .bind(tenant_id)
+    .bind(product_z)
+    .bind(tenant_id)
+    .execute(&pool)
+    .await
+    .expect("products");
+
+    // Both sites stock X at 'main' — backdated so only real posted
+    // movement can refresh the aging clock.
+    let row_a = uuid::Uuid::new_v4();
+    let row_b = uuid::Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO inventory_items \
+            (id, tenant_id, product_id, site_id, location, quantity_on_hand, \
+             quantity_reserved, quantity_available, created_at, updated_at) \
+         VALUES ($1, $2, $3, $4, 'main', 100, 0, 100, NOW() - INTERVAL '200 days', NOW() - INTERVAL '200 days'), \
+                ($5, $6, $7, $8, 'main', 50, 0, 50, NOW() - INTERVAL '200 days', NOW() - INTERVAL '200 days')",
+    )
+    .bind(row_a)
+    .bind(tenant_id)
+    .bind(product_x)
+    .bind(site_a)
+    .bind(row_b)
+    .bind(tenant_id)
+    .bind(product_x)
+    .bind(site_b)
+    .execute(&pool)
+    .await
+    .expect("same-named location at two sites");
+
+    use sensei_services::supply_chain::{
+        DatabaseSupplyChainService, ReceiveStockCommand, StockMove, SupplyChainService,
+    };
+    let sc = DatabaseSupplyChainService::new(pool.clone());
+
+    async fn qty(pool: &sqlx::PgPool, id: uuid::Uuid) -> i64 {
+        sqlx::query_scalar("SELECT quantity_on_hand::bigint FROM inventory_items WHERE id = $1")
+            .bind(id)
+            .fetch_one(pool)
+            .await
+            .expect("read quantity")
+    }
+    async fn qty_at(
+        pool: &sqlx::PgPool,
+        tenant_id: uuid::Uuid,
+        product_id: uuid::Uuid,
+        site_id: uuid::Uuid,
+        location: &str,
+    ) -> Option<i64> {
+        sqlx::query_scalar(
+            "SELECT quantity_on_hand::bigint FROM inventory_items \
+             WHERE tenant_id = $1 AND product_id = $2 AND site_id = $3 AND location = $4",
+        )
+        .bind(tenant_id)
+        .bind(product_id)
+        .bind(site_id)
+        .bind(location)
+        .fetch_optional(pool)
+        .await
+        .expect("read located quantity")
+    }
+
+    // ── 1. Manual receipt at a FRESH site lands on the SITE-LOCAL
+    // ──    receiving location ──────────────────────────────────────────
+    // Product Y has NO inventory anywhere: at site A (no manifest) the
+    // receipt creates the row at the literal site-local 'receiving';
+    // at site B it lands on the manifest-configured 'dock_b' — never a
+    // label discovered tenant-wide.
+    let y_a = sc
+        .receive_stock(
+            tenant_id,
+            &[site_a],
+            ReceiveStockCommand {
+                product_id: product_y,
+                location: None,
+                quantity: 7,
+                lot: None,
+                reason: "manual Y receipt at A".to_string(),
+            },
+        )
+        .await
+        .expect("manual Y receipt at A");
+    assert_eq!(
+        y_a.site_id,
+        Some(site_a),
+        "the manual receipt's move is stamped with the server-resolved site"
+    );
+    assert_eq!(y_a.status, "posted", "a fresh receipt is posted");
+    assert_eq!(
+        qty_at(&pool, tenant_id, product_y, site_a, "receiving").await,
+        Some(7),
+        "the fresh-site receipt created the row at site-local 'receiving'"
+    );
+    let y_b = sc
+        .receive_stock(
+            tenant_id,
+            &[site_b],
+            ReceiveStockCommand {
+                product_id: product_y,
+                location: None,
+                quantity: 3,
+                lot: None,
+                reason: "manual Y receipt at B".to_string(),
+            },
+        )
+        .await
+        .expect("manual Y receipt at B");
+    assert_eq!(
+        qty_at(&pool, tenant_id, product_y, site_b, "dock_b").await,
+        Some(3),
+        "the manifest-configured receiving location is honoured"
+    );
+    assert_eq!(
+        qty_at(&pool, tenant_id, product_y, site_a, "receiving").await,
+        Some(7),
+        "site A's row is untouched by the site-B receipt"
+    );
+    assert!(
+        qty_at(&pool, tenant_id, product_y, site_a, "dock_b")
+            .await
+            .is_none(),
+        "site A never inherits site B's 'dock_b' label"
+    );
+
+    // Empty/ambiguous site scope is refused server-side.
+    let no_site = sc
+        .receive_stock(
+            tenant_id,
+            &[],
+            ReceiveStockCommand {
+                product_id: product_y,
+                location: None,
+                quantity: 1,
+                lot: None,
+                reason: "x".to_string(),
+            },
+        )
+        .await;
+    assert!(
+        matches!(no_site, Err(sensei_core::error::SenseiError::Validation(_))),
+        "an empty site scope cannot attribute a manual receipt: {no_site:?}"
+    );
+    let two_sites = sc
+        .receive_stock(
+            tenant_id,
+            &[site_a, site_b],
+            ReceiveStockCommand {
+                product_id: product_y,
+                location: None,
+                quantity: 1,
+                lot: None,
+                reason: "x".to_string(),
+            },
+        )
+        .await;
+    assert!(
+        matches!(
+            two_sites,
+            Err(sensei_core::error::SenseiError::Validation(_))
+        ),
+        "an ambiguous (multi-site) scope cannot attribute a manual receipt: {two_sites:?}"
+    );
+
+    // ── 2. 'main' at two sites: a site-A receipt never cross-mutates ────
+    let x_a = sc
+        .receive_stock(
+            tenant_id,
+            &[site_a],
+            ReceiveStockCommand {
+                product_id: product_x,
+                location: Some("main".to_string()),
+                quantity: 10,
+                lot: None,
+                reason: "manual X receipt at A".to_string(),
+            },
+        )
+        .await
+        .expect("manual X receipt at site A");
+    assert_eq!(
+        x_a.to_location, "main",
+        "the named location is used verbatim"
+    );
+    assert_eq!(qty(&pool, row_a).await, 110, "site A's 'main' credited");
+    assert_eq!(qty(&pool, row_b).await, 50, "site B's 'main' UNTOUCHED");
+
+    // ── 3. Reversal posts a compensating move; balance returns ──────────
+    let y_b_orig = y_b.id;
+    sc.reverse_stock_move(tenant_id, &[site_b], y_b_orig, user, "wrong product")
+        .await
+        .expect("reversal of the Y@B receipt");
+    let comp: (uuid::Uuid, String, Option<uuid::Uuid>, String, String, i64) = sqlx::query_as(
+        "SELECT id, status, site_id, move_type, to_location, quantity::bigint \
+         FROM stock_moves WHERE reversal_of = $1",
+    )
+    .bind(y_b_orig)
+    .fetch_one(&pool)
+    .await
+    .expect("compensating move exists");
+    assert_eq!(
+        comp.1, "posted",
+        "the compensation is a posted ledger entry"
+    );
+    assert_eq!(comp.2, Some(site_b), "the compensation stays at site B");
+    assert_eq!(comp.3, "issue", "a receipt compensates as an issue");
+    assert_eq!(comp.5, 3, "the compensation carries the original quantity");
+    assert_eq!(
+        qty_at(&pool, tenant_id, product_y, site_b, "dock_b").await,
+        Some(0),
+        "the compensating delta returns the balance"
+    );
+    assert_eq!(
+        qty_at(&pool, tenant_id, product_y, site_a, "receiving").await,
+        Some(7),
+        "the site-B reversal never touched site A"
+    );
+
+    // An impossible inverse move is a Validation error, never a silent
+    // ledger/balance divergence: issue Z's whole stock out, then try to
+    // reverse the receipt that put it there.
+    sc.receive_stock(
+        tenant_id,
+        &[site_a],
+        ReceiveStockCommand {
+            product_id: product_z,
+            location: None,
+            quantity: 5,
+            lot: None,
+            reason: "manual Z receipt".to_string(),
+        },
+    )
+    .await
+    .expect("manual Z receipt at A");
+    let z_issue = StockMove {
+        id: uuid::Uuid::new_v4(),
+        tenant_id,
+        product_id: product_z,
+        product_name: "Z".to_string(),
+        quantity: 5,
+        move_type: "issue".to_string(),
+        from_location: Some("receiving".to_string()),
+        to_location: String::new(),
+        reference_type: None,
+        reference_id: None,
+        created_by: user,
+        created_at: chrono::Utc::now(),
+        site_id: None,
+        status: "posted".to_string(),
+        reversed_by: None,
+        reversed_at: None,
+        reversal_reason: None,
+        reversal_of: None,
+        reversed_by_move: None,
+    };
+    sc.create_stock_move_scoped(tenant_id, &[site_a], z_issue)
+        .await
+        .expect("issue Z out");
+    assert_eq!(
+        qty_at(&pool, tenant_id, product_z, site_a, "receiving").await,
+        Some(0),
+        "Z fully issued"
+    );
+    // The Z receipt id must be recovered for the reversal attempt: it is
+    // the 'manual_receipt' reference at site A.
+    let z_receipt_id: uuid::Uuid = sqlx::query_scalar(
+        "SELECT id FROM stock_moves \
+         WHERE tenant_id = $1 AND site_id = $2 AND product_id = $3 \
+           AND reference_type = 'manual_receipt'",
+    )
+    .bind(tenant_id)
+    .bind(site_a)
+    .bind(product_z)
+    .fetch_one(&pool)
+    .await
+    .expect("Z receipt move");
+    let denied = sc
+        .reverse_stock_move(tenant_id, &[site_a], z_receipt_id, user, "oops")
+        .await
+        .expect_err("reversing into negative stock is refused");
+    assert!(
+        matches!(denied, sensei_core::error::SenseiError::Validation(_)),
+        "the controlled discrepancy is a Validation error: {denied}"
+    );
+    let z_status: String = sqlx::query_scalar("SELECT status FROM stock_moves WHERE id = $1")
+        .bind(z_receipt_id)
+        .fetch_one(&pool)
+        .await
+        .expect("Z receipt status");
+    assert_eq!(
+        z_status, "posted",
+        "the refused reversal rolled back — the receipt stays posted"
+    );
+    let z_comps: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM stock_moves WHERE reversal_of = $1")
+            .bind(z_receipt_id)
+            .fetch_one(&pool)
+            .await
+            .expect("Z comp count");
+    assert_eq!(
+        z_comps, 0,
+        "no compensating move was posted by the refused reversal"
+    );
+
+    // ── 4. Public StockMove exposes site_id/status/reversal fields ──────
+    // The X@A receipt was reversed below; list the site-A ledger through
+    // the PUBLIC domain and inspect the reversal linkage on both rows.
+    let x_a_orig = x_a.id;
+    sc.reverse_stock_move(tenant_id, &[site_a], x_a_orig, user, "manual reversal")
+        .await
+        .expect("reversal of the X@A receipt");
+    assert_eq!(qty(&pool, row_a).await, 100, "site A balance returned");
+    assert_eq!(qty(&pool, row_b).await, 50, "site B untouched throughout");
+
+    let ledger = sc
+        .list_stock_moves_scoped(tenant_id, &[site_a], None, None, None)
+        .await
+        .expect("site-A ledger");
+    let orig_row = ledger
+        .data
+        .iter()
+        .find(|m| m.id == x_a_orig)
+        .expect("the original X receipt is on the public ledger");
+    assert_eq!(orig_row.status, "reversed");
+    assert_eq!(orig_row.site_id, Some(site_a));
+    assert_eq!(orig_row.reversed_by, Some(user));
+    assert!(orig_row.reversed_at.is_some(), "reversed_at is public");
+    assert_eq!(orig_row.reversal_reason.as_deref(), Some("manual reversal"));
+    assert_eq!(
+        orig_row.reversal_of, None,
+        "the original is not itself a compensation"
+    );
+    let comp_of_x = orig_row
+        .reversed_by_move
+        .expect("reversed_by_move is public");
+    let comp_row = ledger
+        .data
+        .iter()
+        .find(|m| m.id == comp_of_x)
+        .expect("the compensating move is on the public ledger");
+    assert_eq!(comp_row.status, "posted");
+    assert_eq!(comp_row.move_type, "issue");
+    assert_eq!(comp_row.site_id, Some(site_a));
+    assert_eq!(comp_row.from_location.as_deref(), Some("main"));
+    assert_eq!(comp_row.reversal_of, Some(x_a_orig));
+    assert!(
+        !ledger.data.iter().any(|m| m.site_id == Some(site_b)),
+        "the site-A public ledger never leaks site-B moves"
+    );
+    // The DOMAIN mapper round-trips the reversal fields of the earlier
+    // site-B reversal too (through the scoped listing).
+    let ledger_b = sc
+        .list_stock_moves_scoped(tenant_id, &[site_b], None, None, None)
+        .await
+        .expect("site-B ledger");
+    let y_orig_row = ledger_b
+        .data
+        .iter()
+        .find(|m| m.id == y_b_orig)
+        .expect("the reversed Y@B receipt is public");
+    assert_eq!(y_orig_row.status, "reversed");
+    assert_eq!(y_orig_row.reversed_by, Some(user));
+    assert!(y_orig_row.reversed_by_move.is_some());
+    assert!(
+        ledger_b.data.iter().any(|m| {
+            m.status == "posted" && m.reversal_of == Some(y_b_orig) && m.site_id == Some(site_b)
+        }),
+        "the compensating move is public at site B"
+    );
+
+    // ── 5. Finance aging ignores other-site and reversed moves ──────────
+    // The audit-fixed aging query (site_id AND status='posted'):
+    //  - site B's X row was NEVER moved at site B -> aged (200-day
+    //    created_at clock);
+    //  - site A's X row: its only movements are the reversed receipt and
+    //    the compensating issue (to_location ''), so NO posted move at
+    //    'main' refreshes the clock -> aged.
+    // The naive query (no site/status predicates) would keep BOTH rows
+    // fresh forever via the other-site receipt and the reversed move.
+    async fn aging_value(
+        pool: &sqlx::PgPool,
+        tenant_id: uuid::Uuid,
+        product_id: uuid::Uuid,
+        site_aware: bool,
+    ) -> f64 {
+        let site_pred = if site_aware {
+            "AND sm.site_id = ii.site_id AND sm.status = 'posted'"
+        } else {
+            ""
+        };
+        let sql = format!(
+            "SELECT COALESCE(SUM(ii.quantity_on_hand * COALESCE(p.standard_cost, 0)), 0)::numeric \
+             FROM inventory_items ii \
+             LEFT JOIN products p ON p.id = ii.product_id AND p.tenant_id = ii.tenant_id \
+             WHERE ii.tenant_id = $1 AND ii.product_id = $2 \
+               AND COALESCE(( \
+                    SELECT MAX(sm.moved_at) FROM stock_moves sm \
+                    WHERE sm.tenant_id = ii.tenant_id \
+                      AND sm.product_id = ii.product_id \
+                      {site_pred} \
+                      AND sm.to_location = ii.location \
+                      AND sm.lot_number IS NOT DISTINCT FROM ii.lot_number \
+               ), ii.created_at) < NOW() - INTERVAL '90 days'"
+        );
+        let v: rust_decimal::Decimal = sqlx::query_scalar(&sql)
+            .bind(tenant_id)
+            .bind(product_id)
+            .fetch_one(pool)
+            .await
+            .expect("aging value");
+        rust_decimal::prelude::ToPrimitive::to_f64(&v).unwrap_or(f64::NAN)
+    }
+    let aged_fixed = aging_value(&pool, tenant_id, product_x, true).await;
+    let aged_naive = aging_value(&pool, tenant_id, product_x, false).await;
+    assert_eq!(
+        aged_fixed, 300.0,
+        "both site rows are aged once the clock ignores other-site and \
+         reversed moves (100 + 50 units at cost 2)"
+    );
+    assert_eq!(
+        aged_naive, 0.0,
+        "the naive consumer would wrongly keep both rows fresh — the \
+         site/status predicates are what make aging honest"
     );
 }

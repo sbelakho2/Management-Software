@@ -4,6 +4,13 @@
 //! it never invents the retrieval strategy. Every line carries its
 //! section name and the `[live]` authority tag so the model can
 //! distinguish authoritative current state from its own inference.
+//!
+//! Twenty-fifth audit: section identity is ALSO carried as TYPED facts
+//! ([`ContextFact`] / [`build_context_facts`]) — a flat string is never
+//! the source of truth for scope, so a site-marked section can neither be
+//! dropped by string parsing nor stripped of its source site. The string
+//! bundle ([`build_compact_context`]) is now a pure rendering of the same
+//! facts for callers that still consume lines.
 
 use sensei_agent_core::context::{ContextPlan, TaskKind};
 use sensei_core::error::{Result, SenseiError};
@@ -15,13 +22,34 @@ const MAX_BUNDLE_CHARS: usize = 2400;
 /// Per-line cap so one runaway row cannot exhaust the budget.
 const MAX_LINE_CHARS: usize = 160;
 
-/// Build the COMPACT authoritative context bundle for a plan.
-///
-/// The plan's `required` sections decide what is fetched; sections the
-/// kernel does not support contribute a single "no additional context"
-/// line. Fetches run in a tenant-scoped transaction (SET LOCAL
-/// `app.tenant_id`) so the RLS fail-closed policies apply exactly as on
-/// every other surface. The result is deterministic and bounded.
+/// One TYPED kernel fact (twenty-fifth audit): the section identity and
+/// scope are data, not string protocol. `site_id` is the SOURCE site the
+/// fact was retrieved under — `None` when the retrieval had no site scope,
+/// and the caller must never substitute its own site afterwards.
+/// `work_center_id` is the work center the fact was fetched under when the
+/// section had one.
+#[derive(Debug, Clone)]
+pub struct ContextFact {
+    pub section: String,
+    pub site_id: Option<Uuid>,
+    pub work_center_id: Option<Uuid>,
+    pub text: String,
+}
+
+fn typed_fact(
+    section: &str,
+    site_id: Option<Uuid>,
+    work_center_id: Option<Uuid>,
+    text: String,
+) -> ContextFact {
+    ContextFact {
+        section: section.to_string(),
+        site_id,
+        work_center_id,
+        text,
+    }
+}
+
 /// Emit a live section line. When the section was produced under a
 /// KNOWN source site, the site is embedded ("site:<uuid>") so the
 /// evidence construction stamps the SOURCE site — a retrieval bug that
@@ -34,6 +62,26 @@ fn line_at(section: &str, content: impl AsRef<str>, source_site_id: Option<Uuid>
     }
 }
 
+/// One bundle line: section name + `[live]` authority tag + content.
+fn line(section: &str, content: impl AsRef<str>) -> String {
+    format!("{section} [live]: {}", content.as_ref())
+}
+
+/// Render one typed fact back to the legacy flat-line form (the section
+/// name + `[live]` authority tag + the SOURCE site marker when the fact
+/// has one).
+fn render_fact(fact: &ContextFact) -> String {
+    line_at(&fact.section, &fact.text, fact.site_id)
+}
+
+/// Build the COMPACT authoritative context bundle for a plan — the
+/// flat-line rendering of [`build_context_facts`] kept for callers that
+/// consume strings (the API chat preparation prefers the typed facts).
+/// The plan's `required` sections decide what is fetched; sections the
+/// kernel does not support contribute a single "no additional context"
+/// line. Fetches run in a tenant-scoped transaction (SET LOCAL
+/// `app.tenant_id`) so the RLS fail-closed policies apply exactly as on
+/// every other surface. The result is deterministic and bounded.
 pub async fn build_compact_context(
     pool: &PgPool,
     tenant_id: Uuid,
@@ -41,38 +89,137 @@ pub async fn build_compact_context(
     work_center_id: Option<Uuid>,
     plan: &ContextPlan,
 ) -> Vec<String> {
-    let mut lines: Vec<String> = Vec::new();
+    let facts = build_context_facts(pool, tenant_id, site_id, work_center_id, plan).await;
+    // Deterministic token budget: drop lines (whole lines, never partial
+    // rows) once the ~600 token cap is reached.
+    let mut lines: Vec<String> = Vec::with_capacity(facts.len());
+    let mut total: usize = 0;
+    for fact in facts {
+        let rendered = render_fact(&fact);
+        let capped: String = rendered.chars().take(MAX_LINE_CHARS).collect();
+        if total + capped.len() > MAX_BUNDLE_CHARS {
+            break;
+        }
+        total += capped.len();
+        lines.push(capped);
+    }
+    if lines.is_empty() {
+        lines.push("no additional context for this task".to_string());
+    }
+    lines
+}
+
+/// Build the TYPED authoritative context facts for a plan (twenty-fifth
+/// audit): the section identity and the SOURCE site scope of every fact
+/// are data — [`build_compact_context`] renders these facts to strings
+/// and the API chat preparation consumes the facts directly, so no caller
+/// ever has to re-derive identity by parsing markers out of a line.
+///
+/// The plan's `required` sections decide what is fetched; sections the
+/// kernel does not support contribute a single "no additional context"
+/// fact. Live operational conditions are only fetched under a KNOWN
+/// scope: a request with neither site nor work center fails closed with
+/// an explicit "unavailable: no site scope for live conditions" fact
+/// instead of degrading into a tenant-wide dump (twenty-fifth audit P0:
+/// no scope leak).
+pub async fn build_context_facts(
+    pool: &PgPool,
+    tenant_id: Uuid,
+    site_id: Option<Uuid>,
+    work_center_id: Option<Uuid>,
+    plan: &ContextPlan,
+) -> Vec<ContextFact> {
+    let mut facts: Vec<ContextFact> = Vec::new();
     let mut no_context_emitted = false;
-    let source_site = site_id;
 
     for section in &plan.required {
         match section.as_str() {
             "current_work" if work_center_id.is_some() => {
-                match current_work_lines(pool, tenant_id, work_center_id.expect("guarded")).await {
-                    Ok(mut section_lines) => lines.append(&mut section_lines),
+                let wc = work_center_id.expect("guarded by match");
+                // Twenty-fifth audit: the current-work facts are stamped
+                // with the WORK CENTER'S OWN site (resolved from
+                // work_centers.site_id inside the same tenant transaction)
+                // so the evidence keeps its structural source-site
+                // identity; rows under a site-less work center stay
+                // site-less (honest — no scope laundering).
+                match current_work_lines(pool, tenant_id, wc).await {
+                    Ok((wc_site, contents)) => {
+                        for text in contents {
+                            facts.push(typed_fact(section, wc_site, Some(wc), text));
+                        }
+                    }
                     Err(e) => {
-                        lines.push(line_at(section, format!("unavailable ({e})"), source_site))
+                        facts.push(typed_fact(
+                            section,
+                            site_id,
+                            Some(wc),
+                            format!("unavailable ({e})"),
+                        ));
                     }
                 }
             }
-            "live_state" => match live_state_lines(pool, tenant_id).await {
-                Ok(mut section_lines) => lines.append(&mut section_lines),
-                Err(e) => lines.push(line_at(section, format!("unavailable ({e})"), source_site)),
-            },
-            "metric_tree" if plan.task == TaskKind::ExecutiveAnalysis => {
-                match metric_tree_lines(pool, tenant_id, site_id).await {
-                    Ok(mut section_lines) => lines.append(&mut section_lines),
+            "live_state" => {
+                // Twenty-fifth audit P0 (fail closed): with NO scope at
+                // all, the section must never become tenant-wide by
+                // accident — an unverifiable conditions dump is not
+                // produced; the explicit line tells the model why.
+                if site_id.is_none() && work_center_id.is_none() {
+                    facts.push(typed_fact(
+                        section,
+                        None,
+                        None,
+                        "unavailable: no site scope for live conditions".to_string(),
+                    ));
+                    continue;
+                }
+                match live_state_lines(pool, tenant_id, site_id, work_center_id).await {
+                    Ok(contents) => {
+                        for text in contents {
+                            // The facts carry the scope the query ran
+                            // under: a site-scoped query returns the
+                            // site's conditions (site marker); a work
+                            // center query without a site returns that
+                            // work center's + corporate conditions with
+                            // NO marker (no site identity to claim).
+                            facts.push(typed_fact(section, site_id, work_center_id, text));
+                        }
+                    }
                     Err(e) => {
-                        lines.push(line_at(section, format!("unavailable ({e})"), source_site))
+                        facts.push(typed_fact(
+                            section,
+                            site_id,
+                            work_center_id,
+                            format!("unavailable ({e})"),
+                        ));
+                    }
+                }
+            }
+            "metric_tree" if plan.task == TaskKind::ExecutiveAnalysis => {
+                // Twenty-fifth audit: the metric facts carry the site the
+                // metric engine was scoped to.
+                match metric_tree_lines(pool, tenant_id, site_id).await {
+                    Ok(contents) => {
+                        for text in contents {
+                            facts.push(typed_fact(section, site_id, None, text));
+                        }
+                    }
+                    Err(e) => {
+                        facts.push(typed_fact(
+                            section,
+                            site_id,
+                            None,
+                            format!("unavailable ({e})"),
+                        ));
                     }
                 }
             }
             _ => {
                 if !no_context_emitted {
-                    lines.push(line_at(
+                    facts.push(typed_fact(
                         section,
-                        "no additional context for this task",
-                        source_site,
+                        None,
+                        None,
+                        "no additional context for this task".to_string(),
                     ));
                     no_context_emitted = true;
                 }
@@ -80,40 +227,30 @@ pub async fn build_compact_context(
         }
     }
 
-    if lines.is_empty() {
-        lines.push("no additional context for this task".to_string());
-    }
-
-    // Deterministic token budget: drop lines (whole lines, never partial
-    // rows) once the ~600 token cap is reached.
-    let mut budgeted: Vec<String> = Vec::with_capacity(lines.len());
-    let mut total: usize = 0;
-    for content in lines {
-        let capped: String = content.chars().take(MAX_LINE_CHARS).collect();
-        if total + capped.len() > MAX_BUNDLE_CHARS {
-            break;
-        }
-        total += capped.len();
-        budgeted.push(capped);
-    }
-    budgeted
-}
-
-/// One bundle line: section name + `[live]` authority tag + content.
-fn line(section: &str, content: impl AsRef<str>) -> String {
-    format!("{section} [live]: {}", content.as_ref())
+    facts
 }
 
 /// `current_work`: the in_progress work order (wo, product,
 /// completed/quantity) and the open andons at the work center
-/// (andon, issue, severity) — LIMIT 3 each, newest first.
+/// (andon, issue, severity) — LIMIT 3 each, newest first. Returns the
+/// work center's OWN site (work_centers.site_id — the site the current
+/// work belongs to) alongside the content lines.
 async fn current_work_lines(
     pool: &PgPool,
     tenant_id: Uuid,
     work_center_id: Uuid,
-) -> Result<Vec<String>> {
+) -> Result<(Option<Uuid>, Vec<String>)> {
     with_tenant_tx(pool, tenant_id, |tx| {
         Box::pin(async move {
+            let wc_site: Option<Uuid> = sqlx::query_scalar::<_, Option<Uuid>>(
+                "SELECT site_id FROM work_centers WHERE tenant_id = $1 AND id = $2",
+            )
+            .bind(tenant_id)
+            .bind(work_center_id)
+            .fetch_optional(&mut **tx)
+            .await
+            .map_err(|e| SenseiError::Database(format!("context kernel: work center site: {e}")))?
+            .flatten();
             let mut lines: Vec<String> = Vec::new();
             let work_orders: Vec<(String, String, i64, i64)> = sqlx::query_as(
                 "SELECT wo_number, product_name, quantity_completed, quantity \
@@ -129,9 +266,8 @@ async fn current_work_lines(
                 SenseiError::Database(format!("context kernel: current work orders: {e}"))
             })?;
             for (wo_number, product, completed, quantity) in work_orders {
-                lines.push(line(
-                    "current_work",
-                    format!("wo={wo_number} product={product} completed={completed}/{quantity}"),
+                lines.push(format!(
+                    "wo={wo_number} product={product} completed={completed}/{quantity}"
                 ));
             }
             let andons: Vec<(String, String, String)> = sqlx::query_as(
@@ -147,43 +283,88 @@ async fn current_work_lines(
             .await
             .map_err(|e| SenseiError::Database(format!("context kernel: open andons: {e}")))?;
             for (andon_number, issue_type, severity) in andons {
-                lines.push(line(
-                    "current_work",
-                    format!("andon={andon_number} issue={issue_type} severity={severity}"),
+                lines.push(format!(
+                    "andon={andon_number} issue={issue_type} severity={severity}"
                 ));
             }
-            Ok(lines)
+            Ok((wc_site, lines))
         })
     })
     .await
 }
 
 /// `live_state`: the open operational conditions (condition, status,
-/// recurrence) — LIMIT 3, newest first.
-async fn live_state_lines(pool: &PgPool, tenant_id: Uuid) -> Result<Vec<String>> {
+/// recurrence) — LIMIT 3, newest first. Twenty-fifth audit P0 (scope
+/// leak fix): the query is scoped by the caller's SITE and WORK CENTER,
+/// never tenant-wide:
+/// - site Some: `AND scope_site_id = $site` (plus `scope_work_center_id`
+///   when a work center is given) — another site's conditions can never
+///   leak into this site's live state;
+/// - site None + work center Some: that work center's own conditions plus
+///   explicitly corporate conditions (both scope columns NULL) — still
+///   never a tenant-wide dump;
+/// - site None + work center None: guarded by [`build_context_facts`],
+///   which fails closed before this query runs.
+async fn live_state_lines(
+    pool: &PgPool,
+    tenant_id: Uuid,
+    site_id: Option<Uuid>,
+    work_center_id: Option<Uuid>,
+) -> Result<Vec<String>> {
     with_tenant_tx(pool, tenant_id, |tx| {
         Box::pin(async move {
-            let conditions: Vec<(String, String, String)> = sqlx::query_as(
-                "SELECT condition_number, status, \
-                        COALESCE(learning ->> 'recurrence_count', '0') \
-                 FROM operational_conditions \
-                 WHERE tenant_id = $1 \
-                   AND status IN ('open', 'responding', 'contained', 'investigating') \
-                 ORDER BY created_at DESC LIMIT 3",
-            )
-            .bind(tenant_id)
-            .fetch_all(&mut **tx)
-            .await
-            .map_err(|e| {
-                SenseiError::Database(format!("context kernel: operational conditions: {e}"))
-            })?;
+            let (sql, bind_site, bind_wc) = match (site_id, work_center_id) {
+                (Some(_site), Some(_wc)) => (
+                    "SELECT condition_number, status, \
+                            COALESCE(learning ->> 'recurrence_count', '0') \
+                     FROM operational_conditions \
+                     WHERE tenant_id = $1 \
+                       AND scope_site_id = $2 AND scope_work_center_id = $3 \
+                       AND status IN ('open', 'responding', 'contained', 'investigating') \
+                     ORDER BY created_at DESC LIMIT 3",
+                    true,
+                    true,
+                ),
+                (Some(_site), None) => (
+                    "SELECT condition_number, status, \
+                            COALESCE(learning ->> 'recurrence_count', '0') \
+                     FROM operational_conditions \
+                     WHERE tenant_id = $1 \
+                       AND scope_site_id = $2 \
+                       AND status IN ('open', 'responding', 'contained', 'investigating') \
+                     ORDER BY created_at DESC LIMIT 3",
+                    true,
+                    false,
+                ),
+                (None, Some(_wc)) => (
+                    "SELECT condition_number, status, \
+                            COALESCE(learning ->> 'recurrence_count', '0') \
+                     FROM operational_conditions \
+                     WHERE tenant_id = $1 \
+                       AND (scope_work_center_id = $2 OR \
+                            (scope_work_center_id IS NULL AND scope_site_id IS NULL)) \
+                       AND status IN ('open', 'responding', 'contained', 'investigating') \
+                     ORDER BY created_at DESC LIMIT 3",
+                    false,
+                    true,
+                ),
+                (None, None) => return Ok(Vec::new()),
+            };
+            let mut query = sqlx::query_as::<_, (String, String, String)>(sql).bind(tenant_id);
+            if bind_site {
+                query = query.bind(site_id.expect("guarded by match"));
+            }
+            if bind_wc {
+                query = query.bind(work_center_id.expect("guarded by match"));
+            }
+            let conditions: Vec<(String, String, String)> =
+                query.fetch_all(&mut **tx).await.map_err(|e| {
+                    SenseiError::Database(format!("context kernel: operational conditions: {e}"))
+                })?;
             let mut lines: Vec<String> = Vec::new();
             for (condition_number, status, recurrence_count) in conditions {
-                lines.push(line(
-                    "live_state",
-                    format!(
-                        "condition={condition_number} status={status} recurrence={recurrence_count}"
-                    ),
+                lines.push(format!(
+                    "condition={condition_number} status={status} recurrence={recurrence_count}"
                 ));
             }
             Ok(lines)
@@ -193,7 +374,8 @@ async fn live_state_lines(pool: &PgPool, tenant_id: Uuid) -> Result<Vec<String>>
 }
 
 /// `metric_tree` (ExecutiveAnalysis only): the metric engine values for
-/// fpy + otd — the SAME executable definitions every surface uses.
+/// fpy + otd — the SAME executable definitions every surface uses,
+/// computed under the caller's site when one is given.
 async fn metric_tree_lines(
     pool: &PgPool,
     tenant_id: Uuid,
@@ -202,17 +384,11 @@ async fn metric_tree_lines(
     let mut lines: Vec<String> = Vec::new();
     for metric_id in ["fpy", "otd"] {
         match super::metric_engine::compute_metric(pool, tenant_id, metric_id, site_id).await {
-            Ok(result) => lines.push(line(
-                "metric_tree",
-                format!(
-                    "metric_id={} value={} unit={}",
-                    result.metric_id, result.value, result.unit
-                ),
+            Ok(result) => lines.push(format!(
+                "metric_id={} value={} unit={}",
+                result.metric_id, result.value, result.unit
             )),
-            Err(e) => lines.push(line(
-                "metric_tree",
-                format!("metric_id={metric_id} unavailable ({e})"),
-            )),
+            Err(e) => lines.push(format!("metric_id={metric_id} unavailable ({e})")),
         }
     }
     Ok(lines)

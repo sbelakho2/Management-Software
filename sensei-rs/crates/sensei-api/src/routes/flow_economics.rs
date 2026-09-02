@@ -118,6 +118,10 @@ pub async fn finance_waste(
     // MAX(stock_moves.moved_at) per product/location/lot. An
     // administrative touch (updated_at) must never make 18-month-dead
     // stock look new.
+    // Twenty-fifth audit P1: the aging clock is SITE- and STATUS-aware —
+    // only 'posted' moves at THE ROW'S OWN SITE refresh it. Another
+    // plant's moves (same product, same location NAME) and reversed or
+    // compensating history never refresh the clock.
     let aging: Decimal = sqlx::query_scalar(
         "SELECT COALESCE(SUM(ii.quantity_on_hand * COALESCE(p.standard_cost, 0)), 0)::numeric \
          FROM inventory_items ii \
@@ -127,6 +131,8 @@ pub async fn finance_waste(
                 SELECT MAX(sm.moved_at) FROM stock_moves sm \
                 WHERE sm.tenant_id = ii.tenant_id \
                   AND sm.product_id = ii.product_id \
+                  AND sm.site_id = ii.site_id \
+                  AND sm.status = 'posted' \
                   AND sm.to_location = ii.location \
                   AND sm.lot_number IS NOT DISTINCT FROM ii.lot_number \
            ), ii.created_at) < NOW() - INTERVAL '90 days'",

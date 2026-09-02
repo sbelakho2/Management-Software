@@ -174,11 +174,16 @@ jobs:
           # Execute the PRODUCTION script verbatim (repo checkout root):
           # docker/postgres-init/01-app-role.sh. It connects with
           # --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" against the
-          # service on PGHOST/PGPORT and reads SENSEI_APP_PASSWORD.
+          # service on PGHOST/PGPORT and reads BOTH SENSEI_APP_PASSWORD and
+          # SENSEI_MIGRATOR_PASSWORD (twenty-fifth audit P0: the script
+          # hard-fails when either is unset — exporting only the app password
+          # made this step (and everything after it: the app-role smoke AND
+          # the clean-bootstrap gate) unreachable).
           POSTGRES_USER=sensei \
           POSTGRES_PASSWORD=sensei_test \
           POSTGRES_DB=sensei_test \
           SENSEI_APP_PASSWORD=x \
+          SENSEI_MIGRATOR_PASSWORD=migrate \
           bash "$GITHUB_WORKSPACE/docker/postgres-init/01-app-role.sh"
       # Seed tenant fixtures AS the superuser (the app role may never
       # create rows outside its RLS context; the db-contract suite itself
@@ -244,30 +249,36 @@ jobs:
           #     hides every row (the WHERE clause alone is not enough).
           HIDDEN="$(psql -X -q -tAc "SELECT COUNT(*) FROM products WHERE tenant_id = '$TA'")"
           [ "$HIDDEN" = "0" ] || { echo "RLS did not hide rows without app.tenant_id (count=$HIDDEN)"; exit 1; }
-          # (d) The service path INSIDE a transaction that sets
-          #     app.tenant_id (set_config(..., true) — the service
-          #     convention): own-tenant rows visible, the other tenant's
-          #     rows still hidden, and tenant-scoped WRITES succeed while
-          #     a cross-tenant write is denied. psql -c runs the
-          #     multi-statement string in ONE transaction, so the LOCAL
-          #     context set by set_config applies to the whole block.
-          VISIBLE_A="$(psql -X -q -tAc "SELECT set_config('app.tenant_id', '$TA', true); SELECT COUNT(*) FROM products WHERE tenant_id = '$TA'")"
+          # (d) The service path INSIDE an explicit transaction that sets
+          #     app.tenant_id with SET LOCAL (transaction-scoped — the
+          #     service convention): own-tenant rows visible, the other
+          #     tenant's rows still hidden, and tenant-scoped WRITES
+          #     succeed while a cross-tenant write is denied. Every
+          #     capture keeps ONLY the count (| tail -1): SET LOCAL
+          #     prints no tuple and the count is the LAST result of the
+          #     transaction, so the captured value compares cleanly to
+          #     1/0 (twenty-fifth audit P0 — the previous set_config +
+          #     COUNT capture compared the config echo to the expected
+          #     count and failed before the federation assertions ran).
+          VISIBLE_A="$(psql -X -q -tA -c "BEGIN; SET LOCAL app.tenant_id = '$TA'; SELECT COUNT(*) FROM products WHERE tenant_id = '$TA'; COMMIT;" | tail -1)"
           [ "$VISIBLE_A" = "1" ] || { echo "own-tenant row invisible with app.tenant_id (count=$VISIBLE_A)"; exit 1; }
-          VISIBLE_B="$(psql -X -q -tAc "SELECT set_config('app.tenant_id', '$TA', true); SELECT COUNT(*) FROM products WHERE tenant_id = '$TB'")"
+          VISIBLE_B="$(psql -X -q -tA -c "BEGIN; SET LOCAL app.tenant_id = '$TA'; SELECT COUNT(*) FROM products WHERE tenant_id = '$TB'; COMMIT;" | tail -1)"
           [ "$VISIBLE_B" = "0" ] || { echo "cross-tenant row visible under tenant-A context (count=$VISIBLE_B)"; exit 1; }
           # Service-path write under the tenant context: INSERT, UPDATE,
           # DELETE of OWN-tenant rows all succeed inside the context tx.
-          psql -X -q -v ON_ERROR_STOP=1 -tAc "
-            SELECT set_config('app.tenant_id', '$TA', true);
+          psql -X -q -v ON_ERROR_STOP=1 -c "
+            BEGIN;
+            SET LOCAL app.tenant_id = '$TA';
             INSERT INTO products (id, tenant_id, product_number, name, unit_of_measure, is_active, product_type, created_at, updated_at)
             VALUES ('30000000-0000-4000-8000-00000000000a', '$TA', 'APP-A-W1', 'W', 'pcs', TRUE, 'finished_good', NOW(), NOW());
             UPDATE products SET name = 'W-updated' WHERE tenant_id = '$TA' AND product_number = 'APP-A-W1';
-            DELETE FROM products WHERE tenant_id = '$TA' AND product_number = 'APP-A-W1';"
-          WROTE="$(psql -X -q -tAc "SELECT set_config('app.tenant_id', '$TA', true); SELECT COUNT(*) FROM products WHERE tenant_id = '$TA' AND product_number = 'APP-A-W1'")"
+            DELETE FROM products WHERE tenant_id = '$TA' AND product_number = 'APP-A-W1';
+            COMMIT;"
+          WROTE="$(psql -X -q -tA -c "BEGIN; SET LOCAL app.tenant_id = '$TA'; SELECT COUNT(*) FROM products WHERE tenant_id = '$TA' AND product_number = 'APP-A-W1'; COMMIT;" | tail -1)"
           [ "$WROTE" = "0" ] || { echo "tenant-scoped write/delete did not persist (count=$WROTE)"; exit 1; }
           # A cross-tenant write under tenant-A context is DENIED by the
           # FORCEd policy (fail-closed, even for INSERT).
-          CROSS_WRITE="$(psql -X -q -v ON_ERROR_STOP=1 -tAc "SELECT set_config('app.tenant_id', '$TA', true); INSERT INTO products (id, tenant_id, product_number, name, unit_of_measure, is_active, product_type, created_at, updated_at) VALUES ('30000000-0000-4000-8000-00000000000b', '$TB', 'X-1', 'X', 'pcs', TRUE, 'finished_good', NOW(), NOW())" 2>&1 || true)"
+          CROSS_WRITE="$(psql -X -q -v ON_ERROR_STOP=1 -c "BEGIN; SET LOCAL app.tenant_id = '$TA'; INSERT INTO products (id, tenant_id, product_number, name, unit_of_measure, is_active, product_type, created_at, updated_at) VALUES ('30000000-0000-4000-8000-00000000000b', '$TB', 'X-1', 'X', 'pcs', TRUE, 'finished_good', NOW(), NOW()); COMMIT;" 2>&1 || true)"
           case "$CROSS_WRITE" in
             *"violates row-level security policy"*) : ;;
             *) echo "cross-tenant write was not denied: '$CROSS_WRITE'"; exit 1;;
@@ -277,15 +288,19 @@ jobs:
           #     EXECUTE ONLY on the no-argument function. Under
           #     app.tenant_id = tenant A the function returns tenant A's
           #     peer rows (the seed above) — the SECURITY DEFINER owner
-          #     does the cross-tenant read; the app role supplies only the
-          #     session context. The caller-supplied-tenant escape hatch
+          #     (sensei_migrator today, sensei_governance_definer once the
+          #     migration chain flips ownership) does the cross-tenant
+          #     read; the app role supplies only the session context. The
+          #     caller-supplied-tenant escape hatch
           #     federation_governance_edges_for(uuid) is REFUSED: it is
           #     revoked from PUBLIC and the canonical script never grants
           #     it — permission denied proves the explicit-grant
-          #     discipline (no ON ALL FUNCTIONS anywhere).
-          GOV="$(psql -X -q -tAc "SELECT set_config('app.tenant_id', '$TA', true); SELECT peer_country FROM federation_governance_edges() ORDER BY peer_country")"
+          #     discipline (no ON ALL FUNCTIONS anywhere). Capture keeps
+          #     ONLY the function output (| tail -1), same convention as
+          #     the RLS counts above.
+          GOV="$(psql -X -q -tA -c "BEGIN; SET LOCAL app.tenant_id = '$TA'; SELECT peer_country FROM federation_governance_edges() ORDER BY peer_country; COMMIT;" | tail -1)"
           [ "$GOV" = "Morocco" ] || { echo "governance function did not return the peer under tenant context (got '$GOV')"; exit 1; }
-          GOV_NONE="$(psql -X -q -tAc "SELECT peer_country FROM federation_governance_edges()")"
+          GOV_NONE="$(psql -X -q -tA -c "BEGIN; SELECT peer_country FROM federation_governance_edges(); COMMIT;" | tail -1)"
           [ -z "$GOV_NONE" ] || { echo "governance function exposed peers without app.tenant_id (got '$GOV_NONE')"; exit 1; }
           GOV_FOR="$(psql -X -q -v ON_ERROR_STOP=1 -tAc "SELECT peer_country FROM federation_governance_edges_for('$TA')" 2>&1 || true)"
           case "$GOV_FOR" in
@@ -296,36 +311,46 @@ jobs:
           #     site_replication_log row the enqueue fanout writes is
           #     reachable by the app role under the tenant context —
           #     table DML from the canonical grants + FORCE RLS scoping.
-          psql -X -q -v ON_ERROR_STOP=1 -tAc "
-            SELECT set_config('app.tenant_id', '$TA', true);
+          psql -X -q -v ON_ERROR_STOP=1 -c "
+            BEGIN;
+            SET LOCAL app.tenant_id = '$TA';
             INSERT INTO site_replication_log (tenant_id, site_id, entity_type, entity_id, projection, source_event_id, schema_version, projection_type, projection_revision, data_policy, status, target_tenant_id, target_site_id, target_jurisdiction, edge_policy)
             VALUES ('$TA', NULL, 'work_order', '40000000-0000-4000-8000-00000000000a', '{}'::jsonb, 'evt-smoke-1', 1, 'work_order', 1, 'internal', 'pending', '$TB', '20000000-0000-4000-8000-00000000000b', 'ma', '{}'::jsonb);
-            DELETE FROM site_replication_log WHERE tenant_id = '$TA' AND source_event_id = 'evt-smoke-1';"
+            DELETE FROM site_replication_log WHERE tenant_id = '$TA' AND source_event_id = 'evt-smoke-1';
+            COMMIT;"
           echo "app-role service path OK: current_user=$CURRENT flags=$FLAGS"
           echo "  rows without app.tenant_id context: $HIDDEN (must be 0)"
           echo "  with tenant-A context: A rows=$VISIBLE_A B rows=$VISIBLE_B"
           echo "  governance peer under tenant-A context: $GOV"
           echo "  governance _for(uuid) variant: permission denied (as required)"
-      # Twenty-fourth audit P0 (clean-bootstrap gate — the PRODUCTION
-      # bootstrap order): the job above ran the chain as the SUPERUSER (the
-      # db_contract suite's harness), then exercised sensei_app against
-      # THAT schema. Production does NOT work that way anymore: a fresh
-      # database is migrated by the dedicated `migrate` container AS
-      # sensei_migrator — a NOBYPASSRLS NOSUPERUSER CREATEDB role that
-      # owns every object the chain creates — and only then does the API
-      # start as sensei_app. This step reproduces that exact order on a
-      # fresh database:
+      # Twenty-fourth + twenty-fifth audit P0 (clean-bootstrap gate — the
+      # PRODUCTION bootstrap order): the job above ran the chain as the
+      # SUPERUSER (the db_contract suite's harness), then exercised
+      # sensei_app against THAT schema. Production does NOT work that way
+      # anymore: a fresh database is migrated by the dedicated `migrate`
+      # container AS sensei_migrator — a deployment-only
+      # NOSUPERUSER BYPASSRLS NOCREATEDB role (twenty-fifth audit P0:
+      # BYPASSRLS is required because FORCE RLS binds the table OWNER too
+      # and the chain seeds/backfills FORCE-RLS tables cross-tenant with
+      # no app.tenant_id context — migration 122 country_policies;
+      # NOCREATEDB because the bootstrap superuser creates databases) —
+      # that owns every object the chain creates, and only then does the
+      # API start as sensei_app. This step reproduces that exact order on
+      # a fresh database:
       #   (1) superuser creates the database and pre-creates the extensions
       #       (production initdb does the same via ./postgres-init/
       #       01-init.sql BEFORE the role script runs — the migrator must
       #       never need CREATE EXTENSION privileges);
       #   (2) the CANONICAL production script (docker/postgres-init/
       #       01-app-role.sh — executed verbatim, as everywhere) defines
-      #       BOTH roles on the fresh database: sensei_migrator holds
-      #       CREATE ON SCHEMA public + ALL ON the database, sensei_app is
-      #       stripped of schema CREATE (REVOKE ... FROM PUBLIC and FROM
-      #       sensei_app) and inherits table DML through default
-      #       privileges declared FOR ROLE sensei_migrator;
+      #       ALL THREE roles on the fresh database: sensei_migrator holds
+      #       BYPASSRLS NOCREATEDB + CREATE ON SCHEMA public + ALL ON the
+      #       database, sensei_governance_definer (NOLOGIN BYPASSRLS — the
+      #       narrower owner the chain must flip the governance functions
+      #       to) is pre-created, and sensei_app is stripped of schema
+      #       CREATE (REVOKE ... FROM PUBLIC and FROM sensei_app) and
+      #       inherits table DML through default privileges declared FOR
+      #       ROLE sensei_migrator;
       #   (3) the migration chain runs AS sensei_migrator through the real
       #       production path: `cargo run -p sensei-api -- --migrate-only`
       #       (the API binary's migrate-only mode — what the compose
@@ -333,7 +358,8 @@ jobs:
       #   (4) assertions: schema + object OWNERSHIP (every table and the
       #       SECURITY DEFINER governance function must be owned by
       #       sensei_migrator, not the app role or the superuser), the
-      #       migrator's role attributes, sensei_app CANNOT CREATE TABLE,
+      #       migrator's role attributes, the governance-definer role's
+      #       attributes + membership, sensei_app CANNOT CREATE TABLE,
       #       and sensei_app CAN SELECT from a migrated tenant table.
       - name: Clean-bootstrap gate — fresh DB migrated AS sensei_migrator (production bootstrap order)
         run: |
@@ -378,16 +404,40 @@ jobs:
           #      table AND the SECURITY DEFINER governance functions must be
           #      owned by sensei_migrator (the migration role must be the
           #      function owner; an app-role-owned function would lose the
-          #      RLS-bypassing owner the governance channel needs).
+          #      RLS-bypassing owner the governance channel needs). The
+          #      migration chain ALTERs the governance functions' OWNER to
+          #      sensei_governance_definer (twenty-fifth audit P0 — the
+          #      role is pre-created by the canonical script and asserted
+          #      in (4c-2)); until that migration-side flip lands, the
+          #      chain-created owner is sensei_migrator.
           TABLE_OWNER="$(psql -X -q -tAc "SELECT pg_get_userbyid(relowner) FROM pg_class WHERE relname = 'products' AND relnamespace = 'public'::regnamespace")"
           [ "$TABLE_OWNER" = "sensei_migrator" ] || { echo "products owned by '$TABLE_OWNER', expected sensei_migrator"; exit 1; }
           FN_OWNER="$(psql -X -q -tAc "SELECT pg_get_userbyid(p.proowner) FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = 'public' AND p.proname = 'federation_governance_edges' AND p.pronargs = 0")"
           [ "$FN_OWNER" = "sensei_migrator" ] || { echo "federation_governance_edges() owned by '$FN_OWNER', expected sensei_migrator"; exit 1; }
-          # (4c) Migrator role attributes: NOSUPERUSER NOBYPASSRLS CREATEDB
-          #      NOCREATEROLE (can DDL + own the chain; cannot bypass RLS
-          #      or administer roles).
+          # (4c) Migrator role attributes (twenty-fifth audit P0):
+          #      NOSUPERUSER BYPASSRLS NOCREATEDB NOCREATEROLE — can DDL and
+          #      own the chain AND bypass FORCE RLS for its cross-tenant
+          #      seeds/backfills (a NOBYPASSRLS migrator cannot cleanly
+          #      bootstrap: FORCE RLS binds the table owner too); cannot
+          #      create databases (the bootstrap superuser does) or
+          #      administer roles.
           FLAGS="$(psql -X -q -tAc "SELECT rolsuper || '/' || rolbypassrls || '/' || rolcreatedb || '/' || rolcreaterole FROM pg_roles WHERE rolname = 'sensei_migrator'")"
-          [ "$FLAGS" = "false/false/true/false" ] || { echo "sensei_migrator is not least-privilege: '$FLAGS'"; exit 1; }
+          [ "$FLAGS" = "false/true/false/false" ] || { echo "sensei_migrator is not the expected deployment-only role: '$FLAGS'"; exit 1; }
+          # (4c-2) Governance-definer role (twenty-fifth audit P0): the
+          #      canonical script pre-creates sensei_governance_definer —
+          #      NOLOGIN NOSUPERUSER BYPASSRLS NOCREATEDB NOCREATEROLE
+          #      (never a connection identity; the RLS bypass exists only
+          #      for the SECURITY-DEFINER governance bodies' FORCE-RLS
+          #      peer reads), and grants sensei_migrator membership so the
+          #      non-superuser chain CAN flip the governance functions'
+          #      OWNER to it (ALTER OWNER requires membership in the new
+          #      owner role). sensei_app is never a member.
+          DEFINER_FLAGS="$(psql -X -q -tAc "SELECT rolsuper || '/' || rolbypassrls || '/' || rolcreatedb || '/' || rolcreaterole || '/' || rolcanlogin FROM pg_roles WHERE rolname = 'sensei_governance_definer'")"
+          [ "$DEFINER_FLAGS" = "false/true/false/false/false" ] || { echo "sensei_governance_definer is not the expected NOLOGIN BYPASSRLS definer role: '$DEFINER_FLAGS'"; exit 1; }
+          # pg_auth_members rows are visibility-filtered for non-members,
+          # so probe the membership as the superuser.
+          DEF_MEMBERSHIP="$(PGUSER=sensei PGPASSWORD=sensei_test psql -X -q -tAc "SELECT EXISTS (SELECT 1 FROM pg_auth_members m JOIN pg_roles r ON r.oid = m.roleid WHERE r.rolname = 'sensei_governance_definer' AND m.member = (SELECT oid FROM pg_roles WHERE rolname = 'sensei_migrator'))")"
+          [ "$DEF_MEMBERSHIP" = "t" ] || { echo "sensei_migrator is not a member of sensei_governance_definer (chain ALTER OWNER would fail): '$DEF_MEMBERSHIP'"; exit 1; }
           # (4d) sensei_app on the migrator-owned schema: schema CREATE is
           #      REFUSED (REVOKE ... FROM PUBLIC + FROM sensei_app), and a
           #      migrated tenant table is SELECTable through the default
@@ -402,5 +452,6 @@ jobs:
           esac
           SELECT_OUT="$(psql -X -q -tAc 'SELECT COUNT(*) FROM products')"
           echo "clean bootstrap OK: migrations=$MIGRATED migrator_flags=$FLAGS table_owner=$TABLE_OWNER fn_owner=$FN_OWNER"
+          echo "  governance-definer role flags=$DEFINER_FLAGS membership=$DEF_MEMBERSHIP"
           echo "  sensei_app CREATE denied (permission denied for schema public)"
           echo "  sensei_app SELECT on products returned count=$SELECT_OUT"

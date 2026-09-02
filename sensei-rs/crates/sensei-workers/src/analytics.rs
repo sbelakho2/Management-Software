@@ -489,6 +489,9 @@ impl AnalyticsWorker {
 
         // Turnover: units moved out over the trailing 30 days divided by the
         // average on-hand quantity (real stock_moves data).
+        // Twenty-fifth audit P1: only 'posted' moves at the ROW'S OWN SITE
+        // count — another plant's same-named location and reversed or
+        // compensating history never count as this row's movement.
         let inventory_turnover: Option<f64> = sqlx::query_scalar(
             "SELECT CASE WHEN COALESCE(SUM(ii.quantity_on_hand), 0) > 0 \
              THEN COALESCE(SUM(sm.quantity) FILTER (WHERE sm.move_type IN ('issue', 'transfer')), 0) \
@@ -496,6 +499,9 @@ impl AnalyticsWorker {
              ELSE 0.0 END \
              FROM inventory_items ii \
              LEFT JOIN stock_moves sm ON sm.product_id = ii.product_id \
+              AND sm.tenant_id = ii.tenant_id \
+              AND sm.site_id = ii.site_id \
+              AND sm.status = 'posted' \
               AND sm.moved_at > NOW() - INTERVAL '30 days'",
         )
         .fetch_optional(pool)

@@ -214,67 +214,82 @@ pub(crate) async fn prepare_inference(
     };
     let context_plan = sensei_agent_core::context::plan_context(&context_request);
     // Seventeenth audit item 7: the live chat runs through the ACTUAL
-    // Context Kernel. The section lines are wrapped in typed ContextItems
+    // Context Kernel. The section facts are wrapped in typed ContextItems
     // (provenance = the section source, authority = live transactional
     // state, sensitivity = Internal, epistemic = RecordedFact) and
     // build_context_bundle applies the REAL kernel semantics: FactAddress
     // contradiction handling, authority ordering, provenance-based
     // selection, sensitivity filtering and the normal-budget token
     // allocation with the reserved contradiction budget.
-    let context_used = match &state.db_pool {
+    // Twenty-fifth audit P0/P1: the kernel sections are carried as TYPED
+    // facts (section + source site + work center + text) and turned into
+    // ContextItems DIRECTLY — a flat-string protocol is never the identity
+    // source. This replaces the old line parser, which split every line on
+    // " [live]: " and therefore DROPPED every site-marked line (emitted as
+    // "section [live site:<uuid>]: content", which contains no " [live]: ")
+    // — the dropped lines were site-scoped evidence that never reached the
+    // model, and the survivors were site-less. With typed facts a marked
+    // section can neither be dropped nor stripped of its source scope.
+    let kernel_items: Vec<sensei_agent_core::context::ContextItem> = match &state.db_pool {
         Some(pool) => {
-            sensei_services::tps::context_sections::build_compact_context(
+            let facts = sensei_services::tps::context_sections::build_context_facts(
                 pool,
                 user.tenant_id,
                 ctx.site_id,
                 ctx.work_center_id,
                 &context_plan,
             )
-            .await
+            .await;
+            facts
+                .into_iter()
+                .map(|fact| {
+                    let section = fact.section;
+                    let text = fact.text;
+                    // Twentieth audit P1: the SOURCE observation timestamp
+                    // is preserved when the fact exposes one (the section
+                    // builders stamp "as of <time>"); when no source time
+                    // is exposed, observed_at stays None — retrieval time
+                    // is NEVER substituted for observation time.
+                    let observed_at = sensei_agent_core::context::parse_observed_at(&text);
+                    // Twenty-fourth audit: the evidence site scope is the
+                    // FACT'S SOURCE site (the scope its retrieval ran
+                    // under) — site-less facts stay None; the request's
+                    // site is never stamped onto evidence, so a retrieval
+                    // bug returning another site's row cannot be
+                    // laundered into this scope.
+                    let source_site = fact.site_id;
+                    let token_cost = (text.len() as u32 / 4).max(1);
+                    let mut item = sensei_agent_core::context::ContextItem {
+                        payload: serde_json::json!({
+                            "section": section.clone(),
+                            "text": text,
+                        }),
+                        fact_address: Some(format!("section:{section}")),
+                        site_scope: source_site,
+                        provenance: sensei_agent_core::context::Provenance {
+                            source: format!("section:{section}"),
+                            source_revision: None,
+                            observed_at,
+                            recorded_at: chrono::Utc::now(),
+                            authority:
+                                sensei_agent_core::context::AuthorityRank::TransactionalState,
+                        },
+                        sensitivity: sensei_agent_core::context::DataClass::Internal,
+                        token_cost,
+                        epistemic_status: sensei_agent_core::context::EpistemicStatus::RecordedFact,
+                        // Nineteenth audit P1: the evidence id is issued
+                        // HERE at construction from the item's own
+                        // provenance + payload — the Context Kernel also
+                        // normalizes any item that still arrives empty.
+                        evidence_id: String::new(),
+                    };
+                    item.evidence_id = item.derive_evidence_id();
+                    item
+                })
+                .collect()
         }
         None => Vec::new(),
     };
-    let kernel_items: Vec<sensei_agent_core::context::ContextItem> = context_used
-        .iter()
-        .filter_map(|line| {
-            let (section, content) = line.split_once(" [live]: ")?;
-            // Twentieth audit P1: the SOURCE observation timestamp is
-            // preserved when the context line carries one (the section
-            // builders stamp "as of <time>"); when no source time is
-            // exposed, observed_at stays None — retrieval time is NEVER
-            // substituted for observation time.
-            let observed_at = sensei_agent_core::context::parse_observed_at(content);
-            // Twenty-fourth audit: the evidence site scope comes from the
-            // LINE'S OWN source marker (site:<uuid> emitted by retrieval
-            // under its DB filter). No marker -> None (site-less) — the
-            // request's site is never stamped onto evidence, so a
-            // retrieval bug returning another site's row cannot be
-            // laundered into this scope.
-            let source_site = parse_source_site(content);
-            let mut item = sensei_agent_core::context::ContextItem {
-                payload: serde_json::json!({ "section": section, "text": content }),
-                fact_address: Some(format!("section:{section}")),
-                site_scope: source_site,
-                provenance: sensei_agent_core::context::Provenance {
-                    source: format!("section:{section}"),
-                    source_revision: None,
-                    observed_at,
-                    recorded_at: chrono::Utc::now(),
-                    authority: sensei_agent_core::context::AuthorityRank::TransactionalState,
-                },
-                sensitivity: sensei_agent_core::context::DataClass::Internal,
-                token_cost: (content.len() as u32 / 4).max(1),
-                epistemic_status: sensei_agent_core::context::EpistemicStatus::RecordedFact,
-                // Nineteenth audit P1: the evidence id is issued HERE at
-                // construction from the item's own provenance + payload —
-                // the Context Kernel also normalizes any item that still
-                // arrives empty.
-                evidence_id: String::new(),
-            };
-            item.evidence_id = item.derive_evidence_id();
-            Some(item)
-        })
-        .collect();
     let kernel_bundle = sensei_agent_core::context_kernel::build_context_bundle(
         &context_request,
         kernel_items,
@@ -504,12 +519,46 @@ fn classify_task(message: &str) -> sensei_agent_core::context::TaskKind {
 
 /// Parse the SOURCE site marker emitted by the retrieval layer
 /// ("[live site:<uuid>]") — evidence is stamped from the source row's
-/// site, never from the request's claimed site.
+/// site, never from the request's claimed site. The live preparation
+/// consumes TYPED kernel facts (twenty-fifth audit), so this parser is
+/// the contract check for the legacy flat-line format.
+#[cfg(test)]
 fn parse_source_site(text: &str) -> Option<uuid::Uuid> {
     text.split_once("[live site:").and_then(|(_, rest)| {
         rest.split_once(']')
             .and_then(|(site, _)| uuid::Uuid::parse_str(site).ok())
     })
+}
+
+/// Parse ONE context-bundle line into `(section, content, source_site)`
+/// (twenty-fifth audit P0): handles BOTH line forms the kernel emits —
+/// the site-less form `"section [live]: content"` AND the site-marked
+/// form `"section [live site:<uuid>]: content"`. The old parser split
+/// every line on `" [live]: "` and therefore DROPPED every site-marked
+/// line (the marker replaces the `[live]` tag, so `" [live]: "` is never
+/// present); surviving lines were all site-less — site-scoped evidence
+/// never reached the model. This parser never drops a line: the site
+/// marker is extracted FIRST when present, then the remainder is split
+/// on `" [live]: "`; a line with no tag at all is kept whole as content.
+#[cfg(test)]
+fn parse_context_line(line: &str) -> Option<(String, String, Option<uuid::Uuid>)> {
+    if line.contains(" [live site:") {
+        let (head, rest) = line.split_once(" [live site:")?;
+        // A malformed marker keeps the line (never dropped) but yields no
+        // site scope — a site identity is never invented.
+        let site = parse_source_site(line);
+        let content = rest
+            .split_once("]: ")
+            .map(|(_, content)| content)
+            .unwrap_or(rest);
+        return Some((head.to_string(), content.to_string(), site));
+    }
+    if let Some((section, content)) = line.split_once(" [live]: ") {
+        return Some((section.to_string(), content.to_string(), None));
+    }
+    // No section tag on the line (e.g. the bare "no additional context"
+    // fallback): keep it whole — never drop a line.
+    Some((String::new(), line.to_string(), None))
 }
 
 /// Run the REAL claims/evidence verifier over the assistant's reply
@@ -1521,5 +1570,37 @@ mod tests {
         let msg = repair_message(3);
         assert!(msg.contains("I can only answer with claims verified"));
         assert!(msg.contains("3 issue(s)"));
+    }
+
+    #[test]
+    fn site_marked_context_line_survives_parsing_with_site_scope() {
+        // Twenty-fifth audit P0: the kernel emits site-marked lines as
+        // "section [live site:<uuid>]: content". The old parser split on
+        // " [live]: " and dropped every such line, so site-scoped
+        // evidence never reached the model. The line must survive and its
+        // parsed site must become the item's site scope.
+        let site = uuid::Uuid::from_u128(42);
+        let line = format!("current_work [live site:{site}]: wo=WO-7 product=P completed=10/50");
+        let (section, content, source_site) =
+            parse_context_line(&line).expect("a site-marked line must never be dropped");
+        assert_eq!(section, "current_work");
+        assert_eq!(content, "wo=WO-7 product=P completed=10/50");
+        assert_eq!(
+            source_site,
+            Some(site),
+            "the parsed source site must become the evidence site scope"
+        );
+        // The site-less form still parses with no scope.
+        let (section, content, source_site) =
+            parse_context_line("live_state [live]: condition=COND-1 status=open").unwrap();
+        assert_eq!(section, "live_state");
+        assert_eq!(content, "condition=COND-1 status=open");
+        assert_eq!(source_site, None);
+        // A line without any tag is kept whole — never dropped.
+        let (section, content, source_site) =
+            parse_context_line("no additional context for this task").unwrap();
+        assert_eq!(section, "");
+        assert!(content.contains("no additional context"));
+        assert_eq!(source_site, None);
     }
 }
