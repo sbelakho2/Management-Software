@@ -2,7 +2,10 @@
 //! items 15-17): sites enqueue versioned AUTHORIZED projections; corporate
 //! claims a lease (claim -> apply -> ACK) so a crash after claim loses
 //! only the lease, never the projection; data residency is enforced
-//! deterministically BEFORE enqueue.
+//! deterministically BEFORE enqueue. Twenty-fourth audit P1 (federation
+//! TOCTOU): the fanout re-reads the tenant's CURRENT membership/policy
+//! inside its own transaction and refuses to persist an edge that changed
+//! after it was loaded.
 
 use axum::extract::{Query, State};
 use axum::Json;
@@ -166,6 +169,14 @@ pub async fn enqueue(
     // edges. Per-edge gate denials come back as `blocked`; duplicates of
     // an already-published row come back as `already_present` (DO NOTHING
     // — idempotent convergence); a mid-way failure rolls back atomically.
+    // Twenty-fourth audit P1 (federation TOCTOU): the edges were loaded
+    // in an EARLIER transaction than this one — the fanout RE-READS the
+    // tenant's CURRENT membership/governance rows inside its own
+    // transaction and only persists an edge whose current state still
+    // matches the loaded edge (same peer, classes, residency policy and
+    // policy revision); an edge whose membership/policy changed between
+    // the load and the persist is counted in `blocked` and never
+    // enqueued — a projection is never written under an obsolete policy.
     let report = replication::enqueue_projection_fanout(
         p,
         user.tenant_id,

@@ -868,12 +868,20 @@ pub async fn validate_site(
             // corrective flag on unprovable rows, even one with a non-NULL
             // site_id) blocks validation: legacy_heuristic is never
             // allowed into an Active plant.
+            // Twenty-fourth audit P0 (cross-site readiness poisoning): the
+            // unreconciled-topology check is SCOPED TO THIS SITE — only
+            // THIS site's own work centers can fail THIS site's readiness,
+            // so Bizerte's unreconciled work centers never fail Tangier's
+            // validation. Tenant-wide hygiene (orphans outside this site)
+            // is reported SEPARATELY as an informational check that never
+            // fails readiness.
             let unreconciled: i64 = sqlx::query_scalar(
-                "SELECT COUNT(*) FROM work_centers WHERE tenant_id = $1 \
-                 AND (site_id IS NULL OR topology_state = 'needs_reconciliation' \
+                "SELECT COUNT(*) FROM work_centers WHERE tenant_id = $1 AND site_id = $2 \
+                 AND (topology_state = 'needs_reconciliation' \
                       OR topology_assignment_source = 'legacy_heuristic')",
             )
             .bind(tenant_id)
+            .bind(site_id)
             .fetch_one(&mut **tx)
             .await
             .map_err(|e| SenseiError::Database(format!("Topology check failed: {e}")))?;
@@ -881,10 +889,41 @@ pub async fn validate_site(
                 "topology_reconciled".into(),
                 unreconciled == 0,
                 if unreconciled == 0 {
-                    "all work centers are site-resolved".to_string()
+                    "all work centers of this site are site-resolved".to_string()
                 } else {
                     format!(
-                        "{unreconciled} work center(s) need topology reconciliation —                          unknown lineage is never assigned to a plant"
+                        "{unreconciled} work center(s) of THIS site need topology \
+                         reconciliation — unknown lineage is never assigned to a plant"
+                    )
+                },
+            ));
+
+            // Twenty-fourth audit P0: tenant_topology_hygiene is the
+            // TENANT-WIDE counterpart of the site-scoped check above —
+            // orphan (site-less) or unreconciled work centers anywhere in
+            // the tenant are reported as a distinct INFORMATIONAL check
+            // (ok = true even when > 0, so it never fails readiness):
+            // plant activation stays site-scoped while the hygiene problem
+            // stays visible for the tenant admin.
+            let tenant_unreconciled: i64 = sqlx::query_scalar(
+                "SELECT COUNT(*) FROM work_centers WHERE tenant_id = $1 \
+                 AND (site_id IS NULL OR topology_state = 'needs_reconciliation' \
+                      OR topology_assignment_source = 'legacy_heuristic')",
+            )
+            .bind(tenant_id)
+            .fetch_one(&mut **tx)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Topology hygiene check failed: {e}")))?;
+            checks.push((
+                "tenant_topology_hygiene".into(),
+                true,
+                if tenant_unreconciled == 0 {
+                    "tenant topology is clean — no orphan or unreconciled work centers".to_string()
+                } else {
+                    format!(
+                        "{tenant_unreconciled} tenant-wide orphan/unreconciled work center(s) \
+                         (outside this site or pending reconciliation) — informational: this \
+                         site's readiness is scoped to its own work centers"
                     )
                 },
             ));
@@ -1004,9 +1043,11 @@ pub async fn validate_site(
                             .bind(keyword.to_lowercase())
                             .fetch_one(&mut **tx)
                             .await
-                            .map_err(|e| SenseiError::Database(format!(
-                                "Work center capability check failed: {e}"
-                            )))?;
+                            .map_err(|e| {
+                                SenseiError::Database(format!(
+                                    "Work center capability check failed: {e}"
+                                ))
+                            })?;
                             (n > 0, format!("{n} work center(s) matching '{keyword}'"))
                         }
                         // <cap>_skills: qualified (independent/trainer)
@@ -1026,10 +1067,13 @@ pub async fn validate_site(
                             .bind(&pattern)
                             .fetch_one(&mut **tx)
                             .await
-                            .map_err(|e| SenseiError::Database(format!(
-                                "Skill capability check failed: {e}"
-                            )))?;
-                            (n > 0, format!("{n} qualified skill(s) matching '{keyword}'"))
+                            .map_err(|e| {
+                                SenseiError::Database(format!("Skill capability check failed: {e}"))
+                            })?;
+                            (
+                                n > 0,
+                                format!("{n} qualified skill(s) matching '{keyword}'"),
+                            )
                         }
                         // <cap>_standards: TWI job_standards (migration 116)
                         // covering the capability process or title.
@@ -1043,36 +1087,62 @@ pub async fn validate_site(
                             .bind(&pattern)
                             .fetch_one(&mut **tx)
                             .await
-                            .map_err(|e| SenseiError::Database(format!(
-                                "Job standard capability check failed: {e}"
-                            )))?;
+                            .map_err(|e| {
+                                SenseiError::Database(format!(
+                                    "Job standard capability check failed: {e}"
+                                ))
+                            })?;
                             (n > 0, format!("{n} job standard(s) matching '{keyword}'"))
                         }
-                        // <cap>_calibration: passing, CURRENT calibration
-                        // records FOR THIS SITE's gauges (twenty-second
-                        // audit P1: calibration must be CURRENT — the most
-                        // recent event's next_due must still lie in the
-                        // future — and capability-relevant, i.e. on this
-                        // site's own gauges; a calibration whose window
-                        // has lapsed proves nothing). Gauges have no
-                        // is_active column (migration 155 adds only
-                        // site_id), so currency is proven by next_due
-                        // alone.
+                        // <cap>_calibration: the site's gauges must be
+                        // CURRENTLY calibrated — for EACH gauge the LATEST
+                        // calibration state decides (twenty-fourth audit
+                        // P1): readiness counts a gauge only when its
+                        // most recent event (by calibration date) is a
+                        // 'pass' whose next_due still lies in the future.
+                        // A January PASS followed by an August FAIL is NOT
+                        // ready — the old query counted any passing event
+                        // with next_due > NOW(), so the stale January
+                        // row would certify a gauge the latest event
+                        // already failed. Gauges have no capability link
+                        // (no work_center_gauges table; migration 155
+                        // adds only gauges.site_id), so capability
+                        // relevance is approximated like the
+                        // work-center/skill arms: the gauge's own
+                        // `name` (migration 006) or `gauge_type`
+                        // (CHECK-bound: caliper/micrometer/cmm/...) must
+                        // match the capability keyword — a calibration on
+                        // an unrelated gauge of this site cannot certify
+                        // the capability.
                         req if req.ends_with("_calibration") => {
                             let n: i64 = sqlx::query_scalar(
-                                "SELECT COUNT(*) FROM calibration_events ce \
-                                 JOIN gauges g ON g.id = ce.gauge_id AND g.tenant_id = ce.tenant_id \
-                                 WHERE ce.tenant_id = $1 AND ce.result = 'pass' \
-                                   AND g.site_id = $2 AND ce.next_due > NOW()",
+                                "SELECT COUNT(*) FROM gauges g \
+                                 CROSS JOIN LATERAL ( \
+                                     SELECT ce.result, ce.next_due \
+                                     FROM calibration_events ce \
+                                     WHERE ce.gauge_id = g.id \
+                                       AND ce.tenant_id = g.tenant_id \
+                                     ORDER BY ce.calibration_date DESC, \
+                                              ce.created_at DESC, ce.id DESC \
+                                     LIMIT 1 \
+                                 ) latest \
+                                 WHERE g.tenant_id = $1 AND g.site_id = $2 \
+                                   AND (g.name ILIKE $3 OR g.gauge_type = $4) \
+                                   AND latest.result = 'pass' \
+                                   AND latest.next_due > NOW()",
                             )
                             .bind(tenant_id)
                             .bind(site_id)
+                            .bind(&pattern)
+                            .bind(keyword.to_lowercase())
                             .fetch_one(&mut **tx)
                             .await
-                            .map_err(|e| SenseiError::Database(format!(
-                                "Calibration capability check failed: {e}"
-                            )))?;
-                            (n > 0, format!("{n} passing calibration(s) on this site's gauges"))
+                            .map_err(|e| {
+                                SenseiError::Database(format!(
+                                    "Calibration capability check failed: {e}"
+                                ))
+                            })?;
+                            (n > 0, format!("{n} gauge(s) currently passing calibration"))
                         }
                         // <cap>_ctq_inspection: an ACTIVE inspection plan
                         // matching the capability with at least one
@@ -1089,12 +1159,15 @@ pub async fn validate_site(
                             .bind(&pattern)
                             .fetch_one(&mut **tx)
                             .await
-                            .map_err(|e| SenseiError::Database(format!(
-                                "Inspection plan capability check failed: {e}"
-                            )))?;
-                            (n > 0, format!(
-                                "{n} active CTQ inspection plan(s) matching '{keyword}'"
-                            ))
+                            .map_err(|e| {
+                                SenseiError::Database(format!(
+                                    "Inspection plan capability check failed: {e}"
+                                ))
+                            })?;
+                            (
+                                n > 0,
+                                format!("{n} active CTQ inspection plan(s) matching '{keyword}'"),
+                            )
                         }
                         // <cap>_fixtures and any other requirement with NO
                         // supporting schema (e.g. ict_fixtures — no

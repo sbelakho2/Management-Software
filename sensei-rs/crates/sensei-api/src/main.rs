@@ -7,9 +7,18 @@
 //! # Fail-fast rules (production)
 //!
 //! * `AppConfig::from_env()` errors abort startup with a clear message.
-//! * A missing `DATABASE_URL`, a failed connection, or failed migrations
-//!   abort startup instead of silently degrading to in-memory mode.
+//! * A missing `DATABASE_URL` or a failed connection abort startup instead
+//!   of silently degrading to in-memory mode.
 //! * The CEO seed account requires an explicit non-default password.
+//!
+//! # Migration contract (twenty-fourth audit P0 — migration-owner split)
+//!
+//! The API process connects as the NON-OWNER `sensei_app` and does NOT run
+//! DDL at startup. Schema changes are applied by the dedicated `migrate`
+//! bootstrap (`--migrate-only` or `SENSEI_MIGRATE=1`), which runs the
+//! chain as `sensei_migrator` and exits 0; compose gates the API on that
+//! service completing successfully. `DB_AUTO_MIGRATE=true` (explicitly
+//! set) keeps the legacy opt-in for local/dev bootstraps.
 //!
 //! In development, database failures are logged and the server continues
 //! with in-memory stores.
@@ -98,6 +107,36 @@ async fn shutdown_signal() {
             .expect("Failed to listen for Ctrl+C");
         info!("Ctrl+C received");
     }
+}
+
+/// True when the CLI/env explicitly asks this process to run the migration
+/// chain (`--migrate-only` or `SENSEI_MIGRATE=1`). The production bootstrap
+/// runs the chain through the dedicated `migrate` container as the
+/// migration-owner role (sensei_migrator); the API server itself connects
+/// as the non-owner sensei_app and NEVER runs DDL unless an explicit
+/// request opts in (twenty-fourth audit P0 — migration-owner split).
+fn migrate_only_requested() -> bool {
+    std::env::args().any(|arg| arg == "--migrate-only") || env_flag_enabled("SENSEI_MIGRATE")
+}
+
+/// True when `DB_AUTO_MIGRATE` is EXPLICITLY set to an enabled value.
+///
+/// `.env.example` documents `DB_AUTO_MIGRATE=true` as the legacy opt-in for
+/// bootstraps that still run the chain from the API process (local/dev).
+/// The default when the variable is UNSET is NO migration at startup: the
+/// production contract is a dedicated migration-owner bootstrap, and an
+/// accidental DDL attempt from the app role would fail loudly.
+fn auto_migrate_opted_in() -> bool {
+    env_flag_enabled("DB_AUTO_MIGRATE")
+}
+
+fn env_flag_enabled(var: &str) -> bool {
+    std::env::var(var).is_ok_and(|value| {
+        matches!(
+            value.trim().to_lowercase().as_str(),
+            "1" | "true" | "yes" | "on"
+        )
+    })
 }
 
 /// The bootstrap tenant for seeded admin/CEO accounts.
@@ -384,6 +423,16 @@ async fn main() {
         subscriber_base.init();
     }
 
+    // ── Explicit migration-owner bootstrap (`--migrate-only` or
+    //    SENSEI_MIGRATE=1) ────────────────────────────────────────────
+    // Production runs the chain from the dedicated `migrate` container as
+    // sensei_migrator (the object owner) and exits 0 — the API process
+    // must not start serving, seeding, or any other service machinery.
+    // This path exits the process, so it never reaches the code below.
+    if migrate_only_requested() {
+        run_migrations_only(&config).await;
+    }
+
     // ── Initialize metrics ────────────────────────────────────────
     init_metrics();
 
@@ -460,22 +509,30 @@ async fn main() {
             }
         };
 
-        // Run database migrations (including entity_store table)
-        if let Err(e) = sensei_db::migrations::run_migrations(&pool).await {
-            if config.environment.is_prod() {
+        // Startup migrations are NOT the default (twenty-fourth audit P0 —
+        // migration-owner split): the production chain runs from the
+        // dedicated `migrate` container as sensei_migrator. The API starts
+        // as the non-owner sensei_app and never DDLs unless an explicit
+        // DB_AUTO_MIGRATE=true opt-in (legacy bootstrap) requests it.
+        if auto_migrate_opted_in() {
+            if let Err(e) = sensei_db::migrations::run_migrations(&pool).await {
+                if config.environment.is_prod() {
+                    tracing::error!(
+                        error = %e,
+                        "Failed to run database migrations in production"
+                    );
+                    std::process::exit(1);
+                }
                 tracing::error!(
                     error = %e,
-                    "Failed to run database migrations in production"
+                    "Failed to run database migrations — falling back to in-memory mode"
                 );
-                std::process::exit(1);
+                seed_bootstrap_users(&state).await;
+                build_and_serve(state, otel_provider, config).await;
+                return;
             }
-            tracing::error!(
-                error = %e,
-                "Failed to run database migrations — falling back to in-memory mode"
-            );
-            seed_bootstrap_users(&state).await;
-            build_and_serve(state, otel_provider, config).await;
-            return;
+        } else {
+            info!("Auto-migration disabled on startup (run --migrate-only as the migration owner to apply schema changes)");
         }
 
         state = state.with_db_pool(Arc::new(pool));
@@ -487,6 +544,53 @@ async fn main() {
 
     // ── Build router & serve ──────────────────────────────────────
     build_and_serve(state, otel_provider, config).await;
+}
+
+/// Apply the migration chain against `DATABASE_URL` and exit the process.
+///
+/// The production bootstrap contract (twenty-fourth audit P0): the
+/// dedicated `migrate` container connects AS sensei_migrator (the owner
+/// of every schema object the chain creates) and this mode applies the
+/// chain, then exits 0 — `docker compose` gates the API/workers on
+/// `service_completed_successfully`. Any failure exits 1 so the stack
+/// never starts against an un-migrated schema. This mode never serves and
+/// never seeds; it is the ONLY path that runs DDL in production.
+/// (Every branch terminates the process — it never returns normally.)
+async fn run_migrations_only(config: &AppConfig) {
+    let database_url = std::env::var("DATABASE_URL").unwrap_or_default();
+    if database_url.is_empty() {
+        tracing::error!("--migrate-only requires DATABASE_URL to be set");
+        std::process::exit(1);
+    }
+
+    let pool = match PgPoolOptions::new()
+        .max_connections(config.database.max_connections)
+        .acquire_timeout(std::time::Duration::from_secs(
+            config.database.connection_timeout_secs,
+        ))
+        .connect(&database_url)
+        .await
+    {
+        Ok(pool) => {
+            info!("PostgreSQL connection pool established (migrate-only)");
+            pool
+        }
+        Err(e) => {
+            tracing::error!(error = %e, "migrate-only: failed to connect to PostgreSQL");
+            std::process::exit(1);
+        }
+    };
+
+    match sensei_db::migrations::run_migrations(&pool).await {
+        Ok(()) => {
+            info!("Migration chain applied successfully — migrate-only run complete");
+            std::process::exit(0);
+        }
+        Err(e) => {
+            tracing::error!(error = %e, "migrate-only: migration chain failed");
+            std::process::exit(1);
+        }
+    }
 }
 
 /// Build the router, bind the listener, and serve with graceful shutdown.

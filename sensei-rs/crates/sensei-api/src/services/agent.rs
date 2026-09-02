@@ -8,7 +8,7 @@ use sensei_agent_core::evidence::{EvidenceRef, ToolResult};
 use sensei_agent_core::journal::{ExecutionJournal, ReservationOutcome};
 use sensei_agent_core::tools::{PolicyEngine, ToolSpec};
 use sensei_services::production::ProductionService;
-use sensei_services::supply_chain::SupplyChainService;
+use sensei_services::supply_chain::{InventoryItem, SupplyChainService};
 use uuid::Uuid;
 
 /// The agent's read-only toolset (Phase 3: read/calculate/recommend only).
@@ -196,11 +196,10 @@ pub async fn execute_tool(
 
     // Scope enforcement (seventeenth audit item 4): resource-touching
     // tools are intersected with the caller's AgentContext scope —
-    // get_work_order(id) and get_inventory_balance(product_id) can no
-    // longer read tenant-wide resources when the caller is scoped.
-    // The DB-backed check runs under a TenantTx; when the pool is absent
-    // (unit tests), the work-center identity from the domain object is
-    // enforced directly.
+    // get_work_order(id) can no longer read tenant-wide resources when
+    // the caller is scoped. The DB-backed check runs under a TenantTx;
+    // when the pool is absent (unit tests), the work-center identity from
+    // the domain object is enforced directly.
     async fn enforce_tool_scope(
         ctx: &AgentContext,
         _pool: Option<&sqlx::PgPool>,
@@ -223,6 +222,31 @@ pub async fn execute_tool(
                     Err("resource is outside the caller's authorized work-center scope".to_string())
                 }
             }
+        }
+    }
+    // Twenty-fourth audit P0 (AI takt scope): tools that take a
+    // SITE_ID ARGUMENT (calculate_takt_for_scope) are scoped to the
+    // caller's OWN active site before any DB query:
+    // - ctx.site_id is set: the argument must BE the caller's site
+    //   (a site-scoped caller may not compute takt for another site);
+    // - ctx.site_id is None but the caller holds a work-center scope:
+    //   the site argument is outside their scope — denied;
+    // - ctx.site_id is None with no scope at all: naming an arbitrary
+    //   tenant site requires a DB-backed scope authority — denied when a
+    //   pool exists; only when there is NO pool (in-memory dev mode,
+    //   where no scope authority exists to check against) is the
+    //   argument accepted.
+    async fn enforce_site_argument_scope(
+        ctx: &AgentContext,
+        pool: Option<&sqlx::PgPool>,
+        site_id: Uuid,
+    ) -> Result<(), String> {
+        match (ctx.site_id, ctx.work_center_id) {
+            (Some(scope_site), _) if scope_site == site_id => Ok(()),
+            (None, None) if pool.is_none() => Ok(()),
+            _ => Err(format!(
+                "site {site_id} is outside the caller's authorized site scope"
+            )),
         }
     }
     let _ = ctx;
@@ -278,23 +302,101 @@ pub async fn execute_tool(
                 .and_then(|v| v.as_str())
                 .and_then(|s| Uuid::parse_str(s).ok())
                 .ok_or_else(|| "get_inventory_balance requires product_id".to_string())?;
-            let mut items = supply_chain
-                .get_inventory(ctx.tenant_id, product_id)
-                .await
-                .map_err(|e| e.to_string())?;
-            if let Some(pool) = pool {
-                let mut tx = sensei_core::db::TenantTx::begin(pool, ctx.tenant_id)
-                    .await
-                    .map_err(|e| format!("scope tx: {e}"))?;
-                let rec_site: Option<Uuid> = sqlx::query_scalar(
-                    "SELECT site_id FROM inventory_items WHERE product_id = $1 LIMIT 1",
-                )
-                .bind(product_id)
-                .fetch_optional(&mut **tx.tx())
-                .await
-                .map_err(|e| format!("scope read: {e}"))?;
-                tx.rollback().await.map_err(|e| format!("scope rb: {e}"))?;
-                enforce_tool_scope(ctx, Some(pool), rec_site, None).await?;
+            let mut items: Vec<InventoryItem> = Vec::new();
+            match pool {
+                // Twenty-fourth audit P0 (inventory tool leak closure):
+                // with a DB pool the retrieval is a SITE-SCOPED query —
+                // WHERE tenant_id AND product_id AND site_id = ANY($sites)
+                // over the caller's OWN site (ctx.site_id when set) —
+                // instead of fetching ALL tenant inventory and then
+                // authorizing on one arbitrary row. Only rows at the
+                // caller's site are ever returned. A caller with NO site
+                // scope authority (ctx.site_id is None) gets an EMPTY
+                // result: there is no tenant-wide fallback, so the tool
+                // can never leak another site's stock.
+                Some(pool) => {
+                    if let Some(site) = ctx.site_id {
+                        let sites = vec![site];
+                        type InvRow = (
+                            Uuid,
+                            Uuid,
+                            Uuid,
+                            String,
+                            i64,
+                            i64,
+                            i64,
+                            String,
+                            Option<String>,
+                            i64,
+                            i64,
+                            chrono::DateTime<chrono::Utc>,
+                        );
+                        items = sqlx::query_as::<_, InvRow>(
+                            "SELECT id, tenant_id, product_id, \
+                                    (SELECT name FROM products \
+                                     WHERE products.id = inventory_items.product_id) \
+                                        AS product_name, \
+                                    quantity_on_hand::bigint, quantity_reserved::bigint, \
+                                    quantity_available::bigint, \
+                                    location, lot_number, \
+                                    COALESCE((SELECT reorder_point FROM products \
+                                              WHERE products.id = inventory_items.product_id), 0) \
+                                        ::bigint AS reorder_point, \
+                                    0::bigint AS reorder_quantity, \
+                                    updated_at \
+                             FROM inventory_items \
+                             WHERE tenant_id = $1 AND product_id = $2 AND site_id = ANY($3)",
+                        )
+                        .bind(ctx.tenant_id)
+                        .bind(product_id)
+                        .bind(sites)
+                        .fetch_all(pool)
+                        .await
+                        .map_err(|e| format!("Inventory read failed: {e}"))?
+                        .into_iter()
+                        .map(
+                            |(
+                                id,
+                                tenant_id,
+                                product_id,
+                                product_name,
+                                quantity_on_hand,
+                                quantity_reserved,
+                                quantity_available,
+                                location,
+                                lot_number,
+                                reorder_point,
+                                reorder_quantity,
+                                updated_at,
+                            )| InventoryItem {
+                                id,
+                                tenant_id,
+                                product_id,
+                                product_name,
+                                quantity_on_hand,
+                                quantity_reserved,
+                                quantity_available,
+                                location,
+                                lot_number,
+                                reorder_point,
+                                reorder_quantity,
+                                updated_at,
+                            },
+                        )
+                        .collect();
+                    }
+                    // ctx.site_id is None -> no site scope authority:
+                    // items stays EMPTY (denied) — no DB query at all.
+                }
+                // No pool (in-memory dev mode): the in-memory supply chain
+                // service is the caller's data store — the legacy service
+                // call is the only read available and carries no scope.
+                None => {
+                    items = supply_chain
+                        .get_inventory(ctx.tenant_id, product_id)
+                        .await
+                        .map_err(|e| e.to_string())?;
+                }
             }
             items.truncate(tool.max_rows);
             let data = serde_json::to_value(&items).map_err(|e| e.to_string())?;
@@ -328,6 +430,12 @@ pub async fn execute_tool(
                 .and_then(|s| chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d").ok())
                 .ok_or_else(|| "calculate_takt_for_scope requires date (YYYY-MM-DD)".to_string())?;
 
+            // Twenty-fourth audit P0 (AI takt scope): the site_id argument
+            // is validated against the caller's AgentContext scope BEFORE
+            // any DB query — an out-of-scope site is rejected with no
+            // calendar/demand reads at all.
+            enforce_site_argument_scope(ctx, pool, site_id).await?;
+
             // ── Authoritative calendar: shifts + production_calendar ──
             let calendar: Vec<(i64, i64, i64, bool, chrono::DateTime<chrono::Utc>)> =
                 sqlx::query_as(
@@ -353,14 +461,20 @@ pub async fn execute_tool(
             }
 
             // ── Authoritative demand: open sales orders for the window ──
+            // Twenty-fourth audit P0: demand is scoped to the site — only
+            // orders THIS site fulfills (so.fulfilling_site_id = $2) count
+            // toward its takt; another site's backlog can never inflate
+            // this site's demand.
             let demand: rust_decimal::Decimal = sqlx::query_scalar(
                 "SELECT COALESCE(SUM(                     (li->>'quantity')::numeric - COALESCE((li->>'quantity_delivered')::numeric, 0)                 ), 0)::numeric \
                  FROM sales_orders so, jsonb_array_elements(so.line_items) AS li \
                  WHERE so.tenant_id = $1 \
+                   AND so.fulfilling_site_id = $2 \
                    AND so.status NOT IN ('completed', 'cancelled', 'closed') \
-                   AND (so.delivery_date IS NULL OR so.delivery_date::date <= $2)",
+                   AND (so.delivery_date IS NULL OR so.delivery_date::date <= $3)",
             )
             .bind(ctx.tenant_id)
+            .bind(site_id)
             .bind(date)
             .fetch_one(pool.ok_or_else(|| "Scope tool requires a database pool".to_string())?)
             .await
@@ -379,12 +493,18 @@ pub async fn execute_tool(
             .fetch_one(pool.ok_or_else(|| "Scope tool requires a database pool".to_string())?)
             .await
             .map_err(|e| format!("Calendar touched-at read failed: {e}"))?;
+            // The demand evidence query carries the SAME site filter as
+            // the demand read — freshness is scoped to this site's own
+            // orders (twenty-fourth audit P0).
             let demand_touched: Option<chrono::DateTime<chrono::Utc>> = sqlx::query_scalar(
                 "SELECT MAX(so.updated_at) FROM sales_orders so \
-                 WHERE so.tenant_id = $1 AND so.status NOT IN ('completed', 'cancelled', 'closed') \
-                   AND (so.delivery_date IS NULL OR so.delivery_date::date <= $2)",
+                 WHERE so.tenant_id = $1 \
+                   AND so.fulfilling_site_id = $2 \
+                   AND so.status NOT IN ('completed', 'cancelled', 'closed') \
+                   AND (so.delivery_date IS NULL OR so.delivery_date::date <= $3)",
             )
             .bind(ctx.tenant_id)
+            .bind(site_id)
             .bind(date)
             .fetch_one(pool.ok_or_else(|| "Scope tool requires a database pool".to_string())?)
             .await

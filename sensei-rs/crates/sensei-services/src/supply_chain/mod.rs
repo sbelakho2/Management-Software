@@ -389,6 +389,17 @@ pub trait SupplyChainService: Send + Sync {
         page: Option<usize>,
         per_page: Option<usize>,
     ) -> Result<PaginatedResponse<StockMove>>;
+    /// List stock movements — only moves whose site is among
+    /// `authorized_sites` (twenty-fourth audit P0: a foreign or site-less
+    /// move never surfaces; an EMPTY entitlement matches nothing).
+    async fn list_stock_moves_scoped(
+        &self,
+        tenant_id: Uuid,
+        authorized_sites: &[Uuid],
+        product_id: Option<Uuid>,
+        page: Option<usize>,
+        per_page: Option<usize>,
+    ) -> Result<PaginatedResponse<StockMove>>;
     /// Update an RFQ.
     async fn update_rfq(&self, tenant_id: Uuid, id: Uuid, rfq: RFQ) -> Result<RFQ>;
     /// Delete an RFQ.
@@ -470,8 +481,19 @@ pub trait SupplyChainService: Send + Sync {
     ) -> Result<InventoryItem>;
     /// Delete an inventory item.
     async fn delete_inventory(&self, tenant_id: Uuid, id: Uuid) -> Result<()>;
-    /// Delete a stock movement.
-    async fn delete_stock_move(&self, tenant_id: Uuid, id: Uuid) -> Result<()>;
+    /// Reverse a stock movement (twenty-fourth audit P0): stock moves are
+    /// LEDGER rows — never erased. Reversal flips the move to 'reversed'
+    /// and stamps the actor/timestamp/reason; the move's site must be
+    /// inside `authorized_sites` (a foreign, site-less or already-reversed
+    /// move is indistinguishable from a nonexistent one: NotFound).
+    async fn reverse_stock_move(
+        &self,
+        tenant_id: Uuid,
+        authorized_sites: &[Uuid],
+        move_id: Uuid,
+        actor: Uuid,
+        reason: &str,
+    ) -> Result<()>;
 
     // ── Site-entitled inventory (twenty-third audit P0/P1) ─────────────
     //
@@ -1557,6 +1579,19 @@ impl SupplyChainService for InMemorySupplyChainService {
             .collect();
         Ok(PaginatedResponse::new(items, page, per_page))
     }
+
+    async fn list_stock_moves_scoped(
+        &self,
+        _tenant_id: Uuid,
+        _authorized_sites: &[Uuid],
+        _product_id: Option<Uuid>,
+        page: Option<usize>,
+        per_page: Option<usize>,
+    ) -> Result<PaginatedResponse<StockMove>> {
+        // In-memory stock moves carry no site — nothing can ever be
+        // entitled, exactly like the other site-entitled in-memory reads.
+        Ok(PaginatedResponse::new(Vec::new(), page, per_page))
+    }
     // ── New: Update / Delete / Submit / Cancel / Accept / Reject ──────────
 
     async fn update_rfq(&self, _tenant_id: Uuid, id: Uuid, rfq: RFQ) -> Result<RFQ> {
@@ -1895,7 +1930,24 @@ impl SupplyChainService for InMemorySupplyChainService {
         Ok(())
     }
 
-    async fn delete_stock_move(&self, _tenant_id: Uuid, id: Uuid) -> Result<()> {
+    async fn reverse_stock_move(
+        &self,
+        _tenant_id: Uuid,
+        authorized_sites: &[Uuid],
+        id: Uuid,
+        _actor: Uuid,
+        _reason: &str,
+    ) -> Result<()> {
+        // The in-memory store keeps NO reversal state (StockMove has no
+        // status field) and its rows carry no site. With an entitlement
+        // the row cannot be authorized (fail closed, like every other
+        // site-entitled in-memory mutation); without one (dev mode —
+        // routes reach the in-memory service only with no site scope) the
+        // reversal removes the dev row, preserving the pre-audit dev
+        // behavior of the delete route.
+        if !authorized_sites.is_empty() {
+            return Err(SenseiError::NotFound(format!("StockMove {id} not found")));
+        }
         let mut store = self.stock_moves.write().await;
         store
             .remove(&id)

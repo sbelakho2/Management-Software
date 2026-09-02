@@ -33,6 +33,21 @@
 //!   `topology_resolved_requires_provenance` makes 'resolved' without a
 //!   verification stamp unrepresentable).
 //!
+//! Twenty-fourth audit P0/P1 (mutation closure): the site-entitlement
+//! scope now lives IN the command statements themselves, not in a
+//! separate proof read before them:
+//!
+//! - [`update`], [`verify_topology`] and [`deactivate`] take
+//!   `authorized_sites` and add `site_id = ANY($sites)` to the SAME
+//!   `UPDATE ... WHERE` that writes — the current row must be at an
+//!   entitled site or the write matches 0 rows (NotFound, foreign ==
+//!   nonexistent) — so a foreign object can never be mutated (or
+//!   verified, or unassigned) even between a route check and the write;
+//!   a REASSIGNMENT's target site is pre-validated by the route against
+//!   the same entitlement before the repository runs;
+//! - an update with an EMPTY entitlement is Forbidden (no site scope =
+//!   no mutation authority).
+//!
 //! [`RelationalWorkCenter`] is the API-visible shape: it carries
 //! `site_id` and `topology_state` on every response.
 
@@ -168,12 +183,22 @@ fn topology_for(_site_id: Option<Uuid>) -> (&'static str, Option<&'static str>) 
 /// atomically with the transition to 'resolved'. This is the ONLY code
 /// path that may write `topology_state = 'resolved'`; `legacy_heuristic`
 /// is refused — it is a marker of doubt, never a provenance.
+///
+/// Twenty-fourth audit P1 (TOCTOU closure): the scope proof and the
+/// certification are ONE statement — the row's CURRENT site must be
+/// among `authorized_sites` in the SAME `UPDATE ... WHERE` that stamps
+/// the verified fields, so a foreign-site (or site-less, or absent) id
+/// is indistinguishable from a nonexistent one (NotFound) and nothing is
+/// ever stamped between a check and the write. An EMPTY entitlement
+/// matches no site and therefore matches no row (NotFound, never a
+/// tenant-wide fallback).
 pub async fn verify_topology(
     pool: &sqlx::PgPool,
     tenant_id: Uuid,
     work_center_id: Uuid,
     verified_by: Uuid,
     source: &str,
+    authorized_sites: &[Uuid],
 ) -> Result<RelationalWorkCenter> {
     if !matches!(
         source,
@@ -185,6 +210,7 @@ pub async fn verify_topology(
              resolves topology"
         )));
     }
+    let sites = authorized_sites.to_vec();
     use crate::tps::replication::with_tenant_tx;
     let source_owned = source.to_string();
     let row = with_tenant_tx(pool, tenant_id, move |tx| {
@@ -195,7 +221,7 @@ pub async fn verify_topology(
                         topology_assignment_source = $3, \
                         topology_verified_at = NOW(), \
                         topology_verified_by = $4 \
-                  WHERE id = $1 AND tenant_id = $2 \
+                  WHERE id = $1 AND tenant_id = $2 AND site_id = ANY($5) \
                   RETURNING id, tenant_id, site_id, work_center_number, name, \
                             work_center_type, topology_state, topology_assignment_source",
             )
@@ -203,6 +229,7 @@ pub async fn verify_topology(
             .bind(tenant_id)
             .bind(&source_owned)
             .bind(verified_by)
+            .bind(sites)
             .fetch_optional(&mut **tx)
             .await
             .map_err(|e| {
@@ -322,12 +349,33 @@ pub async fn create(
 /// P0/P1). Only [`verify_topology`] can stamp provenance and resolve
 /// the row. Name and type edits never certify (or de-certify) topology
 /// by themselves.
+///
+/// Twenty-fourth audit P1 (foreign-object mutation closure): the update
+/// is scoped to the caller's site entitlement IN THE SAME statement —
+/// `site_id = ANY($sites)` on the WHERE requires the row's CURRENT site
+/// to be among `authorized_sites`, so a foreign-site (or site-less, or
+/// absent) id is indistinguishable from a nonexistent one (NotFound) and
+/// an UNASSIGN (`site_id = Some(None)`) of a foreign row is rejected the
+/// same way. A REASSIGNMENT's TARGET site is pre-validated by the caller
+/// (the route intersects the new site with the entitlement before
+/// calling — a target outside `authorized_sites` is a caller bug, never
+/// a silent cross-site move). An EMPTY `authorized_sites` is Forbidden:
+/// a caller with no site entitlement may not mutate any work center.
 pub async fn update(
     pool: &PgPool,
     tenant_id: Uuid,
     id: Uuid,
     patch: &UpdateWorkCenter,
+    authorized_sites: &[Uuid],
 ) -> Result<RelationalWorkCenter> {
+    if authorized_sites.is_empty() {
+        return Err(SenseiError::Forbidden(
+            "work center update requires at least one entitled site — a caller \
+             with no site scope cannot mutate a work center"
+                .to_string(),
+        ));
+    }
+    let sites = authorized_sites.to_vec();
     let row: Option<Row> = sqlx::query_as(
         "UPDATE work_centers SET \
             name = COALESCE($3, name), \
@@ -342,7 +390,7 @@ pub async fn update(
             topology_verified_by = CASE WHEN $5 \
                 THEN NULL ELSE topology_verified_by END, \
             updated_at = NOW() \
-         WHERE id = $1 AND tenant_id = $2 \
+         WHERE id = $1 AND tenant_id = $2 AND site_id = ANY($7) \
          RETURNING id, tenant_id, site_id, work_center_number, name, work_center_type, \
                    topology_state, topology_assignment_source",
     )
@@ -352,6 +400,7 @@ pub async fn update(
     .bind(patch.work_center_type.as_deref())
     .bind(patch.site_id.is_some())
     .bind(patch.site_id.flatten())
+    .bind(sites)
     .fetch_optional(pool)
     .await
     .map_err(|e| classify_constraint_error(e, "update", patch.site_id.flatten(), tenant_id))?;
@@ -481,15 +530,31 @@ pub async fn next_number(pool: &PgPool, tenant_id: Uuid) -> Result<String> {
 ///
 /// Deactivation never touches topology: the row keeps its site /
 /// `topology_state` (a deactivated center is still part of the plant).
-pub async fn deactivate(pool: &PgPool, tenant_id: Uuid, id: Uuid) -> Result<RelationalWorkCenter> {
+///
+/// Twenty-fourth audit P1 (TOCTOU closure): the scope proof and the
+/// deactivation are ONE statement — the row's CURRENT site must be
+/// among `authorized_sites` in the SAME `UPDATE ... WHERE` that flips
+/// `is_active`, so a foreign-site (or site-less, or absent) id is
+/// indistinguishable from a nonexistent one (NotFound) and nothing is
+/// ever deactivated between a check and the write. An EMPTY entitlement
+/// matches no site and therefore matches no row (NotFound, never a
+/// tenant-wide fallback).
+pub async fn deactivate(
+    pool: &PgPool,
+    tenant_id: Uuid,
+    id: Uuid,
+    authorized_sites: &[Uuid],
+) -> Result<RelationalWorkCenter> {
+    let sites = authorized_sites.to_vec();
     let row: Option<Row> = sqlx::query_as(
         "UPDATE work_centers SET is_active = FALSE, updated_at = NOW() \
-         WHERE id = $1 AND tenant_id = $2 \
+         WHERE id = $1 AND tenant_id = $2 AND site_id = ANY($3) \
          RETURNING id, tenant_id, site_id, work_center_number, name, work_center_type, \
                    topology_state, topology_assignment_source",
     )
     .bind(id)
     .bind(tenant_id)
+    .bind(sites)
     .fetch_optional(pool)
     .await
     .map_err(|e| db_err(e, "deactivate"))?;

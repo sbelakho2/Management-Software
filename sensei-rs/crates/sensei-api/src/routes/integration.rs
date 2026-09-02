@@ -219,6 +219,13 @@ pub struct CheckpointRequest {
     #[serde(default)]
     pub watermark_id: Option<String>,
     pub run_id: String,
+    /// The configuration revision this run ACTUALLY tested
+    /// (twenty-fourth audit P1): the completion write only stamps
+    /// `last_verified_revision` while the instance is STILL at this
+    /// revision — a bridge run started at revision 1 that completes
+    /// after the manifest moved the instance to revision 2 is refused
+    /// (Conflict = 409) instead of stamping a revision it never tested.
+    pub verified_configuration_revision: i64,
 }
 
 #[derive(Debug, serde::Serialize)]
@@ -250,6 +257,11 @@ pub async fn save_checkpoint(
     // service: an instance invisible under the caller's tenant is
     // NotFound (404); a DISABLED instance refuses advancement with
     // Conflict (409) — a decommissioned instance can never be advanced.
+    // Twenty-fourth audit P1: the run sends the configuration revision
+    // it ACTUALLY tested; the service refuses (Conflict = 409) a
+    // completion write whose tested revision no longer matches the
+    // instance's current configuration_revision — a run started at an
+    // old revision can never stamp the untested new one.
     sensei_services::tps::integration::write_checkpoint(
         pool,
         user.tenant_id,
@@ -259,6 +271,7 @@ pub async fn save_checkpoint(
         watermark,
         req.watermark_id,
         req.run_id,
+        req.verified_configuration_revision,
     )
     .await?;
     Ok(Json(CheckpointResponse { ok: true }))

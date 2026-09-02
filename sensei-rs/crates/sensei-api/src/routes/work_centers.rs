@@ -31,11 +31,16 @@
 //! Twenty-third audit P0/P1 (command scope): Work Center MUTATIONS are
 //! RequestContext-scoped too. create and update intersect the SUBMITTED
 //! site with the caller's entitlement (a foreign site is 403 BEFORE the
-//! repository runs); the high-authority verify-topology command, and
-//! deactivate, prove the work center's CURRENT site is entitled via
-//! `get_scoped` (foreign/site-less/absent are all NotFound); capacity
-//! and the efficiency report filter by the entitlement inside
-//! `metrics_scoped`.
+//! repository runs); capacity and the efficiency report filter by the
+//! entitlement inside `metrics_scoped`.
+//!
+//! Twenty-fourth audit P0/P1 (foreign-object mutation + TOCTOU closure):
+//! the entitlement now travels INTO the command statements — update,
+//! verify-topology and deactivate carry `site_id = ANY($sites)` in the
+//! SAME `UPDATE ... WHERE` that writes (foreign/site-less/absent are all
+//! NotFound, and no separate pre-check read leaves a window between
+//! proof and write); a reassignment target is pre-validated in the route
+//! and an empty entitlement makes the update Forbidden.
 
 use axum::{
     extract::{Path, Query, State},
@@ -270,9 +275,16 @@ pub async fn create_work_center(
 /// Twenty-third audit P0/P1 (command scope): a REASSIGNMENT to a target
 /// site is rejected in the ROUTE when that site is outside the caller's
 /// RequestContext entitlement (Forbidden/403 BEFORE the repository is
-/// called — the same entitlement intersect as create). Unassigning
-/// (`null`) or leaving the assignment untouched carries no target site
-/// and needs no entitlement.
+/// called — the same entitlement intersect as create).
+///
+/// Twenty-fourth audit P0/P1 (foreign-object mutation closure): EVERY
+/// variant — reassignment, unassign (`site_id: null`) and untouched —
+/// passes the caller's site entitlement to the repository, whose
+/// UPDATE ... WHERE carries `site_id = ANY($sites)`: a foreign current
+/// site (and a foreign UNASSIGN) matches 0 rows (NotFound/404), so the
+/// current-site scope is enforced INSIDE the statement that writes.
+/// The target of a reassignment is pre-validated here; an EMPTY
+/// entitlement is Forbidden (no site scope = no mutation authority).
 pub async fn update_work_center(
     user: AuthenticatedUser,
     State(state): State<AppState>,
@@ -302,6 +314,7 @@ pub async fn update_work_center(
             work_center_type: req.work_center_type,
             site_id: req.site_id,
         },
+        &sites,
     )
     .await?;
 
@@ -317,11 +330,18 @@ pub async fn update_work_center(
 ///
 /// Twenty-third audit P0/P1 (command scope): certification is a
 /// HIGH-AUTHORITY write, so it gets a STRONGER scope than an ordinary
-/// read — before certifying, the route proves the work center's CURRENT
-/// site is inside the caller's RequestContext entitlement via
-/// `get_scoped` (a foreign-site id, a site-less row and a nonexistent
-/// id are all indistinguishable NotFound/404). A caller can never
-/// certify a work center that lives outside their own sites.
+/// read — the caller's RequestContext entitlement is passed into the
+/// repository command itself.
+///
+/// Twenty-fourth audit P0/P1 (TOCTOU closure): there is NO separate
+/// pre-check anymore. The route hands the entitlement to
+/// `verify_topology`, which stamps verified fields and the 'resolved'
+/// transition in the SAME `UPDATE ... WHERE` that requires the work
+/// center's CURRENT site to be among the caller's sites — a foreign-site
+/// id, a site-less row and a nonexistent id are all indistinguishable
+/// NotFound/404, and nothing is certified between a check and the write.
+/// A caller can never certify a work center that lives outside their own
+/// sites.
 pub async fn verify_work_center_topology(
     user: AuthenticatedUser,
     State(state): State<AppState>,
@@ -333,13 +353,15 @@ pub async fn verify_work_center_topology(
     let pool = pool(&state)?;
 
     let sites = entitlement_sites(&user, &state).await;
-    // Prove the CURRENT assignment is entitled (NotFound when the row is
-    // foreign, site-less or absent — zero entitlement matches nothing).
-    let _scoped = work_center_repository::get_scoped(pool, tenant_id, id, &sites).await?;
-
-    let wc =
-        work_center_repository::verify_topology(pool, tenant_id, id, user.user_id, &req.source)
-            .await?;
+    let wc = work_center_repository::verify_topology(
+        pool,
+        tenant_id,
+        id,
+        user.user_id,
+        &req.source,
+        &sites,
+    )
+    .await?;
 
     Ok(Json(wc))
 }
@@ -349,9 +371,16 @@ pub async fn verify_work_center_topology(
 /// Flips `is_active` in the relational table; the topology assignment is
 /// untouched (a deactivated work center is still part of the plant).
 /// Twenty-third audit P0/P1 (command scope): deactivation is scoped via
-/// `get_scoped` BEFORE acting — a work center whose CURRENT site is
-/// outside the caller's entitlement (or which is site-less) is
-/// indistinguishable from a nonexistent one (NotFound/404).
+/// the caller's site entitlement.
+///
+/// Twenty-fourth audit P0/P1 (TOCTOU closure): there is NO separate
+/// pre-check anymore. The route hands the entitlement to `deactivate`,
+/// which flips `is_active` in the SAME `UPDATE ... WHERE` that requires
+/// the work center's CURRENT site to be among the caller's sites — a
+/// work center whose CURRENT site is outside the caller's entitlement
+/// (or which is site-less) is indistinguishable from a nonexistent one
+/// (NotFound/404), and nothing is deactivated between a check and the
+/// write.
 pub async fn deactivate_work_center(
     user: AuthenticatedUser,
     State(state): State<AppState>,
@@ -361,8 +390,7 @@ pub async fn deactivate_work_center(
     let pool = pool(&state)?;
     let tenant_id = user.tenant_id;
     let sites = entitlement_sites(&user, &state).await;
-    let _scoped = work_center_repository::get_scoped(pool, tenant_id, id, &sites).await?;
-    let wc = work_center_repository::deactivate(pool, tenant_id, id).await?;
+    let wc = work_center_repository::deactivate(pool, tenant_id, id, &sites).await?;
     Ok(Json(wc))
 }
 

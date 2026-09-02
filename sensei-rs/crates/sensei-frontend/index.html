@@ -9,7 +9,14 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link rel="preload" as="font" type="font/woff2" href="https://fonts.gstatic.com/s/inter/v18/UcCO3FwrK3iLTeHuS_nVMrMxCp50SjIw2boKoduKmMEVuLyfAZ9hjQ.woff2" crossorigin />
     <link rel="preload" as="font" type="font/woff2" href="https://fonts.gstatic.com/s/jetbrainsmono/v21/tDbY2o-flEEny0FZhsfKu5WU4zr3E_BX0PnT8RD8yKxjPVmUsaaDhw.woff2" crossorigin />
-    <link data-trunk rel="rust" data-target-name="sensei_frontend" />
+    <!-- data-wasm-opt="0" (twenty-fourth audit P0): disable trunk's
+         automatic per-asset wasm-opt pass — the generated module uses
+         bulk-memory + atomic instructions, and trunk's default pass
+         rejects them. The e2e-playwright CI workflow runs the explicit,
+         feature-consistent pass (--enable-bulk-memory --enable-threads
+         -O3) over dist/*.wasm AFTER the build, so optimization still
+         happens deterministically. -->
+    <link data-trunk rel="rust" data-target-name="sensei_frontend" data-wasm-opt="0" />
     <link data-trunk rel="css" href="styles/rams.css" />
     <title>Starz Forge</title>
   </head>

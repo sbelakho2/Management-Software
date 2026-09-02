@@ -69,6 +69,15 @@ pub struct ListStockMovesParams {
     pub per_page: Option<usize>,
 }
 
+/// Optional body for the stock-move DELETE route (twenty-fourth audit P0):
+/// the route REVERSES the move — a reversal is a ledger mutation with a
+/// reason, never an erase.
+#[derive(Debug, Deserialize)]
+pub struct ReverseStockMoveRequest {
+    #[serde(default)]
+    pub reason: Option<String>,
+}
+
 /// Request body for updating RFQ status.
 #[derive(Debug, Deserialize)]
 pub struct UpdateRfqStatusRequest {
@@ -805,6 +814,12 @@ pub async fn create_stock_move(
 }
 
 /// List stock movements with optional product filter.
+///
+/// Twenty-fourth audit P0 (read scope): the listing is intersected with
+/// the caller's RequestContext site entitlement INSIDE the service
+/// (`list_stock_moves_scoped`) — only moves whose `site_id` is among the
+/// caller's entitlement sites are returned, and an EMPTY entitlement
+/// lists nothing, never a tenant-wide fallback.
 pub async fn list_stock_moves(
     user: AuthenticatedUser,
     State(state): State<AppState>,
@@ -812,10 +827,21 @@ pub async fn list_stock_moves(
 ) -> Result<Json<PaginatedResponse<StockMove>>> {
     user.require_permission("inventory:read")?;
     let tenant_id = user.tenant_id;
-    let moves = state
-        .supply_chain_service
-        .list_stock_moves(tenant_id, params.product_id, params.page, params.per_page)
-        .await?;
+    let scope = caller_scope(&user, &state).await?;
+    let moves = if entitlement_of(&scope).is_none_or(|sites| sites.is_empty()) {
+        sensei_core::pagination::PaginatedResponse::new(Vec::new(), params.page, params.per_page)
+    } else {
+        state
+            .supply_chain_service
+            .list_stock_moves_scoped(
+                tenant_id,
+                entitlement_of(&scope).unwrap_or(&[]),
+                params.product_id,
+                params.page,
+                params.per_page,
+            )
+            .await?
+    };
     Ok(Json(moves))
 }
 
@@ -1152,16 +1178,35 @@ pub async fn delete_inventory(
 }
 
 /// Delete a stock movement.
+///
+/// Twenty-fourth audit P0: stock moves are LEDGER rows — this route
+/// REVERSES the move instead of erasing it: the move's site must be
+/// inside the caller's RequestContext entitlement BEFORE the reversal
+/// (a foreign, site-less or already-reversed move is indistinguishable
+/// from a nonexistent one: NotFound), and the actor + reason are
+/// stamped on the row. With no RequestContext possible (in-memory dev
+/// mode) the site-less in-memory store applies its dev-mode semantics.
 pub async fn delete_stock_move(
     user: AuthenticatedUser,
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
+    body: Option<Json<ReverseStockMoveRequest>>,
 ) -> Result<Json<()>> {
     user.require_permission("inventory:adjust")?;
     let tenant_id = user.tenant_id;
+    let reason = body
+        .and_then(|b| b.0.reason)
+        .unwrap_or_else(|| "Stock move reversed via the legacy delete route".to_string());
+    let scope = caller_scope(&user, &state).await?;
     state
         .supply_chain_service
-        .delete_stock_move(tenant_id, id)
+        .reverse_stock_move(
+            tenant_id,
+            entitlement_of(&scope).unwrap_or(&[]),
+            id,
+            user.user_id,
+            &reason,
+        )
         .await?;
     Ok(Json(()))
 }

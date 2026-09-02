@@ -51,6 +51,11 @@ jobs:
           # optimizer must run feature-consistent with the module
           # (twenty-third audit: do not suppress optimization — enable the
           # exact features the module needs).
+          # Twenty-fourth audit P0: index.html now carries
+          # data-wasm-opt="0" on the rust asset, so trunk's automatic
+          # per-asset wasm-opt pass (which runs with a conservative feature
+          # set and rejects these instructions) can no longer fail the
+          # build BEFORE the post-pass below runs.
           trunk build --release
           for wasm in dist/*.wasm; do
             wasm-opt --enable-bulk-memory --enable-threads -O3 "$wasm" -o "$wasm"

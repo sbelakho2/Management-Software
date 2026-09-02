@@ -21,16 +21,47 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required}
       POSTGRES_DB: ${POSTGRES_DB:-sensei}
       # Creates the non-owner sensei_app role (RLS depends on the app NOT
-      # being the table owner).
+      # being the table owner) and the sensei_migrator migration-owner role
+      # (twenty-fourth audit P0: the migrate service runs the chain as the
+      # object owner; the app role never DDLs).
       SENSEI_APP_PASSWORD: ${SENSEI_APP_PASSWORD:?SENSEI_APP_PASSWORD required}
+      SENSEI_MIGRATOR_PASSWORD: ${SENSEI_MIGRATOR_PASSWORD:?SENSEI_MIGRATOR_PASSWORD required}
     volumes:
       - pg-data:/var/lib/postgresql/data
+      # First-boot init (docker-entrypoint-initdb.d, sorted): extensions +
+      # tuning (./postgres-init/01-init.sql), then the canonical production
+      # role script (docker/postgres-init/01-app-role.sh — the ONE source
+      # of both role definitions and the app grants; db-contract CI
+      # executes the same file verbatim).
       - ./postgres-init:/docker-entrypoint-initdb.d:ro
+      - ./docker/postgres-init/01-app-role.sh:/docker-entrypoint-initdb.d/02-app-role.sh:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB:-sensei}"]
       interval: 10s
       timeout: 5s
       retries: 5
+
+  # One-shot migration-owner bootstrap (twenty-fourth audit P0): connects AS
+  # sensei_migrator (CREATEDB, owner of every object the chain creates) and
+  # applies the full migration chain via `--migrate-only`, then exits 0.
+  # The API/workers depend on this service COMPLETING SUCCESSFULLY, so they
+  # never start against an un-migrated schema and never attempt DDL as the
+  # non-owner sensei_app.
+  migrate:
+    build:
+      context: ./sensei-rs
+      dockerfile: Dockerfile
+    restart: "no"
+    command: ["--migrate-only"]
+    environment:
+      SENSEI_ENV: production
+      DATABASE_URL: postgres://sensei_migrator:${SENSEI_MIGRATOR_PASSWORD}@db:5432/${POSTGRES_DB:-sensei}
+      # AppConfig::from_env() validates JWT_SECRET in production before the
+      # migrate-only path runs; reuse the stack's real secret.
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET required}
+    depends_on:
+      db:
+        condition: service_healthy
 
   nats:
     image: nats:2.10-alpine
@@ -88,6 +119,8 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
       nats:
         condition: service_healthy
     healthcheck:
@@ -129,6 +162,11 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      # The workers still probe the migration state at startup; they must
+      # start only AFTER the migration-owner bootstrap completed, or their
+      # app-role connection could not even read _sqlx_migrations.
+      migrate:
+        condition: service_completed_successfully
       nats:
         condition: service_healthy
 

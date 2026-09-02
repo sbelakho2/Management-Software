@@ -152,6 +152,29 @@ services:
     networks:
       - sensei-network
 
+  # One-shot schema bootstrap (twenty-fourth audit P0): the API no longer
+  # auto-migrates at startup, so the stack needs an explicit migrate step.
+  # DEV bootstrap: this file's api/workers connect as the POSTGRES_USER
+  # superuser (no role split in dev), so this service runs the chain with
+  # the same URL and exits 0. Production uses docker-compose.prod.yml,
+  # where the equivalent service connects AS sensei_migrator.
+  migrate:
+    build:
+      context: ./sensei-rs
+      dockerfile: Dockerfile
+    container_name: sensei-migrate
+    restart: "no"
+    profiles: ["dev", "production"]
+    command: ["--migrate-only"]
+    environment:
+      SENSEI_ENV: ${SENSEI_ENV:-development}
+      DATABASE_URL: postgres://${POSTGRES_USER:-sensei}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD not set}@db:5432/${POSTGRES_DB:-sensei}
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - sensei-network
+
   # Rust Axum API
   sensei-api:
     build:
@@ -192,6 +215,10 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      # Schema must exist before the API starts (the API no longer runs
+      # migrations at startup — it connects as the app role, no DDL).
+      migrate:
+        condition: service_completed_successfully
       nats:
         condition: service_healthy
       minio:
@@ -255,6 +282,11 @@ services:
         condition: service_healthy
       db:
         condition: service_healthy
+      # Same ordering as the API: the worker probes the migration state at
+      # startup and must find the schema already applied by the migrate
+      # one-shot.
+      migrate:
+        condition: service_completed_successfully
     deploy:
       resources:
         limits:

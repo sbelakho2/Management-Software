@@ -646,117 +646,150 @@ pub async fn load_federation_edges(
     source_site_id: Option<Uuid>,
 ) -> Result<Vec<FederationEdge>> {
     with_tenant_tx(pool, tenant_id, move |tx| {
-        Box::pin(async move {
-            type EdgeRow = (
-                Uuid,              // peer_tenant_id
-                Uuid,              // peer_site_id (the destination's site manifest)
-                String,            // peer_country (the destination's manifest country)
-                Option<String>,    // peer data_residency (NULL when unset -> row skipped)
-                i64,               // peer country policy revision (0 when none)
-                serde_json::Value, // allowed_data_classes
-                String,            // residency_policy label
-                serde_json::Value, // allowed_countries
-            );
-            let rows: Vec<EdgeRow> = sqlx::query_as("SELECT * FROM federation_governance_edges()")
-                .fetch_all(&mut **tx)
-                .await
-                .map_err(|e| {
-                    SenseiError::Database(format!("replication: federation edges: {e}"))
-                })?;
+        Box::pin(async move { read_governance_edges_tx(tx, tenant_id, source_site_id).await })
+    })
+    .await
+}
 
-            let mut edges = Vec::with_capacity(rows.len());
-            for (
-                peer_tenant,
-                peer_site,
-                _peer_country,
-                data_residency,
-                revision,
-                allowed_classes_json,
-                residency_label,
-                allowed_countries_json,
-            ) in rows
-            {
-                // No peer country policy record (or an unknown residency
-                // code): the destination's jurisdiction cannot be derived,
-                // so nothing is ever exported to it.
-                let Some(residency_code) = data_residency.as_deref() else {
-                    continue;
-                };
-                let Ok(target_jurisdiction) = Jurisdiction::parse(residency_code) else {
-                    continue;
-                };
-                // The membership's allow-list must parse EXACTLY — an
-                // unparseable class cannot be honored, so the edge grants
-                // nothing.
-                let allowed_labels: Vec<String> = match serde_json::from_value(allowed_classes_json)
-                {
-                    Ok(labels) => labels,
+/// The raw row shape of [`federation_governance_edges()`]: one row per
+/// peer SITE the source tenant's memberships grant, with the peer's
+/// governance (migration 156).
+type GovernanceRow = (
+    Uuid,              // peer_tenant_id
+    Uuid,              // peer_site_id (the destination's site manifest)
+    String,            // peer_country (the destination's manifest country)
+    Option<String>,    // peer data_residency (NULL when unset -> row skipped)
+    i64,               // peer country policy revision (0 when none)
+    serde_json::Value, // allowed_data_classes
+    String,            // residency_policy label
+    serde_json::Value, // allowed_countries
+);
+
+/// Read the tenant's CURRENT governance rows through
+/// `federation_governance_edges()` inside an OPEN tenant transaction —
+/// the session context (`app.tenant_id`) is already set on `tx`, so the
+/// no-argument security-definer function resolves the source tenant from
+/// it (the SAME binding `load_federation_edges` relies on). The fanout
+/// re-reads through this helper INSIDE its own transaction (twenty-fourth
+/// audit P1 — federation TOCTOU): the route-level edge load happens in an
+/// EARLIER transaction, so the fanout compares each passed edge against
+/// the CURRENT membership/policy state at persist time instead of trusting
+/// a stale snapshot.
+async fn read_governance_edges_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    tenant_id: Uuid,
+    source_site_id: Option<Uuid>,
+) -> Result<Vec<FederationEdge>> {
+    let rows: Vec<GovernanceRow> = sqlx::query_as("SELECT * FROM federation_governance_edges()")
+        .fetch_all(&mut **tx)
+        .await
+        .map_err(|e| SenseiError::Database(format!("replication: federation edges: {e}")))?;
+    Ok(decode_governance_edges(tenant_id, source_site_id, rows))
+}
+
+/// Decode governance rows into [`FederationEdge`]s — the FAIL-CLOSED
+/// per-row screen of the loader (shared by `load_federation_edges` and
+/// the fanout's in-transaction re-read):
+/// - no peer country policy record (or an unknown residency code): the
+///   destination's jurisdiction cannot be derived, so nothing is ever
+///   exported to it;
+/// - an allow-list entry or residency label that cannot be parsed EXACTLY
+///   grants nothing (the edge is skipped, never guessed);
+/// - an unparseable allowed-country entry kills the whole
+///   `allowed_countries` edge the same way.
+fn decode_governance_edges(
+    tenant_id: Uuid,
+    source_site_id: Option<Uuid>,
+    rows: Vec<GovernanceRow>,
+) -> Vec<FederationEdge> {
+    let mut edges = Vec::with_capacity(rows.len());
+    for (
+        peer_tenant,
+        peer_site,
+        _peer_country,
+        data_residency,
+        revision,
+        allowed_classes_json,
+        residency_label,
+        allowed_countries_json,
+    ) in rows
+    {
+        // No peer country policy record (or an unknown residency
+        // code): the destination's jurisdiction cannot be derived,
+        // so nothing is ever exported to it.
+        let Some(residency_code) = data_residency.as_deref() else {
+            continue;
+        };
+        let Ok(target_jurisdiction) = Jurisdiction::parse(residency_code) else {
+            continue;
+        };
+        // The membership's allow-list must parse EXACTLY — an
+        // unparseable class cannot be honored, so the edge grants
+        // nothing.
+        let allowed_labels: Vec<String> = match serde_json::from_value(allowed_classes_json) {
+            Ok(labels) => labels,
+            Err(_) => continue,
+        };
+        let mut allowed_data_classes = Vec::with_capacity(allowed_labels.len());
+        let mut classes_ok = true;
+        for label in allowed_labels {
+            match DataPolicy::parse(&label) {
+                Ok(policy) => allowed_data_classes.push(policy),
+                Err(_) => {
+                    classes_ok = false;
+                    break;
+                }
+            }
+        }
+        if !classes_ok {
+            continue;
+        }
+        let residency_policy = match residency_label.as_str() {
+            "local_only" => ResidencyPolicy::LocalOnly,
+            "corporate_allowed" => ResidencyPolicy::CorporateAllowed,
+            "allowed_countries" => {
+                // The allowed-country list must parse EXACTLY too.
+                let codes: Vec<String> = match serde_json::from_value(allowed_countries_json) {
+                    Ok(codes) => codes,
                     Err(_) => continue,
                 };
-                let mut allowed_data_classes = Vec::with_capacity(allowed_labels.len());
-                let mut classes_ok = true;
-                for label in allowed_labels {
-                    match DataPolicy::parse(&label) {
-                        Ok(policy) => allowed_data_classes.push(policy),
+                let mut countries = Vec::with_capacity(codes.len());
+                let mut countries_ok = true;
+                for code in codes {
+                    match Jurisdiction::parse(&code) {
+                        Ok(jurisdiction) => countries.push(jurisdiction),
                         Err(_) => {
-                            classes_ok = false;
+                            countries_ok = false;
                             break;
                         }
                     }
                 }
-                if !classes_ok {
+                if !countries_ok {
                     continue;
                 }
-                let residency_policy = match residency_label.as_str() {
-                    "local_only" => ResidencyPolicy::LocalOnly,
-                    "corporate_allowed" => ResidencyPolicy::CorporateAllowed,
-                    "allowed_countries" => {
-                        // The allowed-country list must parse EXACTLY too.
-                        let codes: Vec<String> =
-                            match serde_json::from_value(allowed_countries_json) {
-                                Ok(codes) => codes,
-                                Err(_) => continue,
-                            };
-                        let mut countries = Vec::with_capacity(codes.len());
-                        let mut countries_ok = true;
-                        for code in codes {
-                            match Jurisdiction::parse(&code) {
-                                Ok(jurisdiction) => countries.push(jurisdiction),
-                                Err(_) => {
-                                    countries_ok = false;
-                                    break;
-                                }
-                            }
-                        }
-                        if !countries_ok {
-                            continue;
-                        }
-                        ResidencyPolicy::AllowedCountries(countries)
-                    }
-                    // The CHECK constraint in migration 148 makes this
-                    // unreachable; the guard keeps the loader fail-closed
-                    // anyway.
-                    _ => continue,
-                };
-                edges.push(FederationEdge {
-                    source_tenant: tenant_id,
-                    source_site: source_site_id,
-                    target_tenant: peer_tenant,
-                    // Twenty-second audit P0/P1-4: the governance function
-                    // exposes the peer's site identity, so the edge names
-                    // the EXACT destination site the queue row records as
-                    // target_site_id.
-                    target_site: Some(peer_site),
-                    target_jurisdiction,
-                    allowed_data_classes,
-                    residency_policy,
-                    policy_revision: revision as u64,
-                });
+                ResidencyPolicy::AllowedCountries(countries)
             }
-            Ok(edges)
-        })
-    })
-    .await
+            // The CHECK constraint in migration 148 makes this
+            // unreachable; the guard keeps the loader fail-closed
+            // anyway.
+            _ => continue,
+        };
+        edges.push(FederationEdge {
+            source_tenant: tenant_id,
+            source_site: source_site_id,
+            target_tenant: peer_tenant,
+            // Twenty-second audit P0/P1-4: the governance function
+            // exposes the peer's site identity, so the edge names
+            // the EXACT destination site the queue row records as
+            // target_site_id.
+            target_site: Some(peer_site),
+            target_jurisdiction,
+            allowed_data_classes,
+            residency_policy,
+            policy_revision: revision as u64,
+        });
+    }
+    edges
 }
 
 /// Enqueue one AUTHORIZED state projection for ONE federation edge —
@@ -859,6 +892,19 @@ pub async fn enqueue_projection(
 ///   the edge's own `allowed_data_classes` and its own `residency_policy`
 ///   via [`may_replicate`] (the route-level second line of defense); an
 ///   edge the gate denies is counted in `blocked`, never enqueued;
+/// - twenty-fourth audit P1 (federation TOCTOU): the route LOADED the
+///   passed edges in an EARLIER transaction, so this function RE-READS
+///   the tenant's CURRENT membership/governance rows
+///   (`federation_governance_edges()`, tenant-bound via the session
+///   context this transaction already set) and only persists an edge
+///   whose current state still matches the passed edge — same peer
+///   tenant/site, same jurisdiction, same allowed-data-classes content,
+///   same residency policy, same policy revision. An edge whose
+///   membership or policy CHANGED between the route's load and this
+///   persist is counted in `blocked` and never enqueued (a projection
+///   authorized under a now-obsolete policy is not written under the new
+///   one — the policy snapshot persisted on the row is the policy the
+///   row was really authorized under);
 /// - every permitted edge is inserted with
 ///   `ON CONFLICT (tenant_id, source_event_id, target_tenant_id,
 ///   target_site_id) DO NOTHING` — the plain unique index added by
@@ -872,7 +918,8 @@ pub async fn enqueue_projection(
 ///
 /// Returns the [`FanoutReport`] counting newly-enqueued vs already-present
 /// vs blocked edges. Nothing is written until every edge has been
-/// screened, and the single transaction commits (or rolls back) as one.
+/// screened (gate + current-state revalidation), and the single
+/// transaction commits (or rolls back) as one.
 #[allow(clippy::too_many_arguments)]
 pub async fn enqueue_projection_fanout(
     pool: &sqlx::PgPool,
@@ -910,6 +957,16 @@ pub async fn enqueue_projection_fanout(
                 already_present: 0,
                 blocked: 0,
             };
+            // Twenty-fourth audit P1 (federation TOCTOU): the CURRENT
+            // membership/governance rows, re-read INSIDE this
+            // transaction. The session context is set on `tx`, so
+            // `federation_governance_edges()` resolves the source tenant
+            // from it exactly as the route's loader did — but against the
+            // state AT PERSIST TIME, closing the window in which a
+            // membership/policy change committed between the route's
+            // edge load and this fanout could authorize a row under an
+            // obsolete policy.
+            let current_edges = read_governance_edges_tx(tx, tenant_id, site_id).await?;
             for edge in &edges {
                 // The gate is evaluated ONCE PER EDGE against THAT edge's
                 // own policy record (twentieth audit P0): an edge whose
@@ -924,6 +981,22 @@ pub async fn enqueue_projection_fanout(
                         &edge.residency_policy,
                     )
                 {
+                    report.blocked += 1;
+                    continue;
+                }
+                // Revalidation (twenty-fourth audit P1): the edge loaded
+                // by the route is only persisted if the CURRENT state of
+                // the same membership (re-read in this transaction) still
+                // matches it. A mismatch — membership removed, classes
+                // narrowed, residency policy changed, or the peer policy
+                // revision advanced — is BLOCKED, never enqueued: the
+                // queue row's edge_policy snapshot must reflect the
+                // policy the row was genuinely authorized under.
+                let unchanged = current_edges.iter().find(|current| {
+                    current.target_tenant == edge.target_tenant
+                        && current.target_site == edge.target_site
+                });
+                if !unchanged.is_some_and(|current| edge_governance_unchanged(edge, current)) {
                     report.blocked += 1;
                     continue;
                 }
@@ -970,6 +1043,54 @@ pub async fn enqueue_projection_fanout(
         })
     })
     .await
+}
+
+/// Twenty-fourth audit P1 (federation TOCTOU): does the CURRENT state of
+/// an edge — re-read inside the fanout transaction — still match the edge
+/// the route loaded in an earlier transaction? Compared fields are the
+/// membership/policy the authorization decision was made against: the
+/// peer identity (tenant + site), the derived destination jurisdiction,
+/// the allowed-data-classes CONTENT (order-insensitive — the JSONB
+/// arrays are compared as sets so a concurrent rewrite that only
+/// reorders identical content is not treated as a policy change), the
+/// residency policy content and the pinned policy revision. `false`
+/// means the edge changed under the route and the projection must not be
+/// persisted under the stale snapshot.
+fn edge_governance_unchanged(loaded: &FederationEdge, current: &FederationEdge) -> bool {
+    if loaded.source_tenant != current.source_tenant
+        || loaded.source_site != current.source_site
+        || loaded.target_tenant != current.target_tenant
+        || loaded.target_site != current.target_site
+        || loaded.target_jurisdiction != current.target_jurisdiction
+        || loaded.policy_revision != current.policy_revision
+    {
+        return false;
+    }
+    // allowed_data_classes content, order-insensitive.
+    let mut loaded_classes = loaded.allowed_data_classes.clone();
+    let mut current_classes = current.allowed_data_classes.clone();
+    loaded_classes.sort();
+    current_classes.sort();
+    if loaded_classes != current_classes {
+        return false;
+    }
+    // residency_policy content, order-insensitive for the
+    // allowed-countries list.
+    match (&loaded.residency_policy, &current.residency_policy) {
+        (ResidencyPolicy::LocalOnly, ResidencyPolicy::LocalOnly)
+        | (ResidencyPolicy::CorporateAllowed, ResidencyPolicy::CorporateAllowed) => true,
+        (
+            ResidencyPolicy::AllowedCountries(loaded_countries),
+            ResidencyPolicy::AllowedCountries(current_countries),
+        ) => {
+            let mut loaded_countries = loaded_countries.clone();
+            let mut current_countries = current_countries.clone();
+            loaded_countries.sort();
+            current_countries.sort();
+            loaded_countries == current_countries
+        }
+        _ => false,
+    }
 }
 
 /// Corporate claim: select the claimable rows (pending, or failed past

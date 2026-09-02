@@ -306,3 +306,101 @@ jobs:
           echo "  with tenant-A context: A rows=$VISIBLE_A B rows=$VISIBLE_B"
           echo "  governance peer under tenant-A context: $GOV"
           echo "  governance _for(uuid) variant: permission denied (as required)"
+      # Twenty-fourth audit P0 (clean-bootstrap gate — the PRODUCTION
+      # bootstrap order): the job above ran the chain as the SUPERUSER (the
+      # db_contract suite's harness), then exercised sensei_app against
+      # THAT schema. Production does NOT work that way anymore: a fresh
+      # database is migrated by the dedicated `migrate` container AS
+      # sensei_migrator — a NOBYPASSRLS NOSUPERUSER CREATEDB role that
+      # owns every object the chain creates — and only then does the API
+      # start as sensei_app. This step reproduces that exact order on a
+      # fresh database:
+      #   (1) superuser creates the database and pre-creates the extensions
+      #       (production initdb does the same via ./postgres-init/
+      #       01-init.sql BEFORE the role script runs — the migrator must
+      #       never need CREATE EXTENSION privileges);
+      #   (2) the CANONICAL production script (docker/postgres-init/
+      #       01-app-role.sh — executed verbatim, as everywhere) defines
+      #       BOTH roles on the fresh database: sensei_migrator holds
+      #       CREATE ON SCHEMA public + ALL ON the database, sensei_app is
+      #       stripped of schema CREATE (REVOKE ... FROM PUBLIC and FROM
+      #       sensei_app) and inherits table DML through default
+      #       privileges declared FOR ROLE sensei_migrator;
+      #   (3) the migration chain runs AS sensei_migrator through the real
+      #       production path: `cargo run -p sensei-api -- --migrate-only`
+      #       (the API binary's migrate-only mode — what the compose
+      #       `migrate` service invokes);
+      #   (4) assertions: schema + object OWNERSHIP (every table and the
+      #       SECURITY DEFINER governance function must be owned by
+      #       sensei_migrator, not the app role or the superuser), the
+      #       migrator's role attributes, sensei_app CANNOT CREATE TABLE,
+      #       and sensei_app CAN SELECT from a migrated tenant table.
+      - name: Clean-bootstrap gate — fresh DB migrated AS sensei_migrator (production bootstrap order)
+        run: |
+          set -euo pipefail
+          export PGHOST=localhost PGPORT=5434 PGUSER=sensei PGPASSWORD=sensei_test
+          # (1) Fresh database (DROP IF EXISTS keeps self-hosted runner
+          #     re-runs clean; PG16 DROP ... WITH (FORCE) kills leftovers).
+          psql -X -q -v ON_ERROR_STOP=1 -c 'DROP DATABASE IF EXISTS clean_bootstrap WITH (FORCE)'
+          psql -X -q -v ON_ERROR_STOP=1 -c 'CREATE DATABASE clean_bootstrap'
+          # Extensions exactly as the production initdb does (root
+          # ./postgres-init/01-init.sql) — the migrator never creates them.
+          psql -X -q -v ON_ERROR_STOP=1 -d clean_bootstrap <<'SQL'
+          CREATE EXTENSION IF NOT EXISTS vector;
+          CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+          CREATE EXTENSION IF NOT EXISTS pgcrypto;
+          CREATE EXTENSION IF NOT EXISTS pg_trgm;
+          SQL
+          # (2) Canonical role script against the FRESH database (verbatim,
+          #     same file production mounts as 02-app-role.sh and the job
+          #     above ran on sensei_test). Roles already exist server-wide;
+          #     the script's DO blocks no-op and the ALTERs converge.
+          POSTGRES_USER=sensei \
+          POSTGRES_PASSWORD=sensei_test \
+          POSTGRES_DB=clean_bootstrap \
+          SENSEI_APP_PASSWORD=x \
+          SENSEI_MIGRATOR_PASSWORD=migrate \
+          bash "$GITHUB_WORKSPACE/docker/postgres-init/01-app-role.sh"
+          # (3) Run the ENTIRE migration chain AS sensei_migrator through
+          #     the production binary path (--migrate-only; exits 0 only
+          #     when the chain applied cleanly).
+          SENSEI_NO_ZIG=1 \
+          DATABASE_URL=postgres://sensei_migrator:migrate@localhost:5434/clean_bootstrap \
+          cargo run -p sensei-api -- --migrate-only
+          # (4a) Schema assertions AS sensei_migrator: migration ledger is
+          #      populated and the audited probe table exists.
+          export PGDATABASE=clean_bootstrap PGUSER=sensei_migrator PGPASSWORD=migrate
+          MIGRATED="$(psql -X -q -tAc 'SELECT COUNT(*) FROM _sqlx_migrations')"
+          [ "$MIGRATED" -ge 140 ] || { echo "migration ledger too small: $MIGRATED"; exit 1; }
+          PRODUCTS="$(psql -X -q -tAc "SELECT to_regclass('public.products')")"
+          [ "$PRODUCTS" = "products" ] || { echo "products table missing after migrator chain: '$PRODUCTS'"; exit 1; }
+          # (4b) OWNERSHIP: the chain really ran AS sensei_migrator — every
+          #      table AND the SECURITY DEFINER governance functions must be
+          #      owned by sensei_migrator (the migration role must be the
+          #      function owner; an app-role-owned function would lose the
+          #      RLS-bypassing owner the governance channel needs).
+          TABLE_OWNER="$(psql -X -q -tAc "SELECT pg_get_userbyid(relowner) FROM pg_class WHERE relname = 'products' AND relnamespace = 'public'::regnamespace")"
+          [ "$TABLE_OWNER" = "sensei_migrator" ] || { echo "products owned by '$TABLE_OWNER', expected sensei_migrator"; exit 1; }
+          FN_OWNER="$(psql -X -q -tAc "SELECT pg_get_userbyid(p.proowner) FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = 'public' AND p.proname = 'federation_governance_edges' AND p.pronargs = 0")"
+          [ "$FN_OWNER" = "sensei_migrator" ] || { echo "federation_governance_edges() owned by '$FN_OWNER', expected sensei_migrator"; exit 1; }
+          # (4c) Migrator role attributes: NOSUPERUSER NOBYPASSRLS CREATEDB
+          #      NOCREATEROLE (can DDL + own the chain; cannot bypass RLS
+          #      or administer roles).
+          FLAGS="$(psql -X -q -tAc "SELECT rolsuper || '/' || rolbypassrls || '/' || rolcreatedb || '/' || rolcreaterole FROM pg_roles WHERE rolname = 'sensei_migrator'")"
+          [ "$FLAGS" = "false/false/true/false" ] || { echo "sensei_migrator is not least-privilege: '$FLAGS'"; exit 1; }
+          # (4d) sensei_app on the migrator-owned schema: schema CREATE is
+          #      REFUSED (REVOKE ... FROM PUBLIC + FROM sensei_app), and a
+          #      migrated tenant table is SELECTable through the default
+          #      privileges declared FOR ROLE sensei_migrator.
+          export PGUSER=sensei_app PGPASSWORD=x
+          APP_FLAGS="$(psql -X -q -tAc "SELECT rolsuper || '/' || rolbypassrls || '/' || rolcreatedb || '/' || rolcreaterole FROM pg_roles WHERE rolname = 'sensei_app'")"
+          [ "$APP_FLAGS" = "false/false/false/false" ] || { echo "sensei_app is not least-privilege: '$APP_FLAGS'"; exit 1; }
+          CREATE_OUT="$(psql -X -q -v ON_ERROR_STOP=1 -c 'CREATE TABLE sensei_app_probe (id int)' 2>&1 || true)"
+          case "$CREATE_OUT" in
+            *"permission denied for schema public"*) : ;;
+            *) echo "sensei_app could CREATE TABLE on the migrator-owned schema: '$CREATE_OUT'"; exit 1;;
+          esac
+          SELECT_OUT="$(psql -X -q -tAc 'SELECT COUNT(*) FROM products')"
+          echo "clean bootstrap OK: migrations=$MIGRATED migrator_flags=$FLAGS table_owner=$TABLE_OWNER fn_owner=$FN_OWNER"
+          echo "  sensei_app CREATE denied (permission denied for schema public)"
+          echo "  sensei_app SELECT on products returned count=$SELECT_OUT"

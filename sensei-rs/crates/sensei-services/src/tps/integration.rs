@@ -28,6 +28,16 @@
 //!   a checkpoint only certifies the configuration revision it verified;
 //!   when the manifest advances the revision, the OLD checkpoint stops
 //!   certifying until a fresh run stamps the new revision.
+//!   Twenty-fourth audit P1 (revision race closure): the run itself sends
+//!   the revision it ACTUALLY tested (`verified_configuration_revision`),
+//!   and the verification stamp is a GUARDED conditional update — it only
+//!   succeeds while the instance's CURRENT configuration_revision equals
+//!   the tested revision AND the instance is still enabled. A bridge run
+//!   started at revision 1 that completes after the manifest moved the
+//!   instance to revision 2 cannot stamp revision 2 untested: the stamp is
+//!   refused (Conflict = 409) and the whole write rolls back. The
+//!   checkpoint row records the verified revision too, so the durable
+//!   cursor names exactly what it certified.
 //! - `get_checkpoint` reads that instance's watermark: `None` means the
 //!   instance NEVER RAN (NeverRun/Unknown) — never a fabricated
 //!   `Utc::now()`. `get_site_checkpoint` resolves the instance by
@@ -253,11 +263,31 @@ pub async fn reconcile_instances(
 /// never needs them.
 ///
 /// Twenty-third audit P1: the write ALSO stamps
-/// `last_verified_revision = configuration_revision` on the instance IN
-/// THE SAME TRANSACTION — the checkpoint certifies exactly the
-/// configuration revision it verified. When a manifest change advances
-/// the instance's configuration_revision, the old checkpoint stops
-/// certifying until a fresh write stamps the new revision.
+/// `last_verified_revision` on the instance IN THE SAME TRANSACTION —
+/// the checkpoint certifies exactly the configuration revision it
+/// verified. When a manifest change advances the instance's
+/// configuration_revision, the old checkpoint stops certifying until a
+/// fresh write stamps the new revision.
+///
+/// Twenty-fourth audit P1 (revision race closure):
+/// `verified_configuration_revision` is the revision the bridge run
+/// ACTUALLY tested (sent with the run, in the checkpoint request body).
+/// The verification stamp is a GUARDED conditional update:
+///
+/// ```sql
+/// UPDATE integration_instances
+///    SET last_verified_revision = $rev
+///  WHERE id = $instance AND configuration_revision = $rev AND enabled = TRUE
+/// ```
+///
+/// A 0-row update means the instance moved (its configuration revision
+/// advanced past the tested revision, or it was decommissioned) between
+/// the start of the run and the completion write — the run certified an
+/// OLDER configuration, so the write is refused (Conflict = 409,
+/// "stale integration run") and the checkpoint row rolls back with it.
+/// The checkpoint row records the verified revision
+/// (`integration_checkpoints.verified_revision`, migration 161), so the
+/// durable cursor itself names what it certified.
 #[allow(clippy::too_many_arguments)]
 pub async fn write_checkpoint(
     pool: &PgPool,
@@ -268,11 +298,12 @@ pub async fn write_checkpoint(
     watermark: chrono::DateTime<chrono::Utc>,
     watermark_id: Option<String>,
     run_id: String,
+    verified_configuration_revision: i64,
 ) -> Result<()> {
     with_tenant_tx(pool, tenant_id, |tx| {
         Box::pin(async move {
-            let instance: Option<(bool,)> = sqlx::query_as(
-                "SELECT enabled FROM integration_instances \
+            let instance: Option<(bool, i32)> = sqlx::query_as(
+                "SELECT enabled, configuration_revision FROM integration_instances \
                  WHERE tenant_id = $1 AND id = $2",
             )
             .bind(tenant_id)
@@ -282,7 +313,7 @@ pub async fn write_checkpoint(
             .map_err(|e| {
                 SenseiError::Database(format!("Integration instance lookup failed: {e}"))
             })?;
-            let Some((enabled,)) = instance else {
+            let Some((enabled, configuration_revision)) = instance else {
                 return Err(SenseiError::NotFound(format!(
                     "integration instance {instance_id} not found for this tenant"
                 )));
@@ -293,11 +324,85 @@ pub async fn write_checkpoint(
                      instance cannot be advanced"
                 )));
             }
+            // Twenty-fourth audit P1: the run certifies the revision it
+            // ACTUALLY tested. When the instance has already moved past
+            // that revision the write is refused up front — and the
+            // GUARDED update below enforces the same check atomically
+            // against the state at write time (a concurrent manifest
+            // advance between this read and the stamp cannot slip by).
+            if configuration_revision as i64 != verified_configuration_revision {
+                return Err(SenseiError::Conflict(format!(
+                    "stale integration run: instance moved to a newer configuration \
+                     revision (instance {instance_id} is at revision \
+                     {configuration_revision}, the run tested revision \
+                     {verified_configuration_revision})"
+                )));
+            }
+            // The verification stamp is CONDITIONAL on the instance still
+            // being ENABLED and still carrying the tested revision — a
+            // run that started against an old configuration can never
+            // stamp a revision it did not test (0 rows updated = the
+            // instance moved; the whole write rolls back, checkpoint
+            // included).
+            let stamped = sqlx::query(
+                "UPDATE integration_instances \
+                    SET last_verified_revision = $3::int \
+                  WHERE tenant_id = $1 AND id = $2 \
+                    AND configuration_revision = $3 \
+                    AND enabled = TRUE",
+            )
+            .bind(tenant_id)
+            .bind(instance_id)
+            .bind(verified_configuration_revision)
+            .execute(&mut **tx)
+            .await
+            .map_err(|e| {
+                SenseiError::Database(format!("Instance verification stamp failed: {e}"))
+            })?;
+            if stamped.rows_affected() == 0 {
+                // The instance moved between the read and the guarded
+                // stamp (a concurrent manifest reconcile or
+                // decommission). Classify the current state so the
+                // refusal names what actually happened.
+                let now: Option<(bool, i32)> = sqlx::query_as(
+                    "SELECT enabled, configuration_revision FROM integration_instances \
+                     WHERE tenant_id = $1 AND id = $2",
+                )
+                .bind(tenant_id)
+                .bind(instance_id)
+                .fetch_optional(&mut **tx)
+                .await
+                .map_err(|e| {
+                    SenseiError::Database(format!("Integration instance lookup failed: {e}"))
+                })?;
+                match now {
+                    None => {
+                        return Err(SenseiError::NotFound(format!(
+                            "integration instance {instance_id} not found for this tenant"
+                        )))
+                    }
+                    Some((false, _)) => {
+                        return Err(SenseiError::Conflict(format!(
+                            "integration instance {instance_id} is disabled — a decommissioned \
+                             instance cannot be advanced"
+                        )))
+                    }
+                    Some((true, current_revision)) => {
+                        return Err(SenseiError::Conflict(format!(
+                            "stale integration run: instance moved to a newer configuration \
+                             revision (instance {instance_id} is at revision \
+                             {current_revision}, the run tested revision \
+                             {verified_configuration_revision})"
+                        )))
+                    }
+                }
+            }
             sqlx::query(
                 "INSERT INTO integration_checkpoints \
                      (tenant_id, instance_id, source_system, source_table, \
-                      watermark, watermark_id, last_run_id, last_run_at) \
-                 VALUES ($1, $2, $3, $4, $5, $6, $7, NOW()) \
+                      watermark, watermark_id, last_run_id, last_run_at, \
+                      verified_revision) \
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), $8) \
                  ON CONFLICT (tenant_id, instance_id) DO UPDATE SET \
                      source_system = COALESCE(EXCLUDED.source_system, \
                                               integration_checkpoints.source_system), \
@@ -306,7 +411,8 @@ pub async fn write_checkpoint(
                      watermark = EXCLUDED.watermark, \
                      watermark_id = EXCLUDED.watermark_id, \
                      last_run_id = EXCLUDED.last_run_id, \
-                     last_run_at = NOW()",
+                     last_run_at = NOW(), \
+                     verified_revision = EXCLUDED.verified_revision",
             )
             .bind(tenant_id)
             .bind(instance_id)
@@ -315,23 +421,10 @@ pub async fn write_checkpoint(
             .bind(watermark)
             .bind(&watermark_id)
             .bind(&run_id)
+            .bind(verified_configuration_revision)
             .execute(&mut **tx)
             .await
             .map_err(|e| SenseiError::Database(format!("Checkpoint write failed: {e}")))?;
-            // The verification stamp: this checkpoint certifies the
-            // instance's CURRENT configuration revision — nothing older.
-            sqlx::query(
-                "UPDATE integration_instances \
-                    SET last_verified_revision = configuration_revision \
-                  WHERE tenant_id = $1 AND id = $2",
-            )
-            .bind(tenant_id)
-            .bind(instance_id)
-            .execute(&mut **tx)
-            .await
-            .map_err(|e| {
-                SenseiError::Database(format!("Instance verification stamp failed: {e}"))
-            })?;
             Ok(())
         })
     })

@@ -10586,6 +10586,7 @@ async fn site_bootstrap_lifecycle_validation() {
         chrono::Utc::now(),
         None,
         "run-lc".to_string(),
+        1,
     )
     .await
     .expect("the erp instance's own checkpoint write must succeed");
@@ -13545,6 +13546,7 @@ async fn integration_readiness_is_per_site_instance() {
         chrono::Utc::now(),
         None,
         "run-a".to_string(),
+        1,
     )
     .await
     .expect("site A's own checkpoint write must succeed");
@@ -13630,6 +13632,7 @@ async fn integration_readiness_is_per_site_instance() {
         chrono::Utc::now(),
         None,
         "run-b".to_string(),
+        1,
     )
     .await
     .expect("site B's own checkpoint write must succeed");
@@ -14379,6 +14382,7 @@ async fn integration_producer_reconcile_and_epistemics() {
         chrono::Utc::now(),
         None,
         "run-legacy".to_string(),
+        1,
     )
     .await
     .expect_err("a decommissioned instance must refuse advancement");
@@ -14456,6 +14460,7 @@ async fn integration_producer_reconcile_and_epistemics() {
         chrono::Utc::now(),
         None,
         "run-ghost".to_string(),
+        1,
     )
     .await
     .expect_err("an unknown instance must be refused");
@@ -14477,6 +14482,7 @@ async fn integration_producer_reconcile_and_epistemics() {
         watermark,
         None,
         "run-1".to_string(),
+        1,
     )
     .await
     .expect("the instance's own checkpoint write must succeed");
@@ -14599,7 +14605,8 @@ async fn integration_producer_reconcile_and_epistemics() {
         stale_healthy.2
     );
     // A fresh bridge run stamps revision 2 → the instance is proven
-    // again.
+    // again. (Twenty-fourth audit P1: the run SENDS the revision it
+    // tested — revision 2 — so the guarded stamp succeeds.)
     write_checkpoint(
         &pool,
         tenant_id,
@@ -14609,6 +14616,7 @@ async fn integration_producer_reconcile_and_epistemics() {
         chrono::Utc::now(),
         None,
         "run-2".to_string(),
+        2,
     )
     .await
     .expect("the fresh run must succeed");
@@ -14680,6 +14688,7 @@ async fn integration_producer_reconcile_and_epistemics() {
         chrono::Utc::now(),
         None,
         "run-3".to_string(),
+        2,
     )
     .await
     .expect_err("a decommissioned instance must refuse advancement");
@@ -14715,18 +14724,21 @@ async fn integration_producer_reconcile_and_epistemics() {
     );
 }
 
-/// Twenty-third audit P0/P1 (Work Center command scope): the ROUTE-level
+/// Twenty-third audit P0/P1 (Work Center command scope), closed by the
+/// twenty-fourth audit (foreign-object mutation + TOCTOU): the ROUTE-level
 /// mutation scoping builds on repository primitives that MUST hold at the
 /// DB boundary:
-///   - `get_scoped` is the proof the verify-topology / deactivate /
-///     capacity handlers run BEFORE acting: a work center whose CURRENT
+///   - `get_scoped` proves the READS: a work center whose CURRENT
 ///     site is foreign — or a site-less (`needs_reconciliation`) row —
 ///     is indistinguishable from a nonexistent one (NotFound), and an
 ///     EMPTY entitlement matches nothing;
 ///   - `list_scoped` / `metrics_scoped` intersect the row set with the
 ///     entitlement in the SQL (site-less rows never appear);
-///   - the repository commands the scoped routes delegate to (verify,
-///     deactivate, metrics) work against the entitled rows.
+///   - the MUTATION commands (verify, deactivate, update) carry
+///     `site_id = ANY($sites)` in the SAME `UPDATE ... WHERE` that
+///     writes — a foreign row matches 0 rows (NotFound) with no separate
+///     pre-check window, and an update with an empty entitlement is
+///     Forbidden.
 #[tokio::test]
 async fn twenty_third_audit_work_center_command_scope() {
     let _serial = DB_LOCK.lock().await;
@@ -14881,9 +14893,11 @@ async fn twenty_third_audit_work_center_command_scope() {
         .expect("metrics B");
     assert_eq!(metrics_b[0].id, wc_b.id);
 
-    // The scoped route delegates deactivation AFTER the get_scoped proof:
-    // the command itself keeps working on the entitled row.
-    let _deactivated = work_center_repository::deactivate(&pool, tenant_id, wc_a.id)
+    // Twenty-fourth audit: the scoped route delegates deactivation with
+    // the entitlement — the command's OWN UPDATE ... WHERE requires the
+    // current site to be entitled (a foreign id is NotFound without any
+    // separate pre-check read).
+    let _deactivated = work_center_repository::deactivate(&pool, tenant_id, wc_a.id, &[site_a])
         .await
         .expect("deactivate");
     let after = work_center_repository::metrics_scoped(&pool, tenant_id, &[site_a])
@@ -14894,14 +14908,17 @@ async fn twenty_third_audit_work_center_command_scope() {
         "the deactivated entitled row is projected with is_active = false"
     );
 
-    // verify_topology is the ONLY certifier; the route proves scope via
-    // get_scoped first, then delegates the stamp.
+    // verify_topology is the ONLY certifier; the command stamps verified
+    // fields and resolves topology in the SAME statement whose WHERE
+    // requires the current site to be entitled (twenty-fourth audit —
+    // no separate get_scoped pre-check).
     let verified = work_center_repository::verify_topology(
         &pool,
         tenant_id,
         wc_a.id,
         user,
         "manual_reconciliation",
+        &[site_a],
     )
     .await
     .expect("verify");
@@ -14911,9 +14928,11 @@ async fn twenty_third_audit_work_center_command_scope() {
         Some("manual_reconciliation")
     );
 
-    // The repository's update command stays unscoped (the ROUTE enforces
-    // the target-site entitlement before calling it); a reassignment
-    // write still invalidates verification.
+    // The repository's update command is site-scoped too (twenty-fourth
+    // audit): the WHERE carries site_id = ANY($sites) — the row's CURRENT
+    // site (site_a) must be entitled — and the caller pre-validated the
+    // reassignment TARGET (site_b) against the same entitlement before
+    // calling; a reassignment write still invalidates verification.
     let reassigned = work_center_repository::update(
         &pool,
         tenant_id,
@@ -14923,6 +14942,7 @@ async fn twenty_third_audit_work_center_command_scope() {
             name: None,
             work_center_type: None,
         },
+        &[site_a, site_b],
     )
     .await
     .expect("reassign");
@@ -15336,4 +15356,408 @@ async fn twenty_third_audit_inventory_and_stock_moves_are_site_entitled() {
         .await
         .expect("receipt into the entitled row applies");
     assert_eq!(qty(&pool, row_a).await, 105);
+}
+
+/// Twenty-fourth audit P0 (adversarial): PO receipts write inventory at
+/// the PO's OWN receiving site — never a tenant-global row — and stock
+/// moves are site-attributable, never erased.
+///
+///  1. Site A and site B BOTH stock product X at location 'main'
+///     (migration 160 makes inventory identity site-scoped, so the two
+///     rows coexist); a site-A PO receipt changes ONLY site A's balance
+///     and its stock-move ledger rows carry site A.
+///  2. A site-A receipt for a product with NO site-A inventory row
+///     CREATES the row stamped with site A.
+///  3. list_stock_moves_scoped for site A never shows site B rows.
+///  4. delete_stock_move is gone from the service trait; reversing a
+///     move flips status='reversed' with the actor/timestamp/reason and
+///     leaves the ledger row in place.
+#[tokio::test]
+async fn twenty_fourth_audit_po_receipts_are_site_bound_and_moves_reverse() {
+    let _serial = DB_LOCK.lock().await;
+    let Some(pool) = connect().await else { return };
+    sensei_db::migrations::run_migrations(&pool)
+        .await
+        .expect("migration chain");
+
+    let tenant_id = uuid::Uuid::new_v4();
+    let site_a = uuid::Uuid::new_v4();
+    let site_b = uuid::Uuid::new_v4();
+    let user = uuid::Uuid::new_v4();
+    sqlx::query("INSERT INTO tenants (id, name, slug) VALUES ($1, 't24po', 't24po')")
+        .bind(tenant_id)
+        .execute(&pool)
+        .await
+        .expect("tenant");
+    sqlx::query(
+        "INSERT INTO sites (id, tenant_id, site_code, name) VALUES \
+         ($1, $2, 'T24A', 'T24 A'), ($3, $4, 'T24B', 'T24 B')",
+    )
+    .bind(site_a)
+    .bind(tenant_id)
+    .bind(site_b)
+    .bind(tenant_id)
+    .execute(&pool)
+    .await
+    .expect("sites");
+    sqlx::query(
+        "INSERT INTO users (id, tenant_id, email, name, password_hash) \
+         VALUES ($1, $2, 'u24po@starzforge.local', 'U', 'x')",
+    )
+    .bind(user)
+    .bind(tenant_id)
+    .execute(&pool)
+    .await
+    .expect("user");
+    let supplier = uuid::Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO suppliers (id, tenant_id, supplier_number, name) \
+         VALUES ($1, $2, 'SUP-24', 'Sup')",
+    )
+    .bind(supplier)
+    .bind(tenant_id)
+    .execute(&pool)
+    .await
+    .expect("supplier");
+    let product_x = uuid::Uuid::new_v4();
+    let product_y = uuid::Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO products (id, tenant_id, product_number, name, unit_of_measure, reorder_point) \
+         VALUES ($1, $2, 'P-24X', 'X', 'pcs', 3), ($3, $4, 'P-24Y', 'Y', 'pcs', 3)",
+    )
+    .bind(product_x)
+    .bind(tenant_id)
+    .bind(product_y)
+    .bind(tenant_id)
+    .execute(&pool)
+    .await
+    .expect("products");
+
+    // BOTH sites stock product X at the SAME location name 'main' — only
+    // possible because migration 160 made inventory identity site-scoped.
+    let row_a = uuid::Uuid::new_v4();
+    let row_b = uuid::Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO inventory_items \
+            (id, tenant_id, product_id, site_id, location, quantity_on_hand, \
+             quantity_reserved, quantity_available) \
+         VALUES ($1, $2, $3, $4, 'main', 100, 0, 100), \
+                ($5, $6, $7, $8, 'main', 50, 0, 50)",
+    )
+    .bind(row_a)
+    .bind(tenant_id)
+    .bind(product_x)
+    .bind(site_a)
+    .bind(row_b)
+    .bind(tenant_id)
+    .bind(product_x)
+    .bind(site_b)
+    .execute(&pool)
+    .await
+    .expect("same-named location at two sites must coexist");
+
+    use sensei_services::supply_chain::{
+        DatabaseSupplyChainService, POItem, PurchaseOrder, StockMove, SupplyChainService,
+    };
+    let sc = DatabaseSupplyChainService::new(pool.clone());
+
+    async fn qty(pool: &sqlx::PgPool, id: uuid::Uuid) -> i64 {
+        sqlx::query_scalar("SELECT quantity_on_hand::bigint FROM inventory_items WHERE id = $1")
+            .bind(id)
+            .fetch_one(pool)
+            .await
+            .expect("read quantity")
+    }
+
+    // ── 1. A site-A PO receipt touches ONLY site A's balance ─────────────
+    let po = PurchaseOrder {
+        id: uuid::Uuid::new_v4(),
+        tenant_id,
+        po_number: String::new(),
+        supplier_id: supplier,
+        supplier_name: "Sup".to_string(),
+        status: String::new(),
+        line_items: vec![POItem {
+            product_id: product_x,
+            product_name: "X".to_string(),
+            quantity_ordered: 25,
+            quantity_received: 0,
+            unit_price: rust_decimal::Decimal::ONE,
+        }],
+        total_amount: rust_decimal::Decimal::ZERO,
+        currency: "MAD".to_string(),
+        expected_delivery: None,
+        created_by: user,
+        created_at: chrono::Utc::now(),
+        receiving_site_id: Some(site_a),
+    };
+    let created = sc
+        .create_purchase_order(tenant_id, po)
+        .await
+        .expect("service-created PO for site A");
+    let received = sc
+        .receive_full_po(tenant_id, &[site_a], created.id)
+        .await
+        .expect("site-A receipt applies");
+    assert_eq!(received.status, "received");
+    assert_eq!(
+        qty(&pool, row_a).await,
+        125,
+        "the site-A receipt credited ONLY site A's 'main' row"
+    );
+    assert_eq!(
+        qty(&pool, row_b).await,
+        50,
+        "site B's same-named 'main' row is UNTOUCHED by the site-A receipt"
+    );
+
+    // The receipt's ledger move is stamped with the PO's site.
+    let moves_a: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM stock_moves \
+         WHERE tenant_id = $1 AND site_id = $2 AND reference_id = $3",
+    )
+    .bind(tenant_id)
+    .bind(site_a)
+    .bind(created.id)
+    .fetch_one(&pool)
+    .await
+    .expect("site-A move count");
+    assert_eq!(moves_a, 1, "the receipt recorded one move at site A");
+    let moves_b: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM stock_moves \
+         WHERE tenant_id = $1 AND site_id = $2 AND reference_id = $3",
+    )
+    .bind(tenant_id)
+    .bind(site_b)
+    .bind(created.id)
+    .fetch_one(&pool)
+    .await
+    .expect("site-B move count");
+    assert_eq!(moves_b, 0, "no site-B move was recorded for the site-A PO");
+
+    // A caller scoped ONLY to site B cannot receive the site-A PO at all —
+    // foreign == nonexistent — and nothing changes.
+    let foreign = sc
+        .receive_full_po(tenant_id, &[site_b], created.id)
+        .await
+        .expect_err("receiving a site-A PO under a site-B scope is refused");
+    assert!(
+        matches!(foreign, sensei_core::error::SenseiError::NotFound(_)),
+        "a PO outside the caller's scope is indistinguishable from nonexistent: {foreign}"
+    );
+    assert_eq!(
+        qty(&pool, row_a).await,
+        125,
+        "no change on the refused receipt"
+    );
+    assert_eq!(qty(&pool, row_b).await, 50);
+
+    // ── 2. A receipt with NO site-A inventory row CREATES the row ────────
+    // product_y has NO inventory anywhere; the site-A receipt must create
+    // its row stamped with site A (never site-less, never tenant-global).
+    let po_y = PurchaseOrder {
+        id: uuid::Uuid::new_v4(),
+        tenant_id,
+        po_number: String::new(),
+        supplier_id: supplier,
+        supplier_name: "Sup".to_string(),
+        status: String::new(),
+        line_items: vec![POItem {
+            product_id: product_y,
+            product_name: "Y".to_string(),
+            quantity_ordered: 7,
+            quantity_received: 0,
+            unit_price: rust_decimal::Decimal::ONE,
+        }],
+        total_amount: rust_decimal::Decimal::ZERO,
+        currency: "MAD".to_string(),
+        expected_delivery: None,
+        created_by: user,
+        created_at: chrono::Utc::now(),
+        receiving_site_id: Some(site_a),
+    };
+    let created_y = sc
+        .create_purchase_order(tenant_id, po_y)
+        .await
+        .expect("service-created PO for product Y");
+    sc.receive_full_po(tenant_id, &[site_a], created_y.id)
+        .await
+        .expect("site-A receipt creates the missing row");
+    let (y_site, y_qty, y_loc): (Option<uuid::Uuid>, i64, String) = sqlx::query_as(
+        "SELECT site_id, quantity_on_hand::bigint, location \
+         FROM inventory_items WHERE tenant_id = $1 AND product_id = $2",
+    )
+    .bind(tenant_id)
+    .bind(product_y)
+    .fetch_one(&pool)
+    .await
+    .expect("product-Y row created by the receipt");
+    assert_eq!(
+        y_site,
+        Some(site_a),
+        "the created row carries the PO's site"
+    );
+    assert_eq!(y_qty, 7);
+    assert_eq!(
+        y_loc, "main",
+        "receipt fell back to the warehouse default location"
+    );
+
+    // ── 3. Scoped stock-move lists never cross sites ─────────────────────
+    // A site-B move on product X (receipt into site B's 'main').
+    let receipt_b = StockMove {
+        id: uuid::Uuid::new_v4(),
+        tenant_id,
+        product_id: product_x,
+        product_name: "X".to_string(),
+        quantity: 10,
+        move_type: "receipt".to_string(),
+        from_location: None,
+        to_location: "main".to_string(),
+        reference_type: None,
+        reference_id: None,
+        created_by: user,
+        created_at: chrono::Utc::now(),
+    };
+    let move_b = sc
+        .create_stock_move_scoped(tenant_id, &[site_b], receipt_b)
+        .await
+        .expect("site-B receipt applies");
+    assert_eq!(qty(&pool, row_b).await, 60, "site B credited");
+    assert_eq!(
+        qty(&pool, row_a).await,
+        125,
+        "site A untouched by the B move"
+    );
+
+    let site_b_moves: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM stock_moves WHERE tenant_id = $1 AND site_id = $2",
+    )
+    .bind(tenant_id)
+    .bind(site_b)
+    .fetch_one(&pool)
+    .await
+    .expect("count site-B moves");
+    assert_eq!(site_b_moves, 1);
+
+    let listed_a = sc
+        .list_stock_moves_scoped(tenant_id, &[site_a], None, None, None)
+        .await
+        .expect("list moves for site A");
+    assert_eq!(
+        listed_a.total, 2,
+        "site A sees exactly its two receipt moves"
+    );
+    assert!(
+        !listed_a.data.iter().any(|m| m.id == move_b.id),
+        "site A's listing never shows site B's move"
+    );
+    let listed_b = sc
+        .list_stock_moves_scoped(tenant_id, &[site_b], None, None, None)
+        .await
+        .expect("list moves for site B");
+    assert_eq!(listed_b.total, 1);
+    assert!(
+        listed_b.data.iter().any(|m| m.id == move_b.id),
+        "site B's listing carries its own move"
+    );
+    let listed_empty = sc
+        .list_stock_moves_scoped(tenant_id, &[], None, None, None)
+        .await
+        .expect("empty-scope list");
+    assert_eq!(
+        listed_empty.total, 0,
+        "an empty entitlement matches nothing"
+    );
+    let listed_a_y = sc
+        .list_stock_moves_scoped(tenant_id, &[site_a], Some(product_y), None, None)
+        .await
+        .expect("product-filtered list");
+    assert_eq!(
+        listed_a_y.total, 1,
+        "product Y's site-A receipt move is visible"
+    );
+
+    // ── 4. Reversal replaces deletion ────────────────────────────────────
+    // The delete_stock_move method is GONE from the service (compile-time);
+    // the reversal is site-scoped, stamps the metadata and keeps the row.
+    let wrong_scope = sc
+        .reverse_stock_move(tenant_id, &[site_a], move_b.id, user, "not ours")
+        .await
+        .expect_err("a site-B move cannot be reversed under a site-A scope");
+    assert!(
+        matches!(wrong_scope, sensei_core::error::SenseiError::NotFound(_)),
+        "a move outside the caller's scope is indistinguishable from nonexistent: {wrong_scope}"
+    );
+    let still_posted: String = sqlx::query_scalar("SELECT status FROM stock_moves WHERE id = $1")
+        .bind(move_b.id)
+        .fetch_one(&pool)
+        .await
+        .expect("status");
+    assert_eq!(
+        still_posted, "posted",
+        "the wrong-scope reversal changed nothing"
+    );
+
+    sc.reverse_stock_move(tenant_id, &[site_b], move_b.id, user, "erroneous issue")
+        .await
+        .expect("entitled reversal applies");
+    let (status, reversed_by, reversed_at, reason): (
+        String,
+        Option<uuid::Uuid>,
+        Option<chrono::DateTime<chrono::Utc>>,
+        Option<String>,
+    ) = sqlx::query_as(
+        "SELECT status, reversed_by, reversed_at, reversal_reason \
+             FROM stock_moves WHERE id = $1",
+    )
+    .bind(move_b.id)
+    .fetch_one(&pool)
+    .await
+    .expect("reversal metadata");
+    assert_eq!(status, "reversed", "the move is flipped, never erased");
+    assert_eq!(reversed_by, Some(user), "the acting user is stamped");
+    assert!(reversed_at.is_some(), "the reversal timestamp is stamped");
+    assert_eq!(reason.as_deref(), Some("erroneous issue"));
+    let still_there: Option<i32> = sqlx::query_scalar("SELECT 1 FROM stock_moves WHERE id = $1")
+        .bind(move_b.id)
+        .fetch_optional(&pool)
+        .await
+        .expect("move survives");
+    assert!(
+        still_there.is_some(),
+        "reversal never deletes the ledger row"
+    );
+    assert_eq!(
+        qty(&pool, row_b).await,
+        60,
+        "reversal does not unwind quantities"
+    );
+
+    // An already-reversed move cannot be reversed again (== nonexistent).
+    let twice = sc
+        .reverse_stock_move(tenant_id, &[site_b], move_b.id, user, "again")
+        .await
+        .expect_err("a second reversal is refused");
+    assert!(
+        matches!(twice, sensei_core::error::SenseiError::NotFound(_)),
+        "an already-reversed move is indistinguishable from nonexistent: {twice}"
+    );
+    // Empty entitlement / empty reason are refused up front.
+    let no_scope = sc
+        .reverse_stock_move(tenant_id, &[], move_b.id, user, "x")
+        .await
+        .expect_err("empty entitlement is refused");
+    assert!(
+        matches!(no_scope, sensei_core::error::SenseiError::Forbidden(_)),
+        "no operational scope: {no_scope}"
+    );
+    let no_reason = sc
+        .reverse_stock_move(tenant_id, &[site_b], move_b.id, user, "   ")
+        .await
+        .expect_err("a reversal without a reason is refused");
+    assert!(
+        matches!(no_reason, sensei_core::error::SenseiError::Validation(_)),
+        "reversal requires a reason: {no_reason}"
+    );
 }
