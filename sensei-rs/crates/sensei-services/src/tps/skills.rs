@@ -350,52 +350,112 @@ pub async fn record_qualification(
     let principal_str = principal_id.to_string();
     with_tenant_tx(pool, tenant_id, move |tx| {
         Box::pin(async move {
-            // The CURRENT state is read from storage — the machine is
-            // checked against what is actually recorded, not the request.
-            let current: SkillLevel = match sqlx::query_scalar::<_, String>(
-                "SELECT level FROM skill_qualifications \
-                     WHERE tenant_id = $1 AND principal_id = $2 AND skill_id = $3",
+            // The scope for this demonstration (twentieth audit P1): the
+            // shift's site when a shift is given; else the first-recorded
+            // anchor site; else the active assignment site. Resolved
+            // BEFORE the transition decision so the state machine is
+            // scoped, never global.
+            let scope_site_id: Option<Uuid> = if let Some(shift) = shift_id {
+                let site: Option<Option<Uuid>> = sqlx::query_scalar(
+                    "SELECT site_id FROM shifts WHERE tenant_id = $1 AND id = $2",
+                )
+                .bind(tenant_id)
+                .bind(shift)
+                .fetch_optional(&mut **tx)
+                .await
+                .map_err(|e| {
+                    SenseiError::Database(format!("Failed to read demonstration shift: {e}"))
+                })?;
+                match site.flatten() {
+                    Some(site) => Some(site),
+                    None => {
+                        return Err(SenseiError::Validation(
+                            "the demonstration shift does not exist in this tenant".to_string(),
+                        ))
+                    }
+                }
+            } else {
+                let anchor_site: Option<Option<Uuid>> = sqlx::query_scalar(
+                    "SELECT sh.site_id FROM skill_qualifications q \
+                     JOIN shifts sh ON sh.id = q.shift_id \
+                     WHERE q.tenant_id = $1 AND q.principal_id = $2 AND q.skill_id = $3",
+                )
+                .bind(tenant_id)
+                .bind(principal_id)
+                .bind(skill_id)
+                .fetch_optional(&mut **tx)
+                .await
+                .map_err(|e| {
+                    SenseiError::Database(format!("Failed to read qualification site anchor: {e}"))
+                })?;
+                match anchor_site.flatten() {
+                    Some(site) => Some(site),
+                    None => {
+                        let assignment_site: Option<Option<Uuid>> = sqlx::query_scalar(
+                            "SELECT rs.scope_site_id FROM principal_assignments pa \
+                             JOIN role_slots rs ON rs.id = pa.slot_id \
+                             WHERE pa.tenant_id = $1 AND pa.principal_id = $2 \
+                               AND pa.ended_at IS NULL LIMIT 1",
+                        )
+                        .bind(tenant_id)
+                        .bind(principal_id)
+                        .fetch_optional(&mut **tx)
+                        .await
+                        .map_err(|e| {
+                            SenseiError::Database(format!(
+                                "Failed to read assignment site anchor: {e}"
+                            ))
+                        })?;
+                        assignment_site.flatten()
+                    }
+                }
+            };
+
+            // Twentieth audit P1: the CURRENT state is read from the
+            // SCOPED projection — a Trainer on Shift A never blocks
+            // recording Independent on Shift B. The global
+            // skill_qualifications row is only the legacy fallback.
+            let scoped_current: Option<String> = sqlx::query_scalar(
+                "SELECT cp.level FROM competency_projection cp \
+                 WHERE cp.tenant_id = $1 AND cp.principal_id = $2 AND cp.skill_id = $3 \
+                   AND cp.site_id = $4 \
+                   AND cp.shift_id IS NOT DISTINCT FROM $5 \
+                   AND cp.valid_until > NOW() AND cp.revoked_at IS NULL \
+                 ORDER BY cp.updated_at DESC LIMIT 1",
             )
             .bind(tenant_id)
             .bind(principal_id)
             .bind(skill_id)
+            .bind(scope_site_id)
+            .bind(shift_id)
             .fetch_optional(&mut **tx)
             .await
-            .map_err(|e| SenseiError::Database(format!("Failed to read qualification: {e}")))?
-            {
+            .map_err(|e| {
+                SenseiError::Database(format!("Failed to read scoped qualification: {e}"))
+            })?;
+            let current: SkillLevel = match scoped_current {
                 Some(level) => SkillLevel::from_stored(&level),
-                None => SkillLevel::Unexposed,
+                None => match sqlx::query_scalar::<_, String>(
+                    "SELECT level FROM skill_qualifications \
+                         WHERE tenant_id = $1 AND principal_id = $2 AND skill_id = $3",
+                )
+                .bind(tenant_id)
+                .bind(principal_id)
+                .bind(skill_id)
+                .fetch_optional(&mut **tx)
+                .await
+                .map_err(|e| SenseiError::Database(format!("Failed to read qualification: {e}")))?
+                {
+                    Some(level) => SkillLevel::from_stored(&level),
+                    None => SkillLevel::Unexposed,
+                },
             };
 
             // The demonstration SHIFT context (eighteenth audit P1-9): the
             // shift must exist and its site becomes the evidence anchor — a
             // qualification on a shift that does not exist is a validation
             // error.
-            let demonstration_site_id = match shift_id {
-                Some(shift) => {
-                    let site: Option<Option<Uuid>> = sqlx::query_scalar(
-                        "SELECT site_id FROM shifts WHERE tenant_id = $1 AND id = $2",
-                    )
-                    .bind(tenant_id)
-                    .bind(shift)
-                    .fetch_optional(&mut **tx)
-                    .await
-                    .map_err(|e| {
-                        SenseiError::Database(format!(
-                            "Failed to read demonstration shift: {e}"
-                        ))
-                    })?;
-                    match site {
-                        Some(site) => site,
-                        None => {
-                            return Err(SenseiError::Validation(format!(
-                                "demonstration shift {shift} not found"
-                            )))
-                        }
-                    }
-                }
-                None => None,
-            };
+            let demonstration_site_id = scope_site_id;
 
             // Same-level re-demonstration (nineteenth audit P1) is a REAL
             // demonstration, not a no-op: it is NOT discarded here — the
@@ -647,13 +707,18 @@ pub async fn record_qualification(
             sqlx::query(
                 "INSERT INTO competency_projection \
                     (tenant_id, principal_id, skill_id, site_id, shift_id, level, \
-                     source_evidence_id, updated_at) \
-                 VALUES ($1, $2, $3, $4, $5, $6, $7, NOW()) \
+                     source_evidence_id, valid_from, valid_until, standard_revision, \
+                     updated_at) \
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), \
+                         NOW() + INTERVAL '12 months', $8, NOW()) \
                  ON CONFLICT (tenant_id, principal_id, skill_id, \
                               COALESCE(site_id, '00000000-0000-0000-0000-000000000000'), \
                               COALESCE(shift_id, '00000000-0000-0000-0000-000000000000')) \
                  DO UPDATE SET level = EXCLUDED.level, \
                                source_evidence_id = EXCLUDED.source_evidence_id, \
+                               valid_from = EXCLUDED.valid_from, \
+                               valid_until = EXCLUDED.valid_until, \
+                               standard_revision = EXCLUDED.standard_revision, \
                                updated_at = NOW()",
             )
             .bind(tenant_id)
@@ -663,6 +728,7 @@ pub async fn record_qualification(
             .bind(shift_id)
             .bind(&level_str)
             .bind(evidence_id)
+            .bind(&standard_revision)
             .execute(&mut **tx)
             .await
             .map_err(|e| {
@@ -734,10 +800,12 @@ pub async fn skill_coverage_at(
         Box::pin(async move {
             let rows: Vec<(String, String, bool, i64, i64)> = sqlx::query_as(
                 r#"SELECT s.skill_id, s.name, s.critical,
-                          COUNT(DISTINCT cp.principal_id) FILTER (WHERE cp.level IN ('independent','trainer')
-                                           AND (cp.updated_at IS NULL OR true)),
-                          COUNT(DISTINCT cp.principal_id) FILTER (WHERE cp.level = 'trainer'
-                                           AND (cp.updated_at IS NULL OR true))
+                          COUNT(*) FILTER (WHERE cp.level IN ('independent','trainer')
+                                           AND cp.valid_until > NOW()
+                                           AND cp.revoked_at IS NULL),
+                          COUNT(*) FILTER (WHERE cp.level = 'trainer'
+                                           AND cp.valid_until > NOW()
+                                           AND cp.revoked_at IS NULL)
                    FROM skills s
                    LEFT JOIN competency_projection cp ON cp.skill_id = s.id AND cp.tenant_id = s.tenant_id
                          AND ($2::uuid IS NULL

@@ -657,10 +657,11 @@ impl OperationsService for DatabaseOperationsService {
                     // Distinguish: not found / already resolved / safety rule.
                     let state: Option<(String, String, Option<Uuid>, String)> = sqlx::query_as(
                         "SELECT severity, issue_type, restart_authorized_by, status FROM andons \
-                         WHERE id = $1 AND tenant_id = $2",
+                         WHERE id = $1 AND tenant_id = $2 AND site_id = ANY($3)",
                     )
                     .bind(id)
                     .bind(tenant_id)
+                    .bind(&sites)
                     .fetch_optional(&mut **tx)
                     .await
                     .map_err(|e| SenseiError::Database(format!("Failed to read andon state: {e}")))?;
@@ -1313,10 +1314,11 @@ impl OperationsService for DatabaseOperationsService {
                 let Some(row) = row else {
                     let state: Option<(String, String, Option<Uuid>)> = sqlx::query_as(
                         "SELECT severity, issue_type, restart_authorized_by FROM andons \
-                         WHERE id = $1 AND tenant_id = $2",
+                         WHERE id = $1 AND tenant_id = $2 AND site_id = ANY($3)",
                     )
                     .bind(id)
                     .bind(tenant_id)
+                    .bind(&sites)
                     .fetch_optional(&mut **tx)
                     .await
                     .map_err(|e| SenseiError::Database(format!("Failed to read andon state: {e}")))?;

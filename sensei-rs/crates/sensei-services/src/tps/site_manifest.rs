@@ -572,7 +572,8 @@ pub async fn validate_site(
                  JOIN principal_assignments pa ON pa.principal_id = sq.principal_id \
                  JOIN role_slots rs ON rs.id = pa.slot_id \
                  WHERE sq.tenant_id = $1 AND rs.scope_site_id = $2 AND pa.ended_at IS NULL \
-                   AND sq.level IN ('independent', 'trainer')",
+                   AND sq.level IN ('independent', 'trainer') \
+                   AND (sq.expires_at IS NULL OR sq.expires_at > NOW())",
             )
             .bind(tenant_id)
             .bind(site_id)
@@ -813,6 +814,7 @@ pub async fn validate_site(
                                  WHERE sq.tenant_id = $1 AND rs.scope_site_id = $2 \
                                    AND pa.ended_at IS NULL \
                                    AND sq.level IN ('independent', 'trainer') \
+                   AND (sq.expires_at IS NULL OR sq.expires_at > NOW()) \
                                    AND (sk.name ILIKE $3 OR sk.process ILIKE $3)",
                             )
                             .bind(tenant_id)
@@ -1149,7 +1151,8 @@ pub async fn advance_site_lifecycle(
                          JOIN role_slots rs ON rs.id = pa.slot_id \
                          WHERE sq.tenant_id = $1 AND rs.scope_site_id = $2 \
                            AND pa.ended_at IS NULL \
-                           AND sq.level IN ('independent', 'trainer')",
+                           AND sq.level IN ('independent', 'trainer') \
+                   AND (sq.expires_at IS NULL OR sq.expires_at > NOW())",
                     )
                     .bind(tenant_id)
                     .bind(site_id)
