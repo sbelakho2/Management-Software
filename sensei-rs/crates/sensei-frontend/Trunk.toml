@@ -8,4 +8,5 @@
 # the module: --enable-bulk-memory and --enable-threads are enabled, so
 # the emitted code is optimized rather than suppressed.
 [build]
+wasm-opt = true
 wasm-opt-args = ["--enable-bulk-memory", "--enable-threads", "-O3"]

@@ -150,6 +150,12 @@ pub struct ContextItem {
     /// staffing claim.
     #[serde(default)]
     pub fact_address: Option<String>,
+    /// The SITE SCOPE this evidence was produced under (twenty-third
+    /// audit): set at construction from the request's operating scope so
+    /// verification is STRUCTURAL (site uuids compare), not prose
+    /// parsing — new plants require zero Rust changes.
+    #[serde(default)]
+    pub site_scope: Option<uuid::Uuid>,
 }
 
 /// Legacy/absent `evidence_id` deserializes to an empty string; the
@@ -529,6 +535,7 @@ mod tests {
             token_cost: 12,
             epistemic_status: EpistemicStatus::RecordedFact,
             evidence_id: String::new(),
+            site_scope: None,
             fact_address: None,
         };
         let json = serde_json::to_string(&item).unwrap();
@@ -558,6 +565,7 @@ mod tests {
             token_cost: 12,
             epistemic_status: EpistemicStatus::RecordedFact,
             evidence_id: String::new(),
+            site_scope: None,
             fact_address: None,
         };
         let a1 = mk("sensor-a", now);

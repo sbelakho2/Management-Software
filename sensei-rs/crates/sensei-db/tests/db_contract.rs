@@ -8866,6 +8866,7 @@ async fn invariant_context_sensitivity_is_typed() {
         token_cost: 1,
         evidence_id: String::new(),
         fact_address: None,
+        site_scope: None,
         epistemic_status: EpistemicStatus::RecordedFact,
     };
     let make_request = |ceiling: DataClass| ContextRequest {

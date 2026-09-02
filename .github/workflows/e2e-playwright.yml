@@ -37,10 +37,24 @@ jobs:
         with:
           version: latest
 
+      - name: Install binaryen (wasm-opt)
+        run: |
+          sudo apt-get update && sudo apt-get install -y binaryen
+          wasm-opt --version
+
       - name: Build frontend (trunk — the REAL bundle the router serves)
         working-directory: sensei-rs/crates/sensei-frontend
         run: |
+          # Trunk config (Trunk.toml) also carries the flags; the explicit
+          # wasm-opt pass below is the DETERMINISTIC enforcement: the
+          # generated module uses bulk-memory + atomic instructions, so the
+          # optimizer must run feature-consistent with the module
+          # (twenty-third audit: do not suppress optimization — enable the
+          # exact features the module needs).
           trunk build --release
+          for wasm in dist/*.wasm; do
+            wasm-opt --enable-bulk-memory --enable-threads -O3 "$wasm" -o "$wasm"
+          done
           cp -r dist ../../dist-frontend
 
       - name: Build API

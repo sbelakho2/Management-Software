@@ -247,6 +247,10 @@ pub(crate) async fn prepare_inference(
             let mut item = sensei_agent_core::context::ContextItem {
                 payload: serde_json::json!({ "section": section, "text": content }),
                 fact_address: Some(format!("section:{section}")),
+                // Twenty-third audit: evidence carries the STRUCTURAL site
+                // scope of the request — verification compares site ids,
+                // never city names from prose.
+                site_scope: ctx.site_id,
                 provenance: sensei_agent_core::context::Provenance {
                     source: format!("section:{section}"),
                     source_revision: None,
@@ -778,7 +782,24 @@ fn verify_chat_response(
                 from_address.or(from_text)
             })
             .collect();
+        // Twenty-third audit: SITE MATCHING IS STRUCTURAL. Evidence items
+        // carry the site_scope (a Uuid) they were produced under; the
+        // claim's implied site is the REQUEST's active site when the
+        // sentence names none (so "the SMT line is understaffed" inside a
+        // Tangier-scoped conversation cannot cite Bizerte evidence). The
+        // token matcher remains only for crafted items without scope —
+        // new plants need zero Rust changes.
+        let context_site = ctx.site_id;
         let claim_site = named_site(s);
+        let evidence_scopes: Vec<Option<uuid::Uuid>> = matched_refs
+            .iter()
+            .filter_map(|r| evidence_by_id.get(r.as_str()))
+            .map(|item| item.site_scope)
+            .collect();
+        let structural_sites_match = match (context_site, evidence_scopes.as_slice()) {
+            (Some(scope), scopes) => !scopes.is_empty() && scopes.iter().all(|x| *x == Some(scope)),
+            (None, scopes) => scopes.iter().all(|x| x.is_none()),
+        };
         let evidence_sites: Vec<Option<&'static str>> = matched_refs
             .iter()
             .filter_map(|r| evidence_by_id.get(r.as_str()))
@@ -792,12 +813,18 @@ fn verify_chat_response(
                 from_address.or(from_text)
             })
             .collect();
-        // Family equality AND site equality: a Tangier staffing claim
-        // cited against Bizerte staffing evidence is REJECTED even though
-        // both are the staffing family (twenty-second audit).
-        let site_matches = match (claim_site, evidence_sites.as_slice()) {
+        // Family equality AND structural site equality (token hints only
+        // when the items carry no scope): a Tangier-scoped claim cited
+        // against Bizerte evidence is REJECTED even without the word
+        // 'Tangier' in the sentence.
+        let token_site_matches = match (claim_site, evidence_sites.as_slice()) {
             (Some(site), sites) => !sites.is_empty() && sites.iter().all(|x| *x == Some(site)),
             (None, _) => true,
+        };
+        let site_matches = if evidence_scopes.iter().all(|x| x.is_none()) {
+            token_site_matches
+        } else {
+            structural_sites_match
         };
         let compatible = match (claim_family, evidence_families.as_slice()) {
             (Some(fam), fams) => {
@@ -1196,9 +1223,18 @@ mod tests {
     /// audit P1): the verifier only accepts markers that are exactly one of
     /// these ids.
     fn kernel_item(source: &str, text: &str) -> sensei_agent_core::context::ContextItem {
+        kernel_item_at(source, text, None)
+    }
+
+    fn kernel_item_at(
+        source: &str,
+        text: &str,
+        site_scope: Option<uuid::Uuid>,
+    ) -> sensei_agent_core::context::ContextItem {
         let mut item = sensei_agent_core::context::ContextItem {
             payload: serde_json::json!({ "section": "metric_tree", "text": text }),
             fact_address: Some(format!("section:{source}")),
+            site_scope,
             provenance: sensei_agent_core::context::Provenance {
                 source: source.to_string(),
                 source_revision: None,
@@ -1213,6 +1249,19 @@ mod tests {
         };
         item.evidence_id = item.derive_evidence_id();
         item
+    }
+
+    fn verify_ctx(
+        content: &str,
+        kernel_items: &[sensei_agent_core::context::ContextItem],
+        ctx: &AgentContext,
+    ) -> serde_json::Value {
+        let policy = sensei_agent_core::tools::PolicyEngine::new(
+            crate::services::agent::build_readonly_tools(),
+            sensei_agent_core::tools::ToolRisk::ReadOnly,
+        );
+        let tools = policy.effective_tools(ctx);
+        verify_chat_response(&response_with(content), ctx, &policy, &tools, kernel_items)
     }
 
     fn verify(
@@ -1378,6 +1427,49 @@ mod tests {
             issues.iter().any(|i| i.contains("DIFFERENT site")),
             "the issue names the site mismatch: {:?}",
             issues
+        );
+    }
+
+    #[test]
+    fn context_scoped_claim_cannot_cite_other_site_evidence_without_prose() {
+        // Twenty-third audit: "the SMT line is understaffed" in a Tangier
+        // (uuid 1) conversation rejects Bizerte (uuid 2) evidence even
+        // though the sentence never says 'Tangier' — STRUCTURAL matching.
+        let mut ctx = test_ctx();
+        ctx.site_id = Some(uuid::Uuid::from_u128(1));
+        let bizerte = kernel_item_at(
+            "section:staffing",
+            "Bizerte SMT line staffing: 8 operators on shift A.",
+            Some(uuid::Uuid::from_u128(2)),
+        );
+        let v = verify_ctx(
+            &format!(
+                "The SMT line is understaffed [evidence: {}].",
+                bizerte.evidence_id
+            ),
+            std::slice::from_ref(&bizerte),
+            &ctx,
+        );
+        assert_eq!(
+            v["verdict"], "needs_evidence",
+            "a Tangier-scoped claim cannot be measured by Bizerte evidence"
+        );
+        let tangier = kernel_item_at(
+            "section:staffing",
+            "Tangier SMT line staffing: 5 operators on shift A.",
+            Some(uuid::Uuid::from_u128(1)),
+        );
+        let v2 = verify_ctx(
+            &format!(
+                "The SMT line is understaffed [evidence: {}].",
+                tangier.evidence_id
+            ),
+            std::slice::from_ref(&tangier),
+            &ctx,
+        );
+        assert_eq!(
+            v2["verdict"], "pass",
+            "same-scope evidence measures the claim"
         );
     }
 
