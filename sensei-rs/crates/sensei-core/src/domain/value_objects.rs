@@ -112,6 +112,24 @@ impl Money {
         Ok(Self { cents, currency })
     }
 
+    /// Decimal-NATIVE construction (twenty-first audit item 14): money is
+    /// built from the Decimal aggregate directly — no f64 round trip at
+    /// the constructor boundary. Minor units are computed with Decimal
+    /// arithmetic (multiply by 100, truncate toward zero).
+    pub fn from_decimal_decimal(
+        amount: rust_decimal::Decimal,
+        currency: CurrencyCode,
+    ) -> Result<Self, SenseiError> {
+        let scaled = amount
+            .checked_mul(rust_decimal::Decimal::from(100))
+            .ok_or_else(|| {
+                SenseiError::Validation("Money amount overflowed minor-unit scaling".to_string())
+            })?;
+        let cents =
+            rust_decimal::prelude::ToPrimitive::to_i64(&scaled.round_dp(0)).unwrap_or(i64::MAX);
+        Ok(Self { cents, currency })
+    }
+
     /// Returns the amount as a decimal value (e.g., 10.50).
     pub fn to_decimal(&self) -> f64 {
         self.cents as f64 / 100.0

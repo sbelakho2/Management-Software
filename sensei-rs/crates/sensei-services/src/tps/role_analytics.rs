@@ -812,28 +812,99 @@ async fn collect_material_controller_view(
     work_center_id: Option<Uuid>,
     a: &mut RoleAnalytics,
 ) -> Result<()> {
+    // Twenty-first audit item 12: REAL material starvation is
+    // COMPONENT-level, exploded from the BOM — the finished-good proxy
+    // is gone. demand(component) = SUM over open WOs of (remaining ×
+    // bom.quantity); a WO starves when ANY of its components' demand
+    // exceeds the site's available (on hand − reserved) inventory.
     let starved_count: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*)::bigint \
-         FROM work_orders wo \
-         LEFT JOIN ( \
+        "WITH wo_open AS ( \
+             SELECT wo.id, wo.product_id, \
+                    (wo.quantity - COALESCE(wo.quantity_completed, 0))::double precision AS remaining \
+             FROM work_orders wo \
+             WHERE wo.tenant_id = $1 \
+               AND wo.status IN ('created', 'released', 'in_progress') \
+               AND ($2::uuid IS NULL OR wo.site_id = $2) \
+               AND ($3::uuid IS NULL OR wo.work_center_id = $3) \
+               AND (wo.quantity - COALESCE(wo.quantity_completed, 0)) > 0 \
+         ), \
+         avail AS ( \
              SELECT ii.product_id, \
-                    COALESCE(SUM(ii.quantity_on_hand - ii.quantity_reserved), 0)::float8 AS available \
+                    COALESCE(SUM(ii.quantity_on_hand - ii.quantity_reserved), 0)::double precision AS available \
              FROM inventory_items ii \
              WHERE ii.tenant_id = $1 AND ($2::uuid IS NULL OR ii.site_id = $2) \
              GROUP BY ii.product_id \
-         ) avail ON avail.product_id = wo.product_id \
-         WHERE wo.tenant_id = $1 \
-           AND wo.status IN ('created', 'released', 'in_progress') \
-           AND ($2::uuid IS NULL OR wo.site_id = $2) \
-           AND ($3::uuid IS NULL OR wo.work_center_id = $3) \
-           AND COALESCE(avail.available, 0) < (wo.quantity - COALESCE(wo.quantity_completed, 0))",
+         ), \
+         demand AS ( \
+             SELECT b.component_product_id, \
+                    SUM(w.remaining * b.quantity)::double precision AS needed \
+             FROM wo_open w \
+             JOIN bom_items b ON b.parent_product_id = w.product_id \
+              AND b.tenant_id = $1 AND b.is_active = TRUE \
+             GROUP BY b.component_product_id \
+         ), \
+         shortage AS ( \
+             SELECT d.component_product_id, \
+                    (d.needed - COALESCE(a.available, 0))::double precision AS deficit \
+             FROM demand d \
+             LEFT JOIN avail a ON a.product_id = d.component_product_id \
+             WHERE d.needed > COALESCE(a.available, 0) \
+         ) \
+         SELECT COUNT(DISTINCT w.id)::bigint \
+         FROM wo_open w \
+         JOIN bom_items b ON b.parent_product_id = w.product_id \
+          AND b.tenant_id = $1 AND b.is_active = TRUE \
+         JOIN shortage s ON s.component_product_id = b.component_product_id",
     )
     .bind(tenant_id)
     .bind(site_id)
     .bind(work_center_id)
     .fetch_one(&mut **ttx.tx())
     .await
-    .map_err(|e| SenseiError::Database(format!("role analytics: starvation risk: {e}")))?;
+    .map_err(|e| SenseiError::Database(format!("role analytics: BOM starvation risk: {e}")))?;
+
+    // The top shortage COMPONENTS (with deficits) so the material
+    // controller knows WHAT to expedite, not just how many WOs starve.
+    let deficits: Vec<(String, f64)> = sqlx::query_as(
+        "WITH wo_open AS ( \
+             SELECT wo.id, wo.product_id, \
+                    (wo.quantity - COALESCE(wo.quantity_completed, 0))::double precision AS remaining \
+             FROM work_orders wo \
+             WHERE wo.tenant_id = $1 \
+               AND wo.status IN ('created', 'released', 'in_progress') \
+               AND ($2::uuid IS NULL OR wo.site_id = $2) \
+               AND ($3::uuid IS NULL OR wo.work_center_id = $3) \
+               AND (wo.quantity - COALESCE(wo.quantity_completed, 0)) > 0 \
+         ), \
+         avail AS ( \
+             SELECT ii.product_id, \
+                    COALESCE(SUM(ii.quantity_on_hand - ii.quantity_reserved), 0)::double precision AS available \
+             FROM inventory_items ii \
+             WHERE ii.tenant_id = $1 AND ($2::uuid IS NULL OR ii.site_id = $2) \
+             GROUP BY ii.product_id \
+         ), \
+         demand AS ( \
+             SELECT b.component_product_id, \
+                    SUM(w.remaining * b.quantity)::double precision AS needed \
+             FROM wo_open w \
+             JOIN bom_items b ON b.parent_product_id = w.product_id \
+              AND b.tenant_id = $1 AND b.is_active = TRUE \
+             GROUP BY b.component_product_id \
+         ) \
+         SELECT p.name, \
+                (d.needed - COALESCE(a.available, 0))::float8 \
+         FROM demand d \
+         JOIN products p ON p.id = d.component_product_id AND p.tenant_id = $1 \
+         LEFT JOIN avail a ON a.product_id = d.component_product_id \
+         WHERE d.needed > COALESCE(a.available, 0) \
+         ORDER BY (d.needed - COALESCE(a.available, 0)) DESC LIMIT 5",
+    )
+    .bind(tenant_id)
+    .bind(site_id)
+    .bind(work_center_id)
+    .fetch_all(&mut **ttx.tx())
+    .await
+    .map_err(|e| SenseiError::Database(format!("role analytics: shortage components: {e}")))?;
 
     a.now.push(AnalyticLine::fact(
         "work orders at starvation risk",
@@ -855,46 +926,27 @@ async fn collect_material_controller_view(
         ));
     }
 
-    type StarvedRow = (String, String, f64, i64);
-    let starved: Vec<StarvedRow> = sqlx::query_as(
-        "SELECT wo.wo_number, p.name, \
-                COALESCE(avail.available, 0), \
-                (wo.quantity - COALESCE(wo.quantity_completed, 0)) \
-         FROM work_orders wo \
-         JOIN products p ON p.id = wo.product_id AND p.tenant_id = wo.tenant_id \
-         LEFT JOIN ( \
-             SELECT ii.product_id, \
-                    COALESCE(SUM(ii.quantity_on_hand - ii.quantity_reserved), 0)::float8 AS available \
-             FROM inventory_items ii \
-             WHERE ii.tenant_id = $1 AND ($2::uuid IS NULL OR ii.site_id = $2) \
-             GROUP BY ii.product_id \
-         ) avail ON avail.product_id = wo.product_id \
-         WHERE wo.tenant_id = $1 \
-           AND wo.status IN ('created', 'released', 'in_progress') \
-           AND ($2::uuid IS NULL OR wo.site_id = $2) \
-           AND ($3::uuid IS NULL OR wo.work_center_id = $3) \
-           AND COALESCE(avail.available, 0) < (wo.quantity - COALESCE(wo.quantity_completed, 0)) \
-         ORDER BY wo.created_at ASC \
-         LIMIT 10",
-    )
-    .bind(tenant_id)
-    .bind(site_id)
-    .bind(work_center_id)
-    .fetch_all(&mut **ttx.tx())
-    .await
-    .map_err(|e| SenseiError::Database(format!("role analytics: starvation list: {e}")))?;
-
-    for (wo_number, product, available, remaining) in &starved {
+    // The shortage COMPONENTS with their deficits (BOM-exploded) drive
+    // the WHY/NEXT lines — the material controller sees WHAT to expedite.
+    for (component, deficit) in &deficits {
         a.why.push(AnalyticLine::fact(
             format!(
-                "WO {wo_number} ({product}) needs {remaining} more units but only {available:.0} are \
-                 available at the site — material must be pulled before it starts"
+                "component '{component}' is short by {deficit:.0} units against the \
+                 BOM-exploded demand of open work orders at this site"
             ),
-            1.0,
-            "WO",
+            *deficit,
+            "units",
         ));
-        a.next
-            .push(format!("release material for {product} (WO {wo_number})"));
+        a.next.push(format!(
+            "expedite/allocate '{component}' before the line runs out"
+        ));
+    }
+    if starved_count == 0 {
+        a.why.push(AnalyticLine::fact(
+            "no BOM-exploded component shortage for the open work orders in scope".to_string(),
+            0.0,
+            "units",
+        ));
     }
 
     Ok(())
@@ -1118,9 +1170,8 @@ async fn collect_finance_view(
     let currency = site_currency_code(ttx, tenant_id, site_id).await?;
     // The aggregate is Decimal end-to-end; the f64 boundary exists only
     // at the Money constructor (cents math) — never in the query path.
-    let scrap_value_f64 = rust_decimal::prelude::ToPrimitive::to_f64(&scrap_value).unwrap_or(0.0);
     let money = currency
-        .map(|cc| Money::from_decimal(scrap_value_f64, cc))
+        .map(|cc| Money::from_decimal_decimal(scrap_value, cc))
         .transpose()?;
     let value_unit = match money {
         Some(m) => m.currency.as_str().to_string(),
@@ -1138,7 +1189,7 @@ async fn collect_finance_view(
     ));
     a.now.push(AnalyticLine::fact(
         "scrap value at standard cost",
-        scrap_value_f64,
+        rust_decimal::prelude::ToPrimitive::to_f64(&scrap_value).unwrap_or(0.0),
         value_unit,
     ));
     if scrap_units > 0 {
@@ -1210,7 +1261,7 @@ async fn collect_finance_view(
                         "{scrap_units} units scrapped ≈ {value_text} at standard cost — no_standard: \
                          no scrap_rate target is defined, so this is a note, not an abnormality"
                     ),
-                    scrap_value_f64,
+                    rust_decimal::prelude::ToPrimitive::to_f64(&scrap_value).unwrap_or(0.0),
                     "standard-cost value",
                 ));
             }

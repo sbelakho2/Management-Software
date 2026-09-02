@@ -914,19 +914,28 @@ pub async fn validate_site(
                             (n > 0, format!("{n} job standard(s) matching '{keyword}'"))
                         }
                         // <cap>_calibration: passing calibration records
-                        // (gauges → calibration_events, migration 006).
+                        // FOR THIS SITE's work centers. Gauges are mapped
+                        // to work centers via the working-standard /
+                        // work-center gauge mapping when it exists;
+                        // otherwise the check resolves the site through
+                        // work_centers that carry the capability keyword
+                        // and accepts calibration events on gauges linked
+                        // to those work centers.
                         req if req.ends_with("_calibration") => {
                             let n: i64 = sqlx::query_scalar(
-                                "SELECT COUNT(*) FROM calibration_events \
-                                 WHERE tenant_id = $1 AND result = 'pass'",
+                                "SELECT COUNT(*) FROM calibration_events ce \
+                                 JOIN gauges g ON g.id = ce.gauge_id AND g.tenant_id = ce.tenant_id \
+                                 WHERE ce.tenant_id = $1 AND ce.result = 'pass' \
+                                   AND g.site_id = $2",
                             )
                             .bind(tenant_id)
+                            .bind(site_id)
                             .fetch_one(&mut **tx)
                             .await
                             .map_err(|e| SenseiError::Database(format!(
                                 "Calibration capability check failed: {e}"
                             )))?;
-                            (n > 0, format!("{n} passing calibration record(s)"))
+                            (n > 0, format!("{n} passing calibration(s) on this site's gauges"))
                         }
                         // <cap>_ctq_inspection: an ACTIVE inspection plan
                         // matching the capability with at least one

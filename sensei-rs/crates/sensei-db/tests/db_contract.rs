@@ -10601,11 +10601,12 @@ async fn site_bootstrap_lifecycle_validation() {
     .expect("job standard insert");
     let gauge_id = uuid::Uuid::new_v4();
     sqlx::query(
-        "INSERT INTO gauges (id, tenant_id, gauge_id, name, gauge_type) \
-         VALUES ($1, $2, 'GA-LC-01', 'SMT Reflow Gauge', 'general')",
+        "INSERT INTO gauges (id, tenant_id, gauge_id, name, gauge_type, site_id) \
+         VALUES ($1, $2, 'GA-LC-01', 'SMT Reflow Gauge', 'general', $3)",
     )
     .bind(gauge_id)
     .bind(tenant_id)
+    .bind(site_id)
     .execute(&pool)
     .await
     .expect("gauge insert");
@@ -12981,6 +12982,27 @@ async fn integration_readiness_is_per_site_instance() {
         .execute(&mut *tx)
         .await
         .expect("integration instance insert");
+        let per_site_gauge = uuid::Uuid::new_v4();
+        sqlx::query(
+            "INSERT INTO gauges (id, tenant_id, gauge_id, name, gauge_type, site_id) \
+         VALUES ($1, $2, 'GA-SITE-' || $3::text, 'SMT Reflow Gauge', 'general', $4)",
+        )
+        .bind(per_site_gauge)
+        .bind(tenant_id)
+        .bind(site_id)
+        .bind(site_id)
+        .execute(&mut *tx)
+        .await
+        .expect("per-site gauge insert");
+        sqlx::query(
+            "INSERT INTO calibration_events (tenant_id, gauge_id, next_due, result) \
+         VALUES ($1, $2, NOW() + INTERVAL '1 year', 'pass')",
+        )
+        .bind(tenant_id)
+        .bind(per_site_gauge)
+        .execute(&mut *tx)
+        .await
+        .expect("per-site calibration insert");
         tx.commit().await.expect("slot tx commit");
 
         sqlx::query(
@@ -13052,6 +13074,8 @@ async fn integration_readiness_is_per_site_instance() {
         .execute(pool)
         .await
         .expect("competency projection insert");
+        // Calibration readiness is SITE-LINKED (migration 155): every
+        // site needs its OWN passing calibration on its OWN gauge.
     }
 
     seed_instance_site(
@@ -13119,11 +13143,12 @@ async fn integration_readiness_is_per_site_instance() {
     .expect("job standard insert");
     let gauge_id = uuid::Uuid::new_v4();
     sqlx::query(
-        "INSERT INTO gauges (id, tenant_id, gauge_id, name, gauge_type) \
-         VALUES ($1, $2, 'GA-INST', 'SMT Reflow Gauge', 'general')",
+        "INSERT INTO gauges (id, tenant_id, gauge_id, name, gauge_type, site_id) \
+         VALUES ($1, $2, 'GA-INST', 'SMT Reflow Gauge', 'general', $3)",
     )
     .bind(gauge_id)
     .bind(tenant_id)
+    .bind(site_a)
     .execute(&pool)
     .await
     .expect("gauge insert");
@@ -13456,4 +13481,159 @@ async fn twenty_first_audit_producer_consumer_paths() {
         .await
         .expect("entitled read works");
     assert_eq!(scoped.id, raised.id);
+}
+
+/// Twenty-first-audit item 12: material starvation is COMPONENT-level,
+/// exploded from the BOM — a WO with plenty of finished-good inventory
+/// still starves when a BOM component is short at the site; refilling
+/// the component clears the shortage.
+#[tokio::test]
+async fn material_starvation_is_bom_exploded_component_shortage() {
+    let _serial = DB_LOCK.lock().await;
+    let Some(pool) = connect().await else { return };
+    sensei_db::migrations::run_migrations(&pool)
+        .await
+        .expect("migration chain");
+
+    let tenant_id = uuid::Uuid::new_v4();
+    let site_id = uuid::Uuid::new_v4();
+    let user = uuid::Uuid::new_v4();
+    let product = uuid::Uuid::new_v4();
+    let component = uuid::Uuid::new_v4();
+    let other_component = uuid::Uuid::new_v4();
+    sqlx::query("INSERT INTO tenants (id, name, slug) VALUES ($1, 't21mc', 't21mc')")
+        .bind(tenant_id)
+        .execute(&pool)
+        .await
+        .expect("tenant");
+    sqlx::query("INSERT INTO sites (id, tenant_id, site_code, name) VALUES ($1, $2, 'MC', 'MC')")
+        .bind(site_id)
+        .bind(tenant_id)
+        .execute(&pool)
+        .await
+        .expect("site");
+    sqlx::query(
+        "INSERT INTO users (id, tenant_id, email, name, password_hash) \
+         VALUES ($1, $2, 'mc@starzforge.local', 'M', 'x')",
+    )
+    .bind(user)
+    .bind(tenant_id)
+    .execute(&pool)
+    .await
+    .expect("user");
+    sqlx::query(
+        "INSERT INTO products (id, tenant_id, product_number, name, unit_of_measure) VALUES \
+         ($1, $2, 'P-MC-1', 'Assembly', 'pcs'), \
+         ($3, $4, 'C-MC-1', 'Chip', 'pcs'), \
+         ($5, $6, 'C-MC-2', 'Cap', 'pcs')",
+    )
+    .bind(product)
+    .bind(tenant_id)
+    .bind(component)
+    .bind(tenant_id)
+    .bind(other_component)
+    .bind(tenant_id)
+    .execute(&pool)
+    .await
+    .expect("products");
+    sqlx::query(
+        "INSERT INTO bom_items (tenant_id, parent_product_id, component_product_id, quantity) VALUES \
+         ($1, $2, $3, 2), ($1, $2, $4, 4)",
+    )
+    .bind(tenant_id)
+    .bind(product)
+    .bind(component)
+    .bind(other_component)
+    .execute(&pool)
+    .await
+    .expect("bom");
+    let wo_id = uuid::Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO work_orders (id, tenant_id, wo_number, product_id, quantity, \
+                                  quantity_completed, status, site_id) \
+         VALUES ($1, $2, 'WO-MC-1', $3, 100, 0, 'released', $4)",
+    )
+    .bind(wo_id)
+    .bind(tenant_id)
+    .bind(product)
+    .bind(site_id)
+    .execute(&pool)
+    .await
+    .expect("wo");
+    // Component stock at the site: chip has 300 (needs 200) — ok;
+    // cap has 10 (needs 400) — SHORT by 390.
+    sqlx::query(
+        "INSERT INTO inventory_items (id, tenant_id, product_id, site_id, \
+                                      quantity_on_hand, quantity_reserved) VALUES \
+         ($1, $2, $3, $4, 300, 0), ($5, $6, $7, $8, 10, 0)",
+    )
+    .bind(uuid::Uuid::new_v4())
+    .bind(tenant_id)
+    .bind(component)
+    .bind(site_id)
+    .bind(uuid::Uuid::new_v4())
+    .bind(tenant_id)
+    .bind(other_component)
+    .bind(site_id)
+    .execute(&pool)
+    .await
+    .expect("inventory");
+
+    let mc = sensei_services::tps::role_analytics::build_role_analytics(
+        &pool,
+        tenant_id,
+        "material_controller",
+        Some(site_id),
+        None,
+    )
+    .await
+    .expect("material controller analytics");
+    let starved = mc
+        .now
+        .iter()
+        .find(|l| l.label.contains("starvation risk"))
+        .map(|l| l.actual)
+        .unwrap_or(0.0);
+    assert_eq!(
+        starved, 1.0,
+        "the WO starves because a BOM COMPONENT is short at the site"
+    );
+    assert!(
+        mc.why
+            .iter()
+            .any(|l| l.label.contains("Cap") && l.label.contains("short")),
+        "the shortage names the short component: {:?}",
+        mc.why.iter().map(|l| &l.label).collect::<Vec<_>>()
+    );
+
+    // Refill the cap: the shortage clears.
+    sqlx::query(
+        "UPDATE inventory_items SET quantity_on_hand = 1000 \
+         WHERE tenant_id = $1 AND product_id = $2 AND site_id = $3",
+    )
+    .bind(tenant_id)
+    .bind(other_component)
+    .bind(site_id)
+    .execute(&pool)
+    .await
+    .expect("refill");
+    let mc2 = sensei_services::tps::role_analytics::build_role_analytics(
+        &pool,
+        tenant_id,
+        "material_controller",
+        Some(site_id),
+        None,
+    )
+    .await
+    .expect("material controller after refill");
+    let starved2 = mc2
+        .now
+        .iter()
+        .find(|l| l.label.contains("starvation risk"))
+        .map(|l| l.actual)
+        .unwrap_or(-1.0);
+    assert_eq!(
+        starved2, 0.0,
+        "after refilling the short component the WO is covered"
+    );
 }
