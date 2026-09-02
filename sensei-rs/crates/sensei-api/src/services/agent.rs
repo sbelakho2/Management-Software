@@ -116,20 +116,33 @@ pub async fn execute_tool(
     // Schema enforcement: the declared input schema is checked (type-level)
     // before dispatch — the schema is a contract, not descriptive metadata.
     validate_args(tool, &args)?;
-    // Nineteenth audit P1: the DURABLE command journal is a CLAIM STATE
-    // MACHINE — reserve() atomically claims the key so two concurrent
-    // identical requests can never both dispatch. The key is the tool
-    // name + CANONICALLY sorted args (semantically equal args hash
-    // equal regardless of field order).
+    // Nineteenth + twentieth audit P1: the DURABLE command journal is a
+    // CLAIM STATE MACHINE with LEASES and FENCING TOKENS — reserve()
+    // atomically claims the key (owner + random token + lease) so two
+    // concurrent identical requests can never both dispatch. The key is
+    // the tool name + CANONICALLY sorted args (semantically equal args
+    // hash equal regardless of field order). A loser replays the
+    // terminal outcome, errors on a live in-progress claim, or recovers
+    // an expired/ambiguous claim and proceeds to dispatch ONCE more.
     let journal_key: Option<String> = if tool.idempotent {
         Some(execution_key(tool, &args))
     } else {
         None
     };
+    // The fencing token of the claim we hold while dispatching (Fresh or
+    // recovered); complete() below only lands while it still matches.
+    let mut claim_token: Option<String> = None;
     if let (Some(pool), Some(key)) = (pool, &journal_key) {
         let journal = sensei_services::ai::command_journal::PgExecutionJournal::new(pool.clone());
-        match journal.reserve(ctx.tenant_id, key, &tool.name).await {
-            Ok(ReservationOutcome::Fresh) => {}
+        // Read-only tools have no enforced dispatch timeout; the 300s
+        // lease outlives any query and only guards the in-flight window.
+        let claim_owner = format!("api-executor:{}", ctx.request_id);
+        let lease_seconds: i64 = 300;
+        match journal
+            .reserve(ctx.tenant_id, key, &tool.name, &claim_owner, lease_seconds)
+            .await
+        {
+            Ok(ReservationOutcome::Fresh { claim_token: token }) => claim_token = Some(token),
             Ok(ReservationOutcome::AlreadyExists) => {
                 let row = journal
                     .load(ctx.tenant_id, key)
@@ -139,22 +152,41 @@ pub async fn execute_tool(
                         "command journal inconsistency: reserved key has no row".to_string()
                     })?;
                 let (status, result) = row;
-                return match status.as_str() {
-                    "succeeded" => Ok(ToolResult::new(
-                        result,
-                        vec![],
-                        &format!("{}@journal", tool.name),
-                    )),
+                match status.as_str() {
+                    "succeeded" => {
+                        return Ok(ToolResult::new(
+                            result,
+                            vec![],
+                            &format!("{}@journal", tool.name),
+                        ));
+                    }
                     "failed" => {
                         let message = result
                             .get("error")
                             .and_then(|e| e.as_str())
                             .map(str::to_string)
                             .unwrap_or_else(|| "command previously failed".to_string());
-                        Err(format!("command '{key}' previously failed: {message}"))
+                        return Err(format!("command '{key}' previously failed: {message}"));
                     }
-                    _ => Err("command already in progress".to_string()),
-                };
+                    // In-progress under a live lease (recover() returns
+                    // None) or expired/ambiguous (recover() reclaims and
+                    // we dispatch once more below).
+                    _ => match journal
+                        .recover(ctx.tenant_id, key, &claim_owner, lease_seconds)
+                        .await
+                    {
+                        Ok(Some(token)) => claim_token = Some(token),
+                        Ok(None) => {
+                            return Err(
+                                "command already in progress (lease held by another worker)"
+                                    .to_string(),
+                            );
+                        }
+                        Err(e) => {
+                            return Err(format!("command journal recover failed: {e}"));
+                        }
+                    },
+                }
             }
             Err(e) => return Err(format!("command journal reserve failed: {e}")),
         }
@@ -431,15 +463,16 @@ pub async fn execute_tool(
         }
         other => Err(format!("Unknown tool '{other}'")),
     };
-    // Persist idempotent executions to the durable journal (nineteenth
-    // audit P1): complete() transitions the CLAIMED row to a terminal
-    // status. A failed 'succeeded' write FAILS the execution — the cache
-    // may forget, the journal may not.
-    if let (Some(pool), Some(key)) = (pool, &journal_key) {
+    // Persist idempotent executions to the durable journal (nineteenth +
+    // twentieth audit P1): complete() transitions the CLAIMED row to a
+    // terminal status under the FENCING token — a failed 'succeeded'
+    // write FAILS the execution (the cache may forget, the journal may
+    // not; a stale owner whose claim was recovered is fenced here too).
+    if let (Some(pool), Some(key), Some(claim_token)) = (pool, &journal_key, &claim_token) {
         let journal = sensei_services::ai::command_journal::PgExecutionJournal::new(pool.clone());
         match &outcome {
             Ok(result) => journal
-                .complete(ctx.tenant_id, key, "succeeded", &result.data)
+                .complete(ctx.tenant_id, key, claim_token, "succeeded", &result.data)
                 .await
                 .map_err(|e| format!("command journal write failed: {e}"))?,
             Err(_) => {
@@ -450,6 +483,7 @@ pub async fn execute_tool(
                     .complete(
                         ctx.tenant_id,
                         key,
+                        claim_token,
                         "failed",
                         &serde_json::json!({
                             "error": outcome.as_ref().unwrap_err()

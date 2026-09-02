@@ -6918,6 +6918,25 @@ async fn site_replication_log_durable_projection() {
         data_policy: "internal".to_string(),
         payload: serde_json::json!({ "status": "resolved", "site": site_id }),
     };
+    // Twentieth audit P0: enqueue is PER FEDERATION EDGE — the queue
+    // test fabricates one corporate_allowed edge so the durable-queue
+    // semantics (not the residency gate) are what is exercised.
+    let edge = replication::FederationEdge {
+        source_tenant: tenant_id,
+        source_site: Some(site_id),
+        target_tenant: uuid::Uuid::new_v4(),
+        target_site: None,
+        target_jurisdiction: replication::Jurisdiction::MA,
+        allowed_data_classes: vec![
+            replication::DataPolicy::Public,
+            replication::DataPolicy::Internal,
+            replication::DataPolicy::Confidential,
+            replication::DataPolicy::Restricted,
+            replication::DataPolicy::Personal,
+        ],
+        residency_policy: replication::ResidencyPolicy::CorporateAllowed,
+        policy_revision: 1,
+    };
     replication::enqueue_projection(
         &pool,
         tenant_id,
@@ -6927,8 +6946,8 @@ async fn site_replication_log_durable_projection() {
         envelope_a.payload.clone(),
         envelope_a.source_event_id.as_deref(),
         &envelope_a,
-        None,
-        None,
+        Some(&replication::Jurisdiction::MA),
+        &edge,
     )
     .await
     .expect("enqueue must succeed site-locally");
@@ -6941,8 +6960,8 @@ async fn site_replication_log_durable_projection() {
         envelope_b.payload.clone(),
         envelope_b.source_event_id.as_deref(),
         &envelope_b,
-        None,
-        None,
+        Some(&replication::Jurisdiction::MA),
+        &edge,
     )
     .await
     .expect("enqueue must succeed site-locally");
@@ -7372,6 +7391,28 @@ async fn replication_claim_ack_at_least_once() {
         data_policy: "internal".to_string(),
         payload: serde_json::json!({ "status": "resolved" }),
     };
+    // Twentieth audit P0: enqueue is PER FEDERATION EDGE — the claim/ACK
+    // test fabricates one corporate_allowed edge (same-jurisdiction MA,
+    // every data class allowed) so the lease/ACK semantics (not the
+    // residency gate) are what is exercised. The duplicate-enqueue check
+    // below reuses the SAME edge, so the per-edge idempotency key
+    // (source_event + projection_type + target) still rejects it.
+    let edge = replication::FederationEdge {
+        source_tenant: tenant_id,
+        source_site: Some(site_id),
+        target_tenant: uuid::Uuid::new_v4(),
+        target_site: None,
+        target_jurisdiction: replication::Jurisdiction::MA,
+        allowed_data_classes: vec![
+            replication::DataPolicy::Public,
+            replication::DataPolicy::Internal,
+            replication::DataPolicy::Confidential,
+            replication::DataPolicy::Restricted,
+            replication::DataPolicy::Personal,
+        ],
+        residency_policy: replication::ResidencyPolicy::CorporateAllowed,
+        policy_revision: 1,
+    };
 
     replication::enqueue_projection(
         &pool,
@@ -7382,8 +7423,8 @@ async fn replication_claim_ack_at_least_once() {
         envelope_a.payload.clone(),
         envelope_a.source_event_id.as_deref(),
         &envelope_a,
-        None,
-        None,
+        Some(&replication::Jurisdiction::MA),
+        &edge,
     )
     .await
     .expect("enqueue A must succeed");
@@ -7396,8 +7437,8 @@ async fn replication_claim_ack_at_least_once() {
         envelope_b.payload.clone(),
         envelope_b.source_event_id.as_deref(),
         &envelope_b,
-        None,
-        None,
+        Some(&replication::Jurisdiction::MA),
+        &edge,
     )
     .await
     .expect("enqueue B must succeed");
@@ -7471,28 +7512,33 @@ async fn replication_claim_ack_at_least_once() {
         envelope_a.payload.clone(),
         envelope_a.source_event_id.as_deref(),
         &envelope_a,
-        None,
-        None,
+        Some(&replication::Jurisdiction::MA),
+        &edge,
     )
     .await
     .expect_err("duplicate source_event_id + projection_type must be rejected");
 
-    // Residency gate (item 17): restricted data may not cross countries;
-    // internal data may.
+    // Residency gate (item 17 + twentieth audit P0): under the edge's
+    // own residency policy (CorporateAllowed here) restricted data may
+    // not cross countries; internal data may; same-jurisdiction
+    // restricted movement stays allowed.
     assert!(!replication::may_replicate(
         replication::DataPolicy::Restricted,
         Some(&replication::Jurisdiction::MA),
-        Some(&replication::Jurisdiction::TN)
+        Some(&replication::Jurisdiction::TN),
+        &replication::ResidencyPolicy::CorporateAllowed,
     ));
     assert!(replication::may_replicate(
         replication::DataPolicy::Internal,
         Some(&replication::Jurisdiction::MA),
-        Some(&replication::Jurisdiction::TN)
+        Some(&replication::Jurisdiction::TN),
+        &replication::ResidencyPolicy::CorporateAllowed,
     ));
     assert!(replication::may_replicate(
         replication::DataPolicy::Restricted,
         Some(&replication::Jurisdiction::MA),
-        Some(&replication::Jurisdiction::MA)
+        Some(&replication::Jurisdiction::MA),
+        &replication::ResidencyPolicy::CorporateAllowed,
     ));
 }
 
@@ -9020,6 +9066,25 @@ async fn invariant_replication_crash_after_claim_does_not_lose_message() {
         payload: serde_json::json!({ "status": "completed" }),
     };
     let entity_id = uuid::Uuid::new_v4();
+    // Twentieth audit P0: enqueue is PER FEDERATION EDGE — the crash
+    // invariant test fabricates one corporate_allowed edge so the
+    // lease/redelivery semantics (not the residency gate) are exercised.
+    let edge = replication::FederationEdge {
+        source_tenant: tenant_id,
+        source_site: None,
+        target_tenant: uuid::Uuid::new_v4(),
+        target_site: None,
+        target_jurisdiction: replication::Jurisdiction::MA,
+        allowed_data_classes: vec![
+            replication::DataPolicy::Public,
+            replication::DataPolicy::Internal,
+            replication::DataPolicy::Confidential,
+            replication::DataPolicy::Restricted,
+            replication::DataPolicy::Personal,
+        ],
+        residency_policy: replication::ResidencyPolicy::CorporateAllowed,
+        policy_revision: 1,
+    };
     replication::enqueue_projection(
         &pool,
         tenant_id,
@@ -9029,8 +9094,8 @@ async fn invariant_replication_crash_after_claim_does_not_lose_message() {
         envelope.payload.clone(),
         envelope.source_event_id.as_deref(),
         &envelope,
-        None,
-        None,
+        Some(&replication::Jurisdiction::MA),
+        &edge,
     )
     .await
     .expect("enqueue must succeed");
@@ -10440,7 +10505,7 @@ async fn site_bootstrap_lifecycle_validation() {
     sqlx::query(
         "INSERT INTO integration_checkpoints \
              (tenant_id, source_system, source_table, last_run_at) \
-         VALUES ($1, 'starz_erp', 'sales_orders', NOW())",
+         VALUES ($1, 'erp', 'sales_orders', NOW())",
     )
     .bind(tenant_id)
     .execute(&pool)
@@ -11804,12 +11869,16 @@ async fn nineteenth_audit_adversarial_gate() {
 
     use sensei_services::tps::replication;
 
-    // 1) Restricted + unknown destination -> DENIED (the normal path).
+    // 1) Restricted + unknown destination -> DENIED (the normal path),
+    //    now under the EDGE residency policy (twentieth audit P0): even
+    //    CorporateAllowed cannot export Restricted toward an unknown
+    //    destination.
     assert!(
         !replication::may_replicate(
             replication::DataPolicy::Restricted,
             Some(&replication::Jurisdiction::MA),
             None,
+            &replication::ResidencyPolicy::CorporateAllowed,
         ),
         "Restricted data with an unknown destination must be DENIED"
     );
@@ -11818,6 +11887,7 @@ async fn nineteenth_audit_adversarial_gate() {
             replication::DataPolicy::Internal,
             Some(&replication::Jurisdiction::MA),
             None,
+            &replication::ResidencyPolicy::CorporateAllowed,
         ),
         "Internal data with an unknown destination may replicate"
     );

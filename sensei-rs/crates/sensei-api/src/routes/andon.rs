@@ -496,12 +496,26 @@ pub async fn list_events(
         serde_json::Value,
         i64,
     );
-    // Eighteenth audit P0-2: the event log is scope-intersected. A
-    // site-scoped caller sees ONLY events carrying their site scope; a
-    // caller with no entitlement sees nothing at all.
-    let ctx = crate::routes::agent::build_context(&user, &state).await;
-    let authorized_sites: Vec<Uuid> = if let Some(site) = ctx.site_id {
-        vec![site]
+    // Twentieth audit P1: the event log is scope-intersected by the
+    // FULL RequestContext ENTITLEMENT (all sites the principal may
+    // access), not a single legacy active site — a multi-site manager
+    // sees the events of every site they are entitled to, and a caller
+    // with no entitlement sees nothing at all.
+    let authorized_sites: Vec<Uuid> = if let Some(pool) = state.db_pool.as_ref() {
+        let ctx = crate::routes::agent::build_context(&user, &state).await;
+        sensei_core::domain::request_context::RequestContext::build(
+            pool,
+            user.tenant_id,
+            user.user_id,
+            ctx.site_id,
+            ctx.value_stream_id,
+            ctx.work_center_id,
+            ctx.shift_id,
+            String::new(),
+        )
+        .await
+        .map(|rc| rc.authorized_sites().to_vec())
+        .unwrap_or_default()
     } else {
         Vec::new()
     };

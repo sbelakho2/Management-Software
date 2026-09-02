@@ -304,7 +304,7 @@ impl MetricComputer for OtdV1 {
         &self,
         pool: &PgPool,
         tenant_id: Uuid,
-        _site_id: Option<Uuid>,
+        site_id: Option<Uuid>,
     ) -> Result<MetricResult> {
         let metric_id = self.id().to_string();
         let computed_at = Utc::now();
@@ -326,9 +326,11 @@ impl MetricComputer for OtdV1 {
                             MIN(so.created_at), \
                             MAX(so.updated_at) \
                      FROM sales_orders so \
-                     WHERE so.tenant_id = $1",
+                     WHERE so.tenant_id = $1 \
+                       AND ($2::uuid IS NULL OR so.fulfilling_site_id = $2)",
                 )
                 .bind(tenant_id)
+                .bind(site_id)
                 .fetch_one(&mut **tx)
                 .await
                 .map_err(|e| SenseiError::Database(format!("metric engine: otd: {e}")))?;

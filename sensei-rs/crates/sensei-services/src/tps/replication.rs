@@ -177,6 +177,42 @@ impl ResidencyPolicy {
             Self::CorporateAllowed => true,
         }
     }
+
+    /// The EDGE-LEVEL export gate (twentieth audit P0): the residency
+    /// policy of the membership row decides whether data may move between
+    /// two KNOWN jurisdictions, with the data-CLASS rule layered on top —
+    /// Restricted/Personal never cross a country border even when the
+    /// edge's policy is CorporateAllowed (sixteenth audit item 17 rule,
+    /// unchanged). Same-jurisdiction movement never leaves the country,
+    /// so every policy allows it. Cross-border:
+    /// - LocalOnly => false for ANY data class (twentieth audit P0:
+    ///   LocalOnly must stop Public/Internal/Confidential export too);
+    /// - AllowedCountries => the target must be on the membership's list;
+    /// - CorporateAllowed => anywhere within the corporate group.
+    pub fn allows_export(
+        &self,
+        data_class: DataPolicy,
+        source: &Jurisdiction,
+        target: &Jurisdiction,
+    ) -> bool {
+        if source == target {
+            return true;
+        }
+        if matches!(data_class, DataPolicy::Restricted | DataPolicy::Personal) {
+            return false;
+        }
+        self.allows(source, target)
+    }
+
+    /// The migration-148 CHECK label of this policy ('local_only',
+    /// 'allowed_countries', 'corporate_allowed').
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::LocalOnly => "local_only",
+            Self::AllowedCountries(_) => "allowed_countries",
+            Self::CorporateAllowed => "corporate_allowed",
+        }
+    }
 }
 
 /// TYPED data policy (seventeenth audit item 6): one enum, never a
@@ -220,45 +256,56 @@ impl DataPolicy {
     }
 }
 
-/// DETERMINISTIC residency gate (sixteenth audit item 17): a projection
-/// whose `data_policy` is `restricted` or `personal` may never cross a
-/// country border — it is blocked when the destination country is set and
-/// differs from the source country (or the source is unknown). All other
-/// policies replicate freely. Pure function: the route calls it BEFORE
-/// enqueue (422), and `enqueue_projection` enforces it again as a second
-/// line of defense. Takes the TYPED policy — an unparsed string cannot
-/// reach the gate.
 /// DETERMINISTIC residency gate (sixteenth audit item 17 + eighteenth
-/// audit P0-3): a projection whose DATA CLASS is `restricted` or
-/// `personal` may never cross a country border — blocked when the
-/// TYPED target jurisdiction differs from the TYPED source jurisdiction
-/// (or the target is unknown). All other classes replicate freely.
-/// Both jurisdictions are server-derived; an unparsed string cannot
-/// reach the gate.
+/// audit P0-3 + nineteenth audit P0 + twentieth audit P0): decides
+/// whether one projection of `data_policy` may move from
+/// `source_jurisdiction` to `target_jurisdiction` UNDER THE RESIDENCY
+/// POLICY OF THE FEDERATION EDGE that would carry it. The caller can
+/// never choose which policy applies — the membership row owns the edge,
+/// and `may_replicate` only evaluates what the edge grants. The route
+/// evaluates the gate ONCE PER EDGE against that edge's policy; a
+/// LocalOnly edge now stops Public/Internal/Confidential export too
+/// (twentieth audit P0-2). FAIL-CLOSED at every unknown:
+///
+/// - `(None, None) => false` — the old `(None, None) => true` let an
+///   unrestricted projection be queued with NO derivable destination.
+/// - `(None, Some) => false` — no source jurisdiction, nothing leaves.
+/// - `(Some, None)` — only CorporateAllowed may export an unrestricted
+///   class toward an UNKNOWN destination (the legacy nineteenth-audit
+///   semantics, pinned by the adversarial gate; the production route
+///   never reaches this branch — every edge carries a derived target
+///   jurisdiction).
+/// - Restricted/Personal never cross a country border and never move
+///   toward an unknown destination, whatever the residency policy says.
+///
+/// Both jurisdictions are server-derived; an unparsed string cannot reach
+/// the gate.
 pub fn may_replicate(
     data_policy: DataPolicy,
     source_jurisdiction: Option<&Jurisdiction>,
     target_jurisdiction: Option<&Jurisdiction>,
+    residency: &ResidencyPolicy,
 ) -> bool {
     match (source_jurisdiction, target_jurisdiction) {
-        // Same jurisdiction: intra-country replication is always allowed.
-        (Some(src), Some(dst)) if src == dst => true,
-        // Cross-border:
-        (Some(_src), Some(_dst)) => {
-            // The residency POLICY governs the actual decision (nineteenth
-            // audit P0): the caller cannot choose which policy applies.
-            matches!(
-                data_policy,
-                DataPolicy::Public | DataPolicy::Internal | DataPolicy::Confidential
-            )
-        }
-        // Eighteenth/nineteenth audit P0: Restricted/Personal data with
-        // an UNKNOWN destination is DENIED — unknown is not 'same
-        // country'. This is the normal path through the endpoint.
-        (Some(_src), None) => !matches!(data_policy, DataPolicy::Restricted | DataPolicy::Personal),
+        // Known source AND destination: the EDGE's own residency policy
+        // makes the decision.
+        (Some(src), Some(dst)) => residency.allows_export(data_policy, src, dst),
+        // Known source, UNKNOWN destination: an unknown destination is
+        // not 'same country'. CorporateAllowed may still export an
+        // unrestricted class (the nineteenth-audit contract); LocalOnly
+        // and AllowedCountries grant nothing to a destination they cannot
+        // vouch for.
+        (Some(_src), None) => match residency {
+            ResidencyPolicy::CorporateAllowed => {
+                !matches!(data_policy, DataPolicy::Restricted | DataPolicy::Personal)
+            }
+            ResidencyPolicy::LocalOnly | ResidencyPolicy::AllowedCountries(_) => false,
+        },
         // No source jurisdiction -> nothing may leave.
         (None, Some(_dst)) => false,
-        (None, None) => true,
+        // FAIL-CLOSED (twentieth audit P0): no source AND no destination
+        // grants nothing.
+        (None, None) => false,
     }
 }
 
@@ -401,12 +448,221 @@ pub async fn authorize_projection(
     })
 }
 
-/// Enqueue an AUTHORIZED state projection — SITE-LOCAL, never dependent
-/// on the corporate link. The site's operations keep running while the
-/// queue is durable in its own tenant-scoped transaction. The envelope's
-/// `data_policy` is checked against the residency gate first; the
-/// `source_event_id` + `projection_type` idempotency key makes duplicate
-/// enqueues a hard UNIQUE rejection.
+/// Derive the projection's ENTITY IDENTITY from the source event
+/// (twentieth audit P0): when the event's relational object projection
+/// names a 'subject' (`operational_event_objects.role = 'subject'`), the
+/// subject's object type and id ARE the projection's entity identity —
+/// the client cannot relabel an event as some other entity's projection.
+/// The route uses this when the client entity_type is empty or the event
+/// references an entity; the enqueued row always carries the DERIVED
+/// identity when one exists. Returns `None` when the event carries no
+/// subject object (the caller may then fall back to the client-supplied
+/// identity — there is nothing server-side to derive from).
+pub async fn derive_projection_identity(
+    pool: &sqlx::PgPool,
+    tenant_id: Uuid,
+    event_id: Uuid,
+) -> Result<Option<(String, Uuid)>> {
+    type SubjectRow = (String, Uuid);
+    let subject: Option<SubjectRow> = sqlx::query_as(
+        "SELECT object_type, object_id FROM operational_event_objects \
+         WHERE tenant_id = $1 AND event_id = $2 AND role = 'subject' \
+         ORDER BY object_type ASC, object_id ASC \
+         LIMIT 1",
+    )
+    .bind(tenant_id)
+    .bind(event_id)
+    .fetch_optional(pool)
+    .await
+    .map_err(|e| SenseiError::Database(format!("replication: subject derivation: {e}")))?;
+    Ok(subject)
+}
+
+/// ONE federation edge the source tenant holds toward a destination
+/// (twentieth audit P0): the membership row IS the policy record. The
+/// edge names the target that receives the projection and carries the
+/// governance the residency decision must run against — `target_tenant`
+/// is the peer of one `federation_memberships` row, `target_site` the
+/// peer site manifest the projection would land on (None when the peer
+/// resolves no site), `target_jurisdiction` the TYPED residency code of
+/// that destination (derived from the peer's country policy — never an
+/// arbitrary `LIMIT 1` pick), `allowed_data_classes` the classes the
+/// membership permits over the edge, `residency_policy` the policy that
+/// governs cross-border movement, and `policy_revision` the peer country
+/// policy version the decision is pinned to.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FederationEdge {
+    pub source_tenant: Uuid,
+    pub source_site: Option<Uuid>,
+    pub target_tenant: Uuid,
+    pub target_site: Option<Uuid>,
+    pub target_jurisdiction: Jurisdiction,
+    pub allowed_data_classes: Vec<DataPolicy>,
+    pub residency_policy: ResidencyPolicy,
+    pub policy_revision: u64,
+}
+
+impl FederationEdge {
+    /// The JSONB audit snapshot persisted on every enqueued row
+    /// (`site_replication_log.edge_policy`): the full edge context the
+    /// decision was made against, in canonical DB labels.
+    pub fn policy_snapshot(&self) -> serde_json::Value {
+        serde_json::json!({
+            "source_tenant": self.source_tenant,
+            "source_site": self.source_site,
+            "target_tenant": self.target_tenant,
+            "target_site": self.target_site,
+            "target_jurisdiction": self.target_jurisdiction.as_str(),
+            "allowed_data_classes": self
+                .allowed_data_classes
+                .iter()
+                .map(|c| c.as_str())
+                .collect::<Vec<_>>(),
+            "residency_policy": self.residency_policy.as_str(),
+            "policy_revision": self.policy_revision,
+        })
+    }
+}
+
+/// Load EVERY federation edge the source tenant holds (twentieth audit
+/// P0): `federation_memberships` JOIN the peer's `site_manifests` (peer
+/// country) + the peer's `country_policies` (the TYPED data_residency of
+/// the peer jurisdiction) — NO `LIMIT 1`: one edge per destination the
+/// projection could land on, so the route can make one target-specific
+/// decision per edge instead of checking an arbitrary country. FAIL-CLOSED
+/// per row: an edge whose governance cannot be read EXACTLY (no peer
+/// country policy, an unknown jurisdiction code, an unparseable residency
+/// label or an unparseable allow-list entry) grants nothing and yields NO
+/// edge — an ambiguous or corrupt membership is never guessed into an
+/// arbitrary decision.
+pub async fn load_federation_edges(
+    pool: &sqlx::PgPool,
+    tenant_id: Uuid,
+    source_site_id: Option<Uuid>,
+) -> Result<Vec<FederationEdge>> {
+    type EdgeRow = (
+        Uuid,              // peer_tenant_id
+        Uuid,              // peer site_id (the destination site)
+        Option<String>,    // peer country policy data_residency (LEFT JOIN)
+        serde_json::Value, // allowed_data_classes
+        String,            // residency_policy label
+        serde_json::Value, // allowed_countries
+        i64,               // peer country policy revision (0 when none)
+    );
+    let rows: Vec<EdgeRow> = sqlx::query_as(
+        "SELECT fm.peer_tenant_id, sm.site_id, cp.data_residency, \
+                fm.allowed_data_classes, fm.residency_policy, fm.allowed_countries, \
+                COALESCE((SELECT MAX(revision) FROM country_policy_versions v \
+                           WHERE v.tenant_id = fm.peer_tenant_id AND v.country = sm.country), 0) \
+         FROM federation_memberships fm \
+         JOIN site_manifests sm ON sm.tenant_id = fm.peer_tenant_id \
+         LEFT JOIN country_policies cp \
+                ON cp.tenant_id = fm.peer_tenant_id AND cp.country = sm.country \
+         WHERE fm.tenant_id = $1 \
+         ORDER BY fm.peer_tenant_id ASC, sm.site_id ASC",
+    )
+    .bind(tenant_id)
+    .fetch_all(pool)
+    .await
+    .map_err(|e| SenseiError::Database(format!("replication: federation edges: {e}")))?;
+
+    let mut edges = Vec::with_capacity(rows.len());
+    for (
+        peer_tenant,
+        peer_site,
+        data_residency,
+        allowed_classes_json,
+        residency_label,
+        allowed_countries_json,
+        revision,
+    ) in rows
+    {
+        // No peer country policy record (or an unknown residency code):
+        // the destination's jurisdiction cannot be derived, so nothing is
+        // ever exported to it.
+        let Some(residency_code) = data_residency.as_deref() else {
+            continue;
+        };
+        let Ok(target_jurisdiction) = Jurisdiction::parse(residency_code) else {
+            continue;
+        };
+        // The membership's allow-list must parse EXACTLY — an unparseable
+        // class cannot be honored, so the edge grants nothing.
+        let allowed_labels: Vec<String> = match serde_json::from_value(allowed_classes_json) {
+            Ok(labels) => labels,
+            Err(_) => continue,
+        };
+        let mut allowed_data_classes = Vec::with_capacity(allowed_labels.len());
+        let mut classes_ok = true;
+        for label in allowed_labels {
+            match DataPolicy::parse(&label) {
+                Ok(policy) => allowed_data_classes.push(policy),
+                Err(_) => {
+                    classes_ok = false;
+                    break;
+                }
+            }
+        }
+        if !classes_ok {
+            continue;
+        }
+        let residency_policy = match residency_label.as_str() {
+            "local_only" => ResidencyPolicy::LocalOnly,
+            "corporate_allowed" => ResidencyPolicy::CorporateAllowed,
+            "allowed_countries" => {
+                // The allowed-country list must parse EXACTLY too.
+                let codes: Vec<String> = match serde_json::from_value(allowed_countries_json) {
+                    Ok(codes) => codes,
+                    Err(_) => continue,
+                };
+                let mut countries = Vec::with_capacity(codes.len());
+                let mut countries_ok = true;
+                for code in codes {
+                    match Jurisdiction::parse(&code) {
+                        Ok(jurisdiction) => countries.push(jurisdiction),
+                        Err(_) => {
+                            countries_ok = false;
+                            break;
+                        }
+                    }
+                }
+                if !countries_ok {
+                    continue;
+                }
+                ResidencyPolicy::AllowedCountries(countries)
+            }
+            // The CHECK constraint in migration 148 makes this
+            // unreachable; the guard keeps the loader fail-closed anyway.
+            _ => continue,
+        };
+        edges.push(FederationEdge {
+            source_tenant: tenant_id,
+            source_site: source_site_id,
+            target_tenant: peer_tenant,
+            target_site: Some(peer_site),
+            target_jurisdiction,
+            allowed_data_classes,
+            residency_policy,
+            policy_revision: revision as u64,
+        });
+    }
+    Ok(edges)
+}
+
+/// Enqueue one AUTHORIZED state projection for ONE federation edge —
+/// SITE-LOCAL, never dependent on the corporate link. The site's
+/// operations keep running while the queue is durable in its own
+/// tenant-scoped transaction. Twentieth audit P0: the enqueued row names
+/// its destination (`target_tenant_id`/`target_site_id`), the TYPED
+/// `target_jurisdiction` the residency decision was made against, and the
+/// full edge snapshot (`edge_policy`) — a destination-less queue row no
+/// longer exists. The gate is evaluated against the EDGE's own
+/// `residency_policy` and `allowed_data_classes` (the route screens
+/// before calling; this is the second line of defense), and the
+/// `source_event_id` + `projection_type` + target idempotency key makes
+/// duplicate enqueues of the same event to the same edge a hard UNIQUE
+/// rejection — while the SAME event to DIFFERENT edges is legal (one row
+/// per edge).
 #[allow(clippy::too_many_arguments)]
 pub async fn enqueue_projection(
     pool: &sqlx::PgPool,
@@ -418,10 +674,20 @@ pub async fn enqueue_projection(
     source_event_id: Option<&str>,
     envelope: &ReplicationEnvelope,
     source_jurisdiction: Option<&Jurisdiction>,
-    target_jurisdiction: Option<&Jurisdiction>,
+    edge: &FederationEdge,
 ) -> Result<()> {
     let policy = DataPolicy::parse(&envelope.data_policy).map_err(SenseiError::Validation)?;
-    if !may_replicate(policy, source_jurisdiction, target_jurisdiction) {
+    if !edge.allowed_data_classes.contains(&policy) {
+        return Err(SenseiError::Validation(
+            "the federation edge's allowed_data_classes exclude this projection".to_string(),
+        ));
+    }
+    if !may_replicate(
+        policy,
+        source_jurisdiction,
+        Some(&edge.target_jurisdiction),
+        &edge.residency_policy,
+    ) {
         return Err(SenseiError::Validation(
             "data residency policy blocks this projection".to_string(),
         ));
@@ -436,13 +702,19 @@ pub async fn enqueue_projection(
     let data_policy = envelope.data_policy.clone();
     let schema_version = envelope.schema_version as i32;
     let projection_revision = envelope.projection_revision as i64;
+    let target_tenant_id = edge.target_tenant;
+    let target_site_id = edge.target_site;
+    let target_jurisdiction = edge.target_jurisdiction.as_str().to_string();
+    let edge_policy = edge.policy_snapshot();
     with_tenant_tx(pool, tenant_id, move |tx| {
         Box::pin(async move {
             sqlx::query(
                 "INSERT INTO site_replication_log \
                      (tenant_id, site_id, entity_type, entity_id, projection, source_event_id, \
-                      schema_version, projection_type, projection_revision, data_policy, status) \
-                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'pending')",
+                      schema_version, projection_type, projection_revision, data_policy, status, \
+                      target_tenant_id, target_site_id, target_jurisdiction, edge_policy) \
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'pending', \
+                         $11, $12, $13, $14)",
             )
             .bind(tenant_id)
             .bind(site_id)
@@ -454,6 +726,10 @@ pub async fn enqueue_projection(
             .bind(&projection_type)
             .bind(projection_revision)
             .bind(&data_policy)
+            .bind(target_tenant_id)
+            .bind(target_site_id)
+            .bind(&target_jurisdiction)
+            .bind(edge_policy)
             .execute(&mut **tx)
             .await
             .map_err(|e| SenseiError::Database(format!("replication: enqueue failed: {e}")))?;

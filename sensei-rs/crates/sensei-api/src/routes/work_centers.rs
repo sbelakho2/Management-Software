@@ -3,65 +3,72 @@
 //! Provides endpoints for managing manufacturing work centers (production
 //! cells / manufacturing units), including capacity, efficiency tracking,
 //! and active/inactive status management.
+//!
+//! Twentieth audit P0 (Work Center split-brain): these handlers used to
+//! persist through a generic EntityStore (JSONB in `entity_store`) while
+//! RequestContext topology validation, site readiness, capability checks
+//! and skills read the RELATIONAL `work_centers` table — two systems of
+//! record that could diverge. All create/update/get/list operations now
+//! go through the relational [`WorkCenterRepository`] so a work center
+//! created through this API IMMEDIATELY exists for the plant lifecycle.
+//! Responses carry `site_id` and `topology_state`; a create may assert a
+//! `site_id` (the composite FK verifies the site belongs to the tenant)
+//! or leave it `None` — a site-less work center is created as
+//! `needs_reconciliation`, never certified.
 
 use axum::{
     extract::{Path, Query, State},
     Json,
 };
-use chrono::Utc;
 use sensei_auth::middleware::AuthenticatedUser;
 use sensei_core::error::{Result, SenseiError};
 use sensei_core::pagination::PaginatedResponse;
+use sensei_services::tps::work_center_repository::{
+    self, NewWorkCenter, RelationalWorkCenter, UpdateWorkCenter,
+};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::state::AppState;
-use crate::stores::{WorkCenter, WorkCenterStore};
 
 // ── Query / Request DTOs ───────────────────────────────────────────────────
 
 /// Query parameters for listing work centers.
 #[derive(Debug, Deserialize)]
 pub struct ListWorkCentersParams {
-    pub is_active: Option<bool>,
     pub work_center_type: Option<String>,
-    pub department: Option<String>,
     pub page: Option<usize>,
     pub per_page: Option<usize>,
 }
 
 /// Request body for creating a work center.
+///
+/// `site_id` is OPTIONAL: supply it only when the caller can assert the
+/// work center's plant site — the repository verifies the site exists
+/// for the tenant and records the row as topology `resolved` /
+/// `manual_reconciliation`. Without it the row is created site-less in
+/// `needs_reconciliation` (unknown lineage is never certified and the
+/// site-readiness gate will keep the plant unreconciled until a site is
+/// provably assigned).
 #[derive(Debug, Deserialize)]
 pub struct CreateWorkCenterRequest {
-    pub work_center_number: String,
     pub name: String,
-    pub description: Option<String>,
     pub work_center_type: String,
-    pub department: Option<String>,
-    pub location: Option<String>,
-    pub capacity_per_shift: i32,
-    pub shifts_per_day: i32,
-    pub efficiency: f64,
-    pub available_hours_per_day: f64,
-    pub notes: Option<String>,
-    pub supervisor_id: Option<Uuid>,
+    /// Optional site assignment asserted by the caller.
+    pub site_id: Option<Uuid>,
 }
 
 /// Request body for updating a work center.
+///
+/// `site_id` is three-state: absent = leave the assignment untouched;
+/// `null` = unassign (row becomes `needs_reconciliation`); a UUID =
+/// (re)assert the assignment (site must exist for the tenant).
 #[derive(Debug, Deserialize)]
 pub struct UpdateWorkCenterRequest {
     pub name: Option<String>,
-    pub description: Option<String>,
     pub work_center_type: Option<String>,
-    pub department: Option<String>,
-    pub location: Option<String>,
-    pub is_active: Option<bool>,
-    pub capacity_per_shift: Option<i32>,
-    pub shifts_per_day: Option<i32>,
-    pub efficiency: Option<f64>,
-    pub available_hours_per_day: Option<f64>,
-    pub notes: Option<String>,
-    pub supervisor_id: Option<Uuid>,
+    #[serde(default)]
+    pub site_id: Option<Option<Uuid>>,
 }
 
 /// Work center capacity overview.
@@ -85,69 +92,37 @@ pub struct EfficiencyReport {
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
-fn get_store(state: &AppState) -> &WorkCenterStore {
-    &state.work_centers
-}
-
-/// Default hours per shift used for utilization math (hours_per_shift is
-/// not a field on [`WorkCenter`]).
-const DEFAULT_HOURS_PER_SHIFT: f64 = 8.0;
-
-/// Compute the next work center number within the tenant's own store.
-///
-/// Numbering is per tenant: the highest existing `WC-xxxxx` suffix in the
-/// tenant's work centers plus one. There is no global counter, so tenants
-/// never share or race on sequence state.
-fn next_number(store_map: &std::collections::HashMap<Uuid, WorkCenter>, tenant_id: Uuid) -> String {
-    let max_suffix = store_map
-        .values()
-        .filter(|wc| wc.tenant_id == tenant_id)
-        .filter_map(|wc| wc.work_center_number.strip_prefix("WC-"))
-        .filter_map(|s| s.parse::<u32>().ok())
-        .max()
-        .unwrap_or(0);
-    format!("WC-{:05}", max_suffix + 1)
-}
-
-/// Validate that an efficiency value is a percentage in [0, 100].
-fn validate_efficiency(efficiency: f64) -> Result<()> {
-    if !(0.0..=100.0).contains(&efficiency) {
-        return Err(SenseiError::Validation(format!(
-            "Invalid efficiency {efficiency}: must be a percentage between 0 and 100"
-        )));
-    }
-    Ok(())
+/// The relational `work_centers` table is the single system of record —
+/// every handler below needs the database.
+fn pool(state: &AppState) -> Result<&sqlx::PgPool> {
+    state.db_pool.as_ref().map(|p| p.as_ref()).ok_or_else(|| {
+        SenseiError::Database(
+            "Work center API requires a database connection (relational work_centers table)"
+                .to_string(),
+        )
+    })
 }
 
 // ── Handlers ───────────────────────────────────────────────────────────────
 
-/// List all work centers with optional filters and pagination.
+/// List all work centers with optional type filter and pagination.
 pub async fn list_work_centers(
     user: AuthenticatedUser,
     State(state): State<AppState>,
     Query(params): Query<ListWorkCentersParams>,
-) -> Result<Json<PaginatedResponse<WorkCenter>>> {
+) -> Result<Json<PaginatedResponse<RelationalWorkCenter>>> {
     user.require_permission("tps:work-center:read")?;
     let tenant_id = user.tenant_id;
-    let store = get_store(&state);
-    let map = store.read(user.tenant_id).await;
+    let pool = pool(&state)?;
 
-    let mut items: Vec<WorkCenter> = map
-        .values()
-        .filter(|wc| wc.tenant_id == tenant_id)
-        .filter(|wc| match params.is_active {
-            Some(active) => wc.is_active == active,
-            None => true,
-        })
+    let rows = work_center_repository::list(pool, tenant_id, None).await?;
+
+    let mut items: Vec<RelationalWorkCenter> = rows
+        .into_iter()
         .filter(|wc| match &params.work_center_type {
             Some(t) => wc.work_center_type == *t,
             None => true,
         })
-        .filter(|wc| match &params.department {
-            Some(d) => wc.department.as_deref() == Some(d.as_str()),
-            None => true,
-        })
-        .cloned()
         .collect();
 
     items.sort_by(|a, b| a.work_center_number.cmp(&b.work_center_number));
@@ -156,7 +131,7 @@ pub async fn list_work_centers(
     let per_page = params.per_page.unwrap_or(20).min(100);
     let total_pages = total.div_ceil(per_page);
     let start = (page.saturating_sub(1)) * per_page;
-    let data: Vec<WorkCenter> = items.into_iter().skip(start).take(per_page).collect();
+    let data: Vec<RelationalWorkCenter> = items.into_iter().skip(start).take(per_page).collect();
 
     Ok(Json(PaginatedResponse {
         data,
@@ -172,140 +147,90 @@ pub async fn get_work_center(
     user: AuthenticatedUser,
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
-) -> Result<Json<WorkCenter>> {
+) -> Result<Json<RelationalWorkCenter>> {
     user.require_permission("tps:work-center:read")?;
-    let tenant_id = user.tenant_id;
-    let store = get_store(&state);
-    let map = store.read(user.tenant_id).await;
-
-    let wc = map
-        .get(&id)
-        .filter(|wc| wc.tenant_id == tenant_id)
-        .ok_or_else(|| SenseiError::NotFound(id.to_string()))?
-        .clone();
-
+    let pool = pool(&state)?;
+    let wc = work_center_repository::get(pool, user.tenant_id, id).await?;
     Ok(Json(wc))
 }
 
-/// Create a new work center.
+/// Create a new work center in the relational `work_centers` table.
 pub async fn create_work_center(
     user: AuthenticatedUser,
     State(state): State<AppState>,
     Json(req): Json<CreateWorkCenterRequest>,
-) -> Result<Json<WorkCenter>> {
+) -> Result<Json<RelationalWorkCenter>> {
     user.require_permission("tps:work-center:manage")?;
-    validate_efficiency(req.efficiency)?;
     let tenant_id = user.tenant_id;
-    let now = Utc::now();
-    let store = get_store(&state);
-    let mut map = store.write(user.tenant_id).await;
-    let wc = WorkCenter {
-        id: Uuid::new_v4(),
-        tenant_id,
-        work_center_number: next_number(&map, tenant_id),
-        name: req.name,
-        description: req.description.unwrap_or_default(),
-        work_center_type: req.work_center_type,
-        department: req.department,
-        location: req.location,
-        is_active: true,
-        capacity_per_shift: req.capacity_per_shift,
-        shifts_per_day: req.shifts_per_day,
-        efficiency: req.efficiency,
-        available_hours_per_day: req.available_hours_per_day,
-        notes: req.notes.unwrap_or_default(),
-        supervisor_id: req.supervisor_id,
-        created_by: user.user_id,
-        created_at: now,
-        updated_at: now,
-    };
+    let pool = pool(&state)?;
 
-    map.insert(wc.id, wc.clone());
+    // Per-tenant numbering (same WC-xxxxx rule as before, now computed
+    // over the relational table).
+    let work_center_number = work_center_repository::next_number(pool, tenant_id).await?;
+    let wc = work_center_repository::create(
+        pool,
+        tenant_id,
+        &NewWorkCenter {
+            id: Uuid::new_v4(),
+            site_id: req.site_id,
+            work_center_number,
+            name: req.name,
+            work_center_type: req.work_center_type,
+        },
+    )
+    .await?;
+
     Ok(Json(wc))
 }
 
-/// Update a work center's editable fields.
+/// Update a work center's editable fields and/or site assignment.
 pub async fn update_work_center(
     user: AuthenticatedUser,
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
     Json(req): Json<UpdateWorkCenterRequest>,
-) -> Result<Json<WorkCenter>> {
+) -> Result<Json<RelationalWorkCenter>> {
     user.require_permission("tps:work-center:manage")?;
     let tenant_id = user.tenant_id;
-    let store = get_store(&state);
-    let mut map = store.write(user.tenant_id).await;
+    let pool = pool(&state)?;
 
-    let wc = map
-        .get_mut(&id)
-        .filter(|wc| wc.tenant_id == tenant_id)
-        .ok_or_else(|| SenseiError::NotFound(id.to_string()))?;
+    let wc = work_center_repository::update(
+        pool,
+        tenant_id,
+        id,
+        &UpdateWorkCenter {
+            name: req.name,
+            work_center_type: req.work_center_type,
+            site_id: req.site_id,
+        },
+    )
+    .await?;
 
-    if let Some(name) = req.name {
-        wc.name = name;
-    }
-    if let Some(description) = req.description {
-        wc.description = description;
-    }
-    if let Some(work_center_type) = req.work_center_type {
-        wc.work_center_type = work_center_type;
-    }
-    if let Some(department) = req.department {
-        wc.department = Some(department);
-    }
-    if let Some(location) = req.location {
-        wc.location = Some(location);
-    }
-    if let Some(is_active) = req.is_active {
-        wc.is_active = is_active;
-    }
-    if let Some(capacity) = req.capacity_per_shift {
-        wc.capacity_per_shift = capacity;
-    }
-    if let Some(shifts) = req.shifts_per_day {
-        wc.shifts_per_day = shifts;
-    }
-    if let Some(efficiency) = req.efficiency {
-        validate_efficiency(efficiency)?;
-        wc.efficiency = efficiency;
-    }
-    if let Some(hours) = req.available_hours_per_day {
-        wc.available_hours_per_day = hours;
-    }
-    if let Some(notes) = req.notes {
-        wc.notes = notes;
-    }
-    if let Some(supervisor_id) = req.supervisor_id {
-        wc.supervisor_id = Some(supervisor_id);
-    }
-    wc.updated_at = Utc::now();
-
-    let result = wc.clone();
-    Ok(Json(result))
+    Ok(Json(wc))
 }
 
 /// Deactivate (soft-delete) a work center.
+///
+/// Flips `is_active` in the relational table; the topology assignment is
+/// untouched (a deactivated work center is still part of the plant).
 pub async fn deactivate_work_center(
     user: AuthenticatedUser,
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
-) -> Result<Json<WorkCenter>> {
+) -> Result<Json<RelationalWorkCenter>> {
     user.require_permission("tps:work-center:manage")?;
-    let tenant_id = user.tenant_id;
-    let store = get_store(&state);
-    let mut map = store.write(user.tenant_id).await;
-
-    let wc = map
-        .get_mut(&id)
-        .filter(|wc| wc.tenant_id == tenant_id)
-        .ok_or_else(|| SenseiError::NotFound(id.to_string()))?;
-
-    wc.is_active = false;
-    wc.updated_at = Utc::now();
-    Ok(Json(wc.clone()))
+    let pool = pool(&state)?;
+    let wc = work_center_repository::deactivate(pool, user.tenant_id, id).await?;
+    Ok(Json(wc))
 }
 
 /// Get work center capacity and utilization metrics.
+///
+/// Computed from the RELATIONAL columns (`capacity_per_shift`,
+/// `shifts_per_day`, `efficiency`) — the single system of record. The
+/// relational `efficiency` is a fraction (default 1.0 = 100%). There is
+/// no scheduled-hours input on the relational row, so utilization cannot
+/// be asserted and is reported as 0 — never fabricated.
 pub async fn get_work_center_capacity(
     user: AuthenticatedUser,
     State(state): State<AppState>,
@@ -313,62 +238,55 @@ pub async fn get_work_center_capacity(
 ) -> Result<Json<WorkCenterCapacity>> {
     user.require_permission("tps:work-center:read")?;
     let tenant_id = user.tenant_id;
-    let store = get_store(&state);
-    let map = store.read(user.tenant_id).await;
+    let pool = pool(&state)?;
 
-    let wc = map
-        .get(&id)
-        .filter(|wc| wc.tenant_id == tenant_id)
+    let all = work_center_repository::metrics(pool, tenant_id).await?;
+    let wc = all
+        .into_iter()
+        .find(|wc| wc.id == id)
         .ok_or_else(|| SenseiError::NotFound(id.to_string()))?;
 
-    // Efficiency is a percentage (0-100). Effective capacity is the rated
-    // capacity discounted by efficiency; utilization compares the scheduled
-    // hours against the hours actually available per day
-    // (shifts × hours per shift).
-    let total_capacity_per_day = wc.capacity_per_shift as f64 * wc.shifts_per_day as f64;
-    let effective_capacity_per_day = total_capacity_per_day * (wc.efficiency / 100.0);
-    let available_hours = wc.shifts_per_day as f64 * DEFAULT_HOURS_PER_SHIFT;
-    let utilization_percentage = if available_hours > 0.0 {
-        (wc.available_hours_per_day / available_hours) * 100.0
-    } else {
-        0.0
-    };
+    let capacity_per_shift = wc.capacity_per_shift.unwrap_or(0.0);
+    let shifts_per_day = wc.shifts_per_day.unwrap_or(1) as f64;
+    let efficiency = wc.efficiency.unwrap_or(1.0);
+
+    let total_capacity_per_day = capacity_per_shift * shifts_per_day;
+    let effective_capacity_per_day = total_capacity_per_day * efficiency;
 
     Ok(Json(WorkCenterCapacity {
         total_capacity_per_day,
         effective_capacity_per_day,
-        utilization_percentage,
+        utilization_percentage: 0.0,
     }))
 }
 
 /// Get efficiency report for all active work centers.
+///
+/// Read from the relational columns only. `efficiency` is reported as a
+/// percentage (relational fraction × 100); utilization has no
+/// relational input and is reported as 0.
 pub async fn get_efficiency_report(
     user: AuthenticatedUser,
     State(state): State<AppState>,
 ) -> Result<Json<Vec<EfficiencyReport>>> {
     user.require_permission("tps:work-center:read")?;
     let tenant_id = user.tenant_id;
-    let store = get_store(&state);
-    let map = store.read(user.tenant_id).await;
+    let pool = pool(&state)?;
 
-    let report: Vec<EfficiencyReport> = map
-        .values()
-        .filter(|wc| wc.tenant_id == tenant_id && wc.is_active)
+    let all = work_center_repository::metrics(pool, tenant_id).await?;
+    let report: Vec<EfficiencyReport> = all
+        .into_iter()
+        .filter(|wc| wc.is_active)
         .map(|wc| {
-            let _capacity = wc.capacity_per_shift as f64 * wc.shifts_per_day as f64;
-            let available_hours = wc.shifts_per_day as f64 * DEFAULT_HOURS_PER_SHIFT;
-            let utilization = if available_hours > 0.0 {
-                (wc.available_hours_per_day / available_hours) * 100.0
-            } else {
-                0.0
-            };
+            let capacity_per_shift = wc.capacity_per_shift.unwrap_or(0.0);
+            let efficiency = wc.efficiency.unwrap_or(1.0);
             EfficiencyReport {
                 work_center_id: wc.id,
-                name: wc.name.clone(),
-                efficiency: wc.efficiency,
-                capacity_per_shift: wc.capacity_per_shift,
-                utilization,
-                is_overloaded: utilization > 100.0,
+                name: wc.name,
+                efficiency: efficiency * 100.0,
+                capacity_per_shift: capacity_per_shift as i32,
+                utilization: 0.0,
+                is_overloaded: false,
             }
         })
         .collect();

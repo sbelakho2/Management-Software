@@ -29,12 +29,23 @@ fn pool(state: &AppState) -> Result<&sqlx::PgPool> {
 /// the data it wants to export. It names the SOURCE EVENT (a canonical
 /// operational event); the server derives the site, jurisdiction, data
 /// class and policy revision into an [`AuthorizedProjection`], and the
-/// artifact is what gets enqueued.
+/// artifact is what gets enqueued. Twentieth audit P0: the entity
+/// identity is ALSO server-derived when the client omits it or the event
+/// references an entity — `entity_type`/`entity_id` are only fallbacks
+/// for events whose object projection carries no subject, and the
+/// enqueued row always carries the DERIVED identity.
 #[derive(Debug, Deserialize)]
 pub struct EnqueueRequest {
     pub source_event_id: Uuid,
+    /// Entity type the projection is ABOUT. When empty (or when the
+    /// source event's object projection names a subject), the server
+    /// derives it from the event — the client cannot relabel an event.
+    #[serde(default)]
     pub entity_type: String,
-    pub entity_id: Uuid,
+    /// Entity id the projection is about. Nil is allowed: it is derived
+    /// from the source event's subject object when one exists.
+    #[serde(default)]
+    pub entity_id: Option<Uuid>,
     /// The projection payload (`projection` is accepted as an alias).
     #[serde(default, alias = "projection")]
     pub payload: serde_json::Value,
@@ -96,10 +107,16 @@ fn default_retry_seconds() -> i64 {
 }
 
 /// `POST /api/v1/replication/enqueue` — site-local durable enqueue.
-/// Never depends on the corporate link; the entry is durably queued in
-/// the tenant's own transaction. The residency gate is applied BEFORE
-/// enqueue: a `restricted`/`personal` projection whose destination
-/// country differs from the source is blocked (422).
+/// Never depends on the corporate link; each entry is durably queued in
+/// the tenant's own transaction. Twentieth audit P0: the destination is
+/// NO LONGER a single `LIMIT 1` guess over the federation peers — the
+/// route loads EVERY FederationEdge the caller's tenant holds (membership
+/// row + peer site manifest + peer country policy, all server-derived)
+/// and enqueues ONE ROW PER EDGE that permits the projection, evaluating
+/// `may_replicate` with THAT EDGE's own residency policy and
+/// `allowed_data_classes`. The response returns the number of edges
+/// enqueued; a Restricted/Personal projection that no edge permits is a
+/// 422 (fail-closed — it is never silently dropped).
 pub async fn enqueue(
     user: AuthenticatedUser,
     State(state): State<AppState>,
@@ -118,61 +135,47 @@ pub async fn enqueue(
             .await?;
     let policy = replication::DataPolicy::parse(&artifact.data_class)
         .map_err(sensei_core::error::SenseiError::Validation)?;
-    // Nineteenth audit P0: the destination is DERIVED from the tenant's
-    // federation memberships (the corporate group), never supplied by
-    // the caller and never silently None. Restricted/Personal with no
-    // derivable destination is DENIED by may_replicate.
-    let target_jurisdiction: Option<replication::Jurisdiction> = {
-        let country: Option<String> = sqlx::query_scalar(
-            "SELECT sm.country FROM federation_memberships fm \
-             JOIN site_manifests sm ON sm.tenant_id = fm.peer_tenant_id \
-             WHERE fm.tenant_id = $1 LIMIT 1",
-        )
-        .bind(user.tenant_id)
-        .fetch_optional(p)
-        .await
-        .map_err(|e| {
-            sensei_core::error::SenseiError::Database(format!(
-                "replication: federation target lookup failed: {e}"
-            ))
-        })?;
-        match country {
-            Some(country) => {
-                let residency: Option<String> = sqlx::query_scalar(
-                    "SELECT data_residency FROM country_policies \
-                     WHERE tenant_id = $1 AND country = $2",
-                )
-                .bind(user.tenant_id)
-                .bind(&country)
-                .fetch_optional(p)
-                .await
-                .map_err(|e| {
-                    sensei_core::error::SenseiError::Database(format!(
-                        "replication: target policy lookup failed: {e}"
-                    ))
-                })?;
-                match residency {
-                    Some(residency) => replication::Jurisdiction::parse(&residency).ok(),
-                    None => None,
+
+    // Twentieth audit P0: the entity identity is server-derived from the
+    // source event's subject object when the event carries one (the row
+    // then ALWAYS carries the derived identity, whatever the client
+    // sent). Client values are only the fallback for events that carry
+    // no subject object at all.
+    let (entity_type, entity_id) = {
+        let derived =
+            replication::derive_projection_identity(p, user.tenant_id, req.source_event_id).await?;
+        match derived {
+            Some((derived_type, derived_id)) => (derived_type, derived_id),
+            None => {
+                let client_type = req.entity_type.clone();
+                if client_type.trim().is_empty() {
+                    return Err(SenseiError::Validation(
+                        "replication: entity_type is required when the source event has no \
+                         subject object to derive the projection identity from"
+                            .to_string(),
+                    ));
                 }
+                let client_id = req.entity_id.ok_or_else(|| {
+                    SenseiError::Validation(
+                        "replication: entity_id is required when the source event has no \
+                         subject object to derive the projection identity from"
+                            .to_string(),
+                    )
+                })?;
+                (client_type, client_id)
             }
-            None => None,
         }
     };
-    if !replication::may_replicate(
-        policy,
-        Some(&artifact.source_jurisdiction),
-        target_jurisdiction.as_ref(),
-    ) {
-        return Err(SenseiError::HttpError {
-            status: 422,
-            message: "data residency policy blocks this projection".to_string(),
-        });
-    }
+
+    // Twentieth audit P0: EVERY edge of the caller's federation graph is
+    // loaded (NO LIMIT 1 — one edge per membership row's destination, so
+    // the gate below never checks an arbitrary country), and the gate is
+    // evaluated once PER EDGE with the edge's OWN residency policy.
+    let edges = replication::load_federation_edges(p, user.tenant_id, artifact.source_site).await?;
     let projection_type = req
         .projection_type
         .clone()
-        .unwrap_or_else(|| req.entity_type.clone());
+        .unwrap_or_else(|| entity_type.clone());
     let envelope = ReplicationEnvelope {
         schema_version: req.schema_version,
         source_event_id: Some(artifact.source_event_id.to_string()),
@@ -182,21 +185,52 @@ pub async fn enqueue(
         data_policy: artifact.data_class.clone(),
         payload: artifact.projected_payload.clone(),
     };
-    replication::enqueue_projection(
-        p,
-        user.tenant_id,
-        artifact.source_site,
-        &req.entity_type,
-        req.entity_id,
-        artifact.projected_payload.clone(),
-        Some(&artifact.source_event_id.to_string()),
-        &envelope,
-        Some(&artifact.source_jurisdiction),
-        target_jurisdiction.as_ref(),
-    )
-    .await?;
+    let mut enqueued_edges: u64 = 0;
+    for edge in &edges {
+        if !edge.allowed_data_classes.contains(&policy) {
+            continue;
+        }
+        if !replication::may_replicate(
+            policy,
+            Some(&artifact.source_jurisdiction),
+            Some(&edge.target_jurisdiction),
+            &edge.residency_policy,
+        ) {
+            continue;
+        }
+        replication::enqueue_projection(
+            p,
+            user.tenant_id,
+            artifact.source_site,
+            &entity_type,
+            entity_id,
+            artifact.projected_payload.clone(),
+            Some(&artifact.source_event_id.to_string()),
+            &envelope,
+            Some(&artifact.source_jurisdiction),
+            edge,
+        )
+        .await?;
+        enqueued_edges += 1;
+    }
+    // Restricted/Personal must never be silently dropped: with NO edge
+    // permitting the projection the request is refused outright.
+    if enqueued_edges == 0
+        && matches!(
+            policy,
+            replication::DataPolicy::Restricted | replication::DataPolicy::Personal
+        )
+    {
+        return Err(SenseiError::HttpError {
+            status: 422,
+            message: "no federation edge permits this restricted/personal projection — \
+                      nothing was enqueued"
+                .to_string(),
+        });
+    }
     Ok(Json(serde_json::json!({
         "ok": true,
+        "enqueued_edges": enqueued_edges,
         "authorized_projection": artifact,
     })))
 }

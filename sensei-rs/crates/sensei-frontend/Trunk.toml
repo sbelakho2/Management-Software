@@ -1,0 +1,11 @@
+# Trunk configuration for the sensei-frontend Leptos bundle.
+#
+# Twentieth audit P1 (CI): the generated module contains bulk-memory
+# (memory.copy) and threads (atomic.*) instructions emitted by the Rust
+# wasm toolchain. trunk's default wasm-opt invocation runs with a
+# conservative feature set and rejects those instructions, failing the
+# release build. The optimization pass is made FEATURE-CONSISTENT with
+# the module: --enable-bulk-memory and --enable-threads are enabled, so
+# the emitted code is optimized rather than suppressed.
+[build]
+wasm-opt-args = ["--enable-bulk-memory", "--enable-threads", "-O3"]
