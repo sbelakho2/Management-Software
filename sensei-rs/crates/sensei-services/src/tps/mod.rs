@@ -12,6 +12,7 @@ pub mod corporate;
 pub mod country_policy;
 pub mod episodes;
 pub mod flow_economics;
+pub mod integration;
 pub mod learning;
 pub mod lessons;
 pub mod metric_engine;

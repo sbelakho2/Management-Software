@@ -115,7 +115,7 @@ impl Money {
     /// Decimal-NATIVE construction (twenty-first audit item 14): money is
     /// built from the Decimal aggregate directly — no f64 round trip at
     /// the constructor boundary. Minor units are computed with Decimal
-    /// arithmetic (multiply by 100, truncate toward zero).
+    /// arithmetic (multiply by 100, rounded to the nearest minor unit).
     pub fn from_decimal_decimal(
         amount: rust_decimal::Decimal,
         currency: CurrencyCode,
@@ -125,8 +125,15 @@ impl Money {
             .ok_or_else(|| {
                 SenseiError::Validation("Money amount overflowed minor-unit scaling".to_string())
             })?;
-        let cents =
-            rust_decimal::prelude::ToPrimitive::to_i64(&scaled.round_dp(0)).unwrap_or(i64::MAX);
+        let rounded = scaled.round_dp(0);
+        // i64 is the storage bound (cents): an out-of-range minor-unit
+        // total — positive OR negative — is a Validation error, never a
+        // silent saturating conversion to i64::MAX.
+        let cents = rust_decimal::prelude::ToPrimitive::to_i64(&rounded).ok_or_else(|| {
+            SenseiError::Validation(format!(
+                "Money amount out of i64 minor-unit range after rounding: {rounded}"
+            ))
+        })?;
         Ok(Self { cents, currency })
     }
 
@@ -153,6 +160,8 @@ pub enum CurrencyCode {
     GBP,
     /// Moroccan Dirham.
     MAD,
+    /// Tunisian Dinar.
+    TND,
     /// Japanese Yen.
     JPY,
     /// Chinese Yuan.
@@ -167,8 +176,24 @@ impl CurrencyCode {
             CurrencyCode::EUR => "EUR",
             CurrencyCode::GBP => "GBP",
             CurrencyCode::MAD => "MAD",
+            CurrencyCode::TND => "TND",
             CurrencyCode::JPY => "JPY",
             CurrencyCode::CNY => "CNY",
+        }
+    }
+
+    /// Parse an ISO 4217 currency code (case-insensitive, e.g. `"TND"` or
+    /// `"tnd"`). Returns `None` for unknown codes.
+    pub fn from_iso(code: &str) -> Option<Self> {
+        match code.to_ascii_uppercase().as_str() {
+            "USD" => Some(CurrencyCode::USD),
+            "EUR" => Some(CurrencyCode::EUR),
+            "GBP" => Some(CurrencyCode::GBP),
+            "MAD" => Some(CurrencyCode::MAD),
+            "TND" => Some(CurrencyCode::TND),
+            "JPY" => Some(CurrencyCode::JPY),
+            "CNY" => Some(CurrencyCode::CNY),
+            _ => None,
         }
     }
 }
@@ -264,5 +289,39 @@ mod tests {
         let money = Money::from_decimal(123.45, CurrencyCode::MAD).unwrap();
         assert_eq!(money.to_decimal(), 123.45);
         assert_eq!(money.cents, 12345);
+    }
+
+    #[test]
+    fn currency_code_parses_tnd_case_insensitively() {
+        assert_eq!(CurrencyCode::from_iso("TND"), Some(CurrencyCode::TND));
+        assert_eq!(CurrencyCode::from_iso("tnd"), Some(CurrencyCode::TND));
+        assert_eq!(CurrencyCode::TND.as_str(), "TND");
+        assert_eq!(CurrencyCode::from_iso("XXX"), None);
+        assert_eq!(CurrencyCode::from_iso(""), None);
+    }
+
+    #[test]
+    fn money_from_decimal_decimal_rejects_out_of_range_in_both_directions() {
+        // Positive overflow past i64::MAX minor units: minor-unit scaling
+        // succeeds but the i64 storage bound refuses.
+        let over = rust_decimal::Decimal::from_i128_with_scale(i64::MAX as i128 + 1, 2);
+        let err = Money::from_decimal_decimal(over, CurrencyCode::USD).unwrap_err();
+        assert!(matches!(err, SenseiError::Validation(_)));
+
+        // Negative overflow past i64::MIN minor units.
+        let under = rust_decimal::Decimal::from_i128_with_scale(-(i64::MAX as i128) - 2, 2);
+        let err = Money::from_decimal_decimal(under, CurrencyCode::USD).unwrap_err();
+        assert!(matches!(err, SenseiError::Validation(_)));
+
+        // Scaling overflow (amount too large for Decimal × 100) is also
+        // a Validation error, never a silent saturation.
+        let huge = rust_decimal::Decimal::MAX;
+        let err = Money::from_decimal_decimal(huge, CurrencyCode::USD).unwrap_err();
+        assert!(matches!(err, SenseiError::Validation(_)));
+
+        // i64::MAX minor units exactly survive rounding + conversion.
+        let near_max = rust_decimal::Decimal::from_i128_with_scale(i64::MAX as i128, 2);
+        let money = Money::from_decimal_decimal(near_max, CurrencyCode::EUR).unwrap();
+        assert_eq!(money.cents, i64::MAX);
     }
 }

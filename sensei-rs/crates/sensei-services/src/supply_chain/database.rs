@@ -653,6 +653,54 @@ impl SupplyChainService for DatabaseSupplyChainService {
         Ok(so_row_to_domain(row))
     }
 
+    async fn assign_fulfillment_site(
+        &self,
+        tenant_id: Uuid,
+        order_id: Uuid,
+        site_id: Uuid,
+    ) -> Result<SalesOrder> {
+        // The fulfilling site is IMMUTABLE once set (SalesOrder doc): a
+        // re-anchor to a DIFFERENT site is refused, re-assigning the
+        // SAME site is a no-op, and only a NULL anchor is filled.
+        let existing: Option<Uuid> = sqlx::query_scalar(
+            "SELECT fulfilling_site_id FROM sales_orders WHERE id = $1 AND tenant_id = $2",
+        )
+        .bind(order_id)
+        .bind(tenant_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| SenseiError::Database(format!("Failed to read order site anchor: {e}")))?
+        .flatten();
+        if let Some(existing) = existing {
+            if existing != site_id {
+                return Err(SenseiError::Validation(format!(
+                    "sales order {order_id} already names fulfilling site {existing} — \
+                     the fulfilling site is immutable"
+                )));
+            }
+            return self.get_sales_order(tenant_id, order_id).await;
+        }
+        let row = sqlx::query_as::<_, SalesOrderRow>(
+            r#"UPDATE sales_orders SET fulfilling_site_id=$3 WHERE id=$1 AND tenant_id=$2
+               RETURNING id, tenant_id, order_number, customer_id, customer_name, status, line_items, total_amount, currency, delivery_date, shipping_address, created_by, created_at, fulfilling_site_id"#,
+        ).bind(order_id).bind(tenant_id).bind(site_id).fetch_optional(&self.pool).await
+            .map_err(|e| SenseiError::Database(format!("Failed to assign fulfilling site: {e}")))?
+            .ok_or_else(|| SenseiError::NotFound(format!("Sales order {order_id} not found")))?;
+        Ok(so_row_to_domain(row))
+    }
+
+    async fn confirm_sales_order_with_site(
+        &self,
+        tenant_id: Uuid,
+        order_id: Uuid,
+        site_id: Uuid,
+    ) -> Result<SalesOrder> {
+        self.assign_fulfillment_site(tenant_id, order_id, site_id)
+            .await?;
+        self.update_sales_order_status(tenant_id, order_id, "confirmed")
+            .await
+    }
+
     // ── Purchase Orders ─────────────────────────────────────────────────
 
     async fn create_purchase_order(
@@ -737,7 +785,8 @@ impl SupplyChainService for DatabaseSupplyChainService {
         // Load the PO's JSONB line items and supplier, then update them.
         let row: PurchaseOrderRow = sqlx::query_as(
             r#"SELECT id, tenant_id, po_number, supplier_id, supplier_name, status,
-                      line_items, total_amount, currency, expected_delivery, created_by, created_at
+                      line_items, total_amount, currency, expected_delivery, created_by, created_at,
+                      receiving_site_id
                FROM purchase_orders WHERE id=$1 AND tenant_id=$2 FOR UPDATE"#,
         )
         .bind(po_id)
@@ -827,7 +876,8 @@ impl SupplyChainService for DatabaseSupplyChainService {
 
         let updated: PurchaseOrderRow = sqlx::query_as(
             r#"SELECT id, tenant_id, po_number, supplier_id, supplier_name, status,
-                      line_items, total_amount, currency, expected_delivery, created_by, created_at
+                      line_items, total_amount, currency, expected_delivery, created_by, created_at,
+                      receiving_site_id
                FROM purchase_orders WHERE id=$1 AND tenant_id=$2"#,
         )
         .bind(po_id)
@@ -1308,7 +1358,8 @@ impl SupplyChainService for DatabaseSupplyChainService {
 
         let row: PurchaseOrderRow = sqlx::query_as(
             r#"SELECT id, tenant_id, po_number, supplier_id, supplier_name, status,
-                      line_items, total_amount, currency, expected_delivery, created_by, created_at
+                      line_items, total_amount, currency, expected_delivery, created_by, created_at,
+                      receiving_site_id
                FROM purchase_orders WHERE id=$1 AND tenant_id=$2 FOR UPDATE"#,
         )
         .bind(id)
@@ -1367,7 +1418,8 @@ impl SupplyChainService for DatabaseSupplyChainService {
 
         let updated: PurchaseOrderRow = sqlx::query_as(
             r#"SELECT id, tenant_id, po_number, supplier_id, supplier_name, status,
-                      line_items, total_amount, currency, expected_delivery, created_by, created_at
+                      line_items, total_amount, currency, expected_delivery, created_by, created_at,
+                      receiving_site_id
                FROM purchase_orders WHERE id=$1 AND tenant_id=$2"#,
         )
         .bind(id)
@@ -1399,6 +1451,42 @@ impl SupplyChainService for DatabaseSupplyChainService {
             .map_err(|e| SenseiError::Database(format!("Failed to commit full receipt: {e}")))?;
 
         Ok(po_row_to_domain(updated))
+    }
+
+    async fn assign_receiving_site(
+        &self,
+        tenant_id: Uuid,
+        po_id: Uuid,
+        site_id: Uuid,
+    ) -> Result<PurchaseOrder> {
+        // The receiving site is IMMUTABLE once set (PurchaseOrder doc):
+        // re-anchoring to a DIFFERENT site is refused, re-assigning the
+        // SAME site is a no-op, and only a NULL anchor is filled.
+        let existing: Option<Uuid> = sqlx::query_scalar(
+            "SELECT receiving_site_id FROM purchase_orders WHERE id = $1 AND tenant_id = $2",
+        )
+        .bind(po_id)
+        .bind(tenant_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| SenseiError::Database(format!("Failed to read PO receiving site: {e}")))?
+        .flatten();
+        if let Some(existing) = existing {
+            if existing != site_id {
+                return Err(SenseiError::Validation(format!(
+                    "purchase order {po_id} already names receiving site {existing} — \
+                     the receiving site is immutable"
+                )));
+            }
+            return self.get_purchase_order(tenant_id, po_id).await;
+        }
+        let row = sqlx::query_as::<_, PurchaseOrderRow>(
+            r#"UPDATE purchase_orders SET receiving_site_id=$3 WHERE id=$1 AND tenant_id=$2
+               RETURNING id, tenant_id, po_number, supplier_id, supplier_name, status, line_items, total_amount, currency, expected_delivery, created_by, created_at, receiving_site_id"#,
+        ).bind(po_id).bind(tenant_id).bind(site_id).fetch_optional(&self.pool).await
+            .map_err(|e| SenseiError::Database(format!("Failed to assign receiving site: {e}")))?
+            .ok_or_else(|| SenseiError::NotFound(format!("Purchase order {po_id} not found")))?;
+        Ok(po_row_to_domain(row))
     }
 
     // ── Inventory Mutations ─────────────────────────────────────────────

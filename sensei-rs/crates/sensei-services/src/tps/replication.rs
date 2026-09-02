@@ -329,123 +329,157 @@ pub struct AuthorizedProjection {
 }
 
 /// DERIVE the projection authorization SERVER-SIDE (eighteenth audit
-/// P0-3): from the source EVENT's sensitivity (the data class), its
-/// scope site's manifest country (the source jurisdiction —
-/// `country_policies.data_residency` holds JURISDICTION codes such as
-/// "ma"/"tn", never data classifications), and the country policy
-/// revision. FAIL-CLOSED at every step:
+/// P0-3 + twenty-second audit P0/P1-1): from the source EVENT's
+/// sensitivity (the data class), its scope site's manifest country (the
+/// source jurisdiction — `country_policies.data_residency` holds
+/// JURISDICTION codes such as "ma"/"tn", never data classifications),
+/// and the country policy revision. FAIL-CLOSED at every step:
 /// - no source event -> error (the artifact always names a real event)
 /// - unparseable sensitivity -> error (never a silent downgrade)
 /// - missing manifest / unknown jurisdiction -> error
+///
+/// Twenty-second audit P0/P1-1: every read here targets FORCE-RLS tables
+/// (`operational_events`, `site_manifests`, `country_policies`,
+/// `country_policy_versions`), so the WHOLE body runs inside ONE
+/// [`with_tenant_tx`] — under a production NOSUPERUSER/NOBYPASSRLS app
+/// role a raw pooled read (no `app.tenant_id` context) returns nothing
+/// and the route would fail closed for EVERY event. With the tenant
+/// context set on the transaction, the tenant-scoped reads resolve and
+/// every check below stays identical.
+///
+/// Twenty-second audit P0/P1-5: when `projection_schema` is empty the
+/// artifact's schema label is derived from the source EVENT's own
+/// `event_type` — the route no longer passes any client-supplied
+/// identity, so the label is server-fixed.
 pub async fn authorize_projection(
     pool: &sqlx::PgPool,
     tenant_id: Uuid,
     source_event_id: Uuid,
     projection_schema: &str,
 ) -> Result<AuthorizedProjection> {
-    // 1. The source event must EXIST in this tenant (FORCE RLS makes the
-    //    raw-pool read fail-closed — a foreign event id resolves to
-    //    nothing).
-    type EvRow = (Option<Uuid>, String, String, serde_json::Value);
-    let event: Option<EvRow> = sqlx::query_as(
-        "SELECT scope_site_id, sensitivity, event_type, payload FROM operational_events \
-         WHERE id = $1 AND tenant_id = $2",
-    )
-    .bind(source_event_id)
-    .bind(tenant_id)
-    .fetch_optional(pool)
-    .await
-    .map_err(|e| SenseiError::Database(format!("replication: source event: {e}")))?;
-    let Some((scope_site_id, sensitivity, event_type, event_payload)) = event else {
-        return Err(SenseiError::Validation(
-            "replication: source_event_id must reference an EXISTING canonical event \
-             in this tenant — an artifact without a real source event is refused"
-                .to_string(),
-        ));
-    };
-    // The projector builds the projection from the CANONICAL event row:
-    // event type, occurrence time, scope and the event's own payload.
-    // A client-supplied payload can never be substituted.
-    let projected_payload = serde_json::json!({
-        "source_event": source_event_id,
-        "event_type": event_type,
-        "occurred_at": sqlx::query_scalar::<_, chrono::DateTime<chrono::Utc>>(
-            "SELECT occurred_at FROM operational_events WHERE id = $1 AND tenant_id = $2",
-        )
-        .bind(source_event_id)
-        .bind(tenant_id)
-        .fetch_one(pool)
-        .await
-        .map_err(|e| SenseiError::Database(format!("replication: event time: {e}")))?,
-        "scope_site": scope_site_id,
-        "payload": event_payload,
-    });
-
-    let data_class = DataPolicy::parse(&sensitivity).map_err(SenseiError::Validation)?;
-
-    // 2. Source jurisdiction: the event's scope site manifest country ->
-    //    the country policy's data_residency JURISDICTION code.
-    let site_id = scope_site_id;
-    let source_jurisdiction = match site_id {
-        Some(site_id) => {
-            let country: Option<String> = sqlx::query_scalar(
-                "SELECT sm.country FROM site_manifests sm                  WHERE sm.tenant_id = $1 AND sm.site_id = $2",
+    let projection_schema = projection_schema.to_string();
+    with_tenant_tx(pool, tenant_id, move |tx| {
+        Box::pin(async move {
+            // 1. The source event must EXIST in this tenant (FORCE RLS
+            //    makes a foreign event id resolve to nothing).
+            type EvRow = (Option<Uuid>, String, String, serde_json::Value);
+            let event: Option<EvRow> = sqlx::query_as(
+                "SELECT scope_site_id, sensitivity, event_type, payload FROM operational_events \
+                 WHERE id = $1 AND tenant_id = $2",
             )
+            .bind(source_event_id)
             .bind(tenant_id)
-            .bind(site_id)
-            .fetch_optional(pool)
+            .fetch_optional(&mut **tx)
             .await
-            .map_err(|e| SenseiError::Database(format!("replication: manifest lookup: {e}")))?;
-            let Some(country) = country else {
+            .map_err(|e| SenseiError::Database(format!("replication: source event: {e}")))?;
+            let Some((scope_site_id, sensitivity, event_type, event_payload)) = event else {
                 return Err(SenseiError::Validation(
-                    "replication: the source site has no manifest — its jurisdiction                      cannot be derived, so nothing may leave it"
+                    "replication: source_event_id must reference an EXISTING canonical event \
+                     in this tenant — an artifact without a real source event is refused"
                         .to_string(),
                 ));
             };
-            let residency: Option<String> = sqlx::query_scalar(
-                "SELECT cp.data_residency FROM country_policies cp                  WHERE cp.tenant_id = $1 AND cp.country = $2",
+            // The projector builds the projection from the CANONICAL event
+            // row: event type, occurrence time, scope and the event's own
+            // payload. A client-supplied payload can never be substituted.
+            // Twenty-second audit P0/P1-5: an empty schema label is
+            // derived from the event's own type (server-fixed) — the
+            // route accepts no client projection identity anymore.
+            let projection_schema = if projection_schema.trim().is_empty() {
+                event_type.clone()
+            } else {
+                projection_schema
+            };
+            let projected_payload = serde_json::json!({
+                "source_event": source_event_id,
+                "event_type": event_type,
+                "occurred_at": sqlx::query_scalar::<_, chrono::DateTime<chrono::Utc>>(
+                    "SELECT occurred_at FROM operational_events WHERE id = $1 AND tenant_id = $2",
+                )
+                .bind(source_event_id)
+                .bind(tenant_id)
+                .fetch_one(&mut **tx)
+                .await
+                .map_err(|e| SenseiError::Database(format!("replication: event time: {e}")))?,
+                "scope_site": scope_site_id,
+                "payload": event_payload,
+            });
+
+            let data_class = DataPolicy::parse(&sensitivity).map_err(SenseiError::Validation)?;
+
+            // 2. Source jurisdiction: the event's scope site manifest
+            //    country -> the country policy's data_residency
+            //    JURISDICTION code.
+            let site_id = scope_site_id;
+            let source_jurisdiction = match site_id {
+                Some(site_id) => {
+                    let country: Option<String> = sqlx::query_scalar(
+                        "SELECT sm.country FROM site_manifests sm                  WHERE sm.tenant_id = $1 AND sm.site_id = $2",
+                    )
+                    .bind(tenant_id)
+                    .bind(site_id)
+                    .fetch_optional(&mut **tx)
+                    .await
+                    .map_err(|e| {
+                        SenseiError::Database(format!("replication: manifest lookup: {e}"))
+                    })?;
+                    let Some(country) = country else {
+                        return Err(SenseiError::Validation(
+                            "replication: the source site has no manifest — its jurisdiction                      cannot be derived, so nothing may leave it"
+                                .to_string(),
+                        ));
+                    };
+                    let residency: Option<String> = sqlx::query_scalar(
+                        "SELECT cp.data_residency FROM country_policies cp                  WHERE cp.tenant_id = $1 AND cp.country = $2",
+                    )
+                    .bind(tenant_id)
+                    .bind(&country)
+                    .fetch_optional(&mut **tx)
+                    .await
+                    .map_err(|e| {
+                        SenseiError::Database(format!("replication: policy lookup: {e}"))
+                    })?;
+                    let Some(residency) = residency else {
+                        return Err(SenseiError::Validation(format!(
+                            "replication: no country policy for {country} — a country is a policy                      RECORD, not a code fork"
+                        )));
+                    };
+                    Jurisdiction::parse(&residency).map_err(SenseiError::Validation)?
+                }
+                None => {
+                    return Err(SenseiError::Validation(
+                        "replication: the source event has no site scope — its jurisdiction is                  unknown, so it cannot be authorized for replication"
+                            .to_string(),
+                    ))
+                }
+            };
+
+            // 3. Policy revision: the country policy revision governing
+            //    the source jurisdiction (the artifact pins the decision
+            //    to a revision).
+            let policy_revision: i64 = sqlx::query_scalar(
+                "SELECT COALESCE(MAX(revision), 0) FROM country_policy_versions          WHERE tenant_id = $1 AND country =              (SELECT country FROM site_manifests WHERE tenant_id = $1 AND site_id = $2)",
             )
             .bind(tenant_id)
-            .bind(&country)
-            .fetch_optional(pool)
+            .bind(site_id)
+            .fetch_one(&mut **tx)
             .await
-            .map_err(|e| SenseiError::Database(format!("replication: policy lookup: {e}")))?;
-            let Some(residency) = residency else {
-                return Err(SenseiError::Validation(format!(
-                    "replication: no country policy for {country} — a country is a policy                      RECORD, not a code fork"
-                )));
-            };
-            Jurisdiction::parse(&residency).map_err(SenseiError::Validation)?
-        }
-        None => {
-            return Err(SenseiError::Validation(
-                "replication: the source event has no site scope — its jurisdiction is                  unknown, so it cannot be authorized for replication"
-                    .to_string(),
-            ))
-        }
-    };
+            .map_err(|e| {
+                SenseiError::Database(format!("replication: policy revision: {e}"))
+            })?;
 
-    // 3. Policy revision: the country policy revision governing the
-    //    source jurisdiction (the artifact pins the decision to a
-    //    revision).
-    let policy_revision: i64 = sqlx::query_scalar(
-        "SELECT COALESCE(MAX(revision), 0) FROM country_policy_versions          WHERE tenant_id = $1 AND country =              (SELECT country FROM site_manifests WHERE tenant_id = $1 AND site_id = $2)",
-    )
-    .bind(tenant_id)
-    .bind(site_id)
-    .fetch_one(pool)
-    .await
-    .map_err(|e| SenseiError::Database(format!("replication: policy revision: {e}")))?;
-
-    Ok(AuthorizedProjection {
-        source_event_id,
-        source_site: site_id,
-        source_jurisdiction,
-        data_class: data_class.as_str().to_string(),
-        projection_schema: projection_schema.to_string(),
-        policy_revision: policy_revision as u64,
-        projected_payload,
+            Ok(AuthorizedProjection {
+                source_event_id,
+                source_site: site_id,
+                source_jurisdiction,
+                data_class: data_class.as_str().to_string(),
+                projection_schema,
+                policy_revision: policy_revision as u64,
+                projected_payload,
+            })
+        })
     })
+    .await
 }
 
 /// Derive the projection's ENTITY IDENTITY from the source event
@@ -453,43 +487,54 @@ pub async fn authorize_projection(
 /// names a 'subject' (`operational_event_objects.role = 'subject'`), the
 /// subject's object type and id ARE the projection's entity identity —
 /// the client cannot relabel an event as some other entity's projection.
-/// The route uses this when the client entity_type is empty or the event
-/// references an entity; the enqueued row always carries the DERIVED
-/// identity when one exists. Returns `None` when the event carries no
-/// subject object (the caller may then fall back to the client-supplied
-/// identity — there is nothing server-side to derive from).
+/// Twenty-second audit P0/P1-5: the ROUTE derives the identity SOLELY
+/// from the source event (no client fallback), and this read runs inside
+/// a tenant transaction — `operational_event_objects` is FORCE RLS, so
+/// under a NOSUPERUSER/NOBYPASSRLS app role a raw pooled read would find
+/// no subject. Returns `None` only when the event carries no subject
+/// object (the caller then refuses — nothing client-supplied may stand in
+/// for the identity).
 pub async fn derive_projection_identity(
     pool: &sqlx::PgPool,
     tenant_id: Uuid,
     event_id: Uuid,
 ) -> Result<Option<(String, Uuid)>> {
-    type SubjectRow = (String, Uuid);
-    let subject: Option<SubjectRow> = sqlx::query_as(
-        "SELECT object_type, object_id FROM operational_event_objects \
-         WHERE tenant_id = $1 AND event_id = $2 AND role = 'subject' \
-         ORDER BY object_type ASC, object_id ASC \
-         LIMIT 1",
-    )
-    .bind(tenant_id)
-    .bind(event_id)
-    .fetch_optional(pool)
+    with_tenant_tx(pool, tenant_id, move |tx| {
+        Box::pin(async move {
+            type SubjectRow = (String, Uuid);
+            let subject: Option<SubjectRow> = sqlx::query_as(
+                "SELECT object_type, object_id FROM operational_event_objects \
+                 WHERE tenant_id = $1 AND event_id = $2 AND role = 'subject' \
+                 ORDER BY object_type ASC, object_id ASC \
+                 LIMIT 1",
+            )
+            .bind(tenant_id)
+            .bind(event_id)
+            .fetch_optional(&mut **tx)
+            .await
+            .map_err(|e| SenseiError::Database(format!("replication: subject derivation: {e}")))?;
+            Ok(subject)
+        })
+    })
     .await
-    .map_err(|e| SenseiError::Database(format!("replication: subject derivation: {e}")))?;
-    Ok(subject)
 }
 
 /// ONE federation edge the source tenant holds toward a destination
-/// (twentieth audit P0): the membership row IS the policy record. The
-/// edge names the target that receives the projection and carries the
-/// governance the residency decision must run against — `target_tenant`
-/// is the peer of one `federation_memberships` row, `target_site` the
-/// peer site manifest the projection would land on (None when the peer
-/// resolves no site), `target_jurisdiction` the TYPED residency code of
-/// that destination (derived from the peer's country policy — never an
+/// (twentieth audit P0 + twenty-second audit P0/P1-4): the membership row
+/// IS the policy record. The edge names the target that receives the
+/// projection and carries the governance the residency decision must run
+/// against — `target_tenant` is the peer of one `federation_memberships`
+/// row, `target_site` the PEER SITE MANIFEST the projection would land on
+/// (migration 156 exposes the peer's `site_manifests.site_id`, so the
+/// enqueued `site_replication_log` row records exactly which peer site
+/// the edge authorized), `target_jurisdiction` the TYPED residency code
+/// of that destination (derived from the peer's country policy — never an
 /// arbitrary `LIMIT 1` pick), `allowed_data_classes` the classes the
 /// membership permits over the edge, `residency_policy` the policy that
 /// governs cross-border movement, and `policy_revision` the peer country
-/// policy version the decision is pinned to.
+/// policy version the decision is pinned to — ONE deterministic revision
+/// per peer site (a lateral `ORDER BY revision DESC LIMIT 1`, so multiple
+/// version rows can never duplicate an edge).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FederationEdge {
     pub source_tenant: Uuid,
@@ -524,129 +569,149 @@ impl FederationEdge {
     }
 }
 
-/// Load EVERY federation edge the source tenant holds (twentieth audit
-/// P0, twenty-first audit item 4): the membership-to-peer-governance
-/// join is a SINGLE call into the SECURITY DEFINER function
-/// `federation_governance_edges` (migration 153) — the ONLY
-/// cross-tenant federation-governance boundary. The function executes
-/// with the migration owner's rights, so the FORCE-RLS tenant-local
-/// policies of the peer's `site_manifests`/`country_policies` cannot
-/// hide the peer metadata: under a production non-BYPASSRLS role with
-/// `app.tenant_id` set to the SOURCE tenant, the peer rows are
-/// invisible to any raw pooled read, and the loader no longer performs
-/// one. NO `LIMIT 1`: one edge per destination the projection could
-/// land on, so the route can make one target-specific decision per edge
-/// instead of checking an arbitrary country. FAIL-CLOSED per row: an
-/// edge whose governance cannot be read EXACTLY (no peer country
-/// policy, an unknown jurisdiction code, an unparseable residency label
-/// or an unparseable allow-list entry) grants nothing and yields NO
-/// edge — an ambiguous or corrupt membership is never guessed into an
-/// arbitrary decision.
+/// Load EVERY federation edge the SOURCE tenant holds (twentieth audit
+/// P0, twenty-first audit item 4, twenty-second audit P0/P1-2/4): the
+/// membership-to-peer-governance join is a SINGLE call into the SECURITY
+/// DEFINER function `federation_governance_edges()` (migrations 153 +
+/// 156) — the ONLY cross-tenant federation-governance boundary. The
+/// function executes with the migration owner's rights, so the FORCE-RLS
+/// tenant-local policies of the peer's `site_manifests`/
+/// `country_policies` cannot hide the peer metadata: under a production
+/// non-BYPASSRLS role with `app.tenant_id` set to the SOURCE tenant, the
+/// peer rows are invisible to any raw pooled read, and the loader no
+/// longer performs one. Twenty-second audit P0/P1-2: the function takes
+/// NO tenant argument — migration 156 dropped the caller-trusted
+/// parameterized form; the source tenant is read from the session context
+/// INSIDE the function, and this loader opens its own tenant transaction
+/// (with the crate's [`with_tenant_tx`]) so `app.tenant_id` is set for
+/// the call under ANY role (every role may `set_config`). NO `LIMIT 1`:
+/// one edge per peer SITE the projection could land on, so the route can
+/// make one target-specific decision per edge instead of checking an
+/// arbitrary country — migration 156's lateral pins ONE deterministic
+/// policy revision per peer site and exposes `peer_site_id`, which this
+/// loader carries as `target_site = Some(peer_site_id)` so enqueued rows
+/// record the exact destination site. FAIL-CLOSED per row: an edge whose
+/// governance cannot be read EXACTLY (no peer country policy, an unknown
+/// jurisdiction code, an unparseable residency label or an unparseable
+/// allow-list entry) grants nothing and yields NO edge — an ambiguous or
+/// corrupt membership is never guessed into an arbitrary decision.
 pub async fn load_federation_edges(
     pool: &sqlx::PgPool,
     tenant_id: Uuid,
     source_site_id: Option<Uuid>,
 ) -> Result<Vec<FederationEdge>> {
-    type EdgeRow = (
-        Uuid,              // peer_tenant_id
-        String,            // peer_country (the destination's manifest country)
-        Option<String>,    // peer data_residency (NULL when unset -> row skipped)
-        i64,               // peer country policy revision (0 when none)
-        serde_json::Value, // allowed_data_classes
-        String,            // residency_policy label
-        serde_json::Value, // allowed_countries
-    );
-    let rows: Vec<EdgeRow> = sqlx::query_as("SELECT * FROM federation_governance_edges($1)")
-        .bind(tenant_id)
-        .fetch_all(pool)
-        .await
-        .map_err(|e| SenseiError::Database(format!("replication: federation edges: {e}")))?;
+    with_tenant_tx(pool, tenant_id, move |tx| {
+        Box::pin(async move {
+            type EdgeRow = (
+                Uuid,              // peer_tenant_id
+                Uuid,              // peer_site_id (the destination's site manifest)
+                String,            // peer_country (the destination's manifest country)
+                Option<String>,    // peer data_residency (NULL when unset -> row skipped)
+                i64,               // peer country policy revision (0 when none)
+                serde_json::Value, // allowed_data_classes
+                String,            // residency_policy label
+                serde_json::Value, // allowed_countries
+            );
+            let rows: Vec<EdgeRow> = sqlx::query_as("SELECT * FROM federation_governance_edges()")
+                .fetch_all(&mut **tx)
+                .await
+                .map_err(|e| {
+                    SenseiError::Database(format!("replication: federation edges: {e}"))
+                })?;
 
-    let mut edges = Vec::with_capacity(rows.len());
-    for (
-        peer_tenant,
-        _peer_country,
-        data_residency,
-        revision,
-        allowed_classes_json,
-        residency_label,
-        allowed_countries_json,
-    ) in rows
-    {
-        // No peer country policy record (or an unknown residency code):
-        // the destination's jurisdiction cannot be derived, so nothing is
-        // ever exported to it.
-        let Some(residency_code) = data_residency.as_deref() else {
-            continue;
-        };
-        let Ok(target_jurisdiction) = Jurisdiction::parse(residency_code) else {
-            continue;
-        };
-        // The membership's allow-list must parse EXACTLY — an unparseable
-        // class cannot be honored, so the edge grants nothing.
-        let allowed_labels: Vec<String> = match serde_json::from_value(allowed_classes_json) {
-            Ok(labels) => labels,
-            Err(_) => continue,
-        };
-        let mut allowed_data_classes = Vec::with_capacity(allowed_labels.len());
-        let mut classes_ok = true;
-        for label in allowed_labels {
-            match DataPolicy::parse(&label) {
-                Ok(policy) => allowed_data_classes.push(policy),
-                Err(_) => {
-                    classes_ok = false;
-                    break;
-                }
-            }
-        }
-        if !classes_ok {
-            continue;
-        }
-        let residency_policy = match residency_label.as_str() {
-            "local_only" => ResidencyPolicy::LocalOnly,
-            "corporate_allowed" => ResidencyPolicy::CorporateAllowed,
-            "allowed_countries" => {
-                // The allowed-country list must parse EXACTLY too.
-                let codes: Vec<String> = match serde_json::from_value(allowed_countries_json) {
-                    Ok(codes) => codes,
+            let mut edges = Vec::with_capacity(rows.len());
+            for (
+                peer_tenant,
+                peer_site,
+                _peer_country,
+                data_residency,
+                revision,
+                allowed_classes_json,
+                residency_label,
+                allowed_countries_json,
+            ) in rows
+            {
+                // No peer country policy record (or an unknown residency
+                // code): the destination's jurisdiction cannot be derived,
+                // so nothing is ever exported to it.
+                let Some(residency_code) = data_residency.as_deref() else {
+                    continue;
+                };
+                let Ok(target_jurisdiction) = Jurisdiction::parse(residency_code) else {
+                    continue;
+                };
+                // The membership's allow-list must parse EXACTLY — an
+                // unparseable class cannot be honored, so the edge grants
+                // nothing.
+                let allowed_labels: Vec<String> = match serde_json::from_value(allowed_classes_json)
+                {
+                    Ok(labels) => labels,
                     Err(_) => continue,
                 };
-                let mut countries = Vec::with_capacity(codes.len());
-                let mut countries_ok = true;
-                for code in codes {
-                    match Jurisdiction::parse(&code) {
-                        Ok(jurisdiction) => countries.push(jurisdiction),
+                let mut allowed_data_classes = Vec::with_capacity(allowed_labels.len());
+                let mut classes_ok = true;
+                for label in allowed_labels {
+                    match DataPolicy::parse(&label) {
+                        Ok(policy) => allowed_data_classes.push(policy),
                         Err(_) => {
-                            countries_ok = false;
+                            classes_ok = false;
                             break;
                         }
                     }
                 }
-                if !countries_ok {
+                if !classes_ok {
                     continue;
                 }
-                ResidencyPolicy::AllowedCountries(countries)
+                let residency_policy = match residency_label.as_str() {
+                    "local_only" => ResidencyPolicy::LocalOnly,
+                    "corporate_allowed" => ResidencyPolicy::CorporateAllowed,
+                    "allowed_countries" => {
+                        // The allowed-country list must parse EXACTLY too.
+                        let codes: Vec<String> =
+                            match serde_json::from_value(allowed_countries_json) {
+                                Ok(codes) => codes,
+                                Err(_) => continue,
+                            };
+                        let mut countries = Vec::with_capacity(codes.len());
+                        let mut countries_ok = true;
+                        for code in codes {
+                            match Jurisdiction::parse(&code) {
+                                Ok(jurisdiction) => countries.push(jurisdiction),
+                                Err(_) => {
+                                    countries_ok = false;
+                                    break;
+                                }
+                            }
+                        }
+                        if !countries_ok {
+                            continue;
+                        }
+                        ResidencyPolicy::AllowedCountries(countries)
+                    }
+                    // The CHECK constraint in migration 148 makes this
+                    // unreachable; the guard keeps the loader fail-closed
+                    // anyway.
+                    _ => continue,
+                };
+                edges.push(FederationEdge {
+                    source_tenant: tenant_id,
+                    source_site: source_site_id,
+                    target_tenant: peer_tenant,
+                    // Twenty-second audit P0/P1-4: the governance function
+                    // exposes the peer's site identity, so the edge names
+                    // the EXACT destination site the queue row records as
+                    // target_site_id.
+                    target_site: Some(peer_site),
+                    target_jurisdiction,
+                    allowed_data_classes,
+                    residency_policy,
+                    policy_revision: revision as u64,
+                });
             }
-            // The CHECK constraint in migration 148 makes this
-            // unreachable; the guard keeps the loader fail-closed anyway.
-            _ => continue,
-        };
-        edges.push(FederationEdge {
-            source_tenant: tenant_id,
-            source_site: source_site_id,
-            target_tenant: peer_tenant,
-            // The governance function exposes no site-level identity (an
-            // edge is a membership-to-peer-country contract, derived
-            // server-side); the destination site is resolved by the
-            // peer's own site at apply time.
-            target_site: None,
-            target_jurisdiction,
-            allowed_data_classes,
-            residency_policy,
-            policy_revision: revision as u64,
-        });
-    }
-    Ok(edges)
+            Ok(edges)
+        })
+    })
+    .await
 }
 
 /// Enqueue one AUTHORIZED state projection for ONE federation edge —

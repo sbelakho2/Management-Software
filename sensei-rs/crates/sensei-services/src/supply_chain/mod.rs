@@ -258,6 +258,27 @@ pub trait SupplyChainService: Send + Sync {
         id: Uuid,
         status: &str,
     ) -> Result<SalesOrder>;
+    /// Assign the SITE that fulfils a sales order (twenty-second audit
+    /// P1): quote → order conversions create orders WITHOUT a fulfilling
+    /// site, and the confirmation path refuses a NULL anchor, so the
+    /// conversion is a dead end until the site is assigned. The
+    /// fulfilling site is IMMUTABLE once set: assigning the same site is
+    /// a no-op, assigning a DIFFERENT site is refused.
+    async fn assign_fulfillment_site(
+        &self,
+        tenant_id: Uuid,
+        order_id: Uuid,
+        site_id: Uuid,
+    ) -> Result<SalesOrder>;
+    /// Confirm a sales order naming its fulfilling site in ONE service
+    /// call: assign the site (only when unset) then transition to
+    /// 'confirmed'.
+    async fn confirm_sales_order_with_site(
+        &self,
+        tenant_id: Uuid,
+        order_id: Uuid,
+        site_id: Uuid,
+    ) -> Result<SalesOrder>;
 
     // ── Purchase Orders ─────────────────────────────────────────────────
     /// Create a new purchase order.
@@ -356,6 +377,15 @@ pub trait SupplyChainService: Send + Sync {
     async fn delete_purchase_order(&self, tenant_id: Uuid, id: Uuid) -> Result<()>;
     /// Receive all line items on a purchase order.
     async fn receive_full_po(&self, tenant_id: Uuid, id: Uuid) -> Result<PurchaseOrder>;
+    /// Assign the SITE a purchase order is received FOR (twenty-second
+    /// audit P1): the receiving-site anchor. Immutable once set — the
+    /// same site is a no-op, a different site is refused.
+    async fn assign_receiving_site(
+        &self,
+        tenant_id: Uuid,
+        po_id: Uuid,
+        site_id: Uuid,
+    ) -> Result<PurchaseOrder>;
     /// Update an inventory item.
     async fn update_inventory(
         &self,
@@ -819,6 +849,74 @@ impl SupplyChainService for InMemorySupplyChainService {
             .ok_or_else(|| SenseiError::NotFound(format!("Sales order {id} not found")))?;
         order.status = status.to_string();
         Ok(order.clone())
+    }
+
+    async fn assign_fulfillment_site(
+        &self,
+        tenant_id: Uuid,
+        order_id: Uuid,
+        site_id: Uuid,
+    ) -> Result<SalesOrder> {
+        let mut store = self.sales_orders.write().await;
+        let order = store
+            .get_mut(&order_id)
+            .ok_or_else(|| SenseiError::NotFound(format!("Sales order {order_id} not found")))?;
+        if order.tenant_id != tenant_id {
+            return Err(SenseiError::NotFound(format!(
+                "Sales order {order_id} not found"
+            )));
+        }
+        if let Some(existing) = order.fulfilling_site_id {
+            if existing != site_id {
+                return Err(SenseiError::Validation(format!(
+                    "sales order {order_id} already names fulfilling site {existing} — \
+                     the fulfilling site is immutable"
+                )));
+            }
+        } else {
+            order.fulfilling_site_id = Some(site_id);
+        }
+        Ok(order.clone())
+    }
+
+    async fn confirm_sales_order_with_site(
+        &self,
+        tenant_id: Uuid,
+        order_id: Uuid,
+        site_id: Uuid,
+    ) -> Result<SalesOrder> {
+        self.assign_fulfillment_site(tenant_id, order_id, site_id)
+            .await?;
+        self.update_sales_order_status(tenant_id, order_id, "confirmed")
+            .await
+    }
+
+    async fn assign_receiving_site(
+        &self,
+        tenant_id: Uuid,
+        po_id: Uuid,
+        site_id: Uuid,
+    ) -> Result<PurchaseOrder> {
+        let mut store = self.purchase_orders.write().await;
+        let po = store
+            .get_mut(&po_id)
+            .ok_or_else(|| SenseiError::NotFound(format!("Purchase order {po_id} not found")))?;
+        if po.tenant_id != tenant_id {
+            return Err(SenseiError::NotFound(format!(
+                "Purchase order {po_id} not found"
+            )));
+        }
+        if let Some(existing) = po.receiving_site_id {
+            if existing != site_id {
+                return Err(SenseiError::Validation(format!(
+                    "purchase order {po_id} already names receiving site {existing} — \
+                     the receiving site is immutable"
+                )));
+            }
+        } else {
+            po.receiving_site_id = Some(site_id);
+        }
+        Ok(po.clone())
     }
 
     // ── Purchase Orders ─────────────────────────────────────────────────
@@ -1708,5 +1806,111 @@ mod tests {
         let inv_a = service.get_inventory(tenant_id, product_id).await.unwrap();
         let warehouse = inv_a.iter().find(|i| i.location == "Warehouse-A").unwrap();
         assert_eq!(warehouse.quantity_on_hand, 70);
+    }
+
+    // Twenty-second audit P1: quote → order conversion creates an order
+    // with NO fulfilling site, and the confirm path refuses a NULL
+    // anchor. The site-assign commands unblock the conversion: assign +
+    // confirm in one call, and the anchors are immutable once set.
+    #[tokio::test]
+    async fn test_quote_conversion_confirm_with_site() {
+        let service = InMemorySupplyChainService::default();
+        let tenant_id = Uuid::new_v4();
+        let site_id = Uuid::new_v4();
+
+        let quote = Quote {
+            id: Uuid::nil(),
+            tenant_id,
+            quote_number: String::new(),
+            rfq_id: None,
+            customer_id: Uuid::new_v4(),
+            customer_name: "Customer Co".to_string(),
+            status: "approved".to_string(),
+            line_items: vec![QuoteLineItem {
+                product_id: Uuid::new_v4(),
+                product_name: "Widget".to_string(),
+                quantity: 10,
+                unit_price: rust_decimal::Decimal::from_f64_retain(5.0)
+                    .unwrap_or(rust_decimal::Decimal::ZERO),
+                discount_percentage: 0.0,
+                net_price: rust_decimal::Decimal::from_f64_retain(5.0)
+                    .unwrap_or(rust_decimal::Decimal::ZERO),
+            }],
+            total_amount: rust_decimal::Decimal::from_f64_retain(50.0)
+                .unwrap_or(rust_decimal::Decimal::ZERO),
+            currency: "MAD".to_string(),
+            valid_until: Utc::now() + chrono::Duration::days(30),
+            created_by: Uuid::new_v4(),
+            created_at: Utc::now(),
+        };
+        let quote = service.create_quote(tenant_id, quote).await.unwrap();
+        let order = service
+            .convert_quote_to_order(tenant_id, quote.id, Uuid::new_v4())
+            .await
+            .unwrap();
+        assert_eq!(
+            order.fulfilling_site_id, None,
+            "converted order starts site-less"
+        );
+
+        // A bare confirm is refused once the site anchor is enforced by
+        // the DB implementation; the site-bound confirm must succeed.
+        let confirmed = service
+            .confirm_sales_order_with_site(tenant_id, order.id, site_id)
+            .await
+            .expect("confirm-with-site succeeds");
+        assert_eq!(confirmed.status, "confirmed");
+        assert_eq!(confirmed.fulfilling_site_id, Some(site_id));
+
+        // The fulfilling site is IMMUTABLE: re-assigning the same site is
+        // a no-op, a different site is refused.
+        let again = service
+            .assign_fulfillment_site(tenant_id, order.id, site_id)
+            .await
+            .expect("re-assigning the same site is a no-op");
+        assert_eq!(again.fulfilling_site_id, Some(site_id));
+        let refused = service
+            .assign_fulfillment_site(tenant_id, order.id, Uuid::new_v4())
+            .await;
+        assert!(
+            refused.is_err(),
+            "re-anchoring to a different site is refused"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_assign_receiving_site_immutable() {
+        let service = InMemorySupplyChainService::default();
+        let tenant_id = Uuid::new_v4();
+        let site_id = Uuid::new_v4();
+
+        let po = PurchaseOrder {
+            id: Uuid::nil(),
+            tenant_id,
+            po_number: String::new(),
+            supplier_id: Uuid::new_v4(),
+            supplier_name: "SupplyCo".to_string(),
+            status: String::new(),
+            line_items: vec![],
+            total_amount: rust_decimal::Decimal::ZERO,
+            currency: "MAD".to_string(),
+            expected_delivery: None,
+            created_by: Uuid::new_v4(),
+            created_at: Utc::now(),
+            receiving_site_id: None,
+        };
+        let po = service.create_purchase_order(tenant_id, po).await.unwrap();
+        let assigned = service
+            .assign_receiving_site(tenant_id, po.id, site_id)
+            .await
+            .expect("assign receiving site");
+        assert_eq!(assigned.receiving_site_id, Some(site_id));
+        let refused = service
+            .assign_receiving_site(tenant_id, po.id, Uuid::new_v4())
+            .await;
+        assert!(
+            refused.is_err(),
+            "re-anchoring to a different site is refused"
+        );
     }
 }

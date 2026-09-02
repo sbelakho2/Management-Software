@@ -8,7 +8,8 @@ use axum::{
     Json,
 };
 use sensei_auth::middleware::AuthenticatedUser;
-use sensei_core::error::Result;
+use sensei_core::domain::request_context::RequestContext;
+use sensei_core::error::{Result, SenseiError};
 use sensei_core::pagination::PaginatedResponse;
 use sensei_services::supply_chain::{
     InventoryItem, PurchaseOrder, Quote, SalesOrder, StockMove, RFQ,
@@ -84,6 +85,127 @@ pub struct ConvertQuoteToOrderRequest {
 #[derive(Debug, Deserialize)]
 pub struct UpdateSalesOrderStatusRequest {
     pub status: String,
+    /// Optional SITE the caller wants the order anchored to when the
+    /// status is `confirmed` (twenty-second audit P1): the site must be
+    /// in the caller's entitlement sites, otherwise the request is
+    /// Forbidden. The order's fulfilling site is only filled when it is
+    /// still unset.
+    #[serde(default)]
+    pub requested_site_id: Option<Uuid>,
+}
+
+/// Client input for creating a sales order: ONLY the editable business
+/// fields (twenty-second audit P2). Identity (`id`), ownership
+/// (`tenant_id`, `created_by`, `order_number`, `status`) and the site
+/// anchor are server-derived — the caller can at most REQUEST a site
+/// that the handler intersects with the caller's entitlement.
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct CreateSalesOrderRequest {
+    pub customer_id: Uuid,
+    pub customer_name: String,
+    pub line_items: Vec<sensei_services::supply_chain::SalesOrderItem>,
+    pub currency: String,
+    pub delivery_date: Option<chrono::DateTime<chrono::Utc>>,
+    pub shipping_address: String,
+    /// Optional requested fulfilling site; accepted ONLY when it is in
+    /// the caller's entitlement sites (else 403). Defaults to the
+    /// caller's ACTIVE site when unset and the caller is site-bound.
+    #[serde(default)]
+    pub requested_site_id: Option<Uuid>,
+}
+
+/// Client input for creating a purchase order: ONLY the editable
+/// business fields. Identity/ownership (`id`, `tenant_id`, `created_by`,
+/// `po_number`, `status`) and the receiving-site anchor are
+/// server-derived; `requested_site_id` is intersected with the caller's
+/// entitlement (else 403).
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct CreatePurchaseOrderRequest {
+    pub supplier_id: Uuid,
+    pub supplier_name: String,
+    pub line_items: Vec<sensei_services::supply_chain::POItem>,
+    pub currency: String,
+    pub expected_delivery: Option<chrono::DateTime<chrono::Utc>>,
+    #[serde(default)]
+    pub requested_site_id: Option<Uuid>,
+}
+
+/// Client input for updating a sales order: the mutable business fields
+/// only — identity, status (use the status endpoint), timestamps and the
+/// IMMUTABLE fulfilling site can never be rewritten through this body.
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct UpdateSalesOrderRequest {
+    pub customer_id: Uuid,
+    pub customer_name: String,
+    pub line_items: Vec<sensei_services::supply_chain::SalesOrderItem>,
+    pub currency: String,
+    pub delivery_date: Option<chrono::DateTime<chrono::Utc>>,
+    pub shipping_address: String,
+}
+
+/// Client input for updating a purchase order: the mutable business
+/// fields only — identity, status, timestamps and the IMMUTABLE
+/// receiving site can never be rewritten through this body.
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct UpdatePurchaseOrderRequest {
+    pub supplier_id: Uuid,
+    pub supplier_name: String,
+    pub line_items: Vec<sensei_services::supply_chain::POItem>,
+    pub currency: String,
+    pub expected_delivery: Option<chrono::DateTime<chrono::Utc>>,
+}
+
+// ── Site-scope resolution (twenty-second audit P2) ────────────────────────
+
+/// Full RequestContext scope resolution — the routes/andon.rs
+/// `caller_sites` pattern replicated for supply-chain documents: the
+/// caller's site scope comes from their ACTIVE role-slot assignments,
+/// never from client input. Returns `None` when the deployment has no
+/// database (in-memory mode has no sites to entangle).
+async fn caller_scope(
+    user: &AuthenticatedUser,
+    state: &AppState,
+) -> Result<Option<RequestContext>> {
+    let Some(pool) = state.db_pool.as_ref() else {
+        return Ok(None);
+    };
+    let ctx = crate::routes::agent::build_context(user, state).await;
+    let rc = RequestContext::build(
+        pool,
+        user.tenant_id,
+        user.user_id,
+        ctx.site_id,
+        ctx.value_stream_id,
+        ctx.work_center_id,
+        ctx.shift_id,
+        String::new(),
+    )
+    .await?;
+    Ok(Some(rc))
+}
+
+/// Intersect a client-requested site with the caller's entitlement: the
+/// site is accepted ONLY when it is in the caller's entitlement sites,
+/// otherwise Forbidden. Without a scope authority (in-memory mode) the
+/// caller is not site-bound. When no site was requested, the caller's
+/// ACTIVE site is used.
+fn resolve_site(
+    scope: &Option<RequestContext>,
+    requested_site_id: Option<Uuid>,
+) -> Result<Option<Uuid>> {
+    let Some(rc) = scope else {
+        return Ok(requested_site_id);
+    };
+    if let Some(site) = requested_site_id {
+        if !rc.entitlement_sites.contains(&site) {
+            return Err(SenseiError::Forbidden(format!(
+                "site {site} is not among the caller's entitlement sites"
+            )));
+        }
+        Ok(Some(site))
+    } else {
+        Ok(rc.active_site)
+    }
 }
 
 /// Request body for receiving a PO line.
@@ -123,27 +245,6 @@ pub struct CreateQuoteRequest {
     pub line_items: Vec<sensei_services::supply_chain::QuoteLineItem>,
     pub currency: String,
     pub valid_until: chrono::DateTime<chrono::Utc>,
-}
-
-/// Client input for creating a sales order.
-#[derive(Debug, Clone, serde::Deserialize)]
-pub struct CreateSalesOrderRequest {
-    pub customer_id: Uuid,
-    pub customer_name: String,
-    pub line_items: Vec<sensei_services::supply_chain::SalesOrderItem>,
-    pub currency: String,
-    pub delivery_date: Option<chrono::DateTime<chrono::Utc>>,
-    pub shipping_address: String,
-}
-
-/// Client input for creating a purchase order.
-#[derive(Debug, Clone, serde::Deserialize)]
-pub struct CreatePurchaseOrderRequest {
-    pub supplier_id: Uuid,
-    pub supplier_name: String,
-    pub line_items: Vec<sensei_services::supply_chain::POItem>,
-    pub currency: String,
-    pub expected_delivery: Option<chrono::DateTime<chrono::Utc>>,
 }
 
 /// List all RFQs with optional filters.
@@ -328,16 +429,41 @@ pub async fn list_sales_orders(
 pub async fn create_sales_order(
     user: AuthenticatedUser,
     State(state): State<AppState>,
-    Json(req): Json<SalesOrder>,
+    Json(req): Json<CreateSalesOrderRequest>,
 ) -> Result<Json<SalesOrder>> {
     user.require_permission("sales:order:create")?;
-    let mut req = req;
-    req.created_by = user.user_id;
 
     let tenant_id = user.tenant_id;
+    // Twenty-second audit P2: the site anchor is SERVER-DERIVED from the
+    // caller's RequestContext — the DTO site is accepted only when it is
+    // in the caller's entitlement (else 403), and a site-bound caller
+    // without a request falls back to their ACTIVE site.
+    let scope = caller_scope(&user, &state).await?;
+    let site_id = resolve_site(&scope, req.requested_site_id)?;
+    let total: rust_decimal::Decimal = req
+        .line_items
+        .iter()
+        .map(|li| rust_decimal::Decimal::from(li.quantity) * li.unit_price)
+        .sum();
+    let order = SalesOrder {
+        id: Uuid::nil(),
+        tenant_id,
+        order_number: String::new(),
+        customer_id: req.customer_id,
+        customer_name: req.customer_name,
+        status: String::new(),
+        line_items: req.line_items,
+        total_amount: total,
+        currency: req.currency,
+        delivery_date: req.delivery_date,
+        shipping_address: req.shipping_address,
+        created_by: user.user_id,
+        created_at: chrono::Utc::now(),
+        fulfilling_site_id: site_id,
+    };
     let order = state
         .supply_chain_service
-        .create_sales_order(tenant_id, req)
+        .create_sales_order(tenant_id, order)
         .await?;
     Ok(Json(order))
 }
@@ -368,6 +494,21 @@ pub async fn update_sales_order_status(
     user.require_permission("sales:order:status")?;
 
     let tenant_id = user.tenant_id;
+    // Twenty-second audit P1: confirming a site-less order (quote →
+    // order conversions name no site) is a dead end — the handler's
+    // confirm path accepts an optional site (entitlement-intersected,
+    // else 403) and confirms through the one-call service command.
+    if req.status == "confirmed" {
+        let scope = caller_scope(&user, &state).await?;
+        let site_id = resolve_site(&scope, req.requested_site_id)?;
+        if let Some(site_id) = site_id {
+            let order = state
+                .supply_chain_service
+                .confirm_sales_order_with_site(tenant_id, id, site_id)
+                .await?;
+            return Ok(Json(order));
+        }
+    }
     let order = state
         .supply_chain_service
         .update_sales_order_status(tenant_id, id, &req.status)
@@ -401,16 +542,41 @@ pub async fn list_purchase_orders(
 pub async fn create_purchase_order(
     user: AuthenticatedUser,
     State(state): State<AppState>,
-    Json(req): Json<PurchaseOrder>,
+    Json(req): Json<CreatePurchaseOrderRequest>,
 ) -> Result<Json<PurchaseOrder>> {
     user.require_permission("purchasing:po:create")?;
-    let mut req = req;
-    req.created_by = user.user_id;
 
     let tenant_id = user.tenant_id;
+    // Twenty-second audit P2: the receiving-site anchor is
+    // SERVER-DERIVED from the caller's RequestContext — the DTO site is
+    // accepted only when it is in the caller's entitlement (else 403),
+    // and a site-bound caller without a request falls back to their
+    // ACTIVE site.
+    let scope = caller_scope(&user, &state).await?;
+    let site_id = resolve_site(&scope, req.requested_site_id)?;
+    let total: rust_decimal::Decimal = req
+        .line_items
+        .iter()
+        .map(|li| rust_decimal::Decimal::from(li.quantity_ordered) * li.unit_price)
+        .sum();
+    let po = PurchaseOrder {
+        id: Uuid::nil(),
+        tenant_id,
+        po_number: String::new(),
+        supplier_id: req.supplier_id,
+        supplier_name: req.supplier_name,
+        status: String::new(),
+        line_items: req.line_items,
+        total_amount: total,
+        currency: req.currency,
+        expected_delivery: req.expected_delivery,
+        created_by: user.user_id,
+        created_at: chrono::Utc::now(),
+        receiving_site_id: site_id,
+    };
     let order = state
         .supply_chain_service
-        .create_purchase_order(tenant_id, req)
+        .create_purchase_order(tenant_id, po)
         .await?;
     Ok(Json(order))
 }
@@ -682,13 +848,32 @@ pub async fn update_sales_order(
     user: AuthenticatedUser,
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
-    Json(req): Json<SalesOrder>,
+    Json(req): Json<UpdateSalesOrderRequest>,
 ) -> Result<Json<SalesOrder>> {
     user.require_permission("sales:order:update")?;
     let tenant_id = user.tenant_id;
+    // Twenty-second audit P2: a typed update body can only touch the
+    // mutable business fields — identity, status (status endpoint),
+    // timestamps and the IMMUTABLE fulfilling site stay with the
+    // existing row (read-merge-write).
+    let mut order = state
+        .supply_chain_service
+        .get_sales_order(tenant_id, id)
+        .await?;
+    order.customer_id = req.customer_id;
+    order.customer_name = req.customer_name;
+    order.line_items = req.line_items;
+    order.currency = req.currency;
+    order.delivery_date = req.delivery_date;
+    order.shipping_address = req.shipping_address;
+    order.total_amount = order
+        .line_items
+        .iter()
+        .map(|li| rust_decimal::Decimal::from(li.quantity) * li.unit_price)
+        .sum();
     let order = state
         .supply_chain_service
-        .update_sales_order(tenant_id, id, req)
+        .update_sales_order(tenant_id, id, order)
         .await?;
     Ok(Json(order))
 }
@@ -713,14 +898,32 @@ pub async fn update_purchase_order(
     user: AuthenticatedUser,
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
-    Json(req): Json<PurchaseOrder>,
+    Json(req): Json<UpdatePurchaseOrderRequest>,
 ) -> Result<Json<PurchaseOrder>> {
     user.require_permission("purchasing:po:create")?;
 
     let tenant_id = user.tenant_id;
+    // Twenty-second audit P2: a typed update body can only touch the
+    // mutable business fields — identity, status, timestamps and the
+    // IMMUTABLE receiving site stay with the existing row
+    // (read-merge-write).
+    let mut po = state
+        .supply_chain_service
+        .get_purchase_order(tenant_id, id)
+        .await?;
+    po.supplier_id = req.supplier_id;
+    po.supplier_name = req.supplier_name;
+    po.line_items = req.line_items;
+    po.currency = req.currency;
+    po.expected_delivery = req.expected_delivery;
+    po.total_amount = po
+        .line_items
+        .iter()
+        .map(|li| rust_decimal::Decimal::from(li.quantity_ordered) * li.unit_price)
+        .sum();
     let po = state
         .supply_chain_service
-        .update_purchase_order(tenant_id, id, req)
+        .update_purchase_order(tenant_id, id, po)
         .await?;
     Ok(Json(po))
 }

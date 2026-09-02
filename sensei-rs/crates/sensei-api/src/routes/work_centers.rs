@@ -11,10 +11,22 @@
 //! record that could diverge. All create/update/get/list operations now
 //! go through the relational [`WorkCenterRepository`] so a work center
 //! created through this API IMMEDIATELY exists for the plant lifecycle.
-//! Responses carry `site_id` and `topology_state`; a create may assert a
-//! `site_id` (the composite FK verifies the site belongs to the tenant)
-//! or leave it `None` — a site-less work center is created as
-//! `needs_reconciliation`, never certified.
+//! Responses carry `site_id` and `topology_state`.
+//!
+//! Twenty-second audit P0/P1 (authority closure): ASSIGNMENT IS NOT
+//! VERIFICATION. A create/update may assert a `site_id` (the composite FK
+//! verifies the site belongs to the tenant), but the row is created —
+//! and a site change always returns it — as `needs_reconciliation` with
+//! no provenance.
+//!
+//! Only the explicit `POST /work-centers/{id}/verify-topology` endpoint
+//! stamps `topology_assignment_source` + `topology_verified_at` +
+//! `topology_verified_by` (the authenticated user) and transitions the
+//! row to `resolved`.
+//!
+//! Work Center READS are scope-aware: list/get are intersected with the
+//! caller's RequestContext site entitlement — a zero-entitlement caller
+//! sees nothing (empty list / 404), never a tenant-wide fallback.
 
 use axum::{
     extract::{Path, Query, State},
@@ -29,6 +41,7 @@ use sensei_services::tps::work_center_repository::{
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use crate::routes::andon::caller_sites;
 use crate::state::AppState;
 
 // ── Query / Request DTOs ───────────────────────────────────────────────────
@@ -45,11 +58,13 @@ pub struct ListWorkCentersParams {
 ///
 /// `site_id` is OPTIONAL: supply it only when the caller can assert the
 /// work center's plant site — the repository verifies the site exists
-/// for the tenant and records the row as topology `resolved` /
-/// `manual_reconciliation`. Without it the row is created site-less in
-/// `needs_reconciliation` (unknown lineage is never certified and the
-/// site-readiness gate will keep the plant unreconciled until a site is
-/// provably assigned).
+/// for the tenant. The row is ALWAYS created as topology
+/// `needs_reconciliation` with no provenance (an asserted site is not a
+/// verified one): site-less rows are unknown lineage, never certified,
+/// and even a site-asserted row stays unreconciled until the explicit
+/// `POST /work-centers/{id}/verify-topology` endpoint stamps provenance
+/// and resolves it (the site-readiness gate refuses any tenant
+/// containing an unreconciled row).
 #[derive(Debug, Deserialize)]
 pub struct CreateWorkCenterRequest {
     pub name: String,
@@ -61,14 +76,29 @@ pub struct CreateWorkCenterRequest {
 /// Request body for updating a work center.
 ///
 /// `site_id` is three-state: absent = leave the assignment untouched;
-/// `null` = unassign (row becomes `needs_reconciliation`); a UUID =
-/// (re)assert the assignment (site must exist for the tenant).
+/// `null` = unassign; a UUID = (re)assert the assignment (site must
+/// exist for the tenant). ANY explicit `site_id` write invalidates
+/// verification: the row returns to `needs_reconciliation` with no
+/// provenance and must be re-certified through
+/// `POST /work-centers/{id}/verify-topology`.
 #[derive(Debug, Deserialize)]
 pub struct UpdateWorkCenterRequest {
     pub name: Option<String>,
     pub work_center_type: Option<String>,
     #[serde(default)]
     pub site_id: Option<Option<Uuid>>,
+}
+
+/// Request body for explicit topology verification
+/// (`POST /work-centers/{id}/verify-topology`).
+///
+/// The acting authenticated user becomes `topology_verified_by`; the
+/// source must be a real provenance (`manifest`, `employee_history` or
+/// `manual_reconciliation`) — `legacy_heuristic` is refused. This is the
+/// ONLY operation that may resolve a work center's topology.
+#[derive(Debug, Deserialize)]
+pub struct VerifyTopologyRequest {
+    pub source: String,
 }
 
 /// Work center capacity overview.
@@ -105,7 +135,22 @@ fn pool(state: &AppState) -> Result<&sqlx::PgPool> {
 
 // ── Handlers ───────────────────────────────────────────────────────────────
 
+/// Site entitlement for Work Center READS (twenty-second audit P0/P1),
+/// reused from the Andon scope resolution: the FULL RequestContext
+/// entitlement. Fail-closed: when the context cannot be built (or the
+/// database scope resolution fails) the entitlement is EMPTY — a caller
+/// then sees nothing (empty list / 404), never a tenant-wide fallback.
+async fn entitlement_sites(user: &AuthenticatedUser, state: &AppState) -> Vec<Uuid> {
+    caller_sites(user, state).await.unwrap_or_default()
+}
+
 /// List all work centers with optional type filter and pagination.
+///
+/// Scope-aware (twenty-second audit P0/P1): the listing is intersected
+/// with the caller's RequestContext site entitlement INSIDE the
+/// repository query (`list_scoped`) — a site-scoped caller can only
+/// enumerate rows of their entitled sites, and a zero-entitlement caller
+/// sees an empty page.
 pub async fn list_work_centers(
     user: AuthenticatedUser,
     State(state): State<AppState>,
@@ -114,8 +159,9 @@ pub async fn list_work_centers(
     user.require_permission("tps:work-center:read")?;
     let tenant_id = user.tenant_id;
     let pool = pool(&state)?;
+    let sites = entitlement_sites(&user, &state).await;
 
-    let rows = work_center_repository::list(pool, tenant_id, None).await?;
+    let rows = work_center_repository::list_scoped(pool, tenant_id, None, &sites).await?;
 
     let mut items: Vec<RelationalWorkCenter> = rows
         .into_iter()
@@ -143,6 +189,12 @@ pub async fn list_work_centers(
 }
 
 /// Get a specific work center by ID.
+///
+/// Scope-aware (twenty-second audit P0/P1): 404 unless the work center's
+/// site is among the caller's RequestContext entitlement sites — the
+/// scope check happens inside `get_scoped`, so a foreign-site id and a
+/// nonexistent id are indistinguishable (both NotFound). A
+/// zero-entitlement caller gets 404 for every id.
 pub async fn get_work_center(
     user: AuthenticatedUser,
     State(state): State<AppState>,
@@ -150,7 +202,8 @@ pub async fn get_work_center(
 ) -> Result<Json<RelationalWorkCenter>> {
     user.require_permission("tps:work-center:read")?;
     let pool = pool(&state)?;
-    let wc = work_center_repository::get(pool, user.tenant_id, id).await?;
+    let sites = entitlement_sites(&user, &state).await;
+    let wc = work_center_repository::get_scoped(pool, user.tenant_id, id, &sites).await?;
     Ok(Json(wc))
 }
 
@@ -205,6 +258,29 @@ pub async fn update_work_center(
         },
     )
     .await?;
+
+    Ok(Json(wc))
+}
+
+/// Explicit topology verification (twenty-second audit P0/P1): the ONLY
+/// public operation that transitions a work center to `resolved`.
+/// The acting authenticated user is stamped as `topology_verified_by`
+/// (never a client-supplied actor); the source must be a real provenance
+/// (`manifest`, `employee_history` or `manual_reconciliation`).
+/// Same manage authority as create/update.
+pub async fn verify_work_center_topology(
+    user: AuthenticatedUser,
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+    Json(req): Json<VerifyTopologyRequest>,
+) -> Result<Json<RelationalWorkCenter>> {
+    user.require_permission("tps:work-center:manage")?;
+    let tenant_id = user.tenant_id;
+    let pool = pool(&state)?;
+
+    let wc =
+        work_center_repository::verify_topology(pool, tenant_id, id, user.user_id, &req.source)
+            .await?;
 
     Ok(Json(wc))
 }

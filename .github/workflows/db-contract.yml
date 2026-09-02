@@ -46,3 +46,144 @@ jobs:
         env:
           SENSEI_NO_ZIG: "1"
           DATABASE_URL_TEST: postgres://sensei:sensei_test@localhost:5433/sensei_test
+
+  # Twenty-second audit P0/P1: the gate above proves the migrated schema
+  # against a SUPERUSER connection. RLS (FORCE ROW LEVEL SECURITY, migration
+  # 098) is only a real barrier when the application connects as a
+  # NON-OWNER, least-privilege role — exactly how docker-compose.prod
+  # connects (docker/postgres-init/01-app-role.sh). This second job runs
+  # the SAME db_contract suite on its own fresh database (the suite applies
+  # the full migration chain, dropping/recreating per test), then creates a
+  # REAL `sensei_app` application role with only the audited grants, and
+  # finally SMOKE-TESTS that role over its own psql connection:
+  #   (a) one tenant-scoped service path — FORCE RLS hides every row when
+  #       app.tenant_id is unset, and exactly the context tenant's rows are
+  #       visible inside a transaction that sets it;
+  #   (b) the role is NOBYPASSRLS / NOSUPERUSER / NOCREATEDB / NOCREATEROLE.
+  least-privilege-app-role-gate:
+    name: Least-privilege sensei_app role + RLS smoke gate
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: sensei
+          POSTGRES_PASSWORD: sensei_test
+          POSTGRES_DB: sensei_test
+        ports:
+          # 5434 (not 5433): keeps this job independent of the primary gate
+          # even when both land on one self-hosted runner.
+          - 5434:5432
+        options: >-
+          --health-cmd "pg_isready -U sensei -d sensei_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    defaults:
+      run:
+        working-directory: sensei-rs
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+      - name: Fresh-database migration + DB contract suite
+        run: |
+          cargo test -p sensei-db --test db_contract -- \
+            --test-threads=1
+        env:
+          SENSEI_NO_ZIG: "1"
+          DATABASE_URL_TEST: postgres://sensei:sensei_test@localhost:5434/sensei_test
+      - name: Ensure psql is available on the runner
+        run: |
+          if ! command -v psql >/dev/null 2>&1; then
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq postgresql-client
+          fi
+          psql --version
+      # The suite above leaves a fully migrated schema. Create the REAL
+      # least-privilege application role (mirrors the production script
+      # docker/postgres-init/01-app-role.sh) with ONLY schema usage, table
+      # DML and function execute — no DDL, no owner rights, no RLS bypass.
+      - name: Create least-privilege sensei_app role and grants
+        run: |
+          set -euo pipefail
+          export PGHOST=localhost PGPORT=5434 PGDATABASE=sensei_test
+          export PGUSER=sensei PGPASSWORD=sensei_test
+          psql -X -q -v ON_ERROR_STOP=1 <<'SQL'
+          -- Idempotent reset: fresh CI containers have no role; a re-run on
+          -- a database where the role owns grants must drop them first.
+          DO $$
+          BEGIN
+              IF EXISTS (SELECT FROM pg_roles WHERE rolname = 'sensei_app') THEN
+                  EXECUTE 'DROP OWNED BY sensei_app CASCADE';
+                  EXECUTE 'DROP ROLE sensei_app';
+              END IF;
+          END
+          $$;
+          CREATE ROLE sensei_app LOGIN PASSWORD 'x'
+              NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE;
+          GRANT CONNECT ON DATABASE sensei_test TO sensei_app;
+          GRANT USAGE ON SCHEMA public TO sensei_app;
+          GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO sensei_app;
+          GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO sensei_app;
+          ALTER DEFAULT PRIVILEGES IN SCHEMA public
+              GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO sensei_app;
+          ALTER DEFAULT PRIVILEGES IN SCHEMA public
+              GRANT EXECUTE ON FUNCTIONS TO sensei_app;
+          SQL
+      # Seed two tenants' fixture rows AS the superuser (the app role may
+      # never create rows outside its RLS context; the db-contract suite
+      # itself seeds identically). products carries the migration-098
+      # fail-closed FORCE RLS policy (the tenants table has no tenant_id
+      # column, so it is not RLS-isolated — products is the audited probe).
+      - name: Seed tenant fixtures (superuser)
+        run: |
+          set -euo pipefail
+          export PGHOST=localhost PGPORT=5434 PGDATABASE=sensei_test
+          export PGUSER=sensei PGPASSWORD=sensei_test
+          psql -X -q -v ON_ERROR_STOP=1 <<'SQL'
+          INSERT INTO tenants (id, name, slug)
+          VALUES ('00000000-0000-4000-8000-00000000000a', 'app-a', 'app-a'),
+                 ('00000000-0000-4000-8000-00000000000b', 'app-b', 'app-b');
+          INSERT INTO products (id, tenant_id, product_number, name, unit_of_measure, is_active, product_type, created_at, updated_at)
+          VALUES ('10000000-0000-4000-8000-00000000000a',
+                  '00000000-0000-4000-8000-00000000000a', 'APP-A-1', 'A',
+                  'pcs', TRUE, 'finished_good', NOW(), NOW()),
+                 ('10000000-0000-4000-8000-00000000000b',
+                  '00000000-0000-4000-8000-00000000000b', 'APP-B-1', 'B',
+                  'pcs', TRUE, 'finished_good', NOW(), NOW());
+          SQL
+      # App-role smoke: every psql below connects AS sensei_app (its own
+      # LOGIN, password 'x') — the audited grants are all it has.
+      - name: App-role smoke — tenant-scoped service path + NOBYPASSRLS
+        run: |
+          set -euo pipefail
+          export PGHOST=localhost PGPORT=5434 PGDATABASE=sensei_test
+          export PGUSER=sensei_app PGPASSWORD=x
+          TA='00000000-0000-4000-8000-00000000000a'
+          TB='00000000-0000-4000-8000-00000000000b'
+          # (a) identity: the probe really runs AS the app role.
+          CURRENT="$(psql -X -q -tAc 'SELECT current_user')"
+          [ "$CURRENT" = "sensei_app" ] || { echo "expected sensei_app, got '$CURRENT'"; exit 1; }
+          # (b) least-privilege flags: NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE.
+          FLAGS="$(psql -X -q -tAc "SELECT rolsuper || '/' || rolbypassrls || '/' || rolcreatedb || '/' || rolcreaterole FROM pg_roles WHERE rolname = current_user")"
+          [ "$FLAGS" = "false/false/false/false" ] || { echo "role is not least-privilege: '$FLAGS'"; exit 1; }
+          # Tenant-scoped service path WITHOUT app.tenant_id: FORCE RLS
+          # hides every row (the WHERE clause alone is not enough).
+          HIDDEN="$(psql -X -q -tAc "SELECT COUNT(*) FROM products WHERE tenant_id = '$TA'")"
+          [ "$HIDDEN" = "0" ] || { echo "RLS did not hide rows without app.tenant_id (count=$HIDDEN)"; exit 1; }
+          # The same path INSIDE a transaction that sets app.tenant_id
+          # (the service convention): own-tenant rows visible, the other
+          # tenant's rows still hidden. psql -c runs the multi-statement
+          # string in ONE implicit transaction, so the LOCAL context set
+          # by set_config(..., true) applies to the final count.
+          VISIBLE_A="$(psql -X -q -tAc "SELECT set_config('app.tenant_id', '$TA', true); SELECT COUNT(*) FROM products WHERE tenant_id = '$TA'")"
+          [ "$VISIBLE_A" = "1" ] || { echo "own-tenant row invisible with app.tenant_id (count=$VISIBLE_A)"; exit 1; }
+          VISIBLE_B="$(psql -X -q -tAc "SELECT set_config('app.tenant_id', '$TA', true); SELECT COUNT(*) FROM products WHERE tenant_id = '$TB'")"
+          [ "$VISIBLE_B" = "0" ] || { echo "cross-tenant row visible under tenant-A context (count=$VISIBLE_B)"; exit 1; }
+          echo "app-role smoke OK: current_user=$CURRENT flags=$FLAGS"
+          echo "  rows without app.tenant_id context: $HIDDEN (must be 0)"
+          echo "  with tenant-A context: A rows=$VISIBLE_A B rows=$VISIBLE_B"
+

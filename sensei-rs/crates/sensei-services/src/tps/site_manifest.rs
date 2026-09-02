@@ -30,7 +30,7 @@ pub struct SiteManifest {
 
 /// Transaction-scoped tenant context for RLS (SET LOCAL app.tenant_id) —
 /// same convention as `crates/sensei-services/src/ops/database.rs`.
-async fn set_tenant_context(
+pub(crate) async fn set_tenant_context(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     tenant_id: Uuid,
 ) -> std::result::Result<(), SenseiError> {
@@ -44,7 +44,7 @@ async fn set_tenant_context(
 
 /// Run `f` inside a transaction with the RLS tenant context set — the
 /// `site_manifests` policy is FAIL-CLOSED (missing context = no rows).
-async fn with_tenant_tx<T, F>(pool: &PgPool, tenant_id: Uuid, f: F) -> Result<T>
+pub(crate) async fn with_tenant_tx<T, F>(pool: &PgPool, tenant_id: Uuid, f: F) -> Result<T>
 where
     F: for<'t> FnOnce(
         &'t mut sqlx::Transaction<'_, sqlx::Postgres>,
@@ -457,60 +457,96 @@ fn capability_requirements(capability: &str) -> Vec<&'static str> {
 }
 
 /// Positive, PER-INSTANCE integration evidence for one site (twenty-first
-/// audit item 5): integration_checkpoints are keyed (tenant,
-/// source_system, source_table) — a checkpoint has NO site or instance
-/// anchor, so one healthy SAP checkpoint could certify BOTH Tangier's and
-/// Bizerte's SAP. Readiness is therefore proven per integration INSTANCE:
-/// the manifest declares the kinds the plant needs; `integration_instances`
-/// materializes them PER SITE; and every instance row of THIS site must
-/// show its OWN checkpoint (instance_id) from the last 24h. A declared
-/// kind with no instance row for this site is a provisioning failure —
-/// the manifest can never be certified through a kind that was never
-/// provisioned here.
+/// audit item 5 + twenty-second audit P1): integration_checkpoints are
+/// keyed (tenant, source_system, source_table) — a checkpoint has NO site
+/// or instance anchor, so one healthy SAP checkpoint could certify BOTH
+/// Tangier's and Bizerte's SAP. Readiness is therefore proven per
+/// integration INSTANCE: the manifest declares the kinds the plant needs;
+/// `integration_instances` materializes them PER SITE; and every ENABLED,
+/// REQUIRED instance row of THIS site must show its OWN checkpoint
+/// (instance_id) from the last 24h.
 ///
-/// Ok = every instance of this site is healthy. Err = a Validation error
-/// naming the first failing instance (DB failures propagate as Database
-/// errors).
+/// Lifecycle semantics (twenty-second audit P1):
+/// - a DISABLED (decommissioned) or non-required instance never blocks
+///   readiness — only instances with enabled = TRUE AND required = TRUE
+///   demand proof;
+/// - an EXPLICITLY empty integration policy (`integrations` = '[]') means
+///   "no integrations required" and passes with the message
+///   'no integrations required (explicit)';
+/// - a manifest whose `integrations` column is NULL at all has NO
+///   integration policy — that is 'policy not configured' and FAILS;
+/// - a declared kind with no instance row for this site is a provisioning
+///   failure — the manifest can never be certified through a kind that
+///   was never provisioned here.
+///
+/// Ok(None) = every instance of this site is healthy. Ok(Some(msg)) =
+/// healthy with a specific pass message (the explicit-empty policy). Err
+/// = a Validation error naming the failing state (DB failures propagate
+/// as Database errors).
 async fn site_integration_instances_proven(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     tenant_id: Uuid,
     site_id: Uuid,
-) -> Result<()> {
-    // The manifest's declared kinds (what the plant needs).
-    let declared: Vec<serde_json::Value> = serde_json::from_value(
-        sqlx::query_scalar::<_, serde_json::Value>(
-            "SELECT integrations FROM site_manifests \
-             WHERE tenant_id = $1 AND site_id = $2",
-        )
-        .bind(tenant_id)
-        .bind(site_id)
-        .fetch_one(&mut **tx)
-        .await
-        .map_err(|e| SenseiError::Database(format!("Integrations read failed: {e}")))?,
+) -> Result<Option<String>> {
+    // The manifest's declared kinds (what the plant needs). NULL and '[]'
+    // are DISTINCT states: a NULL integrations policy is NOT configured
+    // (fail closed); an explicit '[]' means the site requires NO
+    // integrations (passes). Reading the raw column as Option<Value>
+    // distinguishes the two before any decoding.
+    let integrations: Option<serde_json::Value> = sqlx::query_scalar(
+        "SELECT integrations FROM site_manifests \
+         WHERE tenant_id = $1 AND site_id = $2",
     )
-    .unwrap_or_default();
-    let kinds: Vec<String> = declared
-        .iter()
-        .filter_map(|v| {
-            v.get("kind")
-                .and_then(|k| k.as_str())
-                .map(|k| k.to_string())
-        })
-        .collect();
-    if kinds.is_empty() {
-        return Err(SenseiError::Validation(
-            "the site declares no integrations — a site with no declared \
-             integration kinds cannot be certified (positive per-instance \
-             evidence required)"
-                .to_string(),
-        ));
-    }
+    .bind(tenant_id)
+    .bind(site_id)
+    .fetch_optional(&mut **tx)
+    .await
+    .map_err(|e| SenseiError::Database(format!("Integrations read failed: {e}")))?
+    .flatten();
+    let kinds: Vec<String> = match integrations {
+        None => {
+            return Err(SenseiError::Validation(
+                "integration policy not configured — the manifest has no \
+                 integrations data (NULL); declare an explicit [] policy or \
+                 provision declared kinds"
+                    .to_string(),
+            ))
+        }
+        Some(value) if !value.is_array() => {
+            return Err(SenseiError::Validation(
+                "integration policy is malformed — site_manifests.integrations \
+                 must be a JSON array of {kind} objects"
+                    .to_string(),
+            ))
+        }
+        Some(value) if value.as_array().map(|a| a.is_empty()).unwrap_or(false) => {
+            // EXPLICIT empty policy: this site legitimately requires no
+            // integrations — no evidence is demanded.
+            return Ok(Some("no integrations required (explicit)".to_string()));
+        }
+        Some(value) => value
+            .as_array()
+            .map(|items| {
+                items
+                    .iter()
+                    .filter_map(|v| {
+                        v.get("kind")
+                            .and_then(|k| k.as_str())
+                            .map(|k| k.to_string())
+                    })
+                    .collect()
+            })
+            .unwrap_or_default(),
+    };
 
     // The materialized instances of THIS site (tenant + site scope).
+    // Lifecycle: only ENABLED and REQUIRED instances demand proof — a
+    // decommissioned (disabled) or optional instance must NOT keep
+    // blocking a plant that no longer needs it.
     type InstanceRow = (Uuid, String);
     let instances: Vec<InstanceRow> = sqlx::query_as(
         "SELECT id, integration_type FROM integration_instances \
-         WHERE tenant_id = $1 AND site_id = $2",
+         WHERE tenant_id = $1 AND site_id = $2 AND enabled = TRUE AND required = TRUE",
     )
     .bind(tenant_id)
     .bind(site_id)
@@ -519,11 +555,22 @@ async fn site_integration_instances_proven(
     .map_err(|e| SenseiError::Database(format!("Integration instance read failed: {e}")))?;
 
     // Reconcile declared kinds against provisioned instances: a declared
-    // kind this site has never provisioned cannot be proven.
+    // kind this site has never provisioned cannot be proven. (A DISABLED
+    // row still counts as provisioned — decommissioning an instance does
+    // not un-provision the kind; it simply stops demanding proof from it.)
+    let all_instances: Vec<String> = sqlx::query_scalar(
+        "SELECT integration_type FROM integration_instances \
+         WHERE tenant_id = $1 AND site_id = $2",
+    )
+    .bind(tenant_id)
+    .bind(site_id)
+    .fetch_all(&mut **tx)
+    .await
+    .map_err(|e| SenseiError::Database(format!("Integration instance read failed: {e}")))?;
     for kind in &kinds {
-        if !instances
+        if !all_instances
             .iter()
-            .any(|(_, integration_type)| integration_type == kind)
+            .any(|integration_type| integration_type == kind)
         {
             return Err(SenseiError::Validation(format!(
                 "integration instance '{kind}' is not provisioned for this site"
@@ -531,7 +578,8 @@ async fn site_integration_instances_proven(
         }
     }
 
-    // Per-instance proof: each instance's OWN checkpoint within 24h.
+    // Per-instance proof: each ENABLED + REQUIRED instance's OWN
+    // checkpoint within 24h.
     for (instance_id, integration_type) in &instances {
         let proven: i64 = sqlx::query_scalar(
             "SELECT COUNT(*) FROM integration_checkpoints \
@@ -554,7 +602,7 @@ async fn site_integration_instances_proven(
             )));
         }
     }
-    Ok(())
+    Ok(None)
 }
 
 /// Run the operational-qualification checks for one site inside a single
@@ -665,16 +713,16 @@ pub async fn validate_site(
                 format!("{shifts} shift(s) assigned in this site"),
             ));
 
-            // 3c. Skill coverage — qualified principals assigned to this
-            // site's slots (sixteenth audit: skills are site-aware). The
-            // qualification level lives on skill_qualifications.
+            // 3c. Skill coverage — qualified principals of this site
+            // (sixteenth audit: skills are site-aware; twenty-second audit
+            // P1: the canonical authority is competency_projection — the
+            // scoped, validity-checked projection — never the legacy
+            // tenant-global skill_qualifications summary).
             let skills: i64 = sqlx::query_scalar(
-                "SELECT COUNT(DISTINCT sq.skill_id) FROM skill_qualifications sq \
-                 JOIN principal_assignments pa ON pa.principal_id = sq.principal_id \
-                 JOIN role_slots rs ON rs.id = pa.slot_id \
-                 WHERE sq.tenant_id = $1 AND rs.scope_site_id = $2 AND pa.ended_at IS NULL \
-                   AND sq.level IN ('independent', 'trainer') \
-                   AND (sq.expires_at IS NULL OR sq.expires_at > NOW())",
+                "SELECT COUNT(DISTINCT cp.skill_id) FROM competency_projection cp \
+                 WHERE cp.tenant_id = $1 AND cp.site_id = $2 \
+                   AND cp.level IN ('independent', 'trainer') \
+                   AND cp.valid_until > NOW() AND cp.revoked_at IS NULL",
             )
             .bind(tenant_id)
             .bind(site_id)
@@ -688,19 +736,24 @@ pub async fn validate_site(
             ));
 
             // 3d. Integrations healthy — readiness is PER INSTANCE
-            // (twenty-first audit item 5): every integration instance
-            // provisioned for THIS site must show its own checkpoint
-            // (instance_id) from the last 24h, and every manifest-declared
-            // kind must be provisioned as an instance of this site. A
-            // tenant-global checkpoint can never certify another site's
-            // instance. DB failures propagate: UNKNOWN -> NOT READY.
+            // (twenty-first audit item 5 + twenty-second audit P1):
+            // every ENABLED + REQUIRED integration instance provisioned
+            // for THIS site must show its own checkpoint (instance_id)
+            // from the last 24h, and every manifest-declared kind must be
+            // provisioned as an instance of this site. A disabled /
+            // decommissioned instance never blocks; an EXPLICIT [] policy
+            // passes ('no integrations required'); a NULL policy is 'not
+            // configured' and fails. A tenant-global checkpoint can never
+            // certify another site's instance. DB failures propagate:
+            // UNKNOWN -> NOT READY.
             let (integrations_ok, integration_detail) =
                 match site_integration_instances_proven(tx, tenant_id, site_id).await {
-                    Ok(()) => (
+                    Ok(None) => (
                         true,
                         "every integration instance of this site is proven by its own checkpoint"
                             .to_string(),
                     ),
+                    Ok(Some(msg)) => (true, msg),
                     Err(SenseiError::Validation(msg)) => (false, msg),
                     Err(e) => return Err(e),
                 };
@@ -854,6 +907,22 @@ pub async fn validate_site(
                 let keyword = capability.replace('_', " ");
                 let pattern = format!("%{keyword}%");
                 for requirement in requirements {
+                    // Only requirements backed by a REAL schema arm can be
+                    // certified; anything else (e.g. ict_fixtures — no
+                    // fixtures table exists in migrations 001-157) is
+                    // emitted as an EXPLICIT FAILING entry named
+                    // capability_<cap>_<req> — a silent skip would let the
+                    // dispatcher certify a plant for a requirement nothing
+                    // proves (twenty-second audit P1).
+                    let schema_supported = [
+                        "_work_centers",
+                        "_skills",
+                        "_standards",
+                        "_calibration",
+                        "_ctq_inspection",
+                    ]
+                    .iter()
+                    .any(|suffix| requirement.ends_with(suffix));
                     let (ok, detail): (bool, String) = match requirement {
                         // <cap>_work_centers: work_centers of THIS site
                         // whose name or type matches the capability.
@@ -913,20 +982,22 @@ pub async fn validate_site(
                             )))?;
                             (n > 0, format!("{n} job standard(s) matching '{keyword}'"))
                         }
-                        // <cap>_calibration: passing calibration records
-                        // FOR THIS SITE's work centers. Gauges are mapped
-                        // to work centers via the working-standard /
-                        // work-center gauge mapping when it exists;
-                        // otherwise the check resolves the site through
-                        // work_centers that carry the capability keyword
-                        // and accepts calibration events on gauges linked
-                        // to those work centers.
+                        // <cap>_calibration: passing, CURRENT calibration
+                        // records FOR THIS SITE's gauges (twenty-second
+                        // audit P1: calibration must be CURRENT — the most
+                        // recent event's next_due must still lie in the
+                        // future — and capability-relevant, i.e. on this
+                        // site's own gauges; a calibration whose window
+                        // has lapsed proves nothing). Gauges have no
+                        // is_active column (migration 155 adds only
+                        // site_id), so currency is proven by next_due
+                        // alone.
                         req if req.ends_with("_calibration") => {
                             let n: i64 = sqlx::query_scalar(
                                 "SELECT COUNT(*) FROM calibration_events ce \
                                  JOIN gauges g ON g.id = ce.gauge_id AND g.tenant_id = ce.tenant_id \
                                  WHERE ce.tenant_id = $1 AND ce.result = 'pass' \
-                                   AND g.site_id = $2",
+                                   AND g.site_id = $2 AND ce.next_due > NOW()",
                             )
                             .bind(tenant_id)
                             .bind(site_id)
@@ -959,14 +1030,32 @@ pub async fn validate_site(
                                 "{n} active CTQ inspection plan(s) matching '{keyword}'"
                             ))
                         }
-                        // <cap>_fixtures: NO fixtures table exists in the
-                        // schema (migrations 001-136) — the ICT fixture
-                        // requirement cannot be verified, so the check is
-                        // NOT emitted (only checks backed by real tables
-                        // are added).
-                        _ => continue,
+                        // <cap>_fixtures and any other requirement with NO
+                        // supporting schema (e.g. ict_fixtures — no
+                        // fixtures table exists in migrations 001-157):
+                        // the requirement cannot be evaluated, so the
+                        // capability can never be certified. The check is
+                        // emitted as an EXPLICIT FAILURE — a silent skip
+                        // would let the dispatcher certify a plant for a
+                        // requirement nothing proves (twenty-second audit
+                        // P1: no unsupported requirement is silently
+                        // dropped).
+                        _ => (
+                            false,
+                            "requirement cannot be evaluated — no supporting \
+                             schema; capability cannot be certified"
+                                .to_string(),
+                        ),
                     };
-                    checks.push((requirement.to_string(), ok, detail));
+                    checks.push((
+                        if schema_supported {
+                            requirement.to_string()
+                        } else {
+                            format!("capability_{capability}_{requirement}")
+                        },
+                        ok,
+                        detail,
+                    ));
                 }
             }
 
@@ -1268,13 +1357,16 @@ pub async fn advance_site_lifecycle(
                                 .to_string(),
                         ));
                     }
-                    // Twenty-first audit item 5: activation requires
-                    // POSITIVE, PER-INSTANCE evidence — every integration
-                    // instance provisioned for THIS site must show its own
+                    // Twenty-first audit item 5 / twenty-second audit P1:
+                    // activation requires POSITIVE, PER-INSTANCE evidence
+                    // — every ENABLED + REQUIRED integration instance
+                    // provisioned for THIS site must show its own
                     // checkpoint (instance_id) in the last 24h, and every
                     // manifest-declared kind must be provisioned as an
                     // instance of this site. A tenant-global checkpoint can
                     // never certify a site whose own instances never ran.
+                    // (Disabled/decommissioned instances never block; an
+                    // explicit [] policy passes.)
                     site_integration_instances_proven(tx, tenant_id, site_id).await?;
                     advance_lifecycle(
                         tx,

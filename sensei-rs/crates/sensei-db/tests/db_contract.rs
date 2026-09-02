@@ -12575,17 +12575,36 @@ async fn twentieth_audit_adversarial_gate_v3() {
     }
 }
 
-/// Twenty-first-audit item 4: the federation-edge loader's cross-tenant
-/// read (`federation_memberships` JOIN the PEER's `site_manifests` +
-/// `country_policies`) is a SECURITY DEFINER function — migration 153's
-/// `federation_governance_edges` is the ONLY cross-tenant
-/// federation-governance boundary. A real non-owner, non-BYPASSRLS app
-/// role (USAGE on the schema, CONNECT on the database, EXECUTE on the
-/// function — NOTHING on the tables, NO app.tenant_id context) must be
-/// able to load the SOURCE tenant's edges through the function, while a
-/// direct SELECT of the peer's FORCE-RLS rows via the same pool yields
-/// nothing: the raw pooled multi-table loader path is dead, the function
-/// is the only channel.
+/// Twenty-first-audit item 4 + twenty-second-audit P0/P1 items 2-4: the
+/// federation-edge loader's cross-tenant read (`federation_memberships`
+/// JOIN the PEER's `site_manifests` + `country_policies` +
+/// `country_policy_versions`) is a SECURITY DEFINER function — the ONLY
+/// cross-tenant federation-governance boundary. A real non-owner,
+/// non-BYPASSRLS app role (USAGE on the schema, CONNECT on the database,
+/// EXECUTE on the no-arg function — NOTHING on the tables, NO pre-set
+/// tenant context) must be able to load the SOURCE tenant's edges through
+/// the function, while a direct SELECT of the peer's FORCE-RLS rows via
+/// the same pool yields nothing: the raw pooled multi-table loader path
+/// is dead, the function is the only channel.
+///
+/// Migration 156 closes the trust boundary the caller-supplied-tenant
+/// parameter (migration 153's `federation_governance_edges(uuid)`) left
+/// open:
+///  - `federation_governance_edges()` takes NO argument: the source
+///    tenant is read from `app.tenant_id` INSIDE the function, and the
+///    Rust loader opens its own tenant transaction (`set_config` is
+///    allowed for every role), so the non-owner call works with NO
+///    session context. Loading under tenant B — which holds no
+///    memberships — yields zero edges: the SQL never sees the tenant as
+///    an argument, the context decides (tenant-bound).
+///  - `federation_governance_edges_for(uuid)` (the migration/admin-only
+///    escape hatch) is REVOKED FROM PUBLIC: the app role's call is
+///    refused with permission denied.
+///  - The function exposes `peer_site_id` and ONE deterministic policy
+///    revision per peer site: tenant B hosts TWO sites (Morocco 'ma' and
+///    Tunisia 'tn', with TWO version rows for Morocco to prove the
+///    lateral `ORDER BY revision DESC LIMIT 1` never duplicates an edge)
+///    ⇒ exactly TWO edges with DISTINCT target_site values.
 #[tokio::test]
 async fn federation_edges_load_under_non_owner_role() {
     let _serial = DB_LOCK.lock().await;
@@ -12604,14 +12623,17 @@ async fn federation_edges_load_under_non_owner_role() {
         .await
         .expect("the ENTIRE migration chain must apply to an empty database");
 
-    // ── Seeds (nineteenth-audit shape): the SOURCE tenant A holds one
-    //    federation membership toward the PEER tenant B; B carries a
-    //    Morocco site manifest and a Morocco country policy ('ma'
-    //    residency) — exactly the peer rows the old loader joined across
-    //    the tenant boundary.
+    // ── Seeds (twenty-first-audit shape + twenty-second-audit P0/P1-3/6):
+    //    the SOURCE tenant A holds one federation membership toward the
+    //    PEER tenant B; B carries TWO site manifests (Morocco 'ma' and
+    //    Tunisia 'tn'), each with its own country policy, and Morocco has
+    //    TWO country_policy_versions rows — exactly the peer rows the old
+    //    loader joined across the tenant boundary, plus the version-row
+    //    duplication the lateral must collapse.
     let tenant_a = uuid::Uuid::new_v4();
     let tenant_b = uuid::Uuid::new_v4();
-    let site_b = uuid::Uuid::new_v4();
+    let site_b_ma = uuid::Uuid::new_v4();
+    let site_b_tn = uuid::Uuid::new_v4();
     sqlx::query(
         "INSERT INTO tenants (id, name, slug) VALUES \
          ($1, 'fed21-a', 'fed21a'), ($2, 'fed21-b', 'fed21b')",
@@ -12623,34 +12645,55 @@ async fn federation_edges_load_under_non_owner_role() {
     .expect("tenants");
     sqlx::query(
         "INSERT INTO sites (id, tenant_id, site_code, name) \
-         VALUES ($1, $2, 'B21', 'Peer B')",
+         VALUES ($1, $2, 'BMA', 'Peer B Morocco'), \
+                ($3, $4, 'BTN', 'Peer B Tunisia')",
     )
-    .bind(site_b)
+    .bind(site_b_ma)
+    .bind(tenant_b)
+    .bind(site_b_tn)
     .bind(tenant_b)
     .execute(&pool)
     .await
-    .expect("peer site");
+    .expect("peer sites");
     sqlx::query(
         "INSERT INTO site_manifests (tenant_id, site_id, country, capabilities) \
-         VALUES ($1, $2, 'Morocco', '[\"SMT\"]')",
+         VALUES ($1, $2, 'Morocco', '[\"SMT\"]'), \
+                ($1, $3, 'Tunisia', '[\"SMT\"]')",
     )
     .bind(tenant_b)
-    .bind(site_b)
+    .bind(site_b_ma)
+    .bind(site_b_tn)
     .execute(&pool)
     .await
-    .expect("peer manifest");
+    .expect("peer manifests");
     sqlx::query(
         "INSERT INTO country_policies (tenant_id, country, language, currency, unit_system, \
                                         week_start, holiday_schedule, timezone, data_residency, \
                                         retention_days, employment_data_visibility, \
                                         local_document_requirements) \
          VALUES ($1, 'Morocco', 'fr', 'MAD', 'metric', 'monday', '[]'::jsonb, \
-                 'Africa/Casablanca', 'ma', 365, 'restricted', '[]'::jsonb)",
+                 'Africa/Casablanca', 'ma', 365, 'restricted', '[]'::jsonb), \
+                ($1, 'Tunisia', 'fr', 'TND', 'metric', 'monday', '[]'::jsonb, \
+                 'Africa/Tunis', 'tn', 365, 'restricted', '[]'::jsonb)",
     )
     .bind(tenant_b)
     .execute(&pool)
     .await
-    .expect("peer policy");
+    .expect("peer policies");
+    // TWO version rows for Morocco (revisions 1 and 2): the plain LEFT
+    // JOIN of migration 153 would emit TWO edges for the Morocco site;
+    // migration 156's lateral must emit exactly ONE (revision 2).
+    sqlx::query(
+        "INSERT INTO country_policy_versions \
+             (tenant_id, country, revision, language, currency, data_residency) \
+         VALUES ($1, 'Morocco', 1, 'fr', 'MAD', 'ma'), \
+                ($1, 'Morocco', 2, 'fr', 'MAD', 'ma'), \
+                ($1, 'Tunisia', 1, 'fr', 'TND', 'tn')",
+    )
+    .bind(tenant_b)
+    .execute(&pool)
+    .await
+    .expect("peer policy versions");
     sqlx::query("INSERT INTO federation_memberships (tenant_id, peer_tenant_id) VALUES ($1, $2)")
         .bind(tenant_a)
         .bind(tenant_b)
@@ -12660,11 +12703,12 @@ async fn federation_edges_load_under_non_owner_role() {
 
     // ── The production non-owner pattern: a real LOGIN role with USAGE
     //    on the schema, CONNECT on the database and EXECUTE on the
-    //    governance function — and NOTHING ELSE. No table grants: the
-    //    FUNCTION is the only cross-tenant channel (FORCE RLS on
+    //    no-arg governance function — and NOTHING ELSE. No table grants:
+    //    the FUNCTION is the only cross-tenant channel (FORCE RLS on
     //    federation_memberships/site_manifests/country_policies would
     //    hide every peer row from a direct read even if the tables were
-    //    granted — the app role carries no app.tenant_id context).
+    //    granted — the app role carries no app.tenant_id context on its
+    //    bare connection).
     let role = "federation_app";
     sqlx::query(&format!("DROP OWNED BY {role} CASCADE"))
         .execute(&pool)
@@ -12699,8 +12743,11 @@ async fn federation_edges_load_under_non_owner_role() {
         .execute(&pool)
         .await
         .expect("app role login");
+    // Twenty-second audit P0/P1-2: the tenant-bound no-arg form only —
+    // federation_governance_edges_for(uuid) stays migration/admin-only
+    // (revoked from PUBLIC, granted to nobody here).
     sqlx::query(&format!(
-        "GRANT EXECUTE ON FUNCTION federation_governance_edges(uuid) TO {role}"
+        "GRANT EXECUTE ON FUNCTION federation_governance_edges() TO {role}"
     ))
     .execute(&pool)
     .await
@@ -12719,49 +12766,142 @@ async fn federation_edges_load_under_non_owner_role() {
         .await
         .expect("app-role connection");
 
-    // ── 1) The loader works for the non-owner role: the SECURITY
-    //    DEFINER function runs with the migration owner's rights, so RLS
-    //    cannot hide the peer metadata — the source tenant's ONE edge
-    //    toward the peer resolves exactly (peer country Morocco,
-    //    residency 'ma', the membership's own governance labels).
+    // ── 1) The loader works for the non-owner role with NO tenant
+    //    context on the session: the loader opens its OWN tenant
+    //    transaction setting app.tenant_id (set_config is allowed for
+    //    every role), and the SECURITY DEFINER no-arg function reads it
+    //    internally — the peer metadata is never hidden by RLS. The one
+    //    membership toward tenant B with TWO peer sites resolves to TWO
+    //    edges with DISTINCT target_site values (the peer site manifests'
+    //    ids), each pinned to ONE deterministic policy revision.
     use sensei_services::tps::replication::{self, DataPolicy, Jurisdiction, ResidencyPolicy};
     let edges = replication::load_federation_edges(&pool_app, tenant_a, None)
         .await
         .expect("edges must load under the app role — the function is the ONLY channel");
     assert_eq!(
         edges.len(),
-        1,
-        "exactly one federation edge (A -> B) must load cross-tenant"
+        2,
+        "one membership with TWO peer sites -> exactly TWO edges — the lateral \
+         revision collapses the version-row duplication"
     );
-    let edge = &edges[0];
-    assert_eq!(edge.target_tenant, tenant_b);
+    let ma_edge = edges
+        .iter()
+        .find(|e| e.target_site == Some(site_b_ma))
+        .expect("the Morocco peer site yields its own edge");
+    let tn_edge = edges
+        .iter()
+        .find(|e| e.target_site == Some(site_b_tn))
+        .expect("the Tunisia peer site yields its own edge");
+    let mut target_sites: Vec<Option<uuid::Uuid>> = edges.iter().map(|e| e.target_site).collect();
+    target_sites.sort_unstable();
+    let mut expected_sites: Vec<Option<uuid::Uuid>> = vec![Some(site_b_ma), Some(site_b_tn)];
+    expected_sites.sort_unstable();
     assert_eq!(
-        edge.target_jurisdiction,
+        target_sites, expected_sites,
+        "both edges carry a target_site — the peer site's id comes back through \
+         the function, and the two values are distinct"
+    );
+    assert_eq!(ma_edge.target_tenant, tenant_b);
+    assert_eq!(
+        ma_edge.target_jurisdiction,
         Jurisdiction::MA,
-        "the peer's residency code ('ma') resolves through the function"
+        "the Morocco site's residency code ('ma') resolves through the function"
     );
     assert_eq!(
-        edge.residency_policy,
-        ResidencyPolicy::CorporateAllowed,
-        "the membership row's own residency policy is the edge policy"
+        tn_edge.target_jurisdiction,
+        Jurisdiction::TN,
+        "the Tunisia site's residency code ('tn') resolves through the function"
     );
+    for edge in [ma_edge, tn_edge] {
+        assert_eq!(
+            edge.residency_policy,
+            ResidencyPolicy::CorporateAllowed,
+            "the membership row's own residency policy is the edge policy"
+        );
+        assert!(
+            edge.allowed_data_classes.contains(&DataPolicy::Internal)
+                && edge.allowed_data_classes.contains(&DataPolicy::Personal),
+            "the membership's allowed_data_classes parse exactly"
+        );
+    }
+    assert_eq!(
+        ma_edge.policy_revision, 2,
+        "Morocco carries TWO version rows — the lateral ORDER BY revision DESC LIMIT 1 \
+         yields exactly ONE deterministic revision (the highest), never a duplicated edge"
+    );
+    assert_eq!(
+        tn_edge.policy_revision, 1,
+        "Tunisia's single version row -> revision 1"
+    );
+
+    // ── 1b) TENANT BINDING: no tenant argument reaches the SQL — the
+    //    session context decides. Loading under tenant B (which holds no
+    //    membership rows) yields zero edges even though the app role may
+    //    set_config: the loader names the tenant for the transaction it
+    //    opens, and the no-arg function reads it from app.tenant_id.
+    let other_tenant_edges = replication::load_federation_edges(&pool_app, tenant_b, None)
+        .await
+        .expect("loading under tenant B must succeed — and bind to tenant B");
     assert!(
-        edge.allowed_data_classes.contains(&DataPolicy::Internal)
-            && edge.allowed_data_classes.contains(&DataPolicy::Personal),
-        "the membership's allowed_data_classes parse exactly"
+        other_tenant_edges.is_empty(),
+        "tenant B holds no federation memberships — the no-arg function binds to \
+         the tenant context, NOT to a caller-supplied argument"
     );
-    assert_eq!(edge.policy_revision, 0, "no version rows -> revision 0");
-    // The function itself reports the peer's manifest country.
-    let peer_country: String =
-        sqlx::query_scalar("SELECT peer_country FROM federation_governance_edges($1)")
-            .bind(tenant_a)
-            .fetch_one(&pool_app)
+    // FAIL-CLOSED with NO context at all: on the bare app-role session
+    // (app.tenant_id unset) the no-arg function exposes nothing.
+    let no_context: Vec<String> =
+        sqlx::query_scalar("SELECT peer_country FROM federation_governance_edges()")
+            .fetch_all(&pool_app)
             .await
-            .expect("function executes for the app role");
-    assert_eq!(
-        peer_country, "Morocco",
-        "peer country comes from the peer's manifest"
+            .expect("the no-arg function executes for the app role");
+    assert!(
+        no_context.is_empty(),
+        "without app.tenant_id the no-arg function returns nothing (fail-closed)"
     );
+
+    // ── 1c) The migration/admin-only `_for` variant is NOT executable by
+    //    the app role: migration 156 revokes EXECUTE ON FUNCTION
+    //    federation_governance_edges_for(uuid) FROM PUBLIC, and this test
+    //    grants it to nobody — permission denied.
+    let denied: std::result::Result<Vec<String>, sqlx::Error> =
+        sqlx::query_scalar("SELECT peer_country FROM federation_governance_edges_for($1)")
+            .bind(tenant_a)
+            .fetch_all(&pool_app)
+            .await;
+    assert!(
+        matches!(&denied, Err(e) if e.to_string().contains("permission denied")),
+        "the app role must NOT execute the caller-supplied-tenant _for variant — \
+         it is revoked from PUBLIC: {denied:?}"
+    );
+
+    // ── 1d) Under the app role's OWN context (set inside a transaction —
+    //    set_config is permitted for every role) the no-arg function
+    //    reports the peer site + one deterministic revision per site.
+    {
+        let mut tx = pool_app.begin().await.expect("ctx tx begin");
+        sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
+            .bind(tenant_a.to_string())
+            .execute(&mut *tx)
+            .await
+            .expect("set tenant context");
+        let rows: Vec<(String, uuid::Uuid, i64)> = sqlx::query_as(
+            "SELECT peer_country, peer_site_id, peer_policy_revision \
+             FROM federation_governance_edges() ORDER BY peer_country",
+        )
+        .fetch_all(&mut *tx)
+        .await
+        .expect("the no-arg function executes for the app role under its own context");
+        tx.commit().await.expect("ctx tx commit");
+        assert_eq!(
+            rows,
+            vec![
+                ("Morocco".to_string(), site_b_ma, 2),
+                ("Tunisia".to_string(), site_b_tn, 1),
+            ],
+            "the function reports each peer site with its manifest country and the \
+             single deterministic revision"
+        );
+    }
 
     // ── 2) The DIRECT channel is closed: a raw SELECT of the peer's
     //    FORCE-RLS rows via the app pool must expose NOTHING — with the
@@ -13635,5 +13775,430 @@ async fn material_starvation_is_bom_exploded_component_shortage() {
     assert_eq!(
         starved2, 0.0,
         "after refilling the short component the WO is covered"
+    );
+}
+
+/// Twenty-second audit P1 (integration producer + epistemics): the
+/// integration INSTANCE is the unit of readiness and lifecycle.
+/// `reconcile_instances` reads the site manifest's declared integration
+/// kinds and materializes one `integration_instances` row per declared
+/// kind FOR THIS SITE; the checkpoint producer advances ONE instance
+/// (instance_id — unknown instance is NotFound/404, a disabled instance
+/// is Conflict/409); a missing checkpoint is NEVER RUN (None), never a
+/// fabricated `Utc::now()`; and a decommissioned (disabled) instance
+/// never blocks readiness — only enabled AND required instances demand
+/// proof.
+#[tokio::test]
+async fn integration_producer_reconcile_and_epistemics() {
+    let _serial = DB_LOCK.lock().await;
+    let Some(pool) = connect().await else { return };
+    sqlx::query(
+        r#"DO $$ DECLARE r RECORD; BEGIN
+             FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname = 'public') LOOP
+                 EXECUTE format('DROP TABLE IF EXISTS %I CASCADE', r.tablename);
+             END LOOP;
+         END $$"#,
+    )
+    .execute(&pool)
+    .await
+    .expect("drop all tables");
+    sensei_db::migrations::run_migrations(&pool)
+        .await
+        .expect("the ENTIRE migration chain must apply to an empty database");
+
+    use sensei_core::error::SenseiError;
+    use sensei_services::tps::integration::{
+        get_checkpoint, reconcile_instances, write_checkpoint,
+    };
+    use sensei_services::tps::site_manifest::{bootstrap_site, validate_site, SiteManifest};
+
+    let tenant_id = uuid::Uuid::new_v4();
+    let site_id = uuid::Uuid::new_v4();
+    let principal = uuid::Uuid::new_v4();
+    let assessor = uuid::Uuid::new_v4();
+    let skill_id = uuid::Uuid::new_v4();
+    let slot_id = uuid::Uuid::new_v4();
+    let wc_id = uuid::Uuid::new_v4();
+    let shift_id = uuid::Uuid::new_v4();
+    let ev_id = uuid::Uuid::new_v4();
+
+    sqlx::query("INSERT INTO tenants (id, name, slug) VALUES ($1, 'recon', 'recon')")
+        .bind(tenant_id)
+        .execute(&pool)
+        .await
+        .expect("tenant insert");
+    sqlx::query(
+        "INSERT INTO sites (id, tenant_id, site_code, name) VALUES \
+         ($1, $2, 'REC', 'Starz Forge Reconcile')",
+    )
+    .bind(site_id)
+    .bind(tenant_id)
+    .execute(&pool)
+    .await
+    .expect("sites insert");
+
+    // The manifest declares ONE integration kind ('sap') — the producer
+    // must materialize exactly one integration instance for THIS site.
+    bootstrap_site(
+        &pool,
+        tenant_id,
+        SiteManifest {
+            site_id,
+            country: "Morocco".to_string(),
+            timezone: "Africa/Casablanca".to_string(),
+            languages: vec!["fr".to_string()],
+            currency: "MAD".to_string(),
+            capabilities: vec!["SMT".to_string()],
+            integrations: vec![serde_json::json!({"kind": "sap", "name": "sap-1"})],
+            policy_bundle: None,
+        },
+    )
+    .await
+    .expect("manifest bootstrap");
+
+    // Full-column country policy (tenant-context tx).
+    let mut tx = pool.begin().await.expect("policy tx");
+    sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
+        .bind(tenant_id.to_string())
+        .execute(&mut *tx)
+        .await
+        .expect("set tenant context");
+    sqlx::query(
+        "INSERT INTO country_policies \
+            (tenant_id, country, language, currency, unit_system, week_start, \
+             holiday_schedule, timezone, data_residency, retention_days, \
+             employment_data_visibility, local_document_requirements) \
+         VALUES ($1, 'Morocco', 'fr', 'MAD', 'metric', 'monday', '[]', \
+                 'Africa/Casablanca', 'ma', 365, 'restricted', '[]')",
+    )
+    .bind(tenant_id)
+    .execute(&mut *tx)
+    .await
+    .expect("country policy insert");
+    sqlx::query(
+        "INSERT INTO role_slots (id, tenant_id, role_name, slot_name, scope_site_id) \
+         VALUES ($1, $2, 'production_planner', 'Planner_Reconcile', $3)",
+    )
+    .bind(slot_id)
+    .bind(tenant_id)
+    .bind(site_id)
+    .execute(&mut *tx)
+    .await
+    .expect("role slot insert");
+    tx.commit().await.expect("policy tx commit");
+
+    // People + skill (the readiness fixture).
+    sqlx::query(
+        "INSERT INTO users (id, tenant_id, email, password_hash, name) VALUES \
+         ($1, $2, 'recon@starzforge.local', 'x', 'Reconcile Principal'), \
+         ($3, $4, 'recon-assessor@starzforge.local', 'x', 'Reconcile Assessor')",
+    )
+    .bind(principal)
+    .bind(tenant_id)
+    .bind(assessor)
+    .bind(tenant_id)
+    .execute(&pool)
+    .await
+    .expect("user insert");
+    sqlx::query(
+        "INSERT INTO skills (id, tenant_id, skill_id, name) \
+         VALUES ($1, $2, 'SK-REC', 'SMT Operator')",
+    )
+    .bind(skill_id)
+    .bind(tenant_id)
+    .execute(&pool)
+    .await
+    .expect("skill insert");
+
+    // Site operational shape: work center (resolved topology), shift,
+    // assignment, qualification evidence + competency projection.
+    sqlx::query(
+        "INSERT INTO work_centers (id, tenant_id, work_center_number, name, work_center_type, site_id, \
+                                   topology_state, topology_assignment_source, \
+                                   topology_verified_at, topology_verified_by) \
+         VALUES ($1, $2, 'WC-REC-01', 'Reconcile SMT Line', 'assembly', $3, 'resolved', \
+                 'manual_reconciliation', NOW(), $4)",
+    )
+    .bind(wc_id)
+    .bind(tenant_id)
+    .bind(site_id)
+    .bind(principal)
+    .execute(&pool)
+    .await
+    .expect("work center insert");
+    sqlx::query(
+        "INSERT INTO shifts (id, tenant_id, site_id, name, start_time, end_time) \
+         VALUES ($1, $2, $3, 'Day', '08:00', '16:00')",
+    )
+    .bind(shift_id)
+    .bind(tenant_id)
+    .bind(site_id)
+    .execute(&pool)
+    .await
+    .expect("shift insert");
+    sqlx::query(
+        "INSERT INTO employee_assignments (tenant_id, user_id, site_id, work_center_id, shift_id) \
+         VALUES ($1, $2, $3, $4, $5)",
+    )
+    .bind(tenant_id)
+    .bind(principal)
+    .bind(site_id)
+    .bind(wc_id)
+    .bind(shift_id)
+    .execute(&pool)
+    .await
+    .expect("assignment insert");
+    sqlx::query(
+        "INSERT INTO skill_qualification_evidence \
+             (id, tenant_id, principal_id, skill_id, standard_revision, demonstrated_at, \
+              demonstration_site_id, assessor_id, evidence) \
+         VALUES ($1, $2, $3, $4, 'rev1', NOW(), $5, $6, '[{\"kind\": \"line_audit\"}]'::jsonb)",
+    )
+    .bind(ev_id)
+    .bind(tenant_id)
+    .bind(principal)
+    .bind(skill_id)
+    .bind(site_id)
+    .bind(assessor)
+    .execute(&pool)
+    .await
+    .expect("evidence insert");
+    sqlx::query(
+        "INSERT INTO competency_projection \
+             (tenant_id, principal_id, skill_id, site_id, level, source_evidence_id, \
+              valid_from, valid_until) \
+         VALUES ($1, $2, $3, $4, 'independent', $5, NOW(), \
+                 NOW() + INTERVAL '12 months')",
+    )
+    .bind(tenant_id)
+    .bind(principal)
+    .bind(skill_id)
+    .bind(site_id)
+    .bind(ev_id)
+    .execute(&pool)
+    .await
+    .expect("competency projection insert");
+
+    // SMT capability data: the standard and a passing, CURRENT
+    // calibration (next_due in the future) on THIS site's gauge.
+    sqlx::query(
+        "INSERT INTO job_standards (tenant_id, standard_id, revision, process, title, steps) \
+         VALUES ($1, 'STD-REC-SMT', 1, 'SMT', 'SMT Line Standard', '[]')",
+    )
+    .bind(tenant_id)
+    .execute(&pool)
+    .await
+    .expect("job standard insert");
+    let gauge_id = uuid::Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO gauges (id, tenant_id, gauge_id, name, gauge_type, site_id) \
+         VALUES ($1, $2, 'GA-REC-01', 'SMT Reflow Gauge', 'general', $3)",
+    )
+    .bind(gauge_id)
+    .bind(tenant_id)
+    .bind(site_id)
+    .execute(&pool)
+    .await
+    .expect("gauge insert");
+    sqlx::query(
+        "INSERT INTO calibration_events (tenant_id, gauge_id, next_due, result) \
+         VALUES ($1, $2, NOW() + INTERVAL '1 year', 'pass')",
+    )
+    .bind(tenant_id)
+    .bind(gauge_id)
+    .execute(&pool)
+    .await
+    .expect("calibration event insert");
+
+    // ── The PRODUCER: reconcile the manifest's declared kinds into
+    // integration instances FOR THIS SITE (idempotent upsert).
+    let count = reconcile_instances(&pool, tenant_id, site_id)
+        .await
+        .expect("reconcile must provision the declared kind");
+    assert_eq!(
+        count, 1,
+        "one declared kind ('sap') must materialize exactly one instance"
+    );
+    let reconciled_again = reconcile_instances(&pool, tenant_id, site_id)
+        .await
+        .expect("re-reconcile must be idempotent");
+    assert_eq!(
+        reconciled_again, 1,
+        "re-reconciling must not duplicate instances"
+    );
+    // Read the instance back (tenant-context tx — integration_instances
+    // is fail-closed RLS) and verify the lifecycle defaults (migration
+    // 157: enabled + required default TRUE).
+    let (instance_id, enabled, required): (uuid::Uuid, bool, bool) = {
+        let mut tx = pool.begin().await.expect("instance read tx");
+        sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
+            .bind(tenant_id.to_string())
+            .execute(&mut *tx)
+            .await
+            .expect("set tenant context");
+        let row: (uuid::Uuid, bool, bool) = sqlx::query_as(
+            "SELECT id, enabled, required FROM integration_instances \
+             WHERE tenant_id = $1 AND site_id = $2 AND integration_type = 'sap'",
+        )
+        .bind(tenant_id)
+        .bind(site_id)
+        .fetch_one(&mut *tx)
+        .await
+        .expect("instance row must exist after reconcile");
+        tx.commit().await.expect("instance read tx commit");
+        row
+    };
+    assert!(enabled, "reconciled instances default to enabled");
+    assert!(required, "reconciled instances default to required");
+
+    // ── Epistemics: an instance that NEVER RAN is None (NeverRun),
+    // never a fabricated Utc::now().
+    let never_ran = get_checkpoint(&pool, tenant_id, instance_id)
+        .await
+        .expect("checkpoint read must succeed");
+    assert!(
+        never_ran.is_none(),
+        "an instance with no checkpoint must report None (unknown), never a fake now"
+    );
+
+    // ── Route-level semantics at service level: an UNKNOWN instance is
+    // NotFound (404) — the caller cannot advance an instance that is not
+    // theirs.
+    let ghost_instance = uuid::Uuid::new_v4();
+    let ghost_err = write_checkpoint(
+        &pool,
+        tenant_id,
+        ghost_instance,
+        Some("sap".to_string()),
+        Some("material_master".to_string()),
+        chrono::Utc::now(),
+        None,
+        "run-ghost".to_string(),
+    )
+    .await
+    .expect_err("an unknown instance must be refused");
+    assert!(
+        matches!(ghost_err, SenseiError::NotFound(_)),
+        "unknown instance must be NotFound (route 404), got: {ghost_err}"
+    );
+
+    // A real write advances THIS instance's own cursor.
+    let watermark = chrono::Utc::now();
+    write_checkpoint(
+        &pool,
+        tenant_id,
+        instance_id,
+        Some("sap".to_string()),
+        Some("material_master".to_string()),
+        watermark,
+        None,
+        "run-1".to_string(),
+    )
+    .await
+    .expect("the instance's own checkpoint write must succeed");
+    let proven = get_checkpoint(&pool, tenant_id, instance_id)
+        .await
+        .expect("checkpoint read must succeed")
+        .expect("the checkpoint written above must be readable");
+    assert!(
+        (proven.watermark - watermark).num_seconds().abs() < 10,
+        "the written watermark must be the readable watermark"
+    );
+
+    // The full readiness ladder: every ENABLED + REQUIRED instance of
+    // this site proven by its OWN checkpoint → ready.
+    let report = validate_site(&pool, tenant_id, site_id)
+        .await
+        .expect("validation must run");
+    assert!(report.ready, "site with a proven instance must be ready");
+    let healthy = report
+        .checks
+        .iter()
+        .find(|(name, _, _)| name == "integrations_healthy")
+        .expect("report must carry integrations_healthy");
+    assert!(healthy.1, "the proven instance must certify readiness");
+
+    // ── Decommission: a DISABLED instance can never be advanced again
+    // (Conflict — route 409) ...
+    {
+        let mut tx = pool.begin().await.expect("disable tx");
+        sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
+            .bind(tenant_id.to_string())
+            .execute(&mut *tx)
+            .await
+            .expect("set tenant context");
+        sqlx::query(
+            "UPDATE integration_instances SET enabled = FALSE \
+             WHERE tenant_id = $1 AND id = $2",
+        )
+        .bind(tenant_id)
+        .bind(instance_id)
+        .execute(&mut *tx)
+        .await
+        .expect("disable instance");
+        tx.commit().await.expect("disable tx commit");
+    }
+    let disabled_err = write_checkpoint(
+        &pool,
+        tenant_id,
+        instance_id,
+        Some("sap".to_string()),
+        Some("material_master".to_string()),
+        chrono::Utc::now(),
+        None,
+        "run-2".to_string(),
+    )
+    .await
+    .expect_err("a disabled instance must refuse advancement");
+    assert!(
+        matches!(disabled_err, SenseiError::Conflict(_)),
+        "disabled instance write must be Conflict (route 409), got: {disabled_err}"
+    );
+    // Its history stays readable — disabled is not deleted.
+    assert!(
+        get_checkpoint(&pool, tenant_id, instance_id)
+            .await
+            .expect("checkpoint read must succeed")
+            .is_some(),
+        "a disabled instance keeps its checkpoint history"
+    );
+
+    // ── ... but it never BLOCKS readiness: the site is re-validated
+    // after the decommission (status reset simulates the revalidation
+    // trigger a lifecycle change causes) and the disabled instance is
+    // not required to prove itself.
+    {
+        let mut tx = pool.begin().await.expect("reset tx");
+        sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
+            .bind(tenant_id.to_string())
+            .execute(&mut *tx)
+            .await
+            .expect("set tenant context");
+        sqlx::query(
+            "UPDATE site_manifests SET status = 'draft' \
+             WHERE tenant_id = $1 AND site_id = $2",
+        )
+        .bind(tenant_id)
+        .bind(site_id)
+        .execute(&mut *tx)
+        .await
+        .expect("reset to draft");
+        tx.commit().await.expect("reset tx commit");
+    }
+    let report_after = validate_site(&pool, tenant_id, site_id)
+        .await
+        .expect("re-validation must run");
+    assert!(
+        report_after.ready,
+        "a decommissioned (disabled) instance must not block readiness"
+    );
+    let healthy_after = report_after
+        .checks
+        .iter()
+        .find(|(name, _, _)| name == "integrations_healthy")
+        .expect("report must carry integrations_healthy");
+    assert!(
+        healthy_after.1,
+        "the disabled instance demands no proof — readiness passes"
     );
 }

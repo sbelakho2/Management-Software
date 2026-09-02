@@ -1000,7 +1000,7 @@ async fn collect_npi_view(
                         AND c.status = 'active') AS has_control_plan, \
                 EXISTS (SELECT 1 FROM first_article_inspections fai \
                         WHERE fai.product_id = wo.product_id \
-                          AND fai.status = 'completed' AND fai.result = 'passed') AS has_fai, \
+                          AND fai.status = 'completed' AND fai.result = 'pass') AS has_fai, \
                 EXISTS (SELECT 1 FROM process_capability_studies pcs \
                         WHERE pcs.product_id = wo.product_id \
                           AND pcs.ppk >= 1.33) AS has_capability \
@@ -1086,15 +1086,16 @@ async fn collect_npi_view(
 }
 
 /// Map an ISO-4217 code from `country_policies.currency` onto the typed
-/// [`CurrencyCode`]. Codes the value object does not cover (the policy
-/// seeds include 'TND') fall back to `None` — the analytics then carry NO
-/// currency label instead of assuming USD (eighteenth audit P1-10).
+/// [`CurrencyCode`]. Codes the value object does not cover fall back to
+/// `None` — the analytics then carry NO currency label instead of assuming
+/// USD (eighteenth audit P1-10).
 fn currency_code_from_iso(code: &str) -> Option<CurrencyCode> {
     match code {
         "USD" => Some(CurrencyCode::USD),
         "EUR" => Some(CurrencyCode::EUR),
         "GBP" => Some(CurrencyCode::GBP),
         "MAD" => Some(CurrencyCode::MAD),
+        "TND" => Some(CurrencyCode::TND),
         "JPY" => Some(CurrencyCode::JPY),
         "CNY" => Some(CurrencyCode::CNY),
         _ => None,

@@ -1769,6 +1769,10 @@ pub fn build_router(state: AppState) -> Router {
                 .delete(routes::work_centers::deactivate_work_center),
         )
         .route(
+            "/api/v1/work-centers/{id}/verify-topology",
+            post(routes::work_centers::verify_work_center_topology),
+        )
+        .route(
             "/api/v1/work-centers/{id}/capacity",
             get(routes::work_centers::get_work_center_capacity),
         )

@@ -10,18 +10,28 @@
 //!
 //! This repository is the single system of record for work centers:
 //! everything written through the public API lands here, in the same
-//! table the lifecycle reads. Topology is never fabricated:
+//! table the lifecycle reads. Topology is never fabricated, and
+//! ASSIGNMENT IS NOT VERIFICATION (twenty-first audit item 2;
+//! twenty-second audit P0/P1):
 //!
-//! - a create/update that supplies a `site_id` records the assertion as
-//!   `topology_state = 'resolved'` with
-//!   `topology_assignment_source = 'manual_reconciliation'` (the API
-//!   caller asserts the site; the composite FK
-//!   `work_centers_tenant_site_fk` proves the site belongs to the
-//!   tenant, otherwise a Validation error is returned);
+//! - a create/update that supplies (or changes) a `site_id` records the
+//!   assertion as `topology_state = 'needs_reconciliation'` with no
+//!   assignment source and NO verification stamp — assigning (or
+//!   re-assigning, or unassigning) a site ALWAYS invalidates any prior
+//!   verification, because an ordinary write is not proof of topology.
+//!   The composite FK `work_centers_tenant_site_fk` still proves the
+//!   site belongs to the tenant (otherwise a Validation error is
+//!   returned);
 //! - a create/update WITHOUT a `site_id` keeps `site_id` NULL and sets
 //!   `topology_state = 'needs_reconciliation'` with no assignment source
 //!   — unknown lineage is never certified (the site-readiness gate
-//!   refuses any tenant containing such a row).
+//!   refuses any tenant containing such a row);
+//! - ONLY [`verify_topology`] transitions a row to
+//!   `topology_state = 'resolved'`, and it does so atomically with
+//!   `topology_assignment_source` + `topology_verified_at` +
+//!   `topology_verified_by` (the migration-151 provenance constraint
+//!   `topology_resolved_requires_provenance` makes 'resolved' without a
+//!   verification stamp unrepresentable).
 //!
 //! [`RelationalWorkCenter`] is the API-visible shape: it carries
 //! `site_id` and `topology_state` on every response.
@@ -64,6 +74,9 @@ pub struct NewWorkCenter {
     /// when the caller can prove the assignment (the composite FK
     /// verifies the site exists for the tenant); `None` creates the row
     /// in `needs_reconciliation` — unknown lineage is never certified.
+    /// EITHER way the row is created `needs_reconciliation` with no
+    /// provenance: an asserted site is not a verified one — only an
+    /// explicit [`verify_topology`] stamps provenance and resolves it.
     pub site_id: Option<Uuid>,
     pub work_center_number: String,
     pub name: String,
@@ -77,8 +90,11 @@ pub struct UpdateWorkCenter {
     /// rewritten). `Some(None)`: unassign the work center from its site
     /// (row becomes `needs_reconciliation`, no assignment source).
     /// `Some(Some(site))`: (re)assert the assignment — the site must
-    /// exist for the tenant and the row becomes `resolved` /
-    /// `manual_reconciliation`.
+    /// exist for the tenant. In BOTH `Some` cases the row is pushed
+    /// back to `needs_reconciliation` with `topology_assignment_source`
+    /// and the verification stamps cleared: touching the site always
+    /// invalidates verification, and only [`verify_topology`] can
+    /// re-certify the row.
     pub site_id: Option<Option<Uuid>>,
     pub name: Option<String>,
     pub work_center_type: Option<String>,
@@ -149,8 +165,9 @@ fn topology_for(_site_id: Option<Uuid>) -> (&'static str, Option<&'static str>) 
 
 /// Explicit topology verification (twenty-first audit item 2): the
 /// acting actor declares the source and stamps verified_at + verified_by
-/// atomically with the transition to 'resolved'. `legacy_heuristic` is
-/// refused — it is a marker of doubt, never a provenance.
+/// atomically with the transition to 'resolved'. This is the ONLY code
+/// path that may write `topology_state = 'resolved'`; `legacy_heuristic`
+/// is refused — it is a marker of doubt, never a provenance.
 pub async fn verify_topology(
     pool: &sqlx::PgPool,
     tenant_id: Uuid,
@@ -262,9 +279,10 @@ fn classify_constraint_error(
 ///
 /// The topology bookkeeping is derived, never caller-supplied: a
 /// supplied `site_id` must exist for the tenant (composite FK; mapped to
-/// a clean Validation error) and yields `resolved` /
-/// `manual_reconciliation`; a `None` `site_id` creates the row in
-/// `needs_reconciliation` with no assignment source.
+/// a clean Validation error). EVERY new row — with or without a site —
+/// starts `needs_reconciliation` with no assignment source and no
+/// verification stamp; an asserted site is an unverified claim until an
+/// explicit [`verify_topology`] call certifies it.
 pub async fn create(
     pool: &PgPool,
     tenant_id: Uuid,
@@ -296,10 +314,14 @@ pub async fn create(
 /// Update a work center's editable fields and/or its site assignment.
 ///
 /// The topology fields are rewritten ONLY when the caller touches
-/// `site_id` — and then exactly like [`create`]: an assignment asserts
-/// `resolved` / `manual_reconciliation` (FK-validated), an unassignment
-/// pushes the row back to `needs_reconciliation` with no source. Name
-/// and type edits never certify (or de-certify) topology by themselves.
+/// `site_id` — and a site write NEVER certifies: assigning,
+/// re-assigning or unassigning a site pushes the row to
+/// `needs_reconciliation` with `topology_assignment_source` NULL and
+/// `topology_verified_at`/`topology_verified_by` cleared (site
+/// assignment always invalidates verification — twenty-second audit
+/// P0/P1). Only [`verify_topology`] can stamp provenance and resolve
+/// the row. Name and type edits never certify (or de-certify) topology
+/// by themselves.
 pub async fn update(
     pool: &PgPool,
     tenant_id: Uuid,
@@ -312,11 +334,13 @@ pub async fn update(
             work_center_type = COALESCE($4, work_center_type), \
             site_id = CASE WHEN $5 THEN $6 ELSE site_id END, \
             topology_state = CASE WHEN $5 \
-                THEN CASE WHEN $6 IS NULL THEN 'needs_reconciliation' ELSE 'resolved' END \
-                ELSE topology_state END, \
+                THEN 'needs_reconciliation' ELSE topology_state END, \
             topology_assignment_source = CASE WHEN $5 \
-                THEN CASE WHEN $6 IS NULL THEN NULL ELSE 'manual_reconciliation' END \
-                ELSE topology_assignment_source END, \
+                THEN NULL ELSE topology_assignment_source END, \
+            topology_verified_at = CASE WHEN $5 \
+                THEN NULL ELSE topology_verified_at END, \
+            topology_verified_by = CASE WHEN $5 \
+                THEN NULL ELSE topology_verified_by END, \
             updated_at = NOW() \
          WHERE id = $1 AND tenant_id = $2 \
          RETURNING id, tenant_id, site_id, work_center_number, name, work_center_type, \
@@ -353,6 +377,37 @@ pub async fn get(pool: &PgPool, tenant_id: Uuid, id: Uuid) -> Result<RelationalW
     })
 }
 
+/// Fetch one relational work center by id — tenant AND site-entitlement
+/// scoped (twenty-second audit P0/P1): the row is visible only when its
+/// site is among `authorized_sites`. An EMPTY entitlement matches
+/// nothing — a caller with no site scope can never read a row, and a
+/// foreign-site id is indistinguishable from a nonexistent one (both
+/// NotFound). Site-less (`needs_reconciliation`) rows have no entitled
+/// site and are never returned.
+pub async fn get_scoped(
+    pool: &PgPool,
+    tenant_id: Uuid,
+    id: Uuid,
+    authorized_sites: &[Uuid],
+) -> Result<RelationalWorkCenter> {
+    let sites = authorized_sites.to_vec();
+    let row: Option<Row> = sqlx::query_as(
+        "SELECT id, tenant_id, site_id, work_center_number, name, work_center_type, \
+                topology_state, topology_assignment_source \
+         FROM work_centers \
+         WHERE id = $1 AND tenant_id = $2 AND site_id = ANY($3)",
+    )
+    .bind(id)
+    .bind(tenant_id)
+    .bind(sites)
+    .fetch_optional(pool)
+    .await
+    .map_err(|e| db_err(e, "get_scoped"))?;
+    row.map(from_row).ok_or_else(|| {
+        SenseiError::NotFound(format!("work center {id} not found in tenant {tenant_id}"))
+    })
+}
+
 /// List the tenant's relational work centers.
 ///
 /// `site_id: Some(site)` restricts to the work centers assigned to that
@@ -375,6 +430,39 @@ pub async fn list(
     .fetch_all(pool)
     .await
     .map_err(|e| db_err(e, "list"))?;
+    Ok(rows.into_iter().map(from_row).collect())
+}
+
+/// List the tenant's relational work centers, intersected with the
+/// caller's site entitlement (twenty-second audit P0/P1): only rows
+/// whose site is among `authorized_sites` are returned — the filter
+/// lives in the SQL so a site-scoped caller can never enumerate another
+/// site's rows, and an EMPTY entitlement matches nothing (zero rows,
+/// never a fallback to tenant-wide). `site_id: Some(site)` narrows
+/// further to one entitled site; `None` keeps every entitled site.
+/// Site-less rows are excluded: they belong to no entitled site.
+pub async fn list_scoped(
+    pool: &PgPool,
+    tenant_id: Uuid,
+    site_id: Option<Uuid>,
+    authorized_sites: &[Uuid],
+) -> Result<Vec<RelationalWorkCenter>> {
+    let sites = authorized_sites.to_vec();
+    let rows: Vec<Row> = sqlx::query_as(
+        "SELECT id, tenant_id, site_id, work_center_number, name, work_center_type, \
+                topology_state, topology_assignment_source \
+         FROM work_centers \
+         WHERE tenant_id = $1 \
+           AND ($2::uuid IS NULL OR site_id = $2) \
+           AND site_id = ANY($3) \
+         ORDER BY work_center_number",
+    )
+    .bind(tenant_id)
+    .bind(site_id)
+    .bind(sites)
+    .fetch_all(pool)
+    .await
+    .map_err(|e| db_err(e, "list_scoped"))?;
     Ok(rows.into_iter().map(from_row).collect())
 }
 

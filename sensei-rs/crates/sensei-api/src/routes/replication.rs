@@ -29,41 +29,16 @@ fn pool(state: &AppState) -> Result<&sqlx::PgPool> {
 /// the data it wants to export. It names the SOURCE EVENT (a canonical
 /// operational event); the server derives the site, jurisdiction, data
 /// class and policy revision into an [`AuthorizedProjection`], and the
-/// artifact is what gets enqueued. Twentieth audit P0: the entity
-/// identity is ALSO server-derived when the client omits it or the event
-/// references an entity — `entity_type`/`entity_id` are only fallbacks
-/// for events whose object projection carries no subject, and the
-/// enqueued row always carries the DERIVED identity.
+/// artifact is what gets enqueued. Twenty-second audit P0/P1-5: the
+/// request carries ONLY the source event — NO client projection identity
+/// anymore. Entity identity (the event's subject object), projection
+/// type (the event's own type), schema version (1) and projection
+/// revision (1) all derive SERVER-SIDE from the source event inside the
+/// authorization step, so nothing a client sends can shift the
+/// idempotency key the queue row is deduplicated on.
 #[derive(Debug, Deserialize)]
 pub struct EnqueueRequest {
     pub source_event_id: Uuid,
-    /// Entity type the projection is ABOUT. When empty (or when the
-    /// source event's object projection names a subject), the server
-    /// derives it from the event — the client cannot relabel an event.
-    #[serde(default)]
-    pub entity_type: String,
-    /// Entity id the projection is about. Nil is allowed: it is derived
-    /// from the source event's subject object when one exists.
-    #[serde(default)]
-    pub entity_id: Option<Uuid>,
-    /// The projection payload (`projection` is accepted as an alias).
-    #[serde(default, alias = "projection")]
-    pub payload: serde_json::Value,
-    /// Envelope: versioned, typed projections (item 15).
-    #[serde(default = "default_schema_version")]
-    pub schema_version: u32,
-    #[serde(default)]
-    pub projection_type: Option<String>,
-    #[serde(default = "default_projection_revision")]
-    pub projection_revision: u64,
-}
-
-fn default_schema_version() -> u32 {
-    1
-}
-
-fn default_projection_revision() -> u64 {
-    1
 }
 
 /// Query parameters for `GET /api/v1/replication/pull`.
@@ -114,9 +89,14 @@ fn default_retry_seconds() -> i64 {
 /// row + peer site manifest + peer country policy, all server-derived)
 /// and enqueues ONE ROW PER EDGE that permits the projection, evaluating
 /// `may_replicate` with THAT EDGE's own residency policy and
-/// `allowed_data_classes`. The response returns the number of edges
-/// enqueued; a Restricted/Personal projection that no edge permits is a
-/// 422 (fail-closed — it is never silently dropped).
+/// `allowed_data_classes`; twenty-second audit P0/P1-4: each edge names
+/// the exact peer site, so every row records its own target_site_id. The
+/// response returns the number of edges enqueued; a Restricted/Personal
+/// projection that no edge permits is a 422 (fail-closed — it is never
+/// silently dropped). Twenty-second audit P0/P1-5: the request carries
+/// ONLY `source_event_id` — entity identity (subject object), projection
+/// type (event type), schema version (1) and projection revision (1) are
+/// all derived server-side from that one id.
 pub async fn enqueue(
     user: AuthenticatedUser,
     State(state): State<AppState>,
@@ -130,58 +110,46 @@ pub async fn enqueue(
     // publisher cannot influence the residency decision by supplying
     // matching countries, omitting the destination, or omitting the site
     // (site omission is now an ERROR, never a silent "internal").
+    // Twenty-second audit P0/P1-5: the projection schema label is passed
+    // EMPTY — authorize_projection derives it from the event's own type,
+    // so the client cannot relabel the projection.
     let artifact =
-        replication::authorize_projection(p, user.tenant_id, req.source_event_id, &req.entity_type)
-            .await?;
+        replication::authorize_projection(p, user.tenant_id, req.source_event_id, "").await?;
     let policy = replication::DataPolicy::parse(&artifact.data_class)
         .map_err(sensei_core::error::SenseiError::Validation)?;
 
-    // Twentieth audit P0: the entity identity is server-derived from the
-    // source event's subject object when the event carries one (the row
-    // then ALWAYS carries the derived identity, whatever the client
-    // sent). Client values are only the fallback for events that carry
-    // no subject object at all.
-    let (entity_type, entity_id) = {
-        let derived =
-            replication::derive_projection_identity(p, user.tenant_id, req.source_event_id).await?;
-        match derived {
-            Some((derived_type, derived_id)) => (derived_type, derived_id),
-            None => {
-                let client_type = req.entity_type.clone();
-                if client_type.trim().is_empty() {
-                    return Err(SenseiError::Validation(
-                        "replication: entity_type is required when the source event has no \
-                         subject object to derive the projection identity from"
-                            .to_string(),
-                    ));
-                }
-                let client_id = req.entity_id.ok_or_else(|| {
-                    SenseiError::Validation(
-                        "replication: entity_id is required when the source event has no \
-                         subject object to derive the projection identity from"
-                            .to_string(),
-                    )
-                })?;
-                (client_type, client_id)
-            }
-        }
-    };
+    // Twenty-second audit P0/P1-5: the entity identity derives from the
+    // source event's subject object — and ONLY from it. The request no
+    // longer carries a client entity_type/entity_id fallback, so an event
+    // without a subject object is refused: nothing client-supplied may
+    // stand in for the identity the queue row is keyed on.
+    let (entity_type, entity_id) =
+        replication::derive_projection_identity(p, user.tenant_id, req.source_event_id)
+            .await?
+            .ok_or_else(|| {
+                SenseiError::Validation(
+                    "replication: the source event carries no subject object — the projection \
+             identity cannot be derived, so it cannot be enqueued"
+                        .to_string(),
+                )
+            })?;
 
     // Twentieth audit P0: EVERY edge of the caller's federation graph is
-    // loaded (NO LIMIT 1 — one edge per membership row's destination, so
+    // loaded (NO LIMIT 1 — one edge per membership row's peer site, so
     // the gate below never checks an arbitrary country), and the gate is
     // evaluated once PER EDGE with the edge's OWN residency policy.
     let edges = replication::load_federation_edges(p, user.tenant_id, artifact.source_site).await?;
-    let projection_type = req
-        .projection_type
-        .clone()
-        .unwrap_or_else(|| entity_type.clone());
+    // Twenty-second audit P0/P1-5: the projection type is the source
+    // EVENT's own type (server-derived inside authorize_projection — the
+    // artifact schema label IS the event type when no client value is
+    // accepted), and schema/projection revisions are server constants:
+    // the client can never shift the idempotency key.
     let envelope = ReplicationEnvelope {
-        schema_version: req.schema_version,
+        schema_version: 1,
         source_event_id: Some(artifact.source_event_id.to_string()),
         source_site: artifact.source_site,
-        projection_type,
-        projection_revision: req.projection_revision,
+        projection_type: artifact.projection_schema.clone(),
+        projection_revision: 1,
         data_policy: artifact.data_class.clone(),
         payload: artifact.projected_payload.clone(),
     };
