@@ -59,6 +59,18 @@ pub async fn list_andons(
     // filter — for multi-site entitlement we call it per entitled site
     // and merge (page semantics preserved on the merged set).
     let sites = caller_sites(&user, &state).await?;
+    if sites.is_empty() {
+        // Twenty-first audit P0: an empty entitlement set lists NOTHING.
+        let page = params.page.unwrap_or(1).max(1);
+        let per_page = params.per_page.unwrap_or(20).clamp(1, 100);
+        return Ok(Json(sensei_core::pagination::PaginatedResponse {
+            data: Vec::new(),
+            total: 0,
+            total_pages: 0,
+            page,
+            per_page,
+        }));
+    }
     let andons = if sites.len() <= 1 {
         state
             .ops_service
@@ -286,18 +298,21 @@ pub async fn get_andon(
 ) -> Result<Json<Andon>> {
     user.require_permission("tps:andon:raise")?;
     let tenant_id = user.tenant_id;
-    let andon = state.ops_service.get_andon(tenant_id, id).await?;
-    // Twentieth audit P1: reads are intersected with the FULL
-    // RequestContext entitlement (every site the principal may access),
-    // not a single legacy active site — a multi-site manager can read
-    // every site they are entitled to, and a caller with no entitlement
-    // sees a foreign-site Andon as NotFound-equivalent.
+    // Twenty-first audit P0: zero entitlement is NO OPERATIONAL SCOPE —
+    // an empty site set denies EVERYTHING and must never degrade to
+    // tenant-wide. The scope is enforced INSIDE the repository lookup so
+    // a foreign-site UUID and a nonexistent UUID are indistinguishable
+    // (both NotFound).
     let sites = caller_sites(&user, &state).await?;
-    if !sites.is_empty() && andon.site_id.is_some_and(|s| !sites.contains(&s)) {
+    if sites.is_empty() {
         return Err(sensei_core::error::SenseiError::Forbidden(
-            "Andon is outside the caller's authorized site scope".to_string(),
+            "no operational scope — no Andon is authorized".to_string(),
         ));
     }
+    let andon = state
+        .ops_service
+        .get_andon_scoped(tenant_id, &sites, id)
+        .await?;
     Ok(Json(andon))
 }
 

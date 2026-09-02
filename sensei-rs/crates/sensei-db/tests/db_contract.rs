@@ -10467,11 +10467,15 @@ async fn site_bootstrap_lifecycle_validation() {
     .execute(&pool)
     .await
     .expect("shift insert");
+    let assessor_id = uuid::Uuid::new_v4();
     sqlx::query(
-        "INSERT INTO users (id, tenant_id, email, password_hash, name) \
-         VALUES ($1, $2, 'lc@starzforge.local', 'x', 'Lifecycle User')",
+        "INSERT INTO users (id, tenant_id, email, password_hash, name) VALUES \
+         ($1, $2, 'lc@starzforge.local', 'x', 'Lifecycle User'), \
+         ($3, $4, 'assessor-lc@starzforge.local', 'x', 'Assessor LC')",
     )
     .bind(user_id)
+    .bind(tenant_id)
+    .bind(assessor_id)
     .bind(tenant_id)
     .execute(&pool)
     .await
@@ -10498,6 +10502,25 @@ async fn site_bootstrap_lifecycle_validation() {
     .execute(&pool)
     .await
     .expect("skill insert");
+    // The readiness gates consume competency_projection (21st audit
+    // item 3) — the fixture seeds the projection with a valid window
+    // plus the legacy summary row.
+    let ev_id = uuid::Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO skill_qualification_evidence \
+             (id, tenant_id, principal_id, skill_id, standard_revision, demonstrated_at, \
+              demonstration_site_id, assessor_id, evidence) \
+         VALUES ($1, $2, $3, $4, 'rev1', NOW(), $5, $6, '[{\"kind\": \"line_audit\"}]'::jsonb)",
+    )
+    .bind(ev_id)
+    .bind(tenant_id)
+    .bind(user_id)
+    .bind(skill_id)
+    .bind(site_id)
+    .bind(assessor_id)
+    .execute(&pool)
+    .await
+    .expect("evidence insert");
     sqlx::query(
         "INSERT INTO skill_qualifications (tenant_id, principal_id, skill_id, level, evidence) \
          VALUES ($1, $2, $3, 'independent', '[{\"kind\": \"line_audit\"}]')",
@@ -10508,6 +10531,21 @@ async fn site_bootstrap_lifecycle_validation() {
     .execute(&pool)
     .await
     .expect("qualification insert");
+    sqlx::query(
+        "INSERT INTO competency_projection \
+             (tenant_id, principal_id, skill_id, site_id, level, source_evidence_id, \
+              valid_from, valid_until) \
+         VALUES ($1, $2, $3, $4, 'independent', $5, NOW(), \
+                 NOW() + INTERVAL '12 months')",
+    )
+    .bind(tenant_id)
+    .bind(user_id)
+    .bind(skill_id)
+    .bind(site_id)
+    .bind(ev_id)
+    .execute(&pool)
+    .await
+    .expect("competency projection insert");
     // Positive integration evidence (nineteenth audit P0): a RECENT
     // integration checkpoint proves the integration ran — absence of
     // dead letters alone is not readiness.

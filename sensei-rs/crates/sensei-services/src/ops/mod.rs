@@ -239,6 +239,17 @@ pub trait OperationsService: Send + Sync {
     ) -> Result<Andon>;
     /// Get an Andon signal by ID.
     async fn get_andon(&self, tenant_id: Uuid, id: Uuid) -> Result<Andon>;
+
+    /// Scoped get (twenty-first audit P0): the lookup carries the
+    /// caller's authorized sites in the SAME query — a foreign-site UUID
+    /// and a nonexistent UUID are indistinguishable (both NotFound), and
+    /// an empty entitlement set matches nothing.
+    async fn get_andon_scoped(
+        &self,
+        tenant_id: Uuid,
+        authorized_sites: &[Uuid],
+        id: Uuid,
+    ) -> Result<Andon>;
     /// Authorize the restart of a line after a critical-safety Andon (hard
     /// rule: resolution requires this authorization), scoped like
     /// [`Self::acknowledge_andon`].
@@ -653,6 +664,30 @@ impl OperationsService for InMemoryOperationsService {
         ))
         .await;
         Ok(result)
+    }
+
+    async fn get_andon_scoped(
+        &self,
+        tenant_id: Uuid,
+        authorized_sites: &[Uuid],
+        id: Uuid,
+    ) -> Result<Andon> {
+        if authorized_sites.is_empty() {
+            return Err(SenseiError::Forbidden(
+                "no operational scope — no Andon is authorized".to_string(),
+            ));
+        }
+        let store = self.andons.read().await;
+        match store.get(&id) {
+            Some(a)
+                if a.tenant_id == tenant_id
+                    && a.site_id
+                        .is_none_or(|site| authorized_sites.contains(&site)) =>
+            {
+                Ok(a.clone())
+            }
+            _ => Err(SenseiError::NotFound(format!("Andon {id} not found"))),
+        }
     }
 
     async fn get_andon(&self, _tenant_id: Uuid, id: Uuid) -> Result<Andon> {

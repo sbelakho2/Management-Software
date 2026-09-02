@@ -766,7 +766,8 @@ async fn collect_buyer_view(
         "SELECT COUNT(*) FILTER (WHERE po.status NOT IN ('received','closed','cancelled'))::bigint, \
                 COUNT(*) FILTER (WHERE po.status NOT IN ('received','closed','cancelled') \
                                  AND po.expected_date IS NOT NULL \
-                                 AND po.expected_date < NOW())::bigint \
+                                 AND COALESCE(po.expected_delivery, po.expected_date) \
+                                      < NOW())::bigint \
          FROM purchase_orders po \
          WHERE po.tenant_id = $1 AND po.receiving_site_id = $2",
     )

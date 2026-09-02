@@ -823,14 +823,11 @@ pub async fn validate_site(
                         // name or process matches the capability.
                         req if req.ends_with("_skills") => {
                             let n: i64 = sqlx::query_scalar(
-                                "SELECT COUNT(DISTINCT sq.skill_id) FROM skill_qualifications sq \
-                                 JOIN principal_assignments pa ON pa.principal_id = sq.principal_id \
-                                 JOIN role_slots rs ON rs.id = pa.slot_id \
-                                 JOIN skills sk ON sk.id = sq.skill_id \
-                                 WHERE sq.tenant_id = $1 AND rs.scope_site_id = $2 \
-                                   AND pa.ended_at IS NULL \
-                                   AND sq.level IN ('independent', 'trainer') \
-                   AND (sq.expires_at IS NULL OR sq.expires_at > NOW()) \
+                                "SELECT COUNT(DISTINCT cp.skill_id) FROM competency_projection cp \
+                                 JOIN skills sk ON sk.id = cp.skill_id \
+                                 WHERE cp.tenant_id = $1 AND cp.site_id = $2 \
+                                   AND cp.level IN ('independent', 'trainer') \
+                                   AND cp.valid_until > NOW() AND cp.revoked_at IS NULL \
                                    AND (sk.name ILIKE $3 OR sk.process ILIKE $3)",
                             )
                             .bind(tenant_id)
@@ -1067,11 +1064,10 @@ async fn site_qualification_checks(
         ));
     }
     let skills: i64 = sqlx::query_scalar(
-        "SELECT COUNT(DISTINCT sq.skill_id) FROM skill_qualifications sq \
-         JOIN principal_assignments pa ON pa.principal_id = sq.principal_id \
-         JOIN role_slots rs ON rs.id = pa.slot_id \
-         WHERE sq.tenant_id = $1 AND rs.scope_site_id = $2 AND pa.ended_at IS NULL \
-           AND sq.level IN ('independent', 'trainer')",
+        "SELECT COUNT(DISTINCT cp.skill_id) FROM competency_projection cp \
+         WHERE cp.tenant_id = $1 AND cp.site_id = $2 \
+           AND cp.level IN ('independent', 'trainer') \
+           AND cp.valid_until > NOW() AND cp.revoked_at IS NULL",
     )
     .bind(tenant_id)
     .bind(site_id)
@@ -1158,17 +1154,16 @@ pub async fn advance_site_lifecycle(
                         .await?;
                 }
                 ("ready_for_training", "operational_qualification") => {
-                    // At least one QUALIFIED skill must exist for this
-                    // site's principals (the qualification table is
-                    // skill_qualifications).
+                    // At least one QUALIFIED competency must exist for
+                    // this site — consumed from competency_projection
+                    // (site-scoped, validity-checked); the legacy
+                    // skill_qualifications summary is never an activation
+                    // authority (21st audit item 3).
                     let evidence: i64 = sqlx::query_scalar(
-                        "SELECT COUNT(*) FROM skill_qualifications sq \
-                         JOIN principal_assignments pa ON pa.principal_id = sq.principal_id \
-                         JOIN role_slots rs ON rs.id = pa.slot_id \
-                         WHERE sq.tenant_id = $1 AND rs.scope_site_id = $2 \
-                           AND pa.ended_at IS NULL \
-                           AND sq.level IN ('independent', 'trainer') \
-                   AND (sq.expires_at IS NULL OR sq.expires_at > NOW())",
+                        "SELECT COUNT(*) FROM competency_projection cp \
+                         WHERE cp.tenant_id = $1 AND cp.site_id = $2 \
+                           AND cp.level IN ('independent', 'trainer') \
+                           AND cp.valid_until > NOW() AND cp.revoked_at IS NULL",
                     )
                     .bind(tenant_id)
                     .bind(site_id)

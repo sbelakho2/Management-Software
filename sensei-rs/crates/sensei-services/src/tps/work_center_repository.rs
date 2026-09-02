@@ -139,15 +139,68 @@ fn from_row(
     }
 }
 
-/// The topology bookkeeping a row receives for a given assignment:
-/// an asserted site is `resolved` by `manual_reconciliation`; no site
-/// means `needs_reconciliation` with no provenance — unknown lineage is
-/// never certified.
-fn topology_for(site_id: Option<Uuid>) -> (&'static str, Option<&'static str>) {
-    match site_id {
-        Some(_) => (TOPOLOGY_RESOLVED, Some(ASSIGNMENT_SOURCE_MANUAL)),
-        None => (TOPOLOGY_NEEDS_RECONCILIATION, None),
+/// The topology bookkeeping a row receives for a given assignment
+/// (twenty-first audit item 2): ASSIGNMENT IS NOT VERIFICATION. An
+/// asserted site leaves the row `needs_reconciliation` (provenance
+/// NULL) until an EXPLICIT topology-verification command stamps
+/// source + verified_at + verified_by atomically — ordinary create/
+/// update can never violate the migration-151 provenance constraint.
+fn topology_for(_site_id: Option<Uuid>) -> (&'static str, Option<&'static str>) {
+    (TOPOLOGY_NEEDS_RECONCILIATION, None)
+}
+
+/// Explicit topology verification (twenty-first audit item 2): the
+/// acting actor declares the source and stamps verified_at + verified_by
+/// atomically with the transition to 'resolved'. `legacy_heuristic` is
+/// refused — it is a marker of doubt, never a provenance.
+pub async fn verify_topology(
+    pool: &sqlx::PgPool,
+    tenant_id: Uuid,
+    work_center_id: Uuid,
+    verified_by: Uuid,
+    source: &str,
+) -> Result<RelationalWorkCenter> {
+    if !matches!(
+        source,
+        "manifest" | "employee_history" | "manual_reconciliation"
+    ) {
+        return Err(SenseiError::Validation(format!(
+            "topology source '{source}' cannot certify a work center — only \
+             manifest, employee_history or manual_reconciliation verification \
+             resolves topology"
+        )));
     }
+    use crate::tps::replication::with_tenant_tx;
+    let source_owned = source.to_string();
+    let row = with_tenant_tx(pool, tenant_id, move |tx| {
+        Box::pin(async move {
+            let row = sqlx::query_as::<_, Row>(
+                "UPDATE work_centers \
+                    SET topology_state = 'resolved', \
+                        topology_assignment_source = $3, \
+                        topology_verified_at = NOW(), \
+                        topology_verified_by = $4 \
+                  WHERE id = $1 AND tenant_id = $2 \
+                  RETURNING id, tenant_id, site_id, work_center_number, name, \
+                            work_center_type, topology_state, topology_assignment_source",
+            )
+            .bind(work_center_id)
+            .bind(tenant_id)
+            .bind(&source_owned)
+            .bind(verified_by)
+            .fetch_optional(&mut **tx)
+            .await
+            .map_err(|e| {
+                SenseiError::Database(format!("Failed to verify work center topology: {e}"))
+            })?
+            .ok_or_else(|| {
+                SenseiError::NotFound(format!("Work center {work_center_id} not found"))
+            })?;
+            Ok(row)
+        })
+    })
+    .await?;
+    Ok(from_row(row))
 }
 
 /// Highest numeric `WC-<n>` suffix among the tenant's existing numbers.
@@ -393,16 +446,15 @@ mod tests {
     use super::*;
 
     #[test]
-    fn supplied_site_is_resolved_by_manual_reconciliation() {
+    fn assignment_is_never_verification_twenty_first_audit() {
+        // Twenty-first audit item 2: creating/updating a site assignment
+        // leaves the row needs_reconciliation — only an explicit
+        // verification command stamps provenance and resolves it.
         let site = Uuid::new_v4();
         assert_eq!(
             topology_for(Some(site)),
-            (TOPOLOGY_RESOLVED, Some(ASSIGNMENT_SOURCE_MANUAL))
+            (TOPOLOGY_NEEDS_RECONCILIATION, None)
         );
-    }
-
-    #[test]
-    fn missing_site_is_needs_reconciliation_without_source() {
         assert_eq!(topology_for(None), (TOPOLOGY_NEEDS_RECONCILIATION, None));
     }
 

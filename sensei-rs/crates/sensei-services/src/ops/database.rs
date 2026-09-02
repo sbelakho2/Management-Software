@@ -775,6 +775,36 @@ impl OperationsService for DatabaseOperationsService {
         Ok(andon_row_to_domain(row))
     }
 
+    /// Twenty-first audit P0: scoped lookup — foreign-site and
+    /// nonexistent UUIDs are indistinguishable (both NotFound); an empty
+    /// entitlement set matches nothing.
+    async fn get_andon_scoped(
+        &self,
+        tenant_id: Uuid,
+        authorized_sites: &[Uuid],
+        id: Uuid,
+    ) -> Result<Andon> {
+        if authorized_sites.is_empty() {
+            return Err(SenseiError::Forbidden(
+                "no operational scope — no Andon is authorized".to_string(),
+            ));
+        }
+        let sites = authorized_sites.to_vec();
+        let row = with_tenant_tx(&self.pool, tenant_id, move |tx| {
+            Box::pin(async move {
+                sqlx::query_as::<_, AndonRow>(
+                    "SELECT id, tenant_id, andon_number, site_id, work_center_id, issue_type, severity, description, status, raised_by, acknowledged_by, resolved_by, resolution, response_time_seconds, resolution_time_seconds, created_at, acknowledged_at, resolved_at, restart_authorized_by, restart_authorized_at, abnormal_condition_observed_at, contained_at, contained_by, contained_note, escalated, escalated_at, request_key FROM andons WHERE id = $1 AND tenant_id = $2 AND site_id = ANY($3)",
+                )
+                .bind(id).bind(tenant_id).bind(&sites)
+                .fetch_optional(&mut **tx)
+                .await.map_err(|e| SenseiError::Database(format!("Failed to get andon: {e}")))?
+                .ok_or_else(|| SenseiError::NotFound(format!("Andon {id} not found")))
+            })
+        }).await?;
+
+        Ok(andon_row_to_domain(row))
+    }
+
     async fn list_andons(
         &self,
         tenant_id: Uuid,
