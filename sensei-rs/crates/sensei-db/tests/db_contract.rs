@@ -10848,6 +10848,14 @@ async fn site_bootstrap_lifecycle_validation() {
         tx.commit().await.expect("erp instance read tx commit");
         id
     };
+    let _run_token = sensei_services::tps::integration::start_run(
+        &pool,
+        tenant_id,
+        erp_instance_id,
+        "run-lc".to_string(),
+    )
+    .await
+    .expect("server-attested run start");
     write_checkpoint(
         &pool,
         tenant_id,
@@ -13955,6 +13963,14 @@ async fn integration_readiness_is_per_site_instance() {
     // ONLY site A's SAP instance has run — through the BRIDGE (twenty-
     // third audit P1: only write_checkpoint stamps last_verified_revision,
     // so readiness can never be certified by a raw checkpoint row).
+    let _run_a = sensei_services::tps::integration::start_run(
+        &pool,
+        tenant_id,
+        site_sap_instance(&pool, tenant_id, site_a).await,
+        "run-a".to_string(),
+    )
+    .await
+    .expect("attested run-a start");
     write_checkpoint(
         &pool,
         tenant_id,
@@ -14041,6 +14057,14 @@ async fn integration_readiness_is_per_site_instance() {
 
     // Give B's OWN instance a checkpoint THROUGH THE BRIDGE → B validates
     // healthy (ready).
+    let _run_b = sensei_services::tps::integration::start_run(
+        &pool,
+        tenant_id,
+        site_sap_instance(&pool, tenant_id, site_b).await,
+        "run-b".to_string(),
+    )
+    .await
+    .expect("attested run-b start");
     write_checkpoint(
         &pool,
         tenant_id,
@@ -14891,6 +14915,14 @@ async fn integration_producer_reconcile_and_epistemics() {
     // verification (audit item 3): last_verified_revision =
     // configuration_revision, in the same transaction.
     let watermark = chrono::Utc::now();
+    let _run_token = sensei_services::tps::integration::start_run(
+        &pool,
+        tenant_id,
+        instance_id,
+        "run-1".to_string(),
+    )
+    .await
+    .expect("server-attested run start");
     write_checkpoint(
         &pool,
         tenant_id,
@@ -15025,6 +15057,14 @@ async fn integration_producer_reconcile_and_epistemics() {
     // A fresh bridge run stamps revision 2 → the instance is proven
     // again. (Twenty-fourth audit P1: the run SENDS the revision it
     // tested — revision 2 — so the guarded stamp succeeds.)
+    let _run_token = sensei_services::tps::integration::start_run(
+        &pool,
+        tenant_id,
+        instance_id,
+        "run-2".to_string(),
+    )
+    .await
+    .expect("server-attested run start");
     write_checkpoint(
         &pool,
         tenant_id,

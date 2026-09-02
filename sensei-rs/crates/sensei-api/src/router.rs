@@ -2264,6 +2264,10 @@ pub fn build_router(state: AppState) -> Router {
             post(routes::integration::save_checkpoint),
         )
         .route(
+            "/api/v1/integration/runs/start",
+            post(routes::integration::start_run),
+        )
+        .route(
             "/api/v1/integration/checkpoint/{system}/{source_table}",
             get(routes::integration::get_checkpoint),
         )

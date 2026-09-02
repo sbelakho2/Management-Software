@@ -58,7 +58,7 @@ jobs:
           # build BEFORE the post-pass below runs.
           trunk build --release
           for wasm in dist/*.wasm; do
-            wasm-opt --enable-bulk-memory --enable-threads -O3 "$wasm" -o "$wasm"
+            wasm-opt --enable-bulk-memory --enable-threads --enable-sign-ext -O3 "$wasm" -o "$wasm"
           done
           cp -r dist ../../dist-frontend
 

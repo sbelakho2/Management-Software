@@ -233,6 +233,37 @@ pub struct CheckpointResponse {
     pub ok: bool,
 }
 
+/// `POST /api/v1/integration/runs/start` — the bridge asks the SERVER to
+/// start a run: the token it receives is bound to the instance's CURRENT
+/// configuration revision, so completion can never claim a revision the
+/// server did not attest (twenty-fifth audit P1).
+#[derive(Debug, serde::Deserialize)]
+pub struct StartRunRequest {
+    pub instance_id: Uuid,
+    pub run_id: String,
+}
+
+pub async fn start_run(
+    user: AuthenticatedUser,
+    State(state): State<AppState>,
+    Json(req): Json<StartRunRequest>,
+) -> Result<Json<serde_json::Value>> {
+    user.require_permission("integration:bridge:write")?;
+    let Some(pool) = state.db_pool.as_ref() else {
+        return Err(sensei_core::error::SenseiError::Database(
+            "no database configured".to_string(),
+        ));
+    };
+    let token = sensei_services::tps::integration::start_run(
+        pool,
+        user.tenant_id,
+        req.instance_id,
+        req.run_id,
+    )
+    .await?;
+    Ok(Json(serde_json::json!({ "run_token": token })))
+}
+
 pub async fn save_checkpoint(
     user: AuthenticatedUser,
     State(state): State<AppState>,
@@ -262,6 +293,10 @@ pub async fn save_checkpoint(
     // completion write whose tested revision no longer matches the
     // instance's current configuration_revision — a run started at an
     // old revision can never stamp the untested new one.
+    // Twenty-fifth audit P1: server-attested runs — the instance must
+    // have an OPEN run (issued by start_run) whose attested revision is
+    // what this completion claims; write_checkpoint validates the
+    // attestation inside its transaction.
     sensei_services::tps::integration::write_checkpoint(
         pool,
         user.tenant_id,

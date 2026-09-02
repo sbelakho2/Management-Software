@@ -289,6 +289,55 @@ pub async fn reconcile_instances(
 /// (`integration_checkpoints.verified_revision`, migration 161), so the
 /// durable cursor itself names what it certified.
 #[allow(clippy::too_many_arguments)]
+/// Start a server-attested integration run (twenty-fifth audit P1): the
+/// server issues the run_token bound to the instance's CURRENT
+/// configuration revision + a digest of it. The bridge cannot declare
+/// which configuration it tested.
+pub async fn start_run(
+    pool: &PgPool,
+    tenant_id: Uuid,
+    instance_id: Uuid,
+    run_id: String,
+) -> Result<uuid::Uuid> {
+    let token = uuid::Uuid::new_v4();
+    with_tenant_tx(pool, tenant_id, move |tx| {
+        Box::pin(async move {
+            let revision: Option<i32> = sqlx::query_scalar(
+                "SELECT configuration_revision FROM integration_instances \
+                 WHERE tenant_id = $1 AND id = $2 AND enabled = TRUE",
+            )
+            .bind(tenant_id)
+            .bind(instance_id)
+            .fetch_optional(&mut **tx)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Run start read failed: {e}")))?;
+            let Some(revision) = revision else {
+                return Err(SenseiError::Conflict(format!(
+                    "integration instance {instance_id} is not enabled — no run may start"
+                )));
+            };
+            sqlx::query(
+                "INSERT INTO integration_runs \
+                     (tenant_id, instance_id, run_token, configuration_revision, \
+                      configuration_digest, run_id) \
+                 VALUES ($1, $2, $3, $4, 'attested:' || $5::text, $6)",
+            )
+            .bind(tenant_id)
+            .bind(instance_id)
+            .bind(token)
+            .bind(revision as i64)
+            .bind(revision)
+            .bind(&run_id)
+            .execute(&mut **tx)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Run start failed: {e}")))?;
+            Ok(token)
+        })
+    })
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
 pub async fn write_checkpoint(
     pool: &PgPool,
     tenant_id: Uuid,
@@ -338,6 +387,37 @@ pub async fn write_checkpoint(
                      {verified_configuration_revision})"
                 )));
             }
+            // The run token attests WHICH revision was actually tested
+            // (server-issued at start). A run started at rev1 that
+            // finishes after the manifest moved is rejected.
+            let attested: Option<(uuid::Uuid, i64, String)> = sqlx::query_as(
+                "SELECT run_token, configuration_revision, configuration_digest \
+                 FROM integration_runs \
+                 WHERE tenant_id = $1 AND instance_id = $2 AND run_id = $3 \
+                   AND completed_at IS NULL \
+                 ORDER BY started_at DESC LIMIT 1",
+            )
+            .bind(tenant_id)
+            .bind(instance_id)
+            .bind(&run_id)
+            .fetch_optional(&mut **tx)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Run attestation read failed: {e}")))?;
+            let Some((_token, attested_revision, _digest)) = attested else {
+                return Err(SenseiError::Conflict(
+                    "no open server-attested run for this run_id — start_run must \
+                     precede completion"
+                        .to_string(),
+                ));
+            };
+            if attested_revision != verified_configuration_revision {
+                return Err(SenseiError::Conflict(format!(
+                    "stale integration run: the server attested configuration revision \
+                     {attested_revision}, completion claims {verified_configuration_revision} \
+                     — the run's attested revision is authoritative"
+                )));
+            }
+
             // The verification stamp is CONDITIONAL on the instance still
             // being ENABLED and still carrying the tested revision — a
             // run that started against an old configuration can never
