@@ -35,9 +35,7 @@ use uuid::Uuid;
 const CANONICAL_WORK_CENTER_TYPES: [&str; 5] =
     ["manual", "semi_automated", "automated", "assembly", "test"];
 
-const TOPOLOGY_RESOLVED: &str = "resolved";
 const TOPOLOGY_NEEDS_RECONCILIATION: &str = "needs_reconciliation";
-const ASSIGNMENT_SOURCE_MANUAL: &str = "manual_reconciliation";
 
 /// A work center row from the relational `work_centers` table.
 ///

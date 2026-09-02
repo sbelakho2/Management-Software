@@ -143,6 +143,13 @@ pub struct ContextItem {
     /// it from the item's own provenance + payload.
     #[serde(default = "default_evidence_id")]
     pub evidence_id: String,
+    /// The FACT ADDRESS this evidence describes (twenty-first audit item
+    /// 7): the section/source the item came from, so a claim can be
+    /// checked against whether the cited evidence actually speaks about
+    /// the claimed subject — an inventory EvidenceRef can never prove a
+    /// staffing claim.
+    #[serde(default)]
+    pub fact_address: Option<String>,
 }
 
 /// Legacy/absent `evidence_id` deserializes to an empty string; the
@@ -522,6 +529,7 @@ mod tests {
             token_cost: 12,
             epistemic_status: EpistemicStatus::RecordedFact,
             evidence_id: String::new(),
+            fact_address: None,
         };
         let json = serde_json::to_string(&item).unwrap();
         assert!(json.contains("\"provenance\""));
@@ -550,6 +558,7 @@ mod tests {
             token_cost: 12,
             epistemic_status: EpistemicStatus::RecordedFact,
             evidence_id: String::new(),
+            fact_address: None,
         };
         let a1 = mk("sensor-a", now);
         let a2 = mk("sensor-a", now);

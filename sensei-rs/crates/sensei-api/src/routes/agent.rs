@@ -128,13 +128,17 @@ pub async fn build_context_with_locale(
             permissions.insert(perm);
         }
     }
-    // Twentieth audit P1: scope resolution goes through the ONE
-    // authoritative builder — RequestContext (entitlement membership +
-    // topology chain proof). users.site_id survives only as a hint that
-    // must PASS the entitlement check; the newest employee_assignment is
-    // no longer consulted as an independent scope authority (a regional
-    // manager's newest assignment could otherwise contradict their
-    // entitlements).
+    // Twentieth audit P1 + twenty-first audit item 6 (one-pass operating
+    // scope): scope resolution goes through the ONE authoritative builder
+    // — RequestContext (entitlement membership + topology chain proof).
+    // users.site_id survives only as a hint that must PASS the
+    // entitlement check. The newest ACTIVE employee_assignment is a
+    // CANDIDATE tuple (site + value stream + work center + shift), never
+    // an independent scope authority: it is passed INTO the SAME
+    // RequestContext::build call, and only the VALIDATED rc.active_*
+    // values are copied into the AgentContext — a stale assignment whose
+    // sub-scopes drifted to another site can no longer re-enter the
+    // context after validation.
     let user_row = state.users_service.find_by_id(user.user_id).await.ok();
     let hint_site = user_row.as_ref().and_then(|u| u.site_id);
     let mut value_stream_id = None;
@@ -143,59 +147,83 @@ pub async fn build_context_with_locale(
     let mut site_id = None;
     let mut timezone = "UTC".to_string();
     if let Some(pool) = state.db_pool.as_ref() {
-        if let Ok(rc) = sensei_core::domain::request_context::RequestContext::build(
+        let mut candidate_vs = None;
+        let mut candidate_wc = None;
+        let mut candidate_shift = None;
+        if hint_site.is_some() {
+            let assignment: Option<(Option<Uuid>, Option<Uuid>, Option<Uuid>)> = sqlx::query_as(
+                "SELECT value_stream_id, work_center_id, shift_id \
+                         FROM employee_assignments \
+                         WHERE tenant_id = $1 AND user_id = $2 AND is_active = TRUE \
+                           AND site_id = $3 \
+                         ORDER BY updated_at DESC LIMIT 1",
+            )
+            .bind(user.tenant_id)
+            .bind(user.user_id)
+            .bind(hint_site)
+            .fetch_optional(pool.as_ref())
+            .await
+            .ok()
+            .flatten();
+            if let Some((vs, wc, sh)) = assignment {
+                candidate_vs = vs;
+                candidate_wc = wc;
+                candidate_shift = sh;
+            }
+        }
+        // ONE-pass validation of the whole candidate tuple: build()
+        // proves the active site is entitled AND every candidate
+        // sub-scope's resolved site equals the active site. On success
+        // the VALIDATED active_* scope becomes the agent context.
+        match sensei_core::domain::request_context::RequestContext::build(
             pool,
             user.tenant_id,
             user.user_id,
             hint_site,
-            None,
-            None,
-            None,
+            candidate_vs,
+            candidate_wc,
+            candidate_shift,
             String::new(),
         )
         .await
         {
-            // The validated entitlement is the scope: when the hint is
-            // NOT entitled, the principal simply has no active operating
-            // site (fail-closed — never a stale users.site_id).
-            if rc
-                .authorized_sites()
-                .contains(&hint_site.unwrap_or_default())
-            {
-                site_id = hint_site;
+            Ok(rc) => {
+                site_id = rc.active_site;
+                value_stream_id = rc.active_value_stream;
+                work_center_id = rc.active_work_center;
+                shift_id = rc.active_shift;
             }
-            if let Some(site) = site_id {
-                let tz: Option<String> = sqlx::query_scalar(
-                    "SELECT timezone FROM sites WHERE id = $1 AND tenant_id = $2",
+            // Invalid combination (a stale assignment, or the hint site
+            // is not entitled): fail closed — the site alone when the
+            // site itself passes the entitlement check, otherwise NO
+            // operating scope. The invalid sub-scopes are never copied.
+            Err(_) => {
+                if let Ok(rc) = sensei_core::domain::request_context::RequestContext::build(
+                    pool,
+                    user.tenant_id,
+                    user.user_id,
+                    hint_site,
+                    None,
+                    None,
+                    None,
+                    String::new(),
                 )
-                .bind(site)
-                .bind(user.tenant_id)
-                .fetch_one(pool.as_ref())
                 .await
-                .ok();
-                if let Some(tz) = tz {
-                    timezone = tz;
+                {
+                    site_id = rc.active_site;
                 }
-                let assignment: Option<(Option<Uuid>, Option<Uuid>, Option<Uuid>)> =
-                    sqlx::query_as(
-                        "SELECT value_stream_id, work_center_id, shift_id \
-                             FROM employee_assignments \
-                             WHERE tenant_id = $1 AND user_id = $2 AND is_active = TRUE \
-                               AND site_id = $3 \
-                             ORDER BY updated_at DESC LIMIT 1",
-                    )
-                    .bind(user.tenant_id)
-                    .bind(user.user_id)
+            }
+        }
+        if let Some(site) = site_id {
+            let tz: Option<String> =
+                sqlx::query_scalar("SELECT timezone FROM sites WHERE id = $1 AND tenant_id = $2")
                     .bind(site)
-                    .fetch_optional(pool.as_ref())
+                    .bind(user.tenant_id)
+                    .fetch_one(pool.as_ref())
                     .await
-                    .ok()
-                    .flatten();
-                if let Some((vs, wc, sh)) = assignment {
-                    value_stream_id = vs;
-                    work_center_id = wc;
-                    shift_id = sh;
-                }
+                    .ok();
+            if let Some(tz) = tz {
+                timezone = tz;
             }
         }
     }

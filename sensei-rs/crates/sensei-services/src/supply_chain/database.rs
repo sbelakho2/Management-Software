@@ -169,6 +169,7 @@ struct SalesOrderRow {
     shipping_address: String,
     created_by: Uuid,
     created_at: chrono::DateTime<Utc>,
+    fulfilling_site_id: Option<Uuid>,
 }
 
 #[derive(Debug, Clone, sqlx::FromRow)]
@@ -185,6 +186,7 @@ struct PurchaseOrderRow {
     expected_delivery: Option<chrono::DateTime<Utc>>,
     created_by: Uuid,
     created_at: chrono::DateTime<Utc>,
+    receiving_site_id: Option<Uuid>,
 }
 
 #[derive(Debug, Clone, sqlx::FromRow)]
@@ -274,6 +276,7 @@ fn so_row_to_domain(r: SalesOrderRow) -> SalesOrder {
         shipping_address: r.shipping_address,
         created_by: r.created_by,
         created_at: r.created_at,
+        fulfilling_site_id: r.fulfilling_site_id,
     }
 }
 
@@ -292,6 +295,7 @@ fn po_row_to_domain(r: PurchaseOrderRow) -> PurchaseOrder {
         expected_delivery: r.expected_delivery,
         created_by: r.created_by,
         created_at: r.created_at,
+        receiving_site_id: r.receiving_site_id,
     }
 }
 
@@ -513,9 +517,9 @@ impl SupplyChainService for DatabaseSupplyChainService {
         let li_json = serde_json::to_value(&so_items).unwrap_or(serde_json::Value::Array(vec![]));
 
         let row = sqlx::query_as::<_, SalesOrderRow>(
-            r#"INSERT INTO sales_orders (id, tenant_id, order_number, customer_id, customer_name, status, line_items, total_amount, currency, delivery_date, shipping_address, created_by, created_at)
-               VALUES ($1,$2,$3,$4,$5,'pending',$6,$7,$8,NULL,'',$9,$10)
-               RETURNING id, tenant_id, order_number, customer_id, customer_name, status, line_items, total_amount, currency, delivery_date, shipping_address, created_by, created_at"#,
+            r#"INSERT INTO sales_orders (id, tenant_id, so_number, order_number, customer_id, customer_name, status, line_items, total_amount, currency, delivery_date, shipping_address, created_by, created_at, fulfilling_site_id)
+               VALUES ($1,$2,$3,$3,$4,$5,'draft',$6,$7,$8,NULL,'',$9,$10,NULL)
+               RETURNING id, tenant_id, order_number, customer_id, customer_name, status, line_items, total_amount, currency, delivery_date, shipping_address, created_by, created_at, fulfilling_site_id"#,
         ).bind(id).bind(tenant_id).bind(&order_number).bind(quote.customer_id).bind(&quote.customer_name)
             .bind(&li_json).bind(quote.total_amount).bind(&quote.currency).bind(actor_id).bind(now)
             .fetch_one(&self.pool).await.map_err(|e| SenseiError::Database(format!("Failed to convert quote to order: {e}")))?;
@@ -545,18 +549,19 @@ impl SupplyChainService for DatabaseSupplyChainService {
             .sum();
 
         let row = sqlx::query_as::<_, SalesOrderRow>(
-            r#"INSERT INTO sales_orders (id, tenant_id, order_number, customer_id, customer_name, status, line_items, total_amount, currency, delivery_date, shipping_address, created_by, created_at)
-               VALUES ($1,$2,$3,$4,$5,'pending',$6,$7,$8,$9,$10,$11,$12)
-               RETURNING id, tenant_id, order_number, customer_id, customer_name, status, line_items, total_amount, currency, delivery_date, shipping_address, created_by, created_at"#,
+            r#"INSERT INTO sales_orders (id, tenant_id, so_number, order_number, customer_id, customer_name, status, line_items, total_amount, currency, delivery_date, shipping_address, created_by, created_at, fulfilling_site_id)
+               VALUES ($1,$2,$3,$3,$4,$5,'draft',$6,$7,$8,$9,$10,$11,$12,$13)
+               RETURNING id, tenant_id, order_number, customer_id, customer_name, status, line_items, total_amount, currency, delivery_date, shipping_address, created_by, created_at, fulfilling_site_id"#,
         ).bind(id).bind(tenant_id).bind(&order_number).bind(order.customer_id).bind(&order.customer_name)
             .bind(&li_json).bind(total).bind(&order.currency).bind(order.delivery_date).bind(&order.shipping_address).bind(order.created_by).bind(now)
+            .bind(order.fulfilling_site_id)
             .fetch_one(&self.pool).await.map_err(|e| SenseiError::Database(format!("Failed to create sales order: {e}")))?;
         Ok(so_row_to_domain(row))
     }
 
     async fn get_sales_order(&self, tenant_id: Uuid, id: Uuid) -> Result<SalesOrder> {
         let row = sqlx::query_as::<_, SalesOrderRow>(
-            "SELECT id, tenant_id, order_number, customer_id, customer_name, status, line_items, total_amount, currency, delivery_date, shipping_address, created_by, created_at FROM sales_orders WHERE id=$1 AND tenant_id=$2",
+            "SELECT id, tenant_id, order_number, customer_id, customer_name, status, line_items, total_amount, currency, delivery_date, shipping_address, created_by, created_at, fulfilling_site_id FROM sales_orders WHERE id=$1 AND tenant_id=$2",
         ).bind(id).bind(tenant_id).fetch_optional(&self.pool).await
             .map_err(|e| SenseiError::Database(format!("Failed to get sales order: {e}")))?
             .ok_or_else(|| SenseiError::NotFound(format!("Sales order {id} not found")))?;
@@ -574,7 +579,7 @@ impl SupplyChainService for DatabaseSupplyChainService {
         let per_page = per_page.unwrap_or(20).clamp(1, 100);
         let offset = (page - 1) * per_page;
         let items: Vec<SalesOrderRow> = sqlx::query_as(
-            r#"SELECT id, tenant_id, order_number, customer_id, customer_name, status, line_items, total_amount, currency, delivery_date, shipping_address, created_by, created_at FROM sales_orders
+            r#"SELECT id, tenant_id, order_number, customer_id, customer_name, status, line_items, total_amount, currency, delivery_date, shipping_address, created_by, created_at, fulfilling_site_id FROM sales_orders
                WHERE tenant_id=$1 AND ($2::text IS NULL OR status=$2) ORDER BY created_at DESC LIMIT $3 OFFSET $4"#,
         ).bind(tenant_id).bind(status).bind(per_page as i64).bind(offset as i64).fetch_all(&self.pool).await
             .map_err(|e| SenseiError::Database(format!("Failed to list sales orders: {e}")))?;
@@ -605,6 +610,28 @@ impl SupplyChainService for DatabaseSupplyChainService {
         // promise in force at that moment. A later confirmation, edit or
         // status transition can never rewrite them, so the OTD metric
         // cannot be improved by editing dates after the fact.
+        // Twenty-first audit item 9: an order that will feed plant
+        // delivery metrics must carry its fulfilling site from the FIRST
+        // confirmation — without the site anchor the order cannot
+        // contribute to any site's OTD and confirmation is refused.
+        if status == "confirmed" || status == "shipped" || status == "delivered" {
+            let site_anchor: Option<Uuid> = sqlx::query_scalar(
+                "SELECT fulfilling_site_id FROM sales_orders WHERE id = $1 AND tenant_id = $2",
+            )
+            .bind(id)
+            .bind(tenant_id)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to read order site anchor: {e}")))?
+            .flatten();
+            if site_anchor.is_none() {
+                return Err(SenseiError::Validation(format!(
+                    "order {id} has no fulfilling site — plant delivery orders must name \
+                     the fulfilling site before '{status}'; site-scoped OTD cannot \
+                     include sited orders otherwise"
+                )));
+            }
+        }
         let stamp = "CASE                        WHEN $1 = 'confirmed' AND confirmed_at IS NULL THEN NOW()                        WHEN $1 IN ('shipped') AND shipped_at IS NULL THEN NOW()                        WHEN $1 IN ('delivered') AND delivered_at IS NULL THEN NOW()                      END";
         let row = sqlx::query_as::<_, SalesOrderRow>(
             &format!(
@@ -618,7 +645,7 @@ impl SupplyChainService for DatabaseSupplyChainService {
                        actual_ship_date      = COALESCE(actual_ship_date, CASE WHEN $1 = 'shipped' THEN NOW() END),
                        actual_delivery_date  = COALESCE(actual_delivery_date, CASE WHEN $1 = 'delivered' THEN NOW() END)
                    WHERE id=$2 AND tenant_id=$3
-                   RETURNING id, tenant_id, order_number, customer_id, customer_name, status, line_items, total_amount, currency, delivery_date, shipping_address, created_by, created_at"#
+                   RETURNING id, tenant_id, order_number, customer_id, customer_name, status, line_items, total_amount, currency, delivery_date, shipping_address, created_by, created_at, fulfilling_site_id"#
             ),
         ).bind(status).bind(id).bind(tenant_id).fetch_optional(&self.pool).await
             .map_err(|e| SenseiError::Database(format!("Failed to update sales order status: {e}")))?
@@ -645,18 +672,19 @@ impl SupplyChainService for DatabaseSupplyChainService {
             .sum();
 
         let row = sqlx::query_as::<_, PurchaseOrderRow>(
-            r#"INSERT INTO purchase_orders (id, tenant_id, po_number, supplier_id, supplier_name, status, line_items, total_amount, currency, expected_delivery, created_by, created_at)
-               VALUES ($1,$2,$3,$4,$5,'draft',$6,$7,$8,$9,$10,$11)
-               RETURNING id, tenant_id, po_number, supplier_id, supplier_name, status, line_items, total_amount, currency, expected_delivery, created_by, created_at"#,
+            r#"INSERT INTO purchase_orders (id, tenant_id, po_number, supplier_id, supplier_name, status, line_items, total_amount, currency, expected_delivery, created_by, created_at, receiving_site_id)
+               VALUES ($1,$2,$3,$4,$5,'draft',$6,$7,$8,$9,$10,$11,$12)
+               RETURNING id, tenant_id, po_number, supplier_id, supplier_name, status, line_items, total_amount, currency, expected_delivery, created_by, created_at, receiving_site_id"#,
         ).bind(id).bind(tenant_id).bind(&po_number).bind(po.supplier_id).bind(&po.supplier_name)
             .bind(&li_json).bind(total).bind(&po.currency).bind(po.expected_delivery).bind(po.created_by).bind(now)
+            .bind(po.receiving_site_id)
             .fetch_one(&self.pool).await.map_err(|e| SenseiError::Database(format!("Failed to create PO: {e}")))?;
         Ok(po_row_to_domain(row))
     }
 
     async fn get_purchase_order(&self, tenant_id: Uuid, id: Uuid) -> Result<PurchaseOrder> {
         let row = sqlx::query_as::<_, PurchaseOrderRow>(
-            "SELECT id, tenant_id, po_number, supplier_id, supplier_name, status, line_items, total_amount, currency, expected_delivery, created_by, created_at FROM purchase_orders WHERE id=$1 AND tenant_id=$2",
+            "SELECT id, tenant_id, po_number, supplier_id, supplier_name, status, line_items, total_amount, currency, expected_delivery, created_by, created_at, receiving_site_id FROM purchase_orders WHERE id=$1 AND tenant_id=$2",
         ).bind(id).bind(tenant_id).fetch_optional(&self.pool).await
             .map_err(|e| SenseiError::Database(format!("Failed to get PO: {e}")))?
             .ok_or_else(|| SenseiError::NotFound(format!("Purchase order {id} not found")))?;
@@ -674,7 +702,7 @@ impl SupplyChainService for DatabaseSupplyChainService {
         let per_page = per_page.unwrap_or(20).clamp(1, 100);
         let offset = (page - 1) * per_page;
         let items: Vec<PurchaseOrderRow> = sqlx::query_as(
-            r#"SELECT id, tenant_id, po_number, supplier_id, supplier_name, status, line_items, total_amount, currency, expected_delivery, created_by, created_at FROM purchase_orders
+            r#"SELECT id, tenant_id, po_number, supplier_id, supplier_name, status, line_items, total_amount, currency, expected_delivery, created_by, created_at, receiving_site_id FROM purchase_orders
                WHERE tenant_id=$1 AND ($2::text IS NULL OR status=$2) ORDER BY created_at DESC LIMIT $3 OFFSET $4"#,
         ).bind(tenant_id).bind(status).bind(per_page as i64).bind(offset as i64).fetch_all(&self.pool).await
             .map_err(|e| SenseiError::Database(format!("Failed to list POs: {e}")))?;
@@ -1212,7 +1240,7 @@ impl SupplyChainService for DatabaseSupplyChainService {
             .sum();
         let row = sqlx::query_as::<_, SalesOrderRow>(
             r#"UPDATE sales_orders SET customer_id=$1, customer_name=$2, line_items=$3, total_amount=$4, currency=$5, delivery_date=$6, shipping_address=$7 WHERE id=$8 AND tenant_id=$9
-               RETURNING id, tenant_id, order_number, customer_id, customer_name, status, line_items, total_amount, currency, delivery_date, shipping_address, created_by, created_at"#,
+               RETURNING id, tenant_id, order_number, customer_id, customer_name, status, line_items, total_amount, currency, delivery_date, shipping_address, created_by, created_at, fulfilling_site_id"#,
         ).bind(order.customer_id).bind(&order.customer_name).bind(&li_json).bind(total).bind(&order.currency).bind(order.delivery_date).bind(&order.shipping_address).bind(id).bind(tenant_id)
             .fetch_optional(&self.pool).await.map_err(|e| SenseiError::Database(format!("Failed to update sales order: {e}")))?
             .ok_or_else(|| SenseiError::NotFound(format!("Sales order {id} not found")))?;
@@ -1249,7 +1277,7 @@ impl SupplyChainService for DatabaseSupplyChainService {
             .sum();
         let row = sqlx::query_as::<_, PurchaseOrderRow>(
             r#"UPDATE purchase_orders SET supplier_id=$1, supplier_name=$2, line_items=$3, total_amount=$4, currency=$5, expected_delivery=$6 WHERE id=$7 AND tenant_id=$8
-               RETURNING id, tenant_id, po_number, supplier_id, supplier_name, status, line_items, total_amount, currency, expected_delivery, created_by, created_at"#,
+               RETURNING id, tenant_id, po_number, supplier_id, supplier_name, status, line_items, total_amount, currency, expected_delivery, created_by, created_at, receiving_site_id"#,
         ).bind(po.supplier_id).bind(&po.supplier_name).bind(&li_json).bind(total).bind(&po.currency).bind(po.expected_delivery).bind(id).bind(tenant_id)
             .fetch_optional(&self.pool).await.map_err(|e| SenseiError::Database(format!("Failed to update PO: {e}")))?
             .ok_or_else(|| SenseiError::NotFound(format!("Purchase order {id} not found")))?;

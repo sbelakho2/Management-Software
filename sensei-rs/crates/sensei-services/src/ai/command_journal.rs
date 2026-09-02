@@ -10,14 +10,18 @@
 //! (AlreadyExists). The old SELECT-then-INSERT sequence let two
 //! concurrent identical requests both dispatch; the claim never does.
 //!
-//! Leases + fencing (twentieth audit P1): a claim stores claim_owner, a
-//! random claim_token and lease_expires_at = NOW()+lease. `recover`
-//! atomically reclaims rows whose lease expired (or whose status is
-//! 'unknown_outcome'/'reconcile_required') and hands the new owner a
-//! fresh token; `complete` and `heartbeat` only act while the caller's
-//! token matches the row — a stale owner whose claim was recovered is
-//! fenced out and can never complete or renew a command it no longer
-//! owns.
+//! Leases + fencing (twentieth audit P1; twenty-first audit item 8): a
+//! claim stores claim_owner, a random claim_token and lease_expires_at =
+//! NOW()+lease. `recover` atomically reclaims ONLY pre-execution-crash
+//! rows — 'reserved'/'executing' whose lease expired without a heartbeat
+//! (or was never set) — and hands the new owner a fresh token.
+//! Ambiguous-outcome rows ('unknown_outcome'/'reconcile_required', the
+//! traces of a timeout that may have landed AFTER the mutation) are
+//! NEVER reclaimable: automatic re-dispatch is blocked and they await
+//! human reconciliation. `complete` and `heartbeat` only act while the
+//! caller's token matches the row — a stale owner whose claim was
+//! recovered is fenced out and can never complete or renew a command it
+//! no longer owns.
 
 use std::sync::Arc;
 
@@ -207,13 +211,18 @@ impl ExecutionJournal for PgExecutionJournal {
         Box::pin(async move {
             with_tenant_tx(&pool, tenant, move |tx| {
                 Box::pin(async move {
-                    // Atomic reclaim — one UPDATE decides: the row is only
-                    // touched when it is reclaimable (expired lease, or
-                    // NULL lease = a legacy pre-149 crash, or an
-                    // ambiguous-outcome status that must be reconciled
-                    // NOW). Terminal rows and rows under a LIVE lease are
-                    // never matched. The winner gets a fresh token, a
-                    // fresh lease and an attempt bump.
+                    // Atomic reclaim — one UPDATE decides: the row is
+                    // only touched when it is a PRE-EXECUTION crash —
+                    // status 'reserved'/'executing' whose lease expired
+                    // (or was never set — a legacy pre-149 crash) without
+                    // a heartbeat. Terminal rows, rows under a LIVE lease
+                    // and ambiguous-outcome rows
+                    // ('unknown_outcome'/'reconcile_required' — the
+                    // mutation MAY have happened) are never matched
+                    // (twenty-first audit item 8: automatic re-dispatch
+                    // of an ambiguous outcome is blocked). The winner
+                    // gets a fresh token, a fresh lease and an attempt
+                    // bump.
                     let claimed: Option<String> = sqlx::query_scalar(
                         "UPDATE command_journal \
                          SET status = 'executing', \
@@ -225,11 +234,8 @@ impl ExecutionJournal for PgExecutionJournal {
                              attempt = attempt + 1, \
                              result = '{}'::jsonb \
                          WHERE tenant_id = $1 AND execution_key = $2 \
-                           AND status IN ('reserved', 'executing', \
-                                          'unknown_outcome', 'reconcile_required') \
-                           AND (status IN ('unknown_outcome', 'reconcile_required') \
-                                OR lease_expires_at IS NULL \
-                                OR lease_expires_at < NOW()) \
+                           AND status IN ('reserved', 'executing') \
+                           AND (lease_expires_at IS NULL OR lease_expires_at < NOW()) \
                          RETURNING claim_token",
                     )
                     .bind(tenant)

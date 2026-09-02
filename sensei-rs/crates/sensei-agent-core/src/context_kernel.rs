@@ -236,6 +236,7 @@ mod tests {
             token_cost,
             epistemic_status: EpistemicStatus::RecordedFact,
             evidence_id: String::new(),
+            fact_address: None,
         }
     }
 

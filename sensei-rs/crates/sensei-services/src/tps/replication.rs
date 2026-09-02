@@ -525,14 +525,21 @@ impl FederationEdge {
 }
 
 /// Load EVERY federation edge the source tenant holds (twentieth audit
-/// P0): `federation_memberships` JOIN the peer's `site_manifests` (peer
-/// country) + the peer's `country_policies` (the TYPED data_residency of
-/// the peer jurisdiction) — NO `LIMIT 1`: one edge per destination the
-/// projection could land on, so the route can make one target-specific
-/// decision per edge instead of checking an arbitrary country. FAIL-CLOSED
-/// per row: an edge whose governance cannot be read EXACTLY (no peer
-/// country policy, an unknown jurisdiction code, an unparseable residency
-/// label or an unparseable allow-list entry) grants nothing and yields NO
+/// P0, twenty-first audit item 4): the membership-to-peer-governance
+/// join is a SINGLE call into the SECURITY DEFINER function
+/// `federation_governance_edges` (migration 153) — the ONLY
+/// cross-tenant federation-governance boundary. The function executes
+/// with the migration owner's rights, so the FORCE-RLS tenant-local
+/// policies of the peer's `site_manifests`/`country_policies` cannot
+/// hide the peer metadata: under a production non-BYPASSRLS role with
+/// `app.tenant_id` set to the SOURCE tenant, the peer rows are
+/// invisible to any raw pooled read, and the loader no longer performs
+/// one. NO `LIMIT 1`: one edge per destination the projection could
+/// land on, so the route can make one target-specific decision per edge
+/// instead of checking an arbitrary country. FAIL-CLOSED per row: an
+/// edge whose governance cannot be read EXACTLY (no peer country
+/// policy, an unknown jurisdiction code, an unparseable residency label
+/// or an unparseable allow-list entry) grants nothing and yields NO
 /// edge — an ambiguous or corrupt membership is never guessed into an
 /// arbitrary decision.
 pub async fn load_federation_edges(
@@ -542,39 +549,28 @@ pub async fn load_federation_edges(
 ) -> Result<Vec<FederationEdge>> {
     type EdgeRow = (
         Uuid,              // peer_tenant_id
-        Uuid,              // peer site_id (the destination site)
-        Option<String>,    // peer country policy data_residency (LEFT JOIN)
+        String,            // peer_country (the destination's manifest country)
+        Option<String>,    // peer data_residency (NULL when unset -> row skipped)
+        i64,               // peer country policy revision (0 when none)
         serde_json::Value, // allowed_data_classes
         String,            // residency_policy label
         serde_json::Value, // allowed_countries
-        i64,               // peer country policy revision (0 when none)
     );
-    let rows: Vec<EdgeRow> = sqlx::query_as(
-        "SELECT fm.peer_tenant_id, sm.site_id, cp.data_residency, \
-                fm.allowed_data_classes, fm.residency_policy, fm.allowed_countries, \
-                COALESCE((SELECT MAX(revision) FROM country_policy_versions v \
-                           WHERE v.tenant_id = fm.peer_tenant_id AND v.country = sm.country), 0) \
-         FROM federation_memberships fm \
-         JOIN site_manifests sm ON sm.tenant_id = fm.peer_tenant_id \
-         LEFT JOIN country_policies cp \
-                ON cp.tenant_id = fm.peer_tenant_id AND cp.country = sm.country \
-         WHERE fm.tenant_id = $1 \
-         ORDER BY fm.peer_tenant_id ASC, sm.site_id ASC",
-    )
-    .bind(tenant_id)
-    .fetch_all(pool)
-    .await
-    .map_err(|e| SenseiError::Database(format!("replication: federation edges: {e}")))?;
+    let rows: Vec<EdgeRow> = sqlx::query_as("SELECT * FROM federation_governance_edges($1)")
+        .bind(tenant_id)
+        .fetch_all(pool)
+        .await
+        .map_err(|e| SenseiError::Database(format!("replication: federation edges: {e}")))?;
 
     let mut edges = Vec::with_capacity(rows.len());
     for (
         peer_tenant,
-        peer_site,
+        _peer_country,
         data_residency,
+        revision,
         allowed_classes_json,
         residency_label,
         allowed_countries_json,
-        revision,
     ) in rows
     {
         // No peer country policy record (or an unknown residency code):
@@ -639,7 +635,11 @@ pub async fn load_federation_edges(
             source_tenant: tenant_id,
             source_site: source_site_id,
             target_tenant: peer_tenant,
-            target_site: Some(peer_site),
+            // The governance function exposes no site-level identity (an
+            // edge is a membership-to-peer-country contract, derived
+            // server-side); the destination site is resolved by the
+            // peer's own site at apply time.
+            target_site: None,
             target_jurisdiction,
             allowed_data_classes,
             residency_policy,

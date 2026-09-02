@@ -456,6 +456,107 @@ fn capability_requirements(capability: &str) -> Vec<&'static str> {
     }
 }
 
+/// Positive, PER-INSTANCE integration evidence for one site (twenty-first
+/// audit item 5): integration_checkpoints are keyed (tenant,
+/// source_system, source_table) — a checkpoint has NO site or instance
+/// anchor, so one healthy SAP checkpoint could certify BOTH Tangier's and
+/// Bizerte's SAP. Readiness is therefore proven per integration INSTANCE:
+/// the manifest declares the kinds the plant needs; `integration_instances`
+/// materializes them PER SITE; and every instance row of THIS site must
+/// show its OWN checkpoint (instance_id) from the last 24h. A declared
+/// kind with no instance row for this site is a provisioning failure —
+/// the manifest can never be certified through a kind that was never
+/// provisioned here.
+///
+/// Ok = every instance of this site is healthy. Err = a Validation error
+/// naming the first failing instance (DB failures propagate as Database
+/// errors).
+async fn site_integration_instances_proven(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    tenant_id: Uuid,
+    site_id: Uuid,
+) -> Result<()> {
+    // The manifest's declared kinds (what the plant needs).
+    let declared: Vec<serde_json::Value> = serde_json::from_value(
+        sqlx::query_scalar::<_, serde_json::Value>(
+            "SELECT integrations FROM site_manifests \
+             WHERE tenant_id = $1 AND site_id = $2",
+        )
+        .bind(tenant_id)
+        .bind(site_id)
+        .fetch_one(&mut **tx)
+        .await
+        .map_err(|e| SenseiError::Database(format!("Integrations read failed: {e}")))?,
+    )
+    .unwrap_or_default();
+    let kinds: Vec<String> = declared
+        .iter()
+        .filter_map(|v| {
+            v.get("kind")
+                .and_then(|k| k.as_str())
+                .map(|k| k.to_string())
+        })
+        .collect();
+    if kinds.is_empty() {
+        return Err(SenseiError::Validation(
+            "the site declares no integrations — a site with no declared \
+             integration kinds cannot be certified (positive per-instance \
+             evidence required)"
+                .to_string(),
+        ));
+    }
+
+    // The materialized instances of THIS site (tenant + site scope).
+    type InstanceRow = (Uuid, String);
+    let instances: Vec<InstanceRow> = sqlx::query_as(
+        "SELECT id, integration_type FROM integration_instances \
+         WHERE tenant_id = $1 AND site_id = $2",
+    )
+    .bind(tenant_id)
+    .bind(site_id)
+    .fetch_all(&mut **tx)
+    .await
+    .map_err(|e| SenseiError::Database(format!("Integration instance read failed: {e}")))?;
+
+    // Reconcile declared kinds against provisioned instances: a declared
+    // kind this site has never provisioned cannot be proven.
+    for kind in &kinds {
+        if !instances
+            .iter()
+            .any(|(_, integration_type)| integration_type == kind)
+        {
+            return Err(SenseiError::Validation(format!(
+                "integration instance '{kind}' is not provisioned for this site"
+            )));
+        }
+    }
+
+    // Per-instance proof: each instance's OWN checkpoint within 24h.
+    for (instance_id, integration_type) in &instances {
+        let proven: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM integration_checkpoints \
+             WHERE tenant_id = $1 AND instance_id = $2 \
+               AND last_run_at > NOW() - INTERVAL '24 hours'",
+        )
+        .bind(tenant_id)
+        .bind(instance_id)
+        .fetch_one(&mut **tx)
+        .await
+        .map_err(|e| {
+            SenseiError::Database(format!(
+                "Integration checkpoint read failed for {integration_type}: {e}"
+            ))
+        })?;
+        if proven == 0 {
+            return Err(SenseiError::Validation(format!(
+                "integration instance '{integration_type}' has no checkpoint \
+                 in the last 24h — this site's own instance evidence is required"
+            )));
+        }
+    }
+    Ok(())
+}
+
 /// Run the operational-qualification checks for one site inside a single
 /// tenant-scoped transaction and produce the validation report. When every
 /// check passes the manifest advances draft → validated (only from
@@ -586,72 +687,27 @@ pub async fn validate_site(
                 format!("{skills} qualified skill(s) on this site's principals"),
             ));
 
-            // 3d. Integrations healthy — the manifest declares
-            // integrations and none is marked failed in this site's log.
-            let integrations_ok: bool = {
-                let declared: Vec<serde_json::Value> = serde_json::from_value(
-                    sqlx::query_scalar::<_, serde_json::Value>(
-                        "SELECT integrations FROM site_manifests \
-                         WHERE tenant_id = $1 AND site_id = $2",
-                    )
-                    .bind(tenant_id)
-                    .bind(site_id)
-                    .fetch_one(&mut **tx)
-                    .await
-                    .map_err(|e| SenseiError::Database(format!("Integrations read failed: {e}")))?,
-                )
-                .unwrap_or_default();
-                // Twentieth audit P1: readiness is PER-SITE and
-                // PER-DECLARED-INTEGRATION. Every integration kind THIS
-                // site declares must show its own recent checkpoint —
-                // one SAP checkpoint can never certify another site's
-                // MES integration, and an unrelated dead letter can
-                // never block this site. DB failures propagate: UNKNOWN
-                // -> NOT READY.
-                let declared_kinds: Vec<String> = declared
-                    .iter()
-                    .filter_map(|v| {
-                        v.get("kind")
-                            .and_then(|k| k.as_str())
-                            .map(|k| k.to_string())
-                    })
-                    .collect();
-                let integration_ok = if declared_kinds.is_empty() {
-                    false
-                } else {
-                    let mut all_proven = true;
-                    for kind in &declared_kinds {
-                        let proven: i64 = sqlx::query_scalar(
-                            "SELECT COUNT(*) FROM integration_checkpoints \
-                             WHERE tenant_id = $1 \
-                               AND source_system = $2 \
-                               AND last_run_at > NOW() - INTERVAL '24 hours'",
-                        )
-                        .bind(tenant_id)
-                        .bind(kind)
-                        .fetch_one(&mut **tx)
-                        .await
-                        .map_err(|e| {
-                            SenseiError::Database(format!(
-                                "Integration checkpoint read failed for {kind}: {e}"
-                            ))
-                        })?;
-                        if proven == 0 {
-                            all_proven = false;
-                        }
-                    }
-                    all_proven
+            // 3d. Integrations healthy — readiness is PER INSTANCE
+            // (twenty-first audit item 5): every integration instance
+            // provisioned for THIS site must show its own checkpoint
+            // (instance_id) from the last 24h, and every manifest-declared
+            // kind must be provisioned as an instance of this site. A
+            // tenant-global checkpoint can never certify another site's
+            // instance. DB failures propagate: UNKNOWN -> NOT READY.
+            let (integrations_ok, integration_detail) =
+                match site_integration_instances_proven(tx, tenant_id, site_id).await {
+                    Ok(()) => (
+                        true,
+                        "every integration instance of this site is proven by its own checkpoint"
+                            .to_string(),
+                    ),
+                    Err(SenseiError::Validation(msg)) => (false, msg),
+                    Err(e) => return Err(e),
                 };
-                integration_ok
-            };
             checks.push((
                 "integrations_healthy".into(),
                 integrations_ok,
-                if integrations_ok {
-                    "integrations declared and healthy".to_string()
-                } else {
-                    "no declared integrations or a failed integration".to_string()
-                },
+                integration_detail,
             ));
 
             // 4. Capabilities mapped — the manifest declares at least one.
@@ -1203,62 +1259,14 @@ pub async fn advance_site_lifecycle(
                                 .to_string(),
                         ));
                     }
-                    // Twentieth audit P1: activation requires POSITIVE,
-                    // PER-SITE, PER-DECLARED-INTEGRATION evidence — every
-                    // kind this site's manifest declares must show its
-                    // own recent checkpoint. A tenant-global checkpoint
-                    // count can no longer certify a site whose own
-                    // declared integrations never ran.
-                    let declared: Vec<serde_json::Value> = serde_json::from_value(
-                        sqlx::query_scalar::<_, serde_json::Value>(
-                            "SELECT integrations FROM site_manifests \
-                             WHERE tenant_id = $1 AND site_id = $2",
-                        )
-                        .bind(tenant_id)
-                        .bind(site_id)
-                        .fetch_one(&mut **tx)
-                        .await
-                        .map_err(|e| {
-                            SenseiError::Database(format!("Integration read failed: {e}"))
-                        })?,
-                    )
-                    .unwrap_or_default();
-                    let kinds: Vec<String> = declared
-                        .iter()
-                        .filter_map(|v| {
-                            v.get("kind")
-                                .and_then(|k| k.as_str())
-                                .map(|k| k.to_string())
-                        })
-                        .collect();
-                    if kinds.is_empty() {
-                        return Err(SenseiError::Validation(
-                            "the site declares no integrations — a site without declared \
-                             integrations cannot activate (positive evidence required)"
-                                .to_string(),
-                        ));
-                    }
-                    for kind in &kinds {
-                        let proven: i64 = sqlx::query_scalar(
-                            "SELECT COUNT(*) FROM integration_checkpoints \
-                             WHERE tenant_id = $1 AND source_system = $2 \
-                               AND last_run_at > NOW() - INTERVAL '24 hours'",
-                        )
-                        .bind(tenant_id)
-                        .bind(kind)
-                        .fetch_one(&mut **tx)
-                        .await
-                        .map_err(|e| {
-                            SenseiError::Database(format!("Integration gate read failed: {e}"))
-                        })?;
-                        if proven == 0 {
-                            return Err(SenseiError::Validation(format!(
-                                "declared integration '{kind}' has no checkpoint in the \
-                                 last 24h — this site's own integration evidence is \
-                                 required for activation"
-                            )));
-                        }
-                    }
+                    // Twenty-first audit item 5: activation requires
+                    // POSITIVE, PER-INSTANCE evidence — every integration
+                    // instance provisioned for THIS site must show its own
+                    // checkpoint (instance_id) in the last 24h, and every
+                    // manifest-declared kind must be provisioned as an
+                    // instance of this site. A tenant-global checkpoint can
+                    // never certify a site whose own instances never ran.
+                    site_integration_instances_proven(tx, tenant_id, site_id).await?;
                     advance_lifecycle(
                         tx,
                         tenant_id,

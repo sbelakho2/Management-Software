@@ -246,6 +246,7 @@ pub(crate) async fn prepare_inference(
             let observed_at = sensei_agent_core::context::parse_observed_at(content);
             let mut item = sensei_agent_core::context::ContextItem {
                 payload: serde_json::json!({ "section": section, "text": content }),
+                fact_address: Some(format!("section:{section}")),
                 provenance: sensei_agent_core::context::Provenance {
                     source: format!("section:{section}"),
                     source_revision: None,
@@ -296,6 +297,7 @@ pub(crate) async fn prepare_inference(
                 .observed_at
                 .map(|t| t.to_rfc3339())
                 .unwrap_or_else(|| "unknown".to_string());
+            let fact_addr = item.fact_address.as_deref().unwrap_or("unknown");
             let authority = match item.provenance.authority {
                 sensei_agent_core::context::AuthorityRank::VerifiedObservation => {
                     "verified_observation"
@@ -309,8 +311,8 @@ pub(crate) async fn prepare_inference(
                 text
             } else {
                 format!(
-                    "[EVIDENCE {}] authority={} observed_at={}\n{text}",
-                    item.evidence_id, authority, observed
+                    "[EVIDENCE {}] fact_address={} authority={} observed_at={}\n{text}",
+                    item.evidence_id, fact_addr, authority, observed
                 )
             }
         })
@@ -524,6 +526,13 @@ fn verify_chat_response(
         .map(|item| item.evidence_id.clone())
         .filter(|id| !id.is_empty())
         .collect();
+    let evidence_by_id: std::collections::HashMap<
+        String,
+        &sensei_agent_core::context::ContextItem,
+    > = kernel_items
+        .iter()
+        .map(|item| (item.evidence_id.clone(), item))
+        .collect();
 
     // Factual-sounding statements: sentences that mention live tenant data
     // (quantities, counts, statuses, ids) in an assertive way. These are
@@ -587,6 +596,74 @@ fn verify_chat_response(
         "morocco",
         "tunisia",
     ];
+    // Twenty-first audit item 7: subject-family classification. A claim
+    // about staffing/quality/inventory etc. can only be MEASURED by
+    // evidence that speaks about the same family.
+    fn subject_family(text: &str) -> Option<&'static str> {
+        let t = text.to_lowercase();
+        if [
+            "staffing",
+            "operator",
+            "understaffed",
+            "overstaffed",
+            "qualified",
+            "unqualified",
+            "training",
+            "trainer",
+            "absentee",
+            "headcount",
+        ]
+        .iter()
+        .any(|k| t.contains(k))
+        {
+            Some("staffing")
+        } else if [
+            "ncr", "defect", "quality", "scrap", "yield", "capa", "rework",
+        ]
+        .iter()
+        .any(|k| t.contains(k))
+        {
+            // Yield/scrap/rework are QUALITY facts — checked before the
+            // generic 'units' production trigger so a yield statement is
+            // never misclassified as inventory.
+            Some("quality")
+        } else if ["inventory", "stock", "on hand", "available inventory"]
+            .iter()
+            .any(|k| t.contains(k))
+        {
+            Some("inventory")
+        } else if ["andon", "escalat", "contain", "safety"]
+            .iter()
+            .any(|k| t.contains(k))
+        {
+            Some("andon")
+        } else if ["delivery", "shipment", "otd", "delivered"]
+            .iter()
+            .any(|k| t.contains(k))
+        {
+            Some("delivery")
+        } else if [
+            "production",
+            "output",
+            "run",
+            "capacity",
+            "line",
+            "process",
+            "units",
+        ]
+        .iter()
+        .any(|k| t.contains(k))
+        {
+            Some("production")
+        } else if ["maintenance", "machine", "equipment", "calibration"]
+            .iter()
+            .any(|k| t.contains(k))
+        {
+            Some("maintenance")
+        } else {
+            None
+        }
+    }
     for sentence in split_sentences(&content) {
         let s = sentence.trim();
         if s.len() < 12 {
@@ -655,16 +732,51 @@ fn verify_chat_response(
         // fails the claim detector); the claim object is created only
         // for sentences that are factual claims.
         let evidence_refs = evidence_refs_in(s);
+        let claim_family = subject_family(s);
         let matched_refs: Vec<String> = evidence_refs
             .iter()
             .filter(|r| evidence_ids.contains(r.as_str()))
             .cloned()
             .collect();
+        // Twenty-first audit item 7: membership is NOT enough — the cited
+        // evidence must speak about the claim's subject family. An
+        // inventory EvidenceRef cannot measure a staffing claim.
+        let evidence_families: Vec<Option<&'static str>> = matched_refs
+            .iter()
+            .filter_map(|r| evidence_by_id.get(r.as_str()))
+            .map(|item| {
+                // The evidence family comes from its fact address OR its
+                // own text (a metric_tree item about units is inventory
+                // evidence).
+                let from_address = item
+                    .fact_address
+                    .as_deref()
+                    .and_then(|fa| subject_family(fa));
+                let from_text = item
+                    .payload
+                    .get("text")
+                    .and_then(|t| t.as_str())
+                    .and_then(|t| subject_family(t));
+                from_address.or(from_text)
+            })
+            .collect();
+        let compatible = match (claim_family, evidence_families.as_slice()) {
+            (Some(fam), fams) => !fams.is_empty() && fams.iter().all(|f| *f == Some(fam)),
+            (None, _) => false,
+        };
         let unmatched_refs: Vec<String> = evidence_refs
             .iter()
             .filter(|r| !evidence_ids.contains(r.as_str()))
             .cloned()
             .collect();
+        // Twenty-first audit item 7: an issued-but-incompatible ref is
+        // structurally wrong evidence for this claim (an inventory
+        // EvidenceRef cannot measure a staffing claim).
+        let incompatible_issued: Vec<String> = if !matched_refs.is_empty() && !compatible {
+            matched_refs.to_vec()
+        } else {
+            Vec::new()
+        };
         if !response.is_fallback && !unmatched_refs.is_empty() {
             for r in &unmatched_refs {
                 issues.push(format!(
@@ -673,9 +785,18 @@ fn verify_chat_response(
                 ));
             }
         }
-        if matched_refs.is_empty() {
-            // No citation at all (or only invalid citations): an
-            // unverified claim — evidence was attempted but failed.
+        if !response.is_fallback && !incompatible_issued.is_empty() {
+            for r in &incompatible_issued {
+                issues.push(format!(
+                    "Evidence '{r}' is a real kernel evidence id but does NOT \
+                     describe this claim's subject — evidence/claim relationship \
+                     violated (inventory evidence cannot measure a staffing claim)."
+                ));
+            }
+        }
+        if matched_refs.is_empty() || !compatible {
+            // No citation at all, or citations that do not describe this
+            // claim's subject: an unverified claim.
             claims.push(Claim {
                 statement: s.to_string(),
                 epistemic_status: "unverified".to_string(),
@@ -684,7 +805,8 @@ fn verify_chat_response(
                 confidence: None,
                 valid_at: None,
             });
-            if !response.is_fallback && unmatched_refs.is_empty() {
+            if !response.is_fallback && unmatched_refs.is_empty() && incompatible_issued.is_empty()
+            {
                 issues.push(format!(
                     "Unverified factual claim: '{s}' — no EvidenceRef. \
                      Facts about live tenant data must be queried through the \
@@ -1026,6 +1148,7 @@ mod tests {
     fn kernel_item(source: &str, text: &str) -> sensei_agent_core::context::ContextItem {
         let mut item = sensei_agent_core::context::ContextItem {
             payload: serde_json::json!({ "section": "metric_tree", "text": text }),
+            fact_address: Some(format!("section:{source}")),
             provenance: sensei_agent_core::context::Provenance {
                 source: source.to_string(),
                 source_revision: None,
@@ -1076,7 +1199,7 @@ mod tests {
         let item = kernel_item("metric_tree", "metric.process_yield_proxy@Bizerte: 42");
         let v = verify(
             &format!(
-                "Line 12 currently stands at 42 units [evidence: {}].",
+                "Process yield on line 12 currently stands at 42 units [evidence: {}].",
                 item.evidence_id
             ),
             std::slice::from_ref(&item),
@@ -1150,6 +1273,33 @@ mod tests {
             &[item],
         );
         assert_eq!(v["verdict"], "needs_evidence");
+        let claims: Vec<Claim> = serde_json::from_value(v["claims"].clone()).unwrap();
+        assert_eq!(claims[0].epistemic_status, "unverified");
+    }
+
+    #[test]
+    fn staffing_claim_cannot_cite_inventory_evidence() {
+        // Twenty-first audit item 7: membership in the issued set is not
+        // enough — the evidence must DESCRIBE the claimed subject.
+        let inv = kernel_item("inventory", "Product X available inventory is 417 units.");
+        let v = verify(
+            &format!(
+                "Tangier is severely understaffed [evidence: {}].",
+                inv.evidence_id
+            ),
+            std::slice::from_ref(&inv),
+        );
+        assert_eq!(
+            v["verdict"], "needs_evidence",
+            "a staffing claim must not be measured by inventory evidence"
+        );
+        let issues: Vec<String> = serde_json::from_value(v["issues"].clone()).unwrap();
+        assert!(
+            issues
+                .iter()
+                .any(|i| i.contains("does NOT describe this claim's subject")),
+            "the issue names the evidence/claim relationship violation"
+        );
         let claims: Vec<Claim> = serde_json::from_value(v["claims"].clone()).unwrap();
         assert_eq!(claims[0].epistemic_status, "unverified");
     }

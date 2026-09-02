@@ -8865,6 +8865,7 @@ async fn invariant_context_sensitivity_is_typed() {
         sensitivity,
         token_cost: 1,
         evidence_id: String::new(),
+        fact_address: None,
         epistemic_status: EpistemicStatus::RecordedFact,
     };
     let make_request = |ceiling: DataClass| ContextRequest {
@@ -10546,15 +10547,31 @@ async fn site_bootstrap_lifecycle_validation() {
     .execute(&pool)
     .await
     .expect("competency projection insert");
-    // Positive integration evidence (nineteenth audit P0): a RECENT
-    // integration checkpoint proves the integration ran — absence of
-    // dead letters alone is not readiness.
+    // Positive integration evidence — the manifest-declared 'erp'
+    // integration is PROVISIONED as an integration INSTANCE of this
+    // site and the RECENT checkpoint proves THAT instance ran
+    // (twenty-first audit item 5: readiness is per instance, so the
+    // checkpoint carries the instance_id — absence of dead letters
+    // alone is not readiness).
+    let erp_instance_id = uuid::Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO integration_instances \
+             (id, tenant_id, site_id, integration_type, endpoint, configuration_revision) \
+         VALUES ($1, $2, $3, 'erp', 'https://starz-erp.internal', 1)",
+    )
+    .bind(erp_instance_id)
+    .bind(tenant_id)
+    .bind(site_id)
+    .execute(&pool)
+    .await
+    .expect("integration instance insert");
     sqlx::query(
         "INSERT INTO integration_checkpoints \
-             (tenant_id, source_system, source_table, last_run_at) \
-         VALUES ($1, 'erp', 'sales_orders', NOW())",
+             (tenant_id, source_system, source_table, instance_id, last_run_at) \
+         VALUES ($1, 'erp', 'sales_orders', $2, NOW())",
     )
     .bind(tenant_id)
+    .bind(erp_instance_id)
     .execute(&pool)
     .await
     .expect("integration checkpoint");
@@ -11785,9 +11802,10 @@ async fn otd_is_on_time_over_immutable_commitment() {
     sqlx::query(
         "INSERT INTO sales_orders (id, tenant_id, so_number, order_number, customer_id, status, \
                                    order_date, delivery_date, confirmed_at, delivered_at, \
-                                   committed_date, actual_delivery_date, shipping_address, created_by) \
-         VALUES ($1, $2, 'SO-OTD-ON', 'SO-OTD-ON', $3, 'delivered', $4, $4, $4, $5, $4, $5, 'Addr', $9), \
-                ($7, $2, 'SO-OTD-LATE', 'SO-OTD-LATE', $3, 'delivered', $6, $6, $6, $8, $6, $8, 'Addr', $9)",
+                                   committed_date, actual_delivery_date, shipping_address, \
+                                   created_by, fulfilling_site_id) \
+         VALUES ($1, $2, 'SO-OTD-ON', 'SO-OTD-ON', $3, 'delivered', $4, $4, $4, $5, $4, $5, 'Addr', $9, $10), \
+                ($7, $2, 'SO-OTD-LATE', 'SO-OTD-LATE', $3, 'delivered', $6, $6, $6, $8, $6, $8, 'Addr', $9, $10)",
     )
     .bind(on_time_id)
     .bind(tenant_id)
@@ -11797,6 +11815,7 @@ async fn otd_is_on_time_over_immutable_commitment() {
     .bind(late_committed)
     .bind(late_id)
     .bind(now - chrono::Duration::days(1))
+    .bind(uuid::Uuid::new_v4())
     .bind(uuid::Uuid::new_v4())
     .execute(&pool)
     .await
@@ -12001,8 +12020,9 @@ async fn nineteenth_audit_adversarial_gate() {
         sqlx::query(
             "INSERT INTO sales_orders (id, tenant_id, so_number, order_number, \
                                        customer_id, status, order_date, delivery_date, \
-                                       shipping_address, line_items, created_by) \
-             VALUES ($1, $2, 'SO-ADV', 'SO-ADV', $3, 'draft', $4, $5, 'addr', '[]'::jsonb, $6)",
+                                       shipping_address, line_items, created_by, \
+                                       fulfilling_site_id) \
+             VALUES ($1, $2, 'SO-ADV', 'SO-ADV', $3, 'draft', $4, $5, 'addr', '[]'::jsonb, $6, $7)",
         )
         .bind(order_id)
         .bind(tenant_id)
@@ -12010,6 +12030,7 @@ async fn nineteenth_audit_adversarial_gate() {
         .bind(chrono::Utc::now() - chrono::Duration::days(1))
         .bind(chrono::Utc::now() + chrono::Duration::days(18))
         .bind(user)
+        .bind(site_id)
         .execute(&pool)
         .await
         .expect("order");
@@ -12551,4 +12572,888 @@ async fn twentieth_audit_adversarial_gate_v3() {
             "the Tunisia site sees only its own on-time order"
         );
     }
+}
+
+/// Twenty-first-audit item 4: the federation-edge loader's cross-tenant
+/// read (`federation_memberships` JOIN the PEER's `site_manifests` +
+/// `country_policies`) is a SECURITY DEFINER function — migration 153's
+/// `federation_governance_edges` is the ONLY cross-tenant
+/// federation-governance boundary. A real non-owner, non-BYPASSRLS app
+/// role (USAGE on the schema, CONNECT on the database, EXECUTE on the
+/// function — NOTHING on the tables, NO app.tenant_id context) must be
+/// able to load the SOURCE tenant's edges through the function, while a
+/// direct SELECT of the peer's FORCE-RLS rows via the same pool yields
+/// nothing: the raw pooled multi-table loader path is dead, the function
+/// is the only channel.
+#[tokio::test]
+async fn federation_edges_load_under_non_owner_role() {
+    let _serial = DB_LOCK.lock().await;
+    let Some(pool) = connect().await else { return };
+    sqlx::query(
+        r#"DO $$ DECLARE r RECORD; BEGIN
+             FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname = 'public') LOOP
+                 EXECUTE format('DROP TABLE IF EXISTS %I CASCADE', r.tablename);
+             END LOOP;
+         END $$"#,
+    )
+    .execute(&pool)
+    .await
+    .expect("drop all tables");
+    sensei_db::migrations::run_migrations(&pool)
+        .await
+        .expect("the ENTIRE migration chain must apply to an empty database");
+
+    // ── Seeds (nineteenth-audit shape): the SOURCE tenant A holds one
+    //    federation membership toward the PEER tenant B; B carries a
+    //    Morocco site manifest and a Morocco country policy ('ma'
+    //    residency) — exactly the peer rows the old loader joined across
+    //    the tenant boundary.
+    let tenant_a = uuid::Uuid::new_v4();
+    let tenant_b = uuid::Uuid::new_v4();
+    let site_b = uuid::Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO tenants (id, name, slug) VALUES \
+         ($1, 'fed21-a', 'fed21a'), ($2, 'fed21-b', 'fed21b')",
+    )
+    .bind(tenant_a)
+    .bind(tenant_b)
+    .execute(&pool)
+    .await
+    .expect("tenants");
+    sqlx::query(
+        "INSERT INTO sites (id, tenant_id, site_code, name) \
+         VALUES ($1, $2, 'B21', 'Peer B')",
+    )
+    .bind(site_b)
+    .bind(tenant_b)
+    .execute(&pool)
+    .await
+    .expect("peer site");
+    sqlx::query(
+        "INSERT INTO site_manifests (tenant_id, site_id, country, capabilities) \
+         VALUES ($1, $2, 'Morocco', '[\"SMT\"]')",
+    )
+    .bind(tenant_b)
+    .bind(site_b)
+    .execute(&pool)
+    .await
+    .expect("peer manifest");
+    sqlx::query(
+        "INSERT INTO country_policies (tenant_id, country, language, currency, unit_system, \
+                                        week_start, holiday_schedule, timezone, data_residency, \
+                                        retention_days, employment_data_visibility, \
+                                        local_document_requirements) \
+         VALUES ($1, 'Morocco', 'fr', 'MAD', 'metric', 'monday', '[]'::jsonb, \
+                 'Africa/Casablanca', 'ma', 365, 'restricted', '[]'::jsonb)",
+    )
+    .bind(tenant_b)
+    .execute(&pool)
+    .await
+    .expect("peer policy");
+    sqlx::query("INSERT INTO federation_memberships (tenant_id, peer_tenant_id) VALUES ($1, $2)")
+        .bind(tenant_a)
+        .bind(tenant_b)
+        .execute(&pool)
+        .await
+        .expect("membership A -> B");
+
+    // ── The production non-owner pattern: a real LOGIN role with USAGE
+    //    on the schema, CONNECT on the database and EXECUTE on the
+    //    governance function — and NOTHING ELSE. No table grants: the
+    //    FUNCTION is the only cross-tenant channel (FORCE RLS on
+    //    federation_memberships/site_manifests/country_policies would
+    //    hide every peer row from a direct read even if the tables were
+    //    granted — the app role carries no app.tenant_id context).
+    let role = "federation_app";
+    sqlx::query(&format!("DROP OWNED BY {role} CASCADE"))
+        .execute(&pool)
+        .await
+        .ok();
+    sqlx::query(&format!("DROP ROLE IF EXISTS {role}"))
+        .execute(&pool)
+        .await
+        .expect("drop role");
+    sqlx::query(&format!("CREATE ROLE {role} NOLOGIN"))
+        .execute(&pool)
+        .await
+        .expect("create role");
+    sqlx::query(&format!("GRANT USAGE ON SCHEMA public TO {role}"))
+        .execute(&pool)
+        .await
+        .expect("grant schema usage");
+    let opts: sqlx::postgres::PgConnectOptions = std::env::var("DATABASE_URL_TEST")
+        .expect("DATABASE_URL_TEST set — connect() succeeded")
+        .parse()
+        .expect("DATABASE_URL_TEST must parse as a postgres URL");
+    let db_name = opts
+        .get_database()
+        .expect("DATABASE_URL_TEST names a database");
+    sqlx::query(&format!(
+        "GRANT CONNECT ON DATABASE \"{db_name}\" TO {role}"
+    ))
+    .execute(&pool)
+    .await
+    .expect("grant connect");
+    sqlx::query(&format!("ALTER ROLE {role} LOGIN PASSWORD 'x'"))
+        .execute(&pool)
+        .await
+        .expect("app role login");
+    sqlx::query(&format!(
+        "GRANT EXECUTE ON FUNCTION federation_governance_edges(uuid) TO {role}"
+    ))
+    .execute(&pool)
+    .await
+    .expect("grant function execute");
+
+    // A SECOND connection logged in AS the app role (the audited grants
+    // are all it has). Host/port come from DATABASE_URL_TEST when
+    // present (localhost:5432 in CI).
+    let app_url = format!(
+        "postgres://{role}:x@{}:{}/{}",
+        opts.get_host(),
+        opts.get_port(),
+        db_name
+    );
+    let pool_app = sqlx::PgPool::connect(&app_url)
+        .await
+        .expect("app-role connection");
+
+    // ── 1) The loader works for the non-owner role: the SECURITY
+    //    DEFINER function runs with the migration owner's rights, so RLS
+    //    cannot hide the peer metadata — the source tenant's ONE edge
+    //    toward the peer resolves exactly (peer country Morocco,
+    //    residency 'ma', the membership's own governance labels).
+    use sensei_services::tps::replication::{self, DataPolicy, Jurisdiction, ResidencyPolicy};
+    let edges = replication::load_federation_edges(&pool_app, tenant_a, None)
+        .await
+        .expect("edges must load under the app role — the function is the ONLY channel");
+    assert_eq!(
+        edges.len(),
+        1,
+        "exactly one federation edge (A -> B) must load cross-tenant"
+    );
+    let edge = &edges[0];
+    assert_eq!(edge.target_tenant, tenant_b);
+    assert_eq!(
+        edge.target_jurisdiction,
+        Jurisdiction::MA,
+        "the peer's residency code ('ma') resolves through the function"
+    );
+    assert_eq!(
+        edge.residency_policy,
+        ResidencyPolicy::CorporateAllowed,
+        "the membership row's own residency policy is the edge policy"
+    );
+    assert!(
+        edge.allowed_data_classes.contains(&DataPolicy::Internal)
+            && edge.allowed_data_classes.contains(&DataPolicy::Personal),
+        "the membership's allowed_data_classes parse exactly"
+    );
+    assert_eq!(edge.policy_revision, 0, "no version rows -> revision 0");
+    // The function itself reports the peer's manifest country.
+    let peer_country: String =
+        sqlx::query_scalar("SELECT peer_country FROM federation_governance_edges($1)")
+            .bind(tenant_a)
+            .fetch_one(&pool_app)
+            .await
+            .expect("function executes for the app role");
+    assert_eq!(
+        peer_country, "Morocco",
+        "peer country comes from the peer's manifest"
+    );
+
+    // ── 2) The DIRECT channel is closed: a raw SELECT of the peer's
+    //    FORCE-RLS rows via the app pool must expose NOTHING — with the
+    //    audited grants (EXECUTE only) the read is refused outright, and
+    //    even a hypothetical SELECT grant would be RLS-hidden (no
+    //    app.tenant_id context). The function is the ONLY cross-tenant
+    //    channel.
+    let direct_manifest: std::result::Result<Vec<(uuid::Uuid, String)>, sqlx::Error> =
+        sqlx::query_as("SELECT tenant_id, country FROM site_manifests WHERE tenant_id = $1")
+            .bind(tenant_b)
+            .fetch_all(&pool_app)
+            .await;
+    assert!(
+        direct_manifest.is_err() || matches!(&direct_manifest, Ok(rows) if rows.is_empty()),
+        "the app role must not read the peer's site_manifests directly — \
+         the function is the ONLY cross-tenant channel"
+    );
+    let direct_membership: std::result::Result<Vec<(uuid::Uuid, uuid::Uuid)>, sqlx::Error> =
+        sqlx::query_as("SELECT tenant_id, peer_tenant_id FROM federation_memberships")
+            .fetch_all(&pool_app)
+            .await;
+    assert!(
+        direct_membership.is_err() || matches!(&direct_membership, Ok(rows) if rows.is_empty()),
+        "FORCE RLS hides every federation_memberships row from the app role's direct read"
+    );
+
+    // ── Cleanup: DROP ROLE is impossible while its pool is open — close
+    //    the pool first, then drop the role.
+    pool_app.close().await;
+    sqlx::query(&format!("DROP OWNED BY {role} CASCADE"))
+        .execute(&pool)
+        .await
+        .ok();
+    sqlx::query(&format!("DROP ROLE IF EXISTS {role}"))
+        .execute(&pool)
+        .await
+        .expect("drop role");
+}
+
+/// Twenty-first audit item 5 (per-site integration INSTANCES): site
+/// readiness must be proven per integration INSTANCE, never per kind.
+/// integration_checkpoints are keyed (tenant, source_system, source_table)
+/// — they carry NO site or instance anchor, so one healthy SAP checkpoint
+/// could certify BOTH Tangier's and Bizerte's SAP. `integration_instances`
+/// materializes the manifest-declared kinds PER SITE, and
+/// `validate_site`'s integrations_healthy check requires every instance of
+/// THIS site to show its OWN checkpoint (instance_id) from the last 24h:
+/// B's SAP instance cannot be certified by A's checkpoint, and a declared
+/// kind with no instance row for the site fails as not provisioned.
+#[tokio::test]
+async fn integration_readiness_is_per_site_instance() {
+    let _serial = DB_LOCK.lock().await;
+    let Some(pool) = connect().await else { return };
+    sqlx::query(
+        r#"DO $$ DECLARE r RECORD; BEGIN
+             FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname = 'public') LOOP
+                 EXECUTE format('DROP TABLE IF EXISTS %I CASCADE', r.tablename);
+             END LOOP;
+         END $$"#,
+    )
+    .execute(&pool)
+    .await
+    .expect("drop all tables");
+    sensei_db::migrations::run_migrations(&pool)
+        .await
+        .expect("the ENTIRE migration chain must apply to an empty database");
+
+    let tenant_id = uuid::Uuid::new_v4();
+    let site_a = uuid::Uuid::new_v4();
+    let site_b = uuid::Uuid::new_v4();
+    let site_c = uuid::Uuid::new_v4();
+    let principal = uuid::Uuid::new_v4();
+    let assessor = uuid::Uuid::new_v4();
+    let skill_id = uuid::Uuid::new_v4();
+    let slot_a = uuid::Uuid::new_v4();
+    let slot_b = uuid::Uuid::new_v4();
+    let wc_a = uuid::Uuid::new_v4();
+    let wc_b = uuid::Uuid::new_v4();
+    let shift_a = uuid::Uuid::new_v4();
+    let shift_b = uuid::Uuid::new_v4();
+    let ev_a = uuid::Uuid::new_v4();
+    let ev_b = uuid::Uuid::new_v4();
+
+    use sensei_services::tps::site_manifest::{bootstrap_site, validate_site, SiteManifest};
+
+    sqlx::query("INSERT INTO tenants (id, name, slug) VALUES ($1, 'inst', 'inst')")
+        .bind(tenant_id)
+        .execute(&pool)
+        .await
+        .expect("tenant insert");
+    sqlx::query(
+        "INSERT INTO sites (id, tenant_id, site_code, name) VALUES \
+         ($1, $2, 'INSA', 'Instance Site A'), \
+         ($3, $4, 'INSB', 'Instance Site B'), \
+         ($5, $6, 'INSC', 'Instance Site C')",
+    )
+    .bind(site_a)
+    .bind(tenant_id)
+    .bind(site_b)
+    .bind(tenant_id)
+    .bind(site_c)
+    .bind(tenant_id)
+    .execute(&pool)
+    .await
+    .expect("sites insert");
+
+    // All three sites DECLARE the same SAP integration kind; only A and B
+    // have it provisioned as an integration INSTANCE for their own site.
+    for (site, name) in [(site_a, "A"), (site_b, "B"), (site_c, "C")] {
+        bootstrap_site(
+            &pool,
+            tenant_id,
+            SiteManifest {
+                site_id: site,
+                country: "Morocco".to_string(),
+                timezone: "Africa/Casablanca".to_string(),
+                languages: vec!["fr".to_string()],
+                currency: "MAD".to_string(),
+                capabilities: vec!["SMT".to_string()],
+                integrations: vec![
+                    serde_json::json!({"kind": "sap", "name": format!("sap-{name}")}),
+                ],
+                policy_bundle: None,
+            },
+        )
+        .await
+        .expect("manifest bootstrap");
+    }
+
+    // The operational prerequisites shared by the tenant: country policy
+    // (full column set), one SMT skill and the people who qualify it.
+    let mut tx = pool.begin().await.expect("policy tx");
+    sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
+        .bind(tenant_id.to_string())
+        .execute(&mut *tx)
+        .await
+        .expect("set tenant context");
+    sqlx::query(
+        "INSERT INTO country_policies \
+            (tenant_id, country, language, currency, unit_system, week_start, \
+             holiday_schedule, timezone, data_residency, retention_days, \
+             employment_data_visibility, local_document_requirements) \
+         VALUES ($1, 'Morocco', 'fr', 'MAD', 'metric', 'monday', '[]', \
+                 'Africa/Casablanca', 'ma', 365, 'restricted', '[]')",
+    )
+    .bind(tenant_id)
+    .execute(&mut *tx)
+    .await
+    .expect("country policy insert");
+    tx.commit().await.expect("policy tx commit");
+    sqlx::query(
+        "INSERT INTO users (id, tenant_id, email, password_hash, name) VALUES \
+         ($1, $2, 'inst@starzforge.local', 'x', 'Instance Principal'), \
+         ($3, $4, 'inst-assessor@starzforge.local', 'x', 'Instance Assessor')",
+    )
+    .bind(principal)
+    .bind(tenant_id)
+    .bind(assessor)
+    .bind(tenant_id)
+    .execute(&pool)
+    .await
+    .expect("user insert");
+    sqlx::query(
+        "INSERT INTO skills (id, tenant_id, skill_id, name) \
+         VALUES ($1, $2, 'SK-INST', 'SMT Operator')",
+    )
+    .bind(skill_id)
+    .bind(tenant_id)
+    .execute(&pool)
+    .await
+    .expect("skill insert");
+
+    // Per-site readiness fixture: role slot + work center + shift +
+    // assignment + qualification evidence + competency projection, plus
+    // the site's own provisioned SAP integration INSTANCE.
+    #[allow(clippy::too_many_arguments)]
+    async fn seed_instance_site(
+        pool: &sqlx::PgPool,
+        tenant_id: uuid::Uuid,
+        site_id: uuid::Uuid,
+        site_code: &str,
+        slot_id: uuid::Uuid,
+        wc_id: uuid::Uuid,
+        shift_id: uuid::Uuid,
+        ev_id: uuid::Uuid,
+        principal: uuid::Uuid,
+        assessor: uuid::Uuid,
+        skill_id: uuid::Uuid,
+        endpoint: &str,
+    ) {
+        let mut tx = pool.begin().await.expect("slot tx");
+        sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
+            .bind(tenant_id.to_string())
+            .execute(&mut *tx)
+            .await
+            .expect("set tenant context");
+        sqlx::query(
+            "INSERT INTO role_slots (id, tenant_id, role_name, slot_name, scope_site_id) \
+             VALUES ($1, $2, 'production_planner', $3, $4)",
+        )
+        .bind(slot_id)
+        .bind(tenant_id)
+        .bind(format!("Planner_Instance_{site_code}"))
+        .bind(site_id)
+        .execute(&mut *tx)
+        .await
+        .expect("role slot insert");
+        // The site's integration INSTANCE (integration_instances is
+        // fail-closed RLS — provisioned inside the tenant context).
+        sqlx::query(
+            "INSERT INTO integration_instances \
+                 (tenant_id, site_id, integration_type, endpoint, configuration_revision) \
+             VALUES ($1, $2, 'sap', $3, 1)",
+        )
+        .bind(tenant_id)
+        .bind(site_id)
+        .bind(endpoint)
+        .execute(&mut *tx)
+        .await
+        .expect("integration instance insert");
+        tx.commit().await.expect("slot tx commit");
+
+        sqlx::query(
+            "INSERT INTO work_centers (id, tenant_id, work_center_number, name, work_center_type, site_id, \
+                                       topology_state, topology_assignment_source, \
+                                       topology_verified_at, topology_verified_by) \
+             VALUES ($1, $2, $3, $4, 'assembly', $5, 'resolved', \
+                     'manual_reconciliation', NOW(), $6)",
+        )
+        .bind(wc_id)
+        .bind(tenant_id)
+        .bind(format!("WC-{site_code}"))
+        .bind(format!("{site_code} SMT Line"))
+        .bind(site_id)
+        .bind(principal)
+        .execute(pool)
+        .await
+        .expect("work center insert");
+        sqlx::query(
+            "INSERT INTO shifts (id, tenant_id, site_id, name, start_time, end_time) \
+             VALUES ($1, $2, $3, $4, '08:00', '16:00')",
+        )
+        .bind(shift_id)
+        .bind(tenant_id)
+        .bind(site_id)
+        .bind(format!("Day {site_code}"))
+        .execute(pool)
+        .await
+        .expect("shift insert");
+        sqlx::query(
+            "INSERT INTO employee_assignments (tenant_id, user_id, site_id, work_center_id, shift_id) \
+             VALUES ($1, $2, $3, $4, $5)",
+        )
+        .bind(tenant_id)
+        .bind(principal)
+        .bind(site_id)
+        .bind(wc_id)
+        .bind(shift_id)
+        .execute(pool)
+        .await
+        .expect("assignment insert");
+        sqlx::query(
+            "INSERT INTO skill_qualification_evidence \
+                 (id, tenant_id, principal_id, skill_id, standard_revision, demonstrated_at, \
+                  demonstration_site_id, assessor_id, evidence) \
+             VALUES ($1, $2, $3, $4, 'rev1', NOW(), $5, $6, '[{\"kind\": \"line_audit\"}]'::jsonb)",
+        )
+        .bind(ev_id)
+        .bind(tenant_id)
+        .bind(principal)
+        .bind(skill_id)
+        .bind(site_id)
+        .bind(assessor)
+        .execute(pool)
+        .await
+        .expect("evidence insert");
+        sqlx::query(
+            "INSERT INTO competency_projection \
+                 (tenant_id, principal_id, skill_id, site_id, level, source_evidence_id, \
+                  valid_from, valid_until) \
+             VALUES ($1, $2, $3, $4, 'independent', $5, NOW(), \
+                     NOW() + INTERVAL '12 months')",
+        )
+        .bind(tenant_id)
+        .bind(principal)
+        .bind(skill_id)
+        .bind(site_id)
+        .bind(ev_id)
+        .execute(pool)
+        .await
+        .expect("competency projection insert");
+    }
+
+    seed_instance_site(
+        &pool,
+        tenant_id,
+        site_a,
+        "INSA",
+        slot_a,
+        wc_a,
+        shift_a,
+        ev_a,
+        principal,
+        assessor,
+        skill_id,
+        "https://a",
+    )
+    .await;
+    seed_instance_site(
+        &pool,
+        tenant_id,
+        site_b,
+        "INSB",
+        slot_b,
+        wc_b,
+        shift_b,
+        ev_b,
+        principal,
+        assessor,
+        skill_id,
+        "https://b",
+    )
+    .await;
+
+    // Tenant-level qualification data the SMT checks consume: the single
+    // current skill_qualifications row, slot assignments for both sites,
+    // standards, gauges and calibration (mirrors the full-ladder fixture).
+    sqlx::query(
+        "INSERT INTO skill_qualifications (tenant_id, principal_id, skill_id, level, evidence) \
+         VALUES ($1, $2, $3, 'independent', '[{\"kind\": \"line_audit\"}]')",
+    )
+    .bind(tenant_id)
+    .bind(principal)
+    .bind(skill_id)
+    .execute(&pool)
+    .await
+    .expect("qualification insert");
+    sqlx::query(
+        "INSERT INTO principal_assignments (tenant_id, principal_id, slot_id) \
+         VALUES ($1, $2, $3), ($1, $2, $4)",
+    )
+    .bind(tenant_id)
+    .bind(principal)
+    .bind(slot_a)
+    .bind(slot_b)
+    .execute(&pool)
+    .await
+    .expect("principal assignment insert");
+    sqlx::query(
+        "INSERT INTO job_standards (tenant_id, standard_id, revision, process, title, steps) \
+         VALUES ($1, 'STD-INST-SMT', 1, 'SMT', 'SMT Line Standard', '[]')",
+    )
+    .bind(tenant_id)
+    .execute(&pool)
+    .await
+    .expect("job standard insert");
+    let gauge_id = uuid::Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO gauges (id, tenant_id, gauge_id, name, gauge_type) \
+         VALUES ($1, $2, 'GA-INST', 'SMT Reflow Gauge', 'general')",
+    )
+    .bind(gauge_id)
+    .bind(tenant_id)
+    .execute(&pool)
+    .await
+    .expect("gauge insert");
+    sqlx::query(
+        "INSERT INTO calibration_events (tenant_id, gauge_id, next_due, result) \
+         VALUES ($1, $2, NOW() + INTERVAL '1 year', 'pass')",
+    )
+    .bind(tenant_id)
+    .bind(gauge_id)
+    .execute(&pool)
+    .await
+    .expect("calibration event insert");
+
+    // ONLY site A's SAP instance has its own recent checkpoint. The
+    // legacy UNIQUE (tenant_id, source_system, source_table) survives
+    // migration 154, so the per-instance fixture rows use distinct
+    // source_table names (the per-instance readiness proof reads
+    // instance_id, never source_system/source_table).
+    sqlx::query(
+        "INSERT INTO integration_checkpoints \
+             (tenant_id, source_system, source_table, instance_id, last_run_at) \
+         SELECT $1, 'sap', 'material_master', id, NOW() - INTERVAL '1 hour' \
+         FROM integration_instances \
+         WHERE tenant_id = $1 AND site_id = $2 AND integration_type = 'sap'",
+    )
+    .bind(tenant_id)
+    .bind(site_a)
+    .execute(&pool)
+    .await
+    .expect("site A checkpoint insert");
+
+    // Site B declares SAP and HAS a provisioned SAP instance — but that
+    // instance never ran. A's checkpoint must NOT certify B: readiness is
+    // per instance, not per kind.
+    let report_b = validate_site(&pool, tenant_id, site_b)
+        .await
+        .expect("validate site B before its checkpoint");
+    let healthy_b = report_b
+        .checks
+        .iter()
+        .find(|(name, _, _)| name == "integrations_healthy")
+        .expect("report must carry integrations_healthy");
+    assert!(
+        !healthy_b.1,
+        "site B's own SAP instance has no checkpoint — B must NOT be healthy \
+         even though site A's SAP checkpoint exists"
+    );
+    assert!(
+        healthy_b
+            .2
+            .contains("integration instance 'sap' has no checkpoint in the last 24h"),
+        "the failing check must name B's own instance, got: {}",
+        healthy_b.2
+    );
+    assert!(
+        !report_b.ready,
+        "site B without its own checkpoint must not be ready"
+    );
+
+    // Site A's own instance checkpoint makes A fully ready — and the
+    // single per-kind checkpoint can never certify another site.
+    let report_a = validate_site(&pool, tenant_id, site_a)
+        .await
+        .expect("validate site A");
+    let healthy_a = report_a
+        .checks
+        .iter()
+        .find(|(name, _, _)| name == "integrations_healthy")
+        .expect("report must carry integrations_healthy");
+    assert!(
+        healthy_a.1,
+        "site A's own SAP instance has a recent checkpoint — A must be healthy: {}",
+        healthy_a.2
+    );
+    assert!(report_a.ready, "site A must be fully ready");
+
+    // Site C declares SAP but never provisioned an instance for itself —
+    // the declared kind cannot be proven: not provisioned.
+    let report_c = validate_site(&pool, tenant_id, site_c)
+        .await
+        .expect("validate site C");
+    let healthy_c = report_c
+        .checks
+        .iter()
+        .find(|(name, _, _)| name == "integrations_healthy")
+        .expect("report must carry integrations_healthy");
+    assert!(
+        !healthy_c.1,
+        "a declared kind with no instance row for the site must fail readiness"
+    );
+    assert_eq!(
+        healthy_c.2, "integration instance 'sap' is not provisioned for this site",
+        "the check must report the provisioning gap for site C"
+    );
+
+    // Give B's OWN instance a checkpoint → B validates healthy (ready).
+    sqlx::query(
+        "INSERT INTO integration_checkpoints \
+             (tenant_id, source_system, source_table, instance_id, last_run_at) \
+         SELECT $1, 'sap', 'goods_movements', id, NOW() - INTERVAL '1 hour' \
+         FROM integration_instances \
+         WHERE tenant_id = $1 AND site_id = $2 AND integration_type = 'sap'",
+    )
+    .bind(tenant_id)
+    .bind(site_b)
+    .execute(&pool)
+    .await
+    .expect("site B checkpoint insert");
+    let report_b_after = validate_site(&pool, tenant_id, site_b)
+        .await
+        .expect("re-validate site B with its own checkpoint");
+    let healthy_b_after = report_b_after
+        .checks
+        .iter()
+        .find(|(name, _, _)| name == "integrations_healthy")
+        .expect("report must carry integrations_healthy");
+    assert!(
+        healthy_b_after.1,
+        "once B's own instance has a checkpoint, B must be healthy: {}",
+        healthy_b_after.2
+    );
+    assert!(
+        report_b_after.ready,
+        "site B must be fully ready once its own instance is proven"
+    );
+}
+
+/// Twenty-first-audit composition gate: the PRODUCERS (SalesOrder and
+/// PurchaseOrder services) must populate the site dimensions ordinary
+/// rows need, so the consumers (site OTD, buyer overdue) see real
+/// service-created data — and the Andon read path denies a
+/// zero-entitlement caller entirely.
+#[tokio::test]
+async fn twenty_first_audit_producer_consumer_paths() {
+    let _serial = DB_LOCK.lock().await;
+    let Some(pool) = connect().await else { return };
+    sensei_db::migrations::run_migrations(&pool)
+        .await
+        .expect("migration chain");
+
+    let tenant_id = uuid::Uuid::new_v4();
+    let site_a = uuid::Uuid::new_v4();
+    let user = uuid::Uuid::new_v4();
+    sqlx::query("INSERT INTO tenants (id, name, slug) VALUES ($1, 't21pc', 't21pc')")
+        .bind(tenant_id)
+        .execute(&pool)
+        .await
+        .expect("tenant");
+    sqlx::query("INSERT INTO sites (id, tenant_id, site_code, name) VALUES ($1, $2, 'T21', 'T21')")
+        .bind(site_a)
+        .bind(tenant_id)
+        .execute(&pool)
+        .await
+        .expect("site");
+    sqlx::query(
+        "INSERT INTO users (id, tenant_id, email, name, password_hash) \
+         VALUES ($1, $2, 'u21pc@starzforge.local', 'U', 'x')",
+    )
+    .bind(user)
+    .bind(tenant_id)
+    .execute(&pool)
+    .await
+    .expect("user");
+    let customer_id = uuid::Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO accounts (id, tenant_id, account_type, name) \
+         VALUES ($1, $2, 'customer', 'T21-C')",
+    )
+    .bind(customer_id)
+    .bind(tenant_id)
+    .execute(&pool)
+    .await
+    .expect("account");
+
+    use sensei_services::supply_chain::{DatabaseSupplyChainService, SupplyChainService};
+    let sc = DatabaseSupplyChainService::new(pool.clone());
+
+    // 1) A SalesOrder created THROUGH THE SERVICE with a fulfilling site
+    //    contributes to that site's OTD.
+    let order = sensei_services::supply_chain::SalesOrder {
+        id: uuid::Uuid::new_v4(),
+        tenant_id,
+        order_number: "SO-PC-1".to_string(),
+        customer_id,
+        customer_name: "C".to_string(),
+        status: "pending".to_string(),
+        line_items: vec![],
+        total_amount: rust_decimal::Decimal::ZERO,
+        currency: "MAD".to_string(),
+        delivery_date: Some(chrono::Utc::now() + chrono::Duration::days(10)),
+        shipping_address: "addr".to_string(),
+        created_by: user,
+        created_at: chrono::Utc::now(),
+        fulfilling_site_id: Some(site_a),
+    };
+    let created = sc
+        .create_sales_order(tenant_id, order)
+        .await
+        .expect("service-created order");
+    assert_eq!(created.fulfilling_site_id, Some(site_a));
+    let _ = sc
+        .update_sales_order_status(tenant_id, created.id, "confirmed")
+        .await
+        .expect("confirm with a site anchor");
+    let _ = sc
+        .update_sales_order_status(tenant_id, created.id, "delivered")
+        .await
+        .expect("deliver");
+    let otd =
+        sensei_services::tps::metric_engine::compute_metric(&pool, tenant_id, "otd", Some(site_a))
+            .await
+            .expect("site otd");
+    assert_eq!(
+        otd.value,
+        rust_decimal::Decimal::ONE,
+        "the SERVICE-created order contributes to site OTD"
+    );
+    // And a site-less order cannot be confirmed at all (refused).
+    let no_site = sensei_services::supply_chain::SalesOrder {
+        fulfilling_site_id: None,
+        ..created.clone()
+    };
+    let created2 = sc
+        .create_sales_order(tenant_id, no_site)
+        .await
+        .expect("order without site");
+    let refused = sc
+        .update_sales_order_status(tenant_id, created2.id, "confirmed")
+        .await;
+    assert!(
+        refused.is_err(),
+        "confirmation without a fulfilling site is REFUSED"
+    );
+
+    // 2) A PurchaseOrder created THROUGH THE SERVICE for Tangier with an
+    //    overdue expected_delivery is visible ONLY to the Tangier buyer.
+    let supplier_id = uuid::Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO suppliers (id, tenant_id, supplier_number, name) \
+         VALUES ($1, $2, 'SUP-PC', 'Sup')",
+    )
+    .bind(supplier_id)
+    .bind(tenant_id)
+    .execute(&pool)
+    .await
+    .expect("supplier");
+    let po = sensei_services::supply_chain::PurchaseOrder {
+        id: uuid::Uuid::new_v4(),
+        tenant_id,
+        po_number: "PO-PC-1".to_string(),
+        supplier_id,
+        supplier_name: "S".to_string(),
+        status: "confirmed".to_string(),
+        line_items: vec![],
+        total_amount: rust_decimal::Decimal::ZERO,
+        currency: "MAD".to_string(),
+        expected_delivery: Some(chrono::Utc::now() - chrono::Duration::days(1)),
+        created_by: user,
+        created_at: chrono::Utc::now(),
+        receiving_site_id: Some(site_a),
+    };
+    let _ = sc
+        .create_purchase_order(tenant_id, po)
+        .await
+        .expect("service-created PO");
+    let buyer = sensei_services::tps::role_analytics::build_role_analytics(
+        &pool,
+        tenant_id,
+        "buyer",
+        Some(site_a),
+        None,
+    )
+    .await
+    .expect("buyer analytics");
+    let open_po = buyer
+        .now
+        .iter()
+        .find(|l| l.label.contains("open purchase orders"))
+        .map(|l| l.actual)
+        .unwrap_or(0.0);
+    assert!(
+        open_po >= 1.0,
+        "the Tangier buyer sees the service-created PO (open = {open_po})"
+    );
+    assert!(
+        buyer.why.iter().any(|l| l.label.contains("PAST DUE")),
+        "the service-created overdue PO is flagged past due"
+    );
+
+    // 3) Andon reads with ZERO entitlement are denied entirely.
+    use sensei_services::ops::OperationsService;
+    let ops = sensei_services::ops::DatabaseOperationsService::new(pool.clone());
+    let andon = sensei_services::ops::Andon {
+        id: uuid::Uuid::new_v4(),
+        tenant_id,
+        site_id: Some(site_a),
+        andon_number: String::new(),
+        work_center_id: uuid::Uuid::new_v4(),
+        issue_type: "quality".to_string(),
+        severity: "medium".to_string(),
+        description: "x".to_string(),
+        status: String::new(),
+        raised_by: user,
+        acknowledged_by: None,
+        resolved_by: None,
+        resolution: None,
+        response_time_seconds: None,
+        resolution_time_seconds: None,
+        created_at: chrono::Utc::now(),
+        acknowledged_at: None,
+        resolved_at: None,
+        restart_authorized_by: None,
+        restart_authorized_at: None,
+        abnormal_condition_observed_at: None,
+        contained_at: None,
+        contained_by: None,
+        contained_note: None,
+        escalated: false,
+        escalated_at: None,
+        request_key: None,
+    };
+    let raised = ops.raise_andon(tenant_id, andon).await.expect("raise");
+    let zero_entitlement = ops.get_andon_scoped(tenant_id, &[], raised.id).await;
+    assert!(
+        zero_entitlement.is_err(),
+        "zero entitlement reads are denied — NoOperationalScope != TenantWide"
+    );
+    let scoped = ops
+        .get_andon_scoped(tenant_id, &[site_a], raised.id)
+        .await
+        .expect("entitled read works");
+    assert_eq!(scoped.id, raised.id);
 }

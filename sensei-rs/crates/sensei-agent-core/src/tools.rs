@@ -244,16 +244,19 @@ pub struct ToolExecutor {
     /// The bounded RAM replay map (performance cache — it may forget).
     execution_results: super::cache::BoundedMap<serde_json::Value>,
     /// The DURABLE system of record (eighteenth audit P1-14, nineteenth
-    /// audit P1, twentieth audit P1): when configured, reserve() atomically
-    /// claims the key with THIS worker as claim_owner plus a lease and a
-    /// fencing token, and complete() transitions the row afterwards — a
-    /// retry (or a concurrent duplicate) replays the journaled outcome even
-    /// after the RAM entry was evicted, and the mutation never runs twice
-    /// while a claim is live. An expired lease or an ambiguous
-    /// ('unknown_outcome'/'reconcile_required') row is recover()ed by the
-    /// next worker, which re-dispatches ONCE more; a stale owner is fenced
-    /// by the claim token. For mutating tools a failed journal write fails
-    /// the execution: the cache may forget, the journal may not.
+    /// audit P1, twentieth audit P1, twenty-first audit item 8): when
+    /// configured, reserve() atomically claims the key with THIS worker
+    /// as claim_owner plus a lease and a fencing token, and complete()
+    /// transitions the row afterwards — a retry (or a concurrent
+    /// duplicate) replays the journaled outcome even after the RAM entry
+    /// was evicted, and the mutation never runs twice while a claim is
+    /// live. recover() is ONLY for a pre-execution crash: a
+    /// 'reserved'/'executing' row whose lease expired without a
+    /// heartbeat. An ambiguous ('unknown_outcome'/'reconcile_required')
+    /// row — the mutation MAY have happened — is NEVER auto-redispatched:
+    /// it Conflicts until a human reconciles it. A stale owner is fenced
+    /// by the claim token. For mutating tools a failed journal write
+    /// fails the execution: the cache may forget, the journal may not.
     journal: Option<std::sync::Arc<dyn super::journal::ExecutionJournal>>,
     /// Identity of this worker/process instance — the claim_owner recorded
     /// on every reserve()/recover(). Fencing itself is TOKEN-based; the
@@ -310,19 +313,24 @@ impl ToolExecutor {
             });
         }
         // Idempotency (item 59 + nineteenth audit P1 + twentieth audit
-        // P1): the DURABLE journal is a CLAIM STATE MACHINE with LEASES
-        // and FENCING TOKENS. reserve() atomically claims the key —
-        // exactly one concurrent caller wins and dispatches. Every loser:
+        // P1 + twenty-first audit item 8): the DURABLE journal is a
+        // CLAIM STATE MACHINE with LEASES and FENCING TOKENS. reserve()
+        // atomically claims the key — exactly one concurrent caller wins
+        // and dispatches. Every loser:
         // - replays the terminal outcome ('succeeded'/'failed');
         // - Conflicts while the claim is leased ('reserved'/'executing'
         //   under a live lease — the mutation is in flight);
-        // - recover()s an EXPIRED lease or an 'unknown_outcome'/
-        //   'reconcile_required' row (a timeout may have happened AFTER
-        //   the mutation) and re-dispatches ONCE more — the attempt bump
-        //   is journal-side. complete() is token-fenced: a stale owner
-        //   whose claim was recovered can never confirm an outcome. The
-        //   RAM cache is a performance cache only (it may forget); with
-        //   no journal configured the RAM-cache behavior is unchanged.
+        // - Conflicts on an ambiguous outcome
+        //   ('unknown_outcome'/'reconcile_required') — the mutation MAY
+        //   have happened, so automatic re-dispatch is BLOCKED and a
+        //   human must reconcile the row;
+        // - recover()s a PRE-EXECUTION crash only ('reserved'/
+        //   'executing' whose lease expired without a heartbeat) and
+        //   re-dispatches ONCE more — the attempt bump is journal-side.
+        // complete() is token-fenced: a stale owner whose claim was
+        // recovered can never confirm an outcome. The RAM cache is a
+        // performance cache only (it may forget); with no journal
+        // configured the RAM-cache behavior is unchanged.
         let key = execution.key.key();
         if tool.idempotent {
             if let Some(journal) = self.journal.clone() {
@@ -372,11 +380,24 @@ impl ToolExecutor {
                                     message,
                                 })
                             }
+                            // Twenty-first audit item 8: an ambiguous
+                            // outcome means the mutating command MAY
+                            // have happened — NEVER auto-redispatch
+                            // (NO recover + dispatch): the retry
+                            // Conflicts and a human must reconcile
+                            // the row.
+                            "unknown_outcome" | "reconcile_required" => Err(ToolError::Conflict {
+                                tool: tool.name.clone(),
+                                message: "ambiguous outcome — requires reconciliation; \
+                                         automatic re-dispatch is blocked"
+                                    .to_string(),
+                            }),
                             // 'reserved'/'executing' under a LIVE lease ->
-                            // Conflict (recover() refuses); expired lease or
-                            // 'unknown_outcome'/'reconcile_required' ->
-                            // recover() reclaims atomically and we dispatch
-                            // ONCE more.
+                            // Conflict (recover() refuses); ONLY a
+                            // pre-execution crash (lease expired without
+                            // a heartbeat) is reclaimable — recover()
+                            // reclaims atomically and we dispatch ONCE
+                            // more.
                             _ => {
                                 match journal
                                     .recover(
@@ -457,8 +478,10 @@ impl ToolExecutor {
     ///   write FAILS the execution (and a fenced/superseded owner also
     ///   fails here — it must never confirm an outcome it no longer owns);
     /// - a timeout after dispatch (retryable) -> complete('unknown_outcome'):
-    ///   the mutation MAY have happened, so this is a reconcile-required
-    ///   state, NOT a plain 'failed';
+    ///   the mutation MAY have happened, so this is a reconciliation
+    ///   state, NOT a plain 'failed'. A later retry NEVER auto-redispatches
+    ///   it (twenty-first audit item 8) — the row Conflicts until a human
+    ///   reconciles it;
     /// - deterministic dispatch errors -> complete('failed');
     /// - output-validation errors -> complete('failed').
     #[allow(clippy::too_many_arguments)]
@@ -488,9 +511,9 @@ impl ToolExecutor {
             Err(_elapsed) => {
                 // A network timeout AFTER dispatch: the mutation may
                 // already have taken effect — record 'unknown_outcome'
-                // (a reconciliation state) so the next worker recovers
-                // and re-dispatches exactly once (attempt bump) instead
-                // of replaying a false deterministic 'failed'.
+                // (a reconciliation state). Item 8: a later retry NEVER
+                // auto-redispatches this row — it Conflicts until a
+                // human reconciles the outcome.
                 let _ = journal
                     .complete(
                         ctx.tenant_id,
@@ -515,7 +538,8 @@ impl ToolExecutor {
             Ok(output) => output,
             Err(dispatch_err) => {
                 // A retryable timeout error means the mutation's fate is
-                // unknown ('unknown_outcome'); any other dispatch error is
+                // unknown ('unknown_outcome' — a human reconciles it,
+                // never an auto-redispatch); any other dispatch error is
                 // a deterministic 'failed' so a retry replays it instead
                 // of re-executing.
                 let status = if matches!(dispatch_err, ToolError::Timeout { .. }) {
@@ -1100,16 +1124,15 @@ mod tests {
                     return Ok(None);
                 };
                 let now = chrono::Utc::now();
-                // Mirrors the Postgres predicate: only non-terminal rows
-                // whose lease is gone (expired, or never set = legacy
-                // crash) or whose outcome is ambiguous are reclaimable.
-                let reconcile = matches!(
-                    row.status.as_str(),
-                    "unknown_outcome" | "reconcile_required"
-                );
+                // Mirrors the Postgres predicate (twenty-first audit
+                // item 8): recover() is ONLY for pre-execution crashes —
+                // 'reserved'/'executing' whose lease is gone (expired,
+                // or never set = legacy crash). Ambiguous-outcome rows
+                // ('unknown_outcome'/'reconcile_required') are NEVER
+                // reclaimable here: they Conflict and wait for a human.
                 let stale = matches!(row.status.as_str(), "reserved" | "executing")
                     && row.lease_expires_at.is_none_or(|expires| expires < now);
-                if !reconcile && !stale {
+                if !stale {
                     return Ok(None);
                 }
                 let claim_token = format!("tok-{}", Uuid::new_v4());
@@ -1538,13 +1561,13 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn journal_timeout_records_unknown_outcome_then_reconciles() {
-        // Twentieth-audit core property: a network timeout AFTER dispatch
+    async fn journal_timeout_records_unknown_outcome_and_blocks_redispatch() {
+        // Twenty-first audit item 8: a network timeout AFTER dispatch
         // means the mutation MAY have happened — the row becomes
-        // 'unknown_outcome' (a reconcile-required state), NEVER a plain
-        // retryable 'failed'. A later executor on the same key recovers
-        // it IMMEDIATELY (status-based, no lease wait) and re-dispatches
-        // exactly once, bumping the attempt.
+        // 'unknown_outcome' (a reconciliation state), NEVER a plain
+        // retryable 'failed'. A later executor on the same key must NOT
+        // auto-redispatch it: execute() returns a Conflict and the row
+        // stays 'unknown_outcome' for a human to reconcile.
         let tool = short_timeout_mutating_tool();
         let journal = std::sync::Arc::new(MemoryJournal::default());
         let caller = ctx(&["finance:journal:post"]);
@@ -1587,13 +1610,14 @@ mod tests {
             "{result}"
         );
         // Attempt 2 (a retry or another worker): reserve -> AlreadyExists
-        // -> load('unknown_outcome') -> recover() reclaims at once (the
-        // outcome is ambiguous — reconcile now) -> dispatch ONCE more.
+        // -> load('unknown_outcome') -> Conflict. Dispatch does NOT run
+        // again, recover() is never invoked, and the row is untouched —
+        // it waits for human reconciliation.
         let mut executor_b = ToolExecutor::with_journal(
             PolicyEngine::new(vec![tool.clone()], ToolRisk::HighRisk),
             journal.clone(),
         );
-        let outcome = executor_b
+        let err = executor_b
             .execute(
                 &caller,
                 &tool,
@@ -1606,31 +1630,102 @@ mod tests {
                 },
             )
             .await
-            .unwrap();
-        assert_eq!(outcome, serde_json::json!({"posted": true}));
+            .unwrap_err();
+        assert!(matches!(err, ToolError::Conflict { .. }), "{err:?}");
+        assert!(err.to_string().contains("requires reconciliation"), "{err}");
         assert_eq!(
             calls.load(std::sync::atomic::Ordering::SeqCst),
-            2,
-            "attempt 1 (timed out) + attempt 2 (recovery) = exactly two dispatches"
+            1,
+            "the ambiguous outcome is NEVER auto-redispatched"
         );
         let row = journal.row(caller.tenant_id, &execution.key.key());
-        assert_eq!(row.status, "succeeded");
-        assert_eq!(row.attempt, 2);
-        assert_eq!(row.result["posted"], serde_json::json!(true));
-        // The row completed with the RECOVERING worker's token: it is
-        // terminal and no longer leased.
+        assert_eq!(row.status, "unknown_outcome");
+        assert_eq!(row.attempt, 1);
         assert!(row.claim_token.is_none());
-        assert!(row.lease_expires_at.is_none());
+    }
+
+    #[tokio::test]
+    async fn ambiguous_outcome_rows_never_auto_redispatch() {
+        // Twenty-first audit item 8: 'unknown_outcome' AND
+        // 'reconcile_required' rows mean the mutating command MAY have
+        // happened. A retry must Conflict (NO recover + dispatch) for
+        // both statuses — the row is left exactly as it was.
+        let tool = mutating_tool();
+        let journal = std::sync::Arc::new(MemoryJournal::default());
+        let caller = ctx(&["finance:journal:post"]);
+        for (index, status) in ["unknown_outcome", "reconcile_required"]
+            .into_iter()
+            .enumerate()
+        {
+            let execution = ToolExecutionContext {
+                key: ToolExecutionId {
+                    request_id: Uuid::new_v4(),
+                    program_execution_id: Uuid::new_v4(),
+                    tool_call_index: index as u32 + 20,
+                },
+            };
+            journal.rows.lock().unwrap().insert(
+                MemoryJournal::key(caller.tenant_id, &execution.key.key()),
+                MemoryRow {
+                    status: status.to_string(),
+                    result: serde_json::json!({"error": "ambiguous"}),
+                    claim_owner: None,
+                    claim_token: None,
+                    lease_expires_at: None,
+                    lease_seconds: 300,
+                    attempt: 1,
+                },
+            );
+            let mut executor = ToolExecutor::with_journal(
+                PolicyEngine::new(vec![tool.clone()], ToolRisk::HighRisk),
+                journal.clone(),
+            );
+            let calls = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
+            let err = executor
+                .execute(
+                    &caller,
+                    &tool,
+                    serde_json::json!({}),
+                    Some(approval()),
+                    execution.clone(),
+                    |_| {
+                        calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                        async move { Ok(serde_json::json!({"posted": true})) }
+                    },
+                )
+                .await
+                .unwrap_err();
+            assert!(
+                matches!(err, ToolError::Conflict { .. }),
+                "{status}: {err:?}"
+            );
+            assert!(
+                err.to_string().contains("requires reconciliation"),
+                "{status}: {err}"
+            );
+            assert_eq!(
+                calls.load(std::sync::atomic::Ordering::SeqCst),
+                0,
+                "{status}: dispatch must never run"
+            );
+            let row = journal.row(caller.tenant_id, &execution.key.key());
+            assert_eq!(row.status, status);
+            assert_eq!(row.attempt, 1, "{status}: recover must not have run");
+            assert!(row.claim_token.is_none());
+        }
     }
 
     #[tokio::test]
     async fn second_executor_recovers_expired_lease_and_completes() {
-        // Crash-recovery (twentieth audit P1): executor A reserved the key
-        // and crashed mid-dispatch. The row sits 'reserved' with an
-        // EXPIRED lease. A second executor reclaims it atomically
-        // (recover -> 'executing', attempt 2, new token), dispatches once
-        // and completes. The stale owner A can NEVER later complete or
-        // renew that claim — fencing by claim_token.
+        // Crash-recovery (twentieth audit P1, narrowed by twenty-first
+        // audit item 8): recover() is ONLY for a PRE-EXECUTION crash —
+        // executor A reserved the key and died before dispatching, so
+        // the row sits 'reserved' with an EXPIRED lease and no
+        // heartbeat. A second executor reclaims it atomically (recover
+        // -> 'executing', attempt 2, new token), dispatches once and
+        // completes. Ambiguous-outcome rows are NOT reclaimable (see
+        // the item-8 tests above). The stale owner A can NEVER later
+        // complete or renew that claim — fencing by claim_token.
         let tool = mutating_tool();
         let journal = std::sync::Arc::new(MemoryJournal::default());
         let caller = ctx(&["finance:journal:post"]);

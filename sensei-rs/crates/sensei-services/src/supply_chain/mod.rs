@@ -106,6 +106,11 @@ pub struct SalesOrder {
     pub shipping_address: String,
     pub created_by: Uuid,
     pub created_at: DateTime<Utc>,
+    /// The SITE that fulfils this order (twenty-first audit item 9): set
+    /// at creation/confirmation and IMMUTABLE — site-scoped OTD is only
+    /// meaningful for orders that name a fulfilling site.
+    #[serde(default)]
+    pub fulfilling_site_id: Option<Uuid>,
 }
 
 /// A single line item within a sales order.
@@ -133,6 +138,11 @@ pub struct PurchaseOrder {
     pub expected_delivery: Option<DateTime<Utc>>,
     pub created_by: Uuid,
     pub created_at: DateTime<Utc>,
+    /// The SITE this PO is bought FOR (twenty-first audit item 10):
+    /// receiving_site_id (migration 152) — procurement is a site
+    /// operation.
+    #[serde(default)]
+    pub receiving_site_id: Option<Uuid>,
 }
 
 /// A single line item within a purchase order.
@@ -712,6 +722,7 @@ impl SupplyChainService for InMemorySupplyChainService {
             customer_id: quote.customer_id,
             customer_name: quote.customer_name,
             status: "pending".to_string(),
+            fulfilling_site_id: None,
             line_items: so_items,
             total_amount: quote.total_amount,
             currency: quote.currency,
@@ -1555,6 +1566,7 @@ mod tests {
             expected_delivery: Some(Utc::now() + chrono::Duration::days(14)),
             created_by: Uuid::new_v4(),
             created_at: Utc::now(),
+            receiving_site_id: None,
         };
 
         let created_po = service.create_purchase_order(tenant_id, po).await.unwrap();
