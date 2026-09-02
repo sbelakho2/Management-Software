@@ -599,6 +599,24 @@ fn verify_chat_response(
     // Twenty-first audit item 7: subject-family classification. A claim
     // about staffing/quality/inventory etc. can only be MEASURED by
     // evidence that speaks about the same family.
+    /// The named SITE in a sentence/evidence text, when one is named
+    /// (twenty-second audit: family equality is NOT enough — a Tangier
+    /// staffing claim cannot be measured by Bizerte staffing evidence).
+    fn named_site(text: &str) -> Option<&'static str> {
+        let t = text.to_lowercase();
+        if t.contains("tangier") {
+            Some("tangier")
+        } else if t.contains("bizerte") {
+            Some("bizerte")
+        } else if t.contains("morocco") || t.contains(" ma ") {
+            Some("morocco")
+        } else if t.contains("tunisia") || t.contains(" tn ") {
+            Some("tunisia")
+        } else {
+            None
+        }
+    }
+
     fn subject_family(text: &str) -> Option<&'static str> {
         let t = text.to_lowercase();
         if [
@@ -760,8 +778,31 @@ fn verify_chat_response(
                 from_address.or(from_text)
             })
             .collect();
+        let claim_site = named_site(s);
+        let evidence_sites: Vec<Option<&'static str>> = matched_refs
+            .iter()
+            .filter_map(|r| evidence_by_id.get(r.as_str()))
+            .map(|item| {
+                let from_address = item.fact_address.as_deref().and_then(named_site);
+                let from_text = item
+                    .payload
+                    .get("text")
+                    .and_then(|t| t.as_str())
+                    .and_then(named_site);
+                from_address.or(from_text)
+            })
+            .collect();
+        // Family equality AND site equality: a Tangier staffing claim
+        // cited against Bizerte staffing evidence is REJECTED even though
+        // both are the staffing family (twenty-second audit).
+        let site_matches = match (claim_site, evidence_sites.as_slice()) {
+            (Some(site), sites) => !sites.is_empty() && sites.iter().all(|x| *x == Some(site)),
+            (None, _) => true,
+        };
         let compatible = match (claim_family, evidence_families.as_slice()) {
-            (Some(fam), fams) => !fams.is_empty() && fams.iter().all(|f| *f == Some(fam)),
+            (Some(fam), fams) => {
+                !fams.is_empty() && fams.iter().all(|f| *f == Some(fam)) && site_matches
+            }
             (None, _) => false,
         };
         let unmatched_refs: Vec<String> = evidence_refs
@@ -787,10 +828,19 @@ fn verify_chat_response(
         }
         if !response.is_fallback && !incompatible_issued.is_empty() {
             for r in &incompatible_issued {
+                let reason = if claim_site.is_some() && !site_matches {
+                    format!(
+                        "the evidence speaks about a DIFFERENT site than the claim \
+                         ('{}') — wrong-site evidence cannot measure the claim",
+                        claim_site.unwrap_or("?")
+                    )
+                } else {
+                    "inventory evidence cannot measure a staffing claim".to_string()
+                };
                 issues.push(format!(
                     "Evidence '{r}' is a real kernel evidence id but does NOT \
                      describe this claim's subject — evidence/claim relationship \
-                     violated (inventory evidence cannot measure a staffing claim)."
+                     violated ({reason})."
                 ));
             }
         }
@@ -1302,6 +1352,33 @@ mod tests {
         );
         let claims: Vec<Claim> = serde_json::from_value(v["claims"].clone()).unwrap();
         assert_eq!(claims[0].epistemic_status, "unverified");
+    }
+
+    #[test]
+    fn tangier_staffing_claim_cannot_cite_bizerte_staffing_evidence() {
+        // Twenty-second audit: family equality alone is not enough — the
+        // SITE must match too.
+        let bizerte = kernel_item(
+            "section:staffing",
+            "Bizerte SMT line staffing: 8 operators on shift A.",
+        );
+        let v = verify(
+            &format!(
+                "Tangier is severely understaffed [evidence: {}].",
+                bizerte.evidence_id
+            ),
+            std::slice::from_ref(&bizerte),
+        );
+        assert_eq!(
+            v["verdict"], "needs_evidence",
+            "a Tangier staffing claim cannot be measured by Bizerte evidence"
+        );
+        let issues: Vec<String> = serde_json::from_value(v["issues"].clone()).unwrap();
+        assert!(
+            issues.iter().any(|i| i.contains("DIFFERENT site")),
+            "the issue names the site mismatch: {:?}",
+            issues
+        );
     }
 
     #[test]
