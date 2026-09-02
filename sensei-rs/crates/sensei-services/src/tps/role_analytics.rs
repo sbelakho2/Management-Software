@@ -731,27 +731,65 @@ async fn collect_site_view(
 /// section FAILS CLOSED (`not_available_site_required`) instead of
 /// returning tenant-wide purchase orders to a site-scoped buyer.
 async fn collect_buyer_view(
-    _ttx: &mut TenantTx<'_>,
-    _tenant_id: Uuid,
+    ttx: &mut TenantTx<'_>,
+    tenant_id: Uuid,
     site_id: Option<Uuid>,
     a: &mut RoleAnalytics,
 ) -> Result<()> {
+    // Twentieth audit P1/P2: purchase_orders now carry receiving_site_id
+    // (migration 152) — the buyer view is scoped honestly. A site-scoped
+    // caller sees exactly their plant's procurement; a caller without a
+    // site scope still fails closed (tenant-wide PO numbers are never
+    // surfaced).
     let boundary = match site_id {
         Some(id) => format!("site {id}"),
         None => "no site scope".to_string(),
     };
+    let Some(site_id) = site_id else {
+        a.now.push(AnalyticLine::fact(
+            "purchase order analytics",
+            0.0,
+            "not_available_site_required",
+        ));
+        a.why.push(AnalyticLine::fact(
+            format!(
+                "purchase orders are site-scoped (receiving_site_id) — open/past-due PO \
+                 counts need a site; none is available for {boundary}"
+            ),
+            0.0,
+            "not_available_site_required",
+        ));
+        return Ok(());
+    };
+
+    let (open_count, past_due_count): (i64, i64) = sqlx::query_as(
+        "SELECT COUNT(*) FILTER (WHERE po.status NOT IN ('received','closed','cancelled'))::bigint, \
+                COUNT(*) FILTER (WHERE po.status NOT IN ('received','closed','cancelled') \
+                                 AND po.expected_date IS NOT NULL \
+                                 AND po.expected_date < NOW())::bigint \
+         FROM purchase_orders po \
+         WHERE po.tenant_id = $1 AND po.receiving_site_id = $2",
+    )
+    .bind(tenant_id)
+    .bind(site_id)
+    .fetch_one(&mut **ttx.tx())
+    .await
+    .map_err(|e| SenseiError::Database(format!("role analytics: buyer PO scope: {e}")))?;
+
     a.now.push(AnalyticLine::fact(
-        "purchase order analytics",
-        0.0,
-        "not_available_site_required",
+        "open purchase orders",
+        open_count as f64,
+        "PO",
     ));
     a.why.push(AnalyticLine::fact(
         format!(
-            "purchase orders carry no site linkage (no site_id on purchase_orders/suppliers/\
-             purchase_order_items) — open/past-due PO counts are not available for {boundary}"
+            "{past_due_count} open purchase order(s) for this site are PAST DUE              (expected date passed) — {boundary}"
         ),
-        0.0,
-        "not_available_site_required",
+        past_due_count as f64,
+        "PO",
+    ));
+    a.next.push(format!(
+        "expedite the {past_due_count} past-due purchase order(s) for this site"
     ));
     Ok(())
 }
@@ -903,12 +941,16 @@ async fn collect_npi_view(
                         WHERE b.parent_product_id = wo.product_id AND b.is_active) AS has_bom, \
                 EXISTS (SELECT 1 FROM routings r \
                         WHERE r.product_id = wo.product_id AND r.is_active) AS has_route, \
-                EXISTS (SELECT 1 FROM pfmea_lite f WHERE f.product_id = wo.product_id) AS has_pfmea, \
-                EXISTS (SELECT 1 FROM control_plans c WHERE c.product_id = wo.product_id) AS has_control_plan, \
+                EXISTS (SELECT 1 FROM pfmea_lite f WHERE f.product_id = wo.product_id \
+                        AND f.status IN ('completed','closed')) AS has_pfmea, \
+                EXISTS (SELECT 1 FROM control_plans c WHERE c.product_id = wo.product_id \
+                        AND c.status = 'active') AS has_control_plan, \
                 EXISTS (SELECT 1 FROM first_article_inspections fai \
-                        WHERE fai.product_id = wo.product_id) AS has_fai, \
+                        WHERE fai.product_id = wo.product_id \
+                          AND fai.status = 'completed' AND fai.result = 'passed') AS has_fai, \
                 EXISTS (SELECT 1 FROM process_capability_studies pcs \
-                        WHERE pcs.product_id = wo.product_id) AS has_capability \
+                        WHERE pcs.product_id = wo.product_id \
+                          AND pcs.ppk >= 1.33) AS has_capability \
          FROM work_orders wo \
          JOIN products p ON p.id = wo.product_id AND p.tenant_id = wo.tenant_id \
          WHERE wo.tenant_id = $1 \

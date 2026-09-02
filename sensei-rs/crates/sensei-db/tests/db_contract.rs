@@ -5402,19 +5402,24 @@ async fn role_analytics_elapsed_pitch_and_scope_deny() {
     )
     .await
     .expect("buyer analytics must build");
-    // Eighteenth audit P1-10: purchase_orders have NO site linkage, so a
-    // site-scoped buyer FAILS CLOSED — tenant-wide PO numbers are never
-    // surfaced; the section states that the site is required.
+    // Eighteenth audit P1-10 + twentieth audit P1/P2: purchase orders
+    // carry receiving_site_id (migration 152); a SITE-scoped buyer sees
+    // exactly their plant's procurement — the past-due PO seeded without
+    // a receiving site is NOT surfaced (never tenant-wide leakage).
     assert!(
-        buyer.abnormal.iter().all(|l| !l.label.contains("past due")),
-        "site-scoped buyer analytics must not leak tenant-wide PO data"
+        buyer.why.iter().all(|l| !l.label.contains("PO-EP")),
+        "site-scoped buyer analytics never surface another site's PO data"
     );
     assert!(
         buyer
             .why
             .iter()
-            .any(|l| l.unit.contains("not_available_site_required")),
-        "the buyer section names the missing site scope instead of          returning tenant-wide numbers"
+            .any(|l| l.label.contains("open purchase order")),
+        "the buyer section reports the site-scoped open-PO position"
+    );
+    assert!(
+        buyer.abnormal.iter().all(|l| !l.label.contains("past due")),
+        "no past-due flag is fabricated for unseen POs"
     );
 }
 
@@ -12482,7 +12487,7 @@ async fn twentieth_audit_adversarial_gate_v3() {
             .bind(chrono::Utc::now() - chrono::Duration::days(10))
             .bind(chrono::Utc::now() - chrono::Duration::days(2))
             .bind(if on_time {
-                chrono::Utc::now() - chrono::Duration::days(2)
+                chrono::Utc::now() - chrono::Duration::days(2) - chrono::Duration::hours(1)
             } else {
                 chrono::Utc::now() + chrono::Duration::days(2)
             })
