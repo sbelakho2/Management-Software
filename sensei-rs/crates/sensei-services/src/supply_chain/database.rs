@@ -612,7 +612,7 @@ impl SupplyChainService for DatabaseSupplyChainService {
                        confirmed_at          = COALESCE(confirmed_at, {stamp}),
                        shipped_at            = COALESCE(shipped_at, {stamp}),
                        delivered_at          = COALESCE(delivered_at, {stamp}),
-                       committed_date        = COALESCE(committed_date, CASE WHEN $1 = 'confirmed' THEN NOW() END),
+                       committed_date        = COALESCE(committed_date, CASE WHEN $1 = 'confirmed' THEN delivery_date END),
                        original_requested_date = COALESCE(original_requested_date, CASE WHEN $1 = 'confirmed' THEN delivery_date END),
                        commitment_revision   = CASE WHEN $1 = 'confirmed' THEN 1 ELSE commitment_revision END,
                        actual_ship_date      = COALESCE(actual_ship_date, CASE WHEN $1 = 'shipped' THEN NOW() END),

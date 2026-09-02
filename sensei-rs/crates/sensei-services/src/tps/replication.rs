@@ -240,13 +240,26 @@ pub fn may_replicate(
     source_jurisdiction: Option<&Jurisdiction>,
     target_jurisdiction: Option<&Jurisdiction>,
 ) -> bool {
-    let destination_set_and_different = match (source_jurisdiction, target_jurisdiction) {
-        (Some(src), Some(dst)) => src != dst,
-        (None, Some(_)) => true,
-        _ => false,
-    };
-    !(destination_set_and_different
-        && matches!(data_policy, DataPolicy::Restricted | DataPolicy::Personal))
+    match (source_jurisdiction, target_jurisdiction) {
+        // Same jurisdiction: intra-country replication is always allowed.
+        (Some(src), Some(dst)) if src == dst => true,
+        // Cross-border:
+        (Some(_src), Some(_dst)) => {
+            // The residency POLICY governs the actual decision (nineteenth
+            // audit P0): the caller cannot choose which policy applies.
+            matches!(
+                data_policy,
+                DataPolicy::Public | DataPolicy::Internal | DataPolicy::Confidential
+            )
+        }
+        // Eighteenth/nineteenth audit P0: Restricted/Personal data with
+        // an UNKNOWN destination is DENIED — unknown is not 'same
+        // country'. This is the normal path through the endpoint.
+        (Some(_src), None) => !matches!(data_policy, DataPolicy::Restricted | DataPolicy::Personal),
+        // No source jurisdiction -> nothing may leave.
+        (None, Some(_dst)) => false,
+        (None, None) => true,
+    }
 }
 
 /// The SERVER-DERIVED authorization artifact (eighteenth audit P0-3):

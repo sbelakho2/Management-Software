@@ -10433,6 +10433,19 @@ async fn site_bootstrap_lifecycle_validation() {
     .execute(&pool)
     .await
     .expect("qualification insert");
+    // Positive integration evidence (nineteenth audit P0): a RECENT
+    // integration checkpoint proves the integration ran — absence of
+    // dead letters alone is not readiness.
+    sqlx::query(
+        "INSERT INTO integration_checkpoints \
+             (tenant_id, source_system, source_table, last_run_at) \
+         VALUES ($1, 'starz_erp', 'sales_orders', NOW())",
+    )
+    .bind(tenant_id)
+    .execute(&pool)
+    .await
+    .expect("integration checkpoint");
+
     // The principal must hold an ACTIVE role-slot assignment for the
     // skill-coverage join (the slot was created in the seeding tx above).
     sqlx::query(

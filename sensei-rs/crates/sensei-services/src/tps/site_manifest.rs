@@ -551,16 +551,32 @@ pub async fn validate_site(
                     .map_err(|e| SenseiError::Database(format!("Integrations read failed: {e}")))?,
                 )
                 .unwrap_or_default();
+                // Eighteenth/nineteenth audit P0: a DB failure means
+                // UNKNOWN -> NOT READY, never '0 failures'. Positive
+                // evidence: a RECENT integration checkpoint proves the
+                // integration ran; dead-letter absence alone proves
+                // nothing.
                 let failures: i64 = sqlx::query_scalar(
                     "SELECT COUNT(*) FROM integration_dead_letter \
                      WHERE tenant_id = $1",
                 )
                 .bind(tenant_id)
-                .bind(site_id)
                 .fetch_one(&mut **tx)
                 .await
-                .unwrap_or(0);
-                !declared.is_empty() && failures == 0
+                .map_err(|e| {
+                    SenseiError::Database(format!("Integration failures read failed: {e}"))
+                })?;
+                let recent_checkpoints: i64 = sqlx::query_scalar(
+                    "SELECT COUNT(*) FROM integration_checkpoints \
+                     WHERE tenant_id = $1 AND last_run_at > NOW() - INTERVAL '24 hours'",
+                )
+                .bind(tenant_id)
+                .fetch_one(&mut **tx)
+                .await
+                .map_err(|e| {
+                    SenseiError::Database(format!("Integration checkpoints read failed: {e}"))
+                })?;
+                !declared.is_empty() && failures == 0 && recent_checkpoints > 0
             };
             checks.push((
                 "integrations_healthy".into(),
@@ -1055,25 +1071,33 @@ pub async fn advance_site_lifecycle(
                     .bind(site_id)
                     .fetch_one(&mut **tx)
                     .await
-                    .unwrap_or(0);
+                    .map_err(|e| {
+                        SenseiError::Database(format!("Replication gate read failed: {e}"))
+                    })?;
                     if failed > 0 {
                         return Err(SenseiError::Validation(
                             "replication has retry-due failed entries — activation blocked"
                                 .to_string(),
                         ));
                     }
-                    let integ_failed: i64 = sqlx::query_scalar(
-                        "SELECT COUNT(*) FROM integration_dead_letter \
-                         WHERE tenant_id = $1",
+                    // Positive evidence: a recent checkpoint proves the
+                    // integration RAN; absence of dead letters alone
+                    // proves nothing. DB errors propagate -> NOT READY.
+                    let recent_checkpoints: i64 = sqlx::query_scalar(
+                        "SELECT COUNT(*) FROM integration_checkpoints \
+                         WHERE tenant_id = $1 AND last_run_at > NOW() - INTERVAL '24 hours'",
                     )
                     .bind(tenant_id)
-                    .bind(site_id)
                     .fetch_one(&mut **tx)
                     .await
-                    .unwrap_or(0);
-                    if integ_failed > 0 {
+                    .map_err(|e| {
+                        SenseiError::Database(format!("Integration gate read failed: {e}"))
+                    })?;
+                    if recent_checkpoints == 0 {
                         return Err(SenseiError::Validation(
-                            "a site integration is failed — activation blocked".to_string(),
+                            "no integration checkpoint in the last 24h — a site without \
+                             positive integration evidence cannot activate"
+                                .to_string(),
                         ));
                     }
                     advance_lifecycle(

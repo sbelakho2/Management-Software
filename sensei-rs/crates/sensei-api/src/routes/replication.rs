@@ -118,7 +118,52 @@ pub async fn enqueue(
             .await?;
     let policy = replication::DataPolicy::parse(&artifact.data_class)
         .map_err(sensei_core::error::SenseiError::Validation)?;
-    if !replication::may_replicate(policy, Some(&artifact.source_jurisdiction), None) {
+    // Nineteenth audit P0: the destination is DERIVED from the tenant's
+    // federation memberships (the corporate group), never supplied by
+    // the caller and never silently None. Restricted/Personal with no
+    // derivable destination is DENIED by may_replicate.
+    let target_jurisdiction: Option<replication::Jurisdiction> = {
+        let country: Option<String> = sqlx::query_scalar(
+            "SELECT sm.country FROM federation_memberships fm \
+             JOIN site_manifests sm ON sm.tenant_id = fm.peer_tenant_id \
+             WHERE fm.tenant_id = $1 LIMIT 1",
+        )
+        .bind(user.tenant_id)
+        .fetch_optional(p)
+        .await
+        .map_err(|e| {
+            sensei_core::error::SenseiError::Database(format!(
+                "replication: federation target lookup failed: {e}"
+            ))
+        })?;
+        match country {
+            Some(country) => {
+                let residency: Option<String> = sqlx::query_scalar(
+                    "SELECT data_residency FROM country_policies \
+                     WHERE tenant_id = $1 AND country = $2",
+                )
+                .bind(user.tenant_id)
+                .bind(&country)
+                .fetch_optional(p)
+                .await
+                .map_err(|e| {
+                    sensei_core::error::SenseiError::Database(format!(
+                        "replication: target policy lookup failed: {e}"
+                    ))
+                })?;
+                match residency {
+                    Some(residency) => replication::Jurisdiction::parse(&residency).ok(),
+                    None => None,
+                }
+            }
+            None => None,
+        }
+    };
+    if !replication::may_replicate(
+        policy,
+        Some(&artifact.source_jurisdiction),
+        target_jurisdiction.as_ref(),
+    ) {
         return Err(SenseiError::HttpError {
             status: 422,
             message: "data residency policy blocks this projection".to_string(),
@@ -147,7 +192,7 @@ pub async fn enqueue(
         Some(&artifact.source_event_id.to_string()),
         &envelope,
         Some(&artifact.source_jurisdiction),
-        None,
+        target_jurisdiction.as_ref(),
     )
     .await?;
     Ok(Json(serde_json::json!({

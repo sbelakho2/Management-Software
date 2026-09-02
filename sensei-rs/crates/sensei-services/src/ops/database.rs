@@ -534,7 +534,7 @@ impl OperationsService for DatabaseOperationsService {
         let now = Utc::now();
         let row = with_tenant_tx(&self.pool, tenant_id, |tx| {
             Box::pin(async move {
-                sqlx::query_as::<_, AndonRow>(
+                let row = sqlx::query_as::<_, AndonRow>(
                     r#"UPDATE andons SET status='acknowledged', acknowledged_by=$1, acknowledged_at=$2,
                         response_time_seconds=EXTRACT(EPOCH FROM ($2 - created_at))::bigint
                        WHERE id=$3 AND tenant_id=$4 AND status='active'
@@ -544,28 +544,26 @@ impl OperationsService for DatabaseOperationsService {
                 .bind(acknowledged_by).bind(now).bind(id).bind(tenant_id).bind(&sites)
                 .fetch_optional(&mut **tx)
                 .await.map_err(|e| SenseiError::Database(format!("Failed to acknowledge andon: {e}")))?
-                .ok_or_else(|| SenseiError::NotFound(format!("Andon {id} not found or not active")))
-            })
-        }).await?;
-        let a = andon_row_to_domain(row);
-        with_tenant_tx(&self.pool, tenant_id, move |tx| {
-            Box::pin(async move {
+                .ok_or_else(|| SenseiError::NotFound(format!("Andon {id} not found or not active")))?;
+                // Nineteenth audit P0: state mutation + canonical stream
+                // event in ONE transaction — a failed event append rolls
+                // the physical change back; the stream never disagrees.
                 crate::ops::andon_events::write_andon_stream_event(
                     tx,
                     tenant_id,
                     "andon.acknowledged",
-                    a.id,
-                    a.site_id,
-                    a.work_center_id,
+                    row.id,
+                    row.site_id,
+                    row.work_center_id,
                     acknowledged_by,
-                    a.acknowledged_at.unwrap_or(now),
-                    serde_json::json!({ "response_time_seconds": a.response_time_seconds }),
+                    row.acknowledged_at.unwrap_or(now),
+                    serde_json::json!({ "response_time_seconds": row.response_time_seconds }),
                 )
-                .await
+                .await?;
+                Ok(row)
             })
-        })
-        .await?;
-        return Ok(a);
+        }).await?;
+        Ok(andon_row_to_domain(row))
     }
 
     async fn escalate_andon(
@@ -587,40 +585,36 @@ impl OperationsService for DatabaseOperationsService {
         let now = Utc::now();
         let row = with_tenant_tx(&self.pool, tenant_id, |tx| {
             Box::pin(async move {
-                sqlx::query_as::<_, AndonRow>(
+                let row = sqlx::query_as::<_, AndonRow>(
                     r#"UPDATE andons SET escalated=TRUE, escalated_at=$1, status=CASE
                            WHEN status='active' THEN 'acknowledged' ELSE status END,
                            acknowledged_by=COALESCE(acknowledged_by, $2),
                            acknowledged_at=COALESCE(acknowledged_at, $1),
                            response_time_seconds=COALESCE(response_time_seconds, EXTRACT(EPOCH FROM ($1 - created_at))::bigint)
                        WHERE id=$3 AND tenant_id=$4 AND status NOT IN ('resolved','voided')
+                         AND site_id = ANY($5)
                        RETURNING id, tenant_id, andon_number, site_id, work_center_id, issue_type, severity, description, status, raised_by, acknowledged_by, resolved_by, resolution, response_time_seconds, resolution_time_seconds, created_at, acknowledged_at, resolved_at, restart_authorized_by, restart_authorized_at, abnormal_condition_observed_at, contained_at, contained_by, contained_note, escalated, escalated_at, request_key, escalated, escalated_at"#,
                 )
                 .bind(now).bind(escalated_by).bind(id).bind(tenant_id).bind(&sites)
                 .fetch_optional(&mut **tx)
                 .await.map_err(|e| SenseiError::Database(format!("Failed to escalate andon: {e}")))?
-                .ok_or_else(|| SenseiError::NotFound(format!("Andon {id} not found or already closed")))
-            })
-        }).await?;
-        let a = andon_row_to_domain(row);
-        with_tenant_tx(&self.pool, tenant_id, move |tx| {
-            Box::pin(async move {
+                .ok_or_else(|| SenseiError::NotFound(format!("Andon {id} not found or already closed")))?;
                 crate::ops::andon_events::write_andon_stream_event(
                     tx,
                     tenant_id,
                     "andon.escalated",
-                    a.id,
-                    a.site_id,
-                    a.work_center_id,
+                    row.id,
+                    row.site_id,
+                    row.work_center_id,
                     escalated_by,
-                    a.escalated_at.unwrap_or(now),
+                    row.escalated_at.unwrap_or(now),
                     serde_json::json!({}),
                 )
-                .await
+                .await?;
+                Ok(row)
             })
-        })
-        .await?;
-        return Ok(a);
+        }).await?;
+        Ok(andon_row_to_domain(row))
     }
 
     async fn resolve_andon(
@@ -693,29 +687,25 @@ impl OperationsService for DatabaseOperationsService {
                 }
                 };
 
-                Ok(row)
-            })
-        })
-        .await?;
-        let a = andon_row_to_domain(row);
-        with_tenant_tx(&self.pool, tenant_id, move |tx| {
-            Box::pin(async move {
+                // Nineteenth audit P0: state mutation + canonical stream
+                // event in ONE transaction.
                 crate::ops::andon_events::write_andon_stream_event(
                     tx,
                     tenant_id,
                     "andon.resolved",
-                    a.id,
-                    a.site_id,
-                    a.work_center_id,
+                    row.id,
+                    row.site_id,
+                    row.work_center_id,
                     resolved_by,
-                    a.resolved_at.unwrap_or(now),
+                    row.resolved_at.unwrap_or(now),
                     serde_json::json!({ "resolution": resolution_for_event }),
                 )
-                .await
+                .await?;
+                Ok(row)
             })
         })
         .await?;
-        return Ok(a);
+        Ok(andon_row_to_domain(row))
     }
 
     async fn authorize_restart(
@@ -733,7 +723,7 @@ impl OperationsService for DatabaseOperationsService {
         let sites = authorized_sites.to_vec();
         let row = with_tenant_tx(&self.pool, tenant_id, |tx| {
             Box::pin(async move {
-                sqlx::query_as::<_, AndonRow>(
+                let row = sqlx::query_as::<_, AndonRow>(
                     "UPDATE andons SET restart_authorized_by = $3, restart_authorized_at = NOW() \
                      WHERE id = $1 AND tenant_id = $2 AND site_id = ANY($4) \
                      RETURNING id, tenant_id, andon_number, site_id, work_center_id, issue_type, severity, \
@@ -748,28 +738,24 @@ impl OperationsService for DatabaseOperationsService {
                 .fetch_optional(&mut **tx)
                 .await
                 .map_err(|e| SenseiError::Database(format!("Failed to authorize restart: {e}")))?
-                .ok_or_else(|| SenseiError::NotFound(format!("Andon {id} not found")))
-            })
-        }).await?;
-        let a = andon_row_to_domain(row);
-        with_tenant_tx(&self.pool, tenant_id, move |tx| {
-            Box::pin(async move {
+                .ok_or_else(|| SenseiError::NotFound(format!("Andon {id} not found")))?;
+                // Nineteenth audit P0: one transaction.
                 crate::ops::andon_events::write_andon_stream_event(
                     tx,
                     tenant_id,
                     "andon.restart_authorized",
-                    a.id,
-                    a.site_id,
-                    a.work_center_id,
+                    row.id,
+                    row.site_id,
+                    row.work_center_id,
                     authorized_by,
-                    a.restart_authorized_at.unwrap_or(Utc::now()),
+                    row.restart_authorized_at.unwrap_or(Utc::now()),
                     serde_json::json!({}),
                 )
-                .await
+                .await?;
+                Ok(row)
             })
-        })
-        .await?;
-        return Ok(a);
+        }).await?;
+        Ok(andon_row_to_domain(row))
     }
 
     async fn get_andon(&self, tenant_id: Uuid, id: Uuid) -> Result<Andon> {
@@ -1348,28 +1334,24 @@ impl OperationsService for DatabaseOperationsService {
                         }
                     };
                 };
-                Ok(row)
-            })
-        }).await?;
-        let a = andon_row_to_domain(row);
-        with_tenant_tx(&self.pool, tenant_id, move |tx| {
-            Box::pin(async move {
+                // Nineteenth audit P0: one transaction — the void and
+                // its canonical event are atomic.
                 crate::ops::andon_events::write_andon_stream_event(
                     tx,
                     tenant_id,
                     "andon.voided",
-                    a.id,
-                    a.site_id,
-                    a.work_center_id,
+                    row.id,
+                    row.site_id,
+                    row.work_center_id,
                     actor_id,
-                    a.resolved_at.unwrap_or(Utc::now()),
+                    row.resolved_at.unwrap_or(Utc::now()),
                     serde_json::json!({ "resolution": reason_for_event }),
                 )
-                .await
+                .await?;
+                Ok(row)
             })
-        })
-        .await?;
-        return Ok(a);
+        }).await?;
+        Ok(andon_row_to_domain(row))
     }
 
     // ── Update/Delete for Project ───────────────────────────────────────
