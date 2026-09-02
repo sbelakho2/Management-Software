@@ -1661,17 +1661,25 @@ impl SupplyChainService for DatabaseSupplyChainService {
         let page = page.unwrap_or(1).max(1);
         let per_page = per_page.unwrap_or(20).clamp(1, 100);
         let offset = (page - 1) * per_page;
-        let items: Vec<StockMoveRow> = sqlx::query_as(
-            r#"SELECT id, tenant_id, product_id,
-                      (SELECT name FROM products WHERE products.id = stock_moves.product_id) AS product_name,
-                      quantity::bigint, move_type, from_location, to_location, reference_type, reference_id,
-                      moved_by AS created_by, created_at
-               FROM stock_moves
-               WHERE tenant_id=$1 AND ($2::uuid IS NULL OR product_id=$2) ORDER BY created_at DESC LIMIT $3 OFFSET $4"#,
-        ).bind(tenant_id).bind(product_id).bind(per_page as i64).bind(offset as i64).fetch_all(&self.pool).await
-            .map_err(|e| SenseiError::Database(format!("Failed to list stock moves: {e}")))?;
-        let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM stock_moves WHERE tenant_id=$1 AND ($2::uuid IS NULL OR product_id=$2)")
-            .bind(tenant_id).bind(product_id).fetch_one(&self.pool).await.map_err(|e| SenseiError::Database(format!("Failed to count stock moves: {e}")))?;
+        // stock_moves is FORCE-RLS (migration 160) — tenant context is
+        // required even for the unscoped legacy list (twenty-fourth
+        // audit P0: RLS rows are invisible without app.tenant_id).
+        let (items, count): (Vec<StockMoveRow>, i64) = with_tenant_tx(&self.pool, tenant_id, |tx| {
+            Box::pin(async move {
+                let items: Vec<StockMoveRow> = sqlx::query_as(
+                    r#"SELECT id, tenant_id, product_id,
+                              (SELECT name FROM products WHERE products.id = stock_moves.product_id) AS product_name,
+                              quantity::bigint, move_type, from_location, to_location, reference_type, reference_id,
+                              moved_by AS created_by, created_at
+                       FROM stock_moves
+                       WHERE tenant_id=$1 AND ($2::uuid IS NULL OR product_id=$2) ORDER BY created_at DESC LIMIT $3 OFFSET $4"#,
+                ).bind(tenant_id).bind(product_id).bind(per_page as i64).bind(offset as i64).fetch_all(&mut **tx).await
+                    .map_err(|e| SenseiError::Database(format!("Failed to list stock moves: {e}")))?;
+                let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM stock_moves WHERE tenant_id=$1 AND ($2::uuid IS NULL OR product_id=$2)")
+                    .bind(tenant_id).bind(product_id).fetch_one(&mut **tx).await.map_err(|e| SenseiError::Database(format!("Failed to count stock moves: {e}")))?;
+                Ok((items, count))
+            })
+        }).await?;
         Ok(paginate(
             items.into_iter().map(sm_row_to_domain).collect(),
             count,

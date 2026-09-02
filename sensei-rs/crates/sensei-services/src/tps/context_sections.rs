@@ -22,6 +22,18 @@ const MAX_LINE_CHARS: usize = 160;
 /// line. Fetches run in a tenant-scoped transaction (SET LOCAL
 /// `app.tenant_id`) so the RLS fail-closed policies apply exactly as on
 /// every other surface. The result is deterministic and bounded.
+/// Emit a live section line. When the section was produced under a
+/// KNOWN source site, the site is embedded ("site:<uuid>") so the
+/// evidence construction stamps the SOURCE site — a retrieval bug that
+/// returns another site's row can never be relabeled with the request's
+/// site (twenty-fourth audit: no scope laundering).
+fn line_at(section: &str, content: impl AsRef<str>, source_site_id: Option<Uuid>) -> String {
+    match source_site_id {
+        Some(site) => format!("{section} [live site:{site}]: {}", content.as_ref()),
+        None => line(section, content),
+    }
+}
+
 pub async fn build_compact_context(
     pool: &PgPool,
     tenant_id: Uuid,
@@ -31,28 +43,37 @@ pub async fn build_compact_context(
 ) -> Vec<String> {
     let mut lines: Vec<String> = Vec::new();
     let mut no_context_emitted = false;
+    let source_site = site_id;
 
     for section in &plan.required {
         match section.as_str() {
             "current_work" if work_center_id.is_some() => {
                 match current_work_lines(pool, tenant_id, work_center_id.expect("guarded")).await {
                     Ok(mut section_lines) => lines.append(&mut section_lines),
-                    Err(e) => lines.push(line(section, format!("unavailable ({e})"))),
+                    Err(e) => {
+                        lines.push(line_at(section, format!("unavailable ({e})"), source_site))
+                    }
                 }
             }
             "live_state" => match live_state_lines(pool, tenant_id).await {
                 Ok(mut section_lines) => lines.append(&mut section_lines),
-                Err(e) => lines.push(line(section, format!("unavailable ({e})"))),
+                Err(e) => lines.push(line_at(section, format!("unavailable ({e})"), source_site)),
             },
             "metric_tree" if plan.task == TaskKind::ExecutiveAnalysis => {
                 match metric_tree_lines(pool, tenant_id, site_id).await {
                     Ok(mut section_lines) => lines.append(&mut section_lines),
-                    Err(e) => lines.push(line(section, format!("unavailable ({e})"))),
+                    Err(e) => {
+                        lines.push(line_at(section, format!("unavailable ({e})"), source_site))
+                    }
                 }
             }
             _ => {
                 if !no_context_emitted {
-                    lines.push(line(section, "no additional context for this task"));
+                    lines.push(line_at(
+                        section,
+                        "no additional context for this task",
+                        source_site,
+                    ));
                     no_context_emitted = true;
                 }
             }

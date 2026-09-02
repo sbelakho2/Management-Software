@@ -244,13 +244,17 @@ pub(crate) async fn prepare_inference(
             // exposed, observed_at stays None — retrieval time is NEVER
             // substituted for observation time.
             let observed_at = sensei_agent_core::context::parse_observed_at(content);
+            // Twenty-fourth audit: the evidence site scope comes from the
+            // LINE'S OWN source marker (site:<uuid> emitted by retrieval
+            // under its DB filter). No marker -> None (site-less) — the
+            // request's site is never stamped onto evidence, so a
+            // retrieval bug returning another site's row cannot be
+            // laundered into this scope.
+            let source_site = parse_source_site(content);
             let mut item = sensei_agent_core::context::ContextItem {
                 payload: serde_json::json!({ "section": section, "text": content }),
                 fact_address: Some(format!("section:{section}")),
-                // Twenty-third audit: evidence carries the STRUCTURAL site
-                // scope of the request — verification compares site ids,
-                // never city names from prose.
-                site_scope: ctx.site_id,
+                site_scope: source_site,
                 provenance: sensei_agent_core::context::Provenance {
                     source: format!("section:{section}"),
                     source_revision: None,
@@ -291,8 +295,14 @@ pub(crate) async fn prepare_inference(
                 .payload
                 .get("text")
                 .and_then(|t| t.as_str())
-                .unwrap_or("")
-                .to_string();
+                .map(|t| match t.split_once("[live site:") {
+                    Some((head, rest)) => {
+                        let tail = rest.split_once(']').map(|(_, after)| after).unwrap_or("");
+                        format!("{head}{tail}")
+                    }
+                    None => t.to_string(),
+                })
+                .unwrap_or_default();
             // Twentieth audit P1: the typed envelope reaches the model —
             // evidence id, authority, observation time and text. The
             // verifier only accepts ev:* ids that appear here.
@@ -490,6 +500,16 @@ fn classify_task(message: &str) -> sensei_agent_core::context::TaskKind {
     } else {
         TaskKind::General
     }
+}
+
+/// Parse the SOURCE site marker emitted by the retrieval layer
+/// ("[live site:<uuid>]") — evidence is stamped from the source row's
+/// site, never from the request's claimed site.
+fn parse_source_site(text: &str) -> Option<uuid::Uuid> {
+    text.split_once("[live site:").and_then(|(_, rest)| {
+        rest.split_once(']')
+            .and_then(|(site, _)| uuid::Uuid::parse_str(site).ok())
+    })
 }
 
 /// Run the REAL claims/evidence verifier over the assistant's reply
