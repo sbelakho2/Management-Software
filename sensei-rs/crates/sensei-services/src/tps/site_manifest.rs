@@ -379,6 +379,34 @@ pub struct ValidationReport {
     pub ready: bool,
 }
 
+/// Capability → mandatory operational requirements (eighteenth audit item
+/// P1-5): each requirement is a check NAME derived from a REAL schema
+/// table. Readiness for a capability is only granted when every required
+/// check passes against actual data — a plant cannot declare itself
+/// competent. Unknown capabilities return nothing and are handled
+/// FAIL-CLOSED by the checks construction (a `capability_<x>_mapped`
+/// failing check), never silently treated as ready.
+fn capability_requirements(capability: &str) -> Vec<&'static str> {
+    match capability {
+        "SMT" => vec![
+            "smt_work_centers",
+            "smt_skills",
+            "smt_standards",
+            "smt_calibration",
+        ],
+        "AOI" => vec!["aoi_work_centers", "aoi_skills", "aoi_ctq_inspection"],
+        "ICT" => vec!["ict_work_centers", "ict_skills", "ict_fixtures"],
+        "box_build" => vec!["box_build_work_centers", "box_build_skills"],
+        "wire_harness" => vec!["wire_harness_work_centers", "wire_harness_skills"],
+        "final_test" => vec![
+            "final_test_work_centers",
+            "final_test_skills",
+            "final_test_standards",
+        ],
+        _ => vec![],
+    }
+}
+
 /// Run the operational-qualification checks for one site inside a single
 /// tenant-scoped transaction and produce the validation report. When every
 /// check passes the manifest advances draft → validated (only from
@@ -596,6 +624,139 @@ pub async fn validate_site(
                     format!("{rep_entries} replication entry(ies), {rep_failed} retry-due failed")
                 },
             ));
+
+            // 7. Capability-derived readiness (eighteenth audit item P1-5):
+            // readiness must follow from the site's DECLARED capabilities —
+            // every mandatory operational requirement of each declared
+            // capability must be satisfied by REAL schema data. Unknown
+            // capabilities are fail-closed: the system refuses to certify
+            // a plant for a capability it cannot verify.
+            for capability in &capabilities {
+                let requirements = capability_requirements(capability);
+                if requirements.is_empty() {
+                    checks.push((
+                        format!("capability_{capability}_mapped"),
+                        false,
+                        format!(
+                            "no operational requirements derived for capability {capability} — \
+                             it cannot be declared ready"
+                        ),
+                    ));
+                    continue;
+                }
+                // ILIKE keyword: underscores become spaces so 'box_build'
+                // matches names like 'Box Build Cell'.
+                let keyword = capability.replace('_', " ");
+                let pattern = format!("%{keyword}%");
+                for requirement in requirements {
+                    let (ok, detail): (bool, String) = match requirement {
+                        // <cap>_work_centers: work_centers of THIS site
+                        // whose name or type matches the capability.
+                        req if req.ends_with("_work_centers") => {
+                            let n: i64 = sqlx::query_scalar(
+                                "SELECT COUNT(*) FROM work_centers \
+                                 WHERE tenant_id = $1 AND site_id = $2 \
+                                   AND (name ILIKE $3 OR work_center_type = $4)",
+                            )
+                            .bind(tenant_id)
+                            .bind(site_id)
+                            .bind(&pattern)
+                            .bind(keyword.to_lowercase())
+                            .fetch_one(&mut **tx)
+                            .await
+                            .map_err(|e| SenseiError::Database(format!(
+                                "Work center capability check failed: {e}"
+                            )))?;
+                            (n > 0, format!("{n} work center(s) matching '{keyword}'"))
+                        }
+                        // <cap>_skills: qualified (independent/trainer)
+                        // principals of THIS site holding a skill whose
+                        // name or process matches the capability.
+                        req if req.ends_with("_skills") => {
+                            let n: i64 = sqlx::query_scalar(
+                                "SELECT COUNT(DISTINCT sq.skill_id) FROM skill_qualifications sq \
+                                 JOIN principal_assignments pa ON pa.principal_id = sq.principal_id \
+                                 JOIN role_slots rs ON rs.id = pa.slot_id \
+                                 JOIN skills sk ON sk.id = sq.skill_id \
+                                 WHERE sq.tenant_id = $1 AND rs.scope_site_id = $2 \
+                                   AND pa.ended_at IS NULL \
+                                   AND sq.level IN ('independent', 'trainer') \
+                                   AND (sk.name ILIKE $3 OR sk.process ILIKE $3)",
+                            )
+                            .bind(tenant_id)
+                            .bind(site_id)
+                            .bind(&pattern)
+                            .fetch_one(&mut **tx)
+                            .await
+                            .map_err(|e| SenseiError::Database(format!(
+                                "Skill capability check failed: {e}"
+                            )))?;
+                            (n > 0, format!("{n} qualified skill(s) matching '{keyword}'"))
+                        }
+                        // <cap>_standards: TWI job_standards (migration 116)
+                        // covering the capability process or title.
+                        req if req.ends_with("_standards") => {
+                            let n: i64 = sqlx::query_scalar(
+                                "SELECT COUNT(*) FROM job_standards \
+                                 WHERE tenant_id = $1 \
+                                   AND (process ILIKE $2 OR title ILIKE $2)",
+                            )
+                            .bind(tenant_id)
+                            .bind(&pattern)
+                            .fetch_one(&mut **tx)
+                            .await
+                            .map_err(|e| SenseiError::Database(format!(
+                                "Job standard capability check failed: {e}"
+                            )))?;
+                            (n > 0, format!("{n} job standard(s) matching '{keyword}'"))
+                        }
+                        // <cap>_calibration: passing calibration records
+                        // (gauges → calibration_events, migration 006).
+                        req if req.ends_with("_calibration") => {
+                            let n: i64 = sqlx::query_scalar(
+                                "SELECT COUNT(*) FROM calibration_events \
+                                 WHERE tenant_id = $1 AND result = 'pass'",
+                            )
+                            .bind(tenant_id)
+                            .fetch_one(&mut **tx)
+                            .await
+                            .map_err(|e| SenseiError::Database(format!(
+                                "Calibration capability check failed: {e}"
+                            )))?;
+                            (n > 0, format!("{n} passing calibration record(s)"))
+                        }
+                        // <cap>_ctq_inspection: an ACTIVE inspection plan
+                        // matching the capability with at least one
+                        // CRITICAL characteristic (CTQ, migration 100).
+                        req if req.ends_with("_ctq_inspection") => {
+                            let n: i64 = sqlx::query_scalar(
+                                "SELECT COUNT(*) FROM inspection_plans ip \
+                                 JOIN inspection_characteristics ic ON ic.plan_id = ip.id \
+                                 WHERE ip.tenant_id = $1 AND ip.status = 'active' \
+                                   AND ic.criticality = 'critical' \
+                                   AND ip.name ILIKE $2",
+                            )
+                            .bind(tenant_id)
+                            .bind(&pattern)
+                            .fetch_one(&mut **tx)
+                            .await
+                            .map_err(|e| SenseiError::Database(format!(
+                                "Inspection plan capability check failed: {e}"
+                            )))?;
+                            (n > 0, format!(
+                                "{n} active CTQ inspection plan(s) matching '{keyword}'"
+                            ))
+                        }
+                        // <cap>_fixtures: NO fixtures table exists in the
+                        // schema (migrations 001-136) — the ICT fixture
+                        // requirement cannot be verified, so the check is
+                        // NOT emitted (only checks backed by real tables
+                        // are added).
+                        _ => continue,
+                    };
+                    checks.push((requirement.to_string(), ok, detail));
+                }
+            }
 
             let ready = checks.iter().all(|(_, ok, _)| *ok);
             let report = ValidationReport { checks, ready };

@@ -11,10 +11,10 @@
 //!   are sample-based), so the approximation is documented, not hidden.
 //!   Rework is never treated as scrap.
 //! - `scrap_rate` — scrapped / completed (produced units).
-//! - `otd` — delivered / (delivered + pending_due) where delivered =
-//!   status in ('shipped','delivered') and pending_due = the other
-//!   non-cancelled, non-draft orders. sales_orders carry NO site scope in
-//!   this schema, so OTD is tenant-level.
+//! - `otd` — ON-TIME DELIVERY: deliveries at or before the immutable
+//!   committed_date / all orders with a commitment. NOT a completion
+//!   ratio — a late delivery never counts as on time. sales_orders carry
+//!   NO site scope in this schema, so OTD is tenant-level.
 //! - `lead_time` — MANUFACTURING LEAD TIME PROXY: delivered_at
 //!   (updated_at) − created_at, in days — no shipped_at column exists.
 
@@ -273,13 +273,21 @@ impl MetricComputer for ScrapRateV1 {
     }
 }
 
-/// ON-TIME DELIVERY (audit item 26): `delivered / (delivered +
-/// pending_due)` over `sales_orders` — delivered = status in
-/// ('shipped','delivered'); pending_due = the other non-cancelled,
-/// non-draft orders. There is no `shipped_at` column and sales_orders
-/// carry NO site scope, so the honest value is tenant-level (the
-/// `site_id` parameter is accepted for API symmetry and documented as
-/// having no effect on this metric).
+/// ON-TIME DELIVERY (audit item P1-8): REAL on-time delivery, not a
+/// delivery-completion ratio. `delivered_on_time / eligible` where
+/// delivered_on_time = orders delivered AT OR BEFORE their committed date
+/// (status in ('shipped','delivered') AND actual_delivery_date <=
+/// committed_date) and eligible = every order with a commitment
+/// (status not in ('cancelled','draft') AND committed_date IS NOT NULL).
+///
+/// ANTI-GAMING RULE (migration 139): `committed_date` is immutable — it
+/// is written ONCE at first confirmation by the executable
+/// status-transition path (COALESCE in update_sales_order_status) and
+/// never updated by later edits. The metric therefore cannot be improved
+/// by editing dates: a late order stays late. sales_orders carry NO site
+/// scope, so the honest value is tenant-level (the `site_id` parameter is
+/// accepted for API symmetry and documented as having no effect on this
+/// metric).
 pub struct OtdV1;
 
 #[async_trait]
@@ -302,16 +310,18 @@ impl MetricComputer for OtdV1 {
         let computed_at = Utc::now();
         with_tenant_tx(pool, tenant_id, |tx| {
             Box::pin(async move {
-                let (delivered, eligible, non_cancelled, period_start, period_end): (
+                let (delivered_on_time, eligible, non_cancelled, period_start, period_end): (
                     i64,
                     i64,
                     i64,
                     Option<DateTime<Utc>>,
                     Option<DateTime<Utc>>,
                 ) = sqlx::query_as(
-                    "SELECT COUNT(*) FILTER (WHERE so.delivered_at IS NOT NULL)::bigint, \
+                    "SELECT COUNT(*) FILTER (WHERE so.status IN ('shipped','delivered') \
+                                             AND so.actual_delivery_date IS NOT NULL \
+                                             AND so.actual_delivery_date <= so.committed_date)::bigint, \
                             COUNT(*) FILTER (WHERE so.status NOT IN ('cancelled','draft') \
-                                             AND so.confirmed_at IS NOT NULL)::bigint, \
+                                             AND so.committed_date IS NOT NULL)::bigint, \
                             COUNT(*) FILTER (WHERE so.status <> 'cancelled')::bigint, \
                             MIN(so.created_at), \
                             MAX(so.updated_at) \
@@ -323,7 +333,7 @@ impl MetricComputer for OtdV1 {
                 .await
                 .map_err(|e| SenseiError::Database(format!("metric engine: otd: {e}")))?;
                 let value = if eligible > 0 {
-                    Decimal::from(delivered)
+                    Decimal::from(delivered_on_time)
                         .checked_div(Decimal::from(eligible))
                         .unwrap_or(Decimal::ZERO)
                 } else {

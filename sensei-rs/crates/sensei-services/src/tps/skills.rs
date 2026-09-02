@@ -296,6 +296,13 @@ pub async fn create_job_standard(
 /// trainer). Promotion is always explicit evidence-based: every upsert
 /// stamps `demonstrated_at = NOW()` and stores the evidence.
 ///
+/// Every recorded qualification also appends ONE immutable row to
+/// `skill_qualification_evidence` (eighteenth audit P1-9) in the same
+/// transaction: the standard revision, assessor and evidence object
+/// travel verbatim, and the demonstration site/shift context is anchored
+/// there — a later qualification on another shift NEVER overwrites the
+/// first shift anchor (the conflict path updates level/evidence only).
+///
 /// The ladder is a controlled state machine (sixteenth audit item 34):
 /// only ADJACENT moves are allowed, a higher state is never overwritten
 /// with a lower one without an explicit revocation, and an evidence
@@ -335,6 +342,36 @@ pub async fn record_qualification(
             {
                 Some(level) => SkillLevel::from_stored(&level),
                 None => SkillLevel::Unexposed,
+            };
+
+            // The demonstration SHIFT context (eighteenth audit P1-9): the
+            // shift must exist and its site becomes the evidence anchor — a
+            // qualification on a shift that does not exist is a validation
+            // error.
+            let demonstration_site_id = match shift_id {
+                Some(shift) => {
+                    let site: Option<Option<Uuid>> = sqlx::query_scalar(
+                        "SELECT site_id FROM shifts WHERE tenant_id = $1 AND id = $2",
+                    )
+                    .bind(tenant_id)
+                    .bind(shift)
+                    .fetch_optional(&mut **tx)
+                    .await
+                    .map_err(|e| {
+                        SenseiError::Database(format!(
+                            "Failed to read demonstration shift: {e}"
+                        ))
+                    })?;
+                    match site {
+                        Some(site) => site,
+                        None => {
+                            return Err(SenseiError::Validation(format!(
+                                "demonstration shift {shift} not found"
+                            )))
+                        }
+                    }
+                }
+                None => None,
             };
 
             // No-op: re-recording the SAME level changes nothing.
@@ -389,6 +426,22 @@ pub async fn record_qualification(
                         .to_string(),
                 ));
             }
+            // The evidence row's standard revision and assessor identity
+            // (P1-9): they travel VERBATIM into the append-only history.
+            let standard_revision = evidence
+                .get("standard_revision")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default()
+                .to_string();
+            let assessor = evidence
+                .get("assessor_id")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default();
+            let assessor_id = Uuid::parse_str(assessor).map_err(|_| {
+                SenseiError::Validation(format!(
+                    "evidence assessor_id must be a valid UUID: {assessor}"
+                ))
+            })?;
             // Critical skills prohibit self-qualification (item 36): the
             // assessor must be a DIFFERENT principal.
             if critical {
@@ -453,6 +506,10 @@ pub async fn record_qualification(
                 ));
             }
 
+            // The qualification row is the CURRENT-STATE anchor: the FIRST
+            // record pins the shift it was demonstrated on, and the
+            // conflict path NEVER touches shift_id (P1-9) — a qualification
+            // on Shift B cannot overwrite the Shift A anchor.
             sqlx::query(
                 "INSERT INTO skill_qualifications \
                     (id, tenant_id, principal_id, skill_id, level, demonstrated_at, evidence, shift_id) \
@@ -461,7 +518,6 @@ pub async fn record_qualification(
                  SET level = EXCLUDED.level, \
                      demonstrated_at = NOW(), \
                      evidence = EXCLUDED.evidence, \
-                     shift_id = EXCLUDED.shift_id, \
                      updated_at = NOW()",
             )
             .bind(Uuid::new_v4())
@@ -474,6 +530,32 @@ pub async fn record_qualification(
             .execute(&mut **tx)
             .await
             .map_err(|e| SenseiError::Database(format!("Failed to record qualification: {e}")))?;
+
+            // Append-only evidence history (P1-9): ONE immutable row per
+            // recorded qualification, in the SAME transaction — the
+            // demonstration site/shift context survives forever, so
+            // multi-shift qualification stays fully representable.
+            sqlx::query(
+                "INSERT INTO skill_qualification_evidence \
+                    (tenant_id, principal_id, skill_id, standard_revision, demonstrated_at, \
+                     demonstration_site_id, demonstration_shift_id, assessor_id, evidence, \
+                     prior_competence) \
+                 VALUES ($1, $2, $3, $4, NOW(), $5, $6, $7, $8, $9)",
+            )
+            .bind(tenant_id)
+            .bind(principal_id)
+            .bind(skill_id)
+            .bind(&standard_revision)
+            .bind(demonstration_site_id)
+            .bind(shift_id)
+            .bind(assessor_id)
+            .bind(&evidence)
+            .bind(&prior_competence)
+            .execute(&mut **tx)
+            .await
+            .map_err(|e| {
+                SenseiError::Database(format!("Failed to record qualification evidence: {e}"))
+            })?;
             Ok(())
         })
     })
@@ -539,10 +621,10 @@ pub async fn skill_coverage_at(
         Box::pin(async move {
             let rows: Vec<(String, String, bool, i64, i64)> = sqlx::query_as(
                 r#"SELECT s.skill_id, s.name, s.critical,
-                          COUNT(*) FILTER (WHERE q.level IN ('independent','trainer')
+                          COUNT(DISTINCT q.principal_id) FILTER (WHERE q.level IN ('independent','trainer')
                                            AND (q.expires_at IS NULL OR q.expires_at > NOW())
                                            AND ($2::uuid IS NULL OR pa.principal_id IS NOT NULL)),
-                          COUNT(*) FILTER (WHERE q.level = 'trainer'
+                          COUNT(DISTINCT q.principal_id) FILTER (WHERE q.level = 'trainer'
                                            AND (q.expires_at IS NULL OR q.expires_at > NOW())
                                            AND ($2::uuid IS NULL OR pa.principal_id IS NOT NULL))
                    FROM skills s
@@ -766,4 +848,276 @@ pub async fn forecast_departure(
         })
     })
     .await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Connect to the CI-provided test database. Returns None when the env
+    /// var is absent so the local suite stays green (the gate runs in CI).
+    async fn connect() -> Option<sqlx::PgPool> {
+        let Ok(url) = std::env::var("DATABASE_URL_TEST") else {
+            eprintln!("SKIP: DATABASE_URL_TEST not set — evidence-history tests run in CI");
+            return None;
+        };
+        sqlx::PgPool::connect(&url).await.ok()
+    }
+
+    async fn drop_all_tables(pool: &sqlx::PgPool) {
+        sqlx::query(
+            r#"DO $$ DECLARE r RECORD; BEGIN
+                 FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname = 'public') LOOP
+                     EXECUTE format('DROP TABLE IF EXISTS %I CASCADE', r.tablename);
+                 END LOOP;
+             END $$"#,
+        )
+        .execute(pool)
+        .await
+        .expect("drop all tables");
+    }
+
+    fn evidence(assessor_id: Uuid) -> serde_json::Value {
+        serde_json::json!({
+            "standard_revision": "AOI-OP-01/r1",
+            "assessor_id": assessor_id.to_string(),
+            "observed_cycles": 4,
+            "checks_passed": ["program loads"],
+        })
+    }
+
+    /// Eighteenth audit P1-9: a qualification recorded on Shift B must NOT
+    /// overwrite the Shift A anchor. The qualification row keeps the FIRST
+    /// recorded shift (the conflict path never touches shift_id), and the
+    /// append-only evidence history holds BOTH demonstrations.
+    #[tokio::test]
+    async fn qualification_history_preserves_both_shift_anchors() {
+        let Some(pool) = connect().await else { return };
+        drop_all_tables(&pool).await;
+        sensei_db::migrations::run_migrations(&pool)
+            .await
+            .expect("the ENTIRE migration chain must apply to an empty database");
+
+        let tenant_id = Uuid::new_v4();
+        let principal_id = Uuid::new_v4();
+        let assessor_id = Uuid::new_v4();
+        let site_a = Uuid::new_v4();
+        let site_b = Uuid::new_v4();
+        let shift_a = Uuid::new_v4();
+        let shift_b = Uuid::new_v4();
+
+        // Setup (tenants/users/skills carry fail-closed RLS: run under the
+        // tenant context).
+        with_tenant_tx(&pool, tenant_id, move |tx| {
+            Box::pin(async move {
+                sqlx::query("INSERT INTO tenants (id, name, slug) VALUES ($1, 'p1-9', 'p1-9')")
+                    .bind(tenant_id)
+                    .execute(&mut **tx)
+                    .await
+                    .expect("tenant insert");
+                sqlx::query(
+                    "INSERT INTO users (id, tenant_id, email, name, password_hash) \
+                     VALUES ($1, $2, 'p@x.local', 'P', 'x')",
+                )
+                .bind(principal_id)
+                .bind(tenant_id)
+                .execute(&mut **tx)
+                .await
+                .expect("principal insert");
+                sqlx::query(
+                    "INSERT INTO users (id, tenant_id, email, name, password_hash) \
+                     VALUES ($1, $2, 'a@x.local', 'A', 'x')",
+                )
+                .bind(assessor_id)
+                .bind(tenant_id)
+                .execute(&mut **tx)
+                .await
+                .expect("assessor insert");
+                sqlx::query(
+                    "INSERT INTO sites (id, tenant_id, site_code, name) \
+                     VALUES ($1, $2, 'A', 'Site A'), ($3, $2, 'B', 'Site B')",
+                )
+                .bind(site_a)
+                .bind(tenant_id)
+                .bind(site_b)
+                .execute(&mut **tx)
+                .await
+                .expect("sites insert");
+                sqlx::query(
+                    "INSERT INTO shifts (id, tenant_id, site_id, name, start_time, end_time) \
+                     VALUES ($1, $2, $3, 'A', '08:00', '16:00'), \
+                            ($4, $2, $5, 'B', '16:00', '00:00')",
+                )
+                .bind(shift_a)
+                .bind(tenant_id)
+                .bind(site_a)
+                .bind(shift_b)
+                .bind(site_b)
+                .execute(&mut **tx)
+                .await
+                .expect("shifts insert");
+                Ok(())
+            })
+        })
+        .await
+        .expect("setup tx");
+
+        let skill_uuid = create_skill(&pool, tenant_id, "aoi", "AOI", None, None, true)
+            .await
+            .expect("create skill");
+
+        // Shift A anchor: learning demonstrated on shift A.
+        record_qualification(
+            &pool,
+            tenant_id,
+            principal_id,
+            skill_uuid,
+            SkillLevel::Learning,
+            evidence(assessor_id),
+            None,
+            Some(shift_a),
+        )
+        .await
+        .expect("qualification on shift A");
+
+        // Shift B: promotion to supervised on shift B — the SECOND record
+        // must NOT overwrite the first evidence row.
+        record_qualification(
+            &pool,
+            tenant_id,
+            principal_id,
+            skill_uuid,
+            SkillLevel::Supervised,
+            evidence(assessor_id),
+            None,
+            Some(shift_b),
+        )
+        .await
+        .expect("qualification on shift B");
+
+        // The evidence history holds BOTH shifts (append-only), and the
+        // qualification anchor retains the FIRST shift.
+        let (evidence_rows, shift_a_anchors, shift_b_anchors, qualification_anchor): (
+            i64,
+            i64,
+            i64,
+            Option<Uuid>,
+        ) = with_tenant_tx(&pool, tenant_id, move |tx| {
+            Box::pin(async move {
+                let counts: (i64, i64, i64) = sqlx::query_as(
+                    "SELECT COUNT(*), \
+                            COUNT(*) FILTER (WHERE demonstration_shift_id = $1), \
+                            COUNT(*) FILTER (WHERE demonstration_shift_id = $2) \
+                     FROM skill_qualification_evidence \
+                     WHERE tenant_id = $3 AND principal_id = $4 AND skill_id = $5",
+                )
+                .bind(shift_a)
+                .bind(shift_b)
+                .bind(tenant_id)
+                .bind(principal_id)
+                .bind(skill_uuid)
+                .fetch_one(&mut **tx)
+                .await
+                .map_err(|e| SenseiError::Database(format!("Evidence read failed: {e}")))?;
+                let anchor: Option<Uuid> = sqlx::query_scalar(
+                    "SELECT shift_id FROM skill_qualifications \
+                     WHERE tenant_id = $1 AND principal_id = $2 AND skill_id = $3",
+                )
+                .bind(tenant_id)
+                .bind(principal_id)
+                .bind(skill_uuid)
+                .fetch_one(&mut **tx)
+                .await
+                .map_err(|e| SenseiError::Database(format!("Qualification read failed: {e}")))?;
+                Ok((counts.0, counts.1, counts.2, anchor))
+            })
+        })
+        .await
+        .expect("read evidence history");
+
+        assert_eq!(
+            evidence_rows, 2,
+            "two recorded qualifications must append TWO immutable evidence rows"
+        );
+        assert_eq!(
+            shift_a_anchors, 1,
+            "the Shift A evidence row must survive the Shift B record"
+        );
+        assert_eq!(
+            shift_b_anchors, 1,
+            "the Shift B evidence row must be recorded"
+        );
+        assert_eq!(
+            qualification_anchor,
+            Some(shift_a),
+            "skill_qualifications.shift_id must retain the FIRST-recorded anchor"
+        );
+    }
+
+    /// Eighteenth audit P1-9: a qualification on a shift that does not
+    /// exist is a validation error (the demonstration context is resolved
+    /// from real shift rows, never invented).
+    #[tokio::test]
+    async fn qualification_with_unknown_shift_is_rejected() {
+        let Some(pool) = connect().await else { return };
+        drop_all_tables(&pool).await;
+        sensei_db::migrations::run_migrations(&pool)
+            .await
+            .expect("the ENTIRE migration chain must apply to an empty database");
+
+        let tenant_id = Uuid::new_v4();
+        let principal_id = Uuid::new_v4();
+        let assessor_id = Uuid::new_v4();
+        with_tenant_tx(&pool, tenant_id, move |tx| {
+            Box::pin(async move {
+                sqlx::query("INSERT INTO tenants (id, name, slug) VALUES ($1, 'p1-9b', 'p1-9b')")
+                    .bind(tenant_id)
+                    .execute(&mut **tx)
+                    .await
+                    .expect("tenant insert");
+                sqlx::query(
+                    "INSERT INTO users (id, tenant_id, email, name, password_hash) \
+                     VALUES ($1, $2, 'p2@x.local', 'P', 'x')",
+                )
+                .bind(principal_id)
+                .bind(tenant_id)
+                .execute(&mut **tx)
+                .await
+                .expect("principal insert");
+                sqlx::query(
+                    "INSERT INTO users (id, tenant_id, email, name, password_hash) \
+                     VALUES ($1, $2, 'a2@x.local', 'A', 'x')",
+                )
+                .bind(assessor_id)
+                .bind(tenant_id)
+                .execute(&mut **tx)
+                .await
+                .expect("assessor insert");
+                Ok(())
+            })
+        })
+        .await
+        .expect("setup tx");
+
+        let skill_uuid = create_skill(&pool, tenant_id, "aoi2", "AOI 2", None, None, false)
+            .await
+            .expect("create skill");
+
+        let err = record_qualification(
+            &pool,
+            tenant_id,
+            principal_id,
+            skill_uuid,
+            SkillLevel::Learning,
+            evidence(assessor_id),
+            None,
+            Some(Uuid::new_v4()), // a shift that does not exist
+        )
+        .await
+        .expect_err("a missing demonstration shift must be a validation error");
+        assert!(
+            matches!(err, SenseiError::Validation(_)),
+            "expected Validation, got {err:?}"
+        );
+    }
 }

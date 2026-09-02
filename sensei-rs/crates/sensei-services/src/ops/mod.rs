@@ -1040,10 +1040,23 @@ impl OperationsService for InMemoryOperationsService {
         id: Uuid,
         authorized_by: Uuid,
     ) -> Result<Andon> {
+        if authorized_sites.is_empty() {
+            return Err(SenseiError::Forbidden(
+                "no operational scope — no Andon is authorized".to_string(),
+            ));
+        }
         let mut store = self.andons.write().await;
         let andon = store
             .get_mut(&id)
             .ok_or_else(|| SenseiError::NotFound(format!("Andon {id} not found")))?;
+        if andon
+            .site_id
+            .is_some_and(|site| !authorized_sites.contains(&site))
+        {
+            return Err(SenseiError::Forbidden(
+                "Andon is outside the caller's authorized site scope".to_string(),
+            ));
+        }
         andon.restart_authorized_by = Some(authorized_by);
         andon.restart_authorized_at = Some(Utc::now());
         Ok(andon.clone())
@@ -1057,6 +1070,11 @@ impl OperationsService for InMemoryOperationsService {
         actor_id: Uuid,
         reason: &str,
     ) -> Result<Andon> {
+        if authorized_sites.is_empty() {
+            return Err(SenseiError::Forbidden(
+                "no operational scope — no Andon is authorized".to_string(),
+            ));
+        }
         let mut store = self.andons.write().await;
         let andon = store
             .get_mut(&id)

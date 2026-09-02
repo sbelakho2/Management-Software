@@ -5402,13 +5402,19 @@ async fn role_analytics_elapsed_pitch_and_scope_deny() {
     )
     .await
     .expect("buyer analytics must build");
+    // Eighteenth audit P1-10: purchase_orders have NO site linkage, so a
+    // site-scoped buyer FAILS CLOSED — tenant-wide PO numbers are never
+    // surfaced; the section states that the site is required.
     assert!(
-        buyer.abnormal.iter().any(|l| l.label.contains("past due")),
-        "the past-due PO is abnormal for the buyer"
+        buyer.abnormal.iter().all(|l| !l.label.contains("past due")),
+        "site-scoped buyer analytics must not leak tenant-wide PO data"
     );
     assert!(
-        buyer.next.iter().any(|n| n.contains("PO-EP")),
-        "NEXT expedites the past-due PO"
+        buyer
+            .why
+            .iter()
+            .any(|l| l.unit.contains("not_available_site_required")),
+        "the buyer section names the missing site scope instead of          returning tenant-wide numbers"
     );
 }
 
@@ -7566,11 +7572,15 @@ async fn metric_engine_matches_corporate_rollup() {
     .await
     .expect("work order insert");
     // A delivered sales order with committed immutable shipment
-    // timestamps (migration 133) → OTD = 1.0 (1 delivered of 1 eligible).
+    // timestamps (migration 133) and COMMITMENT anchors (migration 139):
+    // committed_date = delivery_date and actual_delivery_date = delivered_at
+    // (both now-3d) → delivered AT the commitment → OTD = 1.0 (1 on-time
+    // of 1 eligible).
     sqlx::query(
         "INSERT INTO sales_orders (id, tenant_id, so_number, customer_id, status, \
-                                   order_date, delivery_date, confirmed_at, delivered_at) \
-         VALUES ($1, $2, 'SO-MET', $3, 'delivered', $4, $5, $4, $5)",
+                                   order_date, delivery_date, confirmed_at, delivered_at, \
+                                   committed_date, actual_delivery_date) \
+         VALUES ($1, $2, 'SO-MET', $3, 'delivered', $4, $5, $4, $5, $5, $5)",
     )
     .bind(uuid::Uuid::new_v4())
     .bind(tenant_id)
@@ -10435,6 +10445,36 @@ async fn site_bootstrap_lifecycle_validation() {
     .execute(&pool)
     .await
     .expect("principal assignment insert");
+    // Eighteenth audit item P1-5: capability-derived readiness — the
+    // manifest declares SMT, so the SMT standards and calibration checks
+    // must have real data to pass.
+    sqlx::query(
+        "INSERT INTO job_standards (tenant_id, standard_id, revision, process, title, steps) \
+         VALUES ($1, 'STD-LC-SMT', 1, 'SMT', 'SMT Line Standard', '[]')",
+    )
+    .bind(tenant_id)
+    .execute(&pool)
+    .await
+    .expect("job standard insert");
+    let gauge_id = uuid::Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO gauges (id, tenant_id, gauge_id, name, gauge_type) \
+         VALUES ($1, $2, 'GA-LC-01', 'SMT Reflow Gauge', 'general')",
+    )
+    .bind(gauge_id)
+    .bind(tenant_id)
+    .execute(&pool)
+    .await
+    .expect("gauge insert");
+    sqlx::query(
+        "INSERT INTO calibration_events (tenant_id, gauge_id, next_due, result) \
+         VALUES ($1, $2, NOW() + INTERVAL '1 year', 'pass')",
+    )
+    .bind(tenant_id)
+    .bind(gauge_id)
+    .execute(&pool)
+    .await
+    .expect("calibration event insert");
 
     let report = validate_site(&pool, tenant_id, site_id)
         .await
@@ -11337,6 +11377,16 @@ async fn twi_shift_id_is_a_real_scope_dimension() {
     .execute(&pool)
     .await
     .expect("user");
+    let assessor = uuid::Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO users (id, tenant_id, email, name, password_hash) \
+         VALUES ($1, $2, 'assessor@starzforge.local', 'A', 'x')",
+    )
+    .bind(assessor)
+    .bind(tenant_id)
+    .execute(&pool)
+    .await
+    .expect("assessor user");
     let skill_id = uuid::Uuid::new_v4();
     sqlx::query(
         "INSERT INTO skills (id, tenant_id, skill_id, name, critical) \
@@ -11383,7 +11433,7 @@ async fn twi_shift_id_is_a_real_scope_dimension() {
         SkillLevel::Independent,
         serde_json::json!({
             "standard_revision": "rev",
-            "assessor_id": uuid::Uuid::new_v4().to_string(),
+            "assessor_id": assessor.to_string(),
             "observed_cycles": 3,
             "checks_passed": ["wiring", "soldering"],
         }),
@@ -11391,7 +11441,7 @@ async fn twi_shift_id_is_a_real_scope_dimension() {
         // is justified by a DIFFERENT assessor.
         Some(serde_json::json!({
             "justification": "5 years SMT operator experience",
-            "assessor_id": uuid::Uuid::new_v4().to_string(),
+            "assessor_id": assessor.to_string(),
             "standard_revision": "rev",
             "observed_cycles": 3,
         })),
@@ -11541,4 +11591,136 @@ async fn andon_mutations_cannot_cross_sites() {
     assert_eq!(state_a.status, "acknowledged");
     let state_b = service.get_andon(tenant_id, on_b.id).await.expect("read B");
     assert_eq!(state_b.status, "active", "the B andon was never touched");
+}
+
+/// Eighteenth audit P1-8: OTD is REAL on-time delivery over an IMMUTABLE
+/// commitment (migration 139), not a delivery-completion ratio. Two
+/// delivered orders with the SAME commitment (now - 5d): one delivered at
+/// now - 3d (on time), one delivered at now - 1d (4 days AFTER the
+/// commitment — a MISS). OTD must be 0.5, never 1.0. The anti-gaming rule
+/// is executable, not a comment: re-running the confirmation transition
+/// (the same service function that stamps the anchors, which would write
+/// NOW() into committed_date) must leave the anchor untouched.
+#[tokio::test]
+async fn otd_is_on_time_over_immutable_commitment() {
+    let _serial = DB_LOCK.lock().await;
+    let Some(pool) = connect().await else { return };
+    sqlx::query(
+        r#"DO $$ DECLARE r RECORD; BEGIN
+             FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname = 'public') LOOP
+                 EXECUTE format('DROP TABLE IF EXISTS %I CASCADE', r.tablename);
+             END LOOP;
+         END $$"#,
+    )
+    .execute(&pool)
+    .await
+    .expect("drop all tables");
+    sensei_db::migrations::run_migrations(&pool)
+        .await
+        .expect("the ENTIRE migration chain must apply to an empty database");
+
+    let tenant_id = uuid::Uuid::new_v4();
+    let site_id = uuid::Uuid::new_v4();
+    let customer_id = uuid::Uuid::new_v4();
+    sqlx::query("INSERT INTO tenants (id, name, slug) VALUES ($1, 'otdcommit', 'otdcommit')")
+        .bind(tenant_id)
+        .execute(&pool)
+        .await
+        .expect("tenant insert");
+    sqlx::query(
+        "INSERT INTO sites (id, tenant_id, site_code, name) VALUES ($1, $2, 'OTD', 'OTD Site')",
+    )
+    .bind(site_id)
+    .bind(tenant_id)
+    .execute(&pool)
+    .await
+    .expect("site insert");
+    sqlx::query(
+        "INSERT INTO accounts (id, tenant_id, name, account_type, status, created_at, updated_at) \
+         VALUES ($1, $2, 'OTD Customer', 'customer', 'active', NOW(), NOW())",
+    )
+    .bind(customer_id)
+    .bind(tenant_id)
+    .execute(&pool)
+    .await
+    .expect("customer account insert");
+
+    // Two DELIVERED orders, one on time and one late. The metric's SQL is
+    // `actual_delivery_date <= committed_date`, so the on-time order
+    // delivers AT its commitment (committed -3d, delivered -3d) and the
+    // late order delivers 4 days AFTER its commitment (committed -5d,
+    // delivered -1d) — under the old completion-ratio OTD both would
+    // count as "delivered" and the metric would be 1.0.
+    let now = chrono::Utc::now();
+    let on_time_committed = now - chrono::Duration::days(3);
+    let late_committed = now - chrono::Duration::days(5);
+    let on_time_id = uuid::Uuid::new_v4();
+    let late_id = uuid::Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO sales_orders (id, tenant_id, so_number, order_number, customer_id, status, \
+                                   order_date, delivery_date, confirmed_at, delivered_at, \
+                                   committed_date, actual_delivery_date, shipping_address, created_by) \
+         VALUES ($1, $2, 'SO-OTD-ON', 'SO-OTD-ON', $3, 'delivered', $4, $4, $4, $5, $4, $5, 'Addr', $9), \
+                ($7, $2, 'SO-OTD-LATE', 'SO-OTD-LATE', $3, 'delivered', $6, $6, $6, $8, $6, $8, 'Addr', $9)",
+    )
+    .bind(on_time_id)
+    .bind(tenant_id)
+    .bind(customer_id)
+    .bind(on_time_committed)
+    .bind(now - chrono::Duration::days(3))
+    .bind(late_committed)
+    .bind(late_id)
+    .bind(now - chrono::Duration::days(1))
+    .bind(uuid::Uuid::new_v4())
+    .execute(&pool)
+    .await
+    .expect("sales order inserts");
+
+    use sensei_services::tps::metric_engine::compute_metric;
+    let otd = compute_metric(&pool, tenant_id, "otd", None)
+        .await
+        .expect("otd must compute on the migrated schema");
+    let half = RDecimal::from(1u64) / RDecimal::from(2u64);
+    assert_eq!(otd.value, half, "1 on-time delivery of 2 committed -> 0.5");
+    assert_eq!(otd.sample_size, 2, "both orders carry a commitment");
+
+    // ANTI-GAMING: the confirmation transition would stamp NOW() into
+    // committed_date — the COALESCE guard refuses: the anchor is written
+    // ONCE at first confirmation and NEVER rewritten by later edits.
+    let committed_before: chrono::DateTime<chrono::Utc> =
+        sqlx::query_scalar("SELECT committed_date FROM sales_orders WHERE id = $1")
+            .bind(late_id)
+            .fetch_one(&pool)
+            .await
+            .expect("read the late order's committed_date");
+    use sensei_services::supply_chain::SupplyChainService;
+    let svc = sensei_services::supply_chain::DatabaseSupplyChainService::new(pool.clone());
+    svc.update_sales_order_status(tenant_id, late_id, "confirmed")
+        .await
+        .expect("re-confirmation transition must apply");
+    let committed_after: chrono::DateTime<chrono::Utc> =
+        sqlx::query_scalar("SELECT committed_date FROM sales_orders WHERE id = $1")
+            .bind(late_id)
+            .fetch_one(&pool)
+            .await
+            .expect("read the late order's committed_date again");
+    assert_eq!(
+        committed_after, committed_before,
+        "committed_date is written ONCE at first confirmation; a later \
+         transition that would stamp NOW() must not rewrite the anchor"
+    );
+
+    // Restore the delivered status the re-confirmation replaced, then
+    // confirm the metric still reads the immutable anchor: 0.5.
+    svc.update_sales_order_status(tenant_id, late_id, "delivered")
+        .await
+        .expect("re-delivery transition must apply");
+    let otd_again = compute_metric(&pool, tenant_id, "otd", None)
+        .await
+        .expect("otd must still compute on the migrated schema");
+    assert_eq!(
+        otd_again.value, half,
+        "the metric reads the immutable commitment — still 0.5"
+    );
+    assert_eq!(otd_again.sample_size, 2, "commitment count is unchanged");
 }

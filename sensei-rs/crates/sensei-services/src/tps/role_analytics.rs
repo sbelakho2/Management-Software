@@ -16,8 +16,9 @@
 //! - item 32: the active role is resolved by an EXPLICIT documented
 //!   priority ([`ANALYTICS_ROLE_PRIORITY`]), never by the arbitrary order
 //!   of the user's roles vector.
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Duration, Utc};
 use sensei_core::db::tenant_tx::TenantTx;
+use sensei_core::domain::value_objects::{CurrencyCode, Money};
 use sensei_core::error::{Result, SenseiError};
 use sqlx::PgPool;
 use uuid::Uuid;
@@ -723,82 +724,48 @@ async fn collect_site_view(
 }
 
 /// Buyer view (item 29): supplier commitments — open purchase orders and
-/// the past-due ones that need expediting. NOTE: `purchase_orders` carries
-/// no site column in this tree, so the tenant + required-site gate
-/// (item 31) is the available boundary; when POs gain a site column the
-/// site_id binding belongs here.
+/// the past-due ones that need expediting. Eighteenth audit P1-10: the
+/// purchase-order domain carries NO site linkage in this tree
+/// (`purchase_orders`, `suppliers`, `purchase_order_items` and `products`
+/// all lack `site_id`), so there is NO site-filterable PO query — the
+/// section FAILS CLOSED (`not_available_site_required`) instead of
+/// returning tenant-wide purchase orders to a site-scoped buyer.
 async fn collect_buyer_view(
-    ttx: &mut TenantTx<'_>,
-    tenant_id: Uuid,
+    _ttx: &mut TenantTx<'_>,
+    _tenant_id: Uuid,
     site_id: Option<Uuid>,
     a: &mut RoleAnalytics,
 ) -> Result<()> {
-    let (open_pos, past_due): (i64, i64) = sqlx::query_as(
-        "SELECT COUNT(*)::bigint, \
-                COUNT(*) FILTER (WHERE COALESCE(po.expected_delivery, po.expected_date) < NOW())::bigint \
-         FROM purchase_orders po \
-         WHERE po.tenant_id = $1 \
-           AND po.status NOT IN ('received', 'cancelled', 'closed')",
-    )
-    .bind(tenant_id)
-    .fetch_one(&mut **ttx.tx())
-    .await
-    .map_err(|e| SenseiError::Database(format!("role analytics: buyer open POs: {e}")))?;
-
+    let boundary = match site_id {
+        Some(id) => format!("site {id}"),
+        None => "no site scope".to_string(),
+    };
     a.now.push(AnalyticLine::fact(
-        "open purchase orders",
-        open_pos as f64,
-        "PO",
+        "purchase order analytics",
+        0.0,
+        "not_available_site_required",
     ));
-    a.now.push(AnalyticLine::fact(
-        "purchase orders past due (expedite count)",
-        past_due as f64,
-        "PO",
+    a.why.push(AnalyticLine::fact(
+        format!(
+            "purchase orders carry no site linkage (no site_id on purchase_orders/suppliers/\
+             purchase_order_items) — open/past-due PO counts are not available for {boundary}"
+        ),
+        0.0,
+        "not_available_site_required",
     ));
-    if past_due > 0 {
-        a.abnormal.push(AnalyticLine::fact(
-            "purchase orders past due (expedite count)",
-            past_due as f64,
-            "PO",
-        ));
-    }
-
-    type PastDueRow = (String, DateTime<Utc>);
-    let past_due_pos: Vec<PastDueRow> = sqlx::query_as(
-        "SELECT po.po_number, COALESCE(po.expected_delivery, po.expected_date) \
-         FROM purchase_orders po \
-         WHERE po.tenant_id = $1 \
-           AND po.status NOT IN ('received', 'cancelled', 'closed') \
-           AND COALESCE(po.expected_delivery, po.expected_date) < NOW() \
-         ORDER BY COALESCE(po.expected_delivery, po.expected_date) ASC \
-         LIMIT 10",
-    )
-    .bind(tenant_id)
-    .fetch_all(&mut **ttx.tx())
-    .await
-    .map_err(|e| SenseiError::Database(format!("role analytics: buyer past-due POs: {e}")))?;
-
-    for (po_number, due) in &past_due_pos {
-        a.why.push(
-            AnalyticLine::fact(
-                format!(
-                    "PO {po_number} was due {due} and is still open — the supplier commitment was missed"
-                ),
-                1.0,
-                "PO",
-            )
-            .with_date(*due),
-        );
-        a.next.push(format!("expedite PO {po_number}"));
-    }
-
-    let _ = site_id;
     Ok(())
 }
 
 /// Material-controller view (item 29): line starvation risk — open work
-/// orders whose product has ZERO inventory balance (the simplified
-/// starvation proxy: no stock to pull from).
+/// orders whose SITE-level inventory cannot cover the remaining requirement.
+/// Eighteenth audit P1-10: starvation is judged on `inventory_items` at the
+/// site (migration 112 added `inventory_items.site_id`), never on
+/// tenant-wide `products.quantity_on_hand`. The table carries
+/// `quantity_on_hand` and `quantity_reserved` (no quarantine column), so
+/// available = SUM(quantity_on_hand − quantity_reserved) at the site; no
+/// site-scoped inbound data exists (`purchase_orders` is not site-linked),
+/// so inbound is NOT added. The requirement is the open WO's remaining
+/// units (`quantity − quantity_completed`) at the site.
 async fn collect_material_controller_view(
     ttx: &mut TenantTx<'_>,
     tenant_id: Uuid,
@@ -809,12 +776,18 @@ async fn collect_material_controller_view(
     let starved_count: i64 = sqlx::query_scalar(
         "SELECT COUNT(*)::bigint \
          FROM work_orders wo \
-         JOIN products p ON p.id = wo.product_id AND p.tenant_id = wo.tenant_id \
+         LEFT JOIN ( \
+             SELECT ii.product_id, \
+                    COALESCE(SUM(ii.quantity_on_hand - ii.quantity_reserved), 0)::float8 AS available \
+             FROM inventory_items ii \
+             WHERE ii.tenant_id = $1 AND ($2::uuid IS NULL OR ii.site_id = $2) \
+             GROUP BY ii.product_id \
+         ) avail ON avail.product_id = wo.product_id \
          WHERE wo.tenant_id = $1 \
            AND wo.status IN ('created', 'released', 'in_progress') \
-           AND COALESCE(p.quantity_on_hand, 0) <= 0 \
            AND ($2::uuid IS NULL OR wo.site_id = $2) \
-           AND ($3::uuid IS NULL OR wo.work_center_id = $3)",
+           AND ($3::uuid IS NULL OR wo.work_center_id = $3) \
+           AND COALESCE(avail.available, 0) < (wo.quantity - COALESCE(wo.quantity_completed, 0))",
     )
     .bind(tenant_id)
     .bind(site_id)
@@ -836,23 +809,32 @@ async fn collect_material_controller_view(
         ));
         a.why.push(AnalyticLine::fact(
             format!(
-                "{starved_count} open work orders have zero stock for their product — the line can starve"
+                "{starved_count} open work orders cannot be covered by site inventory — the line can starve"
             ),
             starved_count as f64,
             "WO",
         ));
     }
 
-    type StarvedRow = (String, String, f64);
+    type StarvedRow = (String, String, f64, i64);
     let starved: Vec<StarvedRow> = sqlx::query_as(
-        "SELECT wo.wo_number, p.name, p.quantity_on_hand \
+        "SELECT wo.wo_number, p.name, \
+                COALESCE(avail.available, 0), \
+                (wo.quantity - COALESCE(wo.quantity_completed, 0)) \
          FROM work_orders wo \
          JOIN products p ON p.id = wo.product_id AND p.tenant_id = wo.tenant_id \
+         LEFT JOIN ( \
+             SELECT ii.product_id, \
+                    COALESCE(SUM(ii.quantity_on_hand - ii.quantity_reserved), 0)::float8 AS available \
+             FROM inventory_items ii \
+             WHERE ii.tenant_id = $1 AND ($2::uuid IS NULL OR ii.site_id = $2) \
+             GROUP BY ii.product_id \
+         ) avail ON avail.product_id = wo.product_id \
          WHERE wo.tenant_id = $1 \
            AND wo.status IN ('created', 'released', 'in_progress') \
-           AND COALESCE(p.quantity_on_hand, 0) <= 0 \
            AND ($2::uuid IS NULL OR wo.site_id = $2) \
            AND ($3::uuid IS NULL OR wo.work_center_id = $3) \
+           AND COALESCE(avail.available, 0) < (wo.quantity - COALESCE(wo.quantity_completed, 0)) \
          ORDER BY wo.created_at ASC \
          LIMIT 10",
     )
@@ -863,10 +845,11 @@ async fn collect_material_controller_view(
     .await
     .map_err(|e| SenseiError::Database(format!("role analytics: starvation list: {e}")))?;
 
-    for (wo_number, product, stock) in &starved {
+    for (wo_number, product, available, remaining) in &starved {
         a.why.push(AnalyticLine::fact(
             format!(
-                "WO {wo_number} ({product}) has {stock} on hand — material must be pulled before it starts"
+                "WO {wo_number} ({product}) needs {remaining} more units but only {available:.0} are \
+                 available at the site — material must be pulled before it starts"
             ),
             1.0,
             "WO",
@@ -878,9 +861,24 @@ async fn collect_material_controller_view(
     Ok(())
 }
 
-/// NPI view (item 29): readiness proxy — open work orders for products
-/// created less than 90 days ago (the newest products are the least
-/// likely to have proven, stable standard work).
+/// NPI view (item 29): readiness — for every open work order's product,
+/// the NPI readiness is the fraction of REAL readiness signals that exist
+/// in the schema: BOM (`bom_items`), route (`routings`), PFMEA
+/// (`pfmea_lite`), control plan (`control_plans`), first article
+/// (`first_article_inspections`) and process capability
+/// (`process_capability_studies`). Eighteenth audit P1-10: the 90-day
+/// product-age heuristic is NO LONGER the primary signal — a product with
+/// no signal at all is `insufficient_evidence`, not "at risk because
+/// young"; age is kept only as a minor secondary note.
+const NPI_SIGNALS: [&str; 6] = [
+    "BOM",
+    "route",
+    "PFMEA",
+    "control plan",
+    "first article",
+    "process capability",
+];
+
 async fn collect_npi_view(
     ttx: &mut TenantTx<'_>,
     tenant_id: Uuid,
@@ -888,47 +886,36 @@ async fn collect_npi_view(
     work_center_id: Option<Uuid>,
     a: &mut RoleAnalytics,
 ) -> Result<()> {
-    let new_product_count: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*)::bigint \
+    type ReadinessRow = (
+        String,
+        String,
+        DateTime<Utc>,
+        bool,
+        bool,
+        bool,
+        bool,
+        bool,
+        bool,
+    );
+    let readiness_rows: Vec<ReadinessRow> = sqlx::query_as(
+        "SELECT wo.wo_number, p.name, p.created_at, \
+                EXISTS (SELECT 1 FROM bom_items b \
+                        WHERE b.parent_product_id = wo.product_id AND b.is_active) AS has_bom, \
+                EXISTS (SELECT 1 FROM routings r \
+                        WHERE r.product_id = wo.product_id AND r.is_active) AS has_route, \
+                EXISTS (SELECT 1 FROM pfmea_lite f WHERE f.product_id = wo.product_id) AS has_pfmea, \
+                EXISTS (SELECT 1 FROM control_plans c WHERE c.product_id = wo.product_id) AS has_control_plan, \
+                EXISTS (SELECT 1 FROM first_article_inspections fai \
+                        WHERE fai.product_id = wo.product_id) AS has_fai, \
+                EXISTS (SELECT 1 FROM process_capability_studies pcs \
+                        WHERE pcs.product_id = wo.product_id) AS has_capability \
          FROM work_orders wo \
          JOIN products p ON p.id = wo.product_id AND p.tenant_id = wo.tenant_id \
          WHERE wo.tenant_id = $1 \
            AND wo.status IN ('created', 'released', 'in_progress') \
-           AND p.created_at >= NOW() - interval '90 days' \
-           AND ($2::uuid IS NULL OR wo.site_id = $2) \
-           AND ($3::uuid IS NULL OR wo.work_center_id = $3)",
-    )
-    .bind(tenant_id)
-    .bind(site_id)
-    .bind(work_center_id)
-    .fetch_one(&mut **ttx.tx())
-    .await
-    .map_err(|e| SenseiError::Database(format!("role analytics: npi readiness: {e}")))?;
-
-    a.now.push(AnalyticLine::fact(
-        "open work orders on products under 90 days old",
-        new_product_count as f64,
-        "WO",
-    ));
-    if new_product_count > 0 {
-        a.abnormal.push(AnalyticLine::fact(
-            "open work orders on products under 90 days old",
-            new_product_count as f64,
-            "WO",
-        ));
-    }
-
-    type NewProductRow = (String, String, DateTime<Utc>);
-    let new_products: Vec<NewProductRow> = sqlx::query_as(
-        "SELECT wo.wo_number, p.name, p.created_at \
-         FROM work_orders wo \
-         JOIN products p ON p.id = wo.product_id AND p.tenant_id = wo.tenant_id \
-         WHERE wo.tenant_id = $1 \
-           AND wo.status IN ('created', 'released', 'in_progress') \
-           AND p.created_at >= NOW() - interval '90 days' \
            AND ($2::uuid IS NULL OR wo.site_id = $2) \
            AND ($3::uuid IS NULL OR wo.work_center_id = $3) \
-         ORDER BY p.created_at ASC \
+         ORDER BY wo.created_at ASC \
          LIMIT 10",
     )
     .bind(tenant_id)
@@ -936,29 +923,129 @@ async fn collect_npi_view(
     .bind(work_center_id)
     .fetch_all(&mut **ttx.tx())
     .await
-    .map_err(|e| SenseiError::Database(format!("role analytics: npi list: {e}")))?;
+    .map_err(|e| SenseiError::Database(format!("role analytics: npi readiness: {e}")))?;
 
-    for (wo_number, product, created_at) in &new_products {
-        a.why.push(
-            AnalyticLine::fact(
-                format!(
-                    "WO {wo_number} runs {product}, a product only {created_at} — the process may not be ready"
-                ),
-                1.0,
-                "WO",
-            )
-            .with_date(*created_at),
+    a.now.push(AnalyticLine::fact(
+        "products in NPI readiness review",
+        readiness_rows.len() as f64,
+        "product",
+    ));
+
+    for (wo_number, product, created_at, has_bom, has_route, has_pfmea, has_cp, has_fai, has_cap) in
+        &readiness_rows
+    {
+        let present = [
+            *has_bom, *has_route, *has_pfmea, *has_cp, *has_fai, *has_cap,
+        ];
+        let count = present.iter().filter(|b| **b).count();
+        let missing: Vec<&str> = NPI_SIGNALS
+            .iter()
+            .zip(&present)
+            .filter(|(_, present)| !**present)
+            .map(|(name, _)| *name)
+            .collect();
+        // Readiness is the fraction of signals that EXIST for the product;
+        // zero signals is `insufficient_evidence` — never an at-risk verdict
+        // derived from product age.
+        let status = match count {
+            0 => "insufficient_evidence",
+            6 => "ready",
+            3..=5 => "partially_ready",
+            _ => "at_risk",
+        };
+        let line = AnalyticLine::fact(
+            format!("NPI readiness {product} ({status})"),
+            count as f64,
+            "signals",
+        )
+        .with_delta(6.0, count as f64)
+        .with_date(*created_at);
+        a.now.push(line.clone());
+        if status == "at_risk" {
+            a.abnormal.push(line);
+        }
+
+        // Minor secondary note only: product age is context, never the
+        // primary readiness signal.
+        let young = *created_at >= Utc::now() - Duration::days(90);
+        let missing_text = if missing.is_empty() {
+            "none".to_string()
+        } else {
+            missing.join(", ")
+        };
+        let mut why_text = format!(
+            "WO {wo_number} runs {product}: NPI readiness {count}/6 signals present ({status}) — \
+             missing: {missing_text}"
         );
-        a.next
-            .push(format!("verify standard work exists for {product}"));
+        if young {
+            why_text.push_str("; the product is under 90 days old (secondary note)");
+        }
+        a.why
+            .push(AnalyticLine::fact(why_text, count as f64, "signals").with_date(*created_at));
+        a.next.push(format!(
+            "complete the missing NPI readiness signals for {product}: {missing_text}"
+        ));
     }
 
     Ok(())
 }
 
+/// Map an ISO-4217 code from `country_policies.currency` onto the typed
+/// [`CurrencyCode`]. Codes the value object does not cover (the policy
+/// seeds include 'TND') fall back to `None` — the analytics then carry NO
+/// currency label instead of assuming USD (eighteenth audit P1-10).
+fn currency_code_from_iso(code: &str) -> Option<CurrencyCode> {
+    match code {
+        "USD" => Some(CurrencyCode::USD),
+        "EUR" => Some(CurrencyCode::EUR),
+        "GBP" => Some(CurrencyCode::GBP),
+        "MAD" => Some(CurrencyCode::MAD),
+        "JPY" => Some(CurrencyCode::JPY),
+        "CNY" => Some(CurrencyCode::CNY),
+        _ => None,
+    }
+}
+
+/// The site's currency: `sites.country` → `country_policies.currency`
+/// (eighteenth audit P1-10 — money is never hardcoded "USD"). `None` when
+/// the site has no country, no policy row, or the code is unknown.
+async fn site_currency_code(
+    ttx: &mut TenantTx<'_>,
+    tenant_id: Uuid,
+    site_id: Option<Uuid>,
+) -> Result<Option<CurrencyCode>> {
+    let Some(site_id) = site_id else {
+        return Ok(None);
+    };
+    let country: Option<String> =
+        sqlx::query_scalar("SELECT country FROM sites WHERE id = $1 AND tenant_id = $2")
+            .bind(site_id)
+            .bind(tenant_id)
+            .fetch_optional(&mut **ttx.tx())
+            .await
+            .map_err(|e| SenseiError::Database(format!("role analytics: site country: {e}")))?;
+    let Some(country) = country else {
+        return Ok(None);
+    };
+    let currency: Option<String> = sqlx::query_scalar(
+        "SELECT currency FROM country_policies WHERE tenant_id = $1 AND country = $2",
+    )
+    .bind(tenant_id)
+    .bind(&country)
+    .fetch_optional(&mut **ttx.tx())
+    .await
+    .map_err(|e| SenseiError::Database(format!("role analytics: country currency: {e}")))?;
+    Ok(currency.as_deref().and_then(currency_code_from_iso))
+}
+
 /// Finance view (item 29): scrap at standard cost — scrapped quantity on
 /// work orders multiplied by the product's standard cost (the
 /// premium-freight-style proxy: defects carry real, quantified cost).
+/// Eighteenth audit P1-10: the value carries the SITE's currency from
+/// `country_policies` via the typed [`Money`] value object (never a
+/// hardcoded "USD"/"$"), and nonzero scrap is compared against the
+/// `scrap_rate` standard when a target exists; without a standard it is a
+/// `no_standard` NOTE, never "abnormal".
 async fn collect_finance_view(
     ttx: &mut TenantTx<'_>,
     tenant_id: Uuid,
@@ -966,8 +1053,9 @@ async fn collect_finance_view(
     work_center_id: Option<Uuid>,
     a: &mut RoleAnalytics,
 ) -> Result<()> {
-    let (scrap_units, scrap_value): (i64, f64) = sqlx::query_as(
+    let (scrap_units, completed_units, scrap_value): (i64, i64, f64) = sqlx::query_as(
         "SELECT COALESCE(SUM(wo.quantity_scrapped), 0)::bigint, \
+                COALESCE(SUM(wo.quantity_completed), 0)::bigint, \
                 COALESCE(SUM(wo.quantity_scrapped * COALESCE(p.standard_cost, 0)), 0)::float8 \
          FROM work_orders wo \
          JOIN products p ON p.id = wo.product_id AND p.tenant_id = wo.tenant_id \
@@ -983,6 +1071,19 @@ async fn collect_finance_view(
     .await
     .map_err(|e| SenseiError::Database(format!("role analytics: scrap value: {e}")))?;
 
+    let currency = site_currency_code(ttx, tenant_id, site_id).await?;
+    let money = currency
+        .map(|cc| Money::from_decimal(scrap_value, cc))
+        .transpose()?;
+    let value_unit = match money {
+        Some(m) => m.currency.as_str().to_string(),
+        None => "standard-cost value (currency not configured)".to_string(),
+    };
+    let value_text = match money {
+        Some(m) => m.to_string(),
+        None => format!("{scrap_value:.2}"),
+    };
+
     a.now.push(AnalyticLine::fact(
         "scrap units on work orders",
         scrap_units as f64,
@@ -991,21 +1092,82 @@ async fn collect_finance_view(
     a.now.push(AnalyticLine::fact(
         "scrap value at standard cost",
         scrap_value,
-        "USD",
+        value_unit,
     ));
     if scrap_units > 0 {
-        a.abnormal.push(AnalyticLine::fact(
-            "scrap value at standard cost",
-            scrap_value,
-            "USD",
-        ));
-        a.why.push(AnalyticLine::fact(
-            format!(
-                "{scrap_units} units scrapped ≈ ${scrap_value:.2} at standard cost — defects carry real cost"
-            ),
-            scrap_value,
-            "USD",
-        ));
+        // The scrap standard: metric_definitions has NO target column in
+        // this tree (checked via information_schema — the probe keeps the
+        // comparison honest if a target appears later), so the `scrap_rate`
+        // metric cannot supply a number. Nonzero scrap without a standard
+        // is a `no_standard` NOTE, never an abnormality.
+        let has_target_column: bool = sqlx::query_scalar(
+            "SELECT EXISTS (SELECT 1 FROM information_schema.columns \
+                            WHERE table_name = 'metric_definitions' AND column_name = 'target')",
+        )
+        .fetch_one(&mut **ttx.tx())
+        .await
+        .unwrap_or(false);
+        let scrap_rate_target: Option<f64> = if has_target_column {
+            sqlx::query_scalar::<_, Option<f64>>(
+                "SELECT target FROM metric_definitions \
+                 WHERE tenant_id = $1 AND metric_id = 'scrap_rate' AND active \
+                 ORDER BY version DESC LIMIT 1",
+            )
+            .bind(tenant_id)
+            .fetch_optional(&mut **ttx.tx())
+            .await
+            .map_err(|e| SenseiError::Database(format!("role analytics: scrap rate target: {e}")))?
+            .flatten()
+        } else {
+            None
+        };
+
+        let produced = scrap_units + completed_units;
+        let rate = if produced > 0 {
+            scrap_units as f64 / produced as f64
+        } else {
+            1.0
+        };
+        match scrap_rate_target {
+            Some(target) => {
+                if rate > target {
+                    a.abnormal.push(
+                        AnalyticLine::fact("scrap rate vs standard", rate, "%")
+                            .with_delta(target, rate),
+                    );
+                    a.why.push(AnalyticLine::fact(
+                        format!(
+                            "scrap rate {:.1}% exceeds the {:.1}% standard — defects carry real cost \
+                             ({value_text} at standard cost)",
+                            rate * 100.0,
+                            target * 100.0,
+                        ),
+                        rate,
+                        "%",
+                    ));
+                } else {
+                    a.why.push(AnalyticLine::fact(
+                        format!(
+                            "scrap rate {:.1}% is within the {:.1}% standard",
+                            rate * 100.0,
+                            target * 100.0,
+                        ),
+                        rate,
+                        "%",
+                    ));
+                }
+            }
+            None => {
+                a.why.push(AnalyticLine::fact(
+                    format!(
+                        "{scrap_units} units scrapped ≈ {value_text} at standard cost — no_standard: \
+                         no scrap_rate target is defined, so this is a note, not an abnormality"
+                    ),
+                    scrap_value,
+                    "standard-cost value",
+                ));
+            }
+        }
     }
 
     type ScrapRow = (String, String, i64, Option<f64>);
@@ -1030,9 +1192,14 @@ async fn collect_finance_view(
 
     for (wo_number, product, qty, cost) in &scrap {
         let value = *qty as f64 * cost.unwrap_or(0.0);
+        let line_value = currency
+            .map(|cc| Money::from_decimal(value, cc))
+            .transpose()?
+            .map(|m| m.to_string())
+            .unwrap_or_else(|| format!("{value:.2}"));
         a.why.push(AnalyticLine::fact(
             format!(
-                "WO {wo_number} ({product}) scrapped {qty} units ≈ ${value:.2} at standard cost"
+                "WO {wo_number} ({product}) scrapped {qty} units ≈ {line_value} at standard cost"
             ),
             *qty as f64,
             "units",

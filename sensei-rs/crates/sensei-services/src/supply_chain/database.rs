@@ -598,13 +598,25 @@ impl SupplyChainService for DatabaseSupplyChainService {
         // (migration 133) — confirmed on first confirm, shipped on first
         // ship, delivered on first deliver; the anchors are NEVER
         // rewritten by later transitions.
+        //
+        // ANTI-GAMING RULE (migration 139): the COMMITMENT anchors
+        // (committed_date, original_requested_date) are also written here
+        // via COALESCE — ONCE at first confirmation, from the delivery
+        // promise in force at that moment. A later confirmation, edit or
+        // status transition can never rewrite them, so the OTD metric
+        // cannot be improved by editing dates after the fact.
         let stamp = "CASE                        WHEN $1 = 'confirmed' AND confirmed_at IS NULL THEN NOW()                        WHEN $1 IN ('shipped') AND shipped_at IS NULL THEN NOW()                        WHEN $1 IN ('delivered') AND delivered_at IS NULL THEN NOW()                      END";
         let row = sqlx::query_as::<_, SalesOrderRow>(
             &format!(
                 r#"UPDATE sales_orders SET status=$1,
-                       confirmed_at = COALESCE(confirmed_at, {stamp}),
-                       shipped_at   = COALESCE(shipped_at, {stamp}),
-                       delivered_at = COALESCE(delivered_at, {stamp})
+                       confirmed_at          = COALESCE(confirmed_at, {stamp}),
+                       shipped_at            = COALESCE(shipped_at, {stamp}),
+                       delivered_at          = COALESCE(delivered_at, {stamp}),
+                       committed_date        = COALESCE(committed_date, CASE WHEN $1 = 'confirmed' THEN NOW() END),
+                       original_requested_date = COALESCE(original_requested_date, CASE WHEN $1 = 'confirmed' THEN delivery_date END),
+                       commitment_revision   = CASE WHEN $1 = 'confirmed' THEN 1 ELSE commitment_revision END,
+                       actual_ship_date      = COALESCE(actual_ship_date, CASE WHEN $1 = 'shipped' THEN NOW() END),
+                       actual_delivery_date  = COALESCE(actual_delivery_date, CASE WHEN $1 = 'delivered' THEN NOW() END)
                    WHERE id=$2 AND tenant_id=$3
                    RETURNING id, tenant_id, order_number, customer_id, customer_name, status, line_items, total_amount, currency, delivery_date, shipping_address, created_by, created_at"#
             ),

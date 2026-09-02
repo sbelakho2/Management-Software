@@ -44,6 +44,7 @@ impl RequestContext {
     /// (from the agent context); the builder VERIFIES it instead of
     /// trusting it.
     #[cfg(not(target_arch = "wasm32"))]
+    #[allow(clippy::too_many_arguments)]
     pub async fn build(
         pool: &sqlx::PgPool,
         tenant: Uuid,

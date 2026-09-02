@@ -12,6 +12,7 @@ use axum::{
     },
 };
 use futures::stream::Stream;
+use sensei_agent_core::context::Claim;
 use sensei_auth::authz_snapshot::AuthzSnapshot;
 use sensei_auth::middleware::AuthenticatedUser;
 use sensei_core::error::Result;
@@ -104,16 +105,40 @@ pub struct ChatResponseBody {
     pub snapshot_ok: bool,
 }
 
-/// Handle a single-turn chat message.
-///
-/// Returns a JSON response with the assistant's reply.
-pub async fn chat(
-    user: AuthenticatedUser,
-    State(state): State<AppState>,
-    Json(req): Json<ChatRequest>,
-) -> Result<Json<ChatResponseBody>> {
-    user.require_permission("ai:inference")?;
+/// The fully prepared inference pipeline for one chat request (eighteenth
+/// audit P1-6): agent context → authorization snapshot → ContextRequest →
+/// retrieval plan → compact context → typed ContextItems → kernel bundle →
+/// system context. BOTH the JSON chat and the SSE stream run through this
+/// SAME preparation, so the stream can no longer bypass the Context Kernel
+/// or the authorization snapshot.
+pub(crate) struct PreparedInference {
+    /// The server-created agent context (caller scope + permissions).
+    pub ctx: sensei_agent_core::context::AgentContext,
+    /// The authorization snapshot captured once at request start.
+    pub snapshot: Option<AuthzSnapshot>,
+    /// The deterministic retrieval plan.
+    pub context_plan: sensei_agent_core::context::ContextPlan,
+    /// The compact authoritative context bundle — the texts fed INTO
+    /// generation. The verifier matches evidence markers against these.
+    pub context_used: Vec<String>,
+    /// The prepared system context (the joined bundle), `None` when empty.
+    pub system_context: Option<String>,
+}
 
+/// Build the FULL preparation pipeline shared by the JSON chat and the SSE
+/// stream (eighteenth audit P1-6). Order: AUTHENTICATE → AUTHORIZATION
+/// SNAPSHOT → TASK CLASSIFICATION → CONTEXT REQUEST → RETRIEVAL PLAN →
+/// AUTHORIZED RETRIEVAL → CONTEXT BUNDLE.
+///
+/// The TOCTOU `is_still_current` re-check is deliberately NOT here: each
+/// caller re-checks the snapshot AFTER preparation and as close to
+/// generation as possible.
+pub(crate) async fn prepare_inference(
+    user: &AuthenticatedUser,
+    state: &AppState,
+    message: &str,
+    conversation_id: Option<&str>,
+) -> Result<PreparedInference> {
     // Context Kernel BEFORE generation (sixteenth audit 8/96): the
     // deterministic plan decides what live tenant state is retrieved —
     // the compact authoritative bundle is fed INTO the prompt, it is not
@@ -121,7 +146,7 @@ pub async fn chat(
     // AUTHORIZATION SNAPSHOT → TASK CLASSIFICATION → CONTEXT REQUEST →
     // RETRIEVAL PLAN → AUTHORIZED RETRIEVAL → CONTEXT BUNDLE →
     // GENERATION → CLAIM VERIFICATION → OUTPUT.
-    let ctx = crate::routes::agent::build_context(&user, &state).await;
+    let ctx = crate::routes::agent::build_context(user, state).await;
 
     // Authorization snapshot (sixteenth audit items 5/24): captured ONCE
     // at request start — the revision triple the whole request runs
@@ -174,11 +199,11 @@ pub async fn chat(
         site_id: ctx.site_id,
         value_stream_id: ctx.value_stream_id,
         work_center_id: ctx.work_center_id,
-        task: classify_task(&req.message),
+        task: classify_task(message),
         focal_objects: Vec::new(),
         max_tokens: 4096,
         sensitivity_ceiling: sensei_agent_core::context::DataClass::Internal,
-        trace_id: req.conversation_id.clone().unwrap_or_default(),
+        trace_id: conversation_id.unwrap_or_default().to_string(),
     };
     let context_plan = sensei_agent_core::context::plan_context(&context_request);
     // Seventeenth audit item 7: the live chat runs through the ACTUAL
@@ -245,13 +270,40 @@ pub async fn chat(
         Some(context_used.join("\n"))
     };
 
+    Ok(PreparedInference {
+        ctx,
+        snapshot,
+        context_plan,
+        context_used,
+        system_context,
+    })
+}
+
+/// Handle a single-turn chat message.
+///
+/// Returns a JSON response with the assistant's reply.
+pub async fn chat(
+    user: AuthenticatedUser,
+    State(state): State<AppState>,
+    Json(req): Json<ChatRequest>,
+) -> Result<Json<ChatResponseBody>> {
+    user.require_permission("ai:inference")?;
+
+    // Eighteenth audit P1-6: the FULL Context Kernel preparation is shared
+    // with the SSE stream — agent context → authorization snapshot →
+    // ContextRequest → plan → compact context → typed ContextItems →
+    // kernel bundle → prepared system context.
+    let prepared =
+        prepare_inference(&user, &state, &req.message, req.conversation_id.as_deref()).await?;
+
     // TOCTOU guard (sixteenth audit items 5/24): the permission state
     // must NOT have moved between snapshot capture and generation — if
     // any revision bumped (a revocation landed mid-request), the request
     // is refused and must be re-authorized, never executed under a stale
     // state. No snapshot (no DB pool) = fail closed: an unverifiable
-    // request is not executed.
-    let snapshot_ok = match (&state.db_pool, &snapshot) {
+    // request is not executed. The check stays HERE, after preparation
+    // and immediately before the model call.
+    let snapshot_ok = match (&state.db_pool, &prepared.snapshot) {
         (Some(pool), Some(snap)) => snap.is_still_current(pool).await,
         _ => false,
     };
@@ -269,7 +321,7 @@ pub async fn chat(
             &req.message,
             req.conversation_id.as_deref(),
             req.sampling_params(),
-            system_context.as_deref(),
+            prepared.system_context.as_deref(),
         )
         .await
         .map_err(|e| {
@@ -287,8 +339,14 @@ pub async fn chat(
         crate::services::agent::build_readonly_tools(),
         sensei_agent_core::tools::ToolRisk::ReadOnly,
     );
-    let effective_tools = policy.effective_tools(&ctx);
-    let verification = verify_chat_response(&response, &ctx, &policy, &effective_tools);
+    let effective_tools = policy.effective_tools(&prepared.ctx);
+    let verification = verify_chat_response(
+        &response,
+        &prepared.ctx,
+        &policy,
+        &effective_tools,
+        &prepared.context_used,
+    );
     // Seventeenth audit item 7 — verifier failure BLOCKS/REPAIRS output:
     // an unverifiable factual reply is never delivered as-is. The
     // content is REPAIRED into an honest answer that does not assert the
@@ -297,14 +355,11 @@ pub async fn chat(
     let (final_content, verdict_label) = if verification["verdict"].as_str() == Some("pass") {
         (response.message.content, "pass".to_string())
     } else {
-        let repaired = format!(
-            "I can only answer with claims verified against the plant systems.              The previous reply contained statements I could not verify against              live tenant data ({} issue(s)). Ask me to query a specific metric,              work order, quality record or andon through the tool surface —              or rephrase so the answer is labeled a hypothesis, not a fact.",
-            verification["issues"]
-                .as_array()
-                .map(|a| a.len())
-                .unwrap_or(0)
-        );
-        (repaired, "repaired".to_string())
+        let issue_count = verification["issues"]
+            .as_array()
+            .map(|a| a.len())
+            .unwrap_or(0);
+        (repair_message(issue_count), "repaired".to_string())
     };
     let mut verification_out = verification;
     if verdict_label == "repaired" {
@@ -315,10 +370,20 @@ pub async fn chat(
         conversation_id: response.conversation_id,
         is_fallback: response.is_fallback,
         verification: Some(verification_out),
-        context_plan: Some(context_plan),
-        context_used: Some(context_used),
+        context_plan: Some(prepared.context_plan),
+        context_used: Some(prepared.context_used),
         snapshot_ok: true,
     }))
+}
+
+/// The honest repair text released when verification fails (eighteenth
+/// audit P1-6): the JSON chat and the SSE stream publish THE SAME repaired
+/// answer — the raw buffered reply with unverified claims is never
+/// delivered.
+fn repair_message(issue_count: usize) -> String {
+    format!(
+        "I can only answer with claims verified against the plant systems.              The previous reply contained statements I could not verify against              live tenant data ({issue_count} issue(s)). Ask me to query a specific metric,              work order, quality record or andon through the tool surface."
+    )
 }
 
 /// Deterministic task classification (seventeenth audit item 7): the
@@ -376,15 +441,22 @@ fn classify_task(message: &str) -> sensei_agent_core::context::TaskKind {
 /// Now: factual-sounding statements become ObservedFact claims WITHOUT
 /// evidence refs, and the deterministic verifier flags them — the same
 /// contract the tool surface enforces.
+///
+/// Eighteenth audit P1-7: the output is STRUCTURED — every flagged
+/// sentence becomes a [`Claim`] ("unverified" without evidence; "measured"
+/// when an `[evidence: <source>]` marker matches a prepared context
+/// source). The marker check runs against the CURRENT sentence, never the
+/// whole response.
 fn verify_chat_response(
     response: &sensei_services::ai::chatbot::ChatResponse,
     ctx: &sensei_agent_core::context::AgentContext,
     _policy: &sensei_agent_core::tools::PolicyEngine,
     _effective_tools: &[&sensei_agent_core::tools::ToolSpec],
+    context_used: &[String],
 ) -> serde_json::Value {
     let mut issues: Vec<String> = Vec::new();
+    let mut claims: Vec<Claim> = Vec::new();
     let content = response.message.content.clone();
-    let lower = content.to_lowercase();
 
     // Factual-sounding statements: sentences that mention live tenant data
     // (quantities, counts, statuses, ids) in an assertive way. These are
@@ -410,16 +482,56 @@ fn verify_chat_response(
         "defect",
         "scrap",
     ];
-    let mut claim_sentences: Vec<String> = Vec::new();
-    for sentence in content.split(['.', ';', '\n']) {
+    for sentence in split_sentences(&content) {
         let s = sentence.trim();
         if s.len() < 12 {
             continue;
         }
+        // Eighteenth audit P1-7: the marker check runs against the CURRENT
+        // sentence's lowercased text — the previous implementation checked
+        // the WHOLE response, so one marker in a single sentence flagged
+        // every numeric sentence in the reply.
+        let sentence_lower = s.to_lowercase();
         let has_number = s.chars().any(|c| c.is_ascii_digit());
-        let mentions_data = factual_markers.iter().any(|m| lower.contains(m));
-        if has_number && mentions_data {
-            claim_sentences.push(s.to_string());
+        let mentions_data = factual_markers.iter().any(|m| sentence_lower.contains(m));
+        if !(has_number && mentions_data) {
+            continue;
+        }
+
+        // Evidence markers: "[evidence: <source>]" — when the referenced
+        // source appears in the prepared context bundle, the sentence is a
+        // MEASURED claim and is NOT flagged; otherwise it stays unverified.
+        let evidence_refs = evidence_refs_in(s);
+        let matched_refs: Vec<String> = evidence_refs
+            .iter()
+            .filter(|r| context_used.iter().any(|line| line.contains(r.as_str())))
+            .cloned()
+            .collect();
+        if !matched_refs.is_empty() {
+            claims.push(Claim {
+                statement: s.to_string(),
+                epistemic_status: "measured".to_string(),
+                fact_addresses: Vec::new(),
+                evidence_refs: matched_refs,
+                confidence: None,
+                valid_at: None,
+            });
+            continue;
+        }
+        claims.push(Claim {
+            statement: s.to_string(),
+            epistemic_status: "unverified".to_string(),
+            fact_addresses: Vec::new(),
+            evidence_refs: Vec::new(),
+            confidence: None,
+            valid_at: None,
+        });
+        if !response.is_fallback {
+            issues.push(format!(
+                "Unverified factual claim: '{s}' — no EvidenceRef. \
+                 Facts about live tenant data must be queried through the \
+                 tool surface, stated as unavailable, or labeled a hypothesis."
+            ));
         }
     }
 
@@ -429,14 +541,6 @@ fn verify_chat_response(
              treat as guidance, not as a validated fact."
                 .to_string(),
         );
-    } else {
-        for claim in &claim_sentences {
-            issues.push(format!(
-                "Unverified factual claim: '{claim}' — no EvidenceRef. \
-                 Facts about live tenant data must be queried through the \
-                 tool surface, stated as unavailable, or labeled a hypothesis."
-            ));
-        }
     }
 
     // The context is SERVER-CREATED: the caller's effective scope is
@@ -449,7 +553,8 @@ fn verify_chat_response(
     serde_json::json!({
         "verdict": verdict,
         "issues": issues,
-        "claims_checked": claim_sentences.len(),
+        "claims": claims,
+        "claims_checked": claims.len(),
         "context": {
             "site_id": ctx.site_id,
             "value_stream_id": ctx.value_stream_id,
@@ -457,6 +562,55 @@ fn verify_chat_response(
             "shift_id": ctx.shift_id,
         },
     })
+}
+
+/// Split a reply into sentences on `.` (only when followed by whitespace
+/// or end of input), `;` and newlines. A dot inside an evidence ref such
+/// as "[evidence: metric.process_yield_proxy@Bizerte]" is NOT a sentence
+/// boundary — the ref must survive as one token (eighteenth audit P1-7).
+fn split_sentences(content: &str) -> Vec<String> {
+    let mut sentences = Vec::new();
+    let bytes = content.as_bytes();
+    let mut start = 0;
+    for (i, b) in bytes.iter().enumerate() {
+        let is_boundary = match b {
+            b'.' => i + 1 >= bytes.len() || bytes[i + 1].is_ascii_whitespace(),
+            b';' | b'\n' => true,
+            _ => false,
+        };
+        if is_boundary {
+            if i > start {
+                sentences.push(content[start..i].to_string());
+            }
+            start = i + 1;
+            while start < bytes.len() && bytes[start].is_ascii_whitespace() {
+                start += 1;
+            }
+        }
+    }
+    if start < bytes.len() {
+        sentences.push(content[start..].to_string());
+    }
+    sentences
+}
+
+/// Extract the evidence sources referenced by a sentence, e.g.
+/// "[evidence: metric.process_yield_proxy@Bizerte]" →
+/// "metric.process_yield_proxy@Bizerte". Deterministic and
+/// order-preserving.
+fn evidence_refs_in(sentence: &str) -> Vec<String> {
+    let mut refs = Vec::new();
+    let mut rest = sentence;
+    while let Some(start) = rest.find("[evidence:") {
+        let after = &rest[start + "[evidence:".len()..];
+        let Some(end) = after.find(']') else { break };
+        let inner = after[..end].trim();
+        if !inner.is_empty() {
+            refs.push(inner.to_string());
+        }
+        rest = &after[end + 1..];
+    }
+    refs
 }
 
 /// Stream wrapper that aborts a background task when the stream is dropped.
@@ -499,10 +653,21 @@ pub async fn chat_stream(
     let sse_manager = state.sse_manager.clone();
     let chatbot_service = state.chatbot_service.clone();
 
-    // Item 26: the stream carries the SAME trust guarantee as the JSON
-    // chat — the full response is buffered, verified, and only then
-    // released with its verification envelope.
-    let ctx = crate::routes::agent::build_context(&user, &state).await;
+    // Eighteenth audit P1-6: the stream runs through the SAME Context
+    // Kernel preparation as the JSON chat — agent context, authorization
+    // snapshot, deterministic plan and the prepared context bundle. The
+    // stream can no longer bypass the kernel or the snapshot.
+    let prepared =
+        prepare_inference(&user, &state, &req.message, req.conversation_id.as_deref()).await?;
+
+    // TOCTOU guard (sixteenth audit items 5/24): the permission state must
+    // NOT have moved between snapshot capture and streaming — checked
+    // BEFORE the stream task starts. No snapshot (no DB pool) = fail
+    // closed: an unverifiable stream is never started.
+    let snapshot_ok = match (&state.db_pool, &prepared.snapshot) {
+        (Some(pool), Some(snap)) => snap.is_still_current(pool).await,
+        _ => false,
+    };
 
     // Generate a unique channel name for this streaming session
     let channel = format!("chat-{}", uuid::Uuid::new_v4());
@@ -513,7 +678,38 @@ pub async fn chat_stream(
     // Spawn a background task to run the streaming chat
     let channel_clone = channel.clone();
     let sampling = req.sampling_params();
+    let system_context = prepared.system_context.clone();
+    let context_used = prepared.context_used.clone();
+    let ctx = prepared.ctx.clone();
     let task = tokio::spawn(async move {
+        // The snapshot gate decides whether streaming may START at all
+        // (eighteenth audit P1-6): a stale snapshot publishes an error
+        // event and returns — generation never starts.
+        if !snapshot_ok {
+            sse_manager
+                .publish(
+                    &channel_clone,
+                    "error",
+                    "authorization state changed during the request — re-authorized and retry",
+                )
+                .await;
+            return;
+        }
+        // The PREPARED context travels with the stream: `stream_chat` has
+        // no context parameter, so the authoritative bundle is published
+        // as the first "context" event BEFORE any token, and logged. The
+        // buffered reply is verified against the same bundle below.
+        if let Some(sys) = system_context.as_deref() {
+            tracing::info!(
+                channel = %channel_clone,
+                context = %sys,
+                "SSE chat streaming with prepared Context Kernel bundle"
+            );
+            sse_manager.publish(&channel_clone, "context", sys).await;
+        }
+        // Item 26: the stream carries the SAME trust guarantee as the JSON
+        // chat — the full response is buffered, verified, and only then
+        // released with its verification envelope.
         match chatbot_service
             .stream_chat(
                 user.tenant_id,
@@ -543,7 +739,8 @@ pub async fn chat_stream(
                     sse_manager.publish(&channel_clone, "error", &e).await;
                     return;
                 }
-                // Verify the buffered reply as an ordinary ChatResponse.
+                // Verify the buffered reply as an ordinary ChatResponse,
+                // against the PREPARED context bundle.
                 let chat_response = sensei_services::ai::chatbot::ChatResponse {
                     message: sensei_services::ai::chatbot::ChatMessage {
                         role: "assistant".to_string(),
@@ -558,13 +755,17 @@ pub async fn chat_stream(
                     sensei_agent_core::tools::ToolRisk::ReadOnly,
                 );
                 let effective_tools = policy.effective_tools(&ctx);
-                let mut verification =
-                    verify_chat_response(&chat_response, &ctx, &policy, &effective_tools);
-                // Seventeenth audit item 7: the stream's buffered reply is
-                // REPAIRED when verification fails — unverified factual
-                // claims are never released to the client. The repaired
-                // answer says what CAN be verified, with the issues
-                // attached.
+                let mut verification = verify_chat_response(
+                    &chat_response,
+                    &ctx,
+                    &policy,
+                    &effective_tools,
+                    &context_used,
+                );
+                // Seventeenth audit item 7 (extended by eighteenth audit
+                // P1-6): the stream's buffered reply is REPAIRED when
+                // verification fails — the stream releases THE SAME repair
+                // message as the JSON path, never the raw buffered reply.
                 let released = if verification["verdict"].as_str() == Some("pass") {
                     buffered.clone()
                 } else {
@@ -573,9 +774,7 @@ pub async fn chat_stream(
                         .map(|a| a.len())
                         .unwrap_or(0);
                     verification["verdict"] = serde_json::json!("repaired");
-                    format!(
-                        "I can only answer with claims verified against the plant systems.                          The reply contained {issue_count} statement(s) I could not verify                          against live tenant data — ask for a specific metric, work order,                          quality record or andon through the tool surface."
-                    )
+                    repair_message(issue_count)
                 };
                 // Release tokens only after verification completed.
                 sse_manager
@@ -616,4 +815,147 @@ pub async fn chat_stream(
     };
 
     Ok(Sse::new(abort_on_drop))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sensei_agent_core::context::AgentContext;
+
+    fn test_ctx() -> AgentContext {
+        AgentContext {
+            tenant_id: uuid::Uuid::new_v4(),
+            user_id: uuid::Uuid::new_v4(),
+            session_id: None,
+            site_id: None,
+            value_stream_id: None,
+            work_center_id: None,
+            shift_id: None,
+            roles: vec![],
+            permissions: std::collections::HashSet::new(),
+            locale: "en".to_string(),
+            timezone: "UTC".to_string(),
+            request_id: uuid::Uuid::new_v4(),
+            conversation_id: None,
+        }
+    }
+
+    fn response_with(content: &str) -> sensei_services::ai::chatbot::ChatResponse {
+        sensei_services::ai::chatbot::ChatResponse {
+            message: sensei_services::ai::chatbot::ChatMessage::assistant(content.to_string()),
+            conversation_id: "conv".to_string(),
+            is_fallback: false,
+        }
+    }
+
+    fn verify(content: &str, context_used: &[String]) -> serde_json::Value {
+        let policy = sensei_agent_core::tools::PolicyEngine::new(
+            crate::services::agent::build_readonly_tools(),
+            sensei_agent_core::tools::ToolRisk::ReadOnly,
+        );
+        let tools = policy.effective_tools(&test_ctx());
+        verify_chat_response(
+            &response_with(content),
+            &test_ctx(),
+            &policy,
+            &tools,
+            context_used,
+        )
+    }
+
+    #[test]
+    fn verifier_flags_unverified_factual_claims() {
+        let v = verify("Line 12 currently stands at 42 units of inventory.", &[]);
+        assert_eq!(v["verdict"], "needs_evidence");
+        let claims: Vec<Claim> = serde_json::from_value(v["claims"].clone()).unwrap();
+        assert_eq!(claims.len(), 1);
+        assert_eq!(claims[0].epistemic_status, "unverified");
+        assert!(claims[0].evidence_refs.is_empty());
+        assert_eq!(v["claims_checked"], 1);
+    }
+
+    #[test]
+    fn verifier_marks_measured_claims_with_matching_context_evidence() {
+        let context = vec!["metric.process_yield_proxy@Bizerte: 42".to_string()];
+        let v = verify(
+            "Line 12 currently stands at 42 units [evidence: metric.process_yield_proxy@Bizerte].",
+            &context,
+        );
+        assert_eq!(v["verdict"], "pass");
+        let claims: Vec<Claim> = serde_json::from_value(v["claims"].clone()).unwrap();
+        assert_eq!(claims[0].epistemic_status, "measured");
+        assert_eq!(
+            claims[0].evidence_refs,
+            vec!["metric.process_yield_proxy@Bizerte".to_string()]
+        );
+    }
+
+    #[test]
+    fn verifier_does_not_flag_sentences_without_markers() {
+        // Regression (P1-7): the marker check must run against the CURRENT
+        // sentence — "Production is running." (no digits) must not cause
+        // "Delivery will arrive in 30 days." (digit, no marker) to be
+        // flagged. The previous whole-response check flagged it.
+        let v = verify(
+            "Production is running. Delivery will arrive in 30 days.",
+            &[],
+        );
+        assert_eq!(v["verdict"], "pass");
+        let claims: Vec<Claim> = serde_json::from_value(v["claims"].clone()).unwrap();
+        assert!(claims.is_empty());
+    }
+
+    #[test]
+    fn verifier_flags_evidence_marker_not_in_context() {
+        let v = verify(
+            "Line 12 currently stands at 42 units [evidence: nope.missing@nowhere].",
+            &["real source line".to_string()],
+        );
+        assert_eq!(v["verdict"], "needs_evidence");
+        let claims: Vec<Claim> = serde_json::from_value(v["claims"].clone()).unwrap();
+        assert_eq!(claims[0].epistemic_status, "unverified");
+    }
+
+    #[test]
+    fn evidence_refs_in_extracts_markers() {
+        assert_eq!(
+            evidence_refs_in(
+                "yield is 42 [evidence: metric.process_yield_proxy@Bizerte] [evidence: second.ref]."
+            ),
+            vec![
+                "metric.process_yield_proxy@Bizerte".to_string(),
+                "second.ref".to_string()
+            ]
+        );
+        assert!(evidence_refs_in("no markers here").is_empty());
+    }
+
+    #[test]
+    fn split_sentences_keeps_evidence_refs_intact() {
+        assert_eq!(
+            split_sentences(
+                "Yield is 42 [evidence: metric.process_yield_proxy@Bizerte]. And it is rising."
+            ),
+            vec![
+                "Yield is 42 [evidence: metric.process_yield_proxy@Bizerte]".to_string(),
+                "And it is rising".to_string()
+            ]
+        );
+        assert_eq!(
+            split_sentences("a. b; c\nd"),
+            vec![
+                "a".to_string(),
+                "b".to_string(),
+                "c".to_string(),
+                "d".to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn repair_message_is_shared_between_json_and_stream() {
+        let msg = repair_message(3);
+        assert!(msg.contains("I can only answer with claims verified"));
+        assert!(msg.contains("3 issue(s)"));
+    }
 }

@@ -160,6 +160,23 @@ pub enum EpistemicStatus {
     ProposedAction,
 }
 
+/// A structured claim emitted by the chat verifier (eighteenth audit
+/// P1-7): one per factual-sounding sentence. `epistemic_status` is
+/// "measured" when an `[evidence: <source>]` marker matches a prepared
+/// context source, "unverified" when the sentence asserts a fact without
+/// matching evidence, and may carry the other epistemic labels
+/// ("inferred" | "assumed" | "recommended") from future verifier passes.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct Claim {
+    pub statement: String,
+    /// "measured" | "inferred" | "assumed" | "recommended" | "unverified"
+    pub epistemic_status: String,
+    pub fact_addresses: Vec<String>,
+    pub evidence_refs: Vec<String>,
+    pub confidence: Option<f64>,
+    pub valid_at: Option<String>,
+}
+
 /// The DETERMINISTIC context plan (fifteenth audit 74): the task decides
 /// what must be present BEFORE any semantic retrieval — the model never
 /// invents the retrieval strategy.
@@ -447,5 +464,25 @@ mod tests {
             serde_json::to_string(&EpistemicStatus::ProposedAction).unwrap(),
             "\"proposed_action\""
         );
+    }
+
+    #[test]
+    fn claim_round_trips() {
+        let claim = Claim {
+            statement: "Line 12 yields 42 units".to_string(),
+            epistemic_status: "measured".to_string(),
+            fact_addresses: Vec::new(),
+            evidence_refs: vec!["metric.process_yield_proxy@Bizerte".to_string()],
+            confidence: None,
+            valid_at: None,
+        };
+        let json = serde_json::to_string(&claim).unwrap();
+        let back: Claim = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.statement, claim.statement);
+        assert_eq!(back.epistemic_status, "measured");
+        assert_eq!(back.evidence_refs, claim.evidence_refs);
+        assert!(back.fact_addresses.is_empty());
+        assert_eq!(back.confidence, None);
+        assert_eq!(back.valid_at, None);
     }
 }
