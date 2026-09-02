@@ -34,7 +34,7 @@ use crate::error::{Result, SenseiError};
 /// (`language` / `timezone` / `currency` columns) and the currently
 /// effective `country_policy_versions.revision`; all are `None` when
 /// there is no active site.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct RequestContext {
     pub tenant: Uuid,
     pub principal: Uuid,

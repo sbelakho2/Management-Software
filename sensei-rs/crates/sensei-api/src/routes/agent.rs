@@ -128,45 +128,75 @@ pub async fn build_context_with_locale(
             permissions.insert(perm);
         }
     }
-    // The employee's active site assignment is resolved at request time
-    // (item 17): the agent knows WHERE the user works. The full topology
-    // scope (value stream, work center, shift) and the site timezone come
-    // from the authoritative assignment/site records when a pool exists.
+    // Twentieth audit P1: scope resolution goes through the ONE
+    // authoritative builder — RequestContext (entitlement membership +
+    // topology chain proof). users.site_id survives only as a hint that
+    // must PASS the entitlement check; the newest employee_assignment is
+    // no longer consulted as an independent scope authority (a regional
+    // manager's newest assignment could otherwise contradict their
+    // entitlements).
     let user_row = state.users_service.find_by_id(user.user_id).await.ok();
-    let site_id = user_row.as_ref().and_then(|u| u.site_id);
+    let hint_site = user_row.as_ref().and_then(|u| u.site_id);
     let mut value_stream_id = None;
     let mut work_center_id = None;
     let mut shift_id = None;
+    let mut site_id = None;
     let mut timezone = "UTC".to_string();
     if let Some(pool) = state.db_pool.as_ref() {
-        if let Some(site) = site_id {
-            let tz: Option<String> =
-                sqlx::query_scalar("SELECT timezone FROM sites WHERE id = $1 AND tenant_id = $2")
-                    .bind(site)
-                    .bind(user.tenant_id)
-                    .fetch_one(pool.as_ref())
-                    .await
-                    .ok();
-            if let Some(tz) = tz {
-                timezone = tz;
-            }
-        }
-        let assignment: Option<(Option<Uuid>, Option<Uuid>, Option<Uuid>)> = sqlx::query_as(
-            "SELECT value_stream_id, work_center_id, shift_id \
-                 FROM employee_assignments \
-                 WHERE tenant_id = $1 AND user_id = $2 AND is_active = TRUE \
-                 ORDER BY updated_at DESC LIMIT 1",
+        if let Ok(rc) = sensei_core::domain::request_context::RequestContext::build(
+            pool,
+            user.tenant_id,
+            user.user_id,
+            hint_site,
+            None,
+            None,
+            None,
+            String::new(),
         )
-        .bind(user.tenant_id)
-        .bind(user.user_id)
-        .fetch_optional(pool.as_ref())
         .await
-        .ok()
-        .flatten();
-        if let Some((vs, wc, sh)) = assignment {
-            value_stream_id = vs;
-            work_center_id = wc;
-            shift_id = sh;
+        {
+            // The validated entitlement is the scope: when the hint is
+            // NOT entitled, the principal simply has no active operating
+            // site (fail-closed — never a stale users.site_id).
+            if rc
+                .authorized_sites()
+                .contains(&hint_site.unwrap_or_default())
+            {
+                site_id = hint_site;
+            }
+            if let Some(site) = site_id {
+                let tz: Option<String> = sqlx::query_scalar(
+                    "SELECT timezone FROM sites WHERE id = $1 AND tenant_id = $2",
+                )
+                .bind(site)
+                .bind(user.tenant_id)
+                .fetch_one(pool.as_ref())
+                .await
+                .ok();
+                if let Some(tz) = tz {
+                    timezone = tz;
+                }
+                let assignment: Option<(Option<Uuid>, Option<Uuid>, Option<Uuid>)> =
+                    sqlx::query_as(
+                        "SELECT value_stream_id, work_center_id, shift_id \
+                             FROM employee_assignments \
+                             WHERE tenant_id = $1 AND user_id = $2 AND is_active = TRUE \
+                               AND site_id = $3 \
+                             ORDER BY updated_at DESC LIMIT 1",
+                    )
+                    .bind(user.tenant_id)
+                    .bind(user.user_id)
+                    .bind(site)
+                    .fetch_optional(pool.as_ref())
+                    .await
+                    .ok()
+                    .flatten();
+                if let Some((vs, wc, sh)) = assignment {
+                    value_stream_id = vs;
+                    work_center_id = wc;
+                    shift_id = sh;
+                }
+            }
         }
     }
     AgentContext {
