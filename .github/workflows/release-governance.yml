@@ -43,10 +43,18 @@ jobs:
         run: |
           LABELS=$(gh pr view "$PR" --json labels --jq '.labels[].name')
           if ! echo "$LABELS" | grep -q '^approval:two-person$'; then
-            echo "::error::This PR changes sensitive paths (RBAC, replication/residency, money, standard work, audit, site lifecycle, or migrations) and requires the 'approval:two-person' label before merge. A second qualified approver must review and apply the label."
+            echo "::error::This PR changes sensitive paths (RBAC, replication/residency, money, standard work, audit, site lifecycle, or migrations) and requires the 'approval:two-person' label before merge."
             exit 1
           fi
-          echo "Sensitive-path changes carry the two-person approval label."
+          # A label is metadata, not four-eyes approval (nineteenth audit
+          # P1): at least TWO DISTINCT qualified reviewers must have
+          # approved the PR.
+          REVIEWS=$(gh api repos/{owner}/{repo}/pulls/$PR/reviews --jq '[.[] | select(.state == "APPROVED") | .user.login] | unique | length')
+          if [ "$REVIEWS" -lt 2 ]; then
+            echo "::error::The 'approval:two-person' label is present but only $REVIEWS distinct reviewer(s) approved. Two distinct qualified approvers are required for sensitive-path changes."
+            exit 1
+          fi
+          echo "Sensitive-path changes carry the two-person label with $REVIEWS distinct approving reviewers."
 
       - name: Migration changes require the migration gate label
         if: steps.sensitive.outputs.touched == 'true'

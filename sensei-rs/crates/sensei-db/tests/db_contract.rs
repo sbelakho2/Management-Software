@@ -8813,6 +8813,7 @@ async fn invariant_context_sensitivity_is_typed() {
         },
         sensitivity,
         token_cost: 1,
+        evidence_id: String::new(),
         epistemic_status: EpistemicStatus::RecordedFact,
     };
     let make_request = |ceiling: DataClass| ContextRequest {
@@ -11736,4 +11737,344 @@ async fn otd_is_on_time_over_immutable_commitment() {
         "the metric reads the immutable commitment — still 0.5"
     );
     assert_eq!(otd_again.sample_size, 2, "commitment count is unchanged");
+}
+
+/// Nineteenth-audit acceptance gate — adversarial full-path tests:
+/// 1) restricted replication with an unknown destination is DENIED;
+/// 2) the server-owned projector replaces the client payload;
+/// 3) OTD counts confirmed-Sep-2 / promised-Sep-20 / delivered-Sep-18
+///    as ON TIME through the real confirmation path;
+/// 4) manifest changes invalidate qualification;
+/// 5) legacy-heuristic topology requires reconciliation;
+/// 6) escalation obeys the site scope.
+#[tokio::test]
+async fn nineteenth_audit_adversarial_gate() {
+    let _serial = DB_LOCK.lock().await;
+    let Some(pool) = connect().await else { return };
+    sensei_db::migrations::run_migrations(&pool)
+        .await
+        .expect("migration chain");
+
+    let tenant_id = uuid::Uuid::new_v4();
+    let site_id = uuid::Uuid::new_v4();
+    let user = uuid::Uuid::new_v4();
+    sqlx::query("INSERT INTO tenants (id, name, slug) VALUES ($1, 'adv19', 'adv19')")
+        .bind(tenant_id)
+        .execute(&pool)
+        .await
+        .expect("tenant");
+    sqlx::query(
+        "INSERT INTO sites (id, tenant_id, site_code, name) VALUES ($1, $2, 'AD', 'Adversarial')",
+    )
+    .bind(site_id)
+    .bind(tenant_id)
+    .execute(&pool)
+    .await
+    .expect("site");
+    sqlx::query(
+        "INSERT INTO users (id, tenant_id, email, name, password_hash) \
+         VALUES ($1, $2, 'adv@starzforge.local', 'A', 'x')",
+    )
+    .bind(user)
+    .bind(tenant_id)
+    .execute(&pool)
+    .await
+    .expect("user");
+    sqlx::query(
+        "INSERT INTO site_manifests (tenant_id, site_id, country, capabilities) \
+         VALUES ($1, $2, 'Morocco', '[\"SMT\"]')",
+    )
+    .bind(tenant_id)
+    .bind(site_id)
+    .execute(&pool)
+    .await
+    .expect("manifest");
+    sqlx::query(
+        "INSERT INTO country_policies (tenant_id, country, language, currency, unit_system, \
+                                       week_start, holiday_schedule, timezone, data_residency, \
+                                       retention_days, employment_data_visibility, \
+                                       local_document_requirements) \
+         VALUES ($1, 'Morocco', 'fr', 'MAD', 'metric', 'monday', '[]'::jsonb, \
+                 'Africa/Casablanca', 'ma', 365, 'restricted', '[]'::jsonb)",
+    )
+    .bind(tenant_id)
+    .execute(&pool)
+    .await
+    .expect("policy");
+
+    use sensei_services::tps::replication;
+
+    // 1) Restricted + unknown destination -> DENIED (the normal path).
+    assert!(
+        !replication::may_replicate(
+            replication::DataPolicy::Restricted,
+            Some(&replication::Jurisdiction::MA),
+            None,
+        ),
+        "Restricted data with an unknown destination must be DENIED"
+    );
+    assert!(
+        replication::may_replicate(
+            replication::DataPolicy::Internal,
+            Some(&replication::Jurisdiction::MA),
+            None,
+        ),
+        "Internal data with an unknown destination may replicate"
+    );
+
+    // 2) The server-owned projector builds the payload from the event —
+    //    a client-supplied arbitrary payload is never the content.
+    let event_id = uuid::Uuid::new_v4();
+    {
+        let mut tx = pool.begin().await.expect("event tx");
+        sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
+            .bind(tenant_id.to_string())
+            .execute(&mut *tx)
+            .await
+            .expect("ctx");
+        sqlx::query(
+            "INSERT INTO operational_events \
+                 (id, tenant_id, event_type, occurred_at, recorded_at, scope_site_id, \
+                  actor_id, source_system, sensitivity, payload, sequence, event_schema_version) \
+             VALUES ($1, $2, 'andon.raised', NOW(), NOW(), $3, $4, 'starz_forge', 'internal', \
+                     '{\"issue_type\":\"quality\"}'::jsonb, 1, 1)",
+        )
+        .bind(event_id)
+        .bind(tenant_id)
+        .bind(site_id)
+        .bind(user)
+        .execute(&mut *tx)
+        .await
+        .expect("event");
+        tx.commit().await.expect("event commit");
+    }
+    let artifact = replication::authorize_projection(&pool, tenant_id, event_id, "andon")
+        .await
+        .expect("artifact");
+    assert_eq!(artifact.source_jurisdiction, replication::Jurisdiction::MA);
+    assert_eq!(artifact.data_class, "internal");
+    assert_eq!(
+        artifact.projected_payload["source_event"],
+        serde_json::json!(event_id),
+        "the projection is BUILT from the event, never from client input"
+    );
+    assert_ne!(
+        artifact.projected_payload,
+        serde_json::json!({ "attacker": "payload" }),
+        "an arbitrary client payload cannot be substituted for the projection"
+    );
+
+    // 3) OTD through the REAL confirmation path: confirmed now, promised
+    //    in 18 days, delivered now -> ON TIME.
+    {
+        use sensei_services::supply_chain::{DatabaseSupplyChainService, SupplyChainService};
+        let sc = DatabaseSupplyChainService::new(pool.clone());
+        // sales_orders.customer_id references accounts (composite FK).
+        let customer_id = uuid::Uuid::new_v4();
+        sqlx::query(
+            "INSERT INTO accounts (id, tenant_id, account_type, name) \
+             VALUES ($1, $2, 'customer', 'C-ADV')",
+        )
+        .bind(customer_id)
+        .bind(tenant_id)
+        .execute(&pool)
+        .await
+        .expect("account");
+        let order_id = uuid::Uuid::new_v4();
+        sqlx::query(
+            "INSERT INTO sales_orders (id, tenant_id, so_number, order_number, \
+                                       customer_id, status, order_date, delivery_date, \
+                                       shipping_address, line_items, created_by) \
+             VALUES ($1, $2, 'SO-ADV', 'SO-ADV', $3, 'draft', $4, $5, 'addr', '[]'::jsonb, $6)",
+        )
+        .bind(order_id)
+        .bind(tenant_id)
+        .bind(customer_id)
+        .bind(chrono::Utc::now() - chrono::Duration::days(1))
+        .bind(chrono::Utc::now() + chrono::Duration::days(18))
+        .bind(user)
+        .execute(&pool)
+        .await
+        .expect("order");
+        // The REAL confirmation path stamps the promise.
+        let _ = sc
+            .update_sales_order_status(tenant_id, order_id, "confirmed")
+            .await
+            .expect("confirm");
+        // Delivered today (before the Sep-20 promise).
+        let _ = sc
+            .update_sales_order_status(tenant_id, order_id, "delivered")
+            .await
+            .expect("deliver");
+        let committed: chrono::DateTime<chrono::Utc> = sqlx::query_scalar(
+            "SELECT committed_date FROM sales_orders WHERE id = $1 AND tenant_id = $2",
+        )
+        .bind(order_id)
+        .bind(tenant_id)
+        .fetch_one(&pool)
+        .await
+        .expect("committed");
+        assert!(
+            committed > chrono::Utc::now(),
+            "committed_date is the DELIVERY PROMISE (delivery_date), not the \
+             confirmation timestamp"
+        );
+        let otd =
+            sensei_services::tps::metric_engine::compute_metric(&pool, tenant_id, "otd", None)
+                .await
+                .expect("otd");
+        assert_eq!(
+            otd.value,
+            rust_decimal::Decimal::ONE,
+            "confirmed now, promised in 18 days, delivered now -> OTD = 1"
+        );
+    }
+
+    // 4) Manifest change invalidates qualification.
+    {
+        use sensei_services::tps::site_manifest;
+        site_manifest::bootstrap_site(
+            &pool,
+            tenant_id,
+            site_manifest::SiteManifest {
+                site_id,
+                country: "Morocco".to_string(),
+                timezone: "Africa/Casablanca".to_string(),
+                languages: vec!["fr".to_string()],
+                currency: "MAD".to_string(),
+                capabilities: vec!["SMT".to_string(), "ICT".to_string()],
+                integrations: vec![serde_json::json!({"kind": "erp"})],
+                policy_bundle: None,
+            },
+        )
+        .await
+        .expect("bootstrap v2");
+        let version: i32 = sqlx::query_scalar(
+            "SELECT manifest_version FROM site_manifests \
+             WHERE tenant_id = $1 AND site_id = $2",
+        )
+        .bind(tenant_id)
+        .bind(site_id)
+        .fetch_one(&pool)
+        .await
+        .expect("version");
+        let status: String = sqlx::query_scalar(
+            "SELECT status FROM site_manifests WHERE tenant_id = $1 AND site_id = $2",
+        )
+        .bind(tenant_id)
+        .bind(site_id)
+        .fetch_one(&pool)
+        .await
+        .expect("status");
+        assert_eq!(version, 2, "the manifest version advanced");
+        assert_eq!(
+            status, "draft",
+            "a manifest change invalidates qualification — the site must \
+             be re-validated (requalification required)"
+        );
+    }
+
+    // 5) Legacy-heuristic topology requires reconciliation.
+    {
+        use sensei_services::tps::site_manifest;
+        let wc = uuid::Uuid::new_v4();
+        sqlx::query(
+            "INSERT INTO work_centers (id, tenant_id, work_center_number, name, site_id, \
+                                       topology_state, topology_assignment_source) \
+             VALUES ($1, $2, 'WC-LEGACY', 'Legacy SMT', $3, 'needs_reconciliation', \
+                     'legacy_heuristic')",
+        )
+        .bind(wc)
+        .bind(tenant_id)
+        .bind(site_id)
+        .execute(&pool)
+        .await
+        .expect("legacy wc");
+        let report = site_manifest::validate_site(&pool, tenant_id, site_id)
+            .await
+            .expect("validate");
+        assert!(
+            !report
+                .checks
+                .iter()
+                .any(|(n, ok, _)| n == "topology_reconciled" && *ok),
+            "legacy_heuristic lineage (even with a site_id) must fail topology reconciliation"
+        );
+        site_manifest::reconcile_work_center_topology(
+            &pool,
+            tenant_id,
+            wc,
+            user,
+            "manual_reconciliation",
+        )
+        .await
+        .expect("reconcile");
+        let after = site_manifest::validate_site(&pool, tenant_id, site_id)
+            .await
+            .expect("validate after");
+        assert!(
+            after
+                .checks
+                .iter()
+                .any(|(n, ok, _)| n == "topology_reconciled" && *ok),
+            "after manual reconciliation the topology check passes"
+        );
+    }
+
+    // 6) Escalation obeys the site scope (extension of the cross-site gate).
+    {
+        use sensei_services::ops::OperationsService;
+        let service = sensei_services::ops::DatabaseOperationsService::new(pool.clone());
+        let site_b = uuid::Uuid::new_v4();
+        sqlx::query(
+            "INSERT INTO sites (id, tenant_id, site_code, name) VALUES ($1, $2, 'AB', 'B')",
+        )
+        .bind(site_b)
+        .bind(tenant_id)
+        .execute(&pool)
+        .await
+        .expect("site b");
+        let andon = sensei_services::ops::Andon {
+            id: uuid::Uuid::new_v4(),
+            tenant_id,
+            site_id: Some(site_b),
+            andon_number: String::new(),
+            work_center_id: uuid::Uuid::new_v4(),
+            issue_type: "quality".to_string(),
+            severity: "medium".to_string(),
+            description: "scope".to_string(),
+            status: String::new(),
+            raised_by: user,
+            acknowledged_by: None,
+            resolved_by: None,
+            resolution: None,
+            response_time_seconds: None,
+            resolution_time_seconds: None,
+            created_at: chrono::Utc::now(),
+            acknowledged_at: None,
+            resolved_at: None,
+            restart_authorized_by: None,
+            restart_authorized_at: None,
+            abnormal_condition_observed_at: None,
+            contained_at: None,
+            contained_by: None,
+            contained_note: None,
+            escalated: false,
+            escalated_at: None,
+            request_key: None,
+        };
+        let raised = service.raise_andon(tenant_id, andon).await.expect("raise");
+        let cross_esc = service
+            .escalate_andon(tenant_id, &[site_id], raised.id, user)
+            .await;
+        assert!(
+            cross_esc.is_err(),
+            "a Site-A caller must never escalate a Site-B andon"
+        );
+        let ok_esc = service
+            .escalate_andon(tenant_id, &[site_b], raised.id, user)
+            .await
+            .expect("in-scope escalation works");
+        assert!(ok_esc.escalated);
+    }
 }

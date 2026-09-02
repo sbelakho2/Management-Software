@@ -1,0 +1,30 @@
+# CODEOWNERS — two-person approval targets (nineteenth audit P1 governance).
+# Every change under these paths requires a review from a member of the
+# owning team; the release-governance workflow additionally requires the
+# approval:two-person label (distinct approving reviewers enforced there).
+
+# Security-critical authorization
+/sensei-rs/crates/sensei-auth/           @starzforge/security
+/sensei-rs/crates/sensei-core/src/domain/scope.rs    @starzforge/security
+/sensei-rs/crates/sensei-core/src/domain/request_context.rs @starzforge/security
+
+# Replication / residency / federation
+/sensei-rs/crates/sensei-services/src/tps/replication.rs @starzforge/security
+/sensei-rs/crates/sensei-api/src/routes/replication.rs    @starzforge/security
+/sensei-rs/crates/sensei-services/src/tps/corporate.rs    @starzforge/security
+
+# Money / currency / finance analytics
+/sensei-rs/crates/sensei-services/src/tps/role_analytics.rs @starzforge/finance
+/sensei-rs/crates/sensei-core/src/domain/value_objects.rs    @starzforge/finance
+
+# Standard work / TWI / site lifecycle / readiness
+/sensei-rs/crates/sensei-services/src/tps/site_manifest.rs @starzforge/operations
+/sensei-rs/crates/sensei-services/src/tps/skills.rs        @starzforge/operations
+
+# Audit logs / operational events / memory
+/sensei-rs/crates/sensei-services/src/tps/organizational_memory.rs @starzforge/quality
+/sensei-rs/crates/sensei-api/src/routes/andon.rs           @starzforge/operations
+/sensei-rs/crates/sensei-services/src/ops/                 @starzforge/operations
+
+# Database migrations — every migration needs the migration-gate label
+/sensei-rs/crates/sensei-db/migrations/                    @starzforge/platform

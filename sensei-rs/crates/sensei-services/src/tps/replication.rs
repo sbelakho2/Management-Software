@@ -275,6 +275,10 @@ pub struct AuthorizedProjection {
     pub data_class: String,
     pub projection_schema: String,
     pub policy_revision: u64,
+    /// SERVER-BUILT projection content (nineteenth audit P0): the client
+    /// can never attach an arbitrary payload to a low-sensitivity event —
+    /// the projector derives the payload from the canonical event row.
+    pub projected_payload: serde_json::Value,
 }
 
 /// DERIVE the projection authorization SERVER-SIDE (eighteenth audit
@@ -295,21 +299,41 @@ pub async fn authorize_projection(
     // 1. The source event must EXIST in this tenant (FORCE RLS makes the
     //    raw-pool read fail-closed — a foreign event id resolves to
     //    nothing).
-    type EvRow = (Option<Uuid>, String, String);
+    type EvRow = (Option<Uuid>, String, String, serde_json::Value);
     let event: Option<EvRow> = sqlx::query_as(
-        "SELECT scope_site_id, sensitivity, event_type FROM operational_events          WHERE id = $1 AND tenant_id = $2",
+        "SELECT scope_site_id, sensitivity, event_type, payload FROM operational_events \
+         WHERE id = $1 AND tenant_id = $2",
     )
     .bind(source_event_id)
     .bind(tenant_id)
     .fetch_optional(pool)
     .await
     .map_err(|e| SenseiError::Database(format!("replication: source event: {e}")))?;
-    let Some((scope_site_id, sensitivity, _event_type)) = event else {
+    let Some((scope_site_id, sensitivity, event_type, event_payload)) = event else {
         return Err(SenseiError::Validation(
-            "replication: source_event_id must reference an EXISTING canonical event              in this tenant — an artifact without a real source event is refused"
+            "replication: source_event_id must reference an EXISTING canonical event \
+             in this tenant — an artifact without a real source event is refused"
                 .to_string(),
         ));
     };
+    // The projector builds the projection from the CANONICAL event row:
+    // event type, occurrence time, scope and the event's own payload.
+    // A client-supplied payload can never be substituted.
+    let projected_payload = serde_json::json!({
+        "source_event": source_event_id,
+        "event_type": event_type,
+        "occurred_at": sqlx::query_scalar::<_, chrono::DateTime<chrono::Utc>>(
+            "SELECT occurred_at FROM operational_events WHERE id = $1 AND tenant_id = $2",
+        )
+        .bind(source_event_id)
+        .bind(tenant_id)
+        .fetch_one(pool)
+        .await
+        .map_err(|e| SenseiError::Database(format!("replication: event time: {e}")))?,
+        "scope_site": scope_site_id,
+        "payload": event_payload,
+    });
+
     let data_class = DataPolicy::parse(&sensitivity).map_err(SenseiError::Validation)?;
 
     // 2. Source jurisdiction: the event's scope site manifest country ->
@@ -373,6 +397,7 @@ pub async fn authorize_projection(
         data_class: data_class.as_str().to_string(),
         projection_schema: projection_schema.to_string(),
         policy_revision: policy_revision as u64,
+        projected_payload,
     })
 }
 

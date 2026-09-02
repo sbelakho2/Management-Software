@@ -5,6 +5,7 @@
 //! from this context.
 
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
 /// Everything the agent may know about the caller and the plant. Built by
@@ -123,6 +124,13 @@ pub struct Provenance {
 /// One context item with provenance as DATA (fifteenth audit 75-76):
 /// selection maximizes relevance × authority × freshness under the token
 /// budget and authorization constraints.
+///
+/// `evidence_id` (nineteenth audit P1): the TYPED provenance token of this
+/// item — a deterministic identifier derived from provenance.source +
+/// provenance.observed_at + the payload hash. Claims may only cite
+/// `[evidence: <evidence_id>]` markers, and verification checks the id
+/// against the ACTUAL evidence_id set of the prepared kernel items — never
+/// a substring match against a flattened context string.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ContextItem {
     pub payload: serde_json::Value,
@@ -130,6 +138,48 @@ pub struct ContextItem {
     pub sensitivity: DataClass,
     pub token_cost: u32,
     pub epistemic_status: EpistemicStatus,
+    /// The kernel-issued deterministic evidence id (nineteenth audit P1).
+    /// Empty for legacy constructions until the Context Kernel normalizes
+    /// it from the item's own provenance + payload.
+    #[serde(default = "default_evidence_id")]
+    pub evidence_id: String,
+}
+
+/// Legacy/absent `evidence_id` deserializes to an empty string; the
+/// Context Kernel normalizes it from the item's own provenance + payload
+/// (nineteenth audit P1).
+fn default_evidence_id() -> String {
+    String::new()
+}
+
+impl ContextItem {
+    /// The deterministic evidence id of this item: sha256 over
+    /// provenance.source + provenance.observed_at + the canonical payload,
+    /// truncated to 16 bytes of hex with an `ev:` prefix (nineteenth audit
+    /// P1). Identical items (same source, same observed_at, same payload)
+    /// always derive the same id; `recorded_at` is deliberately excluded
+    /// so the id is stable across construction.
+    pub fn derive_evidence_id(&self) -> String {
+        let mut hasher = Sha256::new();
+        hasher.update(self.provenance.source.as_bytes());
+        hasher.update(b"\x1f");
+        hasher.update(
+            self.provenance
+                .observed_at
+                .map(|t| t.to_rfc3339())
+                .unwrap_or_default()
+                .as_bytes(),
+        );
+        hasher.update(b"\x1f");
+        hasher.update(
+            serde_json::to_string(&self.payload)
+                .unwrap_or_default()
+                .as_bytes(),
+        );
+        let digest = hasher.finalize();
+        let hex: String = digest.iter().take(16).map(|b| format!("{b:02x}")).collect();
+        format!("ev:{hex}")
+    }
 }
 
 /// Explicit source-authority hierarchy (fifteenth audit 76): an AI
@@ -443,6 +493,7 @@ mod tests {
             sensitivity: DataClass::Internal,
             token_cost: 12,
             epistemic_status: EpistemicStatus::RecordedFact,
+            evidence_id: String::new(),
         };
         let json = serde_json::to_string(&item).unwrap();
         assert!(json.contains("\"provenance\""));
@@ -452,6 +503,49 @@ mod tests {
             back.provenance.authority,
             AuthorityRank::VerifiedObservation
         );
+        assert!(back.evidence_id.is_empty());
+    }
+
+    #[test]
+    fn evidence_id_is_deterministic_distinct_and_prefixed() {
+        let now = chrono::Utc::now();
+        let mk = |source: &str, observed_at: chrono::DateTime<chrono::Utc>| ContextItem {
+            payload: serde_json::json!({"id": "WO-1", "status": "open"}),
+            provenance: Provenance {
+                source: source.to_string(),
+                source_revision: None,
+                observed_at: Some(observed_at),
+                recorded_at: chrono::Utc::now(),
+                authority: AuthorityRank::VerifiedObservation,
+            },
+            sensitivity: DataClass::Internal,
+            token_cost: 12,
+            epistemic_status: EpistemicStatus::RecordedFact,
+            evidence_id: String::new(),
+        };
+        let a1 = mk("sensor-a", now);
+        let a2 = mk("sensor-a", now);
+        assert_eq!(a1.derive_evidence_id(), a2.derive_evidence_id());
+        assert!(a1.derive_evidence_id().starts_with("ev:"));
+        assert_ne!(
+            a1.derive_evidence_id(),
+            mk("sensor-b", now).derive_evidence_id(),
+            "different source must derive a different id"
+        );
+        assert_ne!(
+            a1.derive_evidence_id(),
+            mk("sensor-a", now - chrono::Duration::minutes(1)).derive_evidence_id(),
+            "different observed_at must derive a different id"
+        );
+    }
+
+    #[test]
+    fn legacy_context_item_json_defaults_evidence_id() {
+        let json = r#"{"payload":{"id":"WO-1"},"provenance":{"source":"x","source_revision":null,"observed_at":null,"recorded_at":"2026-01-01T00:00:00Z","authority":"verified_observation"},"sensitivity":"internal","token_cost":1,"epistemic_status":"recorded_fact"}"#;
+        let item: ContextItem = serde_json::from_str(json).unwrap();
+        assert!(item.evidence_id.is_empty());
+        let derived = item.derive_evidence_id();
+        assert!(derived.starts_with("ev:"));
     }
 
     #[test]

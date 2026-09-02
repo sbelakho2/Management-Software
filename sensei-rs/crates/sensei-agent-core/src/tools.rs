@@ -138,13 +138,31 @@ pub struct ToolExecutionContext {
 }
 
 /// Tool execution failures: dispatch, REAL timeout (item 56), output
-/// validation (item 57) and policy denial are all distinct.
+/// validation (item 57), policy denial and idempotency conflict
+/// (nineteenth audit P1) are all distinct.
 #[derive(Debug)]
 pub enum ToolError {
-    NotPermitted { tool: String },
-    Dispatch { tool: String, message: String },
-    Timeout { tool: String, timeout_ms: u64 },
-    OutputValidation { tool: String, message: String },
+    NotPermitted {
+        tool: String,
+    },
+    Dispatch {
+        tool: String,
+        message: String,
+    },
+    Timeout {
+        tool: String,
+        timeout_ms: u64,
+    },
+    OutputValidation {
+        tool: String,
+        message: String,
+    },
+    /// The execution key is already claimed and still in progress — a
+    /// concurrent duplicate of a mutating tool must NEVER re-execute.
+    Conflict {
+        tool: String,
+        message: String,
+    },
 }
 
 impl std::fmt::Display for ToolError {
@@ -161,6 +179,9 @@ impl std::fmt::Display for ToolError {
             }
             Self::OutputValidation { tool, message } => {
                 write!(f, "Tool '{tool}' output failed validation: {message}")
+            }
+            Self::Conflict { tool, message } => {
+                write!(f, "Tool '{tool}' is already executing: {message}")
             }
         }
     }
@@ -222,12 +243,14 @@ pub struct ToolExecutor {
     policy: PolicyEngine,
     /// The bounded RAM replay map (performance cache — it may forget).
     execution_results: super::cache::BoundedMap<serde_json::Value>,
-    /// The DURABLE system of record (eighteenth audit P1-14): when
-    /// configured, the journal is checked FIRST and written after every
-    /// idempotent execution — a retry replays the journaled result even
-    /// after the RAM entry was evicted. For mutating tools a failed
-    /// journal write fails the execution: the cache may forget, the
-    /// journal may not.
+    /// The DURABLE system of record (eighteenth audit P1-14, nineteenth
+    /// audit P1): when configured, reserve() atomically claims the key
+    /// before every idempotent execution and complete() transitions the
+    /// row to a terminal status afterwards — a retry (or a concurrent
+    /// duplicate) replays the journaled outcome even after the RAM entry
+    /// was evicted, and the mutation never runs twice. For mutating
+    /// tools a failed journal write fails the execution: the cache may
+    /// forget, the journal may not.
     journal: Option<std::sync::Arc<dyn super::journal::ExecutionJournal>>,
 }
 
@@ -273,15 +296,55 @@ impl ToolExecutor {
                 tool: tool.name.clone(),
             });
         }
-        // Idempotency (item 59 + eighteenth audit P1-14): the same
-        // execution key replays the stored result — the DURABLE journal
-        // is checked first (it is the system of record), then the RAM
-        // cache. The dispatch never runs twice.
+        // Idempotency (item 59 + nineteenth audit P1): the DURABLE
+        // journal is a CLAIM STATE MACHINE. reserve() atomically claims
+        // the key — exactly one concurrent caller wins and dispatches;
+        // every loser replays the completed result, replays the recorded
+        // failure, or gets a Conflict while the claim is in progress.
+        // The dispatch never runs twice. The RAM cache is a performance
+        // cache only (it may forget); with no journal configured the
+        // RAM-cache behavior is unchanged.
         let key = execution.key.key();
         if tool.idempotent {
             if let Some(journal) = &self.journal {
-                if let Some(journaled) = journal.load(ctx.tenant_id, &key).await {
-                    return Ok(journaled);
+                let claim = journal
+                    .reserve(ctx.tenant_id, &key, &tool.name)
+                    .await
+                    .map_err(|message| ToolError::Dispatch {
+                        tool: tool.name.clone(),
+                        message: format!("command journal reserve failed: {message}"),
+                    })?;
+                if claim == super::journal::ReservationOutcome::AlreadyExists {
+                    let (status, result) = journal
+                        .load(ctx.tenant_id, &key)
+                        .await
+                        .map_err(|message| ToolError::Dispatch {
+                            tool: tool.name.clone(),
+                            message: format!("command journal load failed: {message}"),
+                        })?
+                        .ok_or_else(|| ToolError::Dispatch {
+                            tool: tool.name.clone(),
+                            message: "command journal inconsistency: key exists but no row"
+                                .to_string(),
+                        })?;
+                    return match status.as_str() {
+                        "succeeded" => Ok(result),
+                        "failed" => {
+                            let message = result
+                                .get("error")
+                                .and_then(|e| e.as_str())
+                                .map(str::to_string)
+                                .unwrap_or_else(|| "command previously failed".to_string());
+                            Err(ToolError::Dispatch {
+                                tool: tool.name.clone(),
+                                message,
+                            })
+                        }
+                        _ => Err(ToolError::Conflict {
+                            tool: tool.name.clone(),
+                            message: "command already in progress".to_string(),
+                        }),
+                    };
                 }
             }
             if let Some(cached) = self.execution_results.get(&key) {
@@ -296,34 +359,94 @@ impl ToolExecutor {
         )
         .await;
         let output = match result {
-            Ok(inner) => inner?,
+            Ok(inner) => inner,
             Err(_elapsed) => {
+                // A timed-out mutating dispatch may still have taken
+                // effect: record the failure so a retry replays it and
+                // NEVER re-executes.
+                if tool.idempotent {
+                    if let Some(journal) = &self.journal {
+                        let _ = journal
+                            .complete(
+                                ctx.tenant_id,
+                                &key,
+                                "failed",
+                                &serde_json::json!({
+                                    "error": format!(
+                                        "Tool '{}' exceeded its {}ms timeout",
+                                        tool.name, tool.timeout_ms
+                                    )
+                                }),
+                            )
+                            .await;
+                    }
+                }
                 return Err(ToolError::Timeout {
                     tool: tool.name.clone(),
                     timeout_ms: tool.timeout_ms,
                 });
             }
         };
+        let output = match output {
+            Ok(output) => output,
+            Err(dispatch_err) => {
+                // Same direction: a failed dispatch is recorded as
+                // 'failed' so a retry replays the failure instead of
+                // re-executing (the side effect may be ambiguous).
+                if tool.idempotent {
+                    if let Some(journal) = &self.journal {
+                        let _ = journal
+                            .complete(
+                                ctx.tenant_id,
+                                &key,
+                                "failed",
+                                &serde_json::json!({ "error": dispatch_err.to_string() }),
+                            )
+                            .await;
+                    }
+                }
+                return Err(dispatch_err);
+            }
+        };
         // Output validation (item 57): the declared output schema is
-        // enforced after the domain command returns.
-        validate_output(&output, &tool.output_schema).map_err(|message| {
-            ToolError::OutputValidation {
+        // enforced after the domain command returns. A validation
+        // failure means the mutation already took effect: record the
+        // row as 'failed' so a retry replays it and NEVER re-executes.
+        if let Err(message) = validate_output(&output, &tool.output_schema) {
+            if tool.idempotent {
+                if let Some(journal) = &self.journal {
+                    let _ = journal
+                        .complete(
+                            ctx.tenant_id,
+                            &key,
+                            "failed",
+                            &serde_json::json!({
+                                "error": format!(
+                                    "Tool '{}' output failed validation: {message}",
+                                    tool.name
+                                )
+                            }),
+                        )
+                        .await;
+                }
+            }
+            return Err(ToolError::OutputValidation {
                 tool: tool.name.clone(),
                 message,
-            }
-        })?;
+            });
+        }
         if tool.idempotent {
             self.execution_results.insert(key.clone(), output.clone());
             // The journal write is part of correctness for mutating
-            // tools: a failed write FAILS the execution so the record
-            // never silently disappears.
+            // tools: a failed 'succeeded' write FAILS the execution so
+            // the record never silently disappears.
             if let Some(journal) = &self.journal {
                 journal
-                    .store(ctx.tenant_id, &key, &tool.name, &output)
+                    .complete(ctx.tenant_id, &key, "succeeded", &output)
                     .await
                     .map_err(|message| ToolError::Dispatch {
                         tool: tool.name.clone(),
-                        message,
+                        message: format!("command journal complete failed: {message}"),
                     })?;
             }
         }
@@ -666,5 +789,460 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 2);
+    }
+
+    /// In-memory journal for the state-machine tests. The Mutex makes
+    /// reserve() atomic exactly like the Postgres unique constraint —
+    /// two concurrent claims cannot both win.
+    #[derive(Default)]
+    struct MemoryJournal {
+        rows: std::sync::Arc<
+            std::sync::Mutex<std::collections::HashMap<String, (String, serde_json::Value)>>,
+        >,
+        fail_reserve: std::sync::Arc<std::sync::Mutex<bool>>,
+        fail_complete: std::sync::Arc<std::sync::Mutex<bool>>,
+        completes: std::sync::Arc<std::sync::Mutex<u64>>,
+    }
+
+    impl MemoryJournal {
+        fn key(tenant: Uuid, key: &str) -> String {
+            format!("{tenant}|{key}")
+        }
+        fn state(&self, tenant: Uuid, key: &str) -> (String, serde_json::Value) {
+            self.rows
+                .lock()
+                .unwrap()
+                .get(&Self::key(tenant, key))
+                .cloned()
+                .unwrap()
+        }
+    }
+
+    impl crate::journal::ExecutionJournal for MemoryJournal {
+        fn reserve(
+            &self,
+            tenant: Uuid,
+            key: &str,
+            _tool: &str,
+        ) -> std::pin::Pin<
+            Box<
+                dyn std::future::Future<Output = Result<crate::journal::ReservationOutcome, String>>
+                    + Send
+                    + '_,
+            >,
+        > {
+            let key = Self::key(tenant, key);
+            let rows = self.rows.clone();
+            let fail = self.fail_reserve.clone();
+            Box::pin(async move {
+                if *fail.lock().unwrap() {
+                    return Err("reserve failed".to_string());
+                }
+                let mut rows = rows.lock().unwrap();
+                match rows.entry(key) {
+                    std::collections::hash_map::Entry::Occupied(_) => {
+                        Ok(crate::journal::ReservationOutcome::AlreadyExists)
+                    }
+                    std::collections::hash_map::Entry::Vacant(v) => {
+                        v.insert(("reserved".to_string(), serde_json::json!({})));
+                        Ok(crate::journal::ReservationOutcome::Fresh)
+                    }
+                }
+            })
+        }
+
+        fn load(
+            &self,
+            tenant: Uuid,
+            key: &str,
+        ) -> std::pin::Pin<
+            Box<
+                dyn std::future::Future<
+                        Output = Result<Option<(String, serde_json::Value)>, String>,
+                    > + Send
+                    + '_,
+            >,
+        > {
+            let key = Self::key(tenant, key);
+            let rows = self.rows.clone();
+            Box::pin(async move { Ok(rows.lock().unwrap().get(&key).cloned()) })
+        }
+
+        fn complete(
+            &self,
+            tenant: Uuid,
+            key: &str,
+            status: &str,
+            result: &serde_json::Value,
+        ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), String>> + Send + '_>>
+        {
+            let key = Self::key(tenant, key);
+            let rows = self.rows.clone();
+            let fail = self.fail_complete.clone();
+            let completes = self.completes.clone();
+            let status = status.to_string();
+            let result = result.clone();
+            Box::pin(async move {
+                if *fail.lock().unwrap() {
+                    return Err("complete failed".to_string());
+                }
+                *completes.lock().unwrap() += 1;
+                rows.lock().unwrap().insert(key, (status, result));
+                Ok(())
+            })
+        }
+    }
+
+    fn mutating_tool() -> ToolSpec {
+        ToolSpec {
+            name: "post_journal_entry".to_string(),
+            version: 1,
+            risk: ToolRisk::ControlledWrite,
+            required_permission: "finance:journal:post".to_string(),
+            input_schema: serde_json::json!({}),
+            output_schema: serde_json::json!({"posted": "boolean"}),
+            timeout_ms: 10_000,
+            max_rows: 100,
+            idempotent: true,
+            approval_policy: ApprovalPolicy::Required,
+        }
+    }
+
+    fn approval() -> VerifiedApprovalArtifact {
+        VerifiedApprovalArtifact::issue(
+            "wf-1".into(),
+            "ap-1".into(),
+            "operator@sensei".into(),
+            "production:supervisor".into(),
+        )
+    }
+
+    #[tokio::test]
+    async fn journal_replays_succeeded_without_redispatch() {
+        let tool = mutating_tool();
+        let journal = std::sync::Arc::new(MemoryJournal::default());
+        let mut executor = ToolExecutor::with_journal(
+            PolicyEngine::new(vec![tool.clone()], ToolRisk::HighRisk),
+            journal.clone(),
+        );
+        let calls = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
+        let caller = ctx(&["finance:journal:post"]);
+        let execution = ToolExecutionContext {
+            key: ToolExecutionId {
+                request_id: Uuid::new_v4(),
+                program_execution_id: Uuid::new_v4(),
+                tool_call_index: 0,
+            },
+        };
+        let dispatch = |calls: std::sync::Arc<std::sync::atomic::AtomicU64>| {
+            move |_| {
+                calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                async move { Ok(serde_json::json!({"posted": true})) }
+            }
+        };
+        let first = executor
+            .execute(
+                &caller,
+                &tool,
+                serde_json::json!({}),
+                Some(approval()),
+                execution.clone(),
+                dispatch(calls.clone()),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            journal.state(caller.tenant_id, &execution.key.key()).0,
+            "succeeded"
+        );
+        // Same key: reserve -> AlreadyExists -> load('succeeded') ->
+        // replay. Dispatch does NOT run again and complete is NOT
+        // re-issued.
+        let completes_before = *journal.completes.lock().unwrap();
+        let second = executor
+            .execute(
+                &caller,
+                &tool,
+                serde_json::json!({}),
+                Some(approval()),
+                execution.clone(),
+                dispatch(calls.clone()),
+            )
+            .await
+            .unwrap();
+        assert_eq!(first, second);
+        assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 1);
+        assert_eq!(*journal.completes.lock().unwrap(), completes_before);
+    }
+
+    #[tokio::test]
+    async fn journal_conflicts_while_claim_in_progress() {
+        let tool = mutating_tool();
+        let journal = std::sync::Arc::new(MemoryJournal::default());
+        let caller = ctx(&["finance:journal:post"]);
+        let execution = ToolExecutionContext {
+            key: ToolExecutionId {
+                request_id: Uuid::new_v4(),
+                program_execution_id: Uuid::new_v4(),
+                tool_call_index: 1,
+            },
+        };
+        // Pre-seed a 'reserved' row: a concurrent duplicate must never
+        // re-execute — it gets a Conflict instead.
+        journal.rows.lock().unwrap().insert(
+            MemoryJournal::key(caller.tenant_id, &execution.key.key()),
+            ("reserved".to_string(), serde_json::json!({})),
+        );
+        let mut executor = ToolExecutor::with_journal(
+            PolicyEngine::new(vec![tool.clone()], ToolRisk::HighRisk),
+            journal.clone(),
+        );
+        let calls = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
+        let err = executor
+            .execute(
+                &caller,
+                &tool,
+                serde_json::json!({}),
+                Some(approval()),
+                execution,
+                |_| {
+                    calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                    async move { Ok(serde_json::json!({"posted": true})) }
+                },
+            )
+            .await
+            .unwrap_err();
+        assert!(matches!(err, ToolError::Conflict { .. }), "{err:?}");
+        assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    async fn journal_replays_recorded_failure() {
+        let tool = mutating_tool();
+        let journal = std::sync::Arc::new(MemoryJournal::default());
+        let caller = ctx(&["finance:journal:post"]);
+        let execution = ToolExecutionContext {
+            key: ToolExecutionId {
+                request_id: Uuid::new_v4(),
+                program_execution_id: Uuid::new_v4(),
+                tool_call_index: 2,
+            },
+        };
+        // Pre-seed a 'failed' row: the retry replays the stored failure
+        // and never re-executes.
+        journal.rows.lock().unwrap().insert(
+            MemoryJournal::key(caller.tenant_id, &execution.key.key()),
+            (
+                "failed".to_string(),
+                serde_json::json!({"error": "posting denied by GL rules"}),
+            ),
+        );
+        let mut executor = ToolExecutor::with_journal(
+            PolicyEngine::new(vec![tool.clone()], ToolRisk::HighRisk),
+            journal.clone(),
+        );
+        let calls = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
+        let err = executor
+            .execute(
+                &caller,
+                &tool,
+                serde_json::json!({}),
+                Some(approval()),
+                execution,
+                |_| {
+                    calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                    async move { Ok(serde_json::json!({"posted": true})) }
+                },
+            )
+            .await
+            .unwrap_err();
+        assert!(matches!(err, ToolError::Dispatch { .. }), "{err:?}");
+        assert!(
+            err.to_string().contains("posting denied by GL rules"),
+            "{err}"
+        );
+        assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    async fn journal_reserve_error_fails_execution() {
+        let tool = mutating_tool();
+        let journal = std::sync::Arc::new(MemoryJournal::default());
+        *journal.fail_reserve.lock().unwrap() = true;
+        let mut executor = ToolExecutor::with_journal(
+            PolicyEngine::new(vec![tool.clone()], ToolRisk::HighRisk),
+            journal.clone(),
+        );
+        let caller = ctx(&["finance:journal:post"]);
+        let execution = ToolExecutionContext {
+            key: ToolExecutionId {
+                request_id: Uuid::new_v4(),
+                program_execution_id: Uuid::new_v4(),
+                tool_call_index: 3,
+            },
+        };
+        let calls = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
+        // A journal that cannot be reserved must NEVER degrade into
+        // "no prior execution; go ahead".
+        let err = executor
+            .execute(
+                &caller,
+                &tool,
+                serde_json::json!({}),
+                Some(approval()),
+                execution,
+                |_| {
+                    calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                    async move { Ok(serde_json::json!({"posted": true})) }
+                },
+            )
+            .await
+            .unwrap_err();
+        assert!(matches!(err, ToolError::Dispatch { .. }), "{err:?}");
+        assert!(err.to_string().contains("reserve failed"), "{err}");
+        assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    async fn journal_complete_error_fails_mutating_execution() {
+        let tool = mutating_tool();
+        let journal = std::sync::Arc::new(MemoryJournal::default());
+        *journal.fail_complete.lock().unwrap() = true;
+        let mut executor = ToolExecutor::with_journal(
+            PolicyEngine::new(vec![tool.clone()], ToolRisk::HighRisk),
+            journal.clone(),
+        );
+        let caller = ctx(&["finance:journal:post"]);
+        let execution = ToolExecutionContext {
+            key: ToolExecutionId {
+                request_id: Uuid::new_v4(),
+                program_execution_id: Uuid::new_v4(),
+                tool_call_index: 4,
+            },
+        };
+        let calls = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
+        // The mutation ran, but the system of record could not be
+        // updated: the execution FAILS — the journal may not forget.
+        let err = executor
+            .execute(
+                &caller,
+                &tool,
+                serde_json::json!({}),
+                Some(approval()),
+                execution,
+                |_| {
+                    calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                    async move { Ok(serde_json::json!({"posted": true})) }
+                },
+            )
+            .await
+            .unwrap_err();
+        assert!(matches!(err, ToolError::Dispatch { .. }), "{err:?}");
+        assert!(err.to_string().contains("complete failed"), "{err}");
+        assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn journal_dispatch_failure_records_failed() {
+        let tool = mutating_tool();
+        let journal = std::sync::Arc::new(MemoryJournal::default());
+        let mut executor = ToolExecutor::with_journal(
+            PolicyEngine::new(vec![tool.clone()], ToolRisk::HighRisk),
+            journal.clone(),
+        );
+        let caller = ctx(&["finance:journal:post"]);
+        let execution = ToolExecutionContext {
+            key: ToolExecutionId {
+                request_id: Uuid::new_v4(),
+                program_execution_id: Uuid::new_v4(),
+                tool_call_index: 5,
+            },
+        };
+        // The dispatch failed: the row must transition to 'failed' so a
+        // retry replays the failure instead of re-executing.
+        let err = executor
+            .execute(
+                &caller,
+                &tool,
+                serde_json::json!({}),
+                Some(approval()),
+                execution.clone(),
+                |_| async move {
+                    Err(ToolError::Dispatch {
+                        tool: "post_journal_entry".to_string(),
+                        message: "GL posting lock".to_string(),
+                    })
+                },
+            )
+            .await
+            .unwrap_err();
+        assert!(err.to_string().contains("GL posting lock"), "{err}");
+        let (status, result) = journal.state(caller.tenant_id, &execution.key.key());
+        assert_eq!(status, "failed");
+        assert_eq!(
+            result["error"].as_str(),
+            Some("Tool 'post_journal_entry' dispatch failed: GL posting lock")
+        );
+    }
+
+    #[tokio::test]
+    async fn concurrent_identical_requests_execute_once() {
+        // The nineteenth-audit core property: two concurrent identical
+        // requests share one journal — reserve() lets exactly one claim
+        // the key; the loser replays the completed result or conflicts.
+        // The mutation runs exactly once.
+        let tool = mutating_tool();
+        let journal = std::sync::Arc::new(MemoryJournal::default());
+        let caller = ctx(&["finance:journal:post"]);
+        let execution = ToolExecutionContext {
+            key: ToolExecutionId {
+                request_id: Uuid::new_v4(),
+                program_execution_id: Uuid::new_v4(),
+                tool_call_index: 6,
+            },
+        };
+        let calls = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
+        let dispatch = |calls: std::sync::Arc<std::sync::atomic::AtomicU64>| {
+            move |_| {
+                calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                async move { Ok(serde_json::json!({"posted": true})) }
+            }
+        };
+        let mut executor_a = ToolExecutor::with_journal(
+            PolicyEngine::new(vec![tool.clone()], ToolRisk::HighRisk),
+            journal.clone(),
+        );
+        let mut executor_b = ToolExecutor::with_journal(
+            PolicyEngine::new(vec![tool.clone()], ToolRisk::HighRisk),
+            journal.clone(),
+        );
+        let (a, b) = tokio::join!(
+            executor_a.execute(
+                &caller,
+                &tool,
+                serde_json::json!({}),
+                Some(approval()),
+                execution.clone(),
+                dispatch(calls.clone()),
+            ),
+            executor_b.execute(
+                &caller,
+                &tool,
+                serde_json::json!({}),
+                Some(approval()),
+                execution.clone(),
+                dispatch(calls.clone()),
+            ),
+        );
+        assert_eq!(
+            calls.load(std::sync::atomic::Ordering::SeqCst),
+            1,
+            "mutation must run exactly once"
+        );
+        assert!(a.is_ok() || b.is_ok());
+        assert_eq!(
+            journal.state(caller.tenant_id, &execution.key.key()).0,
+            "succeeded"
+        );
     }
 }

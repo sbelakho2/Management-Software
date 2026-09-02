@@ -684,12 +684,20 @@ impl ChatbotService for DatabaseChatbotService {
         message: &str,
         conversation_id: Option<&str>,
         sampling: Option<ChatSamplingParams>,
+        system_context: Option<&str>,
     ) -> Result<mpsc::Receiver<Result<String>>> {
         let (tx, rx) = mpsc::channel(64);
 
         // Perform the chat to persist messages.
         let response = self
-            .chat(tenant_id, user_id, message, conversation_id, sampling, None)
+            .chat(
+                tenant_id,
+                user_id,
+                message,
+                conversation_id,
+                sampling,
+                system_context,
+            )
             .await?;
 
         let response_text = response.message.content;

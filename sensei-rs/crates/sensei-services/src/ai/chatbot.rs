@@ -196,6 +196,9 @@ pub trait ChatbotService: Send + Sync {
     /// representing one token (or a chunk of the response).
     /// `sampling` optionally overrides the configured sampling parameters
     /// for this request.
+    /// `system_context` is the server-built authoritative context bundle
+    /// (Context Kernel, sixteenth audit 8/96) threaded into the prompt
+    /// BEFORE generation — identical to [`ChatbotService::chat`].
     async fn stream_chat(
         &self,
         tenant_id: EntityId,
@@ -203,6 +206,7 @@ pub trait ChatbotService: Send + Sync {
         message: &str,
         conversation_id: Option<&str>,
         sampling: Option<ChatSamplingParams>,
+        system_context: Option<&str>,
     ) -> Result<mpsc::Receiver<Result<String>>>;
 
     /// Retrieve the full conversation history.
@@ -395,11 +399,13 @@ impl ChatbotService for SenseiChatbotService {
         message: &str,
         conversation_id: Option<&str>,
         sampling: Option<ChatSamplingParams>,
+        system_context: Option<&str>,
     ) -> Result<mpsc::Receiver<Result<String>>> {
         let (tx, rx) = mpsc::channel::<Result<String>>(64);
 
         let this = self.clone();
         let message = message.to_string();
+        let system_context = system_context.map(|s| s.to_string());
         let conv_id = conversation_id
             .map(|s| s.to_string())
             .unwrap_or_else(Self::generate_conversation_id);
@@ -407,7 +413,14 @@ impl ChatbotService for SenseiChatbotService {
         tokio::spawn(async move {
             // Get the full response first
             let response = this
-                .chat(tenant_id, user_id, &message, Some(&conv_id), sampling, None)
+                .chat(
+                    tenant_id,
+                    user_id,
+                    &message,
+                    Some(&conv_id),
+                    sampling,
+                    system_context.as_deref(),
+                )
                 .await;
 
             match response {
@@ -523,18 +536,27 @@ impl ChatbotService for InMemoryChatbotService {
         message: &str,
         conversation_id: Option<&str>,
         sampling: Option<ChatSamplingParams>,
+        system_context: Option<&str>,
     ) -> Result<mpsc::Receiver<Result<String>>> {
         let (tx, rx) = mpsc::channel(64);
 
         let this = self.clone();
         let message = message.to_string();
+        let system_context = system_context.map(|s| s.to_string());
         let conv_id = conversation_id
             .map(|s| s.to_string())
             .unwrap_or_else(Self::generate_conversation_id);
 
         tokio::spawn(async move {
             let response = this
-                .chat(tenant_id, user_id, &message, Some(&conv_id), sampling, None)
+                .chat(
+                    tenant_id,
+                    user_id,
+                    &message,
+                    Some(&conv_id),
+                    sampling,
+                    system_context.as_deref(),
+                )
                 .await;
 
             match response {
@@ -767,7 +789,7 @@ mod tests {
         let user_id = EntityId::new_v4();
 
         let mut rx = service
-            .stream_chat(tenant_id, user_id, "hello", None, None)
+            .stream_chat(tenant_id, user_id, "hello", None, None, None)
             .await
             .expect("stream chat should succeed");
 

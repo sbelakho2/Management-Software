@@ -1053,27 +1053,31 @@ async fn collect_finance_view(
     work_center_id: Option<Uuid>,
     a: &mut RoleAnalytics,
 ) -> Result<()> {
-    let (scrap_units, completed_units, scrap_value): (i64, i64, f64) = sqlx::query_as(
-        "SELECT COALESCE(SUM(wo.quantity_scrapped), 0)::bigint, \
+    let (scrap_units, completed_units, scrap_value): (i64, i64, rust_decimal::Decimal) =
+        sqlx::query_as(
+            "SELECT COALESCE(SUM(wo.quantity_scrapped), 0)::bigint, \
                 COALESCE(SUM(wo.quantity_completed), 0)::bigint, \
-                COALESCE(SUM(wo.quantity_scrapped * COALESCE(p.standard_cost, 0)), 0)::float8 \
+                COALESCE(SUM(wo.quantity_scrapped * COALESCE(p.standard_cost, 0)), 0)::numeric \
          FROM work_orders wo \
          JOIN products p ON p.id = wo.product_id AND p.tenant_id = wo.tenant_id \
          WHERE wo.tenant_id = $1 \
            AND wo.status <> 'cancelled' \
            AND ($2::uuid IS NULL OR wo.site_id = $2) \
            AND ($3::uuid IS NULL OR wo.work_center_id = $3)",
-    )
-    .bind(tenant_id)
-    .bind(site_id)
-    .bind(work_center_id)
-    .fetch_one(&mut **ttx.tx())
-    .await
-    .map_err(|e| SenseiError::Database(format!("role analytics: scrap value: {e}")))?;
+        )
+        .bind(tenant_id)
+        .bind(site_id)
+        .bind(work_center_id)
+        .fetch_one(&mut **ttx.tx())
+        .await
+        .map_err(|e| SenseiError::Database(format!("role analytics: scrap value: {e}")))?;
 
     let currency = site_currency_code(ttx, tenant_id, site_id).await?;
+    // The aggregate is Decimal end-to-end; the f64 boundary exists only
+    // at the Money constructor (cents math) — never in the query path.
+    let scrap_value_f64 = rust_decimal::prelude::ToPrimitive::to_f64(&scrap_value).unwrap_or(0.0);
     let money = currency
-        .map(|cc| Money::from_decimal(scrap_value, cc))
+        .map(|cc| Money::from_decimal(scrap_value_f64, cc))
         .transpose()?;
     let value_unit = match money {
         Some(m) => m.currency.as_str().to_string(),
@@ -1091,7 +1095,7 @@ async fn collect_finance_view(
     ));
     a.now.push(AnalyticLine::fact(
         "scrap value at standard cost",
-        scrap_value,
+        scrap_value_f64,
         value_unit,
     ));
     if scrap_units > 0 {
@@ -1163,7 +1167,7 @@ async fn collect_finance_view(
                         "{scrap_units} units scrapped ≈ {value_text} at standard cost — no_standard: \
                          no scrap_rate target is defined, so this is a note, not an abnormality"
                     ),
-                    scrap_value,
+                    scrap_value_f64,
                     "standard-cost value",
                 ));
             }

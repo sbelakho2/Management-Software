@@ -38,6 +38,17 @@ pub fn build_context_bundle(
     let mut candidates: Vec<ContextItem> = items
         .into_iter()
         .filter(|i| i.sensitivity <= ceiling)
+        // Nineteenth audit P1: the kernel ISSUES evidence ids. Every
+        // candidate that may reach the bundle must carry one — items built
+        // without one (legacy constructions) get it derived here from
+        // their own provenance + payload, so the typed provenance is never
+        // discarded before verification.
+        .map(|mut item| {
+            if item.evidence_id.is_empty() {
+                item.evidence_id = item.derive_evidence_id();
+            }
+            item
+        })
         .collect();
 
     // Deterministic greedy order: highest authority first, then most recent,
@@ -224,7 +235,40 @@ mod tests {
             sensitivity: DataClass::Internal,
             token_cost,
             epistemic_status: EpistemicStatus::RecordedFact,
+            evidence_id: String::new(),
         }
+    }
+
+    #[test]
+    fn bundle_issues_evidence_ids_to_selected_items() {
+        let now = Utc::now();
+        let items: Vec<ContextItem> = (0..3)
+            .map(|i| {
+                item(
+                    &format!("src-{i}"),
+                    json!({"live_state": "running"}),
+                    AuthorityRank::VerifiedObservation,
+                    10,
+                    Some(now - Duration::minutes(i)),
+                )
+            })
+            .collect();
+        let bundle = build_context_bundle(
+            &request(TaskKind::Troubleshoot, 1000),
+            items,
+            TokenBudget::default_for(1000),
+        );
+        let kept: Vec<&ContextItem> = bundle.sections.iter().flat_map(|(_, v)| v.iter()).collect();
+        assert_eq!(kept.len(), 3);
+        for k in &kept {
+            assert!(
+                !k.evidence_id.is_empty(),
+                "selected item must carry a kernel-issued evidence id"
+            );
+            assert_eq!(k.evidence_id, k.derive_evidence_id());
+        }
+        let ids: HashSet<String> = kept.iter().map(|k| k.evidence_id.clone()).collect();
+        assert_eq!(ids.len(), kept.len(), "distinct items get distinct ids");
     }
 
     #[test]

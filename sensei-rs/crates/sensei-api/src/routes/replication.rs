@@ -180,7 +180,7 @@ pub async fn enqueue(
         projection_type,
         projection_revision: req.projection_revision,
         data_policy: artifact.data_class.clone(),
-        payload: req.payload.clone(),
+        payload: artifact.projected_payload.clone(),
     };
     replication::enqueue_projection(
         p,
@@ -188,7 +188,7 @@ pub async fn enqueue(
         artifact.source_site,
         &req.entity_type,
         req.entity_id,
-        req.payload,
+        artifact.projected_payload.clone(),
         Some(&artifact.source_event_id.to_string()),
         &envelope,
         Some(&artifact.source_jurisdiction),

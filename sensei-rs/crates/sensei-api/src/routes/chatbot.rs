@@ -19,6 +19,7 @@ use sensei_core::error::Result;
 use sensei_services::ai::chatbot::ChatSamplingParams;
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
+use std::collections::HashSet;
 use std::convert::Infallible;
 use std::pin::Pin;
 use std::task::{Context, Poll};
@@ -121,6 +122,12 @@ pub(crate) struct PreparedInference {
     /// The compact authoritative context bundle — the texts fed INTO
     /// generation. The verifier matches evidence markers against these.
     pub context_used: Vec<String>,
+    /// The PREPARED kernel items behind `context_used` (nineteenth audit
+    /// P1): the typed provenance is kept through verification. The
+    /// verifier builds the ACTUAL evidence_id set from these items — a
+    /// marker is validated by id membership, never by substring matching
+    /// against a flattened string.
+    pub kernel_items: Vec<sensei_agent_core::context::ContextItem>,
     /// The prepared system context (the joined bundle), `None` when empty.
     pub system_context: Option<String>,
 }
@@ -231,7 +238,7 @@ pub(crate) async fn prepare_inference(
         .iter()
         .filter_map(|line| {
             let (section, content) = line.split_once(" [live]: ")?;
-            Some(sensei_agent_core::context::ContextItem {
+            let mut item = sensei_agent_core::context::ContextItem {
                 payload: serde_json::json!({ "section": section, "text": content }),
                 provenance: sensei_agent_core::context::Provenance {
                     source: format!("section:{section}"),
@@ -243,7 +250,14 @@ pub(crate) async fn prepare_inference(
                 sensitivity: sensei_agent_core::context::DataClass::Internal,
                 token_cost: (content.len() as u32 / 4).max(1),
                 epistemic_status: sensei_agent_core::context::EpistemicStatus::RecordedFact,
-            })
+                // Nineteenth audit P1: the evidence id is issued HERE at
+                // construction from the item's own provenance + payload —
+                // the Context Kernel also normalizes any item that still
+                // arrives empty.
+                evidence_id: String::new(),
+            };
+            item.evidence_id = item.derive_evidence_id();
+            Some(item)
         })
         .collect();
     let kernel_bundle = sensei_agent_core::context_kernel::build_context_bundle(
@@ -251,17 +265,22 @@ pub(crate) async fn prepare_inference(
         kernel_items,
         sensei_agent_core::context::TokenBudget::default_for(4096),
     );
-    let context_used: Vec<String> = kernel_bundle
+    // Nineteenth audit P1: the typed items survive the kernel — they are
+    // kept alongside the flattened texts so the verifier can validate
+    // evidence markers against the ACTUAL evidence_id set.
+    let kernel_items: Vec<sensei_agent_core::context::ContextItem> = kernel_bundle
         .sections
         .iter()
-        .flat_map(|(_, items)| {
-            items.iter().map(|item| {
-                item.payload
-                    .get("text")
-                    .and_then(|t| t.as_str())
-                    .unwrap_or("")
-                    .to_string()
-            })
+        .flat_map(|(_, items)| items.iter().cloned())
+        .collect();
+    let context_used: Vec<String> = kernel_items
+        .iter()
+        .map(|item| {
+            item.payload
+                .get("text")
+                .and_then(|t| t.as_str())
+                .unwrap_or("")
+                .to_string()
         })
         .collect();
     let system_context = if context_used.is_empty() {
@@ -275,6 +294,7 @@ pub(crate) async fn prepare_inference(
         snapshot,
         context_plan,
         context_used,
+        kernel_items,
         system_context,
     })
 }
@@ -345,7 +365,7 @@ pub async fn chat(
         &prepared.ctx,
         &policy,
         &effective_tools,
-        &prepared.context_used,
+        &prepared.kernel_items,
     );
     // Seventeenth audit item 7 — verifier failure BLOCKS/REPAIRS output:
     // an unverifiable factual reply is never delivered as-is. The
@@ -444,19 +464,34 @@ fn classify_task(message: &str) -> sensei_agent_core::context::TaskKind {
 ///
 /// Eighteenth audit P1-7: the output is STRUCTURED — every flagged
 /// sentence becomes a [`Claim`] ("unverified" without evidence; "measured"
-/// when an `[evidence: <source>]` marker matches a prepared context
-/// source). The marker check runs against the CURRENT sentence, never the
+/// when an `[evidence: <evidence_id>]` marker matches a prepared context
+/// item). The marker check runs against the CURRENT sentence, never the
 /// whole response.
+///
+/// Nineteenth audit P1: the match is TYPED. The only valid evidence set is
+/// the ACTUAL `evidence_id` set of the prepared [`ContextItem`]s — a
+/// marker whose id is not in that set is an ISSUE (unverified evidence
+/// reference), and a marker is never validated by substring matching
+/// against a flattened context string.
 fn verify_chat_response(
     response: &sensei_services::ai::chatbot::ChatResponse,
     ctx: &sensei_agent_core::context::AgentContext,
     _policy: &sensei_agent_core::tools::PolicyEngine,
     _effective_tools: &[&sensei_agent_core::tools::ToolSpec],
-    context_used: &[String],
+    kernel_items: &[sensei_agent_core::context::ContextItem],
 ) -> serde_json::Value {
     let mut issues: Vec<String> = Vec::new();
     let mut claims: Vec<Claim> = Vec::new();
     let content = response.message.content.clone();
+
+    // Nineteenth audit P1: the ACTUAL evidence ids issued by the Context
+    // Kernel for this request — built from the prepared items, never from
+    // flattened strings.
+    let evidence_ids: HashSet<String> = kernel_items
+        .iter()
+        .map(|item| item.evidence_id.clone())
+        .filter(|id| !id.is_empty())
+        .collect();
 
     // Factual-sounding statements: sentences that mention live tenant data
     // (quantities, counts, statuses, ids) in an assertive way. These are
@@ -498,13 +533,14 @@ fn verify_chat_response(
             continue;
         }
 
-        // Evidence markers: "[evidence: <source>]" — when the referenced
-        // source appears in the prepared context bundle, the sentence is a
-        // MEASURED claim and is NOT flagged; otherwise it stays unverified.
+        // Evidence markers: "[evidence: <evidence_id>]" — the id must BE a
+        // kernel-issued evidence id of a prepared item. A marker whose id
+        // is NOT in the set is an unverified evidence reference (an issue);
+        // a sentence whose markers all verify is a MEASURED claim.
         let evidence_refs = evidence_refs_in(s);
         let matched_refs: Vec<String> = evidence_refs
             .iter()
-            .filter(|r| context_used.iter().any(|line| line.contains(r.as_str())))
+            .filter(|r| evidence_ids.contains(r.as_str()))
             .cloned()
             .collect();
         if !matched_refs.is_empty() {
@@ -527,11 +563,25 @@ fn verify_chat_response(
             valid_at: None,
         });
         if !response.is_fallback {
-            issues.push(format!(
-                "Unverified factual claim: '{s}' — no EvidenceRef. \
-                 Facts about live tenant data must be queried through the \
-                 tool surface, stated as unavailable, or labeled a hypothesis."
-            ));
+            let unmatched_refs: Vec<String> = evidence_refs
+                .iter()
+                .filter(|r| !evidence_ids.contains(r.as_str()))
+                .cloned()
+                .collect();
+            if unmatched_refs.is_empty() {
+                issues.push(format!(
+                    "Unverified factual claim: '{s}' — no EvidenceRef. \
+                     Facts about live tenant data must be queried through the \
+                     tool surface, stated as unavailable, or labeled a hypothesis."
+                ));
+            } else {
+                for r in unmatched_refs {
+                    issues.push(format!(
+                        "Unverified evidence reference: '{r}' — not an evidence id \
+                         issued by the Context Kernel for this request."
+                    ));
+                }
+            }
         }
     }
 
@@ -679,7 +729,10 @@ pub async fn chat_stream(
     let channel_clone = channel.clone();
     let sampling = req.sampling_params();
     let system_context = prepared.system_context.clone();
-    let context_used = prepared.context_used.clone();
+    // Nineteenth audit P1: the PREPARED kernel items (with their issued
+    // evidence ids) travel with the stream — verification validates
+    // markers against the ACTUAL evidence_id set, not flattened strings.
+    let kernel_items = prepared.kernel_items.clone();
     let ctx = prepared.ctx.clone();
     let task = tokio::spawn(async move {
         // The snapshot gate decides whether streaming may START at all
@@ -695,17 +748,17 @@ pub async fn chat_stream(
                 .await;
             return;
         }
-        // The PREPARED context travels with the stream: `stream_chat` has
-        // no context parameter, so the authoritative bundle is published
-        // as the first "context" event BEFORE any token, and logged. The
-        // buffered reply is verified against the same bundle below.
+        // The PREPARED context travels INTO generation: `stream_chat`
+        // receives the same system context as the JSON path, so the model
+        // generates WITH the authoritative kernel bundle (eighteenth audit
+        // P1: SSE consumes the Context Kernel output). The buffered reply
+        // is verified against the same bundle below.
         if let Some(sys) = system_context.as_deref() {
             tracing::info!(
                 channel = %channel_clone,
                 context = %sys,
-                "SSE chat streaming with prepared Context Kernel bundle"
+                "SSE chat generation running with prepared Context Kernel bundle"
             );
-            sse_manager.publish(&channel_clone, "context", sys).await;
         }
         // Item 26: the stream carries the SAME trust guarantee as the JSON
         // chat — the full response is buffered, verified, and only then
@@ -717,6 +770,7 @@ pub async fn chat_stream(
                 &req.message,
                 req.conversation_id.as_deref(),
                 sampling,
+                system_context.as_deref(),
             )
             .await
         {
@@ -760,7 +814,7 @@ pub async fn chat_stream(
                     &ctx,
                     &policy,
                     &effective_tools,
-                    &context_used,
+                    &kernel_items,
                 );
                 // Seventeenth audit item 7 (extended by eighteenth audit
                 // P1-6): the stream's buffered reply is REPAIRED when
@@ -848,7 +902,32 @@ mod tests {
         }
     }
 
-    fn verify(content: &str, context_used: &[String]) -> serde_json::Value {
+    /// A prepared kernel item with a KERNEL-ISSUED evidence id (nineteenth
+    /// audit P1): the verifier only accepts markers that are exactly one of
+    /// these ids.
+    fn kernel_item(source: &str, text: &str) -> sensei_agent_core::context::ContextItem {
+        let mut item = sensei_agent_core::context::ContextItem {
+            payload: serde_json::json!({ "section": "metric_tree", "text": text }),
+            provenance: sensei_agent_core::context::Provenance {
+                source: source.to_string(),
+                source_revision: None,
+                observed_at: Some(chrono::Utc::now()),
+                recorded_at: chrono::Utc::now(),
+                authority: sensei_agent_core::context::AuthorityRank::TransactionalState,
+            },
+            sensitivity: sensei_agent_core::context::DataClass::Internal,
+            token_cost: 10,
+            epistemic_status: sensei_agent_core::context::EpistemicStatus::RecordedFact,
+            evidence_id: String::new(),
+        };
+        item.evidence_id = item.derive_evidence_id();
+        item
+    }
+
+    fn verify(
+        content: &str,
+        kernel_items: &[sensei_agent_core::context::ContextItem],
+    ) -> serde_json::Value {
         let policy = sensei_agent_core::tools::PolicyEngine::new(
             crate::services::agent::build_readonly_tools(),
             sensei_agent_core::tools::ToolRisk::ReadOnly,
@@ -859,7 +938,7 @@ mod tests {
             &test_ctx(),
             &policy,
             &tools,
-            context_used,
+            kernel_items,
         )
     }
 
@@ -875,19 +954,20 @@ mod tests {
     }
 
     #[test]
-    fn verifier_marks_measured_claims_with_matching_context_evidence() {
-        let context = vec!["metric.process_yield_proxy@Bizerte: 42".to_string()];
+    fn verifier_marks_measured_claims_with_kernel_issued_evidence_ids() {
+        let item = kernel_item("metric_tree", "metric.process_yield_proxy@Bizerte: 42");
         let v = verify(
-            "Line 12 currently stands at 42 units [evidence: metric.process_yield_proxy@Bizerte].",
-            &context,
+            &format!(
+                "Line 12 currently stands at 42 units [evidence: {}].",
+                item.evidence_id
+            ),
+            std::slice::from_ref(&item),
         );
         assert_eq!(v["verdict"], "pass");
         let claims: Vec<Claim> = serde_json::from_value(v["claims"].clone()).unwrap();
+        assert_eq!(claims.len(), 1);
         assert_eq!(claims[0].epistemic_status, "measured");
-        assert_eq!(
-            claims[0].evidence_refs,
-            vec!["metric.process_yield_proxy@Bizerte".to_string()]
-        );
+        assert_eq!(claims[0].evidence_refs, vec![item.evidence_id]);
     }
 
     #[test]
@@ -906,10 +986,33 @@ mod tests {
     }
 
     #[test]
-    fn verifier_flags_evidence_marker_not_in_context() {
+    fn verifier_flags_evidence_marker_not_in_evidence_id_set() {
+        let item = kernel_item("metric_tree", "real source line");
         let v = verify(
             "Line 12 currently stands at 42 units [evidence: nope.missing@nowhere].",
-            &["real source line".to_string()],
+            &[item],
+        );
+        assert_eq!(v["verdict"], "needs_evidence");
+        let claims: Vec<Claim> = serde_json::from_value(v["claims"].clone()).unwrap();
+        assert_eq!(claims[0].epistemic_status, "unverified");
+        assert!(claims[0].evidence_refs.is_empty());
+        let issues: Vec<String> = serde_json::from_value(v["issues"].clone()).unwrap();
+        assert!(issues
+            .iter()
+            .any(|i| i.contains("Unverified evidence reference") && i.contains("nope.missing")));
+    }
+
+    #[test]
+    fn verifier_does_not_match_marker_against_context_substrings() {
+        // Nineteenth audit P1: the OLD check accepted any marker whose text
+        // appeared as a SUBSTRING of a context line. The typed check
+        // requires the marker to BE the evidence_id of a prepared item — a
+        // source name that merely appears inside the payload text is NOT
+        // evidence.
+        let item = kernel_item("metric_tree", "metric.process_yield_proxy@Bizerte: 42");
+        let v = verify(
+            "Line 12 currently stands at 42 units [evidence: metric.process_yield_proxy@Bizerte].",
+            &[item],
         );
         assert_eq!(v["verdict"], "needs_evidence");
         let claims: Vec<Claim> = serde_json::from_value(v["claims"].clone()).unwrap();

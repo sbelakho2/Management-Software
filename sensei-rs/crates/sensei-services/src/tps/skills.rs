@@ -7,6 +7,16 @@
 //! reports the number of principals who can run a skill independently
 //! (`bus_factor`) and flags `single_point` when that number is exactly
 //! one.
+//!
+//! Multi-shift competency (nineteenth audit item P1): the current state
+//! lives in `competency_projection`, keyed by
+//! (tenant, principal, skill, site, shift) — one row PER demonstrated
+//! site/shift scope, updated by every recorded qualification
+//! (source_evidence_id links to the immutable evidence row).
+//! `skill_qualifications` keeps the single current level for backward
+//! compatibility (its shift_id stays anchored to the FIRST
+//! demonstration), and site/shift-aware coverage reads the projection's
+//! STRUCTURAL columns instead of the first-shift anchor.
 use sensei_core::error::{Result, SenseiError};
 use uuid::Uuid;
 
@@ -302,6 +312,19 @@ pub async fn create_job_standard(
 /// travel verbatim, and the demonstration site/shift context is anchored
 /// there — a later qualification on another shift NEVER overwrites the
 /// first shift anchor (the conflict path updates level/evidence only).
+/// A SAME-LEVEL re-demonstration is NOT discarded (nineteenth audit P1):
+/// it appends a further evidence row and refreshes the projection, so a
+/// demonstration on Shift B is never lost.
+///
+/// The CURRENT-STATE projection (`competency_projection`, nineteenth
+/// audit P1) is upserted per scope in the same transaction: one row per
+/// (site, shift) the principal has demonstrated the skill on, carrying
+/// the new level and the new evidence row's id as `source_evidence_id`.
+/// The projection site is the resolved demonstration site; a shift-less
+/// demonstration falls back to the existing anchor (the FIRST-recorded
+/// qualification shift's site, then the principal's active role-slot
+/// assignment site) — when nothing is anchored the site stays NULL and
+/// coverage resolves it at query time from the assignment.
 ///
 /// The ladder is a controlled state machine (sixteenth audit item 34):
 /// only ADJACENT moves are allowed, a higher state is never overwritten
@@ -374,12 +397,12 @@ pub async fn record_qualification(
                 None => None,
             };
 
-            // No-op: re-recording the SAME level changes nothing.
-            if current == level {
-                return Ok(());
-            }
-            // Demotion: a higher state is never overwritten with a lower
-            // one without an explicit revocation path.
+            // Same-level re-demonstration (nineteenth audit P1) is a REAL
+            // demonstration, not a no-op: it is NOT discarded here — the
+            // evidence row and the per-scope projection row are appended
+            // below, so multi-shift history accumulates. Only a DEMOTION
+            // is rejected: a higher state is never overwritten with a
+            // lower one without an explicit revocation path.
             if level.rank() < current.rank() {
                 return Err(SenseiError::Validation(
                     QualificationError::DemotionWithoutRevocation
@@ -498,9 +521,10 @@ pub async fn record_qualification(
                 false
             };
 
-            // The controlled ladder: only adjacent moves, unless the
+            // The controlled ladder: only adjacent moves (or a SAME-LEVEL
+            // re-demonstration, which is not a move), unless the
             // prior-competence bypass documented above applies.
-            if !prior_competence_bypass && !allowed_transition(current, level) {
+            if current != level && !prior_competence_bypass && !allowed_transition(current, level) {
                 return Err(SenseiError::Validation(
                     QualificationError::ImpossibleJump.message().to_string(),
                 ));
@@ -531,16 +555,71 @@ pub async fn record_qualification(
             .await
             .map_err(|e| SenseiError::Database(format!("Failed to record qualification: {e}")))?;
 
+            // The projection site (nineteenth audit P1): the resolved
+            // demonstration site when the record carries a shift;
+            // otherwise the existing anchor — the FIRST-recorded
+            // qualification shift's site (skill_qualifications pins
+            // shift_id on first insert and the conflict path never
+            // touches it), then the principal's active role-slot
+            // assignment site. Nothing anchored => NULL (coverage
+            // resolves the site at query time from the assignment).
+            let projection_site_id = match demonstration_site_id {
+                Some(site) => Some(site),
+                None => {
+                    let anchor_site: Option<Option<Uuid>> = sqlx::query_scalar(
+                        "SELECT sh.site_id FROM skill_qualifications q \
+                         JOIN shifts sh ON sh.id = q.shift_id \
+                         WHERE q.tenant_id = $1 AND q.principal_id = $2 AND q.skill_id = $3",
+                    )
+                    .bind(tenant_id)
+                    .bind(principal_id)
+                    .bind(skill_id)
+                    .fetch_optional(&mut **tx)
+                    .await
+                    .map_err(|e| {
+                        SenseiError::Database(format!(
+                            "Failed to read qualification site anchor: {e}"
+                        ))
+                    })?;
+                    match anchor_site.flatten() {
+                        Some(site) => Some(site),
+                        None => {
+                            let assignment_site: Option<Option<Uuid>> = sqlx::query_scalar(
+                                "SELECT rs.scope_site_id FROM principal_assignments pa \
+                                 JOIN role_slots rs ON rs.id = pa.slot_id \
+                                 WHERE pa.tenant_id = $1 AND pa.principal_id = $2 \
+                                   AND pa.ended_at IS NULL \
+                                 LIMIT 1",
+                            )
+                            .bind(tenant_id)
+                            .bind(principal_id)
+                            .fetch_optional(&mut **tx)
+                            .await
+                            .map_err(|e| {
+                                SenseiError::Database(format!(
+                                    "Failed to read assignment site anchor: {e}"
+                                ))
+                            })?;
+                            assignment_site.flatten()
+                        }
+                    }
+                }
+            };
+
             // Append-only evidence history (P1-9): ONE immutable row per
-            // recorded qualification, in the SAME transaction — the
-            // demonstration site/shift context survives forever, so
-            // multi-shift qualification stays fully representable.
-            sqlx::query(
+            // recorded qualification — INCLUDING same-level
+            // re-demonstrations (nineteenth audit P1) — in the SAME
+            // transaction. The demonstration site/shift context survives
+            // forever, so multi-shift qualification stays fully
+            // representable; the returned id becomes the projection's
+            // source_evidence_id.
+            let evidence_id: Uuid = sqlx::query_scalar(
                 "INSERT INTO skill_qualification_evidence \
                     (tenant_id, principal_id, skill_id, standard_revision, demonstrated_at, \
                      demonstration_site_id, demonstration_shift_id, assessor_id, evidence, \
                      prior_competence) \
-                 VALUES ($1, $2, $3, $4, NOW(), $5, $6, $7, $8, $9)",
+                 VALUES ($1, $2, $3, $4, NOW(), $5, $6, $7, $8, $9) \
+                 RETURNING id",
             )
             .bind(tenant_id)
             .bind(principal_id)
@@ -551,10 +630,43 @@ pub async fn record_qualification(
             .bind(assessor_id)
             .bind(&evidence)
             .bind(&prior_competence)
-            .execute(&mut **tx)
+            .fetch_one(&mut **tx)
             .await
             .map_err(|e| {
                 SenseiError::Database(format!("Failed to record qualification evidence: {e}"))
+            })?;
+
+            // The CURRENT-STATE projection (nineteenth audit P1): one row
+            // per (site, shift) scope the principal demonstrated the
+            // skill on. The UNIQUE key's nullable components are
+            // COALESCEd in the conflict target to match the functional
+            // unique index, so the "any site / any shift" bucket
+            // UPSERTs instead of growing. Level changes are the only
+            // updates — demotion is already rejected above, so the
+            // projection never downgrades without revocation.
+            sqlx::query(
+                "INSERT INTO competency_projection \
+                    (tenant_id, principal_id, skill_id, site_id, shift_id, level, \
+                     source_evidence_id, updated_at) \
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, NOW()) \
+                 ON CONFLICT (tenant_id, principal_id, skill_id, \
+                              COALESCE(site_id, '00000000-0000-0000-0000-000000000000'), \
+                              COALESCE(shift_id, '00000000-0000-0000-0000-000000000000')) \
+                 DO UPDATE SET level = EXCLUDED.level, \
+                               source_evidence_id = EXCLUDED.source_evidence_id, \
+                               updated_at = NOW()",
+            )
+            .bind(tenant_id)
+            .bind(principal_id)
+            .bind(skill_id)
+            .bind(projection_site_id)
+            .bind(shift_id)
+            .bind(&level_str)
+            .bind(evidence_id)
+            .execute(&mut **tx)
+            .await
+            .map_err(|e| {
+                SenseiError::Database(format!("Failed to upsert competency projection: {e}"))
             })?;
             Ok(())
         })
@@ -601,16 +713,17 @@ pub async fn skill_coverage(pool: &sqlx::PgPool, tenant_id: Uuid) -> Result<Vec<
     .await
 }
 
-/// Site/shift-aware coverage (sixteenth audit item 38): the bus factor
-/// scoped to one site's role-slot assignment context. The principal's
-/// site is derived from their ACTIVE role-slot assignment
-/// (`principal_assignments` -> `role_slots.scope_site_id`), so a
-/// qualification only counts when the principal is currently assigned to
-/// a slot on that site. Qualifications themselves carry no shift — shift
-/// awareness is a documented approximation over role-slot assignment
-/// context: the `shift` parameter matches the slot name
-/// (`role_slots.slot_name LIKE '%' || shift || '%'`, e.g. slots named
-/// `Planner_Tangier_A` carry the shift in their name).
+/// Site/shift-aware coverage (sixteenth audit item 38 + nineteenth audit
+/// P1): the bus factor scoped to one site/shift. The scope is now
+/// STRUCTURAL — it reads the `competency_projection` rows directly
+/// (`cp.site_id` / `cp.shift_id`), never the single first-shift anchor
+/// on `skill_qualifications` and never slot-name substring matching.
+/// A principal demonstrated on Shift A is visible on Shift A only; a
+/// Shift B demonstration adds its own projection row and shifts the
+/// coverage. Shift-less projection rows (recorded without a shift and
+/// without an anchored site) keep the item-38 semantics: their site
+/// resolves at query time from the principal's ACTIVE role-slot
+/// assignment (`principal_assignments` -> `role_slots.scope_site_id`).
 pub async fn skill_coverage_at(
     pool: &sqlx::PgPool,
     tenant_id: Uuid,
@@ -621,22 +734,22 @@ pub async fn skill_coverage_at(
         Box::pin(async move {
             let rows: Vec<(String, String, bool, i64, i64)> = sqlx::query_as(
                 r#"SELECT s.skill_id, s.name, s.critical,
-                          COUNT(DISTINCT q.principal_id) FILTER (WHERE q.level IN ('independent','trainer')
-                                           AND (q.expires_at IS NULL OR q.expires_at > NOW())
-                                           AND ($2::uuid IS NULL OR pa.principal_id IS NOT NULL)),
-                          COUNT(DISTINCT q.principal_id) FILTER (WHERE q.level = 'trainer'
-                                           AND (q.expires_at IS NULL OR q.expires_at > NOW())
-                                           AND ($2::uuid IS NULL OR pa.principal_id IS NOT NULL))
+                          COUNT(DISTINCT cp.principal_id) FILTER (WHERE cp.level IN ('independent','trainer')
+                                           AND (cp.updated_at IS NULL OR true)),
+                          COUNT(DISTINCT cp.principal_id) FILTER (WHERE cp.level = 'trainer'
+                                           AND (cp.updated_at IS NULL OR true))
                    FROM skills s
-                   LEFT JOIN skill_qualifications q ON q.skill_id = s.id AND q.tenant_id = s.tenant_id
-                         AND ($3::uuid IS NULL OR q.shift_id = $3)
-                   LEFT JOIN principal_assignments pa
-                          ON pa.principal_id = q.principal_id AND pa.tenant_id = q.tenant_id
-                         AND pa.ended_at IS NULL
-                         AND ($2::uuid IS NULL OR pa.principal_id IN (
-                             SELECT pa2.principal_id FROM principal_assignments pa2
-                             JOIN role_slots rs2 ON rs2.id = pa2.slot_id
-                             WHERE pa2.ended_at IS NULL AND rs2.scope_site_id = $2))
+                   LEFT JOIN competency_projection cp ON cp.skill_id = s.id AND cp.tenant_id = s.tenant_id
+                         AND ($2::uuid IS NULL
+                              OR cp.site_id = $2
+                              OR (cp.shift_id IS NULL AND cp.site_id IS NULL
+                                  AND EXISTS (SELECT 1 FROM principal_assignments pa
+                                              JOIN role_slots rs ON rs.id = pa.slot_id
+                                              WHERE pa.tenant_id = cp.tenant_id
+                                                AND pa.principal_id = cp.principal_id
+                                                AND pa.ended_at IS NULL
+                                                AND rs.scope_site_id = $2)))
+                         AND ($3::uuid IS NULL OR cp.shift_id = $3)
                    WHERE s.tenant_id = $1
                    GROUP BY s.id, s.skill_id, s.name, s.critical"#,
             )
@@ -1118,6 +1231,214 @@ mod tests {
         assert!(
             matches!(err, SenseiError::Validation(_)),
             "expected Validation, got {err:?}"
+        );
+    }
+
+    /// Nineteenth audit P1: multi-shift competency from evidence. A
+    /// SAME-LEVEL demonstration on Shift B is NOT discarded (the old
+    /// early return dropped it before any write): it appends a SECOND
+    /// immutable evidence row and a SECOND competency_projection row (one
+    /// per shift scope), and coverage for Shift B sees the principal.
+    #[tokio::test]
+    async fn same_level_demonstration_accumulates_per_shift_projection() {
+        let Some(pool) = connect().await else { return };
+        drop_all_tables(&pool).await;
+        sensei_db::migrations::run_migrations(&pool)
+            .await
+            .expect("the ENTIRE migration chain must apply to an empty database");
+
+        let tenant_id = Uuid::new_v4();
+        let principal_id = Uuid::new_v4();
+        let assessor_id = Uuid::new_v4();
+        let site_id = Uuid::new_v4();
+        let shift_a = Uuid::new_v4();
+        let shift_b = Uuid::new_v4();
+
+        // Setup (tenants/users/sites/shifts carry fail-closed RLS: run
+        // under the tenant context).
+        with_tenant_tx(&pool, tenant_id, move |tx| {
+            Box::pin(async move {
+                sqlx::query(
+                    "INSERT INTO tenants (id, name, slug) VALUES ($1, 'p1-multi', 'p1-multi')",
+                )
+                .bind(tenant_id)
+                .execute(&mut **tx)
+                .await
+                .expect("tenant insert");
+                sqlx::query(
+                    "INSERT INTO users (id, tenant_id, email, name, password_hash) \
+                     VALUES ($1, $2, 'p3@x.local', 'P', 'x'), ($3, $2, 'a3@x.local', 'A', 'x')",
+                )
+                .bind(principal_id)
+                .bind(tenant_id)
+                .bind(assessor_id)
+                .execute(&mut **tx)
+                .await
+                .expect("users insert");
+                sqlx::query(
+                    "INSERT INTO sites (id, tenant_id, site_code, name) \
+                     VALUES ($1, $2, 'S', 'Site')",
+                )
+                .bind(site_id)
+                .bind(tenant_id)
+                .execute(&mut **tx)
+                .await
+                .expect("site insert");
+                sqlx::query(
+                    "INSERT INTO shifts (id, tenant_id, site_id, name, start_time, end_time) \
+                     VALUES ($1, $2, $3, 'A', '08:00', '16:00'), \
+                            ($4, $2, $3, 'B', '16:00', '00:00')",
+                )
+                .bind(shift_a)
+                .bind(tenant_id)
+                .bind(site_id)
+                .bind(shift_b)
+                .execute(&mut **tx)
+                .await
+                .expect("shifts insert");
+                Ok(())
+            })
+        })
+        .await
+        .expect("setup tx");
+
+        let skill_uuid = create_skill(&pool, tenant_id, "aoi3", "AOI 3", None, None, true)
+            .await
+            .expect("create skill");
+
+        // Shift A: the principal demonstrates INDEPENDENT (prior
+        // competence, assessed by a different user).
+        record_qualification(
+            &pool,
+            tenant_id,
+            principal_id,
+            skill_uuid,
+            SkillLevel::Independent,
+            evidence(assessor_id),
+            Some(serde_json::json!({
+                "justification": "5 years AOI programming experience",
+                "assessor_id": assessor_id.to_string(),
+                "standard_revision": "AOI-OP-01/r1",
+                "observed_cycles": 3,
+            })),
+            Some(shift_a),
+        )
+        .await
+        .expect("qualification on shift A");
+
+        // Shift B: the SAME level (independent) re-demonstrated on a
+        // different shift. The old early return discarded this before any
+        // write — it must now append evidence + projection for shift B.
+        record_qualification(
+            &pool,
+            tenant_id,
+            principal_id,
+            skill_uuid,
+            SkillLevel::Independent,
+            evidence(assessor_id),
+            None,
+            Some(shift_b),
+        )
+        .await
+        .expect("same-level qualification on shift B");
+
+        // TWO evidence rows (one per shift), TWO projection rows (one per
+        // shift), and the qualification anchor retains the FIRST shift.
+        let (evidence_rows, projection_rows, shift_a_proj, shift_b_proj, anchor): (
+            i64,
+            i64,
+            i64,
+            i64,
+            Option<Uuid>,
+        ) = with_tenant_tx(&pool, tenant_id, move |tx| {
+            Box::pin(async move {
+                let evidence_rows: i64 = sqlx::query_scalar(
+                    "SELECT COUNT(*) FROM skill_qualification_evidence \
+                     WHERE tenant_id = $1 AND principal_id = $2 AND skill_id = $3",
+                )
+                .bind(tenant_id)
+                .bind(principal_id)
+                .bind(skill_uuid)
+                .fetch_one(&mut **tx)
+                .await
+                .map_err(|e| SenseiError::Database(format!("Evidence read failed: {e}")))?;
+                let (projection_rows, shift_a_proj, shift_b_proj): (i64, i64, i64) =
+                    sqlx::query_as(
+                        "SELECT COUNT(*), \
+                                COUNT(*) FILTER (WHERE shift_id = $1), \
+                                COUNT(*) FILTER (WHERE shift_id = $2) \
+                         FROM competency_projection \
+                         WHERE tenant_id = $3 AND principal_id = $4 AND skill_id = $5",
+                    )
+                    .bind(shift_a)
+                    .bind(shift_b)
+                    .bind(tenant_id)
+                    .bind(principal_id)
+                    .bind(skill_uuid)
+                    .fetch_one(&mut **tx)
+                    .await
+                    .map_err(|e| SenseiError::Database(format!("Projection read failed: {e}")))?;
+                let anchor: Option<Uuid> = sqlx::query_scalar(
+                    "SELECT shift_id FROM skill_qualifications \
+                     WHERE tenant_id = $1 AND principal_id = $2 AND skill_id = $3",
+                )
+                .bind(tenant_id)
+                .bind(principal_id)
+                .bind(skill_uuid)
+                .fetch_one(&mut **tx)
+                .await
+                .map_err(|e| SenseiError::Database(format!("Qualification read failed: {e}")))?;
+                Ok((
+                    evidence_rows,
+                    projection_rows,
+                    shift_a_proj,
+                    shift_b_proj,
+                    anchor,
+                ))
+            })
+        })
+        .await
+        .expect("read evidence + projection");
+
+        assert_eq!(
+            evidence_rows, 2,
+            "the same-level Shift B demonstration must append a SECOND evidence row"
+        );
+        assert_eq!(
+            projection_rows, 2,
+            "one competency_projection row PER demonstrated shift"
+        );
+        assert_eq!(shift_a_proj, 1, "the Shift A projection row exists");
+        assert_eq!(shift_b_proj, 1, "the Shift B projection row exists");
+        assert_eq!(
+            anchor,
+            Some(shift_a),
+            "skill_qualifications.shift_id must retain the FIRST-recorded anchor"
+        );
+
+        // Coverage on Shift B sees the principal (structural shift filter
+        // over competency_projection), and Shift A coverage is intact.
+        let cov_b = skill_coverage_at(&pool, tenant_id, Some(site_id), Some(shift_b))
+            .await
+            .expect("coverage for shift B");
+        let b = cov_b
+            .iter()
+            .find(|c| c.skill_id == "aoi3")
+            .expect("AOI 3 in shift-B coverage");
+        assert_eq!(
+            b.bus_factor, 1,
+            "shift-B coverage must see the principal demonstrated on shift B"
+        );
+        let cov_a = skill_coverage_at(&pool, tenant_id, Some(site_id), Some(shift_a))
+            .await
+            .expect("coverage for shift A");
+        let a = cov_a
+            .iter()
+            .find(|c| c.skill_id == "aoi3")
+            .expect("AOI 3 in shift-A coverage");
+        assert_eq!(
+            a.bus_factor, 1,
+            "shift-A coverage must see the principal demonstrated on shift A"
         );
     }
 }

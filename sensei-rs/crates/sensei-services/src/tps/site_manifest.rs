@@ -164,8 +164,11 @@ pub fn validate_manifest_codes(manifest: &SiteManifest) -> std::result::Result<(
 }
 
 /// Upsert the declarative manifest for one site of a tenant. Idempotent:
-/// re-bootstrapping a site refreshes its records and bumps
-/// `manifest_version` instead of failing.
+/// re-bootstrapping a site refreshes its records; when the content
+/// (capabilities/integrations/policy_bundle) CHANGES, `manifest_version`
+/// is bumped and the qualification is invalidated (validation_report
+/// reset to an empty report + status back to 'draft' — the ladder forces
+/// revalidation).
 pub async fn upsert_manifest(pool: &PgPool, tenant_id: Uuid, manifest: SiteManifest) -> Result<()> {
     validate_manifest_codes(&manifest).map_err(SenseiError::Validation)?;
     validate(&manifest)?;
@@ -190,7 +193,24 @@ pub async fn upsert_manifest(pool: &PgPool, tenant_id: Uuid, manifest: SiteManif
                        capabilities = EXCLUDED.capabilities,
                        integrations = EXCLUDED.integrations,
                        policy_bundle = EXCLUDED.policy_bundle,
-                       manifest_version = site_manifests.manifest_version + 1,
+                       manifest_version = CASE
+                           WHEN site_manifests.capabilities IS DISTINCT FROM EXCLUDED.capabilities
+                             OR site_manifests.integrations IS DISTINCT FROM EXCLUDED.integrations
+                             OR site_manifests.policy_bundle IS DISTINCT FROM EXCLUDED.policy_bundle
+                           THEN site_manifests.manifest_version + 1
+                           ELSE site_manifests.manifest_version END,
+                       validation_report = CASE
+                           WHEN site_manifests.capabilities IS DISTINCT FROM EXCLUDED.capabilities
+                             OR site_manifests.integrations IS DISTINCT FROM EXCLUDED.integrations
+                             OR site_manifests.policy_bundle IS DISTINCT FROM EXCLUDED.policy_bundle
+                           THEN '{}'::jsonb
+                           ELSE site_manifests.validation_report END,
+                       status = CASE
+                           WHEN site_manifests.capabilities IS DISTINCT FROM EXCLUDED.capabilities
+                             OR site_manifests.integrations IS DISTINCT FROM EXCLUDED.integrations
+                             OR site_manifests.policy_bundle IS DISTINCT FROM EXCLUDED.policy_bundle
+                           THEN 'draft'
+                           ELSE site_manifests.status END,
                        updated_at = NOW()"#,
             )
             .bind(tenant_id)
@@ -290,6 +310,14 @@ pub async fn get_manifest(
 /// produces the operational-qualification report (country policy, roles,
 /// work centers, capabilities, metrics) and moves draft → validated, then
 /// `activate_site` moves validated → active.
+/// Nineteenth audit item P1 (manifest staleness): a re-bootstrap that
+/// CHANGES capabilities/integrations/policy_bundle bumps
+/// `manifest_version` and INVALIDATES the qualification — the stored
+/// validation report is reset (empty report, the column is NOT NULL by
+/// migration 131) and the status resets to 'draft'
+/// (RequalificationRequired), so the guarded ladder forces the site to be
+/// re-validated against the new manifest before it can proceed. An
+/// identical re-bootstrap leaves version/status/report untouched.
 pub async fn bootstrap_site(pool: &PgPool, tenant_id: Uuid, manifest: SiteManifest) -> Result<()> {
     validate_manifest_codes(&manifest).map_err(SenseiError::Validation)?;
     validate(&manifest)?;
@@ -314,7 +342,24 @@ pub async fn bootstrap_site(pool: &PgPool, tenant_id: Uuid, manifest: SiteManife
                        capabilities = EXCLUDED.capabilities,
                        integrations = EXCLUDED.integrations,
                        policy_bundle = EXCLUDED.policy_bundle,
-                       manifest_version = site_manifests.manifest_version + 1,
+                       manifest_version = CASE
+                           WHEN site_manifests.capabilities IS DISTINCT FROM EXCLUDED.capabilities
+                             OR site_manifests.integrations IS DISTINCT FROM EXCLUDED.integrations
+                             OR site_manifests.policy_bundle IS DISTINCT FROM EXCLUDED.policy_bundle
+                           THEN site_manifests.manifest_version + 1
+                           ELSE site_manifests.manifest_version END,
+                       validation_report = CASE
+                           WHEN site_manifests.capabilities IS DISTINCT FROM EXCLUDED.capabilities
+                             OR site_manifests.integrations IS DISTINCT FROM EXCLUDED.integrations
+                             OR site_manifests.policy_bundle IS DISTINCT FROM EXCLUDED.policy_bundle
+                           THEN '{}'::jsonb
+                           ELSE site_manifests.validation_report END,
+                       status = CASE
+                           WHEN site_manifests.capabilities IS DISTINCT FROM EXCLUDED.capabilities
+                             OR site_manifests.integrations IS DISTINCT FROM EXCLUDED.integrations
+                             OR site_manifests.policy_bundle IS DISTINCT FROM EXCLUDED.policy_bundle
+                           THEN 'draft'
+                           ELSE site_manifests.status END,
                        updated_at = NOW()"#,
             )
             .bind(tenant_id)
@@ -372,11 +417,15 @@ pub async fn bootstrap_site(pool: &PgPool, tenant_id: Uuid, manifest: SiteManife
 
 /// The operational-qualification report of one site: every prerequisite as
 /// an explicit `(check name, passed, detail)` row plus the aggregate
-/// `ready` flag (all checks pass).
+/// `ready` flag (all checks pass). `manifest_version` records WHICH
+/// manifest revision was validated — a stored report whose version no
+/// longer matches the manifest's current version is STALE (nineteenth
+/// audit item P1): the site must be re-validated.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ValidationReport {
     pub checks: Vec<(String, bool, String)>,
     pub ready: bool,
+    pub manifest_version: i32,
 }
 
 /// Capability → mandatory operational requirements (eighteenth audit item
@@ -420,9 +469,9 @@ pub async fn validate_site(
     with_tenant_tx(pool, tenant_id, |tx| {
         Box::pin(async move {
             // A site without a manifest cannot be validated — bootstrap first.
-            type ManifestRow = (String, serde_json::Value);
+            type ManifestRow = (String, serde_json::Value, i32);
             let row: Option<ManifestRow> = sqlx::query_as(
-                r#"SELECT country, capabilities
+                r#"SELECT country, capabilities, manifest_version
                    FROM site_manifests
                    WHERE tenant_id = $1 AND site_id = $2"#,
             )
@@ -431,7 +480,7 @@ pub async fn validate_site(
             .fetch_optional(&mut **tx)
             .await
             .map_err(|e| SenseiError::Database(format!("Site manifest read failed: {e}")))?;
-            let (country, capabilities) = row.ok_or_else(|| {
+            let (country, capabilities, manifest_version) = row.ok_or_else(|| {
                 SenseiError::Validation(format!(
                     "no site manifest for site {site_id} — bootstrap the site first"
                 ))
@@ -622,9 +671,15 @@ pub async fn validate_site(
             // centers (site_id NULL or topology_state
             // needs_reconciliation) can never pass validation — unknown
             // topology is never certified as ready.
+            // Nineteenth audit P1: provenance doubt is the same failure —
+            // ANY work center marked 'legacy_heuristic' (migration 145's
+            // corrective flag on unprovable rows, even one with a non-NULL
+            // site_id) blocks validation: legacy_heuristic is never
+            // allowed into an Active plant.
             let unreconciled: i64 = sqlx::query_scalar(
                 "SELECT COUNT(*) FROM work_centers WHERE tenant_id = $1 \
-                 AND (site_id IS NULL OR topology_state = 'needs_reconciliation')",
+                 AND (site_id IS NULL OR topology_state = 'needs_reconciliation' \
+                      OR topology_assignment_source = 'legacy_heuristic')",
             )
             .bind(tenant_id)
             .fetch_one(&mut **tx)
@@ -639,6 +694,43 @@ pub async fn validate_site(
                     format!(
                         "{unreconciled} work center(s) need topology reconciliation —                          unknown lineage is never assigned to a plant"
                     )
+                },
+            ));
+
+            // Manifest staleness (nineteenth audit item P1): the report
+            // being REPLACED was validated against some manifest version;
+            // if it does not match the manifest's CURRENT version the site
+            // is NOT ready — a stale report can never certify readiness.
+            // (No stored report yet = first validation, nothing stale.)
+            let stored_report_version: Option<String> = sqlx::query_scalar(
+                "SELECT validation_report->>'manifest_version' \
+                 FROM site_manifests WHERE tenant_id = $1 AND site_id = $2",
+            )
+            .bind(tenant_id)
+            .bind(site_id)
+            .fetch_one(&mut **tx)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Stored report read failed: {e}")))?;
+            let manifest_stale = stored_report_version
+                .as_deref()
+                .map(|v| {
+                    v.parse::<i32>()
+                        .map(|n| n != manifest_version)
+                        .unwrap_or(true)
+                })
+                .unwrap_or(false);
+            let stored_display = stored_report_version.as_deref().unwrap_or("none");
+            checks.push((
+                "manifest_current".into(),
+                !manifest_stale,
+                if manifest_stale {
+                    format!(
+                        "stored validation report is stale (validated manifest_version \
+                         {stored_display}, current {manifest_version}) — re-validate \
+                         the site against the current manifest"
+                    )
+                } else {
+                    format!("validation report matches manifest_version {manifest_version}")
                 },
             ));
 
@@ -799,7 +891,11 @@ pub async fn validate_site(
             }
 
             let ready = checks.iter().all(|(_, ok, _)| *ok);
-            let report = ValidationReport { checks, ready };
+            let report = ValidationReport {
+                checks,
+                ready,
+                manifest_version,
+            };
             let report_json = serde_json::to_value(&report).map_err(|e| {
                 SenseiError::Validation(format!("Invalid validation report JSON: {e}"))
             })?;
@@ -1009,8 +1105,21 @@ pub async fn advance_site_lifecycle(
                     }
                 }
                 ("validated", "provisioning") => {
+                    // The stored report is the gate — and it is only
+                    // trusted when it was validated against the manifest's
+                    // CURRENT version (nineteenth audit P1): a stored
+                    // report carrying an EXPLICIT older manifest_version is
+                    // STALE and NOT ready, so provisioning is blocked until
+                    // the site is re-validated. A report that records no
+                    // manifest_version (legacy pre-145 reports) has nothing
+                    // to mismatch — the version condition is vacuous; the
+                    // invalidated empty report ('{}') still fails the gate
+                    // on the ready flag.
                     let report_ready: bool = sqlx::query_scalar(
                         "SELECT COALESCE((validation_report->>'ready')::boolean, false) \
+                            AND (validation_report->>'manifest_version' IS NULL \
+                                 OR COALESCE((validation_report->>'manifest_version')::int, 0) \
+                                     = manifest_version) \
                          FROM site_manifests WHERE tenant_id = $1 AND site_id = $2",
                     )
                     .bind(tenant_id)
@@ -1125,4 +1234,67 @@ pub async fn advance_site_lifecycle(
 /// guarded ladder — only an 'operational_qualification' site activates.
 pub async fn activate_site(pool: &PgPool, tenant_id: Uuid, site_id: Uuid) -> Result<()> {
     advance_site_lifecycle(pool, tenant_id, site_id, "active").await
+}
+
+/// Re-assert the topology provenance of ONE work center (nineteenth audit
+/// item P1): sets the assignment source (per the caller: 'manifest' when
+/// the site manifest assigned it, 'employee_history' when derived from
+/// employee_assignments, 'manual_reconciliation' when a human verified
+/// it), stamps verified_at/verified_by and marks the topology RESOLVED —
+/// the row is no longer a validation blocker.
+///
+/// 'legacy_heuristic' is REFUSED: it is not a provenance, only the doubt
+/// marker the 145 corrective step applied to unprovable rows — legacy
+/// heuristic must never be (re-)admitted into an Active plant.
+pub async fn reconcile_work_center_topology(
+    pool: &PgPool,
+    tenant_id: Uuid,
+    work_center_id: Uuid,
+    verified_by: Uuid,
+    source: &str,
+) -> Result<()> {
+    match source {
+        "manifest" | "employee_history" | "manual_reconciliation" => {}
+        "legacy_heuristic" => {
+            return Err(SenseiError::Validation(
+                "legacy_heuristic is not a provenance source — it only flags \
+                 unprovable rows; reconcile with 'manifest', 'employee_history' \
+                 or 'manual_reconciliation'"
+                    .to_string(),
+            ));
+        }
+        other => {
+            return Err(SenseiError::Validation(format!(
+                "unknown topology assignment source '{other}' — must be \
+                 'manifest', 'employee_history' or 'manual_reconciliation'"
+            )));
+        }
+    }
+    let source = source.to_string();
+    with_tenant_tx(pool, tenant_id, |tx| {
+        Box::pin(async move {
+            let updated = sqlx::query(
+                "UPDATE work_centers
+                    SET topology_assignment_source = $3,
+                        topology_verified_at = NOW(),
+                        topology_verified_by = $4,
+                        topology_state = 'resolved'
+                  WHERE tenant_id = $1 AND id = $2",
+            )
+            .bind(tenant_id)
+            .bind(work_center_id)
+            .bind(&source)
+            .bind(verified_by)
+            .execute(&mut **tx)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Topology reconcile failed: {e}")))?;
+            if updated.rows_affected() == 0 {
+                return Err(SenseiError::Validation(format!(
+                    "work center {work_center_id} not found in tenant"
+                )));
+            }
+            Ok(())
+        })
+    })
+    .await
 }

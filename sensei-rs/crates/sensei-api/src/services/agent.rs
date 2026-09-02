@@ -5,7 +5,7 @@
 
 use sensei_agent_core::context::AgentContext;
 use sensei_agent_core::evidence::{EvidenceRef, ToolResult};
-use sensei_agent_core::journal::ExecutionJournal;
+use sensei_agent_core::journal::{ExecutionJournal, ReservationOutcome};
 use sensei_agent_core::tools::{PolicyEngine, ToolSpec};
 use sensei_services::production::ProductionService;
 use sensei_services::supply_chain::SupplyChainService;
@@ -116,23 +116,47 @@ pub async fn execute_tool(
     // Schema enforcement: the declared input schema is checked (type-level)
     // before dispatch — the schema is a contract, not descriptive metadata.
     validate_args(tool, &args)?;
-    // Eighteenth audit P1-14: the DURABLE command journal is the system
-    // of record for idempotent executions — a retried mutating tool with
-    // the same args replays the journaled result even after any RAM
-    // cache entry was evicted. The key is the tool name + canonical args.
+    // Nineteenth audit P1: the DURABLE command journal is a CLAIM STATE
+    // MACHINE — reserve() atomically claims the key so two concurrent
+    // identical requests can never both dispatch. The key is the tool
+    // name + CANONICALLY sorted args (semantically equal args hash
+    // equal regardless of field order).
     let journal_key: Option<String> = if tool.idempotent {
-        Some(crate::routes::agent::execution_key(tool, &args))
+        Some(execution_key(tool, &args))
     } else {
         None
     };
     if let (Some(pool), Some(key)) = (pool, &journal_key) {
         let journal = sensei_services::ai::command_journal::PgExecutionJournal::new(pool.clone());
-        if let Some(journaled) = journal.load(ctx.tenant_id, key).await {
-            return Ok(ToolResult::new(
-                journaled,
-                vec![],
-                &format!("{}@journal", tool.name),
-            ));
+        match journal.reserve(ctx.tenant_id, key, &tool.name).await {
+            Ok(ReservationOutcome::Fresh) => {}
+            Ok(ReservationOutcome::AlreadyExists) => {
+                let row = journal
+                    .load(ctx.tenant_id, key)
+                    .await
+                    .map_err(|e| format!("command journal load failed: {e}"))?
+                    .ok_or_else(|| {
+                        "command journal inconsistency: reserved key has no row".to_string()
+                    })?;
+                let (status, result) = row;
+                return match status.as_str() {
+                    "succeeded" => Ok(ToolResult::new(
+                        result,
+                        vec![],
+                        &format!("{}@journal", tool.name),
+                    )),
+                    "failed" => {
+                        let message = result
+                            .get("error")
+                            .and_then(|e| e.as_str())
+                            .map(str::to_string)
+                            .unwrap_or_else(|| "command previously failed".to_string());
+                        Err(format!("command '{key}' previously failed: {message}"))
+                    }
+                    _ => Err("command already in progress".to_string()),
+                };
+            }
+            Err(e) => return Err(format!("command journal reserve failed: {e}")),
         }
     }
     // Timeout enforcement (item 16): the declared timeout is a contract.
@@ -407,18 +431,70 @@ pub async fn execute_tool(
         }
         other => Err(format!("Unknown tool '{other}'")),
     };
-    // Persist idempotent executions to the durable journal (P1-14). For
-    // MUTATING tools a failed write fails the execution — the cache may
-    // forget, the journal may not.
+    // Persist idempotent executions to the durable journal (nineteenth
+    // audit P1): complete() transitions the CLAIMED row to a terminal
+    // status. A failed 'succeeded' write FAILS the execution — the cache
+    // may forget, the journal may not.
     if let (Some(pool), Some(key)) = (pool, &journal_key) {
-        if let Ok(result) = &outcome {
-            let journal =
-                sensei_services::ai::command_journal::PgExecutionJournal::new(pool.clone());
-            journal
-                .store(ctx.tenant_id, key, &tool.name, &result.data)
+        let journal = sensei_services::ai::command_journal::PgExecutionJournal::new(pool.clone());
+        match &outcome {
+            Ok(result) => journal
+                .complete(ctx.tenant_id, key, "succeeded", &result.data)
                 .await
-                .map_err(|e| format!("command journal write failed: {e}"))?;
+                .map_err(|e| format!("command journal write failed: {e}"))?,
+            Err(_) => {
+                // The execution already failed; record it so a retry
+                // replays the failure instead of re-executing. This is
+                // best-effort — the caller keeps the original error.
+                let _ = journal
+                    .complete(
+                        ctx.tenant_id,
+                        key,
+                        "failed",
+                        &serde_json::json!({
+                            "error": outcome.as_ref().unwrap_err()
+                        }),
+                    )
+                    .await;
+            }
         }
     }
     outcome
+}
+
+/// Deterministic execution key for the command journal (nineteenth
+/// audit P1): tool name + CANONICALLY sorted args JSON, hashed with
+/// SHA-256. Recursive key sorting makes semantically identical argument
+/// objects hash identically regardless of field order.
+fn execution_key(tool: &ToolSpec, args: &serde_json::Value) -> String {
+    use sha2::{Digest, Sha256};
+    let mut hasher = Sha256::new();
+    hasher.update(tool.name.as_bytes());
+    hasher.update(b"|");
+    hasher.update(canonicalize_json(args).as_bytes());
+    hex::encode(hasher.finalize())
+}
+
+/// Canonical JSON serialization: recursively sort object keys, then
+/// serialize — `{"b":1,"a":2}` and `{"a":2,"b":1}` produce the SAME
+/// string, so equal arguments always hash equal.
+fn canonicalize_json(value: &serde_json::Value) -> String {
+    fn sort_keys(value: &serde_json::Value) -> serde_json::Value {
+        match value {
+            serde_json::Value::Object(map) => {
+                let mut keys: Vec<&String> = map.keys().collect();
+                keys.sort();
+                let mut sorted = serde_json::Map::new();
+                for key in keys {
+                    sorted.insert(key.clone(), sort_keys(&map[key]));
+                }
+                serde_json::Value::Object(sorted)
+            }
+            serde_json::Value::Array(items) => {
+                serde_json::Value::Array(items.iter().map(sort_keys).collect())
+            }
+            other => other.clone(),
+        }
+    }
+    serde_json::to_string(&sort_keys(value)).unwrap_or_else(|_| "null".to_string())
 }
