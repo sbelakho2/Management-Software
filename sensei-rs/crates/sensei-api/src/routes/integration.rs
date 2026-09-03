@@ -252,7 +252,18 @@ pub async fn start_run(
     State(state): State<AppState>,
     Json(req): Json<StartRunRequest>,
 ) -> Result<Json<serde_json::Value>> {
+    // Run start is a BRIDGE WRITE — the same gate as checkpoint completion
+    // (integration:bridge:write): only the non-human integration bridge
+    // may open a run.
     user.require_permission("integration:bridge:write")?;
+    // The bridge principal only — the same non-human rule as imports and
+    // checkpoint completion: a session that also holds human roles cannot
+    // start integration runs.
+    if user.roles.len() != 1 || user.roles[0] != "integration_bridge" {
+        return Err(SenseiError::Forbidden(
+            "Run starts require the integration_bridge principal".to_string(),
+        ));
+    }
     let Some(pool) = state.db_pool.as_ref() else {
         return Err(sensei_core::error::SenseiError::Database(
             "no database configured".to_string(),

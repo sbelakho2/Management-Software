@@ -494,12 +494,13 @@ impl RbacService {
                 "system:state-machines:read",
                 "attachments:read",
                 "system:audit:read",
-                "federation:lesson:offer",
-                "federation:lesson:accept",
-                "federation:replication:publish",
-                "federation:replication:consume",
+                // Twenty-seventh audit P0: federation (replication + lesson
+                // exchange) and country-policy MANAGEMENT are NOT baseline
+                // user privileges — they belong only to the dedicated
+                // non-human federation_gateway / compliance_officer roles
+                // (and the wildcard platform_superadmin). Only the
+                // read-only policy view stays with ordinary users.
                 "system:country-policy:read",
-                "system:country-policy:manage",
                 "inventory:read",
             ],
         );
@@ -626,8 +627,35 @@ impl RbacService {
                 "integration:import:starz-erp",
                 "integration:import:crm",
                 "integration:status:read",
+                // Twenty-seventh audit P0: the run protocol (start_run /
+                // save_checkpoint) requires this write permission — the
+                // shipped bridge principal must hold it to operate runs.
+                "integration:bridge:write",
             ],
         );
+
+        // ── Dedicated non-human federation / compliance principals ─────
+        // Twenty-seventh audit P0: federation replication and lesson
+        // exchange are NOT baseline user capabilities (every human-facing
+        // role inheriting "user" would otherwise be able to publish site
+        // projections, pull corporate replication queues and import
+        // cross-tenant lessons). They move EXCLUSIVELY to the dedicated
+        // non-human `federation_gateway` role; country-policy management
+        // moves to `compliance_officer`. Both grant nothing else and
+        // deliberately do NOT inherit `user` (or any human role), so a
+        // principal carrying them can never acquire ordinary human powers
+        // through this role. platform_superadmin keeps every capability
+        // through its `*:*` wildcard.
+        self.add_role(
+            "federation_gateway",
+            vec![
+                "federation:replication:publish",
+                "federation:replication:consume",
+                "federation:lesson:offer",
+                "federation:lesson:accept",
+            ],
+        );
+        self.add_role("compliance_officer", vec!["system:country-policy:manage"]);
     }
 
     /// Register a new role with the given permissions.
@@ -877,6 +905,152 @@ mod tests {
 
         assert!(rbac.has_permission(&roles, &Permission("dashboard:read".to_string())));
         assert!(!rbac.has_permission(&roles, &Permission("quality:ncr:create".to_string())));
+    }
+
+    /// Twenty-seventh audit P0: the baseline `user` role (and every role
+    /// that inherits it — operator/manager/site_manager/quality_manager/
+    /// supervisor) must NOT hold the privileged federation, country-policy
+    /// or integration-bridge permissions. Those belong ONLY to the
+    /// dedicated non-human roles (`federation_gateway`, `compliance_officer`,
+    /// `integration_bridge`) and to the wildcard break-glass superadmin.
+    #[test]
+    fn test_privileged_permissions_removed_from_baseline_user() {
+        let rbac = RbacService::new();
+        let human_roles = [
+            "user",
+            "operator",
+            "manager",
+            "site_manager",
+            "quality_manager",
+            "supervisor",
+        ];
+        let privileged = [
+            "federation:replication:publish",
+            "federation:replication:consume",
+            "federation:lesson:offer",
+            "federation:lesson:accept",
+            "system:country-policy:manage",
+            "integration:bridge:write",
+        ];
+
+        for role in human_roles {
+            let roles = vec![role.to_string()];
+            for perm in privileged {
+                assert!(
+                    !rbac.has_permission(&roles, &Permission(perm.to_string())),
+                    "baseline role {role} must not hold {perm}"
+                );
+            }
+        }
+
+        // The read-only country-policy view stays a baseline user right;
+        // only MANAGEMENT was removed.
+        let user_roles = vec!["user".to_string()];
+        assert!(rbac.has_permission(
+            &user_roles,
+            &Permission("system:country-policy:read".to_string())
+        ));
+    }
+
+    /// Twenty-seventh audit P0: federation + country-policy management
+    /// live ONLY on the dedicated non-human roles. Each grants exactly its
+    /// own family and NOTHING else — in particular they do NOT inherit
+    /// `user` (no ancestors), so they never leak human powers.
+    #[test]
+    fn test_dedicated_non_human_roles_grant_only_their_families() {
+        let rbac = RbacService::new();
+
+        let gateway = rbac.permissions_for_role("federation_gateway");
+        let expected_gateway = vec![
+            "federation:lesson:accept".to_string(),
+            "federation:lesson:offer".to_string(),
+            "federation:replication:consume".to_string(),
+            "federation:replication:publish".to_string(),
+        ];
+        assert_eq!(
+            gateway, expected_gateway,
+            "federation_gateway grants exactly its four federation permissions"
+        );
+        assert!(
+            rbac.role_ancestors("federation_gateway").is_empty(),
+            "federation_gateway must not inherit user or any other role"
+        );
+        assert!(
+            !rbac.has_permission(
+                &["federation_gateway".to_string()],
+                &Permission("users:read:self".to_string())
+            ),
+            "federation_gateway grants no user-role powers"
+        );
+
+        let compliance = rbac.permissions_for_role("compliance_officer");
+        assert_eq!(
+            compliance,
+            vec!["system:country-policy:manage".to_string()],
+            "compliance_officer grants exactly system:country-policy:manage"
+        );
+        assert!(
+            rbac.role_ancestors("compliance_officer").is_empty(),
+            "compliance_officer must not inherit user or any other role"
+        );
+
+        // The integration bridge can now use the run protocol
+        // (integration:bridge:write) but holds no federation power.
+        let bridge_perms = rbac.permissions_for_role("integration_bridge");
+        assert!(
+            bridge_perms.contains(&"integration:bridge:write".to_string()),
+            "integration_bridge must hold integration:bridge:write"
+        );
+        assert!(
+            bridge_perms.contains(&"integration:status:read".to_string()),
+            "integration_bridge keeps integration:status:read"
+        );
+        assert!(
+            !rbac.has_permission(
+                &["integration_bridge".to_string()],
+                &Permission("federation:replication:publish".to_string())
+            ),
+            "integration_bridge holds no federation powers"
+        );
+        assert!(
+            !rbac.has_permission(
+                &["federation_gateway".to_string()],
+                &Permission("integration:bridge:write".to_string())
+            ),
+            "federation_gateway holds no integration-bridge powers"
+        );
+        assert!(
+            !rbac.has_permission(
+                &["compliance_officer".to_string()],
+                &Permission("integration:bridge:write".to_string())
+            ),
+            "compliance_officer holds no integration-bridge powers"
+        );
+    }
+
+    /// Twenty-seventh audit P0: the wildcard superuser keeps EVERY
+    /// privileged capability — this codebase's wildcard administrative role
+    /// is `platform_superadmin` (`*:*`); the legacy `admin` role was
+    /// de-wildcarded by an earlier audit and is unassignable through the
+    /// API, so `platform_superadmin` is the only wildcard role that must
+    /// keep everything.
+    #[test]
+    fn test_wildcard_superadmin_keeps_all_privileged_permissions() {
+        let rbac = RbacService::new();
+        let superadmin = vec!["platform_superadmin".to_string()];
+        for perm in [
+            "federation:replication:publish",
+            "federation:replication:consume",
+            "federation:lesson:offer",
+            "federation:lesson:accept",
+            "system:country-policy:manage",
+            "integration:bridge:write",
+        ] {
+            assert!(
+                rbac.has_permission(&superadmin, &Permission(perm.to_string())),
+                "platform_superadmin wildcard must keep {perm}"
+            );
+        }
     }
 
     #[test]

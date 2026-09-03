@@ -143,30 +143,6 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
-      nats:
-        image: nats:2.10-alpine
-        command: ["-js", "-m", "8222"]
-        ports:
-          - 4222:4222
-          - 8222:8222
-        options: >-
-          --health-cmd "wget -q --spider http://localhost:8222/healthz || exit 1"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-      minio:
-        image: minio/minio:RELEASE.2024-06-13T22-53-53Z
-        command: ["server", "/data"]
-        env:
-          MINIO_ROOT_USER: minioadmin
-          MINIO_ROOT_PASSWORD: minioadmin
-        ports:
-          - 9000:9000
-        options: >-
-          --health-cmd "curl -f http://localhost:9000/minio/health/ready || exit 1"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
     steps:
       # actions/checkout@v7.0.1
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -183,6 +159,36 @@ jobs:
       - uses: Swatinem/rust-cache@63fed3e2fecf6f7b51dc6f043341b79ef82a9ae7
         with:
           workspaces: sensei-rs
+      # Twenty-seventh audit P0 (release proof chain): the GitHub
+      # service-container schema has image/credentials/env/ports/volumes/
+      # options but NO `command` — the invalid `command:` keys under
+      # `services.nats`/`services.minio` made this job schema-invalid, so
+      # it never created. NATS and MinIO need custom arguments (JetStream +
+      # monitoring port; MinIO's `server /data` entrypoint), which a
+      # service container cannot express: they now start as an explicit
+      # `docker run` step with the same readiness probes the removed
+      # container health checks ran. Run early so the containers warm up
+      # while cargo builds.
+      - name: Start NATS (JetStream + monitoring) and MinIO via docker run
+        run: |
+          set -euo pipefail
+          docker run -d --name ci-nats -p 4222:4222 -p 8222:8222 \
+            nats:2.10-alpine -js -m 8222
+          docker run -d --name ci-minio -p 9000:9000 \
+            -e MINIO_ROOT_USER=minioadmin -e MINIO_ROOT_PASSWORD=minioadmin \
+            minio/minio:RELEASE.2024-06-13T22-53-53Z server /data
+          for i in $(seq 1 60); do
+            if curl -sf http://localhost:8222/healthz >/dev/null 2>&1 \
+               && curl -sf http://localhost:9000/minio/health/ready >/dev/null 2>&1; then
+              echo "NATS and MinIO ready"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "NATS/MinIO did not become ready"
+          docker logs ci-nats || true
+          docker logs ci-minio || true
+          exit 1
       - name: Build workspace binaries
         run: cargo build --workspace --locked
         working-directory: sensei-rs

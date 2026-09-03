@@ -131,8 +131,16 @@ pub fn locale_for_policy(policy: &CountryPolicy) -> String {
     format!("{}-{}", policy.language, policy.country)
 }
 
-/// Upsert a country policy bundle within the tenant's RLS context
-/// (idempotent on `(tenant_id, country)`).
+/// LEGACY SEED HELPER — the ROUTE path is publish only, and every
+/// publish keeps `country_policies` consistent in the same transaction
+/// (twenty-seventh-audit P0). This direct, unversioned `country_policies`
+/// upsert exists ONLY for seeds/tests that introduce a policy RECORD
+/// (a new country is a policy record, never a code fork) without a
+/// versioned publication. Application writes must go through
+/// [`publish_policy_version`]: it appends the compliance version AND
+/// refreshes the current row in ONE atomic transaction, so the two
+/// stores can never diverge. Idempotent on `(tenant_id, country)` within
+/// the tenant's RLS context.
 pub async fn upsert_country_policy(
     pool: &sqlx::PgPool,
     tenant_id: Uuid,
@@ -183,8 +191,20 @@ pub async fn upsert_country_policy(
 /// Publish a NEW revision of a country policy (sixteenth audit item 65):
 /// policy is EFFECTIVE-DATED. The revision is MAX(revision)+1 for the
 /// country, `valid_from` is NOW(), and the previously-latest OPEN version
-/// is closed (`valid_until = NOW()`). The current `country_policies` row
-/// is NOT the compliance record — the versioned rows are.
+/// is closed (`valid_until = NOW()`).
+///
+/// Twenty-seventh-audit P0: publication is ONE ATOMIC transaction over
+/// BOTH country-policy stores — the versioned rows (`country_policy_
+/// versions`, the compliance record) AND the current `country_policies`
+/// row are written from the SAME payload in the SAME `with_tenant_tx`,
+/// because readers split their sources: request context, replication
+/// jurisdiction and federation governance read residency/locale CONTENT
+/// from `country_policies`, while the revision NUMBER they pin comes
+/// from `country_policy_versions`. A publish that appended only the
+/// version row let revision 7 carry revision-6 content; this function
+/// refreshes both together, so the current content and the appended
+/// version can never diverge. The current `country_policies` row is
+/// STILL not the compliance record — history lives in the versioned rows.
 pub async fn publish_policy_version(
     pool: &sqlx::PgPool,
     tenant_id: Uuid,
@@ -252,6 +272,55 @@ pub async fn publish_policy_version(
             .execute(&mut **tx)
             .await
             .map_err(|e| SenseiError::Database(format!("Failed to publish policy version: {e}")))?;
+
+            // Twenty-seventh-audit P0: refresh the CURRENT `country_policies`
+            // row from the SAME payload, IN THIS SAME TRANSACTION. The
+            // readers that name a revision (request context, replication
+            // jurisdiction, `federation_governance_edges`) take the CONTENT
+            // from `country_policies` and the revision NUMBER from
+            // `country_policy_versions` — both must move together or
+            // revision 7 silently carries revision-6 content. The column
+            // set mirrors migration 122 (`country_policies`); every
+            // content field of the payload lands in BOTH stores atomically.
+            // A country never seen before is introduced by the INSERT arm,
+            // so publish is also how a new country becomes a policy RECORD.
+            sqlx::query(
+                "INSERT INTO country_policies \
+                     (tenant_id, country, language, currency, unit_system, week_start, \
+                      holiday_schedule, timezone, data_residency, retention_days, \
+                      employment_data_visibility, local_document_requirements) \
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) \
+                 ON CONFLICT (tenant_id, country) DO UPDATE SET \
+                     language = EXCLUDED.language, \
+                     currency = EXCLUDED.currency, \
+                     unit_system = EXCLUDED.unit_system, \
+                     week_start = EXCLUDED.week_start, \
+                     holiday_schedule = EXCLUDED.holiday_schedule, \
+                     timezone = EXCLUDED.timezone, \
+                     data_residency = EXCLUDED.data_residency, \
+                     retention_days = EXCLUDED.retention_days, \
+                     employment_data_visibility = EXCLUDED.employment_data_visibility, \
+                     local_document_requirements = EXCLUDED.local_document_requirements, \
+                     updated_at = NOW()",
+            )
+            .bind(tenant_id)
+            .bind(&policy.country)
+            .bind(&policy.language)
+            .bind(&policy.currency)
+            .bind(&policy.unit_system)
+            .bind(&policy.week_start)
+            .bind(policy.holiday_schedule.clone())
+            .bind(&policy.timezone)
+            .bind(&policy.data_residency)
+            .bind(policy.retention_days)
+            .bind(&policy.employment_data_visibility)
+            .bind(policy.local_document_requirements.clone())
+            .execute(&mut **tx)
+            .await
+            .map_err(|e| {
+                SenseiError::Database(format!("Failed to sync current country policy: {e}"))
+            })?;
+
             // Seventeenth audit item 5: the policy revision bump is IN
             // the publish transaction — a policy change without a
             // revision change is impossible.

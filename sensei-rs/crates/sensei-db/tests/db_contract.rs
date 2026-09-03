@@ -7041,19 +7041,22 @@ async fn site_replication_log_durable_projection() {
     assert!(again.is_empty(), "durable once — no double projection");
 }
 
-/// Twenty-sixth audit P0.1 (the ACK must not record an application that
-/// did not happen): `ack()` is the queue-side consume acknowledgement
-/// ONLY — it marks the source queue row 'acked' (delivered to the
-/// consumer) and NEVER writes `replication_applied`. The durable
+/// Twenty-sixth audit P0.1 + twenty-seventh audit P0 (federation inbox):
+/// the ACK must not record an application that did not happen. `ack()`
+/// is the queue-side consume acknowledgement ONLY — it marks the source
+/// queue row 'acked' (delivered to the consumer) and NEVER writes the
+/// replication inbox (`replication_inbox`, migration 166). The durable
 /// target-side record is created by the honest split:
 /// `deliver_to_target_inbox` reserves the projection in the TARGET
-/// tenant's inbox (INSERT ... ON CONFLICT DO NOTHING — a second delivery
-/// returns `false`, never a second receipt — the unique index is the
-/// arbiter, never a check-then-insert window), and
-/// `apply_target_projection` — the explicit apply stub — validates the
-/// reserved inbox receipt and then refuses EVERY application ("no target
-/// projector is registered") while the projector allowlist is empty, so
-/// an application that never happened is never recorded.
+/// tenant's inbox (INSERT ... ON CONFLICT DO NOTHING with
+/// status 'received' — a second delivery returns `false`, never a
+/// second receipt — the unique index is the arbiter, never a
+/// check-then-insert window), and `apply_target_projection` — the apply
+/// gate over the inbox state machine (received / applying / applied /
+/// reconcile_required) — validates the reserved 'received' inbox row and
+/// then refuses EVERY application ("no target projector is registered")
+/// while the projector allowlist is empty, so no 'received' row ever
+/// transitions and an application that never happened is never recorded.
 #[tokio::test]
 async fn replication_target_apply_idempotency_guard() {
     let _serial = DB_LOCK.lock().await;
@@ -7073,7 +7076,7 @@ async fn replication_target_apply_idempotency_guard() {
         .expect("the ENTIRE migration chain must apply to an empty database");
 
     let source_tenant = uuid::Uuid::new_v4();
-    sqlx::query("INSERT INTO tenants (id, name, slug) VALUES ($1, 't26apply', 't26apply')")
+    sqlx::query("INSERT INTO tenants (id, name, slug) VALUES ($1, 't27apply', 't27apply')")
         .bind(source_tenant)
         .execute(&pool)
         .await
@@ -7086,7 +7089,7 @@ async fn replication_target_apply_idempotency_guard() {
     let source_event = uuid::Uuid::new_v4();
     // The destination edge is named by the fabricated membership — the
     // peer tenant/site carry no tenants/sites rows (no FK on the queue's
-    // target columns and none on replication_applied): the inbox receipt
+    // target columns and none on replication_inbox): the inbox receipt
     // ownership + dedupe semantics are what is exercised.
     let target_tenant = uuid::Uuid::new_v4();
     let target_site = uuid::Uuid::new_v4();
@@ -7150,20 +7153,20 @@ async fn replication_target_apply_idempotency_guard() {
             .expect("the enqueued source event id is a UUID");
     let edge_target = entry.target_tenant_id.expect("target tenant");
 
-    async fn receipts_for(pool: &sqlx::PgPool, tenant_id: uuid::Uuid) -> i64 {
-        let mut tx = pool.begin().await.expect("receipt tx begin");
+    async fn inbox_count_for(pool: &sqlx::PgPool, tenant_id: uuid::Uuid) -> i64 {
+        let mut tx = pool.begin().await.expect("inbox tx begin");
         sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
             .bind(tenant_id.to_string())
             .execute(&mut *tx)
             .await
             .expect("set tenant context");
         let n: i64 =
-            sqlx::query_scalar("SELECT count(*) FROM replication_applied WHERE tenant_id = $1")
+            sqlx::query_scalar("SELECT count(*) FROM replication_inbox WHERE tenant_id = $1")
                 .bind(tenant_id)
                 .fetch_one(&mut *tx)
                 .await
-                .expect("receipt count");
-        tx.commit().await.expect("receipt tx commit");
+                .expect("inbox count");
+        tx.commit().await.expect("inbox tx commit");
         n
     }
 
@@ -7183,6 +7186,30 @@ async fn replication_target_apply_idempotency_guard() {
         s
     }
 
+    async fn inbox_state(
+        pool: &sqlx::PgPool,
+        tenant_id: uuid::Uuid,
+        event: uuid::Uuid,
+    ) -> Option<(String, Option<chrono::DateTime<chrono::Utc>>)> {
+        let mut tx = pool.begin().await.expect("inbox state tx begin");
+        sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
+            .bind(tenant_id.to_string())
+            .execute(&mut *tx)
+            .await
+            .expect("set tenant context");
+        let row: Option<(String, Option<chrono::DateTime<chrono::Utc>>)> = sqlx::query_as(
+            "SELECT status, apply_started_at FROM replication_inbox \
+             WHERE tenant_id = $1 AND source_event_id = $2",
+        )
+        .bind(tenant_id)
+        .bind(event)
+        .fetch_optional(&mut *tx)
+        .await
+        .expect("inbox state read");
+        tx.commit().await.expect("inbox state tx commit");
+        row
+    }
+
     // ── 1. ack() alone: delivery to the consumer, NOT an application ──
     // The twenty-fifth-audit wiring recorded a durable
     // `replication_applied` row inside ack()'s own transaction — under
@@ -7190,7 +7217,7 @@ async fn replication_target_apply_idempotency_guard() {
     // applied. No projection-apply step exists (the old code comment said
     // so itself), so that row was an application record FOR AN
     // APPLICATION THAT NEVER HAPPENED. ack() now marks the queue row
-    // 'acked' and writes NOTHING else — zero replication_applied rows
+    // 'acked' and writes NOTHING else — zero replication_inbox rows
     // exist in ANY tenant slice after the ack.
     replication::ack(
         &pool,
@@ -7206,18 +7233,18 @@ async fn replication_target_apply_idempotency_guard() {
         "the consume marks the source queue row acked"
     );
     assert_eq!(
-        receipts_for(&pool, source_tenant).await,
+        inbox_count_for(&pool, source_tenant).await,
         0,
-        "ack() alone creates NO replication_applied row under the source tenant"
+        "ack() alone creates NO replication_inbox row under the source tenant"
     );
     assert_eq!(
-        receipts_for(&pool, target_tenant).await,
+        inbox_count_for(&pool, target_tenant).await,
         0,
-        "ack() alone creates NO replication_applied row under the target tenant"
+        "ack() alone creates NO replication_inbox row under the target tenant"
     );
 
     // ── 2. apply_target_projection before any delivery: refused ──────
-    // The stub's validation (a): no inbox receipt is reserved for the
+    // The apply's validation (a): no inbox row is reserved for the
     // entry, so the apply is refused loudly — an unreserved projection
     // is never silently claimed as applied.
     {
@@ -7237,28 +7264,28 @@ async fn replication_target_apply_idempotency_guard() {
                 sensei_core::error::SenseiError::Validation(ref msg)
                     if msg.contains("no inbox receipt is reserved for work_order")
             ),
-            "apply without a delivery is refused loudly (no reserved receipt)"
+            "apply without a delivery is refused loudly (no reserved inbox row)"
         );
     }
 
     // ── 3. deliver_to_target_inbox: the TARGET INBOX reservation ─────
     // The honest successor of the ack-time write: ONE tenant transaction
     // under the TARGET tenant's context reserves the inbox with the
-    // guarded receipt insert — true = newly reserved. It is an INBOX
-    // RECEIPT, not a projection application: no business mutation
-    // happens here, and the receipt is owned by the TARGET tenant, never
-    // by the source queue tenant.
+    // guarded insert — true = newly reserved, status 'received' (the
+    // migration-166 default). It is an INBOX RECEIPT, not a projection
+    // application: no business mutation happens here, and the receipt is
+    // owned by the TARGET tenant, never by the source queue tenant.
     let delivered = replication::deliver_to_target_inbox(&pool, source_tenant, entry)
         .await
         .expect("delivery must reserve the target inbox");
     assert!(delivered, "the first delivery inserts the receipt");
     assert_eq!(
-        receipts_for(&pool, target_tenant).await,
+        inbox_count_for(&pool, target_tenant).await,
         1,
         "exactly ONE receipt is reserved in the TARGET tenant's inbox"
     );
     assert_eq!(
-        receipts_for(&pool, source_tenant).await,
+        inbox_count_for(&pool, source_tenant).await,
         0,
         "the receipt lives under the TARGET — never under the source queue tenant"
     );
@@ -7276,11 +7303,12 @@ async fn replication_target_apply_idempotency_guard() {
             Option<uuid::Uuid>, // target_site_id
             String,             // projection_type
             i64,                // projection_revision
+            String,             // status
         );
         let receipt: Option<Receipt> = sqlx::query_as(
             "SELECT source_tenant_id, source_site_id, target_tenant_id, target_site_id, \
-                    projection_type, projection_revision \
-             FROM replication_applied WHERE tenant_id = $1 AND source_event_id = $2",
+                    projection_type, projection_revision, status \
+             FROM replication_inbox WHERE tenant_id = $1 AND source_event_id = $2",
         )
         .bind(target_tenant)
         .bind(event_uuid)
@@ -7288,7 +7316,7 @@ async fn replication_target_apply_idempotency_guard() {
         .await
         .expect("receipt shape read");
         tx.commit().await.expect("shape tx commit");
-        let (src_tenant, src_site, tgt_tenant, tgt_site, ptype, prev) =
+        let (src_tenant, src_site, tgt_tenant, tgt_site, ptype, prev, status) =
             receipt.expect("the receipt exists under the target tenant");
         assert_eq!(
             src_tenant, source_tenant,
@@ -7313,6 +7341,10 @@ async fn replication_target_apply_idempotency_guard() {
             "the receipt pins the projection identity"
         );
         assert_eq!(prev, 1, "the receipt pins the projection revision");
+        assert_eq!(
+            status, "received",
+            "delivery reserves the inbox with status 'received' — nothing more"
+        );
     }
     let applied = replication::is_target_applied(
         &pool,
@@ -7345,6 +7377,14 @@ async fn replication_target_apply_idempotency_guard() {
         "the reservation is invisible from the SOURCE queue tenant's context — \
          the receipt belongs to the target's inbox"
     );
+    let (state, started_at) = inbox_state(&pool, target_tenant, event_uuid)
+        .await
+        .expect("the inbox row exists under the target");
+    assert_eq!(state, "received", "delivery leaves the row in 'received'");
+    assert!(
+        started_at.is_none(),
+        "no apply has started — apply_started_at stays NULL"
+    );
 
     // ── 4. A second delivery (a redelivery) is refused ATOMICALLY ────
     // At-least-once: the projection is delivered again (crash after
@@ -7359,15 +7399,15 @@ async fn replication_target_apply_idempotency_guard() {
         "a duplicate delivery is refused — no second receipt"
     );
     assert_eq!(
-        receipts_for(&pool, target_tenant).await,
+        inbox_count_for(&pool, target_tenant).await,
         1,
         "EXACTLY ONE receipt remains after the redelivery"
     );
 
     // ── 5. mark_target_applied (kept public, RETARGETED) ─────────────
-    // The raw-argument form runs the SAME guarded insert under the
-    // target's context: a duplicate key is refused (unique-constraint
-    // semantics unchanged)…
+    // The raw-argument form runs the SAME guarded 'received' insert
+    // under the target's context: a duplicate key is refused
+    // (unique-constraint semantics unchanged)…
     let dup = replication::mark_target_applied(
         &pool,
         target_tenant,
@@ -7407,13 +7447,14 @@ async fn replication_target_apply_idempotency_guard() {
          ownership cannot be written through the public API"
     );
 
-    // ── 6. apply_target_projection on the reserved inbox row: the ────
-    // explicit stub refuses. Validation (a) passes — the receipt is
-    // reserved — but (b) performs NO business mutation: with no target
-    // projector registered (the allowlist is EMPTY), every entity type
-    // is refused with the documented not-registered error. The apply
-    // path fails loudly and never silently claims success; no false
-    // application is ever recorded.
+    // ── 6. apply_target_projection on the reserved 'received' row: ───
+    // the apply refuses. Validation (a) passes — the inbox row is
+    // reserved in 'received' — but (b) performs NO business mutation and
+    // NO state transition: with no target projector registered (the
+    // allowlist is EMPTY), every entity type is refused with the
+    // documented not-registered error. The apply path fails loudly and
+    // never silently claims success; no false application is ever
+    // recorded — the row stays 'received' with no apply_started_at.
     {
         let mut tx = pool.begin().await.expect("apply tx begin");
         sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
@@ -7433,19 +7474,241 @@ async fn replication_target_apply_idempotency_guard() {
                         == "no target projector is registered for work_order — application \
                            is refused rather than falsely recorded"
             ),
-            "the apply stub refuses with the explicit not-registered Validation error"
+            "the apply refuses with the explicit not-registered Validation error"
         );
     }
-
-    // ── 7. The whole history leaves EXACTLY ONE receipt ───────────────
-    // delivery + redelivery + ack + two refused applies: one inbox
-    // receipt, one consumed queue row — no false application recorded.
+    let (state, started_at) = inbox_state(&pool, target_tenant, event_uuid)
+        .await
+        .expect("the inbox row exists under the target");
     assert_eq!(
-        receipts_for(&pool, target_tenant).await,
-        1,
-        "the whole at-least-once history leaves EXACTLY ONE receipt"
+        state, "received",
+        "a refused apply leaves the inbox row in 'received' — no transition, no \
+         false application record"
     );
-    assert_eq!(receipts_for(&pool, source_tenant).await, 0);
+    assert!(
+        started_at.is_none(),
+        "a refused apply never starts an application (apply_started_at stays NULL)"
+    );
+
+    // ── 7. The inbox STATE MACHINE around a registered projector ─────
+    // No projector is registered (the allowlist is EMPTY), so the
+    // received -> applying -> applied / reconcile_required transitions
+    // cannot fire through code. The rows below drive those transitions
+    // DIRECTLY — exactly the writes a registered projector's apply body
+    // would make — to pin the schema state machine and what
+    // apply_target_projection does with each state. Every write runs
+    // under the TARGET tenant's context.
+    // (7a) A FAILED application: received -> applying (apply_started_at)
+    //      -> reconcile_required (failed_at). apply_target_projection
+    //      refuses the row: reconciliation owns a failed application —
+    //      never a silent fresh retry.
+    {
+        let mut tx = pool.begin().await.expect("state tx begin");
+        sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
+            .bind(target_tenant.to_string())
+            .execute(&mut *tx)
+            .await
+            .expect("set tenant context");
+        sqlx::query(
+            "UPDATE replication_inbox \
+             SET status = 'applying', apply_started_at = NOW() \
+             WHERE tenant_id = $1 AND source_event_id = $2",
+        )
+        .bind(target_tenant)
+        .bind(event_uuid)
+        .execute(&mut *tx)
+        .await
+        .expect("received -> applying must be allowed");
+        sqlx::query(
+            "UPDATE replication_inbox \
+             SET status = 'reconcile_required', failed_at = NOW() \
+             WHERE tenant_id = $1 AND source_event_id = $2",
+        )
+        .bind(target_tenant)
+        .bind(event_uuid)
+        .execute(&mut *tx)
+        .await
+        .expect("applying -> reconcile_required must be allowed");
+        tx.commit().await.expect("state tx commit");
+    }
+    let (state, started_at) = inbox_state(&pool, target_tenant, event_uuid)
+        .await
+        .expect("the inbox row exists under the target");
+    assert_eq!(
+        state, "reconcile_required",
+        "the failed-application transition lands in reconcile_required"
+    );
+    assert!(
+        started_at.is_some(),
+        "the failed application records apply_started_at"
+    );
+    {
+        let mut tx = pool.begin().await.expect("reconcile apply tx begin");
+        sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
+            .bind(target_tenant.to_string())
+            .execute(&mut *tx)
+            .await
+            .expect("set target tenant context");
+        let err = replication::apply_target_projection(&mut tx, entry)
+            .await
+            .expect_err("a reconcile_required row cannot be silently re-applied");
+        tx.commit().await.expect("apply tx commit");
+        assert!(
+            matches!(
+                err,
+                sensei_core::error::SenseiError::Validation(ref msg)
+                    if msg.contains("reconcile_required")
+            ),
+            "apply on a failed row is refused until reconciliation happens"
+        );
+    }
+    // (7b) A SUCCESSFUL application after reconciliation: the row is
+    //      reset to 'received', a projector applies it (received ->
+    //      applying -> applied, applied_at set). apply_target_projection
+    //      on the 'applied' row converges with a no-op success — an
+    //      at-least-once redelivery after a real application must never
+    //      error and never record a second application.
+    {
+        let mut tx = pool.begin().await.expect("success state tx begin");
+        sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
+            .bind(target_tenant.to_string())
+            .execute(&mut *tx)
+            .await
+            .expect("set tenant context");
+        sqlx::query(
+            "UPDATE replication_inbox SET status = 'received' \
+             WHERE tenant_id = $1 AND source_event_id = $2",
+        )
+        .bind(target_tenant)
+        .bind(event_uuid)
+        .execute(&mut *tx)
+        .await
+        .expect("reconciliation reset must be allowed");
+        tx.commit().await.expect("state tx commit");
+    }
+    {
+        let mut tx = pool.begin().await.expect("projector tx begin");
+        sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
+            .bind(target_tenant.to_string())
+            .execute(&mut *tx)
+            .await
+            .expect("set tenant context");
+        sqlx::query(
+            "UPDATE replication_inbox \
+             SET status = 'applying', apply_started_at = NOW() \
+             WHERE tenant_id = $1 AND source_event_id = $2",
+        )
+        .bind(target_tenant)
+        .bind(event_uuid)
+        .execute(&mut *tx)
+        .await
+        .expect("received -> applying must be allowed");
+        sqlx::query(
+            "UPDATE replication_inbox \
+             SET status = 'applied', applied_at = NOW() \
+             WHERE tenant_id = $1 AND source_event_id = $2",
+        )
+        .bind(target_tenant)
+        .bind(event_uuid)
+        .execute(&mut *tx)
+        .await
+        .expect("applying -> applied must be allowed");
+        tx.commit().await.expect("projector tx commit");
+    }
+    {
+        let mut tx = pool.begin().await.expect("applied apply tx begin");
+        sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
+            .bind(target_tenant.to_string())
+            .execute(&mut *tx)
+            .await
+            .expect("set target tenant context");
+        replication::apply_target_projection(&mut tx, entry)
+            .await
+            .expect("apply on an already-applied row converges — never a second error");
+        tx.commit().await.expect("apply tx commit");
+    }
+    let (state, started_at) = inbox_state(&pool, target_tenant, event_uuid)
+        .await
+        .expect("the inbox row exists under the target");
+    assert_eq!(
+        state, "applied",
+        "the successful-application transition lands in 'applied' — the ONLY terminal \
+         'this projection really landed' state"
+    );
+    assert!(
+        started_at.is_some(),
+        "the applied projection records apply_started_at"
+    );
+    assert_eq!(
+        inbox_count_for(&pool, target_tenant).await,
+        1,
+        "the whole state-machine history still leaves EXACTLY ONE inbox row"
+    );
+    // (7c) The status CHECK is a real constraint: a state outside
+    //      received/applying/applied/reconcile_required cannot exist.
+    {
+        let mut tx = pool.begin().await.expect("check tx begin");
+        sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
+            .bind(target_tenant.to_string())
+            .execute(&mut *tx)
+            .await
+            .expect("set tenant context");
+        let err = sqlx::query(
+            "UPDATE replication_inbox SET status = 'bogus' \
+             WHERE tenant_id = $1 AND source_event_id = $2",
+        )
+        .bind(target_tenant)
+        .bind(event_uuid)
+        .execute(&mut *tx)
+        .await
+        .expect_err("a status outside the CHECK list must be rejected");
+        assert!(
+            format!("{err}").contains("check constraint"),
+            "the inbox status CHECK rejected the write: {err}"
+        );
+        tx.rollback().await.expect("check tx rollback");
+    }
+    // (7d) A redelivery of an already-applied projection is still
+    //      refused by the unique arbiter — at-least-once delivery never
+    //      double-records, even against a fully applied row.
+    let redelivered_applied = replication::deliver_to_target_inbox(&pool, source_tenant, entry)
+        .await
+        .expect("the redelivery must not error");
+    assert!(
+        !redelivered_applied,
+        "a duplicate delivery of an applied projection is refused — still one row"
+    );
+    assert_eq!(
+        inbox_count_for(&pool, target_tenant).await,
+        1,
+        "EXACTLY ONE inbox row remains after delivery + apply history"
+    );
+    let still_present = replication::is_target_applied(
+        &pool,
+        target_tenant,
+        event_uuid,
+        &entry.projection_type,
+        entry.projection_revision,
+        edge_target,
+        entry.target_site_id,
+    )
+    .await
+    .expect("is-target-applied read must succeed");
+    assert!(
+        still_present,
+        "is_target_applied is presence-agnostic: the applied row still answers true"
+    );
+
+    // ── 8. The whole history leaves EXACTLY ONE inbox row ─────────────
+    // delivery + redelivery + ack + refused applies + the directly
+    // driven projector transitions: one inbox row ('applied'), one
+    // consumed queue row — no false application ever recorded by code.
+    assert_eq!(
+        inbox_count_for(&pool, target_tenant).await,
+        1,
+        "the whole at-least-once history leaves EXACTLY ONE inbox row"
+    );
+    assert_eq!(inbox_count_for(&pool, source_tenant).await, 0);
     assert_eq!(
         queue_status(&pool, source_tenant, entry.id).await,
         "acked",
@@ -10431,6 +10694,277 @@ async fn policy_versions_and_holiday_calendar() {
         (throne, "Throne Day (moved)".to_string()),
         "the latest revision's name must win"
     );
+}
+
+/// Twenty-seventh-audit P0 (country policy has TWO inconsistent sources
+/// of truth): `publish_policy_version` used to append the versioned
+/// compliance row and bump the revision WITHOUT touching the current
+/// `country_policies` row — but the request context, replication
+/// jurisdiction and federation governance read residency/locale CONTENT
+/// from `country_policies`, while the revision NUMBER they pin comes
+/// from `country_policy_versions`. A revision-7 row could silently carry
+/// revision-6 content. This contract pins the ONE-ATOMIC-PUBLICATION
+/// fix: the publish transaction refreshes BOTH stores from the same
+/// payload, so the current row and the appended version move in lockstep.
+/// Morocco is published 'ma' then 'tn' THROUGH THE SERVICE on a peer
+/// tenant that a source tenant holds a federation membership toward —
+/// the same shape `federation_governance_edges` reports — and each
+/// publish must leave:
+///  1. `country_policies.data_residency` == the published code;
+///  2. the latest `country_policy_versions` row == the SAME content
+///     (every content column, not just residency) at revision+1;
+///  3. the governance function's (jurisdiction, revision) pair == the
+///     revision recorded next to that content.
+/// Content and revision NEVER diverge.
+#[tokio::test]
+async fn publish_syncs_current_country_policy_and_version_atomically() {
+    let _serial = DB_LOCK.lock().await;
+    let Some(pool) = connect().await else { return };
+    sqlx::query(
+        r#"DO $$ DECLARE r RECORD; BEGIN
+             FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname = 'public') LOOP
+                 EXECUTE format('DROP TABLE IF EXISTS %I CASCADE', r.tablename);
+             END LOOP;
+         END $$"#,
+    )
+    .execute(&pool)
+    .await
+    .expect("drop all tables");
+    sensei_db::migrations::run_migrations(&pool)
+        .await
+        .expect("the ENTIRE migration chain must apply to an empty database");
+
+    // SOURCE tenant A holds one federation membership toward PEER tenant
+    // B; B hosts a single Morocco site whose policy is published THROUGH
+    // THE SERVICE (nothing raw-seeds B's country rows here — a publish
+    // that skipped the current store leaves NO row for the governance
+    // join at all). The payload deliberately differs from the migration
+    // seed (retention 730, single invoice language), so a publish that
+    // silently kept stale seed content diverges from the FIRST revision.
+    let tenant_a = uuid::Uuid::new_v4();
+    let tenant_b = uuid::Uuid::new_v4();
+    let site_b = uuid::Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO tenants (id, name, slug) VALUES \
+         ($1, 'p27-a', 'p27a'), ($2, 'p27-b', 'p27b')",
+    )
+    .bind(tenant_a)
+    .bind(tenant_b)
+    .execute(&pool)
+    .await
+    .expect("tenants");
+    sqlx::query(
+        "INSERT INTO sites (id, tenant_id, site_code, name) \
+         VALUES ($1, $2, 'P27B', 'Peer B Morocco')",
+    )
+    .bind(site_b)
+    .bind(tenant_b)
+    .execute(&pool)
+    .await
+    .expect("peer site");
+    sqlx::query(
+        "INSERT INTO site_manifests (tenant_id, site_id, country, capabilities) \
+         VALUES ($1, $2, 'Morocco', '[\"SMT\"]')",
+    )
+    .bind(tenant_b)
+    .bind(site_b)
+    .execute(&pool)
+    .await
+    .expect("peer manifest");
+    sqlx::query("INSERT INTO federation_memberships (tenant_id, peer_tenant_id) VALUES ($1, $2)")
+        .bind(tenant_a)
+        .bind(tenant_b)
+        .execute(&pool)
+        .await
+        .expect("membership A -> B");
+
+    use sensei_services::tps::country_policy::{publish_policy_version, CountryPolicy};
+    use sensei_services::tps::replication::Jurisdiction;
+
+    let morocco = |residency: &str| CountryPolicy {
+        country: "Morocco".to_string(),
+        language: "fr".to_string(),
+        currency: "MAD".to_string(),
+        unit_system: "metric".to_string(),
+        week_start: "monday".to_string(),
+        holiday_schedule: serde_json::json!(["new_year", "throne_day", "green_march"]),
+        timezone: "Africa/Casablanca".to_string(),
+        data_residency: Some(residency.to_string()),
+        retention_days: 730,
+        employment_data_visibility: "restricted".to_string(),
+        local_document_requirements: serde_json::json!(["invoice_fr"]),
+    };
+
+    // Read BOTH stores under the tenant RLS context, exactly like the
+    // governance readers do: the full content of the current
+    // `country_policies` row, the full content of the LATEST
+    // `country_policy_versions` row, the revision NUMBER the governance
+    // readers report (MAX(revision)), and the residency each historical
+    // revision row recorded.
+    type PolicyRow = (
+        String,
+        String,
+        String,
+        String,
+        serde_json::Value,
+        String,
+        Option<String>,
+        i32,
+        String,
+        serde_json::Value,
+    );
+    async fn read_lockstep(
+        pool: &sqlx::PgPool,
+        tenant_id: uuid::Uuid,
+    ) -> (PolicyRow, PolicyRow, i64, Vec<(i64, Option<String>)>) {
+        let mut tx = pool.begin().await.expect("read tx begin");
+        sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
+            .bind(tenant_id.to_string())
+            .execute(&mut *tx)
+            .await
+            .expect("set tenant context");
+        let current: PolicyRow = sqlx::query_as(
+            "SELECT language, currency, unit_system, week_start, holiday_schedule, timezone, \
+                    data_residency, retention_days, employment_data_visibility, \
+                    local_document_requirements \
+             FROM country_policies WHERE tenant_id = $1 AND country = 'Morocco'",
+        )
+        .bind(tenant_id)
+        .fetch_one(&mut *tx)
+        .await
+        .expect("a current country_policies row must exist once a publish has run");
+        let latest: PolicyRow = sqlx::query_as(
+            "SELECT language, currency, unit_system, week_start, holiday_schedule, timezone, \
+                    data_residency, retention_days, employment_data_visibility, \
+                    local_document_requirements \
+             FROM country_policy_versions WHERE tenant_id = $1 AND country = 'Morocco' \
+             ORDER BY revision DESC LIMIT 1",
+        )
+        .bind(tenant_id)
+        .fetch_one(&mut *tx)
+        .await
+        .expect("a country_policy_versions row must exist once a publish has run");
+        let revision: i64 = sqlx::query_scalar(
+            "SELECT COALESCE(MAX(revision), 0) FROM country_policy_versions \
+             WHERE tenant_id = $1 AND country = 'Morocco'",
+        )
+        .bind(tenant_id)
+        .fetch_one(&mut *tx)
+        .await
+        .expect("the governance revision read must work");
+        let history: Vec<(i64, Option<String>)> = sqlx::query_as(
+            "SELECT revision, data_residency FROM country_policy_versions \
+             WHERE tenant_id = $1 AND country = 'Morocco' ORDER BY revision",
+        )
+        .bind(tenant_id)
+        .fetch_all(&mut *tx)
+        .await
+        .expect("the revision history read must work");
+        tx.commit().await.expect("read tx commit");
+        (current, latest, revision, history)
+    }
+
+    // (a) FIRST publish: data_residency 'ma'. ONE transaction must leave
+    // the current row AND the appended revision-1 row BOTH on 'ma' with
+    // IDENTICAL content, while the governance function reports exactly
+    // the revision recorded next to that content.
+    publish_policy_version(&pool, tenant_b, morocco("ma"), Some(tenant_b))
+        .await
+        .expect("publish revision 1 for Morocco ('ma')");
+    let (current, latest, revision, history) = read_lockstep(&pool, tenant_b).await;
+    assert_eq!(
+        current.6.as_deref(),
+        Some("ma"),
+        "country_policies.data_residency must be 'ma' immediately after the publish — \
+         the current store and the appended version move in ONE transaction"
+    );
+    assert_eq!(revision, 1, "the first publish must be revision 1");
+    assert_eq!(
+        latest.6.as_deref(),
+        Some("ma"),
+        "the version row the governance revision names must ALSO carry 'ma'"
+    );
+    assert_eq!(
+        current, latest,
+        "the current row and the latest version row must be IDENTICAL across every \
+         content column — revision 1 can never carry pre-publish seed content"
+    );
+    assert_eq!(
+        history,
+        vec![(1_i64, Some("ma".to_string()))],
+        "revision 1's own history row records the residency published with it"
+    );
+    let edges = sensei_services::tps::replication::load_federation_edges(&pool, tenant_a, None)
+        .await
+        .expect("the peer edges must load through federation_governance_edges");
+    assert_eq!(
+        edges.len(),
+        1,
+        "one membership with one peer site -> one edge"
+    );
+    assert_eq!(edges[0].target_tenant, tenant_b);
+    assert_eq!(
+        edges[0].target_jurisdiction,
+        Jurisdiction::MA,
+        "the governance CONTENT read (country_policies -> 'ma') matches the published revision"
+    );
+    assert_eq!(
+        edges[0].policy_revision, 1,
+        "the governance revision NUMBER equals the revision recorded next to the 'ma' content"
+    );
+    assert_eq!(edges[0].policy_revision as i64, revision);
+
+    // (b) SECOND publish: data_residency 'tn' — the divergence detector.
+    // Pre-fix, country_policies kept the stale first-publish row while the
+    // version table advanced to 'tn' at revision 2; the fix must move BOTH
+    // stores to 'tn' at revision+1 in the same transaction.
+    publish_policy_version(&pool, tenant_b, morocco("tn"), Some(tenant_b))
+        .await
+        .expect("publish revision 2 for Morocco ('tn')");
+    let (current, latest, revision, history) = read_lockstep(&pool, tenant_b).await;
+    assert_eq!(
+        revision, 2,
+        "the second publish must be revision+1 of the first"
+    );
+    assert_eq!(
+        current.6.as_deref(),
+        Some("tn"),
+        "country_policies must advance to 'tn' IN THE SAME TRANSACTION — a stale 'ma' \
+         current row with a revision-2 number is exactly the audit's divergence"
+    );
+    assert_eq!(
+        latest.6.as_deref(),
+        Some("tn"),
+        "the revision-2 version row must ALSO carry 'tn'"
+    );
+    assert_eq!(
+        current, latest,
+        "current content and the content the revision number names are the SAME payload — \
+         revision 2 can never carry revision-1 content"
+    );
+    assert_eq!(
+        history,
+        vec![
+            (1_i64, Some("ma".to_string())),
+            (2_i64, Some("tn".to_string())),
+        ],
+        "each revision row keeps the content published AT that revision — the history the \
+         compliance record must preserve"
+    );
+    let edges = sensei_services::tps::replication::load_federation_edges(&pool, tenant_a, None)
+        .await
+        .expect("the peer edges must load after the second publish");
+    assert_eq!(edges.len(), 1);
+    assert_eq!(
+        edges[0].target_jurisdiction,
+        Jurisdiction::TN,
+        "the governance CONTENT read now reports the CURRENT 'tn' policy, not revision-1's 'ma'"
+    );
+    assert_eq!(
+        edges[0].policy_revision, 2,
+        "the governance revision NUMBER equals the revision recorded next to the 'tn' content"
+    );
+    assert_eq!(edges[0].policy_revision as i64, revision);
 }
 
 /// Sixteenth audit items 23-24/45/68: the canonical event envelope carries

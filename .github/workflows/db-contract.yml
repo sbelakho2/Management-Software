@@ -5,6 +5,17 @@ on:
     branches: [main]
   pull_request:
 
+env:
+  # The database each PostgreSQL service container ACTUALLY creates on
+  # first boot (POSTGRES_DB below). The instance never creates a database
+  # named after the POSTGRES_USER ('sensei'), so every control/smoke psql
+  # connection must name THIS database explicitly — psql would otherwise
+  # fall back to the role-named database and fail with FATAL: database
+  # "sensei" does not exist (twenty-seventh audit P0 — release proof
+  # chain: the clean-bootstrap gate's control connection used exactly
+  # that implicit fallback and could never run).
+  DATABASE_NAME: sensei_test
+
 jobs:
   fresh-database-gate:
     name: Fresh PostgreSQL migration + contract gate
@@ -45,7 +56,7 @@ jobs:
             --test-threads=1
         env:
           SENSEI_NO_ZIG: "1"
-          DATABASE_URL_TEST: postgres://sensei:sensei_test@localhost:5433/sensei_test
+          DATABASE_URL_TEST: postgres://sensei:sensei_test@localhost:5433/${{ env.DATABASE_NAME }}
 
   # Twenty-second audit P0/P1 + twenty-third audit P1: the gate above
   # proves the migrated schema against a SUPERUSER connection. RLS (FORCE
@@ -136,7 +147,7 @@ jobs:
             --test-threads=1
         env:
           SENSEI_NO_ZIG: "1"
-          DATABASE_URL_TEST: postgres://sensei:sensei_test@localhost:5434/sensei_test
+          DATABASE_URL_TEST: postgres://sensei:sensei_test@localhost:5434/${{ env.DATABASE_NAME }}
       - name: Ensure psql is available on the runner
         run: |
           if ! command -v psql >/dev/null 2>&1; then
@@ -157,8 +168,8 @@ jobs:
       - name: Create least-privilege sensei_app from the canonical grant script
         run: |
           set -euo pipefail
-          export PGHOST=localhost PGPORT=5434 PGDATABASE=sensei_test
-          export PGUSER=sensei PGPASSWORD=sensei_test
+          export PGHOST=localhost PGPORT=5434 PGUSER=sensei PGPASSWORD=sensei_test
+          export PGDATABASE="$DATABASE_NAME"
           # Idempotent reset: fresh CI containers have no role; a re-run on
           # a database where the role owns grants must drop them first.
           psql -X -q -v ON_ERROR_STOP=1 <<'SQL'
@@ -181,7 +192,7 @@ jobs:
           # the clean-bootstrap gate) unreachable).
           POSTGRES_USER=sensei \
           POSTGRES_PASSWORD=sensei_test \
-          POSTGRES_DB=sensei_test \
+          POSTGRES_DB="$DATABASE_NAME" \
           SENSEI_APP_PASSWORD=x \
           SENSEI_MIGRATOR_PASSWORD=migrate \
           bash "$GITHUB_WORKSPACE/docker/postgres-init/01-app-role.sh"
@@ -197,8 +208,8 @@ jobs:
       - name: Seed tenant + federation fixtures (superuser)
         run: |
           set -euo pipefail
-          export PGHOST=localhost PGPORT=5434 PGDATABASE=sensei_test
-          export PGUSER=sensei PGPASSWORD=sensei_test
+          export PGHOST=localhost PGPORT=5434 PGUSER=sensei PGPASSWORD=sensei_test
+          export PGDATABASE="$DATABASE_NAME"
           psql -X -q -v ON_ERROR_STOP=1 <<'SQL'
           INSERT INTO tenants (id, name, slug)
           VALUES ('00000000-0000-4000-8000-00000000000a', 'app-a', 'app-a'),
@@ -233,8 +244,11 @@ jobs:
       - name: App-role service path — RLS-scoped CRUD + federation governance channel
         run: |
           set -euo pipefail
-          export PGHOST=localhost PGPORT=5434 PGDATABASE=sensei_test
-          export PGUSER=sensei_app PGPASSWORD=x
+          export PGHOST=localhost PGPORT=5434 PGUSER=sensei_app PGPASSWORD=x
+          # The instance-created database, aligned with every other control
+          # connection via DATABASE_NAME (twenty-seventh audit P0) — never
+          # the implicit role-named default.
+          export PGDATABASE="$DATABASE_NAME"
           TA='00000000-0000-4000-8000-00000000000a'
           TB='00000000-0000-4000-8000-00000000000b'
           # (a) identity: the probe really runs AS the app role.
@@ -365,6 +379,13 @@ jobs:
         run: |
           set -euo pipefail
           export PGHOST=localhost PGPORT=5434 PGUSER=sensei PGPASSWORD=sensei_test
+          # The CONTROL connection names the database the instance ACTUALLY
+          # created (DATABASE_NAME — psql's implicit fallback to the
+          # role-named 'sensei' database does not exist and FATALs, so the
+          # gate's very first psql could never run; twenty-seventh audit
+          # P0). This psql only hosts the DROP/CREATE of the fresh
+          # clean_bootstrap database below.
+          export PGDATABASE="$DATABASE_NAME"
           # (1) Fresh database (DROP IF EXISTS keeps self-hosted runner
           #     re-runs clean; PG16 DROP ... WITH (FORCE) kills leftovers).
           psql -X -q -v ON_ERROR_STOP=1 -c 'DROP DATABASE IF EXISTS clean_bootstrap WITH (FORCE)'
@@ -401,19 +422,34 @@ jobs:
           PRODUCTS="$(psql -X -q -tAc "SELECT to_regclass('public.products')")"
           [ "$PRODUCTS" = "products" ] || { echo "products table missing after migrator chain: '$PRODUCTS'"; exit 1; }
           # (4b) OWNERSHIP: the chain really ran AS sensei_migrator — every
-          #      table AND the SECURITY DEFINER governance functions must be
-          #      owned by sensei_migrator (the migration role must be the
-          #      function owner; an app-role-owned function would lose the
-          #      RLS-bypassing owner the governance channel needs). The
-          #      migration chain ALTERs the governance functions' OWNER to
-          #      sensei_governance_definer (twenty-fifth audit P0 — the
-          #      role is pre-created by the canonical script and asserted
-          #      in (4c-2)); until that migration-side flip lands, the
-          #      chain-created owner is sensei_migrator.
+          #      table is owned by sensei_migrator (the migration role is
+          #      the table owner). The SECURITY DEFINER governance
+          #      functions are the exception: migration 165 flips BOTH
+          #      federation_governance_edges() and
+          #      federation_governance_edges_for(uuid) to
+          #      sensei_governance_definer when that role exists (the
+          #      canonical script pre-created it above — asserted in
+          #      (4c-2) — so the flip applies in THIS gate). The
+          #      migration guard SKIPS the flip on a minimal bootstrap
+          #      that never ran the role script, leaving the
+          #      chain-created owner sensei_migrator — the assertion
+          #      derives the expected owner from the role's presence so
+          #      both bootstrap shapes are asserted correctly
+          #      (twenty-seventh audit P0). Either way the owner is
+          #      NEVER the app role or the superuser: the RLS-bypassing
+          #      definer owner is what lets the governance channel read
+          #      the peer tenants' FORCE-RLS rows.
           TABLE_OWNER="$(psql -X -q -tAc "SELECT pg_get_userbyid(relowner) FROM pg_class WHERE relname = 'products' AND relnamespace = 'public'::regnamespace")"
           [ "$TABLE_OWNER" = "sensei_migrator" ] || { echo "products owned by '$TABLE_OWNER', expected sensei_migrator"; exit 1; }
+          if [ "$(psql -X -q -tAc "SELECT EXISTS (SELECT FROM pg_roles WHERE rolname = 'sensei_governance_definer')")" = "t" ]; then
+            EXPECTED_FN_OWNER="sensei_governance_definer"
+          else
+            EXPECTED_FN_OWNER="sensei_migrator"
+          fi
           FN_OWNER="$(psql -X -q -tAc "SELECT pg_get_userbyid(p.proowner) FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = 'public' AND p.proname = 'federation_governance_edges' AND p.pronargs = 0")"
-          [ "$FN_OWNER" = "sensei_migrator" ] || { echo "federation_governance_edges() owned by '$FN_OWNER', expected sensei_migrator"; exit 1; }
+          [ "$FN_OWNER" = "$EXPECTED_FN_OWNER" ] || { echo "federation_governance_edges() owned by '$FN_OWNER', expected $EXPECTED_FN_OWNER (migration 165 flips to sensei_governance_definer when the role exists)"; exit 1; }
+          FN_FOR_OWNER="$(psql -X -q -tAc "SELECT pg_get_userbyid(p.proowner) FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = 'public' AND p.proname = 'federation_governance_edges_for' AND p.pronargs = 1")"
+          [ "$FN_FOR_OWNER" = "$EXPECTED_FN_OWNER" ] || { echo "federation_governance_edges_for(uuid) owned by '$FN_FOR_OWNER', expected $EXPECTED_FN_OWNER (migration 165 flips to sensei_governance_definer when the role exists)"; exit 1; }
           # (4c) Migrator role attributes (twenty-fifth audit P0):
           #      NOSUPERUSER BYPASSRLS NOCREATEDB NOCREATEROLE — can DDL and
           #      own the chain AND bypass FORCE RLS for its cross-tenant

@@ -191,6 +191,27 @@ pub async fn execute_tool(
             Err(e) => return Err(format!("command journal reserve failed: {e}")),
         }
     }
+    // Twenty-seventh audit P0.3: the durable pre-dispatch gate — when a
+    // journaled execution was freshly reserved or recovered, transition
+    // reserved -> dispatching atomically BEFORE the mutation runs. A row
+    // that reached 'dispatching' with an expired lease is NEVER
+    // auto-reclaimed, so a mutation can never execute twice.
+    if let (Some(pool), Some(key)) = (pool, &journal_key) {
+        let journal = sensei_services::ai::command_journal::PgExecutionJournal::new(pool.clone());
+        if let Some(token) = &claim_token {
+            match journal.begin_dispatch(ctx.tenant_id, key, token).await {
+                Ok(true) => {}
+                Ok(false) => {
+                    return Err(format!(
+                        "command '{key}' cannot begin dispatch: the reservation is stale, \
+                         already left 'reserved', or the lease expired — automatic \
+                         re-dispatch is blocked"
+                    ))
+                }
+                Err(e) => return Err(format!("command journal begin_dispatch failed: {e}")),
+            }
+        }
+    }
     // Timeout enforcement (item 16): the declared timeout is a contract.
     let _ = tool.timeout_ms;
 

@@ -1,8 +1,8 @@
 //! Postgres-backed execution journal (eighteenth audit P1-14, nineteenth
-//! audit P1, twentieth audit P1): the durable system of record for
-//! idempotent tool executions (command_journal, migrations 142 + 144 +
-//! 149). FORCE RLS makes every access tenant-scoped through the
-//! transaction context.
+//! audit P1, twentieth audit P1, twenty-seventh audit P0): the durable
+//! system of record for idempotent tool executions (command_journal,
+//! migrations 142 + 144 + 149). FORCE RLS makes every access
+//! tenant-scoped through the transaction context.
 //!
 //! Concurrency safety: `reserve` is the atomic claim — a single
 //! `INSERT ... ON CONFLICT DO NOTHING RETURNING claim_token` decides in
@@ -10,18 +10,26 @@
 //! (AlreadyExists). The old SELECT-then-INSERT sequence let two
 //! concurrent identical requests both dispatch; the claim never does.
 //!
-//! Leases + fencing (twentieth audit P1; twenty-first audit item 8): a
-//! claim stores claim_owner, a random claim_token and lease_expires_at =
-//! NOW()+lease. `recover` atomically reclaims ONLY pre-execution-crash
-//! rows — 'reserved'/'executing' whose lease expired without a heartbeat
-//! (or was never set) — and hands the new owner a fresh token.
-//! Ambiguous-outcome rows ('unknown_outcome'/'reconcile_required', the
-//! traces of a timeout that may have landed AFTER the mutation) are
-//! NEVER reclaimable: automatic re-dispatch is blocked and they await
-//! human reconciliation. `complete` and `heartbeat` only act while the
-//! caller's token matches the row — a stale owner whose claim was
-//! recovered is fenced out and can never complete or renew a command it
-//! no longer owns.
+//! Leases + fencing (twentieth audit P1; twenty-first audit item 8;
+//! twenty-seventh audit P0): a claim stores claim_owner, a random
+//! claim_token and lease_expires_at = NOW()+lease. reserve() leaves the
+//! row 'reserved' — PROVABLY NEVER DISPATCHED. The executor must pass
+//! the DURABLE PRE-DISPATCH GATE `begin_dispatch`, a token- and
+//! lease-checked UPDATE to 'dispatching', and ONLY then does the
+//! mutation run: a crash AFTER the gate can never masquerade as a clean
+//! pre-mutation crash. `recover` atomically reclaims ONLY pre-mutation
+//! crash rows — an EXPIRED 'reserved' row (never dispatched) — and
+//! hands the new owner a fresh token while the row STAYS 'reserved'
+//! (the new owner must still pass `begin_dispatch` before dispatching).
+//! Rows that reached 'dispatching'/'executing' with an expired lease
+//! (the mutation MAY have happened) are NEVER auto-reclaimed:
+//! `recover` marks them 'reconcile_required' (claim fields cleared —
+//! the stale owner is fenced out) and they await human reconciliation.
+//! Ambiguous-outcome rows ('unknown_outcome'/'reconcile_required') are
+//! likewise never reclaimable. `complete` and `heartbeat` only act
+//! while the caller's token matches the row — a stale owner whose claim
+//! was recovered is fenced out and can never complete or renew a
+//! command it no longer owns.
 
 use std::sync::Arc;
 
@@ -109,6 +117,58 @@ impl ExecutionJournal for PgExecutionJournal {
         })
     }
 
+    fn begin_dispatch(
+        &self,
+        tenant: Uuid,
+        key: &str,
+        claim_token: &str,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<bool, String>> + Send + '_>>
+    {
+        let pool = self.pool.clone();
+        let key = key.to_string();
+        let claim_token = claim_token.to_string();
+        Box::pin(async move {
+            with_tenant_tx(&pool, tenant, move |tx| {
+                Box::pin(async move {
+                    // Twenty-seventh audit P0: the DURABLE PRE-DISPATCH
+                    // GATE. reserve() left the row 'reserved' (provably
+                    // never dispatched); the mutation may run ONLY after
+                    // THIS token- and lease-checked UPDATE durably moves
+                    // the row to 'dispatching'. A row not in 'reserved',
+                    // a mismatched token (stale owner — the claim was
+                    // recovered or completed) or an expired lease is
+                    // REFUSED (0 rows): dispatch must not run. Once the
+                    // row is 'dispatching', a crash or terminal-write
+                    // failure can no longer masquerade as a clean
+                    // pre-mutation crash — an expired 'dispatching' row
+                    // is never auto-redispatched (see recover()).
+                    let began: Option<Uuid> = sqlx::query_scalar(
+                        "UPDATE command_journal \
+                         SET status = 'dispatching', last_heartbeat = NOW() \
+                         WHERE tenant_id = $1 AND execution_key = $2 \
+                           AND claim_token = $3 \
+                           AND status = 'reserved' \
+                           AND (lease_expires_at IS NULL OR lease_expires_at > NOW()) \
+                         RETURNING id",
+                    )
+                    .bind(tenant)
+                    .bind(&key)
+                    .bind(&claim_token)
+                    .fetch_optional(&mut **tx)
+                    .await
+                    .map_err(|e| {
+                        sensei_core::error::SenseiError::Database(format!(
+                            "command journal begin_dispatch failed: {e}"
+                        ))
+                    })?;
+                    Ok(began.is_some())
+                })
+            })
+            .await
+            .map_err(|e| e.to_string())
+        })
+    }
+
     fn load(
         &self,
         tenant: Uuid,
@@ -164,16 +224,18 @@ impl ExecutionJournal for PgExecutionJournal {
                     // previous heartbeat) — a constant horizon under
                     // regular heartbeats, with no stored lease constant.
                     // Fencing: the token must match, the row must still be
-                    // in a leased state and the lease must not already
-                    // have expired — a STALE owner (claim recovered) or an
-                    // expired claim is refused.
+                    // in a leased state ('reserved' — pre-gate —
+                    // 'dispatching' — gate passed, mutation possibly in
+                    // flight — or 'executing') and the lease must not
+                    // already have expired — a STALE owner (claim
+                    // recovered) or an expired claim is refused.
                     let renewed: Option<Uuid> = sqlx::query_scalar(
                         "UPDATE command_journal \
                          SET lease_expires_at = NOW() + (lease_expires_at - last_heartbeat), \
                              last_heartbeat = NOW() \
                          WHERE tenant_id = $1 AND execution_key = $2 \
                            AND claim_token = $3 \
-                           AND status IN ('reserved', 'executing') \
+                           AND status IN ('reserved', 'dispatching', 'executing') \
                            AND lease_expires_at >= NOW() \
                          RETURNING id",
                     )
@@ -211,21 +273,26 @@ impl ExecutionJournal for PgExecutionJournal {
         Box::pin(async move {
             with_tenant_tx(&pool, tenant, move |tx| {
                 Box::pin(async move {
-                    // Atomic reclaim — one UPDATE decides: the row is
-                    // only touched when it is a PRE-EXECUTION crash —
-                    // status 'reserved'/'executing' whose lease expired
-                    // (or was never set — a legacy pre-149 crash) without
-                    // a heartbeat. Terminal rows, rows under a LIVE lease
-                    // and ambiguous-outcome rows
-                    // ('unknown_outcome'/'reconcile_required' — the
-                    // mutation MAY have happened) are never matched
-                    // (twenty-first audit item 8: automatic re-dispatch
-                    // of an ambiguous outcome is blocked). The winner
-                    // gets a fresh token, a fresh lease and an attempt
-                    // bump.
+                    // Twenty-seventh audit P0: recover() reclaims ONLY a
+                    // PRE-MUTATION crash — an EXPIRED 'reserved' row (it
+                    // has provably never been dispatched; the mutation
+                    // cannot have happened). The reclaim is one atomic
+                    // UPDATE: the winner gets a fresh token, a fresh
+                    // lease and an attempt bump while the row STAYS
+                    // 'reserved' — the new owner must still pass
+                    // begin_dispatch() before any dispatch. Rows that
+                    // reached 'dispatching'/'executing' (the mutation MAY
+                    // have happened) with an expired lease (or none — a
+                    // legacy crash) are NEVER auto-reclaimed: the second
+                    // UPDATE marks them 'reconcile_required' and clears
+                    // the claim (the stale owner is fenced out) so a
+                    // human reconciles the outcome. Terminal rows, rows
+                    // under a LIVE lease and ambiguous-outcome rows
+                    // ('unknown_outcome'/'reconcile_required') are never
+                    // matched by either UPDATE.
                     let claimed: Option<String> = sqlx::query_scalar(
                         "UPDATE command_journal \
-                         SET status = 'executing', \
+                         SET status = 'reserved', \
                              claim_owner = $3, \
                              claim_token = $4, \
                              lease_expires_at = NOW() + make_interval(secs => $5::float8), \
@@ -234,7 +301,7 @@ impl ExecutionJournal for PgExecutionJournal {
                              attempt = attempt + 1, \
                              result = '{}'::jsonb \
                          WHERE tenant_id = $1 AND execution_key = $2 \
-                           AND status IN ('reserved', 'executing') \
+                           AND status = 'reserved' \
                            AND (lease_expires_at IS NULL OR lease_expires_at < NOW()) \
                          RETURNING claim_token",
                     )
@@ -250,7 +317,41 @@ impl ExecutionJournal for PgExecutionJournal {
                             "command journal recover failed: {e}"
                         ))
                     })?;
-                    Ok(claimed)
+                    if claimed.is_some() {
+                        return Ok(claimed);
+                    }
+                    // Not reclaimable: an expired (or lease-less)
+                    // 'dispatching'/'executing' row means the mutation may
+                    // already have happened — never re-dispatch it
+                    // automatically. Transition it to 'reconcile_required'
+                    // (clearing the claim fenced the stale owner out).
+                    sqlx::query(
+                        "UPDATE command_journal \
+                         SET status = 'reconcile_required', \
+                             result = $3, \
+                             claim_owner = NULL, \
+                             claim_token = NULL, \
+                             lease_expires_at = NULL, \
+                             last_heartbeat = NULL \
+                         WHERE tenant_id = $1 AND execution_key = $2 \
+                           AND status IN ('dispatching', 'executing') \
+                           AND (lease_expires_at IS NULL OR lease_expires_at < NOW())",
+                    )
+                    .bind(tenant)
+                    .bind(&key)
+                    .bind(serde_json::json!({
+                        "error": "lease expired while the command was dispatching/\
+                                  executing — the mutation may have happened; automatic \
+                                  re-dispatch is blocked, reconcile the row before retrying"
+                    }))
+                    .execute(&mut **tx)
+                    .await
+                    .map_err(|e| {
+                        sensei_core::error::SenseiError::Database(format!(
+                            "command journal recover (reconcile marking) failed: {e}"
+                        ))
+                    })?;
+                    Ok(None)
                 })
             })
             .await

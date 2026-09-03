@@ -234,6 +234,53 @@ pub struct SenseiChatbotService {
     conversation_store: Arc<RwLock<HashMap<String, Vec<ChatMessage>>>>,
 }
 
+// ──────────────────────────────────────────────
+// Model weight loading (twenty-seventh audit P0)
+// ──────────────────────────────────────────────
+
+/// Expected number of f32 weight elements for a LLaMA model with the given
+/// dimensions.
+///
+/// Mirrors the transformer layout used by the Zig inference engine
+/// (`expectedWeightLen` in `zig/src/llm.zig`): per layer the RMS norm
+/// weights (att + ffn), the Q/K/V/O attention matrices and the FFN
+/// matrices (w1/w2/w3), followed by the output RMS norm weights and the
+/// vocab×dim token embedding.
+fn expected_weight_count(config: &sensei_zt::llm::LlamaConfig) -> usize {
+    let dim = config.dim;
+    let kv_dim = config.n_kv_heads * (dim / config.n_heads);
+    let layer_weight_len = 2 * dim + dim * dim * 5 + 2 * dim * kv_dim;
+    config.n_layers * layer_weight_len + dim + config.vocab_size * dim
+}
+
+/// Interpret raw model-file bytes as little-endian f32 weights.
+///
+/// A payload whose byte length is not a multiple of 4 is rejected with a
+/// [`SenseiError::Validation`] error — a truncated trailing weight is never
+/// read, so no partial/over-read copy can occur. When
+/// `expected_weight_count` is supplied (the loader knows the model
+/// dimensions), the derived weight count must match it exactly.
+fn decode_model_weights(bytes: &[u8], expected_weight_count: usize) -> Result<Vec<f32>> {
+    if !bytes.len().is_multiple_of(4) {
+        return Err(SenseiError::Validation(format!(
+            "model byte length must be a multiple of 4 (got {} bytes)",
+            bytes.len()
+        )));
+    }
+    let weights: Vec<f32> = bytes
+        .chunks_exact(4)
+        .map(|chunk| f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
+        .collect();
+    if weights.len() != expected_weight_count {
+        return Err(SenseiError::Validation(format!(
+            "model weight count mismatch: expected {expected_weight_count} weights \
+             for the configured model dimensions, but the file contains {} weights",
+            weights.len()
+        )));
+    }
+    Ok(weights)
+}
+
 impl SenseiChatbotService {
     /// Create a new [`SenseiChatbotService`].
     ///
@@ -242,29 +289,33 @@ impl SenseiChatbotService {
     /// pattern-matching chatbot.
     pub fn new(config: ChatbotConfig) -> Self {
         let runner = if let Some(ref path) = config.model_path {
-            // Attempt to load weights from file
+            // Attempt to load weights from file. The file is interpreted as
+            // raw little-endian f32 weights laid out for the LLaMA model
+            // dimensions. Malformed payloads (a byte length that is not a
+            // multiple of 4, or a weight count that does not match the
+            // expected transformer layout) are rejected — never partially
+            // or unsafely loaded.
             match std::fs::read(path) {
                 Ok(bytes) => {
-                    // Interpret bytes as f32 weights
-                    let weight_count = bytes.len() / 4;
-                    let mut weights = vec![0.0f32; weight_count];
-                    unsafe {
-                        std::ptr::copy_nonoverlapping(
-                            bytes.as_ptr(),
-                            weights.as_mut_ptr() as *mut u8,
-                            bytes.len(),
-                        );
-                    }
-
                     let llm_config = sensei_zt::llm::LlamaConfig::default();
-                    match sensei_zt::llm::LlamaRunner::new(llm_config, &weights) {
-                        Ok(runner) => {
-                            tracing::info!("Loaded LLaMA model weights from {path}");
-                            Some(runner)
+                    match decode_model_weights(&bytes, expected_weight_count(&llm_config)) {
+                        Ok(weights) => {
+                            match sensei_zt::llm::LlamaRunner::new(llm_config, &weights) {
+                                Ok(runner) => {
+                                    tracing::info!("Loaded LLaMA model weights from {path}");
+                                    Some(runner)
+                                }
+                                Err(e) => {
+                                    tracing::warn!(
+                                        "Failed to initialise LLaMA runner from {path}: {e}. Falling back to pattern matching."
+                                    );
+                                    None
+                                }
+                            }
                         }
                         Err(e) => {
                             tracing::warn!(
-                                "Failed to initialise LLaMA runner from {path}: {e}. Falling back to pattern matching."
+                                "Rejected model weights from {path}: {e}. Falling back to pattern matching."
                             );
                             None
                         }
@@ -848,5 +899,70 @@ mod tests {
         let system_msg = ChatMessage::system("be helpful".to_string());
         assert_eq!(system_msg.role, "system");
         assert_eq!(system_msg.content, "be helpful");
+    }
+
+    // ── twenty-seventh audit P0: model weight decoding ─────────────
+
+    #[test]
+    fn test_truncated_101_byte_payload_rejected() {
+        let mut bytes: Vec<u8> = (0..25).flat_map(|i| (i as f32).to_le_bytes()).collect();
+        bytes.push(0xAB); // 101 bytes: one dangling byte past the last full weight
+
+        let err = decode_model_weights(&bytes, 25)
+            .expect_err("a non-multiple-of-4 payload must be rejected, never partially loaded");
+        match err {
+            SenseiError::Validation(msg) => {
+                assert!(
+                    msg.contains("multiple of 4"),
+                    "expected a multiple-of-4 validation error, got: {msg}"
+                );
+            }
+            other => panic!("expected SenseiError::Validation, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_100_byte_payload_loads_25_weights() {
+        // 100 bytes = 25 little-endian f32 values; pin the encoding with an
+        // explicit literal (1.0 = 0x3F800000 -> LE bytes 00 00 80 3F).
+        let mut bytes: Vec<u8> = vec![0x00, 0x00, 0x80, 0x3F];
+        let values = [1.0f32, -2.0, 0.5, 3.25, -0.125, 16.0, -0.0];
+        for v in values.iter().skip(1) {
+            bytes.extend_from_slice(&v.to_le_bytes());
+        }
+        bytes.extend((0..(25 - values.len())).flat_map(|i| (100.0 + i as f32).to_le_bytes()));
+        assert_eq!(bytes.len(), 100);
+
+        let weights = decode_model_weights(&bytes, 25).expect("valid 100-byte payload");
+        assert_eq!(weights.len(), 25);
+        assert_eq!(weights[0], 1.0);
+        assert_eq!(weights[1], -2.0);
+        assert_eq!(weights[2], 0.5);
+        assert_eq!(weights[3], 3.25);
+        assert_eq!(weights[4], -0.125);
+        assert_eq!(weights[5], 16.0);
+        assert!(weights[6].is_sign_negative() && weights[6] == -0.0);
+        assert_eq!(weights[7], 100.0);
+        assert_eq!(weights[24], 117.0);
+    }
+
+    #[test]
+    fn test_wrong_expected_weight_count_rejected() {
+        let bytes: Vec<u8> = (0..25).flat_map(|i| (i as f32).to_le_bytes()).collect();
+        assert_eq!(bytes.len(), 100);
+
+        let err = decode_model_weights(&bytes, 24).expect_err(
+            "a payload whose weight count does not match the expected model layout \
+             must be rejected",
+        );
+        match err {
+            SenseiError::Validation(msg) => {
+                assert!(
+                    msg.contains("expected 24") && msg.contains("25"),
+                    "error must name expected vs actual counts, got: {msg}"
+                );
+            }
+            other => panic!("expected SenseiError::Validation, got: {other:?}"),
+        }
     }
 }
