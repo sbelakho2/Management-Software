@@ -1,14 +1,23 @@
 //! Tool registry: every tool wraps a DOMAIN command/query (item 140) —
 //! never SQL/shell/HTTP. The registry owns the ToolSpecs; execution
 //! re-validates the caller's permission and returns evidence-carrying
-//! results (item 96).
+//! results (item 96). Twenty-seventh audit P1: this module registers its
+//! match-based tool dispatch as a ToolHandler and runs EVERY execution
+//! through sensei-agent-core's ToolExecutor — the single execution state
+//! machine (policy re-check -> durable journal claim -> dispatch ->
+//! output validation). The reserve/recover/begin_dispatch/complete dance
+//! lives ONLY in ToolExecutor now.
 
 use sensei_agent_core::context::AgentContext;
 use sensei_agent_core::evidence::{EvidenceRef, ToolResult};
-use sensei_agent_core::journal::{ExecutionJournal, ReservationOutcome};
-use sensei_agent_core::tools::{PolicyEngine, ToolSpec};
+use sensei_agent_core::journal::ExecutionJournal;
+use sensei_agent_core::tools::{
+    PolicyEngine, ToolError, ToolExecutionContext, ToolExecutionId, ToolExecutor, ToolHandler,
+    ToolHandlerFuture, ToolSpec,
+};
 use sensei_services::production::ProductionService;
 use sensei_services::supply_chain::{InventoryItem, SupplyChainService};
+use std::sync::{Arc, Mutex};
 use uuid::Uuid;
 
 /// The agent's read-only toolset (Phase 3: read/calculate/recommend only).
@@ -35,7 +44,10 @@ pub fn build_readonly_tools() -> Vec<ToolSpec> {
                 "planned_downtime_seconds": "integer",
                 "demand_units": "number"
             }),
-            serde_json::json!({"takt_seconds": "number"}),
+            serde_json::json!({
+                "takt_seconds": "number",
+                "net_available_seconds": "integer"
+            }),
         ),
         // The SCOPE variant (item 20): retrieves the authoritative calendar
         // and customer demand from the database for the site/date window —
@@ -47,7 +59,12 @@ pub fn build_readonly_tools() -> Vec<ToolSpec> {
                 "site_id": "uuid",
                 "date": "string"
             }),
-            serde_json::json!({"takt_seconds": "number", "evidence": "array"}),
+            serde_json::json!({
+                "takt_seconds": "number",
+                "net_available_seconds": "integer",
+                "demand_units": "number",
+                "evidence": "array"
+            }),
         ),
     ]
 }
@@ -94,8 +111,19 @@ fn validate_args(tool: &ToolSpec, args: &serde_json::Value) -> Result<(), String
 }
 
 /// Execute one tool on behalf of the caller. The permission is re-checked
-/// here (the prompt is never the security boundary); every result carries
-/// evidence refs and the tool version.
+/// here AND inside the executor (the prompt is never the security
+/// boundary); every result carries evidence refs and the tool version.
+///
+/// Twenty-seventh audit P1 (the collapse): execute_tool NO LONGER owns a
+/// reserve/recover/begin_dispatch/complete journal section. It registers
+/// this module's per-tool-name match dispatch (run_tool below) as a
+/// ToolHandler on sensei-agent-core's ToolExecutor and calls it ONCE —
+/// ToolExecutor is the SINGLE execution state machine: policy re-check,
+/// the durable journal claim dance (reserve -> begin_dispatch -> dispatch
+/// -> complete, leases and fencing tokens), the RAM replay cache, the
+/// REAL timeout and the output-schema validation. Scope enforcement,
+/// argument validation and the tool-result JSON mapping live inside the
+/// registered handler.
 pub async fn execute_tool(
     ctx: &AgentContext,
     tool: &ToolSpec,
@@ -106,114 +134,129 @@ pub async fn execute_tool(
     pool: Option<&sqlx::PgPool>,
 ) -> Result<ToolResult<serde_json::Value>, String> {
     // Defense in depth: independent re-check at execution time (read-only
-    // tools are Automatic, so no approval artifact is required).
+    // tools are Automatic, so no approval artifact is required). The
+    // executor re-checks the same policy before it touches the journal.
     if !policy.can_execute(ctx, tool, None) {
         return Err(format!(
             "Tool '{}' is not permitted for this caller",
             tool.name
         ));
     }
+    // The registered handler is the domain dispatch — the big per-tool-name
+    // match in run_tool. It borrows the caller context/services/pool for
+    // the duration of this ONE execution and keeps the evidence-carrying
+    // ToolResult of the dispatch that actually ran: when the durable
+    // journal REPLAYS a previous 'succeeded' outcome the handler never
+    // runs and the replay is re-wrapped below exactly like the legacy
+    // replay (empty evidence, "@journal" source version).
+    let handler = Arc::new(ApiToolHandler {
+        ctx,
+        production,
+        supply_chain,
+        pool,
+        last: Mutex::new(None),
+    });
+    let handler_view = handler.clone();
+    // The execution identity for the DURABLE journal: deterministic from
+    // the tool name + CANONICALLY sorted args (execution_id below), so
+    // semantically equal invocations always claim the SAME key (the
+    // nineteenth-audit key contract preserved under the collapse).
+    let execution = ToolExecutionContext {
+        key: execution_id(tool, &args),
+    };
+    // The durable journal is configured exactly when the legacy path
+    // journaled: a database pool is present (the ToolExecutor itself
+    // decides whether an idempotent tool uses it).
+    let journal = pool.map(|pool| {
+        sensei_services::ai::command_journal::PgExecutionJournal::new(pool.clone())
+            as Arc<dyn ExecutionJournal>
+    });
+    let mut executor = match journal {
+        Some(journal) => ToolExecutor::with_journal_and_handler(policy.clone(), journal, handler),
+        None => ToolExecutor::with_handler(policy.clone(), handler),
+    };
+    // ONE call on the single execution state machine: policy re-check,
+    // reserve/recover/replay/complete, the REAL timeout and the output
+    // validation all happen inside ToolExecutor.
+    let output = executor
+        .execute_handler(ctx, tool, args, None, execution)
+        .await
+        .map_err(tool_error_message)?;
+    let replayed = handler_view.last.lock().unwrap().take();
+    match replayed {
+        Some(result) => Ok(result),
+        // The journal REPLAYED a previous execution (the handler never
+        // ran): same evidence-less replay ToolResult as the legacy API
+        // path produced for a journaled replay.
+        None => Ok(ToolResult::new(
+            output,
+            vec![],
+            &format!("{}@journal", tool.name),
+        )),
+    }
+}
+
+/// The REGISTERED dispatch handler behind execute_tool (twenty-seventh
+/// audit P1): ToolExecutor owns the execution state machine, this object
+/// owns ONLY the domain dispatch. `last` carries the evidence-carrying
+/// ToolResult of the dispatch that actually ran back to execute_tool.
+struct ApiToolHandler<'h> {
+    ctx: &'h AgentContext,
+    production: &'h dyn ProductionService,
+    supply_chain: &'h dyn SupplyChainService,
+    pool: Option<&'h sqlx::PgPool>,
+    /// The ToolResult of the dispatch that actually ran (None when the
+    /// durable journal replayed a previous outcome instead).
+    last: Mutex<Option<ToolResult<serde_json::Value>>>,
+}
+
+impl<'h> ToolHandler for ApiToolHandler<'h> {
+    fn dispatch<'a>(
+        &'a self,
+        _execution: &'a ToolExecutionContext,
+        tool: &'a ToolSpec,
+        args: &'a serde_json::Value,
+    ) -> ToolHandlerFuture<'a> {
+        Box::pin(async move {
+            match run_tool(
+                self.ctx,
+                tool,
+                args,
+                self.production,
+                self.supply_chain,
+                self.pool,
+            )
+            .await
+            {
+                Ok(result) => {
+                    *self.last.lock().unwrap() = Some(result.clone());
+                    Ok(result.data)
+                }
+                Err(message) => Err(ToolError::Dispatch {
+                    tool: tool.name.clone(),
+                    message,
+                }),
+            }
+        })
+    }
+}
+
+/// The DOMAIN dispatch of this registry (the big per-tool-name match): the
+/// argument validation, the scope enforcement and the tool-result JSON
+/// mapping (seventeenth audit item 4, twenty-fourth audit P0). Returns the
+/// evidence-carrying ToolResult; every error is a deterministic dispatch
+/// failure that the executor records as a journaled 'failed' outcome.
+async fn run_tool(
+    ctx: &AgentContext,
+    tool: &ToolSpec,
+    args: &serde_json::Value,
+    production: &dyn ProductionService,
+    supply_chain: &dyn SupplyChainService,
+    pool: Option<&sqlx::PgPool>,
+) -> Result<ToolResult<serde_json::Value>, String> {
     // Schema enforcement: the declared input schema is checked (type-level)
     // before dispatch — the schema is a contract, not descriptive metadata.
-    validate_args(tool, &args)?;
-    // Nineteenth + twentieth audit P1: the DURABLE command journal is a
-    // CLAIM STATE MACHINE with LEASES and FENCING TOKENS — reserve()
-    // atomically claims the key (owner + random token + lease) so two
-    // concurrent identical requests can never both dispatch. The key is
-    // the tool name + CANONICALLY sorted args (semantically equal args
-    // hash equal regardless of field order). A loser replays the
-    // terminal outcome, errors on a live in-progress claim, or recovers
-    // an expired/ambiguous claim and proceeds to dispatch ONCE more.
-    let journal_key: Option<String> = if tool.idempotent {
-        Some(execution_key(tool, &args))
-    } else {
-        None
-    };
-    // The fencing token of the claim we hold while dispatching (Fresh or
-    // recovered); complete() below only lands while it still matches.
-    let mut claim_token: Option<String> = None;
-    if let (Some(pool), Some(key)) = (pool, &journal_key) {
-        let journal = sensei_services::ai::command_journal::PgExecutionJournal::new(pool.clone());
-        // Read-only tools have no enforced dispatch timeout; the 300s
-        // lease outlives any query and only guards the in-flight window.
-        let claim_owner = format!("api-executor:{}", ctx.request_id);
-        let lease_seconds: i64 = 300;
-        match journal
-            .reserve(ctx.tenant_id, key, &tool.name, &claim_owner, lease_seconds)
-            .await
-        {
-            Ok(ReservationOutcome::Fresh { claim_token: token }) => claim_token = Some(token),
-            Ok(ReservationOutcome::AlreadyExists) => {
-                let row = journal
-                    .load(ctx.tenant_id, key)
-                    .await
-                    .map_err(|e| format!("command journal load failed: {e}"))?
-                    .ok_or_else(|| {
-                        "command journal inconsistency: reserved key has no row".to_string()
-                    })?;
-                let (status, result) = row;
-                match status.as_str() {
-                    "succeeded" => {
-                        return Ok(ToolResult::new(
-                            result,
-                            vec![],
-                            &format!("{}@journal", tool.name),
-                        ));
-                    }
-                    "failed" => {
-                        let message = result
-                            .get("error")
-                            .and_then(|e| e.as_str())
-                            .map(str::to_string)
-                            .unwrap_or_else(|| "command previously failed".to_string());
-                        return Err(format!("command '{key}' previously failed: {message}"));
-                    }
-                    // In-progress under a live lease (recover() returns
-                    // None) or expired/ambiguous (recover() reclaims and
-                    // we dispatch once more below).
-                    _ => match journal
-                        .recover(ctx.tenant_id, key, &claim_owner, lease_seconds)
-                        .await
-                    {
-                        Ok(Some(token)) => claim_token = Some(token),
-                        Ok(None) => {
-                            return Err(
-                                "command already in progress (lease held by another worker)"
-                                    .to_string(),
-                            );
-                        }
-                        Err(e) => {
-                            return Err(format!("command journal recover failed: {e}"));
-                        }
-                    },
-                }
-            }
-            Err(e) => return Err(format!("command journal reserve failed: {e}")),
-        }
-    }
-    // Twenty-seventh audit P0.3: the durable pre-dispatch gate — when a
-    // journaled execution was freshly reserved or recovered, transition
-    // reserved -> dispatching atomically BEFORE the mutation runs. A row
-    // that reached 'dispatching' with an expired lease is NEVER
-    // auto-reclaimed, so a mutation can never execute twice.
-    if let (Some(pool), Some(key)) = (pool, &journal_key) {
-        let journal = sensei_services::ai::command_journal::PgExecutionJournal::new(pool.clone());
-        if let Some(token) = &claim_token {
-            match journal.begin_dispatch(ctx.tenant_id, key, token).await {
-                Ok(true) => {}
-                Ok(false) => {
-                    return Err(format!(
-                        "command '{key}' cannot begin dispatch: the reservation is stale, \
-                         already left 'reserved', or the lease expired — automatic \
-                         re-dispatch is blocked"
-                    ))
-                }
-                Err(e) => return Err(format!("command journal begin_dispatch failed: {e}")),
-            }
-        }
-    }
-    // Timeout enforcement (item 16): the declared timeout is a contract.
-    let _ = tool.timeout_ms;
+    validate_args(tool, args)?;
 
     // Scope enforcement (seventeenth audit item 4): resource-touching
     // tools are intersected with the caller's AgentContext scope —
@@ -221,58 +264,6 @@ pub async fn execute_tool(
     // the caller is scoped. The DB-backed check runs under a TenantTx;
     // when the pool is absent (unit tests), the work-center identity from
     // the domain object is enforced directly.
-    async fn enforce_tool_scope(
-        ctx: &AgentContext,
-        _pool: Option<&sqlx::PgPool>,
-        site_id: Option<Uuid>,
-        work_center_id: Option<Uuid>,
-    ) -> Result<(), String> {
-        match (ctx.site_id, ctx.work_center_id) {
-            (None, None) => Ok(()),
-            (Some(scope_site), None) => {
-                if site_id.is_some_and(|s| s == scope_site) {
-                    Ok(())
-                } else {
-                    Err("resource is outside the caller's authorized site scope".to_string())
-                }
-            }
-            (_, Some(scope_wc)) => {
-                if work_center_id == Some(scope_wc) {
-                    Ok(())
-                } else {
-                    Err("resource is outside the caller's authorized work-center scope".to_string())
-                }
-            }
-        }
-    }
-    // Twenty-fourth audit P0 (AI takt scope): tools that take a
-    // SITE_ID ARGUMENT (calculate_takt_for_scope) are scoped to the
-    // caller's OWN active site before any DB query:
-    // - ctx.site_id is set: the argument must BE the caller's site
-    //   (a site-scoped caller may not compute takt for another site);
-    // - ctx.site_id is None but the caller holds a work-center scope:
-    //   the site argument is outside their scope — denied;
-    // - ctx.site_id is None with no scope at all: naming an arbitrary
-    //   tenant site requires a DB-backed scope authority — denied when a
-    //   pool exists; only when there is NO pool (in-memory dev mode,
-    //   where no scope authority exists to check against) is the
-    //   argument accepted.
-    async fn enforce_site_argument_scope(
-        ctx: &AgentContext,
-        pool: Option<&sqlx::PgPool>,
-        site_id: Uuid,
-    ) -> Result<(), String> {
-        match (ctx.site_id, ctx.work_center_id) {
-            (Some(scope_site), _) if scope_site == site_id => Ok(()),
-            (None, None) if pool.is_none() => Ok(()),
-            _ => Err(format!(
-                "site {site_id} is outside the caller's authorized site scope"
-            )),
-        }
-    }
-    let _ = ctx;
-    let _ = pool;
-
     let outcome = match tool.name.as_str() {
         "get_work_order" => {
             let id: Uuid = args
@@ -302,7 +293,11 @@ pub async fn execute_tool(
             } else {
                 enforce_tool_scope(ctx, None, None, wo.work_center_id).await?;
             }
-            let data = serde_json::to_value(&wo).map_err(|e| e.to_string())?;
+            // The payload follows the DECLARED output schema
+            // ({"work_order": "object"}) — the executor validates dispatch
+            // outputs against it (item 57).
+            let wo_value = serde_json::to_value(&wo).map_err(|e| e.to_string())?;
+            let data = serde_json::json!({ "work_order": wo_value });
             // Item 19: the evidence carries the SOURCE record's last update
             // (business observation time), never the tool-call time.
             let observed_at = wo.updated_at;
@@ -420,7 +415,10 @@ pub async fn execute_tool(
                 }
             }
             items.truncate(tool.max_rows);
-            let data = serde_json::to_value(&items).map_err(|e| e.to_string())?;
+            // The payload follows the DECLARED output schema
+            // ({"items": "array"}).
+            let items_value = serde_json::to_value(&items).map_err(|e| e.to_string())?;
+            let data = serde_json::json!({ "items": items_value });
             // Item 19: freshness is anchored to the newest source record's
             // last update — a three-month-old stock row is NOT fresh.
             let observed_at = items
@@ -543,10 +541,12 @@ pub async fn execute_tool(
             };
             let takt = sensei_services::tps::calculate_takt(site_id, &available, demand)
                 .ok_or_else(|| "No takt exists: zero demand for the window".to_string())?;
+            // The payload follows the DECLARED output schema — the
+            // executor validates it (item 57).
             let data = serde_json::json!({
-                "takt_seconds": takt.takt_seconds.to_string(),
+                "takt_seconds": takt.takt_seconds,
                 "net_available_seconds": takt.net_available_seconds,
-                "demand_units": takt.demand_units.to_string(),
+                "demand_units": takt.demand_units,
                 "evidence": vec![
                     format!("calendar:site={site_id}:date={date}"),
                     format!("sales_demand:site={site_id}:window={date}"),
@@ -589,8 +589,9 @@ pub async fn execute_tool(
             };
             let takt = sensei_services::tps::calculate_takt(Uuid::new_v4(), &available, demand)
                 .ok_or_else(|| "No takt exists for zero demand".to_string())?;
+            // The payload follows the DECLARED output schema.
             let data = serde_json::json!({
-                "takt_seconds": takt.takt_seconds.to_string(),
+                "takt_seconds": takt.takt_seconds,
                 "net_available_seconds": takt.net_available_seconds,
             });
             // Item 19: a formula result is a PURE computation — its evidence
@@ -604,50 +605,92 @@ pub async fn execute_tool(
         }
         other => Err(format!("Unknown tool '{other}'")),
     };
-    // Persist idempotent executions to the durable journal (nineteenth +
-    // twentieth audit P1): complete() transitions the CLAIMED row to a
-    // terminal status under the FENCING token — a failed 'succeeded'
-    // write FAILS the execution (the cache may forget, the journal may
-    // not; a stale owner whose claim was recovered is fenced here too).
-    if let (Some(pool), Some(key), Some(claim_token)) = (pool, &journal_key, &claim_token) {
-        let journal = sensei_services::ai::command_journal::PgExecutionJournal::new(pool.clone());
-        match &outcome {
-            Ok(result) => journal
-                .complete(ctx.tenant_id, key, claim_token, "succeeded", &result.data)
-                .await
-                .map_err(|e| format!("command journal write failed: {e}"))?,
-            Err(_) => {
-                // The execution already failed; record it so a retry
-                // replays the failure instead of re-executing. This is
-                // best-effort — the caller keeps the original error.
-                let _ = journal
-                    .complete(
-                        ctx.tenant_id,
-                        key,
-                        claim_token,
-                        "failed",
-                        &serde_json::json!({
-                            "error": outcome.as_ref().unwrap_err()
-                        }),
-                    )
-                    .await;
-            }
-        }
-    }
     outcome
 }
 
-/// Deterministic execution key for the command journal (nineteenth
-/// audit P1): tool name + CANONICALLY sorted args JSON, hashed with
-/// SHA-256. Recursive key sorting makes semantically identical argument
-/// objects hash identically regardless of field order.
-fn execution_key(tool: &ToolSpec, args: &serde_json::Value) -> String {
+/// Scope enforcement for resource-touching tools (seventeenth audit
+/// item 4): the RECORD's site/work center must be inside the caller's
+/// AgentContext scope. The DB-backed check runs under a TenantTx; the
+/// pool is passed only when the record's site came from the database.
+async fn enforce_tool_scope(
+    ctx: &AgentContext,
+    _pool: Option<&sqlx::PgPool>,
+    site_id: Option<Uuid>,
+    work_center_id: Option<Uuid>,
+) -> Result<(), String> {
+    match (ctx.site_id, ctx.work_center_id) {
+        (None, None) => Ok(()),
+        (Some(scope_site), None) => {
+            if site_id.is_some_and(|s| s == scope_site) {
+                Ok(())
+            } else {
+                Err("resource is outside the caller's authorized site scope".to_string())
+            }
+        }
+        (_, Some(scope_wc)) => {
+            if work_center_id == Some(scope_wc) {
+                Ok(())
+            } else {
+                Err("resource is outside the caller's authorized work-center scope".to_string())
+            }
+        }
+    }
+}
+
+/// Scope enforcement for tools that take a SITE_ID argument
+/// (twenty-fourth audit P0, AI takt scope): the argument must be the
+/// caller's OWN active site; without a DB-backed scope authority naming
+/// an arbitrary tenant site is denied (except in-memory dev mode with no
+/// pool at all, where no scope authority exists to check against).
+async fn enforce_site_argument_scope(
+    ctx: &AgentContext,
+    pool: Option<&sqlx::PgPool>,
+    site_id: Uuid,
+) -> Result<(), String> {
+    match (ctx.site_id, ctx.work_center_id) {
+        (Some(scope_site), _) if scope_site == site_id => Ok(()),
+        (None, None) if pool.is_none() => Ok(()),
+        _ => Err(format!(
+            "site {site_id} is outside the caller's authorized site scope"
+        )),
+    }
+}
+
+/// Map a ToolExecutor failure back to the legacy execute_tool error
+/// strings. A Dispatch error's message already carries the full context
+/// (journal failures and domain dispatch failures alike); the remaining
+/// variants read naturally from their Display.
+fn tool_error_message(err: ToolError) -> String {
+    match err {
+        ToolError::Dispatch { message, .. } => message,
+        other => other.to_string(),
+    }
+}
+
+/// Deterministic execution identity for the command journal (nineteenth
+/// audit P1 semantics preserved under the twenty-seventh-audit P1
+/// collapse): tool name + CANONICALLY sorted args, hashed with SHA-256.
+/// The digest bytes seed the ToolExecutionId fields so semantically equal
+/// invocations — regardless of argument field order or request — always
+/// claim the SAME journal key: a loser replays the terminal outcome, a
+/// live in-progress claim conflicts, and an expired 'reserved' claim is
+/// recovered and dispatched exactly once more.
+fn execution_id(tool: &ToolSpec, args: &serde_json::Value) -> ToolExecutionId {
     use sha2::{Digest, Sha256};
     let mut hasher = Sha256::new();
     hasher.update(tool.name.as_bytes());
     hasher.update(b"|");
     hasher.update(canonicalize_json(args).as_bytes());
-    hex::encode(hasher.finalize())
+    let digest = hasher.finalize();
+    let mut request_bytes = [0u8; 16];
+    request_bytes.copy_from_slice(&digest[..16]);
+    let mut program_bytes = [0u8; 16];
+    program_bytes.copy_from_slice(&digest[16..]);
+    ToolExecutionId {
+        request_id: Uuid::from_bytes(request_bytes),
+        program_execution_id: Uuid::from_bytes(program_bytes),
+        tool_call_index: 0,
+    }
 }
 
 /// Canonical JSON serialization: recursively sort object keys, then
@@ -672,4 +715,145 @@ fn canonicalize_json(value: &serde_json::Value) -> String {
         }
     }
     serde_json::to_string(&sort_keys(value)).unwrap_or_else(|_| "null".to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sensei_agent_core::tools::ToolRisk;
+    use sensei_services::production::InMemoryProductionService;
+    use sensei_services::supply_chain::InMemorySupplyChainService;
+
+    fn ctx(perms: &[&str]) -> AgentContext {
+        AgentContext {
+            tenant_id: Uuid::new_v4(),
+            user_id: Uuid::new_v4(),
+            session_id: None,
+            site_id: None,
+            value_stream_id: None,
+            work_center_id: None,
+            shift_id: None,
+            roles: vec![],
+            permissions: perms.iter().map(|s| s.to_string()).collect(),
+            locale: "en".to_string(),
+            timezone: "UTC".to_string(),
+            request_id: Uuid::new_v4(),
+            conversation_id: None,
+        }
+    }
+
+    fn find_tool(name: &str) -> ToolSpec {
+        build_readonly_tools()
+            .into_iter()
+            .find(|t| t.name == name)
+            .unwrap()
+    }
+
+    #[tokio::test]
+    async fn execute_tool_runs_through_the_single_execution_state_machine() {
+        // Twenty-seventh audit P1: execute_tool dispatches its registered
+        // handler through sensei-agent-core's ToolExecutor; the result is
+        // the evidence-carrying ToolResult whose payload matches the
+        // DECLARED output schema (the executor validates it).
+        let production = InMemoryProductionService::default();
+        let supply_chain = InMemorySupplyChainService::default();
+        let caller = ctx(&["tps:standard-work:read"]);
+        let tool = find_tool("calculate_takt");
+        let policy = PolicyEngine::new(build_readonly_tools(), ToolRisk::ReadOnly);
+        let result = execute_tool(
+            &caller,
+            &tool,
+            serde_json::json!({
+                "scheduled_seconds": 28800,
+                "breaks_seconds": 1200,
+                "planned_downtime_seconds": 600,
+                "demand_units": 100.0
+            }),
+            &policy,
+            &production,
+            &supply_chain,
+            None,
+        )
+        .await
+        .unwrap();
+        assert_eq!(result.source_version, "calculate_takt@v1");
+        assert_eq!(result.evidence.len(), 1);
+        // The payload is schema-conforming: takt_seconds is a JSON number.
+        assert!(result.data["takt_seconds"].is_number(), "{:?}", result.data);
+        assert_eq!(
+            result.data["net_available_seconds"],
+            serde_json::json!(27_000)
+        );
+    }
+
+    #[tokio::test]
+    async fn execute_tool_denies_without_permission() {
+        // The permission re-check fires before anything else (same message
+        // as the legacy path).
+        let production = InMemoryProductionService::default();
+        let supply_chain = InMemorySupplyChainService::default();
+        let caller = ctx(&["production:work-order:read"]);
+        let tool = find_tool("calculate_takt");
+        let policy = PolicyEngine::new(build_readonly_tools(), ToolRisk::ReadOnly);
+        let err = execute_tool(
+            &caller,
+            &tool,
+            serde_json::json!({
+                "scheduled_seconds": 28800,
+                "breaks_seconds": 0,
+                "planned_downtime_seconds": 0,
+                "demand_units": 1.0
+            }),
+            &policy,
+            &production,
+            &supply_chain,
+            None,
+        )
+        .await
+        .unwrap_err();
+        assert!(err.contains("is not permitted for this caller"), "{err}");
+    }
+
+    #[tokio::test]
+    async fn execute_tool_argument_validation_fails_fast() {
+        // Argument validation lives in the registered handler (run_tool).
+        let production = InMemoryProductionService::default();
+        let supply_chain = InMemorySupplyChainService::default();
+        let caller = ctx(&["tps:standard-work:read"]);
+        let tool = find_tool("calculate_takt");
+        let policy = PolicyEngine::new(build_readonly_tools(), ToolRisk::ReadOnly);
+        let err = execute_tool(
+            &caller,
+            &tool,
+            serde_json::json!({}),
+            &policy,
+            &production,
+            &supply_chain,
+            None,
+        )
+        .await
+        .unwrap_err();
+        assert!(
+            err.contains("must be an integer") || err.contains("must be a number"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn execution_id_is_deterministic_across_argument_order() {
+        // The journal key contract (nineteenth audit P1) survives the
+        // twenty-seventh-audit P1 collapse: semantically equal arguments
+        // claim the SAME key regardless of field order.
+        let tool = find_tool("get_work_order");
+        let id = Uuid::new_v4().to_string();
+        let a = execution_id(&tool, &serde_json::json!({"id": id, "other": 1}));
+        let b = execution_id(&tool, &serde_json::json!({"other": 1, "id": id}));
+        assert_eq!(a.key(), b.key());
+        // A different tool name or args yields a different key.
+        let c = execution_id(
+            &find_tool("get_inventory_balance"),
+            &serde_json::json!({"id": id}),
+        );
+        assert_ne!(a.key(), c.key());
+    }
 }

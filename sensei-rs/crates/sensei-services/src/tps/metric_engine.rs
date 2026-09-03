@@ -534,3 +534,118 @@ mod metric_semantics_tests {
         assert_ne!(y, Decimal::from_str("0.9").unwrap());
     }
 }
+
+/// Twenty-seventh-audit P2 (empirical performance evidence): micro-bench
+/// smoke for the PURE hot paths behind every metric endpoint and every
+/// paginated list — the metric ratio math ([`process_yield_ratio`] /
+/// [`scrap_ratio`], which every fpy/scrap_rate compute runs) and the
+/// in-memory pagination shape math of
+/// `sensei_core::pagination::PaginatedResponse::new` used by the
+/// supply-chain list endpoints. Runs under ordinary `cargo test`; reports
+/// p50/p95 iteration rates to stderr only when `PERF_VERBOSE` is set, is
+/// skipped when `SKIP_PERF` is set, and asserts a loose 250 ms ceiling
+/// (avg ≪ 1 ms/op) so CI stays green on shared runners.
+#[cfg(test)]
+mod perf_smoke {
+    use super::*;
+    use sensei_core::pagination::PaginatedResponse;
+    use std::str::FromStr;
+    use std::time::{Duration, Instant};
+
+    const CEILING: Duration = Duration::from_millis(250);
+    const SAMPLES: usize = 5;
+
+    /// Time `ops` invocations in `SAMPLES` equal batches and report the
+    /// p50/p95 iteration rates when `PERF_VERBOSE` is set. Returns the
+    /// total elapsed time.
+    fn timed<F: FnMut()>(name: &str, ops: usize, mut f: F) -> Duration {
+        let per_batch = ops / SAMPLES;
+        let mut rates = Vec::with_capacity(SAMPLES);
+        let mut total = Duration::ZERO;
+        for _ in 0..SAMPLES {
+            let start = Instant::now();
+            for _ in 0..per_batch {
+                f();
+            }
+            let elapsed = start.elapsed();
+            total += elapsed;
+            rates.push(per_batch as f64 / elapsed.as_secs_f64());
+        }
+        rates.sort_by(f64::total_cmp);
+        if std::env::var_os("PERF_VERBOSE").is_some() {
+            let p50 = rates[SAMPLES / 2];
+            let p95 = rates[(SAMPLES * 95) / 100];
+            eprintln!(
+                "[perf::{name}] {ops} iters in {total:?} — p50 {p50:.0} iters/s, p95 {p95:.0} \
+                 iters/s (avg {:.2} µs/op)",
+                total.as_secs_f64() * 1e6 / ops as f64
+            );
+        }
+        total
+    }
+
+    #[test]
+    fn metric_ratio_math_10k_stays_fast_and_exact() {
+        if std::env::var_os("SKIP_PERF").is_some() {
+            eprintln!("SKIP_PERF set — skipping metric_engine::perf_smoke::ratio_math");
+            return;
+        }
+        // Accumulated checksum keeps the compiler honest (the loop has a
+        // real observable result) while mirroring the compute hot path.
+        let mut yield_sum = Decimal::ZERO;
+        let mut scrap_sum = Decimal::ZERO;
+        let elapsed = timed("metric ratio math x10k", 10_000, || {
+            let completed = Decimal::from(100);
+            let scrapped = Decimal::from(10);
+            yield_sum += process_yield_ratio(completed, scrapped);
+            scrap_sum += scrap_ratio(scrapped, completed);
+        });
+        assert!(yield_sum > Decimal::ZERO && scrap_sum > Decimal::ZERO);
+        // y + r == 1 per op (28-sig-digit rounding drift ≪ 1e-6), so the
+        // pair sums to ≈ 10k after 10k ops.
+        let drift = (yield_sum + scrap_sum - Decimal::from(10_000)).abs();
+        assert!(
+            drift < Decimal::from_str("0.000001").unwrap(),
+            "yield+scrap drifted from 10k by {drift}"
+        );
+        assert!(
+            elapsed < CEILING,
+            "10k ratio pairs took {elapsed:?} — metric hot math must stay < {CEILING:?}"
+        );
+    }
+
+    #[test]
+    fn pagination_shape_10k_stays_fast() {
+        if std::env::var_os("SKIP_PERF").is_some() {
+            eprintln!("SKIP_PERF set — skipping metric_engine::perf_smoke::pagination_shape");
+            return;
+        }
+        let mut pages_seen = 0usize;
+        let mut items_seen = 0usize;
+        let elapsed = timed("PaginatedResponse::new x10k", 10_000, || {
+            // A 40-row in-memory page list, cycling the page/window shape
+            // (clamped bounds, last page, walked-off end) like the
+            // supply-chain list endpoints do per request.
+            let page = 1 + (pages_seen % 6);
+            let per_page = match pages_seen % 3 {
+                0 => Some(15),
+                1 => Some(25),
+                _ => None,
+            };
+            let response = PaginatedResponse::new(
+                (0..40).map(|i| i + pages_seen % 7).collect(),
+                Some(page),
+                per_page,
+            );
+            pages_seen += 1;
+            items_seen += response.data.len();
+            assert_eq!(response.per_page.clamp(1, 100), response.per_page);
+        });
+        assert!(pages_seen == 10_000 && items_seen > 0);
+        assert!(
+            elapsed < CEILING,
+            "10k PaginatedResponse::new took {elapsed:?} — list pagination shape must stay < \
+             {CEILING:?}"
+        );
+    }
+}

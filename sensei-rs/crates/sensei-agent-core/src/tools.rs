@@ -234,12 +234,40 @@ pub fn validate_output(
     Ok(())
 }
 
+/// The boxed dispatch future of a registered tool handler. It mirrors the
+/// journal trait's boxed-future pattern exactly (std future, no
+/// async-trait): the future is allowed to borrow the execution context,
+/// the tool and the arguments it was called with for as long as it runs.
+pub type ToolHandlerFuture<'a> = std::pin::Pin<
+    Box<dyn std::future::Future<Output = Result<serde_json::Value, ToolError>> + Send + 'a>,
+>;
+
+/// A REGISTERED tool dispatch handler (twenty-seventh audit P1): the
+/// domain implementation of ONE tool registry (the API's per-tool-name
+/// match, the agent-core read-only dispatch table, ...) behind the single
+/// ToolExecutor execution state machine. The executor owns the policy
+/// re-check, the durable journal claim dance (reserve -> begin_dispatch
+/// -> dispatch -> complete) and the REAL timeout; the handler owns ONLY
+/// the domain dispatch: it validates the arguments, enforces the caller's
+/// scope and maps the domain result into the declared output-schema JSON.
+/// `dispatch` receives the execution context (for journaling-aware
+/// handlers), the tool spec and the arguments, and returns the raw output
+/// value the same way the executor's generic dispatch closure does.
+pub trait ToolHandler: Send + Sync {
+    fn dispatch<'a>(
+        &'a self,
+        execution: &'a ToolExecutionContext,
+        tool: &'a ToolSpec,
+        args: &'a serde_json::Value,
+    ) -> ToolHandlerFuture<'a>;
+}
+
 /// Executes tool calls under the policy engine: the permission is
 /// re-checked at execution time, dispatch runs under a REAL timeout
 /// (item 56), the output is validated against the declared schema
 /// (item 57) and idempotent tools replay on a repeated execution key
 /// (item 59).
-pub struct ToolExecutor {
+pub struct ToolExecutor<'h> {
     policy: PolicyEngine,
     /// The bounded RAM replay map (performance cache — it may forget).
     execution_results: super::cache::BoundedMap<serde_json::Value>,
@@ -269,9 +297,16 @@ pub struct ToolExecutor {
     /// on every reserve()/recover(). Fencing itself is TOKEN-based; the
     /// owner is the human-readable side of a claim.
     claim_owner: String,
+    /// The REGISTERED dispatch handler (twenty-seventh audit P1): when
+    /// present it is the dispatch authority for execute()/execute_handler()
+    /// — the internal/read-only or generic-closure dispatch is only used
+    /// when no handler is registered. The lifetime 'h covers the state the
+    /// handler borrows (services, caller context), so one executor can own
+    /// a handler that dispatches against borrowed infrastructure.
+    handler: Option<std::sync::Arc<dyn ToolHandler + 'h>>,
 }
 
-impl ToolExecutor {
+impl<'h> ToolExecutor<'h> {
     fn claim_owner() -> String {
         format!("executor:{}", Uuid::new_v4())
     }
@@ -282,6 +317,7 @@ impl ToolExecutor {
             execution_results: super::cache::BoundedMap::new(512),
             journal: None,
             claim_owner: Self::claim_owner(),
+            handler: None,
         }
     }
 
@@ -294,12 +330,116 @@ impl ToolExecutor {
             execution_results: super::cache::BoundedMap::new(512),
             journal: Some(journal),
             claim_owner: Self::claim_owner(),
+            handler: None,
         }
     }
 
+    /// Register the dispatch handler WITHOUT a durable journal (the RAM
+    /// replay cache remains the only idempotency store, exactly like
+    /// `new()`'s no-journal path). Twenty-seventh audit P1: the caller
+    /// (e.g. the API service layer) provides the domain dispatch and the
+    /// executor stays the single execution state machine.
+    pub fn with_handler(
+        policy: PolicyEngine,
+        handler: std::sync::Arc<dyn ToolHandler + 'h>,
+    ) -> Self {
+        Self {
+            policy,
+            execution_results: super::cache::BoundedMap::new(512),
+            journal: None,
+            claim_owner: Self::claim_owner(),
+            handler: Some(handler),
+        }
+    }
+
+    /// Register the dispatch handler together with the DURABLE journal —
+    /// the single execution state machine (reserve -> begin_dispatch ->
+    /// dispatch -> complete) that the API tool path and the core read-only
+    /// table both run through. Twenty-seventh audit P1.
+    pub fn with_journal_and_handler(
+        policy: PolicyEngine,
+        journal: std::sync::Arc<dyn super::journal::ExecutionJournal>,
+        handler: std::sync::Arc<dyn ToolHandler + 'h>,
+    ) -> Self {
+        Self {
+            policy,
+            execution_results: super::cache::BoundedMap::new(512),
+            journal: Some(journal),
+            claim_owner: Self::claim_owner(),
+            handler: Some(handler),
+        }
+    }
+
+    /// Execute one tool call through the REGISTERED handler (twenty-seventh
+    /// audit P1): the single execution state machine is ToolExecutor — the
+    /// journal key/claim logic, policy re-check, REAL timeout and output
+    /// validation live ONLY here. The handler is called for dispatch with
+    /// the execution context, the tool spec and the arguments. Returns a
+    /// Dispatch error when no handler is registered.
+    pub async fn execute_handler(
+        &mut self,
+        ctx: &crate::context::AgentContext,
+        tool: &ToolSpec,
+        args: serde_json::Value,
+        approval: Option<VerifiedApprovalArtifact>,
+        execution: ToolExecutionContext,
+    ) -> Result<serde_json::Value, ToolError> {
+        let Some(handler) = self.handler.clone() else {
+            return Err(ToolError::Dispatch {
+                tool: tool.name.clone(),
+                message: "no registered tool handler".to_string(),
+            });
+        };
+        // The adapter owns clones of the handler inputs so the boxed
+        // dispatch future needs no borrows from this frame; the handler is
+        // invoked (and awaited) INSIDE the dispatch the state machine
+        // times out, exactly like the generic dispatch closure path.
+        let execution_for_dispatch = execution.clone();
+        let tool_for_dispatch = tool.clone();
+        let dispatch = move |args: serde_json::Value| {
+            let handler = handler.clone();
+            let execution = execution_for_dispatch.clone();
+            let tool = tool_for_dispatch.clone();
+            async move { handler.dispatch(&execution, &tool, &args).await }
+        };
+        self.execute_inner(ctx, tool, args, approval, execution, dispatch)
+            .await
+    }
+
     /// Execute one tool call. `dispatch` runs the DOMAIN command (never
-    /// SQL/shell/HTTP directly) and returns the raw output value.
+    /// SQL/shell/HTTP directly) and returns the raw output value. When a
+    /// handler is REGISTERED it is the dispatch authority and the generic
+    /// `dispatch` closure is not used; without a handler the closure is
+    /// the dispatch (the internal read-only table use).
     pub async fn execute<F, Fut>(
+        &mut self,
+        ctx: &crate::context::AgentContext,
+        tool: &ToolSpec,
+        args: serde_json::Value,
+        approval: Option<VerifiedApprovalArtifact>,
+        execution: ToolExecutionContext,
+        dispatch: F,
+    ) -> Result<serde_json::Value, ToolError>
+    where
+        F: FnOnce(serde_json::Value) -> Fut,
+        Fut: std::future::Future<Output = Result<serde_json::Value, ToolError>>,
+    {
+        if self.handler.is_some() {
+            return self
+                .execute_handler(ctx, tool, args, approval, execution)
+                .await;
+        }
+        self.execute_inner(ctx, tool, args, approval, execution, dispatch)
+            .await
+    }
+
+    /// Execute one tool call. `dispatch` runs the DOMAIN command (never
+    /// SQL/shell/HTTP directly) and returns the raw output value. This is
+    /// the ONE execution state machine every dispatch path funnels into:
+    /// policy re-check -> durable journal claim dance (reserve ->
+    /// begin_dispatch gate -> complete) or RAM replay -> REAL timeout ->
+    /// output validation.
+    async fn execute_inner<F, Fut>(
         &mut self,
         ctx: &crate::context::AgentContext,
         tool: &ToolSpec,
@@ -2419,6 +2559,250 @@ mod tests {
         assert!(
             !journal.heartbeat(tenant, key, "owner-a").await.unwrap(),
             "an expired claim is refused"
+        );
+    }
+
+    /// A REGISTERED dispatch handler for the twenty-seventh-audit P1
+    /// tests: counts its invocations and returns a fixed, schema-conforming
+    /// output (or the configured error).
+    struct RecordingHandler {
+        calls: std::sync::Arc<std::sync::atomic::AtomicU64>,
+        fail_with: Option<String>,
+    }
+
+    impl super::ToolHandler for RecordingHandler {
+        fn dispatch<'a>(
+            &'a self,
+            _execution: &'a ToolExecutionContext,
+            tool: &'a ToolSpec,
+            _args: &'a serde_json::Value,
+        ) -> ToolHandlerFuture<'a> {
+            let calls = self.calls.clone();
+            let fail_with = self.fail_with.clone();
+            let tool_name = tool.name.clone();
+            Box::pin(async move {
+                calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                match fail_with {
+                    Some(message) => Err(ToolError::Dispatch {
+                        tool: tool_name,
+                        message,
+                    }),
+                    None => Ok(serde_json::json!({"posted": true})),
+                }
+            })
+        }
+    }
+
+    #[tokio::test]
+    async fn registered_handler_runs_the_single_journal_state_machine() {
+        // Twenty-seventh audit P1: an executor built with
+        // with_journal_and_handler() executes a registered handler through
+        // the SAME reserve -> begin_dispatch -> dispatch -> complete state
+        // machine as the generic dispatch closure: the first execution
+        // records 'succeeded' and a retry of the same execution key
+        // REPLAYS the journaled outcome without invoking the handler or
+        // re-issuing a complete.
+        let tool = mutating_tool();
+        let journal = std::sync::Arc::new(MemoryJournal::default());
+        let calls = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
+        let handler = std::sync::Arc::new(RecordingHandler {
+            calls: calls.clone(),
+            fail_with: None,
+        });
+        let mut executor = ToolExecutor::with_journal_and_handler(
+            PolicyEngine::new(vec![tool.clone()], ToolRisk::HighRisk),
+            journal.clone(),
+            handler,
+        );
+        let caller = ctx(&["finance:journal:post"]);
+        let execution = fresh_execution(40);
+        let first = executor
+            .execute_handler(
+                &caller,
+                &tool,
+                serde_json::json!({}),
+                Some(approval()),
+                execution.clone(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(first, serde_json::json!({"posted": true}));
+        assert_eq!(
+            journal.state(caller.tenant_id, &execution.key.key()).0,
+            "succeeded"
+        );
+        let completes_before = *journal.completes.lock().unwrap();
+        let second = executor
+            .execute_handler(
+                &caller,
+                &tool,
+                serde_json::json!({}),
+                Some(approval()),
+                execution,
+            )
+            .await
+            .unwrap();
+        assert_eq!(first, second);
+        assert_eq!(
+            calls.load(std::sync::atomic::Ordering::SeqCst),
+            1,
+            "the replay must never re-dispatch the handler"
+        );
+        assert_eq!(
+            *journal.completes.lock().unwrap(),
+            completes_before,
+            "the replay must never re-record the outcome"
+        );
+    }
+
+    #[tokio::test]
+    async fn registered_handler_failure_is_journaled_as_failed() {
+        // Twenty-seventh audit P1: a deterministic handler failure passes
+        // through the state machine and records the row 'failed', so a
+        // retry replays the failure instead of re-executing.
+        let tool = mutating_tool();
+        let journal = std::sync::Arc::new(MemoryJournal::default());
+        let calls = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
+        let handler = std::sync::Arc::new(RecordingHandler {
+            calls: calls.clone(),
+            fail_with: Some("GL posting lock".to_string()),
+        });
+        let mut executor = ToolExecutor::with_journal_and_handler(
+            PolicyEngine::new(vec![tool.clone()], ToolRisk::HighRisk),
+            journal.clone(),
+            handler,
+        );
+        let caller = ctx(&["finance:journal:post"]);
+        let execution = fresh_execution(41);
+        let err = executor
+            .execute_handler(
+                &caller,
+                &tool,
+                serde_json::json!({}),
+                Some(approval()),
+                execution.clone(),
+            )
+            .await
+            .unwrap_err();
+        assert!(err.to_string().contains("GL posting lock"), "{err}");
+        let (status, result) = journal.state(caller.tenant_id, &execution.key.key());
+        assert_eq!(status, "failed");
+        assert!(
+            result["error"]
+                .as_str()
+                .is_some_and(|e| e.contains("GL posting lock")),
+            "{result}"
+        );
+        // A retry replays the recorded failure — the handler never runs
+        // again.
+        let mut executor_b = ToolExecutor::with_journal_and_handler(
+            PolicyEngine::new(vec![tool.clone()], ToolRisk::HighRisk),
+            journal.clone(),
+            std::sync::Arc::new(RecordingHandler {
+                calls: calls.clone(),
+                fail_with: Some("GL posting lock".to_string()),
+            }),
+        );
+        let err = executor_b
+            .execute_handler(
+                &caller,
+                &tool,
+                serde_json::json!({}),
+                Some(approval()),
+                execution,
+            )
+            .await
+            .unwrap_err();
+        assert!(err.to_string().contains("GL posting lock"), "{err}");
+        assert_eq!(
+            calls.load(std::sync::atomic::Ordering::SeqCst),
+            1,
+            "the recorded failure is replayed, never re-executed"
+        );
+    }
+
+    #[tokio::test]
+    async fn registered_handler_replays_from_the_ram_cache_without_journal() {
+        // Twenty-seventh audit P1: with_handler() (no durable journal)
+        // keeps the executor's RAM-cache replay semantics for the
+        // registered handler.
+        let tool = mutating_tool();
+        let calls = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
+        let handler = std::sync::Arc::new(RecordingHandler {
+            calls: calls.clone(),
+            fail_with: None,
+        });
+        let mut executor = ToolExecutor::with_handler(
+            PolicyEngine::new(vec![tool.clone()], ToolRisk::HighRisk),
+            handler,
+        );
+        let caller = ctx(&["finance:journal:post"]);
+        let execution = fresh_execution(42);
+        let first = executor
+            .execute_handler(
+                &caller,
+                &tool,
+                serde_json::json!({}),
+                Some(approval()),
+                execution.clone(),
+            )
+            .await
+            .unwrap();
+        let second = executor
+            .execute_handler(
+                &caller,
+                &tool,
+                serde_json::json!({}),
+                Some(approval()),
+                execution,
+            )
+            .await
+            .unwrap();
+        assert_eq!(first, second);
+        assert_eq!(
+            calls.load(std::sync::atomic::Ordering::SeqCst),
+            1,
+            "the RAM cache replays the same execution key"
+        );
+    }
+
+    #[tokio::test]
+    async fn registered_handler_authority_applies_to_execute_too() {
+        // Twenty-seventh audit P1: when a handler is REGISTERED,
+        // execute() dispatches through it — the generic dispatch closure
+        // is never invoked.
+        let tool = mutating_tool();
+        let journal = std::sync::Arc::new(MemoryJournal::default());
+        let calls = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
+        let handler = std::sync::Arc::new(RecordingHandler {
+            calls: calls.clone(),
+            fail_with: None,
+        });
+        let mut executor = ToolExecutor::with_journal_and_handler(
+            PolicyEngine::new(vec![tool.clone()], ToolRisk::HighRisk),
+            journal.clone(),
+            handler,
+        );
+        let caller = ctx(&["finance:journal:post"]);
+        let execution = fresh_execution(43);
+        let outcome = executor
+            .execute(
+                &caller,
+                &tool,
+                serde_json::json!({}),
+                Some(approval()),
+                execution.clone(),
+                |_| async move {
+                    panic!("the generic dispatch closure must not run when a handler is registered")
+                },
+            )
+            .await
+            .unwrap();
+        assert_eq!(outcome, serde_json::json!({"posted": true}));
+        assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 1);
+        assert_eq!(
+            journal.state(caller.tenant_id, &execution.key.key()).0,
+            "succeeded"
         );
     }
 }

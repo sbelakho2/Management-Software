@@ -1863,3 +1863,148 @@ pub async fn release_expired(pool: &sqlx::PgPool, tenant_id: Uuid) -> Result<u64
     })
     .await
 }
+
+/// Twenty-seventh-audit P2 (empirical performance evidence): micro-bench
+/// smoke for the PURE hot path of the replication fanout — the typed
+/// [`DataPolicy`]/[`Jurisdiction`] parses and the deterministic
+/// [`may_replicate`] residency gate that runs ONCE PER EDGE on every
+/// enqueue/fanout. Runs under ordinary `cargo test` (10k/5k iterations
+/// complete in well under the loose 250 ms ceiling); reports p50/p95
+/// iteration rates to stderr only when `PERF_VERBOSE` is set, and is
+/// skipped entirely when `SKIP_PERF` is set.
+#[cfg(test)]
+mod perf_smoke {
+    use super::*;
+    use std::time::{Duration, Instant};
+
+    /// Ceiling is deliberately loose (pure pointer/enum math; even a
+    /// debug build is ~2 orders of magnitude under it) so CI stays green
+    /// on shared runners while still catching pathological regressions
+    /// (accidental per-call I/O, allocation, or quadratic behavior).
+    const CEILING: Duration = Duration::from_millis(250);
+    const SAMPLES: usize = 5;
+
+    /// Time `ops` invocations in `SAMPLES` equal batches and report the
+    /// p50/p95 iteration rates when `PERF_VERBOSE` is set. Returns the
+    /// total elapsed time.
+    fn timed<F: FnMut()>(name: &str, ops: usize, mut f: F) -> Duration {
+        let per_batch = ops / SAMPLES;
+        let mut rates = Vec::with_capacity(SAMPLES);
+        let mut total = Duration::ZERO;
+        for _ in 0..SAMPLES {
+            let start = Instant::now();
+            for _ in 0..per_batch {
+                f();
+            }
+            let elapsed = start.elapsed();
+            total += elapsed;
+            rates.push(per_batch as f64 / elapsed.as_secs_f64());
+        }
+        rates.sort_by(f64::total_cmp);
+        if std::env::var_os("PERF_VERBOSE").is_some() {
+            let p50 = rates[SAMPLES / 2];
+            let p95 = rates[(SAMPLES * 95) / 100];
+            eprintln!(
+                "[perf::{name}] {ops} iters in {total:?} — p50 {p50:.0} iters/s, p95 {p95:.0} \
+                 iters/s (avg {:.2} µs/op)",
+                total.as_secs_f64() * 1e6 / ops as f64
+            );
+        }
+        total
+    }
+
+    #[test]
+    fn data_policy_parse_10k_stays_pure_and_fast() {
+        if std::env::var_os("SKIP_PERF").is_some() {
+            eprintln!("SKIP_PERF set — skipping replication::perf_smoke::data_policy_parse");
+            return;
+        }
+        let mut parsed = 0usize;
+        let elapsed = timed("DataPolicy::parse x10k", 10_000, || {
+            let policy = match parsed % 5 {
+                0 => DataPolicy::parse("public"),
+                1 => DataPolicy::parse("internal"),
+                2 => DataPolicy::parse("confidential"),
+                3 => DataPolicy::parse("restricted"),
+                _ => DataPolicy::parse("personal"),
+            };
+            parsed += usize::from(policy.is_ok());
+        });
+        assert_eq!(parsed, 10_000, "every typed label must keep parsing");
+        assert!(
+            elapsed < CEILING,
+            "10k DataPolicy::parse took {elapsed:?} — hot-path parse must stay < {CEILING:?}"
+        );
+    }
+
+    #[test]
+    fn residency_gate_5k_decision_evaluations_stay_fast() {
+        if std::env::var_os("SKIP_PERF").is_some() {
+            eprintln!("SKIP_PERF set — skipping replication::perf_smoke::residency_gate");
+            return;
+        }
+        let ma = Jurisdiction::MA;
+        let tn = Jurisdiction::TN;
+        let local = ResidencyPolicy::LocalOnly;
+        let corp = ResidencyPolicy::CorporateAllowed;
+        let mut allowed = 0usize;
+        let mut iteration = 0usize;
+        let elapsed = timed("may_replicate x5k", 5_000, || {
+            // One edge decision per iteration, cycling the FAIL-CLOSED
+            // branches (cross-border allow/deny, unknown destinations,
+            // Restricted/Personal never crossing a border).
+            let i = iteration;
+            iteration += 1;
+            let policy = if i.is_multiple_of(2) {
+                DataPolicy::Internal
+            } else {
+                DataPolicy::Personal
+            };
+            let src = if i.is_multiple_of(5) { None } else { Some(&ma) };
+            let dst = if i.is_multiple_of(7) { None } else { Some(&tn) };
+            let residency = if i.is_multiple_of(3) { &local } else { &corp };
+            if may_replicate(policy, src, dst, residency) {
+                allowed += 1;
+            }
+        });
+        assert!(
+            allowed > 0 && allowed < 5_000,
+            "the mixed branch cycle must exercise both allow and deny outcomes"
+        );
+        assert!(
+            elapsed < CEILING,
+            "5k may_replicate decisions took {elapsed:?} — the per-edge gate must stay < \
+             {CEILING:?}"
+        );
+    }
+
+    #[test]
+    fn jurisdiction_parse_10k_stays_pure_and_fast() {
+        if std::env::var_os("SKIP_PERF").is_some() {
+            eprintln!("SKIP_PERF set — skipping replication::perf_smoke::jurisdiction_parse");
+            return;
+        }
+        let mut parsed = 0usize;
+        let elapsed = timed("Jurisdiction::parse x10k", 10_000, || {
+            let jurisdiction = match parsed % 8 {
+                0 => Jurisdiction::parse("ma"),
+                1 => Jurisdiction::parse("tn"),
+                2 => Jurisdiction::parse("fr"),
+                3 => Jurisdiction::parse("us"),
+                4 => Jurisdiction::parse("de"),
+                5 => Jurisdiction::parse("es"),
+                6 => Jurisdiction::parse("it"),
+                _ => Jurisdiction::parse("gb"),
+            };
+            parsed += usize::from(jurisdiction.is_ok());
+        });
+        assert_eq!(
+            parsed, 10_000,
+            "every known residency code must keep parsing"
+        );
+        assert!(
+            elapsed < CEILING,
+            "10k Jurisdiction::parse took {elapsed:?} — hot-path parse must stay < {CEILING:?}"
+        );
+    }
+}

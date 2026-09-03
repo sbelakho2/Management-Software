@@ -17582,3 +17582,229 @@ async fn twenty_fifth_audit_manual_receipt_compensation_and_public_ledger() {
          site/status predicates are what make aging honest"
     );
 }
+
+/// Twenty-seventh-audit P2 (empirical performance evidence): query-plan
+/// regression gate — the hottest tenant-scoped statements must be served
+/// by INDEX scans, never sequential scans, on their target tables. The
+/// suite first drops and re-applies the ENTIRE migration chain (so
+/// migration 168's `query_plan_indexes` are present), seeds a
+/// representative multi-tenant volume (55k rows per table across 11
+/// tenants — a real planner needs ANALYZEd statistics to weigh an index
+/// path against a seq scan of noise rows), and EXPLAINs the three
+/// canonical hot statements:
+///
+///   1. the scoped andon list page (ops list endpoint): tenant slice +
+///      `site_id = ANY(authorized sites)` + `ORDER BY created_at DESC
+///      LIMIT/OFFSET` — served by
+///      `idx_andons_tenant_site_created_at` (migration 168);
+///   2. the replication claim pass (the corporate worker's hottest read):
+///      tenant slice + `status = 'pending'` + `ORDER BY created_at ASC
+///      LIMIT` — served by `idx_rep_log_tenant_status_created`
+///      (migration 168);
+///   3. the per-instance integration checkpoint read (readiness proof):
+///      tenant + instance slice + newest-`last_run_at` — served by an
+///      index on `(tenant_id, instance_id, last_run_at DESC)` (migration
+///      168).
+///
+/// Assertion: no plan node may be a `Seq Scan`, and every plan must be
+/// driven by an index scan (plain, backward, or bitmap index scan) — a
+/// hot statement regressing to a full-table scan fails the gate. The
+/// plans are printed so the empirical evidence is visible in the gate
+/// output.
+#[tokio::test]
+async fn hot_queries_use_index_scans() {
+    let _serial = DB_LOCK.lock().await;
+    let Some(pool) = connect().await else { return };
+    sqlx::query(
+        r#"DO $$ DECLARE r RECORD; BEGIN
+             FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname = 'public') LOOP
+                 EXECUTE format('DROP TABLE IF EXISTS %I CASCADE', r.tablename);
+             END LOOP;
+         END $$"#,
+    )
+    .execute(&pool)
+    .await
+    .expect("drop all tables");
+    sensei_db::migrations::run_migrations(&pool)
+        .await
+        .expect("the ENTIRE migration chain must apply to an empty database");
+
+    // ── Representative volume: 1 hot tenant + 10 noise tenants ────────
+    // The planner only weighs an index path against a seq scan honestly
+    // once ANALYZE has real statistics, so the gate seeds a multi-tenant
+    // table of 55k rows and then ANALYZEs before EXPLAINing.
+    let hot_tenant = uuid::Uuid::new_v4();
+    let site_a = uuid::Uuid::new_v4();
+    let site_b = uuid::Uuid::new_v4();
+    let site_c = uuid::Uuid::new_v4();
+    let instance = uuid::Uuid::new_v4();
+    sqlx::query("INSERT INTO tenants (id, name, slug) VALUES ($1, 'plan-hot', 'plan-hot')")
+        .bind(hot_tenant)
+        .execute(&pool)
+        .await
+        .expect("hot tenant insert");
+    sqlx::query(
+        "INSERT INTO tenants (name, slug) \
+         SELECT 'plan-noise-' || g, 'plan-noise-' || g FROM generate_series(1, 10) g",
+    )
+    .execute(&pool)
+    .await
+    .expect("noise tenant insert");
+    sqlx::query(
+        "INSERT INTO sites (id, tenant_id, name, site_code) \
+         VALUES ($1, $4, 'Plan A', 'PLAN-A'), ($2, $4, 'Plan B', 'PLAN-B'), \
+                ($3, $4, 'Plan C', 'PLAN-C')",
+    )
+    .bind(site_a)
+    .bind(site_b)
+    .bind(site_c)
+    .bind(hot_tenant)
+    .execute(&pool)
+    .await
+    .expect("hot site insert");
+
+    // 1. andons: the scoped-list hot table.
+    sqlx::query(
+        "INSERT INTO andons \
+             (tenant_id, andon_number, work_center_id, issue_type, severity, description, \
+              status, site_id, created_at) \
+         SELECT t.id, t.slug || '-' || g, gen_random_uuid(), 'quality', 'low', NULL, \
+                CASE WHEN g % 4 = 0 THEN 'active' ELSE 'resolved' END, \
+                (ARRAY[$2::uuid, $3::uuid, $4::uuid, $4::uuid])[1 + (g % 4)], \
+                NOW() - make_interval(mins => g) \
+         FROM tenants t CROSS JOIN generate_series(1, 5000) g",
+    )
+    .bind(hot_tenant)
+    .bind(site_a)
+    .bind(site_b)
+    .bind(site_c)
+    .execute(&pool)
+    .await
+    .expect("bulk andon seed (55k rows)");
+
+    // 2. site_replication_log: the corporate claim-pass hot table.
+    sqlx::query(
+        "INSERT INTO site_replication_log \
+             (tenant_id, entity_type, entity_id, projection, status, created_at) \
+         SELECT t.id, 'plan', gen_random_uuid(), '{}'::jsonb, \
+                CASE WHEN g % 2 = 0 THEN 'pending' ELSE 'acked' END, \
+                NOW() - make_interval(mins => g) \
+         FROM tenants t CROSS JOIN generate_series(1, 5000) g",
+    )
+    .execute(&pool)
+    .await
+    .expect("bulk replication-log seed (55k rows)");
+
+    // 3. integration_checkpoints: one hot instance-keyed row + 55k rows
+    //    of legacy/other-tenant checkpoint noise.
+    sqlx::query(
+        "INSERT INTO integration_instances (id, tenant_id, site_id, integration_type) \
+         VALUES ($1, $2, $3, 'erp')",
+    )
+    .bind(instance)
+    .bind(hot_tenant)
+    .bind(site_a)
+    .execute(&pool)
+    .await
+    .expect("hot integration instance insert");
+    sqlx::query(
+        "INSERT INTO integration_checkpoints (tenant_id, instance_id, last_run_at) \
+         SELECT t.id, \
+                CASE WHEN t.id = $1 AND g = 1 THEN $2 ELSE NULL END, \
+                NOW() - make_interval(mins => g) \
+         FROM tenants t CROSS JOIN generate_series(1, 5000) g",
+    )
+    .bind(hot_tenant)
+    .bind(instance)
+    .execute(&pool)
+    .await
+    .expect("bulk checkpoint seed (55k rows)");
+
+    sqlx::query("ANALYZE andons")
+        .execute(&pool)
+        .await
+        .expect("analyze andons");
+    sqlx::query("ANALYZE site_replication_log")
+        .execute(&pool)
+        .await
+        .expect("analyze site_replication_log");
+    sqlx::query("ANALYZE integration_checkpoints")
+        .execute(&pool)
+        .await
+        .expect("analyze integration_checkpoints");
+
+    // ── EXPLAIN the three canonical hot statements ────────────────────
+    // Literal tenant/site/instance constants (a custom plan with bound
+    // values — what the first executions of the prepared statements get)
+    // so the planner's selectivity estimates are real, and ANALYZE
+    // statistics decide the path.
+    async fn explain(pool: &sqlx::PgPool, statement: &str) -> Vec<String> {
+        let rows: Vec<(String,)> = sqlx::query_as(&format!("EXPLAIN {statement}"))
+            .fetch_all(pool)
+            .await
+            .expect("EXPLAIN must run against the seeded schema");
+        rows.into_iter().map(|(line,)| line).collect()
+    }
+
+    fn assert_index_driven(table: &str, plan: &[String]) {
+        let text = plan.join("\n");
+        eprintln!("── {table} hot-statement plan:\n{text}\n");
+        assert!(
+            !text.contains("Seq Scan"),
+            "{table}: hot query regressed to a SEQUENTIAL scan — migration 168's index is \
+             missing or unusable:\n{text}"
+        );
+        assert!(
+            text.contains("Index Scan"),
+            "{table}: hot query is not index-driven at all:\n{text}"
+        );
+        assert!(
+            text.contains(&format!("on {table}")),
+            "{table}: plan does not scan the target table:\n{text}"
+        );
+    }
+
+    let andon_plan = explain(
+        &pool,
+        &format!(
+            "SELECT id, tenant_id, andon_number, site_id, work_center_id, issue_type, severity, \
+                    description, status, raised_by, acknowledged_by, resolved_by, resolution, \
+                    response_time_seconds, resolution_time_seconds, created_at, \
+                    acknowledged_at, resolved_at, restart_authorized_by, restart_authorized_at, \
+                    escalated, escalated_at, request_key \
+             FROM andons \
+             WHERE tenant_id = '{hot_tenant}'::uuid \
+               AND site_id = ANY (ARRAY['{site_a}'::uuid, '{site_b}'::uuid]) \
+             ORDER BY created_at DESC \
+             LIMIT 20 OFFSET 0"
+        ),
+    )
+    .await;
+    assert_index_driven("andons", &andon_plan);
+
+    let claim_plan = explain(
+        &pool,
+        &format!(
+            "SELECT id, site_id, entity_type, entity_id, source_event_id, created_at, status \
+             FROM site_replication_log \
+             WHERE tenant_id = '{hot_tenant}'::uuid AND status = 'pending' \
+             ORDER BY created_at ASC, id ASC \
+             LIMIT 50"
+        ),
+    )
+    .await;
+    assert_index_driven("site_replication_log", &claim_plan);
+
+    let checkpoint_plan = explain(
+        &pool,
+        &format!(
+            "SELECT watermark, watermark_id, last_run_id, last_run_at \
+             FROM integration_checkpoints \
+             WHERE tenant_id = '{hot_tenant}'::uuid AND instance_id = '{instance}'::uuid \
+             ORDER BY last_run_at DESC \
+             LIMIT 1"
+        ),
+    )
+    .await;
+    assert_index_driven("integration_checkpoints", &checkpoint_plan);
+}
