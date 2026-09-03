@@ -297,17 +297,52 @@ pub async fn start_run(
                     "integration instance {instance_id} is not enabled — no run may start"
                 )));
             };
+            // Twenty-seventh audit P1: the digest is a REAL SHA-256 over
+            // the NORMALIZED configuration the instance points at, and the
+            // run carries a server-side expiry.
+            let config_type: String = sqlx::query_scalar(
+                "SELECT integration_type FROM integration_instances \
+                 WHERE tenant_id = $1 AND id = $2",
+            )
+            .bind(tenant_id)
+            .bind(instance_id)
+            .fetch_one(&mut **tx)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Run start config read failed: {e}")))?;
+            let config_endpoint: Option<String> = sqlx::query_scalar(
+                "SELECT endpoint FROM integration_instances \
+                 WHERE tenant_id = $1 AND id = $2",
+            )
+            .bind(tenant_id)
+            .bind(instance_id)
+            .fetch_one(&mut **tx)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Run start endpoint read failed: {e}")))?;
+            let normalized = serde_json::json!({
+                "integration_type": config_type,
+                "endpoint": config_endpoint,
+                "configuration_revision": revision,
+            });
+            use sha2::{Digest, Sha256};
+            let mut hasher = Sha256::new();
+            hasher.update(
+                serde_json::to_string(&normalized)
+                    .unwrap_or_default()
+                    .as_bytes(),
+            );
+            let digest = format!("sha256:{:x}", hasher.finalize());
             sqlx::query(
                 "INSERT INTO integration_runs \
                      (tenant_id, instance_id, run_token, configuration_revision, \
-                      configuration_digest, run_id) \
-                 VALUES ($1, $2, $3, $4, 'attested:' || $5::text, $6)",
+                      configuration_digest, configuration, run_id, expires_at) \
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, NOW() + INTERVAL '15 minutes')",
             )
             .bind(tenant_id)
             .bind(instance_id)
             .bind(token)
             .bind(revision as i64)
-            .bind(revision)
+            .bind(&digest)
+            .bind(&normalized)
             .bind(&run_id)
             .execute(&mut **tx)
             .await
@@ -327,11 +362,10 @@ pub async fn start_run(
 /// encode a revision falls back to the run row's own returned
 /// `configuration_revision`: both values are server-written in the same
 /// `start_run` statement, so the fallback is equally server-attested.
-fn attested_revision_from_digest(digest: &str, fallback: i64) -> i64 {
-    digest
-        .strip_prefix("attested:")
-        .and_then(|rev| rev.parse::<i64>().ok())
-        .unwrap_or(fallback)
+fn attested_revision_from_digest(_digest: &str, fallback: i64) -> i64 {
+    // The digest is now a real SHA-256 over the normalized configuration;
+    // the run row's RETURNED configuration_revision is authoritative.
+    fallback
 }
 
 /// Advance ONE integration instance's checkpoint (the bridge's durable
@@ -432,11 +466,25 @@ pub async fn write_checkpoint(
             // token does not match: a second completion of the same run can
             // never succeed, so an old completed run can never refresh
             // last_run_at / last_verified_revision into fresh readiness.
+            // Expire abandoned runs first: an open run past its server
+            // maximum age can never complete (twenty-seventh audit P1).
+            sqlx::query(
+                "UPDATE integration_runs SET completed_at = NOW(), result = 'expired' \
+                 WHERE tenant_id = $1 AND instance_id = $2 \
+                   AND completed_at IS NULL AND expires_at IS NOT NULL \
+                   AND expires_at <= NOW()",
+            )
+            .bind(tenant_id)
+            .bind(instance_id)
+            .execute(&mut **tx)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Run expiry failed: {e}")))?;
             let attested: Option<(i64, String)> = sqlx::query_as(
                 "UPDATE integration_runs \
                     SET completed_at = NOW(), result = 'succeeded' \
                   WHERE tenant_id = $1 AND instance_id = $2 AND run_id = $3 \
                     AND run_token = $4 AND completed_at IS NULL \
+                    AND (expires_at IS NULL OR expires_at > NOW()) \
                   RETURNING configuration_revision, configuration_digest",
             )
             .bind(tenant_id)
