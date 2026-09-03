@@ -15,6 +15,16 @@
 //! containing an identical edge (audit item 3 — a policy change between
 //! the fanout's re-read and its INSERT can no longer persist a stale
 //! authorization).
+//!
+//! Twenty-sixth audit P0.1 (the ACK must not record an application that
+//! did not happen): `ack()` marks the source queue row 'acked' —
+//! delivery to the consumer — and writes NOTHING else. The durable
+//! target-side dedupe record is the TARGET tenant's INBOX RECEIPT,
+//! reserved honestly by [`deliver_to_target_inbox`] (never by the ack
+//! path, and never under the source tenant's slice), and
+//! [`apply_target_projection`] is an explicit stub that refuses every
+//! application until a target projector is registered — an application
+//! that never happened is never recorded.
 
 use sensei_core::error::{Result, SenseiError};
 use serde::{Deserialize, Serialize};
@@ -1296,64 +1306,176 @@ pub async fn claim_batch(
     .await
 }
 
-/// TARGET-SIDE APPLY IDEMPOTENCY (twenty-fifth audit P0/P1-2): the
-/// durable `replication_applied` record (migration 163) is the apply
-/// dedupe key — `(tenant_id, source_event_id, projection_type,
-/// projection_revision, target_tenant_id, target_site_id)`. The worker
-/// that APPLIES a projection records the mark FIRST, in its OWN tenant
-/// transaction, and a duplicate mark (`false`) REFUSES the retried
-/// apply: at-least-once queue delivery (crash after claim loses only the
-/// lease, the row is redelivered) can never become double application.
+/// TARGET INBOX RESERVATION (twenty-sixth audit P0.1): the durable
+/// `replication_applied` record (migration 163) is the dedupe key that
+/// keeps at-least-once queue delivery from ever becoming double
+/// application — `(tenant_id, source_event_id, projection_type,
+/// projection_revision, target_tenant_id, target_site_id)`. The row is
+/// the TARGET tenant's INBOX RECEIPT — an atomic reservation of the
+/// projection for the target's (future) apply pipeline. The guarded
+/// `INSERT ... ON CONFLICT DO NOTHING RETURNING id` makes a duplicate
+/// reservation a no-op that returns no row (`false`) — never an error
+/// and never a second record; the unique index is the arbiter, so two
+/// workers (or a redelivery) racing the same key cannot both win.
 ///
-/// `tenant_id` is the tenant under whose RLS slice the apply happens —
-/// the same tenant context the queue row is claimed under — and the
-/// record is FORCE-RLS isolated to it, exactly like the queue table.
+/// A receipt is an inbox receipt, NOT a projection application: no
+/// target projector exists in this workspace, so the only state a
+/// receipt can hold is 'reserved' — nothing may ever transition it,
+/// because nothing may claim an application that did not happen (see
+/// [`apply_target_projection`], which refuses every apply until a
+/// projector is registered).
+///
+/// The receipt lives in the TARGET tenant's FORCE-RLS slice: the row's
+/// OWNER (`tenant_id`) and `target_tenant_id` are bound to the SAME
+/// tenant — the destination whose inbox is being reserved — never to
+/// the source queue tenant. The insert always runs INSIDE an open
+/// tenant transaction under the target's context ([`deliver_to_target_inbox`]
+/// and [`mark_target_applied`] open it); the source queue tenant can
+/// neither see nor write the target's inbox slice.
 #[allow(clippy::too_many_arguments)]
 async fn insert_target_applied_tx(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
-    tenant_id: Uuid,
+    target_inbox_tenant_id: Uuid,
     source_tenant_id: Uuid,
     source_site_id: Option<Uuid>,
     source_event_id: Uuid,
     projection_type: &str,
     projection_revision: u64,
-    target_tenant_id: Uuid,
     target_site_id: Option<Uuid>,
 ) -> Result<bool> {
-    // ATOMIC refusal: ON CONFLICT DO NOTHING makes a duplicate mark a
+    // ATOMIC refusal: ON CONFLICT DO NOTHING makes a duplicate receipt a
     // no-op that returns no row — `false` — never an error and never a
     // second record. The unique index is the arbiter: two workers (or a
-    // redelivery) racing the same key cannot both win.
+    // redelivery) racing the same key cannot both win. `$1` is bound
+    // twice: the receipt owner (the RLS slice the row lands in) IS the
+    // destination (`target_tenant_id`) — a receipt owned by any other
+    // tenant would mis-record the target's inbox.
     let row: Option<(Uuid,)> = sqlx::query_as(
         "INSERT INTO replication_applied \
              (tenant_id, source_tenant_id, source_site_id, source_event_id, \
               projection_type, projection_revision, target_tenant_id, target_site_id) \
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8) \
+         VALUES ($1, $2, $3, $4, $5, $6, $1, $7) \
          ON CONFLICT (tenant_id, source_event_id, projection_type, projection_revision, \
                       target_tenant_id, target_site_id) \
          DO NOTHING \
          RETURNING id",
     )
-    .bind(tenant_id)
+    .bind(target_inbox_tenant_id)
     .bind(source_tenant_id)
     .bind(source_site_id)
     .bind(source_event_id)
     .bind(projection_type)
     .bind(projection_revision as i64)
-    .bind(target_tenant_id)
     .bind(target_site_id)
     .fetch_optional(&mut **tx)
     .await
-    .map_err(|e| SenseiError::Database(format!("replication: mark target applied failed: {e}")))?;
+    .map_err(|e| {
+        SenseiError::Database(format!("replication: target inbox reservation failed: {e}"))
+    })?;
     Ok(row.is_some())
 }
 
-/// Mark ONE projection apply as landed under the applying tenant's
-/// context (twenty-fifth audit P0/P1-2): `true` when the record was
-/// newly inserted, `false` when the SAME key is already recorded — the
-/// retried apply is refused atomically. Callers invoke this BEFORE the
-/// side-effecting apply: `true` -> apply, `false` -> skip (the
-/// projection already landed).
+/// DELIVER one claimed queue entry to the TARGET tenant's inbox
+/// (twenty-sixth audit P0.1): the honest successor of the consume-time
+/// `replication_applied` write the twenty-fifth audit wired into
+/// [`ack`]. The target-side dedupe record is now created HERE — and
+/// only here — inside ONE tenant transaction under the TARGET tenant's
+/// context. It is never created by the ack path, and never under the
+/// source queue tenant's slice.
+///
+/// This is the TARGET INBOX reservation, not a projection application:
+/// the delivery performs NO business mutation. It reserves the inbox
+/// with the guarded receipt insert and returns `true` when the receipt
+/// was newly reserved, `false` when the SAME key is already reserved — a
+/// redelivery after a crash (at-least-once) is refused atomically, so a
+/// retried delivery can never double-record. Applying is a separate,
+/// explicit step ([`apply_target_projection`]) that refuses until a
+/// target projector is registered.
+///
+/// `source_tenant` is the tenant whose queue row is being delivered (the
+/// receipt's `source_tenant_id`). The entry must name its destination
+/// (`target_tenant_id`) and carry a UUID `source_event_id` — a
+/// destination-less or key-less entry cannot reserve an inbox and is
+/// refused, never silently dropped. Receipts dedupe on the migration-163
+/// unique key, which does not include `source_tenant_id`: the same
+/// source event delivered to one target from different source tenants
+/// collides on that key, and the second delivery is (correctly, for
+/// at-least-once) refused — the schema's dedupe boundary, unchanged by
+/// this audit.
+pub async fn deliver_to_target_inbox(
+    pool: &sqlx::PgPool,
+    source_tenant: Uuid,
+    entry: &ReplicationEntry,
+) -> Result<bool> {
+    // The queue row's destination IS the inbox owner — a row without one
+    // has no inbox to reserve.
+    let Some(target_tenant) = entry.target_tenant_id else {
+        return Err(SenseiError::Validation(
+            "replication: deliver_to_target_inbox requires an entry naming its target tenant \
+             (target_tenant_id) — a destination-less row cannot reserve a target inbox"
+                .to_string(),
+        ));
+    };
+    // The receipt is keyed on the source event — a key-less entry cannot
+    // be reserved (and must never be silently treated as delivered).
+    let Some(source_event_id) = entry
+        .source_event_id
+        .as_deref()
+        .and_then(|e| Uuid::parse_str(e).ok())
+    else {
+        return Err(SenseiError::Validation(
+            "replication: deliver_to_target_inbox requires a UUID source_event_id — the \
+             target inbox receipt is keyed on the source event, and a key-less entry \
+             cannot be reserved"
+                .to_string(),
+        ));
+    };
+    // Everything the insert needs is copied out of the entry BEFORE the
+    // tenant transaction moves the borrowed values into the async
+    // closure.
+    let site_id = entry.site_id;
+    let projection_type = entry.projection_type.clone();
+    let projection_revision = entry.projection_revision;
+    let target_site_id = entry.target_site_id;
+    // ONE TenantTx under the TARGET tenant context: the FORCE-RLS insert
+    // lands in the target's slice, and the reservation + its dedupe
+    // commit (or roll back) as one.
+    with_tenant_tx(pool, target_tenant, move |tx| {
+        Box::pin(async move {
+            insert_target_applied_tx(
+                tx,
+                target_tenant,
+                source_tenant,
+                site_id,
+                source_event_id,
+                &projection_type,
+                projection_revision,
+                target_site_id,
+            )
+            .await
+        })
+    })
+    .await
+}
+
+/// Target inbox receipt — raw-argument form (twenty-sixth audit P0.1
+/// RETARGET): [`deliver_to_target_inbox`] resolves the SAME guarded
+/// insert from a claimed entry; this public form takes the key columns
+/// directly for operations/tooling. It opens ONE tenant transaction
+/// under `tenant_id` and runs the receipt insert — `true` when newly
+/// reserved, `false` when the SAME key is already reserved. The function
+/// is kept public under its legacy twenty-fifth-audit name, and the
+/// unique-constraint semantics are unchanged, but the semantics are
+/// RETARGETED: it writes the TARGET INBOX RECEIPT (a reservation, the
+/// internal insert of [`deliver_to_target_inbox`]), never an application
+/// record — the name notwithstanding, no apply is recorded here.
+///
+/// RETARGETED ownership: `tenant_id` is the TARGET inbox tenant — the
+/// receipt's owner — and it MUST equal `target_tenant_id` (the receipt
+/// is the destination's own inbox record). A call whose owner is not the
+/// destination is refused loudly: such a row would mis-own the target's
+/// receipt exactly as the removed ack-time write did (an application
+/// record for the source tenant's slice that no target ever saw).
 #[allow(clippy::too_many_arguments)]
 pub async fn mark_target_applied(
     pool: &sqlx::PgPool,
@@ -1366,6 +1488,14 @@ pub async fn mark_target_applied(
     target_tenant_id: Uuid,
     target_site_id: Option<Uuid>,
 ) -> Result<bool> {
+    if tenant_id != target_tenant_id {
+        return Err(SenseiError::Validation(
+            "replication: the inbox receipt owner (tenant_id) must BE the target tenant \
+             (target_tenant_id) — a receipt owned by any other tenant would mis-record the \
+             target's inbox"
+                .to_string(),
+        ));
+    }
     let projection_type = projection_type.to_string();
     with_tenant_tx(pool, tenant_id, move |tx| {
         Box::pin(async move {
@@ -1377,7 +1507,6 @@ pub async fn mark_target_applied(
                 source_event_id,
                 &projection_type,
                 projection_revision,
-                target_tenant_id,
                 target_site_id,
             )
             .await
@@ -1386,12 +1515,15 @@ pub async fn mark_target_applied(
     .await
 }
 
-/// Has this projection ALREADY been applied under the applying tenant's
-/// context (twenty-fifth audit P0/P1-2)? Read-only form of
-/// [`mark_target_applied`] — used by the apply path to decide before the
-/// guarded mark, and by operations to inspect the durable dedupe state.
-/// The same tenant-scoped key as the unique index; the FORCE-RLS policy
-/// keeps the answer tenant-local.
+/// Is an inbox receipt already reserved for this projection (twenty-sixth
+/// audit P0.1 RETARGET)? Read-only form of the guarded receipt insert —
+/// used by the target-side pipeline to decide before a delivery, and by
+/// operations to inspect the durable reservation state. `tenant_id` must
+/// be the TARGET inbox tenant the receipt was reserved under (and
+/// `target_tenant_id` the receipt's destination — the same tenant under
+/// the retargeted ownership); queried under the source queue tenant's
+/// context the receipt is invisible, fail-closed — the target's inbox is
+/// never readable from the source's slice.
 #[allow(clippy::too_many_arguments)]
 pub async fn is_target_applied(
     pool: &sqlx::PgPool,
@@ -1429,89 +1561,131 @@ pub async fn is_target_applied(
     .await
 }
 
-/// Corporate ACK after applying the projection: marks the row `acked`.
-/// The `claim_token` is the ownership check — a stale worker (or one that
-/// never held the lease) is rejected, and the row stays claimed for the
-/// real worker.
+/// The EXPLICIT allowlist of entity types whose target-side projection
+/// application is REGISTERED (twenty-sixth audit P0.1): currently EMPTY.
+/// A projection is applied ONLY when its entity type is on this list AND
+/// a projector implementation exists for it — nothing else may claim an
+/// application. The list stays empty until a real target projector
+/// exists: registering an entity type without implementing its projector
+/// would let [`apply_target_projection`] claim success for an
+/// application that never happened.
+const REGISTERED_TARGET_PROJECTORS: &[&str] = &[];
+
+/// TARGET PROJECTION APPLY — the explicit stub (twenty-sixth audit
+/// P0.1): the honest apply gate the ack-time `replication_applied`
+/// write was masquerading as.
 ///
-/// Twenty-fifth audit P0/P1-2 (the no-real-apply wiring): this entry→ack
-/// path is where a claimed entry is consumed in this workspace (the
-/// claim's caller pulls and the same worker acks; no projection-apply
-/// step exists yet), so the consume transaction ALSO records the durable
-/// target-apply marker in the SAME transaction as the status flip. An
-/// entry carrying a keyable `source_event_id` (a UUID) and a named
-/// destination gets its `replication_applied` record inserted first
-/// (`ON CONFLICT DO NOTHING` — a duplicate mark is skipped, never
-/// recorded twice); entries without a keyable event/destination (legacy
-/// envelopes) are still acked — there is no idempotency key to record.
-/// The future apply step inserts the SAME record in its OWN transaction
-/// before applying, which is what makes a retried apply refuse.
+/// (a) VALIDATION — the projection's inbox receipt must already be
+/// RESERVED for the entry in `replication_applied` under the target
+/// tenant's slice ([`deliver_to_target_inbox`] must have run first). The
+/// receipt IS the reservation, and its only state is 'reserved': nothing
+/// in this workspace can land an application, so no other state can
+/// exist — validating the receipt's presence validates the reservation.
+/// An unreserved projection is refused loudly.
+/// (b) APPLICATION — NO business mutation is performed. The apply is
+/// refused with a documented Validation error unless the entry's entity
+/// type is on [`REGISTERED_TARGET_PROJECTORS`], which is currently
+/// EMPTY — so every apply is refused: the apply path fails loudly and
+/// never silently claims success. No false application is ever recorded.
+///
+/// Runs inside an OPEN tenant transaction (`tx`) whose context must be
+/// the TARGET tenant — the slice the receipt was reserved under. A
+/// context that cannot see the receipt resolves the validation to
+/// nothing and is refused, fail-closed.
+pub async fn apply_target_projection(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    entry: &ReplicationEntry,
+) -> Result<()> {
+    // A key-less or destination-less entry has no reservable receipt.
+    let Some(source_event_id) = entry
+        .source_event_id
+        .as_deref()
+        .and_then(|e| Uuid::parse_str(e).ok())
+    else {
+        return Err(SenseiError::Validation(
+            "replication: apply_target_projection requires a UUID source_event_id — a \
+             key-less entry has no reservable inbox receipt"
+                .to_string(),
+        ));
+    };
+    let Some(target_tenant_id) = entry.target_tenant_id else {
+        return Err(SenseiError::Validation(
+            "replication: apply_target_projection requires an entry naming its target \
+             tenant (target_tenant_id) — a destination-less entry has no reserved receipt"
+                .to_string(),
+        ));
+    };
+    // (a) The inbox receipt must be reserved under the TARGET tenant's
+    // context: same source event, projection identity, destination edge
+    // and source site as the delivery that reserved it. Under the
+    // retargeted ownership the receipt's `tenant_id` and
+    // `target_tenant_id` are the same tenant, so the target filter pins
+    // the RLS slice too.
+    let reserved: bool = sqlx::query_scalar(
+        "SELECT EXISTS ( \
+             SELECT 1 FROM replication_applied \
+             WHERE source_event_id = $1 AND projection_type = $2 \
+               AND projection_revision = $3 \
+               AND source_site_id IS NOT DISTINCT FROM $4 \
+               AND target_tenant_id = $5 \
+               AND target_site_id IS NOT DISTINCT FROM $6 \
+         )",
+    )
+    .bind(source_event_id)
+    .bind(&entry.projection_type)
+    .bind(entry.projection_revision as i64)
+    .bind(entry.site_id)
+    .bind(target_tenant_id)
+    .bind(entry.target_site_id)
+    .fetch_one(&mut **tx)
+    .await
+    .map_err(|e| {
+        SenseiError::Database(format!("replication: apply inbox-receipt validation: {e}"))
+    })?;
+    if !reserved {
+        return Err(SenseiError::Validation(format!(
+            "replication: no inbox receipt is reserved for {} — applying an unreserved \
+             projection is refused rather than falsely recorded (deliver_to_target_inbox \
+             must run first)",
+            entry.entity_type
+        )));
+    }
+    // (b) A registered target projector would perform the actual business
+    // mutation here. The allowlist is currently EMPTY, so no entity type
+    // can reach this branch; it stays fail-loud anyway — nothing may
+    // claim an application that did not happen.
+    if REGISTERED_TARGET_PROJECTORS.contains(&entry.entity_type.as_str()) {
+        return Err(SenseiError::Validation(format!(
+            "the target projector for {} is registered but not implemented — application \
+             is refused rather than falsely recorded",
+            entry.entity_type
+        )));
+    }
+    Err(SenseiError::Validation(format!(
+        "no target projector is registered for {} — application is refused rather than falsely recorded",
+        entry.entity_type
+    )))
+}
+
+/// Corporate ACK (twenty-sixth audit P0.1): acknowledges delivery of the
+/// claimed entry to the CONSUMER — marks the source queue row `acked`
+/// and does NOTHING else. The `claim_token` is the ownership check — a
+/// stale worker (or one that never held the lease) is rejected, and the
+/// row stays claimed for the real worker.
+///
+/// The twenty-fifth-audit code recorded a durable `replication_applied`
+/// marker in this SAME transaction ("no projection-apply step exists
+/// yet"): that was an application record FOR AN APPLICATION THAT NEVER
+/// HAPPENED. `ack()` is the queue-side consume acknowledgement ONLY — it
+/// NEVER writes `replication_applied`. The target side of the
+/// at-least-once contract is reserved separately and honestly by
+/// [`deliver_to_target_inbox`] (in ONE transaction under the TARGET
+/// tenant's context), and the application itself is gated by the
+/// explicit stub [`apply_target_projection`], which refuses until a
+/// target projector is registered.
 pub async fn ack(pool: &sqlx::PgPool, tenant_id: Uuid, id: Uuid, claim_token: Uuid) -> Result<()> {
     with_tenant_tx(pool, tenant_id, move |tx| {
         Box::pin(async move {
-            // The ownership + idempotency-key read: no row with this id
-            // and claim token under this tenant -> the same rejection as
-            // before (a stale worker's ACK never reaches the status
-            // flip). The key columns are the row's own — source_event_id
-            // (the queue stores it as VARCHAR), the source site, the
-            // destination edge and the projection envelope identity.
-            type AckKey = (
-                Option<String>,
-                Option<Uuid>,
-                Option<Uuid>,
-                Option<Uuid>,
-                String,
-                i64,
-            );
-            let key: Option<AckKey> = sqlx::query_as(
-                "SELECT source_event_id, site_id, target_tenant_id, target_site_id, \
-                        COALESCE(projection_type, entity_type), projection_revision \
-                 FROM site_replication_log \
-                 WHERE id = $1 AND tenant_id = $2 AND claim_token = $3",
-            )
-            .bind(id)
-            .bind(tenant_id)
-            .bind(claim_token)
-            .fetch_optional(&mut **tx)
-            .await
-            .map_err(|e| SenseiError::Database(format!("replication: ack key read: {e}")))?;
-            let Some((
-                source_event_id,
-                source_site_id,
-                target_tenant_id,
-                target_site_id,
-                projection_type,
-                projection_revision,
-            )) = key
-            else {
-                return Err(SenseiError::NotFound(
-                    "replication: ack rejected — no row with this id and claim token".to_string(),
-                ));
-            };
-            // Durable target-apply marker (twenty-fifth audit P0/P1-2):
-            // only keyable rows — a UUID source event AND a named
-            // destination edge — carry an idempotency key worth
-            // recording; the duplicate case (the marker already exists
-            // from an earlier delivery/apply) skips, and the row is still
-            // consumed. Legacy rows without the key are recorded nowhere.
-            if let (Some(event), Some(target_tenant)) =
-                (source_event_id.as_deref(), target_tenant_id)
-            {
-                if let Ok(event_uuid) = Uuid::parse_str(event) {
-                    insert_target_applied_tx(
-                        tx,
-                        tenant_id,
-                        tenant_id,
-                        source_site_id,
-                        event_uuid,
-                        &projection_type,
-                        projection_revision as u64,
-                        target_tenant,
-                        target_site_id,
-                    )
-                    .await?;
-                }
-            }
             let res = sqlx::query(
                 "UPDATE site_replication_log SET status = 'acked', acked_at = NOW() \
                  WHERE id = $1 AND tenant_id = $2 AND claim_token = $3",

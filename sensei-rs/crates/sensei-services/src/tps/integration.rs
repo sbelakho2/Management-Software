@@ -23,21 +23,35 @@
 //!   (instance_id): the instance must be visible under the caller's
 //!   tenant (unknown → NotFound = 404) and must be ENABLED (disabled →
 //!   Conflict = 409 — a decommissioned instance can never be advanced).
-//!   Twenty-third audit P1: the write ALSO stamps
-//!   `last_verified_revision = configuration_revision` on the instance —
-//!   a checkpoint only certifies the configuration revision it verified;
-//!   when the manifest advances the revision, the OLD checkpoint stops
-//!   certifying until a fresh run stamps the new revision.
-//!   Twenty-fourth audit P1 (revision race closure): the run itself sends
-//!   the revision it ACTUALLY tested (`verified_configuration_revision`),
-//!   and the verification stamp is a GUARDED conditional update — it only
-//!   succeeds while the instance's CURRENT configuration_revision equals
-//!   the tested revision AND the instance is still enabled. A bridge run
-//!   started at revision 1 that completes after the manifest moved the
-//!   instance to revision 2 cannot stamp revision 2 untested: the stamp is
-//!   refused (Conflict = 409) and the whole write rolls back. The
-//!   checkpoint row records the verified revision too, so the durable
-//!   cursor names exactly what it certified.
+//!   Twenty-sixth audit P0.2 (one-shot, token-authenticated completion):
+//!   completion is server-attested END TO END — the caller presents the
+//!   run_token that `start_run` issued, and the attestation step is an
+//!   ATOMIC ONE-SHOT CONSUME:
+//!
+//!   ```sql
+//!   UPDATE integration_runs
+//!      SET completed_at = NOW(), result = 'succeeded'
+//!    WHERE tenant_id = $1 AND instance_id = $2 AND run_id = $3
+//!      AND run_token = $4 AND completed_at IS NULL
+//!    RETURNING configuration_revision, configuration_digest
+//!   ```
+//!
+//!   0 rows → Conflict (the run is absent, already consumed, or the token
+//!   does not match) — the SAME run can NEVER complete twice, so a replay
+//!   of an old completion can never refresh last_run_at /
+//!   last_verified_revision into manufactured fresh readiness. The
+//!   completion write records NO client-claimed revision:
+//!   - the instance's verification stamp (`last_verified_revision`, the
+//!     guarded conditional update) uses the CONSUMED run's RETURNED
+//!     configuration_revision and only succeeds while the instance's
+//!     CURRENT configuration_revision still equals it AND the instance is
+//!     still enabled — a run started at revision 1 that completes after
+//!     the manifest moved the instance to revision 2 is refused
+//!     (Conflict = 409) and the whole write (consume included) rolls
+//!     back, so an untested revision is never stamped;
+//!   - the checkpoint row records the digest-derived attested
+//!     verified_revision, so the durable cursor names exactly what the
+//!     server attested at run start.
 //! - `get_checkpoint` reads that instance's watermark: `None` means the
 //!   instance NEVER RAN (NeverRun/Unknown) — never a fabricated
 //!   `Utc::now()`. `get_site_checkpoint` resolves the instance by
@@ -254,45 +268,12 @@ pub async fn reconcile_instances(
     .await
 }
 
-/// Advance ONE integration instance's checkpoint (the bridge's durable
-/// cursor). The instance row is resolved against the caller's tenant —
-/// an instance that is not visible under that tenant is unknown
-/// (NotFound), and a DISABLED (decommissioned) instance refuses
-/// advancement (Conflict). `source_system`/`source_table` are OPTIONAL
-/// legacy metadata: the readiness proof is `instance_id`, so a write
-/// never needs them.
-///
-/// Twenty-third audit P1: the write ALSO stamps
-/// `last_verified_revision` on the instance IN THE SAME TRANSACTION —
-/// the checkpoint certifies exactly the configuration revision it
-/// verified. When a manifest change advances the instance's
-/// configuration_revision, the old checkpoint stops certifying until a
-/// fresh write stamps the new revision.
-///
-/// Twenty-fourth audit P1 (revision race closure):
-/// `verified_configuration_revision` is the revision the bridge run
-/// ACTUALLY tested (sent with the run, in the checkpoint request body).
-/// The verification stamp is a GUARDED conditional update:
-///
-/// ```sql
-/// UPDATE integration_instances
-///    SET last_verified_revision = $rev
-///  WHERE id = $instance AND configuration_revision = $rev AND enabled = TRUE
-/// ```
-///
-/// A 0-row update means the instance moved (its configuration revision
-/// advanced past the tested revision, or it was decommissioned) between
-/// the start of the run and the completion write — the run certified an
-/// OLDER configuration, so the write is refused (Conflict = 409,
-/// "stale integration run") and the checkpoint row rolls back with it.
-/// The checkpoint row records the verified revision
-/// (`integration_checkpoints.verified_revision`, migration 161), so the
-/// durable cursor itself names what it certified.
-#[allow(clippy::too_many_arguments)]
 /// Start a server-attested integration run (twenty-fifth audit P1): the
 /// server issues the run_token bound to the instance's CURRENT
-/// configuration revision + a digest of it. The bridge cannot declare
-/// which configuration it tested.
+/// configuration revision + a digest of it (`'attested:' || revision`).
+/// The bridge cannot declare which configuration it tested; the returned
+/// token is the ONLY credential that may complete the run (twenty-sixth
+/// audit P0.2), and completion consumes the run exactly once.
 pub async fn start_run(
     pool: &PgPool,
     tenant_id: Uuid,
@@ -337,6 +318,74 @@ pub async fn start_run(
     .await
 }
 
+/// The configuration revision a consumed run's digest attests
+/// (twenty-sixth audit P0.2). `start_run` mints the digest as
+/// `'attested:' || configuration_revision`, so parsing the RUN's RETURNED
+/// digest yields the revision the server bound the run_token to — the
+/// checkpoint row's verified_revision always names the SERVER-ATTESTED
+/// configuration, never a client claim. A digest shape that does not
+/// encode a revision falls back to the run row's own returned
+/// `configuration_revision`: both values are server-written in the same
+/// `start_run` statement, so the fallback is equally server-attested.
+fn attested_revision_from_digest(digest: &str, fallback: i64) -> i64 {
+    digest
+        .strip_prefix("attested:")
+        .and_then(|rev| rev.parse::<i64>().ok())
+        .unwrap_or(fallback)
+}
+
+/// Advance ONE integration instance's checkpoint (the bridge's durable
+/// cursor) — the COMPLETION side of a server-attested run
+/// (twenty-sixth audit P0.2). The instance row is resolved against the
+/// caller's tenant — an instance that is not visible under that tenant is
+/// unknown (NotFound), and a DISABLED (decommissioned) instance refuses
+/// advancement (Conflict). `source_system`/`source_table` are OPTIONAL
+/// legacy metadata: the readiness proof is `instance_id`, so a write
+/// never needs them.
+///
+/// The completion is AUTHENTICATED by the run_token that `start_run`
+/// issued, and the attestation is an ATOMIC ONE-SHOT CONSUME — the run
+/// row is closed (`completed_at = NOW()`, `result = 'succeeded'`) and its
+/// attested state RETURNED in the SAME statement:
+///
+/// ```sql
+/// UPDATE integration_runs
+///    SET completed_at = NOW(), result = 'succeeded'
+///  WHERE tenant_id = $1 AND instance_id = $2 AND run_id = $3
+///    AND run_token = $4 AND completed_at IS NULL
+///  RETURNING configuration_revision, configuration_digest
+/// ```
+///
+/// 0 rows → Conflict ("run is absent, already consumed, or the token does
+/// not match") — a run that already completed can never complete again,
+/// so replaying an OLD completion can never refresh
+/// last_run_at / last_verified_revision into fresh readiness.
+///
+/// NO revision is taken from the caller. The write records the CONSUMED
+/// run's server-attested state only:
+/// - the verification stamp is a GUARDED conditional update on the
+///   instance, conditioned on the RETURNED configuration_revision:
+///
+///   ```sql
+///   UPDATE integration_instances
+///      SET last_verified_revision = $rev
+///    WHERE id = $instance AND configuration_revision = $rev AND enabled = TRUE
+///   ```
+///
+///   A 0-row update means the instance moved (its configuration revision
+///   advanced past the attested revision, or it was decommissioned)
+///   between start_run and this completion — the run certified an OLDER
+///   configuration, so the write is refused (Conflict = 409, "stale
+///   integration run") and the WHOLE transaction rolls back (the consume
+///   included — the run stays open, but can never stamp a revision it
+///   did not test).
+/// - the checkpoint row records the digest-derived attested revision
+///   (`integration_checkpoints.verified_revision`, migration 161), so the
+///   durable cursor itself names what the run verified. The instance's
+///   `last_verified_revision` stamp is likewise the attested revision —
+///   when a manifest change advances the instance's
+///   configuration_revision, the old checkpoint stops certifying until a
+///   fresh run stamps the new revision.
 #[allow(clippy::too_many_arguments)]
 pub async fn write_checkpoint(
     pool: &PgPool,
@@ -347,12 +396,15 @@ pub async fn write_checkpoint(
     watermark: chrono::DateTime<chrono::Utc>,
     watermark_id: Option<String>,
     run_id: String,
-    verified_configuration_revision: i64,
+    run_token: uuid::Uuid,
 ) -> Result<()> {
     with_tenant_tx(pool, tenant_id, |tx| {
         Box::pin(async move {
-            let instance: Option<(bool, i32)> = sqlx::query_as(
-                "SELECT enabled, configuration_revision FROM integration_instances \
+            // Instance visibility + lifecycle gate: unknown → NotFound,
+            // decommissioned → Conflict. Checked BEFORE the run consume so
+            // the refusal names the instance state, not the run.
+            let instance: Option<(bool,)> = sqlx::query_as(
+                "SELECT enabled FROM integration_instances \
                  WHERE tenant_id = $1 AND id = $2",
             )
             .bind(tenant_id)
@@ -362,7 +414,7 @@ pub async fn write_checkpoint(
             .map_err(|e| {
                 SenseiError::Database(format!("Integration instance lookup failed: {e}"))
             })?;
-            let Some((enabled, configuration_revision)) = instance else {
+            let Some((enabled,)) = instance else {
                 return Err(SenseiError::NotFound(format!(
                     "integration instance {instance_id} not found for this tenant"
                 )));
@@ -373,56 +425,44 @@ pub async fn write_checkpoint(
                      instance cannot be advanced"
                 )));
             }
-            // Twenty-fourth audit P1: the run certifies the revision it
-            // ACTUALLY tested. When the instance has already moved past
-            // that revision the write is refused up front — and the
-            // GUARDED update below enforces the same check atomically
-            // against the state at write time (a concurrent manifest
-            // advance between this read and the stamp cannot slip by).
-            if configuration_revision as i64 != verified_configuration_revision {
-                return Err(SenseiError::Conflict(format!(
-                    "stale integration run: instance moved to a newer configuration \
-                     revision (instance {instance_id} is at revision \
-                     {configuration_revision}, the run tested revision \
-                     {verified_configuration_revision})"
-                )));
-            }
-            // The run token attests WHICH revision was actually tested
-            // (server-issued at start). A run started at rev1 that
-            // finishes after the manifest moved is rejected.
-            let attested: Option<(uuid::Uuid, i64, String)> = sqlx::query_as(
-                "SELECT run_token, configuration_revision, configuration_digest \
-                 FROM integration_runs \
-                 WHERE tenant_id = $1 AND instance_id = $2 AND run_id = $3 \
-                   AND completed_at IS NULL \
-                 ORDER BY started_at DESC LIMIT 1",
+            // Twenty-sixth audit P0.2: the attestation is an ATOMIC
+            // ONE-SHOT CONSUME — the open run bound to (run_id, run_token)
+            // is CLOSED and its server-attested state RETURNED in the same
+            // UPDATE. 0 rows = the run is absent, already consumed, or the
+            // token does not match: a second completion of the same run can
+            // never succeed, so an old completed run can never refresh
+            // last_run_at / last_verified_revision into fresh readiness.
+            let attested: Option<(i64, String)> = sqlx::query_as(
+                "UPDATE integration_runs \
+                    SET completed_at = NOW(), result = 'succeeded' \
+                  WHERE tenant_id = $1 AND instance_id = $2 AND run_id = $3 \
+                    AND run_token = $4 AND completed_at IS NULL \
+                  RETURNING configuration_revision, configuration_digest",
             )
             .bind(tenant_id)
             .bind(instance_id)
             .bind(&run_id)
+            .bind(run_token)
             .fetch_optional(&mut **tx)
             .await
-            .map_err(|e| SenseiError::Database(format!("Run attestation read failed: {e}")))?;
-            let Some((_token, attested_revision, _digest)) = attested else {
+            .map_err(|e| SenseiError::Database(format!("Run attestation consume failed: {e}")))?;
+            let Some((attested_revision, digest)) = attested else {
                 return Err(SenseiError::Conflict(
-                    "no open server-attested run for this run_id — start_run must \
-                     precede completion"
+                    "run is absent, already consumed, or the token does not match — \
+                     start_run must precede completion, and each run completes exactly once"
                         .to_string(),
                 ));
             };
-            if attested_revision != verified_configuration_revision {
-                return Err(SenseiError::Conflict(format!(
-                    "stale integration run: the server attested configuration revision \
-                     {attested_revision}, completion claims {verified_configuration_revision} \
-                     — the run's attested revision is authoritative"
-                )));
-            }
+            // The revision this completion certifies is the run's OWN
+            // server-attested state (RETURNED above): the digest-derived
+            // attested revision — never a client claim.
+            let verified_revision = attested_revision_from_digest(&digest, attested_revision);
 
             // The verification stamp is CONDITIONAL on the instance still
-            // being ENABLED and still carrying the tested revision — a
-            // run that started against an old configuration can never
-            // stamp a revision it did not test (0 rows updated = the
-            // instance moved; the whole write rolls back, checkpoint
+            // being ENABLED and still carrying the ATTESTED revision — a
+            // run started against an old configuration can never stamp a
+            // revision it did not test (0 rows updated = the instance
+            // moved; the whole write rolls back, consume and checkpoint
             // included).
             let stamped = sqlx::query(
                 "UPDATE integration_instances \
@@ -433,17 +473,17 @@ pub async fn write_checkpoint(
             )
             .bind(tenant_id)
             .bind(instance_id)
-            .bind(verified_configuration_revision)
+            .bind(attested_revision)
             .execute(&mut **tx)
             .await
             .map_err(|e| {
                 SenseiError::Database(format!("Instance verification stamp failed: {e}"))
             })?;
             if stamped.rows_affected() == 0 {
-                // The instance moved between the read and the guarded
-                // stamp (a concurrent manifest reconcile or
-                // decommission). Classify the current state so the
-                // refusal names what actually happened.
+                // The instance moved after the consume (a concurrent
+                // manifest reconcile or decommission). Classify the
+                // current state so the refusal names what actually
+                // happened.
                 let now: Option<(bool, i32)> = sqlx::query_as(
                     "SELECT enabled, configuration_revision FROM integration_instances \
                      WHERE tenant_id = $1 AND id = $2",
@@ -471,8 +511,8 @@ pub async fn write_checkpoint(
                         return Err(SenseiError::Conflict(format!(
                             "stale integration run: instance moved to a newer configuration \
                              revision (instance {instance_id} is at revision \
-                             {current_revision}, the run tested revision \
-                             {verified_configuration_revision})"
+                             {current_revision}, the run attested revision \
+                             {attested_revision})"
                         )))
                     }
                 }
@@ -501,7 +541,7 @@ pub async fn write_checkpoint(
             .bind(watermark)
             .bind(&watermark_id)
             .bind(&run_id)
-            .bind(verified_configuration_revision)
+            .bind(verified_revision)
             .execute(&mut **tx)
             .await
             .map_err(|e| SenseiError::Database(format!("Checkpoint write failed: {e}")))?;

@@ -7041,18 +7041,19 @@ async fn site_replication_log_durable_projection() {
     assert!(again.is_empty(), "durable once — no double projection");
 }
 
-/// Twenty-fifth audit P0/P1-2 (target-side apply idempotency): the
-/// durable `replication_applied` record (migration 163) is the
-/// TARGET-apply dedupe key. `mark_target_applied` returns `true` when
-/// the record is newly inserted and `false` when the SAME key is already
-/// recorded — a retried apply is refused ATOMICALLY (INSERT ... ON
-/// CONFLICT DO NOTHING RETURNING id — the unique index is the arbiter,
-/// never a check-then-insert window). The at-least-once redelivery
-/// (apply recorded, crash BEFORE the ack, lease expiry, same projection
-/// claimed again) skips the duplicate apply, still completes the consume
-/// (the ack path's own guard mark is the duplicate and is skipped), and
-/// leaves EXACTLY ONE durable record — a retried apply can never become
-/// a double application.
+/// Twenty-sixth audit P0.1 (the ACK must not record an application that
+/// did not happen): `ack()` is the queue-side consume acknowledgement
+/// ONLY — it marks the source queue row 'acked' (delivered to the
+/// consumer) and NEVER writes `replication_applied`. The durable
+/// target-side record is created by the honest split:
+/// `deliver_to_target_inbox` reserves the projection in the TARGET
+/// tenant's inbox (INSERT ... ON CONFLICT DO NOTHING — a second delivery
+/// returns `false`, never a second receipt — the unique index is the
+/// arbiter, never a check-then-insert window), and
+/// `apply_target_projection` — the explicit apply stub — validates the
+/// reserved inbox receipt and then refuses EVERY application ("no target
+/// projector is registered") while the projector allowlist is empty, so
+/// an application that never happened is never recorded.
 #[tokio::test]
 async fn replication_target_apply_idempotency_guard() {
     let _serial = DB_LOCK.lock().await;
@@ -7072,7 +7073,7 @@ async fn replication_target_apply_idempotency_guard() {
         .expect("the ENTIRE migration chain must apply to an empty database");
 
     let source_tenant = uuid::Uuid::new_v4();
-    sqlx::query("INSERT INTO tenants (id, name, slug) VALUES ($1, 't25apply', 't25apply')")
+    sqlx::query("INSERT INTO tenants (id, name, slug) VALUES ($1, 't26apply', 't26apply')")
         .bind(source_tenant)
         .execute(&pool)
         .await
@@ -7085,7 +7086,8 @@ async fn replication_target_apply_idempotency_guard() {
     let source_event = uuid::Uuid::new_v4();
     // The destination edge is named by the fabricated membership — the
     // peer tenant/site carry no tenants/sites rows (no FK on the queue's
-    // target columns): the idempotency key is what is exercised.
+    // target columns and none on replication_applied): the inbox receipt
+    // ownership + dedupe semantics are what is exercised.
     let target_tenant = uuid::Uuid::new_v4();
     let target_site = uuid::Uuid::new_v4();
 
@@ -7130,7 +7132,7 @@ async fn replication_target_apply_idempotency_guard() {
     .expect("enqueue must succeed site-locally");
 
     // The worker claims the projection — the claimed entry carries the
-    // full target + envelope context (P0/P1-1) the apply needs.
+    // full target + envelope context the delivery/apply need.
     let claimed = replication::claim_batch(&pool, source_tenant, 10)
         .await
         .expect("claim must work");
@@ -7148,13 +7150,173 @@ async fn replication_target_apply_idempotency_guard() {
             .expect("the enqueued source event id is a UUID");
     let edge_target = entry.target_tenant_id.expect("target tenant");
 
-    // FIRST apply: the durable target-apply mark is newly inserted under
-    // the applying tenant's context.
-    let first = replication::mark_target_applied(
+    async fn receipts_for(pool: &sqlx::PgPool, tenant_id: uuid::Uuid) -> i64 {
+        let mut tx = pool.begin().await.expect("receipt tx begin");
+        sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
+            .bind(tenant_id.to_string())
+            .execute(&mut *tx)
+            .await
+            .expect("set tenant context");
+        let n: i64 =
+            sqlx::query_scalar("SELECT count(*) FROM replication_applied WHERE tenant_id = $1")
+                .bind(tenant_id)
+                .fetch_one(&mut *tx)
+                .await
+                .expect("receipt count");
+        tx.commit().await.expect("receipt tx commit");
+        n
+    }
+
+    async fn queue_status(pool: &sqlx::PgPool, tenant_id: uuid::Uuid, id: uuid::Uuid) -> String {
+        let mut tx = pool.begin().await.expect("status tx begin");
+        sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
+            .bind(tenant_id.to_string())
+            .execute(&mut *tx)
+            .await
+            .expect("set tenant context");
+        let s: String = sqlx::query_scalar("SELECT status FROM site_replication_log WHERE id = $1")
+            .bind(id)
+            .fetch_one(&mut *tx)
+            .await
+            .expect("status read");
+        tx.commit().await.expect("status tx commit");
+        s
+    }
+
+    // ── 1. ack() alone: delivery to the consumer, NOT an application ──
+    // The twenty-fifth-audit wiring recorded a durable
+    // `replication_applied` row inside ack()'s own transaction — under
+    // the SOURCE queue tenant's slice, as if the projection had been
+    // applied. No projection-apply step exists (the old code comment said
+    // so itself), so that row was an application record FOR AN
+    // APPLICATION THAT NEVER HAPPENED. ack() now marks the queue row
+    // 'acked' and writes NOTHING else — zero replication_applied rows
+    // exist in ANY tenant slice after the ack.
+    replication::ack(
         &pool,
         source_tenant,
-        source_tenant,
-        entry.site_id,
+        entry.id,
+        entry.claim_token.expect("lease token"),
+    )
+    .await
+    .expect("ack must succeed");
+    assert_eq!(
+        queue_status(&pool, source_tenant, entry.id).await,
+        "acked",
+        "the consume marks the source queue row acked"
+    );
+    assert_eq!(
+        receipts_for(&pool, source_tenant).await,
+        0,
+        "ack() alone creates NO replication_applied row under the source tenant"
+    );
+    assert_eq!(
+        receipts_for(&pool, target_tenant).await,
+        0,
+        "ack() alone creates NO replication_applied row under the target tenant"
+    );
+
+    // ── 2. apply_target_projection before any delivery: refused ──────
+    // The stub's validation (a): no inbox receipt is reserved for the
+    // entry, so the apply is refused loudly — an unreserved projection
+    // is never silently claimed as applied.
+    {
+        let mut tx = pool.begin().await.expect("apply tx begin");
+        sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
+            .bind(target_tenant.to_string())
+            .execute(&mut *tx)
+            .await
+            .expect("set target tenant context");
+        let err = replication::apply_target_projection(&mut tx, entry)
+            .await
+            .expect_err("an unreserved projection cannot be applied");
+        tx.commit().await.expect("apply tx commit");
+        assert!(
+            matches!(
+                err,
+                sensei_core::error::SenseiError::Validation(ref msg)
+                    if msg.contains("no inbox receipt is reserved for work_order")
+            ),
+            "apply without a delivery is refused loudly (no reserved receipt)"
+        );
+    }
+
+    // ── 3. deliver_to_target_inbox: the TARGET INBOX reservation ─────
+    // The honest successor of the ack-time write: ONE tenant transaction
+    // under the TARGET tenant's context reserves the inbox with the
+    // guarded receipt insert — true = newly reserved. It is an INBOX
+    // RECEIPT, not a projection application: no business mutation
+    // happens here, and the receipt is owned by the TARGET tenant, never
+    // by the source queue tenant.
+    let delivered = replication::deliver_to_target_inbox(&pool, source_tenant, entry)
+        .await
+        .expect("delivery must reserve the target inbox");
+    assert!(delivered, "the first delivery inserts the receipt");
+    assert_eq!(
+        receipts_for(&pool, target_tenant).await,
+        1,
+        "exactly ONE receipt is reserved in the TARGET tenant's inbox"
+    );
+    assert_eq!(
+        receipts_for(&pool, source_tenant).await,
+        0,
+        "the receipt lives under the TARGET — never under the source queue tenant"
+    );
+    {
+        let mut tx = pool.begin().await.expect("receipt shape tx begin");
+        sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
+            .bind(target_tenant.to_string())
+            .execute(&mut *tx)
+            .await
+            .expect("set tenant context");
+        type Receipt = (
+            uuid::Uuid,         // source_tenant_id
+            Option<uuid::Uuid>, // source_site_id
+            uuid::Uuid,         // target_tenant_id
+            Option<uuid::Uuid>, // target_site_id
+            String,             // projection_type
+            i64,                // projection_revision
+        );
+        let receipt: Option<Receipt> = sqlx::query_as(
+            "SELECT source_tenant_id, source_site_id, target_tenant_id, target_site_id, \
+                    projection_type, projection_revision \
+             FROM replication_applied WHERE tenant_id = $1 AND source_event_id = $2",
+        )
+        .bind(target_tenant)
+        .bind(event_uuid)
+        .fetch_optional(&mut *tx)
+        .await
+        .expect("receipt shape read");
+        tx.commit().await.expect("shape tx commit");
+        let (src_tenant, src_site, tgt_tenant, tgt_site, ptype, prev) =
+            receipt.expect("the receipt exists under the target tenant");
+        assert_eq!(
+            src_tenant, source_tenant,
+            "the receipt records the SOURCE tenant"
+        );
+        assert_eq!(
+            src_site,
+            Some(site_id),
+            "the receipt records the source site"
+        );
+        assert_eq!(
+            tgt_tenant, target_tenant,
+            "the receipt owner (tenant_id) IS the target tenant (target_tenant_id)"
+        );
+        assert_eq!(
+            tgt_site,
+            Some(target_site),
+            "the receipt names the destination site"
+        );
+        assert_eq!(
+            ptype, "work_order",
+            "the receipt pins the projection identity"
+        );
+        assert_eq!(prev, 1, "the receipt pins the projection revision");
+    }
+    let applied = replication::is_target_applied(
+        &pool,
+        target_tenant,
         event_uuid,
         &entry.projection_type,
         entry.projection_revision,
@@ -7162,9 +7324,12 @@ async fn replication_target_apply_idempotency_guard() {
         entry.target_site_id,
     )
     .await
-    .expect("first apply mark must succeed");
-    assert!(first, "the first apply inserts the durable record");
-    let applied = replication::is_target_applied(
+    .expect("is-target-applied read must succeed");
+    assert!(
+        applied,
+        "the reservation is visible under the TARGET tenant"
+    );
+    let hidden = replication::is_target_applied(
         &pool,
         source_tenant,
         event_uuid,
@@ -7175,12 +7340,53 @@ async fn replication_target_apply_idempotency_guard() {
     )
     .await
     .expect("is-target-applied read must succeed");
-    assert!(applied, "the apply is recorded as landed");
+    assert!(
+        !hidden,
+        "the reservation is invisible from the SOURCE queue tenant's context — \
+         the receipt belongs to the target's inbox"
+    );
 
-    // RETRIED apply of the SAME projection: refused atomically — the
-    // duplicate mark is a no-op (false), never an error and never a
-    // second record.
-    let retried = replication::mark_target_applied(
+    // ── 4. A second delivery (a redelivery) is refused ATOMICALLY ────
+    // At-least-once: the projection is delivered again (crash after
+    // delivery, lease expiry, same entry claimed again) — the duplicate
+    // receipt is a no-op (false), never an error and never a second
+    // record.
+    let redelivered = replication::deliver_to_target_inbox(&pool, source_tenant, entry)
+        .await
+        .expect("the redelivery must not error");
+    assert!(
+        !redelivered,
+        "a duplicate delivery is refused — no second receipt"
+    );
+    assert_eq!(
+        receipts_for(&pool, target_tenant).await,
+        1,
+        "EXACTLY ONE receipt remains after the redelivery"
+    );
+
+    // ── 5. mark_target_applied (kept public, RETARGETED) ─────────────
+    // The raw-argument form runs the SAME guarded insert under the
+    // target's context: a duplicate key is refused (unique-constraint
+    // semantics unchanged)…
+    let dup = replication::mark_target_applied(
+        &pool,
+        target_tenant,
+        source_tenant,
+        entry.site_id,
+        event_uuid,
+        &entry.projection_type,
+        entry.projection_revision,
+        edge_target,
+        entry.target_site_id,
+    )
+    .await
+    .expect("the raw-argument receipt insert must not error");
+    assert!(!dup, "the same key is already reserved — refused");
+    // …and the OLD mis-ownership shape (owner = the SOURCE queue tenant,
+    // target = the destination) — the exact shape the removed ack-time
+    // write used — is refused loudly instead of writing a receipt the
+    // target never sees.
+    let misowned = replication::mark_target_applied(
         &pool,
         source_tenant,
         source_tenant,
@@ -7191,108 +7397,60 @@ async fn replication_target_apply_idempotency_guard() {
         edge_target,
         entry.target_site_id,
     )
-    .await
-    .expect("the retried apply mark must not error");
+    .await;
     assert!(
-        !retried,
-        "a retried apply of the same (event, type, revision, target) is refused"
+        matches!(
+            misowned,
+            Err(sensei_core::error::SenseiError::Validation(_))
+        ),
+        "a receipt whose owner is not its destination is refused — the old ack-time \
+         ownership cannot be written through the public API"
     );
 
-    // The worker crashes AFTER the apply but BEFORE the ACK: the lease
-    // expires and the SAME projection is redelivered (at-least-once).
+    // ── 6. apply_target_projection on the reserved inbox row: the ────
+    // explicit stub refuses. Validation (a) passes — the receipt is
+    // reserved — but (b) performs NO business mutation: with no target
+    // projector registered (the allowlist is EMPTY), every entity type
+    // is refused with the documented not-registered error. The apply
+    // path fails loudly and never silently claims success; no false
+    // application is ever recorded.
     {
-        let mut tx = pool.begin().await.expect("expire tx begin");
+        let mut tx = pool.begin().await.expect("apply tx begin");
         sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
-            .bind(source_tenant.to_string())
+            .bind(target_tenant.to_string())
             .execute(&mut *tx)
             .await
-            .expect("set tenant context");
-        sqlx::query(
-            "UPDATE site_replication_log SET lease_expires_at = NOW() - INTERVAL '1 minute' \
-             WHERE id = $1",
-        )
-        .bind(entry.id)
-        .execute(&mut *tx)
-        .await
-        .expect("expire the lease");
-        tx.commit().await.expect("expire tx commit");
-    }
-    let released = replication::release_expired(&pool, source_tenant)
-        .await
-        .expect("release expired must work");
-    assert_eq!(released, 1, "the crashed lease is released");
-    let redelivered = replication::claim_batch(&pool, source_tenant, 10)
-        .await
-        .expect("re-claim must work");
-    assert_eq!(redelivered.len(), 1, "the projection is redelivered");
-    assert_eq!(redelivered[0].id, entry.id, "the SAME projection returns");
-
-    // The redelivered apply is REFUSED — the durable record says the
-    // projection already landed, so the side effect is skipped.
-    let refused = replication::mark_target_applied(
-        &pool,
-        source_tenant,
-        source_tenant,
-        redelivered[0].site_id,
-        event_uuid,
-        &redelivered[0].projection_type,
-        redelivered[0].projection_revision,
-        redelivered[0].target_tenant_id.expect("target tenant"),
-        redelivered[0].target_site_id,
-    )
-    .await
-    .expect("the redelivered apply mark must not error");
-    assert!(
-        !refused,
-        "the redelivered apply is refused — no double application"
-    );
-
-    // The consume completes: the ACK path (the entry->ack wiring) records
-    // its OWN guard mark in the same transaction — that mark is the
-    // duplicate and is skipped, never recorded twice.
-    replication::ack(
-        &pool,
-        source_tenant,
-        redelivered[0].id,
-        redelivered[0].claim_token.expect("fresh lease token"),
-    )
-    .await
-    .expect("the fresh token acks");
-    {
-        let mut tx = pool.begin().await.expect("record tx begin");
-        sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
-            .bind(source_tenant.to_string())
-            .execute(&mut *tx)
+            .expect("set target tenant context");
+        let err = replication::apply_target_projection(&mut tx, entry)
             .await
-            .expect("set tenant context");
-        let records: i64 = sqlx::query_scalar(
-            "SELECT count(*) FROM replication_applied \
-             WHERE tenant_id = $1 AND source_event_id = $2 \
-               AND projection_type = $3 AND projection_revision = $4 \
-               AND target_tenant_id = $5 AND target_site_id = $6",
-        )
-        .bind(source_tenant)
-        .bind(event_uuid)
-        .bind("work_order")
-        .bind(1i64)
-        .bind(target_tenant)
-        .bind(target_site)
-        .fetch_one(&mut *tx)
-        .await
-        .expect("durable record count");
-        let status: String =
-            sqlx::query_scalar("SELECT status FROM site_replication_log WHERE id = $1")
-                .bind(entry.id)
-                .fetch_one(&mut *tx)
-                .await
-                .expect("queue row status");
-        tx.commit().await.expect("record tx commit");
-        assert_eq!(
-            records, 1,
-            "apply + redelivery + ack leave EXACTLY ONE durable apply record"
+            .expect_err("apply without a registered projector must be refused");
+        tx.commit().await.expect("apply tx commit");
+        assert!(
+            matches!(
+                err,
+                sensei_core::error::SenseiError::Validation(ref msg)
+                    if msg.as_str()
+                        == "no target projector is registered for work_order — application \
+                           is refused rather than falsely recorded"
+            ),
+            "the apply stub refuses with the explicit not-registered Validation error"
         );
-        assert_eq!(status, "acked", "the consume completes exactly once");
     }
+
+    // ── 7. The whole history leaves EXACTLY ONE receipt ───────────────
+    // delivery + redelivery + ack + two refused applies: one inbox
+    // receipt, one consumed queue row — no false application recorded.
+    assert_eq!(
+        receipts_for(&pool, target_tenant).await,
+        1,
+        "the whole at-least-once history leaves EXACTLY ONE receipt"
+    );
+    assert_eq!(receipts_for(&pool, source_tenant).await, 0);
+    assert_eq!(
+        queue_status(&pool, source_tenant, entry.id).await,
+        "acked",
+        "the queue row is consumed exactly once"
+    );
 }
 
 /// AUTHORIZATION SNAPSHOTS (fifteenth audit 24/A5): every AI execution
@@ -10848,7 +11006,7 @@ async fn site_bootstrap_lifecycle_validation() {
         tx.commit().await.expect("erp instance read tx commit");
         id
     };
-    let _run_token = sensei_services::tps::integration::start_run(
+    let run_token = sensei_services::tps::integration::start_run(
         &pool,
         tenant_id,
         erp_instance_id,
@@ -10865,7 +11023,7 @@ async fn site_bootstrap_lifecycle_validation() {
         chrono::Utc::now(),
         None,
         "run-lc".to_string(),
-        1,
+        run_token,
     )
     .await
     .expect("the erp instance's own checkpoint write must succeed");
@@ -12416,6 +12574,7 @@ async fn nineteenth_audit_adversarial_gate() {
     // 5) Legacy-heuristic topology requires reconciliation.
     {
         use sensei_services::tps::site_manifest;
+        use sensei_services::tps::work_center_repository;
         let wc = uuid::Uuid::new_v4();
         sqlx::query(
             "INSERT INTO work_centers (id, tenant_id, work_center_number, name, site_id, \
@@ -12439,15 +12598,21 @@ async fn nineteenth_audit_adversarial_gate() {
                 .any(|(n, ok, _)| n == "topology_reconciled" && *ok),
             "legacy_heuristic lineage (even with a site_id) must fail topology reconciliation"
         );
-        site_manifest::reconcile_work_center_topology(
+        // verify_topology is the ONLY certifier (twenty-sixth audit P1 —
+        // the site_manifest reconcile duplicate is gone); it stamps the
+        // source and resolves the row in the SAME update whose WHERE
+        // requires the current site to be among the caller's sites.
+        let verified = work_center_repository::verify_topology(
             &pool,
             tenant_id,
             wc,
             user,
             "manual_reconciliation",
+            &[site_id],
         )
         .await
-        .expect("reconcile");
+        .expect("verify topology");
+        assert_eq!(verified.topology_state, "resolved");
         let after = site_manifest::validate_site(&pool, tenant_id, site_id)
             .await
             .expect("validate after");
@@ -13963,7 +14128,7 @@ async fn integration_readiness_is_per_site_instance() {
     // ONLY site A's SAP instance has run — through the BRIDGE (twenty-
     // third audit P1: only write_checkpoint stamps last_verified_revision,
     // so readiness can never be certified by a raw checkpoint row).
-    let _run_a = sensei_services::tps::integration::start_run(
+    let run_a = sensei_services::tps::integration::start_run(
         &pool,
         tenant_id,
         site_sap_instance(&pool, tenant_id, site_a).await,
@@ -13980,7 +14145,7 @@ async fn integration_readiness_is_per_site_instance() {
         chrono::Utc::now(),
         None,
         "run-a".to_string(),
-        1,
+        run_a,
     )
     .await
     .expect("site A's own checkpoint write must succeed");
@@ -14057,7 +14222,7 @@ async fn integration_readiness_is_per_site_instance() {
 
     // Give B's OWN instance a checkpoint THROUGH THE BRIDGE → B validates
     // healthy (ready).
-    let _run_b = sensei_services::tps::integration::start_run(
+    let run_b = sensei_services::tps::integration::start_run(
         &pool,
         tenant_id,
         site_sap_instance(&pool, tenant_id, site_b).await,
@@ -14074,7 +14239,7 @@ async fn integration_readiness_is_per_site_instance() {
         chrono::Utc::now(),
         None,
         "run-b".to_string(),
-        1,
+        run_b,
     )
     .await
     .expect("site B's own checkpoint write must succeed");
@@ -14815,6 +14980,9 @@ async fn integration_producer_reconcile_and_epistemics() {
             "a decommissioned instance is disabled AND non-required"
         );
     }
+    // The decommissioned-instance gate fires BEFORE the run consume, so
+    // no run token needs to exist — a fresh uuid only stands in for the
+    // credential this write would have needed to reach attestation.
     let decommissioned_err = write_checkpoint(
         &pool,
         tenant_id,
@@ -14824,7 +14992,7 @@ async fn integration_producer_reconcile_and_epistemics() {
         chrono::Utc::now(),
         None,
         "run-legacy".to_string(),
-        1,
+        uuid::Uuid::new_v4(),
     )
     .await
     .expect_err("a decommissioned instance must refuse advancement");
@@ -14892,6 +15060,8 @@ async fn integration_producer_reconcile_and_epistemics() {
     // ── Route-level semantics at service level: an UNKNOWN instance is
     // NotFound (404) — the caller cannot advance an instance that is not
     // theirs.
+    // An instance invisible under the tenant is refused BEFORE the run
+    // consume — the placeholder token below never reaches attestation.
     let ghost_instance = uuid::Uuid::new_v4();
     let ghost_err = write_checkpoint(
         &pool,
@@ -14902,7 +15072,7 @@ async fn integration_producer_reconcile_and_epistemics() {
         chrono::Utc::now(),
         None,
         "run-ghost".to_string(),
-        1,
+        uuid::Uuid::new_v4(),
     )
     .await
     .expect_err("an unknown instance must be refused");
@@ -14915,7 +15085,7 @@ async fn integration_producer_reconcile_and_epistemics() {
     // verification (audit item 3): last_verified_revision =
     // configuration_revision, in the same transaction.
     let watermark = chrono::Utc::now();
-    let _run_token = sensei_services::tps::integration::start_run(
+    let run_token = sensei_services::tps::integration::start_run(
         &pool,
         tenant_id,
         instance_id,
@@ -14932,7 +15102,7 @@ async fn integration_producer_reconcile_and_epistemics() {
         watermark,
         None,
         "run-1".to_string(),
-        1,
+        run_token,
     )
     .await
     .expect("the instance's own checkpoint write must succeed");
@@ -14967,6 +15137,55 @@ async fn integration_producer_reconcile_and_epistemics() {
         stamped,
         Some(1),
         "write_checkpoint must stamp last_verified_revision = configuration_revision"
+    );
+
+    // ── Twenty-sixth audit P0.2 (one-shot consume): the completed run is
+    // CONSUMED — replaying the same (run_id, run_token) completion can
+    // NEVER succeed again, so an old run can never refresh the cursor or
+    // the verification stamp into manufactured fresh readiness. A wrong
+    // token on the consumed run is refused the same way.
+    let replay_err = write_checkpoint(
+        &pool,
+        tenant_id,
+        instance_id,
+        Some("sap".to_string()),
+        Some("material_master".to_string()),
+        chrono::Utc::now(),
+        None,
+        "run-1".to_string(),
+        run_token,
+    )
+    .await
+    .expect_err("a consumed run must refuse a second completion");
+    assert!(
+        matches!(replay_err, SenseiError::Conflict(_)),
+        "replaying a completed run must be Conflict (route 409), got: {replay_err}"
+    );
+    let wrong_token_err = write_checkpoint(
+        &pool,
+        tenant_id,
+        instance_id,
+        Some("sap".to_string()),
+        Some("material_master".to_string()),
+        chrono::Utc::now(),
+        None,
+        "run-1".to_string(),
+        uuid::Uuid::new_v4(),
+    )
+    .await
+    .expect_err("a completed run must refuse a mismatched token");
+    assert!(
+        matches!(wrong_token_err, SenseiError::Conflict(_)),
+        "a mismatched token on a consumed run must be Conflict (route 409), got: {wrong_token_err}"
+    );
+    let still_first = get_checkpoint(&pool, tenant_id, instance_id)
+        .await
+        .expect("checkpoint read must succeed")
+        .expect("the checkpoint written above must be readable");
+    assert_eq!(
+        still_first.last_run_id.as_deref(),
+        Some("run-1"),
+        "the refused replay must not have refreshed the checkpoint cursor"
     );
 
     // The full readiness ladder: the ENABLED + REQUIRED instance of this
@@ -15055,9 +15274,10 @@ async fn integration_producer_reconcile_and_epistemics() {
         stale_healthy.2
     );
     // A fresh bridge run stamps revision 2 → the instance is proven
-    // again. (Twenty-fourth audit P1: the run SENDS the revision it
-    // tested — revision 2 — so the guarded stamp succeeds.)
-    let _run_token = sensei_services::tps::integration::start_run(
+    // again. (Twenty-sixth audit P0.2: the completion presents the token
+    // start_run issued — the server consumes it one-shot and stamps the
+    // attested revision 2.)
+    let run_token = sensei_services::tps::integration::start_run(
         &pool,
         tenant_id,
         instance_id,
@@ -15074,7 +15294,7 @@ async fn integration_producer_reconcile_and_epistemics() {
         chrono::Utc::now(),
         None,
         "run-2".to_string(),
-        2,
+        run_token,
     )
     .await
     .expect("the fresh run must succeed");
@@ -15136,7 +15356,9 @@ async fn integration_producer_reconcile_and_epistemics() {
         counts_empty.disabled, 0,
         "the manifest update's hook already decommissioned the instance"
     );
-    // ... it can never be advanced again (Conflict = 409) ...
+    // ... it can never be advanced again (Conflict = 409) — the
+    // decommissioned-instance gate fires BEFORE the run consume, so no
+    // token exists to present ...
     let decommissioned_again = write_checkpoint(
         &pool,
         tenant_id,
@@ -15146,7 +15368,7 @@ async fn integration_producer_reconcile_and_epistemics() {
         chrono::Utc::now(),
         None,
         "run-3".to_string(),
-        2,
+        uuid::Uuid::new_v4(),
     )
     .await
     .expect_err("a decommissioned instance must refuse advancement");

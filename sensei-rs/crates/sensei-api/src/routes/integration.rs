@@ -203,6 +203,12 @@ pub async fn import_record(
 /// INSTANCE (instance_id) — the readiness proof is instance_id, never the
 /// legacy tenant-global (source_system, source_table) cursor. The legacy
 /// fields are optional metadata only.
+/// Twenty-sixth audit P0.2 (one-shot, token-authenticated completion):
+/// the request carries the run_token that `start_run` returned — NO
+/// client-claimed revision exists anymore. The service consumes the open
+/// run ATOMICALLY (token-bound, `completed_at IS NULL`) and records the
+/// server-attested configuration revision returned by that consume; a
+/// second completion of the same run is refused (Conflict = 409).
 #[derive(Debug, serde::Deserialize)]
 pub struct CheckpointRequest {
     /// The integration instance this run advances (resolved against the
@@ -219,13 +225,11 @@ pub struct CheckpointRequest {
     #[serde(default)]
     pub watermark_id: Option<String>,
     pub run_id: String,
-    /// The configuration revision this run ACTUALLY tested
-    /// (twenty-fourth audit P1): the completion write only stamps
-    /// `last_verified_revision` while the instance is STILL at this
-    /// revision — a bridge run started at revision 1 that completes
-    /// after the manifest moved the instance to revision 2 is refused
-    /// (Conflict = 409) instead of stamping a revision it never tested.
-    pub verified_configuration_revision: i64,
+    /// The server-issued credential from `POST /runs/start`: completing a
+    /// run REQUIRES the exact token the server bound to the instance's
+    /// configuration at start — a completion without it (or a replay of
+    /// an already-consumed run) is refused (Conflict = 409).
+    pub run_token: Uuid,
 }
 
 #[derive(Debug, serde::Serialize)]
@@ -269,7 +273,10 @@ pub async fn save_checkpoint(
     State(state): State<AppState>,
     Json(req): Json<CheckpointRequest>,
 ) -> Result<Json<CheckpointResponse>> {
-    user.require_permission("integration:status:read")?;
+    // Completion is a BRIDGE WRITE — the same gate as run start
+    // (integration:bridge:write): only the non-human integration bridge
+    // may advance a run's checkpoint.
+    user.require_permission("integration:bridge:write")?;
     // The bridge principal only — the same non-human rule as imports.
     if user.roles.len() != 1 || user.roles[0] != "integration_bridge" {
         return Err(SenseiError::Forbidden(
@@ -288,15 +295,13 @@ pub async fn save_checkpoint(
     // service: an instance invisible under the caller's tenant is
     // NotFound (404); a DISABLED instance refuses advancement with
     // Conflict (409) — a decommissioned instance can never be advanced.
-    // Twenty-fourth audit P1: the run sends the configuration revision
-    // it ACTUALLY tested; the service refuses (Conflict = 409) a
-    // completion write whose tested revision no longer matches the
-    // instance's current configuration_revision — a run started at an
-    // old revision can never stamp the untested new one.
-    // Twenty-fifth audit P1: server-attested runs — the instance must
-    // have an OPEN run (issued by start_run) whose attested revision is
-    // what this completion claims; write_checkpoint validates the
-    // attestation inside its transaction.
+    // Twenty-sixth audit P0.2 (one-shot, token-authenticated
+    // completion): the run_token from `POST /runs/start` is the ONLY
+    // credential that completes the run — the service consumes the open
+    // run ATOMICALLY (run_id + run_token + `completed_at IS NULL`) and
+    // uses the configuration state RETURNED by that consume, so the
+    // client never claims a revision and an already-completed run can
+    // never be replayed into fresh readiness.
     sensei_services::tps::integration::write_checkpoint(
         pool,
         user.tenant_id,
@@ -306,7 +311,7 @@ pub async fn save_checkpoint(
         watermark,
         req.watermark_id,
         req.run_id,
-        req.verified_configuration_revision,
+        req.run_token,
     )
     .await?;
     Ok(Json(CheckpointResponse { ok: true }))

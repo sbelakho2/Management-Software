@@ -740,9 +740,9 @@ pub async fn skill_coverage(pool: &sqlx::PgPool, tenant_id: Uuid) -> Result<Vec<
         Box::pin(async move {
             let rows: Vec<(String, String, bool, i64, i64)> = sqlx::query_as(
                 r#"SELECT s.skill_id, s.name, s.critical,
-                          COUNT(*) FILTER (WHERE q.level IN ('independent','trainer')
+                          COUNT(DISTINCT q.principal_id) FILTER (WHERE q.level IN ('independent','trainer')
                                            AND (q.expires_at IS NULL OR q.expires_at > NOW())),
-                          COUNT(*) FILTER (WHERE q.level = 'trainer'
+                          COUNT(DISTINCT q.principal_id) FILTER (WHERE q.level = 'trainer'
                                            AND (q.expires_at IS NULL OR q.expires_at > NOW()))
                    FROM skills s
                    LEFT JOIN skill_qualifications q ON q.skill_id = s.id AND q.tenant_id = s.tenant_id
@@ -792,10 +792,10 @@ pub async fn skill_coverage_at(
         Box::pin(async move {
             let rows: Vec<(String, String, bool, i64, i64)> = sqlx::query_as(
                 r#"SELECT s.skill_id, s.name, s.critical,
-                          COUNT(*) FILTER (WHERE cp.level IN ('independent','trainer')
+                          COUNT(DISTINCT cp.principal_id) FILTER (WHERE cp.level IN ('independent','trainer')
                                            AND cp.valid_until > NOW()
                                            AND cp.revoked_at IS NULL),
-                          COUNT(*) FILTER (WHERE cp.level = 'trainer'
+                          COUNT(DISTINCT cp.principal_id) FILTER (WHERE cp.level = 'trainer'
                                            AND cp.valid_until > NOW()
                                            AND cp.revoked_at IS NULL)
                    FROM skills s

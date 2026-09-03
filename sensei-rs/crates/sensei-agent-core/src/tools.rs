@@ -513,8 +513,14 @@ impl ToolExecutor {
                 // already have taken effect — record 'unknown_outcome'
                 // (a reconciliation state). Item 8: a later retry NEVER
                 // auto-redispatches this row — it Conflicts until a
-                // human reconciles the outcome.
-                let _ = journal
+                // human reconciles the outcome. Twenty-sixth audit P0.3:
+                // a journal that cannot record that reconciliation state
+                // must NOT be swallowed — the execution then fails with an
+                // explicit ambiguous/conflict error (never a retryable
+                // Timeout that could look like a clean pre-execution
+                // crash once the lease expires) instead of leaving the
+                // row reclaimable-looking.
+                journal
                     .complete(
                         ctx.tenant_id,
                         key,
@@ -527,7 +533,15 @@ impl ToolExecutor {
                             )
                         }),
                     )
-                    .await;
+                    .await
+                    .map_err(|message| ToolError::Conflict {
+                        tool: tool.name.clone(),
+                        message: format!(
+                            "ambiguous outcome — the command journal failed to record \
+                             'unknown_outcome' after a timeout: {message}; automatic \
+                             re-dispatch is blocked, reconcile the row before retrying"
+                        ),
+                    })?;
                 return Err(ToolError::Timeout {
                     tool: tool.name.clone(),
                     timeout_ms: tool.timeout_ms,
@@ -547,7 +561,14 @@ impl ToolExecutor {
                 } else {
                     "failed"
                 };
-                let _ = journal
+                // Twenty-sixth audit P0.3: the terminal write is part of
+                // correctness — when the journal cannot record the
+                // dispatch outcome, the execution fails with an explicit
+                // ambiguous/conflict error (the mutation's fate is unknown
+                // without the row) instead of silently returning the
+                // dispatch error and leaving the claim reclaimable-looking
+                // after its lease expires.
+                journal
                     .complete(
                         ctx.tenant_id,
                         key,
@@ -555,7 +576,15 @@ impl ToolExecutor {
                         status,
                         &serde_json::json!({ "error": dispatch_err.to_string() }),
                     )
-                    .await;
+                    .await
+                    .map_err(|message| ToolError::Conflict {
+                        tool: tool.name.clone(),
+                        message: format!(
+                            "ambiguous outcome — the command journal failed to record \
+                             '{status}' after a dispatch error ({dispatch_err}): {message}; \
+                             automatic re-dispatch is blocked, reconcile the row before retrying"
+                        ),
+                    })?;
                 return Err(dispatch_err);
             }
         };
@@ -564,7 +593,14 @@ impl ToolExecutor {
         // means the mutation already took effect: record the row as
         // 'failed' so a retry replays it and NEVER re-executes.
         if let Err(message) = validate_output(&output, &tool.output_schema) {
-            let _ = journal
+            // Twenty-sixth audit P0.3: the 'failed' write is part of
+            // correctness — when the journal cannot record it, the
+            // execution fails with an explicit ambiguous/conflict error
+            // (the mutation already took effect but the row cannot prove
+            // so) instead of silently returning the validation error and
+            // leaving the claim reclaimable-looking after its lease
+            // expires.
+            journal
                 .complete(
                     ctx.tenant_id,
                     key,
@@ -577,7 +613,15 @@ impl ToolExecutor {
                         )
                     }),
                 )
-                .await;
+                .await
+                .map_err(|complete_err| ToolError::Conflict {
+                    tool: tool.name.clone(),
+                    message: format!(
+                        "ambiguous outcome — the command journal failed to record 'failed' \
+                         after an output-validation failure ({message}): {complete_err}; \
+                         automatic re-dispatch is blocked, reconcile the row before retrying"
+                    ),
+                })?;
             return Err(ToolError::OutputValidation {
                 tool: tool.name.clone(),
                 message,
@@ -1490,6 +1534,57 @@ mod tests {
             result["error"].as_str(),
             Some("Tool 'post_journal_entry' dispatch failed: GL posting lock")
         );
+    }
+
+    #[tokio::test]
+    async fn journal_failure_during_unknown_outcome_write_fails_execution() {
+        // Twenty-sixth audit P0.3: when the journal store fails during
+        // the 'unknown_outcome' write (here: the dispatch reports a
+        // retryable timeout), execute() must return Err — never a silent
+        // Ok — with the explicit ambiguous/conflict error, NOT the raw
+        // (retryable-looking) timeout, so no caller can mistake the
+        // un-recorded row for a clean pre-execution crash.
+        let tool = mutating_tool();
+        let journal = std::sync::Arc::new(MemoryJournal::default());
+        let mut executor = ToolExecutor::with_journal(
+            PolicyEngine::new(vec![tool.clone()], ToolRisk::HighRisk),
+            journal.clone(),
+        );
+        let caller = ctx(&["finance:journal:post"]);
+        let execution = ToolExecutionContext {
+            key: ToolExecutionId {
+                request_id: Uuid::new_v4(),
+                program_execution_id: Uuid::new_v4(),
+                tool_call_index: 9,
+            },
+        };
+        // The journal store is DOWN for terminal writes.
+        *journal.fail_complete.lock().unwrap() = true;
+        let err = executor
+            .execute(
+                &caller,
+                &tool,
+                serde_json::json!({}),
+                Some(approval()),
+                execution.clone(),
+                |_| async move {
+                    Err(ToolError::Timeout {
+                        tool: "post_journal_entry".to_string(),
+                        timeout_ms: 10_000,
+                    })
+                },
+            )
+            .await
+            .unwrap_err();
+        assert!(matches!(err, ToolError::Conflict { .. }), "{err:?}");
+        assert!(err.to_string().contains("ambiguous outcome"), "{err}");
+        assert!(err.to_string().contains("unknown_outcome"), "{err}");
+        assert!(err.to_string().contains("complete failed"), "{err}");
+        // The row never reached a terminal state and the claim was never
+        // released: it must NOT look 'failed'/'succeeded' to a replay.
+        let row = journal.row(caller.tenant_id, &execution.key.key());
+        assert_eq!(row.status, "reserved");
+        assert!(row.claim_token.is_some());
     }
 
     #[tokio::test]

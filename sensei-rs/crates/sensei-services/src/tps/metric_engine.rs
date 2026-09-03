@@ -14,7 +14,8 @@
 //! - `otd` — ON-TIME DELIVERY: deliveries at or before the immutable
 //!   committed_date / all orders with a commitment. NOT a completion
 //!   ratio — a late delivery never counts as on time. sales_orders carry
-//!   NO site scope in this schema, so OTD is tenant-level.
+//!   a site scope (`fulfilling_site_id`, migration 139), honored by the
+//!   metric when a site_id is bound.
 //! - `lead_time` — MANUFACTURING LEAD TIME PROXY: delivered_at
 //!   (updated_at) − created_at, in days — no shipped_at column exists.
 
@@ -284,10 +285,11 @@ impl MetricComputer for ScrapRateV1 {
 /// is written ONCE at first confirmation by the executable
 /// status-transition path (COALESCE in update_sales_order_status) and
 /// never updated by later edits. The metric therefore cannot be improved
-/// by editing dates: a late order stays late. sales_orders carry NO site
-/// scope, so the honest value is tenant-level (the `site_id` parameter is
-/// accepted for API symmetry and documented as having no effect on this
-/// metric).
+/// by editing dates: a late order stays late. sales_orders carry a site
+/// scope (`fulfilling_site_id`, migration 139): when `site_id` is bound,
+/// only orders that site fulfills count in BOTH the numerator
+/// (delivered_on_time) and the denominator (eligible); `site_id = None`
+/// keeps the tenant-level value.
 pub struct OtdV1;
 
 #[async_trait]
@@ -366,8 +368,12 @@ impl MetricComputer for OtdV1 {
 /// MANUFACTURING LEAD TIME PROXY (audit item 27): `delivered_at −
 /// created_at` in days — the schema has no `shipped_at` column, so the
 /// best available is `updated_at − created_at` of delivered orders
-/// (status in ('shipped','delivered')). sales_orders carry NO site
-/// scope, so the honest value is tenant-level.
+/// (status in ('shipped','delivered')). sales_orders DO carry a site
+/// scope (`fulfilling_site_id`, migration 139), so the metric honors the
+/// `site_id` parameter on BOTH the numerator (delivered orders driving
+/// the average) and the denominator (non-cancelled orders driving the
+/// coverage): `site_id = None` keeps the tenant-level value, `site_id =
+/// Some(site)` restricts both to orders that site fulfills.
 pub struct LeadTimeV1;
 
 #[async_trait]
@@ -384,7 +390,7 @@ impl MetricComputer for LeadTimeV1 {
         &self,
         pool: &PgPool,
         tenant_id: Uuid,
-        _site_id: Option<Uuid>,
+        site_id: Option<Uuid>,
     ) -> Result<MetricResult> {
         let metric_id = self.id().to_string();
         let computed_at = Utc::now();
@@ -402,13 +408,16 @@ impl MetricComputer for LeadTimeV1 {
                                                 - so.created_at)) / 86400.0), 0)::numeric, \
                             COUNT(*)::bigint, \
                             (SELECT COUNT(*) FROM sales_orders so2 \
-                             WHERE so2.tenant_id = $1 AND so2.status <> 'cancelled')::bigint, \
+                             WHERE so2.tenant_id = $1 AND so2.status <> 'cancelled' \
+                               AND ($2::uuid IS NULL OR so2.fulfilling_site_id = $2))::bigint, \
                             MIN(so.created_at), \
                             MAX(so.updated_at) \
                      FROM sales_orders so \
-                     WHERE so.tenant_id = $1 AND so.status IN ('shipped','delivered')",
+                     WHERE so.tenant_id = $1 AND so.status IN ('shipped','delivered') \
+                       AND ($2::uuid IS NULL OR so.fulfilling_site_id = $2)",
                 )
                 .bind(tenant_id)
+                .bind(site_id)
                 .fetch_one(&mut **tx)
                 .await
                 .map_err(|e| SenseiError::Database(format!("metric engine: lead time: {e}")))?;
