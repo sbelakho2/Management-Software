@@ -343,7 +343,7 @@ pub(crate) async fn caller_sites(user: &AuthenticatedUser, state: &AppState) -> 
         String::new(),
     )
     .await?;
-    Ok(rc.authorized_sites().to_vec())
+    Ok(rc.authorized_sites())
 }
 
 pub async fn acknowledge_andon(
@@ -557,7 +557,7 @@ pub async fn list_events(
             String::new(),
         )
         .await
-        .map(|rc| rc.authorized_sites().to_vec())
+        .map(|rc| rc.authorized_sites())
         .unwrap_or_default()
     } else {
         Vec::new()

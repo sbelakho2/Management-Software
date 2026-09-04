@@ -102,6 +102,13 @@ pub async fn auth_layer(State(state): State<AppState>, mut req: Request, next: N
 
     // Inject JwtService into extensions so the downstream middleware can find it.
     req.extensions_mut().insert((*state.jwt_service).clone());
+    // Inject the database pool (when present) so the downstream middleware
+    // can reload LIVE user state (roles + effective permissions) per
+    // authenticated request instead of trusting token roles
+    // (twenty-ninth audit Wave A). Absent in in-memory/dev mode: the
+    // downstream middleware then falls back to the token identity.
+    req.extensions_mut()
+        .insert::<Option<std::sync::Arc<sqlx::PgPool>>>(state.db_pool.clone());
 
     match auth_middleware(req, next).await {
         Ok(response) => response,

@@ -75,7 +75,23 @@ pub async fn export_entity(
     Path(entity_type): Path<String>,
     Query(params): Query<ExportParams>,
 ) -> Result<Response> {
-    user.require_permission("system:audit:read")?;
+    // Per-entity domain authorization (Wave B): exporting an entity
+    // requires the READ permission of its OWNING domain — never the
+    // blanket system:audit:read. Unknown entity types are rejected here
+    // (deny by default) before any dispatch.
+    let required = match entity_type.as_str() {
+        "ncr" => "quality:ncr:read",
+        "capa" => "quality:capa:read",
+        "audit" => "quality:audit:read",
+        "inspection" => "quality:inspection:read",
+        "work-order" => "production:work-order:read",
+        other => {
+            return Err(SenseiError::NotFound(format!(
+            "Unknown entity type: '{other}'. Supported: ncr, capa, audit, work-order, inspection"
+        )))
+        }
+    };
+    user.require_permission(required)?;
     // Validate format
     let format = params.format.to_lowercase();
     if !matches!(format.as_str(), "pdf" | "csv" | "xlsx") {

@@ -175,6 +175,9 @@ mod tests {
             tenant_id,
             roles: vec!["admin".to_string(), "platform_admin".to_string()],
             sid: None,
+            // Empty request-local permission set: the legacy RBAC registry
+            // backs require_permission in direct-construction tests.
+            permissions: std::collections::HashSet::new(),
         }
     }
 

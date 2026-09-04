@@ -68,23 +68,51 @@ pub trait UsersService: Send + Sync {
         user: User,
     ) -> Result<User>;
 
-    /// Update a user's profile fields. `caller_tenant_id` is enforced in
-    /// the repository: a tenant admin can only ever touch users of their
-    /// own tenant, even if a handler forgets to check.
-    async fn update_user(
+    /// Update a user's PROFILE fields only — `name` and `email` (both are
+    /// assigned; pass the current value to leave a field unchanged).
+    /// `caller_tenant_id` is enforced in the repository: a tenant admin
+    /// can only ever touch users of their own tenant, even if a handler
+    /// forgets to check.
+    ///
+    /// Deliberately NOT an authorization-capable mutation
+    /// (twenty-ninth audit Wave A): roles, `is_active`,
+    /// `credential_version` and `password_hash` are never assigned here —
+    /// those live exclusively behind
+    /// [`Self::update_user_roles`]/[`Self::deactivate_user`]/
+    /// [`Self::activate_user`]/[`Self::change_password`].
+    async fn update_profile(
         &self,
         caller_tenant_id: EntityId,
         id: EntityId,
-        user: User,
+        name: String,
+        email: String,
     ) -> Result<User>;
 
-    /// Deactivate a user (soft delete). Tenant-scoped (see [`Self::update_user`]).
+    /// Change a user's password: stores the NEW hash and bumps the
+    /// credential version in ONE operation (tenant-scoped). The ONLY
+    /// credential mutation — a generic user update can never rewrite
+    /// `password_hash` or `credential_version`.
+    async fn change_password(
+        &self,
+        caller_tenant_id: EntityId,
+        id: EntityId,
+        new_password_hash: String,
+    ) -> Result<User>;
+
+    /// Deactivate a user (soft delete). Tenant-scoped (see [`Self::update_profile`]).
+    /// Bumps the tenant's principal authorization revision atomically
+    /// (DB impl): a deactivated user's authorization caches die with the
+    /// deactivation.
     async fn deactivate_user(&self, caller_tenant_id: EntityId, id: EntityId) -> Result<User>;
 
-    /// Reactivate a user. Tenant-scoped (see [`Self::update_user`]).
+    /// Reactivate a user. Tenant-scoped (see [`Self::update_profile`]).
+    /// Bumps the tenant's principal authorization revision atomically
+    /// (DB impl).
     async fn activate_user(&self, caller_tenant_id: EntityId, id: EntityId) -> Result<User>;
 
-    /// Update a user's roles. Tenant-scoped (see [`Self::update_user`]).
+    /// Update a user's roles. Tenant-scoped (see [`Self::update_profile`]).
+    /// Bumps the tenant's principal authorization revision atomically
+    /// (DB impl): a role change is LIVE for the very next request.
     async fn update_user_roles(
         &self,
         caller_tenant_id: EntityId,
@@ -306,11 +334,12 @@ impl UsersService for InMemoryUsersService {
         Ok(PaginatedResponse::new(items, page, per_page))
     }
 
-    async fn update_user(
+    async fn update_profile(
         &self,
         caller_tenant_id: EntityId,
         id: EntityId,
-        updated: User,
+        name: String,
+        email: String,
     ) -> Result<User> {
         let mut users = self.users.write().await;
         match users.get(&id) {
@@ -330,22 +359,18 @@ impl UsersService for InMemoryUsersService {
         // immutable scan does not overlap the `get_mut` borrow.
         if users
             .values()
-            .any(|u| u.id != id && u.email.eq_ignore_ascii_case(&updated.email))
+            .any(|u| u.id != id && u.email.eq_ignore_ascii_case(&email))
         {
             return Err(SenseiError::AlreadyExists(format!(
-                "User with email '{}' already exists",
-                updated.email
+                "User with email '{email}' already exists"
             )));
         }
 
         let updated_user = {
             let user = users.get_mut(&id).expect("user presence checked above");
-            let email_changed = !user.email.eq_ignore_ascii_case(&updated.email);
-            user.name = updated.name;
-            user.email = updated.email;
-            user.password_hash = updated.password_hash;
-            user.credential_version = updated.credential_version;
-            user.is_active = updated.is_active;
+            let email_changed = !user.email.eq_ignore_ascii_case(&email);
+            user.name = name;
+            user.email = email;
             user.updated_at = now();
             (user.clone(), email_changed)
         };
@@ -355,6 +380,34 @@ impl UsersService for InMemoryUsersService {
             self.verified_emails.write().await.remove(&id);
         }
         Ok(updated_user.0)
+    }
+
+    async fn change_password(
+        &self,
+        caller_tenant_id: EntityId,
+        id: EntityId,
+        new_password_hash: String,
+    ) -> Result<User> {
+        let mut users = self.users.write().await;
+        let user = match users.get(&id) {
+            None => {
+                return Err(SenseiError::NotFound(format!(
+                    "User with id '{id}' not found"
+                )));
+            }
+            Some(existing) if existing.tenant_id != caller_tenant_id => {
+                return Err(SenseiError::NotFound(format!(
+                    "User with id '{id}' not found"
+                )));
+            }
+            Some(_) => users.get_mut(&id).expect("presence checked above"),
+        };
+        user.password_hash = new_password_hash;
+        // Every outstanding refresh token/session must die with the old
+        // password.
+        user.credential_version = user.credential_version.saturating_add(1);
+        user.updated_at = now();
+        Ok(user.clone())
     }
 
     async fn deactivate_user(&self, caller_tenant_id: EntityId, id: EntityId) -> Result<User> {
@@ -485,14 +538,18 @@ mod tests {
     async fn rename_email_keeps_find_by_email_working() {
         let svc = InMemoryUsersService::new();
         let created = svc.create_user(user("old@example.com")).await.unwrap();
-        let mut renamed = created.clone();
-        renamed.email = "new@example.com".to_string();
 
         let updated = svc
-            .update_user(created.tenant_id, created.id, renamed)
+            .update_profile(
+                created.tenant_id,
+                created.id,
+                "New Name".to_string(),
+                "new@example.com".to_string(),
+            )
             .await
             .unwrap();
         assert_eq!(updated.email, "new@example.com");
+        assert_eq!(updated.name, "New Name");
 
         assert!(svc.find_by_email("old@example.com").await.is_err());
         let found = svc.find_by_email("new@example.com").await.unwrap();
@@ -500,6 +557,42 @@ mod tests {
         assert_eq!(
             svc.find_by_id(created.id).await.unwrap().email,
             "new@example.com"
+        );
+    }
+
+    #[tokio::test]
+    async fn update_profile_never_touches_authorization_state() {
+        let svc = InMemoryUsersService::new();
+        let created = svc.create_user(user("profile@example.com")).await.unwrap();
+        let updated = svc
+            .update_profile(
+                created.tenant_id,
+                created.id,
+                "Profile Only".to_string(),
+                "profile@example.com".to_string(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(updated.roles, created.roles);
+        assert_eq!(updated.is_active, created.is_active);
+        assert_eq!(updated.credential_version, created.credential_version);
+        assert_eq!(updated.password_hash, created.password_hash);
+        assert_eq!(updated.name, "Profile Only");
+    }
+
+    #[tokio::test]
+    async fn change_password_bumps_credential_version() {
+        let svc = InMemoryUsersService::new();
+        let created = svc.create_user(user("pw@example.com")).await.unwrap();
+        let updated = svc
+            .change_password(created.tenant_id, created.id, "new-hash".to_string())
+            .await
+            .unwrap();
+        assert_eq!(updated.password_hash, "new-hash");
+        assert_eq!(
+            updated.credential_version,
+            created.credential_version + 1,
+            "a password change bumps the credential version"
         );
     }
 

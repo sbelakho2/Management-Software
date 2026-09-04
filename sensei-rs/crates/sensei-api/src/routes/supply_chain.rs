@@ -200,7 +200,7 @@ async fn caller_scope(
 /// ACTIVE site is used.
 /// The caller's entitlement site set — None scope (in-memory/dev mode)
 /// means the caller is not site-bound (permissive dev behavior).
-fn entitlement_of(scope: &Option<RequestContext>) -> Option<&[Uuid]> {
+fn entitlement_of(scope: &Option<RequestContext>) -> Option<Vec<Uuid>> {
     scope.as_ref().map(|rc| rc.authorized_sites())
 }
 
@@ -212,14 +212,14 @@ fn resolve_site(
         return Ok(requested_site_id);
     };
     if let Some(site) = requested_site_id {
-        if !rc.entitlement_sites.contains(&site) {
+        if !rc.scope.allows_site(site) {
             return Err(SenseiError::Forbidden(format!(
                 "site {site} is not among the caller's entitlement sites"
             )));
         }
         Ok(Some(site))
     } else {
-        Ok(rc.active_site)
+        Ok(rc.focus.site)
     }
 }
 
@@ -458,7 +458,7 @@ pub async fn list_sales_orders(
             .supply_chain_service
             .list_sales_orders_scoped(
                 tenant_id,
-                entitlement_of(&scope).unwrap_or(&[]),
+                entitlement_of(&scope).as_deref().unwrap_or(&[]),
                 params.status.as_deref(),
                 params.page,
                 params.per_page,
@@ -528,7 +528,11 @@ pub async fn get_sales_order(
     } else {
         state
             .supply_chain_service
-            .get_sales_order_scoped(tenant_id, entitlement_of(&scope).unwrap_or(&[]), id)
+            .get_sales_order_scoped(
+                tenant_id,
+                entitlement_of(&scope).as_deref().unwrap_or(&[]),
+                id,
+            )
             .await?
     };
     Ok(Json(order))
@@ -553,7 +557,8 @@ pub async fn update_sales_order_status(
     // predicate itself is site-scoped — a foreign order is
     // indistinguishable from a nonexistent one.
     let scope = caller_scope(&user, &state).await?;
-    let sites = entitlement_of(&scope).unwrap_or(&[]);
+    let sites = entitlement_of(&scope).unwrap_or_default();
+    let sites = sites.as_slice();
     if req.status == "confirmed" {
         let site_id = resolve_site(&scope, req.requested_site_id)?;
         if let Some(site_id) = site_id {
@@ -589,7 +594,7 @@ pub async fn list_purchase_orders(
             .supply_chain_service
             .list_purchase_orders_scoped(
                 tenant_id,
-                entitlement_of(&scope).unwrap_or(&[]),
+                entitlement_of(&scope).as_deref().unwrap_or(&[]),
                 params.status.as_deref(),
                 params.page,
                 params.per_page,
@@ -658,7 +663,11 @@ pub async fn get_purchase_order(
     } else {
         state
             .supply_chain_service
-            .get_purchase_order_scoped(tenant_id, entitlement_of(&scope).unwrap_or(&[]), id)
+            .get_purchase_order_scoped(
+                tenant_id,
+                entitlement_of(&scope).as_deref().unwrap_or(&[]),
+                id,
+            )
             .await?
     };
     Ok(Json(order))
@@ -678,7 +687,8 @@ pub async fn receive_po_line(
     // entitlement; a PO whose receiving site is outside that scope is
     // indistinguishable from a nonexistent PO.
     let scope = caller_scope(&user, &state).await?;
-    let sites = entitlement_of(&scope).unwrap_or(&[]);
+    let sites = entitlement_of(&scope).unwrap_or_default();
+    let sites = sites.as_slice();
     let order = state
         .supply_chain_service
         .receive_po_line(
@@ -717,7 +727,7 @@ pub async fn list_inventory(
             .supply_chain_service
             .list_inventory_scoped(
                 tenant_id,
-                entitlement_of(&scope).unwrap_or(&[]),
+                entitlement_of(&scope).as_deref().unwrap_or(&[]),
                 params.location.as_deref(),
                 params.page,
                 params.per_page,
@@ -747,7 +757,11 @@ pub async fn get_inventory(
     } else {
         state
             .supply_chain_service
-            .get_inventory_scoped(tenant_id, entitlement_of(&scope).unwrap_or(&[]), product_id)
+            .get_inventory_scoped(
+                tenant_id,
+                entitlement_of(&scope).as_deref().unwrap_or(&[]),
+                product_id,
+            )
             .await?
     };
     Ok(Json(items))
@@ -786,7 +800,7 @@ pub async fn adjust_inventory(
             .supply_chain_service
             .adjust_inventory_scoped(
                 tenant_id,
-                entitlement_of(&scope).unwrap_or(&[]),
+                entitlement_of(&scope).as_deref().unwrap_or(&[]),
                 req.product_id,
                 &req.location,
                 req.quantity_change,
@@ -826,7 +840,11 @@ pub async fn create_stock_move(
     } else {
         state
             .supply_chain_service
-            .create_stock_move_scoped(tenant_id, entitlement_of(&scope).unwrap_or(&[]), req)
+            .create_stock_move_scoped(
+                tenant_id,
+                entitlement_of(&scope).as_deref().unwrap_or(&[]),
+                req,
+            )
             .await?
     };
     Ok(Json(stock_move))
@@ -854,7 +872,7 @@ pub async fn list_stock_moves(
             .supply_chain_service
             .list_stock_moves_scoped(
                 tenant_id,
-                entitlement_of(&scope).unwrap_or(&[]),
+                entitlement_of(&scope).as_deref().unwrap_or(&[]),
                 params.product_id,
                 params.page,
                 params.per_page,
@@ -1017,7 +1035,8 @@ pub async fn update_sales_order(
     // existing row (read-merge-write). Twenty-third audit P0: both the
     // merge read and the write carry the caller's site entitlement.
     let scope = caller_scope(&user, &state).await?;
-    let sites = entitlement_of(&scope).unwrap_or(&[]);
+    let sites = entitlement_of(&scope).unwrap_or_default();
+    let sites = sites.as_slice();
     let mut order = state
         .supply_chain_service
         .get_sales_order_scoped(tenant_id, sites, id)
@@ -1050,7 +1069,8 @@ pub async fn delete_sales_order(
     let tenant_id = user.tenant_id;
     // Twenty-third audit P0: the delete is site-scope-enforced.
     let scope = caller_scope(&user, &state).await?;
-    let sites = entitlement_of(&scope).unwrap_or(&[]);
+    let sites = entitlement_of(&scope).unwrap_or_default();
+    let sites = sites.as_slice();
     state
         .supply_chain_service
         .delete_sales_order(tenant_id, sites, id)
@@ -1074,7 +1094,8 @@ pub async fn update_purchase_order(
     // (read-merge-write). Twenty-third audit P0: both the merge read and
     // the write carry the caller's site entitlement.
     let scope = caller_scope(&user, &state).await?;
-    let sites = entitlement_of(&scope).unwrap_or(&[]);
+    let sites = entitlement_of(&scope).unwrap_or_default();
+    let sites = sites.as_slice();
     let mut po = state
         .supply_chain_service
         .get_purchase_order_scoped(tenant_id, sites, id)
@@ -1107,7 +1128,8 @@ pub async fn delete_purchase_order(
     let tenant_id = user.tenant_id;
     // Twenty-third audit P0: the delete is site-scope-enforced.
     let scope = caller_scope(&user, &state).await?;
-    let sites = entitlement_of(&scope).unwrap_or(&[]);
+    let sites = entitlement_of(&scope).unwrap_or_default();
+    let sites = sites.as_slice();
     state
         .supply_chain_service
         .delete_purchase_order(tenant_id, sites, id)
@@ -1127,7 +1149,8 @@ pub async fn receive_full_po(
     // entitlement; a PO whose receiving site is outside that scope is
     // rejected before any stock movement.
     let scope = caller_scope(&user, &state).await?;
-    let sites = entitlement_of(&scope).unwrap_or(&[]);
+    let sites = entitlement_of(&scope).unwrap_or_default();
+    let sites = sites.as_slice();
     let po = state
         .supply_chain_service
         .receive_full_po(tenant_id, sites, id)
@@ -1160,7 +1183,12 @@ pub async fn update_inventory(
     } else {
         state
             .supply_chain_service
-            .update_inventory_scoped(tenant_id, entitlement_of(&scope).unwrap_or(&[]), id, req)
+            .update_inventory_scoped(
+                tenant_id,
+                entitlement_of(&scope).as_deref().unwrap_or(&[]),
+                id,
+                req,
+            )
             .await?
     };
     Ok(Json(item))
@@ -1190,7 +1218,11 @@ pub async fn delete_inventory(
     } else {
         state
             .supply_chain_service
-            .delete_inventory_scoped(tenant_id, entitlement_of(&scope).unwrap_or(&[]), id)
+            .delete_inventory_scoped(
+                tenant_id,
+                entitlement_of(&scope).as_deref().unwrap_or(&[]),
+                id,
+            )
             .await?;
     }
     Ok(Json(()))
@@ -1221,7 +1253,7 @@ pub async fn delete_stock_move(
         .supply_chain_service
         .reverse_stock_move(
             tenant_id,
-            entitlement_of(&scope).unwrap_or(&[]),
+            entitlement_of(&scope).as_deref().unwrap_or(&[]),
             id,
             user.user_id,
             &reason,
@@ -1251,9 +1283,9 @@ pub async fn receive_stock(
     // service and is refused there with Validation.
     let sites: Vec<Uuid> = match &scope {
         None => Vec::new(),
-        Some(rc) => match rc.active_site {
+        Some(rc) => match rc.focus.site {
             Some(active) => vec![active],
-            None => rc.authorized_sites().to_vec(),
+            None => rc.authorized_sites(),
         },
     };
     let command = sensei_services::supply_chain::ReceiveStockCommand {

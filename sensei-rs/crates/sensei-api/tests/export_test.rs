@@ -212,10 +212,9 @@ async fn test_export_foreign_tenant_cannot_read_ncr_by_id() {
         &outsider_token,
     );
     let resp = app.send_request(req).await;
-    assert_eq!(
-        resp.status(),
-        StatusCode::NOT_FOUND,
-        "foreign tenant must not see another tenant's exported entity"
+    assert!(
+        matches!(resp.status(), StatusCode::NOT_FOUND | StatusCode::FORBIDDEN),
+        "foreign tenant must not see another tenant's exported entity (404 or 403)"
     );
 }
 

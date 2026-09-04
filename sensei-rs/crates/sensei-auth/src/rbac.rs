@@ -27,19 +27,30 @@ pub struct RbacService {
     role_hierarchy: HashMap<String, Vec<String>>,
 }
 
-/// Process-wide shared authorization service, installed by the API at
-/// startup with the DB-loaded role map. `require_permission` resolves
-/// through this registry so database-defined custom roles are actually
-/// used in authorization decisions (never a fresh `RbacService::new()`).
+/// Process-wide shared authorization service (ROLLOUT-COMPAT ONLY,
+/// twenty-ninth audit Wave A): the API no longer installs a process-global
+/// snapshot at startup. The production authorization path resolves LIVE
+/// state per authenticated request — static role expansion (this crate's
+/// compiled map) plus the tenant's custom `roles` rows, resolved by
+/// [`crate::resolver::resolve_effective_permissions`] and carried in
+/// [`crate::middleware::AuthenticatedUser::permissions`].
+/// [`AuthenticatedUser::require_permission`] consults that request-local
+/// permission set FIRST; this registry is consulted ONLY when the
+/// request-local set is empty (in-memory/dev mode and tests that construct
+/// [`crate::middleware::AuthenticatedUser`] directly).
 static AUTHORIZATION_SERVICE: std::sync::OnceLock<std::sync::Arc<RbacService>> =
     std::sync::OnceLock::new();
 
-/// Install the shared authorization service (idempotent — first install wins).
+/// Install the shared authorization service (idempotent — first install
+/// wins). Kept for TESTS and embedded runtimes that intentionally want a
+/// process-wide registry; the production startup path MUST NOT call this
+/// (see `sensei-api/src/main.rs`).
 pub fn set_authorization_service(svc: std::sync::Arc<RbacService>) {
     let _ = AUTHORIZATION_SERVICE.set(svc);
 }
 
-/// The shared authorization service (defaults when not installed, e.g. tests).
+/// The shared authorization service (defaults when not installed, e.g.
+/// tests): a fresh static-defaults instance, never a DB snapshot.
 pub fn authorization_service() -> std::sync::Arc<RbacService> {
     AUTHORIZATION_SERVICE
         .get()
@@ -92,8 +103,6 @@ impl RbacService {
         // Break-glass superuser only (never assigned through the normal
         // user-management API; see routes/users.rs update_user_roles).
         self.add_role("platform_superadmin", vec!["*:*"]);
-        // System-level tenant management (bootstrap admin only).
-        self.add_role("platform_admin", vec!["tenants:*", "users:*", "system:*"]);
         // System-level tenant management (bootstrap admin only).
         self.add_role("platform_admin", vec!["tenants:*", "users:*", "system:*"]);
         // Tenant-scoped user administration.
@@ -493,7 +502,12 @@ impl RbacService {
                 "master-data:products:read",
                 "system:state-machines:read",
                 "attachments:read",
-                "system:audit:read",
+                // Twenty-ninth-audit Wave B: the business audit-log view
+                // (system:audit:read) is NOT a baseline user privilege —
+                // it lives ONLY on the dedicated compliance_auditor role
+                // (and the wildcard platform_superadmin). Export routes
+                // use per-domain read permissions instead (quality:* /
+                // production:work-order:read).
                 // Twenty-seventh audit P0: federation (replication + lesson
                 // exchange) and country-policy MANAGEMENT are NOT baseline
                 // user privileges — they belong only to the dedicated
@@ -656,6 +670,19 @@ impl RbacService {
             ],
         );
         self.add_role("compliance_officer", vec!["system:country-policy:manage"]);
+        // Twenty-ninth-audit Wave B: the audit family moves OUT of the
+        // baseline `user` role onto this dedicated role — business audit
+        // logs (system:audit:read) plus quality-audit read/create. Like
+        // the other dedicated roles it inherits NOTHING (no `user`
+        // parent), so it grants exactly these three permissions.
+        self.add_role(
+            "compliance_auditor",
+            vec![
+                "system:audit:read",
+                "quality:audit:read",
+                "quality:audit:create",
+            ],
+        );
     }
 
     /// Register a new role with the given permissions.
@@ -711,6 +738,29 @@ impl RbacService {
             }
         }
         ancestors
+    }
+
+    /// Expand a role set through the STATIC role map and hierarchy,
+    /// WITHOUT any database access: each role's own permissions plus every
+    /// ancestor role's permissions (NIST hierarchical RBAC), collected
+    /// into a deduplicated set of granted permission strings. Tenant
+    /// custom rows are deliberately NOT part of this expansion — the
+    /// per-request resolver
+    /// ([`crate::resolver::resolve_effective_permissions`]) merges the
+    /// tenant's `roles` rows on top of this static baseline.
+    pub fn expand_static(&self, roles: &[String]) -> HashSet<String> {
+        let mut perms = HashSet::new();
+        for role_name in roles {
+            if let Some(role_perms) = self.roles.get(role_name.as_str()) {
+                perms.extend(role_perms.iter().cloned());
+            }
+            for ancestor in self.role_ancestors(role_name) {
+                if let Some(ancestor_perms) = self.roles.get(&ancestor) {
+                    perms.extend(ancestor_perms.iter().cloned());
+                }
+            }
+        }
+        perms
     }
 
     /// Check if a user with the given roles has the required permission.
@@ -950,6 +1000,51 @@ mod tests {
             &user_roles,
             &Permission("system:country-policy:read".to_string())
         ));
+    }
+
+    /// Twenty-ninth-audit Wave B: the audit family (system:audit:read plus
+    /// quality-audit read/create) is NOT a baseline `user` capability —
+    /// it belongs ONLY to the dedicated `compliance_auditor` role (and
+    /// the wildcard platform_superadmin). Every human-facing role that
+    /// inherits `user` loses audit-log reads with it.
+    #[test]
+    fn test_audit_permissions_removed_from_baseline_user() {
+        let rbac = RbacService::new();
+        for role in [
+            "user",
+            "operator",
+            "manager",
+            "supervisor",
+            "site_manager",
+            "quality_manager",
+        ] {
+            let roles = vec![role.to_string()];
+            assert!(
+                !rbac.has_permission(&roles, &Permission("system:audit:read".to_string())),
+                "baseline role {role} must not hold system:audit:read"
+            );
+        }
+
+        let auditor = rbac.permissions_for_role("compliance_auditor");
+        assert_eq!(
+            auditor,
+            vec![
+                "quality:audit:create".to_string(),
+                "quality:audit:read".to_string(),
+                "system:audit:read".to_string(),
+            ],
+            "compliance_auditor grants exactly its three audit permissions"
+        );
+        assert!(
+            rbac.role_ancestors("compliance_auditor").is_empty(),
+            "compliance_auditor must not inherit user or any other role"
+        );
+
+        let superadmin = vec!["platform_superadmin".to_string()];
+        assert!(
+            rbac.has_permission(&superadmin, &Permission("system:audit:read".to_string())),
+            "platform_superadmin wildcard keeps system:audit:read"
+        );
     }
 
     /// Twenty-seventh audit P0: federation + country-policy management

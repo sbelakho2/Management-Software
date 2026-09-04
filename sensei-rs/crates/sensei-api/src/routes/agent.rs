@@ -188,10 +188,10 @@ pub async fn build_context_with_locale(
         .await
         {
             Ok(rc) => {
-                site_id = rc.active_site;
-                value_stream_id = rc.active_value_stream;
-                work_center_id = rc.active_work_center;
-                shift_id = rc.active_shift;
+                site_id = rc.focus.site;
+                value_stream_id = rc.focus.value_stream;
+                work_center_id = rc.focus.work_center;
+                shift_id = rc.focus.shift;
             }
             // Invalid combination (a stale assignment, or the hint site
             // is not entitled): fail closed — the site alone when the
@@ -210,7 +210,7 @@ pub async fn build_context_with_locale(
                 )
                 .await
                 {
-                    site_id = rc.active_site;
+                    site_id = rc.focus.site;
                 }
             }
         }

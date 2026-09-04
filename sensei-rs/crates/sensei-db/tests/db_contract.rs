@@ -2021,6 +2021,10 @@ fn integration_import_rejects_humans_and_scopes_by_system() {
         tenant_id: tenant,
         roles: vec!["user".to_string()],
         sid: Some(uuid::Uuid::new_v4()),
+        // Empty request-local permission set: the legacy RBAC registry
+        // (reset to static defaults above) backs require_permission in
+        // direct constructions.
+        permissions: std::collections::HashSet::new(),
     };
     // A plain "user" must NOT hold ANY integration permission.
     assert!(
@@ -2067,6 +2071,8 @@ fn integration_import_rejects_humans_and_scopes_by_system() {
         tenant_id: tenant,
         roles: vec!["integration_bridge".to_string()],
         sid: Some(uuid::Uuid::new_v4()),
+        // Empty request-local permission set: legacy registry path.
+        permissions: std::collections::HashSet::new(),
     };
     assert!(
         bridge_starz
@@ -3659,8 +3665,8 @@ async fn role_slot_departure_handover() {
             .await
             .expect("set tenant context");
         sqlx::query(
-            "INSERT INTO role_slots (id, tenant_id, role_name, slot_name) \
-             VALUES ($1, $2, 'electronics_buyer', 'electronics_buyer_tangier')",
+            "INSERT INTO role_slots (id, tenant_id, role_name, slot_name, scope_kind) \
+             VALUES ($1, $2, 'electronics_buyer', 'electronics_buyer_tangier', 'none')",
         )
         .bind(slot_id)
         .bind(tenant_id)
@@ -4493,8 +4499,8 @@ async fn organizational_memory_deterministic_promotion() {
             .await
             .expect("set tenant context");
         sqlx::query(
-            "INSERT INTO role_slots (id, tenant_id, role_name, slot_name) \
-             VALUES ($1, $2, 'electronics_buyer', 'electronics_buyer_tangier')",
+            "INSERT INTO role_slots (id, tenant_id, role_name, slot_name, scope_kind) \
+             VALUES ($1, $2, 'electronics_buyer', 'electronics_buyer_tangier', 'none')",
         )
         .bind(slot_id)
         .bind(tenant_id)
@@ -10006,8 +10012,8 @@ async fn invariant_departed_user_is_disabled() {
             .await
             .expect("set tenant context");
         sqlx::query(
-            "INSERT INTO role_slots (id, tenant_id, role_name, slot_name) \
-             VALUES ($1, $2, 'electronics_buyer', 'electronics_buyer_tangier')",
+            "INSERT INTO role_slots (id, tenant_id, role_name, slot_name, scope_kind) \
+             VALUES ($1, $2, 'electronics_buyer', 'electronics_buyer_tangier', 'none')",
         )
         .bind(slot_id)
         .bind(tenant_id)
@@ -10472,7 +10478,7 @@ async fn authz_snapshot_current_check() {
     let _work_center = uuid::Uuid::new_v4();
     let other_site = uuid::Uuid::new_v4();
     // The DB-resolved constructor is the ONLY public path (item 6) —
-    // AuthorizedScope::enforce is the runtime gate.
+    // AuthorizedScope::enforce_resource is the runtime gate.
     let authz_scope = sensei_core::domain::scope::AuthorizedScope::Sites(vec![site]);
     assert!(
         authz_scope.allows_site(site),
@@ -10482,12 +10488,17 @@ async fn authz_snapshot_current_check() {
         !authz_scope.allows_site(other_site),
         "the scope never allows another site"
     );
+    use sensei_core::domain::scope::ResourceScope;
     assert!(
-        authz_scope.enforce(Some(site), None).is_ok(),
+        authz_scope
+            .enforce_resource(&ResourceScope::Site { site })
+            .is_ok(),
         "the authorized site passes enforcement"
     );
     assert!(
-        authz_scope.enforce(Some(other_site), None).is_err(),
+        authz_scope
+            .enforce_resource(&ResourceScope::Site { site: other_site })
+            .is_err(),
         "a foreign site fails enforcement"
     );
     let site_scope = sensei_core::domain::scope::AuthorizedScope::Sites(vec![site]);
@@ -17808,4 +17819,268 @@ async fn hot_queries_use_index_scans() {
     )
     .await;
     assert_index_driven("integration_checkpoints", &checkpoint_plan);
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Twenty-ninth audit Wave A items 12-17 — atomic principal-revision bumps
+// and the profile/authorization user-operation split.
+// ─────────────────────────────────────────────────────────────────────────
+
+/// Twenty-ninth audit (12/14): update_user_roles bumps the tenant's
+/// principal_revision IN THE SAME TRANSACTION as the role change — and a
+/// forced rollback leaves BOTH the roles and the revision untouched.
+#[tokio::test]
+async fn user_roles_update_bumps_principal_revision_atomically() {
+    let _serial = DB_LOCK.lock().await;
+    let Some(pool) = connect().await else { return };
+    sensei_db::migrations::run_migrations(&pool)
+        .await
+        .expect("the ENTIRE migration chain must apply to an empty database");
+
+    let tenant_id = uuid::Uuid::new_v4();
+    let user_id = uuid::Uuid::new_v4();
+    sqlx::query("INSERT INTO tenants (id, name, slug) VALUES ($1, 'revroles', 'revroles')")
+        .bind(tenant_id)
+        .execute(&pool)
+        .await
+        .expect("tenant insert");
+    let email = format!("roles-{}@rev.local", tenant_id.as_simple());
+    sqlx::query(
+        "INSERT INTO users (id, tenant_id, email, name, password_hash, roles) \
+         VALUES ($1, $2, $3, 'R', 'x', ARRAY['user'])",
+    )
+    .bind(user_id)
+    .bind(tenant_id)
+    .bind(&email)
+    .execute(&pool)
+    .await
+    .expect("user insert");
+
+    use sensei_services::tps::authorization_revisions::{bump_in_tx, current_snapshot};
+    use sensei_services::users::{DatabaseUsersService, UsersService};
+    let svc = DatabaseUsersService::new(pool.clone());
+
+    // Seeding the revision row (lazy, same as the service paths).
+    let before = current_snapshot(&pool, tenant_id)
+        .await
+        .expect("snapshot before");
+
+    // The service-level role update bumps the principal revision.
+    let updated = svc
+        .update_user_roles(
+            tenant_id,
+            user_id,
+            vec!["quality_manager".to_string(), "user".to_string()],
+        )
+        .await
+        .expect("update_user_roles must succeed");
+    assert_eq!(
+        updated.roles,
+        vec!["quality_manager".to_string(), "user".to_string()]
+    );
+    let after = current_snapshot(&pool, tenant_id)
+        .await
+        .expect("snapshot after");
+    assert_eq!(
+        after.principal_revision,
+        before.principal_revision + 1,
+        "a role change must bump the principal revision exactly once"
+    );
+    assert_eq!(
+        after.policy_revision, before.policy_revision,
+        "a role change must NOT touch the policy revision"
+    );
+
+    // A FORCED ROLLBACK leaves both the role assignment AND the revision
+    // exactly as they were: the mutation and its bump share one
+    // transaction, so a failed commit cannot leave a half-applied state.
+    let roles_before_rollback: Vec<String> =
+        sqlx::query_scalar("SELECT roles FROM users WHERE id = $1")
+            .bind(user_id)
+            .fetch_one(&pool)
+            .await
+            .expect("roles before rollback");
+    let revision_before_rollback = current_snapshot(&pool, tenant_id)
+        .await
+        .expect("snapshot before rollback")
+        .principal_revision;
+
+    let mut tx = pool.begin().await.expect("tx begin");
+    sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
+        .bind(tenant_id.to_string())
+        .execute(&mut *tx)
+        .await
+        .expect("set tenant context");
+    sqlx::query("UPDATE users SET roles = ARRAY['operator'] WHERE id = $1 AND tenant_id = $2")
+        .bind(user_id)
+        .bind(tenant_id)
+        .execute(&mut *tx)
+        .await
+        .expect("role update inside the doomed transaction");
+    bump_in_tx(&mut tx, tenant_id, "principal_revision")
+        .await
+        .expect("in-tx bump inside the doomed transaction");
+    tx.rollback().await.expect("forced rollback");
+
+    let roles_after_rollback: Vec<String> =
+        sqlx::query_scalar("SELECT roles FROM users WHERE id = $1")
+            .bind(user_id)
+            .fetch_one(&pool)
+            .await
+            .expect("roles after rollback");
+    assert_eq!(
+        roles_after_rollback, roles_before_rollback,
+        "a rolled-back role update must leave the roles untouched"
+    );
+    let revision_after_rollback = current_snapshot(&pool, tenant_id)
+        .await
+        .expect("snapshot after rollback")
+        .principal_revision;
+    assert_eq!(
+        revision_after_rollback, revision_before_rollback,
+        "a rolled-back bump must leave the principal revision untouched"
+    );
+}
+
+/// Twenty-ninth audit (14): deactivate_user and activate_user each bump
+/// the tenant's principal_revision atomically — deactivation/activation
+/// invalidates authorization-derived state with the state change itself.
+#[tokio::test]
+async fn user_deactivate_and_activate_bump_principal_revision() {
+    let _serial = DB_LOCK.lock().await;
+    let Some(pool) = connect().await else { return };
+    sensei_db::migrations::run_migrations(&pool)
+        .await
+        .expect("the ENTIRE migration chain must apply to an empty database");
+
+    let tenant_id = uuid::Uuid::new_v4();
+    let user_id = uuid::Uuid::new_v4();
+    sqlx::query("INSERT INTO tenants (id, name, slug) VALUES ($1, 'revlife', 'revlife')")
+        .bind(tenant_id)
+        .execute(&pool)
+        .await
+        .expect("tenant insert");
+    let email = format!("life-{}@rev.local", tenant_id.as_simple());
+    sqlx::query(
+        "INSERT INTO users (id, tenant_id, email, name, password_hash, roles) \
+         VALUES ($1, $2, $3, 'L', 'x', ARRAY['user'])",
+    )
+    .bind(user_id)
+    .bind(tenant_id)
+    .bind(&email)
+    .execute(&pool)
+    .await
+    .expect("user insert");
+
+    use sensei_services::tps::authorization_revisions::current_snapshot;
+    use sensei_services::users::{DatabaseUsersService, UsersService};
+    let svc = DatabaseUsersService::new(pool.clone());
+
+    let baseline = current_snapshot(&pool, tenant_id)
+        .await
+        .expect("snapshot baseline")
+        .principal_revision;
+
+    let deactivated = svc
+        .deactivate_user(tenant_id, user_id)
+        .await
+        .expect("deactivate_user must succeed");
+    assert!(!deactivated.is_active);
+    let after_deactivate = current_snapshot(&pool, tenant_id)
+        .await
+        .expect("snapshot after deactivate")
+        .principal_revision;
+    assert_eq!(
+        after_deactivate,
+        baseline + 1,
+        "a deactivation must bump the principal revision exactly once"
+    );
+
+    let reactivated = svc
+        .activate_user(tenant_id, user_id)
+        .await
+        .expect("activate_user must succeed");
+    assert!(reactivated.is_active);
+    let after_activate = current_snapshot(&pool, tenant_id)
+        .await
+        .expect("snapshot after activate")
+        .principal_revision;
+    assert_eq!(
+        after_activate,
+        baseline + 2,
+        "an activation must bump the principal revision exactly once"
+    );
+}
+
+/// Twenty-ninth audit (17): update_profile assigns ONLY name/email — it
+/// must never alter roles, is_active, credential_version or
+/// password_hash (the authorization-capable mutations own those columns).
+#[tokio::test]
+async fn user_profile_update_never_touches_authorization_state() {
+    let _serial = DB_LOCK.lock().await;
+    let Some(pool) = connect().await else { return };
+    sensei_db::migrations::run_migrations(&pool)
+        .await
+        .expect("the ENTIRE migration chain must apply to an empty database");
+
+    let tenant_id = uuid::Uuid::new_v4();
+    let user_id = uuid::Uuid::new_v4();
+    sqlx::query("INSERT INTO tenants (id, name, slug) VALUES ($1, 'profiso', 'profiso')")
+        .bind(tenant_id)
+        .execute(&pool)
+        .await
+        .expect("tenant insert");
+    let old_email = format!("old-{}@prof.local", tenant_id.as_simple());
+    sqlx::query(
+        "INSERT INTO users (id, tenant_id, email, name, password_hash, roles, \
+                            is_active, credential_version) \
+         VALUES ($1, $2, $3, 'Old', 'hash-x', ARRAY['user', 'quality_engineer'], \
+                            TRUE, 7)",
+    )
+    .bind(user_id)
+    .bind(tenant_id)
+    .bind(&old_email)
+    .execute(&pool)
+    .await
+    .expect("user insert");
+
+    use sensei_services::users::{DatabaseUsersService, UsersService};
+    let svc = DatabaseUsersService::new(pool.clone());
+
+    let new_email = format!("new-{}@prof.local", tenant_id.as_simple());
+    let updated = svc
+        .update_profile(
+            tenant_id,
+            user_id,
+            "New Name".to_string(),
+            new_email.clone(),
+        )
+        .await
+        .expect("update_profile must succeed");
+    assert_eq!(updated.name, "New Name");
+    assert_eq!(updated.email, new_email);
+
+    // The authorization-relevant columns must be byte-for-byte untouched.
+    let (roles, is_active, credential_version, password_hash): (Vec<String>, bool, i64, String) =
+        sqlx::query_as(
+            "SELECT roles, is_active, credential_version, password_hash FROM users WHERE id = $1",
+        )
+        .bind(user_id)
+        .fetch_one(&pool)
+        .await
+        .expect("read the users row after profile update");
+    assert_eq!(
+        roles,
+        vec!["user".to_string(), "quality_engineer".to_string()],
+        "a profile update must NOT alter roles"
+    );
+    assert!(is_active, "a profile update must NOT alter is_active");
+    assert_eq!(
+        credential_version, 7,
+        "a profile update must NOT alter credential_version"
+    );
+    assert_eq!(
+        password_hash, "hash-x",
+        "a profile update must NOT alter password_hash"
+    );
 }

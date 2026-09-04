@@ -447,9 +447,14 @@ async fn main() {
     // Cross-replica EntityStore cache invalidation: every replica evicts
     // changed rows immediately after ANY replica commits a write.
     state.attach_entity_store_buses(state.event_bus.clone());
-    // Install the shared authorization service: every require_permission
-    // decision resolves through THIS instance (DB-loaded custom roles).
-    sensei_auth::rbac::set_authorization_service(state.rbac_service.clone());
+    // NO process-global authorization snapshot is installed here
+    // (twenty-ninth audit Wave A): production authorization resolves LIVE
+    // state per authenticated request — the current user row plus the
+    // static role map and the tenant's custom `roles` rows — so a role
+    // change, deactivation or deletion can never be outlived by a
+    // startup-time global. (set_authorization_service stays available in
+    // sensei-auth for tests/embedded runtimes; the startup path must not
+    // call it.)
 
     // Eagerly (and with supervision) subscribe the realtime fanout BEFORE
     // the HTTP listener starts: a replica must receive cross-replica WS/SSE

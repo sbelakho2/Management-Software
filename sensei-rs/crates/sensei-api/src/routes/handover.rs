@@ -29,12 +29,33 @@ use crate::state::AppState;
 
 // ── Request / response DTOs ─────────────────────────────────────────────────
 
+/// The slot's operational scope (twenty-ninth-audit Wave A item 5) —
+/// explicit and typed, never inferred from which id column is set:
+///
+/// - `none`: the slot carries no operational scope.
+/// - `tenant`: the slot is TENANT-WIDE — creating it additionally
+///   requires `hr:role-slot:tenant-wide` (a deliberate grant, never an
+///   accident of a NULL scope).
+/// - `site`: the slot is scoped to one site.
+/// - `work_center`: the slot is scoped to one work center; the owning
+///   site is resolved from `work_centers.site_id` (NotFound when the
+///   work center does not exist in the tenant) and stored denormalized
+///   alongside it.
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum SlotScopeRequest {
+    None,
+    Tenant,
+    Site { site_id: Uuid },
+    WorkCenter { work_center_id: Uuid },
+}
+
 /// Body for creating a role slot.
 #[derive(Debug, Deserialize)]
 pub struct CreateSlotRequest {
     pub role_name: String,
     pub slot_name: String,
-    pub scope_site_id: Option<Uuid>,
+    pub scope: SlotScopeRequest,
     pub description: Option<String>,
 }
 
@@ -64,7 +85,9 @@ pub struct RoleSlot {
     pub tenant_id: Uuid,
     pub role_name: String,
     pub slot_name: String,
+    pub scope_kind: String,
     pub scope_site_id: Option<Uuid>,
+    pub scope_work_center_id: Option<Uuid>,
     pub description: Option<String>,
     pub current_principal_id: Option<Uuid>,
     pub created_at: chrono::DateTime<chrono::Utc>,
@@ -131,13 +154,20 @@ async fn most_recent_slot_id(
 // ── Handlers ────────────────────────────────────────────────────────────────
 
 /// `POST /api/v1/roles/slots` — create a role slot. The slot (not the
-/// person) owns the work; principals are assigned to it later.
+/// person) owns the work; principals are assigned to it later. Scope is
+/// EXPLICIT (twenty-ninth-audit Wave A item 5): a tenant-wide slot is a
+/// deliberate grant requiring `hr:role-slot:tenant-wide` on top of the
+/// slot-management permission; a work-center slot resolves (and stores)
+/// the owning site from `work_centers.site_id`.
 pub async fn create_slot(
     user: AuthenticatedUser,
     State(state): State<AppState>,
     Json(req): Json<CreateSlotRequest>,
 ) -> Result<Json<RoleSlot>> {
     user.require_permission("hr:manage")?;
+    if matches!(req.scope, SlotScopeRequest::Tenant) {
+        user.require_permission("hr:role-slot:tenant-wide")?;
+    }
     let tenant_id = user.tenant_id;
     let p = pool(&state)?;
     let mut tx = p
@@ -145,23 +175,57 @@ pub async fn create_slot(
         .await
         .map_err(|e| SenseiError::Database(e.to_string()))?;
     set_tenant_context(&mut tx, tenant_id).await?;
+    let (scope_kind, scope_site_id, scope_work_center_id): (&str, Option<Uuid>, Option<Uuid>) =
+        match req.scope {
+            SlotScopeRequest::None => ("none", None, None),
+            SlotScopeRequest::Tenant => ("tenant", None, None),
+            SlotScopeRequest::Site { site_id } => ("site", Some(site_id), None),
+            SlotScopeRequest::WorkCenter { work_center_id } => {
+                // DB-resolved scope: the owning site comes from the work
+                // center's row — the caller can never name a site themselves
+                // (migration 169 shape CHECK stores kind + BOTH ids).
+                let site_id: Option<Uuid> = sqlx::query_scalar(
+                    "SELECT site_id FROM work_centers WHERE id = $1 AND tenant_id = $2",
+                )
+                .bind(work_center_id)
+                .bind(tenant_id)
+                .fetch_optional(&mut *tx)
+                .await
+                .map_err(|e| {
+                    SenseiError::Database(format!("Work-center site resolve failed: {e}"))
+                })?;
+                let Some(site_id) = site_id else {
+                    return Err(SenseiError::NotFound(format!(
+                        "work center {work_center_id}"
+                    )));
+                };
+                ("work_center", Some(site_id), Some(work_center_id))
+            }
+        };
     let slot: (
         Uuid,
         Uuid,
         String,
         String,
+        String,
+        Option<Uuid>,
         Option<Uuid>,
         Option<String>,
         chrono::DateTime<chrono::Utc>,
     ) = sqlx::query_as(
-        "INSERT INTO role_slots (tenant_id, role_name, slot_name, scope_site_id, description) \
-             VALUES ($1, $2, $3, $4, $5) \
-             RETURNING id, tenant_id, role_name, slot_name, scope_site_id, description, created_at",
+        "INSERT INTO role_slots \
+             (tenant_id, role_name, slot_name, scope_kind, scope_site_id, \
+              scope_work_center_id, description) \
+             VALUES ($1, $2, $3, $4, $5, $6, $7) \
+             RETURNING id, tenant_id, role_name, slot_name, scope_kind, \
+                       scope_site_id, scope_work_center_id, description, created_at",
     )
     .bind(tenant_id)
     .bind(&req.role_name)
     .bind(&req.slot_name)
-    .bind(req.scope_site_id)
+    .bind(scope_kind)
+    .bind(scope_site_id)
+    .bind(scope_work_center_id)
     .bind(req.description)
     .fetch_one(&mut *tx)
     .await
@@ -192,10 +256,12 @@ pub async fn create_slot(
         tenant_id: slot.1,
         role_name: slot.2,
         slot_name: slot.3,
-        scope_site_id: slot.4,
-        description: slot.5,
+        scope_kind: slot.4,
+        scope_site_id: slot.5,
+        scope_work_center_id: slot.6,
+        description: slot.7,
         current_principal_id: None,
-        created_at: slot.6,
+        created_at: slot.8,
     }))
 }
 
@@ -738,13 +804,16 @@ pub async fn list_slots(
         Uuid,
         String,
         String,
+        String,
+        Option<Uuid>,
         Option<Uuid>,
         Option<String>,
         chrono::DateTime<chrono::Utc>,
         Option<Uuid>,
     )> = sqlx::query_as(
-        "SELECT rs.id, rs.tenant_id, rs.role_name, rs.slot_name, rs.scope_site_id, \
-                    rs.description, rs.created_at, pa.principal_id \
+        "SELECT rs.id, rs.tenant_id, rs.role_name, rs.slot_name, rs.scope_kind, \
+                    rs.scope_site_id, rs.scope_work_center_id, rs.description, \
+                    rs.created_at, pa.principal_id \
              FROM role_slots rs \
              LEFT JOIN LATERAL ( \
                  SELECT principal_id FROM principal_assignments \
@@ -764,12 +833,25 @@ pub async fn list_slots(
     Ok(Json(
         rows.into_iter()
             .map(
-                |(id, tenant, role_name, slot_name, scope, desc, created, principal)| RoleSlot {
+                |(
+                    id,
+                    tenant,
+                    role_name,
+                    slot_name,
+                    scope_kind,
+                    scope,
+                    scope_wc,
+                    desc,
+                    created,
+                    principal,
+                )| RoleSlot {
                     id,
                     tenant_id: tenant,
                     role_name,
                     slot_name,
+                    scope_kind,
                     scope_site_id: scope,
+                    scope_work_center_id: scope_wc,
                     description: desc,
                     current_principal_id: principal,
                     created_at: created,

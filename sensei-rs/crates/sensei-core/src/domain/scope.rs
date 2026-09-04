@@ -1,9 +1,16 @@
-//! Typed operational scope (sixteenth audit items 84/6): invalid states are
-//! IMPOSSIBLE — a work-center scope always carries its site, and the only
-//! way to construct one is the DB-RESOLVED path that proves the work
-//! center belongs to the site (`work_centers.site_id`, migration 134).
-//! Plain constructors are crate-private: a `WorkCenterScope` value can
-//! only exist with the site the database says owns the work center.
+//! Typed operational scope (sixteenth audit items 84/6; twenty-ninth
+//! audit Wave A item 3): invalid states are IMPOSSIBLE — a work-center
+//! scope always carries its site, and the only way to construct one is
+//! the DB-RESOLVED path that proves the work center belongs to the site
+//! (`work_centers.site_id`, migration 134). Plain constructors are
+//! crate-private: a `WorkCenterScope` value can only exist with the site
+//! the database says owns the work center.
+//!
+//! Resources are enforced against an EXPLICIT [`ResourceScope`]: every
+//! resource-touching call declares exactly what it is touching
+//! (`Tenant` / `Site` / `WorkCenter`), and [`ResourceScope::Unresolved`]
+//! fails closed for every scope — the old `(None, None)` "no resource
+//! scope to check" allowance is gone.
 use uuid::Uuid;
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -56,6 +63,27 @@ impl WorkCenterScope {
     pub fn allows_site(&self, other: Uuid) -> bool {
         self.site == other
     }
+}
+
+/// What a resource claims to be (twenty-ninth audit Wave A item 3): the
+/// RESOURCE side of the enforcement decision. Every resource-touching
+/// call must declare EXACTLY what it is touching — there is no
+/// `(None, None)`-means-allow ambiguity anymore:
+///
+/// - [`ResourceScope::Tenant`]: a tenant-level object with no site
+///   dimension (a deliberate, well-formed claim).
+/// - [`ResourceScope::Site`]: an object anchored to one site.
+/// - [`ResourceScope::WorkCenter`]: an object anchored to one work
+///   center (which always carries its site).
+/// - [`ResourceScope::Unresolved`]: the resource's scope could not be
+///   established — FAIL-CLOSED, always Forbidden (even for a
+///   tenant-wide caller).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub enum ResourceScope {
+    Tenant,
+    Site { site: Uuid },
+    WorkCenter { site: Uuid, work_center: Uuid },
+    Unresolved,
 }
 
 /// The caller's effective operational scope (seventeenth audit item 4,
@@ -138,27 +166,35 @@ impl AuthorizedScope {
         }
     }
 
-    /// Fail-closed enforcement: the resource's (site, work_center) must be
+    /// Fail-closed resource enforcement (twenty-ninth audit Wave A
+    /// item 3): the resource's EXPLICIT [`ResourceScope`] must be
     /// covered by this scope. Returns a `Forbidden` error otherwise.
-    pub fn enforce(&self, site_id: Option<Uuid>, work_center_id: Option<Uuid>) -> Result<()> {
-        if matches!(self, Self::NoOperationalScope) {
-            return Err(SenseiError::Forbidden(
-                "principal has no operational scope — no data is authorized".to_string(),
-            ));
-        }
-        match (site_id, work_center_id) {
-            (None, None) => Ok(()), // no resource scope to check
-            (Some(_site), Some(_wc)) => {
-                if self.allows_work_center(_site, _wc) {
-                    Ok(())
-                } else {
-                    Err(SenseiError::Forbidden(
-                        "resource work center is outside the caller's authorized scope".to_string(),
-                    ))
-                }
-            }
-            (Some(_site), None) => {
-                if self.allows_site(_site) {
+    ///
+    /// Exact semantics:
+    ///
+    /// | caller scope \ resource | `Tenant` | `Site { site }` | `WorkCenter { site, wc }` | `Unresolved` |
+    /// |---|---|---|---|---|
+    /// | `NoOperationalScope` | Forbidden | Forbidden | Forbidden | Forbidden |
+    /// | `TenantWide` | allowed | allowed | allowed | Forbidden |
+    /// | `Sites(sites)` | Forbidden | allowed iff `site ∈ sites` | allowed iff `site ∈ sites` | Forbidden |
+    /// | `WorkCenter(wc)` | Forbidden | allowed iff `site == wc.site` | allowed iff exact match (`site == wc.site && work_center == wc.work_center`) | Forbidden |
+    ///
+    /// [`ResourceScope::Unresolved`] is Forbidden ALWAYS — a resource
+    /// whose scope cannot be established is never authorized, not even
+    /// for a tenant-wide caller (no magical absence-allow).
+    pub fn enforce_resource(&self, resource: &ResourceScope) -> Result<()> {
+        match resource {
+            ResourceScope::Unresolved => Err(SenseiError::Forbidden(
+                "resource scope is unresolved — no data is authorized".to_string(),
+            )),
+            ResourceScope::Tenant => match self {
+                Self::TenantWide => Ok(()),
+                _ => Err(SenseiError::Forbidden(
+                    "a tenant-level resource is outside the caller's authorized scope".to_string(),
+                )),
+            },
+            ResourceScope::Site { site } => {
+                if self.allows_site(*site) {
                     Ok(())
                 } else {
                     Err(SenseiError::Forbidden(
@@ -166,9 +202,307 @@ impl AuthorizedScope {
                     ))
                 }
             }
-            (None, Some(_wc)) => Err(SenseiError::Forbidden(
-                "work-center-scoped resource without a site cannot be authorized".to_string(),
-            )),
+            ResourceScope::WorkCenter { site, work_center } => {
+                if self.allows_work_center(*site, *work_center) {
+                    Ok(())
+                } else {
+                    Err(SenseiError::Forbidden(
+                        "resource work center is outside the caller's authorized scope".to_string(),
+                    ))
+                }
+            }
         }
+    }
+
+    /// Deprecated legacy form — call [`Self::enforce_resource`] with an
+    /// explicit [`ResourceScope`] instead. Semantics are FIXED
+    /// (twenty-ninth audit Wave A item 3): the old `(None, None)`
+    /// "no resource scope to check" allowance is gone.
+    ///
+    /// - `NoOperationalScope` — Forbidden ALWAYS.
+    /// - `(None, None)` — a tenant-level resource: Ok ONLY for
+    ///   `TenantWide` (the sole scope a site-less claim may not widen);
+    ///   `Sites` / `WorkCenter` are Forbidden.
+    /// - `(Some(site), None)` — a site resource: `allows_site(site)`.
+    /// - `(Some(site), Some(wc))` — a work-center resource:
+    ///   `allows_work_center(site, wc)`.
+    /// - `(None, Some(_))` — an inconsistent, site-less work-center
+    ///   claim: Forbidden ALWAYS (maps to `ResourceScope::Unresolved`).
+    #[deprecated(note = "call enforce_resource with an explicit ResourceScope instead")]
+    pub fn enforce(&self, site_id: Option<Uuid>, work_center_id: Option<Uuid>) -> Result<()> {
+        let resource = match (site_id, work_center_id) {
+            (None, None) => ResourceScope::Tenant,
+            (Some(site), None) => ResourceScope::Site { site },
+            (Some(site), Some(work_center)) => ResourceScope::WorkCenter { site, work_center },
+            (None, Some(_)) => ResourceScope::Unresolved,
+        };
+        self.enforce_resource(&resource)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn no_scope() -> AuthorizedScope {
+        AuthorizedScope::NoOperationalScope
+    }
+    fn tenant_wide() -> AuthorizedScope {
+        AuthorizedScope::tenant_wide()
+    }
+    fn sites(site_a: Uuid, site_b: Uuid) -> AuthorizedScope {
+        AuthorizedScope::Sites(vec![site_a, site_b])
+    }
+    fn work_center(site: Uuid, wc: Uuid) -> AuthorizedScope {
+        AuthorizedScope::WorkCenter(WorkCenterScope {
+            site,
+            work_center: wc,
+        })
+    }
+
+    fn ok(scope: &AuthorizedScope, resource: &ResourceScope) -> bool {
+        scope.enforce_resource(resource).is_ok()
+    }
+
+    #[test]
+    fn enforce_resource_unresolved_is_forbidden_for_every_scope() {
+        let site = Uuid::new_v4();
+        let wc = Uuid::new_v4();
+        for scope in [
+            no_scope(),
+            tenant_wide(),
+            sites(site, Uuid::new_v4()),
+            work_center(site, wc),
+        ] {
+            assert!(
+                scope.enforce_resource(&ResourceScope::Unresolved).is_err(),
+                "Unresolved must be Forbidden for {scope:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn enforce_resource_no_operational_scope_forbids_every_resource() {
+        let site = Uuid::new_v4();
+        let wc = Uuid::new_v4();
+        let scope = no_scope();
+        for resource in [
+            ResourceScope::Tenant,
+            ResourceScope::Site { site },
+            ResourceScope::WorkCenter {
+                site,
+                work_center: wc,
+            },
+            ResourceScope::Unresolved,
+        ] {
+            assert!(
+                scope.enforce_resource(&resource).is_err(),
+                "NoOperationalScope must forbid {resource:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn enforce_resource_tenant_wide_allows_every_well_formed_resource() {
+        let site = Uuid::new_v4();
+        let wc = Uuid::new_v4();
+        let scope = tenant_wide();
+        assert!(ok(&scope, &ResourceScope::Tenant));
+        assert!(ok(&scope, &ResourceScope::Site { site }));
+        assert!(ok(
+            &scope,
+            &ResourceScope::WorkCenter {
+                site,
+                work_center: wc
+            }
+        ));
+        assert!(scope.enforce_resource(&ResourceScope::Unresolved).is_err());
+    }
+
+    #[test]
+    fn enforce_resource_sites_allows_site_and_work_center_of_its_sites_only() {
+        let site_a = Uuid::new_v4();
+        let site_b = Uuid::new_v4();
+        let foreign = Uuid::new_v4();
+        let wc_a = Uuid::new_v4();
+        let scope = sites(site_a, site_b);
+
+        // Tenant-level resource: only a tenant-wide grant reaches it.
+        assert!(scope.enforce_resource(&ResourceScope::Tenant).is_err());
+
+        assert!(ok(&scope, &ResourceScope::Site { site: site_a }));
+        assert!(ok(&scope, &ResourceScope::Site { site: site_b }));
+        assert!(!ok(&scope, &ResourceScope::Site { site: foreign }));
+
+        assert!(ok(
+            &scope,
+            &ResourceScope::WorkCenter {
+                site: site_a,
+                work_center: wc_a,
+            }
+        ));
+        assert!(!ok(
+            &scope,
+            &ResourceScope::WorkCenter {
+                site: foreign,
+                work_center: wc_a,
+            }
+        ));
+    }
+
+    #[test]
+    fn enforce_resource_work_center_allows_only_the_exact_match() {
+        let site_a = Uuid::new_v4();
+        let foreign_site = Uuid::new_v4();
+        let wc_a = Uuid::new_v4();
+        let foreign_wc = Uuid::new_v4();
+        let scope = work_center(site_a, wc_a);
+
+        // Tenant-level resource: only a tenant-wide grant reaches it.
+        assert!(scope.enforce_resource(&ResourceScope::Tenant).is_err());
+
+        // Site resource: only the work center's OWN site.
+        assert!(ok(&scope, &ResourceScope::Site { site: site_a }));
+        assert!(!ok(&scope, &ResourceScope::Site { site: foreign_site }));
+
+        // Work-center resource: EXACT match only.
+        assert!(ok(
+            &scope,
+            &ResourceScope::WorkCenter {
+                site: site_a,
+                work_center: wc_a,
+            }
+        ));
+        assert!(!ok(
+            &scope,
+            &ResourceScope::WorkCenter {
+                site: site_a,
+                work_center: foreign_wc,
+            }
+        ));
+        assert!(!ok(
+            &scope,
+            &ResourceScope::WorkCenter {
+                site: foreign_site,
+                work_center: wc_a,
+            }
+        ));
+    }
+
+    #[test]
+    fn enforce_full_matrix() {
+        let site_a = Uuid::new_v4();
+        let site_b = Uuid::new_v4();
+        let wc_a = Uuid::new_v4();
+        let wc_b = Uuid::new_v4();
+        let resources = [
+            ResourceScope::Tenant,
+            ResourceScope::Site { site: site_a },
+            ResourceScope::Site { site: site_b },
+            ResourceScope::WorkCenter {
+                site: site_a,
+                work_center: wc_a,
+            },
+            ResourceScope::WorkCenter {
+                site: site_a,
+                work_center: wc_b,
+            },
+            ResourceScope::Unresolved,
+        ];
+        // Per-scope expectations over `resources` (scope order below).
+        let cases = [
+            (no_scope(), [false, false, false, false, false, false]),
+            (tenant_wide(), [true, true, true, true, true, false]),
+            (
+                sites(site_a, site_b),
+                [false, true, true, true, true, false],
+            ),
+            (
+                work_center(site_a, wc_a),
+                [false, true, false, true, false, false],
+            ),
+        ];
+        for (scope, expected) in cases {
+            for (resource, expect_ok) in resources.iter().zip(expected) {
+                assert_eq!(
+                    ok(&scope, resource),
+                    expect_ok,
+                    "scope {scope:?} vs resource {resource:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    #[allow(deprecated)]
+    fn deprecated_enforce_none_none_is_ok_only_for_tenant_wide() {
+        let site = Uuid::new_v4();
+        let wc = Uuid::new_v4();
+        assert!(tenant_wide().enforce(None, None).is_ok());
+        assert!(no_scope().enforce(None, None).is_err());
+        assert!(sites(site, Uuid::new_v4()).enforce(None, None).is_err());
+        assert!(work_center(site, wc).enforce(None, None).is_err());
+    }
+
+    #[test]
+    #[allow(deprecated)]
+    fn deprecated_enforce_no_operational_scope_is_forbidden_always() {
+        let site = Uuid::new_v4();
+        let wc = Uuid::new_v4();
+        let scope = no_scope();
+        for args in [
+            (None, None),
+            (Some(site), None),
+            (None, Some(wc)),
+            (Some(site), Some(wc)),
+        ] {
+            assert!(scope.enforce(args.0, args.1).is_err(), "args {args:?}");
+        }
+    }
+
+    #[test]
+    #[allow(deprecated)]
+    fn deprecated_enforce_none_some_is_forbidden_always() {
+        let site = Uuid::new_v4();
+        let wc = Uuid::new_v4();
+        // An inconsistent site-less work-center claim never passes — not
+        // even for a tenant-wide caller.
+        for scope in [
+            no_scope(),
+            tenant_wide(),
+            sites(site, Uuid::new_v4()),
+            work_center(site, wc),
+        ] {
+            assert!(scope.enforce(None, Some(wc)).is_err(), "scope {scope:?}");
+        }
+    }
+
+    #[test]
+    #[allow(deprecated)]
+    fn deprecated_enforce_site_arms_keep_scope_coverage() {
+        let site_a = Uuid::new_v4();
+        let site_b = Uuid::new_v4();
+        let wc_a = Uuid::new_v4();
+        assert!(sites(site_a, site_b).enforce(Some(site_a), None).is_ok());
+        assert!(sites(site_a, site_b)
+            .enforce(Some(site_b), Some(wc_a))
+            .is_ok());
+        assert!(sites(site_a, site_b)
+            .enforce(Some(Uuid::new_v4()), None)
+            .is_err());
+        assert!(work_center(site_a, wc_a)
+            .enforce(Some(site_a), None)
+            .is_ok());
+        assert!(work_center(site_a, wc_a)
+            .enforce(Some(site_a), Some(wc_a))
+            .is_ok());
+        assert!(work_center(site_a, wc_a)
+            .enforce(Some(site_a), Some(Uuid::new_v4()))
+            .is_err());
+        assert!(work_center(site_a, wc_a)
+            .enforce(Some(site_b), Some(wc_a))
+            .is_err());
+        assert!(tenant_wide().enforce(Some(site_a), Some(wc_a)).is_ok());
+        assert!(no_scope().enforce(Some(site_a), Some(wc_a)).is_err());
     }
 }

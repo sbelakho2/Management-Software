@@ -5,6 +5,7 @@
 
 use async_trait::async_trait;
 use chrono::Utc;
+use sensei_core::db::TenantTx;
 use sensei_core::domain::entities::User;
 use sensei_core::error::{Result, SenseiError};
 use sensei_core::pagination::PaginatedResponse;
@@ -332,88 +333,173 @@ impl UsersService for DatabaseUsersService {
         Ok(user)
     }
 
-    async fn update_user(
+    async fn update_profile(
         &self,
         caller_tenant_id: EntityId,
         id: EntityId,
-        updated: User,
+        name: String,
+        email: String,
     ) -> Result<User> {
-        let now = Utc::now();
-        let verified = self.is_email_verified(id).await.unwrap_or(false);
-        let model = user_to_model(updated, verified);
+        // Profile-only mutation (twenty-ninth audit Wave A): assigns ONLY
+        // name/email (plus the email_verified reset on an address change).
+        // roles / is_active / credential_version / password_hash are never
+        // written here — they live exclusively behind update_user_roles /
+        // deactivate_user / activate_user / change_password. The users
+        // table is FORCE RLS, so the update runs inside a tenant-scoped
+        // transaction (the production non-owner role needs the context).
+        let mut db = TenantTx::begin(&self.pool, caller_tenant_id)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to begin profile update: {e}")))?;
 
-        let result = sqlx::query_as::<_, UserModel>(
+        let result = sqlx::query_as::<_, UserModel>(&format!(
             "UPDATE users \
-             SET name = $2, email = $3, password_hash = $4, roles = $5, \
-                 is_active = $6, credential_version = $7, \
-                 email_verified = CASE WHEN email <> $8 THEN false ELSE email_verified END, \
-                 updated_at = $9 \
-             WHERE id = $1 AND tenant_id = $10 \
-             RETURNING id, tenant_id, email, name, password_hash, roles, \
-                       is_active, email_verified, credential_version, last_login_at, created_at, updated_at",
-        )
+             SET name = $2, email = $3, \
+                 email_verified = CASE WHEN email <> $3 THEN false ELSE email_verified END, \
+                 updated_at = NOW() \
+             WHERE id = $1 AND tenant_id = $4 \
+             RETURNING {USER_COLUMNS}"
+        ))
         .bind(id)
-        .bind(&model.name)
-        .bind(&model.email)
-        .bind(&model.password_hash)
-        .bind(&model.roles)
-        .bind(model.is_active)
-        .bind(model.credential_version)
-        .bind(&model.email)
-        .bind(now)
+        .bind(&name)
+        .bind(&email)
         .bind(caller_tenant_id)
-        .fetch_optional(&self.pool)
+        .fetch_optional(&mut **db.tx())
         .await;
 
         match result {
-            Ok(Some(model)) => Ok(user_model_to_domain(model)),
+            Ok(Some(model)) => {
+                db.commit().await.map_err(|e| {
+                    SenseiError::Database(format!("Failed to commit profile update: {e}"))
+                })?;
+                Ok(user_model_to_domain(model))
+            }
             Ok(None) => Err(SenseiError::NotFound(format!(
                 "User with id '{id}' not found"
             ))),
             Err(e) if is_unique_violation(&e) => Err(SenseiError::AlreadyExists(
                 "A user with that email already exists".to_string(),
             )),
-            Err(e) => Err(SenseiError::Database(format!("Failed to update user: {e}"))),
+            Err(e) => Err(SenseiError::Database(format!(
+                "Failed to update user profile: {e}"
+            ))),
+        }
+    }
+
+    async fn change_password(
+        &self,
+        caller_tenant_id: EntityId,
+        id: EntityId,
+        new_password_hash: String,
+    ) -> Result<User> {
+        // The ONLY credential mutation: stores the new hash and bumps the
+        // credential version atomically (refresh tokens and sessions die
+        // with the old password). Tenant-scoped transaction (FORCE RLS).
+        let mut db = TenantTx::begin(&self.pool, caller_tenant_id)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to begin password change: {e}")))?;
+
+        let result = sqlx::query_as::<_, UserModel>(&format!(
+            "UPDATE users \
+             SET password_hash = $3, credential_version = credential_version + 1, \
+                 updated_at = NOW() \
+             WHERE id = $1 AND tenant_id = $2 \
+             RETURNING {USER_COLUMNS}"
+        ))
+        .bind(id)
+        .bind(caller_tenant_id)
+        .bind(&new_password_hash)
+        .fetch_optional(&mut **db.tx())
+        .await;
+
+        match result {
+            Ok(Some(model)) => {
+                db.commit().await.map_err(|e| {
+                    SenseiError::Database(format!("Failed to commit password change: {e}"))
+                })?;
+                Ok(user_model_to_domain(model))
+            }
+            Ok(None) => Err(SenseiError::NotFound(format!(
+                "User with id '{id}' not found"
+            ))),
+            Err(e) => Err(SenseiError::Database(format!(
+                "Failed to change password: {e}"
+            ))),
         }
     }
 
     async fn deactivate_user(&self, caller_tenant_id: EntityId, id: EntityId) -> Result<User> {
-        let now = Utc::now();
+        // ONE tenant-scoped transaction (twenty-ninth audit Wave A): the
+        // UPDATE and the principal-revision bump are inseparable — a
+        // deactivation that did not move the authorization revision is
+        // impossible. The revision bump invalidates authorization-derived
+        // caches atomically.
+        let mut db = TenantTx::begin(&self.pool, caller_tenant_id)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to begin deactivation: {e}")))?;
 
         let model = sqlx::query_as::<_, UserModel>(&format!(
             "UPDATE users \
-                 SET is_active = false, updated_at = $2 \
-                 WHERE id = $1 AND tenant_id = $3 \
+                 SET is_active = false, updated_at = NOW() \
+                 WHERE id = $1 AND tenant_id = $2 \
                  RETURNING {USER_COLUMNS}"
         ))
         .bind(id)
-        .bind(now)
         .bind(caller_tenant_id)
-        .fetch_optional(&self.pool)
+        .fetch_optional(&mut **db.tx())
         .await
-        .map_err(|e| SenseiError::Database(format!("Failed to deactivate user: {e}")))?
-        .ok_or_else(|| SenseiError::NotFound(format!("User with id '{id}' not found")))?;
+        .map_err(|e| SenseiError::Database(format!("Failed to deactivate user: {e}")))?;
 
+        let Some(model) = model else {
+            return Err(SenseiError::NotFound(format!(
+                "User with id '{id}' not found"
+            )));
+        };
+        crate::tps::authorization_revisions::bump_in_tx(
+            db.tx(),
+            caller_tenant_id,
+            "principal_revision",
+        )
+        .await?;
+        db.commit()
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to commit deactivation: {e}")))?;
         Ok(user_model_to_domain(model))
     }
 
     async fn activate_user(&self, caller_tenant_id: EntityId, id: EntityId) -> Result<User> {
-        let now = Utc::now();
+        // ONE tenant-scoped transaction: UPDATE + principal-revision bump
+        // (the reactivated user's authorization caches must not outlive
+        // the activation).
+        let mut db = TenantTx::begin(&self.pool, caller_tenant_id)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to begin activation: {e}")))?;
 
         let model = sqlx::query_as::<_, UserModel>(&format!(
             "UPDATE users \
-                 SET is_active = true, updated_at = $2 \
-                 WHERE id = $1 AND tenant_id = $3 \
+                 SET is_active = true, updated_at = NOW() \
+                 WHERE id = $1 AND tenant_id = $2 \
                  RETURNING {USER_COLUMNS}"
         ))
         .bind(id)
-        .bind(now)
         .bind(caller_tenant_id)
-        .fetch_optional(&self.pool)
+        .fetch_optional(&mut **db.tx())
         .await
-        .map_err(|e| SenseiError::Database(format!("Failed to activate user: {e}")))?
-        .ok_or_else(|| SenseiError::NotFound(format!("User with id '{id}' not found")))?;
+        .map_err(|e| SenseiError::Database(format!("Failed to activate user: {e}")))?;
 
+        let Some(model) = model else {
+            return Err(SenseiError::NotFound(format!(
+                "User with id '{id}' not found"
+            )));
+        };
+        crate::tps::authorization_revisions::bump_in_tx(
+            db.tx(),
+            caller_tenant_id,
+            "principal_revision",
+        )
+        .await?;
+        db.commit()
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to commit activation: {e}")))?;
         Ok(user_model_to_domain(model))
     }
 
@@ -424,23 +510,41 @@ impl UsersService for DatabaseUsersService {
         roles: Vec<String>,
     ) -> Result<User> {
         validate_roles_db(&self.pool, caller_tenant_id, &roles).await?;
-        let now = Utc::now();
+        // ONE tenant-scoped transaction: the role UPDATE and the
+        // principal-revision bump are inseparable — a role change is LIVE
+        // for the very next request (the middleware reloads per request,
+        // and the revision bump invalidates authorization-derived caches).
+        let mut db = TenantTx::begin(&self.pool, caller_tenant_id)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to begin role update: {e}")))?;
 
         let model = sqlx::query_as::<_, UserModel>(&format!(
             "UPDATE users \
-                 SET roles = $2, updated_at = $3 \
-                 WHERE id = $1 AND tenant_id = $4 \
+                 SET roles = $2, updated_at = NOW() \
+                 WHERE id = $1 AND tenant_id = $3 \
                  RETURNING {USER_COLUMNS}"
         ))
         .bind(id)
         .bind(&roles)
-        .bind(now)
         .bind(caller_tenant_id)
-        .fetch_optional(&self.pool)
+        .fetch_optional(&mut **db.tx())
         .await
-        .map_err(|e| SenseiError::Database(format!("Failed to update user roles: {e}")))?
-        .ok_or_else(|| SenseiError::NotFound(format!("User with id '{id}' not found")))?;
+        .map_err(|e| SenseiError::Database(format!("Failed to update user roles: {e}")))?;
 
+        let Some(model) = model else {
+            return Err(SenseiError::NotFound(format!(
+                "User with id '{id}' not found"
+            )));
+        };
+        crate::tps::authorization_revisions::bump_in_tx(
+            db.tx(),
+            caller_tenant_id,
+            "principal_revision",
+        )
+        .await?;
+        db.commit()
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to commit role update: {e}")))?;
         Ok(user_model_to_domain(model))
     }
 

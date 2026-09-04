@@ -824,26 +824,25 @@ pub async fn update_me(
     State(state): State<AppState>,
     Json(req): Json<UpdateProfileRequest>,
 ) -> Result<Json<UserProfileResponse>> {
-    let mut profile = state.users_service.find_by_id(user.user_id).await?;
+    let profile = state.users_service.find_by_id(user.user_id).await?;
 
-    if let Some(name) = req.name {
-        profile.name = name;
-    }
-    if let Some(email) = req.email {
+    if let Some(email) = &req.email {
         // Check if new email is taken
-        if email != profile.email && state.users_service.find_by_email(&email).await.is_ok() {
+        if email != &profile.email && state.users_service.find_by_email(email).await.is_ok() {
             return Err(SenseiError::AlreadyExists(format!(
-                "Email '{}' is already in use",
-                email
+                "Email '{email}' is already in use"
             )));
         }
-        profile.email = email;
     }
 
-    profile.updated_at = now();
+    let name = req.name.unwrap_or_else(|| profile.name.clone());
+    let email = req.email.unwrap_or_else(|| profile.email.clone());
+    // Profile-only (twenty-ninth audit Wave A): the service assigns ONLY
+    // name/email — a self-service profile update can never touch roles,
+    // active state, credential version or the password hash.
     let updated = state
         .users_service
-        .update_user(user.tenant_id, user.user_id, profile)
+        .update_profile(user.tenant_id, user.user_id, name, email)
         .await?;
     Ok(Json(UserProfileResponse::from(updated)))
 }
@@ -876,15 +875,12 @@ pub async fn change_password(
     validate_password_strength(&req.new_password)?;
     let new_hash = hash_password(&req.new_password)?;
 
-    let mut updated = profile.clone();
-    updated.password_hash = new_hash;
-    // A password change invalidates every outstanding refresh token and
-    // session: bump the credential version so old tokens fail validation.
-    updated.credential_version = updated.credential_version.saturating_add(1);
-    updated.updated_at = now();
+    // The ONLY credential mutation (twenty-ninth audit Wave A): stores the
+    // new hash and bumps the credential version atomically, so every
+    // outstanding refresh token and session dies with the old password.
     state
         .users_service
-        .update_user(user.tenant_id, user.user_id, updated)
+        .change_password(user.tenant_id, user.user_id, new_hash)
         .await?;
 
     if let Err(e) = state
@@ -1003,16 +999,15 @@ pub async fn confirm_password_reset(
     validate_password_strength(&req.new_password)?;
     let new_hash = hash_password(&req.new_password)?;
 
-    // Update user's password and bump the credential version: every
-    // outstanding refresh token and session must die with the old password.
-    let mut user = state.users_service.find_by_id(stored.user_id).await?;
+    // Update the user's password through the ONLY credential mutation
+    // (twenty-ninth audit Wave A): it stores the new hash and bumps the
+    // credential version atomically, so every outstanding refresh token
+    // and session dies with the old password.
+    let user = state.users_service.find_by_id(stored.user_id).await?;
     let caller_tenant = user.tenant_id;
-    user.password_hash = new_hash;
-    user.credential_version = user.credential_version.saturating_add(1);
-    user.updated_at = now();
     state
         .users_service
-        .update_user(caller_tenant, stored.user_id, user)
+        .change_password(caller_tenant, stored.user_id, new_hash)
         .await?;
 
     if let Err(e) = state
@@ -1213,6 +1208,9 @@ mod tests {
                 "operator".to_string(),
             ],
             sid: None,
+            // Empty request-local permission set: the legacy RBAC registry
+            // backs require_permission in direct-construction tests.
+            permissions: std::collections::HashSet::new(),
         }
     }
 

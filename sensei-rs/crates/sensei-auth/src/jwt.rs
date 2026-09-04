@@ -33,7 +33,14 @@ pub struct AccessTokenClaims {
     pub iat: usize,
     /// Not before timestamp (Unix epoch seconds).
     pub nbf: usize,
-    /// User roles for RBAC.
+    /// User roles at ISSUE time — INFORMATIONAL ONLY (twenty-ninth audit
+    /// Wave A): authorization never trusts these. The auth middleware
+    /// reloads the CURRENT user row and resolves LIVE roles + effective
+    /// permissions per authenticated request, so a role change,
+    /// deactivation or deletion takes effect immediately even though this
+    /// claim stays fixed until token expiry. The claim remains for
+    /// diagnostics/introspection (and as the in-memory/dev-mode
+    /// fallback identity when no database is attached).
     pub roles: Vec<String>,
     /// Token type (always "access").
     pub token_type: String,

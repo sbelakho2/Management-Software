@@ -138,13 +138,19 @@ pub async fn get_user(
 /// Update a user (admin).
 ///
 /// Non-admin users can only update users in their own tenant.
+///
+/// Profile-only (twenty-ninth audit Wave A): the service layer assigns
+/// ONLY name/email — roles, active state, credential version and the
+/// password hash are never writable through this endpoint. Those fields
+/// have dedicated authorization-capable mutations
+/// (`update_user_roles`, deactivate/activate, `change_password`).
 pub async fn update_user(
     user: AuthenticatedUser,
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
     Json(req): Json<UpdateUserRequest>,
 ) -> Result<Json<UserResponse>> {
-    let mut existing = state.users_service.find_by_id(id).await?;
+    let existing = state.users_service.find_by_id(id).await?;
     // Editing another user requires the users:update permission; editing
     // yourself is always allowed (self-service profile changes).
     if id != user.user_id && !user.has_any_role(&["tenant_admin", "platform_admin", "admin"]) {
@@ -156,23 +162,19 @@ pub async fn update_user(
         return Err(SenseiError::NotFound(format!("User {id} not found")));
     }
 
-    if let Some(name) = req.name {
-        existing.name = name;
-    }
-    if let Some(email) = req.email {
-        if email != existing.email && state.users_service.find_by_email(&email).await.is_ok() {
+    if let Some(email) = &req.email {
+        if email != &existing.email && state.users_service.find_by_email(email).await.is_ok() {
             return Err(SenseiError::AlreadyExists(format!(
-                "Email '{}' is already in use",
-                email
+                "Email '{email}' is already in use"
             )));
         }
-        existing.email = email;
     }
 
-    existing.updated_at = sensei_core::types::now();
+    let name = req.name.unwrap_or_else(|| existing.name.clone());
+    let email = req.email.unwrap_or_else(|| existing.email.clone());
     let updated = state
         .users_service
-        .update_user(user.tenant_id, id, existing)
+        .update_profile(user.tenant_id, id, name, email)
         .await?;
     Ok(Json(UserResponse::from(updated)))
 }
@@ -310,6 +312,9 @@ mod tests {
                 "operator".to_string(),
             ],
             sid: None,
+            // Empty request-local permission set: legacy RBAC registry
+            // backs require_permission in direct-construction tests.
+            permissions: std::collections::HashSet::new(),
         }
     }
 
