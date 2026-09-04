@@ -27,7 +27,14 @@ services:
       # migrator needs the RLS bypass for the chain's cross-tenant
       # FORCE-RLS seeds; databases are created by the initdb superuser,
       # never by the migrator) and the NOLOGIN sensei_governance_definer
-      # role that owns the federation-governance functions.
+      # role that owns the federation-governance functions. Twenty-eighth
+      # audit P0: this FIRST initdb run happens BEFORE the migration
+      # chain, so it pre-grants the definer USAGE + CREATE ON SCHEMA
+      # public — migration 165's ALTER FUNCTION ... OWNER TO
+      # sensei_governance_definer requires schema CREATE of the new owner
+      # — and the definer's guarded table SELECT grants no-op here (the
+      # tables do not exist yet); the post-migration `grants` one-shot
+      # below applies those once the chain created the tables.
       SENSEI_APP_PASSWORD: ${SENSEI_APP_PASSWORD:?SENSEI_APP_PASSWORD required}
       SENSEI_MIGRATOR_PASSWORD: ${SENSEI_MIGRATOR_PASSWORD:?SENSEI_MIGRATOR_PASSWORD required}
     volumes:
@@ -54,7 +61,12 @@ services:
   # The API/workers depend on this service COMPLETING SUCCESSFULLY, so they
   # never start against an un-migrated schema and never attempt DDL as the
   # non-owner sensei_app. sensei_migrator is NEVER the runtime app
-  # identity — only this bootstrap uses it.
+  # identity — only this bootstrap uses it. It runs only AFTER the
+  # `bootstrap` one-shot below converged the roles and pre-migration
+  # grants (twenty-eighth audit P0): migration 165's
+  # ALTER FUNCTION ... OWNER TO sensei_governance_definer executes as
+  # this non-superuser role, and the definer must already hold USAGE +
+  # CREATE ON SCHEMA public or the clean bootstrap fails there.
   migrate:
     build:
       context: ./sensei-rs
@@ -70,6 +82,73 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      bootstrap:
+        condition: service_completed_successfully
+
+  # Pre-migration canonical role-script convergence (twenty-eighth audit
+  # P0 — governance ownership on a clean bootstrap): the canonical script
+  # (docker/postgres-init/01-app-role.sh, the ONE source of the role
+  # definitions and grants) must run BEFORE the migration chain AND again
+  # AFTER it. On a FRESH volume the db container's initdb mount already
+  # ran it pre-migration; this one-shot re-runs the IDENTICAL script
+  # against volumes whose initdb predates the definer's schema grant — an
+  # upgrade that first applies migration 165 would otherwise fail there
+  # (ALTER ... OWNER requires the new owner to hold CREATE on the
+  # function's schema). Every statement is idempotent, so on a fresh
+  # volume the run converges to the exact same state initdb produced.
+  # Runs as the bootstrap superuser over TCP (the script connects with
+  # --username "$POSTGRES_USER" --dbname "$POSTGRES_DB"; PGPASSWORD is
+  # the image's own password variable reused for the connection).
+  bootstrap:
+    image: pgvector/pgvector:pg16
+    restart: "no"
+    entrypoint: ["/bin/bash", "/opt/sensei/01-app-role.sh"]
+    environment:
+      PGHOST: db
+      PGPORT: "5432"
+      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER required}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required}
+      PGPASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required}
+      POSTGRES_DB: ${POSTGRES_DB:-sensei}
+      SENSEI_APP_PASSWORD: ${SENSEI_APP_PASSWORD:?SENSEI_APP_PASSWORD required}
+      SENSEI_MIGRATOR_PASSWORD: ${SENSEI_MIGRATOR_PASSWORD:?SENSEI_MIGRATOR_PASSWORD required}
+    volumes:
+      - ./docker/postgres-init/01-app-role.sh:/opt/sensei/01-app-role.sh:ro
+    depends_on:
+      db:
+        condition: service_healthy
+
+  # Post-migration canonical grants re-run (twenty-eighth audit P0): the
+  # migration chain has now created the FORCE-RLS federation tables the
+  # governance definer's SECURITY DEFINER bodies read, and BYPASSRLS does
+  # NOT grant table SELECT — so the canonical role script runs a SECOND
+  # time, and its table-existence guards fire now that
+  # federation_memberships, site_manifests, country_policies and
+  # country_policy_versions exist, granting sensei_governance_definer
+  # SELECT on each (its bodies execute under exactly those privileges).
+  # CI's clean-bootstrap gate (db-contract.yml) reproduces this same
+  # two-phase order. sensei-api / sensei-workers start only after this
+  # one-shot completed successfully.
+  grants:
+    image: pgvector/pgvector:pg16
+    restart: "no"
+    entrypoint: ["/bin/bash", "/opt/sensei/01-app-role.sh"]
+    environment:
+      PGHOST: db
+      PGPORT: "5432"
+      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER required}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required}
+      PGPASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required}
+      POSTGRES_DB: ${POSTGRES_DB:-sensei}
+      SENSEI_APP_PASSWORD: ${SENSEI_APP_PASSWORD:?SENSEI_APP_PASSWORD required}
+      SENSEI_MIGRATOR_PASSWORD: ${SENSEI_MIGRATOR_PASSWORD:?SENSEI_MIGRATOR_PASSWORD required}
+    volumes:
+      - ./docker/postgres-init/01-app-role.sh:/opt/sensei/01-app-role.sh:ro
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
 
   nats:
     image: nats:2.10-alpine
@@ -129,6 +208,12 @@ services:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully
+      # The post-migration canonical grants re-run must complete before the
+      # runtime services start (twenty-eighth audit P0): it grants the
+      # governance definer the SELECT privileges its SECURITY DEFINER
+      # bodies execute under.
+      grants:
+        condition: service_completed_successfully
       nats:
         condition: service_healthy
     healthcheck:
@@ -172,8 +257,13 @@ services:
         condition: service_healthy
       # The workers still probe the migration state at startup; they must
       # start only AFTER the migration-owner bootstrap completed, or their
-      # app-role connection could not even read _sqlx_migrations.
+      # app-role connection could not even read _sqlx_migrations. The
+      # post-migration `grants` re-run must also have completed
+      # (twenty-eighth audit P0) so the governance definer holds the
+      # SELECT grants its SECURITY DEFINER bodies execute under.
       migrate:
+        condition: service_completed_successfully
+      grants:
         condition: service_completed_successfully
       nats:
         condition: service_healthy

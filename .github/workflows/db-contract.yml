@@ -37,10 +37,18 @@ jobs:
     defaults:
       run:
         working-directory: sensei-rs
+    # Twenty-eighth audit P0 (release gate): the pure-Rust path
+    # (SENSEI_NO_ZIG=1, the documented switch — see the comment on the
+    # Fresh-database step) is set ONCE at the job level so EVERY cargo
+    # invocation in this job uses it; a step-scoped env var would silently
+    # miss a later cargo step in the same job.
+    env:
+      SENSEI_NO_ZIG: "1"
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
+          toolchain: 1.96.0
           components: clippy, rustfmt
       - uses: Swatinem/rust-cache@v2
       # Twentieth audit P1 (CI): the workspace crate sensei-zt builds a
@@ -55,7 +63,6 @@ jobs:
           cargo test -p sensei-db --test db_contract -- \
             --test-threads=1
         env:
-          SENSEI_NO_ZIG: "1"
           DATABASE_URL_TEST: postgres://sensei:sensei_test@localhost:5433/${{ env.DATABASE_NAME }}
 
   # Twenty-second audit P0/P1 + twenty-third audit P1: the gate above
@@ -135,10 +142,17 @@ jobs:
     defaults:
       run:
         working-directory: sensei-rs
+    # Twenty-eighth audit P0 (release gate): job-level SENSEI_NO_ZIG — the
+    # pure-Rust path for EVERY cargo invocation in this job (the DB
+    # contract suite below AND the clean-bootstrap gate's `cargo run`
+    # migrate-only step further down); see the comment on the suite step.
+    env:
+      SENSEI_NO_ZIG: "1"
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
+          toolchain: 1.96.0
           components: clippy, rustfmt
       - uses: Swatinem/rust-cache@v2
       - name: Fresh-database migration + DB contract suite
@@ -146,7 +160,6 @@ jobs:
           cargo test -p sensei-db --test db_contract -- \
             --test-threads=1
         env:
-          SENSEI_NO_ZIG: "1"
           DATABASE_URL_TEST: postgres://sensei:sensei_test@localhost:5434/${{ env.DATABASE_NAME }}
       - name: Ensure psql is available on the runner
         run: |
@@ -350,31 +363,60 @@ jobs:
       # NOCREATEDB because the bootstrap superuser creates databases) —
       # that owns every object the chain creates, and only then does the
       # API start as sensei_app. This step reproduces that exact order on
-      # a fresh database:
-      #   (1) superuser creates the database and pre-creates the extensions
+      # a fresh database. Twenty-eighth audit P0 fixed the ORDER of the
+      # canonical script around the chain: migration 165's
+      # ALTER FUNCTION ... OWNER TO sensei_governance_definer executes as
+      # the non-superuser sensei_migrator, and PostgreSQL requires the NEW
+      # owner to hold CREATE on the function's schema — a pre-migration
+      # script run grants the definer USAGE + CREATE ON SCHEMA public, and
+      # the table SELECT grants the definer's SECURITY DEFINER bodies need
+      # (BYPASSRLS does not grant table SELECT) land when the SAME script
+      # is re-run after the chain created the federation tables:
+      #   (a) superuser creates the database and pre-creates the extensions
       #       (production initdb does the same via ./postgres-init/
       #       01-init.sql BEFORE the role script runs — the migrator must
-      #       never need CREATE EXTENSION privileges);
-      #   (2) the CANONICAL production script (docker/postgres-init/
-      #       01-app-role.sh — executed verbatim, as everywhere) defines
-      #       ALL THREE roles on the fresh database: sensei_migrator holds
-      #       BYPASSRLS NOCREATEDB + CREATE ON SCHEMA public + ALL ON the
-      #       database, sensei_governance_definer (NOLOGIN BYPASSRLS — the
-      #       narrower owner the chain must flip the governance functions
-      #       to) is pre-created, and sensei_app is stripped of schema
-      #       CREATE (REVOKE ... FROM PUBLIC and FROM sensei_app) and
-      #       inherits table DML through default privileges declared FOR
-      #       ROLE sensei_migrator;
-      #   (3) the migration chain runs AS sensei_migrator through the real
+      #       never need CREATE EXTENSION privileges), then runs the
+      #       CANONICAL production script (docker/postgres-init/
+      #       01-app-role.sh — executed verbatim, as everywhere) ONCE
+      #       against the fresh database: it defines ALL THREE roles —
+      #       sensei_migrator holds BYPASSRLS NOCREATEDB + CREATE ON
+      #       SCHEMA public + ALL ON the database, sensei_governance_definer
+      #       (NOLOGIN BYPASSRLS — the narrower owner migration 165 must
+      #       flip the governance functions to) is pre-created AND granted
+      #       USAGE + CREATE ON SCHEMA public (twenty-eighth audit P0: the
+      #       pre-migration schema grant the chain-side owner transfer
+      #       requires), and sensei_app is stripped of schema CREATE
+      #       (REVOKE ... FROM PUBLIC and FROM sensei_app) and inherits
+      #       table DML through default privileges declared FOR ROLE
+      #       sensei_migrator. The definer's guarded table grants no-op
+      #       here — the federation tables do not exist yet;
+      #   (b) the migration chain runs AS sensei_migrator through the real
       #       production path: `cargo run -p sensei-api -- --migrate-only`
       #       (the API binary's migrate-only mode — what the compose
-      #       `migrate` service invokes);
-      #   (4) assertions: schema + object OWNERSHIP (every table and the
-      #       SECURITY DEFINER governance function must be owned by
-      #       sensei_migrator, not the app role or the superuser), the
-      #       migrator's role attributes, the governance-definer role's
-      #       attributes + membership, sensei_app CANNOT CREATE TABLE,
-      #       and sensei_app CAN SELECT from a migrated tenant table.
+      #       `migrate` service invokes). Migration 165's owner transfer
+      #       now SUCCEEDS because the definer holds schema USAGE+CREATE
+      #       from (a);
+      #   (c) the canonical script runs a SECOND time (production's
+      #       post-migrate `grants` one-shot in docker-compose.prod.yml
+      #       does the same): the chain has now created the FORCE-RLS
+      #       federation tables, so the script's table-existence guards
+      #       fire and sensei_governance_definer receives SELECT on
+      #       federation_memberships, site_manifests, country_policies and
+      #       country_policy_versions — the grants its SECURITY DEFINER
+      #       bodies execute under;
+      #   (d) assertions: schema + object OWNERSHIP (every table is owned
+      #       by sensei_migrator; both governance functions are owned by
+      #       sensei_governance_definer — never the app role or the
+      #       superuser), the migrator's deployment-only role attributes,
+      #       the governance-definer role's attributes + membership
+      #       (sensei_migrator member, sensei_app NOT a member), the
+      #       definer's schema + table privileges (has_schema_privilege /
+      #       has_table_privilege — BYPASSRLS alone would not let the
+      #       definer bodies read the peer tables), sensei_app CANNOT
+      #       CREATE TABLE, sensei_app CAN SELECT from a migrated tenant
+      #       table, sensei_app CAN EXECUTE
+      #       federation_governance_edges() and CANNOT execute
+      #       federation_governance_edges_for(uuid).
       - name: Clean-bootstrap gate — fresh DB migrated AS sensei_migrator (production bootstrap order)
         run: |
           set -euo pipefail
@@ -398,38 +440,73 @@ jobs:
           CREATE EXTENSION IF NOT EXISTS pgcrypto;
           CREATE EXTENSION IF NOT EXISTS pg_trgm;
           SQL
-          # (2) Canonical role script against the FRESH database (verbatim,
-          #     same file production mounts as 02-app-role.sh and the job
-          #     above ran on sensei_test). Roles already exist server-wide;
-          #     the script's DO blocks no-op and the ALTERs converge.
+          # (a) FIRST canonical role-script run against the FRESH database
+          #     (executed verbatim — the same file production mounts as
+          #     02-app-role.sh at initdb, and the job above ran it on
+          #     sensei_test). Roles already exist server-wide; the script's
+          #     DO blocks no-op and the ALTERs converge. Twenty-eighth
+          #     audit P0: this PRE-MIGRATION run grants
+          #     sensei_governance_definer USAGE + CREATE ON SCHEMA public —
+          #     migration 165's ALTER FUNCTION ... OWNER TO
+          #     sensei_governance_definer (step (b)) executes as the
+          #     non-superuser sensei_migrator, and PostgreSQL requires the
+          #     NEW owner to hold CREATE on the object's schema. Without
+          #     this grant the clean bootstrap failed at migration 165
+          #     ("permission denied for schema public"). The definer's
+          #     table SELECT grants are guarded on table existence in the
+          #     script, so they no-op here (the chain has not created the
+          #     tables yet) and land in the step-(c) re-run.
           POSTGRES_USER=sensei \
           POSTGRES_PASSWORD=sensei_test \
           POSTGRES_DB=clean_bootstrap \
           SENSEI_APP_PASSWORD=x \
           SENSEI_MIGRATOR_PASSWORD=migrate \
           bash "$GITHUB_WORKSPACE/docker/postgres-init/01-app-role.sh"
-          # (3) Run the ENTIRE migration chain AS sensei_migrator through
+          # (b) Run the ENTIRE migration chain AS sensei_migrator through
           #     the production binary path (--migrate-only; exits 0 only
-          #     when the chain applied cleanly).
-          SENSEI_NO_ZIG=1 \
+          #     when the chain applied cleanly). SENSEI_NO_ZIG comes from
+          #     the job-level env (twenty-eighth audit P0). Migration
+          #     165's owner transfer now SUCCEEDS: the definer holds
+          #     schema USAGE+CREATE from the step-(a) run, so the
+          #     non-superuser chain can flip both governance functions to
+          #     sensei_governance_definer.
           DATABASE_URL=postgres://sensei_migrator:migrate@localhost:5434/clean_bootstrap \
           cargo run -p sensei-api -- --migrate-only
-          # (4a) Schema assertions AS sensei_migrator: migration ledger is
-          #      populated and the audited probe table exists.
+          # (c) SECOND canonical role-script run (POST-migration — the
+          #     production `grants` one-shot in docker-compose.prod.yml
+          #     runs the identical re-run after its `migrate` one-shot).
+          #     The chain has now created the FORCE-RLS federation tables
+          #     the governance bodies read, so the script's
+          #     table-existence guards fire and sensei_governance_definer
+          #     receives SELECT on federation_memberships, site_manifests,
+          #     country_policies and country_policy_versions — BYPASSRLS
+          #     does NOT grant table SELECT, and without these the
+          #     definer-owned SECURITY DEFINER bodies would fail at
+          #     runtime. Everything else in the script re-applies
+          #     idempotently (attributes, passwords, schema grants,
+          #     sensei_app's table DML and the function EXECUTE surface).
+          POSTGRES_USER=sensei \
+          POSTGRES_PASSWORD=sensei_test \
+          POSTGRES_DB=clean_bootstrap \
+          SENSEI_APP_PASSWORD=x \
+          SENSEI_MIGRATOR_PASSWORD=migrate \
+          bash "$GITHUB_WORKSPACE/docker/postgres-init/01-app-role.sh"
+          # (d-1) Schema assertions AS sensei_migrator: migration ledger is
+          #       populated and the audited probe table exists.
           export PGDATABASE=clean_bootstrap PGUSER=sensei_migrator PGPASSWORD=migrate
           MIGRATED="$(psql -X -q -tAc 'SELECT COUNT(*) FROM _sqlx_migrations')"
           [ "$MIGRATED" -ge 140 ] || { echo "migration ledger too small: $MIGRATED"; exit 1; }
           PRODUCTS="$(psql -X -q -tAc "SELECT to_regclass('public.products')")"
           [ "$PRODUCTS" = "products" ] || { echo "products table missing after migrator chain: '$PRODUCTS'"; exit 1; }
-          # (4b) OWNERSHIP: the chain really ran AS sensei_migrator — every
-          #      table is owned by sensei_migrator (the migration role is
-          #      the table owner). The SECURITY DEFINER governance
+          # (d-2) OWNERSHIP: the chain really ran AS sensei_migrator —
+          #      every table is owned by sensei_migrator (the migration
+          #      role is the table owner). The SECURITY DEFINER governance
           #      functions are the exception: migration 165 flips BOTH
           #      federation_governance_edges() and
           #      federation_governance_edges_for(uuid) to
           #      sensei_governance_definer when that role exists (the
-          #      canonical script pre-created it above — asserted in
-          #      (4c-2) — so the flip applies in THIS gate). The
+          #      canonical script pre-created it in (a) — asserted in
+          #      (d-4) — so the flip applies in THIS gate). The
           #      migration guard SKIPS the flip on a minimal bootstrap
           #      that never ran the role script, leaving the
           #      chain-created owner sensei_migrator — the assertion
@@ -450,16 +527,17 @@ jobs:
           [ "$FN_OWNER" = "$EXPECTED_FN_OWNER" ] || { echo "federation_governance_edges() owned by '$FN_OWNER', expected $EXPECTED_FN_OWNER (migration 165 flips to sensei_governance_definer when the role exists)"; exit 1; }
           FN_FOR_OWNER="$(psql -X -q -tAc "SELECT pg_get_userbyid(p.proowner) FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = 'public' AND p.proname = 'federation_governance_edges_for' AND p.pronargs = 1")"
           [ "$FN_FOR_OWNER" = "$EXPECTED_FN_OWNER" ] || { echo "federation_governance_edges_for(uuid) owned by '$FN_FOR_OWNER', expected $EXPECTED_FN_OWNER (migration 165 flips to sensei_governance_definer when the role exists)"; exit 1; }
-          # (4c) Migrator role attributes (twenty-fifth audit P0):
-          #      NOSUPERUSER BYPASSRLS NOCREATEDB NOCREATEROLE — can DDL and
-          #      own the chain AND bypass FORCE RLS for its cross-tenant
-          #      seeds/backfills (a NOBYPASSRLS migrator cannot cleanly
-          #      bootstrap: FORCE RLS binds the table owner too); cannot
-          #      create databases (the bootstrap superuser does) or
-          #      administer roles.
+          # (d-3) Migrator role attributes (twenty-fifth audit P0): the
+          #      DEPLOYMENT-ONLY migration identity —
+          #      NOSUPERUSER BYPASSRLS NOCREATEDB NOCREATEROLE — can DDL
+          #      and own the chain AND bypass FORCE RLS for its
+          #      cross-tenant seeds/backfills (a NOBYPASSRLS migrator
+          #      cannot cleanly bootstrap: FORCE RLS binds the table owner
+          #      too); cannot create databases (the bootstrap superuser
+          #      does) or administer roles.
           FLAGS="$(psql -X -q -tAc "SELECT rolsuper || '/' || rolbypassrls || '/' || rolcreatedb || '/' || rolcreaterole FROM pg_roles WHERE rolname = 'sensei_migrator'")"
           [ "$FLAGS" = "false/true/false/false" ] || { echo "sensei_migrator is not the expected deployment-only role: '$FLAGS'"; exit 1; }
-          # (4c-2) Governance-definer role (twenty-fifth audit P0): the
+          # (d-4) Governance-definer role (twenty-fifth audit P0): the
           #      canonical script pre-creates sensei_governance_definer —
           #      NOLOGIN NOSUPERUSER BYPASSRLS NOCREATEDB NOCREATEROLE
           #      (never a connection identity; the RLS bypass exists only
@@ -467,14 +545,25 @@ jobs:
           #      peer reads), and grants sensei_migrator membership so the
           #      non-superuser chain CAN flip the governance functions'
           #      OWNER to it (ALTER OWNER requires membership in the new
-          #      owner role). sensei_app is never a member.
+          #      owner role). sensei_app is never a member — asserted
+          #      right below.
           DEFINER_FLAGS="$(psql -X -q -tAc "SELECT rolsuper || '/' || rolbypassrls || '/' || rolcreatedb || '/' || rolcreaterole || '/' || rolcanlogin FROM pg_roles WHERE rolname = 'sensei_governance_definer'")"
           [ "$DEFINER_FLAGS" = "false/true/false/false/false" ] || { echo "sensei_governance_definer is not the expected NOLOGIN BYPASSRLS definer role: '$DEFINER_FLAGS'"; exit 1; }
           # pg_auth_members rows are visibility-filtered for non-members,
           # so probe the membership as the superuser.
           DEF_MEMBERSHIP="$(PGUSER=sensei PGPASSWORD=sensei_test psql -X -q -tAc "SELECT EXISTS (SELECT 1 FROM pg_auth_members m JOIN pg_roles r ON r.oid = m.roleid WHERE r.rolname = 'sensei_governance_definer' AND m.member = (SELECT oid FROM pg_roles WHERE rolname = 'sensei_migrator'))")"
           [ "$DEF_MEMBERSHIP" = "t" ] || { echo "sensei_migrator is not a member of sensei_governance_definer (chain ALTER OWNER would fail): '$DEF_MEMBERSHIP'"; exit 1; }
-          # (4d) sensei_app on the migrator-owned schema: schema CREATE is
+          # (d-4-2) The runtime app role is NEVER a member of the definer
+          #      (twenty-eighth audit P0): membership would hand sensei_app
+          #      the definer's BYPASSRLS attribute (any role that is a
+          #      member can SET ROLE to it) and collapse the
+          #      SECURITY-DEFINER owner boundary — the app identity must
+          #      stay NOBYPASSRLS under FORCE RLS. Only the
+          #      deployment-only sensei_migrator (asserted above) may be a
+          #      member.
+          APP_DEF_MEMBERSHIP="$(PGUSER=sensei PGPASSWORD=sensei_test psql -X -q -tAc "SELECT EXISTS (SELECT 1 FROM pg_auth_members m JOIN pg_roles r ON r.oid = m.roleid JOIN pg_roles mem ON mem.oid = m.member WHERE r.rolname = 'sensei_governance_definer' AND mem.rolname = 'sensei_app')")"
+          [ "$APP_DEF_MEMBERSHIP" = "f" ] || { echo "sensei_app IS a member of sensei_governance_definer (definer boundary collapsed): '$APP_DEF_MEMBERSHIP'"; exit 1; }
+          # (d-5) sensei_app on the migrator-owned schema: schema CREATE is
           #      REFUSED (REVOKE ... FROM PUBLIC + FROM sensei_app), and a
           #      migrated tenant table is SELECTable through the default
           #      privileges declared FOR ROLE sensei_migrator.
@@ -487,7 +576,64 @@ jobs:
             *) echo "sensei_app could CREATE TABLE on the migrator-owned schema: '$CREATE_OUT'"; exit 1;;
           esac
           SELECT_OUT="$(psql -X -q -tAc 'SELECT COUNT(*) FROM products')"
+          # (d-5-2) The app role's governance-function surface on the clean
+          #      bootstrap (twenty-eighth audit P0): EXECUTE ONLY on the
+          #      no-argument federation_governance_edges() — PUBLIC keeps
+          #      EXECUTE on that form (migration 156) and the canonical
+          #      script grants it explicitly once the function exists. An
+          #      ACTUAL call must succeed (the clean database has no rows,
+          #      so it returns nothing — but the SECURITY DEFINER body
+          #      runs with the definer's privileges, so success also
+          #      proves the step-(c) post-migration table grants). The
+          #      migration/admin-only _for(uuid) variant is REFUSED: it is
+          #      revoked from PUBLIC and never granted to the app role.
+          HAS_APP_EDGES="$(psql -X -q -tAc "SELECT has_function_privilege('sensei_app', p.oid, 'EXECUTE') FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = 'public' AND p.proname = 'federation_governance_edges' AND p.pronargs = 0")"
+          [ "$HAS_APP_EDGES" = "t" ] || { echo "sensei_app lacks EXECUTE on federation_governance_edges(): '$HAS_APP_EDGES'"; exit 1; }
+          GOV_EXEC="$(psql -X -q -v ON_ERROR_STOP=1 -tAc 'SELECT peer_country FROM federation_governance_edges()')"
+          HAS_APP_FOR="$(psql -X -q -tAc "SELECT has_function_privilege('sensei_app', p.oid, 'EXECUTE') FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = 'public' AND p.proname = 'federation_governance_edges_for' AND p.pronargs = 1")"
+          [ "$HAS_APP_FOR" = "f" ] || { echo "sensei_app HAS EXECUTE on federation_governance_edges_for(uuid): '$HAS_APP_FOR'"; exit 1; }
+          GOV_FOR="$(psql -X -q -v ON_ERROR_STOP=1 -tAc "SELECT peer_country FROM federation_governance_edges_for('00000000-0000-4000-8000-00000000000a')" 2>&1 || true)"
+          case "$GOV_FOR" in
+            *"permission denied for function"*) : ;;
+            *) echo "federation_governance_edges_for(uuid) was not denied for the app role on the clean bootstrap: '$GOV_FOR'"; exit 1;;
+          esac
+          # (d-6) The definer's OWN schema + table privileges on the clean
+          #      bootstrap (twenty-eighth audit P0): a direct
+          #      SET ROLE sensei_governance_definer SELECT would prove
+          #      nothing — with no app.tenant_id context the FORCE-RLS
+          #      policy filters every row out regardless of privileges —
+          #      so probe has_schema_privilege / has_table_privilege
+          #      instead. These are exactly the privileges the migration
+          #      165 owner transfer (schema USAGE+CREATE from the
+          #      step-(a) run) and the definer-owned SECURITY DEFINER
+          #      bodies (SELECT on the four federation tables from the
+          #      step-(c) run; BYPASSRLS alone does not grant table
+          #      SELECT) execute under.
+          DEFINER_PRIVS="$(PGUSER=sensei PGPASSWORD=sensei_test psql -X -q -v ON_ERROR_STOP=1 -d clean_bootstrap <<'SQL' 2>&1)"
+          DO $$
+          DECLARE
+              t text;
+              granted boolean;
+          BEGIN
+              IF NOT has_schema_privilege('sensei_governance_definer', 'public', 'USAGE') THEN
+                  RAISE EXCEPTION 'sensei_governance_definer lacks USAGE on schema public';
+              END IF;
+              IF NOT has_schema_privilege('sensei_governance_definer', 'public', 'CREATE') THEN
+                  RAISE EXCEPTION 'sensei_governance_definer lacks CREATE on schema public (migration 165''s ALTER FUNCTION OWNER requires it)';
+              END IF;
+              FOREACH t IN ARRAY ARRAY['federation_memberships', 'site_manifests',
+                                        'country_policies', 'country_policy_versions'] LOOP
+                  EXECUTE format('SELECT has_table_privilege(%L, %L, %L)',
+                                 'sensei_governance_definer', 'public.' || t, 'SELECT') INTO granted;
+                  IF NOT granted THEN
+                      RAISE EXCEPTION 'sensei_governance_definer lacks SELECT on public.% (the SECURITY DEFINER governance bodies read it; BYPASSRLS does not grant table SELECT)', t;
+                  END IF;
+              END LOOP;
+          END
+          $$;
+          SQL
           echo "clean bootstrap OK: migrations=$MIGRATED migrator_flags=$FLAGS table_owner=$TABLE_OWNER fn_owner=$FN_OWNER"
-          echo "  governance-definer role flags=$DEFINER_FLAGS membership=$DEF_MEMBERSHIP"
-          echo "  sensei_app CREATE denied (permission denied for schema public)"
-          echo "  sensei_app SELECT on products returned count=$SELECT_OUT"
+          echo "  governance-definer role flags=$DEFINER_FLAGS membership=$DEF_MEMBERSHIP app_member=$APP_DEF_MEMBERSHIP"
+          echo "  definer schema/table privileges OK (has_schema_privilege USAGE+CREATE; has_table_privilege SELECT on the four federation tables)"
+          echo "  sensei_app CREATE denied (permission denied for schema public); SELECT on products returned count=$SELECT_OUT"
+          echo "  sensei_app governance surface: edges() EXECUTE ok (has_privilege=$HAS_APP_EDGES); _for(uuid) permission denied (has_privilege=$HAS_APP_FOR)"

@@ -51,13 +51,25 @@ pub struct ToolSpec {
     pub timeout_ms: u64,
     /// Maximum rows returned to the model context.
     pub max_rows: usize,
-    /// Deterministic idempotency key support (agent retries never
-    /// duplicate).
+    /// Deterministic idempotency key support — COMMAND idempotency for
+    /// MUTATING tools only (agent retries never duplicate a mutation).
+    /// Read-only/observational tools may set this flag
+    /// (ToolSpec::read_only does) but they are NEVER reserved,
+    /// journaled, cached or replayed: the durable command journal is
+    /// keyed by tool+args without user/site/scope, so caching a
+    /// read-only execution could leak another caller's scoped data,
+    /// freeze live values and strip evidence — every read-only call
+    /// runs the domain handler FRESH (twenty-eighth audit P0-1).
     pub idempotent: bool,
     pub approval_policy: ApprovalPolicy,
 }
 
 impl ToolSpec {
+    /// A read/calculate-only tool: it still declares idempotent:true,
+    /// but idempotency means COMMAND idempotency for MUTATING tools —
+    /// a read-only execution is never journaled/cached/replayed
+    /// (twenty-eighth audit P0-1), so every call re-runs the domain
+    /// handler under THIS caller's scope and returns fresh evidence.
     pub fn read_only(
         name: &str,
         required_permission: &str,
@@ -376,6 +388,13 @@ impl<'h> ToolExecutor<'h> {
     /// validation live ONLY here. The handler is called for dispatch with
     /// the execution context, the tool spec and the arguments. Returns a
     /// Dispatch error when no handler is registered.
+    ///
+    /// Twenty-eighth audit P0-1: read-only tools (risk == ReadOnly, even
+    /// when idempotent:true) skip the whole journal/claim/RAM-replay path
+    /// below — the gate lives in execute_inner(), the ONE state machine
+    /// every entry point funnels into, so execute_handler() and execute()
+    /// never need a second copy: every read-only call dispatches the
+    /// handler FRESH (fresh data, fresh EvidenceRefs, live scope checks).
     pub async fn execute_handler(
         &mut self,
         ctx: &crate::context::AgentContext,
@@ -410,7 +429,10 @@ impl<'h> ToolExecutor<'h> {
     /// SQL/shell/HTTP directly) and returns the raw output value. When a
     /// handler is REGISTERED it is the dispatch authority and the generic
     /// `dispatch` closure is not used; without a handler the closure is
-    /// the dispatch (the internal read-only table use).
+    /// the dispatch (the internal read-only table use). Read-only tools
+    /// always dispatch — execute_inner()'s single mutating-only
+    /// journal/RAM gate (twenty-eighth audit P0-1) applies to every entry
+    /// point (execute, execute_handler, execute_inner).
     pub async fn execute<F, Fut>(
         &mut self,
         ctx: &crate::context::AgentContext,
@@ -460,13 +482,24 @@ impl<'h> ToolExecutor<'h> {
             });
         }
         // Idempotency (item 59 + nineteenth audit P1 + twentieth audit
-        // P1 + twenty-first audit item 8 + twenty-seventh audit P0): the
-        // DURABLE journal is a CLAIM STATE MACHINE with LEASES and
-        // FENCING TOKENS. reserve() atomically claims the key — exactly
-        // one concurrent caller wins and reaches the DURABLE
-        // PRE-DISPATCH GATE: the mutation runs ONLY after begin_dispatch()
-        // durably moved the row 'reserved' → 'dispatching' (a crash after
-        // that gate can never masquerade as a clean pre-mutation crash).
+        // P1 + twenty-first audit item 8 + twenty-seventh audit P0 +
+        // twenty-eighth audit P0-1): the DURABLE journal is a CLAIM
+        // STATE MACHINE with LEASES and FENCING TOKENS. reserve()
+        // atomically claims the key — exactly one concurrent caller
+        // wins and reaches the DURABLE PRE-DISPATCH GATE: the mutation
+        // runs ONLY after begin_dispatch() durably moved the row
+        // 'reserved' → 'dispatching' (a crash after that gate can never
+        // masquerade as a clean pre-mutation crash).
+        // Twenty-eighth audit P0-1: this state machine exists for
+        // MUTATING tools ONLY. A ReadOnly tool — even when it declares
+        // idempotent:true (ToolSpec::read_only does) — NEVER reserves,
+        // journals, loads, replays, recovers or RAM-caches: the journal
+        // key carries no user/site/scope, so a journaled read-only
+        // result could be replayed for a SECOND caller without running
+        // the domain handler (where scope authorization lives), freeze
+        // a live value, and strip the original EvidenceRefs. Every
+        // ReadOnly call falls straight through to the dispatch below
+        // and returns FRESH evidence.
         // Every loser:
         // - replays the terminal outcome ('succeeded'/'failed');
         // - Conflicts while the claim is leased
@@ -487,7 +520,7 @@ impl<'h> ToolExecutor<'h> {
         // performance cache only (it may forget); with no journal
         // configured the RAM-cache behavior is unchanged.
         let key = execution.key.key();
-        if tool.idempotent {
+        if tool.idempotent && tool.risk != ToolRisk::ReadOnly {
             if let Some(journal) = self.journal.clone() {
                 // The lease must outlive the dispatch (bounded by the
                 // tool's REAL timeout) so an in-flight claim is never
@@ -523,6 +556,14 @@ impl<'h> ToolExecutor<'h> {
                                     .to_string(),
                             })?;
                         match status.as_str() {
+                            // The journaled outcome is restored VERBATIM
+                            // (twenty-eighth audit P0-1): when the stored
+                            // result carried the ToolResult evidence
+                            // array serialized alongside the data
+                            // (an 'evidence' member), the replay keeps
+                            // those entries — nothing is stripped or
+                            // re-wrapped here; the caller's layer
+                            // reconstructs its ToolResult from them.
                             "succeeded" => Ok(result),
                             "failed" => {
                                 let message = result
@@ -623,7 +664,10 @@ impl<'h> ToolExecutor<'h> {
                 message,
             });
         }
-        if tool.idempotent {
+        // RAM replay cache for MUTATING tools only (twenty-eighth audit
+        // P0-1): a ReadOnly result is never cached — the next call must
+        // run the domain handler again for fresh data and evidence.
+        if tool.idempotent && tool.risk != ToolRisk::ReadOnly {
             self.execution_results.insert(key, output.clone());
         }
         Ok(output)
@@ -832,6 +876,11 @@ impl<'h> ToolExecutor<'h> {
         // silently disappears. Token fencing also means a stale owner
         // whose claim was recovered gets an error here instead of
         // confirming an outcome it no longer owns.
+        // Twenty-eighth audit P0-1: the FULL validated output is stored —
+        // when the dispatch embedded the ToolResult evidence array as an
+        // 'evidence' member of the output, it is stored alongside the
+        // data and restored verbatim on replay (evidence is never
+        // stripped at the journal boundary).
         journal
             .complete(ctx.tenant_id, key, &claim_token, "succeeded", &output)
             .await
@@ -2570,6 +2619,30 @@ mod tests {
         fail_with: Option<String>,
     }
 
+    /// A REGISTERED handler for the twenty-eighth-audit P0-1 read-only
+    /// tests: counts its invocations and returns a FRESH, schema-conforming
+    /// output per call (each dispatch observes live state).
+    struct ReadOnlyRecordingHandler {
+        calls: std::sync::Arc<std::sync::atomic::AtomicU64>,
+    }
+
+    impl super::ToolHandler for ReadOnlyRecordingHandler {
+        fn dispatch<'a>(
+            &'a self,
+            _execution: &'a ToolExecutionContext,
+            _tool: &'a ToolSpec,
+            _args: &'a serde_json::Value,
+        ) -> ToolHandlerFuture<'a> {
+            let calls = self.calls.clone();
+            Box::pin(async move {
+                let seq = calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                Ok(serde_json::json!({
+                    "work_order": { "seq": seq }
+                }))
+            })
+        }
+    }
+
     impl super::ToolHandler for RecordingHandler {
         fn dispatch<'a>(
             &'a self,
@@ -2803,6 +2876,275 @@ mod tests {
         assert_eq!(
             journal.state(caller.tenant_id, &execution.key.key()).0,
             "succeeded"
+        );
+    }
+
+    fn read_only_query_tool() -> ToolSpec {
+        ToolSpec {
+            name: "get_work_order".to_string(),
+            version: 1,
+            risk: ToolRisk::ReadOnly,
+            required_permission: "production:work-order:read".to_string(),
+            input_schema: serde_json::json!({"id": "uuid"}),
+            output_schema: serde_json::json!({"work_order": "object"}),
+            timeout_ms: 10_000,
+            max_rows: 500,
+            idempotent: true,
+            approval_policy: ApprovalPolicy::Automatic,
+        }
+    }
+
+    #[tokio::test]
+    async fn read_only_tool_never_journals_or_replays_and_dispatches_fresh_every_time() {
+        // Twenty-eighth audit P0-1 (adversarial a): a ReadOnly tool
+        // (idempotent:true) executed TWICE on the SAME execution key —
+        // even with a durable journal configured — must run the domain
+        // dispatch BOTH times (count == 2): no reserve, no journal row,
+        // no RAM replay, no load/recover. Every call falls through to
+        // the dispatch, which is where scope authorization happens, so a
+        // second caller can never replay the first caller's result. The
+        // two results are FRESH (the dispatch observes live state on
+        // every call — they differ), never a frozen first value.
+        let tool = read_only_query_tool();
+        let journal = std::sync::Arc::new(MemoryJournal::default());
+        let mut executor = ToolExecutor::with_journal(
+            PolicyEngine::new(vec![tool.clone()], ToolRisk::ReadOnly),
+            journal.clone(),
+        );
+        let caller = ctx(&["production:work-order:read"]);
+        let execution = fresh_execution(50);
+        let _key = execution.key.key();
+        let calls = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
+        let dispatch = |calls: std::sync::Arc<std::sync::atomic::AtomicU64>| {
+            move |_| {
+                let seq = calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                async move {
+                    Ok(serde_json::json!({
+                        "work_order": { "id": format!("wo-{seq}") }
+                    }))
+                }
+            }
+        };
+        let first = executor
+            .execute(
+                &caller,
+                &tool,
+                serde_json::json!({"id": uuid::Uuid::new_v4().to_string()}),
+                None,
+                execution.clone(),
+                dispatch(calls.clone()),
+            )
+            .await
+            .unwrap();
+        let second = executor
+            .execute(
+                &caller,
+                &tool,
+                serde_json::json!({"id": uuid::Uuid::new_v4().to_string()}),
+                None,
+                execution.clone(),
+                dispatch(calls.clone()),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            calls.load(std::sync::atomic::Ordering::SeqCst),
+            2,
+            "a read-only tool must dispatch on EVERY call — never replay"
+        );
+        assert_ne!(
+            first, second,
+            "a read-only tool must return FRESH results — never a frozen replay"
+        );
+        assert_eq!(
+            first["work_order"]["id"],
+            serde_json::json!("wo-0"),
+            "the first dispatch observed seq 0"
+        );
+        assert_eq!(
+            second["work_order"]["id"],
+            serde_json::json!("wo-1"),
+            "the second dispatch observed live seq 1"
+        );
+        assert!(
+            journal.rows.lock().unwrap().is_empty(),
+            "a read-only tool must NEVER claim a durable journal row"
+        );
+        assert_eq!(*journal.completes.lock().unwrap(), 0);
+        // A SECOND executor sharing the same (empty) journal also
+        // dispatches again — there is nothing to replay anywhere.
+        let mut executor_b = ToolExecutor::with_journal(
+            PolicyEngine::new(vec![tool.clone()], ToolRisk::ReadOnly),
+            journal.clone(),
+        );
+        let third = executor_b
+            .execute(
+                &caller,
+                &tool,
+                serde_json::json!({"id": uuid::Uuid::new_v4().to_string()}),
+                None,
+                execution,
+                dispatch(calls.clone()),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            calls.load(std::sync::atomic::Ordering::SeqCst),
+            3,
+            "a fresh executor must also dispatch — the read-only path has no replay store"
+        );
+        assert_eq!(third["work_order"]["id"], serde_json::json!("wo-2"));
+        assert!(journal.rows.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn read_only_tool_handler_executes_fresh_even_with_journal() {
+        // Twenty-eighth audit P0-1: the read-only exclusion applies to
+        // the REGISTERED HANDLER path too (execute_handler funnels into
+        // execute_inner's single gate): two executions of the same key
+        // on a journal-equipped executor invoke the handler TWICE with
+        // fresh results and journal no row.
+        let tool = read_only_query_tool();
+        let journal = std::sync::Arc::new(MemoryJournal::default());
+        let calls = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
+        let handler = std::sync::Arc::new(ReadOnlyRecordingHandler {
+            calls: calls.clone(),
+        });
+        let mut executor = ToolExecutor::with_journal_and_handler(
+            PolicyEngine::new(vec![tool.clone()], ToolRisk::ReadOnly),
+            journal.clone(),
+            handler,
+        );
+        let caller = ctx(&["production:work-order:read"]);
+        let execution = fresh_execution(51);
+        let first = executor
+            .execute_handler(
+                &caller,
+                &tool,
+                serde_json::json!({"id": uuid::Uuid::new_v4().to_string()}),
+                None,
+                execution.clone(),
+            )
+            .await
+            .unwrap();
+        let second = executor
+            .execute_handler(
+                &caller,
+                &tool,
+                serde_json::json!({"id": uuid::Uuid::new_v4().to_string()}),
+                None,
+                execution,
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            calls.load(std::sync::atomic::Ordering::SeqCst),
+            2,
+            "the registered handler must run on EVERY read-only call"
+        );
+        assert_ne!(first, second, "fresh results on every read-only call");
+        assert!(
+            journal.rows.lock().unwrap().is_empty(),
+            "a read-only handler execution must never reserve a journal row"
+        );
+    }
+
+    #[tokio::test]
+    async fn mutating_journal_replay_preserves_stored_evidence() {
+        // Twenty-eighth audit P0-1 (adversarial c): MUTATING tools keep
+        // their journal semantics unchanged — one dispatch, then the
+        // same key REPLAYS (count == 1) — and the replay PRESERVES the
+        // evidence the original result carried: the journaled
+        // 'succeeded' outcome stores the FULL dispatch output, so an
+        // 'evidence' member (the ToolResult evidence array serialized
+        // alongside the data) survives the store and is restored
+        // verbatim by the replay — never stripped into an empty list.
+        let tool = ToolSpec {
+            output_schema: serde_json::json!({"posted": "boolean", "evidence": "array"}),
+            ..mutating_tool()
+        };
+        let journal = std::sync::Arc::new(MemoryJournal::default());
+        let mut executor = ToolExecutor::with_journal(
+            PolicyEngine::new(vec![tool.clone()], ToolRisk::HighRisk),
+            journal.clone(),
+        );
+        let caller = ctx(&["finance:journal:post"]);
+        let execution = fresh_execution(52);
+        let calls = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
+        let observed_at = chrono::Utc::now();
+        let evidence = serde_json::to_value(vec![crate::evidence::EvidenceRef::new(
+            "work_order:42",
+            7,
+            observed_at,
+        )])
+        .unwrap();
+        let first = executor
+            .execute(
+                &caller,
+                &tool,
+                serde_json::json!({}),
+                Some(approval()),
+                execution.clone(),
+                |_| {
+                    calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                    let evidence = evidence.clone();
+                    async move {
+                        Ok(serde_json::json!({
+                            "posted": true,
+                            "evidence": evidence,
+                        }))
+                    }
+                },
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            first["evidence"].as_array().map(Vec::len),
+            Some(1),
+            "the original result carried its evidence"
+        );
+        // The evidence is stored ALONGSIDE the data in the journal row.
+        let (status, stored) = journal.state(caller.tenant_id, &execution.key.key());
+        assert_eq!(status, "succeeded");
+        assert_eq!(
+            stored["evidence"], evidence,
+            "the journal stored the evidence"
+        );
+        // Replay through a FRESH executor (a journal replay, not the RAM
+        // cache): the mutation does not dispatch again and the replayed
+        // result keeps the stored evidence entries.
+        let mut executor_b = ToolExecutor::with_journal(
+            PolicyEngine::new(vec![tool.clone()], ToolRisk::HighRisk),
+            journal.clone(),
+        );
+        let replayed = executor_b
+            .execute(
+                &caller,
+                &tool,
+                serde_json::json!({}),
+                Some(approval()),
+                execution,
+                |_| {
+                    calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                    async move { panic!("a journaled mutating replay must never re-dispatch") }
+                },
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            calls.load(std::sync::atomic::Ordering::SeqCst),
+            1,
+            "the mutation dispatches exactly once; the replay is journaled"
+        );
+        assert_eq!(replayed, first, "the replay restores the stored outcome");
+        assert_eq!(
+            replayed["evidence"], evidence,
+            "the replay preserved the stored evidence entries"
+        );
+        assert_eq!(
+            replayed["evidence"].as_array().map(Vec::len),
+            Some(1),
+            "evidence is non-empty on replay"
         );
     }
 }

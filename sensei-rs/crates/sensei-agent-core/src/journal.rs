@@ -1,9 +1,22 @@
 //! Durable command journal (eighteenth audit P1-14, nineteenth audit
-//! P1, twentieth audit P1, twenty-seventh audit P0): the bounded RAM
-//! replay map in the ToolExecutor is a PERFORMANCE cache — it may
-//! forget. This trait is the SYSTEM OF RECORD for idempotent tool
-//! executions, modeled as a CLAIM STATE MACHINE with LEASES and
-//! FENCING TOKENS:
+//! P1, twentieth audit P1, twenty-seventh audit P0, twenty-eighth audit
+//! P0-1): the bounded RAM replay map in the ToolExecutor is a
+//! PERFORMANCE cache — it may forget. This trait is the SYSTEM OF RECORD
+//! for MUTATING/COMMAND tool executions, modeled as a CLAIM STATE
+//! MACHINE with LEASES and FENCING TOKENS:
+//!
+//! Twenty-eighth audit P0-1: the journal exists for MUTATING tools
+//! ONLY. Read-only/observational tools — even when they declare
+//! idempotent:true — NEVER reserve/load/replay here: their results are
+//! keyed by tool+args only (no user/site/scope), so a journaled
+//! read-only outcome could be replayed for a second caller without
+//! running the domain handler (where scope authorization happens),
+//! freeze a live value and strip the original EvidenceRefs. The
+//! ToolExecutor gate (`tool.idempotent && tool.risk != ToolRisk::ReadOnly`)
+//! keeps every read-only call on the fresh-dispatch path; this journal
+//! stores the FULL validated outcome of a mutating execution — any
+//! `evidence` member (the ToolResult evidence array serialized
+//! alongside the data) is stored and restored verbatim on replay.
 //!
 //! ```text
 //!   reserve() (attempt 1)            begin_dispatch() by the claim owner

@@ -60,12 +60,18 @@
 #   country_policy_versions), so their owner must BYPASSRLS; NOLOGIN
 #   means the role is never a connection identity and its privileges
 #   exist only inside the SECURITY-DEFINER execution boundary. The
-#   MIGRATION CHAIN must set the function OWNER to
-#   sensei_governance_definer (ALTER FUNCTION ... OWNER TO
-#   sensei_governance_definer, with the SELECT grants the definer body
-#   needs) — this script only pre-creates the role; ownership flips in
-#   the migration chain, NOT here (no migration files are edited from
-#   this script). sensei_migrator is granted membership in
+#   MIGRATION CHAIN flips the function OWNER to
+#   sensei_governance_definer (migration 165: ALTER FUNCTION ... OWNER
+#   TO sensei_governance_definer) — ownership itself is NOT moved by this
+#   script (no migration files are edited from here), but this script
+#   pre-grants what that chain-side transfer and the definer-owned bodies
+#   require (twenty-eighth audit P0): USAGE + CREATE ON SCHEMA public
+#   BEFORE the chain runs (ALTER ... OWNER demands schema CREATE of the
+#   new owner, so without it the non-superuser chain fails at migration
+#   165) and SELECT on the four federation tables the bodies read
+#   (BYPASSRLS does not grant table SELECT; those grants are guarded on
+#   table existence and land when this script is re-run AFTER the chain
+#   created the tables). sensei_migrator is granted membership in
 #   sensei_governance_definer below so the non-superuser chain CAN
 #   perform that ownership transfer; the runtime app role is never
 #   granted membership.
@@ -79,7 +85,20 @@
 set -e
 : "${SENSEI_APP_PASSWORD:?SENSEI_APP_PASSWORD must be set (production docker-compose and db-contract CI provide it)}"
 : "${SENSEI_MIGRATOR_PASSWORD:?SENSEI_MIGRATOR_PASSWORD must be set (production docker-compose and db-contract CI provide it)}"
-psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-EOSQL
+# Passwords reach psql as psql VARIABLES (-v app_password=... /
+# -v migrator_password=...), never as shell-expanded text inside the
+# heredoc (twenty-eighth audit P0 — role-script hardening): the heredoc
+# is QUOTED (<<-'EOSQL'), so the shell performs NO expansion on its body,
+# and a password containing backticks, $(...) or quotes can neither
+# execute shell code nor corrupt the SQL. :'app_password' and
+# :'migrator_password' are psql's quoted-literal interpolation of the
+# -v values — psql escapes them properly for the server — and the ALTER
+# ROLE statements below converge the passwords on every run.
+psql -v ON_ERROR_STOP=1 \
+    -v app_password="$SENSEI_APP_PASSWORD" \
+    -v migrator_password="$SENSEI_MIGRATOR_PASSWORD" \
+    -v app_db="$POSTGRES_DB" \
+    --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-'EOSQL'
     -- ── sensei_migrator: deployment-only migration/bootstrap role ──────
     -- Runs the full migration chain as the owner of every object it
     -- creates (tables, indexes, SECURITY DEFINER functions). It is NEVER
@@ -94,16 +113,16 @@ psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-E
     -- clean database. NOCREATEDB: the bootstrap superuser creates the
     -- database (docker-entrypoint POSTGRES_DB / CI superuser), never the
     -- migrator. NOCREATEROLE: probe roles belong to the DB superuser.
-    DO \$\$
+    DO $$
     BEGIN
         IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'sensei_migrator') THEN
             CREATE ROLE sensei_migrator LOGIN;
         END IF;
     END
-    \$\$;
+    $$;
     -- Idempotent convergence on re-runs: attributes + password are
     -- enforced, never assumed from a previous bootstrap.
-    ALTER ROLE sensei_migrator WITH LOGIN PASSWORD '${SENSEI_MIGRATOR_PASSWORD}'
+    ALTER ROLE sensei_migrator WITH LOGIN PASSWORD :'migrator_password'
         NOSUPERUSER BYPASSRLS NOCREATEDB NOCREATEROLE;
 
     -- ── sensei_governance_definer: narrower governance owner (25th P0) ─
@@ -118,13 +137,13 @@ psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-E
     -- can do that; ownership itself is NOT moved by this script). Grants
     -- survive ALTER OWNER, so sensei_app's EXECUTE on the no-argument
     -- form below stays valid after the flip.
-    DO \$\$
+    DO $$
     BEGIN
         IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'sensei_governance_definer') THEN
             CREATE ROLE sensei_governance_definer NOLOGIN;
         END IF;
     END
-    \$\$;
+    $$;
     ALTER ROLE sensei_governance_definer WITH NOLOGIN NOSUPERUSER BYPASSRLS
         NOCREATEDB NOCREATEROLE;
     -- Membership: ALTER FUNCTION ... OWNER TO sensei_governance_definer
@@ -133,24 +152,88 @@ psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-E
     -- this membership is inert at runtime; sensei_app is never a member.
     GRANT sensei_governance_definer TO sensei_migrator;
 
-    -- ── sensei_app: the non-owner application role ─────────────────────
-    DO \$\$
+    -- ── Governance-definer schema privileges (twenty-eighth audit P0) ─
+    -- Migration 165 flips the governance functions' OWNER to
+    -- sensei_governance_definer while the chain runs AS the non-superuser
+    -- sensei_migrator. PostgreSQL's ALTER ... OWNER requires the NEW
+    -- owner to hold CREATE on the object's schema — the clean production
+    -- bootstrap failed at migration 165 exactly there ("permission
+    -- denied for schema public" for the definer). This script runs at
+    -- initdb BEFORE the chain (db-contract CI step (a) and the compose
+    -- `bootstrap` one-shot run it identically), so the definer holds
+    -- USAGE + CREATE ON SCHEMA public from the pre-migration run and the
+    -- chain-side owner transfer succeeds. USAGE is what the
+    -- definer-owned SECURITY DEFINER bodies need to reach the schema at
+    -- all; CREATE stays granted (mirroring sensei_migrator) for any
+    -- future chain-side owner flip. The role is NOLOGIN, so the grants
+    -- are inert outside the SECURITY-DEFINER execution boundary. The
+    -- grant is idempotent and guarded on the role existing (a re-run
+    -- against a database where the role was dropped must no-op, not
+    -- error).
+    DO $$
     BEGIN
-        IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'sensei_app') THEN
-            CREATE ROLE sensei_app LOGIN PASSWORD '${SENSEI_APP_PASSWORD}';
+        IF EXISTS (SELECT FROM pg_roles WHERE rolname = 'sensei_governance_definer') THEN
+            EXECUTE 'GRANT USAGE, CREATE ON SCHEMA public TO sensei_governance_definer';
         END IF;
     END
-    \$\$;
-    ALTER ROLE sensei_app WITH LOGIN PASSWORD '${SENSEI_APP_PASSWORD}'
+    $$;
+
+    -- ── Governance-definer table privileges (twenty-eighth audit P0) ──
+    -- The SECURITY DEFINER governance bodies (migration 156) read PEER
+    -- tenants' rows on the four FORCE-RLS federation tables, and
+    -- BYPASSRLS does NOT substitute for table grants: the definer is NOT
+    -- the table owner (sensei_migrator is), so the definer needs explicit
+    -- SELECT on each table its bodies touch. ORDER PROBLEM: at initdb the
+    -- tables do not exist yet — the migration chain creates them later —
+    -- so each grant is guarded on the table existing and no-ops on the
+    -- pre-migration run. The SAME canonical script is therefore re-run
+    -- AFTER the migration chain (db-contract CI clean-bootstrap step (c);
+    -- production's post-migrate `grants` one-shot in
+    -- docker-compose.prod.yml), and the guards fire once the tables are
+    -- present. Re-runs stay idempotent (PostgreSQL re-grants are no-ops);
+    -- every grant is guarded both on the role existing and on the table
+    -- existing.
+    DO $$
+    DECLARE
+        t text;
+    BEGIN
+        IF EXISTS (SELECT FROM pg_roles WHERE rolname = 'sensei_governance_definer') THEN
+            FOREACH t IN ARRAY ARRAY['federation_memberships', 'site_manifests',
+                                      'country_policies', 'country_policy_versions'] LOOP
+                IF to_regclass('public.' || t) IS NOT NULL THEN
+                    EXECUTE format('GRANT SELECT ON public.%I TO sensei_governance_definer', t);
+                ELSE
+                    RAISE NOTICE '% not present yet (this run precedes the migration chain) — the post-migration re-run of this script grants the definer''s SELECT', t;
+                END IF;
+            END LOOP;
+        END IF;
+    END
+    $$;
+
+    -- ── sensei_app: the non-owner application role ─────────────────────
+    -- The CREATE inside the DO block carries NO password: psql's :'var'
+    -- interpolation happens at top level of the SQL text, outside
+    -- PL/pgSQL bodies, so the password is applied by the ALTER ROLE below
+    -- (which runs on every pass — the DO block only fills the role in on
+    -- first creation).
+    DO $$
+    BEGIN
+        IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'sensei_app') THEN
+            CREATE ROLE sensei_app LOGIN;
+        END IF;
+    END
+    $$;
+    ALTER ROLE sensei_app WITH LOGIN PASSWORD :'app_password'
         NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE;
 
     -- ── Schema-ownership split (twenty-fourth audit P0) ────────────────
-    -- The chain runs inside "${POSTGRES_DB}": ALL ON the database
-    -- (CONNECT + CREATE ON DATABASE for trusted-extension creation) and
-    -- CREATE ON SCHEMA public so the chain can DDL. In PostgreSQL >= 15
-    -- CREATE on public is already owner-only; the explicit grant keeps
-    -- this script the single source on every server version.
-    GRANT ALL PRIVILEGES ON DATABASE "${POSTGRES_DB}" TO sensei_migrator;
+    -- The chain runs inside :"app_db" (the psql -v database variable):
+    -- ALL ON the database (CONNECT + CREATE ON DATABASE for
+    -- trusted-extension creation) and CREATE ON SCHEMA public so the
+    -- chain can DDL. In PostgreSQL >= 15 CREATE on public is already
+    -- owner-only; the explicit grant keeps this script the single source
+    -- on every server version.
+    GRANT ALL PRIVILEGES ON DATABASE :"app_db" TO sensei_migrator;
     GRANT USAGE, CREATE ON SCHEMA public TO sensei_migrator;
     -- No OTHER role may DDL on public: revoke the historical PUBLIC
     -- schema-CREATE (PostgreSQL < 15 default), then hand CREATE back
@@ -161,7 +244,7 @@ psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-E
     REVOKE CREATE ON SCHEMA public FROM sensei_app;
 
     -- ── sensei_app grants (canonical, audited) ─────────────────────────
-    GRANT CONNECT ON DATABASE "${POSTGRES_DB}" TO sensei_app;
+    GRANT CONNECT ON DATABASE :"app_db" TO sensei_app;
     GRANT USAGE ON SCHEMA public TO sensei_app;
     -- Tables the MIGRATION OWNER creates (the production bootstrap order:
     -- this script runs at first boot, the chain runs later as
@@ -183,7 +266,7 @@ psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-E
     -- chain-side ALTER OWNER to sensei_governance_definer. NEVER granted
     -- here (and revoked from PUBLIC by migration 156):
     -- federation_governance_edges_for(uuid).
-    DO \$\$
+    DO $$
     BEGIN
         IF EXISTS (SELECT 1 FROM pg_proc p
                    JOIN pg_namespace n ON n.oid = p.pronamespace
@@ -195,7 +278,7 @@ psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-E
             RAISE NOTICE 'federation_governance_edges() not present yet — the migration-156 PUBLIC default EXECUTE on the no-argument form applies once the migrations create it';
         END IF;
     END
-    \$\$;
+    $$;
     -- Defensive convergence for the migration/admin-only variant
     -- federation_governance_edges_for(uuid): migration 156 revokes it
     -- from PUBLIC and the app role is never granted it, but when this
@@ -205,7 +288,7 @@ psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-E
     -- governance surface. Once the chain flips ownership to
     -- sensei_governance_definer the revocations persist (they are
     -- function-level grants, not ownership).
-    DO \$\$
+    DO $$
     BEGIN
         IF EXISTS (SELECT 1 FROM pg_proc p
                    JOIN pg_namespace n ON n.oid = p.pronamespace
@@ -218,5 +301,5 @@ psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-E
             RAISE NOTICE 'federation_governance_edges_for(uuid) not present yet — migration 156 revokes it from PUBLIC once the migrations create it, and the app role is never granted it';
         END IF;
     END
-    \$\$;
+    $$;
 EOSQL

@@ -6613,9 +6613,7 @@ async fn country_policy_bundle_is_data_not_code() {
         .await
         .expect("tenant insert");
 
-    use sensei_services::tps::country_policy::{
-        get_country_policy, locale_for_policy, upsert_country_policy, CountryPolicy,
-    };
+    use sensei_services::tps::country_policy::{get_country_policy, locale_for_policy};
 
     // The migration SEEDS the Morocco bundle for every tenant — read it
     // through the REAL service (tenant-scoped RLS transaction).
@@ -6643,30 +6641,30 @@ async fn country_policy_bundle_is_data_not_code() {
     // the country name.
     assert_eq!(locale_for_policy(&morocco), "fr-Morocco");
 
-    // Adding Germany is a DATA act: upsert the policy record, then the
-    // same read path resolves it.
-    upsert_country_policy(
-        &pool,
-        tenant_id,
-        CountryPolicy {
-            country: "Germany".to_string(),
-            language: "de".to_string(),
-            currency: "EUR".to_string(),
-            unit_system: "metric".to_string(),
-            week_start: "monday".to_string(),
-            holiday_schedule: serde_json::json!(["new_year", "unity_day"]),
-            timezone: "Europe/Berlin".to_string(),
-            data_residency: Some("de".to_string()),
-            retention_days: 730,
-            employment_data_visibility: "restricted".to_string(),
-            local_document_requirements: serde_json::json!(["invoice_de"]),
-        },
+    // Adding Germany is a DATA act: seed the policy record, then the
+    // same read path resolves it. The suite seeds raw (it is a superuser
+    // harness; FORCE-RLS tables are seeded with raw SQL everywhere) — the
+    // old public upsert seed helper is crate-private since the
+    // twenty-eighth audit (application writes go through the versioned
+    // publish path), so this fixture writes the canonical
+    // migration-122 column set directly.
+    sqlx::query(
+        "INSERT INTO country_policies \
+             (tenant_id, country, language, currency, unit_system, week_start, \
+              holiday_schedule, timezone, data_residency, retention_days, \
+              employment_data_visibility, local_document_requirements) \
+         VALUES ($1, 'Germany', 'de', 'EUR', 'metric', 'monday', \
+                 $2, 'Europe/Berlin', 'de', 730, 'restricted', $3)",
     )
+    .bind(tenant_id)
+    .bind(serde_json::json!(["new_year", "unity_day"]))
+    .bind(serde_json::json!(["invoice_de"]))
+    .execute(&pool)
     .await
-    .expect("upsert must introduce the Germany policy record");
+    .expect("seed must introduce the Germany policy record");
     let germany = get_country_policy(&pool, tenant_id, "Germany")
         .await
-        .expect("Germany must resolve after the upsert");
+        .expect("Germany must resolve after the seed");
     assert_eq!(germany.currency, "EUR");
     assert_eq!(germany.retention_days, 730);
     assert_eq!(locale_for_policy(&germany), "de-Germany");
@@ -7254,7 +7252,7 @@ async fn replication_target_apply_idempotency_guard() {
             .execute(&mut *tx)
             .await
             .expect("set target tenant context");
-        let err = replication::apply_target_projection(&mut tx, entry)
+        let err = replication::apply_target_projection(&mut tx, source_tenant, entry)
             .await
             .expect_err("an unreserved projection cannot be applied");
         tx.commit().await.expect("apply tx commit");
@@ -7346,23 +7344,9 @@ async fn replication_target_apply_idempotency_guard() {
             "delivery reserves the inbox with status 'received' — nothing more"
         );
     }
-    let applied = replication::is_target_applied(
+    let applied = replication::target_inbox_exists(
         &pool,
         target_tenant,
-        event_uuid,
-        &entry.projection_type,
-        entry.projection_revision,
-        edge_target,
-        entry.target_site_id,
-    )
-    .await
-    .expect("is-target-applied read must succeed");
-    assert!(
-        applied,
-        "the reservation is visible under the TARGET tenant"
-    );
-    let hidden = replication::is_target_applied(
-        &pool,
         source_tenant,
         event_uuid,
         &entry.projection_type,
@@ -7371,7 +7355,23 @@ async fn replication_target_apply_idempotency_guard() {
         entry.target_site_id,
     )
     .await
-    .expect("is-target-applied read must succeed");
+    .expect("target-inbox-exists read must succeed");
+    assert!(
+        applied,
+        "the reservation is visible under the TARGET tenant"
+    );
+    let hidden = replication::target_inbox_exists(
+        &pool,
+        source_tenant,
+        source_tenant,
+        event_uuid,
+        &entry.projection_type,
+        entry.projection_revision,
+        edge_target,
+        entry.target_site_id,
+    )
+    .await
+    .expect("target-inbox-exists read must succeed");
     assert!(
         !hidden,
         "the reservation is invisible from the SOURCE queue tenant's context — \
@@ -7404,11 +7404,11 @@ async fn replication_target_apply_idempotency_guard() {
         "EXACTLY ONE receipt remains after the redelivery"
     );
 
-    // ── 5. mark_target_applied (kept public, RETARGETED) ─────────────
+    // ── 5. reserve_target_inbox (the raw-argument receipt form) ───────
     // The raw-argument form runs the SAME guarded 'received' insert
     // under the target's context: a duplicate key is refused
     // (unique-constraint semantics unchanged)…
-    let dup = replication::mark_target_applied(
+    let dup = replication::reserve_target_inbox(
         &pool,
         target_tenant,
         source_tenant,
@@ -7426,7 +7426,7 @@ async fn replication_target_apply_idempotency_guard() {
     // target = the destination) — the exact shape the removed ack-time
     // write used — is refused loudly instead of writing a receipt the
     // target never sees.
-    let misowned = replication::mark_target_applied(
+    let misowned = replication::reserve_target_inbox(
         &pool,
         source_tenant,
         source_tenant,
@@ -7462,7 +7462,7 @@ async fn replication_target_apply_idempotency_guard() {
             .execute(&mut *tx)
             .await
             .expect("set target tenant context");
-        let err = replication::apply_target_projection(&mut tx, entry)
+        let err = replication::apply_target_projection(&mut tx, source_tenant, entry)
             .await
             .expect_err("apply without a registered projector must be refused");
         tx.commit().await.expect("apply tx commit");
@@ -7549,7 +7549,7 @@ async fn replication_target_apply_idempotency_guard() {
             .execute(&mut *tx)
             .await
             .expect("set target tenant context");
-        let err = replication::apply_target_projection(&mut tx, entry)
+        let err = replication::apply_target_projection(&mut tx, source_tenant, entry)
             .await
             .expect_err("a reconcile_required row cannot be silently re-applied");
         tx.commit().await.expect("apply tx commit");
@@ -7622,7 +7622,7 @@ async fn replication_target_apply_idempotency_guard() {
             .execute(&mut *tx)
             .await
             .expect("set target tenant context");
-        replication::apply_target_projection(&mut tx, entry)
+        replication::apply_target_projection(&mut tx, source_tenant, entry)
             .await
             .expect("apply on an already-applied row converges — never a second error");
         tx.commit().await.expect("apply tx commit");
@@ -7683,9 +7683,10 @@ async fn replication_target_apply_idempotency_guard() {
         1,
         "EXACTLY ONE inbox row remains after delivery + apply history"
     );
-    let still_present = replication::is_target_applied(
+    let still_present = replication::target_inbox_exists(
         &pool,
         target_tenant,
+        source_tenant,
         event_uuid,
         &entry.projection_type,
         entry.projection_revision,
@@ -7693,10 +7694,10 @@ async fn replication_target_apply_idempotency_guard() {
         entry.target_site_id,
     )
     .await
-    .expect("is-target-applied read must succeed");
+    .expect("target-inbox-exists read must succeed");
     assert!(
         still_present,
-        "is_target_applied is presence-agnostic: the applied row still answers true"
+        "target_inbox_exists is presence-agnostic: the applied row still answers true"
     );
 
     // ── 8. The whole history leaves EXACTLY ONE inbox row ─────────────

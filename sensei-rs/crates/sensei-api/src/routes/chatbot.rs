@@ -31,16 +31,22 @@ use tracing::error;
 use crate::state::AppState;
 
 /// A structured claim the client asserts alongside its message (twenty-
-/// seventh audit P1): the verifier does not need to detect the claim in
-/// prose — it verifies each draft structurally, so correctness never
-/// depends on English sentence heuristics (a French claim is checked the
-/// same way as an English one).
+/// seventh audit P1): the verifier checks each draft structurally, so
+/// correctness never depends on English sentence heuristics (a French
+/// claim is checked the same way as an English one). Since the twenty-
+/// eighth audit P0-2 these drafts are SUPPLEMENTARY assertions only —
+/// they are verified IN ADDITION to the reply's prose, never instead of
+/// it, and the caller cannot weaken the check.
 #[derive(Debug, serde::Deserialize)]
 pub struct ClaimDraft {
     /// The claim statement as written.
     pub statement: String,
-    /// The client-declared epistemic kind: "measured" | "inferred" |
-    /// "assumed" | "recommended" ("" = unclassified factual claim).
+    /// Accepted for schema compatibility but IGNORED by the verifier
+    /// (twenty-eighth audit P0-2): a caller cannot declare
+    /// "assumed"/"recommended" to bypass the factual-claim check — every
+    /// caller draft is verified like a measured claim. The server-side
+    /// assumed/recommended recording concept is reserved for future
+    /// model-generated claims, never for HTTP caller input.
     #[serde(default)]
     pub epistemic_kind: String,
     /// Optional structural address of the fact the claim refers to.
@@ -56,9 +62,13 @@ pub struct ClaimDraft {
 pub struct ChatRequest {
     /// The user's message text.
     pub message: String,
-    /// Structured claims channel (twenty-seventh audit P1): when non-empty
-    /// the verifier checks THESE claims instead of scanning the reply's
-    /// prose — verification is structural and language-independent.
+    /// Structured claims channel (twenty-seventh audit P1): caller-supplied
+    /// claims the verifier checks STRUCTURALLY (language-independent).
+    /// Twenty-eighth audit P0-2: they are SUPPLEMENTARY — verification of
+    /// the generated reply's prose ALWAYS runs and these drafts are checked
+    /// in addition, merged into the same claims/issues envelopes. A non-
+    /// empty channel never replaces prose verification and never relaxes
+    /// the factual-claim requirements.
     #[serde(default)]
     pub structured_claims: Vec<ClaimDraft>,
     /// Optional conversation ID to continue an existing conversation.
@@ -607,6 +617,12 @@ fn parse_context_line(line: &str) -> Option<(String, String, Option<uuid::Uuid>)
 /// marker whose id is not in that set is an ISSUE (unverified evidence
 /// reference), and a marker is never validated by substring matching
 /// against a flattened context string.
+///
+/// Twenty-eighth audit P0-2: the caller's `structured_claims` are
+/// SUPPLEMENTARY — the prose scanner ALWAYS runs over the generated reply,
+/// and every caller draft is verified like a measured claim (the declared
+/// epistemic kind is ignored). Caller-supplied claims can neither replace
+/// prose verification nor relax the factual-claim requirements.
 fn verify_chat_response(
     response: &sensei_services::ai::chatbot::ChatResponse,
     ctx: &sensei_agent_core::context::AgentContext,
@@ -773,10 +789,18 @@ fn verify_chat_response(
     // STRUCTURAL site-scope check (never geographic vocabulary).
     let check_claim = |sentence: &str,
                        evidence_refs: Vec<String>,
+                       declared_family: Option<&'static str>,
                        issues: &mut Vec<String>,
                        claims: &mut Vec<Claim>| {
         let s = sentence.trim();
-        let claim_family = subject_family(s);
+        // Twenty-eighth audit P0-2 item 3: for a structured draft that
+        // declares a fact_address, claim family resolution consults the
+        // fact_address text FIRST, then the statement — the advertised
+        // field is meaningful when the cited evidence carries no
+        // scope/family (crafted, site-less items) and the statement's
+        // language yields no English subject-family keyword. Prose
+        // sentences pass `None` and keep the statement-only resolution.
+        let claim_family = declared_family.or_else(|| subject_family(s));
         let matched_refs: Vec<String> = evidence_refs
             .iter()
             .filter(|r| evidence_ids.contains(r.as_str()))
@@ -925,105 +949,109 @@ fn verify_chat_response(
         }
     };
 
-    if structured_claims.is_empty() {
-        // PROSE PATH (unchanged behavior): the English prose scanner below
-        // runs ONLY when the client sent no structured claims. Every
-        // sentence is gated through the language heuristics, then checked
-        // by the same `check_claim` routine as the drafts.
-        for sentence in split_sentences(&content) {
-            let s = sentence.trim();
-            if s.len() < 12 {
-                continue;
-            }
-            let sentence_lower = s.to_lowercase();
-            let ends_interrogative = s.ends_with('?');
-            let hedged = hedge_prefixes.iter().any(|p| sentence_lower.starts_with(p));
-            let subject_matter = operational_subjects
-                .iter()
-                .any(|m| sentence_lower.contains(m));
-            if ends_interrogative || hedged {
-                continue;
-            }
-            // A sentence about an operational subject that states a
-            // predicate (copula or action verb) is a claim even without a
-            // digit — "Production is running." is a live-state claim; "the
-            // supplier is unreliable" is a claim about the supplier.
-            let states_predicate = [
-                " is ",
-                " are ",
-                " has ",
-                " have ",
-                " was ",
-                " were ",
-                " runs ",
-                " operates ",
-                " produces ",
-                " delivers ",
-                " fails ",
-                " exceeds ",
-                " under ",
-                " behind ",
-                " on time",
-                " stable",
-                " unstable",
-                " qualified",
-                " unqualified",
-                " unreliable",
-                " understaffed",
-                " overstaffed",
-                " in control",
-                " out of control",
-                " stands at ",
-                " currently ",
-                " units ",
-                " inventory",
-                " ncr",
-                " capa",
-                " andon",
-                " scrap",
-                " defect",
-                " yield of ",
-                " order ",
-            ]
+    // PROSE SCANNER — runs on EVERY reply (twenty-eighth audit P0-2):
+    // caller-supplied structured claims NEVER replace the verification of
+    // the model's generated content. Every sentence is gated through the
+    // language heuristics, then checked by the same `check_claim` routine
+    // as the drafts — one harmless 'recommended' draft cannot smuggle
+    // unverified factual prose past the scanner.
+    for sentence in split_sentences(&content) {
+        let s = sentence.trim();
+        if s.len() < 12 {
+            continue;
+        }
+        let sentence_lower = s.to_lowercase();
+        let ends_interrogative = s.ends_with('?');
+        let hedged = hedge_prefixes.iter().any(|p| sentence_lower.starts_with(p));
+        let subject_matter = operational_subjects
             .iter()
-            .any(|p| sentence_lower.contains(p));
-            if !(subject_matter && states_predicate) {
-                continue;
-            }
+            .any(|m| sentence_lower.contains(m));
+        if ends_interrogative || hedged {
+            continue;
+        }
+        // A sentence about an operational subject that states a
+        // predicate (copula or action verb) is a claim even without a
+        // digit — "Production is running." is a live-state claim; "the
+        // supplier is unreliable" is a claim about the supplier.
+        let states_predicate = [
+            " is ",
+            " are ",
+            " has ",
+            " have ",
+            " was ",
+            " were ",
+            " runs ",
+            " operates ",
+            " produces ",
+            " delivers ",
+            " fails ",
+            " exceeds ",
+            " under ",
+            " behind ",
+            " on time",
+            " stable",
+            " unstable",
+            " qualified",
+            " unqualified",
+            " unreliable",
+            " understaffed",
+            " overstaffed",
+            " in control",
+            " out of control",
+            " stands at ",
+            " currently ",
+            " units ",
+            " inventory",
+            " ncr",
+            " capa",
+            " andon",
+            " scrap",
+            " defect",
+            " yield of ",
+            " order ",
+        ]
+        .iter()
+        .any(|p| sentence_lower.contains(p));
+        if !(subject_matter && states_predicate) {
+            continue;
+        }
 
-            // Evidence markers: "[evidence: <evidence_id>]" — the id must BE
-            // a kernel-issued evidence id of a prepared item. Marker
-            // validation happens on EVERY sentence regardless of detection
-            // (a fabricated citation can never hide inside a sentence that
-            // fails the claim detector); the claim object is created only
-            // for sentences that are factual claims.
-            let evidence_refs = evidence_refs_in(s);
-            check_claim(s, evidence_refs, &mut issues, &mut claims);
+        // Evidence markers: "[evidence: <evidence_id>]" — the id must BE
+        // a kernel-issued evidence id of a prepared item. Marker
+        // validation happens on EVERY sentence regardless of detection
+        // (a fabricated citation can never hide inside a sentence that
+        // fails the claim detector); the claim object is created only
+        // for sentences that are factual claims.
+        let evidence_refs = evidence_refs_in(s);
+        check_claim(s, evidence_refs, None, &mut issues, &mut claims);
+    }
+
+    // STRUCTURED CLAIMS — SUPPLEMENTARY checks (twenty-eighth audit P0-2):
+    // each caller draft is verified IN ADDITION to the prose scan above,
+    // and its claims/issues merge into the SAME envelopes. Two caller
+    // powers are removed:
+    //   - the caller-declared epistemic kind is IGNORED: an
+    //     'assumed'/'recommended' draft no longer bypasses the factual-
+    //     claim check — every draft runs through the SAME routine as a
+    //     measured claim (evidence membership + structural site scope +
+    //     subject family) and raises the unverified-fact issue when it
+    //     lacks evidence. The assumed/recommended RECORDING concept stays
+    //     reserved for FUTURE model-generated claims, never HTTP input.
+    //   - a draft's declared fact_address is consulted first for claim
+    //     family resolution when the cited evidence lacks a scope/family.
+    for draft in structured_claims {
+        let s = draft.statement.trim();
+        if s.is_empty() {
+            continue;
         }
-    } else {
-        // STRUCTURED CLAIMS PATH (twenty-seventh audit P1): the client
-        // asserted the claims itself — no sentence scanning, no English
-        // heuristics, so multilingual claims are verified identically. A
-        // draft whose kind declares a NON-factual epistemic status
-        // ("assumed"/"recommended") is recorded with that status and can
-        // never raise the unverified-fact issue; every other kind
-        // ("measured", "inferred", "") runs through the SAME factual-claim
-        // check as prose claims (evidence membership + structural
-        // site_scope vs the request site).
-        for draft in structured_claims {
-            let s = draft.statement.trim();
-            match draft.epistemic_kind.as_str() {
-                "assumed" | "recommended" => claims.push(Claim {
-                    statement: s.to_string(),
-                    epistemic_status: draft.epistemic_kind.clone(),
-                    fact_addresses: Vec::new(),
-                    evidence_refs: Vec::new(),
-                    confidence: None,
-                    valid_at: None,
-                }),
-                _ => check_claim(s, draft.evidence_ids.clone(), &mut issues, &mut claims),
-            }
-        }
+        let declared_family = draft.fact_address.as_deref().and_then(subject_family);
+        check_claim(
+            s,
+            draft.evidence_ids.clone(),
+            declared_family,
+            &mut issues,
+            &mut claims,
+        );
     }
 
     if response.is_fallback {
@@ -1712,7 +1740,10 @@ mod tests {
         // Bizerte-scoped evidence id inside a Tangier-scoped request is
         // rejected by the STRUCTURAL site check. No English word appears
         // in the claim — multilingual correctness is achieved structurally,
-        // not by prose heuristics.
+        // not by prose heuristics. Twenty-eighth audit P0-2: the prose
+        // reply is scanned ALONGSIDE the draft ("Production is running."
+        // is flagged too) — structured claims never replace prose
+        // verification.
         let mut ctx = test_ctx();
         ctx.site_id = Some(uuid::Uuid::from_u128(1));
         let bizerte = kernel_item_at(
@@ -1726,9 +1757,6 @@ mod tests {
             fact_address: None,
             evidence_ids: vec![bizerte.evidence_id.clone()],
         };
-        // The reply prose deliberately holds an English sentence the prose
-        // scanner WOULD flag — with structured claims present the scanner
-        // is skipped entirely, so only the draft is checked.
         let v = verify_drafts(
             "Production is running.",
             std::slice::from_ref(&bizerte),
@@ -1740,12 +1768,22 @@ mod tests {
             "wrong-site evidence cannot measure the French claim"
         );
         let claims: Vec<Claim> = serde_json::from_value(v["claims"].clone()).unwrap();
-        assert_eq!(claims.len(), 1, "only the structured draft is checked");
         assert_eq!(
-            claims[0].statement, "La ligne de Tangier manque de personnel",
-            "the French claim survives verbatim — no English rewrite"
+            claims.len(),
+            2,
+            "the prose reply is scanned IN ADDITION to the structured draft"
         );
-        assert_eq!(claims[0].epistemic_status, "unverified");
+        let french = claims
+            .iter()
+            .find(|c| c.statement == "La ligne de Tangier manque de personnel")
+            .expect("the French claim survives verbatim — no English rewrite");
+        assert_eq!(french.epistemic_status, "unverified");
+        assert!(
+            claims
+                .iter()
+                .any(|c| c.statement.contains("Production is running")),
+            "the reply's prose claim is still checked — drafts are supplementary"
+        );
         let issues: Vec<String> = serde_json::from_value(v["issues"].clone()).unwrap();
         assert!(
             issues.iter().any(|i| i.contains("site scope differs")),
@@ -1755,10 +1793,12 @@ mod tests {
     }
 
     #[test]
-    fn structured_assumed_draft_is_recorded_without_issue() {
-        // Twenty-seventh audit P1: an 'assumed' draft is recorded with its
-        // declared epistemic status and NEVER raises the unverified-fact
-        // issue — an assumption is not asserted as a measured fact.
+    fn caller_assumed_draft_cannot_bypass_the_factual_check() {
+        // Twenty-eighth audit P0-2 item 2: the caller's declared epistemic
+        // kind ('assumed'/'recommended') is IGNORED — every caller draft is
+        // verified like a measured claim. An 'assumed' draft without
+        // evidence raises the unverified-fact issue; it is never recorded
+        // as a privileged non-factual claim.
         let ctx = test_ctx();
         let draft = ClaimDraft {
             statement: "La ligne de Tangier manque de personnel".to_string(),
@@ -1767,13 +1807,194 @@ mod tests {
             evidence_ids: vec![],
         };
         let v = verify_drafts("", &[], &ctx, &[draft]);
-        assert_eq!(v["verdict"], "pass");
+        assert_eq!(
+            v["verdict"], "needs_evidence",
+            "an unevidenced caller draft fails verification regardless of its declared kind"
+        );
         let issues: Vec<String> = serde_json::from_value(v["issues"].clone()).unwrap();
-        assert!(issues.is_empty());
+        assert!(
+            issues
+                .iter()
+                .any(|i| i.contains("Unverified factual claim")),
+            "the assumed draft raises the unverified-fact issue like any prose claim: {:?}",
+            issues
+        );
         let claims: Vec<Claim> = serde_json::from_value(v["claims"].clone()).unwrap();
         assert_eq!(claims.len(), 1);
-        assert_eq!(claims[0].epistemic_status, "assumed");
-        assert!(claims[0].evidence_refs.is_empty());
+        assert_eq!(
+            claims[0].epistemic_status, "unverified",
+            "the draft is not recorded with the caller's declared kind"
+        );
+        assert_eq!(
+            claims[0].statement,
+            "La ligne de Tangier manque de personnel"
+        );
         assert_eq!(v["claims_checked"], 1);
+    }
+
+    #[test]
+    fn caller_recommended_draft_cannot_suppress_prose_verification() {
+        // Twenty-eighth audit P0-2 test (a): the caller sends ONE harmless
+        // 'recommended' draft ('Check the issue.', no evidence) while the
+        // model reply asserts an unverified factual claim ('Tangier
+        // inventory has fallen to 12 units.'). The prose scanner MUST
+        // still run — the reply's claim is checked, fails, and the verdict
+        // is needs_evidence. The old skip-the-prose-when-drafts-exist
+        // bypass is closed.
+        let ctx = test_ctx();
+        let draft = ClaimDraft {
+            statement: "Check the issue.".to_string(),
+            epistemic_kind: "recommended".to_string(),
+            fact_address: None,
+            evidence_ids: vec![],
+        };
+        let v = verify_drafts(
+            "Tangier inventory has fallen to 12 units.",
+            &[],
+            &ctx,
+            &[draft],
+        );
+        assert_eq!(
+            v["verdict"], "needs_evidence",
+            "an unevidenced model claim cannot pass because a draft was supplied"
+        );
+        let claims: Vec<Claim> = serde_json::from_value(v["claims"].clone()).unwrap();
+        assert_eq!(
+            claims.len(),
+            2,
+            "the prose claim AND the caller draft are both checked"
+        );
+        let prose = claims
+            .iter()
+            .find(|c| c.statement == "Tangier inventory has fallen to 12 units")
+            .expect("the prose claim is scanned even when structured claims are present");
+        assert_eq!(prose.epistemic_status, "unverified");
+        assert!(prose.evidence_refs.is_empty());
+        let issues: Vec<String> = serde_json::from_value(v["issues"].clone()).unwrap();
+        assert!(
+            issues.iter().any(|i| i.contains("Unverified factual claim")
+                && i.contains("Tangier inventory has fallen to 12 units")),
+            "the unverified prose claim is reported: {:?}",
+            issues
+        );
+    }
+
+    #[test]
+    fn caller_draft_with_correct_same_site_evidence_passes_alongside_prose() {
+        // Twenty-eighth audit P0-2 test (b): structured claims are
+        // SUPPLEMENTARY — a caller draft citing CORRECT same-site evidence
+        // passes, and the prose reply is verified alongside it. The
+        // declared 'recommended' kind is ignored: with evidence the draft
+        // is recorded 'measured' like any verified claim.
+        let mut ctx = test_ctx();
+        ctx.site_id = Some(uuid::Uuid::from_u128(1));
+        let item = kernel_item_at(
+            "inventory",
+            "Tangier inventory available: 12 units.",
+            Some(uuid::Uuid::from_u128(1)),
+        );
+        let draft = ClaimDraft {
+            statement: "Tangier inventory has fallen to 12 units.".to_string(),
+            epistemic_kind: "recommended".to_string(),
+            fact_address: None,
+            evidence_ids: vec![item.evidence_id.clone()],
+        };
+        let v = verify_drafts(
+            &format!(
+                "Tangier inventory is at 12 units [evidence: {}].",
+                item.evidence_id
+            ),
+            std::slice::from_ref(&item),
+            &ctx,
+            &[draft],
+        );
+        assert_eq!(v["verdict"], "pass");
+        let claims: Vec<Claim> = serde_json::from_value(v["claims"].clone()).unwrap();
+        assert_eq!(
+            claims.len(),
+            2,
+            "the verified prose claim and the verified draft both pass"
+        );
+        assert!(
+            claims.iter().all(|c| c.epistemic_status == "measured"),
+            "evidence-backed prose and drafts are measured: {:?}",
+            claims
+        );
+        assert!(
+            claims.iter().all(|c| !c.evidence_refs.is_empty()),
+            "every measured claim carries its evidence refs"
+        );
+    }
+
+    #[test]
+    fn french_prose_with_unevidenced_caller_draft_is_flagged() {
+        // Twenty-eighth audit P0-2 test (c): a French prose reply 'La
+        // ligne est instable.' with a caller draft carrying no evidence
+        // must yield needs_evidence — whether the multilingual prose
+        // scanner catches the sentence or the draft check catches the
+        // unevidenced claim, the unverified content never passes.
+        let ctx = test_ctx();
+        let draft = ClaimDraft {
+            statement: "La ligne est instable.".to_string(),
+            epistemic_kind: "measured".to_string(),
+            fact_address: None,
+            evidence_ids: vec![],
+        };
+        let v = verify_drafts("La ligne est instable.", &[], &ctx, &[draft]);
+        assert_eq!(
+            v["verdict"], "needs_evidence",
+            "French unevidenced content is flagged by the prose scanner or the draft check"
+        );
+        let issues: Vec<String> = serde_json::from_value(v["issues"].clone()).unwrap();
+        assert!(
+            issues
+                .iter()
+                .any(|i| i.contains("Unverified factual claim") && i.contains("instable")),
+            "an unverified-fact issue names the unevidenced statement: {:?}",
+            issues
+        );
+    }
+
+    #[test]
+    fn caller_draft_fact_address_resolves_claim_family_first() {
+        // Twenty-eighth audit P0-2 item 3: when a structured draft declares
+        // a fact_address and the cited evidence lacks a scope/family
+        // (crafted, site-less item), claim family resolution consults the
+        // draft's fact_address text FIRST, then the statement. The French
+        // statement carries no English family keyword — with the
+        // fact_address it measures against the cited production evidence;
+        // without it the claim has no resolvable family and fails.
+        let ctx = test_ctx();
+        let item = kernel_item("production", "Bizerte: 8 operateurs sur la ligne.");
+        let draft_with_address = ClaimDraft {
+            statement: "La ligne de Bizerte est instable".to_string(),
+            epistemic_kind: "measured".to_string(),
+            fact_address: Some("section:production".to_string()),
+            evidence_ids: vec![item.evidence_id.clone()],
+        };
+        let v = verify_drafts("", std::slice::from_ref(&item), &ctx, &[draft_with_address]);
+        assert_eq!(
+            v["verdict"], "pass",
+            "the fact_address family measures the multilingual claim against the cited evidence"
+        );
+        let claims: Vec<Claim> = serde_json::from_value(v["claims"].clone()).unwrap();
+        assert_eq!(claims[0].epistemic_status, "measured");
+        assert_eq!(claims[0].evidence_refs, vec![item.evidence_id.clone()]);
+        let draft_without_address = ClaimDraft {
+            statement: "La ligne de Bizerte est instable".to_string(),
+            epistemic_kind: "measured".to_string(),
+            fact_address: None,
+            evidence_ids: vec![item.evidence_id.clone()],
+        };
+        let v2 = verify_drafts(
+            "",
+            std::slice::from_ref(&item),
+            &ctx,
+            &[draft_without_address],
+        );
+        assert_eq!(
+            v2["verdict"], "needs_evidence",
+            "without the fact_address the French statement has no resolvable claim family"
+        );
     }
 }

@@ -23,6 +23,7 @@ jobs:
       DATABASE_URL: postgres://postgres:postgres@localhost:5432/sensei_test
       JWT_SECRET: ci-e2e-secret
       SENSEI_ENV: test
+      SENSEI_NO_ZIG: "1"
       RUST_BACKTRACE: 1
     steps:
       - uses: actions/checkout@v4
@@ -30,6 +31,7 @@ jobs:
       - name: Install Rust (wasm32)
         uses: dtolnay/rust-toolchain@stable
         with:
+          toolchain: 1.96.0
           targets: wasm32-unknown-unknown
 
       - name: Install trunk
@@ -62,11 +64,14 @@ jobs:
           done
           cp -r dist ../../dist-frontend
 
+      # Twenty-eighth audit P0 (release gate): SENSEI_NO_ZIG is set ONCE
+      # at the job level (above) — every cargo invocation in this job
+      # (frontend trunk build, API build, the migrations+seed step, the
+      # API boot) relies on the pure-Rust path, and a step-scoped env var
+      # silently missed the 'Run migrations + seed' recompile.
       - name: Build API
         working-directory: sensei-rs
         run: cargo build -p sensei-api --release
-        env:
-          SENSEI_NO_ZIG: "1" 
 
       - name: Run migrations + seed
         working-directory: sensei-rs

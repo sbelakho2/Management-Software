@@ -131,17 +131,28 @@ pub fn locale_for_policy(policy: &CountryPolicy) -> String {
     format!("{}-{}", policy.language, policy.country)
 }
 
-/// LEGACY SEED HELPER — the ROUTE path is publish only, and every
-/// publish keeps `country_policies` consistent in the same transaction
+/// LEGACY SEED HELPER — crate-internal (twenty-eighth audit P0): the
+/// ROUTE path is publish only, and every publish keeps
+/// `country_policies` consistent in the same transaction
 /// (twenty-seventh-audit P0). This direct, unversioned `country_policies`
-/// upsert exists ONLY for seeds/tests that introduce a policy RECORD
-/// (a new country is a policy record, never a code fork) without a
-/// versioned publication. Application writes must go through
+/// upsert exists ONLY for in-crate seeds/tests that introduce a policy
+/// RECORD (a new country is a policy record, never a code fork) without
+/// a versioned publication. Application writes must go through
 /// [`publish_policy_version`]: it appends the compliance version AND
 /// refreshes the current row in ONE atomic transaction, so the two
 /// stores can never diverge. Idempotent on `(tenant_id, country)` within
 /// the tenant's RLS context.
-pub async fn upsert_country_policy(
+///
+/// The function is `pub(crate)` — it was public only as a cross-crate
+/// seed helper, and the DB contract fixture that used it now seeds the
+/// raw canonical row itself (the cross-crate tests are superuser
+/// harnesses that seed FORCE-RLS tables with raw SQL everywhere else
+/// too). Nothing outside this crate may bypass the versioned publish
+/// path.
+// Retained (not yet called from an in-crate seed/test): keeping the
+// helper compilable for future in-crate seeds would otherwise warn.
+#[allow(dead_code)]
+pub(crate) async fn upsert_country_policy(
     pool: &sqlx::PgPool,
     tenant_id: Uuid,
     policy: CountryPolicy,

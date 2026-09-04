@@ -1345,7 +1345,7 @@ pub async fn claim_batch(
 /// tenant — the destination whose inbox is being reserved — never to
 /// the source queue tenant. The insert always runs INSIDE an open
 /// tenant transaction under the target's context ([`deliver_to_target_inbox`]
-/// and [`mark_target_applied`] open it); the source queue tenant can
+/// and [`reserve_target_inbox`] open it); the source queue tenant can
 /// neither see nor write the target's inbox slice.
 #[allow(clippy::too_many_arguments)]
 async fn insert_inbox_receipt_tx(
@@ -1474,19 +1474,25 @@ pub async fn deliver_to_target_inbox(
     .await
 }
 
-/// Target inbox receipt — raw-argument form (twenty-sixth audit P0.1
-/// RETARGET, twenty-seventh audit P0): [`deliver_to_target_inbox`]
-/// resolves the SAME guarded insert from a claimed entry; this public
-/// form takes the key columns directly for operations/tooling. It opens
-/// ONE tenant transaction under `tenant_id` and runs the receipt insert
-/// (status 'received') — `true` when newly reserved, `false` when the
-/// SAME key is already reserved. The function is kept public under its
-/// legacy twenty-fifth-audit name, and the unique-constraint semantics
-/// are unchanged, but the semantics are RETARGETED: it writes the TARGET
-/// INBOX RECEIPT (a reservation, the internal insert of
-/// [`deliver_to_target_inbox`]), never an application record — the name
-/// notwithstanding, no apply is recorded here, and the row's state stays
-/// 'received' until a registered projector transitions it.
+/// RESERVE a TARGET inbox receipt — raw-argument form (twenty-sixth
+/// audit P0.1 RETARGET, twenty-seventh audit P0, twenty-eighth audit
+/// P0 name): [`deliver_to_target_inbox`] resolves the SAME guarded
+/// insert from a claimed entry; this public form takes the key columns
+/// directly for operations/tooling. The twenty-fifth-audit name
+/// (`mark_target_applied`) claimed to record an APPLICATION; this
+/// function only RESERVES the projection in the target's inbox — no
+/// apply is ever recorded here, and the row's state stays 'received'
+/// until a registered projector transitions it. The honest name is
+/// [`reserve_target_inbox`]; the old name is gone (nothing outside the
+/// twenty-fifth-audit contract ever relied on it).
+///
+/// It opens ONE tenant transaction under `tenant_id` and runs the
+/// receipt insert (status 'received') — `true` when newly reserved,
+/// `false` when the SAME key is already reserved. The unique-constraint
+/// semantics are unchanged: the arbiter is the migration-166 unique
+/// index `(source_tenant_id, source_event_id, projection_type,
+/// projection_revision, target_tenant_id, target_site_id)`, never a
+/// check-then-insert window.
 ///
 /// RETARGETED ownership: `tenant_id` is the TARGET inbox tenant — the
 /// receipt's owner — and it MUST equal `target_tenant_id` (the receipt
@@ -1495,7 +1501,7 @@ pub async fn deliver_to_target_inbox(
 /// receipt exactly as the removed ack-time write did (an application
 /// record for the source tenant's slice that no target ever saw).
 #[allow(clippy::too_many_arguments)]
-pub async fn mark_target_applied(
+pub async fn reserve_target_inbox(
     pool: &sqlx::PgPool,
     tenant_id: Uuid,
     source_tenant_id: Uuid,
@@ -1534,22 +1540,35 @@ pub async fn mark_target_applied(
 }
 
 /// Is an inbox receipt already present for this projection (twenty-sixth
-/// audit P0.1 RETARGET, twenty-seventh audit P0)? Read-only form of the
-/// guarded receipt insert — used by the target-side pipeline to decide
-/// before a delivery, and by operations to inspect the durable
-/// reservation state. Presence is status-agnostic: a 'received',
-/// 'applying', 'applied' or 'reconcile_required' row all answer `true`
-/// (the row exists in the target's inbox; what state it is in is the
-/// apply pipeline's business). `tenant_id` must be the TARGET inbox
-/// tenant the receipt was reserved under (and `target_tenant_id` the
-/// receipt's destination — the same tenant under the retargeted
-/// ownership); queried under the source queue tenant's context the
-/// receipt is invisible, fail-closed — the target's inbox is never
-/// readable from the source's slice.
+/// audit P0.1 RETARGET, twenty-seventh audit P0, twenty-eighth audit P0
+/// name + federation identity)? Read-only form of the guarded receipt
+/// insert — used by the target-side pipeline to decide before a
+/// delivery, and by operations to inspect the durable reservation
+/// state. Presence is status-agnostic: a 'received', 'applying',
+/// 'applied' or 'reconcile_required' row all answer `true` (the row
+/// exists in the target's inbox; what state it is in is the apply
+/// pipeline's business — read it with [`target_apply_status`]).
+///
+/// `tenant_id` must be the TARGET inbox tenant the receipt was reserved
+/// under (and `target_tenant_id` the receipt's destination — the same
+/// tenant under the retargeted ownership); queried under the source
+/// queue tenant's context the receipt is invisible, fail-closed — the
+/// target's inbox is never readable from the source's slice.
+///
+/// Twenty-eighth audit P0 (federation identity): the lookup keys the
+/// migration-166 dedupe boundary EXACTLY — `source_tenant_id` is part
+/// of that key, and the receipt of a DIFFERENT source tenant (a
+/// different site delivering the same event UUID to the same target)
+/// must never answer `true` for this projection. The lookup therefore
+/// filters `source_tenant_id` like every other key column; the honest
+/// twenty-fifth-audit name (`is_target_applied`) is gone — the question
+/// this answers is "does the target inbox already hold this
+/// reservation?", never "was this applied?".
 #[allow(clippy::too_many_arguments)]
-pub async fn is_target_applied(
+pub async fn target_inbox_exists(
     pool: &sqlx::PgPool,
     tenant_id: Uuid,
+    source_tenant_id: Uuid,
     source_event_id: Uuid,
     projection_type: &str,
     projection_revision: u64,
@@ -1562,13 +1581,15 @@ pub async fn is_target_applied(
             let present: bool = sqlx::query_scalar(
                 "SELECT EXISTS ( \
                      SELECT 1 FROM replication_inbox \
-                     WHERE tenant_id = $1 AND source_event_id = $2 \
-                       AND projection_type = $3 AND projection_revision = $4 \
-                       AND target_tenant_id = $5 \
-                       AND target_site_id IS NOT DISTINCT FROM $6 \
+                     WHERE tenant_id = $1 AND source_tenant_id = $2 \
+                       AND source_event_id = $3 \
+                       AND projection_type = $4 AND projection_revision = $5 \
+                       AND target_tenant_id = $6 \
+                       AND target_site_id IS NOT DISTINCT FROM $7 \
                  )",
             )
             .bind(tenant_id)
+            .bind(source_tenant_id)
             .bind(source_event_id)
             .bind(&projection_type)
             .bind(projection_revision as i64)
@@ -1576,8 +1597,62 @@ pub async fn is_target_applied(
             .bind(target_site_id)
             .fetch_one(&mut **tx)
             .await
-            .map_err(|e| SenseiError::Database(format!("replication: is target applied: {e}")))?;
+            .map_err(|e| SenseiError::Database(format!("replication: target inbox exists: {e}")))?;
             Ok(present)
+        })
+    })
+    .await
+}
+
+/// The CURRENT state of the target inbox receipt for this projection
+/// (twenty-eighth audit P0 — federation identity status read): returns
+/// the `replication_inbox.status` value ('received', 'applying',
+/// 'applied' or 'reconcile_required') when a receipt is reserved, or
+/// `None` when NO receipt exists for the exact migration-166 dedupe key.
+///
+/// The lookup keys the FULL key — `tenant_id` (the target inbox owner,
+/// via the transaction context AND the explicit column), the SOURCE
+/// tenant, the source event, the projection identity, the destination
+/// tenant and the destination site — so a receipt delivered from a
+/// DIFFERENT source tenant can never answer for this projection
+/// (`source_tenant_id` is part of the unique key, and every lookup pins
+/// it). Status-agnostic: this read does not decide anything — the apply
+/// pipeline's state machine owns the row.
+#[allow(clippy::too_many_arguments)]
+pub async fn target_apply_status(
+    pool: &sqlx::PgPool,
+    tenant_id: Uuid,
+    source_tenant_id: Uuid,
+    source_event_id: Uuid,
+    projection_type: &str,
+    projection_revision: u64,
+    target_tenant_id: Uuid,
+    target_site_id: Option<Uuid>,
+) -> Result<Option<String>> {
+    let projection_type = projection_type.to_string();
+    with_tenant_tx(pool, tenant_id, move |tx| {
+        Box::pin(async move {
+            let status: Option<String> = sqlx::query_scalar(
+                "SELECT status FROM replication_inbox \
+                 WHERE tenant_id = $1 AND source_tenant_id = $2 \
+                   AND source_event_id = $3 \
+                   AND projection_type = $4 AND projection_revision = $5 \
+                   AND target_tenant_id = $6 \
+                   AND target_site_id IS NOT DISTINCT FROM $7",
+            )
+            .bind(tenant_id)
+            .bind(source_tenant_id)
+            .bind(source_event_id)
+            .bind(&projection_type)
+            .bind(projection_revision as i64)
+            .bind(target_tenant_id)
+            .bind(target_site_id)
+            .fetch_optional(&mut **tx)
+            .await
+            .map_err(|e| {
+                SenseiError::Database(format!("replication: target apply status read: {e}"))
+            })?;
+            Ok(status)
         })
     })
     .await
@@ -1635,8 +1710,16 @@ const REGISTERED_TARGET_PROJECTORS: &[&str] = &[];
 /// the TARGET tenant — the slice the receipt was reserved under. A
 /// context that cannot see the receipt resolves the validation to
 /// nothing and is refused, fail-closed.
+///
+/// Twenty-eighth audit P0 (federation identity): `source_tenant_id` is
+/// the tenant whose queue row is being applied (the receipt's
+/// `source_tenant_id` — part of the migration-166 dedupe key). The
+/// receipt lookup keys the FULL key, so the row of a DIFFERENT source
+/// tenant delivering the same event UUID to this target can never
+/// validate — nor ever be locked — for this apply.
 pub async fn apply_target_projection(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    source_tenant_id: Uuid,
     entry: &ReplicationEntry,
 ) -> Result<()> {
     // A key-less or destination-less entry has no reservable receipt.
@@ -1659,21 +1742,27 @@ pub async fn apply_target_projection(
         ));
     };
     // (a) The inbox receipt must exist under the TARGET tenant's context:
-    // same source event, projection identity, destination edge and source
-    // site as the delivery that reserved it. Under the retargeted
-    // ownership the receipt's `tenant_id` and `target_tenant_id` are the
-    // same tenant, so the target filter pins the RLS slice too. The row
-    // is LOCKED: the state machine decision below must be made against a
-    // row no concurrent worker can transition mid-apply.
+    // same SOURCE tenant, same source event, projection identity,
+    // destination edge and source site as the delivery that reserved it —
+    // the migration-166 dedupe key EXACTLY (twenty-eighth audit P0: the
+    // source tenant is part of that key, and a receipt delivered from a
+    // different source tenant must never validate this apply). Under the
+    // retargeted ownership the receipt's `tenant_id` and
+    // `target_tenant_id` are the same tenant, so the target filter pins
+    // the RLS slice too. The row is LOCKED: the state machine decision
+    // below must be made against a row no concurrent worker can
+    // transition mid-apply.
     let status: Option<String> = sqlx::query_scalar(
         "SELECT status FROM replication_inbox \
-         WHERE source_event_id = $1 AND projection_type = $2 \
-           AND projection_revision = $3 \
-           AND source_site_id IS NOT DISTINCT FROM $4 \
-           AND target_tenant_id = $5 \
-           AND target_site_id IS NOT DISTINCT FROM $6 \
+         WHERE source_tenant_id = $1 AND source_event_id = $2 \
+           AND projection_type = $3 \
+           AND projection_revision = $4 \
+           AND source_site_id IS NOT DISTINCT FROM $5 \
+           AND target_tenant_id = $6 \
+           AND target_site_id IS NOT DISTINCT FROM $7 \
          FOR UPDATE",
     )
+    .bind(source_tenant_id)
     .bind(source_event_id)
     .bind(&entry.projection_type)
     .bind(entry.projection_revision as i64)

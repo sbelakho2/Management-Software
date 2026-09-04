@@ -13,7 +13,7 @@ use sensei_agent_core::evidence::{EvidenceRef, ToolResult};
 use sensei_agent_core::journal::ExecutionJournal;
 use sensei_agent_core::tools::{
     PolicyEngine, ToolError, ToolExecutionContext, ToolExecutionId, ToolExecutor, ToolHandler,
-    ToolHandlerFuture, ToolSpec,
+    ToolHandlerFuture, ToolRisk, ToolSpec,
 };
 use sensei_services::production::ProductionService;
 use sensei_services::supply_chain::{InventoryItem, SupplyChainService};
@@ -147,8 +147,9 @@ pub async fn execute_tool(
     // the duration of this ONE execution and keeps the evidence-carrying
     // ToolResult of the dispatch that actually ran: when the durable
     // journal REPLAYS a previous 'succeeded' outcome the handler never
-    // runs and the replay is re-wrapped below exactly like the legacy
-    // replay (empty evidence, "@journal" source version).
+    // runs and the replay is re-wrapped below (the stored evidence array
+    // is restored when the journaled outcome carried it, twenty-eighth
+    // audit P0-1).
     let handler = Arc::new(ApiToolHandler {
         ctx,
         production,
@@ -157,27 +158,60 @@ pub async fn execute_tool(
         last: Mutex::new(None),
     });
     let handler_view = handler.clone();
-    // The execution identity for the DURABLE journal: deterministic from
-    // the tool name + CANONICALLY sorted args (execution_id below), so
-    // semantically equal invocations always claim the SAME key (the
-    // nineteenth-audit key contract preserved under the collapse).
-    let execution = ToolExecutionContext {
-        key: execution_id(tool, &args),
+    // Twenty-eighth audit P0-1: the durable command journal is for
+    // MUTATING tools ONLY. All four tools of this registry are
+    // read_only() (they declare idempotent:true for command semantics,
+    // but a ReadOnly execution must NEVER reserve/journal/load/replay):
+    // the journal key is tool+args without user/site/scope, so a
+    // journaled read-only result could be replayed for a second caller
+    // WITHOUT running the domain handler — the exact place the scope
+    // authorization (enforce_tool_scope/enforce_site_argument_scope)
+    // executes — freezing a live value and stripping EvidenceRefs. So
+    // the journal key/claim machinery is built ONLY under
+    // `tool.idempotent && tool.risk != ToolRisk::ReadOnly`; read-only
+    // calls go through a handler-only executor (no journal, no
+    // deterministic replay key — a throwaway context whose key is never
+    // used) and every call dispatches FRESH.
+    let journaling = tool.idempotent && tool.risk != ToolRisk::ReadOnly;
+    let execution = if journaling {
+        // The execution identity for the DURABLE journal: deterministic
+        // from the tool name + CANONICALLY sorted args (execution_id
+        // below), so semantically equal invocations always claim the
+        // SAME key (the nineteenth-audit key contract preserved under
+        // the collapse).
+        ToolExecutionContext {
+            key: execution_id(tool, &args),
+        }
+    } else {
+        // Read-only: the journal key is never built — this throwaway
+        // context is never used for a reserve/recover/load/replay (the
+        // executor's own ReadOnly gate is the second line of defense).
+        ToolExecutionContext {
+            key: ToolExecutionId {
+                request_id: Uuid::new_v4(),
+                program_execution_id: Uuid::new_v4(),
+                tool_call_index: 0,
+            },
+        }
     };
-    // The durable journal is configured exactly when the legacy path
-    // journaled: a database pool is present (the ToolExecutor itself
-    // decides whether an idempotent tool uses it).
-    let journal = pool.map(|pool| {
-        sensei_services::ai::command_journal::PgExecutionJournal::new(pool.clone())
-            as Arc<dyn ExecutionJournal>
-    });
-    let mut executor = match journal {
-        Some(journal) => ToolExecutor::with_journal_and_handler(policy.clone(), journal, handler),
-        None => ToolExecutor::with_handler(policy.clone(), handler),
+    let mut executor = if journaling {
+        // The durable journal is configured exactly when the legacy path
+        // journaled: a database pool is present.
+        match pool {
+            Some(pool) => ToolExecutor::with_journal_and_handler(
+                policy.clone(),
+                sensei_services::ai::command_journal::PgExecutionJournal::new(pool.clone())
+                    as Arc<dyn ExecutionJournal>,
+                handler.clone(),
+            ),
+            None => ToolExecutor::with_handler(policy.clone(), handler.clone()),
+        }
+    } else {
+        ToolExecutor::with_handler(policy.clone(), handler.clone())
     };
     // ONE call on the single execution state machine: policy re-check,
-    // reserve/recover/replay/complete, the REAL timeout and the output
-    // validation all happen inside ToolExecutor.
+    // reserve/recover/replay/complete (mutating tools only), the REAL
+    // timeout and the output validation all happen inside ToolExecutor.
     let output = executor
         .execute_handler(ctx, tool, args, None, execution)
         .await
@@ -186,13 +220,21 @@ pub async fn execute_tool(
     match replayed {
         Some(result) => Ok(result),
         // The journal REPLAYED a previous execution (the handler never
-        // ran): same evidence-less replay ToolResult as the legacy API
-        // path produced for a journaled replay.
-        None => Ok(ToolResult::new(
-            output,
-            vec![],
-            &format!("{}@journal", tool.name),
-        )),
+        // ran): reconstruct the ToolResult with the journaled evidence
+        // when the stored outcome carried the ToolResult evidence array
+        // serialized alongside the data; legacy rows without it keep the
+        // evidence-less "@journal" replay.
+        None => {
+            let evidence = output
+                .get("evidence")
+                .and_then(|e| serde_json::from_value::<Vec<EvidenceRef>>(e.clone()).ok())
+                .unwrap_or_default();
+            Ok(ToolResult::new(
+                output,
+                evidence,
+                &format!("{}@journal", tool.name),
+            ))
+        }
     }
 }
 
