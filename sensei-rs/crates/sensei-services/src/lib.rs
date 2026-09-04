@@ -16,6 +16,7 @@
 
 pub mod accounts;
 pub mod ai;
+pub mod authz_sql;
 pub mod contacts;
 pub mod export;
 pub mod finance;

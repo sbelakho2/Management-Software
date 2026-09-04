@@ -10,6 +10,8 @@ use axum::{
 };
 use chrono::{DateTime, Utc};
 use sensei_auth::middleware::AuthenticatedUser;
+use sensei_core::domain::request_context::{OperationalFocus, RequestContext};
+use sensei_core::domain::scope::AuthorizedScope;
 use sensei_core::error::Result;
 use sensei_services::quality::{
     Audit, AuditFinding, CapaExtended, CapaPriority, CapaType, ControlPlan, CustomerComplaint,
@@ -21,6 +23,59 @@ use serde::Deserialize;
 use uuid::Uuid;
 
 use crate::state::AppState;
+
+/// The caller's server-created request context for quality handlers
+/// (twenty-ninth audit Wave B items 5-6 — the routes/andon.rs
+/// `caller_sites` / routes/supply_chain.rs `caller_scope` pattern
+/// replicated): the scope comes from the principal's ACTIVE role-slot
+/// assignments resolved against the DB, the operating focus from the
+/// agent context — never from client input.
+///
+/// In-memory / dev mode has no database and therefore no site dimension:
+/// the caller receives an EXPLICIT tenant-wide dev grant (bootstrap
+/// semantics — the DB-backed builder never returns TenantWide), which
+/// keeps every record visible, exactly like the pre-scope behavior.
+pub(crate) async fn caller_ctx(
+    user: &AuthenticatedUser,
+    state: &AppState,
+) -> Result<RequestContext> {
+    let Some(pool) = state.db_pool.as_ref() else {
+        return Ok(dev_ctx(user));
+    };
+    let ctx = crate::routes::agent::build_context(user, state).await;
+    RequestContext::build(
+        pool,
+        user.tenant_id,
+        user.user_id,
+        ctx.site_id,
+        ctx.value_stream_id,
+        ctx.work_center_id,
+        ctx.shift_id,
+        String::new(),
+    )
+    .await
+}
+
+/// In-memory/dev-mode context: tenant-wide + no operating focus (there
+/// is no site dimension without a database).
+fn dev_ctx(user: &AuthenticatedUser) -> RequestContext {
+    RequestContext {
+        tenant: user.tenant_id,
+        principal: user.user_id,
+        scope: AuthorizedScope::tenant_wide(),
+        focus: OperationalFocus {
+            site: None,
+            value_stream: None,
+            work_center: None,
+            shift: None,
+        },
+        locale: None,
+        timezone: None,
+        currency: None,
+        country_policy_revision: None,
+        trace_id: String::new(),
+    }
+}
 
 /// Simple pagination-only query parameters for list endpoints without filters.
 #[derive(Debug, Deserialize)]
@@ -83,11 +138,11 @@ pub async fn list_ncrs(
 ) -> Result<Json<PaginatedResponse<NonConformance>>> {
     user.require_permission("quality:ncr:read")?;
 
-    let tenant_id = user.tenant_id;
+    let ctx = caller_ctx(&user, &state).await?;
     let result = state
         .quality_service
         .list_ncrs(
-            tenant_id,
+            &ctx,
             params.status.as_deref(),
             params.severity.as_deref(),
             params.source.as_deref(),
@@ -106,8 +161,8 @@ pub async fn get_ncr(
 ) -> Result<Json<NonConformance>> {
     user.require_permission("quality:ncr:read")?;
 
-    let tenant_id = user.tenant_id;
-    let result = state.quality_service.get_ncr(tenant_id, id).await?;
+    let ctx = caller_ctx(&user, &state).await?;
+    let result = state.quality_service.get_ncr(&ctx, id).await?;
     Ok(Json(result))
 }
 
@@ -119,11 +174,11 @@ pub async fn list_capas(
 ) -> Result<Json<PaginatedResponse<CapaExtended>>> {
     user.require_permission("quality:capa:read")?;
 
-    let tenant_id = user.tenant_id;
+    let ctx = caller_ctx(&user, &state).await?;
     let result = state
         .quality_service
         .list_capas(
-            tenant_id,
+            &ctx,
             params.status.as_deref(),
             params.nc_type.as_deref(),
             params.page,
@@ -141,8 +196,8 @@ pub async fn get_capa(
 ) -> Result<Json<CapaExtended>> {
     user.require_permission("quality:capa:read")?;
 
-    let tenant_id = user.tenant_id;
-    let result = state.quality_service.get_capa(tenant_id, id).await?;
+    let ctx = caller_ctx(&user, &state).await?;
+    let result = state.quality_service.get_capa(&ctx, id).await?;
     Ok(Json(result))
 }
 
@@ -154,11 +209,11 @@ pub async fn list_audits(
 ) -> Result<Json<PaginatedResponse<Audit>>> {
     user.require_permission("quality:audit:read")?;
 
-    let tenant_id = user.tenant_id;
+    let ctx = caller_ctx(&user, &state).await?;
     let result = state
         .quality_service
         .list_audits(
-            tenant_id,
+            &ctx,
             params.status.as_deref(),
             params.audit_type.as_deref(),
             params.page,
@@ -176,8 +231,8 @@ pub async fn get_audit(
 ) -> Result<Json<Audit>> {
     user.require_permission("quality:audit:read")?;
 
-    let tenant_id = user.tenant_id;
-    let result = state.quality_service.get_audit(tenant_id, id).await?;
+    let ctx = caller_ctx(&user, &state).await?;
+    let result = state.quality_service.get_audit(&ctx, id).await?;
     Ok(Json(result))
 }
 
@@ -188,10 +243,10 @@ pub async fn list_audit_findings(
     Path(audit_id): axum::extract::Path<Uuid>,
 ) -> Result<Json<Vec<AuditFinding>>> {
     user.require_permission("quality:audit:read")?;
-    let tenant_id = user.tenant_id;
+    let ctx = caller_ctx(&user, &state).await?;
     let result = state
         .quality_service
-        .list_audit_findings(tenant_id, audit_id)
+        .list_audit_findings(&ctx, audit_id)
         .await?;
     Ok(Json(result))
 }
@@ -651,11 +706,11 @@ pub async fn create_ncr(
 ) -> Result<Json<NonConformance>> {
     user.require_permission("quality:ncr:create")?;
 
-    let tenant_id = user.tenant_id;
+    let ctx = caller_ctx(&user, &state).await?;
     let result = state
         .quality_service
         .create_ncr(
-            tenant_id,
+            &ctx,
             body.title,
             body.description,
             body.nc_type,
@@ -681,8 +736,8 @@ pub async fn update_ncr(
 ) -> Result<Json<NonConformance>> {
     user.require_permission("quality:ncr:update")?;
 
-    let tenant_id = user.tenant_id;
-    let result = state.quality_service.update_ncr(tenant_id, id, ncr).await?;
+    let ctx = caller_ctx(&user, &state).await?;
+    let result = state.quality_service.update_ncr(&ctx, id, ncr).await?;
     Ok(Json(result))
 }
 
@@ -694,8 +749,8 @@ pub async fn delete_ncr(
 ) -> Result<Json<()>> {
     user.require_permission("quality:ncr:delete")?;
 
-    let tenant_id = user.tenant_id;
-    state.quality_service.delete_ncr(tenant_id, id).await?;
+    let ctx = caller_ctx(&user, &state).await?;
+    state.quality_service.delete_ncr(&ctx, id).await?;
     Ok(Json(()))
 }
 
@@ -708,11 +763,8 @@ pub async fn investigate_ncr(
 ) -> Result<Json<NonConformance>> {
     user.require_permission("quality:ncr:update")?;
 
-    let tenant_id = user.tenant_id;
-    let result = state
-        .quality_service
-        .investigate_ncr(tenant_id, id, rca)
-        .await?;
+    let ctx = caller_ctx(&user, &state).await?;
+    let result = state.quality_service.investigate_ncr(&ctx, id, rca).await?;
     Ok(Json(result))
 }
 
@@ -725,10 +777,10 @@ pub async fn disposition_ncr(
 ) -> Result<Json<NonConformance>> {
     user.require_permission("quality:ncr:approve")?;
 
-    let tenant_id = user.tenant_id;
+    let ctx = caller_ctx(&user, &state).await?;
     let result = state
         .quality_service
-        .disposition_ncr(tenant_id, id, body.disposition)
+        .disposition_ncr(&ctx, id, body.disposition)
         .await?;
     Ok(Json(result))
 }
@@ -741,8 +793,8 @@ pub async fn close_ncr(
 ) -> Result<Json<NonConformance>> {
     user.require_permission("quality:ncr:approve")?;
 
-    let tenant_id = user.tenant_id;
-    let result = state.quality_service.close_ncr(tenant_id, id).await?;
+    let ctx = caller_ctx(&user, &state).await?;
+    let result = state.quality_service.close_ncr(&ctx, id).await?;
     Ok(Json(result))
 }
 
@@ -758,11 +810,11 @@ pub async fn create_capa(
 ) -> Result<Json<CapaExtended>> {
     user.require_permission("quality:capa:create")?;
 
-    let tenant_id = user.tenant_id;
+    let ctx = caller_ctx(&user, &state).await?;
     let result = state
         .quality_service
         .create_capa(
-            tenant_id,
+            &ctx,
             body.title,
             body.description,
             body.nc_ids,
@@ -784,11 +836,8 @@ pub async fn update_capa(
 ) -> Result<Json<CapaExtended>> {
     user.require_permission("quality:capa:update")?;
 
-    let tenant_id = user.tenant_id;
-    let result = state
-        .quality_service
-        .update_capa(tenant_id, id, capa)
-        .await?;
+    let ctx = caller_ctx(&user, &state).await?;
+    let result = state.quality_service.update_capa(&ctx, id, capa).await?;
     Ok(Json(result))
 }
 
@@ -800,8 +849,8 @@ pub async fn delete_capa(
 ) -> Result<Json<()>> {
     user.require_permission("quality:capa:update")?;
 
-    let tenant_id = user.tenant_id;
-    state.quality_service.delete_capa(tenant_id, id).await?;
+    let ctx = caller_ctx(&user, &state).await?;
+    state.quality_service.delete_capa(&ctx, id).await?;
     Ok(Json(()))
 }
 
@@ -813,8 +862,8 @@ pub async fn verify_capa(
 ) -> Result<Json<CapaExtended>> {
     user.require_permission("quality:capa:close")?;
 
-    let tenant_id = user.tenant_id;
-    let result = state.quality_service.verify_capa(tenant_id, id).await?;
+    let ctx = caller_ctx(&user, &state).await?;
+    let result = state.quality_service.verify_capa(&ctx, id).await?;
     Ok(Json(result))
 }
 
@@ -826,8 +875,8 @@ pub async fn close_capa(
 ) -> Result<Json<CapaExtended>> {
     user.require_permission("quality:capa:close")?;
 
-    let tenant_id = user.tenant_id;
-    let result = state.quality_service.close_capa(tenant_id, id).await?;
+    let ctx = caller_ctx(&user, &state).await?;
+    let result = state.quality_service.close_capa(&ctx, id).await?;
     Ok(Json(result))
 }
 
@@ -941,8 +990,8 @@ pub async fn create_audit(
 ) -> Result<Json<Audit>> {
     user.require_permission("quality:audit:create")?;
 
-    let tenant_id = user.tenant_id;
-    let result = state.quality_service.create_audit(tenant_id, audit).await?;
+    let ctx = caller_ctx(&user, &state).await?;
+    let result = state.quality_service.create_audit(&ctx, audit).await?;
     Ok(Json(result))
 }
 
@@ -955,11 +1004,8 @@ pub async fn update_audit(
 ) -> Result<Json<Audit>> {
     user.require_permission("quality:audit:update")?;
 
-    let tenant_id = user.tenant_id;
-    let result = state
-        .quality_service
-        .update_audit(tenant_id, id, audit)
-        .await?;
+    let ctx = caller_ctx(&user, &state).await?;
+    let result = state.quality_service.update_audit(&ctx, id, audit).await?;
     Ok(Json(result))
 }
 
@@ -971,8 +1017,8 @@ pub async fn delete_audit(
 ) -> Result<Json<()>> {
     user.require_permission("quality:audit:delete")?;
 
-    let tenant_id = user.tenant_id;
-    state.quality_service.delete_audit(tenant_id, id).await?;
+    let ctx = caller_ctx(&user, &state).await?;
+    state.quality_service.delete_audit(&ctx, id).await?;
     Ok(Json(()))
 }
 

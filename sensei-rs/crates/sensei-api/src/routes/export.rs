@@ -17,6 +17,7 @@ use axum::{
 };
 use chrono::{DateTime, Utc};
 use sensei_auth::middleware::AuthenticatedUser;
+use sensei_core::domain::RequestContext;
 use sensei_core::error::{Result, SenseiError};
 use sensei_services::export::pdf::{AuditData, CapaData, InspectionData, NcrData, WorkOrderData};
 use serde::Deserialize;
@@ -105,12 +106,18 @@ pub async fn export_entity(
     let date_to = parse_date_filter("date_to", params.date_to.as_deref())?;
 
     let tenant_id = user.tenant_id;
+    // Twenty-ninth audit Wave B items 6-8: the NCR / CAPA / audit
+    // exports read through the caller's server-created request context —
+    // the quality service enforces the scope (site-scoped callers only
+    // ever export their authorized records). The DB-backed builder is
+    // the andon caller_sites pattern replicated for this route file.
+    let qctx = crate::routes::quality::caller_ctx(&user, &state).await?;
 
     match entity_type.as_str() {
         "ncr" => {
             export_ncr(
                 state,
-                tenant_id,
+                &qctx,
                 &format,
                 params.id,
                 params.status.as_deref(),
@@ -122,7 +129,7 @@ pub async fn export_entity(
         "capa" => {
             export_capa(
                 state,
-                tenant_id,
+                &qctx,
                 &format,
                 params.id,
                 params.status.as_deref(),
@@ -134,7 +141,7 @@ pub async fn export_entity(
         "audit" => {
             export_audit(
                 state,
-                tenant_id,
+                &qctx,
                 &format,
                 params.id,
                 params.status.as_deref(),
@@ -144,9 +151,14 @@ pub async fn export_entity(
             .await
         }
         "work-order" => {
+            // Twenty-ninth audit Wave B item 7: build the request context
+            // ONCE per request — the export can only read the caller's
+            // authorized work orders (the scope is enforced inside the
+            // service).
+            let ctx = crate::authorization::build_request_context(&user, &state).await?;
             export_work_order(
                 state,
-                tenant_id,
+                ctx,
                 &format,
                 params.id,
                 params.status.as_deref(),
@@ -202,10 +214,11 @@ where
 
 // ── Entity-specific export logic ─────────────────────────────────────────
 
-/// Export NCR(s) in the requested format.
+/// Export NCR(s) in the requested format (the caller's request context
+/// scopes every read — twenty-ninth audit Wave B items 6-8).
 async fn export_ncr(
     state: AppState,
-    tenant_id: Uuid,
+    ctx: &RequestContext,
     format: &str,
     id: Option<Uuid>,
     status: Option<&str>,
@@ -213,17 +226,19 @@ async fn export_ncr(
     date_to: Option<DateTime<Utc>>,
 ) -> Result<Response> {
     let ncrs = if let Some(ncr_id) = id {
-        let ncr = state.quality_service.get_ncr(tenant_id, ncr_id).await?;
+        let ncr = state.quality_service.get_ncr(ctx, ncr_id).await?;
         vec![ncr]
     } else {
         let status_owned = status.map(|s| s.to_string());
+        let ctx_owned = ctx.clone();
         fetch_all_pages(|page| {
             let svc = state.quality_service.clone();
             let status = status_owned.clone();
+            let ctx = ctx_owned.clone();
             Box::pin(async move {
                 let page = svc
                     .list_ncrs(
-                        tenant_id,
+                        &ctx,
                         status.as_deref(),
                         None,
                         None,
@@ -285,10 +300,11 @@ async fn export_ncr(
     }
 }
 
-/// Export CAPA(s) in the requested format.
+/// Export CAPA(s) in the requested format (scope from the request
+/// context — twenty-ninth audit Wave B items 6-8).
 async fn export_capa(
     state: AppState,
-    tenant_id: Uuid,
+    ctx: &RequestContext,
     format: &str,
     id: Option<Uuid>,
     status: Option<&str>,
@@ -296,17 +312,19 @@ async fn export_capa(
     date_to: Option<DateTime<Utc>>,
 ) -> Result<Response> {
     let capas = if let Some(capa_id) = id {
-        let capa = state.quality_service.get_capa(tenant_id, capa_id).await?;
+        let capa = state.quality_service.get_capa(ctx, capa_id).await?;
         vec![capa]
     } else {
         let status_owned = status.map(|s| s.to_string());
+        let ctx_owned = ctx.clone();
         fetch_all_pages(|page| {
             let svc = state.quality_service.clone();
             let status = status_owned.clone();
+            let ctx = ctx_owned.clone();
             Box::pin(async move {
                 let page = svc
                     .list_capas(
-                        tenant_id,
+                        &ctx,
                         status.as_deref(),
                         None,
                         Some(page),
@@ -370,10 +388,11 @@ async fn export_capa(
     }
 }
 
-/// Export Audit(s) in the requested format.
+/// Export Audit(s) in the requested format (scope from the request
+/// context — twenty-ninth audit Wave B items 6-8).
 async fn export_audit(
     state: AppState,
-    tenant_id: Uuid,
+    ctx: &RequestContext,
     format: &str,
     id: Option<Uuid>,
     status: Option<&str>,
@@ -381,17 +400,19 @@ async fn export_audit(
     date_to: Option<DateTime<Utc>>,
 ) -> Result<Response> {
     let audits = if let Some(audit_id) = id {
-        let audit = state.quality_service.get_audit(tenant_id, audit_id).await?;
+        let audit = state.quality_service.get_audit(ctx, audit_id).await?;
         vec![audit]
     } else {
         let status_owned = status.map(|s| s.to_string());
+        let ctx_owned = ctx.clone();
         fetch_all_pages(|page| {
             let svc = state.quality_service.clone();
             let status = status_owned.clone();
+            let ctx = ctx_owned.clone();
             Box::pin(async move {
                 let page = svc
                     .list_audits(
-                        tenant_id,
+                        &ctx,
                         status.as_deref(),
                         None,
                         Some(page),
@@ -483,9 +504,13 @@ async fn export_audit(
 }
 
 /// Export Work Order(s) in the requested format.
+///
+/// The caller's [`RequestContext`] is passed through every service call:
+/// an export can never include a work order outside the caller's
+/// authorized scope.
 async fn export_work_order(
     state: AppState,
-    tenant_id: Uuid,
+    ctx: sensei_core::domain::request_context::RequestContext,
     format: &str,
     id: Option<Uuid>,
     status: Option<&str>,
@@ -493,26 +518,22 @@ async fn export_work_order(
     date_to: Option<DateTime<Utc>>,
 ) -> Result<Response> {
     let orders = if let Some(wo_id) = id {
-        let wo = state
-            .production_service
-            .get_work_order(tenant_id, wo_id)
-            .await?;
+        let wo = state.production_service.get_work_order(&ctx, wo_id).await?;
         vec![wo]
     } else {
         let status_owned = status.map(|s| s.to_string());
         fetch_all_pages(|page| {
             let svc = state.production_service.clone();
+            let ctx = ctx.clone();
             let status = status_owned.clone();
             Box::pin(async move {
-                let page = svc
-                    .list_work_orders(
-                        tenant_id,
-                        status.as_deref(),
-                        None,
-                        Some(page),
-                        Some(EXPORT_PAGE_SIZE),
-                    )
-                    .await?;
+                let filter = sensei_services::production::WorkOrderListFilter {
+                    status,
+                    work_center_id: None,
+                    page: Some(page),
+                    per_page: Some(EXPORT_PAGE_SIZE),
+                };
+                let page = svc.list_work_orders(&ctx, &filter).await?;
                 Ok(page.data)
             })
         })

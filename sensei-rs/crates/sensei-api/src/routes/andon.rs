@@ -326,24 +326,12 @@ pub async fn get_andon(
 /// no entitlement gets an EMPTY set, which the repository command turns
 /// into zero matched rows.
 pub(crate) async fn caller_sites(user: &AuthenticatedUser, state: &AppState) -> Result<Vec<Uuid>> {
-    let Some(pool) = state.db_pool.as_ref() else {
-        return Err(sensei_core::error::SenseiError::Database(
-            "scope resolution requires the database".to_string(),
-        ));
-    };
-    let ctx = crate::routes::agent::build_context(user, state).await;
-    let rc = sensei_core::domain::request_context::RequestContext::build(
-        pool,
-        user.tenant_id,
-        user.user_id,
-        ctx.site_id,
-        ctx.value_stream_id,
-        ctx.work_center_id,
-        ctx.shift_id,
-        String::new(),
-    )
-    .await?;
-    Ok(rc.authorized_sites())
+    // The canonical builder: DB-backed mode resolves the authorized
+    // scope; in-memory (dev/test) mode carries the explicit tenant-wide
+    // grant so pure in-memory suites exercise the same context surface.
+    Ok(crate::authorization::build_request_context(user, state)
+        .await?
+        .authorized_sites())
 }
 
 pub async fn acknowledge_andon(

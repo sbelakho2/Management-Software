@@ -3,6 +3,17 @@
 //! Provides a unified search endpoint across multiple entity types by
 //! delegating to the [`SearchService`] (database-backed or in-memory).
 //! Supports optional entity-type filtering and pagination.
+//!
+//! # Authorization (twenty-ninth-audit Wave B item 10)
+//!
+//! Search is never a tenant-wide, type-unrestricted listing: the caller's
+//! effective [`AllowedSearchProjection`] is precomputed here — every
+//! result type whose read permission the caller lacks is dropped, and the
+//! operational types (work centers, standard work, production cells) are
+//! restricted to the caller's `RequestContext` authorized sites. The
+//! projection is passed INTO the database search so candidate tables are
+//! filtered before ranking; a caller with nothing admissible gets an
+//! empty result set, never a fallback to an unrestricted search.
 
 use axum::{
     extract::{Query, State},
@@ -13,6 +24,7 @@ use sensei_core::error::Result;
 use sensei_services::ops::search::SearchResult;
 use serde::{Deserialize, Serialize};
 
+use crate::authorization::search_policy::AllowedSearchProjection;
 use crate::state::AppState;
 
 // ── Query / Response DTOs ────────────────────────────────────────────────────
@@ -48,9 +60,18 @@ pub struct SearchResponse {
     pub facets: Vec<SearchFacet>,
 }
 
+/// Results are merged per backend and truncated to this cap before the
+/// response-level `limit` applies (mirrors the backends' own caps).
+const MERGE_CAP: usize = 50;
+
 // ── Handlers ─────────────────────────────────────────────────────────────────
 
 /// Unified search across users, accounts, contacts, products, and PM entities.
+///
+/// The admissible search surface is derived from the caller's live
+/// permissions and operational scope BEFORE any backend query runs:
+/// types the caller may not read are never searched, and a caller with no
+/// admissible type receives an empty result set.
 pub async fn search(
     user: AuthenticatedUser,
     State(state): State<AppState>,
@@ -59,10 +80,38 @@ pub async fn search(
     let query = params.q.trim().to_string();
     let limit = params.limit.unwrap_or(10).clamp(1, 50);
 
-    let results = state
-        .search_service
-        .search(user.tenant_id, &query, params.entity_type.as_deref())
-        .await?;
+    let projection =
+        AllowedSearchProjection::for_caller(&state, &user, params.entity_type.as_deref()).await?;
+
+    let results = if projection.entity_types().is_empty() {
+        Vec::new()
+    } else if let Some(pool) = &state.db_pool {
+        // Database deployment: the admissible projection travels INTO the
+        // search so candidate tables are filtered before ranking.
+        crate::db_search_service::search_db_authorized(pool, user.tenant_id, &query, &projection)
+            .await?
+    } else {
+        // In-memory/dev deployment (no site rows to entangle): run one
+        // bounded search per admissible type so inadmissible types can
+        // never leak through the untyped service contract.
+        let mut merged: Vec<SearchResult> = Vec::new();
+        for &result_type in projection.entity_types() {
+            let partial = state
+                .search_service
+                .search(user.tenant_id, &query, Some(result_type))
+                .await?;
+            merged.extend(partial);
+        }
+        merged.sort_by(|a, b| {
+            b.relevance
+                .partial_cmp(&a.relevance)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| a.result_type.cmp(&b.result_type))
+                .then_with(|| a.result_id.cmp(&b.result_id))
+        });
+        merged.truncate(MERGE_CAP);
+        merged
+    };
 
     let total = results.len();
 

@@ -19,6 +19,16 @@
 //! ever see its own entities — and ranked by `similarity()`, truncated to a
 //! bounded result set.
 //!
+//! # Authorization (twenty-ninth-audit Wave B item 10)
+//!
+//! [`search_db_authorized`] runs the caller-derived
+//! [`AllowedSearchProjection`]: candidate tables/types are filtered
+//! BEFORE ranking by the caller's permissions (result types whose read
+//! permission the caller lacks are never queried) and operational types
+//! are restricted to the caller's authorized sites INSIDE the SQL
+//! (`NoOperationalScope` yields no operational rows at all). Search never
+//! runs all tables and then filters the result set.
+//!
 //! # Indexing contract
 //!
 //! [`SearchService::index_entity`] / [`SearchService::remove_from_index`]
@@ -33,6 +43,8 @@ use sensei_services::ops::search::{SearchResult, SearchService};
 use sqlx::PgPool;
 use std::collections::HashMap;
 use uuid::Uuid;
+
+use crate::authorization::search_policy::{policy_for, AllowedSearchProjection, ScopeMode};
 
 /// Maximum results per entity query before the cross-type merge.
 const SEARCH_LIMIT: i64 = 50;
@@ -215,7 +227,8 @@ impl DatabaseSearchService {
     }
 
     /// Search the generic `entity_store` JSONB rows for the given store
-    /// entity types, scoped to the tenant.
+    /// entity types, scoped to the tenant (unrestricted operational
+    /// variant — used by the legacy trait path).
     async fn search_entity_store(
         &self,
         tenant_id: EntityId,
@@ -223,12 +236,71 @@ impl DatabaseSearchService {
         store_types: &[String],
         limit: i64,
     ) -> Result<Vec<SearchResult>> {
+        self.search_entity_store_rows(tenant_id, query, store_types, None, None, limit)
+            .await
+    }
+
+    /// Search `entity_store` JSONB rows for the given store entity types.
+    ///
+    /// `operational_store_types` + `sites` carry the authorization
+    /// restriction (Wave B item 10): when both are `Some`, operational
+    /// rows must be attributable to one of the caller's authorized sites
+    /// INSIDE the SQL — an unattributable operational row (or an empty
+    /// entitlement) matches zero rows. `None` sites = no scope authority
+    /// (dev/unrestricted). Candidate types are always filtered BEFORE
+    /// ranking — search never runs the whole table and filters after.
+    #[allow(clippy::too_many_arguments)]
+    async fn search_entity_store_rows(
+        &self,
+        tenant_id: EntityId,
+        query: &str,
+        store_types: &[String],
+        operational_store_types: Option<&[String]>,
+        sites: Option<&[Uuid]>,
+        limit: i64,
+    ) -> Result<Vec<SearchResult>> {
         // Reverse map: store entity_type -> search result type name.
         let search_type_of: HashMap<&str, &str> =
             GENERIC_ENTITY_TYPES.iter().map(|(s, e)| (*e, *s)).collect();
 
-        let rows = sqlx::query_as::<_, (Uuid, String, serde_json::Value, f32)>(
-            "SELECT id, entity_type, data, \
+        // Operational attribution clause (site predicate for the
+        // operational tables that carry site_id — inserted BEFORE the
+        // LIMIT, i.e. before ranking truncation):
+        //
+        // * work_center rows are attributed through the relational
+        //   `work_centers.site_id`;
+        // * production_cell rows through `production_cell_work_centers`
+        //   → their work centers' sites;
+        // * standard-work rows carry no site linkage — they are never
+        //   attributable and are excluded under a site restriction.
+        //
+        // The clause is only assembled from fixed fragments; parameter
+        // numbering is tracked explicitly below.
+        let (site_clause, limit_param): (String, usize) = match (operational_store_types, sites) {
+            (Some(op_types), Some(site_list)) if !site_list.is_empty() => (
+                format!(
+                    " AND (entity_type <> ALL($4::text[]) \
+                     OR EXISTS (SELECT 1 FROM work_centers wc \
+                                WHERE wc.tenant_id = entity_store.tenant_id \
+                                  AND wc.id = entity_store.id \
+                                  AND wc.site_id = ANY($5)) \
+                     OR EXISTS (SELECT 1 FROM production_cell_work_centers pcwc \
+                                JOIN work_centers wc \
+                                  ON wc.tenant_id = pcwc.tenant_id \
+                                 AND wc.id = pcwc.work_center_id \
+                                WHERE pcwc.tenant_id = entity_store.tenant_id \
+                                  AND pcwc.cell_id = entity_store.id \
+                                  AND wc.site_id = ANY($5))) \
+                     -- {op_type_count} operational types restricted to the \
+                     -- caller's authorized sites",
+                    op_type_count = op_types.len()
+                ),
+                6,
+            ),
+            _ => (String::new(), 4),
+        };
+
+        let base_sql = "SELECT id, entity_type, data, \
                 GREATEST(similarity(COALESCE(data->>'name', ''), $3), \
                          similarity(COALESCE(data->>'title', ''), $3), \
                          similarity(COALESCE(data->>'description', ''), $3)) AS relevance \
@@ -246,17 +318,21 @@ impl DatabaseSearchService {
                         AND (data->>'effective_from' IS NULL \
                              OR (data->>'effective_from')::timestamptz <= NOW()) \
                         AND (data->>'effective_to' IS NULL \
-                             OR (data->>'effective_to')::timestamptz >= NOW()))) \
-             ORDER BY relevance DESC \
-             LIMIT $4",
-        )
-        .bind(tenant_id)
-        .bind(store_types)
-        .bind(query)
-        .bind(limit)
-        .fetch_all(&self.pool)
-        .await
-        .map_err(|e| SenseiError::Database(format!("Entity store search failed: {e}")))?;
+                             OR (data->>'effective_to')::timestamptz >= NOW())))";
+        let sql = format!("{base_sql}{site_clause} ORDER BY relevance DESC LIMIT ${limit_param}");
+
+        let mut query_builder = sqlx::query_as::<_, (Uuid, String, serde_json::Value, f32)>(&sql)
+            .bind(tenant_id)
+            .bind(store_types)
+            .bind(query);
+        if let (Some(op_types), Some(site_list)) = (operational_store_types, sites) {
+            query_builder = query_builder.bind(op_types).bind(site_list);
+        }
+        let rows = query_builder
+            .bind(limit)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Entity store search failed: {e}")))?;
 
         let mut results = Vec::with_capacity(rows.len());
         for (id, store_type, data, relevance) in rows {
@@ -277,6 +353,122 @@ impl DatabaseSearchService {
                 relevance,
             });
         }
+        Ok(results)
+    }
+
+    /// Authorized full-text search (Wave B item 10): candidate types are
+    /// filtered by the caller's admissible projection BEFORE any query
+    /// runs (dropped types are never searched), and operational types are
+    /// restricted to the projection's sites inside the SQL. An empty
+    /// projection (or an empty entitlement for operational types) returns
+    /// no rows — never a search-all-then-filter path.
+    pub async fn search_authorized(
+        &self,
+        tenant_id: EntityId,
+        query: &str,
+        projection: &AllowedSearchProjection,
+    ) -> Result<Vec<SearchResult>> {
+        let query = query.trim();
+        if query.is_empty() || projection.entity_types().is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let mut results: Vec<SearchResult> = Vec::new();
+
+        // ── Typed tables (permission-admissible only) ─────────────────
+        for &result_type in projection.entity_types() {
+            match result_type {
+                "user" => results.extend(self.search_users(tenant_id, query, SEARCH_LIMIT).await?),
+                "account" => {
+                    results.extend(self.search_accounts(tenant_id, query, SEARCH_LIMIT).await?)
+                }
+                "contact" => {
+                    results.extend(self.search_contacts(tenant_id, query, SEARCH_LIMIT).await?)
+                }
+                "product" => {
+                    results.extend(self.search_products(tenant_id, query, SEARCH_LIMIT).await?)
+                }
+                _ => {}
+            }
+        }
+
+        // ── Generic entity_store types, split by scope mode ───────────
+        // Tenant-mode types are searched without a site predicate;
+        // operational types are restricted to the authorized sites (or
+        // skipped entirely when the caller has no operational scope).
+        let mut tenant_store_types: Vec<String> = Vec::new();
+        let mut operational_store_types: Vec<String> = Vec::new();
+        for &result_type in projection.entity_types() {
+            let Some((_, store_type)) =
+                GENERIC_ENTITY_TYPES.iter().find(|(s, _)| *s == result_type)
+            else {
+                continue;
+            };
+            match policy_for(result_type).map(|p| p.scope_mode()) {
+                Some(ScopeMode::Tenant) => tenant_store_types.push(store_type.to_string()),
+                Some(ScopeMode::Operational) => {
+                    operational_store_types.push(store_type.to_string())
+                }
+                None => {}
+            }
+        }
+
+        if !tenant_store_types.is_empty() {
+            results.extend(
+                self.search_entity_store_rows(
+                    tenant_id,
+                    query,
+                    &tenant_store_types,
+                    None,
+                    None,
+                    SEARCH_LIMIT,
+                )
+                .await?,
+            );
+        }
+        if !operational_store_types.is_empty() {
+            match projection.sites() {
+                // No scope authority (dev deployments): unrestricted.
+                None => {
+                    results.extend(
+                        self.search_entity_store_rows(
+                            tenant_id,
+                            query,
+                            &operational_store_types,
+                            None,
+                            None,
+                            SEARCH_LIMIT,
+                        )
+                        .await?,
+                    );
+                }
+                // NoOperationalScope (empty): no operational rows —
+                // never a tenant-wide fallback.
+                Some(sites) => {
+                    results.extend(
+                        self.search_entity_store_rows(
+                            tenant_id,
+                            query,
+                            &operational_store_types,
+                            Some(&operational_store_types),
+                            Some(sites),
+                            SEARCH_LIMIT,
+                        )
+                        .await?,
+                    );
+                }
+            }
+        }
+
+        // ── Sort by relevance descending, limit to 50 ─────────────────
+        results.sort_by(|a, b| {
+            b.relevance
+                .partial_cmp(&a.relevance)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| a.result_type.cmp(&b.result_type))
+                .then_with(|| a.result_id.cmp(&b.result_id))
+        });
+        results.truncate(SEARCH_LIMIT as usize);
         Ok(results)
     }
 
@@ -385,4 +577,23 @@ impl SearchService for DatabaseSearchService {
     ) -> Result<()> {
         Ok(())
     }
+}
+
+/// Authorized database search entry point used by the search route
+/// (Wave B item 10): the caller-derived admissible projection (result
+/// types the caller may read + authorized operational sites) is pushed
+/// into the query so candidate tables are filtered BEFORE ranking.
+///
+/// The route reaches this directly through `AppState::db_pool` (which is
+/// the same pool the installed `DatabaseSearchService` wraps), while
+/// in-memory/dev deployments keep the in-memory search service.
+pub async fn search_db_authorized(
+    pool: &PgPool,
+    tenant_id: EntityId,
+    query: &str,
+    projection: &AllowedSearchProjection,
+) -> Result<Vec<SearchResult>> {
+    DatabaseSearchService::new(pool.clone())
+        .search_authorized(tenant_id, query, projection)
+        .await
 }

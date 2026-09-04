@@ -6,9 +6,22 @@
 //! tenant isolation and full CRUD support.
 //!
 //! Implements [`QualityService`].
+//!
+//! # Resource scope (twenty-ninth audit Wave B items 6-8)
+//!
+//! The NCR / CAPA / audit operational methods take the server-created
+//! [`RequestContext`] and run inside a [`TenantTx`] of `ctx.tenant`. Every
+//! statement filters through the caller's scope: site-scoped callers match
+//! the record's SERVER-STAMPED `scope_site_id` (stored in the JSONB record
+//! as `data->>'scope_site_id'`) against `ctx.authorized_sites()`; the
+//! tenant-wide grant has no predicate; a caller with no operational scope
+//! matches zero rows. Creation stamps the scope from `ctx.focus` — client
+//! payloads can never set the scope keys.
 
 use async_trait::async_trait;
 use chrono::Utc;
+use sensei_core::db::TenantTx;
+use sensei_core::domain::{AuthorizedScope, RequestContext};
 use sensei_core::error::{Result, SenseiError};
 use sensei_core::pagination::PaginatedResponse;
 use serde_json;
@@ -104,6 +117,115 @@ fn not_found(entity: &str, id: Uuid) -> SenseiError {
     SenseiError::NotFound(format!("{} {id} not found", entity))
 }
 
+/// The SQL scope predicate + optional site-set bind (twenty-ninth audit
+/// Wave B items 3-4). Quality rows keep the whole record in a `data`
+/// JSONB column whose `scope_site_id` / `scope_work_center_id` keys are
+/// SERVER-STAMPED at creation (see [`stamp_record_data`]):
+///
+/// - `Sites` / `WorkCenter` — `(data->>'scope_site_id')::uuid` must be
+///   one of the authorized sites. A record without a stamp (`NULL` — a
+///   corporate quality record) never matches, so corporate rows are
+///   invisible to site-scoped callers;
+/// - `TenantWide` — no predicate (every record of the tenant);
+/// - `NoOperationalScope` — `AND FALSE`: zero rows.
+///
+/// The fragment binds through placeholder `$slot`; callers bind the
+/// returned site vector LAST, after their own binds.
+fn scope_filter(ctx: &RequestContext, slot: usize) -> (String, Option<Vec<Uuid>>) {
+    match &ctx.scope {
+        AuthorizedScope::NoOperationalScope => ("AND FALSE".to_string(), None),
+        AuthorizedScope::TenantWide => (String::new(), None),
+        AuthorizedScope::Sites(_) | AuthorizedScope::WorkCenter(_) => {
+            let sites = ctx.authorized_sites();
+            if sites.is_empty() {
+                ("AND FALSE".to_string(), None)
+            } else {
+                (
+                    format!("AND (data->>'scope_site_id')::uuid = ANY(${slot}::uuid[])"),
+                    Some(sites),
+                )
+            }
+        }
+    }
+}
+
+/// Server-stamp the record payload with a quality resource scope
+/// (twenty-ninth audit Wave B item 2): `scope_site_id` /
+/// `scope_work_center_id` keys are written into the JSONB record. Both
+/// `NULL` (no site) is the honest encoding of a CORPORATE /
+/// tenant-level record. Client payloads can never set these keys.
+fn stamp_record_data_with(
+    mut data: serde_json::Value,
+    stamp: QualityScopeStamp,
+) -> serde_json::Value {
+    let obj = data
+        .as_object_mut()
+        .expect("quality record payload is a JSON object");
+    obj.insert(
+        "scope_site_id".to_string(),
+        stamp
+            .site_id
+            .map(|s| serde_json::json!(s.to_string()))
+            .unwrap_or(serde_json::Value::Null),
+    );
+    obj.insert(
+        "scope_work_center_id".to_string(),
+        stamp
+            .work_center_id
+            .map(|w| serde_json::json!(w.to_string()))
+            .unwrap_or(serde_json::Value::Null),
+    );
+    data
+}
+
+/// Server-stamp a NEW record from the caller's validated operating focus.
+fn stamp_record_data(data: serde_json::Value, ctx: &RequestContext) -> serde_json::Value {
+    stamp_record_data_with(data, QualityScopeStamp::from(ctx))
+}
+
+/// Read the server-stamped scope back out of a stored record payload.
+fn read_stored_stamp(data: &serde_json::Value) -> QualityScopeStamp {
+    let parse = |key: &str| -> Option<Uuid> {
+        data.get(key)
+            .and_then(|v| v.as_str())
+            .and_then(|s| Uuid::parse_str(s).ok())
+    };
+    QualityScopeStamp {
+        site_id: parse("scope_site_id"),
+        work_center_id: parse("scope_work_center_id"),
+    }
+}
+
+/// Fetch ONE scoped row's data payload in a TenantTx of `ctx.tenant`:
+/// `Ok(None)` when the id is missing OR outside the caller's scope
+/// (item 3: out-of-scope and nonexistent are indistinguishable).
+async fn fetch_scoped_data(
+    pool: &PgPool,
+    ctx: &RequestContext,
+    table: &str,
+    id: Uuid,
+) -> Result<Option<serde_json::Value>> {
+    let mut db = TenantTx::begin(pool, ctx.tenant)
+        .await
+        .map_err(|e| SenseiError::Database(format!("{table}: begin tx: {e}")))?;
+    let (pred, site_bind) = scope_filter(ctx, 3);
+    let sql = format!("SELECT data FROM {table} WHERE id=$1 AND tenant_id=$2 {pred}");
+    let mut q = sqlx::query_scalar::<_, serde_json::Value>(&sql)
+        .bind(id)
+        .bind(ctx.tenant);
+    if let Some(sites) = site_bind {
+        q = q.bind(sites);
+    }
+    let data = q
+        .fetch_optional(&mut **db.tx())
+        .await
+        .map_err(|e| db_err("fetch_scoped_data", e))?;
+    db.commit()
+        .await
+        .map_err(|e| SenseiError::Database(format!("{table}: commit: {e}")))?;
+    Ok(data)
+}
+
 /// Fetch a single tenant-scoped JSONB entity by ID (404 when missing or
 /// owned by another tenant).
 async fn get_by_id<T: serde::de::DeserializeOwned>(
@@ -137,7 +259,7 @@ impl QualityService for DatabaseQualityService {
 
     async fn list_ncrs(
         &self,
-        tenant_id: Uuid,
+        ctx: &RequestContext,
         status: Option<&str>,
         severity: Option<&str>,
         source: Option<&str>,
@@ -147,14 +269,38 @@ impl QualityService for DatabaseQualityService {
         let page = page.unwrap_or(1).max(1);
         let pp = per_page.unwrap_or(20).clamp(1, 100);
         let off = (page - 1) * pp;
-        let rows: Vec<JsonbRow> = sqlx::query_as(
-            "SELECT id, tenant_id, data, created_at, updated_at FROM quality_ncrs WHERE tenant_id=$1 ORDER BY created_at DESC LIMIT $2 OFFSET $3",
-        ).bind(tenant_id).bind(pp as i64).bind(off as i64).fetch_all(&self.pool).await.map_err(|e| db_err("list_ncrs", e))?;
-        let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM quality_ncrs WHERE tenant_id=$1")
-            .bind(tenant_id)
-            .fetch_one(&self.pool)
+        let mut db = TenantTx::begin(&self.pool, ctx.tenant)
+            .await
+            .map_err(|e| SenseiError::Database(format!("list_ncrs: begin tx: {e}")))?;
+        let (pred_rows, site_bind_rows) = scope_filter(ctx, 4);
+        let rows_sql = format!(
+            "SELECT id, tenant_id, data, created_at, updated_at FROM quality_ncrs \
+             WHERE tenant_id=$1 {pred_rows} ORDER BY created_at DESC LIMIT $2 OFFSET $3"
+        );
+        let mut rows_q = sqlx::query_as::<_, JsonbRow>(&rows_sql)
+            .bind(ctx.tenant)
+            .bind(pp as i64)
+            .bind(off as i64);
+        if let Some(sites) = site_bind_rows {
+            rows_q = rows_q.bind(sites);
+        }
+        let rows: Vec<JsonbRow> = rows_q
+            .fetch_all(&mut **db.tx())
+            .await
+            .map_err(|e| db_err("list_ncrs", e))?;
+        let (pred_cnt, site_bind_cnt) = scope_filter(ctx, 2);
+        let count_sql = format!("SELECT COUNT(*) FROM quality_ncrs WHERE tenant_id=$1 {pred_cnt}");
+        let mut count_q = sqlx::query_scalar::<_, i64>(&count_sql).bind(ctx.tenant);
+        if let Some(sites) = site_bind_cnt {
+            count_q = count_q.bind(sites);
+        }
+        let count: i64 = count_q
+            .fetch_one(&mut **db.tx())
             .await
             .map_err(|e| db_err("count_ncrs", e))?;
+        db.commit()
+            .await
+            .map_err(|e| SenseiError::Database(format!("list_ncrs: commit: {e}")))?;
         let items: Vec<NonConformance> = rows
             .into_iter()
             .map(|r| {
@@ -178,7 +324,7 @@ impl QualityService for DatabaseQualityService {
 
     async fn create_ncr(
         &self,
-        tenant_id: Uuid,
+        ctx: &RequestContext,
         title: String,
         description: String,
         nc_type: NcType,
@@ -191,6 +337,11 @@ impl QualityService for DatabaseQualityService {
         location: Option<String>,
         is_recurrence: bool,
     ) -> Result<NonConformance> {
+        if !ctx.has_entitlement() {
+            return Err(SenseiError::Forbidden(
+                "principal has no operational scope — cannot create an NCR".to_string(),
+            ));
+        }
         let now = Utc::now();
         let (id, nc_number) = gen_number("NCR");
         let ncr = NonConformance {
@@ -217,46 +368,71 @@ impl QualityService for DatabaseQualityService {
             created_at: now,
             updated_at: now,
         };
-        let data = serde_json::to_value(&ncr)
+        // Server-stamped resource scope (item 2): the caller's validated
+        // operating focus — never client input.
+        let stamp = QualityScopeStamp::from(ctx);
+        let mut data = serde_json::to_value(&ncr)
             .map_err(|e| SenseiError::Database(format!("Failed to serialize NCR: {e}")))?;
+        data = stamp_record_data(data, ctx);
         // Item 28: the NCR state mutation and its workflow-driving event
         // are ONE transaction — a committed NCR can never lose its event
         // to a post-commit publish failure.
-        let mut tx = self
-            .pool
-            .begin()
+        let mut tx = TenantTx::begin(&self.pool, ctx.tenant)
             .await
-            .map_err(|e| db_err("create_ncr", e))?;
+            .map_err(|e| SenseiError::Database(format!("create_ncr: begin tx: {e}")))?;
         sqlx::query("INSERT INTO quality_ncrs (id, tenant_id, data, created_at, updated_at) VALUES ($1,$2,$3,$4,$5)")
-            .bind(id).bind(tenant_id).bind(&data).bind(now).bind(now).execute(&mut *tx).await.map_err(|e| db_err("create_ncr", e))?;
+            .bind(id).bind(ctx.tenant).bind(&data).bind(now).bind(now).execute(&mut **tx.tx()).await.map_err(|e| db_err("create_ncr", e))?;
         sensei_db::outbox::enqueue_outbox(
-            &mut tx,
-            tenant_id,
+            tx.tx(),
+            ctx.tenant,
             "quality_ncr",
             id,
             "sensei.quality.ncr.created",
-            serde_json::json!({ "nc_number": ncr.nc_number, "severity": format!("{:?}", ncr.severity) }),
+            serde_json::json!({ "nc_number": ncr.nc_number, "severity": format!("{:?}", ncr.severity), "scope_site_id": stamp.site_id.map(|s| s.to_string()) }),
         )
         .await?;
-        tx.commit().await.map_err(|e| db_err("create_ncr", e))?;
+        tx.commit()
+            .await
+            .map_err(|e| SenseiError::Database(format!("create_ncr: commit: {e}")))?;
         Ok(ncr)
     }
 
-    async fn get_ncr(&self, tenant_id: Uuid, id: Uuid) -> Result<NonConformance> {
-        let row = sqlx::query_as::<_, JsonbRow>("SELECT id, tenant_id, data, created_at, updated_at FROM quality_ncrs WHERE id=$1 AND tenant_id=$2")
-            .bind(id).bind(tenant_id).fetch_optional(&self.pool).await.map_err(|e| db_err("get_ncr", e))?
+    async fn get_ncr(&self, ctx: &RequestContext, id: Uuid) -> Result<NonConformance> {
+        let mut db = TenantTx::begin(&self.pool, ctx.tenant)
+            .await
+            .map_err(|e| SenseiError::Database(format!("get_ncr: begin tx: {e}")))?;
+        let (pred, site_bind) = scope_filter(ctx, 3);
+        let sql = format!(
+            "SELECT id, tenant_id, data, created_at, updated_at FROM quality_ncrs \
+             WHERE id=$1 AND tenant_id=$2 {pred}"
+        );
+        let mut q = sqlx::query_as::<_, JsonbRow>(&sql)
+            .bind(id)
+            .bind(ctx.tenant);
+        if let Some(sites) = site_bind {
+            q = q.bind(sites);
+        }
+        let row = q
+            .fetch_optional(&mut **db.tx())
+            .await
+            .map_err(|e| db_err("get_ncr", e))?
             .ok_or_else(|| not_found("NCR", id))?;
+        db.commit()
+            .await
+            .map_err(|e| SenseiError::Database(format!("get_ncr: commit: {e}")))?;
         serde_json::from_value(row.data)
             .map_err(|e| SenseiError::Database(format!("Failed to deserialize NCR: {e}")))
     }
 
     async fn update_ncr_status(
         &self,
-        tenant_id: Uuid,
+        ctx: &RequestContext,
         id: Uuid,
         severity: NcSeverity,
     ) -> Result<NonConformance> {
-        let mut ncr = self.get_ncr(tenant_id, id).await?;
+        // Read-then-write inside the caller's scope: an out-of-scope (or
+        // missing) NCR is NotFound before anything is mutated.
+        let mut ncr = self.get_ncr(ctx, id).await?;
         ncr.severity = severity;
         ncr.updated_at = Utc::now();
         let data = serde_json::to_value(&ncr).unwrap_or(serde_json::Value::Null);
@@ -264,7 +440,7 @@ impl QualityService for DatabaseQualityService {
             .bind(&data)
             .bind(ncr.updated_at)
             .bind(id)
-            .bind(tenant_id)
+            .bind(ctx.tenant)
             .execute(&self.pool)
             .await
             .map_err(|e| db_err("update_ncr_status", e))?;
@@ -275,7 +451,7 @@ impl QualityService for DatabaseQualityService {
 
     async fn list_capas(
         &self,
-        tenant_id: Uuid,
+        ctx: &RequestContext,
         status: Option<&str>,
         nc_type: Option<&str>,
         page: Option<usize>,
@@ -284,14 +460,38 @@ impl QualityService for DatabaseQualityService {
         let page = page.unwrap_or(1).max(1);
         let pp = per_page.unwrap_or(20).clamp(1, 100);
         let off = (page - 1) * pp;
-        let rows: Vec<JsonbRow> = sqlx::query_as("SELECT id, tenant_id, data, created_at, updated_at FROM quality_capas WHERE tenant_id=$1 ORDER BY created_at DESC LIMIT $2 OFFSET $3")
-            .bind(tenant_id).bind(pp as i64).bind(off as i64).fetch_all(&self.pool).await.map_err(|e| db_err("list_capas", e))?;
-        let count: i64 =
-            sqlx::query_scalar("SELECT COUNT(*) FROM quality_capas WHERE tenant_id=$1")
-                .bind(tenant_id)
-                .fetch_one(&self.pool)
-                .await
-                .map_err(|e| db_err("count_capas", e))?;
+        let mut db = TenantTx::begin(&self.pool, ctx.tenant)
+            .await
+            .map_err(|e| SenseiError::Database(format!("list_capas: begin tx: {e}")))?;
+        let (pred_rows, site_bind_rows) = scope_filter(ctx, 4);
+        let rows_sql = format!(
+            "SELECT id, tenant_id, data, created_at, updated_at FROM quality_capas \
+             WHERE tenant_id=$1 {pred_rows} ORDER BY created_at DESC LIMIT $2 OFFSET $3"
+        );
+        let mut rows_q = sqlx::query_as::<_, JsonbRow>(&rows_sql)
+            .bind(ctx.tenant)
+            .bind(pp as i64)
+            .bind(off as i64);
+        if let Some(sites) = site_bind_rows {
+            rows_q = rows_q.bind(sites);
+        }
+        let rows: Vec<JsonbRow> = rows_q
+            .fetch_all(&mut **db.tx())
+            .await
+            .map_err(|e| db_err("list_capas", e))?;
+        let (pred_cnt, site_bind_cnt) = scope_filter(ctx, 2);
+        let count_sql = format!("SELECT COUNT(*) FROM quality_capas WHERE tenant_id=$1 {pred_cnt}");
+        let mut count_q = sqlx::query_scalar::<_, i64>(&count_sql).bind(ctx.tenant);
+        if let Some(sites) = site_bind_cnt {
+            count_q = count_q.bind(sites);
+        }
+        let count: i64 = count_q
+            .fetch_one(&mut **db.tx())
+            .await
+            .map_err(|e| db_err("count_capas", e))?;
+        db.commit()
+            .await
+            .map_err(|e| SenseiError::Database(format!("list_capas: commit: {e}")))?;
         let items: Vec<CapaExtended> = rows
             .into_iter()
             .map(|r| {
@@ -311,7 +511,7 @@ impl QualityService for DatabaseQualityService {
 
     async fn create_capa(
         &self,
-        tenant_id: Uuid,
+        ctx: &RequestContext,
         title: String,
         description: String,
         nc_ids: Vec<Uuid>,
@@ -320,6 +520,11 @@ impl QualityService for DatabaseQualityService {
         owner_id: Option<Uuid>,
         due_date: Option<chrono::DateTime<Utc>>,
     ) -> Result<CapaExtended> {
+        if !ctx.has_entitlement() {
+            return Err(SenseiError::Forbidden(
+                "principal has no operational scope — cannot create a CAPA".to_string(),
+            ));
+        }
         let now = Utc::now();
         let (id, capa_number) = gen_number("CAPA");
         let capa = CapaExtended {
@@ -342,43 +547,66 @@ impl QualityService for DatabaseQualityService {
             created_at: now,
             updated_at: now,
         };
-        let data = serde_json::to_value(&capa).unwrap_or(serde_json::Value::Null);
+        // Server-stamped resource scope (item 2).
+        let stamp = QualityScopeStamp::from(ctx);
+        let mut data = serde_json::to_value(&capa).unwrap_or(serde_json::Value::Null);
+        data = stamp_record_data(data, ctx);
         // Item 28: CAPA creation + its workflow-driving event are atomic.
-        let mut tx = self
-            .pool
-            .begin()
+        let mut tx = TenantTx::begin(&self.pool, ctx.tenant)
             .await
-            .map_err(|e| db_err("create_capa", e))?;
+            .map_err(|e| SenseiError::Database(format!("create_capa: begin tx: {e}")))?;
         sqlx::query("INSERT INTO quality_capas (id, tenant_id, data, created_at, updated_at) VALUES ($1,$2,$3,$4,$5)")
-            .bind(id).bind(tenant_id).bind(&data).bind(now).bind(now).execute(&mut *tx).await.map_err(|e| db_err("create_capa", e))?;
+            .bind(id).bind(ctx.tenant).bind(&data).bind(now).bind(now).execute(&mut **tx.tx()).await.map_err(|e| db_err("create_capa", e))?;
         sensei_db::outbox::enqueue_outbox(
-            &mut tx,
-            tenant_id,
+            tx.tx(),
+            ctx.tenant,
             "quality_capa",
             id,
             "sensei.quality.capa.created",
-            serde_json::json!({ "capa_number": capa.capa_number, "priority": format!("{:?}", capa.priority) }),
+            serde_json::json!({ "capa_number": capa.capa_number, "priority": format!("{:?}", capa.priority), "scope_site_id": stamp.site_id.map(|s| s.to_string()) }),
         )
         .await?;
-        tx.commit().await.map_err(|e| db_err("create_capa", e))?;
+        tx.commit()
+            .await
+            .map_err(|e| SenseiError::Database(format!("create_capa: commit: {e}")))?;
         Ok(capa)
     }
 
-    async fn get_capa(&self, tenant_id: Uuid, id: Uuid) -> Result<CapaExtended> {
-        let row = sqlx::query_as::<_, JsonbRow>("SELECT id, tenant_id, data, created_at, updated_at FROM quality_capas WHERE id=$1 AND tenant_id=$2")
-            .bind(id).bind(tenant_id).fetch_optional(&self.pool).await.map_err(|e| db_err("get_capa", e))?
+    async fn get_capa(&self, ctx: &RequestContext, id: Uuid) -> Result<CapaExtended> {
+        let mut db = TenantTx::begin(&self.pool, ctx.tenant)
+            .await
+            .map_err(|e| SenseiError::Database(format!("get_capa: begin tx: {e}")))?;
+        let (pred, site_bind) = scope_filter(ctx, 3);
+        let sql = format!(
+            "SELECT id, tenant_id, data, created_at, updated_at FROM quality_capas \
+             WHERE id=$1 AND tenant_id=$2 {pred}"
+        );
+        let mut q = sqlx::query_as::<_, JsonbRow>(&sql)
+            .bind(id)
+            .bind(ctx.tenant);
+        if let Some(sites) = site_bind {
+            q = q.bind(sites);
+        }
+        let row = q
+            .fetch_optional(&mut **db.tx())
+            .await
+            .map_err(|e| db_err("get_capa", e))?
             .ok_or_else(|| not_found("CAPA", id))?;
+        db.commit()
+            .await
+            .map_err(|e| SenseiError::Database(format!("get_capa: commit: {e}")))?;
         serde_json::from_value(row.data)
             .map_err(|e| SenseiError::Database(format!("Failed to deserialize CAPA: {e}")))
     }
 
     async fn update_capa_status(
         &self,
-        tenant_id: Uuid,
+        ctx: &RequestContext,
         id: Uuid,
         status: CapaStatusEx,
     ) -> Result<CapaExtended> {
-        let mut capa = self.get_capa(tenant_id, id).await?;
+        // Read-then-write inside the caller's scope.
+        let mut capa = self.get_capa(ctx, id).await?;
         capa.status = status;
         if matches!(capa.status, CapaStatusEx::Closed) {
             capa.closed_at = Some(Utc::now());
@@ -389,7 +617,7 @@ impl QualityService for DatabaseQualityService {
             .bind(&data)
             .bind(capa.updated_at)
             .bind(id)
-            .bind(tenant_id)
+            .bind(ctx.tenant)
             .execute(&self.pool)
             .await
             .map_err(|e| db_err("update_capa_status", e))?;
@@ -480,7 +708,7 @@ impl QualityService for DatabaseQualityService {
 
     async fn list_audits(
         &self,
-        tenant_id: Uuid,
+        ctx: &RequestContext,
         status: Option<&str>,
         audit_type: Option<&str>,
         page: Option<usize>,
@@ -489,14 +717,39 @@ impl QualityService for DatabaseQualityService {
         let page = page.unwrap_or(1).max(1);
         let pp = per_page.unwrap_or(20).clamp(1, 100);
         let off = (page - 1) * pp;
-        let rows: Vec<JsonbRow> = sqlx::query_as("SELECT id, tenant_id, data, created_at, updated_at FROM quality_audits WHERE tenant_id=$1 ORDER BY created_at DESC LIMIT $2 OFFSET $3")
-            .bind(tenant_id).bind(pp as i64).bind(off as i64).fetch_all(&self.pool).await.map_err(|e| db_err("list_audits", e))?;
-        let count: i64 =
-            sqlx::query_scalar("SELECT COUNT(*) FROM quality_audits WHERE tenant_id=$1")
-                .bind(tenant_id)
-                .fetch_one(&self.pool)
-                .await
-                .map_err(|e| db_err("count_audits", e))?;
+        let mut db = TenantTx::begin(&self.pool, ctx.tenant)
+            .await
+            .map_err(|e| SenseiError::Database(format!("list_audits: begin tx: {e}")))?;
+        let (pred_rows, site_bind_rows) = scope_filter(ctx, 4);
+        let rows_sql = format!(
+            "SELECT id, tenant_id, data, created_at, updated_at FROM quality_audits \
+             WHERE tenant_id=$1 {pred_rows} ORDER BY created_at DESC LIMIT $2 OFFSET $3"
+        );
+        let mut rows_q = sqlx::query_as::<_, JsonbRow>(&rows_sql)
+            .bind(ctx.tenant)
+            .bind(pp as i64)
+            .bind(off as i64);
+        if let Some(sites) = site_bind_rows {
+            rows_q = rows_q.bind(sites);
+        }
+        let rows: Vec<JsonbRow> = rows_q
+            .fetch_all(&mut **db.tx())
+            .await
+            .map_err(|e| db_err("list_audits", e))?;
+        let (pred_cnt, site_bind_cnt) = scope_filter(ctx, 2);
+        let count_sql =
+            format!("SELECT COUNT(*) FROM quality_audits WHERE tenant_id=$1 {pred_cnt}");
+        let mut count_q = sqlx::query_scalar::<_, i64>(&count_sql).bind(ctx.tenant);
+        if let Some(sites) = site_bind_cnt {
+            count_q = count_q.bind(sites);
+        }
+        let count: i64 = count_q
+            .fetch_one(&mut **db.tx())
+            .await
+            .map_err(|e| db_err("count_audits", e))?;
+        db.commit()
+            .await
+            .map_err(|e| SenseiError::Database(format!("list_audits: commit: {e}")))?;
         let items: Vec<Audit> = rows
             .into_iter()
             .map(|r| {
@@ -514,33 +767,69 @@ impl QualityService for DatabaseQualityService {
         Ok(paginate(items, count, page, pp))
     }
 
-    async fn create_audit(&self, tenant_id: Uuid, mut audit: Audit) -> Result<Audit> {
+    async fn create_audit(&self, ctx: &RequestContext, mut audit: Audit) -> Result<Audit> {
+        if !ctx.has_entitlement() {
+            return Err(SenseiError::Forbidden(
+                "principal has no operational scope — cannot create an audit".to_string(),
+            ));
+        }
         let now = Utc::now();
         audit.id = Uuid::new_v4();
         audit.created_at = now;
         audit.updated_at = now;
-        let data = serde_json::to_value(&audit).unwrap_or(serde_json::Value::Null);
+        // Server-stamped resource scope (item 2): any scope keys in the
+        // client-supplied body are OVERRIDDEN here — client input never
+        // sets the scope.
+        let mut data = serde_json::to_value(&audit).unwrap_or(serde_json::Value::Null);
+        data = stamp_record_data(data, ctx);
+        let mut tx = TenantTx::begin(&self.pool, ctx.tenant)
+            .await
+            .map_err(|e| SenseiError::Database(format!("create_audit: begin tx: {e}")))?;
         sqlx::query("INSERT INTO quality_audits (id, tenant_id, data, created_at, updated_at) VALUES ($1,$2,$3,$4,$5)")
-            .bind(audit.id).bind(tenant_id).bind(&data).bind(now).bind(now).execute(&self.pool).await.map_err(|e| db_err("create_audit", e))?;
+            .bind(audit.id).bind(ctx.tenant).bind(&data).bind(now).bind(now).execute(&mut **tx.tx()).await.map_err(|e| db_err("create_audit", e))?;
+        tx.commit()
+            .await
+            .map_err(|e| SenseiError::Database(format!("create_audit: commit: {e}")))?;
         Ok(audit)
     }
 
-    async fn get_audit(&self, tenant_id: Uuid, id: Uuid) -> Result<Audit> {
-        let row = sqlx::query_as::<_, JsonbRow>("SELECT id, tenant_id, data, created_at, updated_at FROM quality_audits WHERE id=$1 AND tenant_id=$2")
-            .bind(id).bind(tenant_id).fetch_optional(&self.pool).await.map_err(|e| db_err("get_audit", e))?
+    async fn get_audit(&self, ctx: &RequestContext, id: Uuid) -> Result<Audit> {
+        let mut db = TenantTx::begin(&self.pool, ctx.tenant)
+            .await
+            .map_err(|e| SenseiError::Database(format!("get_audit: begin tx: {e}")))?;
+        let (pred, site_bind) = scope_filter(ctx, 3);
+        let sql = format!(
+            "SELECT id, tenant_id, data, created_at, updated_at FROM quality_audits \
+             WHERE id=$1 AND tenant_id=$2 {pred}"
+        );
+        let mut q = sqlx::query_as::<_, JsonbRow>(&sql)
+            .bind(id)
+            .bind(ctx.tenant);
+        if let Some(sites) = site_bind {
+            q = q.bind(sites);
+        }
+        let row = q
+            .fetch_optional(&mut **db.tx())
+            .await
+            .map_err(|e| db_err("get_audit", e))?
             .ok_or_else(|| not_found("Audit", id))?;
+        db.commit()
+            .await
+            .map_err(|e| SenseiError::Database(format!("get_audit: commit: {e}")))?;
         serde_json::from_value(row.data)
             .map_err(|e| SenseiError::Database(format!("Failed to deserialize audit: {e}")))
     }
 
     async fn list_audit_findings(
         &self,
-        tenant_id: Uuid,
+        ctx: &RequestContext,
         audit_id: Uuid,
     ) -> Result<Vec<AuditFinding>> {
-        let _ = self.get_audit(tenant_id, audit_id).await?;
+        // The parent audit is scope-checked first (item 3): findings of
+        // an out-of-scope audit are indistinguishable from a missing one.
+        let _ = self.get_audit(ctx, audit_id).await?;
         let rows: Vec<FindingRow> = sqlx::query_as("SELECT id, tenant_id, audit_id, data, created_at, updated_at FROM quality_audit_findings WHERE audit_id=$1 AND tenant_id=$2")
-            .bind(audit_id).bind(tenant_id).fetch_all(&self.pool).await.map_err(|e| db_err("list_findings", e))?;
+            .bind(audit_id).bind(ctx.tenant).fetch_all(&self.pool).await.map_err(|e| db_err("list_findings", e))?;
         Ok(rows
             .into_iter()
             .filter_map(|r| serde_json::from_value(r.data).ok())
@@ -946,30 +1235,49 @@ impl QualityService for DatabaseQualityService {
 
     async fn update_ncr(
         &self,
-        tenant_id: Uuid,
+        ctx: &RequestContext,
         id: Uuid,
         ncr: NonConformance,
     ) -> Result<NonConformance> {
+        // Read the stored record inside the caller's scope first: the
+        // scope stamp is server-owned, so the whole-entity echo can never
+        // move the record between sites (item 5).
+        let stored = fetch_scoped_data(&self.pool, ctx, "quality_ncrs", id)
+            .await?
+            .ok_or_else(|| not_found("NCR", id))?;
+        let stamp = read_stored_stamp(&stored);
         let now = Utc::now();
-        let data = serde_json::to_value(&ncr).unwrap_or(serde_json::Value::Null);
+        let mut data = serde_json::to_value(&ncr).unwrap_or(serde_json::Value::Null);
+        data = stamp_record_data_with(data, stamp);
         sqlx::query("UPDATE quality_ncrs SET data=$1, updated_at=$2 WHERE id=$3 AND tenant_id=$4")
             .bind(&data)
             .bind(now)
             .bind(id)
-            .bind(tenant_id)
+            .bind(ctx.tenant)
             .execute(&self.pool)
             .await
             .map_err(|e| db_err("update_ncr", e))?;
         Ok(ncr)
     }
 
-    async fn delete_ncr(&self, tenant_id: Uuid, id: Uuid) -> Result<()> {
-        let r = sqlx::query("DELETE FROM quality_ncrs WHERE id=$1 AND tenant_id=$2")
-            .bind(id)
-            .bind(tenant_id)
-            .execute(&self.pool)
+    async fn delete_ncr(&self, ctx: &RequestContext, id: Uuid) -> Result<()> {
+        // Out-of-scope deletes are indistinguishable from missing ones.
+        let mut db = TenantTx::begin(&self.pool, ctx.tenant)
+            .await
+            .map_err(|e| SenseiError::Database(format!("delete_ncr: begin tx: {e}")))?;
+        let (pred, site_bind) = scope_filter(ctx, 3);
+        let sql = format!("DELETE FROM quality_ncrs WHERE id=$1 AND tenant_id=$2 {pred}");
+        let mut q = sqlx::query(&sql).bind(id).bind(ctx.tenant);
+        if let Some(sites) = site_bind {
+            q = q.bind(sites);
+        }
+        let r = q
+            .execute(&mut **db.tx())
             .await
             .map_err(|e| db_err("delete_ncr", e))?;
+        db.commit()
+            .await
+            .map_err(|e| SenseiError::Database(format!("delete_ncr: commit: {e}")))?;
         if r.rows_affected() == 0 {
             return Err(not_found("NCR", id));
         }
@@ -978,11 +1286,17 @@ impl QualityService for DatabaseQualityService {
 
     async fn investigate_ncr(
         &self,
-        tenant_id: Uuid,
+        ctx: &RequestContext,
         id: Uuid,
         rca: RootCauseAnalysis,
     ) -> Result<NonConformance> {
-        let mut ncr = self.get_ncr(tenant_id, id).await?;
+        // Read-then-write inside the caller's scope.
+        let stored = fetch_scoped_data(&self.pool, ctx, "quality_ncrs", id)
+            .await?
+            .ok_or_else(|| not_found("NCR", id))?;
+        let stamp = read_stored_stamp(&stored);
+        let mut ncr: NonConformance = serde_json::from_value(stored)
+            .map_err(|e| SenseiError::Database(format!("Failed to deserialize NCR: {e}")))?;
         if ncr.status == NcrStatus::Closed {
             return Err(SenseiError::Validation(
                 "Cannot investigate a closed NCR".to_string(),
@@ -998,13 +1312,14 @@ impl QualityService for DatabaseQualityService {
         ncr.analysis_method = Some(rca.analysis_method);
         ncr.status = NcrStatus::UnderInvestigation;
         ncr.updated_at = Utc::now();
-        let data = serde_json::to_value(&ncr)
+        let mut data = serde_json::to_value(&ncr)
             .map_err(|e| SenseiError::Database(format!("Failed to serialize NCR: {e}")))?;
+        data = stamp_record_data_with(data, stamp);
         sqlx::query("UPDATE quality_ncrs SET data=$1, updated_at=$2 WHERE id=$3 AND tenant_id=$4")
             .bind(&data)
             .bind(ncr.updated_at)
             .bind(id)
-            .bind(tenant_id)
+            .bind(ctx.tenant)
             .execute(&self.pool)
             .await
             .map_err(|e| db_err("investigate_ncr", e))?;
@@ -1013,7 +1328,7 @@ impl QualityService for DatabaseQualityService {
 
     async fn disposition_ncr(
         &self,
-        tenant_id: Uuid,
+        ctx: &RequestContext,
         id: Uuid,
         disposition: String,
     ) -> Result<NonConformance> {
@@ -1022,7 +1337,12 @@ impl QualityService for DatabaseQualityService {
                 "Disposition cannot be empty".to_string(),
             ));
         }
-        let mut ncr = self.get_ncr(tenant_id, id).await?;
+        let stored = fetch_scoped_data(&self.pool, ctx, "quality_ncrs", id)
+            .await?
+            .ok_or_else(|| not_found("NCR", id))?;
+        let stamp = read_stored_stamp(&stored);
+        let mut ncr: NonConformance = serde_json::from_value(stored)
+            .map_err(|e| SenseiError::Database(format!("Failed to deserialize NCR: {e}")))?;
         if ncr.status == NcrStatus::Closed {
             return Err(SenseiError::Validation(
                 "Cannot dispose a closed NCR".to_string(),
@@ -1047,21 +1367,27 @@ impl QualityService for DatabaseQualityService {
         ncr.disposition = Some(disposition);
         ncr.status = NcrStatus::ActionDefined;
         ncr.updated_at = Utc::now();
-        let data = serde_json::to_value(&ncr)
+        let mut data = serde_json::to_value(&ncr)
             .map_err(|e| SenseiError::Database(format!("Failed to serialize NCR: {e}")))?;
+        data = stamp_record_data_with(data, stamp);
         sqlx::query("UPDATE quality_ncrs SET data=$1, updated_at=$2 WHERE id=$3 AND tenant_id=$4")
             .bind(&data)
             .bind(ncr.updated_at)
             .bind(id)
-            .bind(tenant_id)
+            .bind(ctx.tenant)
             .execute(&self.pool)
             .await
             .map_err(|e| db_err("disposition_ncr", e))?;
         Ok(ncr)
     }
 
-    async fn close_ncr(&self, tenant_id: Uuid, id: Uuid) -> Result<NonConformance> {
-        let mut ncr = self.get_ncr(tenant_id, id).await?;
+    async fn close_ncr(&self, ctx: &RequestContext, id: Uuid) -> Result<NonConformance> {
+        let stored = fetch_scoped_data(&self.pool, ctx, "quality_ncrs", id)
+            .await?
+            .ok_or_else(|| not_found("NCR", id))?;
+        let stamp = read_stored_stamp(&stored);
+        let mut ncr: NonConformance = serde_json::from_value(stored)
+            .map_err(|e| SenseiError::Database(format!("Failed to deserialize NCR: {e}")))?;
         if ncr.status == NcrStatus::Closed {
             return Err(SenseiError::Validation("NCR is already closed".to_string()));
         }
@@ -1086,13 +1412,14 @@ impl QualityService for DatabaseQualityService {
         ncr.status = NcrStatus::Closed;
         ncr.closed_at = Some(Utc::now());
         ncr.updated_at = Utc::now();
-        let data = serde_json::to_value(&ncr)
+        let mut data = serde_json::to_value(&ncr)
             .map_err(|e| SenseiError::Database(format!("Failed to serialize NCR: {e}")))?;
+        data = stamp_record_data_with(data, stamp);
         sqlx::query("UPDATE quality_ncrs SET data=$1, updated_at=$2 WHERE id=$3 AND tenant_id=$4")
             .bind(&data)
             .bind(ncr.updated_at)
             .bind(id)
-            .bind(tenant_id)
+            .bind(ctx.tenant)
             .execute(&self.pool)
             .await
             .map_err(|e| db_err("close_ncr", e))?;
@@ -1103,38 +1430,60 @@ impl QualityService for DatabaseQualityService {
 
     async fn update_capa(
         &self,
-        tenant_id: Uuid,
+        ctx: &RequestContext,
         id: Uuid,
         capa: CapaExtended,
     ) -> Result<CapaExtended> {
+        // Read the stored record inside the caller's scope first: the
+        // scope stamp is server-owned (item 5).
+        let stored = fetch_scoped_data(&self.pool, ctx, "quality_capas", id)
+            .await?
+            .ok_or_else(|| not_found("CAPA", id))?;
+        let stamp = read_stored_stamp(&stored);
         let now = Utc::now();
-        let data = serde_json::to_value(&capa).unwrap_or(serde_json::Value::Null);
+        let mut data = serde_json::to_value(&capa).unwrap_or(serde_json::Value::Null);
+        data = stamp_record_data_with(data, stamp);
         sqlx::query("UPDATE quality_capas SET data=$1, updated_at=$2 WHERE id=$3 AND tenant_id=$4")
             .bind(&data)
             .bind(now)
             .bind(id)
-            .bind(tenant_id)
+            .bind(ctx.tenant)
             .execute(&self.pool)
             .await
             .map_err(|e| db_err("update_capa", e))?;
         Ok(capa)
     }
 
-    async fn delete_capa(&self, tenant_id: Uuid, id: Uuid) -> Result<()> {
-        let r = sqlx::query("DELETE FROM quality_capas WHERE id=$1 AND tenant_id=$2")
-            .bind(id)
-            .bind(tenant_id)
-            .execute(&self.pool)
+    async fn delete_capa(&self, ctx: &RequestContext, id: Uuid) -> Result<()> {
+        let mut db = TenantTx::begin(&self.pool, ctx.tenant)
+            .await
+            .map_err(|e| SenseiError::Database(format!("delete_capa: begin tx: {e}")))?;
+        let (pred, site_bind) = scope_filter(ctx, 3);
+        let sql = format!("DELETE FROM quality_capas WHERE id=$1 AND tenant_id=$2 {pred}");
+        let mut q = sqlx::query(&sql).bind(id).bind(ctx.tenant);
+        if let Some(sites) = site_bind {
+            q = q.bind(sites);
+        }
+        let r = q
+            .execute(&mut **db.tx())
             .await
             .map_err(|e| db_err("delete_capa", e))?;
+        db.commit()
+            .await
+            .map_err(|e| SenseiError::Database(format!("delete_capa: commit: {e}")))?;
         if r.rows_affected() == 0 {
             return Err(not_found("CAPA", id));
         }
         Ok(())
     }
 
-    async fn verify_capa(&self, tenant_id: Uuid, id: Uuid) -> Result<CapaExtended> {
-        let mut capa = self.get_capa(tenant_id, id).await?;
+    async fn verify_capa(&self, ctx: &RequestContext, id: Uuid) -> Result<CapaExtended> {
+        let stored = fetch_scoped_data(&self.pool, ctx, "quality_capas", id)
+            .await?
+            .ok_or_else(|| not_found("CAPA", id))?;
+        let stamp = read_stored_stamp(&stored);
+        let mut capa: CapaExtended = serde_json::from_value(stored)
+            .map_err(|e| SenseiError::Database(format!("Failed to deserialize CAPA: {e}")))?;
         if capa.status == CapaStatusEx::Closed {
             return Err(SenseiError::Validation(
                 "Cannot verify a closed CAPA".to_string(),
@@ -1171,22 +1520,22 @@ impl QualityService for DatabaseQualityService {
             created_at: Utc::now(),
         });
         capa.updated_at = Utc::now();
-        let data = serde_json::to_value(&capa)
+        let mut data = serde_json::to_value(&capa)
             .map_err(|e| SenseiError::Database(format!("Failed to serialize CAPA: {e}")))?;
+        data = stamp_record_data_with(data, stamp);
         sqlx::query("UPDATE quality_capas SET data=$1, updated_at=$2 WHERE id=$3 AND tenant_id=$4")
             .bind(&data)
             .bind(capa.updated_at)
             .bind(id)
-            .bind(tenant_id)
+            .bind(ctx.tenant)
             .execute(&self.pool)
             .await
             .map_err(|e| db_err("verify_capa", e))?;
         Ok(capa)
     }
 
-    async fn close_capa(&self, tenant_id: Uuid, id: Uuid) -> Result<CapaExtended> {
-        self.update_capa_status(tenant_id, id, CapaStatusEx::Closed)
-            .await
+    async fn close_capa(&self, ctx: &RequestContext, id: Uuid) -> Result<CapaExtended> {
+        self.update_capa_status(ctx, id, CapaStatusEx::Closed).await
     }
 
     // ── Inspection Update/Delete ──────────────────────────────────────────
@@ -1247,29 +1596,46 @@ impl QualityService for DatabaseQualityService {
 
     // ── Audit Update/Delete ──────────────────────────────────────────────
 
-    async fn update_audit(&self, tenant_id: Uuid, id: Uuid, audit: Audit) -> Result<Audit> {
+    async fn update_audit(&self, ctx: &RequestContext, id: Uuid, audit: Audit) -> Result<Audit> {
+        // Read the stored record inside the caller's scope first: the
+        // scope stamp is server-owned (item 5).
+        let stored = fetch_scoped_data(&self.pool, ctx, "quality_audits", id)
+            .await?
+            .ok_or_else(|| not_found("Audit", id))?;
+        let stamp = read_stored_stamp(&stored);
         let now = Utc::now();
-        let data = serde_json::to_value(&audit).unwrap_or(serde_json::Value::Null);
+        let mut data = serde_json::to_value(&audit).unwrap_or(serde_json::Value::Null);
+        data = stamp_record_data_with(data, stamp);
         sqlx::query(
             "UPDATE quality_audits SET data=$1, updated_at=$2 WHERE id=$3 AND tenant_id=$4",
         )
         .bind(&data)
         .bind(now)
         .bind(id)
-        .bind(tenant_id)
+        .bind(ctx.tenant)
         .execute(&self.pool)
         .await
         .map_err(|e| db_err("update_audit", e))?;
         Ok(audit)
     }
 
-    async fn delete_audit(&self, tenant_id: Uuid, id: Uuid) -> Result<()> {
-        let r = sqlx::query("DELETE FROM quality_audits WHERE id=$1 AND tenant_id=$2")
-            .bind(id)
-            .bind(tenant_id)
-            .execute(&self.pool)
+    async fn delete_audit(&self, ctx: &RequestContext, id: Uuid) -> Result<()> {
+        let mut db = TenantTx::begin(&self.pool, ctx.tenant)
+            .await
+            .map_err(|e| SenseiError::Database(format!("delete_audit: begin tx: {e}")))?;
+        let (pred, site_bind) = scope_filter(ctx, 3);
+        let sql = format!("DELETE FROM quality_audits WHERE id=$1 AND tenant_id=$2 {pred}");
+        let mut q = sqlx::query(&sql).bind(id).bind(ctx.tenant);
+        if let Some(sites) = site_bind {
+            q = q.bind(sites);
+        }
+        let r = q
+            .execute(&mut **db.tx())
             .await
             .map_err(|e| db_err("delete_audit", e))?;
+        db.commit()
+            .await
+            .map_err(|e| SenseiError::Database(format!("delete_audit: commit: {e}")))?;
         if r.rows_affected() == 0 {
             return Err(not_found("Audit", id));
         }

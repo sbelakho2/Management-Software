@@ -106,7 +106,10 @@ pub async fn run_mrp_planning(
 
     let records = state
         .production_service
-        .run_mrp(tenant_id, product_id)
+        .run_mrp(
+            &crate::authorization::build_request_context(&user, &state).await?,
+            product_id,
+        )
         .await?;
 
     // Exceptions: every record with a net requirement > available.

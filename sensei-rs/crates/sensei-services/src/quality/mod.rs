@@ -12,6 +12,20 @@
 //! - **npi_risk**: NPI risk register (FMEA) and change control
 //! - **msa_spc**: Measurement systems analysis (GRR), process capability (Cp/Cpk), SPC
 //! - **stage_gates**: NPI stage-gate workflow and traceability
+//!
+//! # Resource scope (twenty-ninth audit Wave B items 6-8)
+//!
+//! The NCR / CAPA / audit methods of [`QualityService`] take the
+//! server-created [`RequestContext`](sensei_core::domain::RequestContext)
+//! — never a naked `tenant_id` — and quality records carry an
+//! authoritative, SERVER-STAMPED site / work-center anchor
+//! ([`QualityScopeStamp`]; migration 170 adds `scope_site_id` /
+//! `scope_work_center_id` columns to the relational quality tables). The
+//! database implementation embeds the caller's scope as a SQL predicate
+//! in the same statement as the read or mutation (site-scoped callers
+//! match `scope_site_id = ANY(authorized sites)`; a corporate record
+//! with a NULL scope is tenant-wide-only; a caller with no operational
+//! scope matches zero rows).
 
 mod database;
 pub use database::DatabaseQualityService;

@@ -313,8 +313,44 @@ async fn run_tool(
                 .and_then(|v| v.as_str())
                 .and_then(|s| Uuid::parse_str(s).ok())
                 .ok_or_else(|| "get_work_order requires id".to_string())?;
+            // Twenty-ninth audit Wave B item 7: the domain call carries the
+            // server-created RequestContext. With a pool the context is
+            // DB-resolved from the agent's validated scope tuple; without
+            // one (in-memory dev/tests) the agent acts with the explicit
+            // tenant-wide grant and the record-level scope check below
+            // still runs.
+            let rc = match pool {
+                Some(pool) => sensei_core::domain::request_context::RequestContext::build(
+                    pool,
+                    ctx.tenant_id,
+                    ctx.user_id,
+                    ctx.site_id,
+                    ctx.value_stream_id,
+                    ctx.work_center_id,
+                    ctx.shift_id,
+                    String::new(),
+                )
+                .await
+                .map_err(|e| format!("request context: {e}"))?,
+                None => sensei_core::domain::request_context::RequestContext {
+                    tenant: ctx.tenant_id,
+                    principal: ctx.user_id,
+                    scope: sensei_core::domain::scope::AuthorizedScope::tenant_wide(),
+                    focus: sensei_core::domain::request_context::OperationalFocus {
+                        site: ctx.site_id,
+                        value_stream: ctx.value_stream_id,
+                        work_center: ctx.work_center_id,
+                        shift: ctx.shift_id,
+                    },
+                    locale: None,
+                    timezone: None,
+                    currency: None,
+                    country_policy_revision: None,
+                    trace_id: String::new(),
+                },
+            };
             let wo = production
-                .get_work_order(ctx.tenant_id, id)
+                .get_work_order(&rc, id)
                 .await
                 .map_err(|e| e.to_string())?;
             // The resource's site is resolved from the DB under the

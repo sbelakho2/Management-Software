@@ -2,9 +2,34 @@
 //!
 //! Provides work order, production order, BOM, and MRP management
 //! backed by PostgreSQL tables. Implements [`ProductionService`].
+//!
+//! # Scoped execution (twenty-ninth audit Wave B item 7)
+//!
+//! Every operational method takes the server-created [`RequestContext`] —
+//! never a naked `tenant_id` — and the caller's [`AuthorizedScope`] is
+//! enforced IN THE SAME STATEMENT as the operation through
+//! [`DbScopeFilter`]:
+//!
+//! - `TenantWide` — the explicit all-access grant: only the statement's
+//!   `tenant_id` predicate applies (an order with no work center is
+//!   reachable, exactly as before).
+//! - `Sites` / `WorkCenter` — the statement resolves the work order's
+//!   SITE through its work center (`work_centers.site_id`, the carrier
+//!   join) and adds the scope predicate on the carrier row. An order
+//!   with no work center has no carrier row and matches zero rows (fail
+//!   closed), and a work order outside the scope is indistinguishable
+//!   from a nonexistent one (NotFound).
+//! - `None` (no active assignment) — the impossible `1 = 0` predicate:
+//!   no entitlement → no data.
+//!
+//! Every transactional statement runs on a [`TenantTx`] established from
+//! `ctx.tenant` (the `SET LOCAL app.tenant_id` RLS context is set at
+//! transaction construction).
 
 use async_trait::async_trait;
 use chrono::Utc;
+use sensei_core::db::TenantTx;
+use sensei_core::domain::request_context::RequestContext;
 use sensei_core::error::{Result, SenseiError};
 use sensei_core::pagination::PaginatedResponse;
 use sqlx::PgPool;
@@ -12,8 +37,10 @@ use std::collections::HashMap;
 use uuid::Uuid;
 
 use super::{
-    BOMItem, MRPRecord, ProductionOrder, ProductionService, WorkOrder, WorkOrderOperation,
+    BOMItem, MRPRecord, ProductionOrder, ProductionService, WorkOrder, WorkOrderListFilter,
+    WorkOrderOperation,
 };
+use crate::authz_sql::DbScopeFilter;
 
 // ---------------------------------------------------------------------------
 // Row structs (map 1:1 to PostgreSQL rows)
@@ -89,6 +116,17 @@ struct BomItemRow {
     unit_of_measure: String,
     scrap_percent: rust_decimal::Decimal,
 }
+
+/// The work-center scope carrier (twenty-ninth audit Wave B item 7): the
+/// work order's site is owned by the `work_centers` row, so every scoped
+/// work-order statement joins this derived relation and applies the
+/// [`DbScopeFilter`] fragment to it. Exposing the carrier's identity under
+/// `work_center_id` gives the carrier exactly the columns the scope
+/// fragments reference (`site_id`, `work_center_id`) — see
+/// [`crate::authz_sql`].
+const WC_CARRIER_JOIN: &str = "JOIN (SELECT wc.id AS work_center_id, wc.site_id, \
+     wc.tenant_id FROM work_centers wc) AS wc \
+     ON wc.work_center_id = wo.work_center_id AND wc.tenant_id = wo.tenant_id";
 
 // ---------------------------------------------------------------------------
 // Mapping helpers
@@ -173,20 +211,6 @@ fn bom_row_to_domain(r: BomItemRow) -> BOMItem {
 // Database service
 // ---------------------------------------------------------------------------
 
-/// PostgreSQL-backed implementation of [`ProductionService`].
-/// Transaction-scoped tenant context for RLS (SET LOCAL app.tenant_id).
-async fn set_tenant_context(
-    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
-    tenant_id: Uuid,
-) -> std::result::Result<(), SenseiError> {
-    sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
-        .bind(tenant_id.to_string())
-        .execute(&mut **tx)
-        .await
-        .map_err(|e| SenseiError::Database(format!("Failed to set tenant context: {e}")))?;
-    Ok(())
-}
-
 pub struct DatabaseProductionService {
     pool: PgPool,
 }
@@ -206,7 +230,7 @@ impl DatabaseProductionService {
     /// rather than failed.
     async fn generate_operations(
         &self,
-        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        tx: &mut TenantTx<'_>,
         tenant_id: Uuid,
         work_order_id: Uuid,
         product_id: Uuid,
@@ -226,7 +250,7 @@ impl DatabaseProductionService {
         )
         .bind(product_id)
         .bind(tenant_id)
-        .fetch_all(&mut **tx)
+        .fetch_all(&mut **tx.tx())
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to load routings: {e}")))?;
 
@@ -256,7 +280,7 @@ impl DatabaseProductionService {
             )
             .bind(tenant_id)
             .bind(wc_id)
-            .fetch_optional(&mut **tx)
+            .fetch_optional(&mut **tx.tx())
             .await
             .map_err(|e| SenseiError::Database(format!("Failed to resolve station: {e}")))?;
             match station {
@@ -303,7 +327,7 @@ impl DatabaseProductionService {
             .bind(step.setup_time)
             .bind(ordinal)
             .bind(now)
-            .execute(&mut **tx)
+            .execute(&mut **tx.tx())
             .await
             .map_err(|e| {
                 SenseiError::Database(format!("Failed to create work order operation: {e}"))
@@ -320,7 +344,7 @@ impl DatabaseProductionService {
     /// inside the status-transition transaction.
     async fn freeze_release_configuration(
         &self,
-        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        tx: &mut TenantTx<'_>,
         tenant_id: Uuid,
         work_order_id: Uuid,
     ) -> Result<()> {
@@ -330,7 +354,7 @@ impl DatabaseProductionService {
         )
         .bind(work_order_id)
         .bind(tenant_id)
-        .fetch_one(&mut **tx)
+        .fetch_one(&mut **tx.tx())
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to read WO for freeze: {e}")))?;
 
@@ -347,7 +371,7 @@ impl DatabaseProductionService {
             )
             .bind(tenant_id)
             .bind(product_id)
-            .fetch_optional(&mut **tx)
+            .fetch_optional(&mut **tx.tx())
             .await
             .map_err(|e| SenseiError::Database(format!("Failed to resolve standard: {e}")))?,
         };
@@ -368,7 +392,7 @@ impl DatabaseProductionService {
         )
         .bind(standard_id)
         .bind(tenant_id)
-        .fetch_one(&mut **tx)
+        .fetch_one(&mut **tx.tx())
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to validate standard: {e}")))?;
         if !valid {
@@ -384,7 +408,7 @@ impl DatabaseProductionService {
         )
         .bind(tenant_id)
         .bind(product_id)
-        .fetch_one(&mut **tx)
+        .fetch_one(&mut **tx.tx())
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to count BOM: {e}")))?;
         if bom_count == 0 {
@@ -402,7 +426,7 @@ impl DatabaseProductionService {
         )
         .bind(tenant_id)
         .bind(product_id)
-        .fetch_one(&mut **tx)
+        .fetch_one(&mut **tx.tx())
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to count routing: {e}")))?;
         if routing_count == 0 {
@@ -420,7 +444,7 @@ impl DatabaseProductionService {
         )
         .bind(tenant_id)
         .bind(product_id)
-        .fetch_all(&mut **tx)
+        .fetch_all(&mut **tx.tx())
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to load CTQ set: {e}")))?;
 
@@ -441,7 +465,7 @@ impl DatabaseProductionService {
         .bind(serde_json::to_value(&ctq_ids).unwrap_or_default())
         .bind(work_order_id)
         .bind(tenant_id)
-        .execute(&mut **tx)
+        .execute(&mut **tx.tx())
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to freeze release config: {e}")))?;
         Ok(())
@@ -452,7 +476,12 @@ impl DatabaseProductionService {
 impl ProductionService for DatabaseProductionService {
     // ── Work Orders ─────────────────────────────────────────────────────
 
-    async fn create_work_order(&self, tenant_id: Uuid, mut wo: WorkOrder) -> Result<WorkOrder> {
+    async fn create_work_order(
+        &self,
+        ctx: &RequestContext,
+        mut wo: WorkOrder,
+    ) -> Result<WorkOrder> {
+        let tenant_id = ctx.tenant;
         let now = Utc::now();
         let id = Uuid::new_v4();
         let wo_number = format!(
@@ -471,10 +500,10 @@ impl ProductionService for DatabaseProductionService {
 
         // Item 28: the work-order state mutation and its workflow-driving
         // event are ONE transaction — a committed WO can never lose its
-        // event to a post-commit publish failure.
-        let mut self_tx = self
-            .pool
-            .begin()
+        // event to a post-commit publish failure. The transaction is a
+        // TenantTx established from ctx.tenant (RLS context set at
+        // construction).
+        let mut self_tx = TenantTx::begin(&self.pool, tenant_id)
             .await
             .map_err(|e| SenseiError::Database(format!("Failed to begin WO tx: {e}")))?;
         let row = sqlx::query_as::<_, WorkOrderRow>(
@@ -490,17 +519,7 @@ impl ProductionService for DatabaseProductionService {
                 source_sales_order_line_id, customer_requirement_revision
             ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,
                       $25,$26,$27,$28,$29,$30,$31,$32,$33)
-            RETURNING id, tenant_id, wo_number, product_id, product_name,
-                      quantity, quantity_completed, quantity_scrapped, status, work_center_id, priority,
-                      scheduled_start, scheduled_end, actual_start, actual_end,
-                      quantity_scrapped, short_close_qty, short_close_reason, short_close_approved_by, short_close_at,
-                      assigned_to, notes, created_at, updated_at, source_sales_order_id,
-                      standard_work_id, product_revision_id, bom_revision_id, routing_revision_id,
-                      control_plan_revision_id, ctq_characteristic_set, tooling_revision,
-                      source_sales_order_line_id, customer_requirement_revision,
-                      standard_work_id, product_revision_id, bom_revision_id, routing_revision_id,
-                      control_plan_revision_id, ctq_characteristic_set, tooling_revision,
-                      source_sales_order_line_id, customer_requirement_revision
+            RETURNING *
             "#,
         )
         .bind(wo.id)
@@ -536,7 +555,7 @@ impl ProductionService for DatabaseProductionService {
         .bind(&wo.tooling_revision)
         .bind(wo.source_sales_order_line_id)
         .bind(&wo.customer_requirement_revision)
-        .fetch_one(&mut *self_tx)
+        .fetch_one(&mut **self_tx.tx())
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to create work order: {e}")))?;
 
@@ -548,7 +567,7 @@ impl ProductionService for DatabaseProductionService {
             .await?;
 
         sensei_db::outbox::enqueue_outbox(
-            &mut self_tx,
+            self_tx.tx(),
             tenant_id,
             "work_order",
             id,
@@ -567,90 +586,130 @@ impl ProductionService for DatabaseProductionService {
 
         Ok(wo_row_to_domain(row))
     }
-    async fn get_work_order(&self, tenant_id: Uuid, id: Uuid) -> Result<WorkOrder> {
-        let row = sqlx::query_as::<_, WorkOrderRow>(
-            r#"
-            SELECT id, tenant_id, wo_number, product_id, product_name,
-                   quantity, quantity_completed, quantity_scrapped, status, work_center_id, priority,
-                   scheduled_start, scheduled_end, actual_start, actual_end,
-                   quantity_scrapped, short_close_qty, short_close_reason, short_close_approved_by, short_close_at,
-                   assigned_to, notes, created_at, updated_at, source_sales_order_id,
-                      standard_work_id, product_revision_id, bom_revision_id, routing_revision_id,
-                      control_plan_revision_id, ctq_characteristic_set, tooling_revision,
-                      source_sales_order_line_id, customer_requirement_revision,
-                standard_work_id, product_revision_id, bom_revision_id, routing_revision_id,
-                control_plan_revision_id, ctq_characteristic_set, tooling_revision,
-                source_sales_order_line_id, customer_requirement_revision
-            FROM work_orders
-            WHERE id = $1 AND tenant_id = $2
-            "#,
-        )
-        .bind(id)
-        .bind(tenant_id)
-        .fetch_optional(&self.pool)
-        .await
-        .map_err(|e| SenseiError::Database(format!("Failed to get work order: {e}")))?
-        .ok_or_else(|| SenseiError::NotFound(format!("Work order {id} not found")))?;
+
+    async fn get_work_order(&self, ctx: &RequestContext, id: Uuid) -> Result<WorkOrder> {
+        let tenant_id = ctx.tenant;
+        let scope = DbScopeFilter::from_authorized(&ctx.scope);
+        let (scope_clause, tenant_wide) = scope.where_clause_for("wc", 3);
+        // A scoped caller can only read orders whose work-center carrier
+        // row is inside their scope; an order outside the scope — and a
+        // nonexistent id — both match zero rows (NotFound).
+        let sql = if tenant_wide {
+            "SELECT wo.* FROM work_orders wo \
+             WHERE wo.id = $1 AND wo.tenant_id = $2"
+                .to_string()
+        } else {
+            format!(
+                "SELECT wo.* FROM work_orders wo \
+                 {WC_CARRIER_JOIN} \
+                 WHERE wo.id = $1 AND wo.tenant_id = $2 AND {scope_clause}"
+            )
+        };
+        let mut q = sqlx::query_as::<_, WorkOrderRow>(&sql)
+            .bind(id)
+            .bind(tenant_id);
+        q = match &scope {
+            DbScopeFilter::Sites(sites) => q.bind(sites.to_vec()),
+            DbScopeFilter::WorkCenter { site, work_center } => q.bind(*site).bind(*work_center),
+            DbScopeFilter::TenantWide | DbScopeFilter::None => q,
+        };
+        let row = q
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to get work order: {e}")))?
+            .ok_or_else(|| SenseiError::NotFound(format!("Work order {id} not found")))?;
 
         Ok(wo_row_to_domain(row))
     }
 
     async fn list_work_orders(
         &self,
-        tenant_id: Uuid,
-        status: Option<&str>,
-        work_center_id: Option<Uuid>,
-        page: Option<usize>,
-        per_page: Option<usize>,
+        ctx: &RequestContext,
+        filter: &WorkOrderListFilter,
     ) -> Result<PaginatedResponse<WorkOrder>> {
-        let page = page.unwrap_or(1).max(1);
-        let per_page = per_page.unwrap_or(20).clamp(1, 100);
+        let tenant_id = ctx.tenant;
+        let page = filter.page.unwrap_or(1).max(1);
+        let per_page = filter.per_page.unwrap_or(20).clamp(1, 100);
         let offset = (page - 1) * per_page;
+        let scope = DbScopeFilter::from_authorized(&ctx.scope);
+        let (scope_clause, tenant_wide) = scope.where_clause_for("wc", 4);
+        // The client's work-center filter is ANDed (never widening); the
+        // scope clause additionally intersects the row's SITE (through the
+        // carrier join). Scoped callers never see work-center-less orders.
+        let from = if tenant_wide {
+            "FROM work_orders wo".to_string()
+        } else {
+            format!("FROM work_orders wo {WC_CARRIER_JOIN}")
+        };
+        let where_clause = if tenant_wide {
+            "WHERE wo.tenant_id = $1 \
+               AND ($2::text IS NULL OR wo.status = $2) \
+               AND ($3::uuid IS NULL OR wo.work_center_id = $3)"
+                .to_string()
+        } else {
+            format!(
+                "WHERE wo.tenant_id = $1 \
+                   AND ($2::text IS NULL OR wo.status = $2) \
+                   AND ($3::uuid IS NULL OR wo.work_center_id = $3) \
+                   AND {scope_clause}"
+            )
+        };
+        let scope_binds = scope_bind_count(&scope);
+        let limit = 4 + scope_binds;
+        let offset_p = limit + 1;
+        let sql = format!(
+            "SELECT wo.* {from} {where_clause} \
+             ORDER BY wo.created_at DESC \
+             LIMIT ${limit} OFFSET ${offset_p}"
+        );
+        let mut q = sqlx::query_as::<_, WorkOrderRow>(&sql)
+            .bind(tenant_id)
+            .bind(filter.status.as_deref())
+            .bind(filter.work_center_id);
+        q = match &scope {
+            DbScopeFilter::Sites(sites) => q.bind(sites.to_vec()),
+            DbScopeFilter::WorkCenter { site, work_center } => q.bind(*site).bind(*work_center),
+            DbScopeFilter::TenantWide | DbScopeFilter::None => q,
+        };
+        let items: Vec<WorkOrderRow> = q
+            .bind(per_page as i64)
+            .bind(offset as i64)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to list work orders: {e}")))?;
 
-        let items: Vec<WorkOrderRow> = sqlx::query_as(
-            r#"
-            SELECT id, tenant_id, wo_number, product_id, product_name,
-                   quantity, quantity_completed, quantity_scrapped, status, work_center_id, priority,
-                   scheduled_start, scheduled_end, actual_start, actual_end,
-                   quantity_scrapped, short_close_qty, short_close_reason, short_close_approved_by, short_close_at,
-                   assigned_to, notes, created_at, updated_at, source_sales_order_id,
-                      standard_work_id, product_revision_id, bom_revision_id, routing_revision_id,
-                      control_plan_revision_id, ctq_characteristic_set, tooling_revision,
-                      source_sales_order_line_id, customer_requirement_revision,
-                standard_work_id, product_revision_id, bom_revision_id, routing_revision_id,
-                control_plan_revision_id, ctq_characteristic_set, tooling_revision,
-                source_sales_order_line_id, customer_requirement_revision
-            FROM work_orders
-            WHERE tenant_id = $1
-              AND ($2::text IS NULL OR status = $2)
-              AND ($3::uuid IS NULL OR work_center_id = $3)
-            ORDER BY created_at DESC
-            LIMIT $4 OFFSET $5
-            "#,
-        )
-        .bind(tenant_id)
-        .bind(status)
-        .bind(work_center_id)
-        .bind(per_page as i64)
-        .bind(offset as i64)
-        .fetch_all(&self.pool)
-        .await
-        .map_err(|e| SenseiError::Database(format!("Failed to list work orders: {e}")))?;
-
-        let count: i64 = sqlx::query_scalar(
-            r#"
-            SELECT COUNT(*) FROM work_orders
-            WHERE tenant_id = $1
-              AND ($2::text IS NULL OR status = $2)
-              AND ($3::uuid IS NULL OR work_center_id = $3)
-            "#,
-        )
-        .bind(tenant_id)
-        .bind(status)
-        .bind(work_center_id)
-        .fetch_one(&self.pool)
-        .await
-        .map_err(|e| SenseiError::Database(format!("Failed to count work orders: {e}")))?;
+        let count_from = if tenant_wide {
+            "FROM work_orders wo".to_string()
+        } else {
+            format!("FROM work_orders wo {WC_CARRIER_JOIN}")
+        };
+        let count_where = if tenant_wide {
+            "WHERE wo.tenant_id = $1 \
+               AND ($2::text IS NULL OR wo.status = $2) \
+               AND ($3::uuid IS NULL OR wo.work_center_id = $3)"
+                .to_string()
+        } else {
+            format!(
+                "WHERE wo.tenant_id = $1 \
+                   AND ($2::text IS NULL OR wo.status = $2) \
+                   AND ($3::uuid IS NULL OR wo.work_center_id = $3) \
+                   AND {scope_clause}"
+            )
+        };
+        let count_sql = format!("SELECT COUNT(*) {count_from} {count_where}");
+        let mut cq = sqlx::query_scalar::<_, i64>(&count_sql)
+            .bind(tenant_id)
+            .bind(filter.status.as_deref())
+            .bind(filter.work_center_id);
+        cq = match &scope {
+            DbScopeFilter::Sites(sites) => cq.bind(sites.to_vec()),
+            DbScopeFilter::WorkCenter { site, work_center } => cq.bind(*site).bind(*work_center),
+            DbScopeFilter::TenantWide | DbScopeFilter::None => cq,
+        };
+        let count: i64 = cq
+            .fetch_one(&self.pool)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to count work orders: {e}")))?;
 
         let items = items.into_iter().map(wo_row_to_domain).collect();
         Ok(PaginatedResponse {
@@ -664,11 +723,13 @@ impl ProductionService for DatabaseProductionService {
 
     async fn update_work_order_status(
         &self,
-        tenant_id: Uuid,
+        ctx: &RequestContext,
         id: Uuid,
         status: &str,
     ) -> Result<WorkOrder> {
+        let tenant_id = ctx.tenant;
         let now = Utc::now();
+        let scope = DbScopeFilter::from_authorized(&ctx.scope);
 
         // Validated lifecycle: Created -> Released -> InProgress ->
         // Completed; Released/InProgress -> OnHold; Created/Released ->
@@ -685,17 +746,38 @@ impl ProductionService for DatabaseProductionService {
                 "Unknown work order status '{status}'"
             )));
         }
-        // Current state gates the transition.
-        let current: Option<String> =
-            sqlx::query_scalar("SELECT status FROM work_orders WHERE id = $1 AND tenant_id = $2")
-                .bind(id)
-                .bind(tenant_id)
-                .fetch_optional(&self.pool)
+        // Current state gates the transition. The read is scoped: the state
+        // of an out-of-scope order is never observed (it is NotFound).
+        let (scope_clause, tenant_wide) = scope.where_clause_for("wc", 3);
+        let current: Option<String> = if tenant_wide {
+            sqlx::query_scalar(
+                "SELECT status FROM work_orders wo WHERE wo.id = $1 AND wo.tenant_id = $2",
+            )
+            .bind(id)
+            .bind(tenant_id)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to read work order status: {e}")))?
+            .ok_or_else(|| SenseiError::NotFound(format!("Work order {id} not found")))?
+        } else {
+            let sql = format!(
+                "SELECT wo.status FROM work_orders wo \
+                 {WC_CARRIER_JOIN} \
+                 WHERE wo.id = $1 AND wo.tenant_id = $2 AND {scope_clause}"
+            );
+            let mut q = sqlx::query_scalar(&sql).bind(id).bind(tenant_id);
+            q = match &scope {
+                DbScopeFilter::Sites(sites) => q.bind(sites.to_vec()),
+                DbScopeFilter::WorkCenter { site, work_center } => q.bind(*site).bind(*work_center),
+                DbScopeFilter::TenantWide | DbScopeFilter::None => q,
+            };
+            q.fetch_optional(&self.pool)
                 .await
                 .map_err(|e| {
                     SenseiError::Database(format!("Failed to read work order status: {e}"))
                 })?
-                .ok_or_else(|| SenseiError::NotFound(format!("Work order {id} not found")))?;
+                .ok_or_else(|| SenseiError::NotFound(format!("Work order {id} not found")))?
+        };
         let legal = matches!(
             (current.as_deref(), status),
             (Some("created"), "released" | "cancelled")
@@ -713,9 +795,7 @@ impl ProductionService for DatabaseProductionService {
 
         // Item 28: the status transition and its workflow-driving event
         // are ONE transaction.
-        let mut status_tx = self
-            .pool
-            .begin()
+        let mut status_tx = TenantTx::begin(&self.pool, tenant_id)
             .await
             .map_err(|e| SenseiError::Database(format!("Failed to begin WO status tx: {e}")))?;
         // ── RELEASE = the controlled configuration boundary ─────────
@@ -728,38 +808,65 @@ impl ProductionService for DatabaseProductionService {
                 .await?;
         }
 
-        let row = sqlx::query_as::<_, WorkOrderRow>(
-            r#"
-            UPDATE work_orders
-            SET status = $1,
-                actual_start = CASE WHEN $1 = 'in_progress' AND actual_start IS NULL THEN $3 ELSE actual_start END,
-                actual_end = CASE WHEN $1 = 'completed' AND actual_end IS NULL THEN $3 ELSE actual_end END,
-                updated_at = $3
-            WHERE id = $4 AND tenant_id = $2
-            RETURNING id, tenant_id, wo_number, product_id, product_name,
-                      quantity, quantity_completed, quantity_scrapped, status, work_center_id, priority,
-                      scheduled_start, scheduled_end, actual_start, actual_end,
-                      quantity_scrapped, short_close_qty, short_close_reason, short_close_approved_by, short_close_at,
-                      assigned_to, notes, created_at, updated_at, source_sales_order_id,
-                      standard_work_id, product_revision_id, bom_revision_id, routing_revision_id,
-                      control_plan_revision_id, ctq_characteristic_set, tooling_revision,
-                      source_sales_order_line_id, customer_requirement_revision,
-                      standard_work_id, product_revision_id, bom_revision_id, routing_revision_id,
-                      control_plan_revision_id, ctq_characteristic_set, tooling_revision,
-                      source_sales_order_line_id, customer_requirement_revision
-            "#,
-        )
-        .bind(status)
-        .bind(tenant_id)
-        .bind(now)
-        .bind(id)
-        .fetch_optional(&mut *status_tx)
-        .await
-        .map_err(|e| SenseiError::Database(format!("Failed to update work order status: {e}")))?
-        .ok_or_else(|| SenseiError::NotFound(format!("Work order {id} not found")))?;
+        // ONE scoped statement (twenty-ninth audit Wave B item 7): the
+        // UPDATE resolves the order's site through its work-center carrier
+        // and applies the scope predicate on the carrier row — an
+        // out-of-scope id matches zero rows (NotFound).
+        let (update_clause, tenant_wide) = scope.where_clause_for("wc", 5);
+        let (sql, has_carrier): (String, bool) = if tenant_wide {
+            (
+                r#"
+                UPDATE work_orders wo
+                SET status = $1,
+                    actual_start = CASE WHEN $1 = 'in_progress' AND actual_start IS NULL THEN $3 ELSE actual_start END,
+                    actual_end = CASE WHEN $1 = 'completed' AND actual_end IS NULL THEN $3 ELSE actual_end END,
+                    updated_at = $3
+                WHERE wo.id = $4 AND wo.tenant_id = $2
+                RETURNING wo.*
+                "#
+                .to_string(),
+                false,
+            )
+        } else {
+            (
+                format!(
+                    r#"
+                    UPDATE work_orders wo
+                    SET status = $1,
+                        actual_start = CASE WHEN $1 = 'in_progress' AND actual_start IS NULL THEN $3 ELSE actual_start END,
+                        actual_end = CASE WHEN $1 = 'completed' AND actual_end IS NULL THEN $3 ELSE actual_end END,
+                        updated_at = $3
+                    FROM (SELECT wc.id AS work_center_id, wc.site_id, wc.tenant_id FROM work_centers wc) AS wc
+                    WHERE wo.id = $4 AND wo.tenant_id = $2
+                      AND wc.work_center_id = wo.work_center_id
+                      AND wc.tenant_id = wo.tenant_id
+                      AND {update_clause}
+                    RETURNING wo.*
+                    "#
+                ),
+                true,
+            )
+        };
+        let mut q = sqlx::query_as::<_, WorkOrderRow>(&sql)
+            .bind(status)
+            .bind(tenant_id)
+            .bind(now)
+            .bind(id);
+        if has_carrier {
+            q = match &scope {
+                DbScopeFilter::Sites(sites) => q.bind(sites.to_vec()),
+                DbScopeFilter::WorkCenter { site, work_center } => q.bind(*site).bind(*work_center),
+                DbScopeFilter::TenantWide | DbScopeFilter::None => q,
+            };
+        }
+        let row = q
+            .fetch_optional(&mut **status_tx.tx())
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to update work order status: {e}")))?
+            .ok_or_else(|| SenseiError::NotFound(format!("Work order {id} not found")))?;
 
         sensei_db::outbox::enqueue_outbox(
-            &mut status_tx,
+            status_tx.tx(),
             tenant_id,
             "work_order",
             id,
@@ -781,17 +888,21 @@ impl ProductionService for DatabaseProductionService {
 
     async fn update_work_order(
         &self,
-        tenant_id: Uuid,
+        ctx: &RequestContext,
         id: Uuid,
         wo: WorkOrder,
     ) -> Result<WorkOrder> {
+        let tenant_id = ctx.tenant;
         let now = Utc::now();
+        let scope = DbScopeFilter::from_authorized(&ctx.scope);
+        let (scope_clause, tenant_wide) = scope.where_clause_for("wc", 16);
 
         // Identity fields come from the stored record; the caller-supplied
-        // values for them are never trusted.
-        let row = sqlx::query_as::<_, WorkOrderRow>(
+        // values for them are never trusted. Scoped callers can only edit
+        // orders whose carrier row is in scope.
+        let sql = if tenant_wide {
             r#"
-            UPDATE work_orders
+            UPDATE work_orders wo
             SET product_id = $1,
                 product_name = $2,
                 quantity = $3,
@@ -805,48 +916,77 @@ impl ProductionService for DatabaseProductionService {
                 assigned_to = $11,
                 notes = $12,
                 updated_at = $13
-            WHERE id = $14 AND tenant_id = $15
-            RETURNING id, tenant_id, wo_number, product_id, product_name,
-                      quantity, quantity_completed, quantity_scrapped, status, work_center_id, priority,
-                      scheduled_start, scheduled_end, actual_start, actual_end,
-                      quantity_scrapped, short_close_qty, short_close_reason, short_close_approved_by, short_close_at,
-                      assigned_to, notes, created_at, updated_at, source_sales_order_id,
-                      standard_work_id, product_revision_id, bom_revision_id, routing_revision_id,
-                      control_plan_revision_id, ctq_characteristic_set, tooling_revision,
-                      source_sales_order_line_id, customer_requirement_revision
-            "#,
-        )
-        .bind(wo.product_id)
-        .bind(wo.product_name)
-        .bind(wo.quantity)
-        .bind(wo.quantity_completed)
-        .bind(wo.quantity_scrapped)
-        .bind(wo.status)
-        .bind(wo.work_center_id)
-        .bind(wo.priority)
-        .bind(wo.scheduled_start)
-        .bind(wo.scheduled_end)
-        .bind(&wo.assigned_to)
-        .bind(wo.notes)
-        .bind(now)
-        .bind(id)
-        .bind(tenant_id)
-        .fetch_optional(&self.pool)
-        .await
-        .map_err(|e| SenseiError::Database(format!("Failed to update work order: {e}")))?
-        .ok_or_else(|| SenseiError::NotFound(format!("Work order {id} not found")))?;
+            WHERE wo.id = $14 AND wo.tenant_id = $15
+            RETURNING wo.*
+            "#
+            .to_string()
+        } else {
+            format!(
+                r#"
+                UPDATE work_orders wo
+                SET product_id = $1,
+                    product_name = $2,
+                    quantity = $3,
+                    quantity_completed = CASE WHEN $4 = 0 AND quantity_completed > 0 THEN quantity_completed ELSE $4 END,
+                    quantity_scrapped = $5,
+                    status = $6,
+                    work_center_id = $7,
+                    priority = $8,
+                    scheduled_start = $9,
+                    scheduled_end = $10,
+                    assigned_to = $11,
+                    notes = $12,
+                    updated_at = $13
+                FROM (SELECT wc.id AS work_center_id, wc.site_id, wc.tenant_id FROM work_centers wc) AS wc
+                WHERE wo.id = $14 AND wo.tenant_id = $15
+                  AND wc.work_center_id = wo.work_center_id
+                  AND wc.tenant_id = wo.tenant_id
+                  AND {scope_clause}
+                RETURNING wo.*
+                "#
+            )
+        };
+        let mut q = sqlx::query_as::<_, WorkOrderRow>(&sql)
+            .bind(wo.product_id)
+            .bind(&wo.product_name)
+            .bind(wo.quantity)
+            .bind(wo.quantity_completed)
+            .bind(wo.quantity_scrapped)
+            .bind(&wo.status)
+            .bind(wo.work_center_id)
+            .bind(&wo.priority)
+            .bind(wo.scheduled_start)
+            .bind(wo.scheduled_end)
+            .bind(&wo.assigned_to)
+            .bind(&wo.notes)
+            .bind(now)
+            .bind(id)
+            .bind(tenant_id);
+        if !tenant_wide {
+            q = match &scope {
+                DbScopeFilter::Sites(sites) => q.bind(sites.to_vec()),
+                DbScopeFilter::WorkCenter { site, work_center } => q.bind(*site).bind(*work_center),
+                DbScopeFilter::TenantWide | DbScopeFilter::None => q,
+            };
+        }
+        let row = q
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to update work order: {e}")))?
+            .ok_or_else(|| SenseiError::NotFound(format!("Work order {id} not found")))?;
 
         Ok(wo_row_to_domain(row))
     }
 
     async fn report_production(
         &self,
-        tenant_id: Uuid,
+        ctx: &RequestContext,
         work_order_id: Uuid,
         quantity_completed: i64,
         quantity_scrapped: i64,
         actor_id: Uuid,
     ) -> Result<WorkOrder> {
+        let tenant_id = ctx.tenant;
         // Scrap reported by the shop floor must never disappear: negative
         // or absurd reports are rejected, and every report is appended to
         // the immutable production-event ledger.
@@ -856,17 +996,16 @@ impl ProductionService for DatabaseProductionService {
             ));
         }
         let now = Utc::now();
+        let scope = DbScopeFilter::from_authorized(&ctx.scope);
+        let (scope_clause, tenant_wide) = scope.where_clause_for("wc", 6);
 
-        let mut tx = self
-            .pool
-            .begin()
+        let mut tx = TenantTx::begin(&self.pool, tenant_id)
             .await
             .map_err(|e| SenseiError::Database(format!("Failed to begin report tx: {e}")))?;
-        set_tenant_context(&mut tx, tenant_id).await?;
 
-        let row = sqlx::query_as::<_, WorkOrderRow>(
+        let sql = if tenant_wide {
             r#"
-            UPDATE work_orders
+            UPDATE work_orders wo
             SET quantity_completed = quantity_completed + $1,
                 quantity_scrapped = quantity_scrapped + $5,
                 status = CASE
@@ -878,27 +1017,54 @@ impl ProductionService for DatabaseProductionService {
                     ELSE actual_end
                 END,
                 updated_at = $4
-            WHERE id = $2 AND tenant_id = $3
-            RETURNING id, tenant_id, wo_number, product_id, product_name,
-                      quantity, quantity_completed, quantity_scrapped,
-                      short_close_qty, short_close_reason, short_close_approved_by, short_close_at,
-                      status, work_center_id, priority,
-                      scheduled_start, scheduled_end, actual_start, actual_end,
-                      assigned_to, notes, created_at, updated_at, source_sales_order_id,
-                      standard_work_id, product_revision_id, bom_revision_id, routing_revision_id,
-                      control_plan_revision_id, ctq_characteristic_set, tooling_revision,
-                      source_sales_order_line_id, customer_requirement_revision
-            "#,
-        )
-        .bind(quantity_completed)
-        .bind(work_order_id)
-        .bind(tenant_id)
-        .bind(now)
-        .bind(quantity_scrapped)
-        .fetch_optional(&mut *tx)
-        .await
-        .map_err(|e| SenseiError::Database(format!("Failed to report production: {e}")))?
-        .ok_or_else(|| SenseiError::NotFound(format!("Work order {work_order_id} not found")))?;
+            WHERE wo.id = $2 AND wo.tenant_id = $3
+            RETURNING wo.*
+            "#
+            .to_string()
+        } else {
+            format!(
+                r#"
+                UPDATE work_orders wo
+                SET quantity_completed = quantity_completed + $1,
+                    quantity_scrapped = quantity_scrapped + $5,
+                    status = CASE
+                        WHEN quantity_completed + $1 >= quantity AND status != 'completed' THEN 'completed'
+                        ELSE status
+                    END,
+                    actual_end = CASE
+                        WHEN quantity_completed + $1 >= quantity AND status != 'completed' THEN $4
+                        ELSE actual_end
+                    END,
+                    updated_at = $4
+                FROM (SELECT wc.id AS work_center_id, wc.site_id, wc.tenant_id FROM work_centers wc) AS wc
+                WHERE wo.id = $2 AND wo.tenant_id = $3
+                  AND wc.work_center_id = wo.work_center_id
+                  AND wc.tenant_id = wo.tenant_id
+                  AND {scope_clause}
+                RETURNING wo.*
+                "#
+            )
+        };
+        let mut q = sqlx::query_as::<_, WorkOrderRow>(&sql)
+            .bind(quantity_completed)
+            .bind(work_order_id)
+            .bind(tenant_id)
+            .bind(now)
+            .bind(quantity_scrapped);
+        if !tenant_wide {
+            q = match &scope {
+                DbScopeFilter::Sites(sites) => q.bind(sites.to_vec()),
+                DbScopeFilter::WorkCenter { site, work_center } => q.bind(*site).bind(*work_center),
+                DbScopeFilter::TenantWide | DbScopeFilter::None => q,
+            };
+        }
+        let row = q
+            .fetch_optional(&mut **tx.tx())
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to report production: {e}")))?
+            .ok_or_else(|| {
+                SenseiError::NotFound(format!("Work order {work_order_id} not found"))
+            })?;
 
         // Append to the immutable event ledger (same transaction).
         sqlx::query(
@@ -916,7 +1082,7 @@ impl ProductionService for DatabaseProductionService {
         // MES-grade provenance: WHO reported is part of the immutable event.
         .bind(actor_id)
         .bind(now)
-        .execute(&mut *tx)
+        .execute(&mut **tx.tx())
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to record production event: {e}")))?;
 
@@ -931,9 +1097,10 @@ impl ProductionService for DatabaseProductionService {
 
     async fn create_production_order(
         &self,
-        tenant_id: Uuid,
+        ctx: &RequestContext,
         mut order: ProductionOrder,
     ) -> Result<ProductionOrder> {
+        let tenant_id = ctx.tenant;
         let now = Utc::now();
         let id = Uuid::new_v4();
         let order_number = format!(
@@ -950,6 +1117,9 @@ impl ProductionService for DatabaseProductionService {
         order.quantity_scrapped = 0;
         order.created_at = now;
 
+        let mut tx = TenantTx::begin(&self.pool, tenant_id)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to begin PO tx: {e}")))?;
         let row = sqlx::query_as::<_, ProductionOrderRow>(
             r#"
             INSERT INTO production_orders (
@@ -960,12 +1130,7 @@ impl ProductionService for DatabaseProductionService {
                 short_close_qty, short_close_reason, short_close_approved_by, short_close_at,
                 created_at
             ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
-            RETURNING id, tenant_id, order_number, product_id,
-                      quantity_planned, quantity_produced, quantity_scrapped,
-                      status, work_center_id, planned_start, planned_end,
-                      actual_start, actual_end,
-                      short_close_qty, short_close_reason, short_close_approved_by, short_close_at,
-                      created_at
+            RETURNING *
             "#,
         )
         .bind(order.id)
@@ -986,24 +1151,27 @@ impl ProductionService for DatabaseProductionService {
         .bind(Option::<Uuid>::None)
         .bind(Option::<chrono::DateTime<Utc>>::None)
         .bind(now)
-        .fetch_one(&self.pool)
+        .fetch_one(&mut **tx.tx())
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to create production order: {e}")))?;
+        tx.commit()
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to commit PO tx: {e}")))?;
 
         Ok(po_row_to_domain(row))
     }
 
-    async fn get_production_order(&self, tenant_id: Uuid, id: Uuid) -> Result<ProductionOrder> {
+    async fn get_production_order(
+        &self,
+        ctx: &RequestContext,
+        id: Uuid,
+    ) -> Result<ProductionOrder> {
+        let tenant_id = ctx.tenant;
         let row = sqlx::query_as::<_, ProductionOrderRow>(
             r#"
-            SELECT id, tenant_id, order_number, product_id,
-                   quantity_planned, quantity_produced, quantity_scrapped,
-                   status, work_center_id, planned_start, planned_end,
-                   actual_start, actual_end,
-                   short_close_qty, short_close_reason, short_close_approved_by, short_close_at,
-                   created_at
-            FROM production_orders
-            WHERE id = $1 AND tenant_id = $2
+            SELECT po.*
+            FROM production_orders po
+            WHERE po.id = $1 AND po.tenant_id = $2
             "#,
         )
         .bind(id)
@@ -1018,27 +1186,23 @@ impl ProductionService for DatabaseProductionService {
 
     async fn list_production_orders(
         &self,
-        tenant_id: Uuid,
+        ctx: &RequestContext,
         status: Option<&str>,
         page: Option<usize>,
         per_page: Option<usize>,
     ) -> Result<PaginatedResponse<ProductionOrder>> {
+        let tenant_id = ctx.tenant;
         let page = page.unwrap_or(1).max(1);
         let per_page = per_page.unwrap_or(20).clamp(1, 100);
         let offset = (page - 1) * per_page;
 
         let items: Vec<ProductionOrderRow> = sqlx::query_as(
             r#"
-            SELECT id, tenant_id, order_number, product_id,
-                   quantity_planned, quantity_produced, quantity_scrapped,
-                   status, work_center_id, planned_start, planned_end,
-                   actual_start, actual_end,
-                   short_close_qty, short_close_reason, short_close_approved_by, short_close_at,
-                   created_at
-            FROM production_orders
-            WHERE tenant_id = $1
-              AND ($2::text IS NULL OR status = $2)
-            ORDER BY created_at DESC
+            SELECT po.*
+            FROM production_orders po
+            WHERE po.tenant_id = $1
+              AND ($2::text IS NULL OR po.status = $2)
+            ORDER BY po.created_at DESC
             LIMIT $3 OFFSET $4
             "#,
         )
@@ -1052,8 +1216,8 @@ impl ProductionService for DatabaseProductionService {
 
         let count: i64 = sqlx::query_scalar(
             r#"
-            SELECT COUNT(*) FROM production_orders
-            WHERE tenant_id = $1 AND ($2::text IS NULL OR status = $2)
+            SELECT COUNT(*) FROM production_orders po
+            WHERE po.tenant_id = $1 AND ($2::text IS NULL OR po.status = $2)
             "#,
         )
         .bind(tenant_id)
@@ -1074,35 +1238,30 @@ impl ProductionService for DatabaseProductionService {
 
     async fn complete_production_order(
         &self,
-        tenant_id: Uuid,
+        ctx: &RequestContext,
         id: Uuid,
         short_close_qty: i64,
         short_close_reason: Option<&str>,
         approver: Uuid,
     ) -> Result<ProductionOrder> {
+        let tenant_id = ctx.tenant;
         let now = Utc::now();
 
-        let mut tx =
-            self.pool.begin().await.map_err(|e| {
-                SenseiError::Database(format!("Failed to begin completion tx: {e}"))
-            })?;
+        let mut tx = TenantTx::begin(&self.pool, tenant_id)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to begin completion tx: {e}")))?;
 
         let existing = sqlx::query_as::<_, ProductionOrderRow>(
             r#"
-            SELECT id, tenant_id, order_number, product_id,
-                   quantity_planned, quantity_produced, quantity_scrapped,
-                   status, work_center_id, planned_start, planned_end,
-                   actual_start, actual_end,
-                   short_close_qty, short_close_reason, short_close_approved_by, short_close_at,
-                   created_at
-            FROM production_orders
-            WHERE id = $1 AND tenant_id = $2
+            SELECT po.*
+            FROM production_orders po
+            WHERE po.id = $1 AND po.tenant_id = $2
             FOR UPDATE
             "#,
         )
         .bind(id)
         .bind(tenant_id)
-        .fetch_optional(&mut *tx)
+        .fetch_optional(&mut **tx.tx())
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to get production order: {e}")))?
         .ok_or_else(|| SenseiError::NotFound(format!("Production order {id} not found")))?;
@@ -1140,7 +1299,7 @@ impl ProductionService for DatabaseProductionService {
 
         let row = sqlx::query_as::<_, ProductionOrderRow>(
             r#"
-            UPDATE production_orders
+            UPDATE production_orders po
             SET status = 'completed',
                 actual_end = $1,
                 short_close_qty = $4,
@@ -1148,13 +1307,8 @@ impl ProductionService for DatabaseProductionService {
                 short_close_approved_by = $6,
                 short_close_at = CASE WHEN $4 > 0 THEN $1 ELSE NULL END,
                 updated_at = $1
-            WHERE id = $2 AND tenant_id = $3
-            RETURNING id, tenant_id, order_number, product_id,
-                      quantity_planned, quantity_produced, quantity_scrapped,
-                      status, work_center_id, planned_start, planned_end,
-                      actual_start, actual_end,
-                      short_close_qty, short_close_reason, short_close_approved_by, short_close_at,
-                      created_at
+            WHERE po.id = $2 AND po.tenant_id = $3
+            RETURNING po.*
             "#,
         )
         .bind(now)
@@ -1163,7 +1317,7 @@ impl ProductionService for DatabaseProductionService {
         .bind(short_close_qty)
         .bind(short_close_reason)
         .bind(approver)
-        .fetch_one(&mut *tx)
+        .fetch_one(&mut **tx.tx())
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to complete production order: {e}")))?;
 
@@ -1183,7 +1337,7 @@ impl ProductionService for DatabaseProductionService {
         .bind(short_close_reason.unwrap_or(""))
         .bind(approver)
         .bind(now)
-        .execute(&mut *tx)
+        .execute(&mut **tx.tx())
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to record completion event: {e}")))?;
 
@@ -1196,9 +1350,13 @@ impl ProductionService for DatabaseProductionService {
 
     // ── BOM ─────────────────────────────────────────────────────────────
 
-    async fn add_bom_item(&self, tenant_id: Uuid, item: BOMItem) -> Result<BOMItem> {
+    async fn add_bom_item(&self, ctx: &RequestContext, item: BOMItem) -> Result<BOMItem> {
+        let tenant_id = ctx.tenant;
         let id = Uuid::new_v4();
 
+        let mut tx = TenantTx::begin(&self.pool, tenant_id)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to begin BOM tx: {e}")))?;
         let row = sqlx::query_as::<_, BomItemRow>(
             r#"
             WITH ins AS (
@@ -1221,14 +1379,18 @@ impl ProductionService for DatabaseProductionService {
         .bind(item.quantity)
         .bind(&item.unit_of_measure)
         .bind(item.scrap_percent)
-        .fetch_one(&self.pool)
+        .fetch_one(&mut **tx.tx())
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to add BOM item: {e}")))?;
+        tx.commit()
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to commit BOM tx: {e}")))?;
 
         Ok(bom_row_to_domain(row))
     }
 
-    async fn get_bom(&self, tenant_id: Uuid, product_id: Uuid) -> Result<Vec<BOMItem>> {
+    async fn get_bom(&self, ctx: &RequestContext, product_id: Uuid) -> Result<Vec<BOMItem>> {
+        let tenant_id = ctx.tenant;
         // Item 29: ONE BOM vocabulary — quantity / scrap_percent (the
         // schema columns). The old quantity_required/scrap_percentage
         // aliases do not exist on bom_items and made get_bom fail at
@@ -1254,7 +1416,8 @@ impl ProductionService for DatabaseProductionService {
 
     // ── MRP ─────────────────────────────────────────────────────────────
 
-    async fn run_mrp(&self, tenant_id: Uuid, product_id: Uuid) -> Result<Vec<MRPRecord>> {
+    async fn run_mrp(&self, ctx: &RequestContext, product_id: Uuid) -> Result<Vec<MRPRecord>> {
+        let tenant_id = ctx.tenant;
         let now = Utc::now();
 
         // ── 1. Independent demand for the product ──────────────────────
@@ -1741,18 +1904,45 @@ impl ProductionService for DatabaseProductionService {
 
     async fn list_work_order_operations(
         &self,
-        tenant_id: Uuid,
+        ctx: &RequestContext,
         work_order_id: Uuid,
     ) -> Result<Vec<WorkOrderOperation>> {
-        // First verify the work order exists and belongs to the tenant
-        let wo_exists: bool = sqlx::query_scalar(
-            "SELECT EXISTS(SELECT 1 FROM work_orders WHERE id = $1 AND tenant_id = $2)",
-        )
-        .bind(work_order_id)
-        .bind(tenant_id)
-        .fetch_one(&self.pool)
-        .await
-        .map_err(|e| SenseiError::Database(format!("Failed to check work order existence: {e}")))?;
+        let tenant_id = ctx.tenant;
+        let scope = DbScopeFilter::from_authorized(&ctx.scope);
+        let (scope_clause, tenant_wide) = scope.where_clause_for("wc", 3);
+
+        // First verify the work order exists AND is in scope (the parent's
+        // carrier row decides — a foreign order is NotFound).
+        let wo_exists: bool = if tenant_wide {
+            sqlx::query_scalar(
+                "SELECT EXISTS(SELECT 1 FROM work_orders wo \
+                 WHERE wo.id = $1 AND wo.tenant_id = $2)",
+            )
+            .bind(work_order_id)
+            .bind(tenant_id)
+            .fetch_one(&self.pool)
+            .await
+            .map_err(|e| {
+                SenseiError::Database(format!("Failed to check work order existence: {e}"))
+            })?
+        } else {
+            let sql = format!(
+                "SELECT EXISTS(SELECT 1 FROM work_orders wo \
+                 {WC_CARRIER_JOIN} \
+                 WHERE wo.id = $1 AND wo.tenant_id = $2 AND {scope_clause})"
+            );
+            let mut q = sqlx::query_scalar::<_, bool>(&sql)
+                .bind(work_order_id)
+                .bind(tenant_id);
+            q = match &scope {
+                DbScopeFilter::Sites(sites) => q.bind(sites.to_vec()),
+                DbScopeFilter::WorkCenter { site, work_center } => q.bind(*site).bind(*work_center),
+                DbScopeFilter::TenantWide | DbScopeFilter::None => q,
+            };
+            q.fetch_one(&self.pool).await.map_err(|e| {
+                SenseiError::Database(format!("Failed to check work order existence: {e}"))
+            })?
+        };
 
         if !wo_exists {
             return Err(SenseiError::NotFound(format!(
@@ -1762,12 +1952,12 @@ impl ProductionService for DatabaseProductionService {
 
         let rows = sqlx::query_as::<_, WorkOrderOperationRow>(
             r#"
-            SELECT id, work_order_id, sequence, station_id, operation,
-                   status, standard_time, setup_time,
-                   started_at, completed_at, created_at
-            FROM work_order_operations
-            WHERE work_order_id = $1 AND tenant_id = $2
-            ORDER BY sequence
+            SELECT o.id, o.work_order_id, o.sequence, o.station_id, o.operation,
+                   o.status, o.standard_time, o.setup_time,
+                   o.started_at, o.completed_at, o.created_at
+            FROM work_order_operations o
+            WHERE o.work_order_id = $1 AND o.tenant_id = $2
+            ORDER BY o.sequence
             "#,
         )
         .bind(work_order_id)
@@ -1792,6 +1982,18 @@ impl ProductionService for DatabaseProductionService {
                 created_at: r.created_at,
             })
             .collect())
+    }
+}
+
+/// How many placeholder VALUES the scope filter consumes, in the order
+/// its fragment declares them (`Sites` → one vector; `WorkCenter` →
+/// site then work-center identity). Statement placeholders AFTER the
+/// scope fragment must be numbered past this many binds.
+fn scope_bind_count(scope: &DbScopeFilter<'_>) -> usize {
+    match scope {
+        DbScopeFilter::Sites(_) => 1,
+        DbScopeFilter::WorkCenter { .. } => 2,
+        DbScopeFilter::TenantWide | DbScopeFilter::None => 0,
     }
 }
 

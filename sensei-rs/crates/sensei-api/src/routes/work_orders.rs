@@ -9,12 +9,14 @@ use axum::{
 };
 use chrono::{DateTime, Utc};
 use sensei_auth::middleware::AuthenticatedUser;
+use sensei_core::domain::request_context::RequestContext;
 use sensei_core::error::Result;
 use sensei_core::pagination::PaginatedResponse;
-use sensei_services::production::WorkOrder;
+use sensei_services::production::{WorkOrder, WorkOrderListFilter};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use crate::authorization::build_request_context;
 use crate::state::AppState;
 
 // ── Query / Request DTOs ───────────────────────────────────────────────────
@@ -94,19 +96,24 @@ pub struct PriorityCount {
 
 // ── Handlers ───────────────────────────────────────────────────────────────
 
-/// Page through every work order in the tenant (the service clamps
-/// per_page, so a single request cannot fetch everything).
+/// Page through every work order the caller's request context authorizes
+/// (the service embeds the ctx scope as a SQL predicate / list filter; the
+/// client work-center filter is ANDed, never widening).
 async fn fetch_all_work_orders(
     production: &dyn sensei_services::production::ProductionService,
-    tenant_id: Uuid,
+    ctx: &RequestContext,
 ) -> Result<Vec<WorkOrder>> {
     const PER_PAGE: usize = 100;
     let mut all = Vec::new();
     let mut page = 1usize;
     loop {
-        let res = production
-            .list_work_orders(tenant_id, None, None, Some(page), Some(PER_PAGE))
-            .await?;
+        let filter = WorkOrderListFilter {
+            status: None,
+            work_center_id: None,
+            page: Some(page),
+            per_page: Some(PER_PAGE),
+        };
+        let res = production.list_work_orders(ctx, &filter).await?;
         let fetched = res.data.len();
         all.extend(res.data);
         if fetched < PER_PAGE {
@@ -127,7 +134,7 @@ pub async fn list_work_orders(
     Query(params): Query<ListWorkOrdersParams>,
 ) -> Result<Json<PaginatedResponse<WorkOrder>>> {
     user.require_permission("production:work-order:read")?;
-    let tenant_id = user.tenant_id;
+    let ctx = build_request_context(&user, &state).await?;
 
     let date_from = params
         .date_from
@@ -146,7 +153,7 @@ pub async fn list_work_orders(
             sensei_core::error::SenseiError::Validation(format!("Invalid date_to: {e}"))
         })?;
 
-    let all = fetch_all_work_orders(state.production_service.as_ref(), tenant_id).await?;
+    let all = fetch_all_work_orders(state.production_service.as_ref(), &ctx).await?;
     let mut filtered: Vec<WorkOrder> = all
         .into_iter()
         .filter(|o| {
@@ -183,11 +190,8 @@ pub async fn get_work_order(
     Path(id): Path<Uuid>,
 ) -> Result<Json<WorkOrder>> {
     user.require_permission("production:work-order:read")?;
-    let tenant_id = user.tenant_id;
-    let order = state
-        .production_service
-        .get_work_order(tenant_id, id)
-        .await?;
+    let ctx = build_request_context(&user, &state).await?;
+    let order = state.production_service.get_work_order(&ctx, id).await?;
     Ok(Json(order))
 }
 
@@ -198,10 +202,10 @@ pub async fn create_work_order(
     Json(req): Json<WorkOrder>,
 ) -> Result<Json<WorkOrder>> {
     user.require_permission("production:work-order:create")?;
-    let tenant_id = user.tenant_id;
+    let ctx = build_request_context(&user, &state).await?;
     let order = state
         .production_service
-        .create_work_order(tenant_id, req)
+        .create_work_order(&ctx, req)
         .await?;
     Ok(Json(order))
 }
@@ -217,13 +221,10 @@ pub async fn update_work_order(
     Json(req): Json<UpdateWorkOrderRequest>,
 ) -> Result<Json<WorkOrder>> {
     user.require_permission("production:work-order:update")?;
-    let tenant_id = user.tenant_id;
+    let ctx = build_request_context(&user, &state).await?;
 
     // Fetch the existing work order to verify it exists and merge with it.
-    let mut updated = state
-        .production_service
-        .get_work_order(tenant_id, id)
-        .await?;
+    let mut updated = state.production_service.get_work_order(&ctx, id).await?;
 
     // Apply changes from the request
     if let Some(product_id) = req.product_id {
@@ -273,7 +274,7 @@ pub async fn update_work_order(
 
     let order = state
         .production_service
-        .update_work_order(tenant_id, id, updated)
+        .update_work_order(&ctx, id, updated)
         .await?;
     Ok(Json(order))
 }
@@ -285,10 +286,10 @@ pub async fn delete_work_order(
     Path(id): Path<Uuid>,
 ) -> Result<Json<()>> {
     user.require_permission("production:work-order:delete")?;
-    let tenant_id = user.tenant_id;
+    let ctx = build_request_context(&user, &state).await?;
     state
         .production_service
-        .update_work_order_status(tenant_id, id, "Cancelled")
+        .update_work_order_status(&ctx, id, "Cancelled")
         .await?;
     Ok(Json(()))
 }
@@ -301,10 +302,10 @@ pub async fn update_work_order_status(
     Json(req): Json<UpdateStatusRequest>,
 ) -> Result<Json<WorkOrder>> {
     user.require_permission("production:work-order:update")?;
-    let tenant_id = user.tenant_id;
+    let ctx = build_request_context(&user, &state).await?;
     let order = state
         .production_service
-        .update_work_order_status(tenant_id, id, &req.status)
+        .update_work_order_status(&ctx, id, &req.status)
         .await?;
     Ok(Json(order))
 }
@@ -319,10 +320,10 @@ pub async fn list_work_order_operations(
     Path(id): Path<Uuid>,
 ) -> Result<Json<Vec<WorkOrderOperation>>> {
     user.require_permission("production:work-order:read")?;
-    let tenant_id = user.tenant_id;
+    let ctx = build_request_context(&user, &state).await?;
     let ops = state
         .production_service
-        .list_work_order_operations(tenant_id, id)
+        .list_work_order_operations(&ctx, id)
         .await?;
 
     // Map from service DTO to route response DTO
@@ -352,8 +353,8 @@ pub async fn get_work_order_stats(
     State(state): State<AppState>,
 ) -> Result<Json<WorkOrderStats>> {
     user.require_permission("production:work-order:read")?;
-    let tenant_id = user.tenant_id;
-    let orders = fetch_all_work_orders(state.production_service.as_ref(), tenant_id).await?;
+    let ctx = build_request_context(&user, &state).await?;
+    let orders = fetch_all_work_orders(state.production_service.as_ref(), &ctx).await?;
 
     let total = orders.len();
 

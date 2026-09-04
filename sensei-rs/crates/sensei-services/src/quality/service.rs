@@ -8,6 +8,7 @@ use chrono::{DateTime, Utc};
 use sensei_core::domain::events::{
     CAPACreatedEvent, DomainEvent, NcrCreatedEvent, SupplierEvaluatedEvent,
 };
+use sensei_core::domain::{AuthorizedScope, RequestContext};
 use sensei_core::error::{Result, SenseiError};
 use sensei_core::pagination::PaginatedResponse;
 use sensei_event_bus::bus::EventBus;
@@ -24,14 +25,36 @@ use super::models::*;
 
 /// Quality service trait covering NCR, CAPA, inspection, audit, supplier,
 /// NPI risk, MSA/SPC, gauge, complaint, 8D, and management review workflows.
+///
+/// # Request contexts (twenty-ninth audit Wave B items 6-8)
+///
+/// The NCR / CAPA / audit operational methods take the server-created
+/// [`RequestContext`] instead of a naked `tenant_id`: `ctx.tenant` is the
+/// tenant, and `ctx.scope` is the caller's DB-resolved authorization
+/// boundary. List/get/update/close surface semantics:
+///
+/// - `Sites` / `WorkCenter` — the caller sees ONLY records whose
+///   SERVER-STAMPED `scope_site_id` is among `ctx.authorized_sites()`; a
+///   record with no site stamp (`NULL` — a corporate/tenant-level record)
+///   is invisible to a site-scoped caller;
+/// - `TenantWide` — no scope predicate: every record of the tenant,
+///   corporate records included;
+/// - `NoOperationalScope` — zero rows on lists, `NotFound` on gets
+///   (FAIL-CLOSED: no entitlement → no data).
+///
+/// Creation stamps the record server-side from the caller's validated
+/// operating focus (see [`QualityScopeStamp`]); client input can never
+/// set the scope columns — on whole-entity updates the stored stamp is
+/// preserved.
 #[async_trait]
 #[allow(clippy::too_many_arguments)]
 pub trait QualityService: Send + Sync {
     // ── NCRs ──────────────────────────────────────────────────────────────
-    /// List NCRs with optional filters.
+    /// List NCRs with optional filters, intersected with the caller's
+    /// scope at the record level.
     async fn list_ncrs(
         &self,
-        tenant_id: Uuid,
+        ctx: &RequestContext,
         status: Option<&str>,
         severity: Option<&str>,
         source: Option<&str>,
@@ -39,10 +62,10 @@ pub trait QualityService: Send + Sync {
         per_page: Option<usize>,
     ) -> Result<PaginatedResponse<NonConformance>>;
 
-    /// Create a new NCR.
+    /// Create a new NCR, server-stamped with the caller's operating scope.
     async fn create_ncr(
         &self,
-        tenant_id: Uuid,
+        ctx: &RequestContext,
         title: String,
         description: String,
         nc_type: NcType,
@@ -56,32 +79,34 @@ pub trait QualityService: Send + Sync {
         is_recurrence: bool,
     ) -> Result<NonConformance>;
 
-    /// Get a specific NCR by ID.
-    async fn get_ncr(&self, tenant_id: Uuid, id: Uuid) -> Result<NonConformance>;
+    /// Get a specific NCR by ID — out-of-scope and nonexistent ids are
+    /// indistinguishable: both `NotFound`.
+    async fn get_ncr(&self, ctx: &RequestContext, id: Uuid) -> Result<NonConformance>;
 
     /// Update NCR status (severity, etc.).
     async fn update_ncr_status(
         &self,
-        tenant_id: Uuid,
+        ctx: &RequestContext,
         id: Uuid,
         severity: NcSeverity,
     ) -> Result<NonConformance>;
 
     // ── CAPAs ─────────────────────────────────────────────────────────────
-    /// List CAPAs with optional filters.
+    /// List CAPAs with optional filters, intersected with the caller's
+    /// scope at the record level.
     async fn list_capas(
         &self,
-        tenant_id: Uuid,
+        ctx: &RequestContext,
         status: Option<&str>,
         nc_type: Option<&str>,
         page: Option<usize>,
         per_page: Option<usize>,
     ) -> Result<PaginatedResponse<CapaExtended>>;
 
-    /// Create a new CAPA.
+    /// Create a new CAPA, server-stamped with the caller's operating scope.
     async fn create_capa(
         &self,
-        tenant_id: Uuid,
+        ctx: &RequestContext,
         title: String,
         description: String,
         nc_ids: Vec<Uuid>,
@@ -91,13 +116,14 @@ pub trait QualityService: Send + Sync {
         due_date: Option<DateTime<Utc>>,
     ) -> Result<CapaExtended>;
 
-    /// Get a specific CAPA by ID.
-    async fn get_capa(&self, tenant_id: Uuid, id: Uuid) -> Result<CapaExtended>;
+    /// Get a specific CAPA by ID — out-of-scope and nonexistent ids are
+    /// indistinguishable: both `NotFound`.
+    async fn get_capa(&self, ctx: &RequestContext, id: Uuid) -> Result<CapaExtended>;
 
     /// Update CAPA status.
     async fn update_capa_status(
         &self,
-        tenant_id: Uuid,
+        ctx: &RequestContext,
         id: Uuid,
         status: CapaStatusEx,
     ) -> Result<CapaExtended>;
@@ -134,26 +160,30 @@ pub trait QualityService: Send + Sync {
     ) -> Result<SelfInspection>;
 
     // ── Audits ────────────────────────────────────────────────────────────
-    /// List audits with optional filters.
+    /// List audits with optional filters, intersected with the caller's
+    /// scope at the record level.
     async fn list_audits(
         &self,
-        tenant_id: Uuid,
+        ctx: &RequestContext,
         status: Option<&str>,
         audit_type: Option<&str>,
         page: Option<usize>,
         per_page: Option<usize>,
     ) -> Result<PaginatedResponse<Audit>>;
 
-    /// Create a new audit.
-    async fn create_audit(&self, tenant_id: Uuid, audit: Audit) -> Result<Audit>;
+    /// Create a new audit, server-stamped with the caller's operating
+    /// scope — any scope fields in the client body are overridden.
+    async fn create_audit(&self, ctx: &RequestContext, audit: Audit) -> Result<Audit>;
 
-    /// Get a specific audit by ID.
-    async fn get_audit(&self, tenant_id: Uuid, id: Uuid) -> Result<Audit>;
+    /// Get a specific audit by ID — out-of-scope and nonexistent ids are
+    /// indistinguishable: both `NotFound`.
+    async fn get_audit(&self, ctx: &RequestContext, id: Uuid) -> Result<Audit>;
 
-    /// List audit findings for a specific audit.
+    /// List audit findings for a specific audit (the parent audit is
+    /// scope-checked first).
     async fn list_audit_findings(
         &self,
-        tenant_id: Uuid,
+        ctx: &RequestContext,
         audit_id: Uuid,
     ) -> Result<Vec<AuditFinding>>;
 
@@ -280,46 +310,49 @@ pub trait QualityService: Send + Sync {
     ) -> Result<PaginatedResponse<ManagementReview>>;
 
     // ── New: NCR Update/Delete/Lifecycle ─────────────────────────────────
-    /// Update an NCR.
+    /// Update an NCR (whole-entity echo). The server-owned scope stamp of
+    /// the stored record is preserved — the client body can never move a
+    /// record between sites.
     async fn update_ncr(
         &self,
-        tenant_id: Uuid,
+        ctx: &RequestContext,
         id: Uuid,
         ncr: NonConformance,
     ) -> Result<NonConformance>;
-    /// Delete an NCR.
-    async fn delete_ncr(&self, tenant_id: Uuid, id: Uuid) -> Result<()>;
+    /// Delete an NCR — out-of-scope ids are `NotFound`.
+    async fn delete_ncr(&self, ctx: &RequestContext, id: Uuid) -> Result<()>;
     /// Investigate an NCR (add root cause analysis).
     async fn investigate_ncr(
         &self,
-        tenant_id: Uuid,
+        ctx: &RequestContext,
         id: Uuid,
         rca: RootCauseAnalysis,
     ) -> Result<NonConformance>;
     /// Add disposition to an NCR.
     async fn disposition_ncr(
         &self,
-        tenant_id: Uuid,
+        ctx: &RequestContext,
         id: Uuid,
         disposition: String,
     ) -> Result<NonConformance>;
     /// Close an NCR.
-    async fn close_ncr(&self, tenant_id: Uuid, id: Uuid) -> Result<NonConformance>;
+    async fn close_ncr(&self, ctx: &RequestContext, id: Uuid) -> Result<NonConformance>;
 
     // ── New: CAPA Update/Delete/Lifecycle ────────────────────────────────
-    /// Update a CAPA.
+    /// Update a CAPA (whole-entity echo). The server-owned scope stamp of
+    /// the stored record is preserved.
     async fn update_capa(
         &self,
-        tenant_id: Uuid,
+        ctx: &RequestContext,
         id: Uuid,
         capa: CapaExtended,
     ) -> Result<CapaExtended>;
-    /// Delete a CAPA.
-    async fn delete_capa(&self, tenant_id: Uuid, id: Uuid) -> Result<()>;
+    /// Delete a CAPA — out-of-scope ids are `NotFound`.
+    async fn delete_capa(&self, ctx: &RequestContext, id: Uuid) -> Result<()>;
     /// Verify a CAPA's effectiveness.
-    async fn verify_capa(&self, tenant_id: Uuid, id: Uuid) -> Result<CapaExtended>;
+    async fn verify_capa(&self, ctx: &RequestContext, id: Uuid) -> Result<CapaExtended>;
     /// Close a CAPA.
-    async fn close_capa(&self, tenant_id: Uuid, id: Uuid) -> Result<CapaExtended>;
+    async fn close_capa(&self, ctx: &RequestContext, id: Uuid) -> Result<CapaExtended>;
 
     // ── New: Inspection Update/Delete ────────────────────────────────────
     /// Update a first article inspection.
@@ -342,10 +375,11 @@ pub trait QualityService: Send + Sync {
     async fn delete_self_inspection(&self, tenant_id: Uuid, id: Uuid) -> Result<()>;
 
     // ── New: Audit Update/Delete ─────────────────────────────────────────
-    /// Update an audit.
-    async fn update_audit(&self, tenant_id: Uuid, id: Uuid, audit: Audit) -> Result<Audit>;
-    /// Delete an audit.
-    async fn delete_audit(&self, tenant_id: Uuid, id: Uuid) -> Result<()>;
+    /// Update an audit (whole-entity echo). The server-owned scope stamp
+    /// of the stored record is preserved.
+    async fn update_audit(&self, ctx: &RequestContext, id: Uuid, audit: Audit) -> Result<Audit>;
+    /// Delete an audit — out-of-scope ids are `NotFound`.
+    async fn delete_audit(&self, ctx: &RequestContext, id: Uuid) -> Result<()>;
 
     // ── New: Supplier Scorecard/SCAR Update/Delete ───────────────────────
     /// Update a supplier scorecard.
@@ -530,6 +564,14 @@ pub trait QualityService: Send + Sync {
 /// can enforce tenant isolation even though the model structs themselves do
 /// not carry a `tenant_id` field.
 ///
+/// The NCR / CAPA / audit records additionally keep their SERVER-STAMPED
+/// resource scope in a `scope_index` (twenty-ninth audit Wave B items
+/// 6-8) so the same scope semantics as the SQL implementation hold: a
+/// site-scoped caller sees only records stamped with one of their
+/// authorized sites, corporate (unstamped) records are visible to the
+/// explicit tenant-wide grant only, and a caller with no operational
+/// scope sees nothing.
+///
 /// Suitable for development, testing, and demo environments.
 pub struct InMemoryQualityService {
     ncrs: RwLock<HashMap<Uuid, NonConformance>>,
@@ -556,6 +598,9 @@ pub struct InMemoryQualityService {
     event_bus: Option<Arc<dyn EventBus>>,
     /// Maps entity ID → tenant ID for tenant isolation.
     tenant_index: RwLock<HashMap<Uuid, Uuid>>,
+    /// Maps entity ID → the server-stamped quality resource scope
+    /// (NCR / CAPA / audit records only).
+    scope_index: RwLock<HashMap<Uuid, QualityScopeStamp>>,
 }
 
 impl InMemoryQualityService {
@@ -585,6 +630,7 @@ impl InMemoryQualityService {
             capa_counter: RwLock::new(0),
             event_bus,
             tenant_index: RwLock::new(HashMap::new()),
+            scope_index: RwLock::new(HashMap::new()),
         }
     }
 
@@ -620,6 +666,52 @@ impl InMemoryQualityService {
             None => true, // not indexed yet — allow through
         }
     }
+
+    /// Record the server-stamped quality resource scope of an entity
+    /// (twenty-ninth audit Wave B item 2).
+    async fn record_scope(&self, entity_id: Uuid, stamp: QualityScopeStamp) {
+        self.scope_index.write().await.insert(entity_id, stamp);
+    }
+
+    /// The stored scope stamp of an entity; entities without a recorded
+    /// stamp are treated as corporate (both ids `None`) — the honest
+    /// legacy encoding.
+    async fn stored_scope(&self, entity_id: Uuid) -> QualityScopeStamp {
+        let idx = self.scope_index.read().await;
+        idx.get(&entity_id).copied().unwrap_or_default()
+    }
+
+    /// The caller's scope as a SQL-equivalent visibility decision over a
+    /// record's SERVER-STAMPED site (twenty-ninth audit Wave B item 3):
+    ///
+    /// - `NoOperationalScope` ⇒ false (no rows anywhere);
+    /// - `TenantWide` ⇒ true (corporate records included);
+    /// - `Sites` / `WorkCenter` ⇒ the record's site, when stamped, is
+    ///   one of the authorized sites — an unstamped (corporate) record
+    ///   is NOT visible to a site-scoped caller.
+    fn site_visible(ctx: &RequestContext, stamp: QualityScopeStamp) -> bool {
+        match &ctx.scope {
+            AuthorizedScope::NoOperationalScope => false,
+            AuthorizedScope::TenantWide => true,
+            AuthorizedScope::Sites(sites) => {
+                stamp.site_id.is_some_and(|site| sites.contains(&site))
+            }
+            AuthorizedScope::WorkCenter(wc) => stamp.site_id == Some(wc.site),
+        }
+    }
+
+    /// Scope gate used by the mutating single-record paths: a record
+    /// outside the caller's scope is indistinguishable from a missing
+    /// one — `NotFound`.
+    async fn scope_gate(&self, ctx: &RequestContext, entity_id: Uuid) -> Result<QualityScopeStamp> {
+        let stamp = self.stored_scope(entity_id).await;
+        if !Self::site_visible(ctx, stamp) {
+            return Err(SenseiError::NotFound(format!(
+                "record {entity_id} not found"
+            )));
+        }
+        Ok(stamp)
+    }
 }
 
 impl Default for InMemoryQualityService {
@@ -634,7 +726,7 @@ impl QualityService for InMemoryQualityService {
 
     async fn list_ncrs(
         &self,
-        tenant_id: Uuid,
+        ctx: &RequestContext,
         status: Option<&str>,
         severity: Option<&str>,
         source: Option<&str>,
@@ -642,13 +734,21 @@ impl QualityService for InMemoryQualityService {
         per_page: Option<usize>,
     ) -> Result<PaginatedResponse<NonConformance>> {
         let idx = self.tenant_index.read().await;
+        let scopes = self.scope_index.read().await;
         let store = self.ncrs.read().await;
+        let tenant_id = ctx.tenant;
         let items: Vec<_> = store
             .values()
             .filter(|ncr| {
                 // Tenant isolation
                 let belongs_to_tenant = idx.get(&ncr.id).is_none_or(|&tid| tid == tenant_id);
                 if !belongs_to_tenant {
+                    return false;
+                }
+                // Scope intersection (site-scoped callers see only their
+                // stamped records; corporate rows are tenant-wide only).
+                let stamp = scopes.get(&ncr.id).copied().unwrap_or_default();
+                if !Self::site_visible(ctx, stamp) {
                     return false;
                 }
                 status.is_none_or(|s| enum_name_matches(s, ncr.status.as_str()))
@@ -667,7 +767,7 @@ impl QualityService for InMemoryQualityService {
 
     async fn create_ncr(
         &self,
-        tenant_id: Uuid,
+        ctx: &RequestContext,
         title: String,
         description: String,
         nc_type: NcType,
@@ -680,6 +780,16 @@ impl QualityService for InMemoryQualityService {
         location: Option<String>,
         is_recurrence: bool,
     ) -> Result<NonConformance> {
+        if matches!(ctx.scope, AuthorizedScope::NoOperationalScope) {
+            return Err(SenseiError::Forbidden(
+                "principal has no operational scope — cannot create an NCR".to_string(),
+            ));
+        }
+        let tenant_id = ctx.tenant;
+        // Server-stamped scope: the caller's VALIDATED operating focus
+        // (the context builder proves the focus work center belongs to
+        // the focus site). Client input has no scope dimension here.
+        let stamp = QualityScopeStamp::from(ctx);
         let mut counter = self.ncr_counter.write().await;
         *counter += 1;
         let nc_number = Self::generate_ncr_number(*counter);
@@ -713,6 +823,7 @@ impl QualityService for InMemoryQualityService {
 
         let id = ncr.id;
         self.record_tenant(id, tenant_id).await;
+        self.record_scope(id, stamp).await;
         self.ncrs.write().await.insert(id, ncr.clone());
         self.publish_event(NcrCreatedEvent::new(
             tenant_id,
@@ -726,13 +837,16 @@ impl QualityService for InMemoryQualityService {
         Ok(ncr)
     }
 
-    async fn get_ncr(&self, tenant_id: Uuid, id: Uuid) -> Result<NonConformance> {
+    async fn get_ncr(&self, ctx: &RequestContext, id: Uuid) -> Result<NonConformance> {
         let store = self.ncrs.read().await;
         let ncr = store
             .get(&id)
             .cloned()
             .ok_or_else(|| SenseiError::NotFound(format!("NCR with id {id} not found")))?;
-        if !self.tenant_matches(id, tenant_id).await {
+        if !self.tenant_matches(id, ctx.tenant).await {
+            return Err(SenseiError::NotFound(format!("NCR with id {id} not found")));
+        }
+        if self.scope_gate(ctx, id).await.is_err() {
             return Err(SenseiError::NotFound(format!("NCR with id {id} not found")));
         }
         Ok(ncr)
@@ -740,13 +854,14 @@ impl QualityService for InMemoryQualityService {
 
     async fn update_ncr_status(
         &self,
-        tenant_id: Uuid,
+        ctx: &RequestContext,
         id: Uuid,
         severity: NcSeverity,
     ) -> Result<NonConformance> {
-        if !self.tenant_matches(id, tenant_id).await {
+        if !self.tenant_matches(id, ctx.tenant).await {
             return Err(SenseiError::NotFound(format!("NCR with id {id} not found")));
         }
+        self.scope_gate(ctx, id).await?;
         let mut store = self.ncrs.write().await;
         let ncr = store
             .get_mut(&id)
@@ -760,20 +875,26 @@ impl QualityService for InMemoryQualityService {
 
     async fn list_capas(
         &self,
-        tenant_id: Uuid,
+        ctx: &RequestContext,
         status: Option<&str>,
         nc_type: Option<&str>,
         page: Option<usize>,
         per_page: Option<usize>,
     ) -> Result<PaginatedResponse<CapaExtended>> {
         let idx = self.tenant_index.read().await;
+        let scopes = self.scope_index.read().await;
         let store = self.capas.read().await;
+        let tenant_id = ctx.tenant;
         let items: Vec<_> = store
             .values()
             .filter(|capa| {
                 // Tenant isolation
                 let belongs_to_tenant = idx.get(&capa.id).is_none_or(|&tid| tid == tenant_id);
                 if !belongs_to_tenant {
+                    return false;
+                }
+                let stamp = scopes.get(&capa.id).copied().unwrap_or_default();
+                if !Self::site_visible(ctx, stamp) {
                     return false;
                 }
                 let status_match =
@@ -792,7 +913,7 @@ impl QualityService for InMemoryQualityService {
 
     async fn create_capa(
         &self,
-        tenant_id: Uuid,
+        ctx: &RequestContext,
         title: String,
         description: String,
         nc_ids: Vec<Uuid>,
@@ -801,6 +922,13 @@ impl QualityService for InMemoryQualityService {
         owner_id: Option<Uuid>,
         due_date: Option<DateTime<Utc>>,
     ) -> Result<CapaExtended> {
+        if matches!(ctx.scope, AuthorizedScope::NoOperationalScope) {
+            return Err(SenseiError::Forbidden(
+                "principal has no operational scope — cannot create a CAPA".to_string(),
+            ));
+        }
+        let tenant_id = ctx.tenant;
+        let stamp = QualityScopeStamp::from(ctx);
         let mut counter = self.capa_counter.write().await;
         *counter += 1;
         let capa_number = Self::generate_capa_number(*counter);
@@ -830,6 +958,7 @@ impl QualityService for InMemoryQualityService {
 
         let id = capa.id;
         self.record_tenant(id, tenant_id).await;
+        self.record_scope(id, stamp).await;
         self.capas.write().await.insert(id, capa.clone());
         self.publish_event(CAPACreatedEvent::new(
             tenant_id,
@@ -843,12 +972,13 @@ impl QualityService for InMemoryQualityService {
         Ok(capa)
     }
 
-    async fn get_capa(&self, tenant_id: Uuid, id: Uuid) -> Result<CapaExtended> {
-        if !self.tenant_matches(id, tenant_id).await {
+    async fn get_capa(&self, ctx: &RequestContext, id: Uuid) -> Result<CapaExtended> {
+        if !self.tenant_matches(id, ctx.tenant).await {
             return Err(SenseiError::NotFound(format!(
                 "CAPA with id {id} not found"
             )));
         }
+        self.scope_gate(ctx, id).await?;
         let store = self.capas.read().await;
         store
             .get(&id)
@@ -858,15 +988,16 @@ impl QualityService for InMemoryQualityService {
 
     async fn update_capa_status(
         &self,
-        tenant_id: Uuid,
+        ctx: &RequestContext,
         id: Uuid,
         status: CapaStatusEx,
     ) -> Result<CapaExtended> {
-        if !self.tenant_matches(id, tenant_id).await {
+        if !self.tenant_matches(id, ctx.tenant).await {
             return Err(SenseiError::NotFound(format!(
                 "CAPA with id {id} not found"
             )));
         }
+        self.scope_gate(ctx, id).await?;
         let mut store = self.capas.write().await;
         let capa = store
             .get_mut(&id)
@@ -954,20 +1085,26 @@ impl QualityService for InMemoryQualityService {
 
     async fn list_audits(
         &self,
-        tenant_id: Uuid,
+        ctx: &RequestContext,
         status: Option<&str>,
         audit_type: Option<&str>,
         page: Option<usize>,
         per_page: Option<usize>,
     ) -> Result<PaginatedResponse<Audit>> {
         let idx = self.tenant_index.read().await;
+        let scopes = self.scope_index.read().await;
         let store = self.audits.read().await;
+        let tenant_id = ctx.tenant;
         let items: Vec<_> = store
             .values()
             .filter(|audit| {
                 // Tenant isolation
                 let belongs_to_tenant = idx.get(&audit.id).is_none_or(|&tid| tid == tenant_id);
                 if !belongs_to_tenant {
+                    return false;
+                }
+                let stamp = scopes.get(&audit.id).copied().unwrap_or_default();
+                if !Self::site_visible(ctx, stamp) {
                     return false;
                 }
                 status.is_none_or(|s| enum_name_matches(s, &format!("{:?}", audit.status)))
@@ -980,23 +1117,32 @@ impl QualityService for InMemoryQualityService {
         Ok(PaginatedResponse::new(items, page, per_page))
     }
 
-    async fn create_audit(&self, tenant_id: Uuid, mut audit: Audit) -> Result<Audit> {
+    async fn create_audit(&self, ctx: &RequestContext, mut audit: Audit) -> Result<Audit> {
+        if matches!(ctx.scope, AuthorizedScope::NoOperationalScope) {
+            return Err(SenseiError::Forbidden(
+                "principal has no operational scope — cannot create an audit".to_string(),
+            ));
+        }
+        let tenant_id = ctx.tenant;
+        let stamp = QualityScopeStamp::from(ctx);
         let now = Utc::now();
         audit.id = Uuid::new_v4();
         audit.created_at = now;
         audit.updated_at = now;
         let id = audit.id;
         self.record_tenant(id, tenant_id).await;
+        self.record_scope(id, stamp).await;
         self.audits.write().await.insert(id, audit.clone());
         Ok(audit)
     }
 
-    async fn get_audit(&self, tenant_id: Uuid, id: Uuid) -> Result<Audit> {
-        if !self.tenant_matches(id, tenant_id).await {
+    async fn get_audit(&self, ctx: &RequestContext, id: Uuid) -> Result<Audit> {
+        if !self.tenant_matches(id, ctx.tenant).await {
             return Err(SenseiError::NotFound(format!(
                 "Audit with id {id} not found"
             )));
         }
+        self.scope_gate(ctx, id).await?;
         let store = self.audits.read().await;
         store
             .get(&id)
@@ -1006,15 +1152,16 @@ impl QualityService for InMemoryQualityService {
 
     async fn list_audit_findings(
         &self,
-        tenant_id: Uuid,
+        ctx: &RequestContext,
         audit_id: Uuid,
     ) -> Result<Vec<AuditFinding>> {
-        // Verify the audit belongs to the requesting tenant
-        if !self.tenant_matches(audit_id, tenant_id).await {
+        // Verify the audit belongs to the requesting tenant and scope.
+        if !self.tenant_matches(audit_id, ctx.tenant).await {
             return Err(SenseiError::NotFound(format!(
                 "Audit with id {audit_id} not found"
             )));
         }
+        self.scope_gate(ctx, audit_id).await?;
         let store = self.audit_findings.read().await;
         Ok(store
             .values()
@@ -1320,13 +1467,17 @@ impl QualityService for InMemoryQualityService {
 
     async fn update_ncr(
         &self,
-        tenant_id: Uuid,
+        ctx: &RequestContext,
         id: Uuid,
         ncr: NonConformance,
     ) -> Result<NonConformance> {
-        if !self.tenant_matches(id, tenant_id).await {
+        if !self.tenant_matches(id, ctx.tenant).await {
             return Err(SenseiError::NotFound(format!("NCR with id {id} not found")));
         }
+        // The stored scope stamp is server-owned and preserved — the
+        // client body (a whole-entity echo) can never move the record
+        // between sites.
+        let stored_scope = self.scope_gate(ctx, id).await?;
         let mut store = self.ncrs.write().await;
         let existing = store
             .get_mut(&id)
@@ -1350,30 +1501,40 @@ impl QualityService for InMemoryQualityService {
         existing.disposition = ncr.disposition;
         existing.closed_at = ncr.closed_at;
         existing.updated_at = Utc::now();
-        Ok(existing.clone())
+        let updated = existing.clone();
+        drop(store);
+        self.record_scope(id, stored_scope).await;
+        Ok(updated)
     }
 
-    async fn delete_ncr(&self, tenant_id: Uuid, id: Uuid) -> Result<()> {
-        if !self.tenant_matches(id, tenant_id).await {
+    async fn delete_ncr(&self, ctx: &RequestContext, id: Uuid) -> Result<()> {
+        if !self.tenant_matches(id, ctx.tenant).await {
             return Err(SenseiError::NotFound(format!("NCR with id {id} not found")));
         }
+        self.scope_gate(ctx, id).await?;
+        // Canonical lock order (tenant -> scope -> store) so concurrent
+        // list/get/delete paths can never interleave into a deadlock.
+        let mut ti = self.tenant_index.write().await;
+        let mut si = self.scope_index.write().await;
         let mut store = self.ncrs.write().await;
         store
             .remove(&id)
             .ok_or_else(|| SenseiError::NotFound(format!("NCR with id {id} not found")))?;
-        self.tenant_index.write().await.remove(&id);
+        ti.remove(&id);
+        si.remove(&id);
         Ok(())
     }
 
     async fn investigate_ncr(
         &self,
-        tenant_id: Uuid,
+        ctx: &RequestContext,
         id: Uuid,
         rca: RootCauseAnalysis,
     ) -> Result<NonConformance> {
-        if !self.tenant_matches(id, tenant_id).await {
+        if !self.tenant_matches(id, ctx.tenant).await {
             return Err(SenseiError::NotFound(format!("NCR with id {id} not found")));
         }
+        self.scope_gate(ctx, id).await?;
         let mut store = self.ncrs.write().await;
         let existing = store
             .get_mut(&id)
@@ -1398,13 +1559,14 @@ impl QualityService for InMemoryQualityService {
 
     async fn disposition_ncr(
         &self,
-        tenant_id: Uuid,
+        ctx: &RequestContext,
         id: Uuid,
         disposition: String,
     ) -> Result<NonConformance> {
-        if !self.tenant_matches(id, tenant_id).await {
+        if !self.tenant_matches(id, ctx.tenant).await {
             return Err(SenseiError::NotFound(format!("NCR with id {id} not found")));
         }
+        self.scope_gate(ctx, id).await?;
         if disposition.trim().is_empty() {
             return Err(SenseiError::Validation(
                 "Disposition cannot be empty".to_string(),
@@ -1431,10 +1593,11 @@ impl QualityService for InMemoryQualityService {
         Ok(existing.clone())
     }
 
-    async fn close_ncr(&self, tenant_id: Uuid, id: Uuid) -> Result<NonConformance> {
-        if !self.tenant_matches(id, tenant_id).await {
+    async fn close_ncr(&self, ctx: &RequestContext, id: Uuid) -> Result<NonConformance> {
+        if !self.tenant_matches(id, ctx.tenant).await {
             return Err(SenseiError::NotFound(format!("NCR with id {id} not found")));
         }
+        self.scope_gate(ctx, id).await?;
         let mut store = self.ncrs.write().await;
         let existing = store
             .get_mut(&id)
@@ -1471,15 +1634,17 @@ impl QualityService for InMemoryQualityService {
 
     async fn update_capa(
         &self,
-        tenant_id: Uuid,
+        ctx: &RequestContext,
         id: Uuid,
         capa: CapaExtended,
     ) -> Result<CapaExtended> {
-        if !self.tenant_matches(id, tenant_id).await {
+        if !self.tenant_matches(id, ctx.tenant).await {
             return Err(SenseiError::NotFound(format!(
                 "CAPA with id {id} not found"
             )));
         }
+        // The stored scope stamp is server-owned and preserved.
+        let stored_scope = self.scope_gate(ctx, id).await?;
         let mut store = self.capas.write().await;
         let existing = store
             .get_mut(&id)
@@ -1503,29 +1668,37 @@ impl QualityService for InMemoryQualityService {
         existing.due_date = capa.due_date;
         existing.closed_at = capa.closed_at;
         existing.updated_at = Utc::now();
-        Ok(existing.clone())
+        let updated = existing.clone();
+        drop(store);
+        self.record_scope(id, stored_scope).await;
+        Ok(updated)
     }
 
-    async fn delete_capa(&self, tenant_id: Uuid, id: Uuid) -> Result<()> {
-        if !self.tenant_matches(id, tenant_id).await {
+    async fn delete_capa(&self, ctx: &RequestContext, id: Uuid) -> Result<()> {
+        if !self.tenant_matches(id, ctx.tenant).await {
             return Err(SenseiError::NotFound(format!(
                 "CAPA with id {id} not found"
             )));
         }
+        self.scope_gate(ctx, id).await?;
+        let mut ti = self.tenant_index.write().await;
+        let mut si = self.scope_index.write().await;
         let mut store = self.capas.write().await;
         store
             .remove(&id)
             .ok_or_else(|| SenseiError::NotFound(format!("CAPA with id {id} not found")))?;
-        self.tenant_index.write().await.remove(&id);
+        ti.remove(&id);
+        si.remove(&id);
         Ok(())
     }
 
-    async fn verify_capa(&self, tenant_id: Uuid, id: Uuid) -> Result<CapaExtended> {
-        if !self.tenant_matches(id, tenant_id).await {
+    async fn verify_capa(&self, ctx: &RequestContext, id: Uuid) -> Result<CapaExtended> {
+        if !self.tenant_matches(id, ctx.tenant).await {
             return Err(SenseiError::NotFound(format!(
                 "CAPA with id {id} not found"
             )));
         }
+        self.scope_gate(ctx, id).await?;
         let mut store = self.capas.write().await;
         let existing = store
             .get_mut(&id)
@@ -1571,12 +1744,13 @@ impl QualityService for InMemoryQualityService {
         Ok(existing.clone())
     }
 
-    async fn close_capa(&self, tenant_id: Uuid, id: Uuid) -> Result<CapaExtended> {
-        if !self.tenant_matches(id, tenant_id).await {
+    async fn close_capa(&self, ctx: &RequestContext, id: Uuid) -> Result<CapaExtended> {
+        if !self.tenant_matches(id, ctx.tenant).await {
             return Err(SenseiError::NotFound(format!(
                 "CAPA with id {id} not found"
             )));
         }
+        self.scope_gate(ctx, id).await?;
         let mut store = self.capas.write().await;
         let existing = store
             .get_mut(&id)
@@ -1666,12 +1840,14 @@ impl QualityService for InMemoryQualityService {
 
     // ── New: Audit Update/Delete ─────────────────────────────────────────
 
-    async fn update_audit(&self, tenant_id: Uuid, id: Uuid, audit: Audit) -> Result<Audit> {
-        if !self.tenant_matches(id, tenant_id).await {
+    async fn update_audit(&self, ctx: &RequestContext, id: Uuid, audit: Audit) -> Result<Audit> {
+        if !self.tenant_matches(id, ctx.tenant).await {
             return Err(SenseiError::NotFound(format!(
                 "Audit with id {id} not found"
             )));
         }
+        // The stored scope stamp is server-owned and preserved.
+        let stored_scope = self.scope_gate(ctx, id).await?;
         let mut store = self.audits.write().await;
         let existing = store
             .get_mut(&id)
@@ -1683,20 +1859,27 @@ impl QualityService for InMemoryQualityService {
         existing.auditor_id = audit.auditor_id;
         existing.scope = audit.scope;
         existing.updated_at = Utc::now();
-        Ok(existing.clone())
+        let updated = existing.clone();
+        drop(store);
+        self.record_scope(id, stored_scope).await;
+        Ok(updated)
     }
 
-    async fn delete_audit(&self, tenant_id: Uuid, id: Uuid) -> Result<()> {
-        if !self.tenant_matches(id, tenant_id).await {
+    async fn delete_audit(&self, ctx: &RequestContext, id: Uuid) -> Result<()> {
+        if !self.tenant_matches(id, ctx.tenant).await {
             return Err(SenseiError::NotFound(format!(
                 "Audit with id {id} not found"
             )));
         }
+        self.scope_gate(ctx, id).await?;
+        let mut ti = self.tenant_index.write().await;
+        let mut si = self.scope_index.write().await;
         let mut store = self.audits.write().await;
         store
             .remove(&id)
             .ok_or_else(|| SenseiError::NotFound(format!("Audit with id {id} not found")))?;
-        self.tenant_index.write().await.remove(&id);
+        ti.remove(&id);
+        si.remove(&id);
         Ok(())
     }
 
@@ -2412,14 +2595,40 @@ impl QualityService for InMemoryQualityService {
 mod tests {
     use super::*;
 
+    /// Test-only request-context constructor (twenty-ninth audit Wave B
+    /// items 6-8): pure unit tests have no database, so the context is
+    /// assembled directly with an EXPLICIT tenant-wide grant (bootstrap
+    /// semantics — `RequestContext::build` never returns TenantWide; the
+    /// DB-backed fixtures use the real builder). Tenant-wide keeps every
+    /// record visible, exactly like the in-memory/dev mode.
+    fn test_ctx(tenant_id: Uuid) -> RequestContext {
+        RequestContext {
+            tenant: tenant_id,
+            principal: Uuid::new_v4(),
+            scope: AuthorizedScope::tenant_wide(),
+            focus: sensei_core::domain::OperationalFocus {
+                site: None,
+                value_stream: None,
+                work_center: None,
+                shift: None,
+            },
+            locale: None,
+            timezone: None,
+            currency: None,
+            country_policy_revision: None,
+            trace_id: String::new(),
+        }
+    }
+
     #[tokio::test]
     async fn test_ncr_workflow_investigate_disposition_close() {
         let service = InMemoryQualityService::default();
         let tenant_id = Uuid::new_v4();
+        let ctx = test_ctx(tenant_id);
 
         let ncr = service
             .create_ncr(
-                tenant_id,
+                &ctx,
                 "Defect rate too high".to_string(),
                 "PPM rose on line 3".to_string(),
                 NcType::Product,
@@ -2449,10 +2658,7 @@ mod tests {
             verified_at: None,
             created_at: Utc::now(),
         };
-        let investigated = service
-            .investigate_ncr(tenant_id, ncr.id, rca)
-            .await
-            .unwrap();
+        let investigated = service.investigate_ncr(&ctx, ncr.id, rca).await.unwrap();
         assert_eq!(investigated.status, NcrStatus::UnderInvestigation);
         assert_eq!(
             investigated.root_cause.as_deref(),
@@ -2463,7 +2669,7 @@ mod tests {
 
         // Disposition: ActionDefined.
         let disposed = service
-            .disposition_ncr(tenant_id, ncr.id, "Rework and verify".to_string())
+            .disposition_ncr(&ctx, ncr.id, "Rework and verify".to_string())
             .await
             .unwrap();
         assert_eq!(disposed.status, NcrStatus::ActionDefined);
@@ -2472,7 +2678,7 @@ mod tests {
         // Closing without completeness is rejected.
         let fresh = service
             .create_ncr(
-                tenant_id,
+                &ctx,
                 "Incomplete".to_string(),
                 "no data".to_string(),
                 NcType::Process,
@@ -2487,18 +2693,18 @@ mod tests {
             )
             .await
             .unwrap();
-        let err = service.close_ncr(tenant_id, fresh.id).await.unwrap_err();
+        let err = service.close_ncr(&ctx, fresh.id).await.unwrap_err();
         assert!(matches!(err, SenseiError::Validation(_)));
 
         // Complete lifecycle closes with closed_at set.
-        let closed = service.close_ncr(tenant_id, ncr.id).await.unwrap();
+        let closed = service.close_ncr(&ctx, ncr.id).await.unwrap();
         assert_eq!(closed.status, NcrStatus::Closed);
         assert!(closed.closed_at.is_some());
 
         // Closed NCRs reject further investigation.
         let err = service
             .investigate_ncr(
-                tenant_id,
+                &ctx,
                 ncr.id,
                 RootCauseAnalysis {
                     id: Uuid::new_v4(),
@@ -2522,10 +2728,11 @@ mod tests {
     async fn test_list_ncrs_filters_by_status_and_source() {
         let service = InMemoryQualityService::default();
         let tenant_id = Uuid::new_v4();
+        let ctx = test_ctx(tenant_id);
 
         let first = service
             .create_ncr(
-                tenant_id,
+                &ctx,
                 "A".to_string(),
                 "d".to_string(),
                 NcType::Product,
@@ -2542,7 +2749,7 @@ mod tests {
             .unwrap();
         service
             .create_ncr(
-                tenant_id,
+                &ctx,
                 "B".to_string(),
                 "d".to_string(),
                 NcType::Process,
@@ -2561,33 +2768,23 @@ mod tests {
         // Set the source on one NCR via update.
         let mut updated = first.clone();
         updated.source = Some("inspection".to_string());
-        service
-            .update_ncr(tenant_id, first.id, updated)
-            .await
-            .unwrap();
+        service.update_ncr(&ctx, first.id, updated).await.unwrap();
 
         let page = service
-            .list_ncrs(tenant_id, Some("open"), None, None, None, None)
+            .list_ncrs(&ctx, Some("open"), None, None, None, None)
             .await
             .unwrap();
         assert_eq!(page.data.len(), 2);
 
         let page = service
-            .list_ncrs(
-                tenant_id,
-                Some("open"),
-                None,
-                Some("inspection"),
-                None,
-                None,
-            )
+            .list_ncrs(&ctx, Some("open"), None, Some("inspection"), None, None)
             .await
             .unwrap();
         assert_eq!(page.data.len(), 1);
         assert_eq!(page.data[0].id, first.id);
 
         let page = service
-            .list_ncrs(tenant_id, None, Some("critical"), None, None, None)
+            .list_ncrs(&ctx, None, Some("critical"), None, None, None)
             .await
             .unwrap();
         assert!(page.data.is_empty());
@@ -2597,11 +2794,12 @@ mod tests {
     async fn test_verify_capa_records_effectiveness() {
         let service = InMemoryQualityService::default();
         let tenant_id = Uuid::new_v4();
+        let ctx = test_ctx(tenant_id);
 
         // Verification without RCA/actions is rejected.
         let capa = service
             .create_capa(
-                tenant_id,
+                &ctx,
                 "Fix calibration".to_string(),
                 "desc".to_string(),
                 vec![],
@@ -2612,7 +2810,7 @@ mod tests {
             )
             .await
             .unwrap();
-        let err = service.verify_capa(tenant_id, capa.id).await.unwrap_err();
+        let err = service.verify_capa(&ctx, capa.id).await.unwrap_err();
         assert!(matches!(err, SenseiError::Validation(_)));
 
         // Seed an RCA and an action, then verify.
@@ -2644,12 +2842,9 @@ mod tests {
             created_at: Utc::now(),
             updated_at: Utc::now(),
         });
-        service
-            .update_capa(tenant_id, capa.id, with_rca)
-            .await
-            .unwrap();
+        service.update_capa(&ctx, capa.id, with_rca).await.unwrap();
 
-        let verified = service.verify_capa(tenant_id, capa.id).await.unwrap();
+        let verified = service.verify_capa(&ctx, capa.id).await.unwrap();
         assert_eq!(verified.status, CapaStatusEx::Verification);
         assert!(
             verified
@@ -2658,5 +2853,150 @@ mod tests {
                 .any(|ec| ec.is_effective),
             "verification must record an effectiveness check"
         );
+    }
+
+    #[tokio::test]
+    async fn test_site_scoped_caller_only_sees_stamped_records() {
+        let service = InMemoryQualityService::default();
+        let tenant_a = Uuid::new_v4();
+        let tenant_b = Uuid::new_v4();
+        let site_a = Uuid::new_v4();
+        let site_b = Uuid::new_v4();
+        let corporate_ctx = test_ctx(tenant_a);
+
+        // Server-side stamping (item 2): a caller acting in site A gets a
+        // record stamped with site A; a corporate caller (no operating
+        // focus, tenant-wide grant) gets an UNSTAMPED (corporate) record.
+        let site_a_ctx = RequestContext {
+            focus: sensei_core::domain::OperationalFocus {
+                site: Some(site_a),
+                value_stream: None,
+                work_center: None,
+                shift: None,
+            },
+            ..test_ctx(tenant_a)
+        };
+        let stamped = service
+            .create_ncr(
+                &site_a_ctx,
+                "Site A defect".to_string(),
+                "d".to_string(),
+                NcType::Product,
+                NcSeverity::Medium,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                false,
+            )
+            .await
+            .unwrap();
+        let corporate = service
+            .create_ncr(
+                &corporate_ctx,
+                "Corporate finding".to_string(),
+                "d".to_string(),
+                NcType::System,
+                NcSeverity::High,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                false,
+            )
+            .await
+            .unwrap();
+
+        // A SITE-A-scoped caller (Sites([site_a])) sees the site-A record
+        // but NOT the corporate one.
+        let site_a_scope_ctx = RequestContext {
+            scope: AuthorizedScope::Sites(vec![site_a]),
+            focus: sensei_core::domain::OperationalFocus {
+                site: Some(site_a),
+                value_stream: None,
+                work_center: None,
+                shift: None,
+            },
+            ..test_ctx(tenant_a)
+        };
+        let listed = service
+            .list_ncrs(&site_a_scope_ctx, None, None, None, None, None)
+            .await
+            .unwrap();
+        assert_eq!(listed.data.len(), 1, "site-scoped list sees its site only");
+        assert_eq!(listed.data[0].id, stamped.id);
+        assert!(
+            service
+                .get_ncr(&site_a_scope_ctx, corporate.id)
+                .await
+                .is_err(),
+            "corporate record is invisible to a site-scoped caller (NotFound)"
+        );
+        assert!(
+            service.get_ncr(&site_a_scope_ctx, stamped.id).await.is_ok(),
+            "stamped record resolves for its site"
+        );
+
+        // A SITE-B-scoped caller sees neither record.
+        let site_b_scope_ctx = RequestContext {
+            scope: AuthorizedScope::Sites(vec![site_b]),
+            focus: sensei_core::domain::OperationalFocus {
+                site: Some(site_b),
+                value_stream: None,
+                work_center: None,
+                shift: None,
+            },
+            ..test_ctx(tenant_a)
+        };
+        let listed_b = service
+            .list_ncrs(&site_b_scope_ctx, None, None, None, None, None)
+            .await
+            .unwrap();
+        assert!(listed_b.data.is_empty(), "foreign site sees nothing");
+        assert!(
+            service
+                .get_ncr(&site_b_scope_ctx, stamped.id)
+                .await
+                .is_err(),
+            "out-of-scope get is NotFound"
+        );
+
+        // NoOperationalScope sees nothing, even for a stamped record.
+        let no_scope_ctx = RequestContext {
+            scope: AuthorizedScope::NoOperationalScope,
+            focus: sensei_core::domain::OperationalFocus {
+                site: None,
+                value_stream: None,
+                work_center: None,
+                shift: None,
+            },
+            ..test_ctx(tenant_a)
+        };
+        let listed_none = service
+            .list_ncrs(&no_scope_ctx, None, None, None, None, None)
+            .await
+            .unwrap();
+        assert!(listed_none.data.is_empty(), "no scope → no rows");
+        assert!(
+            service.get_ncr(&no_scope_ctx, stamped.id).await.is_err(),
+            "no scope → NotFound"
+        );
+
+        // The tenant-wide caller sees everything (corporate included),
+        // and a foreign TENANT never sees the records at all.
+        let all = service
+            .list_ncrs(&corporate_ctx, None, None, None, None, None)
+            .await
+            .unwrap();
+        assert_eq!(all.data.len(), 2);
+        let foreign = service
+            .list_ncrs(&test_ctx(tenant_b), None, None, None, None, None)
+            .await
+            .unwrap();
+        assert!(foreign.data.is_empty(), "tenant isolation holds");
     }
 }

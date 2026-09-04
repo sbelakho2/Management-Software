@@ -2,6 +2,13 @@
 //!
 //! Provides endpoints for work orders, production orders, BOM management,
 //! and MRP (Material Requirements Planning).
+//!
+//! Twenty-ninth audit Wave B item 7: each handler builds the server-created
+//! [`RequestContext`] ONCE (authorization::build_request_context — the same
+//! focus resolution as the Andon `caller_sites` pattern) and passes it to
+//! every production service call. The client can only NARROW: a
+//! `work_center_id` query parameter is ANDed with the caller's authorized
+//! scope, never widening it.
 
 use axum::{
     extract::{Path, Query, State},
@@ -10,16 +17,20 @@ use axum::{
 use sensei_auth::middleware::AuthenticatedUser;
 use sensei_core::error::Result;
 use sensei_core::pagination::PaginatedResponse;
-use sensei_services::production::{BOMItem, MRPRecord, ProductionOrder, WorkOrder};
+use sensei_services::production::{
+    BOMItem, MRPRecord, ProductionOrder, WorkOrder, WorkOrderListFilter,
+};
 use serde::Deserialize;
 use uuid::Uuid;
 
+use crate::authorization::build_request_context;
 use crate::state::AppState;
 
 /// Query parameters for listing work orders.
 #[derive(Debug, Deserialize)]
 pub struct ListWorkOrdersParams {
     pub status: Option<String>,
+    /// NARROWING filter only (ANDed with the caller's scope).
     pub work_center_id: Option<Uuid>,
     pub page: Option<usize>,
     pub per_page: Option<usize>,
@@ -61,16 +72,16 @@ pub async fn list_work_orders(
     Query(params): Query<ListWorkOrdersParams>,
 ) -> Result<Json<PaginatedResponse<WorkOrder>>> {
     user.require_permission("production:work-order:read")?;
-    let tenant_id = user.tenant_id;
+    let ctx = build_request_context(&user, &state).await?;
+    let filter = WorkOrderListFilter {
+        status: params.status,
+        work_center_id: params.work_center_id,
+        page: params.page,
+        per_page: params.per_page,
+    };
     let orders = state
         .production_service
-        .list_work_orders(
-            tenant_id,
-            params.status.as_deref(),
-            params.work_center_id,
-            params.page,
-            params.per_page,
-        )
+        .list_work_orders(&ctx, &filter)
         .await?;
     Ok(Json(orders))
 }
@@ -82,10 +93,10 @@ pub async fn create_work_order(
     Json(req): Json<WorkOrder>,
 ) -> Result<Json<WorkOrder>> {
     user.require_permission("production:work-order:create")?;
-    let tenant_id = user.tenant_id;
+    let ctx = build_request_context(&user, &state).await?;
     let order = state
         .production_service
-        .create_work_order(tenant_id, req)
+        .create_work_order(&ctx, req)
         .await?;
     Ok(Json(order))
 }
@@ -97,11 +108,8 @@ pub async fn get_work_order(
     Path(id): Path<Uuid>,
 ) -> Result<Json<WorkOrder>> {
     user.require_permission("production:work-order:read")?;
-    let tenant_id = user.tenant_id;
-    let order = state
-        .production_service
-        .get_work_order(tenant_id, id)
-        .await?;
+    let ctx = build_request_context(&user, &state).await?;
+    let order = state.production_service.get_work_order(&ctx, id).await?;
     Ok(Json(order))
 }
 
@@ -113,10 +121,10 @@ pub async fn update_work_order_status(
     Json(req): Json<UpdateWorkOrderStatusRequest>,
 ) -> Result<Json<WorkOrder>> {
     user.require_permission("production:work-order:update")?;
-    let tenant_id = user.tenant_id;
+    let ctx = build_request_context(&user, &state).await?;
     let order = state
         .production_service
-        .update_work_order_status(tenant_id, id, &req.status)
+        .update_work_order_status(&ctx, id, &req.status)
         .await?;
     Ok(Json(order))
 }
@@ -129,11 +137,11 @@ pub async fn report_production(
     Json(req): Json<ReportProductionRequest>,
 ) -> Result<Json<WorkOrder>> {
     user.require_permission("production:report")?;
-    let tenant_id = user.tenant_id;
+    let ctx = build_request_context(&user, &state).await?;
     let order = state
         .production_service
         .report_production(
-            tenant_id,
+            &ctx,
             id,
             req.quantity_completed,
             req.quantity_scrapped,
@@ -152,15 +160,10 @@ pub async fn list_production_orders(
     Query(params): Query<ListProductionOrdersParams>,
 ) -> Result<Json<PaginatedResponse<ProductionOrder>>> {
     user.require_permission("production:work-order:read")?;
-    let tenant_id = user.tenant_id;
+    let ctx = build_request_context(&user, &state).await?;
     let orders = state
         .production_service
-        .list_production_orders(
-            tenant_id,
-            params.status.as_deref(),
-            params.page,
-            params.per_page,
-        )
+        .list_production_orders(&ctx, params.status.as_deref(), params.page, params.per_page)
         .await?;
     Ok(Json(orders))
 }
@@ -172,10 +175,10 @@ pub async fn create_production_order(
     Json(req): Json<ProductionOrder>,
 ) -> Result<Json<ProductionOrder>> {
     user.require_permission("production:release")?;
-    let tenant_id = user.tenant_id;
+    let ctx = build_request_context(&user, &state).await?;
     let order = state
         .production_service
-        .create_production_order(tenant_id, req)
+        .create_production_order(&ctx, req)
         .await?;
     Ok(Json(order))
 }
@@ -187,10 +190,10 @@ pub async fn get_production_order(
     Path(id): Path<Uuid>,
 ) -> Result<Json<ProductionOrder>> {
     user.require_permission("production:work-order:read")?;
-    let tenant_id = user.tenant_id;
+    let ctx = build_request_context(&user, &state).await?;
     let order = state
         .production_service
-        .get_production_order(tenant_id, id)
+        .get_production_order(&ctx, id)
         .await?;
     Ok(Json(order))
 }
@@ -214,11 +217,11 @@ pub async fn complete_production_order(
     Json(req): Json<CompleteProductionOrderRequest>,
 ) -> Result<Json<ProductionOrder>> {
     user.require_permission("production:complete")?;
-    let tenant_id = user.tenant_id;
+    let ctx = build_request_context(&user, &state).await?;
     let order = state
         .production_service
         .complete_production_order(
-            tenant_id,
+            &ctx,
             id,
             req.short_close_qty,
             req.short_close_reason.as_deref(),
@@ -237,11 +240,8 @@ pub async fn add_bom_item(
     Json(req): Json<BOMItem>,
 ) -> Result<Json<BOMItem>> {
     user.require_permission("production:work-order:update")?;
-    let tenant_id = user.tenant_id;
-    let item = state
-        .production_service
-        .add_bom_item(tenant_id, req)
-        .await?;
+    let ctx = build_request_context(&user, &state).await?;
+    let item = state.production_service.add_bom_item(&ctx, req).await?;
     Ok(Json(item))
 }
 
@@ -252,11 +252,8 @@ pub async fn get_bom(
     Path(product_id): Path<Uuid>,
 ) -> Result<Json<Vec<BOMItem>>> {
     user.require_permission("production:work-order:read")?;
-    let tenant_id = user.tenant_id;
-    let bom = state
-        .production_service
-        .get_bom(tenant_id, product_id)
-        .await?;
+    let ctx = build_request_context(&user, &state).await?;
+    let bom = state.production_service.get_bom(&ctx, product_id).await?;
     Ok(Json(bom))
 }
 
@@ -269,10 +266,10 @@ pub async fn run_mrp(
     Json(req): Json<RunMrpRequest>,
 ) -> Result<Json<Vec<MRPRecord>>> {
     user.require_permission("tps:mrp:run")?;
-    let tenant_id = user.tenant_id;
+    let ctx = build_request_context(&user, &state).await?;
     let records = state
         .production_service
-        .run_mrp(tenant_id, req.product_id)
+        .run_mrp(&ctx, req.product_id)
         .await?;
     Ok(Json(records))
 }

@@ -24,6 +24,32 @@ async fn connect() -> Option<PgPool> {
     PgPool::connect(&url).await.ok()
 }
 
+/// Tenant-wide request context for DB-contract fixtures (twenty-ninth
+/// audit Wave B item 7): the gate seeds no role-slot assignments, so the
+/// fixtures act with the EXPLICIT tenant-wide grant — the exact semantics
+/// the naked tenant_id calls used to imply. Real scopes are exercised by
+/// the API layer (routes resolve the RequestContext from the principal).
+fn tenant_ctx(tenant_id: uuid::Uuid) -> sensei_core::domain::request_context::RequestContext {
+    use sensei_core::domain::request_context::{OperationalFocus, RequestContext};
+    use sensei_core::domain::scope::AuthorizedScope;
+    RequestContext {
+        tenant: tenant_id,
+        principal: uuid::Uuid::new_v4(),
+        scope: AuthorizedScope::tenant_wide(),
+        focus: OperationalFocus {
+            site: None,
+            value_stream: None,
+            work_center: None,
+            shift: None,
+        },
+        locale: None,
+        timezone: None,
+        currency: None,
+        country_policy_revision: None,
+        trace_id: String::new(),
+    }
+}
+
 #[tokio::test]
 async fn full_migration_chain_applies_and_core_contracts_work() {
     let _serial = DB_LOCK.lock().await;
@@ -292,6 +318,7 @@ async fn database_production_service_crud_works_on_migrated_schema() {
     .await
     .expect("product insert");
 
+    let ctx = tenant_ctx(tenant_id);
     use sensei_services::production::ProductionService;
     let service = sensei_services::production::DatabaseProductionService::new(pool.clone());
 
@@ -333,7 +360,7 @@ async fn database_production_service_crud_works_on_migrated_schema() {
         customer_requirement_revision: None,
     };
     let created = service
-        .create_work_order(tenant_id, wo)
+        .create_work_order(&ctx, wo)
         .await
         .expect("DatabaseProductionService.create_work_order must work on migrated schema");
     assert_eq!(created.quantity, 100);
@@ -341,7 +368,7 @@ async fn database_production_service_crud_works_on_migrated_schema() {
 
     // get_work_order: the expanded SELECT must decode into WorkOrderRow.
     let fetched = service
-        .get_work_order(tenant_id, created.id)
+        .get_work_order(&ctx, created.id)
         .await
         .expect("get_work_order must decode the full row");
     assert_eq!(fetched.id, created.id);
@@ -352,7 +379,7 @@ async fn database_production_service_crud_works_on_migrated_schema() {
     updated_wo.quantity = 120;
     updated_wo.quantity_scrapped = 3;
     let updated = service
-        .update_work_order(tenant_id, created.id, updated_wo)
+        .update_work_order(&ctx, created.id, updated_wo)
         .await
         .expect("update_work_order must work");
     assert_eq!(updated.quantity, 120, "quantity must persist");
@@ -437,7 +464,7 @@ async fn database_production_service_crud_works_on_migrated_schema() {
     .await
     .expect("effective standard insert");
     let released = service
-        .update_work_order_status(tenant_id, created.id, "released")
+        .update_work_order_status(&ctx, created.id, "released")
         .await
         .expect("update_work_order_status must work");
     assert_eq!(released.status, "released");
@@ -463,7 +490,7 @@ async fn database_production_service_crud_works_on_migrated_schema() {
     .await
     .expect("operator insert");
     let reported = service
-        .report_production(tenant_id, created.id, 40, 2, operator_id)
+        .report_production(&ctx, created.id, 40, 2, operator_id)
         .await
         .expect("report_production must work");
     assert_eq!(reported.quantity_completed, 40);
@@ -471,7 +498,15 @@ async fn database_production_service_crud_works_on_migrated_schema() {
 
     // list_work_orders: paginated decode of the full row.
     let listed = service
-        .list_work_orders(tenant_id, None, None, Some(1), Some(10))
+        .list_work_orders(
+            &ctx,
+            &sensei_services::production::WorkOrderListFilter {
+                status: None,
+                work_center_id: None,
+                page: Some(1),
+                per_page: Some(10),
+            },
+        )
         .await
         .expect("list_work_orders must work");
     assert_eq!(listed.total, 1);
@@ -501,11 +536,11 @@ async fn database_production_service_crud_works_on_migrated_schema() {
         created_at: chrono::Utc::now(),
     };
     let po_created = service
-        .create_production_order(tenant_id, po)
+        .create_production_order(&ctx, po)
         .await
         .expect("create_production_order must work");
     let po_fetched = service
-        .get_production_order(tenant_id, po_created.id)
+        .get_production_order(&ctx, po_created.id)
         .await
         .expect("get_production_order must work");
     assert_eq!(po_fetched.id, po_created.id);
@@ -514,7 +549,7 @@ async fn database_production_service_crud_works_on_migrated_schema() {
     // close columns must round-trip through the RETURNING.
     let completed = service
         .complete_production_order(
-            tenant_id,
+            &ctx,
             po_created.id,
             5,
             Some("Fixture tolerance"),
@@ -868,6 +903,7 @@ async fn mrp_rejects_cycles_and_phases_dates_backward() {
     let tenant_id = uuid::Uuid::new_v4();
     let a = uuid::Uuid::new_v4();
     let b = uuid::Uuid::new_v4();
+    let ctx = tenant_ctx(tenant_id);
     let c = uuid::Uuid::new_v4();
     sqlx::query("INSERT INTO tenants (id, name, slug) VALUES ($1, 'mrp', 'mrp')")
         .bind(tenant_id)
@@ -906,7 +942,7 @@ async fn mrp_rejects_cycles_and_phases_dates_backward() {
     .execute(&pool)
     .await
     .expect("cyclic BOM insert");
-    let cycle_result = service.run_mrp(tenant_id, a).await;
+    let cycle_result = service.run_mrp(&ctx, a).await;
     assert!(
         cycle_result.is_err(),
         "a cyclic BOM must be rejected, never silently truncated"
@@ -943,7 +979,7 @@ async fn mrp_rejects_cycles_and_phases_dates_backward() {
     .await
     .expect("WO insert");
 
-    let records = service.run_mrp(tenant_id, a).await.expect("MRP must run");
+    let records = service.run_mrp(&ctx, a).await.expect("MRP must run");
     let a_rec = records
         .iter()
         .find(|r| r.product_id == a)
@@ -2450,6 +2486,7 @@ async fn mrp_demand_pegging_allocates_supply_against_demand() {
 
     let tenant_id = uuid::Uuid::new_v4();
     let user_id = uuid::Uuid::new_v4();
+    let ctx = tenant_ctx(tenant_id);
     sqlx::query("INSERT INTO tenants (id, name, slug) VALUES ($1, 'peg', 'pegging')")
         .bind(tenant_id)
         .execute(&pool)
@@ -2533,7 +2570,7 @@ async fn mrp_demand_pegging_allocates_supply_against_demand() {
         AppState::new(config, users_service).with_db_pool(std::sync::Arc::new(pool.clone()));
     let records = state
         .production_service
-        .run_mrp(tenant_id, product_id)
+        .run_mrp(&ctx, product_id)
         .await
         .expect("run_mrp");
     let record = records
@@ -2695,7 +2732,7 @@ async fn tps_full_learning_loop() {
     let prod_service = sensei_services::production::DatabaseProductionService::new(pool.clone());
     let wo_a = prod_service
         .create_work_order(
-            tenant_id,
+            &tenant_ctx(tenant_id),
             sensei_services::production::WorkOrder {
                 id: uuid::Uuid::new_v4(),
                 tenant_id,
@@ -2735,7 +2772,7 @@ async fn tps_full_learning_loop() {
         .await
         .expect("create WO A");
     let released_a = prod_service
-        .update_work_order_status(tenant_id, wo_a.id, "released")
+        .update_work_order_status(&tenant_ctx(tenant_id), wo_a.id, "released")
         .await
         .expect("release WO A");
     assert_eq!(
@@ -2859,7 +2896,7 @@ async fn tps_full_learning_loop() {
 
     let wo_b = prod_service
         .create_work_order(
-            tenant_id,
+            &tenant_ctx(tenant_id),
             sensei_services::production::WorkOrder {
                 id: uuid::Uuid::new_v4(),
                 tenant_id,
@@ -2899,7 +2936,7 @@ async fn tps_full_learning_loop() {
         .await
         .expect("create WO B");
     let released_b = prod_service
-        .update_work_order_status(tenant_id, wo_b.id, "released")
+        .update_work_order_status(&tenant_ctx(tenant_id), wo_b.id, "released")
         .await
         .expect("release WO B");
     assert_eq!(
@@ -18083,4 +18120,550 @@ async fn user_profile_update_never_touches_authorization_state() {
         password_hash, "hash-x",
         "a profile update must NOT alter password_hash"
     );
+}
+
+// ── Twenty-ninth-audit Wave B items 6-8 fixtures: quality resource scope ──
+
+#[tokio::test]
+/// Migration-170 contract: the scope columns exist on EVERY actual
+/// quality table of the audit's resource family (nothing fabricated),
+/// they are nullable, and the (tenant_id, scope_site_id) index exists.
+async fn quality_scope_columns_exist_on_the_real_quality_tables() {
+    let _serial = DB_LOCK.lock().await;
+    let Some(pool) = connect().await else { return };
+    sensei_db::migrations::run_migrations(&pool)
+        .await
+        .expect("the ENTIRE migration chain must apply to an empty database");
+
+    // The six tables the audit's family names resolve to in this schema.
+    let tables = [
+        "ncr_reports",
+        "non_conformances",
+        "capas",
+        "quality_audits",
+        "audits",
+        "inspections",
+    ];
+    for table in tables {
+        let (site_nullable, wc_nullable): (bool, bool) = sqlx::query_as(
+            "SELECT is_nullable = 'YES', is_nullable = 'YES' \
+             FROM information_schema.columns \
+             WHERE table_name = $1 AND column_name = 'scope_site_id' \
+             UNION ALL \
+             SELECT is_nullable = 'YES', is_nullable = 'YES' \
+             FROM information_schema.columns \
+             WHERE table_name = $1 AND column_name = 'scope_work_center_id'",
+        )
+        .bind(table)
+        .fetch_one(&pool)
+        .await
+        .unwrap_or_else(|_| panic!("{table} must carry both scope columns"));
+        assert!(site_nullable, "{table}.scope_site_id must be nullable");
+        assert!(wc_nullable, "{table}.scope_work_center_id must be nullable");
+    }
+
+    // No fabricated tables: quality_reviews / supplier_corrective_actions
+    // do not exist anywhere in the chain.
+    let ghost_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM information_schema.tables \
+                            WHERE table_schema = 'public' AND table_name IN \
+                            ('quality_reviews', 'supplier_corrective_actions')",
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("information_schema read");
+    assert_eq!(ghost_count, 0, "no quality tables may be fabricated");
+
+    // The scope lookup index exists on every stamped table.
+    for table in tables {
+        let idx: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM pg_indexes \
+             WHERE schemaname = 'public' AND tablename = $1 AND indexdef LIKE '%scope_site_id%'",
+        )
+        .bind(table)
+        .fetch_one(&pool)
+        .await
+        .expect("index read");
+        assert!(
+            idx > 0,
+            "{table} needs a (tenant_id, scope_site_id) scope index"
+        );
+    }
+}
+
+#[tokio::test]
+/// Site-scope semantics on the real tables (migration 170): a work
+/// order's work center resolves its site SERVER-side, quality records
+/// are stamped with it, and a site-scoped caller's SQL predicate
+/// (`scope_site_id = ANY($1)`) sees exactly its site — corporate rows
+/// with a NULL scope pair are invisible to site-scoped callers and
+/// visible only without the predicate (tenant-wide).
+async fn quality_scope_rows_are_server_stamped_and_site_visible() {
+    let _serial = DB_LOCK.lock().await;
+    let Some(pool) = connect().await else { return };
+    sensei_db::migrations::run_migrations(&pool)
+        .await
+        .expect("the ENTIRE migration chain must apply to an empty database");
+
+    let tenant_id = uuid::Uuid::new_v4();
+    let site_a = uuid::Uuid::new_v4();
+    let site_b = uuid::Uuid::new_v4();
+    let wc_a = uuid::Uuid::new_v4();
+    let wo_a = uuid::Uuid::new_v4();
+    let user_id = uuid::Uuid::new_v4();
+    sqlx::query("INSERT INTO tenants (id, name, slug) VALUES ($1, 'qscope', 'qscope')")
+        .bind(tenant_id)
+        .execute(&pool)
+        .await
+        .expect("tenant insert");
+    sqlx::query(
+        "INSERT INTO sites (id, tenant_id, site_code, name) VALUES \
+         ($1, $2, 'QA', 'Quality A'), ($3, $2, 'QB', 'Quality B')",
+    )
+    .bind(site_a)
+    .bind(tenant_id)
+    .bind(site_b)
+    .execute(&pool)
+    .await
+    .expect("sites insert");
+    sqlx::query(
+        "INSERT INTO work_centers (id, tenant_id, name, work_center_number, site_id, \
+         is_active, capacity_per_shift, created_at, updated_at) \
+         VALUES ($1, $2, 'QA-WC', 'QA-WC-1', $3, TRUE, 8, NOW(), NOW())",
+    )
+    .bind(wc_a)
+    .bind(tenant_id)
+    .bind(site_a)
+    .execute(&pool)
+    .await
+    .expect("work center insert");
+    let email = format!("qscope-{}@local", tenant_id.as_simple());
+    sqlx::query(
+        "INSERT INTO users (id, tenant_id, email, name, password_hash, roles) \
+         VALUES ($1, $2, $3, 'Q', 'x', ARRAY['user'])",
+    )
+    .bind(user_id)
+    .bind(tenant_id)
+    .bind(&email)
+    .execute(&pool)
+    .await
+    .expect("user insert");
+
+    // Server-side resolution proof: the stamping values are derived from
+    // the work order's work_center_id -> work_centers.site_id IN THE
+    // DATABASE, then stamped onto the quality rows.
+    sqlx::query(
+        "INSERT INTO work_orders (id, tenant_id, wo_number, product_id, quantity, \
+         work_center_id, created_at, updated_at) \
+         VALUES ($1, $2, 'WO-QSCOPE', $1, 10, $3, NOW(), NOW())",
+    )
+    .bind(wo_a)
+    .bind(tenant_id)
+    .bind(wc_a)
+    .execute(&pool)
+    .await
+    .expect("work order insert");
+    let (resolved_site, resolved_wc): (uuid::Uuid, uuid::Uuid) = sqlx::query_as(
+        "SELECT wc.site_id, wo.work_center_id FROM work_orders wo \
+         JOIN work_centers wc ON wc.id = wo.work_center_id \
+         WHERE wo.id = $1 AND wo.tenant_id = $2",
+    )
+    .bind(wo_a)
+    .bind(tenant_id)
+    .fetch_one(&pool)
+    .await
+    .expect("work order -> site resolution");
+    assert_eq!(resolved_site, site_a, "the WO's work center is on site A");
+    assert_eq!(resolved_wc, wc_a);
+
+    // A site-A-stamped NCR (raised from the work order) and a CORPORATE
+    // NCR (both scope columns NULL — the honest tenant-level encoding).
+    sqlx::query(
+        "INSERT INTO ncr_reports (id, tenant_id, ncr_number, title, description, \
+         severity, status, reported_by, scope_site_id, scope_work_center_id, \
+         created_at, updated_at) \
+         VALUES ($1, $2, 'NCR-QSCOPE-A', 'Site A defect', 'd', 'major', 'open', $3, \
+                 $4, $5, NOW(), NOW()), \
+                ($6, $2, 'NCR-QSCOPE-C', 'Corporate finding', 'd', 'major', 'open', $3, \
+                 NULL, NULL, NOW(), NOW())",
+    )
+    .bind(uuid::Uuid::new_v4())
+    .bind(tenant_id)
+    .bind(user_id)
+    .bind(site_a)
+    .bind(wc_a)
+    .bind(uuid::Uuid::new_v4())
+    .execute(&pool)
+    .await
+    .expect("stamped + corporate NCR inserts");
+
+    // Site-scoped caller (authorized sites = {site_a}): ONLY the stamped
+    // row matches — the corporate row's NULL never equals ANY($1).
+    let site_visible: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM ncr_reports \
+         WHERE tenant_id = $1 AND scope_site_id = ANY($2::uuid[])",
+    )
+    .bind(tenant_id)
+    .bind(vec![site_a])
+    .fetch_one(&pool)
+    .await
+    .expect("site-scoped count");
+    assert_eq!(site_visible, 1, "site A sees exactly its stamped NCR");
+
+    // A foreign site's caller sees zero rows.
+    let foreign_visible: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM ncr_reports \
+         WHERE tenant_id = $1 AND scope_site_id = ANY($2::uuid[])",
+    )
+    .bind(tenant_id)
+    .bind(vec![site_b])
+    .fetch_one(&pool)
+    .await
+    .expect("foreign-site count");
+    assert_eq!(foreign_visible, 0, "site B sees nothing");
+
+    // NoOperationalScope (empty set) sees zero rows.
+    let none_visible: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM ncr_reports \
+         WHERE tenant_id = $1 AND scope_site_id = ANY($2::uuid[])",
+    )
+    .bind(tenant_id)
+    .bind(Vec::<uuid::Uuid>::new())
+    .fetch_one(&pool)
+    .await
+    .expect("no-scope count");
+    assert_eq!(none_visible, 0, "no operational scope → no rows");
+
+    // The tenant-wide grant (no predicate) sees every record, corporate
+    // rows included.
+    let tenant_visible: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM ncr_reports WHERE tenant_id = $1")
+            .bind(tenant_id)
+            .fetch_one(&pool)
+            .await
+            .expect("tenant-wide count");
+    assert_eq!(tenant_visible, 2, "tenant-wide sees stamped + corporate");
+
+    // Same predicate holds for capas (migration 170 covered table).
+    sqlx::query(
+        "INSERT INTO capas (id, tenant_id, capa_number, title, action_plan, status, \
+         owner_id, scope_site_id, scope_work_center_id, created_at, updated_at) \
+         VALUES ($1, $2, 'CAPA-QSCOPE', 'Fix', 'plan', 'open', $3, $4, $5, NOW(), NOW())",
+    )
+    .bind(uuid::Uuid::new_v4())
+    .bind(tenant_id)
+    .bind(user_id)
+    .bind(site_a)
+    .bind(wc_a)
+    .execute(&pool)
+    .await
+    .expect("stamped CAPA insert");
+    let capa_visible: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM capas \
+         WHERE tenant_id = $1 AND scope_site_id = ANY($2::uuid[])",
+    )
+    .bind(tenant_id)
+    .bind(vec![site_a])
+    .fetch_one(&pool)
+    .await
+    .expect("capa site-scoped count");
+    assert_eq!(capa_visible, 1);
+
+    // A DB-resolved RequestContext for the fixture user (a real ACTIVE
+    // role-slot assignment to site A) resolves to exactly that site —
+    // proving the route-level builder + the SQL predicate agree.
+    let slot_id = uuid::Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO role_slots (id, tenant_id, role_name, slot_name, scope_site_id) \
+         VALUES ($1, $2, 'quality_engineer', 'QE_A', $3)",
+    )
+    .bind(slot_id)
+    .bind(tenant_id)
+    .bind(site_a)
+    .execute(&pool)
+    .await
+    .expect("role slot insert");
+    sqlx::query(
+        "INSERT INTO principal_assignments (id, tenant_id, principal_id, slot_id, \
+         assigned_at, ended_at) \
+         VALUES ($1, $2, $3, $4, NOW(), NULL)",
+    )
+    .bind(uuid::Uuid::new_v4())
+    .bind(tenant_id)
+    .bind(user_id)
+    .bind(slot_id)
+    .execute(&pool)
+    .await
+    .expect("principal assignment insert");
+    let rc = sensei_core::domain::request_context::RequestContext::build(
+        &pool,
+        tenant_id,
+        user_id,
+        None,
+        None,
+        None,
+        None,
+        String::new(),
+    )
+    .await
+    .expect("RequestContext::build with the fixture user must resolve");
+    assert_eq!(
+        rc.authorized_sites(),
+        vec![site_a],
+        "the fixture user's DB-resolved scope is exactly site A"
+    );
+}
+
+/// Twenty-ninth audit Wave B item 7: production work-order statements
+/// embed the caller's SQL scope predicate. Tenant-wide sees every order;
+/// a site-scoped caller sees ONLY orders whose work-center carrier row
+/// sits in an authorized site (orders with no work center are invisible
+/// to scoped callers — fail closed); a work-center-scoped caller sees
+/// exactly that one work center's orders; a no-scope caller matches zero
+/// rows. The client work-center list filter only NARROWS.
+#[tokio::test]
+async fn production_work_orders_are_sql_scoped_to_the_caller_scope() {
+    let _serial = DB_LOCK.lock().await;
+    let Some(pool) = connect().await else { return };
+    sqlx::query(
+        r#"DO $$ DECLARE r RECORD; BEGIN
+             FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname = 'public') LOOP
+                 EXECUTE format('DROP TABLE IF EXISTS %I CASCADE', r.tablename);
+             END LOOP;
+         END $$"#,
+    )
+    .execute(&pool)
+    .await
+    .expect("drop all tables");
+    sensei_db::migrations::run_migrations(&pool)
+        .await
+        .expect("the ENTIRE migration chain must apply to an empty database");
+
+    let tenant_id = uuid::Uuid::new_v4();
+    let site_a = uuid::Uuid::new_v4();
+    let site_b = uuid::Uuid::new_v4();
+    let wc_a = uuid::Uuid::new_v4();
+    let wc_b = uuid::Uuid::new_v4();
+    let product_id = uuid::Uuid::new_v4();
+    sqlx::query("INSERT INTO tenants (id, name, slug) VALUES ($1, 'scopeprod', 'scopeprod')")
+        .bind(tenant_id)
+        .execute(&pool)
+        .await
+        .expect("tenant insert");
+    sqlx::query(
+        "INSERT INTO sites (id, tenant_id, site_code, name) VALUES \
+         ($1, $2, 'SA', 'Site A'), ($3, $2, 'SB', 'Site B')",
+    )
+    .bind(site_a)
+    .bind(tenant_id)
+    .bind(site_b)
+    .execute(&pool)
+    .await
+    .expect("sites insert");
+    for (wc, site, num) in [(wc_a, site_a, "WC-A"), (wc_b, site_b, "WC-B")] {
+        sqlx::query(
+            "INSERT INTO work_centers \
+             (id, tenant_id, work_center_number, name, is_active, capacity_per_shift, \
+              site_id, created_at, updated_at) \
+             VALUES ($1, $2, $3, $3, TRUE, 8, $4, NOW(), NOW())",
+        )
+        .bind(wc)
+        .bind(tenant_id)
+        .bind(num)
+        .bind(site)
+        .execute(&pool)
+        .await
+        .expect("work center insert");
+    }
+    sqlx::query(
+        "INSERT INTO products (id, tenant_id, product_number, name, unit_of_measure) \
+         VALUES ($1, $2, 'P-SCOPE', 'Scope Product', 'pcs')",
+    )
+    .bind(product_id)
+    .bind(tenant_id)
+    .execute(&pool)
+    .await
+    .expect("product insert");
+
+    use sensei_services::production::ProductionService;
+    let service = sensei_services::production::DatabaseProductionService::new(pool.clone());
+    let tenant_wide = tenant_ctx(tenant_id);
+    let make_wo = |wc: uuid::Uuid, number: &str| sensei_services::production::WorkOrder {
+        id: uuid::Uuid::new_v4(),
+        tenant_id,
+        wo_number: number.to_string(),
+        product_id,
+        product_name: "Scope Product".to_string(),
+        quantity: 10,
+        quantity_completed: 0,
+        status: "created".to_string(),
+        work_center_id: Some(wc),
+        priority: "normal".to_string(),
+        scheduled_start: None,
+        scheduled_end: None,
+        actual_start: None,
+        actual_end: None,
+        quantity_scrapped: 0,
+        short_close_qty: 0,
+        short_close_reason: None,
+        short_close_approved_by: None,
+        short_close_at: None,
+        assigned_to: Vec::new(),
+        notes: String::new(),
+        created_at: chrono::Utc::now(),
+        updated_at: chrono::Utc::now(),
+        source_sales_order_id: None,
+        standard_work_id: None,
+        product_revision_id: None,
+        bom_revision_id: None,
+        routing_revision_id: None,
+        control_plan_revision_id: None,
+        ctq_characteristic_set: Vec::new(),
+        tooling_revision: None,
+        source_sales_order_line_id: None,
+        customer_requirement_revision: None,
+    };
+    let wo_a = service
+        .create_work_order(&tenant_wide, make_wo(wc_a, "WO-SCOPE-A"))
+        .await
+        .expect("create WO on site A");
+    let wo_b = service
+        .create_work_order(&tenant_wide, make_wo(wc_b, "WO-SCOPE-B"))
+        .await
+        .expect("create WO on site B");
+
+    // A context helper scoped exactly like the server-built one.
+    let scoped_ctx = |scope: sensei_core::domain::scope::AuthorizedScope| {
+        use sensei_core::domain::request_context::{OperationalFocus, RequestContext};
+        RequestContext {
+            tenant: tenant_id,
+            principal: uuid::Uuid::new_v4(),
+            scope,
+            focus: OperationalFocus {
+                site: None,
+                value_stream: None,
+                work_center: None,
+                shift: None,
+            },
+            locale: None,
+            timezone: None,
+            currency: None,
+            country_policy_revision: None,
+            trace_id: String::new(),
+        }
+    };
+
+    // ── Tenant-wide: both orders are reachable ──
+    let list = service
+        .list_work_orders(
+            &tenant_wide,
+            &sensei_services::production::WorkOrderListFilter::default(),
+        )
+        .await
+        .expect("tenant-wide list");
+    assert_eq!(list.total, 2);
+
+    // ── Sites([site_a]): only site A's order is visible ──
+    let site_a_ctx = scoped_ctx(sensei_core::domain::scope::AuthorizedScope::Sites(vec![
+        site_a,
+    ]));
+    let got = service.get_work_order(&site_a_ctx, wo_a.id).await;
+    assert!(got.is_ok(), "site-A caller reads site-A order");
+    assert!(
+        service.get_work_order(&site_a_ctx, wo_b.id).await.is_err(),
+        "site-A caller cannot read site-B order (out of scope = NotFound)"
+    );
+    let list = service
+        .list_work_orders(
+            &site_a_ctx,
+            &sensei_services::production::WorkOrderListFilter::default(),
+        )
+        .await
+        .expect("site-A list");
+    assert_eq!(list.total, 1);
+    assert_eq!(list.data[0].id, wo_a.id);
+    // The client work-center filter only NARROWS the scoped list.
+    let narrow = service
+        .list_work_orders(
+            &site_a_ctx,
+            &sensei_services::production::WorkOrderListFilter {
+                status: None,
+                work_center_id: Some(wc_b),
+                page: None,
+                per_page: None,
+            },
+        )
+        .await
+        .expect("narrowed list");
+    assert_eq!(
+        narrow.total, 0,
+        "a site-A caller never widens to site B's WC"
+    );
+
+    // ── Sites([site_b]): site A's order is NotFound ──
+    let site_b_ctx = scoped_ctx(sensei_core::domain::scope::AuthorizedScope::Sites(vec![
+        site_b,
+    ]));
+    assert!(
+        service.get_work_order(&site_b_ctx, wo_a.id).await.is_err(),
+        "site-B caller cannot read site-A order"
+    );
+
+    // ── WorkCenter { site_a, wc_a }: exactly that order, and scoped
+    //    edits (update / status) only ever touch it ──
+    let wc_ctx = scoped_ctx(sensei_core::domain::scope::AuthorizedScope::WorkCenter(
+        sensei_core::domain::scope::WorkCenterScope {
+            site: site_a,
+            work_center: wc_a,
+        },
+    ));
+    assert!(service.get_work_order(&wc_ctx, wo_a.id).await.is_ok());
+    assert!(
+        service.get_work_order(&wc_ctx, wo_b.id).await.is_err(),
+        "work-center-scoped caller cannot read another work center's order"
+    );
+    let list = service
+        .list_work_orders(
+            &wc_ctx,
+            &sensei_services::production::WorkOrderListFilter::default(),
+        )
+        .await
+        .expect("wc list");
+    assert_eq!(list.total, 1);
+    let mut edited = wo_a.clone();
+    edited.priority = "high".to_string();
+    let edited = service
+        .update_work_order(&wc_ctx, wo_a.id, edited)
+        .await
+        .expect("scoped edit succeeds");
+    assert_eq!(edited.priority, "high");
+    // A scoped status transition is rejected for a foreign order.
+    let foreign_wc_ctx = scoped_ctx(sensei_core::domain::scope::AuthorizedScope::WorkCenter(
+        sensei_core::domain::scope::WorkCenterScope {
+            site: site_b,
+            work_center: wc_b,
+        },
+    ));
+    assert!(
+        service
+            .update_work_order_status(&foreign_wc_ctx, wo_a.id, "cancelled")
+            .await
+            .is_err(),
+        "a status update on another work center's order must match zero rows"
+    );
+
+    // ── NoOperationalScope: impossible predicate — zero rows ──
+    let none_ctx = scoped_ctx(sensei_core::domain::scope::AuthorizedScope::NoOperationalScope);
+    assert!(
+        service.get_work_order(&none_ctx, wo_a.id).await.is_err(),
+        "no entitlement = NotFound on get"
+    );
+    let list = service
+        .list_work_orders(
+            &none_ctx,
+            &sensei_services::production::WorkOrderListFilter::default(),
+        )
+        .await
+        .expect("no-scope list");
+    assert_eq!(list.total, 0, "no entitlement = zero rows on list");
 }

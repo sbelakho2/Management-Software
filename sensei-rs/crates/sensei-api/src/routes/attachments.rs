@@ -15,6 +15,13 @@
 //! * **Reference validation** — the referenced `(entity_type, entity_id)`
 //!   must exist **and** belong to the caller's tenant. Only entity types
 //!   backed by an entity store are accepted; unknown types fail closed.
+//! * **Parent authorization (twenty-ninth-audit Wave B item 11)** —
+//!   attachments INHERIT their parent's authorization: list/download
+//!   require `attachments:read` AND [`require_parent_read`] on the
+//!   parent, upload/delete require `attachments:manage` AND
+//!   [`require_parent_manage`] — the parent check runs BEFORE any listing,
+//!   presigning or blob deletion, so a known attachment UUID never
+//!   bypasses the parent's permission/site scope.
 //! * **Server-side content types** — the browser-provided MIME type is
 //!   ignored; the content type is derived from a small extension allowlist
 //!   (pdf, png, jpeg, txt, csv, xlsx, docx, md). Unknown extensions are
@@ -37,6 +44,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
+use crate::authorization::parent_resource::{require_parent_manage, require_parent_read};
 use crate::db_stores::EntityStore;
 use crate::state::AppState;
 use crate::stores::Attachment;
@@ -310,6 +318,23 @@ fn entity_checker(state: &AppState, entity_type: &str) -> Option<Box<dyn EntityR
     })
 }
 
+/// Whether an entity with `id` exists and belongs to `tenant_id`.
+///
+/// Shared with the parent-authorization module (`authorization/
+/// parent_resource.rs`): entity-store-backed parents are proven here so
+/// the existence semantics are identical to the upload validation.
+pub(crate) async fn entity_exists(
+    state: &AppState,
+    entity_type: &str,
+    entity_id: Uuid,
+    tenant_id: Uuid,
+) -> bool {
+    match entity_checker(state, entity_type) {
+        Some(checker) => checker.exists(entity_id, tenant_id).await,
+        None => false,
+    }
+}
+
 /// Validate that `(entity_type, entity_id)` exists and belongs to the
 /// caller's tenant. Unknown entity types fail closed with a clear message.
 async fn validate_entity_reference(
@@ -424,6 +449,12 @@ async fn upload_inner(
     // file at this point). Unknown entity types fail closed.
     validate_entity_reference(state, &entity_type, entity_id, user.tenant_id).await?;
 
+    // Twenty-ninth-audit Wave B item 11: attachments inherit their
+    // PARENT's authorization — uploads additionally require the parent's
+    // canonical manage permission (site-scoped in DB deployments) before
+    // any byte is stored.
+    require_parent_manage(state, &user, &entity_type, entity_id).await?;
+
     // Server-side content type from the extension allowlist — the browser
     // MIME type is never trusted.
     let file_name = sanitize_file_name(&file_name);
@@ -534,6 +565,11 @@ async fn stream_file_field(
 }
 
 /// List attachments for a given entity type and ID.
+///
+/// The caller must hold `attachments:read` AND be able to read the
+/// parent entity (`require_parent_read`) — the check runs BEFORE any
+/// attachment row is listed, so enumerating a parent the caller may not
+/// read (or that does not exist) yields no metadata at all.
 pub async fn list_attachments(
     user: AuthenticatedUser,
     State(state): State<AppState>,
@@ -541,6 +577,7 @@ pub async fn list_attachments(
     Query(params): Query<ListAttachmentsParams>,
 ) -> Result<Json<PaginatedResponse<Attachment>>> {
     user.require_permission("attachments:read")?;
+    require_parent_read(&state, &user, &entity_type, entity_id).await?;
     let attachments = state
         .attachment_repo
         .list(user.tenant_id, &entity_type, entity_id)
@@ -556,8 +593,12 @@ pub async fn list_attachments(
 /// Download an attachment by ID.
 ///
 /// Authenticates the user, resolves the metadata under the user's tenant,
-/// retrieves the bytes from the shared storage backend and streams them with
-/// a server-authoritative content type and a safe `Content-Disposition`.
+/// then — twenty-ninth-audit Wave B item 11 — requires READ access to the
+/// attachment's PARENT entity (`require_parent_read`) BEFORE any
+/// presigning or buffered retrieval: a known attachment UUID never
+/// bypasses the parent's authorization. The bytes are then retrieved from
+/// the shared storage backend and streamed with a server-authoritative
+/// content type and a safe `Content-Disposition`.
 pub async fn download_attachment(
     user: AuthenticatedUser,
     State(state): State<AppState>,
@@ -575,6 +616,11 @@ pub async fn download_attachment(
             SenseiError::Internal("Failed to read attachment".to_string())
         })?
         .ok_or_else(|| SenseiError::NotFound(format!("Attachment {id} not found")))?;
+
+    // Parent authorization FIRST: without it no presigned URL is issued
+    // and no byte is retrieved (metadata has already revealed only the
+    // row the tenant owns; a denied/unknown parent stops the download).
+    require_parent_read(&state, &user, &attachment.entity_type, attachment.entity_id).await?;
 
     // Prefer a short-lived signed download (true streaming at the storage
     // backend); fall back to buffered retrieval when unsupported.
@@ -625,7 +671,10 @@ pub async fn download_attachment(
 
 /// Delete an attachment by ID.
 ///
-/// Removes the file from the storage backend and deletes the metadata entry.
+/// Removes the file from the storage backend and deletes the metadata
+/// entry. The caller must hold `attachments:manage` AND be able to
+/// MANAGE the attachment's parent entity (`require_parent_manage`) — a
+/// known attachment UUID never bypasses the parent's authorization.
 pub async fn delete_attachment(
     user: AuthenticatedUser,
     State(state): State<AppState>,
@@ -642,6 +691,10 @@ pub async fn delete_attachment(
             SenseiError::Internal("Failed to read attachment".to_string())
         })?
         .ok_or_else(|| SenseiError::NotFound(format!("Attachment {id} not found")))?;
+
+    // Parent manage authorization BEFORE the blob is deleted: an
+    // attachment whose parent the caller may not manage survives.
+    require_parent_manage(&state, &user, &attachment.entity_type, attachment.entity_id).await?;
 
     // Delete the file from the storage backend (storage_path is the opaque key).
     state

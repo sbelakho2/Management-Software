@@ -9,6 +9,18 @@
 //! The production service layer abstracts manufacturing operations behind a
 //! trait, enabling the system to swap in real database-backed implementations
 //! while keeping the in-memory implementation for unit tests and demos.
+//!
+//! # Request contexts (twenty-ninth audit Wave B item 7)
+//!
+//! Every operational method takes the server-created
+//! [`RequestContext`](sensei_core::domain::request_context::RequestContext)
+//! instead of a naked `tenant_id`: `ctx.tenant` is the tenant and `ctx.scope`
+//! is the caller's DB-resolved authorization boundary. The database
+//! implementation embeds the scope as a SQL predicate (see
+//! [`crate::authz_sql::DbScopeFilter`]) in the SAME statement that reads or
+//! mutates the row; a client-supplied work-center filter on
+//! [`WorkOrderListFilter`] is always ANDed (a narrowing filter, never a
+//! widening one).
 
 mod database;
 pub use database::DatabaseProductionService;
@@ -19,6 +31,8 @@ use sensei_core::domain::events::{
     DomainEvent, DowntimeRecordedEvent, MRPRunCompleted, ProductionOrderCompletedEvent,
     ProductionOrderStartedEvent, WorkOrderCreatedEvent, WorkOrderStatusChangedEvent,
 };
+use sensei_core::domain::request_context::RequestContext;
+use sensei_core::domain::scope::AuthorizedScope;
 use sensei_core::error::{Result, SenseiError};
 use sensei_core::pagination::PaginatedResponse;
 use sensei_event_bus::bus::EventBus;
@@ -202,28 +216,55 @@ pub struct RoutingStep {
 // Trait
 // ---------------------------------------------------------------------------
 
+/// Client-supplied narrowing filter for [`ProductionService::list_work_orders`].
+///
+/// `status`, `work_center_id` and the pagination window are the caller's
+/// LIST filters — they intersect with the caller's authorized scope and can
+/// never widen it (the work-center filter is ANDed with the scope predicate,
+/// never ORed).
+#[derive(Debug, Clone, Default)]
+pub struct WorkOrderListFilter {
+    pub status: Option<String>,
+    /// NARROWING filter only: the scope of [`RequestContext`] decides what
+    /// the caller may see; this filter only restricts it further.
+    pub work_center_id: Option<Uuid>,
+    pub page: Option<usize>,
+    pub per_page: Option<usize>,
+}
+
+impl WorkOrderListFilter {
+    pub fn new() -> Self {
+        Self::default()
+    }
+}
+
 /// Production service trait covering work orders, production orders,
 /// bill of materials, and material requirements planning.
+///
+/// Twenty-ninth audit Wave B item 7: EVERY operational method takes the
+/// server-created [`RequestContext`] — never a naked `tenant_id`. The
+/// tenant is `ctx.tenant`; the caller's authorization boundary is
+/// `ctx.scope`, which database-backed implementations enforce as a SQL
+/// predicate in the same statement as the operation.
 #[async_trait]
 pub trait ProductionService: Send + Sync {
     // ── Work Orders ─────────────────────────────────────────────────────
-    /// Create a new work order.
-    async fn create_work_order(&self, tenant_id: Uuid, wo: WorkOrder) -> Result<WorkOrder>;
-    /// Get a work order by ID.
-    async fn get_work_order(&self, tenant_id: Uuid, id: Uuid) -> Result<WorkOrder>;
-    /// List work orders with optional status and work center filters, with pagination.
+    /// Create a new work order in the caller's tenant.
+    async fn create_work_order(&self, ctx: &RequestContext, wo: WorkOrder) -> Result<WorkOrder>;
+    /// Get a work order by ID — a row outside the caller's scope (or a
+    /// nonexistent id) is indistinguishable: both NotFound.
+    async fn get_work_order(&self, ctx: &RequestContext, id: Uuid) -> Result<WorkOrder>;
+    /// List work orders: the caller's scope is always enforced; the
+    /// client's status / work-center filters are NARROWING only.
     async fn list_work_orders(
         &self,
-        tenant_id: Uuid,
-        status: Option<&str>,
-        work_center_id: Option<Uuid>,
-        page: Option<usize>,
-        per_page: Option<usize>,
+        ctx: &RequestContext,
+        filter: &WorkOrderListFilter,
     ) -> Result<PaginatedResponse<WorkOrder>>;
     /// Update the status of a work order.
     async fn update_work_order_status(
         &self,
-        tenant_id: Uuid,
+        ctx: &RequestContext,
         id: Uuid,
         status: &str,
     ) -> Result<WorkOrder>;
@@ -234,14 +275,14 @@ pub trait ProductionService: Send + Sync {
     /// supplied value.
     async fn update_work_order(
         &self,
-        tenant_id: Uuid,
+        ctx: &RequestContext,
         id: Uuid,
         wo: WorkOrder,
     ) -> Result<WorkOrder>;
     /// Report production completion for a work order.
     async fn report_production(
         &self,
-        tenant_id: Uuid,
+        ctx: &RequestContext,
         work_order_id: Uuid,
         quantity_completed: i64,
         quantity_scrapped: i64,
@@ -250,7 +291,7 @@ pub trait ProductionService: Send + Sync {
     /// List operations / routing steps for a work order.
     async fn list_work_order_operations(
         &self,
-        tenant_id: Uuid,
+        ctx: &RequestContext,
         work_order_id: Uuid,
     ) -> Result<Vec<WorkOrderOperation>>;
 
@@ -258,15 +299,16 @@ pub trait ProductionService: Send + Sync {
     /// Create a new production order.
     async fn create_production_order(
         &self,
-        tenant_id: Uuid,
+        ctx: &RequestContext,
         order: ProductionOrder,
     ) -> Result<ProductionOrder>;
     /// Get a production order by ID.
-    async fn get_production_order(&self, tenant_id: Uuid, id: Uuid) -> Result<ProductionOrder>;
+    async fn get_production_order(&self, ctx: &RequestContext, id: Uuid)
+        -> Result<ProductionOrder>;
     /// List production orders with optional status filter, with pagination.
     async fn list_production_orders(
         &self,
-        tenant_id: Uuid,
+        ctx: &RequestContext,
         status: Option<&str>,
         page: Option<usize>,
         per_page: Option<usize>,
@@ -274,7 +316,7 @@ pub trait ProductionService: Send + Sync {
     /// Complete a production order.
     async fn complete_production_order(
         &self,
-        tenant_id: Uuid,
+        ctx: &RequestContext,
         id: Uuid,
         short_close_qty: i64,
         short_close_reason: Option<&str>,
@@ -283,13 +325,13 @@ pub trait ProductionService: Send + Sync {
 
     // ── BOM ─────────────────────────────────────────────────────────────
     /// Add a BOM item.
-    async fn add_bom_item(&self, tenant_id: Uuid, item: BOMItem) -> Result<BOMItem>;
+    async fn add_bom_item(&self, ctx: &RequestContext, item: BOMItem) -> Result<BOMItem>;
     /// Get the entire BOM for a product (list of components).
-    async fn get_bom(&self, tenant_id: Uuid, product_id: Uuid) -> Result<Vec<BOMItem>>;
+    async fn get_bom(&self, ctx: &RequestContext, product_id: Uuid) -> Result<Vec<BOMItem>>;
 
     // ── MRP ─────────────────────────────────────────────────────────────
     /// Run MRP for a product and return the planning records.
-    async fn run_mrp(&self, tenant_id: Uuid, product_id: Uuid) -> Result<Vec<MRPRecord>>;
+    async fn run_mrp(&self, ctx: &RequestContext, product_id: Uuid) -> Result<Vec<MRPRecord>>;
 }
 
 // ---------------------------------------------------------------------------
@@ -356,6 +398,31 @@ impl InMemoryProductionService {
         }
     }
 
+    /// Is this work order inside the caller's request context? The tenant
+    /// is always enforced; the exact work-center scope is enforced on the
+    /// row's work-center identity. The in-memory rows carry no site
+    /// dimension (there is no site table), so a site-set scope cannot be
+    /// violated — and an empty/no entitlement denies everything.
+    fn wo_in_scope(ctx: &RequestContext, wo: &WorkOrder) -> bool {
+        if wo.tenant_id != ctx.tenant {
+            return false;
+        }
+        match &ctx.scope {
+            AuthorizedScope::NoOperationalScope => false,
+            AuthorizedScope::TenantWide => true,
+            // No site data exists in-memory to contradict the scope.
+            AuthorizedScope::Sites(_) => true,
+            AuthorizedScope::WorkCenter(wc) => wo.work_center_id == Some(wc.work_center),
+        }
+    }
+
+    /// The context's tenant-side entitlement gate for the tenant-level
+    /// commands (production orders / BOM / MRP): no entitlement → no
+    /// command.
+    fn tenant_entitled(ctx: &RequestContext) -> bool {
+        !matches!(ctx.scope, AuthorizedScope::NoOperationalScope)
+    }
+
     fn generate_wo_number(counter: u64) -> String {
         format!("WO-{}-{:04}", Utc::now().format("%Y%m%d"), counter)
     }
@@ -410,7 +477,17 @@ impl Default for InMemoryProductionService {
 impl ProductionService for InMemoryProductionService {
     // ── Work Orders ─────────────────────────────────────────────────────
 
-    async fn create_work_order(&self, tenant_id: Uuid, mut wo: WorkOrder) -> Result<WorkOrder> {
+    async fn create_work_order(
+        &self,
+        ctx: &RequestContext,
+        mut wo: WorkOrder,
+    ) -> Result<WorkOrder> {
+        if !Self::tenant_entitled(ctx) {
+            return Err(SenseiError::Forbidden(
+                "principal has no operational scope — cannot create a work order".to_string(),
+            ));
+        }
+        let tenant_id = ctx.tenant;
         let mut counter = self.wo_counter.write().await;
         *counter += 1;
         let wo_number = Self::generate_wo_number(*counter);
@@ -444,44 +521,49 @@ impl ProductionService for InMemoryProductionService {
         Ok(wo)
     }
 
-    async fn get_work_order(&self, _tenant_id: Uuid, id: Uuid) -> Result<WorkOrder> {
+    async fn get_work_order(&self, ctx: &RequestContext, id: Uuid) -> Result<WorkOrder> {
         let store = self.work_orders.read().await;
-        store
+        let wo = store
             .get(&id)
-            .cloned()
-            .ok_or_else(|| SenseiError::NotFound(format!("Work order {id} not found")))
+            .ok_or_else(|| SenseiError::NotFound(format!("Work order {id} not found")))?;
+        if !Self::wo_in_scope(ctx, wo) {
+            // Out-of-scope and nonexistent are indistinguishable (the DB
+            // impl matches zero rows for both).
+            return Err(SenseiError::NotFound(format!("Work order {id} not found")));
+        }
+        Ok(wo.clone())
     }
 
     async fn list_work_orders(
         &self,
-        tenant_id: Uuid,
-        status: Option<&str>,
-        work_center_id: Option<Uuid>,
-        page: Option<usize>,
-        per_page: Option<usize>,
+        ctx: &RequestContext,
+        filter: &WorkOrderListFilter,
     ) -> Result<PaginatedResponse<WorkOrder>> {
         let store = self.work_orders.read().await;
         let items: Vec<_> = store
             .values()
             .filter(|wo| {
-                wo.tenant_id == tenant_id
-                    && status.is_none_or(|s| wo.status == s)
-                    && work_center_id.is_none_or(|wc| wo.work_center_id == Some(wc))
+                Self::wo_in_scope(ctx, wo)
+                    && filter.status.as_deref().is_none_or(|s| wo.status == s)
+                    && filter
+                        .work_center_id
+                        .is_none_or(|wc| wo.work_center_id == Some(wc))
             })
             .cloned()
             .collect();
-        Ok(PaginatedResponse::new(items, page, per_page))
+        Ok(PaginatedResponse::new(items, filter.page, filter.per_page))
     }
 
     async fn update_work_order_status(
         &self,
-        tenant_id: Uuid,
+        ctx: &RequestContext,
         id: Uuid,
         status: &str,
     ) -> Result<WorkOrder> {
         let mut store = self.work_orders.write().await;
         let wo = store
             .get_mut(&id)
+            .filter(|wo| Self::wo_in_scope(ctx, wo))
             .ok_or_else(|| SenseiError::NotFound(format!("Work order {id} not found")))?;
 
         let now = Utc::now();
@@ -503,7 +585,7 @@ impl ProductionService for InMemoryProductionService {
         drop(store);
 
         self.publish_event(WorkOrderStatusChangedEvent::new(
-            tenant_id,
+            ctx.tenant,
             id,
             wo_cloned.wo_number.clone(),
             old_status,
@@ -517,14 +599,14 @@ impl ProductionService for InMemoryProductionService {
 
     async fn update_work_order(
         &self,
-        tenant_id: Uuid,
+        ctx: &RequestContext,
         id: Uuid,
         mut wo: WorkOrder,
     ) -> Result<WorkOrder> {
         let mut store = self.work_orders.write().await;
         let existing = store
             .get(&id)
-            .filter(|w| w.tenant_id == tenant_id)
+            .filter(|w| Self::wo_in_scope(ctx, w))
             .cloned()
             .ok_or_else(|| SenseiError::NotFound(format!("Work order {id} not found")))?;
 
@@ -543,7 +625,7 @@ impl ProductionService for InMemoryProductionService {
         drop(store);
 
         self.publish_event(WorkOrderStatusChangedEvent::new(
-            tenant_id,
+            ctx.tenant,
             id,
             wo.wo_number.clone(),
             existing.status,
@@ -557,16 +639,19 @@ impl ProductionService for InMemoryProductionService {
 
     async fn report_production(
         &self,
-        tenant_id: Uuid,
+        ctx: &RequestContext,
         work_order_id: Uuid,
         quantity_completed: i64,
         quantity_scrapped: i64,
         _actor_id: Uuid,
     ) -> Result<WorkOrder> {
         let mut store = self.work_orders.write().await;
-        let wo = store.get_mut(&work_order_id).ok_or_else(|| {
-            SenseiError::NotFound(format!("Work order {work_order_id} not found"))
-        })?;
+        let wo = store
+            .get_mut(&work_order_id)
+            .filter(|wo| Self::wo_in_scope(ctx, wo))
+            .ok_or_else(|| {
+                SenseiError::NotFound(format!("Work order {work_order_id} not found"))
+            })?;
 
         wo.quantity_completed += quantity_completed;
         wo.updated_at = Utc::now();
@@ -582,7 +667,7 @@ impl ProductionService for InMemoryProductionService {
 
         if quantity_scrapped > 0 {
             self.publish_event(DowntimeRecordedEvent::new(
-                tenant_id,
+                ctx.tenant,
                 wo_cloned.work_center_id.unwrap_or(Uuid::default()),
                 quantity_scrapped as f64,
                 "production_scrap".to_string(),
@@ -599,15 +684,20 @@ impl ProductionService for InMemoryProductionService {
 
     async fn list_work_order_operations(
         &self,
-        _tenant_id: Uuid,
+        ctx: &RequestContext,
         work_order_id: Uuid,
     ) -> Result<Vec<WorkOrderOperation>> {
-        // First verify the work order exists
+        // First verify the work order exists and is in scope
         {
             let wo_store = self.work_orders.read().await;
-            wo_store.get(&work_order_id).ok_or_else(|| {
-                SenseiError::NotFound(format!("Work order {work_order_id} not found"))
-            })?;
+            match wo_store.get(&work_order_id) {
+                Some(wo) if Self::wo_in_scope(ctx, wo) => {}
+                _ => {
+                    return Err(SenseiError::NotFound(format!(
+                        "Work order {work_order_id} not found"
+                    )))
+                }
+            }
         }
 
         let ops_store = self.wo_operations.read().await;
@@ -625,9 +715,15 @@ impl ProductionService for InMemoryProductionService {
 
     async fn create_production_order(
         &self,
-        tenant_id: Uuid,
+        ctx: &RequestContext,
         mut order: ProductionOrder,
     ) -> Result<ProductionOrder> {
+        if !Self::tenant_entitled(ctx) {
+            return Err(SenseiError::Forbidden(
+                "principal has no operational scope — cannot create a production order".to_string(),
+            ));
+        }
+        let tenant_id = ctx.tenant;
         let mut counter = self.po_counter.write().await;
         *counter += 1;
         let order_number = Self::generate_po_number(*counter);
@@ -662,17 +758,26 @@ impl ProductionService for InMemoryProductionService {
         Ok(order)
     }
 
-    async fn get_production_order(&self, _tenant_id: Uuid, id: Uuid) -> Result<ProductionOrder> {
+    async fn get_production_order(
+        &self,
+        ctx: &RequestContext,
+        id: Uuid,
+    ) -> Result<ProductionOrder> {
         let store = self.production_orders.read().await;
-        store
+        let po = store
             .get(&id)
+            .filter(|po| {
+                po.tenant_id == ctx.tenant
+                    && !matches!(ctx.scope, AuthorizedScope::NoOperationalScope)
+            })
             .cloned()
-            .ok_or_else(|| SenseiError::NotFound(format!("Production order {id} not found")))
+            .ok_or_else(|| SenseiError::NotFound(format!("Production order {id} not found")))?;
+        Ok(po)
     }
 
     async fn list_production_orders(
         &self,
-        tenant_id: Uuid,
+        ctx: &RequestContext,
         status: Option<&str>,
         page: Option<usize>,
         per_page: Option<usize>,
@@ -680,7 +785,11 @@ impl ProductionService for InMemoryProductionService {
         let store = self.production_orders.read().await;
         let items: Vec<_> = store
             .values()
-            .filter(|po| po.tenant_id == tenant_id && status.is_none_or(|s| po.status == s))
+            .filter(|po| {
+                po.tenant_id == ctx.tenant
+                    && !matches!(ctx.scope, AuthorizedScope::NoOperationalScope)
+                    && status.is_none_or(|s| po.status == s)
+            })
             .cloned()
             .collect();
         Ok(PaginatedResponse::new(items, page, per_page))
@@ -688,7 +797,7 @@ impl ProductionService for InMemoryProductionService {
 
     async fn complete_production_order(
         &self,
-        tenant_id: Uuid,
+        ctx: &RequestContext,
         id: Uuid,
         short_close_qty: i64,
         short_close_reason: Option<&str>,
@@ -697,6 +806,10 @@ impl ProductionService for InMemoryProductionService {
         let mut store = self.production_orders.write().await;
         let po = store
             .get_mut(&id)
+            .filter(|po| {
+                po.tenant_id == ctx.tenant
+                    && !matches!(ctx.scope, AuthorizedScope::NoOperationalScope)
+            })
             .ok_or_else(|| SenseiError::NotFound(format!("Production order {id} not found")))?;
 
         if po.status == "completed" {
@@ -741,7 +854,7 @@ impl ProductionService for InMemoryProductionService {
         drop(store);
 
         self.publish_event(ProductionOrderCompletedEvent::new(
-            tenant_id,
+            ctx.tenant,
             id,
             po_cloned.product_id,
             po_cloned.quantity_produced,
@@ -754,26 +867,40 @@ impl ProductionService for InMemoryProductionService {
 
     // ── BOM ─────────────────────────────────────────────────────────────
 
-    async fn add_bom_item(&self, tenant_id: Uuid, mut item: BOMItem) -> Result<BOMItem> {
+    async fn add_bom_item(&self, ctx: &RequestContext, mut item: BOMItem) -> Result<BOMItem> {
+        if !Self::tenant_entitled(ctx) {
+            return Err(SenseiError::Forbidden(
+                "principal has no operational scope — cannot add a BOM item".to_string(),
+            ));
+        }
         item.id = Uuid::new_v4();
-        item.tenant_id = tenant_id;
+        item.tenant_id = ctx.tenant;
         let id = item.id;
         self.bom_items.write().await.insert(id, item.clone());
         Ok(item)
     }
 
-    async fn get_bom(&self, _tenant_id: Uuid, product_id: Uuid) -> Result<Vec<BOMItem>> {
+    async fn get_bom(&self, ctx: &RequestContext, product_id: Uuid) -> Result<Vec<BOMItem>> {
         let store = self.bom_items.read().await;
         Ok(store
             .values()
-            .filter(|item| item.parent_product_id == product_id)
+            .filter(|item| {
+                item.tenant_id == ctx.tenant
+                    && !matches!(ctx.scope, AuthorizedScope::NoOperationalScope)
+                    && item.parent_product_id == product_id
+            })
             .cloned()
             .collect())
     }
 
     // ── MRP ─────────────────────────────────────────────────────────────
 
-    async fn run_mrp(&self, tenant_id: Uuid, product_id: Uuid) -> Result<Vec<MRPRecord>> {
+    async fn run_mrp(&self, ctx: &RequestContext, product_id: Uuid) -> Result<Vec<MRPRecord>> {
+        if !Self::tenant_entitled(ctx) {
+            return Err(SenseiError::Forbidden(
+                "principal has no operational scope — cannot run MRP".to_string(),
+            ));
+        }
         let now = Utc::now();
         let mut records = Vec::new();
 
@@ -785,7 +912,7 @@ impl ProductionService for InMemoryProductionService {
                 .values()
                 .filter(|wo| {
                     wo.product_id == product_id
-                        && wo.tenant_id == tenant_id
+                        && wo.tenant_id == ctx.tenant
                         && wo.status != "completed"
                         && wo.status != "cancelled"
                 })
@@ -799,7 +926,7 @@ impl ProductionService for InMemoryProductionService {
                 .values()
                 .filter(|po| {
                     po.product_id == product_id
-                        && po.tenant_id == tenant_id
+                        && po.tenant_id == ctx.tenant
                         && po.status != "completed"
                         && po.status != "cancelled"
                 })
@@ -824,7 +951,7 @@ impl ProductionService for InMemoryProductionService {
 
         let record = MRPRecord {
             id: Uuid::new_v4(),
-            tenant_id,
+            tenant_id: ctx.tenant,
             product_id,
             gross_requirement,
             scheduled_receipts,
@@ -837,7 +964,7 @@ impl ProductionService for InMemoryProductionService {
         };
 
         self.publish_event(MRPRunCompleted::new(
-            tenant_id,
+            ctx.tenant,
             record.id,
             // The event carries COUNTS (planned orders, shortages), not
             // quantities — Decimal widens to i64 only at this boundary.
@@ -867,6 +994,108 @@ impl ProductionService for InMemoryProductionService {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A tenant-wide request context for pure in-memory tests: the
+    /// in-memory service is exercised with the legacy tenant-wide
+    /// semantics (its rows carry no site dimension).
+    fn rc(tenant_id: Uuid) -> RequestContext {
+        RequestContext {
+            tenant: tenant_id,
+            principal: Uuid::new_v4(),
+            scope: AuthorizedScope::tenant_wide(),
+            focus: sensei_core::domain::request_context::OperationalFocus {
+                site: None,
+                value_stream: None,
+                work_center: None,
+                shift: None,
+            },
+            locale: None,
+            timezone: None,
+            currency: None,
+            country_policy_revision: None,
+            trace_id: String::new(),
+        }
+    }
+
+    #[tokio::test]
+    async fn in_memory_scope_denies_foreign_work_centers() {
+        use sensei_core::domain::scope::{AuthorizedScope, WorkCenterScope};
+        let service = InMemoryProductionService::default();
+        let tenant_id = Uuid::new_v4();
+        let wc_a = Uuid::new_v4();
+        let wc_b = Uuid::new_v4();
+        let base = |wc: Uuid| WorkOrder {
+            id: Uuid::nil(),
+            tenant_id,
+            wo_number: String::new(),
+            product_id: Uuid::new_v4(),
+            product_name: "P".to_string(),
+            quantity: 1,
+            quantity_completed: 0,
+            status: String::new(),
+            work_center_id: Some(wc),
+            priority: "normal".to_string(),
+            scheduled_start: None,
+            scheduled_end: None,
+            actual_start: None,
+            actual_end: None,
+            quantity_scrapped: 0,
+            short_close_qty: 0,
+            short_close_reason: None,
+            short_close_approved_by: None,
+            short_close_at: None,
+            assigned_to: Vec::new(),
+            notes: String::new(),
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+            source_sales_order_id: None,
+            standard_work_id: None,
+            product_revision_id: None,
+            bom_revision_id: None,
+            routing_revision_id: None,
+            control_plan_revision_id: None,
+            ctq_characteristic_set: Vec::new(),
+            tooling_revision: None,
+            source_sales_order_line_id: None,
+            customer_requirement_revision: None,
+        };
+        let created_a = service
+            .create_work_order(&rc(tenant_id), base(wc_a))
+            .await
+            .unwrap();
+        service
+            .create_work_order(&rc(tenant_id), base(wc_b))
+            .await
+            .unwrap();
+        let scoped = RequestContext {
+            tenant: tenant_id,
+            principal: Uuid::new_v4(),
+            scope: AuthorizedScope::WorkCenter(WorkCenterScope {
+                site: Uuid::new_v4(),
+                work_center: wc_a,
+            }),
+            focus: sensei_core::domain::request_context::OperationalFocus {
+                site: None,
+                value_stream: None,
+                work_center: None,
+                shift: None,
+            },
+            locale: None,
+            timezone: None,
+            currency: None,
+            country_policy_revision: None,
+            trace_id: String::new(),
+        };
+        assert!(service.get_work_order(&scoped, created_a.id).await.is_ok());
+        let list = service
+            .list_work_orders(&scoped, &WorkOrderListFilter::default())
+            .await
+            .unwrap();
+        assert_eq!(
+            list.total, 1,
+            "a work-center scope lists only its own orders"
+        );
+    }
 
     #[tokio::test]
     async fn test_create_and_get_work_order() {
@@ -911,14 +1140,14 @@ mod tests {
         };
 
         let created = service
-            .create_work_order(tenant_id, wo)
+            .create_work_order(&rc(tenant_id), wo)
             .await
             .expect("should create work order");
         assert!(created.wo_number.starts_with("WO-"));
         assert_eq!(created.status, "created");
 
         let fetched = service
-            .get_work_order(tenant_id, created.id)
+            .get_work_order(&rc(tenant_id), created.id)
             .await
             .expect("should fetch work order");
         assert_eq!(fetched.id, created.id);
@@ -965,9 +1194,9 @@ mod tests {
             customer_requirement_revision: None,
         };
 
-        let created = service.create_work_order(tenant_id, wo).await.unwrap();
+        let created = service.create_work_order(&rc(tenant_id), wo).await.unwrap();
         let updated = service
-            .update_work_order_status(tenant_id, created.id, "in_progress")
+            .update_work_order_status(&rc(tenant_id), created.id, "in_progress")
             .await
             .unwrap();
         assert_eq!(updated.status, "in_progress");
@@ -1015,9 +1244,9 @@ mod tests {
             customer_requirement_revision: None,
         };
 
-        let created = service.create_work_order(tenant_id, wo).await.unwrap();
+        let created = service.create_work_order(&rc(tenant_id), wo).await.unwrap();
         let reported = service
-            .report_production(tenant_id, created.id, 10, 0, Uuid::new_v4())
+            .report_production(&rc(tenant_id), created.id, 10, 0, Uuid::new_v4())
             .await
             .unwrap();
         assert_eq!(reported.status, "completed");
@@ -1051,7 +1280,7 @@ mod tests {
         };
 
         let created = service
-            .create_production_order(tenant_id, po)
+            .create_production_order(&rc(tenant_id), po)
             .await
             .expect("should create production order");
         assert!(created.order_number.starts_with("PO-"));
@@ -1059,14 +1288,14 @@ mod tests {
 
         // An unaccounted completion must be rejected (no fabricated output).
         let rejected = service
-            .complete_production_order(tenant_id, created.id, 0, None, Uuid::new_v4())
+            .complete_production_order(&rc(tenant_id), created.id, 0, None, Uuid::new_v4())
             .await;
         assert!(rejected.is_err(), "completion without production must fail");
 
         // A documented short close reconciles the disposition.
         let completed = service
             .complete_production_order(
-                tenant_id,
+                &rc(tenant_id),
                 created.id,
                 500,
                 Some("customer changed requirement"),
@@ -1097,13 +1326,13 @@ mod tests {
         };
 
         let added = service
-            .add_bom_item(tenant_id, item)
+            .add_bom_item(&rc(tenant_id), item)
             .await
             .expect("should add BOM item");
         assert_ne!(added.id, Uuid::nil());
 
         let bom = service
-            .get_bom(tenant_id, product_id)
+            .get_bom(&rc(tenant_id), product_id)
             .await
             .expect("should get BOM");
         assert_eq!(bom.len(), 1);
@@ -1111,7 +1340,7 @@ mod tests {
 
         // Run MRP — should produce a record even with no active work orders
         let mrp_records = service
-            .run_mrp(tenant_id, product_id)
+            .run_mrp(&rc(tenant_id), product_id)
             .await
             .expect("should run MRP");
         assert!(!mrp_records.is_empty());
@@ -1163,9 +1392,9 @@ mod tests {
             source_sales_order_line_id: None,
             customer_requirement_revision: None,
         };
-        service.create_work_order(tenant_id, wo).await.unwrap();
+        service.create_work_order(&rc(tenant_id), wo).await.unwrap();
 
-        let records = service.run_mrp(tenant_id, product_id).await.unwrap();
+        let records = service.run_mrp(&rc(tenant_id), product_id).await.unwrap();
         let record = &records[0];
 
         // projected = on_hand + receipts − gross = 30 + 0 − 100 → 0 (clamped).
@@ -1180,7 +1409,7 @@ mod tests {
 
         // With enough stock the net requirement drops to zero.
         service.seed_inventory_on_hand(product_id, 150).await;
-        let records = service.run_mrp(tenant_id, product_id).await.unwrap();
+        let records = service.run_mrp(&rc(tenant_id), product_id).await.unwrap();
         assert_eq!(
             records[0].projected_on_hand,
             rust_decimal::Decimal::from(50)
@@ -1251,10 +1480,10 @@ mod tests {
             source_sales_order_line_id: None,
             customer_requirement_revision: None,
         };
-        let created = service.create_work_order(tenant_id, wo).await.unwrap();
+        let created = service.create_work_order(&rc(tenant_id), wo).await.unwrap();
 
         let ops = service
-            .list_work_order_operations(tenant_id, created.id)
+            .list_work_order_operations(&rc(tenant_id), created.id)
             .await
             .unwrap();
         assert_eq!(ops.len(), 2);
@@ -1304,9 +1533,12 @@ mod tests {
             source_sales_order_line_id: None,
             customer_requirement_revision: None,
         };
-        let created2 = service.create_work_order(tenant_id, wo2).await.unwrap();
+        let created2 = service
+            .create_work_order(&rc(tenant_id), wo2)
+            .await
+            .unwrap();
         let ops = service
-            .list_work_order_operations(tenant_id, created2.id)
+            .list_work_order_operations(&rc(tenant_id), created2.id)
             .await
             .unwrap();
         assert!(ops.is_empty());

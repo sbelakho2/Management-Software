@@ -223,18 +223,26 @@ pub async fn get_cell_utilization(
 
     let total_capacity = cell.capacity_per_shift as f64 * cell.shifts_per_day as f64;
 
-    // Compute real utilization from production data: page through all of the
-    // tenant's work orders and sum the remaining quantity of every active
-    // (non-terminal) order. This is the capacity currently committed to the
+    // Compute real utilization from production data: page through the
+    // caller's AUTHORIZED work orders (the ctx scope is enforced by the
+    // service) and sum the remaining quantity of every active (non-
+    // terminal) order. This is the capacity currently committed to the
     // cell's production flow, compared against the cell's available daily
     // capacity. No heuristic, no fabricated numbers.
+    let ctx = crate::authorization::build_request_context(&user, &state).await?;
     const PER_PAGE: usize = 100;
     let mut active_remaining: f64 = 0.0;
     let mut page = 1usize;
     loop {
+        let filter = sensei_services::production::WorkOrderListFilter {
+            status: None,
+            work_center_id: None,
+            page: Some(page),
+            per_page: Some(PER_PAGE),
+        };
         let res = state
             .production_service
-            .list_work_orders(tenant_id, None, None, Some(page), Some(PER_PAGE))
+            .list_work_orders(&ctx, &filter)
             .await?;
         let fetched = res.data.len();
         for wo in &res.data {
