@@ -10,6 +10,7 @@
 //! and [`SearchService::remove_from_index`] for real-time search index updates.
 
 use async_trait::async_trait;
+use sensei_core::db::TenantTx;
 use sensei_core::error::{Result, SenseiError};
 use sensei_core::types::EntityId;
 use serde::Serialize;
@@ -462,6 +463,18 @@ impl SearchService for DatabaseSearchService {
             return Ok(Vec::new());
         }
 
+        // Thirtieth-audit item 18: every tenant-owned table this search
+        // touches is fail-closed FORCE RLS (migration 175 normalized the
+        // last compatibility policies — work_orders, production_orders,
+        // purchase_orders, sales_orders — onto the universal
+        // no-context = no-rows policy), so the reads must run inside a
+        // TenantTx whose SET LOCAL app.tenant_id admits exactly this
+        // tenant. Read-only: the transaction is dropped (rolled back)
+        // after the reads.
+        let mut db = TenantTx::begin(&self.pool, tenant_id)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to begin search tx: {e}")))?;
+
         // Item 71: operational EXACT-MATCH ids resolve deterministically
         // BEFORE semantic/fuzzy retrieval — typing "WO-30291" or
         // "PO-9918" must find the object, not a fuzzy guess. Exact matches
@@ -474,7 +487,7 @@ impl SearchService for DatabaseSearchService {
             )
             .bind(tenant_id)
             .bind(query)
-            .fetch_all(&self.pool)
+            .fetch_all(&mut **db.tx())
             .await
             .unwrap_or_default();
             for (t, id, title) in rows {
@@ -493,7 +506,7 @@ impl SearchService for DatabaseSearchService {
             )
             .bind(tenant_id)
             .bind(query)
-            .fetch_all(&self.pool)
+            .fetch_all(&mut **db.tx())
             .await
             .unwrap_or_default();
             for (t, id, title) in rows {
@@ -512,7 +525,7 @@ impl SearchService for DatabaseSearchService {
             )
             .bind(tenant_id)
             .bind(query)
-            .fetch_all(&self.pool)
+            .fetch_all(&mut **db.tx())
             .await
             .unwrap_or_default();
             for (t, id, title) in rows {
@@ -531,7 +544,7 @@ impl SearchService for DatabaseSearchService {
             )
             .bind(tenant_id)
             .bind(query)
-            .fetch_all(&self.pool)
+            .fetch_all(&mut **db.tx())
             .await
             .unwrap_or_default();
             for (t, id, title) in rows {
@@ -550,7 +563,7 @@ impl SearchService for DatabaseSearchService {
             )
             .bind(tenant_id)
             .bind(query)
-            .fetch_all(&self.pool)
+            .fetch_all(&mut **db.tx())
             .await
             .unwrap_or_default();
             for (t, id, title) in rows {
@@ -569,7 +582,7 @@ impl SearchService for DatabaseSearchService {
             )
             .bind(tenant_id)
             .bind(query)
-            .fetch_all(&self.pool)
+            .fetch_all(&mut **db.tx())
             .await
             .unwrap_or_default();
             for (t, id, title) in rows {
@@ -590,7 +603,7 @@ impl SearchService for DatabaseSearchService {
             .bind(query)
             .bind(tenant_id)
             .bind(et)
-            .fetch_all(&self.pool)
+            .fetch_all(&mut **db.tx())
             .await
             .map_err(|e| SenseiError::Database(format!("Full-text search failed: {e}")))?
         } else {
@@ -599,7 +612,7 @@ impl SearchService for DatabaseSearchService {
             )
             .bind(query)
             .bind(tenant_id)
-            .fetch_all(&self.pool)
+            .fetch_all(&mut **db.tx())
             .await
             .map_err(|e| SenseiError::Database(format!("Full-text search failed: {e}")))?
         };
@@ -618,6 +631,8 @@ impl SearchService for DatabaseSearchService {
                 .unwrap_or(std::cmp::Ordering::Equal)
         });
         let results: Vec<SearchResult> = exact_results;
+        // Read-only tenant transaction: dropping it rolls the context back.
+        drop(db);
         Ok(results)
     }
 

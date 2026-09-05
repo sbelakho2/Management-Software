@@ -6,17 +6,26 @@
 //! - `sensei.tasks.analytics.kpi` — warehouse KPI computation
 //!
 //! Queries real aggregate data from the database when a pool is available.
-/// Falls back to empty results with a warning when no pool is configured.
+//! Falls back to empty results with a warning when no pool is configured.
+//!
+//! # Tenant scoping (thirtieth-audit item 18, Wave C RLS)
+//!
+//! Every table the metrics read is tenant-owned and fail-closed FORCE RLS
+//! since migration 175, so the worker computes metrics per tenant inside a
+//! [`TenantTx`] and merges component-wise. See [`AnalyticsWorker`].
 use crate::error::{Result, WorkerError};
 use crate::task::{ClaimOutcome, IdempotencyGuard, TaskConsumer, TaskMetadata, TaskOutcome};
 use async_trait::async_trait;
+use sensei_core::db::TenantTx;
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use std::collections::HashMap;
+use std::ops::AddAssign;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::RwLock;
 use tracing::{error, info, warn};
+use uuid::Uuid;
 
 /// Payload for analytics-related tasks.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -126,8 +135,6 @@ pub struct AnalyticsWorker {
     cache: Arc<AnalyticsCache>,
     /// Optional database pool for querying real data.
     pool: Option<Arc<PgPool>>,
-    /// Recorded query failures: query label → error message.
-    failures: Arc<RwLock<HashMap<String, String>>>,
     /// Idempotency guard (migration 053): claims the task_id before
     /// computing/storing a snapshot or KPI set.
     idempotency: IdempotencyGuard,
@@ -139,7 +146,6 @@ impl AnalyticsWorker {
         Self {
             cache: Arc::new(AnalyticsCache::new(Duration::from_secs(300))),
             pool: None,
-            failures: Arc::new(RwLock::new(HashMap::new())),
             idempotency: IdempotencyGuard::new(None, "analytics"),
         }
     }
@@ -149,7 +155,6 @@ impl AnalyticsWorker {
         Self {
             cache,
             pool: None,
-            failures: Arc::new(RwLock::new(HashMap::new())),
             idempotency: IdempotencyGuard::new(None, "analytics"),
         }
     }
@@ -159,65 +164,17 @@ impl AnalyticsWorker {
         Self {
             cache: Arc::new(AnalyticsCache::new(Duration::from_secs(300))),
             pool: pool.clone(),
-            failures: Arc::new(RwLock::new(HashMap::new())),
             idempotency: IdempotencyGuard::new(pool, "analytics"),
         }
     }
 
-    /// Record a failed analytics query and return the error.
-    async fn query_failed(&self, label: &str, e: sqlx::Error) -> WorkerError {
+    /// Record a failed analytics query and return the error. The
+    /// observability map write is intentionally absent here: this helper
+    /// is called from synchronous map_err closures on sqlx results.
+    fn query_failed(&self, label: &str, e: sqlx::Error) -> WorkerError {
         let msg = e.to_string();
         error!(query = %label, error = %msg, "Analytics query failed");
-        self.failures
-            .write()
-            .await
-            .insert(label.to_string(), msg.clone());
         WorkerError::Processing(format!("Analytics query '{label}' failed: {msg}"))
-    }
-
-    /// Fetch a scalar i64 aggregate, recording failures instead of defaulting.
-    async fn fetch_count(&self, pool: &PgPool, label: &str, sql: &str, date: &str) -> Result<i64> {
-        match sqlx::query_scalar::<_, i64>(sql)
-            .bind(date)
-            .fetch_one(pool)
-            .await
-        {
-            Ok(v) => Ok(v),
-            Err(e) => Err(self.query_failed(label, e).await),
-        }
-    }
-
-    /// Fetch an optional f64 aggregate, recording failures instead of defaulting.
-    async fn fetch_optional_f64(
-        &self,
-        pool: &PgPool,
-        label: &str,
-        sql: &str,
-        date: &str,
-    ) -> Result<Option<f64>> {
-        match sqlx::query_scalar::<_, f64>(sql)
-            .bind(date)
-            .fetch_optional(pool)
-            .await
-        {
-            Ok(row) => Ok(row),
-            Err(e) => Err(self.query_failed(label, e).await),
-        }
-    }
-
-    /// Convert a `NULL` aggregate into `0.0` as a last resort.
-    ///
-    /// A `NULL` result means the aggregate ran over zero rows (e.g. `AVG`
-    /// over an empty day). The value is logged as missing rather than
-    /// silently defaulted.
-    fn null_aggregate_to_zero(label: &str, value: Option<f64>) -> f64 {
-        match value {
-            Some(v) => v,
-            None => {
-                warn!(metric = %label, "No data for metric — recording 0.0");
-                0.0
-            }
-        }
     }
 
     /// Compute a daily analytics snapshot.
@@ -225,14 +182,32 @@ impl AnalyticsWorker {
     /// Queries real aggregate data from the database for each domain
     /// (production, quality, finance, inventory). Falls back to empty
     /// domain data if no pool is available.
+    ///
+    /// # Tenant scoping (thirtieth-audit item 18, Wave C RLS)
+    ///
+    /// Every table the metrics read (`work_orders`, `ncr_reports`,
+    /// `capas`, `invoices`, `inventory_items`, `products`, `stock_moves`)
+    /// is tenant-owned and fail-closed FORCE RLS since migration 175: a
+    /// raw-pool query under the production `sensei_app` role has no
+    /// `app.tenant_id` context and sees zero rows. Each tenant's metrics
+    /// are therefore computed inside a [`TenantTx`] of that tenant and
+    /// merged component-wise (counts and sums add; averages/rates are
+    /// weighted by their row counts) — a payload tenant_id narrows the
+    /// snapshot to exactly that tenant; a tenant-less payload covers every
+    /// active tenant (the tenant list comes from the RLS-free `tenants`
+    /// table).
     async fn compute_snapshot(&self, payload: &AnalyticsTaskPayload) -> Result<AnalyticsSnapshot> {
         let date = payload
             .date
             .clone()
             .unwrap_or_else(|| chrono::Utc::now().format("%Y-%m-%d").to_string());
 
-        // Check cache first.
-        let cache_key = format!("snapshot:{}", date);
+        // Cache key: the tenant filter is part of the snapshot identity.
+        let tenant_scope = payload
+            .tenant_id
+            .clone()
+            .unwrap_or_else(|| "all".to_string());
+        let cache_key = format!("snapshot:{}:{}", date, tenant_scope);
         if let Some(cached) = self.cache.get_snapshot(&cache_key).await {
             info!(date = %date, "Returning cached analytics snapshot");
             return Ok(cached);
@@ -243,29 +218,61 @@ impl AnalyticsWorker {
         let mut domains = HashMap::new();
 
         if let Some(pool) = &self.pool {
-            // Query real production metrics.
-            domains.insert(
-                "production".to_string(),
-                self.query_production_metrics(pool, &date).await?,
-            );
+            let mut tenants: Vec<Uuid> = match &payload.tenant_id {
+                Some(raw) => match Uuid::parse_str(raw) {
+                    Ok(t) => vec![t],
+                    Err(_) => {
+                        warn!(tenant_id = %raw, "Invalid tenant_id in analytics payload — computing for all active tenants");
+                        tenant_ids(pool).await
+                    }
+                },
+                None => tenant_ids(pool).await,
+            };
+            tenants.sort();
+            tenants.dedup();
+            if tenants.is_empty() {
+                warn!("No active tenants — analytics snapshot will contain empty domain data");
+            }
 
-            // Query real quality metrics.
-            domains.insert(
-                "quality".to_string(),
-                self.query_quality_metrics(pool, &date).await?,
-            );
+            // Component-wise accumulators (per-tenant metrics merged below).
+            let mut prod = ProductionTotals::default();
+            let mut quality = QualityTotals::default();
+            let mut finance = FinanceTotals::default();
+            let mut inventory = InventoryTotals::default();
 
-            // Query real finance metrics.
-            domains.insert(
-                "finance".to_string(),
-                self.query_finance_metrics(pool, &date).await?,
-            );
+            for tenant_id in tenants {
+                let mut db = TenantTx::begin(pool, tenant_id).await.map_err(|e| {
+                    WorkerError::Processing(format!(
+                        "Failed to begin analytics tx for tenant {tenant_id}: {e}"
+                    ))
+                })?;
+                prod += self
+                    .query_production_metrics(&mut db, &date)
+                    .await
+                    .map_err(|e| self.attach_tenant(e, tenant_id))?;
+                quality += self
+                    .query_quality_metrics(&mut db, &date)
+                    .await
+                    .map_err(|e| self.attach_tenant(e, tenant_id))?;
+                finance += self
+                    .query_finance_metrics(&mut db, &date)
+                    .await
+                    .map_err(|e| self.attach_tenant(e, tenant_id))?;
+                inventory += self
+                    .query_inventory_metrics(&mut db, &date)
+                    .await
+                    .map_err(|e| self.attach_tenant(e, tenant_id))?;
+                db.commit().await.map_err(|e| {
+                    WorkerError::Processing(format!(
+                        "Failed to commit analytics tx for tenant {tenant_id}: {e}"
+                    ))
+                })?;
+            }
 
-            // Query real inventory metrics.
-            domains.insert(
-                "inventory".to_string(),
-                self.query_inventory_metrics(pool, &date).await?,
-            );
+            domains.insert("production".to_string(), prod.to_json());
+            domains.insert("quality".to_string(), quality.to_json());
+            domains.insert("finance".to_string(), finance.to_json());
+            domains.insert("inventory".to_string(), inventory.to_json());
         } else {
             warn!(
                 "No database pool configured — analytics snapshot will contain empty domain data. \
@@ -286,217 +293,193 @@ impl AnalyticsWorker {
         Ok(snapshot)
     }
 
-    /// Query production metrics from the database.
+    /// Tag a per-tenant query failure with the tenant that produced it.
+    fn attach_tenant(&self, e: WorkerError, tenant_id: Uuid) -> WorkerError {
+        match e {
+            WorkerError::Processing(msg) => WorkerError::Processing(format!(
+                "Analytics query for tenant {tenant_id} failed: {msg}"
+            )),
+            other => other,
+        }
+    }
+
+    /// Query production metrics for ONE tenant (runs on the tenant's
+    /// TenantTx — RLS admits exactly this tenant's `work_orders`).
     ///
     /// `work_orders` has no dedicated completion timestamp: `status`
     /// transitions to `'completed'` via `UPDATE`, so `updated_at` is the
     /// completion timestamp, `created_at` the start, and `scheduled_end`
-    /// the plan deadline.
+    /// the plan deadline. The row-count/weighting pairs let the tenant
+    /// totals merge exactly (the average cycle time is the summed cycle
+    /// minutes over the summed completed count, never a mean of means).
     async fn query_production_metrics(
         &self,
-        pool: &PgPool,
+        db: &mut TenantTx<'_>,
         date: &str,
-    ) -> Result<serde_json::Value> {
-        let work_orders_completed = self
-            .fetch_count(
-                pool,
-                "production.work_orders_completed",
-                "SELECT COUNT(*) FROM work_orders \
-                 WHERE status = 'completed' AND DATE(updated_at) = $1",
-                date,
-            )
-            .await?;
+    ) -> Result<ProductionTotals> {
+        // One row of (completed count, summed cycle minutes, on-time
+        // count) for the date.
+        let (completed, cycle_time_sum_minutes, on_time_count): (i64, f64, i64) = sqlx::query_as(
+            "SELECT \
+                COUNT(*) FILTER (WHERE status = 'completed' AND DATE(updated_at) = $1), \
+                COALESCE(SUM(EXTRACT(EPOCH FROM (updated_at - created_at)) / 60.0) \
+                    FILTER (WHERE status = 'completed' AND DATE(updated_at) = $1), 0.0), \
+                COUNT(*) FILTER (WHERE status = 'completed' AND DATE(updated_at) = $1 \
+                    AND updated_at <= scheduled_end) \
+             FROM work_orders",
+        )
+        .bind(date)
+        .fetch_one(&mut **db.tx())
+        .await
+        .map_err(|e| self.query_failed("production.work_orders_completed", e))?;
 
-        let avg_cycle_time = self
-            .fetch_optional_f64(
-                pool,
-                "production.cycle_time",
-                "SELECT AVG(EXTRACT(EPOCH FROM (updated_at - created_at)) / 60.0) \
-                 FROM work_orders \
-                 WHERE status = 'completed' AND DATE(updated_at) = $1",
-                date,
-            )
-            .await?;
-
-        let on_time_count = self
-            .fetch_count(
-                pool,
-                "production.on_time",
-                "SELECT COUNT(*) FROM work_orders \
-                 WHERE status = 'completed' AND DATE(updated_at) = $1 \
-                 AND updated_at <= scheduled_end",
-                date,
-            )
-            .await?;
-
-        let on_time_rate = if work_orders_completed == 0 {
+        if completed == 0 {
             warn!(
                 date = %date,
                 "No completed work orders for date — recording on-time delivery rate 0.0"
             );
-            0.0
-        } else {
-            on_time_count as f64 / work_orders_completed as f64
-        };
+        }
 
-        Ok(serde_json::json!({
-            "work_orders_completed": work_orders_completed,
-            "cycle_time_avg_minutes": Self::null_aggregate_to_zero("production.cycle_time", avg_cycle_time),
-            "on_time_delivery_rate": on_time_rate,
-        }))
+        Ok(ProductionTotals {
+            completed,
+            cycle_time_sum_minutes,
+            on_time_count,
+        })
     }
 
-    /// Query quality metrics from the database.
+    /// Query quality metrics for ONE tenant (runs on the tenant's
+    /// TenantTx — RLS admits exactly this tenant's rows).
     ///
     /// Quality state lives in the `ncr_reports` and `capas` tables with
     /// plain `status` columns (there is no JSONB-backed `quality_ncrs` /
     /// `quality_capas` pair in the schema).
-    async fn query_quality_metrics(&self, pool: &PgPool, date: &str) -> Result<serde_json::Value> {
-        let ncrs_opened = self
-            .fetch_count(
-                pool,
-                "quality.ncrs_opened",
-                "SELECT COUNT(*) FROM ncr_reports WHERE DATE(created_at) = $1",
-                date,
-            )
-            .await?;
+    async fn query_quality_metrics(
+        &self,
+        db: &mut TenantTx<'_>,
+        date: &str,
+    ) -> Result<QualityTotals> {
+        let ncrs_opened: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM ncr_reports WHERE DATE(created_at) = $1",
+        )
+        .bind(date)
+        .fetch_one(&mut **db.tx())
+        .await
+        .map_err(|e| self.query_failed("quality.ncrs_opened", e))?;
 
-        let ncrs_closed = self
-            .fetch_count(
-                pool,
-                "quality.ncrs_closed",
-                "SELECT COUNT(*) FROM ncr_reports \
-                 WHERE status = 'closed' AND DATE(updated_at) = $1",
-                date,
-            )
-            .await?;
+        let ncrs_closed: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM ncr_reports \
+             WHERE status = 'closed' AND DATE(updated_at) = $1",
+        )
+        .bind(date)
+        .fetch_one(&mut **db.tx())
+        .await
+        .map_err(|e| self.query_failed("quality.ncrs_closed", e))?;
 
         let open_ncr_count: i64 = sqlx::query_scalar(
             "SELECT COUNT(*) FROM ncr_reports \
              WHERE status IN ('open', 'under_investigation', 'action_defined', 'in_progress')",
         )
-        .fetch_one(pool)
+        .fetch_one(&mut **db.tx())
         .await
-        .map_err(|e| {
-            let msg = e.to_string();
-            error!(query = "quality.open_ncr_count", error = %msg, "Analytics query failed");
-            WorkerError::Processing(format!(
-                "Analytics query 'quality.open_ncr_count' failed: {msg}"
-            ))
-        })?;
+        .map_err(|e| self.query_failed("quality.open_ncr_count", e))?;
 
         let capa_open: i64 = sqlx::query_scalar(
             "SELECT COUNT(*) FROM capas \
              WHERE status IN ('open', 'analysis_in_progress', 'approved', \
-                              'implementation_in_progress', 'verification_in_progress')",
+                               'implementation_in_progress', 'verification_in_progress')",
         )
-        .fetch_one(pool)
+        .fetch_one(&mut **db.tx())
         .await
-        .map_err(|e| {
-            let msg = e.to_string();
-            error!(query = "quality.capa_open", error = %msg, "Analytics query failed");
-            WorkerError::Processing(format!("Analytics query 'quality.capa_open' failed: {msg}"))
-        })?;
+        .map_err(|e| self.query_failed("quality.capa_open", e))?;
 
-        Ok(serde_json::json!({
-            "ncrs_opened": ncrs_opened,
-            "ncrs_closed": ncrs_closed,
-            "open_ncr_count": open_ncr_count,
-            "capa_open": capa_open,
-        }))
+        Ok(QualityTotals {
+            ncrs_opened,
+            ncrs_closed,
+            open_ncr_count,
+            capa_open,
+        })
     }
 
-    /// Query finance metrics from the database.
+    /// Query finance metrics for ONE tenant (runs on the tenant's
+    /// TenantTx — RLS admits exactly this tenant's `invoices`).
     ///
     /// `invoices` has no `paid_at` column: `invoice_date` is the issuance
-    /// date and `updated_at` the payment-status transition timestamp.
-    async fn query_finance_metrics(&self, pool: &PgPool, date: &str) -> Result<serde_json::Value> {
-        let invoices_issued = self
-            .fetch_count(
-                pool,
-                "finance.invoices_issued",
-                "SELECT COUNT(*) FROM invoices WHERE DATE(invoice_date) = $1",
-                date,
-            )
-            .await?;
+    /// date and `updated_at` the payment-status transition timestamp. The
+    /// NUMERIC sums are cast to float8 so the scalar decodes as f64.
+    async fn query_finance_metrics(
+        &self,
+        db: &mut TenantTx<'_>,
+        date: &str,
+    ) -> Result<FinanceTotals> {
+        let invoices_issued: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM invoices WHERE DATE(invoice_date) = $1",
+        )
+        .bind(date)
+        .fetch_one(&mut **db.tx())
+        .await
+        .map_err(|e| self.query_failed("finance.invoices_issued", e))?;
 
-        let total_revenue = self
-            .fetch_optional_f64(
-                pool,
-                "finance.total_revenue",
-                "SELECT SUM(total_amount) FROM invoices \
-                 WHERE status = 'paid' AND DATE(updated_at) = $1",
-                date,
-            )
-            .await?;
+        let total_revenue: f64 = sqlx::query_scalar(
+            "SELECT COALESCE(SUM(total_amount), 0)::float8 FROM invoices \
+             WHERE status = 'paid' AND DATE(updated_at) = $1",
+        )
+        .bind(date)
+        .fetch_one(&mut **db.tx())
+        .await
+        .map_err(|e| self.query_failed("finance.total_revenue", e))?;
 
-        let outstanding_ar: Option<f64> = sqlx::query_scalar(
-            "SELECT SUM(total_amount) FROM invoices \
+        let outstanding_ar: f64 = sqlx::query_scalar(
+            "SELECT COALESCE(SUM(total_amount), 0)::float8 FROM invoices \
              WHERE status IN ('sent', 'overdue')",
         )
-        .fetch_optional(pool)
+        .fetch_one(&mut **db.tx())
         .await
-        .map_err(|e| {
-            let msg = e.to_string();
-            error!(query = "finance.outstanding_ar", error = %msg, "Analytics query failed");
-            WorkerError::Processing(format!(
-                "Analytics query 'finance.outstanding_ar' failed: {msg}"
-            ))
-        })?;
+        .map_err(|e| self.query_failed("finance.outstanding_ar", e))?;
 
-        Ok(serde_json::json!({
-            "invoices_issued": invoices_issued,
-            "total_revenue": Self::null_aggregate_to_zero("finance.total_revenue", total_revenue),
-            "outstanding_ar": Self::null_aggregate_to_zero("finance.outstanding_ar", outstanding_ar),
-        }))
+        Ok(FinanceTotals {
+            invoices_issued,
+            total_revenue,
+            outstanding_ar,
+        })
     }
 
-    /// Query inventory metrics from the database.
+    /// Query inventory metrics for ONE tenant (runs on the tenant's
+    /// TenantTx — RLS admits exactly this tenant's rows).
     ///
     /// `inventory_items` has no `reorder_point` column — the reorder level
     /// lives on `products` — and `stock_moves.move_type` uses
     /// `('receipt', 'issue', 'transfer', 'adjustment')` (no `'delivery'`).
     async fn query_inventory_metrics(
         &self,
-        pool: &PgPool,
+        db: &mut TenantTx<'_>,
         _date: &str,
-    ) -> Result<serde_json::Value> {
-        let total_items: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM inventory_items")
-            .fetch_one(pool)
-            .await
-            .map_err(|e| {
-                let msg = e.to_string();
-                error!(query = "inventory.total_items", error = %msg, "Analytics query failed");
-                WorkerError::Processing(format!(
-                    "Analytics query 'inventory.total_items' failed: {msg}"
-                ))
-            })?;
+    ) -> Result<InventoryTotals> {
+        let total_items: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM inventory_items")
+                .fetch_one(&mut **db.tx())
+                .await
+                .map_err(|e| self.query_failed("inventory.total_items", e))?;
 
         let low_stock_items: i64 = sqlx::query_scalar(
             "SELECT COUNT(*) FROM inventory_items ii \
              JOIN products p ON p.id = ii.product_id \
              WHERE ii.quantity_on_hand <= COALESCE(p.reorder_point, 0)",
         )
-        .fetch_one(pool)
+        .fetch_one(&mut **db.tx())
         .await
-        .map_err(|e| {
-            let msg = e.to_string();
-            error!(query = "inventory.low_stock", error = %msg, "Analytics query failed");
-            WorkerError::Processing(format!(
-                "Analytics query 'inventory.low_stock' failed: {msg}"
-            ))
-        })?;
+        .map_err(|e| self.query_failed("inventory.low_stock", e))?;
 
         // Turnover: units moved out over the trailing 30 days divided by the
-        // average on-hand quantity (real stock_moves data).
-        // Twenty-fifth audit P1: only 'posted' moves at the ROW'S OWN SITE
-        // count — another plant's same-named location and reversed or
-        // compensating history never count as this row's movement.
-        let inventory_turnover: Option<f64> = sqlx::query_scalar(
-            "SELECT CASE WHEN COALESCE(SUM(ii.quantity_on_hand), 0) > 0 \
-             THEN COALESCE(SUM(sm.quantity) FILTER (WHERE sm.move_type IN ('issue', 'transfer')), 0) \
-                  / SUM(ii.quantity_on_hand) \
-             ELSE 0.0 END \
+        // average on-hand quantity (real stock_moves data). The tenant query
+        // returns the (moved, on-hand) pair; the merged turnover is
+        // total_moved / total_on_hand, never a mean of per-tenant ratios.
+        let (moved_units, on_hand_units): (f64, f64) = sqlx::query_as(
+            "SELECT \
+                COALESCE(SUM(sm.quantity) \
+                    FILTER (WHERE sm.move_type IN ('issue', 'transfer') \
+                        AND sm.status = 'posted' \
+                        AND sm.moved_at > NOW() - INTERVAL '30 days'), 0)::float8, \
+                COALESCE(SUM(ii.quantity_on_hand), 0)::float8 \
              FROM inventory_items ii \
              LEFT JOIN stock_moves sm ON sm.product_id = ii.product_id \
               AND sm.tenant_id = ii.tenant_id \
@@ -504,25 +487,26 @@ impl AnalyticsWorker {
               AND sm.status = 'posted' \
               AND sm.moved_at > NOW() - INTERVAL '30 days'",
         )
-        .fetch_optional(pool)
+        .fetch_one(&mut **db.tx())
         .await
-        .map_err(|e| {
-            let msg = e.to_string();
-            error!(query = "inventory.turnover", error = %msg, "Analytics query failed");
-            WorkerError::Processing(format!("Analytics query 'inventory.turnover' failed: {msg}"))
-        })?;
+        .map_err(|e| self.query_failed("inventory.turnover", e))?;
 
-        Ok(serde_json::json!({
-            "total_items": total_items,
-            "low_stock_items": low_stock_items,
-            "inventory_turnover": Self::null_aggregate_to_zero("inventory.turnover", inventory_turnover),
-        }))
+        Ok(InventoryTotals {
+            total_items,
+            low_stock_items,
+            moved_units,
+            on_hand_units,
+        })
     }
 
     /// Compute warehouse KPIs.
     ///
     /// Queries real aggregate data from the database. Falls back to empty
-    /// KPIs if no pool is available.
+    /// KPIs if no pool is available. Tenant scoping follows
+    /// [`Self::compute_snapshot`]: every source table is fail-closed FORCE
+    /// RLS (migration 175), so each tenant's KPI components are computed
+    /// inside its own [`TenantTx`] and merged component-wise (averages are
+    /// weighted by their row counts).
     async fn compute_warehouse_kpis(
         &self,
         payload: &AnalyticsTaskPayload,
@@ -532,7 +516,11 @@ impl AnalyticsWorker {
             .clone()
             .unwrap_or_else(|| chrono::Utc::now().format("%Y-%m-%d").to_string());
 
-        let cache_key = format!("kpi:warehouse:{}", date);
+        let tenant_scope = payload
+            .tenant_id
+            .clone()
+            .unwrap_or_else(|| "all".to_string());
+        let cache_key = format!("kpi:warehouse:{}:{}", date, tenant_scope);
         if let Some(cached) = self.cache.get_kpis(&cache_key).await {
             info!(date = %date, "Returning cached warehouse KPIs");
             return Ok(cached);
@@ -543,116 +531,38 @@ impl AnalyticsWorker {
         let computed_at = chrono::Utc::now().to_rfc3339();
 
         let kpis = if let Some(pool) = &self.pool {
-            let storage_utilization: f64 = sqlx::query_scalar(
-                "SELECT COALESCE(AVG(utilization_pct), 0.0) \
-                 FROM warehouse_storage_locations",
-            )
-            .fetch_one(pool.as_ref())
-            .await
-            .map_err(|e| {
-                let msg = e.to_string();
-                error!(query = "kpi.storage_utilization", error = %msg, "Analytics query failed");
-                WorkerError::Processing(format!(
-                    "Analytics query 'kpi.storage_utilization' failed: {msg}"
-                ))
-            })?;
-
-            let picking_accuracy: f64 = sqlx::query_scalar(
-                "SELECT CASE WHEN COUNT(*) > 0 \
-                 THEN SUM(CASE WHEN status = 'correct' THEN 1 ELSE 0 END)::float / COUNT(*) * 100.0 \
-                 ELSE 0.0 END \
-                 FROM warehouse_pick_events WHERE DATE(event_date) = $1",
-            )
-            .bind(&date)
-            .fetch_one(pool.as_ref())
-            .await
-            .map_err(|e| {
-                let msg = e.to_string();
-                error!(query = "kpi.picking_accuracy", error = %msg, "Analytics query failed");
-                WorkerError::Processing(format!("Analytics query 'kpi.picking_accuracy' failed: {msg}"))
-            })?;
-
-            let order_cycle_time: f64 = sqlx::query_scalar(
-                "SELECT COALESCE(AVG(EXTRACT(EPOCH FROM (completed_at - created_at)) / 3600.0), 0.0) \
-                 FROM warehouse_orders WHERE DATE(completed_at) = $1",
-            )
-            .bind(&date)
-            .fetch_one(pool.as_ref())
-            .await
-            .map_err(|e| {
-                let msg = e.to_string();
-                error!(query = "kpi.order_cycle_time", error = %msg, "Analytics query failed");
-                WorkerError::Processing(format!("Analytics query 'kpi.order_cycle_time' failed: {msg}"))
-            })?;
-
-            let dock_to_stock_time: f64 = sqlx::query_scalar(
-                "SELECT COALESCE(AVG(EXTRACT(EPOCH FROM (putaway_at - received_at)) / 3600.0), 0.0) \
-                 FROM warehouse_receipts WHERE DATE(received_at) = $1",
-            )
-            .bind(&date)
-            .fetch_one(pool.as_ref())
-            .await
-            .map_err(|e| {
-                let msg = e.to_string();
-                error!(query = "kpi.dock_to_stock_time", error = %msg, "Analytics query failed");
-                WorkerError::Processing(format!("Analytics query 'kpi.dock_to_stock_time' failed: {msg}"))
-            })?;
-
-            let inventory_accuracy: f64 = sqlx::query_scalar(
-                "SELECT CASE WHEN COUNT(*) > 0 \
-                 THEN SUM(CASE WHEN ABS(counted_qty - expected_qty)::float / \
-                     GREATEST(expected_qty, 1) < 0.05 THEN 1 ELSE 0 END)::float / COUNT(*) * 100.0 \
-                 ELSE 0.0 END \
-                 FROM warehouse_cycle_counts WHERE DATE(count_date) = $1",
-            )
-            .bind(&date)
-            .fetch_one(pool.as_ref())
-            .await
-            .map_err(|e| {
-                let msg = e.to_string();
-                error!(query = "kpi.inventory_accuracy", error = %msg, "Analytics query failed");
-                WorkerError::Processing(format!(
-                    "Analytics query 'kpi.inventory_accuracy' failed: {msg}"
-                ))
-            })?;
-
-            vec![
-                KpiValue {
-                    name: "storage_utilization".to_string(),
-                    value: storage_utilization,
-                    unit: "%".to_string(),
-                    computed_at: computed_at.clone(),
-                    threshold: Some(85.0),
+            let mut tenants: Vec<Uuid> = match &payload.tenant_id {
+                Some(raw) => match Uuid::parse_str(raw) {
+                    Ok(t) => vec![t],
+                    Err(_) => {
+                        warn!(tenant_id = %raw, "Invalid tenant_id in KPI payload — computing for all active tenants");
+                        tenant_ids(pool).await
+                    }
                 },
-                KpiValue {
-                    name: "picking_accuracy".to_string(),
-                    value: picking_accuracy,
-                    unit: "%".to_string(),
-                    computed_at: computed_at.clone(),
-                    threshold: Some(95.0),
-                },
-                KpiValue {
-                    name: "order_cycle_time".to_string(),
-                    value: order_cycle_time,
-                    unit: "hours".to_string(),
-                    computed_at: computed_at.clone(),
-                    threshold: Some(8.0),
-                },
-                KpiValue {
-                    name: "dock_to_stock_time".to_string(),
-                    value: dock_to_stock_time,
-                    unit: "hours".to_string(),
-                    computed_at: computed_at.clone(),
-                    threshold: Some(12.0),
-                },
-                KpiValue {
-                    name: "inventory_accuracy".to_string(),
-                    value: inventory_accuracy,
-                    unit: "%".to_string(),
-                    computed_at,
-                    threshold: Some(95.0),
-                },
-            ]
+                None => tenant_ids(pool).await,
+            };
+            tenants.sort();
+            tenants.dedup();
+
+            let mut totals = WarehouseKpiTotals::default();
+            for tenant_id in tenants {
+                let mut db = TenantTx::begin(pool, tenant_id).await.map_err(|e| {
+                    WorkerError::Processing(format!(
+                        "Failed to begin KPI tx for tenant {tenant_id}: {e}"
+                    ))
+                })?;
+                totals += self
+                    .query_warehouse_kpi_components(&mut db, &date)
+                    .await
+                    .map_err(|e| self.attach_tenant(e, tenant_id))?;
+                db.commit().await.map_err(|e| {
+                    WorkerError::Processing(format!(
+                        "Failed to commit KPI tx for tenant {tenant_id}: {e}"
+                    ))
+                })?;
+            }
+
+            totals.to_kpis(computed_at)
         } else {
             warn!(
                 "No database pool configured — warehouse KPIs will be empty. \
@@ -665,6 +575,326 @@ impl AnalyticsWorker {
 
         info!(date = %date, kpi_count = kpis.len(), "Warehouse KPIs computed");
         Ok(kpis)
+    }
+
+    /// Query the component pairs ONE tenant contributes to the warehouse
+    /// KPIs (runs on the tenant's TenantTx — RLS admits exactly this
+    /// tenant's rows). Averages and rates return their (sum, count) pairs
+    /// so the merged KPI stays exact.
+    async fn query_warehouse_kpi_components(
+        &self,
+        db: &mut TenantTx<'_>,
+        date: &str,
+    ) -> Result<WarehouseKpiTotals> {
+        // storage utilization: summed utilization pct + location count.
+        let (utilization_sum, location_count): (f64, i64) = sqlx::query_as(
+            "SELECT COALESCE(SUM(utilization_pct), 0.0), COUNT(*) \
+             FROM warehouse_storage_locations",
+        )
+        .fetch_one(&mut **db.tx())
+        .await
+        .map_err(|e| self.query_failed("kpi.storage_utilization", e))?;
+
+        // picking accuracy: correct picks + total picks on the date.
+        let (correct_picks, total_picks): (i64, i64) = sqlx::query_as(
+            "SELECT \
+                COUNT(*) FILTER (WHERE status = 'correct'), \
+                COUNT(*) \
+             FROM warehouse_pick_events WHERE DATE(event_date) = $1",
+        )
+        .bind(date)
+        .fetch_one(&mut **db.tx())
+        .await
+        .map_err(|e| self.query_failed("kpi.picking_accuracy", e))?;
+
+        // order cycle time: summed hours + completed orders on the date.
+        let (cycle_hours, cycle_count): (f64, i64) = sqlx::query_as(
+            "SELECT \
+                COALESCE(SUM(EXTRACT(EPOCH FROM (completed_at - created_at)) / 3600.0), 0.0), \
+                COUNT(*) \
+             FROM warehouse_orders WHERE DATE(completed_at) = $1",
+        )
+        .bind(date)
+        .fetch_one(&mut **db.tx())
+        .await
+        .map_err(|e| self.query_failed("kpi.order_cycle_time", e))?;
+
+        // dock-to-stock: summed hours + receipts on the date.
+        let (dts_hours, dts_count): (f64, i64) = sqlx::query_as(
+            "SELECT \
+                COALESCE(SUM(EXTRACT(EPOCH FROM (putaway_at - received_at)) / 3600.0), 0.0), \
+                COUNT(*) \
+             FROM warehouse_receipts WHERE DATE(received_at) = $1",
+        )
+        .bind(date)
+        .fetch_one(&mut **db.tx())
+        .await
+        .map_err(|e| self.query_failed("kpi.dock_to_stock_time", e))?;
+
+        // inventory accuracy: within-tolerance counts + total counts on the
+        // date (the 5 % tolerance of the original CASE is preserved).
+        let (accurate_counts, total_counts): (i64, i64) = sqlx::query_as(
+            "SELECT \
+                COUNT(*) FILTER (WHERE ABS(counted_qty - expected_qty)::float / \
+                    GREATEST(expected_qty, 1) < 0.05), \
+                COUNT(*) \
+             FROM warehouse_cycle_counts WHERE DATE(count_date) = $1",
+        )
+        .bind(date)
+        .fetch_one(&mut **db.tx())
+        .await
+        .map_err(|e| self.query_failed("kpi.inventory_accuracy", e))?;
+
+        Ok(WarehouseKpiTotals {
+            utilization_sum,
+            location_count,
+            correct_picks,
+            total_picks,
+            cycle_hours,
+            cycle_count,
+            dts_hours,
+            dts_count,
+            accurate_counts,
+            total_counts,
+        })
+    }
+}
+
+/// Active tenants for tenant-less analytics/KPI runs, read from the
+/// RLS-free `tenants` table (it has no tenant_id column — tenant RLS does
+/// not apply to it).
+async fn tenant_ids(pool: &PgPool) -> Vec<Uuid> {
+    sqlx::query_scalar("SELECT id FROM tenants WHERE is_active = TRUE ORDER BY id")
+        .fetch_all(pool)
+        .await
+        .unwrap_or_default()
+}
+
+/// Per-tenant production-metric components. The completed-count weight
+/// keeps the merged cycle-time average and on-time rate exact (the old
+/// whole-DB AVG/rate over the same rows).
+#[derive(Debug, Clone, Copy, Default)]
+struct ProductionTotals {
+    completed: i64,
+    cycle_time_sum_minutes: f64,
+    on_time_count: i64,
+}
+
+impl AddAssign for ProductionTotals {
+    fn add_assign(&mut self, rhs: Self) {
+        self.completed += rhs.completed;
+        self.cycle_time_sum_minutes += rhs.cycle_time_sum_minutes;
+        self.on_time_count += rhs.on_time_count;
+    }
+}
+
+impl ProductionTotals {
+    fn to_json(self) -> serde_json::Value {
+        let cycle_time_avg_minutes = if self.completed > 0 {
+            self.cycle_time_sum_minutes / self.completed as f64
+        } else {
+            0.0
+        };
+        let on_time_delivery_rate = if self.completed > 0 {
+            self.on_time_count as f64 / self.completed as f64
+        } else {
+            0.0
+        };
+        serde_json::json!({
+            "work_orders_completed": self.completed,
+            "cycle_time_avg_minutes": cycle_time_avg_minutes,
+            "on_time_delivery_rate": on_time_delivery_rate,
+        })
+    }
+}
+
+/// Per-tenant quality-metric counts (pure sums across tenants).
+#[derive(Debug, Clone, Copy, Default)]
+struct QualityTotals {
+    ncrs_opened: i64,
+    ncrs_closed: i64,
+    open_ncr_count: i64,
+    capa_open: i64,
+}
+
+impl AddAssign for QualityTotals {
+    fn add_assign(&mut self, rhs: Self) {
+        self.ncrs_opened += rhs.ncrs_opened;
+        self.ncrs_closed += rhs.ncrs_closed;
+        self.open_ncr_count += rhs.open_ncr_count;
+        self.capa_open += rhs.capa_open;
+    }
+}
+
+impl QualityTotals {
+    fn to_json(self) -> serde_json::Value {
+        serde_json::json!({
+            "ncrs_opened": self.ncrs_opened,
+            "ncrs_closed": self.ncrs_closed,
+            "open_ncr_count": self.open_ncr_count,
+            "capa_open": self.capa_open,
+        })
+    }
+}
+
+/// Per-tenant finance-metric components (counts and NUMERIC sums cast to
+/// float8; both add across tenants).
+#[derive(Debug, Clone, Copy, Default)]
+struct FinanceTotals {
+    invoices_issued: i64,
+    total_revenue: f64,
+    outstanding_ar: f64,
+}
+
+impl AddAssign for FinanceTotals {
+    fn add_assign(&mut self, rhs: Self) {
+        self.invoices_issued += rhs.invoices_issued;
+        self.total_revenue += rhs.total_revenue;
+        self.outstanding_ar += rhs.outstanding_ar;
+    }
+}
+
+impl FinanceTotals {
+    fn to_json(self) -> serde_json::Value {
+        serde_json::json!({
+            "invoices_issued": self.invoices_issued,
+            "total_revenue": self.total_revenue,
+            "outstanding_ar": self.outstanding_ar,
+        })
+    }
+}
+
+/// Per-tenant inventory-metric components. Turnover merges as
+/// total_moved / total_on_hand (never a mean of per-tenant ratios).
+#[derive(Debug, Clone, Copy, Default)]
+struct InventoryTotals {
+    total_items: i64,
+    low_stock_items: i64,
+    moved_units: f64,
+    on_hand_units: f64,
+}
+
+impl AddAssign for InventoryTotals {
+    fn add_assign(&mut self, rhs: Self) {
+        self.total_items += rhs.total_items;
+        self.low_stock_items += rhs.low_stock_items;
+        self.moved_units += rhs.moved_units;
+        self.on_hand_units += rhs.on_hand_units;
+    }
+}
+
+impl InventoryTotals {
+    fn to_json(self) -> serde_json::Value {
+        let inventory_turnover = if self.on_hand_units > 0.0 {
+            self.moved_units / self.on_hand_units
+        } else {
+            0.0
+        };
+        serde_json::json!({
+            "total_items": self.total_items,
+            "low_stock_items": self.low_stock_items,
+            "inventory_turnover": inventory_turnover,
+        })
+    }
+}
+
+/// Per-tenant warehouse-KPI components. Every average/rate keeps its
+/// (sum, count) pair so the merged KPI matches the whole-DB formula
+/// exactly.
+#[derive(Debug, Clone, Copy, Default)]
+struct WarehouseKpiTotals {
+    utilization_sum: f64,
+    location_count: i64,
+    correct_picks: i64,
+    total_picks: i64,
+    cycle_hours: f64,
+    cycle_count: i64,
+    dts_hours: f64,
+    dts_count: i64,
+    accurate_counts: i64,
+    total_counts: i64,
+}
+
+impl AddAssign for WarehouseKpiTotals {
+    fn add_assign(&mut self, rhs: Self) {
+        self.utilization_sum += rhs.utilization_sum;
+        self.location_count += rhs.location_count;
+        self.correct_picks += rhs.correct_picks;
+        self.total_picks += rhs.total_picks;
+        self.cycle_hours += rhs.cycle_hours;
+        self.cycle_count += rhs.cycle_count;
+        self.dts_hours += rhs.dts_hours;
+        self.dts_count += rhs.dts_count;
+        self.accurate_counts += rhs.accurate_counts;
+        self.total_counts += rhs.total_counts;
+    }
+}
+
+impl WarehouseKpiTotals {
+    /// Render the merged components as the historical five KPI values.
+    fn to_kpis(self, computed_at: String) -> Vec<KpiValue> {
+        let storage_utilization = if self.location_count > 0 {
+            self.utilization_sum / self.location_count as f64
+        } else {
+            0.0
+        };
+        let picking_accuracy = if self.total_picks > 0 {
+            self.correct_picks as f64 / self.total_picks as f64 * 100.0
+        } else {
+            0.0
+        };
+        let order_cycle_time = if self.cycle_count > 0 {
+            self.cycle_hours / self.cycle_count as f64
+        } else {
+            0.0
+        };
+        let dock_to_stock_time = if self.dts_count > 0 {
+            self.dts_hours / self.dts_count as f64
+        } else {
+            0.0
+        };
+        let inventory_accuracy = if self.total_counts > 0 {
+            self.accurate_counts as f64 / self.total_counts as f64 * 100.0
+        } else {
+            0.0
+        };
+        vec![
+            KpiValue {
+                name: "storage_utilization".to_string(),
+                value: storage_utilization,
+                unit: "%".to_string(),
+                computed_at: computed_at.clone(),
+                threshold: Some(85.0),
+            },
+            KpiValue {
+                name: "picking_accuracy".to_string(),
+                value: picking_accuracy,
+                unit: "%".to_string(),
+                computed_at: computed_at.clone(),
+                threshold: Some(95.0),
+            },
+            KpiValue {
+                name: "order_cycle_time".to_string(),
+                value: order_cycle_time,
+                unit: "hours".to_string(),
+                computed_at: computed_at.clone(),
+                threshold: Some(8.0),
+            },
+            KpiValue {
+                name: "dock_to_stock_time".to_string(),
+                value: dock_to_stock_time,
+                unit: "hours".to_string(),
+                computed_at: computed_at.clone(),
+                threshold: Some(12.0),
+            },
+            KpiValue {
+                name: "inventory_accuracy".to_string(),
+                value: inventory_accuracy,
+                unit: "%".to_string(),
+                computed_at,
+                threshold: Some(95.0),
+            },
+        ]
     }
 }
 

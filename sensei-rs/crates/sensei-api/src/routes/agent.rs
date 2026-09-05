@@ -118,16 +118,14 @@ pub async fn build_context_with_locale(
     state: &AppState,
     accept_language: Option<&str>,
 ) -> AgentContext {
-    let rbac = sensei_auth::rbac::authorization_service();
-    let mut permissions = std::collections::HashSet::new();
-    for role in &user.roles {
-        // Same resolution as HTTP authorization: system + tenant-scoped
-        // custom role permissions (item 18 — no disagreement between the
-        // two layers).
-        for perm in rbac.permissions_for_role_in_tenant(user.tenant_id, role) {
-            permissions.insert(perm);
-        }
-    }
+    // Thirtieth-audit P0-11: the agent runs on the SAME LIVE permission
+    // set the auth middleware resolved per request (static hierarchy +
+    // tenant custom rows, carried on user.permissions) — never a
+    // reconstruction from the process-global RBAC registry, which would
+    // diverge once a tenant custom role changes (a revoked custom
+    // permission could keep flowing to the model, or a fresh grant could
+    // stay invisible). Roles ride along from user.roles (also live).
+    let permissions = user.permissions.clone();
     // Twentieth audit P1 + twenty-first audit item 6 (one-pass operating
     // scope): scope resolution goes through the ONE authoritative builder
     // — RequestContext (entitlement membership + topology chain proof).

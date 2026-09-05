@@ -1,10 +1,10 @@
 # =============================================================================
 # CONFIGMAP — non-secret configuration only.
 #
-# Credential-bearing values (DATABASE_URL, JWT_SECRET, S3_ACCESS_KEY,
-# S3_SECRET_KEY, SMTP_PASSWORD, NATS credentials, CEO password)
-# live exclusively in the Secret (secret.yaml). Deployment env vars must
-# reference the right source: Secret for secrets, ConfigMap for config.
+# Credential-bearing values (DATABASE_URL_APP/ADMIN/MIGRATOR, JWT_SECRET,
+# S3_ACCESS_KEY, S3_SECRET_KEY, SMTP_PASSWORD, NATS credentials, CEO
+# password) live exclusively in the Secret (secret.yaml). Deployment env vars
+# must reference the right source: Secret for secrets, ConfigMap for config.
 # See .env.example (the canonical env contract) for the authoritative list.
 # =============================================================================
 apiVersion: v1
@@ -28,7 +28,10 @@ data:
   CORS_ALLOWED_ORIGINS: {{ .Values.config.corsOrigins | join "," | quote }}
   DB_MAX_CONNECTIONS: {{ .Values.config.rust.dbMaxConnections | default 20 | quote }}
   DB_CONNECTION_TIMEOUT: {{ .Values.config.rust.dbConnectionTimeout | default 30 | quote }}
-  DB_AUTO_MIGRATE: {{ .Values.config.rust.dbAutoMigrate | default true | quote }}
+  # Auto-migration is a DEV/LEGACY opt-in. The production default is false:
+  # schema changes are applied by the db-migrate Job hook (sensei_migrator)
+  # before the API/worker rollout — the API never migrates.
+  DB_AUTO_MIGRATE: {{ .Values.config.rust.dbAutoMigrate | default false | quote }}
   JWT_ACCESS_TTL_MINUTES: {{ .Values.config.rust.accessTokenTtlMinutes | default 15 | quote }}
   JWT_REFRESH_EXPIRY_DAYS: {{ .Values.config.rust.refreshTokenExpiryDays | default 7 | quote }}
   JWT_ISSUER: {{ .Values.config.rust.jwtIssuer | default "sensei" | quote }}

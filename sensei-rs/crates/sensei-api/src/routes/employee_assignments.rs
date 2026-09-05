@@ -57,14 +57,26 @@ pub async fn set_employee_assignment(
         SenseiError::Database("Assignment management requires the database pool".to_string())
     })?;
 
-    // The target user must exist in this tenant.
-    let exists: bool =
-        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM users WHERE id = $1 AND tenant_id = $2)")
-            .bind(user_id)
-            .bind(user.tenant_id)
-            .fetch_one(pool.as_ref())
+    // The target user must exist in this tenant. The users table is
+    // fail-closed FORCE RLS (migration 175 universal policy), so the
+    // check runs inside a TenantTx of the caller's tenant.
+    let exists: bool = {
+        let mut db = sensei_core::db::TenantTx::begin(pool, user.tenant_id)
             .await
-            .map_err(|e| SenseiError::Database(format!("Assignment lookup failed: {e}")))?;
+            .map_err(|e| {
+                SenseiError::Database(format!("Assignment lookup tx failed: {e}"))
+            })?;
+        let found: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM users WHERE id = $1 AND tenant_id = $2)",
+        )
+        .bind(user_id)
+        .bind(user.tenant_id)
+        .fetch_one(&mut **db.tx())
+        .await
+        .map_err(|e| SenseiError::Database(format!("Assignment lookup failed: {e}")))?;
+        drop(db);
+        found
+    };
     if !exists {
         return Err(SenseiError::NotFound(format!("User {user_id} not found")));
     }

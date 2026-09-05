@@ -1,4 +1,16 @@
 # Tool versions — single source of truth for pinned tooling.
 # CI (`.github/workflows/*.yml`) reads these versions; keep in sync with the
 # Dockerfile (sensei-rs/Dockerfile) base images and rust-toolchain.toml.
+#
+# Zig: the version AND the pinned sha256 of its x86_64-linux archive
+# (zig-x86_64-linux-${VERSION}.tar.xz — the 0.15.x naming; the obsolete
+# zig-linux-x86_64-* archive name is gone). scripts/install-zig.sh consumes
+# both lines; the Dockerfile mirrors both inline (its build context is
+# sensei-rs/ and cannot read this file).
 zig 0.15.2
+zig_archive_sha256 02aa270f183da276e5b5920b1dac44a63f1a49e55050ebde3aecc9eb82f93239
+
+# Trunk (Leptos WASM bundler): pinned so `cargo install trunk --version
+# "$TRUNK_VERSION" --locked` is identical in CI (e2e-playwright.yml) and in
+# the Dockerfile frontend stage (crates.io latest stable at pin time).
+trunk 0.21.14

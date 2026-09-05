@@ -6,6 +6,7 @@ use axum::extract::State;
 use axum::Json;
 use rust_decimal::Decimal;
 use sensei_auth::middleware::AuthenticatedUser;
+use sensei_core::db::TenantTx;
 use sensei_core::error::{Result, SenseiError};
 use sensei_services::tps::flow_economics::{self, FinanceWasteSnapshot, SourcingFlowCost};
 
@@ -52,18 +53,28 @@ pub async fn sourcing_flow_cost(
     // Demand per day: resolved from the product family's recent sales when
     // a product_id is given, otherwise the caller's explicit demand_per_day.
     let demand_per_day: Decimal = match req.get("product_id").and_then(|v| v.as_str()) {
-        Some(product_id) if !product_id.is_empty() => sqlx::query_scalar(
-            "SELECT COALESCE(SUM((li->>'quantity')::numeric), 0) / 30.0 \
-             FROM sales_orders so, jsonb_array_elements(so.line_items) AS li \
-             WHERE so.tenant_id = $1 AND (li->>'product_id')::uuid = $2 \
-               AND so.status NOT IN ('completed', 'cancelled', 'closed') \
-               AND so.created_at > NOW() - INTERVAL '30 days'",
-        )
-        .bind(user.tenant_id)
-        .bind(product_id)
-        .fetch_one(pool.as_ref())
-        .await
-        .unwrap_or(Decimal::ZERO),
+        // Wave C RLS (thirtieth-audit item 18): sales_orders is fail-closed
+        // FORCE RLS since migration 175 — the demand read runs inside a
+        // TenantTx of the caller's tenant.
+        Some(product_id) if !product_id.is_empty() => {
+            let mut db = TenantTx::begin(pool, user.tenant_id).await.map_err(|e| {
+                SenseiError::Database(format!("Failed to begin flow-economics tx: {e}"))
+            })?;
+            let demand = sqlx::query_scalar(
+                "SELECT COALESCE(SUM((li->>'quantity')::numeric), 0) / 30.0 \
+                 FROM sales_orders so, jsonb_array_elements(so.line_items) AS li \
+                 WHERE so.tenant_id = $1 AND (li->>'product_id')::uuid = $2 \
+                   AND so.status NOT IN ('completed', 'cancelled', 'closed') \
+                   AND so.created_at > NOW() - INTERVAL '30 days'",
+            )
+            .bind(user.tenant_id)
+            .bind(product_id)
+            .fetch_one(&mut **db.tx())
+            .await
+            .unwrap_or(Decimal::ZERO);
+            let _ = db.commit().await;
+            demand
+        }
         _ => req
             .get("demand_per_day")
             .and_then(|v| v.as_str())
@@ -99,6 +110,14 @@ pub async fn finance_waste(
         .as_ref()
         .ok_or_else(|| SenseiError::Database("Waste view requires the database".to_string()))?;
 
+    // Wave C RLS (thirtieth-audit item 18): work_orders/inventory_items/
+    // stock_moves/products are tenant-owned fail-closed FORCE RLS since
+    // migration 175 — all waste reads run on ONE TenantTx of the caller's
+    // tenant.
+    let mut db = TenantTx::begin(pool, user.tenant_id)
+        .await
+        .map_err(|e| SenseiError::Database(format!("Failed to begin waste tx: {e}")))?;
+
     // WIP cash: open work orders × product standard cost.
     let wip_row: (Decimal, Decimal) = sqlx::query_as(
         "SELECT COALESCE(SUM(wo.quantity - wo.quantity_completed), 0)::numeric, \
@@ -108,7 +127,7 @@ pub async fn finance_waste(
          WHERE wo.tenant_id = $1 AND wo.status NOT IN ('completed', 'cancelled')",
     )
     .bind(user.tenant_id)
-    .fetch_one(pool.as_ref())
+    .fetch_one(&mut **db.tx())
     .await
     .map_err(|e| SenseiError::Database(format!("WIP read failed: {e}")))?;
     let (_wip_qty, wip_cash) = wip_row;
@@ -138,7 +157,7 @@ pub async fn finance_waste(
            ), ii.created_at) < NOW() - INTERVAL '90 days'",
     )
     .bind(user.tenant_id)
-    .fetch_one(pool.as_ref())
+    .fetch_one(&mut **db.tx())
     .await
     .map_err(|e| SenseiError::Database(format!("Aging read failed: {e}")))?;
 
@@ -152,10 +171,13 @@ pub async fn finance_waste(
          WHERE wo.tenant_id = $1",
     )
     .bind(user.tenant_id)
-    .fetch_one(pool.as_ref())
+    .fetch_one(&mut **db.tx())
     .await
     .map_err(|e| SenseiError::Database(format!("Scrap read failed: {e}")))?;
     let rework_cost: Decimal = Decimal::ZERO;
+    db.commit()
+        .await
+        .map_err(|e| SenseiError::Database(format!("Failed to commit waste tx: {e}")))?;
 
     Ok(Json(flow_economics::finance_waste(
         wip_cash,

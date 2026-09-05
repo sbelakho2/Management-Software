@@ -131,6 +131,17 @@ pub async fn derive_signals(
     })?;
     use sensei_services::tps::signals::*;
     let mut signals: Vec<TpsSignal> = Vec::new();
+    // Thirtieth-audit item 18: the tables this derivation reads
+    // (tps_thresholds, andons, work_orders, purchase_orders,
+    // goods_receipts, suppliers, ...) are fail-closed FORCE RLS
+    // (migration 175 normalized the last compatibility policies onto
+    // the universal no-context = no-rows shape), so all reads run
+    // inside ONE TenantTx of the caller's tenant.
+    let mut db = sensei_core::db::TenantTx::begin(pool, user.tenant_id)
+        .await
+        .map_err(|e| sensei_core::error::SenseiError::Database(
+            format!("Signal derivation tx failed: {e}")))?;
+
 
     // Item 45 (thirteenth audit): thresholds are consumed at the MOST
     // SPECIFIC scope first — the product-family override, then the
@@ -144,7 +155,7 @@ pub async fn derive_signals(
              WHERE tenant_id = $1 AND product_family_id IS NULL",
         )
         .bind(user.tenant_id)
-        .fetch_all(pool.as_ref())
+        .fetch_all(&mut **db.tx())
         .await
         .map_err(|e| {
             sensei_core::error::SenseiError::Database(format!("Threshold read failed: {e}"))
@@ -159,7 +170,7 @@ pub async fn derive_signals(
              WHERE tenant_id = $1 AND product_family_id IS NOT NULL",
         )
         .bind(user.tenant_id)
-        .fetch_all(pool.as_ref())
+        .fetch_all(&mut **db.tx())
         .await
         .map_err(|e| {
             sensei_core::error::SenseiError::Database(format!("Family threshold read failed: {e}"))
@@ -188,7 +199,7 @@ pub async fn derive_signals(
     .bind(user.tenant_id)
     .bind(format!("{recurrence_window} days"))
     .bind(recurrence_threshold)
-    .fetch_all(pool.as_ref())
+    .fetch_all(&mut **db.tx())
     .await
     .map_err(|e| {
         sensei_core::error::SenseiError::Database(format!("Recurrence read failed: {e}"))
@@ -223,7 +234,7 @@ pub async fn derive_signals(
     .bind(user.tenant_id)
     .bind(format!("{queue_window} days"))
     .bind(queue_threshold)
-    .fetch_all(pool.as_ref())
+    .fetch_all(&mut **db.tx())
     .await
     .map_err(|e| sensei_core::error::SenseiError::Database(format!("Queue read failed: {e}")))?;
     for (_wc, net_growth) in queue {
@@ -250,7 +261,7 @@ pub async fn derive_signals(
          LIMIT 3",
     )
     .bind(user.tenant_id)
-    .fetch_all(pool.as_ref())
+    .fetch_all(&mut **db.tx())
     .await
     .map_err(|e| sensei_core::error::SenseiError::Database(format!("Supplier read failed: {e}")))?;
     for (_name, otd, stddev, mean_bias) in suppliers {
@@ -281,7 +292,7 @@ pub async fn derive_signals(
     )
     .bind(user.tenant_id)
     .bind(format!("{cycle_window} days"))
-    .fetch_all(pool.as_ref())
+    .fetch_all(&mut **db.tx())
     .await
     .map_err(|e| sensei_core::error::SenseiError::Database(format!("Cycle read failed: {e}")))?;
     for (actual, standard) in cycle {
@@ -290,6 +301,7 @@ pub async fn derive_signals(
             signals.push(s);
         }
     }
+    drop(db);
     Ok(Json(DerivedSignals {
         signals,
         derived_from: "factory events (andons, work orders, receipts, operations)".to_string(),

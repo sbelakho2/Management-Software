@@ -60,24 +60,17 @@ Create the name of the service account to use
 {{- end }}
 
 {{/*
-PostgreSQL host
+Database host (thirtieth-audit items 26/28): the bundled Bitnami subchart is
+a DEV/EVAL convenience (postgresql.enabled=true resolves to the subchart
+service); the production default is an external PostgreSQL provisioned from
+the pinned DB capability image (.github/.db-capability — see values.yaml
+database.imagePin), addressed by database.host.
 */}}
-{{- define "sensei.postgresql.host" -}}
+{{- define "sensei.db.host" -}}
 {{- if .Values.postgresql.enabled }}
 {{- printf "%s-postgresql" (include "sensei.fullname" .) }}
 {{- else }}
-{{- .Values.config.databaseHost }}
-{{- end }}
-{{- end }}
-
-{{/*
-PostgreSQL database URL
-*/}}
-{{- define "sensei.postgresql.url" -}}
-{{- if .Values.config.databaseUrl }}
-{{- .Values.config.databaseUrl }}
-{{- else }}
-{{- printf "postgresql+asyncpg://%s:%s@%s:5432/%s" .Values.postgresql.auth.username .Values.postgresql.auth.password (include "sensei.postgresql.host" .) .Values.postgresql.auth.database }}
+{{- .Values.database.host }}
 {{- end }}
 {{- end }}
 

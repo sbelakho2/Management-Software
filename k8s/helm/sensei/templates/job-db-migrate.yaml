@@ -1,0 +1,68 @@
+{{- if .Values.database.jobs.enabled }}
+# =============================================================================
+# db-migrate Job hook (thirtieth-audit item 26) — MIGRATOR identity only.
+#
+# Runs the FULL migration chain (`sensei-api --migrate-only`) as the
+# deployment-only sensei_migrator role (BYPASSRLS NOCREATEDB, created by the
+# db-bootstrap hook) against DATABASE_URL_MIGRATOR. The API/worker
+# Deployments NEVER run migrations (no init containers, dbAutoMigrate=false)
+# and connect only as sensei_app.
+#
+# Hook ordering (bootstrap -> migrate -> grants -> rollout): pre-install AND
+# pre-upgrade hook, weight -3 — after db-bootstrap (-5), before db-grants
+# (-1). Helm waits for this Job to succeed before the next hook / before the
+# new Deployment manifests are applied; a failed migration aborts the
+# upgrade and the PREVIOUS deployment keeps serving traffic.
+# =============================================================================
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "sensei.fullname" . }}-db-migrate
+  labels:
+    {{- include "sensei.labels" . | nindent 4 }}
+    app.kubernetes.io/component: db-migrate
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "-3"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 2
+  template:
+    metadata:
+      labels:
+        {{- include "sensei.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: db-migrate
+    spec:
+      restartPolicy: OnFailure
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "sensei.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.securityContext | nindent 8 }}
+      containers:
+      - name: db-migrate
+        securityContext:
+          {{- toYaml .Values.podSecurityContext | nindent 12 }}
+        image: "{{ .Values.senseiApi.image.repository }}:{{ .Values.senseiApi.image.tag | default .Chart.AppVersion }}"
+        imagePullPolicy: {{ .Values.senseiApi.image.pullPolicy }}
+        command: ["/usr/local/bin/sensei-api"]
+        args: ["--migrate-only"]
+        env:
+        - name: SENSEI_ENV
+          value: {{ .Values.config.environment | quote }}
+        # MIGRATOR identity only — the sole DB URL this Job may hold.
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "sensei.fullname" . }}-secret
+              key: DATABASE_URL_MIGRATOR
+        # AppConfig validates JWT_SECRET in production before the
+        # migrate-only path runs (same contract as docker-compose.prod.yml).
+        - name: JWT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "sensei.fullname" . }}-secret
+              key: JWT_SECRET
+{{- end }}

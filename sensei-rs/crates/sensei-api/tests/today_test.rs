@@ -163,8 +163,13 @@ async fn connect() -> Option<sqlx::PgPool> {
     sqlx::PgPool::connect(&url).await.ok()
 }
 
+/// The DB-gated tests share one database and each DROPS every table
+/// before re-applying the full chain — a per-binary lock serializes them.
+static TODAY_DB_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
 #[tokio::test]
 async fn test_today_site_scope_never_tenant_totals() {
+    let _serial = TODAY_DB_LOCK.lock().await;
     let Some(pool) = connect().await else { return };
     drop_all_tables(&pool).await;
     sensei_db::migrations::run_migrations(&pool)
@@ -339,5 +344,390 @@ async fn test_today_site_scope_never_tenant_totals() {
     assert_eq!(
         snap.quality.open_capas, 0,
         "no CAPAs were seeded — zero is the honest count"
+    );
+}
+
+// ── Site-local "today" boundaries (thirtieth-audit item 15) ─────────────────
+//
+// The date-bounded counters must use the SITE's local calendar day, never a
+// UTC `date_naive()` comparison: near local midnight a UTC instant belongs
+// to a different UTC date than its site-local date (2026-09-04 23:30 UTC is
+// already 2026-09-05 00:30 at a UTC+1 site, and 2026-09-05 23:30 local is
+// 2026-09-06 04:30 UTC at a UTC-5 site). A work order completed inside that
+// window must count as "completed today" on its site, and the SAME
+// implementation must give every site its own day in a multi-site union.
+
+/// The UTC instant `local_time_of_day` into the site's CURRENT local day
+/// (resolved from the DB with the same `AT TIME ZONE` arithmetic the
+/// handler uses).
+async fn local_day_offset_utc(
+    pool: &sqlx::PgPool,
+    tz: &str,
+    offset: &str,
+) -> chrono::DateTime<chrono::Utc> {
+    sqlx::query_scalar(
+        "SELECT (((NOW() AT TIME ZONE $1)::date)::timestamp + $2::interval) \
+                AT TIME ZONE $1",
+    )
+    .bind(tz)
+    .bind(offset)
+    .fetch_one(pool)
+    .await
+    .expect("local-day offset must resolve")
+}
+
+/// The site's CURRENT local date (the label the handler computes).
+async fn local_today(pool: &sqlx::PgPool, tz: &str) -> chrono::NaiveDate {
+    sqlx::query_scalar("SELECT (NOW() AT TIME ZONE $1)::date")
+        .bind(tz)
+        .fetch_one(pool)
+        .await
+        .expect("local today must resolve")
+}
+
+/// Seed the tenant/sites/work centers/users/role-slot fixture shared by the
+/// DB-gated today tests. Returns (tenant, site_a, site_b, wc_a, wc_b).
+#[allow(clippy::type_complexity)]
+async fn seed_scope_fixture(
+    pool: &sqlx::PgPool,
+    tz_a: &str,
+    tz_b: &str,
+) -> (Uuid, Uuid, Uuid, Uuid, Uuid) {
+    let tenant_id = Uuid::new_v4();
+    let site_a = Uuid::new_v4();
+    let site_b = Uuid::new_v4();
+    let wc_a = Uuid::new_v4();
+    let wc_b = Uuid::new_v4();
+
+    sqlx::query("INSERT INTO tenants (id, name, slug) VALUES ($1, 'scope', 'scope')")
+        .bind(tenant_id)
+        .execute(pool)
+        .await
+        .expect("tenant insert");
+    for (site, code, tz) in [(site_a, "A", tz_a), (site_b, "B", tz_b)] {
+        sqlx::query(
+            "INSERT INTO sites (id, tenant_id, name, site_code, timezone) \
+             VALUES ($1, $2, $3, $3, $4)",
+        )
+        .bind(site)
+        .bind(tenant_id)
+        .bind(code)
+        .bind(tz)
+        .execute(pool)
+        .await
+        .expect("site insert");
+    }
+    for (wc, site, code) in [(wc_a, site_a, "WC-A"), (wc_b, site_b, "WC-B")] {
+        sqlx::query(
+            "INSERT INTO work_centers (id, tenant_id, name, work_center_number, site_id) \
+             VALUES ($1, $2, $3, $3, $4)",
+        )
+        .bind(wc)
+        .bind(tenant_id)
+        .bind(code)
+        .bind(site)
+        .execute(pool)
+        .await
+        .expect("work center insert");
+    }
+    (tenant_id, site_a, site_b, wc_a, wc_b)
+}
+
+/// Seed a work order with an explicit completion/update instant.
+async fn seed_work_order(
+    pool: &sqlx::PgPool,
+    tenant_id: Uuid,
+    wc_id: Uuid,
+    number: &str,
+    status: &str,
+    updated_at: chrono::DateTime<chrono::Utc>,
+) {
+    sqlx::query(
+        "INSERT INTO work_orders \
+             (id, tenant_id, wo_number, product_id, product_name, quantity, status, work_center_id, updated_at) \
+         VALUES ($1, $2, $3, $4, 'P', 1, $5, $6, $7)",
+    )
+    .bind(Uuid::new_v4())
+    .bind(tenant_id)
+    .bind(number)
+    .bind(Uuid::new_v4())
+    .bind(status)
+    .bind(wc_id)
+    .bind(updated_at)
+    .execute(pool)
+    .await
+    .expect("work order insert");
+}
+
+/// Seed a site-scoped user (site hint + active role-slot assignment).
+async fn seed_site_user(
+    pool: &sqlx::PgPool,
+    tenant_id: Uuid,
+    user_id: Uuid,
+    site_id: Uuid,
+    email: &str,
+) {
+    sqlx::query(
+        "INSERT INTO users (id, tenant_id, email, name, password_hash, roles, site_id) \
+         VALUES ($1, $2, $3, 'User', 'x', '{user}', $4)",
+    )
+    .bind(user_id)
+    .bind(tenant_id)
+    .bind(email)
+    .bind(site_id)
+    .execute(pool)
+    .await
+    .expect("user insert");
+    let slot_id = Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO role_slots (id, tenant_id, role_name, slot_name, scope_site_id) \
+         VALUES ($1, $2, 'operator', $3, $4)",
+    )
+    .bind(slot_id)
+    .bind(tenant_id)
+    .bind(format!("slot-{user_id}"))
+    .bind(site_id)
+    .execute(pool)
+    .await
+    .expect("role slot insert");
+    sqlx::query(
+        "INSERT INTO principal_assignments (id, tenant_id, principal_id, slot_id) \
+         VALUES ($1, $2, $3, $4)",
+    )
+    .bind(Uuid::new_v4())
+    .bind(tenant_id)
+    .bind(user_id)
+    .bind(slot_id)
+    .execute(pool)
+    .await
+    .expect("assignment insert");
+}
+
+/// Seed an unscoped user with one role-slot assignment per granted site
+/// (used by the multi-site union test).
+async fn seed_multi_site_user(pool: &sqlx::PgPool, tenant_id: Uuid, user_id: Uuid, sites: &[Uuid]) {
+    sqlx::query(
+        "INSERT INTO users (id, tenant_id, email, name, password_hash, roles) \
+         VALUES ($1, $2, 'union@sensei.test', 'Union User', 'x', '{user}')",
+    )
+    .bind(user_id)
+    .bind(tenant_id)
+    .execute(pool)
+    .await
+    .expect("user insert");
+    for (idx, site) in sites.iter().enumerate() {
+        let slot_id = Uuid::new_v4();
+        sqlx::query(
+            "INSERT INTO role_slots (id, tenant_id, role_name, slot_name, scope_site_id) \
+             VALUES ($1, $2, 'operator', $3, $4)",
+        )
+        .bind(slot_id)
+        .bind(tenant_id)
+        .bind(format!("slot-{user_id}-{idx}"))
+        .bind(site)
+        .execute(pool)
+        .await
+        .expect("role slot insert");
+        sqlx::query(
+            "INSERT INTO principal_assignments (id, tenant_id, principal_id, slot_id) \
+             VALUES ($1, $2, $3, $4)",
+        )
+        .bind(Uuid::new_v4())
+        .bind(tenant_id)
+        .bind(user_id)
+        .bind(slot_id)
+        .execute(pool)
+        .await
+        .expect("assignment insert");
+    }
+}
+
+#[tokio::test]
+async fn test_today_completed_counts_the_site_local_day_across_the_utc_boundary() {
+    let _serial = TODAY_DB_LOCK.lock().await;
+    let Some(pool) = connect().await else { return };
+    drop_all_tables(&pool).await;
+    sensei_db::migrations::run_migrations(&pool)
+        .await
+        .expect("the ENTIRE migration chain must apply to an empty database");
+    let pool = Arc::new(pool);
+
+    // A is UTC+1 (Etc/GMT-1), B is UTC-5 (Etc/GMT+5) — fixed offsets, no
+    // DST, so the boundary mismatch directions never flip.
+    let (tenant_id, site_a, site_b, wc_a, wc_b) =
+        seed_scope_fixture(&pool, "Etc/GMT-1", "Etc/GMT+5").await;
+    let user_a = Uuid::new_v4();
+    seed_site_user(&pool, tenant_id, user_a, site_a, "user-a@sensei.test").await;
+    let user_b = Uuid::new_v4();
+    seed_site_user(&pool, tenant_id, user_b, site_b, "user-b@sensei.test").await;
+
+    // ── Boundary-mismatch completions, derived from the LIVE local days
+    // so the test is deterministic at any wall-clock instant:
+    //  * A: local 00:30 today — its UTC date is ALWAYS the previous UTC
+    //    day (local midnight of a UTC+1 site is 23:00 UTC the day
+    //    before), so `updated_at.date_naive()` never equals the
+    //    site-local date.
+    //  * B: local 23:30 today — its UTC date is ALWAYS the NEXT UTC day
+    //    (local midnight of a UTC-5 site is 05:00 UTC the same day).
+    let a_local_today = local_today(&pool, "Etc/GMT-1").await;
+    let b_local_today = local_today(&pool, "Etc/GMT+5").await;
+    let completed_at_a = local_day_offset_utc(&pool, "Etc/GMT-1", "30 minutes").await;
+    let completed_at_b = local_day_offset_utc(&pool, "Etc/GMT+5", "23 hours 30 minutes").await;
+    // Yesterday locally at A (also 30 min before A's local midnight).
+    let completed_yesterday_at_a =
+        local_day_offset_utc(&pool, "Etc/GMT-1", "-12 hours 30 minutes").await;
+    // The preconditions that make these the audit's midnight mismatch:
+    assert_ne!(
+        completed_at_a.date_naive(),
+        a_local_today,
+        "A's 00:30-local instant must sit on the PREVIOUS UTC date"
+    );
+    assert_ne!(
+        completed_at_b.date_naive(),
+        b_local_today,
+        "B's 23:30-local instant must sit on the NEXT UTC date"
+    );
+    assert_ne!(
+        completed_yesterday_at_a.date_naive(),
+        a_local_today,
+        "the yesterday-local completion must not be today's UTC date either"
+    );
+
+    seed_work_order(
+        &pool,
+        tenant_id,
+        wc_a,
+        "WO-A-TODAY",
+        "completed",
+        completed_at_a,
+    )
+    .await;
+    seed_work_order(
+        &pool,
+        tenant_id,
+        wc_a,
+        "WO-A-YESTERDAY",
+        "completed",
+        completed_yesterday_at_a,
+    )
+    .await;
+    seed_work_order(
+        &pool,
+        tenant_id,
+        wc_b,
+        "WO-B-TODAY",
+        "completed",
+        completed_at_b,
+    )
+    .await;
+
+    let app = common::TestApp::new().await;
+    let state = app.state.with_db_pool(pool.clone());
+
+    let user = AuthenticatedUser {
+        user_id: user_a,
+        tenant_id,
+        roles: vec!["operator".to_string()],
+        sid: None,
+        permissions: HashSet::from(["dashboard:read".to_string()]),
+    };
+    let resp = sensei_api::routes::today::get_today_snapshot(user, State(state.clone()))
+        .await
+        .expect("today snapshot must resolve for the site-A caller");
+    let snap = resp.0;
+    assert_eq!(snap.scope.site_id, Some(site_a));
+    assert_eq!(
+        snap.work_orders.completed_today, 1,
+        "the WO completed at A's local 00:30 (UTC date = yesterday) is \
+         TODAY at A; the yesterday-local completion is not, and B's WO is \
+         invisible to A"
+    );
+    assert_eq!(snap.work_orders.total_active, 0);
+
+    let user = AuthenticatedUser {
+        user_id: user_b,
+        tenant_id,
+        roles: vec!["operator".to_string()],
+        sid: None,
+        permissions: HashSet::from(["dashboard:read".to_string()]),
+    };
+    let resp = sensei_api::routes::today::get_today_snapshot(user, State(state))
+        .await
+        .expect("today snapshot must resolve for the site-B caller");
+    let snap = resp.0;
+    assert_eq!(snap.scope.site_id, Some(site_b));
+    assert_eq!(
+        snap.work_orders.completed_today, 1,
+        "the WO completed at B's local 23:30 (UTC date = tomorrow) is \
+         TODAY at B — a UTC date_naive() comparison would count it for \
+         the wrong day or not at all"
+    );
+    assert_eq!(snap.work_orders.total_active, 0);
+}
+
+#[tokio::test]
+async fn test_today_multisite_union_counts_each_site_on_its_own_local_day() {
+    let _serial = TODAY_DB_LOCK.lock().await;
+    let Some(pool) = connect().await else { return };
+    drop_all_tables(&pool).await;
+    sensei_db::migrations::run_migrations(&pool)
+        .await
+        .expect("the ENTIRE migration chain must apply to an empty database");
+    let pool = Arc::new(pool);
+
+    let (tenant_id, site_a, site_b, wc_a, wc_b) =
+        seed_scope_fixture(&pool, "Etc/GMT-1", "Etc/GMT+5").await;
+    let union_user = Uuid::new_v4();
+    // The caller is granted BOTH sites but carries NO site hint, so no
+    // operating focus exists: the display is the authorized union.
+    seed_multi_site_user(&pool, tenant_id, union_user, &[site_a, site_b]).await;
+
+    // Both sites complete a WO inside THEIR local day at instants whose
+    // UTC dates are the other site's (or neither site's) date:
+    //  * A's row: local 00:30 today  (= previous UTC day 23:30)
+    //  * B's row: local 23:30 today  (= next UTC day 04:30)
+    // With ONE shared (UTC) day boundary both rows fall outside; per-site
+    // windows must count both.
+    let completed_at_a = local_day_offset_utc(&pool, "Etc/GMT-1", "30 minutes").await;
+    let completed_at_b = local_day_offset_utc(&pool, "Etc/GMT+5", "23 hours 30 minutes").await;
+    seed_work_order(
+        &pool,
+        tenant_id,
+        wc_a,
+        "WO-A-UNION",
+        "completed",
+        completed_at_a,
+    )
+    .await;
+    seed_work_order(
+        &pool,
+        tenant_id,
+        wc_b,
+        "WO-B-UNION",
+        "completed",
+        completed_at_b,
+    )
+    .await;
+
+    let app = common::TestApp::new().await;
+    let state = app.state.with_db_pool(pool.clone());
+
+    let user = AuthenticatedUser {
+        user_id: union_user,
+        tenant_id,
+        roles: vec!["operator".to_string()],
+        sid: None,
+        permissions: HashSet::from(["dashboard:read".to_string()]),
+    };
+    let resp = sensei_api::routes::today::get_today_snapshot(user, State(state))
+        .await
+        .expect("today snapshot must resolve for the union caller");
+    let snap = resp.0;
+    assert_eq!(snap.scope.site_id, None, "no focus — the union displays");
+    assert_eq!(
+        snap.work_orders.completed_today, 2,
+        "each site's WO completed on ITS OWN local day — a single UTC/\
+         shared boundary would count neither (their UTC dates differ from \
+         every shared date)"
     );
 }

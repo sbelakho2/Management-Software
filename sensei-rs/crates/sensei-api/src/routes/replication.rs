@@ -234,9 +234,43 @@ pub async fn pull(
     Ok(Json(PullResponse { entries }))
 }
 
+/// Body for `POST /api/v1/replication/confirm-receipts` — the source-side
+/// confirmation poll (thirtieth audit item 25).
+#[derive(Debug, Deserialize)]
+pub struct ConfirmQuery {
+    #[serde(default = "default_limit")]
+    pub limit: i64,
+}
+
+/// `POST /api/v1/replication/confirm-receipts` — the SOURCE-side
+/// reconciliation poll that moves 'acked' queue rows to
+/// 'application_confirmed' ONLY when a target-generated application
+/// receipt (replication_receipts) is observed for the row with a
+/// matching payload_hash. The transition is never reachable from the
+/// ACK: the ack route marks 'acked' (delivery to the consumer) and
+/// nothing else, and the receipt itself lives in the TARGET tenant's
+/// FORCE-RLS slice where no source-side write can create one. The poll
+/// runs under the caller's tenant (the queue owner) and observes its own
+/// receipts through the session-bound SECURITY DEFINER boundary.
+pub async fn confirm_receipts(
+    user: AuthenticatedUser,
+    State(state): State<AppState>,
+    Query(query): Query<ConfirmQuery>,
+) -> Result<Json<serde_json::Value>> {
+    user.require_permission("federation:replication:consume")?;
+    let p = pool(&state)?;
+    let report = replication::confirm_application_receipts(p, user.tenant_id, query.limit).await?;
+    Ok(Json(
+        serde_json::json!({ "ok": true, "confirmation": report }),
+    ))
+}
+
 /// `POST /api/v1/replication/ack` — corporate ACK after applying the
 /// projection. The `claim_token` is the ownership check: a stale worker's
-/// ACK is rejected.
+/// ACK is rejected. The ACK acknowledges DELIVERY to the consumer only:
+/// it marks the row 'acked' and never records an application — the
+/// terminal 'application_confirmed' state is reached only by observing
+/// a target-generated receipt (see [`confirm_receipts`]).
 pub async fn ack(
     user: AuthenticatedUser,
     State(state): State<AppState>,

@@ -87,27 +87,35 @@ pub enum ResourceScope {
 }
 
 /// The caller's effective operational scope (seventeenth audit item 4,
-/// eighteenth audit P0-1): ONE type that every resource-touching
-/// repository/route enforces. Resolution is DB-derived — the caller
-/// cannot widen it.
+/// eighteenth audit P0-1; thirtieth-audit P0 item 1): ONE type that every
+/// resource-touching repository/route enforces. Resolution is DB-derived —
+/// the caller cannot widen it.
 ///
 /// - [`AuthorizedScope::NoOperationalScope`]: no active slot assignment
-///   exists — the principal has NO entitlement and NO data access. This
-///   is the FAIL-CLOSED default: a worker whose assignments disappeared,
-///   were corrupted, or never existed gets less privilege, never more.
-///   The invariant is: No entitlement → no scope → no data.
-/// - [`AuthorizedScope::TenantWide`]: constructed ONLY by the explicit
-///   bootstrap/admin path — never by default. `resolve()` never returns
-///   it.
-/// - [`AuthorizedScope::Sites`]: exactly the sites the principal's active
-///   role slots are scoped to.
-/// - [`AuthorizedScope::WorkCenter`]: one site + one work center.
+///   (or only `scope_kind = 'none'` slots) exists — the principal has NO
+///   entitlement and NO data access. This is the FAIL-CLOSED default: a
+///   worker whose assignments disappeared, were corrupted, or never
+///   existed gets less privilege, never more. The invariant is: No
+///   entitlement → no scope → no data.
+/// - [`AuthorizedScope::TenantWide`]: constructed by the EXPLICIT
+///   bootstrap/admin path OR resolved from an ACTIVE role slot with
+///   `scope_kind = 'tenant'` — never by default.
+/// - [`AuthorizedScope::Operational`]: the union of the principal's
+///   site grants (`scope_kind = 'site'` → `sites`) and exact work-center
+///   grants (`scope_kind = 'work_center'` → `work_centers`, each carrying
+///   its DB-derived site). Work centers are NEVER normalized into their
+///   site — a WC slot grants exactly that work center, and a site grant
+///   covers every work center of the site. A pure work-center principal
+///   has an EMPTY `sites` set: their `work_centers` set carries the real
+///   scope.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum AuthorizedScope {
     NoOperationalScope,
     TenantWide,
-    Sites(Vec<Uuid>),
-    WorkCenter(WorkCenterScope),
+    Operational {
+        sites: std::collections::HashSet<Uuid>,
+        work_centers: std::collections::HashSet<WorkCenterScope>,
+    },
 }
 
 impl AuthorizedScope {
@@ -119,56 +127,110 @@ impl AuthorizedScope {
     }
 
     /// Resolve the caller's scope from their ACTIVE role-slot assignments
-    /// (role_slots.scope_site_id). FAIL-CLOSED (eighteenth audit P0-1):
-    /// a principal with no active assignment resolves to
-    /// [`AuthorizedScope::NoOperationalScope`] — absence of an
-    /// assignment means NO scope, not tenant-wide privilege.
+    /// reading ALL of `role_slots.scope_kind` / `scope_site_id` /
+    /// `scope_work_center_id` (thirtieth-audit P0 item 1 — the previous
+    /// `scope_site_id`-only resolution made tenant slots vanish and
+    /// widened work-center slots to their whole site). FAIL-CLOSED
+    /// (eighteenth audit P0-1): a principal with no active assignment
+    /// resolves to [`AuthorizedScope::NoOperationalScope`] — absence of
+    /// an assignment means NO scope, not tenant-wide privilege.
+    ///
+    /// Semantics:
+    /// - any slot with `scope_kind = 'tenant'` ⇒ [`Self::TenantWide`];
+    /// - no active slots ⇒ [`Self::NoOperationalScope`];
+    /// - `scope_kind = 'site'` ⇒ the site joins `sites`;
+    /// - `scope_kind = 'work_center'` ⇒ its (site, work center) pair
+    ///   joins `work_centers` — NEVER normalized into `sites`;
+    /// - `scope_kind = 'none'` is ignored — and a principal with ONLY
+    ///   `'none'` slots resolves to [`Self::NoOperationalScope`] (fail
+    ///   closed preserved).
     #[cfg(not(target_arch = "wasm32"))]
     pub async fn resolve(tx: &mut TenantTx<'_>, principal_id: Uuid) -> Result<Self> {
-        let sites: Vec<Uuid> = sqlx::query_scalar(
-            "SELECT DISTINCT rs.scope_site_id \
+        type SlotRow = (String, Option<Uuid>, Option<Uuid>);
+        let slots: Vec<SlotRow> = sqlx::query_as(
+            "SELECT rs.scope_kind, rs.scope_site_id, rs.scope_work_center_id \
              FROM principal_assignments pa \
              JOIN role_slots rs ON rs.id = pa.slot_id \
-             WHERE pa.principal_id = $1 AND pa.ended_at IS NULL \
-               AND rs.scope_site_id IS NOT NULL",
+             WHERE pa.principal_id = $1 AND pa.ended_at IS NULL",
         )
         .bind(principal_id)
         .fetch_all(&mut **tx.tx())
         .await
         .map_err(|e| SenseiError::Database(format!("scope: resolve principal: {e}")))?;
-        if sites.is_empty() {
+        if slots.is_empty() {
+            return Ok(Self::NoOperationalScope);
+        }
+        for (kind, _, _) in &slots {
+            if kind == "tenant" {
+                return Ok(Self::TenantWide);
+            }
+        }
+        let mut sites = std::collections::HashSet::new();
+        let mut work_centers = std::collections::HashSet::new();
+        for (kind, site, work_center) in slots {
+            match kind.as_str() {
+                "site" => {
+                    if let Some(site) = site {
+                        sites.insert(site);
+                    }
+                }
+                "work_center" => {
+                    if let (Some(site), Some(work_center)) = (site, work_center) {
+                        work_centers.insert(WorkCenterScope { site, work_center });
+                    }
+                }
+                // 'none' slots carry no scope ids; 'tenant' is handled
+                // above. Neither contributes to the union.
+                _ => {}
+            }
+        }
+        if sites.is_empty() && work_centers.is_empty() {
             Ok(Self::NoOperationalScope)
         } else {
-            Ok(Self::Sites(sites))
+            Ok(Self::Operational {
+                sites,
+                work_centers,
+            })
         }
     }
 
-    /// Does this scope cover the given site?
+    /// Does this scope cover the given site? (Thirtieth-audit P0 item 1:
+    /// only SITE grants cover sites — a work-center grant covers its
+    /// exact work center, never the whole site.)
     pub fn allows_site(&self, site: Uuid) -> bool {
         match self {
             Self::NoOperationalScope => false,
             Self::TenantWide => true,
-            Self::Sites(sites) => sites.contains(&site),
-            Self::WorkCenter(wc) => wc.site == site,
+            Self::Operational { sites, .. } => sites.contains(&site),
         }
     }
 
-    /// Does this scope cover the given work center (site, wc)?
+    /// Does this scope cover the given work center (site, wc)? A
+    /// work-center grant allows ONLY its exact (site, wc) pair; a site
+    /// grant covers every work center of that site.
     pub fn allows_work_center(&self, site: Uuid, work_center: Uuid) -> bool {
         match self {
             Self::NoOperationalScope => false,
             Self::TenantWide => true,
             // Eighteenth audit P0-1: a site-level scope covers a work
-            // center ONLY when the work center's site is in the vector —
+            // center ONLY when the work center's site is in the set —
             // the previous `Sites(_) => true` admitted ANY work center.
-            Self::Sites(sites) => sites.contains(&site),
-            Self::WorkCenter(wc) => wc.site == site && wc.work_center == work_center,
+            Self::Operational {
+                sites,
+                work_centers,
+            } => {
+                sites.contains(&site)
+                    || work_centers
+                        .iter()
+                        .any(|wc| wc.site == site && wc.work_center == work_center)
+            }
         }
     }
 
     /// Fail-closed resource enforcement (twenty-ninth audit Wave A
-    /// item 3): the resource's EXPLICIT [`ResourceScope`] must be
-    /// covered by this scope. Returns a `Forbidden` error otherwise.
+    /// item 3; thirtieth-audit P0 item 1): the resource's EXPLICIT
+    /// [`ResourceScope`] must be covered by this scope. Returns a
+    /// `Forbidden` error otherwise.
     ///
     /// Exact semantics:
     ///
@@ -176,8 +238,11 @@ impl AuthorizedScope {
     /// |---|---|---|---|---|
     /// | `NoOperationalScope` | Forbidden | Forbidden | Forbidden | Forbidden |
     /// | `TenantWide` | allowed | allowed | allowed | Forbidden |
-    /// | `Sites(sites)` | Forbidden | allowed iff `site ∈ sites` | allowed iff `site ∈ sites` | Forbidden |
-    /// | `WorkCenter(wc)` | Forbidden | allowed iff `site == wc.site` | allowed iff exact match (`site == wc.site && work_center == wc.work_center`) | Forbidden |
+    /// | `Operational { sites, work_centers }` | Forbidden | allowed iff `site ∈ sites` | allowed iff `site ∈ sites` OR exact match (`(site, wc) ∈ work_centers`) | Forbidden |
+    ///
+    /// A work-center grant NEVER widens into its site: a pure
+    /// work-center caller (`sites = ∅`) is Forbidden on `Site` and
+    /// on every work-center resource but its exact pair(s).
     ///
     /// [`ResourceScope::Unresolved`] is Forbidden ALWAYS — a resource
     /// whose scope cannot be established is never authorized, not even
@@ -222,7 +287,7 @@ impl AuthorizedScope {
     /// - `NoOperationalScope` — Forbidden ALWAYS.
     /// - `(None, None)` — a tenant-level resource: Ok ONLY for
     ///   `TenantWide` (the sole scope a site-less claim may not widen);
-    ///   `Sites` / `WorkCenter` are Forbidden.
+    ///   `Operational` is Forbidden.
     /// - `(Some(site), None)` — a site resource: `allows_site(site)`.
     /// - `(Some(site), Some(wc))` — a work-center resource:
     ///   `allows_work_center(site, wc)`.
@@ -243,6 +308,7 @@ impl AuthorizedScope {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashSet;
 
     fn no_scope() -> AuthorizedScope {
         AuthorizedScope::NoOperationalScope
@@ -251,13 +317,19 @@ mod tests {
         AuthorizedScope::tenant_wide()
     }
     fn sites(site_a: Uuid, site_b: Uuid) -> AuthorizedScope {
-        AuthorizedScope::Sites(vec![site_a, site_b])
+        AuthorizedScope::Operational {
+            sites: HashSet::from([site_a, site_b]),
+            work_centers: HashSet::new(),
+        }
     }
     fn work_center(site: Uuid, wc: Uuid) -> AuthorizedScope {
-        AuthorizedScope::WorkCenter(WorkCenterScope {
-            site,
-            work_center: wc,
-        })
+        AuthorizedScope::Operational {
+            sites: HashSet::new(),
+            work_centers: HashSet::from([WorkCenterScope {
+                site,
+                work_center: wc,
+            }]),
+        }
     }
 
     fn ok(scope: &AuthorizedScope, resource: &ResourceScope) -> bool {
@@ -361,8 +433,9 @@ mod tests {
         // Tenant-level resource: only a tenant-wide grant reaches it.
         assert!(scope.enforce_resource(&ResourceScope::Tenant).is_err());
 
-        // Site resource: only the work center's OWN site.
-        assert!(ok(&scope, &ResourceScope::Site { site: site_a }));
+        // Site resource: a work-center grant never widens into its site
+        // (thirtieth-audit P0 item 1) — Forbidden even for wc's own site.
+        assert!(!ok(&scope, &ResourceScope::Site { site: site_a }));
         assert!(!ok(&scope, &ResourceScope::Site { site: foreign_site }));
 
         // Work-center resource: EXACT match only.
@@ -417,9 +490,11 @@ mod tests {
                 sites(site_a, site_b),
                 [false, true, true, true, true, false],
             ),
+            // A work-center scope allows its exact pair only — never the
+            // site resource, never a sibling work center (P0 item 1).
             (
                 work_center(site_a, wc_a),
-                [false, true, false, true, false, false],
+                [false, false, false, true, false, false],
             ),
         ];
         for (scope, expected) in cases {
@@ -490,9 +565,11 @@ mod tests {
         assert!(sites(site_a, site_b)
             .enforce(Some(Uuid::new_v4()), None)
             .is_err());
+        // A pure work-center scope covers its exact pair, never the site
+        // arm (thirtieth-audit P0 item 1 — no whole-site widening).
         assert!(work_center(site_a, wc_a)
             .enforce(Some(site_a), None)
-            .is_ok());
+            .is_err());
         assert!(work_center(site_a, wc_a)
             .enforce(Some(site_a), Some(wc_a))
             .is_ok());
@@ -504,5 +581,30 @@ mod tests {
             .is_err());
         assert!(tenant_wide().enforce(Some(site_a), Some(wc_a)).is_ok());
         assert!(no_scope().enforce(Some(site_a), Some(wc_a)).is_err());
+    }
+
+    #[test]
+    fn mixed_site_and_work_center_grants_union_exactly() {
+        let site_a = Uuid::new_v4();
+        let site_b = Uuid::new_v4();
+        let wc_b1 = Uuid::new_v4();
+        let wc_b2 = Uuid::new_v4();
+        let scope = AuthorizedScope::Operational {
+            sites: HashSet::from([site_a]),
+            work_centers: HashSet::from([WorkCenterScope {
+                site: site_b,
+                work_center: wc_b1,
+            }]),
+        };
+        // The site grant covers the whole site (any of its work centers).
+        assert!(scope.allows_site(site_a));
+        assert!(
+            !scope.allows_site(site_b),
+            "WC grant never widens to site B"
+        );
+        assert!(scope.allows_work_center(site_a, Uuid::new_v4()));
+        // The work-center grant covers exactly (site_b, wc_b1).
+        assert!(scope.allows_work_center(site_b, wc_b1));
+        assert!(!scope.allows_work_center(site_b, wc_b2));
     }
 }

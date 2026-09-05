@@ -1,0 +1,45 @@
+# =============================================================================
+# DB CAPABILITY CONTRACT — single declared database capability (thirtieth-audit
+# item 28). Every environment that chooses a PostgreSQL product MUST consume
+# exactly the image pinned below — never a different database product.
+#
+# Declared capability
+# -------------------
+#   PostgreSQL major      : 16 (PG_MAJOR)
+#   Image (pinned)        : PG_IMAGE — pgvector/pgvector:pg16 (includes the
+#                           PostgreSQL 16 server + the pgvector extension).
+#                           Dockerfile reference: github.com/pgvector/pgvector
+#                           docker/16/Dockerfile (this tag's multi-arch index
+#                           digest is pinned below, so the reference is
+#                           immutable across every consumer).
+#   Required extensions   : vector, uuid-ossp, pgcrypto, pg_trgm
+#                           (migration 004_rfq_quote_tables.sql requires
+#                           CREATE EXTENSION vector — plain postgres:16 images
+#                           CANNOT satisfy the contract, which is why E2E and
+#                           every other environment must use PG_IMAGE).
+#   Required features     : pg16 row-level security (FORCE RLS), SQLx
+#                           migration ledger (_sqlx_migrations), JSONB, GIN
+#                           indexes, trusted extensions (initdb creates them
+#                           as the bootstrap superuser before migrations run).
+#
+# Who consumes what (each entry MUST carry the exact PG_IMAGE literal; the
+# enforcement script scripts/validate-db-contract.sh fails CI on drift):
+#   env                       file(s)                                        role
+#   ------------------------  ---------------------------------------------  -------
+#   DB contract CI            .github/workflows/db-contract.yml              fresh-DB + least-privilege/RLS + clean-bootstrap gates (2 service containers)
+#   E2E browser release gate  .github/workflows/e2e-playwright.yml           Playwright E2E against a real migrated DB (1 service container)
+#   Rust CI (unit/integration) .github/workflows/sensei-rs-ci.yml            test + integration + security service containers (3)
+#   CD pre-flight             .github/workflows/cd.yml                       test + integration service containers (2)
+#   Local dev Compose         docker-compose.yml                             db + integration-db services
+#   Production Compose        docker-compose.prod.yml                        db + bootstrap + grants services
+#   Kubernetes chart          k8s/helm/sensei/values.yaml                    database.imagePin (production DB must be provisioned from this image
+#                                                                             family; the bundled Bitnami subchart is dev/eval only and CANNOT
+#                                                                             satisfy the vector requirement)
+#
+# Bump procedure: update PG_IMAGE below (new tag and/or digest), then update
+# every literal in the consumer files to match — the validator enforces the
+# equality, so CI will fail until all consumers are repinned together.
+# =============================================================================
+PG_MAJOR=16
+PG_IMAGE=pgvector/pgvector:pg16@sha256:ccc6e83d6e35e931dc7c5def2022729d5a6c370318d099181995567ff1fb4d6b
+PG_REQUIRED_EXTENSIONS=vector uuid-ossp pgcrypto pg_trgm

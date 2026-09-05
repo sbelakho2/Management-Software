@@ -1,0 +1,87 @@
+{{- if .Values.database.jobs.enabled }}
+# =============================================================================
+# db-grants Job hook (thirtieth-audit item 26) — ADMIN identity only.
+#
+# Post-migration canonical grants re-run: executes the SAME canonical role
+# script (sensei-rs/scripts/db/01-app-role.sh, at /opt/sensei/db/01-app-role.sh
+# in the application image) as the bootstrap superuser. The migration chain
+# has now created the FORCE-RLS federation tables, so the script's
+# table-existence guards fire and sensei_governance_definer receives SELECT
+# on federation_memberships/site_manifests/country_policies/
+# country_policy_versions — the privileges its SECURITY DEFINER bodies
+# execute under (BYPASSRLS alone does not grant table SELECT). DB access =
+# DATABASE_URL_ADMIN ONLY; role passwords come from the same secret keys the
+# URLs embed.
+#
+# Hook ordering (bootstrap -> migrate -> grants -> rollout): pre-install AND
+# pre-upgrade hook, weight -1 — after db-migrate (-3). The API/worker
+# rollout happens only after this Job succeeds.
+# =============================================================================
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "sensei.fullname" . }}-db-grants
+  labels:
+    {{- include "sensei.labels" . | nindent 4 }}
+    app.kubernetes.io/component: db-grants
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "-1"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        {{- include "sensei.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: db-grants
+    spec:
+      restartPolicy: OnFailure
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "sensei.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.securityContext | nindent 8 }}
+      containers:
+      - name: db-grants
+        securityContext:
+          {{- toYaml .Values.podSecurityContext | nindent 12 }}
+        image: "{{ .Values.senseiApi.image.repository }}:{{ .Values.senseiApi.image.tag | default .Chart.AppVersion }}"
+        imagePullPolicy: {{ .Values.senseiApi.image.pullPolicy }}
+        command: ["/bin/bash", "-euc"]
+        args:
+        - |
+          URL="${DATABASE_URL_ADMIN:?DATABASE_URL_ADMIN is required}"
+          export PGHOST="$(printf '%s' "$URL" | sed -E 's#^postgres(ql)?://[^@/]*@([^:/]+).*#\2#')"
+          export PGPORT="$(printf '%s' "$URL" | sed -nE 's#^postgres(ql)?://[^@/]*@[^:/]+:([0-9]+)/.*#\1#p')"
+          export PGUSER="$(printf '%s' "$URL" | sed -E 's#^postgres(ql)?://([^:@/]+)(:[^@/]*)?@.*#\2#')"
+          export PGPASSWORD="$(printf '%s' "$URL" | sed -nE 's#^postgres(ql)?://[^:@/]+:([^@/]*)@.*#\2#p')"
+          export PGCLIENTENCODING=UTF8
+          [ -n "${PGPORT:-}" ] || PGPORT=5432
+          POSTGRES_USER="$PGUSER" \
+          POSTGRES_PASSWORD="$PGPASSWORD" \
+          POSTGRES_DB="$(printf '%s' "$URL" | sed -nE 's#^postgres(ql)?://[^/]*/([^?]*).*#\2#p')" \
+          SENSEI_APP_PASSWORD="${SENSEI_APP_PASSWORD:?}" \
+          SENSEI_MIGRATOR_PASSWORD="${SENSEI_MIGRATOR_PASSWORD:?}" \
+          /bin/bash /opt/sensei/db/01-app-role.sh
+        env:
+        # ADMIN identity only — the sole DB URL this Job may hold.
+        - name: DATABASE_URL_ADMIN
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "sensei.fullname" . }}-secret
+              key: DATABASE_URL_ADMIN
+        # Role passwords the canonical script converges (ALTER ROLE ...).
+        - name: SENSEI_APP_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "sensei.fullname" . }}-secret
+              key: SENSEI_APP_PASSWORD
+        - name: SENSEI_MIGRATOR_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "sensei.fullname" . }}-secret
+              key: SENSEI_MIGRATOR_PASSWORD
+{{- end }}

@@ -114,12 +114,22 @@ healthChecks:
       failureThreshold: 3
 
 # PostgreSQL configuration optimized for Hetzner Block Storage
+# NOTE (thirtieth-audit items 26/28): enabling the Bitnami subchart here is
+# the DEV/EVAL convenience shape — the Bitnami image cannot satisfy the DB
+# capability contract (no pgvector, and first install cannot feed the
+# pre-install DB hooks). Production on Hetzner should disable this subchart
+# and point database.host at a PostgreSQL provisioned from the pinned
+# pgvector family image (see database.imagePin in values.yaml and
+# .github/.db-capability). If the bundled DB is used, set
+# postgresql.auth.postgresPassword explicitly so the bootstrap/migrate/
+# grants hooks can connect (they run against the bundled DB on upgrades).
 postgresql:
   enabled: true
   auth:
     database: sensei
     username: sensei
     password: ""  # Set via --set or sealed secrets
+    postgresPassword: ""  # REQUIRED for the DB Job hooks (admin identity)
 
   persistence:
     enabled: true

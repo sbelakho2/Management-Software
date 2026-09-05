@@ -4,13 +4,15 @@
 //! delegating to the [`SearchService`] (database-backed or in-memory).
 //! Supports optional entity-type filtering and pagination.
 //!
-//! # Authorization (twenty-ninth-audit Wave B item 10)
+//! # Authorization (twenty-ninth-audit Wave B item 10; thirtieth-audit
+//! P0 item 12)
 //!
 //! Search is never a tenant-wide, type-unrestricted listing: the caller's
 //! effective [`AllowedSearchProjection`] is precomputed here — every
 //! result type whose read permission the caller lacks is dropped, and the
-//! operational types (work centers, standard work, production cells) are
-//! restricted to the caller's `RequestContext` authorized sites. The
+//! projection carries the caller's FULL `RequestContext` scope (site
+//! grants AND exact work-center grants — the operational types are never
+//! widened from work-center grants into their parent sites). The
 //! projection is passed INTO the database search so candidate tables are
 //! filtered before ranking; a caller with nothing admissible gets an
 //! empty result set, never a fallback to an unrestricted search.

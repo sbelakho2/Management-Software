@@ -19,6 +19,7 @@ use chrono::{DateTime, Utc};
 use sensei_auth::middleware::AuthenticatedUser;
 use sensei_core::domain::RequestContext;
 use sensei_core::error::{Result, SenseiError};
+use sensei_services::authz_sql::DbScopeFilter;
 use sensei_services::export::pdf::{AuditData, CapaData, InspectionData, NcrData, WorkOrderData};
 use serde::Deserialize;
 use uuid::Uuid;
@@ -105,12 +106,14 @@ pub async fn export_entity(
     let date_from = parse_date_filter("date_from", params.date_from.as_deref())?;
     let date_to = parse_date_filter("date_to", params.date_to.as_deref())?;
 
-    let tenant_id = user.tenant_id;
-    // Twenty-ninth audit Wave B items 6-8: the NCR / CAPA / audit
-    // exports read through the caller's server-created request context —
-    // the quality service enforces the scope (site-scoped callers only
-    // ever export their authorized records). The DB-backed builder is
-    // the andon caller_sites pattern replicated for this route file.
+    // Twenty-ninth audit Wave B items 6-8 + thirtieth-audit item 16: the
+    // NCR / CAPA / audit / inspection exports read through the caller's
+    // server-created request context — site-scoped callers only ever
+    // export their authorized records. The NCR / CAPA / audit lists are
+    // scope-enforced inside the quality service; the inspection export
+    // applies the same scope discipline at the route layer (see
+    // [`export_inspection`]). The DB-backed builder is the andon
+    // caller_sites pattern replicated for this route file.
     let qctx = crate::routes::quality::caller_ctx(&user, &state).await?;
 
     match entity_type.as_str() {
@@ -170,7 +173,7 @@ pub async fn export_entity(
         "inspection" => {
             export_inspection(
                 state,
-                tenant_id,
+                &qctx,
                 &format,
                 params.id,
                 params.status.as_deref(),
@@ -597,149 +600,405 @@ async fn export_work_order(
     }
 }
 
+// ── Inspection export (thirtieth-audit item 16) ───────────────────────────
+
+/// The `inspections` status values the export filters on (canonical CHECK
+/// list in migration 002) are compared with the same normalized equality
+/// everywhere: `LOWER(status) = LOWER($param)` in SQL, the equivalent
+/// trim+lowercase match on the in-memory dev rows.
+fn inspection_status_matches(row_status: &str, filter: Option<&str>) -> bool {
+    match filter {
+        Some(filter) => row_status.trim().to_lowercase() == filter.trim().to_lowercase(),
+        None => true,
+    }
+}
+
+/// A canonical `inspections` row (migration 002) exported by the
+/// DB-backed path — the resource the migration-170 scope stamp lives on.
+struct ScopedInspectionRow {
+    id: Uuid,
+    inspection_number: String,
+    inspection_type: String,
+    product_id: Option<Uuid>,
+    work_order_id: Option<Uuid>,
+    result: String,
+    status: String,
+    inspector_id: Option<Uuid>,
+    created_at: DateTime<Utc>,
+}
+
+/// The SQL scope predicate over the canonical `inspections` scope stamp
+/// (migration 170) — the caller's [`DbScopeFilter`] applied to the
+/// carrier subquery that exposes the stamp as the `(site_id,
+/// work_center_id)` column contract the scope fragments reference
+/// (`scope_site_id` / `scope_work_center_id`, NULL = a corporate record).
+///
+/// - `TenantWide` → no predicate (the `tenant_id` predicate is the whole
+///   boundary; corporate rows included);
+/// - `Operational` (site grants) → `scope_site_id = ANY($n)` — a NULL
+///   stamp (corporate) never matches, fail closed;
+/// - `Operational` (exact work-center grants only) → the stamp's
+///   `(site, work_center)` must equal a granted pair — a work-center
+///   grant never widens into its site;
+/// - no operational scope → `1 = 0`: zero rows.
+fn inspection_scope_extra(scope: &DbScopeFilter) -> (String, bool, usize) {
+    let (scope_clause, tenant_wide) = scope.where_clause_for("sc", 6);
+    let bind_count = match scope {
+        DbScopeFilter::Operational {
+            sites,
+            work_centers,
+        } => usize::from(!sites.is_empty()) + 2 * work_centers.len(),
+        DbScopeFilter::TenantWide | DbScopeFilter::None => 0,
+    };
+    let extra = if tenant_wide {
+        String::new()
+    } else {
+        format!(" AND {scope_clause}")
+    };
+    (extra, tenant_wide, bind_count)
+}
+
+/// Fetch the canonical `inspections` rows the caller's scope entitles —
+/// scope, status, id and date range are all SQL-level predicates (never
+/// a tenant-wide page, and the status argument is material instead of
+/// fetch-broadly-then-ignore).
+async fn fetch_scoped_canonical_inspections(
+    pool: &sqlx::PgPool,
+    ctx: &RequestContext,
+    status: Option<&str>,
+    id: Option<Uuid>,
+    date_from: Option<DateTime<Utc>>,
+    date_to: Option<DateTime<Utc>>,
+) -> Result<Vec<ScopedInspectionRow>> {
+    let scope = DbScopeFilter::from_authorized(&ctx.scope);
+    let (scope_extra, tenant_wide, scope_binds) = inspection_scope_extra(&scope);
+    let carrier_join = if tenant_wide {
+        String::new()
+    } else {
+        "JOIN (SELECT i.id AS inspection_id, \
+                      i.scope_site_id AS site_id, \
+                      i.scope_work_center_id AS work_center_id \
+               FROM inspections i) AS sc ON sc.inspection_id = insp.id"
+            .to_string()
+    };
+    // Placeholder map: $1 tenant · $2 status · $3 id · $4 date_from ·
+    // $5 date_to · $6.. scope · LIMIT/OFFSET after the scope binds.
+    let limit_param = 6 + scope_binds;
+    let offset_param = limit_param + 1;
+    let sql = format!(
+        "SELECT insp.id, insp.inspection_number, insp.inspection_type, \
+                insp.product_id, insp.work_order_id, insp.result, \
+                insp.status, insp.inspector_id, insp.created_at \
+         FROM inspections insp {carrier_join} \
+         WHERE insp.tenant_id = $1 \
+           AND ($2::text IS NULL OR LOWER(insp.status) = LOWER($2)) \
+           AND ($3::uuid IS NULL OR insp.id = $3) \
+           AND ($4::timestamptz IS NULL OR insp.created_at >= $4) \
+           AND ($5::timestamptz IS NULL OR insp.created_at <= $5){scope_extra} \
+         ORDER BY insp.created_at DESC, insp.id \
+         LIMIT ${limit_param} OFFSET ${offset_param}"
+    );
+
+    let mut tx = pool.begin().await.map_err(|e| {
+        sensei_core::error::SenseiError::Database(format!("export: inspection tx begin: {e}"))
+    })?;
+    sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
+        .bind(ctx.tenant.to_string())
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| {
+            sensei_core::error::SenseiError::Database(format!("export: inspection tenant ctx: {e}"))
+        })?;
+
+    let mut all = Vec::new();
+    let mut page = 1usize;
+    loop {
+        let mut q = sqlx::query_as::<
+            _,
+            (
+                Uuid,
+                String,
+                String,
+                Option<Uuid>,
+                Option<Uuid>,
+                String,
+                String,
+                Option<Uuid>,
+                DateTime<Utc>,
+            ),
+        >(&sql)
+        .bind(ctx.tenant)
+        .bind(status.map(|s| s.to_string()))
+        .bind(id)
+        .bind(date_from)
+        .bind(date_to);
+        if !tenant_wide {
+            if let DbScopeFilter::Operational {
+                sites,
+                work_centers,
+            } = &scope
+            {
+                if !sites.is_empty() {
+                    q = q.bind(sites.clone());
+                }
+                for wc in work_centers {
+                    q = q.bind(wc.site).bind(wc.work_center);
+                }
+            }
+        }
+        let offset = ((page - 1) * EXPORT_PAGE_SIZE) as i64;
+        q = q.bind(EXPORT_PAGE_SIZE as i64).bind(offset);
+        let rows: Vec<(
+            Uuid,
+            String,
+            String,
+            Option<Uuid>,
+            Option<Uuid>,
+            String,
+            String,
+            Option<Uuid>,
+            DateTime<Utc>,
+        )> = q.fetch_all(&mut *tx).await.map_err(|e| {
+            sensei_core::error::SenseiError::Database(format!(
+                "export: scoped inspection fetch: {e}"
+            ))
+        })?;
+        let count = rows.len();
+        all.extend(rows.into_iter().map(
+            |(
+                id,
+                inspection_number,
+                inspection_type,
+                product_id,
+                work_order_id,
+                result,
+                status,
+                inspector_id,
+                created_at,
+            )| {
+                ScopedInspectionRow {
+                    id,
+                    inspection_number,
+                    inspection_type,
+                    product_id,
+                    work_order_id,
+                    result,
+                    status,
+                    inspector_id,
+                    created_at,
+                }
+            },
+        ));
+        if count < EXPORT_PAGE_SIZE {
+            break;
+        }
+        page += 1;
+        if page > 10_000 {
+            break;
+        }
+    }
+    tx.commit().await.map_err(|e| {
+        sensei_core::error::SenseiError::Database(format!("export: inspection tx commit: {e}"))
+    })?;
+    Ok(all)
+}
+
 /// Export Inspection(s) in the requested format.
 ///
-/// Queries the quality service for first article and self-inspections,
-/// then maps the real data to the export format.
+/// Thirtieth-audit item 16: the inspection export no longer reads
+/// through the tenant-oriented inspection APIs
+/// (`list_first_article_inspections` / `list_self_inspections` /
+/// `get_first_article_inspection` / `get_self_inspection` take a naked
+/// `tenant_id` — the [`QualityService`] trait has NO context-aware
+/// inspection read on the current tree; the concurrent item-6 work in
+/// `sensei-services/src/quality/**` is consumed here only as it exists,
+/// i.e. not yet). Consumed on the current tree instead:
+///
+/// - the route-layer authorization used by the quality get/list surface
+///   — the server-created [`RequestContext`] (`caller_ctx`), and
+/// - [`DbScopeFilter`] (the same scope-to-SQL bridge the scoped
+///   repositories use) applied to the canonical `inspections` table's
+///   migration-170 `scope_site_id` / `scope_work_center_id` stamp at the
+///   SQL level — status / id / date-range filters ride in the SAME
+///   statement, so a site-B inspection can never appear in a site-A
+///   export and the status argument is material (a mismatched filter
+///   returns zero rows instead of every row).
+///
+/// DB-less / in-memory mode keeps the historical dev convention (the
+/// in-memory quality stores carry no site dimension, so the dev context
+/// is the explicit tenant-wide grant): the first-article + self
+/// inspection merge is preserved, with the status filter applied to the
+/// fetched rows.
 async fn export_inspection(
     state: AppState,
-    tenant_id: Uuid,
+    ctx: &RequestContext,
     format: &str,
     id: Option<Uuid>,
     status: Option<&str>,
     date_from: Option<DateTime<Utc>>,
     date_to: Option<DateTime<Utc>>,
 ) -> Result<Response> {
-    // Collect inspections from the quality service.
-    // We gather both first article inspections and self-inspections.
     let mut inspection_rows: Vec<serde_json::Value> = Vec::new();
     let mut pdf_data_items: Vec<InspectionData> = Vec::new();
 
-    // Fetch first article inspections (paged)
-    let fai_items = fetch_all_pages(|page| {
-        let svc = state.quality_service.clone();
-        Box::pin(async move {
-            let page = svc
-                .list_first_article_inspections(tenant_id, Some(page), Some(EXPORT_PAGE_SIZE))
-                .await?;
-            Ok(page.data)
+    if let Some(pool) = state.db_pool.as_ref() {
+        // ── DB-backed: canonical scoped read (SQL-level filters) ───────
+        let rows =
+            fetch_scoped_canonical_inspections(pool, ctx, status, id, date_from, date_to).await?;
+        for row in rows {
+            let part_number = row
+                .product_id
+                .or(row.work_order_id)
+                .map(|u| u.to_string())
+                .unwrap_or_default();
+            pdf_data_items.push(InspectionData {
+                id: row.inspection_number.clone(),
+                part_name: row.inspection_number.clone(),
+                part_number,
+                inspector: row.inspector_id.map(|u| u.to_string()).unwrap_or_default(),
+                date: row.created_at.to_rfc3339(),
+                measurements: Vec::new(),
+                result: row.result.clone(),
+            });
+            inspection_rows.push(serde_json::json!({
+                "id": row.id.to_string(),
+                "inspection_number": row.inspection_number,
+                "status": row.status,
+                "result": row.result,
+                "type": row.inspection_type,
+            }));
+        }
+    } else {
+        // ── DEV / DB-less: in-memory stores, tenant-wide dev grant ─────
+        // First article inspections (paged).
+        let tenant_id = ctx.tenant;
+        let fai_items = fetch_all_pages(|page| {
+            let svc = state.quality_service.clone();
+            Box::pin(async move {
+                let page = svc
+                    .list_first_article_inspections(tenant_id, Some(page), Some(EXPORT_PAGE_SIZE))
+                    .await?;
+                Ok(page.data)
+            })
         })
-    })
-    .await?;
+        .await?;
 
-    for fai in &fai_items {
-        // If a specific ID was requested, filter to that inspection only
-        if let Some(filter_id) = id {
-            if fai.id != filter_id {
+        for fai in &fai_items {
+            if let Some(filter_id) = id {
+                if fai.id != filter_id {
+                    continue;
+                }
+            }
+            if !within_date_range(fai.created_at, date_from, date_to)
+                || !inspection_status_matches(&fai.status, status)
+            {
                 continue;
             }
-        }
-        if !within_date_range(fai.created_at, date_from, date_to) {
-            continue;
+
+            let measurements: Vec<(String, f64, f64, String)> = fai
+                .characteristics
+                .iter()
+                .map(|c| {
+                    (
+                        c.characteristic_number.clone(),
+                        c.specification.parse().unwrap_or(0.0),
+                        c.result.parse().unwrap_or(0.0),
+                        c.is_conforming
+                            .map(|v| {
+                                if v {
+                                    "Pass".to_string()
+                                } else {
+                                    "Fail".to_string()
+                                }
+                            })
+                            .unwrap_or_else(|| c.result.clone()),
+                    )
+                })
+                .collect();
+
+            pdf_data_items.push(InspectionData {
+                id: fai.fai_number.clone(),
+                part_name: fai.part_name.clone(),
+                part_number: fai.part_number.clone(),
+                inspector: fai.inspector_id.map(|u| u.to_string()).unwrap_or_default(),
+                date: fai.created_at.to_rfc3339(),
+                measurements: measurements.clone(),
+                result: fai.status.clone(),
+            });
+
+            inspection_rows.push(serde_json::json!({
+                "id": fai.id.to_string(),
+                "fai_number": fai.fai_number,
+                "part_name": fai.part_name,
+                "part_number": fai.part_number,
+                "status": fai.status,
+                "type": "first_article",
+            }));
         }
 
-        let measurements: Vec<(String, f64, f64, String)> = fai
-            .characteristics
-            .iter()
-            .map(|c| {
-                (
-                    c.characteristic_number.clone(),
-                    c.specification.parse().unwrap_or(0.0),
-                    c.result.parse().unwrap_or(0.0),
-                    c.is_conforming
-                        .map(|v| {
-                            if v {
-                                "Pass".to_string()
-                            } else {
-                                "Fail".to_string()
-                            }
-                        })
-                        .unwrap_or_else(|| c.result.clone()),
-                )
+        // Self-inspections (paged).
+        let tenant_id = ctx.tenant;
+        let si_items = fetch_all_pages(|page| {
+            let svc = state.quality_service.clone();
+            Box::pin(async move {
+                let page = svc
+                    .list_self_inspections(tenant_id, Some(page), Some(EXPORT_PAGE_SIZE))
+                    .await?;
+                Ok(page.data)
             })
-            .collect();
-
-        pdf_data_items.push(InspectionData {
-            id: fai.fai_number.clone(),
-            part_name: fai.part_name.clone(),
-            part_number: fai.part_number.clone(),
-            inspector: fai.inspector_id.map(|u| u.to_string()).unwrap_or_default(),
-            date: fai.created_at.to_rfc3339(),
-            measurements: measurements.clone(),
-            result: fai.status.clone(),
-        });
-
-        inspection_rows.push(serde_json::json!({
-            "id": fai.id.to_string(),
-            "fai_number": fai.fai_number,
-            "part_name": fai.part_name,
-            "part_number": fai.part_number,
-            "status": fai.status,
-            "type": "first_article",
-        }));
-    }
-
-    // Fetch self-inspections (paged)
-    let si_items = fetch_all_pages(|page| {
-        let svc = state.quality_service.clone();
-        Box::pin(async move {
-            let page = svc
-                .list_self_inspections(tenant_id, Some(page), Some(EXPORT_PAGE_SIZE))
-                .await?;
-            Ok(page.data)
         })
-    })
-    .await?;
+        .await?;
 
-    for si in &si_items {
-        if let Some(filter_id) = id {
-            if si.id != filter_id {
+        for si in &si_items {
+            if let Some(filter_id) = id {
+                if si.id != filter_id {
+                    continue;
+                }
+            }
+            if !within_date_range(si.created_at, date_from, date_to)
+                || !inspection_status_matches(&si.status, status)
+            {
                 continue;
             }
+
+            let measurements: Vec<(String, f64, f64, String)> = si
+                .checks
+                .iter()
+                .map(|c| {
+                    (
+                        c.characteristic.clone(),
+                        c.specification
+                            .as_deref()
+                            .and_then(|s| s.parse().ok())
+                            .unwrap_or(0.0),
+                        c.actual_value
+                            .as_deref()
+                            .and_then(|s| s.parse().ok())
+                            .unwrap_or(0.0),
+                        c.result.clone(),
+                    )
+                })
+                .collect();
+
+            pdf_data_items.push(InspectionData {
+                id: si.inspection_number.clone(),
+                part_name: si.product_id.map(|u| u.to_string()).unwrap_or_default(),
+                part_number: si.work_order_id.map(|u| u.to_string()).unwrap_or_default(),
+                inspector: si.operator_id.map(|u| u.to_string()).unwrap_or_default(),
+                date: si.created_at.to_rfc3339(),
+                measurements: measurements.clone(),
+                result: si.result.clone().unwrap_or_else(|| si.status.clone()),
+            });
+
+            inspection_rows.push(serde_json::json!({
+                "id": si.id.to_string(),
+                "inspection_number": si.inspection_number,
+                "status": si.status,
+                "result": si.result,
+                "type": "self_inspection",
+            }));
         }
-        if !within_date_range(si.created_at, date_from, date_to) {
-            continue;
-        }
-
-        let measurements: Vec<(String, f64, f64, String)> = si
-            .checks
-            .iter()
-            .map(|c| {
-                (
-                    c.characteristic.clone(),
-                    c.specification
-                        .as_deref()
-                        .and_then(|s| s.parse().ok())
-                        .unwrap_or(0.0),
-                    c.actual_value
-                        .as_deref()
-                        .and_then(|s| s.parse().ok())
-                        .unwrap_or(0.0),
-                    c.result.clone(),
-                )
-            })
-            .collect();
-
-        pdf_data_items.push(InspectionData {
-            id: si.inspection_number.clone(),
-            part_name: si.product_id.map(|u| u.to_string()).unwrap_or_default(),
-            part_number: si.work_order_id.map(|u| u.to_string()).unwrap_or_default(),
-            inspector: si.operator_id.map(|u| u.to_string()).unwrap_or_default(),
-            date: si.created_at.to_rfc3339(),
-            measurements: measurements.clone(),
-            result: si.result.clone().unwrap_or_else(|| si.status.clone()),
-        });
-
-        inspection_rows.push(serde_json::json!({
-            "id": si.id.to_string(),
-            "inspection_number": si.inspection_number,
-            "status": si.status,
-            "result": si.result,
-            "type": "self_inspection",
-        }));
     }
-
-    let _ = status;
 
     match format {
         "pdf" => {

@@ -75,11 +75,30 @@ const USER_COLUMNS: &str = "id, tenant_id, email, name, password_hash, roles, \
                             is_active, email_verified, credential_version, site_id, locale, \
                             last_login_at, created_at, updated_at";
 
+/// The users-service read surface (thirtieth-audit item 18): `users` is
+/// FORCE RLS with the universal fail-closed tenant_isolation policy —
+/// NO context means NO rows — so a raw-pool read returns nothing under
+/// the production sensei_app role. Reads that run BEFORE any
+/// app.tenant_id can exist (login's globally-unique email lookup, the
+/// pre-tenant bootstrap flows, tenant-wide admin listing) go through the
+/// SECURITY DEFINER identity functions migration 175 created: their
+/// bodies run as the BYPASSRLS migration owner and the app role holds
+/// EXECUTE on exactly those three functions (never PUBLIC). Reads that
+/// HAVE a tenant context run inside a TenantTx instead — see
+/// update_profile/change_password/deactivate/activate/update_user_roles.
+const AUTH_USER_BY_EMAIL: &str = "auth_user_by_email";
+const AUTH_USER_BY_ID: &str = "auth_user_by_id";
+const AUTH_USERS_ALL: &str = "auth_users_all";
+
 #[async_trait]
 impl UsersService for DatabaseUsersService {
     async fn find_by_email(&self, email: &str) -> Result<User> {
+        // Pre-tenant identity channel (migration 175): the email is the
+        // platform-unique login identity, so the lookup legitimately
+        // crosses tenants through auth_user_by_email(text) — the ONLY
+        // no-context users reader left for sensei_app.
         let model = sqlx::query_as::<_, UserModel>(&format!(
-            "SELECT {USER_COLUMNS} FROM users WHERE email = $1"
+            "SELECT * FROM {AUTH_USER_BY_EMAIL}($1)"
         ))
         .bind(email)
         .fetch_optional(&self.pool)
@@ -91,8 +110,13 @@ impl UsersService for DatabaseUsersService {
     }
 
     async fn find_by_id(&self, id: EntityId) -> Result<User> {
+        // Cross-tenant id lookup (migration 175): callers enforce their
+        // own tenant authorization AFTER the fetch (the id is a global
+        // primary key) — see routes/users.rs get_user/update_user and
+        // routes/admin.rs, which reject rows whose tenant is not the
+        // caller's.
         let model = sqlx::query_as::<_, UserModel>(&format!(
-            "SELECT {USER_COLUMNS} FROM users WHERE id = $1"
+            "SELECT * FROM {AUTH_USER_BY_ID}($1)"
         ))
         .bind(id)
         .fetch_optional(&self.pool)
@@ -106,6 +130,14 @@ impl UsersService for DatabaseUsersService {
     async fn create_user(&self, user: User) -> Result<User> {
         let now = Utc::now();
         let model = user_to_model(user.clone(), false);
+
+        // The users table is fail-closed FORCE RLS: the INSERT must run
+        // inside the tenant context of the row's own tenant_id (migration
+        // 175 canonical WITH CHECK), so the whole statement executes in a
+        // TenantTx of user.tenant_id.
+        let mut db = TenantTx::begin(&self.pool, model.tenant_id)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to begin user create: {e}")))?;
 
         let created = sqlx::query_as::<_, UserModel>(&format!(
             "INSERT INTO users (id, tenant_id, email, name, password_hash, roles, \
@@ -129,31 +161,48 @@ impl UsersService for DatabaseUsersService {
         .bind(model.last_login_at)
         .bind(now)
         .bind(now)
-        .fetch_optional(&self.pool)
-        .await
-        .map_err(|e| {
-            // The global normalized-email index rejects cross-tenant
-            // duplicates even though the tenant-scoped ON CONFLICT does not
-            // fire — surface it as a friendly conflict, not a 500.
-            if is_unique_violation(&e) {
-                SenseiError::AlreadyExists(format!(
+        .fetch_optional(&mut **db.tx())
+        .await;
+
+        let created = match created {
+            Ok(Some(row)) => row,
+            Ok(None) => {
+                db.rollback().await.ok();
+                return Err(SenseiError::AlreadyExists(format!(
                     "User with email '{}' already exists",
                     user.email
-                ))
-            } else {
-                SenseiError::Database(format!("Failed to create user: {e}"))
+                )));
             }
-        })?
-        .ok_or_else(|| {
-            SenseiError::AlreadyExists(format!("User with email '{}' already exists", user.email))
-        })?;
+            Err(e) => {
+                db.rollback().await.ok();
+                // The global normalized-email index rejects cross-tenant
+                // duplicates even though the tenant-scoped ON CONFLICT does not
+                // fire — surface it as a friendly conflict, not a 500.
+                if is_unique_violation(&e) {
+                    return Err(SenseiError::AlreadyExists(format!(
+                        "User with email '{}' already exists",
+                        user.email
+                    )));
+                }
+                return Err(SenseiError::Database(format!("Failed to create user: {e}")));
+            }
+        };
+        db.commit()
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to commit user create: {e}")))?;
 
         Ok(user_model_to_domain(created))
     }
 
     async fn list_users(&self) -> Result<Vec<User>> {
+        // Tenant-wide admin listing via the migration-175 definer
+        // channel: the service semantics (mirrored by the in-memory
+        // implementation) are "all users; the caller scopes" — the route
+        // layer filters by the caller's tenant, and the pre-tenant
+        // notification-trigger worker resolves role targets across the
+        // deployment.
         let models = sqlx::query_as::<_, UserModel>(&format!(
-            "SELECT {USER_COLUMNS} FROM users ORDER BY created_at DESC"
+            "SELECT {USER_COLUMNS} FROM {AUTH_USERS_ALL}() ORDER BY created_at DESC"
         ))
         .fetch_all(&self.pool)
         .await
@@ -175,36 +224,41 @@ impl UsersService for DatabaseUsersService {
 
         // Exact array membership: `$n = ANY(roles)` — no false positives
         // from substring matching ('admin' must not match 'admin2').
+        // The source is the migration-175 definer channel (see
+        // `list_users`): the count and the page both read the same
+        // cross-tenant snapshot and the caller scopes.
         let (count_sql, data_sql): (String, String) = match (role, is_active) {
             (Some(_), Some(_)) => (
-                "SELECT COUNT(*) FROM users WHERE $1 = ANY(roles) AND is_active = $2".to_string(),
+                format!(
+                    "SELECT COUNT(*) FROM {AUTH_USERS_ALL}() WHERE $1 = ANY(roles) AND is_active = $2"
+                ),
                 format!(
                     "SELECT {USER_COLUMNS} \
-                     FROM users WHERE $1 = ANY(roles) AND is_active = $2 \
+                     FROM {AUTH_USERS_ALL}() WHERE $1 = ANY(roles) AND is_active = $2 \
                      ORDER BY created_at DESC LIMIT $3 OFFSET $4"
                 ),
             ),
             (Some(_), None) => (
-                "SELECT COUNT(*) FROM users WHERE $1 = ANY(roles)".to_string(),
+                format!("SELECT COUNT(*) FROM {AUTH_USERS_ALL}() WHERE $1 = ANY(roles)"),
                 format!(
                     "SELECT {USER_COLUMNS} \
-                     FROM users WHERE $1 = ANY(roles) \
+                     FROM {AUTH_USERS_ALL}() WHERE $1 = ANY(roles) \
                      ORDER BY created_at DESC LIMIT $2 OFFSET $3"
                 ),
             ),
             (None, Some(_)) => (
-                "SELECT COUNT(*) FROM users WHERE is_active = $1".to_string(),
+                format!("SELECT COUNT(*) FROM {AUTH_USERS_ALL}() WHERE is_active = $1"),
                 format!(
                     "SELECT {USER_COLUMNS} \
-                     FROM users WHERE is_active = $1 \
+                     FROM {AUTH_USERS_ALL}() WHERE is_active = $1 \
                      ORDER BY created_at DESC LIMIT $2 OFFSET $3"
                 ),
             ),
             (None, None) => (
-                "SELECT COUNT(*) FROM users".to_string(),
+                format!("SELECT COUNT(*) FROM {AUTH_USERS_ALL}()"),
                 format!(
                     "SELECT {USER_COLUMNS} \
-                     FROM users ORDER BY created_at DESC LIMIT $1 OFFSET $2"
+                     FROM {AUTH_USERS_ALL}() ORDER BY created_at DESC LIMIT $1 OFFSET $2"
                 ),
             ),
         };
@@ -268,16 +322,39 @@ impl UsersService for DatabaseUsersService {
     }
 
     async fn bump_credential_version(&self, id: EntityId) -> Result<User> {
+        // Thirtieth-audit item 18 (Wave C RLS): `users` is fail-closed
+        // FORCE RLS (migration 175), so the UPDATE must run inside a
+        // TenantTx of the row's own tenant. The tenant is resolved through
+        // the pre-tenant identity channel (auth_user_by_id) — the caller
+        // has only the global user id.
+        let row_tenant: Option<EntityId> =
+            sqlx::query_scalar(&format!("SELECT tenant_id FROM {AUTH_USER_BY_ID}($1)"))
+                .bind(id)
+                .fetch_optional(&self.pool)
+                .await
+                .map_err(|e| {
+                    SenseiError::Database(format!("Failed to resolve user tenant: {e}"))
+                })?;
+        let tenant_id = row_tenant.ok_or_else(|| {
+            SenseiError::NotFound(format!("User with id '{id}' not found"))
+        })?;
+        let mut db = TenantTx::begin(&self.pool, tenant_id)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to begin credential bump: {e}")))?;
         let model = sqlx::query_as::<_, UserModel>(&format!(
             "UPDATE users SET credential_version = credential_version + 1, updated_at = NOW() \
-             WHERE id = $1 \
+             WHERE id = $1 AND tenant_id = $2 \
              RETURNING {USER_COLUMNS}"
         ))
         .bind(id)
-        .fetch_optional(&self.pool)
+        .bind(tenant_id)
+        .fetch_optional(&mut **db.tx())
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to bump credential version: {e}")))?
         .ok_or_else(|| SenseiError::NotFound(format!("User with id '{id}' not found")))?;
+        db.commit()
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to commit credential bump: {e}")))?;
         Ok(user_model_to_domain(model))
     }
 
@@ -286,10 +363,12 @@ impl UsersService for DatabaseUsersService {
         tenant: sensei_core::domain::entities::Tenant,
         user: User,
     ) -> Result<User> {
-        // One transaction: the users.tenant_id FK can never dangle.
-        let mut tx = self
-            .pool
-            .begin()
+        // One transaction: the users.tenant_id FK can never dangle. The
+        // registration flow creates a BRAND-NEW tenant, so the tenant
+        // context is the new tenant's own id — set before any statement,
+        // which admits the users INSERT under the fail-closed WITH CHECK
+        // (tenants itself has no tenant_id column and no RLS).
+        let mut db = TenantTx::begin(&self.pool, tenant.id)
             .await
             .map_err(|e| SenseiError::Database(format!("Failed to begin registration: {e}")))?;
 
@@ -302,7 +381,7 @@ impl UsersService for DatabaseUsersService {
         .bind(&tenant.slug)
         .bind(tenant.is_active)
         .bind(serde_json::to_string(&tenant.features).unwrap_or_else(|_| "{}".to_string()))
-        .execute(&mut *tx)
+        .execute(&mut **db.tx())
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to create tenant: {e}")))?;
 
@@ -323,11 +402,11 @@ impl UsersService for DatabaseUsersService {
         .bind(model.is_active)
         .bind(model.email_verified)
         .bind(model.credential_version)
-        .execute(&mut *tx)
+        .execute(&mut **db.tx())
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to create initial user: {e}")))?;
 
-        tx.commit()
+        db.commit()
             .await
             .map_err(|e| SenseiError::Database(format!("Failed to commit registration: {e}")))?;
         Ok(user)
@@ -549,26 +628,61 @@ impl UsersService for DatabaseUsersService {
     }
 
     async fn is_email_verified(&self, id: EntityId) -> Result<bool> {
-        sqlx::query_scalar::<_, bool>("SELECT email_verified FROM users WHERE id = $1")
-            .bind(id)
-            .fetch_optional(&self.pool)
-            .await
-            .map_err(|e| SenseiError::Database(format!("Failed to read email_verified: {e}")))?
-            .ok_or_else(|| SenseiError::NotFound(format!("User with id '{id}' not found")))
+        // Pre-tenant identity channel (migration 175): the email-verified
+        // state of the row is read through auth_user_by_id — a raw-pool
+        // SELECT on `users` is fail-closed FORCE RLS and returns nothing
+        // without an app.tenant_id context, and these verification flows
+        // run before any tenant context exists.
+        sqlx::query_scalar::<_, bool>(&format!(
+            "SELECT email_verified FROM {AUTH_USER_BY_ID}($1)"
+        ))
+        .bind(id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| SenseiError::Database(format!("Failed to read email_verified: {e}")))?
+        .ok_or_else(|| SenseiError::NotFound(format!("User with id '{id}' not found")))
     }
 
     async fn set_email_verified(&self, id: EntityId, verified: bool) -> Result<()> {
-        let result = sqlx::query("UPDATE users SET email_verified = $2 WHERE id = $1")
-            .bind(id)
-            .bind(verified)
-            .execute(&self.pool)
+        // Thirtieth-audit item 18 (Wave C RLS): the UPDATE runs inside a
+        // TenantTx of the row's own tenant (resolved through the
+        // pre-tenant identity channel) — a raw-pool UPDATE on the
+        // fail-closed FORCE RLS `users` table affects zero rows.
+        let row_tenant: Option<EntityId> =
+            sqlx::query_scalar(&format!("SELECT tenant_id FROM {AUTH_USER_BY_ID}($1)"))
+                .bind(id)
+                .fetch_optional(&self.pool)
+                .await
+                .map_err(|e| {
+                    SenseiError::Database(format!("Failed to resolve user tenant: {e}"))
+                })?;
+        let tenant_id = row_tenant.ok_or_else(|| {
+            SenseiError::NotFound(format!("User with id '{id}' not found"))
+        })?;
+        let mut db = TenantTx::begin(&self.pool, tenant_id)
             .await
-            .map_err(|e| SenseiError::Database(format!("Failed to set email_verified: {e}")))?;
+            .map_err(|e| {
+                SenseiError::Database(format!("Failed to begin email-verified update: {e}"))
+            })?;
+        let result = sqlx::query(
+            "UPDATE users SET email_verified = $2 WHERE id = $1 AND tenant_id = $3",
+        )
+        .bind(id)
+        .bind(verified)
+        .bind(tenant_id)
+        .execute(&mut **db.tx())
+        .await
+        .map_err(|e| SenseiError::Database(format!("Failed to set email_verified: {e}")))?;
         if result.rows_affected() == 0 {
             return Err(SenseiError::NotFound(format!(
                 "User with id '{id}' not found"
             )));
         }
+        db.commit()
+            .await
+            .map_err(|e| {
+                SenseiError::Database(format!("Failed to commit email-verified update: {e}"))
+            })?;
         Ok(())
     }
 }
@@ -590,6 +704,13 @@ async fn validate_roles_db(
     caller_tenant_id: uuid::Uuid,
     roles: &[String],
 ) -> Result<()> {
+    // The `roles` table is fail-closed FORCE RLS: the custom-role lookup
+    // must run inside a TenantTx of the caller's tenant (thirtieth-audit
+    // item 18 — a raw read would silently see zero rows once migration
+    // 175's NULLIF shape treats the pooled '' placeholder as no context).
+    let mut db = TenantTx::begin(pool, caller_tenant_id)
+        .await
+        .map_err(|e| SenseiError::Database(format!("Failed to begin role validation: {e}")))?;
     let static_rbac = sensei_auth::rbac::RbacService::new();
     let mut unknown: Vec<&String> = Vec::new();
     for role in roles {
@@ -605,13 +726,16 @@ async fn validate_roles_db(
             sqlx::query_scalar("SELECT name FROM roles WHERE tenant_id = $1 AND name = $2 LIMIT 1")
                 .bind(caller_tenant_id)
                 .bind(role)
-                .fetch_optional(pool)
+                .fetch_optional(&mut **db.tx())
                 .await
                 .map_err(|e| SenseiError::Database(format!("Failed to validate roles: {e}")))?;
         if found.is_none() {
             unknown.push(role);
         }
     }
+    db.commit()
+        .await
+        .map_err(|e| SenseiError::Database(format!("Failed to commit role validation: {e}")))?;
     if !unknown.is_empty() {
         return Err(SenseiError::Validation(format!(
             "Unknown role(s): {}",

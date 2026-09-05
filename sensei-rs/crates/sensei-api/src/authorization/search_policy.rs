@@ -1,5 +1,5 @@
 //! Canonical search result-type authorization registry (twenty-ninth
-//! audit Wave B item 10).
+//! audit Wave B item 10; thirtieth-audit P0 item 12).
 //!
 //! Unified search must never be a tenant-wide, type-unrestricted listing:
 //! every searched result type maps to the canonical read permission that
@@ -7,16 +7,20 @@
 //! [`ScopeMode::Tenant`] (no site dimension — accounts, contacts,
 //! products, knowledge, …) or [`ScopeMode::Operational`] (shop-floor
 //! data — work centers, standard work, production cells) whose rows are
-//! restricted to the caller's authorized sites.
+//! restricted to the caller's FULL [`AuthorizedScope`] — site grants AND
+//! exact work-center grants, never a normalized site list.
 //!
 //! The caller's effective [`AllowedSearchProjection`] is precomputed in
 //! the route:
 //!
 //! 1. every result type whose read permission the caller does NOT hold
 //!    is dropped (never searched, never returned);
-//! 2. operational types are additionally restricted to the caller's
-//!    `RequestContext` authorized sites (an empty entitlement produces
-//!    NO operational rows — never a tenant-wide fallback).
+//! 2. the projection carries the caller's DB-resolved
+//!    [`AuthorizedScope`] unchanged — the database search applies it
+//!    per RESOURCE (a site grant covers the site's rows; a work-center
+//!    grant covers exactly that work center's rows, never the parent
+//!    site; an empty entitlement produces NO operational rows — never a
+//!    tenant-wide fallback).
 //!
 //! The projection is passed INTO the database search so candidate tables
 //! are filtered before ranking — search never runs all tables and then
@@ -33,7 +37,6 @@
 use sensei_auth::middleware::AuthenticatedUser;
 use sensei_core::domain::scope::AuthorizedScope;
 use sensei_core::error::{Result, SenseiError};
-use uuid::Uuid;
 
 use crate::authorization::request_context::build_request_context;
 use crate::state::AppState;
@@ -195,39 +198,47 @@ pub fn can_read_result_type(user: &AuthenticatedUser, result_type: &str) -> bool
 // Caller-derived search projection
 // ---------------------------------------------------------------------------
 
-/// The caller's admissible search surface (item 10): which result types
-/// they may search and — for operational types — the sites those rows
-/// must belong to.
+/// The caller's admissible search surface (item 10; thirtieth-audit P0
+/// item 12): which result types they may search and — for operational
+/// types — the FULL DB-resolved [`AuthorizedScope`] those rows must lie
+/// inside.
 ///
-/// `sites` is:
+/// The scope travels UNCHANGED from the caller's [`RequestContext`] (no
+/// site-list normalization): the database search matches per resource, so
+/// an exact work-center grant (`Operational.work_centers`) restricts
+/// work-center rows to `id = ANY($exact_wc_ids)` — never to the parent
+/// site — while site grants (`Operational.sites`) apply only to
+/// site-level rows and site-attributable rows.
 ///
-/// * `None` — no scope authority exists (in-memory/dev deployments have
-///   no site rows to entangle; the operational types are not
-///   site-restricted there, mirroring the supply-chain `caller_scope`
-///   pattern);
-/// * `Some(&[])` — a DB-resolved `NoOperationalScope`: operational types
-///   yield NO rows (fail closed, never a tenant-wide fallback);
-/// * `Some(sites)` — `Sites` / `WorkCenter` scope: operational rows are
-///   restricted to rows whose site is among `sites`.
+/// [`RequestContext`]: sensei_core::domain::request_context::RequestContext
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AllowedSearchProjection {
     entity_types: Vec<&'static str>,
-    sites: Option<Vec<Uuid>>,
+    /// The caller's FULL operational scope:
+    ///
+    /// * `TenantWide` — an explicit all-access grant (dev deployments
+    ///   carry it by default): no operational restriction applies;
+    /// * `NoOperationalScope` — no entitlement: operational types yield
+    ///   NO rows (fail closed, never a tenant-wide fallback);
+    /// * `Operational { sites, work_centers }` — site grants cover the
+    ///   sites' rows; work-center grants cover exactly the granted work
+    ///   centers (never the parent site).
+    scope: AuthorizedScope,
 }
 
 impl AllowedSearchProjection {
-    /// Precompute the caller's admissible projection (item 10):
+    /// Precompute the caller's admissible projection (item 10; item 12):
     ///
     /// * every registered result type whose read permission the caller
     ///   does not hold is dropped;
     /// * the optional `requested_type` filter (the `entity_type` query
     ///   parameter) is intersected — a type the caller may not read, or
     ///   an unknown type, admits nothing;
-    /// * when the deployment has a database, the operational scope is
-    ///   resolved through the caller's [`RequestContext`] (the
-    ///   routes/andon.rs `caller_sites` pattern); without a database the
-    ///   operational types stay unrestricted (dev semantics — there are
-    ///   no site rows to entangle).
+    /// * the FULL operational scope is resolved through the caller's
+    ///   [`RequestContext`] (the routes/andon.rs `caller_sites` pattern)
+    ///   and carried on the projection untouched — the DB search applies
+    ///   it per resource instead of normalizing work-center grants into
+    ///   their sites.
     ///
     /// [`RequestContext`]: sensei_core::domain::request_context::RequestContext
     pub async fn for_caller(
@@ -235,7 +246,7 @@ impl AllowedSearchProjection {
         user: &AuthenticatedUser,
         requested_type: Option<&str>,
     ) -> Result<Self> {
-        let sites = caller_operational_sites(state, user).await?;
+        let rc = build_request_context(user, state).await?;
         let entity_types: Vec<&'static str> = REGISTRY
             .iter()
             .filter(|policy| requested_type.is_none_or(|rt| rt == policy.result_type()))
@@ -247,7 +258,7 @@ impl AllowedSearchProjection {
             .collect();
         Ok(Self {
             entity_types,
-            sites,
+            scope: rc.scope,
         })
     }
 
@@ -256,11 +267,14 @@ impl AllowedSearchProjection {
         &self.entity_types
     }
 
-    /// The site restriction for operational types (`None` = no scope
-    /// authority, unrestricted; `Some` = restricted, empty means deny all
-    /// operational rows).
-    pub fn sites(&self) -> Option<&[Uuid]> {
-        self.sites.as_deref()
+    /// The caller's FULL operational scope (item 12): the database search
+    /// applies this scope per resource — site grants (`Operational.sites`)
+    /// restrict site-level rows; work-center grants
+    /// (`Operational.work_centers`) restrict work-center rows to the exact
+    /// granted ids; `NoOperationalScope` admits no operational row;
+    /// `TenantWide` is unrestricted.
+    pub fn scope(&self) -> &AuthorizedScope {
+        &self.scope
     }
 
     /// Whether the given result type is admissible.
@@ -268,35 +282,14 @@ impl AllowedSearchProjection {
         self.entity_types.contains(&result_type)
     }
 
-    /// True when the caller is site-restricted (has a DB-resolved scope).
-    pub fn is_site_restricted(&self) -> bool {
-        self.sites.is_some()
+    /// True when the caller is operationally restricted (has any
+    /// DB-resolved operational entitlement narrower than tenant-wide).
+    pub fn is_operationally_restricted(&self) -> bool {
+        !matches!(
+            self.scope,
+            AuthorizedScope::TenantWide | AuthorizedScope::NoOperationalScope
+        )
     }
-}
-
-/// Resolve the caller's operational site restriction through the ONE
-/// shared [`RequestContext`] builder ([`build_request_context`] — the
-/// routes/andon.rs `caller_sites` pattern):
-///
-/// * no scope authority (in-memory/dev → explicit tenant-wide grant) →
-///   `None` (dev semantics, no sites to entangle);
-/// * `NoOperationalScope` → `Some(vec![])` (deny every operational row);
-/// * `Sites` → `Some(sites)`;
-/// * `WorkCenter` → `Some(vec![wc.site])`;
-/// * `TenantWide` → `None` (explicit all-access grant).
-///
-/// [`RequestContext`]: sensei_core::domain::request_context::RequestContext
-async fn caller_operational_sites(
-    state: &AppState,
-    user: &AuthenticatedUser,
-) -> Result<Option<Vec<Uuid>>> {
-    let rc = build_request_context(user, state).await?;
-    Ok(match &rc.scope {
-        AuthorizedScope::TenantWide => None,
-        AuthorizedScope::NoOperationalScope => Some(Vec::new()),
-        AuthorizedScope::Sites(sites) => Some(sites.clone()),
-        AuthorizedScope::WorkCenter(wc) => Some(vec![wc.site]),
-    })
 }
 
 /// Guard: an unknown requested result type must fail closed (never
@@ -314,6 +307,7 @@ pub fn ensure_known_result_type(result_type: &str) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use uuid::Uuid;
 
     #[test]
     fn registry_covers_every_searchable_result_type() {

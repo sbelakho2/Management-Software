@@ -297,24 +297,26 @@ mod tests {
     }
 
     fn admin_user(tenant_id: TenantId, user_id: EntityId) -> AuthenticatedUser {
+        let roles = vec![
+            "user".to_string(),
+            "tenant_admin".to_string(),
+            "production_manager".to_string(),
+            "quality_manager".to_string(),
+            "purchasing_manager".to_string(),
+            "sales_manager".to_string(),
+            "finance_manager".to_string(),
+            "inventory_manager".to_string(),
+            "operator".to_string(),
+        ];
         AuthenticatedUser {
             user_id,
             tenant_id,
-            roles: vec![
-                "user".to_string(),
-                "tenant_admin".to_string(),
-                "production_manager".to_string(),
-                "quality_manager".to_string(),
-                "purchasing_manager".to_string(),
-                "sales_manager".to_string(),
-                "finance_manager".to_string(),
-                "inventory_manager".to_string(),
-                "operator".to_string(),
-            ],
+            roles: roles.clone(),
             sid: None,
-            // Empty request-local permission set: legacy RBAC registry
-            // backs require_permission in direct-construction tests.
-            permissions: std::collections::HashSet::new(),
+            // Explicit permissions (thirtieth-audit P0-10): require_permission
+            // no longer falls back to the global registry, so direct
+            // constructions carry the static expansion of their roles.
+            permissions: sensei_auth::rbac::RbacService::new().expand_static(&roles),
         }
     }
 

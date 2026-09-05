@@ -41,9 +41,18 @@ To learn more about the release, try:
 3. View logs:
   kubectl logs --namespace {{ .Release.Namespace }} -l "app.kubernetes.io/instance={{ .Release.Name }}" --tail=100
 
-4. Database migrations:
-  Migrations run automatically at API startup when DB_AUTO_MIGRATE=true
-  (the default). No manual migration step is required.
+4. Database lifecycle (thirtieth-audit item 26):
+   The chart ships three DB Job hooks that run before every install/upgrade
+   rollout, in this order:
+     bootstrap (ADMIN) -> migrate (sensei_migrator) -> grants (ADMIN) -> rollout
+   - The API/workers NEVER auto-migrate (DB_AUTO_MIGRATE=false) and connect
+     ONLY as sensei_app (DATABASE_URL_APP); admin/migrator URLs live in the
+     Secret but are never mounted into API/worker pods.
+   - A failed hook Job aborts the release: on upgrade the previous
+     deployment keeps serving traffic (hooks complete before the new
+     manifests are applied).
+   - Watch them with:  kubectl get jobs -l app.kubernetes.io/instance={{ .Release.Name }}
+     (failed pods are kept for logs; succeeded hook Jobs are deleted).
 
 5. Seed the CEO account:
   The CEO seed account is created at first startup when SENSEI_CEO_PASSWORD is
@@ -57,11 +66,16 @@ To learn more about the release, try:
   Detailed:  GET /health/detailed
 
 ** Important Security Notes **
-- All credential-bearing environment variables (DATABASE_URL, JWT_SECRET,
-  S3_ACCESS_KEY, S3_SECRET_KEY, SMTP_PASSWORD, REDIS_URL, NATS credentials,
-  SENSEI_CEO_PASSWORD) live in the {{ include "sensei.fullname" . }}-secret
-  Secret. The ConfigMap holds non-secret configuration only. See
-  .env.example for the canonical environment contract.
+- Three DB identities are defined (thirtieth-audit item 26):
+    DATABASE_URL_ADMIN      -> db-bootstrap + db-grants Job hooks only
+    DATABASE_URL_MIGRATOR   -> db-migrate Job hook only
+    DATABASE_URL_APP        -> API + workers only
+  API/worker pods never receive the admin or migrator URLs. All other
+  credential-bearing variables (JWT_SECRET, S3_ACCESS_KEY, S3_SECRET_KEY,
+  SMTP_PASSWORD, NATS credentials, SENSEI_CEO_PASSWORD) live in the
+  {{ include "sensei.fullname" . }}-secret Secret; the ConfigMap holds
+  non-secret configuration only. See .env.example for the canonical
+  environment contract.
 - SENSEI_ENV is parsed strictly: an invalid value (e.g. a typo) aborts startup.
 - JWT secrets are preserved across upgrades; rotate them deliberately.
 - Configure TLS certificates for secure communication.

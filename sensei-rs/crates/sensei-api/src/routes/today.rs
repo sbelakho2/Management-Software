@@ -31,11 +31,33 @@
 //!
 //! 1. `focus.work_center` present -> exact work center;
 //! 2. `focus.site` present -> that site;
-//! 3. scope `Sites` with exactly one site -> that site;
-//! 4. scope `Sites` with several sites (no focus) -> the authorized
-//!    union (never wider than the entitlement, never the whole tenant);
+//! 3. scope `Operational` with exactly one site -> that site;
+//! 4. scope `Operational` with several sites (no focus) -> the
+//!    authorized union (never wider than the entitlement, never the
+//!    whole tenant);
 //! 5. scope `TenantWide` -> tenant totals;
-//! 6. `NoOperationalScope` / empty -> zeros (no operational data).
+//! 6. `NoOperationalScope` / empty / an unrenderable exact work-center
+//!    set -> zeros (no operational data).
+//!
+//! A pure work-center scope (empty site set) is never widened into its
+//! site: a single granted work center displays that exact work center
+//! (thirtieth-audit P0 item 1); a SET of granted work centers cannot be
+//! represented by the one-WC display and fails closed (zeros).
+//!
+//! Local-day semantics (thirtieth-audit item 15): every date-bounded
+//! counter ("completed today", "overdue") is evaluated against SITE-LOCAL
+//! calendar-day windows — a half-open UTC range `[local midnight,
+//! next local midnight)` resolved from `sites.timezone` IN PostgreSQL
+//! (`AT TIME ZONE`), per work order via its work center's site. A UTC
+//! `date_naive()` comparison against a site-local date mislabels rows
+//! near local midnight (2026-09-04 23:30 UTC is already 2026-09-05
+//! 00:30 at a UTC+1 site), so no `date_naive()` boundary exists here:
+//! every instant is tested with `ts >= start AND ts < end` against the
+//! window of the row's own site — multi-site aggregation counts each
+//! row on its own site's local day. Rows without a site anchor (a
+//! tenant-wide display; dev mode) fall back to the caller's active-site
+//! window, and the DB-less dev convention (no site dimension ⇒ UTC) to
+//! the UTC day of the displayed date.
 //!
 //! DB-less (in-memory dev/test) mode cannot resolve a scope: the shared
 //! context builder grants the explicit tenant-wide scope (the in-memory
@@ -53,6 +75,7 @@ use sensei_services::ops::Andon;
 use sensei_services::production::{WorkOrder, WorkOrderListFilter};
 use sensei_services::quality::{CapaExtended, NonConformance};
 use serde::Serialize;
+use std::collections::HashMap;
 use uuid::Uuid;
 
 use crate::authorization::build_request_context;
@@ -176,19 +199,36 @@ impl DisplayScope {
         match &rc.scope {
             AuthorizedScope::NoOperationalScope => Self::NoData,
             AuthorizedScope::TenantWide => Self::Tenant,
-            AuthorizedScope::Sites(sites) if sites.len() <= 1 => sites
-                .first()
-                .copied()
-                .map_or(Self::NoData, |site| Self::Site { site }),
-            AuthorizedScope::Sites(sites) => Self::Sites {
-                sites: sites.clone(),
-            },
-            // A work-center scope without an operating focus: display its
-            // exact work center (never wider than the entitlement).
-            AuthorizedScope::WorkCenter(wc) => Self::WorkCenter {
-                site: wc.site,
-                work_center: wc.work_center,
-            },
+            // Thirtieth-audit P0 item 1: a pure work-center grant stays
+            // EXACT — one granted work center displays that exact work
+            // center; a set of granted work centers cannot be rendered by
+            // a single site/one-WC display, so it fails closed (NoData)
+            // rather than widen into a whole site.
+            AuthorizedScope::Operational {
+                sites,
+                work_centers,
+            } => {
+                if !work_centers.is_empty() && sites.is_empty() {
+                    return if work_centers.len() == 1 {
+                        let wc = work_centers.iter().next().expect("len checked == 1");
+                        Self::WorkCenter {
+                            site: wc.site,
+                            work_center: wc.work_center,
+                        }
+                    } else {
+                        Self::NoData
+                    };
+                }
+                // Site grants decide the display (mixed grants display the
+                // site grants only — never wider than the entitlement).
+                let mut ids: Vec<Uuid> = sites.iter().copied().collect();
+                ids.sort_unstable();
+                match ids.len() {
+                    0 => Self::NoData,
+                    1 => Self::Site { site: ids[0] },
+                    _ => Self::Sites { sites: ids },
+                }
+            }
         }
     }
 
@@ -206,14 +246,14 @@ impl DisplayScope {
 
 /// Work orders are anchored to a site through their work center
 /// (`work_centers.site_id`); a work order without a work center has no
-/// site anchor and never appears on a site-scoped dashboard.
+/// site anchor and never appears on a site-scoped dashboard (the LEFT
+/// JOIN exposes NULL `wc.site_id`, and `NULL = ANY($2)` never matches —
+/// fail closed).
 fn work_order_predicate(display: &DisplayScope) -> Option<String> {
     match display {
-        DisplayScope::Site { .. } | DisplayScope::Sites { .. } => Some(
-            " AND EXISTS (SELECT 1 FROM work_centers wc \
-             WHERE wc.id = wo.work_center_id AND wc.site_id = ANY($2::uuid[]))"
-                .to_string(),
-        ),
+        DisplayScope::Site { .. } | DisplayScope::Sites { .. } => {
+            Some(" AND wc.site_id = ANY($2::uuid[])".to_string())
+        }
         DisplayScope::WorkCenter { .. } => {
             Some(" AND wo.work_center_id = ANY($2::uuid[])".to_string())
         }
@@ -260,6 +300,81 @@ fn display_ids(display: &DisplayScope) -> Option<Vec<Uuid>> {
     }
 }
 
+// ── Site-local day windows (thirtieth-audit item 15) ───────────────────────
+
+/// A site-local calendar day as a half-open UTC window `[start, end)`.
+///
+/// The window is resolved IN PostgreSQL from the site's IANA timezone
+/// (`sites.timezone`): `(NOW() AT TIME ZONE s.timezone)::date` is the
+/// site-local "today" and
+/// `(date::timestamp AT TIME ZONE s.timezone)` converts that local
+/// midnight back to a UTC instant — no client-side timezone database is
+/// needed, and DST transitions are handled by the database exactly like
+/// the date label (item 65). Every "today" membership test compares UTC
+/// instants with `>= start AND < end`; a UTC `date_naive()` comparison
+/// against a site-local date would mislabel rows near local midnight
+/// (2026-09-04 23:30 UTC is already 2026-09-05 00:30 at a UTC+1 site).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct LocalDayWindow {
+    start: DateTime<Utc>,
+    end: DateTime<Utc>,
+}
+
+impl LocalDayWindow {
+    /// True when the UTC instant falls INSIDE the site-local day.
+    fn contains(&self, ts: DateTime<Utc>) -> bool {
+        ts >= self.start && ts < self.end
+    }
+
+    /// True when the UTC instant falls strictly BEFORE the site-local
+    /// day — its site-local date is a PAST date (used for the overdue
+    /// check: `scheduled_end`'s local date < the site-local today).
+    fn is_before(&self, ts: DateTime<Utc>) -> bool {
+        ts < self.start
+    }
+
+    /// The UTC-day window of `local_date` — the DB-less / dev fallback
+    /// (the permissive-dev convention has no site dimension, so the
+    /// site-local day IS the UTC day).
+    fn utc_day(local_date: NaiveDate) -> Self {
+        let start = local_date
+            .and_hms_opt(0, 0, 0)
+            .expect("midnight is always a valid time")
+            .and_utc();
+        Self {
+            start,
+            end: start + chrono::Duration::days(1),
+        }
+    }
+}
+
+/// Every site of the tenant with its site-local "today" window (the map
+/// key is the `sites.id` a work order's work center anchors to). The
+/// windows are computed inside the SAME transaction as the work-order
+/// fetch, so `NOW()` (transaction start time) is shared by both.
+async fn fetch_site_windows(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    tenant_id: Uuid,
+) -> Result<HashMap<Uuid, LocalDayWindow>> {
+    let rows: Vec<(Uuid, DateTime<Utc>, DateTime<Utc>)> = sqlx::query_as(
+        "SELECT s.id, \
+         ((NOW() AT TIME ZONE s.timezone)::date::timestamp AT TIME ZONE s.timezone), \
+         (((NOW() AT TIME ZONE s.timezone)::date::timestamp + INTERVAL '1 day') \
+             AT TIME ZONE s.timezone) \
+         FROM sites s WHERE s.tenant_id = $1",
+    )
+    .bind(tenant_id)
+    .fetch_all(&mut **tx)
+    .await
+    .map_err(|e| {
+        sensei_core::error::SenseiError::Database(format!("today: site day windows: {e}"))
+    })?;
+    Ok(rows
+        .into_iter()
+        .map(|(site, start, end)| (site, LocalDayWindow { start, end }))
+        .collect())
+}
+
 // ── Work orders ────────────────────────────────────────────────────────────
 
 /// Minimal work-order row both fetch paths map to before counting.
@@ -268,16 +383,36 @@ struct WoRow {
     status: String,
     updated_at: DateTime<Utc>,
     scheduled_end: Option<DateTime<Utc>>,
+    /// The site the work order anchors to through its work center
+    /// (`work_centers.site_id`) — `None` for an unanchored work order
+    /// (visible to a tenant-wide display only) and in dev mode.
+    site_id: Option<Uuid>,
 }
 
-fn count_work_orders(rows: &[WoRow], today: NaiveDate) -> WorkOrderSummary {
+/// Count the display scope's work orders.
+///
+/// The date-bounded counters ("completed today", "overdue") test UTC
+/// instants against the row's OWN site-local day window — `>= start AND
+/// < end` — never a UTC `date_naive()` against the site-local date
+/// (thirtieth-audit item 15). Rows whose site is unknown (unanchored
+/// tenant-wide rows, dev mode) fall back to `fallback_window`.
+fn count_work_orders(
+    rows: &[WoRow],
+    site_windows: &HashMap<Uuid, LocalDayWindow>,
+    fallback_window: LocalDayWindow,
+) -> WorkOrderSummary {
+    let window_of = |row: &WoRow| {
+        row.site_id
+            .and_then(|site| site_windows.get(&site).copied())
+            .unwrap_or(fallback_window)
+    };
     let total_active = rows
         .iter()
         .filter(|o| !status_is_cancelled(&o.status) && !status_is_completed(&o.status))
         .count();
     let completed_today = rows
         .iter()
-        .filter(|o| status_is_completed(&o.status) && o.updated_at.date_naive() == today)
+        .filter(|o| status_is_completed(&o.status) && window_of(o).contains(o.updated_at))
         .count();
     let in_progress = rows
         .iter()
@@ -286,7 +421,9 @@ fn count_work_orders(rows: &[WoRow], today: NaiveDate) -> WorkOrderSummary {
     let overdue = rows
         .iter()
         .filter(|o| {
-            status_is_open(&o.status) && o.scheduled_end.is_some_and(|end| end.date_naive() < today)
+            status_is_open(&o.status)
+                && o.scheduled_end
+                    .is_some_and(|end| window_of(o).is_before(end))
         })
         .count();
     WorkOrderSummary {
@@ -329,30 +466,40 @@ async fn fetch_all_work_orders_dev(
 
 /// Fetch ONLY the work orders inside the effective display scope — SQL
 /// site filtering through `work_centers.site_id` (never a tenant-wide
-/// page). `DisplayScope::NoData` yields an empty set.
+/// page). `DisplayScope::NoData` yields an empty set. Every work order
+/// carries the site its work center anchors to; the site-local "today"
+/// windows of the tenant's sites are returned alongside (item 15).
 async fn fetch_work_orders_scoped(
     state: &AppState,
     ctx: &RequestContext,
     display: &DisplayScope,
-) -> Result<Vec<WoRow>> {
+) -> Result<(Vec<WoRow>, HashMap<Uuid, LocalDayWindow>)> {
     if display.is_no_data() {
-        return Ok(Vec::new());
+        return Ok((Vec::new(), HashMap::new()));
     }
     let Some(pool) = state.db_pool.as_ref() else {
         let orders = fetch_all_work_orders_dev(state, ctx).await?;
-        return Ok(orders
-            .into_iter()
-            .map(|o| WoRow {
-                status: o.status,
-                updated_at: o.updated_at,
-                scheduled_end: o.scheduled_end,
-            })
-            .collect());
+        return Ok((
+            orders
+                .into_iter()
+                .map(|o| WoRow {
+                    status: o.status,
+                    updated_at: o.updated_at,
+                    scheduled_end: o.scheduled_end,
+                    // Dev mode has no site dimension: every row falls
+                    // back to the UTC day of the displayed date.
+                    site_id: None,
+                })
+                .collect(),
+            HashMap::new(),
+        ));
     };
     let predicate_unwrapped = work_order_predicate(display).unwrap_or_default();
     let sql = format!(
-        "SELECT wo.status, wo.updated_at, wo.scheduled_end \
-         FROM work_orders wo WHERE wo.tenant_id = $1{predicate_unwrapped}"
+        "SELECT wo.status, wo.updated_at, wo.scheduled_end, wc.site_id \
+         FROM work_orders wo \
+         LEFT JOIN work_centers wc ON wc.id = wo.work_center_id \
+         WHERE wo.tenant_id = $1{predicate_unwrapped}"
     );
     let mut tx = pool.begin().await.map_err(|e| {
         sensei_core::error::SenseiError::Database(format!("today: wo tx begin: {e}"))
@@ -365,24 +512,31 @@ async fn fetch_work_orders_scoped(
             sensei_core::error::SenseiError::Database(format!("today: wo tenant ctx: {e}"))
         })?;
     let mut q =
-        sqlx::query_as::<_, (String, DateTime<Utc>, Option<DateTime<Utc>>)>(&sql).bind(ctx.tenant);
+        sqlx::query_as::<_, (String, DateTime<Utc>, Option<DateTime<Utc>>, Option<Uuid>)>(&sql)
+            .bind(ctx.tenant);
     if let Some(ids) = display_ids(display) {
         q = q.bind(ids);
     }
     let rows = q.fetch_all(&mut *tx).await.map_err(|e| {
         sensei_core::error::SenseiError::Database(format!("today: scoped WO fetch: {e}"))
     })?;
+    // The site-local day windows resolve inside the SAME transaction, so
+    // the row membership tests and the windows share one NOW().
+    let site_windows = fetch_site_windows(&mut tx, ctx.tenant).await?;
     tx.commit().await.map_err(|e| {
         sensei_core::error::SenseiError::Database(format!("today: wo tx commit: {e}"))
     })?;
-    Ok(rows
-        .into_iter()
-        .map(|(status, updated_at, scheduled_end)| WoRow {
-            status,
-            updated_at,
-            scheduled_end,
-        })
-        .collect())
+    Ok((
+        rows.into_iter()
+            .map(|(status, updated_at, scheduled_end, site_id)| WoRow {
+                status,
+                updated_at,
+                scheduled_end,
+                site_id,
+            })
+            .collect(),
+        site_windows,
+    ))
 }
 
 // ── Andons ─────────────────────────────────────────────────────────────────
@@ -716,10 +870,13 @@ pub async fn get_today_snapshot(
     let ctx = build_request_context(&user, &state).await?;
     let display = DisplayScope::resolve(&ctx);
 
-    // Item 65: "today" is the SITE's today, never UTC — the user's active
-    // site timezone (resolved at request time) defines the day boundary.
-    // The timezone conversion happens IN the database (PostgreSQL's
-    // `AT TIME ZONE` understands every IANA zone) — no client-side tz db.
+    // Item 65 + thirtieth-audit item 15: "today" is the SITE's today,
+    // never UTC — the user's active site timezone (resolved at request
+    // time) defines the day boundary. The timezone conversion happens IN
+    // the database (PostgreSQL's `AT TIME ZONE` understands every IANA
+    // zone) — no client-side tz db. Each date-bounded counter below
+    // tests instants against site-local day windows resolved from the
+    // same `sites.timezone` column.
     let agent_ctx = crate::routes::agent::build_context(&user, &state).await;
     let timezone = agent_ctx.timezone.clone();
     let today: chrono::NaiveDate = if let Some(pool) = state.db_pool.as_ref() {
@@ -740,8 +897,16 @@ pub async fn get_today_snapshot(
     };
 
     // ── Work Orders ──────────────────────────────────────────────────
-    let work_order_rows = fetch_work_orders_scoped(&state, &ctx, &display).await?;
-    let work_order_summary = count_work_orders(&work_order_rows, today);
+    let (work_order_rows, site_windows) = fetch_work_orders_scoped(&state, &ctx, &display).await?;
+    // Rows without a site anchor (a tenant-wide display with unanchored
+    // work orders; dev mode) are counted on the caller's active-site
+    // window — the UTC day of the displayed date when no active site
+    // exists (the DB-less dev convention).
+    let fallback_window = agent_ctx
+        .site_id
+        .and_then(|site| site_windows.get(&site).copied())
+        .unwrap_or_else(|| LocalDayWindow::utc_day(today));
+    let work_order_summary = count_work_orders(&work_order_rows, &site_windows, fallback_window);
 
     // ── Quality (Andon events) ───────────────────────────────────────
     let andon_statuses = fetch_andons_scoped(&state, &ctx, &display).await?;
@@ -824,15 +989,30 @@ mod tests {
         }
     }
 
+    /// A site-grant scope (thirtieth-audit P0 item 1 representation).
+    fn sites_scope(ids: Vec<Uuid>) -> AuthorizedScope {
+        use sensei_core::domain::scope::WorkCenterScope;
+        AuthorizedScope::Operational {
+            sites: ids.into_iter().collect(),
+            work_centers: std::collections::HashSet::<WorkCenterScope>::new(),
+        }
+    }
+
+    /// A pure work-center-grant scope: exact (site, wc), never the site.
+    fn wc_scope(site: Uuid, work_center: Uuid) -> AuthorizedScope {
+        use sensei_core::domain::scope::WorkCenterScope;
+        AuthorizedScope::Operational {
+            sites: std::collections::HashSet::new(),
+            work_centers: std::collections::HashSet::from([WorkCenterScope { site, work_center }]),
+        }
+    }
+
     #[test]
     fn display_scope_focus_work_center_wins() {
         let site = Uuid::new_v4();
         let wc = Uuid::new_v4();
         let other = Uuid::new_v4();
-        let ctx = rc(
-            AuthorizedScope::Sites(vec![site, other]),
-            focus(Some(site), Some(wc)),
-        );
+        let ctx = rc(sites_scope(vec![site, other]), focus(Some(site), Some(wc)));
         assert_eq!(
             DisplayScope::resolve(&ctx),
             DisplayScope::WorkCenter {
@@ -855,10 +1035,7 @@ mod tests {
     #[test]
     fn display_scope_work_center_focus_without_site_is_no_data() {
         let wc = Uuid::new_v4();
-        let ctx = rc(
-            AuthorizedScope::Sites(vec![Uuid::new_v4()]),
-            focus(None, Some(wc)),
-        );
+        let ctx = rc(sites_scope(vec![Uuid::new_v4()]), focus(None, Some(wc)));
         assert_eq!(DisplayScope::resolve(&ctx), DisplayScope::NoData);
     }
 
@@ -866,17 +1043,14 @@ mod tests {
     fn display_scope_focus_site_wins() {
         let site = Uuid::new_v4();
         let other = Uuid::new_v4();
-        let ctx = rc(
-            AuthorizedScope::Sites(vec![site, other]),
-            focus(Some(site), None),
-        );
+        let ctx = rc(sites_scope(vec![site, other]), focus(Some(site), None));
         assert_eq!(DisplayScope::resolve(&ctx), DisplayScope::Site { site });
     }
 
     #[test]
     fn display_scope_single_authorized_site_falls_back() {
         let site = Uuid::new_v4();
-        let ctx = rc(AuthorizedScope::Sites(vec![site]), focus(None, None));
+        let ctx = rc(sites_scope(vec![site]), focus(None, None));
         assert_eq!(DisplayScope::resolve(&ctx), DisplayScope::Site { site });
     }
 
@@ -884,10 +1058,13 @@ mod tests {
     fn display_scope_multi_site_union_never_tenant() {
         let a = Uuid::new_v4();
         let b = Uuid::new_v4();
-        let ctx = rc(AuthorizedScope::Sites(vec![a, b]), focus(None, None));
+        let ctx = rc(sites_scope(vec![a, b]), focus(None, None));
+        // The display union is the deterministic SORTED site set.
+        let mut expected = vec![a, b];
+        expected.sort_unstable();
         assert_eq!(
             DisplayScope::resolve(&ctx),
-            DisplayScope::Sites { sites: vec![a, b] }
+            DisplayScope::Sites { sites: expected }
         );
     }
 
@@ -901,7 +1078,7 @@ mod tests {
     fn display_scope_no_operational_scope_is_zeros() {
         let ctx = rc(AuthorizedScope::NoOperationalScope, focus(None, None));
         assert_eq!(DisplayScope::resolve(&ctx), DisplayScope::NoData);
-        let empty = rc(AuthorizedScope::Sites(vec![]), focus(None, None));
+        let empty = rc(sites_scope(vec![]), focus(None, None));
         assert_eq!(DisplayScope::resolve(&empty), DisplayScope::NoData);
     }
 
@@ -916,13 +1093,7 @@ mod tests {
     fn display_scope_work_center_scope_without_focus_displays_exact_wc() {
         let site = Uuid::new_v4();
         let wc = Uuid::new_v4();
-        let ctx = rc(
-            AuthorizedScope::WorkCenter(sensei_core::domain::scope::WorkCenterScope {
-                site,
-                work_center: wc,
-            }),
-            focus(None, None),
-        );
+        let ctx = rc(wc_scope(site, wc), focus(None, None));
         assert_eq!(
             DisplayScope::resolve(&ctx),
             DisplayScope::WorkCenter {
@@ -941,5 +1112,173 @@ mod tests {
         assert!(!is_terminal_quality_status("Open"));
         assert!(!is_terminal_quality_status("in_progress"));
         assert!(!is_terminal_quality_status("under_investigation"));
+    }
+
+    // ── Site-local day windows (thirtieth-audit item 15) ──────────────────
+
+    fn dt(s: &str) -> DateTime<Utc> {
+        DateTime::parse_from_rfc3339(s)
+            .expect("valid rfc3339")
+            .with_timezone(&Utc)
+    }
+
+    /// The audit's boundary example, both signs: a UTC instant INSIDE a
+    /// site-local day whose UTC `date_naive()` is the WRONG date.
+    ///
+    /// - UTC+1 site (local 2026-09-05): local midnight = 2026-09-04
+    ///   23:00 UTC; 2026-09-04 23:30 UTC is local 00:30 on 09-05.
+    /// - UTC-5 site (local 2026-09-05): local midnight = 2026-09-05
+    ///   05:00 UTC; 2026-09-06 04:30 UTC is local 23:30 on 09-05.
+    #[test]
+    fn local_day_windows_use_site_local_date_not_utc_date_naive() {
+        // UTC+1 site's local 2026-09-05.
+        let plus1 = LocalDayWindow {
+            start: dt("2026-09-04T23:00:00Z"),
+            end: dt("2026-09-05T23:00:00Z"),
+        };
+        let in_plus1_day = dt("2026-09-04T23:30:00Z");
+        assert!(plus1.contains(in_plus1_day));
+        assert_eq!(in_plus1_day.date_naive().to_string(), "2026-09-04");
+        assert_ne!(
+            in_plus1_day.date_naive(),
+            NaiveDate::from_ymd_opt(2026, 9, 5).expect("valid"),
+            "the UTC date differs from the site-local date — this is the \
+             mismatch a date_naive() comparison gets wrong"
+        );
+        // One minute before local midnight: still yesterday locally.
+        assert!(!plus1.contains(dt("2026-09-04T22:59:00Z")));
+        // Local midnight belongs to the NEW day.
+        assert!(plus1.contains(dt("2026-09-04T23:00:00Z")));
+        assert!(!plus1.contains(dt("2026-09-05T23:00:00Z")));
+
+        // UTC-5 site's local 2026-09-05.
+        let minus5 = LocalDayWindow {
+            start: dt("2026-09-05T05:00:00Z"),
+            end: dt("2026-09-06T05:00:00Z"),
+        };
+        let in_minus5_day = dt("2026-09-06T04:30:00Z");
+        assert!(minus5.contains(in_minus5_day));
+        assert_eq!(in_minus5_day.date_naive().to_string(), "2026-09-06");
+        assert_ne!(
+            in_minus5_day.date_naive(),
+            NaiveDate::from_ymd_opt(2026, 9, 5).expect("valid"),
+            "same mismatch in the other direction"
+        );
+        assert!(minus5.is_before(dt("2026-09-05T04:59:59Z")));
+        assert!(!minus5.is_before(dt("2026-09-05T05:00:00Z")));
+    }
+
+    fn wo(
+        status: &str,
+        updated_at: DateTime<Utc>,
+        scheduled_end: Option<DateTime<Utc>>,
+        site: Option<Uuid>,
+    ) -> WoRow {
+        WoRow {
+            status: status.to_string(),
+            updated_at,
+            scheduled_end,
+            site_id: site,
+        }
+    }
+
+    #[test]
+    fn completed_today_counts_each_rows_site_local_day() {
+        // Site A is UTC+1 (local 2026-09-05); site B is UTC-5 (local
+        // 2026-09-05). The SAME UTC instant 2026-09-04 23:30 is already
+        // 09-05 00:30 at A but still 09-04 18:30 at B.
+        let site_a = Uuid::new_v4();
+        let site_b = Uuid::new_v4();
+        let mut windows = HashMap::new();
+        windows.insert(
+            site_a,
+            LocalDayWindow {
+                start: dt("2026-09-04T23:00:00Z"),
+                end: dt("2026-09-05T23:00:00Z"),
+            },
+        );
+        windows.insert(
+            site_b,
+            LocalDayWindow {
+                start: dt("2026-09-05T05:00:00Z"),
+                end: dt("2026-09-06T05:00:00Z"),
+            },
+        );
+        let fallback = LocalDayWindow::utc_day(NaiveDate::from_ymd_opt(2026, 9, 5).expect("valid"));
+
+        let rows = vec![
+            // Completed at 2026-09-04 23:30 UTC: A's local 09-05 00:30
+            // (counted), B's local 09-04 18:30 (NOT counted).
+            wo("completed", dt("2026-09-04T23:30:00Z"), None, Some(site_a)),
+            wo("completed", dt("2026-09-04T23:30:00Z"), None, Some(site_b)),
+            // Completed yesterday locally at A (local 09-04 23:00).
+            wo("completed", dt("2026-09-04T22:00:00Z"), None, Some(site_a)),
+        ];
+        let summary = count_work_orders(&rows, &windows, fallback);
+        assert_eq!(
+            summary.completed_today, 1,
+            "only A's row falls inside A's local 09-05 — the same UTC \
+             instant is still 09-04 at B, and the third row is A's \
+             yesterday"
+        );
+        assert_eq!(summary.total_active, 0);
+        // A tenant-wide caller (no per-site window) falls back to the UTC
+        // day of the displayed date.
+        let summary = count_work_orders(&rows, &HashMap::new(), fallback);
+        assert_eq!(
+            summary.completed_today, 0,
+            "all three instants carry a UTC date other than 2026-09-05"
+        );
+    }
+
+    #[test]
+    fn overdue_compares_scheduled_end_on_the_rows_site_local_day() {
+        let site_a = Uuid::new_v4();
+        let mut windows = HashMap::new();
+        windows.insert(
+            site_a,
+            LocalDayWindow {
+                start: dt("2026-09-04T23:00:00Z"),
+                end: dt("2026-09-05T23:00:00Z"),
+            },
+        );
+        let fallback = LocalDayWindow::utc_day(NaiveDate::from_ymd_opt(2026, 9, 5).expect("valid"));
+
+        let rows = vec![
+            // Due local 09-04 23:00 (= UTC 09-04 22:00) — local date
+            // 09-04 is BEFORE A's local today 09-05: overdue, although
+            // its UTC date_naive (09-04) is the only date an unadjusted
+            // comparison would call "yesterday" — the old code called it
+            // overdue for the wrong reason but must STILL be overdue.
+            wo(
+                "open",
+                dt("2026-09-04T23:00:00Z"),
+                Some(dt("2026-09-04T22:00:00Z")),
+                Some(site_a),
+            ),
+            // Due local 09-05 00:30 (= UTC 09-04 23:30): STILL TODAY at
+            // A — the UTC date_naive 09-04 < local today 09-05 made the
+            // old code call this overdue; the site-local date says no.
+            wo(
+                "open",
+                dt("2026-09-04T23:30:00Z"),
+                Some(dt("2026-09-04T23:30:00Z")),
+                Some(site_a),
+            ),
+            // Due local 09-05 23:00 (= UTC 09-05 22:00): today, not
+            // overdue.
+            wo(
+                "open",
+                dt("2026-09-05T22:00:00Z"),
+                Some(dt("2026-09-05T22:00:00Z")),
+                Some(site_a),
+            ),
+        ];
+        let summary = count_work_orders(&rows, &windows, fallback);
+        assert_eq!(
+            summary.overdue, 1,
+            "only the 09-04 local due date is past A's local today"
+        );
+        assert_eq!(summary.total_active, 3);
     }
 }

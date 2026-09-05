@@ -19,14 +19,30 @@
 //! ever see its own entities — and ranked by `similarity()`, truncated to a
 //! bounded result set.
 //!
-//! # Authorization (twenty-ninth-audit Wave B item 10)
+//! # Authorization (twenty-ninth-audit Wave B item 10; thirtieth-audit
+//! P0 item 12)
 //!
 //! [`search_db_authorized`] runs the caller-derived
 //! [`AllowedSearchProjection`]: candidate tables/types are filtered
 //! BEFORE ranking by the caller's permissions (result types whose read
 //! permission the caller lacks are never queried) and operational types
-//! are restricted to the caller's authorized sites INSIDE the SQL
-//! (`NoOperationalScope` yields no operational rows at all). Search never
+//! are restricted to the caller's FULL [`AuthorizedScope`] INSIDE the SQL.
+//! The scope is matched PER RESOURCE — a site grant
+//! (`Operational.sites`) attributes rows through their site carrier,
+//! while an exact work-center grant (`Operational.work_centers`) matches
+//! the granted work centers' rows by id (`id = ANY($exact_wc_ids)`,
+//! never the parent site):
+//!
+//! * `work_center` rows are their own scope carrier (relational
+//!   `work_centers.site_id` / the row's own id);
+//! * `production_cell` rows derive their scope through their work-center
+//!   carriers (`production_cell_work_centers` → `work_centers`); a cell
+//!   with no carrier is searchable only under a tenant-wide grant;
+//! * `standard_work` rows carry no site linkage and are never returned
+//!   to a scope-restricted caller.
+//!
+//! `NoOperationalScope` yields no operational rows at all; `TenantWide`
+//! (the explicit all-access grant) applies no restriction. Search never
 //! runs all tables and then filters the result set.
 //!
 //! # Indexing contract
@@ -37,6 +53,8 @@
 //! are queried directly, so there is nothing to maintain.
 
 use async_trait::async_trait;
+use sensei_core::db::TenantTx;
+use sensei_core::domain::scope::AuthorizedScope;
 use sensei_core::error::{Result, SenseiError};
 use sensei_core::types::EntityId;
 use sensei_services::ops::search::{SearchResult, SearchService};
@@ -48,6 +66,23 @@ use crate::authorization::search_policy::{policy_for, AllowedSearchProjection, S
 
 /// Maximum results per entity query before the cross-type merge.
 const SEARCH_LIMIT: i64 = 50;
+
+/// The operational restriction applied to entity-store search rows
+/// (thirtieth-audit P0 item 12): the caller's FULL scope shape, never a
+/// normalized site list.
+#[derive(Debug, Clone, Copy)]
+enum StoreScopeRestriction<'a> {
+    /// No restriction (explicit tenant-wide grant / dev mode).
+    Unrestricted,
+    /// Site grants + exact work-center grants of an `Operational` scope.
+    /// Either set may be empty: a pure work-center caller carries an
+    /// empty `sites` set (their rows match by exact work-center id, never
+    /// by the parent site); an empty pair denies every operational row.
+    Authorized {
+        sites: &'a [Uuid],
+        work_centers: &'a [Uuid],
+    },
+}
 
 /// Entity types stored in the generic `entity_store` table: `(search result
 /// type name, store entity_type)`.
@@ -92,6 +127,14 @@ impl DatabaseSearchService {
         query: &str,
         limit: i64,
     ) -> Result<Vec<SearchResult>> {
+        // The users table is fail-closed FORCE RLS (migration 175
+        // universal policy): the search runs inside a TenantTx of the
+        // caller's tenant — under sensei_app a raw read would return
+        // nothing (and pre-175 it leaked every tenant's users through the
+        // compatibility clause on pooled sessions).
+        let mut db = TenantTx::begin(&self.pool, tenant_id)
+            .await
+            .map_err(|e| SenseiError::Database(format!("User search tx failed: {e}")))?;
         let rows = sqlx::query_as::<_, (Uuid, String, Option<String>, f32)>(
             "SELECT id, name, email, \
                 GREATEST(similarity(name, $2), similarity(COALESCE(email, ''), $2)) AS relevance \
@@ -104,9 +147,10 @@ impl DatabaseSearchService {
         .bind(tenant_id)
         .bind(query)
         .bind(limit)
-        .fetch_all(&self.pool)
+        .fetch_all(&mut **db.tx())
         .await
         .map_err(|e| SenseiError::Database(format!("User search failed: {e}")))?;
+        drop(db);
 
         Ok(rows
             .into_iter()
@@ -236,68 +280,87 @@ impl DatabaseSearchService {
         store_types: &[String],
         limit: i64,
     ) -> Result<Vec<SearchResult>> {
-        self.search_entity_store_rows(tenant_id, query, store_types, None, None, limit)
-            .await
+        self.search_entity_store_rows(
+            tenant_id,
+            query,
+            store_types,
+            StoreScopeRestriction::Unrestricted,
+            limit,
+        )
+        .await
     }
 
     /// Search `entity_store` JSONB rows for the given store entity types.
     ///
-    /// `operational_store_types` + `sites` carry the authorization
-    /// restriction (Wave B item 10): when both are `Some`, operational
-    /// rows must be attributable to one of the caller's authorized sites
-    /// INSIDE the SQL — an unattributable operational row (or an empty
-    /// entitlement) matches zero rows. `None` sites = no scope authority
-    /// (dev/unrestricted). Candidate types are always filtered BEFORE
+    /// `restriction` carries the caller's operational scope shape
+    /// (thirtieth-audit P0 item 12): when the caller is scope-restricted,
+    /// operational rows must be attributable to one of the caller's
+    /// site grants or to one of their EXACT work-center grants INSIDE the
+    /// SQL — an unattributable operational row (or an empty entitlement)
+    /// matches zero rows. Candidate types are always filtered BEFORE
     /// ranking — search never runs the whole table and filters after.
-    #[allow(clippy::too_many_arguments)]
     async fn search_entity_store_rows(
         &self,
         tenant_id: EntityId,
         query: &str,
         store_types: &[String],
-        operational_store_types: Option<&[String]>,
-        sites: Option<&[Uuid]>,
+        restriction: StoreScopeRestriction<'_>,
         limit: i64,
     ) -> Result<Vec<SearchResult>> {
         // Reverse map: store entity_type -> search result type name.
         let search_type_of: HashMap<&str, &str> =
             GENERIC_ENTITY_TYPES.iter().map(|(s, e)| (*e, *s)).collect();
 
-        // Operational attribution clause (site predicate for the
-        // operational tables that carry site_id — inserted BEFORE the
-        // LIMIT, i.e. before ranking truncation):
+        // Per-resource operational attribution clause (item 12) — inserted
+        // BEFORE the LIMIT, i.e. before ranking truncation. Each candidate
+        // row is matched through ITS OWN scope carrier, never through a
+        // sibling entity type's carrier:
         //
-        // * work_center rows are attributed through the relational
-        //   `work_centers.site_id`;
-        // * production_cell rows through `production_cell_work_centers`
-        //   → their work centers' sites;
-        // * standard-work rows carry no site linkage — they are never
-        //   attributable and are excluded under a site restriction.
+        // * `work_center` rows are the carrier of their own scope: the
+        //   relational row of the SAME id must lie in a granted site OR —
+        //   for a caller holding only work-center grants — the row's id
+        //   must be one of the granted work centers (`id = ANY($5)`,
+        //   NEVER the parent site);
+        // * `production_cell` rows derive their scope through their
+        //   work-center carriers (`production_cell_work_centers` → the
+        //   carriers' sites / exact carrier ids);
+        // * `standard_work` rows carry no site linkage — they are never
+        //   attributable and are excluded under any restriction.
         //
         // The clause is only assembled from fixed fragments; parameter
         // numbering is tracked explicitly below.
-        let (site_clause, limit_param): (String, usize) = match (operational_store_types, sites) {
-            (Some(op_types), Some(site_list)) if !site_list.is_empty() => (
+        let (scope_clause, limit_param): (String, usize) = match restriction {
+            StoreScopeRestriction::Unrestricted => (String::new(), 4),
+            StoreScopeRestriction::Authorized {
+                sites,
+                work_centers,
+            } => (
                 format!(
-                    " AND (entity_type <> ALL($4::text[]) \
-                     OR EXISTS (SELECT 1 FROM work_centers wc \
-                                WHERE wc.tenant_id = entity_store.tenant_id \
-                                  AND wc.id = entity_store.id \
-                                  AND wc.site_id = ANY($5)) \
-                     OR EXISTS (SELECT 1 FROM production_cell_work_centers pcwc \
-                                JOIN work_centers wc \
-                                  ON wc.tenant_id = pcwc.tenant_id \
-                                 AND wc.id = pcwc.work_center_id \
-                                WHERE pcwc.tenant_id = entity_store.tenant_id \
-                                  AND pcwc.cell_id = entity_store.id \
-                                  AND wc.site_id = ANY($5))) \
-                     -- {op_type_count} operational types restricted to the \
-                     -- caller's authorized sites",
-                    op_type_count = op_types.len()
+                    " AND ( \
+                     (entity_type = 'work_center' AND EXISTS (\
+                        SELECT 1 FROM work_centers wc \
+                        WHERE wc.tenant_id = entity_store.tenant_id \
+                          AND wc.id = entity_store.id \
+                          AND (wc.site_id = ANY($4::uuid[]) \
+                               OR wc.id = ANY($5::uuid[])))) \
+                     OR \
+                     (entity_type = 'production_cell' AND EXISTS (\
+                        SELECT 1 FROM production_cell_work_centers pcwc \
+                        JOIN work_centers wc \
+                          ON wc.tenant_id = pcwc.tenant_id \
+                         AND wc.id = pcwc.work_center_id \
+                        WHERE pcwc.tenant_id = entity_store.tenant_id \
+                          AND pcwc.cell_id = entity_store.id \
+                          AND (wc.site_id = ANY($4::uuid[]) \
+                               OR wc.id = ANY($5::uuid[])))) \
+                    ) \
+                    -- {site_count} site grant(s) + {wc_count} exact work-center \
+                    -- grant(s) restrict the operational rows",
+                    site_count = sites.len(),
+                    wc_count = work_centers.len()
                 ),
                 6,
             ),
-            _ => (String::new(), 4),
         };
 
         let base_sql = "SELECT id, entity_type, data, \
@@ -319,14 +382,18 @@ impl DatabaseSearchService {
                              OR (data->>'effective_from')::timestamptz <= NOW()) \
                         AND (data->>'effective_to' IS NULL \
                              OR (data->>'effective_to')::timestamptz >= NOW())))";
-        let sql = format!("{base_sql}{site_clause} ORDER BY relevance DESC LIMIT ${limit_param}");
+        let sql = format!("{base_sql}{scope_clause} ORDER BY relevance DESC LIMIT ${limit_param}");
 
         let mut query_builder = sqlx::query_as::<_, (Uuid, String, serde_json::Value, f32)>(&sql)
             .bind(tenant_id)
             .bind(store_types)
             .bind(query);
-        if let (Some(op_types), Some(site_list)) = (operational_store_types, sites) {
-            query_builder = query_builder.bind(op_types).bind(site_list);
+        if let StoreScopeRestriction::Authorized {
+            sites,
+            work_centers,
+        } = restriction
+        {
+            query_builder = query_builder.bind(sites).bind(work_centers);
         }
         let rows = query_builder
             .bind(limit)
@@ -356,12 +423,14 @@ impl DatabaseSearchService {
         Ok(results)
     }
 
-    /// Authorized full-text search (Wave B item 10): candidate types are
-    /// filtered by the caller's admissible projection BEFORE any query
-    /// runs (dropped types are never searched), and operational types are
-    /// restricted to the projection's sites inside the SQL. An empty
-    /// projection (or an empty entitlement for operational types) returns
-    /// no rows — never a search-all-then-filter path.
+    /// Authorized full-text search (Wave B item 10; thirtieth-audit P0
+    /// item 12): candidate types are filtered by the caller's admissible
+    /// projection BEFORE any query runs (dropped types are never
+    /// searched), and operational types are restricted to the projection's
+    /// FULL scope inside the SQL — site grants AND exact work-center
+    /// grants, matched per resource (a work-center grant never widens to
+    /// the parent site). An empty projection (or a `NoOperationalScope`
+    /// caller) returns no rows — never a search-all-then-filter path.
     pub async fn search_authorized(
         &self,
         tenant_id: EntityId,
@@ -393,9 +462,10 @@ impl DatabaseSearchService {
         }
 
         // ── Generic entity_store types, split by scope mode ───────────
-        // Tenant-mode types are searched without a site predicate;
-        // operational types are restricted to the authorized sites (or
-        // skipped entirely when the caller has no operational scope).
+        // Tenant-mode types are searched without a restriction;
+        // operational types are restricted to the projection's FULL
+        // AuthorizedScope (or skipped entirely when the caller has no
+        // operational scope).
         let mut tenant_store_types: Vec<String> = Vec::new();
         let mut operational_store_types: Vec<String> = Vec::new();
         for &result_type in projection.entity_types() {
@@ -419,44 +489,51 @@ impl DatabaseSearchService {
                     tenant_id,
                     query,
                     &tenant_store_types,
-                    None,
-                    None,
+                    StoreScopeRestriction::Unrestricted,
                     SEARCH_LIMIT,
                 )
                 .await?,
             );
         }
         if !operational_store_types.is_empty() {
-            match projection.sites() {
-                // No scope authority (dev deployments): unrestricted.
-                None => {
-                    results.extend(
-                        self.search_entity_store_rows(
-                            tenant_id,
-                            query,
-                            &operational_store_types,
-                            None,
-                            None,
-                            SEARCH_LIMIT,
-                        )
-                        .await?,
-                    );
+            // Derive the restriction from the FULL resolved scope: an
+            // `Operational` scope keeps its site grants AND its exact
+            // work-center grants (a pure work-center caller has an empty
+            // site set — the SQL then matches rows by exact work-center
+            // id, never by the parent site).
+            let mut sorted_sites: Vec<Uuid> = Vec::new();
+            let mut sorted_work_centers: Vec<Uuid> = Vec::new();
+            let restriction: Option<StoreScopeRestriction<'_>> = match projection.scope() {
+                // Explicit all-access grant: no restriction.
+                AuthorizedScope::TenantWide => Some(StoreScopeRestriction::Unrestricted),
+                // NoOperationalScope: no operational rows — never a
+                // tenant-wide fallback.
+                AuthorizedScope::NoOperationalScope => None,
+                AuthorizedScope::Operational {
+                    sites,
+                    work_centers,
+                } => {
+                    sorted_sites.extend(sites.iter().copied());
+                    sorted_sites.sort_unstable();
+                    sorted_work_centers.extend(work_centers.iter().map(|wc| wc.work_center));
+                    sorted_work_centers.sort_unstable();
+                    Some(StoreScopeRestriction::Authorized {
+                        sites: &sorted_sites,
+                        work_centers: &sorted_work_centers,
+                    })
                 }
-                // NoOperationalScope (empty): no operational rows —
-                // never a tenant-wide fallback.
-                Some(sites) => {
-                    results.extend(
-                        self.search_entity_store_rows(
-                            tenant_id,
-                            query,
-                            &operational_store_types,
-                            Some(&operational_store_types),
-                            Some(sites),
-                            SEARCH_LIMIT,
-                        )
-                        .await?,
-                    );
-                }
+            };
+            if let Some(restriction) = restriction {
+                results.extend(
+                    self.search_entity_store_rows(
+                        tenant_id,
+                        query,
+                        &operational_store_types,
+                        restriction,
+                        SEARCH_LIMIT,
+                    )
+                    .await?,
+                );
             }
         }
 

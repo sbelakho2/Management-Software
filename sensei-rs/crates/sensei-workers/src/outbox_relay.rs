@@ -11,6 +11,8 @@ use std::sync::Arc;
 use std::time::Duration;
 use tracing::{error, info, warn};
 
+use sensei_core::db::TenantTx;
+
 const POLL_INTERVAL: Duration = Duration::from_secs(2);
 const BATCH_SIZE: i64 = 50;
 const MAX_ATTEMPTS: i32 = 25;
@@ -197,42 +199,70 @@ async fn publish_acknowledged(
 /// Renew the claim lease while a publish is in flight: a publish that
 /// stalls beyond the fixed lease must NOT let a second relay reclaim the
 /// event mid-flight (item 10).
+///
+/// `outbox_events` is tenant-owned and fail-closed FORCE RLS (migration
+/// 175): a raw-pool UPDATE has no app.tenant_id context and silently
+/// affects zero rows, so the renewal runs in its own tenant-scoped
+/// transaction.
 async fn renew_claim(pool: &sqlx::PgPool, event_id: uuid::Uuid, tenant_id: uuid::Uuid) {
+    let mut tx = match TenantTx::begin(pool, tenant_id).await {
+        Ok(tx) => tx,
+        Err(e) => {
+            error!(error = %e, event_id = %event_id, "Failed to begin claim renewal");
+            return;
+        }
+    };
     let result = sqlx::query(
         "UPDATE outbox_events SET claim_until = NOW() + INTERVAL '30 seconds'          WHERE event_id = $1 AND claimed_by = $2 AND published_at IS NULL AND tenant_id = $3",
     )
     .bind(event_id)
     .bind(replica_id())
     .bind(tenant_id)
-    .execute(pool)
+    .execute(&mut **tx.tx())
     .await;
     if let Err(e) = result {
         error!(error = %e, event_id = %event_id, "Failed to renew outbox claim");
+        return;
+    }
+    if let Err(e) = tx.commit().await {
+        error!(error = %e, event_id = %event_id, "Failed to commit claim renewal");
     }
 }
 
 /// Mark published with an OWNERSHIP check: only the relay that holds the
 /// claim may mark the event — a stale replica can never overwrite a newer
 /// publish. The durable `outbox_published` record is the consumer-side
-/// deduplication anchor (item 10).
+/// deduplication anchor (item 10). The UPDATE runs in a tenant-scoped
+/// transaction (`outbox_events` is fail-closed FORCE RLS since migration
+/// 175 — no context means zero rows).
 async fn mark_published(pool: &sqlx::PgPool, event_id: uuid::Uuid, tenant_id: uuid::Uuid) {
+    let mut tx = match TenantTx::begin(pool, tenant_id).await {
+        Ok(tx) => tx,
+        Err(e) => {
+            error!(error = %e, event_id = %event_id, "Failed to begin mark-published");
+            return;
+        }
+    };
     let result = sqlx::query(
         "UPDATE outbox_events SET published_at = NOW(), claimed_by = NULL, claim_until = NULL          WHERE event_id = $1 AND published_at IS NULL AND claimed_by = $2 AND tenant_id = $3",
     )
     .bind(event_id)
     .bind(replica_id())
     .bind(tenant_id)
-    .execute(pool)
+    .execute(&mut **tx.tx())
     .await;
     match result {
         Ok(outcome) if outcome.rows_affected() == 1 => {
             // Durable dedupe record: consumers that crash after the JetStream
             // ack but before processing can reconcile against this table.
+            // outbox_published has no tenant_id column — it is outside
+            // tenant RLS, so the insert may run on the transaction handle
+            // like every other statement here.
             if let Err(e) = sqlx::query(
                 "INSERT INTO outbox_published (event_id, published_at)                  VALUES ($1, NOW()) ON CONFLICT (event_id) DO NOTHING",
             )
             .bind(event_id)
-            .execute(pool)
+            .execute(&mut **tx.tx())
             .await
             {
                 error!(error = %e, event_id = %event_id, "Failed to record outbox_published");
@@ -245,14 +275,26 @@ async fn mark_published(pool: &sqlx::PgPool, event_id: uuid::Uuid, tenant_id: uu
             error!(error = %e, event_id = %event_id, "Failed to mark outbox event published");
         }
     }
+    if let Err(e) = tx.commit().await {
+        error!(error = %e, event_id = %event_id, "Failed to commit mark-published");
+    }
 }
 
+/// Record a publish failure on the event (attempt counter + last error).
+/// Tenant-scoped transaction — `outbox_events` is fail-closed FORCE RLS.
 async fn record_failure(
     pool: &sqlx::PgPool,
     event_id: uuid::Uuid,
     tenant_id: uuid::Uuid,
     err: &str,
 ) {
+    let mut tx = match TenantTx::begin(pool, tenant_id).await {
+        Ok(tx) => tx,
+        Err(e) => {
+            error!(error = %e, event_id = %event_id, "Failed to begin failure record");
+            return;
+        }
+    };
     if let Err(e) = sqlx::query(
         "UPDATE outbox_events SET attempt_count = attempt_count + 1, last_error = $2, \
                 claimed_by = NULL, claim_until = NULL \
@@ -261,9 +303,13 @@ async fn record_failure(
     .bind(event_id)
     .bind(err)
     .bind(tenant_id)
-    .execute(pool)
+    .execute(&mut **tx.tx())
     .await
     {
         error!(error = %e, event_id = %event_id, "Failed to record outbox failure");
+        return;
+    }
+    if let Err(e) = tx.commit().await {
+        error!(error = %e, event_id = %event_id, "Failed to commit failure record");
     }
 }

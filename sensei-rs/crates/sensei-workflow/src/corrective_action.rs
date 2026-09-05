@@ -385,17 +385,23 @@ mod tests {
     async fn seed_tenant(pool: &PgPool) -> (Uuid, Uuid) {
         let tenant_id = Uuid::new_v4();
         let actor_id = Uuid::new_v4();
-        sqlx::query("INSERT INTO tenants (id, name, slug) VALUES ($1, 'wf', 'wf')")
+        // The gate database is shared and persistent across runs (and the
+        // suite runs serially), so the slug/email must be unique per
+        // seeded tenant — a fixed literal would collide with leftovers on
+        // the second serial run.
+        sqlx::query("INSERT INTO tenants (id, name, slug) VALUES ($1, 'wf', $2)")
             .bind(tenant_id)
+            .bind(format!("wf-{tenant_id}"))
             .execute(pool)
             .await
             .expect("tenant insert");
         sqlx::query(
             "INSERT INTO users (id, tenant_id, email, name, password_hash) \
-             VALUES ($1, $2, 'wf@svc.local', 'W', 'x')",
+             VALUES ($1, $2, $3, 'W', 'x')",
         )
         .bind(actor_id)
         .bind(tenant_id)
+        .bind(format!("wf-{actor_id}@svc.local"))
         .execute(pool)
         .await
         .expect("user insert");

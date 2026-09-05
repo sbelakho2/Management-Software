@@ -73,7 +73,14 @@ config:
     jwtAudience: sensei-api
     dbMaxConnections: 20
     dbConnectionTimeout: 30
-    dbAutoMigrate: true
+    # DB auto-migration is a DEV/legacy opt-in ONLY. Production topology
+    # (thirtieth-audit item 26): the schema is applied exclusively by the
+    # dedicated migration Job (templates/job-db-migrate.yaml) running as the
+    # deployment-only sensei_migrator identity BEFORE the API/worker rollout;
+    # the API itself NEVER migrates (no init containers, no startup DDL).
+    # A failed migration hook aborts the release and the previous deployment
+    # keeps serving traffic.
+    dbAutoMigrate: false
     apiHost: 0.0.0.0
     apiPort: 8080
     metricsPort: 9090
@@ -82,9 +89,6 @@ config:
     realtimeTicketTtlSeconds: 300
     idempotencyTtlSeconds: 300
   natsCluster: sensei
-  # Database URL — constructed from postgresql values; override only for an
-  # external database
-  databaseUrl: ""
   # Sentry DSN for error tracking
   sentryDsn: ""
   # SMTP configuration for email notifications
@@ -198,18 +202,36 @@ senseiApi:
 # External Secrets Operator integration
 # Maps remote vault properties onto the app Secret. The keys below mirror the
 # full credential contract defined in templates/secret.yaml.
+#
+# DB identities are SEPARATE vault secrets (thirtieth-audit item 26): the
+# admin/migrator URLs are never mounted into API/worker pods, so the vault
+# layout keeps the same containment the runtime enforces.
 externalSecrets:
   enabled: false
   refreshInterval: "1h"
   secretStoreName: "vault-backend"
   secretStoreKind: "ClusterSecretStore"
   data:
-    POSTGRES_PASSWORD:
-      remoteKey: "sensei/prod/db"
-      remoteProperty: "password"
-    DATABASE_URL:
-      remoteKey: "sensei/prod/db"
+    # Runtime app identity — the ONLY DB URL the API/worker pods receive.
+    DATABASE_URL_APP:
+      remoteKey: "sensei/prod/db/app"
       remoteProperty: "url"
+    # Deployment-only migration identity (db-migrate Job hook only).
+    DATABASE_URL_MIGRATOR:
+      remoteKey: "sensei/prod/db/migrator"
+      remoteProperty: "url"
+    # Bootstrap superuser identity (db-bootstrap/db-grants Job hooks only).
+    DATABASE_URL_ADMIN:
+      remoteKey: "sensei/prod/db/admin"
+      remoteProperty: "url"
+    # Role passwords the canonical bootstrap/grants script converges
+    # (ALTER ROLE ... PASSWORD) — consumed by the bootstrap/grant hooks only.
+    SENSEI_APP_PASSWORD:
+      remoteKey: "sensei/prod/db/app"
+      remoteProperty: "password"
+    SENSEI_MIGRATOR_PASSWORD:
+      remoteKey: "sensei/prod/db/migrator"
+      remoteProperty: "password"
     JWT_SECRET:
       remoteKey: "sensei/prod/auth"
       remoteProperty: "jwt_secret"
@@ -228,9 +250,6 @@ externalSecrets:
     SMTP_PASSWORD:
       remoteKey: "sensei/prod/smtp"
       remoteProperty: "password"
-    REDIS_URL:
-      remoteKey: "sensei/prod/redis"
-      remoteProperty: "url"
     NATS_USER:
       remoteKey: "sensei/prod/nats"
       remoteProperty: "user"
@@ -272,13 +291,83 @@ redis:
     enabled: false
     password: ""  # Secret — stored in the app Secret (REDIS_URL), not the ConfigMap
 
-# PostgreSQL configuration (Bitnami chart)
+# =============================================================================
+# DATABASE CAPABILITY CONTRACT + IDENTITY TOPOLOGY (thirtieth-audit items
+# 26 and 28)
+#
+# The chart ships the PRODUCTION DB topology: THREE identities, exactly like
+# the Compose/DB-contract path:
+#   DATABASE_URL_ADMIN      bootstrap superuser — db-bootstrap + db-grants
+#                           Job hooks only (run the canonical role script
+#                           sensei-rs/scripts/db/01-app-role.sh, shipped in
+#                           the application image)
+#   DATABASE_URL_MIGRATOR   deployment-only sensei_migrator — db-migrate Job
+#                           hook only (sensei-api --migrate-only)
+#   DATABASE_URL_APP        least-privilege sensei_app — API + workers only
+# API/worker manifests NEVER contain the admin or migrator URLs.
+#
+# Database product: the pinned capability image from .github/.db-capability
+# (pgvector/pgvector:pg16@sha256:<pinned digest> — PostgreSQL 16 WITH the
+# vector extension migration 004 requires; plain postgres:16 or the Bitnami
+# image CANNOT satisfy it). The PostgreSQL server itself is provisioned
+# OUTSIDE this chart (managed/external, or your own StatefulSet running the
+# pinned image); the bootstrap/migrate/grants hooks provision roles+grants
+# against it on install and before every upgrade.
+# =============================================================================
+database:
+  # Pinned capability image (single literal consumed by the DB contract —
+  # .github/.db-capability is the source; scripts/validate-db-contract.sh
+  # enforces that workflows, compose files and this value stay identical).
+  imagePin: pgvector/pgvector:pg16@sha256:ccc6e83d6e35e931dc7c5def2022729d5a6c370318d099181995567ff1fb4d6b
+  # External DB endpoint (required when postgresql.enabled=false — the
+  # default). E.g. the service name of your pgvector-family PostgreSQL.
+  host: ""
+  port: "5432"
+  name: sensei
+  admin:
+    # Bootstrap superuser identity (db-bootstrap/db-grants hooks).
+    user: postgres
+    password: ""          # Secret — set via values/--set or externalSecrets
+    url: ""               # Full DATABASE_URL_ADMIN override (managed DB)
+  migrator:
+    # Deployment-only migration identity (db-migrate hook). The role is
+    # CREATED by the bootstrap hook with the password below, so the chart
+    # may generate it (preserved across upgrades via the Secret lookup).
+    user: sensei_migrator
+    password: ""          # Empty => generated + preserved (or externalSecrets)
+    url: ""               # Full DATABASE_URL_MIGRATOR override
+  app:
+    # Least-privilege runtime identity (API + workers). Created by the
+    # bootstrap hook with the password below.
+    user: sensei_app
+    password: ""          # Empty => generated + preserved (or externalSecrets)
+    url: ""               # Full DATABASE_URL_APP override
+  jobs:
+    # The bootstrap -> migrate -> grants Job hooks (pre-install/pre-upgrade,
+    # hook weights -5/-3/-1) gate every rollout. A failed hook aborts the
+    # release; on upgrade the previous deployment keeps serving traffic.
+    enabled: true
+
+# PostgreSQL configuration (Bitnami subchart) — DEV/EVAL CONVENIENCE ONLY.
+# The Bitnami PostgreSQL image cannot satisfy the DB capability contract
+# (no pgvector; migration 004 requires CREATE EXTENSION vector) and its
+# first-ever install cannot feed the pre-install DB hooks (the subchart is
+# created after hooks run). Production (the default: postgresql.enabled:
+# false) provisions the pinned pgvector-family DB externally and lets the
+# bootstrap/migrate/grants hooks own the schema lifecycle. Enabling the
+# subchart here is for local/eval stacks where you accept manual DB
+# provisioning — the API role topology still applies.
 postgresql:
-  enabled: true
+  enabled: false
   auth:
     username: sensei
-    password: ""  # Set via secrets
+    password: ""            # Deprecated in the new topology (was the old
+                            # shared-app-user credential)
     database: sensei
+    # Superuser password (the ADMIN identity when the subchart is enabled):
+    # REQUIRED for the bootstrap/migrate/grants hooks to run against the
+    # bundled DB (they connect as `postgres`). No default — set explicitly.
+    postgresPassword: ""
   primary:
     persistence:
       enabled: true
@@ -292,12 +381,16 @@ postgresql:
         memory: "1Gi"
         cpu: "1000m"
     initdb:
+      # Dev/eval only: on a FRESH bundled Bitnami volume these run at first
+      # boot. NOTE: `vector` fails on the Bitnami image (it is not the
+      # pgvector product) — this block documents the dev intent; production
+      # DB provisioning happens against the pinned capability image.
       scripts:
         init.sql: |
           -- Enable required extensions
           CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
           CREATE EXTENSION IF NOT EXISTS "pgcrypto";
-          CREATE EXTENSION IF NOT EXISTS "vector";
+          CREATE EXTENSION IF NOT EXISTS "pg_trgm";
   backup:
     enabled: true
     cronjob:

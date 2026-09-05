@@ -250,6 +250,14 @@ impl WorkOrderListFilter {
 pub trait ProductionService: Send + Sync {
     // ── Work Orders ─────────────────────────────────────────────────────
     /// Create a new work order in the caller's tenant.
+    ///
+    /// Thirtieth-audit P0 item 3: the DESTINATION work center must sit
+    /// inside the caller's EXACT scope. An anchored create resolves the
+    /// destination through `work_centers` in the SAME statement (zero rows
+    /// = the work center does not exist or is outside the scope →
+    /// NotFound); an unanchored (no work center) create is a tenant-level
+    /// claim and requires the explicit [`AuthorizedScope::TenantWide`]
+    /// grant.
     async fn create_work_order(&self, ctx: &RequestContext, wo: WorkOrder) -> Result<WorkOrder>;
     /// Get a work order by ID — a row outside the caller's scope (or a
     /// nonexistent id) is indistinguishable: both NotFound.
@@ -272,12 +280,29 @@ pub trait ProductionService: Send + Sync {
     ///
     /// Identity fields (`id`, `tenant_id`, `wo_number`, `created_at`) are
     /// preserved from the stored record; all other fields are taken from the
-    /// supplied value.
+    /// supplied value. `work_center_id` is NOT editable here (thirtieth
+    /// audit P0 item 3): the assignment is immutable through the generic
+    /// edit and changes only through [`ProductionService::reassign_work_order`],
+    /// which authorizes BOTH the source order and the destination work
+    /// center in one statement.
     async fn update_work_order(
         &self,
         ctx: &RequestContext,
         id: Uuid,
         wo: WorkOrder,
+    ) -> Result<WorkOrder>;
+    /// Reassign a work order to another work center (thirtieth audit P0
+    /// item 3): an EXPLICIT, dual-authorized command. The single statement
+    /// proves the SOURCE order is inside the caller's scope (the existing
+    /// carrier predicate) AND that the DESTINATION work center is inside
+    /// the same scope — an order on another site's work center can never
+    /// be moved there, and an out-of-scope source or destination matches
+    /// zero rows (NotFound).
+    async fn reassign_work_order(
+        &self,
+        ctx: &RequestContext,
+        work_order_id: Uuid,
+        target_work_center_id: Uuid,
     ) -> Result<WorkOrder>;
     /// Report production completion for a work order.
     async fn report_production(
@@ -297,6 +322,13 @@ pub trait ProductionService: Send + Sync {
 
     // ── Production Orders ───────────────────────────────────────────────
     /// Create a new production order.
+    ///
+    /// Thirtieth-audit P0 item 4: production orders are scoped through
+    /// their work-center carrier (`production_orders.work_center_id` →
+    /// `work_centers.site_id`) EXACTLY like work orders — the CREATE
+    /// resolves the destination work center inside the caller's scope in
+    /// the same statement, and an unanchored create requires the
+    /// tenant-wide grant.
     async fn create_production_order(
         &self,
         ctx: &RequestContext,
@@ -402,7 +434,12 @@ impl InMemoryProductionService {
     /// is always enforced; the exact work-center scope is enforced on the
     /// row's work-center identity. The in-memory rows carry no site
     /// dimension (there is no site table), so a site-set scope cannot be
-    /// violated — and an empty/no entitlement denies everything.
+    /// contradicted — and an empty/no entitlement denies everything.
+    /// Mirroring the DB carrier semantics (thirtieth audit P0 items 3-4):
+    /// an order with NO work center is a tenant-level claim — only the
+    /// explicit tenant-wide grant sees it; site/work-center scopes fail
+    /// closed. A pure work-center scope requires its EXACT granted work
+    /// center (thirtieth-audit P0 item 1 — never the whole site).
     fn wo_in_scope(ctx: &RequestContext, wo: &WorkOrder) -> bool {
         if wo.tenant_id != ctx.tenant {
             return false;
@@ -410,9 +447,41 @@ impl InMemoryProductionService {
         match &ctx.scope {
             AuthorizedScope::NoOperationalScope => false,
             AuthorizedScope::TenantWide => true,
-            // No site data exists in-memory to contradict the scope.
-            AuthorizedScope::Sites(_) => true,
-            AuthorizedScope::WorkCenter(wc) => wo.work_center_id == Some(wc.work_center),
+            // No site data exists in-memory to contradict the scope, but an
+            // unanchored order is never a site claim (fail closed).
+            AuthorizedScope::Operational {
+                sites,
+                work_centers,
+            } => {
+                let Some(wc_id) = wo.work_center_id else {
+                    return false;
+                };
+                !sites.is_empty() || work_centers.iter().any(|wc| wc.work_center == wc_id)
+            }
+        }
+    }
+
+    /// Is this production order inside the caller's request context? The
+    /// production-order carrier is `production_orders.work_center_id`
+    /// (same carrier semantics as work orders — thirtieth audit P0
+    /// item 4): scoped callers only reach anchored orders, and a
+    /// pure work-center scope only its exact granted work center(s).
+    fn po_in_scope(ctx: &RequestContext, po: &ProductionOrder) -> bool {
+        if po.tenant_id != ctx.tenant {
+            return false;
+        }
+        match &ctx.scope {
+            AuthorizedScope::NoOperationalScope => false,
+            AuthorizedScope::TenantWide => true,
+            AuthorizedScope::Operational {
+                sites,
+                work_centers,
+            } => {
+                let Some(wc_id) = po.work_center_id else {
+                    return false;
+                };
+                !sites.is_empty() || work_centers.iter().any(|wc| wc.work_center == wc_id)
+            }
         }
     }
 
@@ -421,6 +490,22 @@ impl InMemoryProductionService {
     /// command.
     fn tenant_entitled(ctx: &RequestContext) -> bool {
         !matches!(ctx.scope, AuthorizedScope::NoOperationalScope)
+    }
+
+    /// May this scope create/transfer onto the given destination work
+    /// center? The in-memory rows carry no site dimension, so a site-set
+    /// grant cannot be contradicted; a pure work-center grant requires
+    /// its EXACT granted work center (thirtieth-audit P0 item 1 — a WC
+    /// grant never widens).
+    fn destination_granted(scope: &AuthorizedScope, dest: Uuid) -> bool {
+        match scope {
+            AuthorizedScope::NoOperationalScope => false,
+            AuthorizedScope::TenantWide => true,
+            AuthorizedScope::Operational {
+                sites,
+                work_centers,
+            } => !sites.is_empty() || work_centers.iter().any(|wc| wc.work_center == dest),
+        }
     }
 
     fn generate_wo_number(counter: u64) -> String {
@@ -486,6 +571,29 @@ impl ProductionService for InMemoryProductionService {
             return Err(SenseiError::Forbidden(
                 "principal has no operational scope — cannot create a work order".to_string(),
             ));
+        }
+        // Thirtieth audit P0 item 3: the destination must be inside the
+        // caller's exact scope. The in-memory rows carry no site dimension,
+        // so a site-set scope cannot be contradicted — but an unanchored
+        // order is a TENANT-level claim and requires the tenant-wide grant,
+        // and a pure work-center scope may only create on ITS exact
+        // work center(s).
+        match (wo.work_center_id, &ctx.scope) {
+            (None, AuthorizedScope::TenantWide) => {}
+            (None, _) => {
+                return Err(SenseiError::Forbidden(
+                    "an unanchored work order requires the tenant-wide grant — anchor the order \
+                     to a work center inside your scope"
+                        .to_string(),
+                ))
+            }
+            (Some(dest), scope) if !Self::destination_granted(scope, dest) => {
+                return Err(SenseiError::Forbidden(
+                    "the destination work center is outside the caller's authorized scope"
+                        .to_string(),
+                ))
+            }
+            _ => {}
         }
         let tenant_id = ctx.tenant;
         let mut counter = self.wo_counter.write().await;
@@ -615,6 +723,10 @@ impl ProductionService for InMemoryProductionService {
         wo.wo_number = existing.wo_number;
         wo.created_at = existing.created_at;
         wo.updated_at = Utc::now();
+        // Thirtieth audit P0 item 3: the work-center assignment is
+        // immutable through the generic edit — it changes ONLY through
+        // reassign_work_order (which authorizes both ends).
+        wo.work_center_id = existing.work_center_id;
         // Progress is owned by the reporting flow; a partial edit must not
         // reset already-completed quantities.
         if wo.quantity_completed == 0 && existing.quantity_completed > 0 {
@@ -635,6 +747,42 @@ impl ProductionService for InMemoryProductionService {
         .await;
 
         Ok(wo)
+    }
+
+    async fn reassign_work_order(
+        &self,
+        ctx: &RequestContext,
+        work_order_id: Uuid,
+        target_work_center_id: Uuid,
+    ) -> Result<WorkOrder> {
+        let mut store = self.work_orders.write().await;
+        let wo = store
+            .get_mut(&work_order_id)
+            .filter(|wo| Self::wo_in_scope(ctx, wo))
+            .ok_or_else(|| {
+                SenseiError::NotFound(format!("Work order {work_order_id} not found"))
+            })?;
+        // Dual authorization: the SOURCE is in scope (filter above); the
+        // DESTINATION must also be inside the caller's exact scope. The
+        // in-memory rows carry no site dimension, so a site-set scope
+        // cannot be contradicted — a pure work-center scope may only
+        // reassign to its EXACT granted work center(s) (any other
+        // destination is a denial).
+        match &ctx.scope {
+            AuthorizedScope::Operational { .. }
+                if !Self::destination_granted(&ctx.scope, target_work_center_id) =>
+            {
+                return Err(SenseiError::NotFound(format!(
+                    "Work order {work_order_id} not found"
+                )))
+            }
+            AuthorizedScope::TenantWide
+            | AuthorizedScope::NoOperationalScope
+            | AuthorizedScope::Operational { .. } => {}
+        }
+        wo.work_center_id = Some(target_work_center_id);
+        wo.updated_at = Utc::now();
+        Ok(wo.clone())
     }
 
     async fn report_production(
@@ -723,6 +871,27 @@ impl ProductionService for InMemoryProductionService {
                 "principal has no operational scope — cannot create a production order".to_string(),
             ));
         }
+        // Thirtieth audit P0 item 4: production orders carry their scope
+        // through the work center — an unanchored order is a tenant-level
+        // claim (tenant-wide grant only), and a pure work-center scope may
+        // only create on its EXACT work center(s).
+        match (order.work_center_id, &ctx.scope) {
+            (None, AuthorizedScope::TenantWide) => {}
+            (None, _) => {
+                return Err(SenseiError::Forbidden(
+                    "an unanchored production order requires the tenant-wide grant — anchor the \
+                     order to a work center inside your scope"
+                        .to_string(),
+                ))
+            }
+            (Some(dest), scope) if !Self::destination_granted(scope, dest) => {
+                return Err(SenseiError::Forbidden(
+                    "the destination work center is outside the caller's authorized scope"
+                        .to_string(),
+                ))
+            }
+            _ => {}
+        }
         let tenant_id = ctx.tenant;
         let mut counter = self.po_counter.write().await;
         *counter += 1;
@@ -766,10 +935,7 @@ impl ProductionService for InMemoryProductionService {
         let store = self.production_orders.read().await;
         let po = store
             .get(&id)
-            .filter(|po| {
-                po.tenant_id == ctx.tenant
-                    && !matches!(ctx.scope, AuthorizedScope::NoOperationalScope)
-            })
+            .filter(|po| Self::po_in_scope(ctx, po))
             .cloned()
             .ok_or_else(|| SenseiError::NotFound(format!("Production order {id} not found")))?;
         Ok(po)
@@ -785,11 +951,7 @@ impl ProductionService for InMemoryProductionService {
         let store = self.production_orders.read().await;
         let items: Vec<_> = store
             .values()
-            .filter(|po| {
-                po.tenant_id == ctx.tenant
-                    && !matches!(ctx.scope, AuthorizedScope::NoOperationalScope)
-                    && status.is_none_or(|s| po.status == s)
-            })
+            .filter(|po| Self::po_in_scope(ctx, po) && status.is_none_or(|s| po.status == s))
             .cloned()
             .collect();
         Ok(PaginatedResponse::new(items, page, per_page))
@@ -806,10 +968,7 @@ impl ProductionService for InMemoryProductionService {
         let mut store = self.production_orders.write().await;
         let po = store
             .get_mut(&id)
-            .filter(|po| {
-                po.tenant_id == ctx.tenant
-                    && !matches!(ctx.scope, AuthorizedScope::NoOperationalScope)
-            })
+            .filter(|po| Self::po_in_scope(ctx, po))
             .ok_or_else(|| SenseiError::NotFound(format!("Production order {id} not found")))?;
 
         if po.status == "completed" {
@@ -1070,10 +1229,13 @@ mod tests {
         let scoped = RequestContext {
             tenant: tenant_id,
             principal: Uuid::new_v4(),
-            scope: AuthorizedScope::WorkCenter(WorkCenterScope {
-                site: Uuid::new_v4(),
-                work_center: wc_a,
-            }),
+            scope: AuthorizedScope::Operational {
+                sites: std::collections::HashSet::new(),
+                work_centers: std::collections::HashSet::from([WorkCenterScope {
+                    site: Uuid::new_v4(),
+                    work_center: wc_a,
+                }]),
+            },
             focus: sensei_core::domain::request_context::OperationalFocus {
                 site: None,
                 value_stream: None,

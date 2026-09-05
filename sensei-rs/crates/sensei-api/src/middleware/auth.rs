@@ -103,10 +103,14 @@ pub async fn auth_layer(State(state): State<AppState>, mut req: Request, next: N
     // Inject JwtService into extensions so the downstream middleware can find it.
     req.extensions_mut().insert((*state.jwt_service).clone());
     // Inject the database pool (when present) so the downstream middleware
-    // can reload LIVE user state (roles + effective permissions) per
-    // authenticated request instead of trusting token roles
-    // (twenty-ninth audit Wave A). Absent in in-memory/dev mode: the
-    // downstream middleware then falls back to the token identity.
+    // can reload LIVE user state (roles + fully resolved effective
+    // permissions) per authenticated request instead of trusting token
+    // roles (twenty-ninth audit Wave A; thirtieth-audit P0-9). The reload
+    // runs in ONE tenant-scoped transaction — the `roles` table is
+    // fail-closed FORCE RLS, so the tenant custom-role read must happen
+    // under that transaction's `app.tenant_id` context. Absent in
+    // in-memory/dev mode: the downstream middleware then resolves the
+    // token roles through the compiled static RBAC map.
     req.extensions_mut()
         .insert::<Option<std::sync::Arc<sqlx::PgPool>>>(state.db_pool.clone());
 

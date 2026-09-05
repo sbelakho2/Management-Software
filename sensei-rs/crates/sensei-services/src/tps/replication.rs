@@ -26,19 +26,52 @@
 //! application until a target projector is registered — an application
 //! that never happened is never recorded.
 //!
-//! Twenty-seventh audit P0 (federation inbox): the receipt record is
-//! renamed into its honest model — `replication_inbox` (migration 166)
-//! — an explicit inbox in the TARGET tenant's FORCE-RLS slice whose
-//! `status` column carries a real state machine: 'received' (delivery
-//! landed), 'applying' (a registered projector claimed the row),
-//! 'applied' (the projector succeeded) and 'reconcile_required' (the
-//! projector failed). [`deliver_to_target_inbox`] inserts 'received';
-//! [`apply_target_projection`] is the ONLY path that may leave that
-//! state, and it transitions received -> applying -> applied only when
-//! a REAL projector is registered (the allowlist is still empty, so
-//! every apply validates then refuses with a Validation error) and
-//! marks the row reconcile_required when a registered projector fails.
-//! `ack()` STILL never writes the inbox.
+//! Twenty-seventh audit P0 (federation inbox) — the state AT that audit,
+//! superseded by the thirtieth-audit implementation below: the receipt
+//! record is renamed into its honest model — `replication_inbox`
+//! (migration 166) — an explicit inbox in the TARGET tenant's FORCE-RLS
+//! slice whose `status` column carries a real state machine: 'received'
+//! (delivery landed), 'applying' (a registered projector claimed the
+//! row), 'applied' (the projector succeeded) and 'reconcile_required'
+//! (the projector failed). [`deliver_to_target_inbox`] inserts
+//! 'received'; [`apply_target_projection`] is the ONLY path that may
+//! leave that state — while the projector allowlist was still empty it
+//! validated and refused every apply, and `ack()` NEVER wrote the
+//! inbox.
+//!
+//! Thirtieth audit item 25 (federation: honest end-to-end application
+//! state with target-generated receipts and real projectors): the final
+//! production receiving state machine is now implemented end to end:
+//!
+//!   source queued -> source claimed -> target received -> target
+//!   applying -> target applied -> TARGET-GENERATED APPLICATION RECEIPT
+//!   -> source application_confirmed
+//!
+//! - Real projectors are REGISTERED (see [`crate::tps::target_projectors`])
+//!   for the entity types the federation carries; each applies the
+//!   projection as a durable business write into the target's existing
+//!   canonical event store (idempotent at the store level per source
+//!   event). [`apply_target_projection`] now runs the registered body
+//!   through the inbox state machine and, on success, binds a
+//!   server-created application receipt (`replication_receipts`,
+//!   migration 173) carrying source_tenant_id, source_queue_id,
+//!   source_event_id, target_tenant_id, target_site_id, target_inbox_id,
+//!   projection_type, projection_revision, payload_hash and received_at.
+//! - Delivery records `source_queue_id` + `payload_hash` on the inbox
+//!   row; the apply verifies the hash of the projection it is about to
+//!   apply against the hash recorded at delivery. A mismatch is recorded
+//!   'reconcile_required', never 'applied'.
+//! - The source queue row's terminal state is now 'application_confirmed'
+//!   (migration 173), reached ONLY through
+//!   [`confirm_application_receipts`] — the confirmation poller observes
+//!   the target-generated receipts (session-bound SECURITY DEFINER
+//!   boundary that exposes only receipts owned by their destination
+//!   tenant, never source-manufacturable ones) and confirms a row only
+//!   when a receipt binds its queue id with a matching payload_hash.
+//!   `ack()` still only marks 'acked' (delivery to the consumer) — a
+//!   source-side worker can NEVER manufacture 'target applied' by calling
+//!   ACK, and can never write an application receipt: those live in the
+//!   TARGET tenant's FORCE-RLS slice, created by the target apply alone.
 
 use sensei_core::error::{Result, SenseiError};
 use serde::{Deserialize, Serialize};
@@ -121,6 +154,21 @@ impl<'r> sqlx::FromRow<'r, sqlx::postgres::PgRow> for ReplicationEntry {
             data_policy: row.try_get("data_policy")?,
         })
     }
+}
+
+/// The canonical payload hash (thirtieth audit item 25): SHA-256 hex over
+/// the canonical JSON bytes of the queue row's projection payload. The
+/// SAME payload value serializes to the SAME bytes within one binary, so
+/// delivery, apply and the source confirmation poll all agree on the
+/// digest of one queue row — and a receipt binds that digest, so the
+/// source can only confirm a receipt whose payload is byte-identical to
+/// what it enqueued.
+pub fn projection_payload_hash(payload: &serde_json::Value) -> Result<String> {
+    use sha2::{Digest, Sha256};
+    let bytes = serde_json::to_vec(payload).map_err(|e| {
+        SenseiError::Internal(format!("replication: payload canonicalization: {e}"))
+    })?;
+    Ok(hex::encode(Sha256::digest(bytes.as_slice())))
 }
 
 /// The FANOUT outcome (twenty-third audit P1): one publish of one source
@@ -1321,24 +1369,35 @@ pub async fn claim_batch(
 }
 
 /// TARGET INBOX RECEIPT INSERT (twenty-sixth audit P0.1, renamed by the
-/// twenty-seventh audit P0): the durable `replication_inbox` record
-/// (migration 166) is the dedupe key that keeps at-least-once queue
-/// delivery from ever becoming double application — `(source_tenant_id,
+/// twenty-seventh audit P0, binding columns by the thirtieth audit item
+/// 25): the durable `replication_inbox` record (migration 166) is the
+/// dedupe key that keeps at-least-once queue delivery from ever becoming
+/// double application — the OWNER-SCOPED `(tenant_id, source_tenant_id,
 /// source_event_id, projection_type, projection_revision,
-/// target_tenant_id, target_site_id)`. The row is the TARGET tenant's
-/// INBOX RECEIPT — an atomic reservation of the projection for the
-/// target's apply pipeline, inserted with `status = 'received'` (the
-/// column default). The guarded `INSERT ... ON CONFLICT DO NOTHING
-/// RETURNING id` makes a duplicate reservation a no-op that returns no
-/// row (`false`) — never an error and never a second record; the unique
-/// index is the arbiter, so two workers (or a redelivery) racing the
-/// same key cannot both win.
+/// target_tenant_id, target_site_id)` key (migration 173 re-created the
+/// migration-166 arbiter with the owner first, so a row a source
+/// session squats in its own slice can never collide with — or block —
+/// the destination's real reservation). The row is the TARGET tenant's
+/// INBOX RECEIPT — an
+/// atomic reservation of the projection for the target's apply pipeline,
+/// inserted with `status = 'received'` (the column default). The guarded
+/// `INSERT ... ON CONFLICT DO NOTHING RETURNING id` makes a duplicate
+/// reservation a no-op that returns no row (`false`) — never an error and
+/// never a second record; the unique index is the arbiter, so two workers
+/// (or a redelivery) racing the same key cannot both win.
+///
+/// Thirtieth audit item 25: the reservation binds the DELIVERY IDENTITY
+/// the receipt will be built on — `source_queue_id` (the source queue row
+/// this delivery came from) and `payload_hash` (SHA-256 hex of the
+/// canonical projection payload, computed by the caller). The apply path
+/// later verifies the projection it applies against this recorded hash: a
+/// payload that changed between delivery and apply is a corruption that
+/// must be reconciled, never applied.
 ///
 /// A receipt is an inbox receipt, NOT a projection application: no
-/// target projector exists in this workspace, so no 'received' row may
-/// ever transition out of its state through code (see
-/// [`apply_target_projection`], which refuses every apply until a
-/// projector is registered).
+/// business mutation happens here, and the 'received' row only leaves its
+/// state through a registered target projector (see
+/// [`apply_target_projection`]).
 ///
 /// The receipt lives in the TARGET tenant's FORCE-RLS slice: the row's
 /// OWNER (`tenant_id`) and `target_tenant_id` are bound to the SAME
@@ -1352,11 +1411,13 @@ async fn insert_inbox_receipt_tx(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     target_inbox_tenant_id: Uuid,
     source_tenant_id: Uuid,
+    source_queue_id: Uuid,
     source_site_id: Option<Uuid>,
     source_event_id: Uuid,
     projection_type: &str,
     projection_revision: u64,
     target_site_id: Option<Uuid>,
+    payload_hash: &str,
 ) -> Result<bool> {
     // ATOMIC refusal: ON CONFLICT DO NOTHING makes a duplicate receipt a
     // no-op that returns no row — `false` — never an error and never a
@@ -1368,21 +1429,24 @@ async fn insert_inbox_receipt_tx(
     // defaults to 'received' — delivery, nothing more.
     let row: Option<(Uuid,)> = sqlx::query_as(
         "INSERT INTO replication_inbox \
-             (tenant_id, source_tenant_id, source_site_id, source_event_id, \
-              projection_type, projection_revision, target_tenant_id, target_site_id) \
-         VALUES ($1, $2, $3, $4, $5, $6, $1, $7) \
-         ON CONFLICT (source_tenant_id, source_event_id, projection_type, \
+             (tenant_id, source_tenant_id, source_queue_id, source_site_id, source_event_id, \
+              projection_type, projection_revision, target_tenant_id, target_site_id, \
+              payload_hash) \
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $1, $8, $9) \
+         ON CONFLICT (tenant_id, source_tenant_id, source_event_id, projection_type, \
                       projection_revision, target_tenant_id, target_site_id) \
          DO NOTHING \
          RETURNING id",
     )
     .bind(target_inbox_tenant_id)
     .bind(source_tenant_id)
+    .bind(source_queue_id)
     .bind(source_site_id)
     .bind(source_event_id)
     .bind(projection_type)
     .bind(projection_revision as i64)
     .bind(target_site_id)
+    .bind(payload_hash)
     .fetch_optional(&mut **tx)
     .await
     .map_err(|e| {
@@ -1392,12 +1456,13 @@ async fn insert_inbox_receipt_tx(
 }
 
 /// DELIVER one claimed queue entry to the TARGET tenant's inbox
-/// (twenty-sixth audit P0.1, twenty-seventh audit P0): the honest
-/// successor of the consume-time `replication_applied` write the
-/// twenty-fifth audit wired into [`ack`]. The target-side dedupe record
-/// is now created HERE — and only here — inside ONE tenant transaction
-/// under the TARGET tenant's context. It is never created by the ack
-/// path, and never under the source queue tenant's slice.
+/// (twenty-sixth audit P0.1, twenty-seventh audit P0, thirtieth audit
+/// item 25 binding): the honest successor of the consume-time
+/// `replication_applied` write the twenty-fifth audit wired into
+/// [`ack`]. The target-side dedupe record is now created HERE — and only
+/// here — inside ONE tenant transaction under the TARGET tenant's
+/// context. It is never created by the ack path, and never under the
+/// source queue tenant's slice.
 ///
 /// This is the TARGET INBOX reservation, not a projection application:
 /// the delivery performs NO business mutation. It reserves the inbox
@@ -1406,18 +1471,28 @@ async fn insert_inbox_receipt_tx(
 /// receipt was newly reserved, `false` when the SAME key is already
 /// reserved: a redelivery after a crash (at-least-once) is refused
 /// atomically, so a retried delivery can never double-record. Applying
-/// is a separate, explicit step ([`apply_target_projection`]) that
-/// refuses until a target projector is registered.
+/// is a separate, explicit step ([`apply_target_projection`]) that runs
+/// a registered target projector.
+///
+/// Thirtieth audit item 25: the reservation records the DELIVERY
+/// BINDING — `source_queue_id` (the claimed queue row's id) and
+/// `payload_hash` (SHA-256 hex of the canonical projection payload being
+/// delivered). The apply path verifies its projection against that hash
+/// before any application; the receipt the apply eventually binds carries
+/// the same digest, so the source can confirm ONLY a receipt whose
+/// payload matches what it enqueued.
 ///
 /// `source_tenant` is the tenant whose queue row is being delivered (the
 /// receipt's `source_tenant_id`). The entry must name its destination
 /// (`target_tenant_id`) and carry a UUID `source_event_id` — a
 /// destination-less or key-less entry cannot reserve an inbox and is
-/// refused, never silently dropped. Receipts dedupe on the migration-166
-/// unique key, which does not include `tenant_id`: the same source event
-/// delivered to one target from different source tenants collides on
-/// that key, and the second delivery is (correctly, for at-least-once)
-/// refused — the schema's dedupe boundary.
+/// refused, never silently dropped. Receipts dedupe on the OWNER-SCOPED
+/// unique key (migration 173): within one destination slice the same
+/// delivery key is reserved once (a duplicate delivery is, correctly,
+/// for at-least-once, refused), while deliveries of the same event UUID
+/// from DIFFERENT source tenants to the same target are distinct
+/// reservations — the owner column keeps one source's rows out of
+/// another's dedupe space.
 pub async fn deliver_to_target_inbox(
     pool: &sqlx::PgPool,
     source_tenant: Uuid,
@@ -1448,11 +1523,14 @@ pub async fn deliver_to_target_inbox(
     };
     // Everything the insert needs is copied out of the entry BEFORE the
     // tenant transaction moves the borrowed values into the async
-    // closure.
+    // closure. The payload hash is computed from the SAME canonical
+    // payload the apply will verify against later.
     let site_id = entry.site_id;
+    let entry_id = entry.id;
     let projection_type = entry.projection_type.clone();
     let projection_revision = entry.projection_revision;
     let target_site_id = entry.target_site_id;
+    let payload_hash = projection_payload_hash(&entry.projection)?;
     // ONE TenantTx under the TARGET tenant context: the FORCE-RLS insert
     // lands in the target's slice, and the reservation + its dedupe
     // commit (or roll back) as one.
@@ -1462,11 +1540,13 @@ pub async fn deliver_to_target_inbox(
                 tx,
                 target_tenant,
                 source_tenant,
+                entry_id,
                 site_id,
                 source_event_id,
                 &projection_type,
                 projection_revision,
                 target_site_id,
+                &payload_hash,
             )
             .await
         })
@@ -1476,15 +1556,21 @@ pub async fn deliver_to_target_inbox(
 
 /// RESERVE a TARGET inbox receipt — raw-argument form (twenty-sixth
 /// audit P0.1 RETARGET, twenty-seventh audit P0, twenty-eighth audit
-/// P0 name): [`deliver_to_target_inbox`] resolves the SAME guarded
-/// insert from a claimed entry; this public form takes the key columns
-/// directly for operations/tooling. The twenty-fifth-audit name
-/// (`mark_target_applied`) claimed to record an APPLICATION; this
-/// function only RESERVES the projection in the target's inbox — no
-/// apply is ever recorded here, and the row's state stays 'received'
-/// until a registered projector transitions it. The honest name is
-/// [`reserve_target_inbox`]; the old name is gone (nothing outside the
-/// twenty-fifth-audit contract ever relied on it).
+/// P0 name, thirtieth audit item 25 binding): [`deliver_to_target_inbox`]
+/// resolves the SAME guarded insert from a claimed entry; this public
+/// form takes the key columns directly for operations/tooling. The
+/// twenty-fifth-audit name (`mark_target_applied`) claimed to record an
+/// APPLICATION; this function only RESERVES the projection in the
+/// target's inbox — no apply is ever recorded here, and the row's state
+/// stays 'received' until a registered projector transitions it. The
+/// honest name is [`reserve_target_inbox`]; the old name is gone
+/// (nothing outside the twenty-fifth-audit contract ever relied on it).
+///
+/// Thirtieth audit item 25: the raw form binds the delivery identity
+/// too — `source_queue_id` (the source queue row this delivery came
+/// from) and `payload_hash` (SHA-256 hex of the canonical projection
+/// payload) — so every reserved inbox row carries the binding the
+/// apply path verifies and the receipt later duplicates.
 ///
 /// It opens ONE tenant transaction under `tenant_id` and runs the
 /// receipt insert (status 'received') — `true` when newly reserved,
@@ -1505,12 +1591,14 @@ pub async fn reserve_target_inbox(
     pool: &sqlx::PgPool,
     tenant_id: Uuid,
     source_tenant_id: Uuid,
+    source_queue_id: Uuid,
     source_site_id: Option<Uuid>,
     source_event_id: Uuid,
     projection_type: &str,
     projection_revision: u64,
     target_tenant_id: Uuid,
     target_site_id: Option<Uuid>,
+    payload_hash: &str,
 ) -> Result<bool> {
     if tenant_id != target_tenant_id {
         return Err(SenseiError::Validation(
@@ -1521,17 +1609,20 @@ pub async fn reserve_target_inbox(
         ));
     }
     let projection_type = projection_type.to_string();
+    let payload_hash = payload_hash.to_string();
     with_tenant_tx(pool, tenant_id, move |tx| {
         Box::pin(async move {
             insert_inbox_receipt_tx(
                 tx,
                 tenant_id,
                 source_tenant_id,
+                source_queue_id,
                 source_site_id,
                 source_event_id,
                 &projection_type,
                 projection_revision,
                 target_site_id,
+                &payload_hash,
             )
             .await
         })
@@ -1556,11 +1647,12 @@ pub async fn reserve_target_inbox(
 /// target's inbox is never readable from the source's slice.
 ///
 /// Twenty-eighth audit P0 (federation identity): the lookup keys the
-/// migration-166 dedupe boundary EXACTLY — `source_tenant_id` is part
-/// of that key, and the receipt of a DIFFERENT source tenant (a
-/// different site delivering the same event UUID to the same target)
-/// must never answer `true` for this projection. The lookup therefore
-/// filters `source_tenant_id` like every other key column; the honest
+/// owner-scoped dedupe boundary EXACTLY — `tenant_id` (the destination
+/// slice) and `source_tenant_id` are part of that key, and the receipt
+/// of a DIFFERENT source tenant (a different site delivering the same
+/// event UUID to the same target) must never answer `true` for this
+/// projection. The lookup therefore filters `source_tenant_id` like
+/// every other key column; the honest
 /// twenty-fifth-audit name (`is_target_applied`) is gone — the question
 /// this answers is "does the target inbox already hold this
 /// reservation?", never "was this applied?".
@@ -1608,7 +1700,7 @@ pub async fn target_inbox_exists(
 /// (twenty-eighth audit P0 — federation identity status read): returns
 /// the `replication_inbox.status` value ('received', 'applying',
 /// 'applied' or 'reconcile_required') when a receipt is reserved, or
-/// `None` when NO receipt exists for the exact migration-166 dedupe key.
+/// `None` when NO receipt exists for the exact owner-scoped dedupe key.
 ///
 /// The lookup keys the FULL key — `tenant_id` (the target inbox owner,
 /// via the transaction context AND the explicit column), the SOURCE
@@ -1658,21 +1750,13 @@ pub async fn target_apply_status(
     .await
 }
 
-/// The EXPLICIT allowlist of entity types whose target-side projection
-/// application is REGISTERED (twenty-sixth audit P0.1, unchanged by the
-/// twenty-seventh audit P0): currently EMPTY. A projection is applied
-/// ONLY when its entity type is on this list AND a projector
-/// implementation exists for it — nothing else may claim an application.
-/// The list stays empty until a real target projector exists: registering
-/// an entity type without implementing its projector would let
-/// [`apply_target_projection`] claim success for an application that
-/// never happened.
-const REGISTERED_TARGET_PROJECTORS: &[&str] = &[];
-
-/// TARGET PROJECTION APPLY — the honest inbox state-machine executor
-/// (twenty-sixth audit P0.1 stub, twenty-seventh audit P0): the ONLY
-/// code path that may move a `replication_inbox` row out of its initial
-/// 'received' state.
+/// TARGET PROJECTION APPLY — the inbox state-machine executor with a
+/// REAL registered projector (twenty-sixth audit P0.1 stub, twenty-
+/// seventh audit P0 gate, thirtieth audit item 25 implementation): the
+/// ONLY code path that may move a `replication_inbox` row out of its
+/// initial 'received' state, and the ONLY path that creates a
+/// target-generated application receipt (`replication_receipts`,
+/// migration 173).
 ///
 /// (a) VALIDATION — the projection's inbox receipt must already exist
 ///     for the entry in `replication_inbox` under the target tenant's
@@ -1689,34 +1773,45 @@ const REGISTERED_TARGET_PROJECTORS: &[&str] = &[];
 ///       must be reconciled before any new apply (never a silent
 ///       retry);
 ///     - 'received': the only state an apply may leave.
-/// (b) APPLICATION — the inbox row may only leave 'received' when the
-///     entry's entity type is on [`REGISTERED_TARGET_PROJECTORS`] (the
-///     projector allowlist) AND a real projector body is implemented for
-///     it. The allowlist is currently EMPTY, so every apply is refused
-///     with a documented Validation error BEFORE any transition: the
-///     apply path fails loudly and never silently claims success, and no
-///     false application is ever recorded.
-/// (c) TRANSITIONS — when a real projector IS registered (allowlist
-///     entry + implemented body) the row moves through the migration-166
-///     state machine around that body: received -> 'applying'
-///     (apply_started_at) with a guard so only one worker can start an
-///     apply, then 'applied' (applied_at) when the body succeeds, or
-///     'reconcile_required' (failed_at) when the body fails — the
-///     failure is recorded and the body's error propagates. While no
-///     body exists even a registered-but-unimplemented type is refused,
-///     never run through a phantom body.
+/// (b) PAYLOAD INTEGRITY — delivery recorded `payload_hash` (SHA-256 hex
+///     of the canonical projection payload) on the inbox row; the apply
+///     recomputes the hash of the projection it is about to apply and
+///     compares. A mismatch (the payload changed between delivery and
+///     apply — corruption or a tampered redelivery) is recorded
+///     'reconcile_required' and refused — never applied.
+/// (c) REGISTERED-PROJECTOR GATE — the inbox row leaves 'received' only
+///     through a REGISTERED projector for the entry's entity type
+///     ([`crate::tps::target_projectors::registered_target_projector`],
+///     the successor of the empty allowlist). An entity type with no
+///     projector is refused — nothing may claim an application no
+///     registered projector performs.
+/// (d) TRANSITIONS — the row moves through the migration-166 state
+///     machine around the registered body: received -> 'applying'
+///     (apply_started_at, guarded so only one worker can start), then
+///     'applied' (applied_at) when the body succeeds — and the apply
+///     binds the server-created application receipt carrying
+///     source_tenant_id, source_queue_id, source_event_id,
+///     target_tenant_id, target_site_id, target_inbox_id,
+///     projection_type, projection_revision, payload_hash and
+///     received_at — or 'reconcile_required' (failed_at) when the body
+///     fails (the failure is recorded and the body's error propagates).
 ///
 /// Runs inside an OPEN tenant transaction (`tx`) whose context must be
 /// the TARGET tenant — the slice the receipt was reserved under. A
 /// context that cannot see the receipt resolves the validation to
 /// nothing and is refused, fail-closed.
 ///
+/// The receipt row is created ONLY here, in the TARGET tenant's slice:
+/// no source-side write can produce one, so a source-side actor can
+/// never manufacture the target-application fact.
+///
 /// Twenty-eighth audit P0 (federation identity): `source_tenant_id` is
 /// the tenant whose queue row is being applied (the receipt's
-/// `source_tenant_id` — part of the migration-166 dedupe key). The
-/// receipt lookup keys the FULL key, so the row of a DIFFERENT source
-/// tenant delivering the same event UUID to this target can never
-/// validate — nor ever be locked — for this apply.
+/// `source_tenant_id` — part of the owner-scoped dedupe key). The
+/// receipt lookup keys the FULL key (including the destination slice's
+/// `tenant_id`), so the row of a DIFFERENT source tenant delivering the
+/// same event UUID to this target can never validate — nor ever be
+/// locked — for this apply.
 pub async fn apply_target_projection(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     source_tenant_id: Uuid,
@@ -1741,27 +1836,42 @@ pub async fn apply_target_projection(
                 .to_string(),
         ));
     };
-    // (a) The inbox receipt must exist under the TARGET tenant's context:
-    // same SOURCE tenant, same source event, projection identity,
+    // (a) The inbox receipt must exist in the TARGET tenant's inbox
+    // slice: same SOURCE tenant, same source event, projection identity,
     // destination edge and source site as the delivery that reserved it —
     // the migration-166 dedupe key EXACTLY (twenty-eighth audit P0: the
     // source tenant is part of that key, and a receipt delivered from a
     // different source tenant must never validate this apply). Under the
     // retargeted ownership the receipt's `tenant_id` and
-    // `target_tenant_id` are the same tenant, so the target filter pins
-    // the RLS slice too. The row is LOCKED: the state machine decision
+    // `target_tenant_id` are the same tenant, so the lookup pins
+    // `tenant_id = $6` EXPLICITLY — the same explicit-tenant convention
+    // every query in this crate follows (the FORCE-RLS policy of the
+    // migration-166 slice is the production boundary, and the explicit
+    // filter keeps the scoping honest even where the session role is not
+    // RLS-constrained). The row is LOCKED: the state machine decision
     // below must be made against a row no concurrent worker can
-    // transition mid-apply.
-    let status: Option<String> = sqlx::query_scalar(
-        "SELECT status FROM replication_inbox \
-         WHERE source_tenant_id = $1 AND source_event_id = $2 \
-           AND projection_type = $3 \
-           AND projection_revision = $4 \
-           AND source_site_id IS NOT DISTINCT FROM $5 \
-           AND target_tenant_id = $6 \
-           AND target_site_id IS NOT DISTINCT FROM $7 \
+    // transition mid-apply. The delivery binding (source_queue_id,
+    // payload_hash, received_at) is read with the row so the apply can
+    // verify integrity and bind the receipt identity.
+    type InboxRow = (
+        Uuid,                                  // id
+        String,                                // status
+        Option<String>,                        // payload_hash (delivery binding)
+        Option<chrono::DateTime<chrono::Utc>>, // received_at
+        Option<Uuid>,                          // source_queue_id
+    );
+    let row: Option<InboxRow> = sqlx::query_as(
+        "SELECT id, status, payload_hash, received_at, source_queue_id \
+         FROM replication_inbox \
+         WHERE tenant_id = $1 AND source_tenant_id = $2 AND source_event_id = $3 \
+           AND projection_type = $4 \
+           AND projection_revision = $5 \
+           AND source_site_id IS NOT DISTINCT FROM $6 \
+           AND target_tenant_id = $7 \
+           AND target_site_id IS NOT DISTINCT FROM $8 \
          FOR UPDATE",
     )
+    .bind(target_tenant_id)
     .bind(source_tenant_id)
     .bind(source_event_id)
     .bind(&entry.projection_type)
@@ -1774,7 +1884,7 @@ pub async fn apply_target_projection(
     .map_err(|e| {
         SenseiError::Database(format!("replication: apply inbox-receipt validation: {e}"))
     })?;
-    let Some(status) = status else {
+    let Some((inbox_id, status, stored_hash, received_at, inbox_source_queue_id)) = row else {
         return Err(SenseiError::Validation(format!(
             "replication: no inbox receipt is reserved for {} — applying an unreserved \
              projection is refused rather than falsely recorded (deliver_to_target_inbox \
@@ -1782,6 +1892,16 @@ pub async fn apply_target_projection(
             entry.entity_type
         )));
     };
+    // The delivery binding must name THIS queue row — the receipt the
+    // apply creates will bind `source_queue_id`, and a receipt bound to a
+    // different queue row would mis-record the delivery.
+    if inbox_source_queue_id != Some(entry.id) {
+        return Err(SenseiError::Validation(format!(
+            "replication: the inbox receipt for {} is bound to a different source queue \
+             row — applying through a mismatched entry is refused rather than mis-bound",
+            entry.entity_type
+        )));
+    }
     // The row's state decides what the apply may do. The migration-166
     // CHECK makes 'received'/'applying'/'applied'/'reconcile_required'
     // the only possible values; every arm stays fail-closed anyway.
@@ -1812,7 +1932,7 @@ pub async fn apply_target_projection(
             )))
         }
         // 'received': the only state an apply may leave — fall through
-        // to the projector gate below.
+        // to the integrity + projector gates below.
         "received" => {}
         other => {
             return Err(SenseiError::Validation(format!(
@@ -1822,34 +1942,338 @@ pub async fn apply_target_projection(
             )))
         }
     }
-    // (b) The REGISTERED-PROJECTOR gate: an inbox row leaves 'received'
-    // ONLY through a real projector. The allowlist is currently EMPTY,
-    // so every apply is refused here with the documented Validation
-    // error — no transition happens, and no application that did not
-    // happen is ever recorded.
-    if !REGISTERED_TARGET_PROJECTORS.contains(&entry.entity_type.as_str()) {
+    // (b) PAYLOAD INTEGRITY: the hash of the projection about to be
+    // applied must equal the hash delivery recorded. A row without a
+    // recorded hash predates the binding (migration 173) — the apply
+    // cannot verify it, so it is refused, never applied on faith.
+    let payload_hash = projection_payload_hash(&entry.projection)?;
+    match stored_hash.as_deref() {
+        None => {
+            return Err(SenseiError::Validation(format!(
+                "replication: the inbox row for {} carries no delivery payload_hash — the \
+                 apply cannot verify the projection against the delivered payload and is \
+                 refused (redeliver the entry so delivery can bind the hash)",
+                entry.entity_type
+            )))
+        }
+        Some(stored) if stored != payload_hash => {
+            fail_inbox_apply_tx(tx, inbox_id, "received").await?;
+            return Err(SenseiError::Validation(format!(
+                "replication: payload hash mismatch for {} — the projection about to be \
+                 applied does not match the payload delivery recorded, so the row is \
+                 marked 'reconcile_required' instead of applied",
+                entry.entity_type
+            )));
+        }
+        Some(_) => {}
+    }
+    // (c) The REGISTERED-PROJECTOR gate: an inbox row leaves 'received'
+    // ONLY through a real projector (target_projectors::registered_target_projector
+    // — the successor of the empty allowlist; every registration ships
+    // with its implemented body, so a registered type is never run
+    // through a phantom body).
+    let Some(projector) = super::target_projectors::registered_target_projector(&entry.entity_type)
+    else {
         return Err(SenseiError::Validation(format!(
             "no target projector is registered for {} — application is refused rather than falsely recorded",
             entry.entity_type
         )));
+    };
+    // (d) received -> applying, guarded: only one worker may start an
+    // apply. The row is already locked FOR UPDATE above, so the guard is
+    // the state machine's second line of defense.
+    let res = sqlx::query(
+        "UPDATE replication_inbox \
+         SET status = 'applying', apply_started_at = NOW() \
+         WHERE id = $1 AND status = 'received'",
+    )
+    .bind(inbox_id)
+    .execute(&mut **tx)
+    .await
+    .map_err(|e| SenseiError::Database(format!("replication: apply start failed: {e}")))?;
+    if res.rows_affected() != 1 {
+        return Err(SenseiError::Validation(
+            "replication: the inbox row was already being applied by another worker — no \
+             second apply may start"
+                .to_string(),
+        ));
     }
-    // (c) A REGISTERED entity type reaches this branch only when the
-    // allowlist above stops being empty — and a registration is only
-    // real when its projector body is implemented alongside it (see
-    // REGISTERED_TARGET_PROJECTORS). No body exists in this workspace,
-    // so even a registered type is refused here rather than run through
-    // a phantom body: the received -> applying -> applied (or
-    // 'reconcile_required' on body failure) transition sequence is the
-    // contract of that future body, and nothing may claim it before the
-    // body exists.
-    Err(SenseiError::Validation(format!(
-        "the target projector for {} is registered but not implemented — application \
-         is refused rather than falsely recorded",
-        entry.entity_type
-    )))
+    // The registered projector body runs INSIDE this transaction, under
+    // the TARGET tenant's context: its business write and the inbox state
+    // transition + receipt binding commit (or roll back) together. A body
+    // failure is recorded ('reconcile_required', failed_at) and the body's
+    // error propagates — an application that did not land is never
+    // recorded as 'applied'.
+    if let Err(e) = projector
+        .apply(tx, target_tenant_id, source_tenant_id, entry)
+        .await
+    {
+        fail_inbox_apply_tx(tx, inbox_id, "applying").await?;
+        return Err(e);
+    }
+    // applying -> applied: the projection really landed. The only
+    // terminal 'this projection landed' state.
+    let res = sqlx::query(
+        "UPDATE replication_inbox \
+         SET status = 'applied', applied_at = NOW() \
+         WHERE id = $1 AND status = 'applying'",
+    )
+    .bind(inbox_id)
+    .execute(&mut **tx)
+    .await
+    .map_err(|e| SenseiError::Database(format!("replication: apply completion failed: {e}")))?;
+    if res.rows_affected() != 1 {
+        return Err(SenseiError::Internal(
+            "replication: the applied transition lost the applying row — the state machine \
+             guard must be atomic"
+                .to_string(),
+        ));
+    }
+    // The TARGET-GENERATED APPLICATION RECEIPT (thirtieth audit item 25):
+    // server-created here and only here, in the TARGET tenant's FORCE-RLS
+    // slice, binding the full receipt identity. `ON CONFLICT (target_inbox_id)
+    // DO NOTHING` keeps an apply-after-reconciliation from creating a
+    // second receipt — the original receipt stays the identity record.
+    bind_application_receipt_tx(
+        tx,
+        target_tenant_id,
+        source_tenant_id,
+        entry,
+        source_event_id,
+        inbox_id,
+        &payload_hash,
+        received_at,
+    )
+    .await?;
+    Ok(())
 }
 
-/// Corporate ACK (twenty-sixth audit P0.1, twenty-seventh audit P0):
+/// Mark an inbox row 'reconcile_required' (failed_at) — the durable
+/// record that an application attempt failed and must be reconciled
+/// before any new apply. Used by the payload-integrity path (from
+/// 'received' — the apply never started) and the projector-failure path
+/// (from 'applying' — the apply body failed) of
+/// [`apply_target_projection`]; the guarded `WHERE ... status = $2`
+/// transition only fires from the state the caller actually holds. The
+/// caller's transaction decides whether the surrounding state commits
+/// (the recommended shape: commit so the reconciliation requirement
+/// survives).
+async fn fail_inbox_apply_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    inbox_id: Uuid,
+    from_status: &str,
+) -> Result<()> {
+    sqlx::query(
+        "UPDATE replication_inbox \
+         SET status = 'reconcile_required', failed_at = NOW() \
+         WHERE id = $1 AND status = $2",
+    )
+    .bind(inbox_id)
+    .bind(from_status)
+    .execute(&mut **tx)
+    .await
+    .map_err(|e| {
+        SenseiError::Database(format!(
+            "replication: reconcile-required transition failed: {e}"
+        ))
+    })?;
+    Ok(())
+}
+
+/// Bind the TARGET-GENERATED APPLICATION RECEIPT (thirtieth audit item
+/// 25): the server-created `replication_receipts` row that records, in
+/// the TARGET tenant's FORCE-RLS slice, that the target inbox APPLIED a
+/// projection. Binding fields (migration 173):
+/// source_tenant_id, source_queue_id, source_event_id, target_tenant_id,
+/// target_site_id, target_inbox_id, projection_type,
+/// projection_revision, payload_hash and received_at (the inbox row's
+/// delivery time). `ON CONFLICT (target_inbox_id) DO NOTHING` makes the
+/// binding idempotent — one receipt per inbox reservation.
+#[allow(clippy::too_many_arguments)]
+async fn bind_application_receipt_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    target_tenant_id: Uuid,
+    source_tenant_id: Uuid,
+    entry: &ReplicationEntry,
+    source_event_id: Uuid,
+    inbox_id: Uuid,
+    payload_hash: &str,
+    received_at: Option<chrono::DateTime<chrono::Utc>>,
+) -> Result<()> {
+    sqlx::query(
+        "INSERT INTO replication_receipts \
+             (tenant_id, source_tenant_id, source_queue_id, source_site_id, \
+              source_event_id, target_tenant_id, target_site_id, target_inbox_id, \
+              projection_type, projection_revision, payload_hash, received_at) \
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) \
+         ON CONFLICT (tenant_id, target_inbox_id) DO NOTHING",
+    )
+    .bind(target_tenant_id)
+    .bind(source_tenant_id)
+    .bind(entry.id)
+    .bind(entry.site_id)
+    .bind(source_event_id)
+    .bind(target_tenant_id)
+    .bind(entry.target_site_id)
+    .bind(inbox_id)
+    .bind(&entry.projection_type)
+    .bind(entry.projection_revision as i64)
+    .bind(payload_hash)
+    .bind(received_at.unwrap_or_else(chrono::Utc::now))
+    .execute(&mut **tx)
+    .await
+    .map_err(|e| SenseiError::Database(format!("replication: receipt binding failed: {e}")))?;
+    Ok(())
+}
+
+/// The SOURCE-side confirmation outcome (thirtieth audit item 25): the
+/// count of acked queue rows the confirmation poll actually confirmed
+/// (a matching target-generated receipt was observed), rows still
+/// awaiting a receipt, and rows whose observed receipt binds a
+/// DIFFERENT payload hash (never confirmed — the receipt does not belong
+/// to this payload).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct ConfirmationReport {
+    pub confirmed: u64,
+    pub awaiting_receipt: u64,
+    pub receipt_payload_mismatch: u64,
+}
+
+/// CONFIRM acked source queue rows whose application the target has
+/// really performed (thirtieth audit item 25): the SOURCE-side
+/// reconciliation poll that drives 'acked' -> 'application_confirmed'.
+///
+/// The poll runs in ONE tenant transaction under `tenant_id` (the SOURCE
+/// queue tenant's context): it selects the tenant's 'acked' rows
+/// (`FOR UPDATE SKIP LOCKED`, claim-style), and for each row reads the
+/// application receipts the TARGET generated for it through
+/// `federation_application_receipts(source_queue_id)` — the session-bound
+/// SECURITY DEFINER boundary (migration 173) that exposes ONLY receipts
+/// whose `source_tenant_id` equals the caller's context AND whose owner
+/// is the receipt's own destination (a receipt the source could write in
+/// its own slice is never exposed — the anti-manufacture invariant). A
+/// row is confirmed ONLY when a receipt exists whose `payload_hash`
+/// equals the SHA-256 of the queue row's own projection payload: the
+/// receipt is target-generated (a source worker can never write into the
+/// target's FORCE-RLS slice), and the hash match proves the receipt
+/// belongs to exactly this payload. The receipt IS the durable
+/// application fact — `apply_target_projection` binds it in the same
+/// transaction that lands the projection, and only a successful apply
+/// ever creates one — so the confirmation does not depend on the inbox
+/// row's later state. Nothing else moves a row to
+/// 'application_confirmed' — and never ACK.
+///
+/// Rows whose receipt binds a different payload hash are counted in
+/// `receipt_payload_mismatch` and stay 'acked' (a receipt for a
+/// different payload must never confirm this row). Rows with no receipt
+/// yet are counted in `awaiting_receipt`.
+pub async fn confirm_application_receipts(
+    pool: &sqlx::PgPool,
+    tenant_id: Uuid,
+    limit: i64,
+) -> Result<ConfirmationReport> {
+    with_tenant_tx(pool, tenant_id, move |tx| {
+        Box::pin(async move {
+            let mut report = ConfirmationReport::default();
+            type AckedRow = (Uuid, serde_json::Value);
+            let rows: Vec<AckedRow> = sqlx::query_as(
+                "SELECT id, projection FROM site_replication_log \
+                 WHERE tenant_id = $1 AND status = 'acked' \
+                 ORDER BY acked_at ASC, id ASC \
+                 LIMIT $2 \
+                 FOR UPDATE SKIP LOCKED",
+            )
+            .bind(tenant_id)
+            .bind(limit)
+            .fetch_all(&mut **tx)
+            .await
+            .map_err(|e| {
+                SenseiError::Database(format!("replication: confirmation poll failed: {e}"))
+            })?;
+            // Receipt row shape of federation_application_receipts():
+            // receipt_id, target_tenant_id, target_site_id,
+            // source_event_id, projection_type, projection_revision,
+            // payload_hash, applied_at, inbox_status (inbox_status is
+            // observational only — the receipt itself is the fact).
+            type ReceiptRow = (
+                Uuid,
+                Option<Uuid>,
+                Option<Uuid>,
+                Option<Uuid>,
+                Option<String>,
+                Option<i64>,
+                Option<String>,
+                Option<chrono::DateTime<chrono::Utc>>,
+                Option<String>,
+            );
+            for (queue_id, projection) in rows {
+                let local_hash = projection_payload_hash(&projection)?;
+                let receipts: Vec<ReceiptRow> =
+                    sqlx::query_as("SELECT * FROM federation_application_receipts($1)")
+                        .bind(queue_id)
+                        .fetch_all(&mut **tx)
+                        .await
+                        .map_err(|e| {
+                            SenseiError::Database(format!("replication: receipt read failed: {e}"))
+                        })?;
+                let mut observed = false;
+                for (
+                    _receipt_id,
+                    _target_tenant,
+                    _target_site,
+                    _event,
+                    _ptype,
+                    _prev,
+                    hash,
+                    _at,
+                    _status,
+                ) in receipts
+                {
+                    observed = true;
+                    match hash.as_deref() {
+                        // A target-generated receipt whose payload binds
+                        // THIS queue row's exact payload: confirm.
+                        Some(hash) if hash == local_hash => {
+                            let res = sqlx::query(
+                                "UPDATE site_replication_log \
+                                 SET status = 'application_confirmed', confirmed_at = NOW() \
+                                 WHERE id = $1 AND tenant_id = $2 AND status = 'acked'",
+                            )
+                            .bind(queue_id)
+                            .bind(tenant_id)
+                            .execute(&mut **tx)
+                            .await
+                            .map_err(|e| {
+                                SenseiError::Database(format!(
+                                    "replication: confirmation transition failed: {e}"
+                                ))
+                            })?;
+                            if res.rows_affected() == 1 {
+                                report.confirmed += 1;
+                            }
+                        }
+                        // A receipt for a DIFFERENT payload must never
+                        // confirm this row — count and stay 'acked'.
+                        Some(hash) if hash != local_hash => {
+                            report.receipt_payload_mismatch += 1;
+                        }
+                        // A receipt without a bindable hash is a corrupt
+                        // row — never confirmation.
+                        _ => {}
+                    }
+                }
+                if !observed {
+                    report.awaiting_receipt += 1;
+                }
+            }
+            Ok(report)
+        })
+    })
+    .await
+}
+
+/// Corporate ACK (twenty-sixth audit P0.1, twenty-seventh audit P0,
+/// thirtieth audit item 25 — still a delivery acknowledgement ONLY):
 /// acknowledges delivery of the claimed entry to the CONSUMER — marks
 /// the source queue row `acked` and does NOTHING else. The
 /// `claim_token` is the ownership check — a stale worker (or one that
@@ -1860,13 +2284,18 @@ pub async fn apply_target_projection(
 /// marker in this SAME transaction ("no projection-apply step exists
 /// yet"): that was an application record FOR AN APPLICATION THAT NEVER
 /// HAPPENED. `ack()` is the queue-side consume acknowledgement ONLY — it
-/// NEVER writes the replication inbox (`replication_inbox`), under any
-/// tenant. The target side of the at-least-once contract is reserved
-/// separately and honestly by [`deliver_to_target_inbox`] (in ONE
-/// transaction under the TARGET tenant's context, inserting the
-/// 'received' inbox row), and the application itself is gated by
-/// [`apply_target_projection`], which refuses until a target projector
-/// is registered.
+/// NEVER writes the replication inbox (`replication_inbox`), never
+/// writes an application receipt (`replication_receipts`) and never
+/// moves the row to 'application_confirmed', under any tenant. The
+/// target side of the at-least-once contract is reserved separately and
+/// honestly by [`deliver_to_target_inbox`] (in ONE transaction under the
+/// TARGET tenant's context, inserting the 'received' inbox row), the
+/// application itself is performed by [`apply_target_projection`]
+/// through a registered projector (which alone creates the receipt), and
+/// the terminal source state 'application_confirmed' is reached only by
+/// [`confirm_application_receipts`] observing that target-generated
+/// receipt. A source-side worker can never manufacture 'target applied'
+/// by calling ACK.
 pub async fn ack(pool: &sqlx::PgPool, tenant_id: Uuid, id: Uuid, claim_token: Uuid) -> Result<()> {
     with_tenant_tx(pool, tenant_id, move |tx| {
         Box::pin(async move {

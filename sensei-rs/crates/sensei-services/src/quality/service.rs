@@ -33,10 +33,10 @@ use super::models::*;
 /// tenant, and `ctx.scope` is the caller's DB-resolved authorization
 /// boundary. List/get/update/close surface semantics:
 ///
-/// - `Sites` / `WorkCenter` — the caller sees ONLY records whose
-///   SERVER-STAMPED `scope_site_id` is among `ctx.authorized_sites()`; a
-///   record with no site stamp (`NULL` — a corporate/tenant-level record)
-///   is invisible to a site-scoped caller;
+/// - `Operational` (site grants) — the caller sees ONLY records whose
+///   SERVER-STAMPED `scope_site_id` is among the granted sites; a
+///   record with no site stamp (`NULL` — a corporate/tenant-level
+///   record) is invisible to a site-scoped caller;
 /// - `TenantWide` — no scope predicate: every record of the tenant,
 ///   corporate records included;
 /// - `NoOperationalScope` — zero rows on lists, `NotFound` on gets
@@ -682,21 +682,35 @@ impl InMemoryQualityService {
     }
 
     /// The caller's scope as a SQL-equivalent visibility decision over a
-    /// record's SERVER-STAMPED site (twenty-ninth audit Wave B item 3):
+    /// record's SERVER-STAMPED site (twenty-ninth audit Wave B item 3;
+    /// thirtieth-audit P0 item 1):
     ///
     /// - `NoOperationalScope` ⇒ false (no rows anywhere);
     /// - `TenantWide` ⇒ true (corporate records included);
-    /// - `Sites` / `WorkCenter` ⇒ the record's site, when stamped, is
-    ///   one of the authorized sites — an unstamped (corporate) record
-    ///   is NOT visible to a site-scoped caller.
+    /// - `Operational` with site grants ⇒ the record's site, when
+    ///   stamped, is one of the authorized sites — an unstamped
+    ///   (corporate) record is NOT visible to a site-scoped caller;
+    /// - `Operational` with ONLY work-center grants ⇒ the record's stamp
+    ///   must match an exact granted (site, work center) — a WC grant
+    ///   never widens into its whole site.
     fn site_visible(ctx: &RequestContext, stamp: QualityScopeStamp) -> bool {
         match &ctx.scope {
             AuthorizedScope::NoOperationalScope => false,
             AuthorizedScope::TenantWide => true,
-            AuthorizedScope::Sites(sites) => {
-                stamp.site_id.is_some_and(|site| sites.contains(&site))
+            AuthorizedScope::Operational {
+                sites,
+                work_centers,
+            } => {
+                if stamp.site_id.is_some_and(|site| sites.contains(&site)) {
+                    return true;
+                }
+                match (stamp.site_id, stamp.work_center_id) {
+                    (Some(site), Some(wc)) => work_centers
+                        .iter()
+                        .any(|s| s.site == site && s.work_center == wc),
+                    _ => false,
+                }
             }
-            AuthorizedScope::WorkCenter(wc) => stamp.site_id == Some(wc.site),
         }
     }
 
@@ -780,16 +794,12 @@ impl QualityService for InMemoryQualityService {
         location: Option<String>,
         is_recurrence: bool,
     ) -> Result<NonConformance> {
-        if matches!(ctx.scope, AuthorizedScope::NoOperationalScope) {
-            return Err(SenseiError::Forbidden(
-                "principal has no operational scope — cannot create an NCR".to_string(),
-            ));
-        }
         let tenant_id = ctx.tenant;
-        // Server-stamped scope: the caller's VALIDATED operating focus
-        // (the context builder proves the focus work center belongs to
-        // the focus site). Client input has no scope dimension here.
-        let stamp = QualityScopeStamp::from(ctx);
+        // Server-stamped scope (thirtieth-audit P0 item 8): the SINGLE
+        // creation-scope helper derives the stamp from the validated
+        // operating focus — a scoped caller without an operating site is
+        // rejected instead of silently producing a corporate record.
+        let stamp = super::scope::stamp_from_scope(super::scope::derive_creation_scope(ctx, None)?);
         let mut counter = self.ncr_counter.write().await;
         *counter += 1;
         let nc_number = Self::generate_ncr_number(*counter);
@@ -922,13 +932,12 @@ impl QualityService for InMemoryQualityService {
         owner_id: Option<Uuid>,
         due_date: Option<DateTime<Utc>>,
     ) -> Result<CapaExtended> {
-        if matches!(ctx.scope, AuthorizedScope::NoOperationalScope) {
-            return Err(SenseiError::Forbidden(
-                "principal has no operational scope — cannot create a CAPA".to_string(),
-            ));
-        }
         let tenant_id = ctx.tenant;
-        let stamp = QualityScopeStamp::from(ctx);
+        // Server-stamped scope (thirtieth-audit P0 item 8): the SINGLE
+        // creation-scope helper derives the stamp from the validated
+        // operating focus — a scoped caller without an operating site is
+        // rejected instead of silently producing a corporate record.
+        let stamp = super::scope::stamp_from_scope(super::scope::derive_creation_scope(ctx, None)?);
         let mut counter = self.capa_counter.write().await;
         *counter += 1;
         let capa_number = Self::generate_capa_number(*counter);
@@ -1118,13 +1127,12 @@ impl QualityService for InMemoryQualityService {
     }
 
     async fn create_audit(&self, ctx: &RequestContext, mut audit: Audit) -> Result<Audit> {
-        if matches!(ctx.scope, AuthorizedScope::NoOperationalScope) {
-            return Err(SenseiError::Forbidden(
-                "principal has no operational scope — cannot create an audit".to_string(),
-            ));
-        }
         let tenant_id = ctx.tenant;
-        let stamp = QualityScopeStamp::from(ctx);
+        // Server-stamped scope (thirtieth-audit P0 item 8): the SINGLE
+        // creation-scope helper derives the stamp from the validated
+        // operating focus — a scoped caller without an operating site is
+        // rejected instead of silently producing a corporate record.
+        let stamp = super::scope::stamp_from_scope(super::scope::derive_creation_scope(ctx, None)?);
         let now = Utc::now();
         audit.id = Uuid::new_v4();
         audit.created_at = now;
@@ -2911,10 +2919,13 @@ mod tests {
             .await
             .unwrap();
 
-        // A SITE-A-scoped caller (Sites([site_a])) sees the site-A record
-        // but NOT the corporate one.
+        // A SITE-A-scoped caller (Operational { sites: {site_a} }) sees
+        // the site-A record but NOT the corporate one.
         let site_a_scope_ctx = RequestContext {
-            scope: AuthorizedScope::Sites(vec![site_a]),
+            scope: AuthorizedScope::Operational {
+                sites: std::collections::HashSet::from([site_a]),
+                work_centers: std::collections::HashSet::new(),
+            },
             focus: sensei_core::domain::OperationalFocus {
                 site: Some(site_a),
                 value_stream: None,
@@ -2943,7 +2954,10 @@ mod tests {
 
         // A SITE-B-scoped caller sees neither record.
         let site_b_scope_ctx = RequestContext {
-            scope: AuthorizedScope::Sites(vec![site_b]),
+            scope: AuthorizedScope::Operational {
+                sites: std::collections::HashSet::from([site_b]),
+                work_centers: std::collections::HashSet::new(),
+            },
             focus: sensei_core::domain::OperationalFocus {
                 site: Some(site_b),
                 value_stream: None,

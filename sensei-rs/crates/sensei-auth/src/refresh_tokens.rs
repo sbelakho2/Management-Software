@@ -141,27 +141,31 @@ impl RefreshTokenStore {
                     .await
                     .map_err(|e| TokenReuseDetected::Database(e.to_string()))?;
 
-                // The authoritative check joins the CURRENT user row:
+                // The authoritative check consults the CURRENT user row:
                 // revoked_at, expiry, active flag and the user's CURRENT
                 // credential version (not the version stored next to this
                 // token — a password change bumps the user's version and
                 // every older token must die, even without a revoke pass).
+                // The `users` table is fail-closed FORCE RLS (migration
+                // 175 universal policy: no app.tenant_id context means no
+                // rows), and refresh-token validation runs BEFORE any
+                // tenant context exists — so the user state is read
+                // through the migration-175 SECURITY DEFINER identity
+                // function `auth_user_by_id(uuid)` (owned by the
+                // BYPASSRLS migration role, EXECUTE granted to
+                // sensei_app), never by JOINing the raw table.
                 type RefreshRow = (
                     Uuid,
                     Uuid,
                     Option<chrono::DateTime<chrono::Utc>>,
                     chrono::DateTime<chrono::Utc>,
                     i64,
-                    i64,
-                    bool,
                     Option<String>,
                 );
                 let row: Option<RefreshRow> = sqlx::query_as(
                     "SELECT rt.family_id, rt.user_id, rt.revoked_at, rt.expires_at, \
-                                rt.credential_version, u.credential_version AS user_version, \
-                                u.is_active, rt.rotated_to_hash \
+                                rt.credential_version, rt.rotated_to_hash \
                          FROM refresh_tokens rt \
-                         JOIN users u ON u.id = rt.user_id \
                          WHERE rt.token_hash = $1 \
                          FOR UPDATE OF rt",
                 )
@@ -176,11 +180,32 @@ impl RefreshTokenStore {
                     revoked_at,
                     expires_at,
                     stored_version,
-                    user_version,
-                    is_active,
                     rotated_to,
                 )) = row
                 else {
+                    return Err(TokenReuseDetected::Invalid);
+                };
+
+                // The user's live authorization state (same transaction):
+                // active flag + CURRENT credential version.
+                type UserAuthRow = (bool, i64);
+                let user_row: Option<UserAuthRow> = sqlx::query_as(
+                    "SELECT is_active, credential_version FROM auth_user_by_id($1)",
+                )
+                .bind(user_id)
+                .fetch_optional(&mut *tx)
+                .await
+                .map_err(|e| TokenReuseDetected::Database(e.to_string()))?;
+                let Some((is_active, user_version)) = user_row else {
+                    // The user row is gone (deleted): every outstanding
+                    // token of the user must die.
+                    sqlx::query(
+                        "UPDATE refresh_tokens SET revoked_at = NOW() WHERE family_id = $1 AND revoked_at IS NULL",
+                    )
+                    .bind(family_id)
+                    .execute(&mut *tx)
+                    .await
+                    .map_err(|e| TokenReuseDetected::Database(e.to_string()))?;
                     return Err(TokenReuseDetected::Invalid);
                 };
 

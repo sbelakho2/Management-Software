@@ -1,4 +1,9 @@
 {{- if .Values.worker.enabled }}
+# =============================================================================
+# worker Deployment — runtime DB identity: DATABASE_URL_APP ONLY.
+# Thirtieth-audit item 26: same containment as the API — no envFrom
+# secretRef, no DATABASE_URL_ADMIN / DATABASE_URL_MIGRATOR / role passwords.
+# =============================================================================
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -35,20 +40,21 @@ spec:
         image: "{{ .Values.senseiApi.image.repository }}:{{ .Values.senseiApi.image.tag | default .Chart.AppVersion }}"
         imagePullPolicy: {{ .Values.senseiApi.image.pullPolicy }}
         command: ["/usr/local/bin/sensei-workers"]
+        # ConfigMap only via envFrom. NO envFrom secretRef (the secret also
+        # carries the ADMIN/MIGRATOR URLs and role passwords — runtime pods
+        # get per-key refs below only).
         envFrom:
         - configMapRef:
             name: {{ include "sensei.fullname" . }}-config
-        - secretRef:
-            name: {{ include "sensei.fullname" . }}-secret
-            optional: true
         env:
         - name: SENSEI_ENV
           value: {{ .Values.config.environment | quote }}
+        # ── Runtime DB identity: APP only (never admin/migrator) ─────────
         - name: DATABASE_URL
           valueFrom:
             secretKeyRef:
               name: {{ include "sensei.fullname" . }}-secret
-              key: DATABASE_URL
+              key: DATABASE_URL_APP
         - name: NATS_URL
           value: {{ include "sensei.nats.url" . | quote }}
         - name: JWT_SECRET
@@ -56,6 +62,14 @@ spec:
             secretKeyRef:
               name: {{ include "sensei.fullname" . }}-secret
               key: JWT_SECRET
+        {{- if .Values.config.jwtPreviousSigningKey }}
+        - name: JWT_PREVIOUS_SIGNING_KEY
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "sensei.fullname" . }}-secret
+              key: JWT_PREVIOUS_SIGNING_KEY
+              optional: true
+        {{- end }}
         - name: S3_ENDPOINT
           value: {{ include "sensei.minio.endpoint" . | quote }}
         - name: S3_ACCESS_KEY
@@ -70,6 +84,14 @@ spec:
               key: S3_SECRET_KEY
         - name: S3_BUCKET
           value: {{ .Values.config.storage.bucket | quote }}
+        {{- if .Values.config.smtp.password }}
+        - name: SMTP_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "sensei.fullname" . }}-secret
+              key: SMTP_PASSWORD
+              optional: true
+        {{- end }}
         - name: LOG_LEVEL
           value: {{ .Values.config.logLevel | quote }}
         # Liveness: the runtime is alive. NEVER tests dependencies — a

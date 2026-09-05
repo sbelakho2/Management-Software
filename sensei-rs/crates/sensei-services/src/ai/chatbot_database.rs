@@ -11,6 +11,7 @@
 
 use async_trait::async_trait;
 use chrono::Utc;
+use sensei_core::db::TenantTx;
 use sensei_core::error::{Result, SenseiError};
 use sensei_core::types::EntityId;
 use sensei_db::models::ChatMessageModel;
@@ -459,6 +460,10 @@ impl DatabaseChatbotService {
             return None;
         }
         let patterns: Vec<String> = tokens.iter().map(|t| format!("{t}%")).collect();
+        // Wave C RLS (thirtieth-audit item 18): products is tenant-owned
+        // fail-closed FORCE RLS — the lookup runs inside a TenantTx of the
+        // tenant (a raw-pool read returns zero rows under sensei_app).
+        let mut db = TenantTx::begin(&self.pool, tenant_id).await.ok()?;
         sqlx::query_scalar::<_, Uuid>(
             "SELECT id FROM products \
              WHERE tenant_id = $1 AND (product_number ILIKE ANY($2) OR name ILIKE ANY($2)) \
@@ -466,7 +471,7 @@ impl DatabaseChatbotService {
         )
         .bind(tenant_id)
         .bind(&patterns)
-        .fetch_optional(&self.pool)
+        .fetch_optional(&mut **db.tx())
         .await
         .ok()
         .flatten()
@@ -480,6 +485,8 @@ impl DatabaseChatbotService {
             return None;
         }
         let patterns: Vec<String> = tokens.iter().map(|t| format!("{t}%")).collect();
+        // Wave C RLS: equipment is fail-closed FORCE RLS — tenant tx.
+        let mut db = TenantTx::begin(&self.pool, tenant_id).await.ok()?;
         sqlx::query_scalar::<_, Uuid>(
             "SELECT id FROM equipment \
              WHERE tenant_id = $1 AND (equipment_number ILIKE ANY($2) OR name ILIKE ANY($2)) \
@@ -487,7 +494,7 @@ impl DatabaseChatbotService {
         )
         .bind(tenant_id)
         .bind(&patterns)
-        .fetch_optional(&self.pool)
+        .fetch_optional(&mut **db.tx())
         .await
         .ok()
         .flatten()
@@ -507,6 +514,11 @@ impl DatabaseChatbotService {
         }
         let patterns: Vec<String> = tokens.iter().map(|t| format!("{t}%")).collect();
 
+        // Wave C RLS (thirtieth-audit item 18): quality/work-order/
+        // equipment tables are fail-closed FORCE RLS — the lookups run on
+        // ONE TenantTx of the tenant (raw-pool reads return zero rows).
+        let mut db = TenantTx::begin(&self.pool, tenant_id).await.ok()?;
+
         // Explicit UUIDs are resolved directly.
         for token in &tokens {
             if let Ok(id) = Uuid::parse_str(token) {
@@ -524,7 +536,7 @@ impl DatabaseChatbotService {
             )
             .bind(tenant_id)
             .bind(&patterns)
-            .fetch_optional(&self.pool)
+            .fetch_optional(&mut **db.tx())
             .await
             {
                 return Some(("ncr".to_string(), id));
@@ -536,12 +548,12 @@ impl DatabaseChatbotService {
         if message.to_lowercase().contains("work order") || message.to_lowercase().contains("wo ") {
             if let Ok(Some(id)) = sqlx::query_scalar::<_, Uuid>(
                 "SELECT id FROM work_orders \
-                 WHERE tenant_id = $1 AND work_order_number ILIKE ANY($2) \
+                 WHERE tenant_id = $1 AND wo_number ILIKE ANY($2) \
                  ORDER BY created_at DESC LIMIT 1",
             )
             .bind(tenant_id)
             .bind(&patterns)
-            .fetch_optional(&self.pool)
+            .fetch_optional(&mut **db.tx())
             .await
             {
                 return Some(("work_order".to_string(), id));
@@ -557,7 +569,7 @@ impl DatabaseChatbotService {
         )
         .bind(tenant_id)
         .bind(&patterns)
-        .fetch_optional(&self.pool)
+        .fetch_optional(&mut **db.tx())
         .await
         {
             return Some(("equipment".to_string(), id));

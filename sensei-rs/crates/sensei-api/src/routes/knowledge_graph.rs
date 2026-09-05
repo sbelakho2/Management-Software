@@ -7,6 +7,7 @@
 use axum::extract::{Path, State};
 use axum::Json;
 use sensei_auth::middleware::AuthenticatedUser;
+use sensei_core::db::TenantTx;
 use sensei_core::error::{Result, SenseiError};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -67,6 +68,14 @@ pub async fn record_edge(
             valid_relations.join(", ")
         )));
     }
+    // Wave C RLS (thirtieth-audit item 18): every typed-node table and
+    // knowledge_graph_edges are tenant-owned fail-closed FORCE RLS since
+    // migration 175 — the existence checks and the edge write run on ONE
+    // TenantTx of the caller's tenant.
+    let mut db = TenantTx::begin(pool, user.tenant_id)
+        .await
+        .map_err(|e| SenseiError::Database(format!("Failed to begin graph tx: {e}")))?;
+
     // Item 61: TYPED nodes — the source and target must exist in their
     // typed tables and belong to the SAME tenant. Free-form UUIDs with no
     // existence proof are rejected (the database cannot FK them).
@@ -79,7 +88,7 @@ pub async fn record_edge(
                 sqlx::query_scalar("SELECT id FROM andons WHERE id = $1 AND tenant_id = $2")
                     .bind(entity_id)
                     .bind(user.tenant_id)
-                    .fetch_optional(pool.as_ref())
+                    .fetch_optional(&mut **db.tx())
                     .await
                     .map_err(|e| SenseiError::Database(format!("Node check failed: {e}")))?
             }
@@ -87,7 +96,7 @@ pub async fn record_edge(
                 sqlx::query_scalar("SELECT id FROM work_centers WHERE id = $1 AND tenant_id = $2")
                     .bind(entity_id)
                     .bind(user.tenant_id)
-                    .fetch_optional(pool.as_ref())
+                    .fetch_optional(&mut **db.tx())
                     .await
                     .map_err(|e| SenseiError::Database(format!("Node check failed: {e}")))?
             }
@@ -95,7 +104,7 @@ pub async fn record_edge(
                 sqlx::query_scalar("SELECT id FROM a3_reports WHERE id = $1 AND tenant_id = $2")
                     .bind(entity_id)
                     .bind(user.tenant_id)
-                    .fetch_optional(pool.as_ref())
+                    .fetch_optional(&mut **db.tx())
                     .await
                     .map_err(|e| SenseiError::Database(format!("Node check failed: {e}")))?
             }
@@ -104,14 +113,14 @@ pub async fn record_edge(
             )
             .bind(entity_id)
             .bind(user.tenant_id)
-            .fetch_optional(pool.as_ref())
+            .fetch_optional(&mut **db.tx())
             .await
             .map_err(|e| SenseiError::Database(format!("Node check failed: {e}")))?,
             "action" | "task" => {
                 sqlx::query_scalar("SELECT id FROM tasks WHERE id = $1 AND tenant_id = $2")
                     .bind(entity_id)
                     .bind(user.tenant_id)
-                    .fetch_optional(pool.as_ref())
+                    .fetch_optional(&mut **db.tx())
                     .await
                     .map_err(|e| SenseiError::Database(format!("Node check failed: {e}")))?
             }
@@ -119,7 +128,7 @@ pub async fn record_edge(
                 sqlx::query_scalar("SELECT id FROM work_orders WHERE id = $1 AND tenant_id = $2")
                     .bind(entity_id)
                     .bind(user.tenant_id)
-                    .fetch_optional(pool.as_ref())
+                    .fetch_optional(&mut **db.tx())
                     .await
                     .map_err(|e| SenseiError::Database(format!("Node check failed: {e}")))?
             }
@@ -127,7 +136,7 @@ pub async fn record_edge(
                 sqlx::query_scalar("SELECT id FROM products WHERE id = $1 AND tenant_id = $2")
                     .bind(entity_id)
                     .bind(user.tenant_id)
-                    .fetch_optional(pool.as_ref())
+                    .fetch_optional(&mut **db.tx())
                     .await
                     .map_err(|e| SenseiError::Database(format!("Node check failed: {e}")))?
             }
@@ -158,9 +167,12 @@ pub async fn record_edge(
     .bind(&req.target_type)
     .bind(req.target_id)
     .bind(user.user_id)
-    .fetch_one(pool.as_ref())
+    .fetch_one(&mut **db.tx())
     .await
     .map_err(|e| SenseiError::Database(format!("Edge record failed: {e}")))?;
+    db.commit()
+        .await
+        .map_err(|e| SenseiError::Database(format!("Failed to commit graph tx: {e}")))?;
 
     Ok(Json(GraphEdge {
         id: row.0,
@@ -186,14 +198,21 @@ pub async fn rebuild_graph(
         SenseiError::Database("Knowledge graph requires the database".to_string())
     })?;
     // Regenerate the abnormality → occurred_at → work_center edges from
-    // the authoritative andons table.
+    // the authoritative andons table. Wave C RLS: andons is fail-closed
+    // FORCE RLS, so the rebuild runs inside a tenant-scoped transaction.
+    let mut db = TenantTx::begin(pool, user.tenant_id)
+        .await
+        .map_err(|e| SenseiError::Database(format!("Failed to begin graph rebuild: {e}")))?;
     let inserted = sqlx::query(
         "INSERT INTO knowledge_graph_edges  (tenant_id, source_type, source_id, relation, target_type, target_id)  SELECT a.tenant_id, 'abnormality', a.id, 'occurred_at', 'work_center', a.work_center_id  FROM andons a  WHERE a.tenant_id = $1 AND a.work_center_id IS NOT NULL  ON CONFLICT DO NOTHING",
     )
     .bind(user.tenant_id)
-    .execute(pool.as_ref())
+    .execute(&mut **db.tx())
     .await
     .map_err(|e| SenseiError::Database(format!("Graph rebuild failed: {e}")))?;
+    db.commit()
+        .await
+        .map_err(|e| SenseiError::Database(format!("Failed to commit graph rebuild: {e}")))?;
     Ok(Json(serde_json::json!({
         "rebuilt": true,
         "edges_created": inserted.rows_affected(),
@@ -221,6 +240,9 @@ pub async fn edges_around(
         Uuid,
         chrono::DateTime<chrono::Utc>,
     );
+    let mut db = TenantTx::begin(pool, user.tenant_id)
+        .await
+        .map_err(|e| SenseiError::Database(format!("Failed to begin graph query: {e}")))?;
     let rows: Vec<GraphRow> = sqlx::query_as(
         "SELECT id, source_type, source_id, relation, target_type, target_id, created_at \
              FROM knowledge_graph_edges \
@@ -232,7 +254,7 @@ pub async fn edges_around(
     .bind(user.tenant_id)
     .bind(&entity_type)
     .bind(entity_id)
-    .fetch_all(pool.as_ref())
+    .fetch_all(&mut **db.tx())
     .await
     .map_err(|e| SenseiError::Database(format!("Graph query failed: {e}")))?;
 
@@ -243,8 +265,8 @@ pub async fn edges_around(
     // leak it.
     let mut visible: Vec<GraphEdge> = Vec::new();
     for (id, st, si, rel, tt, ti, ca) in rows {
-        let source_ok = node_visible_to(pool, user.tenant_id, &user.roles, &st, si).await?;
-        let target_ok = node_visible_to(pool, user.tenant_id, &user.roles, &tt, ti).await?;
+        let source_ok = node_visible_to(&mut db, user.tenant_id, &user.roles, &st, si).await?;
+        let target_ok = node_visible_to(&mut db, user.tenant_id, &user.roles, &tt, ti).await?;
         if source_ok && target_ok {
             visible.push(GraphEdge {
                 id,
@@ -257,6 +279,9 @@ pub async fn edges_around(
             });
         }
     }
+    db.commit()
+        .await
+        .map_err(|e| SenseiError::Database(format!("Failed to commit graph query: {e}")))?;
     Ok(Json(visible))
 }
 
@@ -265,7 +290,7 @@ pub async fn edges_around(
 /// restricted pack is filtered out. All other typed nodes are tenant-
 /// scoped, so tenant membership is the ACL.
 async fn node_visible_to(
-    pool: &sqlx::PgPool,
+    db: &mut TenantTx<'_>,
     tenant_id: Uuid,
     caller_roles: &[String],
     node_type: &str,
@@ -282,7 +307,7 @@ async fn node_visible_to(
     )
     .bind(tenant_id)
     .bind(node_id)
-    .fetch_optional(pool)
+    .fetch_optional(&mut **db.tx())
     .await
     .map_err(|e| SenseiError::Database(format!("Node ACL read failed: {e}")))?;
     match allowed {

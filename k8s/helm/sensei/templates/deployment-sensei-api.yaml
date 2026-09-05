@@ -1,4 +1,12 @@
 {{- if .Values.senseiApi.enabled }}
+# =============================================================================
+# sensei-api Deployment — runtime DB identity: DATABASE_URL_APP ONLY.
+# Thirtieth-audit item 26: the pod receives no DATABASE_URL_ADMIN /
+# DATABASE_URL_MIGRATOR / role passwords (no envFrom secretRef — every
+# secret arrives as an explicit, named secretKeyRef below). The schema is
+# applied by the db-migrate Job hook BEFORE this Deployment is rolled out;
+# this pod never migrates (no init containers, dbAutoMigrate=false).
+# =============================================================================
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -40,20 +48,21 @@ spec:
         - name: http
           containerPort: 8080
           protocol: TCP
+        # ConfigMap only via envFrom. NO envFrom secretRef: the secret also
+        # carries the ADMIN/MIGRATOR URLs and role passwords, which must
+        # never reach runtime pods — secrets are injected per-key below.
         envFrom:
         - configMapRef:
             name: {{ include "sensei.fullname" . }}-config
-        - secretRef:
-            name: {{ include "sensei.fullname" . }}-secret
-            optional: true
         env:
         - name: SENSEI_ENV
           value: {{ .Values.config.environment | quote }}
+        # ── Runtime DB identity: APP only (never admin/migrator) ─────────
         - name: DATABASE_URL
           valueFrom:
             secretKeyRef:
               name: {{ include "sensei.fullname" . }}-secret
-              key: DATABASE_URL
+              key: DATABASE_URL_APP
         - name: NATS_URL
           value: {{ include "sensei.nats.url" . | quote }}
         - name: JWT_SECRET
@@ -61,6 +70,22 @@ spec:
             secretKeyRef:
               name: {{ include "sensei.fullname" . }}-secret
               key: JWT_SECRET
+        {{- if .Values.config.jwtPreviousSigningKey }}
+        - name: JWT_PREVIOUS_SIGNING_KEY
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "sensei.fullname" . }}-secret
+              key: JWT_PREVIOUS_SIGNING_KEY
+              optional: true
+        {{- end }}
+        {{- if .Values.config.ceoPassword }}
+        - name: SENSEI_CEO_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "sensei.fullname" . }}-secret
+              key: SENSEI_CEO_PASSWORD
+              optional: true
+        {{- end }}
         - name: S3_ENDPOINT
           value: {{ include "sensei.minio.endpoint" . | quote }}
         - name: S3_ACCESS_KEY
@@ -75,6 +100,60 @@ spec:
               key: S3_SECRET_KEY
         - name: S3_BUCKET
           value: {{ .Values.config.storage.bucket | quote }}
+        {{- if .Values.config.bootstrap.adminPassword }}
+        - name: SENSEI_ADMIN_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "sensei.fullname" . }}-secret
+              key: SENSEI_ADMIN_PASSWORD
+              optional: true
+        - name: SENSEI_ADMIN_EMAIL
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "sensei.fullname" . }}-secret
+              key: SENSEI_ADMIN_EMAIL
+              optional: true
+        {{- end }}
+        {{- if .Values.config.smtp.password }}
+        - name: SMTP_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "sensei.fullname" . }}-secret
+              key: SMTP_PASSWORD
+              optional: true
+        {{- end }}
+        {{- if .Values.config.erpStarz.apiKey }}
+        - name: STARZ_ERP_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "sensei.fullname" . }}-secret
+              key: STARZ_ERP_API_KEY
+              optional: true
+        {{- end }}
+        {{- if .Values.config.erpStarz.webhookSecret }}
+        - name: STARZ_ERP_WEBHOOK_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "sensei.fullname" . }}-secret
+              key: STARZ_ERP_WEBHOOK_SECRET
+              optional: true
+        {{- end }}
+        {{- if .Values.config.crmV2.apiKey }}
+        - name: CRM_V2_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "sensei.fullname" . }}-secret
+              key: CRM_V2_API_KEY
+              optional: true
+        {{- end }}
+        {{- if .Values.config.crmV2.webhookSecret }}
+        - name: CRM_V2_WEBHOOK_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "sensei.fullname" . }}-secret
+              key: CRM_V2_WEBHOOK_SECRET
+              optional: true
+        {{- end }}
         - name: LOG_LEVEL
           value: {{ .Values.config.logLevel | quote }}
         - name: API_HOST

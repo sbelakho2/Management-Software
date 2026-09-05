@@ -5,13 +5,16 @@
 //!
 //! - `scope` — the principal's AUTHORIZATION boundary: an
 //!   [`AuthorizedScope`] resolved from their ACTIVE role-slot
-//!   assignments (see `AuthorizedScope::resolve`). A principal with no
-//!   active assignment resolves to `NoOperationalScope` — FAIL-CLOSED
+//!   assignments reading scope_kind/scope_site_id/scope_work_center_id
+//!   (see `AuthorizedScope::resolve`). A principal with no active
+//!   assignment resolves to `NoOperationalScope` — FAIL-CLOSED
 //!   (eighteenth audit P0-1): no assignment can never become broader
-//!   access, and `TenantWide` is only ever an EXPLICIT bootstrap grant.
-//!   The tenant-side authorization model and the operational side are
-//!   now separated: `scope` carries what the principal MAY access;
-//!   `focus` carries where the session acts.
+//!   access, `TenantWide` requires an explicit tenant-kind grant, and a
+//!   work-center grant stays exact (thirtieth-audit P0 item 1 — WC
+//!   slots no longer widen to their whole site). The tenant-side
+//!   authorization model and the operational side are now separated:
+//!   `scope` carries what the principal MAY access; `focus` carries
+//!   where the session acts.
 //! - `focus` — the single OPERATIONAL context the session acts in
 //!   (site / value stream / work center / shift), an
 //!   [`OperationalFocus`]. The builder proves the chain is consistent:
@@ -20,16 +23,18 @@
 //!   exist and equal the focus site, and a sub-scope without a focus
 //!   site is unrepresentable.
 //!
-//! Invariants (nineteenth audit P1; twenty-ninth audit Wave A item 6):
-//! the focus is validated against the scope, never trusted from the
-//! client:
+//! Invariants (nineteenth audit P1; twenty-ninth audit Wave A item 6;
+//! thirtieth-audit P0 item 1): the focus is validated against the scope,
+//! never trusted from the client:
 //!
 //! - `NoOperationalScope` ⇒ the focus must be entirely `None` — no
 //!   entitlement → no operating context (no entitlement → no scope →
 //!   no data).
-//! - `Sites(sites)` ⇒ a focus site, when set, must be `∈ sites` — a
-//!   principal can never act in a site they are not entitled to.
-//! - `WorkCenter(wc)` ⇒ a focus site, when set, must equal `wc.site`.
+//! - `Operational { sites, work_centers }` ⇒ a focus site, when set,
+//!   must be a site grant (`∈ sites`) or carry the focus's exact granted
+//!   work center (a principal can never act in a site they are not
+//!   entitled to, and a work-center grant never widens into site-wide
+//!   operation).
 //! - `TenantWide` ⇒ every well-formed focus is authorized.
 //! - A focus sub-scope (value stream / work center / shift) without a
 //!   focus site is unrepresentable.
@@ -37,7 +42,10 @@
 //! Every repository command with `WHERE ... site_id = ANY($n)` embeds
 //! `authorized_sites()` from `scope` in the SAME transaction as the
 //! mutation; a `NoOperationalScope` caller's empty set matches zero
-//! rows → NotFound/Forbidden.
+//! rows → NotFound/Forbidden. A pure work-center principal's
+//! `authorized_sites()` is ALSO empty (their scope is exact work
+//! centers, never whole sites) — commands that can express work-center
+//! identity go through work-center-scoped predicates instead.
 use uuid::Uuid;
 
 use crate::domain::scope::AuthorizedScope;
@@ -82,7 +90,8 @@ pub struct RequestContext {
     pub principal: Uuid,
     /// The principal's authorization (what they MAY access) — see
     /// [`AuthorizedScope`]. TenantWide is only ever an explicit
-    /// bootstrap grant; the DB-resolved builder never returns it.
+    /// bootstrap grant or the resolution of an active tenant-kind role
+    /// slot; it is never a default.
     pub scope: AuthorizedScope,
     /// The validated operating context (where the session acts).
     pub focus: OperationalFocus,
@@ -99,10 +108,14 @@ pub struct RequestContext {
 
 impl RequestContext {
     /// Build a context from the DB (eighteenth audit P0-1; nineteenth
-    /// audit P1; twenty-ninth audit Wave A item 6): the scope comes from
-    /// ACTIVE principal-assignment → role-slot sites; the operating
-    /// focus is validated against the topology chain —
-    /// `work_centers.site_id`, `shifts.site_id` and
+    /// audit P1; twenty-ninth audit Wave A item 6; thirtieth-audit P0
+    /// item 1): the scope comes from ACTIVE principal-assignment → role
+    /// slot grants reading `scope_kind` / `scope_site_id` /
+    /// `scope_work_center_id` (`AuthorizedScope::resolve`: tenant-kind
+    /// slots resolve TenantWide, site-kind slots and work-center-kind
+    /// slots resolve an `Operational` union of sites and exact work
+    /// centers); the operating focus is validated against the topology
+    /// chain — `work_centers.site_id`, `shifts.site_id` and
     /// `value_streams.site_id` must each exist and equal the focus site,
     /// a sub-scope without a focus site is a Validation error — and
     /// against the scope (see [`Self::validate_operating_scope`]).
@@ -128,9 +141,12 @@ impl RequestContext {
         let mut tx = TenantTx::begin(pool, tenant)
             .await
             .map_err(|e| SenseiError::Database(format!("request-context: begin tx: {e}")))?;
-        // The AUTHORIZATION boundary, DB-resolved (the same active
-        // role-slot query as before): Sites(sites) or — with no active
-        // assignment — NoOperationalScope. Never TenantWide.
+        // The AUTHORIZATION boundary, DB-resolved from the principal's
+        // ACTIVE role-slot grants (scope_kind/scope_site_id/
+        // scope_work_center_id — thirtieth-audit P0 item 1): TenantWide
+        // for a tenant-kind slot, NoOperationalScope with no active
+        // assignment, otherwise the Operational union of site and exact
+        // work-center grants.
         let scope = AuthorizedScope::resolve(&mut tx, principal).await?;
 
         // Topology-consistency proof (nineteenth audit P1): every active
@@ -297,14 +313,19 @@ impl RequestContext {
     }
 
     /// Re-check the operating-scope invariants (nineteenth audit P1;
-    /// twenty-ninth audit Wave A item 6) — the focus vs the scope:
+    /// twenty-ninth audit Wave A item 6; thirtieth-audit P0 item 1) —
+    /// the focus vs the scope:
     ///
     /// - `NoOperationalScope` ⇒ the focus must be entirely `None` — no
     ///   entitlement → no operating context (no entitlement → no scope
     ///   → no data);
-    /// - a focus site, when set, MUST be authorized by the scope
-    ///   (`Sites` membership / the `WorkCenter` scope's own site — a
-    ///   principal can never act in a site they are not entitled to);
+    /// - a focus site, when set, MUST be authorized: a site grant
+    ///   (`site ∈ Operational.sites` — a principal can never act in a
+    ///   site they are not entitled to) or the focus's own exact granted
+    ///   work center (`(focus site, focus work center)` is one of
+    ///   `Operational.work_centers` — a work-center grant never widens
+    ///   into site-wide operation, it anchors operation at its exact
+    ///   work center);
     /// - a focus sub-scope (value stream / work center / shift) without
     ///   a focus site is unrepresentable.
     ///
@@ -322,7 +343,22 @@ impl RequestContext {
             ));
         }
         if let Some(site) = self.focus.site {
-            if !self.scope.allows_site(site) {
+            let site_authorized = match &self.scope {
+                AuthorizedScope::TenantWide => true,
+                AuthorizedScope::Operational {
+                    sites,
+                    work_centers,
+                } => {
+                    sites.contains(&site)
+                        || self.focus.work_center.is_some_and(|wc_id| {
+                            work_centers
+                                .iter()
+                                .any(|wc| wc.site == site && wc.work_center == wc_id)
+                        })
+                }
+                AuthorizedScope::NoOperationalScope => unreachable!("handled above"),
+            };
+            if !site_authorized {
                 return Err(SenseiError::Validation(format!(
                     "operating site {site} is not among the principal's authorized sites — \
                      the operating context is unauthorized"
@@ -353,14 +389,24 @@ impl RequestContext {
         match &self.scope {
             AuthorizedScope::NoOperationalScope => false,
             AuthorizedScope::TenantWide => true,
-            AuthorizedScope::Sites(sites) => !sites.is_empty(),
-            AuthorizedScope::WorkCenter(_) => true,
+            AuthorizedScope::Operational {
+                sites,
+                work_centers,
+            } => !sites.is_empty() || !work_centers.is_empty(),
         }
     }
 
-    /// The SQL site-set placeholder value for scoped commands: the list
-    /// of sites this scope authorizes (`Sites` → its sites;
-    /// `WorkCenter` → its site).
+    /// The SQL site-set placeholder value for scoped commands: the SITE
+    /// grants of this scope (`Operational.sites`, sorted for
+    /// determinism).
+    ///
+    /// A pure work-center principal has an EMPTY site set — their
+    /// `work_centers` set carries the real scope (thirtieth-audit P0
+    /// item 1: WC slots are NEVER normalized into their site, so a
+    /// site-set predicate must not match whole-site rows for them).
+    /// Commands that can express work-center identity must go through
+    /// work-center-scoped enforcement/predicates instead of the site-set
+    /// forms.
     ///
     /// `TenantWide` → an EMPTY vec: tenant-wide is an explicit
     /// all-access grant, NOT representable as a site set — commands
@@ -369,12 +415,13 @@ impl RequestContext {
     /// enforcement (`AuthorizedScope::enforce_resource`) instead of the
     /// site-set predicates.
     pub fn authorized_sites(&self) -> Vec<Uuid> {
-        match &self.scope {
+        let mut sites: Vec<Uuid> = match &self.scope {
             AuthorizedScope::NoOperationalScope => Vec::new(),
             AuthorizedScope::TenantWide => Vec::new(),
-            AuthorizedScope::Sites(sites) => sites.clone(),
-            AuthorizedScope::WorkCenter(wc) => vec![wc.site],
-        }
+            AuthorizedScope::Operational { sites, .. } => sites.iter().copied().collect(),
+        };
+        sites.sort_unstable();
+        sites
     }
 
     /// The single operating site (the focus's site) — the legacy

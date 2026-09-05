@@ -672,39 +672,79 @@ impl SupplyChainService for DatabaseSupplyChainService {
         quote_id: Uuid,
         actor_id: Uuid,
     ) -> Result<SalesOrder> {
-        let quote = self.get_quote(tenant_id, quote_id).await?;
-        let now = Utc::now();
-        let (id, suffix) = gen_id();
-        let order_number = format!("SO-{}-{}", now.format("%Y%m%d"), suffix);
-        let so_items: Vec<SalesOrderItem> = quote
-            .line_items
-            .iter()
-            .map(|li| SalesOrderItem {
-                product_id: li.product_id,
-                product_name: li.product_name.clone(),
-                quantity: li.quantity,
-                unit_price: li.unit_price,
-                delivered_quantity: 0,
+        // Wave C RLS (thirtieth-audit item 18): quotes and sales_orders
+        // are tenant-owned fail-closed FORCE RLS since migration 175 — the
+        // quote read, the sales-order INSERT and the quote status flip run
+        // as ONE tenant-scoped transaction (the conversion is atomic too:
+        // no order without its quote marked converted).
+        with_tenant_tx(&self.pool, tenant_id, move |tx| {
+            Box::pin(async move {
+                let quote_row = sqlx::query_as::<_, QuoteRow>(
+                    r#"SELECT id, tenant_id, quote_number, rfq_id, customer_id, customer_name, status, line_items, total_amount, currency, valid_until, created_by, created_at
+                       FROM quotes WHERE id=$1 AND tenant_id=$2 FOR UPDATE"#,
+                )
+                .bind(quote_id)
+                .bind(tenant_id)
+                .fetch_optional(&mut **tx)
+                .await
+                .map_err(|e| SenseiError::Database(format!("Failed to get quote: {e}")))?
+                .ok_or_else(|| SenseiError::NotFound(format!("Quote {quote_id} not found")))?;
+                let quote = quote_row_to_domain(quote_row);
+                let now = Utc::now();
+                let (id, suffix) = gen_id();
+                let order_number = format!("SO-{}-{}", now.format("%Y%m%d"), suffix);
+                let so_items: Vec<SalesOrderItem> = quote
+                    .line_items
+                    .iter()
+                    .map(|li| SalesOrderItem {
+                        product_id: li.product_id,
+                        product_name: li.product_name.clone(),
+                        quantity: li.quantity,
+                        unit_price: li.unit_price,
+                        delivered_quantity: 0,
+                    })
+                    .collect();
+                let li_json =
+                    serde_json::to_value(&so_items).unwrap_or(serde_json::Value::Array(vec![]));
+                let quote_customer_id = quote.customer_id;
+                let quote_customer_name = quote.customer_name;
+                let quote_total = quote.total_amount;
+                let quote_currency = quote.currency;
+
+                let row = sqlx::query_as::<_, SalesOrderRow>(
+                    r#"INSERT INTO sales_orders (id, tenant_id, so_number, order_number, customer_id, customer_name, status, line_items, total_amount, currency, delivery_date, shipping_address, created_by, created_at, fulfilling_site_id)
+                       VALUES ($1,$2,$3,$3,$4,$5,'draft',$6,$7,$8,NULL,'',$9,$10,NULL)
+                       RETURNING id, tenant_id, order_number, customer_id, customer_name, status, line_items, total_amount, currency, delivery_date, shipping_address, created_by, created_at, fulfilling_site_id"#,
+                )
+                .bind(id)
+                .bind(tenant_id)
+                .bind(&order_number)
+                .bind(quote_customer_id)
+                .bind(&quote_customer_name)
+                .bind(&li_json)
+                .bind(quote_total)
+                .bind(&quote_currency)
+                .bind(actor_id)
+                .bind(now)
+                .fetch_one(&mut **tx)
+                .await
+                .map_err(|e| {
+                    SenseiError::Database(format!("Failed to convert quote to order: {e}"))
+                })?;
+
+                sqlx::query("UPDATE quotes SET status='converted' WHERE id=$1 AND tenant_id=$2")
+                    .bind(quote_id)
+                    .bind(tenant_id)
+                    .execute(&mut **tx)
+                    .await
+                    .map_err(|e| {
+                        SenseiError::Database(format!("Failed to update quote status: {e}"))
+                    })?;
+
+                Ok(so_row_to_domain(row))
             })
-            .collect();
-        let li_json = serde_json::to_value(&so_items).unwrap_or(serde_json::Value::Array(vec![]));
-
-        let row = sqlx::query_as::<_, SalesOrderRow>(
-            r#"INSERT INTO sales_orders (id, tenant_id, so_number, order_number, customer_id, customer_name, status, line_items, total_amount, currency, delivery_date, shipping_address, created_by, created_at, fulfilling_site_id)
-               VALUES ($1,$2,$3,$3,$4,$5,'draft',$6,$7,$8,NULL,'',$9,$10,NULL)
-               RETURNING id, tenant_id, order_number, customer_id, customer_name, status, line_items, total_amount, currency, delivery_date, shipping_address, created_by, created_at, fulfilling_site_id"#,
-        ).bind(id).bind(tenant_id).bind(&order_number).bind(quote.customer_id).bind(&quote.customer_name)
-            .bind(&li_json).bind(quote.total_amount).bind(&quote.currency).bind(actor_id).bind(now)
-            .fetch_one(&self.pool).await.map_err(|e| SenseiError::Database(format!("Failed to convert quote to order: {e}")))?;
-
-        sqlx::query("UPDATE quotes SET status='converted' WHERE id=$1 AND tenant_id=$2")
-            .bind(quote_id)
-            .bind(tenant_id)
-            .execute(&self.pool)
-            .await
-            .map_err(|e| SenseiError::Database(format!("Failed to update quote status: {e}")))?;
-
-        Ok(so_row_to_domain(row))
+        })
+        .await
     }
 
     // ── Sales Orders ────────────────────────────────────────────────────
@@ -905,19 +945,41 @@ impl SupplyChainService for DatabaseSupplyChainService {
         let page = page.unwrap_or(1).max(1);
         let per_page = per_page.unwrap_or(20).clamp(1, 100);
         let offset = (page - 1) * per_page;
-        let items: Vec<SalesOrderRow> = sqlx::query_as(
-            r#"SELECT id, tenant_id, order_number, customer_id, customer_name, status, line_items, total_amount, currency, delivery_date, shipping_address, created_by, created_at, fulfilling_site_id FROM sales_orders
-               WHERE tenant_id=$1 AND ($2::text IS NULL OR status=$2) ORDER BY created_at DESC LIMIT $3 OFFSET $4"#,
-        ).bind(tenant_id).bind(status).bind(per_page as i64).bind(offset as i64).fetch_all(&self.pool).await
-            .map_err(|e| SenseiError::Database(format!("Failed to list sales orders: {e}")))?;
-        let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM sales_orders WHERE tenant_id=$1 AND ($2::text IS NULL OR status=$2)")
-            .bind(tenant_id).bind(status).fetch_one(&self.pool).await.map_err(|e| SenseiError::Database(format!("Failed to count sales orders: {e}")))?;
-        Ok(paginate(
-            items.into_iter().map(so_row_to_domain).collect(),
-            count,
-            page,
-            per_page,
-        ))
+        let status_owned = status.map(str::to_string);
+        // Wave C RLS (thirtieth-audit item 18): sales_orders is fail-closed
+        // FORCE RLS since migration 175 — the page and its count read on
+        // ONE tenant-scoped transaction (raw-pool reads return zero rows
+        // under the production sensei_app role).
+        with_tenant_tx(&self.pool, tenant_id, move |tx| {
+            Box::pin(async move {
+                let items: Vec<SalesOrderRow> = sqlx::query_as(
+                    r#"SELECT id, tenant_id, order_number, customer_id, customer_name, status, line_items, total_amount, currency, delivery_date, shipping_address, created_by, created_at, fulfilling_site_id FROM sales_orders
+                       WHERE tenant_id=$1 AND ($2::text IS NULL OR status=$2) ORDER BY created_at DESC LIMIT $3 OFFSET $4"#,
+                )
+                .bind(tenant_id)
+                .bind(status_owned.as_deref())
+                .bind(per_page as i64)
+                .bind(offset as i64)
+                .fetch_all(&mut **tx)
+                .await
+                .map_err(|e| SenseiError::Database(format!("Failed to list sales orders: {e}")))?;
+                let count: i64 = sqlx::query_scalar(
+                    "SELECT COUNT(*) FROM sales_orders WHERE tenant_id=$1 AND ($2::text IS NULL OR status=$2)",
+                )
+                .bind(tenant_id)
+                .bind(status_owned.as_deref())
+                .fetch_one(&mut **tx)
+                .await
+                .map_err(|e| SenseiError::Database(format!("Failed to count sales orders: {e}")))?;
+                Ok(paginate(
+                    items.into_iter().map(so_row_to_domain).collect(),
+                    count,
+                    page,
+                    per_page,
+                ))
+            })
+        })
+        .await
     }
 
     async fn update_sales_order_status(
@@ -1134,19 +1196,40 @@ impl SupplyChainService for DatabaseSupplyChainService {
         let page = page.unwrap_or(1).max(1);
         let per_page = per_page.unwrap_or(20).clamp(1, 100);
         let offset = (page - 1) * per_page;
-        let items: Vec<PurchaseOrderRow> = sqlx::query_as(
-            r#"SELECT id, tenant_id, po_number, supplier_id, supplier_name, status, line_items, total_amount, currency, expected_delivery, created_by, created_at, receiving_site_id FROM purchase_orders
-               WHERE tenant_id=$1 AND ($2::text IS NULL OR status=$2) ORDER BY created_at DESC LIMIT $3 OFFSET $4"#,
-        ).bind(tenant_id).bind(status).bind(per_page as i64).bind(offset as i64).fetch_all(&self.pool).await
-            .map_err(|e| SenseiError::Database(format!("Failed to list POs: {e}")))?;
-        let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM purchase_orders WHERE tenant_id=$1 AND ($2::text IS NULL OR status=$2)")
-            .bind(tenant_id).bind(status).fetch_one(&self.pool).await.map_err(|e| SenseiError::Database(format!("Failed to count POs: {e}")))?;
-        Ok(paginate(
-            items.into_iter().map(po_row_to_domain).collect(),
-            count,
-            page,
-            per_page,
-        ))
+        let status_owned = status.map(str::to_string);
+        // Wave C RLS (thirtieth-audit item 18): purchase_orders is
+        // fail-closed FORCE RLS since migration 175 — page and count read
+        // on ONE tenant-scoped transaction.
+        with_tenant_tx(&self.pool, tenant_id, move |tx| {
+            Box::pin(async move {
+                let items: Vec<PurchaseOrderRow> = sqlx::query_as(
+                    r#"SELECT id, tenant_id, po_number, supplier_id, supplier_name, status, line_items, total_amount, currency, expected_delivery, created_by, created_at, receiving_site_id FROM purchase_orders
+                       WHERE tenant_id=$1 AND ($2::text IS NULL OR status=$2) ORDER BY created_at DESC LIMIT $3 OFFSET $4"#,
+                )
+                .bind(tenant_id)
+                .bind(status_owned.as_deref())
+                .bind(per_page as i64)
+                .bind(offset as i64)
+                .fetch_all(&mut **tx)
+                .await
+                .map_err(|e| SenseiError::Database(format!("Failed to list POs: {e}")))?;
+                let count: i64 = sqlx::query_scalar(
+                    "SELECT COUNT(*) FROM purchase_orders WHERE tenant_id=$1 AND ($2::text IS NULL OR status=$2)",
+                )
+                .bind(tenant_id)
+                .bind(status_owned.as_deref())
+                .fetch_one(&mut **tx)
+                .await
+                .map_err(|e| SenseiError::Database(format!("Failed to count POs: {e}")))?;
+                Ok(paginate(
+                    items.into_iter().map(po_row_to_domain).collect(),
+                    count,
+                    page,
+                    per_page,
+                ))
+            })
+        })
+        .await
     }
 
     async fn receive_po_line(
@@ -1895,13 +1978,40 @@ impl SupplyChainService for DatabaseSupplyChainService {
             .iter()
             .map(|li| rust_decimal::Decimal::from(li.quantity) * li.unit_price)
             .sum();
-        let row = sqlx::query_as::<_, SalesOrderRow>(
-            r#"UPDATE sales_orders SET customer_id=$1, customer_name=$2, line_items=$3, total_amount=$4, currency=$5, delivery_date=$6, shipping_address=$7 WHERE id=$8 AND tenant_id=$9 AND fulfilling_site_id = ANY($10)
-               RETURNING id, tenant_id, order_number, customer_id, customer_name, status, line_items, total_amount, currency, delivery_date, shipping_address, created_by, created_at, fulfilling_site_id"#,
-        ).bind(order.customer_id).bind(&order.customer_name).bind(&li_json).bind(total).bind(&order.currency).bind(order.delivery_date).bind(&order.shipping_address).bind(id).bind(tenant_id).bind(&sites)
-            .fetch_optional(&self.pool).await.map_err(|e| SenseiError::Database(format!("Failed to update sales order: {e}")))?
-            .ok_or_else(|| SenseiError::NotFound(format!("Sales order {id} not found")))?;
-        Ok(so_row_to_domain(row))
+        let customer_id = order.customer_id;
+        let customer_name = order.customer_name;
+        let currency = order.currency;
+        let delivery_date = order.delivery_date;
+        let shipping_address = order.shipping_address;
+        // Wave C RLS (thirtieth-audit item 18): the write runs inside a
+        // tenant-scoped transaction (sales_orders is fail-closed FORCE
+        // RLS since migration 175).
+        with_tenant_tx(&self.pool, tenant_id, move |tx| {
+            Box::pin(async move {
+                let row = sqlx::query_as::<_, SalesOrderRow>(
+                    r#"UPDATE sales_orders SET customer_id=$1, customer_name=$2, line_items=$3, total_amount=$4, currency=$5, delivery_date=$6, shipping_address=$7 WHERE id=$8 AND tenant_id=$9 AND fulfilling_site_id = ANY($10)
+                       RETURNING id, tenant_id, order_number, customer_id, customer_name, status, line_items, total_amount, currency, delivery_date, shipping_address, created_by, created_at, fulfilling_site_id"#,
+                )
+                .bind(customer_id)
+                .bind(&customer_name)
+                .bind(&li_json)
+                .bind(total)
+                .bind(&currency)
+                .bind(delivery_date)
+                .bind(&shipping_address)
+                .bind(id)
+                .bind(tenant_id)
+                .bind(&sites)
+                .fetch_optional(&mut **tx)
+                .await
+                .map_err(|e| {
+                    SenseiError::Database(format!("Failed to update sales order: {e}"))
+                })?
+                .ok_or_else(|| SenseiError::NotFound(format!("Sales order {id} not found")))?;
+                Ok(so_row_to_domain(row))
+            })
+        })
+        .await
     }
 
     async fn delete_sales_order(
@@ -1916,17 +2026,28 @@ impl SupplyChainService for DatabaseSupplyChainService {
             ));
         }
         let sites = authorized_sites.to_vec();
-        let r = sqlx::query("DELETE FROM sales_orders WHERE id=$1 AND tenant_id=$2 AND fulfilling_site_id = ANY($3)")
-            .bind(id)
-            .bind(tenant_id)
-            .bind(&sites)
-            .execute(&self.pool)
-            .await
-            .map_err(|e| SenseiError::Database(format!("Failed to delete sales order: {e}")))?;
-        if r.rows_affected() == 0 {
-            return Err(SenseiError::NotFound(format!("Sales order {id} not found")));
-        }
-        Ok(())
+        with_tenant_tx(&self.pool, tenant_id, move |tx| {
+            Box::pin(async move {
+                let r = sqlx::query(
+                    "DELETE FROM sales_orders WHERE id=$1 AND tenant_id=$2 AND fulfilling_site_id = ANY($3)",
+                )
+                .bind(id)
+                .bind(tenant_id)
+                .bind(&sites)
+                .execute(&mut **tx)
+                .await
+                .map_err(|e| {
+                    SenseiError::Database(format!("Failed to delete sales order: {e}"))
+                })?;
+                if r.rows_affected() == 0 {
+                    return Err(SenseiError::NotFound(format!(
+                        "Sales order {id} not found"
+                    )));
+                }
+                Ok(())
+            })
+        })
+        .await
     }
 
     // ── Purchase Order Mutations ────────────────────────────────────────
@@ -1951,13 +2072,36 @@ impl SupplyChainService for DatabaseSupplyChainService {
             .iter()
             .map(|li| rust_decimal::Decimal::from(li.quantity_ordered) * li.unit_price)
             .sum();
-        let row = sqlx::query_as::<_, PurchaseOrderRow>(
-            r#"UPDATE purchase_orders SET supplier_id=$1, supplier_name=$2, line_items=$3, total_amount=$4, currency=$5, expected_delivery=$6 WHERE id=$7 AND tenant_id=$8 AND receiving_site_id = ANY($9)
-               RETURNING id, tenant_id, po_number, supplier_id, supplier_name, status, line_items, total_amount, currency, expected_delivery, created_by, created_at, receiving_site_id"#,
-        ).bind(po.supplier_id).bind(&po.supplier_name).bind(&li_json).bind(total).bind(&po.currency).bind(po.expected_delivery).bind(id).bind(tenant_id).bind(&sites)
-            .fetch_optional(&self.pool).await.map_err(|e| SenseiError::Database(format!("Failed to update PO: {e}")))?
-            .ok_or_else(|| SenseiError::NotFound(format!("Purchase order {id} not found")))?;
-        Ok(po_row_to_domain(row))
+        let supplier_id = po.supplier_id;
+        let supplier_name = po.supplier_name;
+        let currency = po.currency;
+        let expected_delivery = po.expected_delivery;
+        // Wave C RLS (thirtieth-audit item 18): the write runs inside a
+        // tenant-scoped transaction (purchase_orders is fail-closed FORCE
+        // RLS since migration 175).
+        with_tenant_tx(&self.pool, tenant_id, move |tx| {
+            Box::pin(async move {
+                let row = sqlx::query_as::<_, PurchaseOrderRow>(
+                    r#"UPDATE purchase_orders SET supplier_id=$1, supplier_name=$2, line_items=$3, total_amount=$4, currency=$5, expected_delivery=$6 WHERE id=$7 AND tenant_id=$8 AND receiving_site_id = ANY($9)
+                       RETURNING id, tenant_id, po_number, supplier_id, supplier_name, status, line_items, total_amount, currency, expected_delivery, created_by, created_at, receiving_site_id"#,
+                )
+                .bind(supplier_id)
+                .bind(&supplier_name)
+                .bind(&li_json)
+                .bind(total)
+                .bind(&currency)
+                .bind(expected_delivery)
+                .bind(id)
+                .bind(tenant_id)
+                .bind(&sites)
+                .fetch_optional(&mut **tx)
+                .await
+                .map_err(|e| SenseiError::Database(format!("Failed to update PO: {e}")))?
+                .ok_or_else(|| SenseiError::NotFound(format!("Purchase order {id} not found")))?;
+                Ok(po_row_to_domain(row))
+            })
+        })
+        .await
     }
 
     async fn delete_purchase_order(
@@ -1972,19 +2116,28 @@ impl SupplyChainService for DatabaseSupplyChainService {
             ));
         }
         let sites = authorized_sites.to_vec();
-        let r = sqlx::query("DELETE FROM purchase_orders WHERE id=$1 AND tenant_id=$2 AND receiving_site_id = ANY($3)")
-            .bind(id)
-            .bind(tenant_id)
-            .bind(&sites)
-            .execute(&self.pool)
-            .await
-            .map_err(|e| SenseiError::Database(format!("Failed to delete PO: {e}")))?;
-        if r.rows_affected() == 0 {
-            return Err(SenseiError::NotFound(format!(
-                "Purchase order {id} not found"
-            )));
-        }
-        Ok(())
+        with_tenant_tx(&self.pool, tenant_id, move |tx| {
+            Box::pin(async move {
+                let r = sqlx::query(
+                    "DELETE FROM purchase_orders WHERE id=$1 AND tenant_id=$2 AND receiving_site_id = ANY($3)",
+                )
+                .bind(id)
+                .bind(tenant_id)
+                .bind(&sites)
+                .execute(&mut **tx)
+                .await
+                .map_err(|e| {
+                    SenseiError::Database(format!("Failed to delete PO: {e}"))
+                })?;
+                if r.rows_affected() == 0 {
+                    return Err(SenseiError::NotFound(format!(
+                        "Purchase order {id} not found"
+                    )));
+                }
+                Ok(())
+            })
+        })
+        .await
     }
 
     async fn receive_full_po(

@@ -12,14 +12,22 @@ use axum::{
     },
 };
 use futures::stream::Stream;
-use sensei_agent_core::context::Claim;
+use sensei_agent_core::context::{
+    AgentContext, Claim, ClaimAssertion, ClaimOperator, ContextItem, DerivedAssertion,
+    FactAddress,
+};
+use sensei_agent_core::facts::RecomputedDerivation;
+use sensei_agent_core::verifier::{
+    parse_claim_time, verify_derived_claim, verify_measured_claim,
+};
 use sensei_auth::authz_snapshot::AuthzSnapshot;
 use sensei_auth::middleware::AuthenticatedUser;
 use sensei_core::error::Result;
 use sensei_services::ai::chatbot::ChatSamplingParams;
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
-use std::collections::HashSet;
+use sqlx::PgPool;
+use std::collections::{HashMap, HashSet};
 use std::convert::Infallible;
 use std::pin::Pin;
 use std::task::{Context, Poll};
@@ -30,6 +38,54 @@ use tracing::error;
 
 use crate::state::AppState;
 
+/// The typed assertion of one structured claim (thirtieth audit item 23):
+/// the deterministic address/operator/value/unit statement the verifier
+/// checks against the typed evidence — language-independent. A measured
+/// factual claim MUST carry one of these (or a [`DerivedClaimDraft`]).
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct ClaimAssertionDraft {
+    /// The object type of the fact address ("work_order", "andon", …).
+    #[serde(default)]
+    pub object_type: Option<String>,
+    /// The object id of the fact address ("WO-123", …).
+    #[serde(default)]
+    pub object_id: Option<String>,
+    /// The attribute the claim is about ("quantity_completed", …).
+    #[serde(default)]
+    pub attribute: Option<String>,
+    /// The comparison operator; defaults to `equal` when omitted.
+    #[serde(default)]
+    pub operator: Option<ClaimOperator>,
+    /// The claimed value.
+    #[serde(default)]
+    pub value: Option<serde_json::Value>,
+    /// The unit of the claimed value ("units", "%", …).
+    #[serde(default)]
+    pub unit: Option<String>,
+    /// The RFC3339 validity/observation instant the claim asserts.
+    #[serde(default)]
+    pub valid_time: Option<String>,
+}
+
+/// The derived-claim assertion of one structured claim (thirtieth audit
+/// item 23): the server re-runs the deterministic derivation program
+/// identified by `derivation_id` at `derivation_version` and the claimed
+/// `result` must agree with the recomputation.
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct DerivedClaimDraft {
+    pub derivation_id: String,
+    #[serde(default)]
+    pub derivation_version: u32,
+    /// Evidence ids of the operands the derivation rests on.
+    #[serde(default)]
+    pub operand_evidence_ids: Vec<String>,
+    /// The claimed derived result.
+    #[serde(default)]
+    pub result: Option<serde_json::Value>,
+    #[serde(default)]
+    pub unit: Option<String>,
+}
+
 /// A structured claim the client asserts alongside its message (twenty-
 /// seventh audit P1): the verifier checks each draft structurally, so
 /// correctness never depends on English sentence heuristics (a French
@@ -37,9 +93,13 @@ use crate::state::AppState;
 /// eighth audit P0-2 these drafts are SUPPLEMENTARY assertions only —
 /// they are verified IN ADDITION to the reply's prose, never instead of
 /// it, and the caller cannot weaken the check.
-#[derive(Debug, serde::Deserialize)]
+///
+/// Thirtieth audit item 23: a MEASURED claim additionally carries a
+/// typed [`ClaimAssertionDraft`] (address/operator/value/unit) or a
+/// [`DerivedClaimDraft`] — an evidence id alone can never prove a value.
+#[derive(Debug, Clone, serde::Deserialize)]
 pub struct ClaimDraft {
-    /// The claim statement as written.
+    /// The claim statement as written (in any language).
     pub statement: String,
     /// Accepted for schema compatibility but IGNORED by the verifier
     /// (twenty-eighth audit P0-2): a caller cannot declare
@@ -55,6 +115,15 @@ pub struct ClaimDraft {
     /// Kernel-issued evidence ids the client cites for this claim.
     #[serde(default)]
     pub evidence_ids: Vec<String>,
+    /// The TYPED assertion of the measured claim (thirtieth audit item
+    /// 23). Optional for qualitative legacy prose claims; REQUIRED for a
+    /// claim to be measured against typed evidence.
+    #[serde(default)]
+    pub assertion: Option<ClaimAssertionDraft>,
+    /// The derived-claim assertion (server-recomputed), when the claim
+    /// asserts the result of a deterministic derivation.
+    #[serde(default)]
+    pub derived: Option<DerivedClaimDraft>,
 }
 
 /// Request body for a chat message.
@@ -258,67 +327,38 @@ pub(crate) async fn prepare_inference(
     // selection, sensitivity filtering and the normal-budget token
     // allocation with the reserved contradiction budget.
     // Twenty-fifth audit P0/P1: the kernel sections are carried as TYPED
-    // facts (section + source site + work center + text) and turned into
-    // ContextItems DIRECTLY — a flat-string protocol is never the identity
-    // source. This replaces the old line parser, which split every line on
-    // " [live]: " and therefore DROPPED every site-marked line (emitted as
-    // "section [live site:<uuid>]: content", which contains no " [live]: ")
-    // — the dropped lines were site-scoped evidence that never reached the
-    // model, and the survivors were site-less. With typed facts a marked
-    // section can neither be dropped nor stripped of its source scope.
-    let kernel_items: Vec<sensei_agent_core::context::ContextItem> = match &state.db_pool {
+    // facts (section + source site + work center + typed value/unit/
+    // observed_at) and turned into ContextItems DIRECTLY — a flat-string
+    // protocol is never the identity source. This replaces the old line
+    // parser, which split every line on " [live]: " and therefore DROPPED
+    // every site-marked line (emitted as "section [live site:<uuid>]:
+    // content", which contains no " [live]: ") — the dropped lines were
+    // site-scoped evidence that never reached the model, and the
+    // survivors were site-less. With typed facts a marked section can
+    // neither be dropped nor stripped of its source scope.
+    // Thirtieth audit item 23: the typed facts carry their FactAddress,
+    // typed value, unit and source observation time; the ContextItem
+    // payload embeds the typed fact so the verifier checks claims against
+    // the TYPED fields (never the prose).
+    let kernel_items: Vec<ContextItem> = match &state.db_pool {
         Some(pool) => {
-            let facts = sensei_services::tps::context_sections::build_context_facts(
-                pool,
-                user.tenant_id,
-                ctx.site_id,
-                ctx.work_center_id,
-                &context_plan,
-            )
-            .await;
+            let facts =
+                sensei_services::tps::context_sections::build_context_facts(
+                    pool,
+                    user.tenant_id,
+                    ctx.site_id,
+                    ctx.work_center_id,
+                    &context_plan,
+                )
+                .await;
             facts
                 .into_iter()
                 .map(|fact| {
-                    let section = fact.section;
-                    let text = fact.text;
-                    // Twentieth audit P1: the SOURCE observation timestamp
-                    // is preserved when the fact exposes one (the section
-                    // builders stamp "as of <time>"); when no source time
-                    // is exposed, observed_at stays None — retrieval time
-                    // is NEVER substituted for observation time.
-                    let observed_at = sensei_agent_core::context::parse_observed_at(&text);
-                    // Twenty-fourth audit: the evidence site scope is the
-                    // FACT'S SOURCE site (the scope its retrieval ran
-                    // under) — site-less facts stay None; the request's
-                    // site is never stamped onto evidence, so a retrieval
-                    // bug returning another site's row cannot be
-                    // laundered into this scope.
-                    let source_site = fact.site_id;
-                    let token_cost = (text.len() as u32 / 4).max(1);
-                    let mut item = sensei_agent_core::context::ContextItem {
-                        payload: serde_json::json!({
-                            "section": section.clone(),
-                            "text": text,
-                        }),
-                        fact_address: Some(format!("section:{section}")),
-                        site_scope: source_site,
-                        provenance: sensei_agent_core::context::Provenance {
-                            source: format!("section:{section}"),
-                            source_revision: None,
-                            observed_at,
-                            recorded_at: chrono::Utc::now(),
-                            authority:
-                                sensei_agent_core::context::AuthorityRank::TransactionalState,
-                        },
-                        sensitivity: sensei_agent_core::context::DataClass::Internal,
-                        token_cost,
-                        epistemic_status: sensei_agent_core::context::EpistemicStatus::RecordedFact,
-                        // Nineteenth audit P1: the evidence id is issued
-                        // HERE at construction from the item's own
-                        // provenance + payload — the Context Kernel also
-                        // normalizes any item that still arrives empty.
-                        evidence_id: String::new(),
-                    };
+                    let mut item = fact.to_context_item();
+                    // Nineteenth audit P1: the evidence id is issued HERE
+                    // at construction from the item's own provenance +
+                    // payload — the Context Kernel also normalizes any
+                    // item that still arrives empty.
                     item.evidence_id = item.derive_evidence_id();
                     item
                 })
@@ -419,13 +459,11 @@ pub async fn chat(
     // must NOT have moved between snapshot capture and generation — if
     // any revision bumped (a revocation landed mid-request), the request
     // is refused and must be re-authorized, never executed under a stale
-    // state. No snapshot (no DB pool) = fail closed: an unverifiable
-    // request is not executed. The check stays HERE, after preparation
-    // and immediately before the model call.
-    let snapshot_ok = match (&state.db_pool, &prepared.snapshot) {
-        (Some(pool), Some(snap)) => snap.is_still_current(pool).await,
-        _ => false,
-    };
+    // state. In-memory deployments (no DB pool, no authorization state)
+    // have nothing that can have moved — the gate is vacuous there. The
+    // check stays HERE, after preparation and immediately before the
+    // model call.
+    let snapshot_ok = authorization_gate(state.db_pool.as_deref(), prepared.snapshot.as_ref()).await;
     if !snapshot_ok {
         return Err(sensei_core::error::SenseiError::Forbidden(
             "authorization state changed during the request — re-authorized and retry".to_string(),
@@ -454,11 +492,22 @@ pub async fn chat(
     // The assistant can no longer answer with unverifiable tenant claims:
     // every response is checked against the caller's real permissions and
     // the tool contract.
+    // Thirtieth audit item 23: derived claims are recomputed by the
+    // deterministic programs (metrics) NOW, after generation and before
+    // verification — the value the model asserts must equal what the
+    // program computes at release time.
     let policy = sensei_agent_core::tools::PolicyEngine::new(
         crate::services::agent::build_readonly_tools(),
         sensei_agent_core::tools::ToolRisk::ReadOnly,
     );
     let effective_tools = policy.effective_tools(&prepared.ctx);
+    let (recomputed, recompute_issues) = resolve_recomputed_derivations(
+        state.db_pool.as_deref(),
+        user.tenant_id,
+        prepared.ctx.site_id,
+        &req.structured_claims,
+    )
+    .await;
     let verification = verify_chat_response(
         &response,
         &prepared.ctx,
@@ -466,6 +515,8 @@ pub async fn chat(
         &effective_tools,
         &prepared.kernel_items,
         &req.structured_claims,
+        &recomputed,
+        &recompute_issues,
     );
     // Seventeenth audit item 7 — verifier failure BLOCKS/REPAIRS output:
     // an unverifiable factual reply is never delivered as-is. The
@@ -484,6 +535,18 @@ pub async fn chat(
     let mut verification_out = verification;
     if verdict_label == "repaired" {
         verification_out["verdict"] = serde_json::json!("repaired");
+    }
+    // ITEM 24 — the release gate: model generation took time; the
+    // authorization snapshot must STILL be current after deterministic
+    // verification and immediately before the answer is released. A
+    // revocation that landed mid-execution means the response is never
+    // handed out.
+    if !authorization_gate(state.db_pool.as_deref(), prepared.snapshot.as_ref()).await {
+        return Err(sensei_core::error::SenseiError::Forbidden(
+            "authorization state changed after model execution — the answer was \
+             not released; re-authorized and retry"
+                .to_string(),
+        ));
     }
     Ok(Json(ChatResponseBody {
         response: final_content,
@@ -599,41 +662,58 @@ fn parse_context_line(line: &str) -> Option<(String, String, Option<uuid::Uuid>)
 }
 
 /// Run the REAL claims/evidence verifier over the assistant's reply
-/// (item 25): every sentence that states a FACT about live tenant data
-/// must carry evidence. The previous loop inspected only the (already
-/// permitted) effective toolset, which by construction always passed.
-/// Now: factual-sounding statements become ObservedFact claims WITHOUT
-/// evidence refs, and the deterministic verifier flags them — the same
-/// contract the tool surface enforces.
+/// (item 25; thirtieth audit item 23 REWRITE): measured claims are now
+/// verified DETERMINISTICALLY against TYPED evidence.
 ///
-/// Eighteenth audit P1-7: the output is STRUCTURED — every flagged
-/// sentence becomes a [`Claim`] ("unverified" without evidence; "measured"
-/// when an `[evidence: <evidence_id>]` marker matches a prepared context
-/// item). The marker check runs against the CURRENT sentence, never the
-/// whole response.
+/// The claim channel is the STRUCTURED one: a measured claim must carry
+/// a typed [`ClaimAssertion`] (FactAddress + operator + value + unit) or
+/// a [`DerivedAssertion`] (the server re-runs the derivation program and
+/// compares the recomputed result). Verification checks, per cited
+/// evidence item: evidence existence AND exact object match AND exact
+/// attribute match AND exact site/work-center scope match AND valid
+/// time/freshness AND unit compatibility AND the claimed operator/value.
+/// The language of the statement is irrelevant — a French or Arabic
+/// rendering of the same assertion verifies identically.
 ///
-/// Nineteenth audit P1: the match is TYPED. The only valid evidence set is
-/// the ACTUAL `evidence_id` set of the prepared [`ContextItem`]s — a
-/// marker whose id is not in that set is an ISSUE (unverified evidence
-/// reference), and a marker is never validated by substring matching
-/// against a flattened context string.
+/// The lexical PROSE SCANNER is demoted to defense-in-depth: it only
+/// detects that the model rendered factual prose WITHOUT representing it
+/// in the structured claims channel (such prose is flagged, never
+/// measured). Every `[evidence: ...]` marker is parsed on every sentence
+/// whether or not the sentence classifies as a factual claim — a fake
+/// marker can never hide inside unclassified prose.
 ///
-/// Twenty-eighth audit P0-2: the caller's `structured_claims` are
-/// SUPPLEMENTARY — the prose scanner ALWAYS runs over the generated reply,
-/// and every caller draft is verified like a measured claim (the declared
-/// epistemic kind is ignored). Caller-supplied claims can neither replace
-/// prose verification nor relax the factual-claim requirements.
+/// `recomputed` carries the server-side recomputation results of every
+/// derivation program referenced by the drafts (produced by
+/// [`resolve_recomputed_derivations`] from the live metric engine);
+/// `recompute_issues` carries the failures of that resolution (unknown
+/// derivation ids, version moves, no live program) — a derived claim is
+/// NEVER accepted without the deterministic program agreeing.
+#[allow(clippy::too_many_arguments)]
 fn verify_chat_response(
     response: &sensei_services::ai::chatbot::ChatResponse,
-    ctx: &sensei_agent_core::context::AgentContext,
+    ctx: &AgentContext,
     _policy: &sensei_agent_core::tools::PolicyEngine,
     _effective_tools: &[&sensei_agent_core::tools::ToolSpec],
-    kernel_items: &[sensei_agent_core::context::ContextItem],
+    kernel_items: &[ContextItem],
     structured_claims: &[ClaimDraft],
+    recomputed: &HashMap<String, RecomputedDerivation>,
+    recompute_issues: &[String],
 ) -> serde_json::Value {
     let mut issues: Vec<String> = Vec::new();
+    issues.extend(recompute_issues.iter().cloned());
     let mut claims: Vec<Claim> = Vec::new();
+    let mut typed_checked: usize = 0;
+    let mut derived_checked: usize = 0;
     let content = response.message.content.clone();
+
+    if response.is_fallback {
+        issues.push(
+            "Fallback/general answer — not grounded in tenant evidence; \
+             treat as guidance, not as a validated fact."
+                .to_string(),
+        );
+        return envelope(issues, claims, typed_checked, derived_checked, ctx);
+    }
 
     // Nineteenth audit P1: the ACTUAL evidence ids issued by the Context
     // Kernel for this request — built from the prepared items, never from
@@ -643,27 +723,575 @@ fn verify_chat_response(
         .map(|item| item.evidence_id.clone())
         .filter(|id| !id.is_empty())
         .collect();
-    let evidence_by_id: std::collections::HashMap<
-        String,
-        &sensei_agent_core::context::ContextItem,
-    > = kernel_items
+    let evidence_by_id: HashMap<String, &ContextItem> = kernel_items
         .iter()
         .map(|item| (item.evidence_id.clone(), item))
         .collect();
 
-    // Factual-sounding statements: sentences that mention live tenant data
-    // (quantities, counts, statuses, ids) in an assertive way. These are
-    // ObservedFact claims and REQUIRE evidence — the assistant produced
-    // none here, so they are violations.
-    // Twentieth audit P1: factual detection is no longer "digit AND
-    // data-looking marker". ANY declarative assertion about an
-    // operational subject is a CLAIM — qualitative assertions like "the
-    // line is unstable" or "Tangier is understaffed" must enter the
-    // evidence system; only hedged, interrogative or meta statements
-    // are exempt. The marker gate existed because numeric sentences
-    // without markers were the visible class of fabrication; it let
-    // consequential qualitative assertions escape entirely.
-    let hedge_prefixes = [
+    /// A fully resolved structured claim (typed assertion or derived
+    /// assertion) from one caller/model draft.
+    struct ResolvedDraft {
+        statement: String,
+        evidence_ids: Vec<String>,
+        assertion: Option<ClaimAssertion>,
+        derived: Option<DerivedAssertion>,
+    }
+
+    /// Resolve the typed fields of one structured draft. A measured
+    /// claim MUST carry a typed assertion or a derived assertion (never
+    /// both) — evidence ids alone cannot prove a value.
+    fn resolve_draft(draft: &ClaimDraft) -> std::result::Result<ResolvedDraft, String> {
+        let statement = draft.statement.trim().to_string();
+        if statement.is_empty() {
+            return Err("structured claim has an empty statement".to_string());
+        }
+        let assertion = match &draft.assertion {
+            None => None,
+            Some(a) => {
+                let missing = |what: &str| {
+                    format!("structured claim '{statement}' is missing the {what} of its typed assertion")
+                };
+                let object_type = a
+                    .object_type
+                    .as_deref()
+                    .filter(|s| !s.trim().is_empty())
+                    .ok_or_else(|| missing("object_type"))?;
+                let object_id = a
+                    .object_id
+                    .as_deref()
+                    .filter(|s| !s.trim().is_empty())
+                    .ok_or_else(|| missing("object_id"))?;
+                let attribute = a
+                    .attribute
+                    .as_deref()
+                    .filter(|s| !s.trim().is_empty())
+                    .ok_or_else(|| missing("attribute"))?;
+                let value = a.value.clone().ok_or_else(|| missing("value"))?;
+                Some(ClaimAssertion {
+                    address: FactAddress {
+                        object_type: object_type.to_string(),
+                        object_id: object_id.to_string(),
+                        attribute: attribute.to_string(),
+                        valid_time: a.valid_time.clone(),
+                    },
+                    operator: a.operator.clone().unwrap_or(ClaimOperator::Equal),
+                    value,
+                    unit: a.unit.clone(),
+                })
+            }
+        };
+        let derived = match &draft.derived {
+            None => None,
+            Some(d) => {
+                let result = d.result.clone().ok_or_else(|| {
+                    format!(
+                        "derived claim '{statement}' is missing its claimed result value"
+                    )
+                })?;
+                Some(DerivedAssertion {
+                    derivation_id: d.derivation_id.clone(),
+                    derivation_version: d.derivation_version,
+                    operand_evidence_ids: d.operand_evidence_ids.clone(),
+                    result,
+                    unit: d.unit.clone(),
+                })
+            }
+        };
+        match (&assertion, &derived) {
+            (Some(_), Some(_)) => Err(format!(
+                "structured claim '{statement}' carries BOTH a typed assertion and a \
+                 derived assertion — a claim is measured by exactly one channel"
+            )),
+            _ => Ok(ResolvedDraft {
+                statement,
+                evidence_ids: draft.evidence_ids.clone(),
+                assertion,
+                derived,
+            }),
+        }
+    }
+
+    /// The structural fact-address summary of an evidence item, for the
+    /// claim envelope (site + typed address when present).
+    fn evidence_fact_summary(item: &ContextItem) -> String {
+        let site = item
+            .site_scope
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| "unknown".to_string());
+        if let Some(fact) = item.typed_fact() {
+            format!(
+                "site:{}/{}:{}:{}",
+                site, fact.address.object_type, fact.address.object_id, fact.address.attribute
+            )
+        } else {
+            format!(
+                "site:{}/address:{}",
+                site,
+                item.fact_address.as_deref().unwrap_or("unknown")
+            )
+        }
+    }
+
+    // The statements represented by the structured channel, keyed by a
+    // normalized form (whitespace/punctuation/case-insensitive, evidence
+    // markers stripped): factual prose sentences whose statement IS
+    // represented by a draft are verified once through the draft.
+    let represented: HashMap<String, usize> = structured_claims
+        .iter()
+        .enumerate()
+        .map(|(i, d)| (normalize_statement(&d.statement), i))
+        .collect();
+
+    // ── PROSE SCANNER (defense-in-depth, thirtieth audit item 23) ─────
+    // Every sentence is scanned for evidence markers FIRST — a marker is
+    // parsed whether or not the sentence classifies as a factual claim,
+    // so a fabricated citation can never hide inside unclassified prose.
+    // Factual prose sentences that are NOT represented by a structured
+    // claim with a typed assertion are flagged — the model rendered
+    // factual content without representing it in the claims channel, and
+    // that content can never be measured by language heuristics.
+    for sentence in split_sentences(&content) {
+        let s = sentence.trim();
+        if s.is_empty() {
+            continue;
+        }
+        let markers = evidence_refs_in(s);
+        let unmatched: Vec<&String> = markers
+            .iter()
+            .filter(|m| !evidence_ids.contains(m.as_str()))
+            .collect();
+        if !unmatched.is_empty() {
+            for r in &unmatched {
+                issues.push(format!(
+                    "Unverified evidence reference: '{r}' — not an evidence id \
+                     issued by the Context Kernel for this request."
+                ));
+            }
+        }
+        if !sentence_is_factual_prose(s) {
+            continue;
+        }
+        // Represented by the structured channel → verified through the
+        // draft loop below (the statement is the SAME claim).
+        if let Some(_) = represented.get(&normalize_statement(s)) {
+            continue;
+        }
+        let matched: Vec<String> = markers
+            .iter()
+            .filter(|m| evidence_ids.contains(m.as_str()))
+            .cloned()
+            .collect();
+        if matched.is_empty() {
+            claims.push(Claim {
+                statement: s.to_string(),
+                epistemic_status: "unverified".to_string(),
+                fact_addresses: Vec::new(),
+                evidence_refs: Vec::new(),
+                confidence: None,
+                valid_at: None,
+                assertion: None,
+                derived: None,
+            });
+            issues.push(format!(
+                "Unverified factual claim: '{s}' — no EvidenceRef. \
+                 Facts about live tenant data must be queried through the \
+                 tool surface, stated as unavailable, or labeled a hypothesis."
+            ));
+        } else {
+            // Real evidence markers, but the claim exists ONLY as prose —
+            // no typed assertion represents it in the structured channel.
+            let fact_addresses: Vec<String> = matched
+                .iter()
+                .filter_map(|r| evidence_by_id.get(r.as_str()))
+                .map(|item| evidence_fact_summary(item))
+                .collect();
+            claims.push(Claim {
+                statement: s.to_string(),
+                epistemic_status: "unverified".to_string(),
+                fact_addresses,
+                evidence_refs: matched.clone(),
+                confidence: None,
+                valid_at: None,
+                assertion: None,
+                derived: None,
+            });
+            issues.push(format!(
+                "Factual claim rendered only in prose: '{s}' [evidence: {}] — it \
+                 is not represented in the structured claims channel, so it cannot \
+                 be measured. A measured claim must carry a typed ClaimAssertion \
+                 (address/operator/value/unit) or a DerivedAssertion.",
+                matched.join(", ")
+            ));
+        }
+    }
+
+    // ── STRUCTURED CLAIMS channel (deterministic verification) ────────
+    // Each draft is verified once: typed assertions go through the full
+    // chain (object → attribute → site/WC → time/freshness → unit →
+    // operator/value); derived assertions are checked against the
+    // server's recomputation.
+    for draft in structured_claims {
+        let resolved = match resolve_draft(draft) {
+            Ok(r) => r,
+            Err(e) => {
+                claims.push(Claim {
+                    statement: draft.statement.trim().to_string(),
+                    epistemic_status: "unverified".to_string(),
+                    fact_addresses: Vec::new(),
+                    evidence_refs: Vec::new(),
+                    confidence: None,
+                    valid_at: None,
+                    assertion: None,
+                    derived: None,
+                });
+                issues.push(e);
+                continue;
+            }
+        };
+        let unmatched: Vec<&String> = resolved
+            .evidence_ids
+            .iter()
+            .filter(|m| !evidence_ids.contains(m.as_str()))
+            .collect();
+        if !unmatched.is_empty() {
+            for r in &unmatched {
+                issues.push(format!(
+                    "Unverified evidence reference: '{r}' — not an evidence id \
+                     issued by the Context Kernel for this request."
+                ));
+            }
+        }
+        let matched: Vec<String> = resolved
+            .evidence_ids
+            .iter()
+            .filter(|m| evidence_ids.contains(m.as_str()))
+            .cloned()
+            .collect();
+        let fact_addresses: Vec<String> = matched
+            .iter()
+            .filter_map(|r| evidence_by_id.get(r.as_str()))
+            .map(|item| evidence_fact_summary(item))
+            .collect();
+
+        // A structured claim that does not assert a typed value can never
+        // be measured (the audit's canonical hole: evidence E says 12,
+        // the claim says 999 — without the operator/value comparison the
+        // verifier has nothing to reject). Derived-only drafts are
+        // handled by the derived loop below.
+        if resolved.derived.is_some() && resolved.assertion.is_none() {
+            continue;
+        }
+        let Some(assertion) = resolved.assertion.as_ref() else {
+            claims.push(Claim {
+                statement: resolved.statement.clone(),
+                epistemic_status: "unverified".to_string(),
+                fact_addresses: fact_addresses.clone(),
+                evidence_refs: matched.clone(),
+                confidence: None,
+                valid_at: None,
+                assertion: resolved.assertion.clone(),
+                derived: None,
+            });
+            if matched.is_empty() {
+                issues.push(format!(
+                    "Unverified factual claim: '{}' — no EvidenceRef. \
+                     Facts about live tenant data must be queried through the \
+                     tool surface, stated as unavailable, or labeled a hypothesis.",
+                    resolved.statement
+                ));
+            } else {
+                issues.push(format!(
+                    "Structured claim '{}' cannot be measured: a measured factual \
+                     claim must carry a typed ClaimAssertion \
+                     (object_type/object_id/attribute/operator/value/unit) or a \
+                     DerivedAssertion — an evidence id alone proves no value.",
+                    resolved.statement
+                ));
+            }
+            continue;
+        };
+
+        // TYPED measured claim: verify against every cited evidence item.
+        // (A draft carrying BOTH channels was rejected by resolve_draft.)
+        typed_checked += 1;
+        let mut claim_issues: Vec<String> = Vec::new();
+        for r in &matched {
+            if let Some(item) = evidence_by_id.get(r.as_str()) {
+                claim_issues.extend(verify_measured_claim(
+                    None,
+                    assertion,
+                    ctx.site_id,
+                    ctx.work_center_id,
+                    item,
+                    chrono::Utc::now(),
+                ));
+            }
+        }
+        if matched.is_empty() {
+            claim_issues.push(format!(
+                "measured claim '{}' cites no evidence issued by the Context Kernel",
+                resolved.statement
+            ));
+        }
+        if claim_issues.is_empty() {
+            claims.push(Claim {
+                statement: resolved.statement.clone(),
+                epistemic_status: "measured".to_string(),
+                fact_addresses: fact_addresses.clone(),
+                evidence_refs: matched.clone(),
+                confidence: None,
+                valid_at: parse_claim_time(None, assertion.address.valid_time.as_deref())
+                    .map(|t| t.to_rfc3339()),
+                assertion: Some(assertion.clone()),
+                derived: None,
+            });
+        } else {
+            issues.extend(claim_issues.iter().cloned());
+            claims.push(Claim {
+                statement: resolved.statement.clone(),
+                epistemic_status: "unverified".to_string(),
+                fact_addresses: fact_addresses.clone(),
+                evidence_refs: matched.clone(),
+                confidence: None,
+                valid_at: None,
+                assertion: Some(assertion.clone()),
+                derived: None,
+            });
+        }
+    }
+
+    // ── DERIVED claims (server recomputation) ─────────────────────────
+    // Structured drafts carrying a DerivedAssertion were recomputed by
+    // the deterministic program BEFORE this function ran; every derived
+    // claim is checked against the recomputed value and its operand
+    // evidence ids.
+    for draft in structured_claims {
+        if draft.derived.is_none() {
+            continue;
+        }
+        if draft.assertion.is_some() {
+            continue; // reported by the typed path above
+        }
+        let resolved = match resolve_draft(draft) {
+            Ok(r) => r,
+            Err(_) => continue,
+        };
+        let Some(derived) = resolved.derived.as_ref() else {
+            continue;
+        };
+        derived_checked += 1;
+        let key = derivation_key(&derived.derivation_id, derived.derivation_version);
+        let recomputed_value = recomputed.get(&key);
+        let operand_exists = |id: &str| evidence_ids.contains(id) || id.is_empty();
+        let derived_issues = verify_derived_claim(
+            derived,
+            recomputed_value,
+            operand_exists,
+            chrono::Utc::now(),
+        );
+        if derived_issues.is_empty() {
+            claims.push(Claim {
+                statement: resolved.statement.clone(),
+                epistemic_status: "measured".to_string(),
+                fact_addresses: Vec::new(),
+                evidence_refs: resolved.evidence_ids.clone(),
+                confidence: None,
+                valid_at: None,
+                assertion: None,
+                derived: Some(derived.clone()),
+            });
+        } else {
+            issues.extend(derived_issues.iter().cloned());
+            claims.push(Claim {
+                statement: resolved.statement.clone(),
+                epistemic_status: "unverified".to_string(),
+                fact_addresses: Vec::new(),
+                evidence_refs: resolved.evidence_ids.clone(),
+                confidence: None,
+                valid_at: None,
+                assertion: None,
+                derived: Some(derived.clone()),
+            });
+        }
+    }
+
+    envelope(issues, claims, typed_checked, derived_checked, ctx)
+}
+
+/// Build the verification envelope.
+fn envelope(
+    issues: Vec<String>,
+    claims: Vec<Claim>,
+    typed_checked: usize,
+    derived_checked: usize,
+    ctx: &AgentContext,
+) -> serde_json::Value {
+    let verdict = if issues.is_empty() {
+        "pass"
+    } else {
+        "needs_evidence"
+    };
+    serde_json::json!({
+        "verdict": verdict,
+        "issues": issues,
+        "claims": claims,
+        "claims_checked": claims.len(),
+        "typed_claims_checked": typed_checked,
+        "derived_claims_checked": derived_checked,
+        "context": {
+            "site_id": ctx.site_id,
+            "value_stream_id": ctx.value_stream_id,
+            "work_center_id": ctx.work_center_id,
+            "shift_id": ctx.shift_id,
+        },
+    })
+}
+
+/// Normalize a claim statement for prose↔structured pairing: case-folded,
+/// whitespace collapsed, trailing punctuation stripped, evidence markers
+/// removed. Two renderings of the SAME claim in ANY language normalize to
+/// the same key when their statements are identical.
+fn normalize_statement(s: &str) -> String {
+    let mut out = s.trim().to_lowercase();
+    // Strip "[evidence: ...]" markers — the structured statement does not
+    // carry them while the prose rendering may.
+    loop {
+        let Some(start) = out.find("[evidence:") else {
+            break;
+        };
+        let after = &out[start + "[evidence:".len()..];
+        let Some(end) = after.find(']') else {
+            break;
+        };
+        out = format!("{}{}", &out[..start], &after[end + 1..]);
+    }
+    let collapsed: String = out.split_whitespace().collect::<Vec<_>>().join(" ");
+    collapsed.trim_end_matches(['.', '!', '?', ';', ',', ':']).to_string()
+}
+
+/// Deterministic recomputation key of a derivation program result:
+/// derivation id @ program version.
+fn derivation_key(derivation_id: &str, version: u32) -> String {
+    format!("{derivation_id}@{version}")
+}
+
+/// Thirtieth audit item 23 — derived claims: RE-RUN the deterministic
+/// derivation programs referenced by the structured drafts and return
+/// (a) the recomputed values keyed by `derivation_id@version` and (b)
+/// the deterministic failures (unknown derivation ids, version moves,
+/// program errors, no live program). The model NEVER gets to say a value
+/// "was deterministically derived" unless the program agrees — a derived
+/// claim whose id is not resolvable or whose version moved is rejected,
+/// never silently re-verified against a prepared value.
+async fn resolve_recomputed_derivations(
+    db_pool: Option<&PgPool>,
+    tenant_id: uuid::Uuid,
+    site_id: Option<uuid::Uuid>,
+    structured_claims: &[ClaimDraft],
+) -> (HashMap<String, RecomputedDerivation>, Vec<String>) {
+    let mut recomputed: HashMap<String, RecomputedDerivation> = HashMap::new();
+    let mut issues: Vec<String> = Vec::new();
+    for draft in structured_claims {
+        let Some(derived) = draft.derived.as_ref() else {
+            continue;
+        };
+        let key = derivation_key(&derived.derivation_id, derived.derivation_version);
+        if recomputed.contains_key(&key) {
+            continue;
+        }
+        // Derived claims need the live deterministic program. Every
+        // current derivation program in the system is a METRIC of the
+        // metric engine (the one executable registry every surface uses);
+        // unknown ids have no program and can never verify.
+        let Some(pool) = db_pool else {
+            issues.push(format!(
+                "derived claim '{}'@v{} could not be recomputed — no live \
+                 deterministic derivation program is available for this request",
+                derived.derivation_id, derived.derivation_version
+            ));
+            continue;
+        };
+        let program = sensei_services::tps::metric_engine::registry().into_iter().find(
+            |c| c.id() == derived.derivation_id
+                || (derived.derivation_id == "fpy" && c.id() == "process_yield_proxy"),
+        );
+        let Some(program) = program else {
+            issues.push(format!(
+                "derived claim '{}'@v{} cites a derivation id with no \
+                 deterministic program — the server cannot recompute it",
+                derived.derivation_id, derived.derivation_version
+            ));
+            continue;
+        };
+        let current_version = program.version();
+        if current_version != derived.derivation_version {
+            issues.push(format!(
+                "derived claim '{}'@v{} cites a moved derivation program — the \
+                 deterministic program is now at version {current_version}; \
+                 re-derive against the current version",
+                derived.derivation_id, derived.derivation_version
+            ));
+            continue;
+        }
+        match program.compute(pool, tenant_id, site_id).await {
+            Ok(result) => {
+                let value = serde_json::to_value(&result.value)
+                    .unwrap_or(serde_json::Value::Null);
+                recomputed.insert(
+                    key,
+                    RecomputedDerivation {
+                        derivation_id: result.metric_id,
+                        version: current_version,
+                        value,
+                        unit: Some(result.unit),
+                        recomputed_at: result.computed_at,
+                    },
+                );
+            }
+            Err(e) => issues.push(format!(
+                "derived claim '{}'@v{} could not be recomputed — the \
+                 deterministic program failed: {e}",
+                derived.derivation_id, derived.derivation_version
+            )),
+        }
+    }
+    (recomputed, issues)
+}
+
+/// Item 24 — the authorization release gate: the request's authorization
+/// snapshot must STILL be current immediately before an answer is
+/// released. Model execution takes time: T0 snapshot, T1 generation
+/// starts, T2 a revocation lands, T3 generation finishes — releasing the
+/// answer would hand out data under a permission state the caller no
+/// longer has. The gate is re-run AFTER deterministic verification and
+/// immediately BEFORE any release (JSON response or first streamed
+/// token).
+///
+/// A request that captured NO authorization state (dev/in-memory
+/// deployment without a database) has nothing that can have moved — the
+/// gate is vacuously open (the content is still repaired by the
+/// verifier). A half-captured state never occurs in the request flow and
+/// fails closed.
+async fn authorization_gate(
+    db_pool: Option<&PgPool>,
+    snapshot: Option<&AuthzSnapshot>,
+) -> bool {
+    match (db_pool, snapshot) {
+        (Some(pool), Some(snap)) => snap.is_still_current(pool).await,
+        (None, None) => true,
+        _ => false,
+    }
+}
+
+/// Whether a sentence sounds like a direct request or meta-talk rather
+/// than an assertion (defense-in-depth prose gate).
+fn hedged_or_interrogative(s: &str) -> bool {
+    let sentence_lower = s.to_lowercase();
+    let ends_interrogative = s.ends_with('?');
+    if ends_interrogative {
+        return true;
+    }
+    [
         "i ",
         "i'm ",
         "i am ",
@@ -681,7 +1309,20 @@ fn verify_chat_response(
         "guidance",
         "treat ",
         "as a hypothesis",
-    ];
+    ]
+    .iter()
+    .any(|p| sentence_lower.starts_with(p))
+}
+
+/// Defense-in-depth factual-prose detector (thirtieth audit item 23): a
+/// sentence about an operational subject that states a predicate. This
+/// detector no longer MEASURES anything — it only spots prose the model
+/// rendered WITHOUT representing it in the structured claims channel.
+fn sentence_is_factual_prose(s: &str) -> bool {
+    if s.len() < 12 || hedged_or_interrogative(s) {
+        return false;
+    }
+    let sentence_lower = s.to_lowercase();
     let operational_subjects = [
         "line",
         "process",
@@ -710,377 +1351,52 @@ fn verify_chat_response(
         "order",
         "capacity",
     ];
-    // Twenty-first audit item 7: subject-family classification. A claim
-    // about staffing/quality/inventory etc. can only be MEASURED by
-    // evidence that speaks about the same family.
-    /// The named SITE in a sentence/evidence text, when one is named
-    /// (twenty-second audit: family equality is NOT enough — a Tangier
-    /// staffing claim cannot be measured by Bizerte staffing evidence).
-    fn subject_family(text: &str) -> Option<&'static str> {
-        let t = text.to_lowercase();
-        if [
-            "staffing",
-            "operator",
-            "understaffed",
-            "overstaffed",
-            "qualified",
-            "unqualified",
-            "training",
-            "trainer",
-            "absentee",
-            "headcount",
-        ]
+    let subject_matter = operational_subjects
         .iter()
-        .any(|k| t.contains(k))
-        {
-            Some("staffing")
-        } else if [
-            "ncr", "defect", "quality", "scrap", "yield", "capa", "rework",
-        ]
-        .iter()
-        .any(|k| t.contains(k))
-        {
-            // Yield/scrap/rework are QUALITY facts — checked before the
-            // generic 'units' production trigger so a yield statement is
-            // never misclassified as inventory.
-            Some("quality")
-        } else if ["inventory", "stock", "on hand", "available inventory"]
-            .iter()
-            .any(|k| t.contains(k))
-        {
-            Some("inventory")
-        } else if ["andon", "escalat", "contain", "safety"]
-            .iter()
-            .any(|k| t.contains(k))
-        {
-            Some("andon")
-        } else if ["delivery", "shipment", "otd", "delivered"]
-            .iter()
-            .any(|k| t.contains(k))
-        {
-            Some("delivery")
-        } else if [
-            "production",
-            "output",
-            "run",
-            "capacity",
-            "line",
-            "process",
-            "units",
-        ]
-        .iter()
-        .any(|k| t.contains(k))
-        {
-            Some("production")
-        } else if ["maintenance", "machine", "equipment", "calibration"]
-            .iter()
-            .any(|k| t.contains(k))
-        {
-            Some("maintenance")
-        } else {
-            None
-        }
+        .any(|m| sentence_lower.contains(m));
+    if !subject_matter {
+        return false;
     }
-    // Twenty-seventh audit P1: ONE per-claim verification routine, shared
-    // by the prose scanner and the structured claims channel. The evidence
-    // refs arrive pre-extracted (prose markers OR a draft's `evidence_ids`);
-    // claims and issues are produced by the SAME deterministic logic —
-    // membership in the kernel-issued evidence set, subject family and the
-    // STRUCTURAL site-scope check (never geographic vocabulary).
-    let check_claim = |sentence: &str,
-                       evidence_refs: Vec<String>,
-                       declared_family: Option<&'static str>,
-                       issues: &mut Vec<String>,
-                       claims: &mut Vec<Claim>| {
-        let s = sentence.trim();
-        // Twenty-eighth audit P0-2 item 3: for a structured draft that
-        // declares a fact_address, claim family resolution consults the
-        // fact_address text FIRST, then the statement — the advertised
-        // field is meaningful when the cited evidence carries no
-        // scope/family (crafted, site-less items) and the statement's
-        // language yields no English subject-family keyword. Prose
-        // sentences pass `None` and keep the statement-only resolution.
-        let claim_family = declared_family.or_else(|| subject_family(s));
-        let matched_refs: Vec<String> = evidence_refs
-            .iter()
-            .filter(|r| evidence_ids.contains(r.as_str()))
-            .cloned()
-            .collect();
-        // Twenty-first audit item 7: membership is NOT enough — the cited
-        // evidence must speak about the claim's subject family. An
-        // inventory EvidenceRef cannot measure a staffing claim.
-        let evidence_families: Vec<Option<&'static str>> = matched_refs
-            .iter()
-            .filter_map(|r| evidence_by_id.get(r.as_str()))
-            .map(|item| {
-                // The evidence family comes from its fact address OR its
-                // own text (a metric_tree item about units is inventory
-                // evidence).
-                let from_address = item
-                    .fact_address
-                    .as_deref()
-                    .and_then(|fa| subject_family(fa));
-                let from_text = item
-                    .payload
-                    .get("text")
-                    .and_then(|t| t.as_str())
-                    .and_then(|t| subject_family(t));
-                from_address.or(from_text)
-            })
-            .collect();
-        // Twenty-third audit: SITE MATCHING IS STRUCTURAL. Evidence items
-        // carry the site_scope (a Uuid) they were produced under; the
-        // claim's implied site is the REQUEST's active site when the
-        // sentence names none (so "the SMT line is understaffed" inside a
-        // Tangier-scoped conversation cannot cite Bizerte evidence). The
-        // token matcher remains only for crafted items without scope —
-        // new plants need zero Rust changes.
-        let context_site = ctx.site_id;
-        // SITE MATCHING IS STRUCTURAL ONLY (twenty-fourth audit): the
-        // claim's site is the REQUEST's active site; evidence sites come
-        // from ContextItem.site_scope. No geographic vocabulary exists in
-        // the verifier — onboarding a new plant requires zero Rust edits.
-        // Scoped-less test items (no site_scope) are matched only by
-        // family (legacy path for crafted items).
-        let evidence_scopes: Vec<Option<uuid::Uuid>> = matched_refs
-            .iter()
-            .filter_map(|r| evidence_by_id.get(r.as_str()))
-            .map(|item| item.site_scope)
-            .collect();
-        let all_scoped = evidence_scopes.iter().any(|x| x.is_some());
-        let site_matches = if all_scoped {
-            match (context_site, evidence_scopes.as_slice()) {
-                (Some(scope), scopes) => {
-                    !scopes.is_empty() && scopes.iter().all(|x| *x == Some(scope))
-                }
-                (None, _) => false, // scoped evidence without a request site never matches
-            }
-        } else {
-            // Crafted, site-less items: no site claim can be made.
-            true
-        };
-        let compatible = match (claim_family, evidence_families.as_slice()) {
-            (Some(fam), fams) => {
-                !fams.is_empty() && fams.iter().all(|f| *f == Some(fam)) && site_matches
-            }
-            (None, _) => false,
-        };
-        let unmatched_refs: Vec<String> = evidence_refs
-            .iter()
-            .filter(|r| !evidence_ids.contains(r.as_str()))
-            .cloned()
-            .collect();
-        // Twenty-first audit item 7: an issued-but-incompatible ref is
-        // structurally wrong evidence for this claim (an inventory
-        // EvidenceRef cannot measure a staffing claim).
-        let incompatible_issued: Vec<String> = if !matched_refs.is_empty() && !compatible {
-            matched_refs.to_vec()
-        } else {
-            Vec::new()
-        };
-        if !response.is_fallback && !unmatched_refs.is_empty() {
-            for r in &unmatched_refs {
-                issues.push(format!(
-                    "Unverified evidence reference: '{r}' — not an evidence id \
-                     issued by the Context Kernel for this request."
-                ));
-            }
-        }
-        if !response.is_fallback && !incompatible_issued.is_empty() {
-            for r in &incompatible_issued {
-                let reason = if !site_matches {
-                    "the evidence's site scope differs from the request's active \
-                     site — wrong-site evidence cannot measure the claim"
-                        .to_string()
-                } else {
-                    "inventory evidence cannot measure a staffing claim".to_string()
-                };
-                issues.push(format!(
-                    "Evidence '{r}' is a real kernel evidence id but does NOT \
-                     describe this claim's subject — evidence/claim relationship \
-                     violated ({reason})."
-                ));
-            }
-        }
-        if matched_refs.is_empty() || !compatible {
-            // No citation at all, or citations that do not describe this
-            // claim's subject: an unverified claim.
-            claims.push(Claim {
-                statement: s.to_string(),
-                epistemic_status: "unverified".to_string(),
-                fact_addresses: Vec::new(),
-                evidence_refs: Vec::new(),
-                confidence: None,
-                valid_at: None,
-            });
-            if !response.is_fallback && unmatched_refs.is_empty() && incompatible_issued.is_empty()
-            {
-                issues.push(format!(
-                    "Unverified factual claim: '{s}' — no EvidenceRef. \
-                     Facts about live tenant data must be queried through the \
-                     tool surface, stated as unavailable, or labeled a hypothesis."
-                ));
-            }
-        } else {
-            // Measured claims carry the STRUCTURAL fact addresses of the
-            // evidence that measured them (site scope + source address) —
-            // never an empty list (twenty-fourth audit).
-            let fact_addresses: Vec<String> = matched_refs
-                .iter()
-                .filter_map(|r| evidence_by_id.get(r.as_str()))
-                .map(|item| {
-                    format!(
-                        "site:{}/address:{}",
-                        item.site_scope
-                            .map(|s| s.to_string())
-                            .unwrap_or_else(|| "unknown".to_string()),
-                        item.fact_address.as_deref().unwrap_or("unknown")
-                    )
-                })
-                .collect();
-            claims.push(Claim {
-                statement: s.to_string(),
-                epistemic_status: "measured".to_string(),
-                fact_addresses,
-                evidence_refs: matched_refs,
-                confidence: None,
-                valid_at: None,
-            });
-        }
-    };
-
-    // PROSE SCANNER — runs on EVERY reply (twenty-eighth audit P0-2):
-    // caller-supplied structured claims NEVER replace the verification of
-    // the model's generated content. Every sentence is gated through the
-    // language heuristics, then checked by the same `check_claim` routine
-    // as the drafts — one harmless 'recommended' draft cannot smuggle
-    // unverified factual prose past the scanner.
-    for sentence in split_sentences(&content) {
-        let s = sentence.trim();
-        if s.len() < 12 {
-            continue;
-        }
-        let sentence_lower = s.to_lowercase();
-        let ends_interrogative = s.ends_with('?');
-        let hedged = hedge_prefixes.iter().any(|p| sentence_lower.starts_with(p));
-        let subject_matter = operational_subjects
-            .iter()
-            .any(|m| sentence_lower.contains(m));
-        if ends_interrogative || hedged {
-            continue;
-        }
-        // A sentence about an operational subject that states a
-        // predicate (copula or action verb) is a claim even without a
-        // digit — "Production is running." is a live-state claim; "the
-        // supplier is unreliable" is a claim about the supplier.
-        let states_predicate = [
-            " is ",
-            " are ",
-            " has ",
-            " have ",
-            " was ",
-            " were ",
-            " runs ",
-            " operates ",
-            " produces ",
-            " delivers ",
-            " fails ",
-            " exceeds ",
-            " under ",
-            " behind ",
-            " on time",
-            " stable",
-            " unstable",
-            " qualified",
-            " unqualified",
-            " unreliable",
-            " understaffed",
-            " overstaffed",
-            " in control",
-            " out of control",
-            " stands at ",
-            " currently ",
-            " units ",
-            " inventory",
-            " ncr",
-            " capa",
-            " andon",
-            " scrap",
-            " defect",
-            " yield of ",
-            " order ",
-        ]
-        .iter()
-        .any(|p| sentence_lower.contains(p));
-        if !(subject_matter && states_predicate) {
-            continue;
-        }
-
-        // Evidence markers: "[evidence: <evidence_id>]" — the id must BE
-        // a kernel-issued evidence id of a prepared item. Marker
-        // validation happens on EVERY sentence regardless of detection
-        // (a fabricated citation can never hide inside a sentence that
-        // fails the claim detector); the claim object is created only
-        // for sentences that are factual claims.
-        let evidence_refs = evidence_refs_in(s);
-        check_claim(s, evidence_refs, None, &mut issues, &mut claims);
-    }
-
-    // STRUCTURED CLAIMS — SUPPLEMENTARY checks (twenty-eighth audit P0-2):
-    // each caller draft is verified IN ADDITION to the prose scan above,
-    // and its claims/issues merge into the SAME envelopes. Two caller
-    // powers are removed:
-    //   - the caller-declared epistemic kind is IGNORED: an
-    //     'assumed'/'recommended' draft no longer bypasses the factual-
-    //     claim check — every draft runs through the SAME routine as a
-    //     measured claim (evidence membership + structural site scope +
-    //     subject family) and raises the unverified-fact issue when it
-    //     lacks evidence. The assumed/recommended RECORDING concept stays
-    //     reserved for FUTURE model-generated claims, never HTTP input.
-    //   - a draft's declared fact_address is consulted first for claim
-    //     family resolution when the cited evidence lacks a scope/family.
-    for draft in structured_claims {
-        let s = draft.statement.trim();
-        if s.is_empty() {
-            continue;
-        }
-        let declared_family = draft.fact_address.as_deref().and_then(subject_family);
-        check_claim(
-            s,
-            draft.evidence_ids.clone(),
-            declared_family,
-            &mut issues,
-            &mut claims,
-        );
-    }
-
-    if response.is_fallback {
-        issues.push(
-            "Fallback/general answer — not grounded in tenant evidence; \
-             treat as guidance, not as a validated fact."
-                .to_string(),
-        );
-    }
-
-    // The context is SERVER-CREATED: the caller's effective scope is
-    // attached so the client can see WHERE the answer applies.
-    let verdict = if issues.is_empty() {
-        "pass"
-    } else {
-        "needs_evidence"
-    };
-    serde_json::json!({
-        "verdict": verdict,
-        "issues": issues,
-        "claims": claims,
-        "claims_checked": claims.len(),
-        "context": {
-            "site_id": ctx.site_id,
-            "value_stream_id": ctx.value_stream_id,
-            "work_center_id": ctx.work_center_id,
-            "shift_id": ctx.shift_id,
-        },
-    })
+    let states_predicate = [
+        " is ",
+        " are ",
+        " has ",
+        " have ",
+        " was ",
+        " were ",
+        " runs ",
+        " operates ",
+        " produces ",
+        " delivers ",
+        " fails ",
+        " exceeds ",
+        " under ",
+        " behind ",
+        " on time",
+        " stable",
+        " unstable",
+        " qualified",
+        " unqualified",
+        " unreliable",
+        " understaffed",
+        " overstaffed",
+        " in control",
+        " out of control",
+        " stands at ",
+        " currently ",
+        " units ",
+        " inventory",
+        " ncr",
+        " capa",
+        " andon",
+        " scrap",
+        " defect",
+        " yield of ",
+        " order ",
+    ]
+    .iter()
+    .any(|p| sentence_lower.contains(p));
+    subject_matter && states_predicate
 }
 
 /// Split a reply into sentences on `.` (only when followed by whitespace
@@ -1181,12 +1497,16 @@ pub async fn chat_stream(
 
     // TOCTOU guard (sixteenth audit items 5/24): the permission state must
     // NOT have moved between snapshot capture and streaming — checked
-    // BEFORE the stream task starts. No snapshot (no DB pool) = fail
-    // closed: an unverifiable stream is never started.
-    let snapshot_ok = match (&state.db_pool, &prepared.snapshot) {
-        (Some(pool), Some(snap)) => snap.is_still_current(pool).await,
-        _ => false,
-    };
+    // BEFORE the stream task starts. In-memory deployments (no DB pool,
+    // no authorization state) have nothing that can have moved — the gate
+    // is vacuous there. ITEM 24: the gate is re-checked AGAIN inside the
+    // task, after verification and immediately before release.
+    let snapshot_ok = authorization_gate(state.db_pool.as_deref(), prepared.snapshot.as_ref()).await;
+    // ITEM 24: the snapshot travels into the task for the release
+    // re-check (a revocation that lands during generation must block the
+    // release of the buffered reply).
+    let snapshot = prepared.snapshot.clone();
+    let db_pool_for_release = state.db_pool.clone();
 
     // Generate a unique channel name for this streaming session
     let channel = format!("chat-{}", uuid::Uuid::new_v4());
@@ -1278,6 +1598,15 @@ pub async fn chat_stream(
                     sensei_agent_core::tools::ToolRisk::ReadOnly,
                 );
                 let effective_tools = policy.effective_tools(&ctx);
+                // Thirtieth audit item 23: derived claims are recomputed
+                // by the deterministic programs AFTER generation.
+                let (recomputed, recompute_issues) = resolve_recomputed_derivations(
+                    db_pool_for_release.as_deref(),
+                    user.tenant_id,
+                    ctx.site_id,
+                    &req.structured_claims,
+                )
+                .await;
                 let mut verification = verify_chat_response(
                     &chat_response,
                     &ctx,
@@ -1285,6 +1614,8 @@ pub async fn chat_stream(
                     &effective_tools,
                     &kernel_items,
                     &req.structured_claims,
+                    &recomputed,
+                    &recompute_issues,
                 );
                 // Seventeenth audit item 7 (extended by eighteenth audit
                 // P1-6): the stream's buffered reply is REPAIRED when
@@ -1300,7 +1631,31 @@ pub async fn chat_stream(
                     verification["verdict"] = serde_json::json!("repaired");
                     repair_message(issue_count)
                 };
-                // Release tokens only after verification completed.
+                // ITEM 24 — the release gate: verification completed, but
+                // the authorization snapshot must STILL be current before
+                // the first token is released (model execution took time;
+                // a revocation may have landed while it ran). Streaming
+                // already buffers the whole reply, so nothing unverified
+                // was streamed and nothing can be retracted — the stale
+                // release is simply refused.
+                if !authorization_gate(
+                    db_pool_for_release.as_deref(),
+                    snapshot.as_ref(),
+                )
+                .await
+                {
+                    sse_manager
+                        .publish(
+                            &channel_clone,
+                            "error",
+                            "authorization state changed during the request — the \
+                             answer was not released; re-authorized and retry",
+                        )
+                        .await;
+                    return;
+                }
+                // Release tokens only after verification completed AND the
+                // release gate passed.
                 sse_manager
                     .publish(&channel_clone, "token", &released)
                     .await;
@@ -1345,6 +1700,11 @@ pub async fn chat_stream(
 mod tests {
     use super::*;
     use sensei_agent_core::context::AgentContext;
+    use sensei_agent_core::facts::ContextFact;
+
+    /// DB-gated chatbot tests share one database; a per-binary lock
+    /// serializes them (same convention as the repo's DB-contract tests).
+    static CHAT_DB_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
     fn test_ctx() -> AgentContext {
         AgentContext {
@@ -1372,36 +1732,82 @@ mod tests {
         }
     }
 
-    /// A prepared kernel item with a KERNEL-ISSUED evidence id (nineteenth
-    /// audit P1): the verifier only accepts markers that are exactly one of
-    /// these ids.
-    fn kernel_item(source: &str, text: &str) -> sensei_agent_core::context::ContextItem {
-        kernel_item_at(source, text, None)
-    }
-
-    fn kernel_item_at(
-        source: &str,
-        text: &str,
-        site_scope: Option<uuid::Uuid>,
-    ) -> sensei_agent_core::context::ContextItem {
-        let mut item = sensei_agent_core::context::ContextItem {
-            payload: serde_json::json!({ "section": "metric_tree", "text": text }),
-            fact_address: Some(format!("section:{source}")),
-            site_scope,
-            provenance: sensei_agent_core::context::Provenance {
-                source: source.to_string(),
-                source_revision: None,
-                observed_at: Some(chrono::Utc::now()),
-                recorded_at: chrono::Utc::now(),
-                authority: sensei_agent_core::context::AuthorityRank::TransactionalState,
-            },
-            sensitivity: sensei_agent_core::context::DataClass::Internal,
-            token_cost: 10,
-            epistemic_status: sensei_agent_core::context::EpistemicStatus::RecordedFact,
-            evidence_id: String::new(),
-        };
+    /// A TYPED kernel item carrying a real measured fact
+    /// (WO-123 quantity_completed = 12 units) at site 1 / work center 11,
+    /// observed two minutes ago — inside the work-order freshness window.
+    fn typed_wo_item(completed: i64) -> sensei_agent_core::context::ContextItem {
+        let site = Some(uuid::Uuid::from_u128(1));
+        let wc = Some(uuid::Uuid::from_u128(11));
+        let observed_at = Some(chrono::Utc::now() - chrono::Duration::minutes(2));
+        let mut item = ContextFact::measured(
+            "current_work",
+            "work_order",
+            "WO-123",
+            "quantity_completed",
+            completed,
+            Some("units"),
+            site,
+            wc,
+            observed_at,
+            format!("wo=WO-123 product=P completed={completed}/100"),
+        )
+        .to_context_item();
         item.evidence_id = item.derive_evidence_id();
         item
+    }
+
+    /// A TYPED derived metric item (process_yield_proxy v1 = 0.9722…).
+    fn typed_metric_item(value: f64) -> sensei_agent_core::context::ContextItem {
+        let mut fact = ContextFact::measured(
+            "metric_tree",
+            "metric",
+            "process_yield_proxy",
+            "value",
+            value,
+            Some("ratio"),
+            None,
+            None,
+            Some(chrono::Utc::now() - chrono::Duration::minutes(1)),
+            format!("metric_id=process_yield_proxy value={value} unit=ratio"),
+        );
+        fact.derivation = Some(sensei_agent_core::facts::FactDerivation {
+            derivation_id: "process_yield_proxy".to_string(),
+            derivation_version: 1,
+        });
+        let mut item = fact.to_context_item();
+        item.evidence_id = item.derive_evidence_id();
+        item
+    }
+
+    /// Build a typed claim draft (statement in ANY language + typed
+    /// assertion). `evidence` is the cited kernel item.
+    fn typed_draft(
+        statement: &str,
+        evidence: &sensei_agent_core::context::ContextItem,
+        object_type: &str,
+        object_id: &str,
+        attribute: &str,
+        operator: ClaimOperator,
+        value: serde_json::Value,
+        unit: Option<&str>,
+        valid_time: Option<String>,
+    ) -> ClaimDraft {
+        ClaimDraft {
+            statement: statement.to_string(),
+            epistemic_kind: "measured".to_string(),
+            fact_address: None,
+            evidence_ids: vec![evidence.evidence_id.clone()],
+            assertion: Some(ClaimAssertionDraft {
+                object_type: Some(object_type.to_string()),
+                object_id: Some(object_id.to_string()),
+                attribute: Some(attribute.to_string()),
+                operator: Some(operator),
+                value: Some(value),
+                unit: unit.map(str::to_string),
+                valid_time,
+            }),
+            derived: None,
+        }
     }
 
     fn verify_ctx(
@@ -1420,6 +1826,8 @@ mod tests {
             &policy,
             &tools,
             kernel_items,
+            &[],
+            &HashMap::new(),
             &[],
         )
     }
@@ -1440,7 +1848,41 @@ mod tests {
             &tools,
             kernel_items,
             &[],
+            &HashMap::new(),
+            &[],
         )
+    }
+
+    fn verify_drafts(
+        content: &str,
+        kernel_items: &[sensei_agent_core::context::ContextItem],
+        ctx: &AgentContext,
+        drafts: &[ClaimDraft],
+        recomputed: &HashMap<String, RecomputedDerivation>,
+        recompute_issues: &[String],
+    ) -> serde_json::Value {
+        let policy = sensei_agent_core::tools::PolicyEngine::new(
+            crate::services::agent::build_readonly_tools(),
+            sensei_agent_core::tools::ToolRisk::ReadOnly,
+        );
+        let tools = policy.effective_tools(ctx);
+        verify_chat_response(
+            &response_with(content),
+            ctx,
+            &policy,
+            &tools,
+            kernel_items,
+            drafts,
+            recomputed,
+            recompute_issues,
+        )
+    }
+
+    fn ctx_at_site_1() -> AgentContext {
+        let mut ctx = test_ctx();
+        ctx.site_id = Some(uuid::Uuid::from_u128(1));
+        ctx.work_center_id = Some(uuid::Uuid::from_u128(11));
+        ctx
     }
 
     #[test]
@@ -1455,28 +1897,425 @@ mod tests {
     }
 
     #[test]
-    fn verifier_marks_measured_claims_with_kernel_issued_evidence_ids() {
-        let item = kernel_item("metric_tree", "metric.process_yield_proxy@Bizerte: 42");
-        let v = verify(
+    fn typed_measured_claim_passes_with_the_same_structured_assertion_in_any_language() {
+        // Thirtieth audit item 23: the SAME typed assertion verifies the
+        // claim whatever language the statement is written in. The prose
+        // sentence is represented by the structured claim (same
+        // statement), so it is verified ONCE, deterministically.
+        let item = typed_wo_item(12);
+        let evidence_id = item.evidence_id.clone();
+        for (lang, statement) in [
+            ("en", "WO-123 completed 12 units"),
+            ("fr", "La commande WO-123 a terminé 12 unités"),
+            ("ar", "أكمل أمر العمل WO-123 12 وحدة"),
+            ("de", "WO-123 hat 12 Einheiten abgeschlossen"),
+        ] {
+            let ctx = ctx_at_site_1();
+            let draft = typed_draft(
+                statement,
+                &item,
+                "work_order",
+                "WO-123",
+                "quantity_completed",
+                ClaimOperator::Equal,
+                serde_json::json!(12),
+                Some("units"),
+                None,
+            );
+            let v = verify_drafts(
+                statement, // the prose rendering of the same statement
+                std::slice::from_ref(&item),
+                &ctx,
+                &[draft],
+                &HashMap::new(),
+                &[],
+            );
+            assert_eq!(
+                v["verdict"], "pass",
+                "[{lang}] the typed claim with the CORRECT value must pass: {:?}",
+                v["issues"]
+            );
+            let claims: Vec<Claim> = serde_json::from_value(v["claims"].clone()).unwrap();
+            assert_eq!(claims.len(), 1, "[{lang}] one measured claim");
+            assert_eq!(claims[0].epistemic_status, "measured");
+            assert_eq!(claims[0].evidence_refs, vec![evidence_id.clone()]);
+            assert!(claims[0].assertion.is_some());
+
+            // The WRONG value fails in the same language — the audit's
+            // canonical hole (evidence 12, claim 999).
+            let ctx = ctx_at_site_1();
+            let bad_draft = typed_draft(
+                statement,
+                &item,
+                "work_order",
+                "WO-123",
+                "quantity_completed",
+                ClaimOperator::Equal,
+                serde_json::json!(999),
+                Some("units"),
+                None,
+            );
+            let v2 = verify_drafts(
+                statement,
+                std::slice::from_ref(&item),
+                &ctx,
+                &[bad_draft],
+                &HashMap::new(),
+                &[],
+            );
+            assert_eq!(
+                v2["verdict"], "needs_evidence",
+                "[{lang}] the typed claim with the WRONG value must fail: {:?}",
+                v2["issues"]
+            );
+            let issues: Vec<String> = serde_json::from_value(v2["issues"].clone()).unwrap();
+            assert!(
+                issues.iter().any(|i| i.contains("claimed value does not hold")),
+                "[{lang}] the value comparison must reject the claim: {issues:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn real_evidence_wrong_object_fails() {
+        let item = typed_wo_item(12);
+        let ctx = ctx_at_site_1();
+        let draft = typed_draft(
+            "WO-456 completed 999 units",
+            &item,
+            "work_order",
+            "WO-456",
+            "quantity_completed",
+            ClaimOperator::Equal,
+            serde_json::json!(12),
+            Some("units"),
+            None,
+        );
+        let v = verify_drafts(
+            "WO-456 completed 12 units",
+            std::slice::from_ref(&item),
+            &ctx,
+            &[draft],
+            &HashMap::new(),
+            &[],
+        );
+        assert_eq!(v["verdict"], "needs_evidence");
+        let issues: Vec<String> = serde_json::from_value(v["issues"].clone()).unwrap();
+        assert!(
+            issues
+                .iter()
+                .any(|i| i.contains("wrong object") && i.contains("WO-456")),
+            "an evidence for WO-123 cannot measure a WO-456 claim: {issues:?}"
+        );
+    }
+
+    #[test]
+    fn real_evidence_wrong_attribute_fails() {
+        let item = typed_wo_item(12);
+        let ctx = ctx_at_site_1();
+        let draft = typed_draft(
+            "WO-123 completed quantity 999 units",
+            &item,
+            "work_order",
+            "WO-123",
+            "quantity",
+            ClaimOperator::Equal,
+            serde_json::json!(999),
+            Some("units"),
+            None,
+        );
+        let v = verify_drafts(
+            "WO-123 completed quantity is 999 units",
+            std::slice::from_ref(&item),
+            &ctx,
+            &[draft],
+            &HashMap::new(),
+            &[],
+        );
+        assert_eq!(v["verdict"], "needs_evidence");
+        let issues: Vec<String> = serde_json::from_value(v["issues"].clone()).unwrap();
+        assert!(
+            issues
+                .iter()
+                .any(|i| i.contains("wrong attribute") && i.contains("'quantity'")),
+            "quantity_completed evidence cannot measure a quantity claim: {issues:?}"
+        );
+    }
+
+    #[test]
+    fn real_evidence_wrong_object_type_fails() {
+        // The staffing/inventory family test, deterministic: evidence of
+        // object type X can never measure a claim about object type Y.
+        let inv = ContextFact::measured(
+            "live_state",
+            "product",
+            "P-42",
+            "available_inventory",
+            417,
+            Some("units"),
+            Some(uuid::Uuid::from_u128(1)),
+            Some(uuid::Uuid::from_u128(11)),
+            Some(chrono::Utc::now() - chrono::Duration::minutes(1)),
+            "Product P-42 available inventory is 417 units.",
+        );
+        let mut inv_item = inv.to_context_item();
+        inv_item.evidence_id = inv_item.derive_evidence_id();
+        let ctx = ctx_at_site_1();
+        let draft = typed_draft(
+            "Tangier is severely understaffed",
+            &inv_item,
+            "work_center_team",
+            "SMT",
+            "operator_count",
+            ClaimOperator::LessThan,
+            serde_json::json!(6),
+            Some("operators"),
+            None,
+        );
+        let v = verify_drafts(
+            "Tangier is severely understaffed.",
+            std::slice::from_ref(&inv_item),
+            &ctx,
+            &[draft],
+            &HashMap::new(),
+            &[],
+        );
+        assert_eq!(
+            v["verdict"], "needs_evidence",
+            "an inventory evidence cannot measure a staffing claim"
+        );
+        let issues: Vec<String> = serde_json::from_value(v["issues"].clone()).unwrap();
+        assert!(
+            issues
+                .iter()
+                .any(|i| i.contains("wrong object type")),
+            "{issues:?}"
+        );
+    }
+
+    #[test]
+    fn wrong_site_evidence_fails_and_same_site_passes() {
+        // Twenty-third audit semantics, deterministic: site scope is
+        // STRUCTURAL — a Bizerte (2) staffing evidence cannot measure a
+        // Tangier (1) claim, and the same-site evidence passes.
+        let mut bizerte = ContextFact::measured(
+            "live_state",
+            "work_center_team",
+            "SMT",
+            "operator_count",
+            5,
+            Some("operators"),
+            Some(uuid::Uuid::from_u128(2)),
+            Some(uuid::Uuid::from_u128(21)),
+            Some(chrono::Utc::now() - chrono::Duration::minutes(1)),
+            "Bizerte SMT line staffing: 5 operators on shift A.",
+        )
+        .to_context_item();
+        bizerte.evidence_id = bizerte.derive_evidence_id();
+        let ctx = ctx_at_site_1();
+        let draft = typed_draft(
+            "L'équipe SMT de Tangier manque de personnel",
+            &bizerte,
+            "work_center_team",
+            "SMT",
+            "operator_count",
+            ClaimOperator::LessThan,
+            serde_json::json!(6),
+            Some("operators"),
+            None,
+        );
+        let v = verify_drafts(
+            "L'équipe SMT de Tangier manque de personnel.",
+            std::slice::from_ref(&bizerte),
+            &ctx,
+            &[draft],
+            &HashMap::new(),
+            &[],
+        );
+        assert_eq!(
+            v["verdict"], "needs_evidence",
+            "a Tangier-scoped claim cannot be measured by Bizerte evidence"
+        );
+        let issues: Vec<String> = serde_json::from_value(v["issues"].clone()).unwrap();
+        assert!(
+            issues
+                .iter()
+                .any(|i| i.contains("wrong site scope")),
+            "the issue names the structural site mismatch: {issues:?}"
+        );
+
+        let mut tangier = ContextFact::measured(
+            "live_state",
+            "work_center_team",
+            "SMT",
+            "operator_count",
+            5,
+            Some("operators"),
+            Some(uuid::Uuid::from_u128(1)),
+            Some(uuid::Uuid::from_u128(11)),
+            Some(chrono::Utc::now() - chrono::Duration::minutes(1)),
+            "Tangier SMT line staffing: 5 operators on shift A.",
+        )
+        .to_context_item();
+        tangier.evidence_id = tangier.derive_evidence_id();
+        let draft = typed_draft(
+            "L'équipe SMT de Tangier manque de personnel",
+            &tangier,
+            "work_center_team",
+            "SMT",
+            "operator_count",
+            ClaimOperator::LessThan,
+            serde_json::json!(6),
+            Some("operators"),
+            None,
+        );
+        let v2 = verify_drafts(
+            "L'équipe SMT de Tangier manque de personnel.",
+            std::slice::from_ref(&tangier),
+            &ctx,
+            &[draft],
+            &HashMap::new(),
+            &[],
+        );
+        assert_eq!(v2["verdict"], "pass", "same-scope evidence measures the claim");
+    }
+
+    #[test]
+    fn wrong_unit_fails() {
+        let item = typed_wo_item(12);
+        let ctx = ctx_at_site_1();
+        let draft = typed_draft(
+            "WO-123 completed 12 kg",
+            &item,
+            "work_order",
+            "WO-123",
+            "quantity_completed",
+            ClaimOperator::Equal,
+            serde_json::json!(12),
+            Some("kg"),
+            None,
+        );
+        let v = verify_drafts(
+            "WO-123 completed 12 kg",
+            std::slice::from_ref(&item),
+            &ctx,
+            &[draft],
+            &HashMap::new(),
+            &[],
+        );
+        assert_eq!(v["verdict"], "needs_evidence");
+        let issues: Vec<String> = serde_json::from_value(v["issues"].clone()).unwrap();
+        assert!(
+            issues.iter().any(|i| i.contains("unit mismatch") && i.contains("kg")),
+            "{issues:?}"
+        );
+    }
+
+    #[test]
+    fn wrong_valid_time_fails() {
+        // The claim asserts the fact held TWO DAYS ago; the evidence
+        // observed it two minutes ago. Claim time and evidence time never
+        // coincide and the claim time is out of freshness.
+        let item = typed_wo_item(12);
+        let ctx = ctx_at_site_1();
+        let claimed_time = (chrono::Utc::now() - chrono::Duration::days(2)).to_rfc3339();
+        let draft = typed_draft(
+            "WO-123 completed 12 units as of two days ago",
+            &item,
+            "work_order",
+            "WO-123",
+            "quantity_completed",
+            ClaimOperator::Equal,
+            serde_json::json!(12),
+            Some("units"),
+            Some(claimed_time),
+        );
+        let v = verify_drafts(
+            "WO-123 completed 12 units.",
+            std::slice::from_ref(&item),
+            &ctx,
+            &[draft],
+            &HashMap::new(),
+            &[],
+        );
+        assert_eq!(v["verdict"], "needs_evidence");
+        let issues: Vec<String> = serde_json::from_value(v["issues"].clone()).unwrap();
+        assert!(
+            issues.iter().any(|i| i.contains("wrong valid time") || i.contains("out-of-freshness")),
+            "a claim time the evidence never observed must fail: {issues:?}"
+        );
+    }
+
+    #[test]
+    fn measured_claim_requires_a_typed_assertion() {
+        // A structured claim with a REAL evidence id but NO typed
+        // assertion cannot be measured — without operator/value there is
+        // nothing to reject a false value with.
+        let item = typed_wo_item(12);
+        let ctx = ctx_at_site_1();
+        let draft = ClaimDraft {
+            statement: "WO-123 completed 999 units".to_string(),
+            epistemic_kind: "measured".to_string(),
+            fact_address: None,
+            evidence_ids: vec![item.evidence_id.clone()],
+            assertion: None,
+            derived: None,
+        };
+        let v = verify_drafts(
+            "WO-123 completed 999 units.",
+            std::slice::from_ref(&item),
+            &ctx,
+            &[draft],
+            &HashMap::new(),
+            &[],
+        );
+        assert_eq!(v["verdict"], "needs_evidence");
+        let claims: Vec<Claim> = serde_json::from_value(v["claims"].clone()).unwrap();
+        assert_eq!(claims[0].epistemic_status, "unverified");
+        assert!(
+            claims[0].evidence_refs.iter().any(|r| r == &item.evidence_id),
+            "the real evidence id stays recorded on the unverified claim"
+        );
+        let issues: Vec<String> = serde_json::from_value(v["issues"].clone()).unwrap();
+        assert!(
+            issues
+                .iter()
+                .any(|i| i.contains("must carry a typed ClaimAssertion")),
+            "{issues:?}"
+        );
+    }
+
+    #[test]
+    fn prose_without_structured_representation_is_flagged_not_measured() {
+        // The prose scanner is DEFENSE-IN-DEPTH: a factual sentence with a
+        // REAL evidence marker but no typed claim in the structured
+        // channel is never measured — it is flagged as unrepresented
+        // prose and the reply is repaired.
+        let item = typed_wo_item(12);
+        let ctx = ctx_at_site_1();
+        let v = verify_ctx(
             &format!(
-                "Process yield on line 12 currently stands at 42 units [evidence: {}].",
+                "The work order WO-123 has completed 12 units [evidence: {}].",
                 item.evidence_id
             ),
             std::slice::from_ref(&item),
+            &ctx,
         );
-        assert_eq!(v["verdict"], "pass");
+        assert_eq!(
+            v["verdict"], "needs_evidence",
+            "real evidence id alone cannot measure prose"
+        );
+        let issues: Vec<String> = serde_json::from_value(v["issues"].clone()).unwrap();
+        assert!(
+            issues.iter().any(|i| i.contains("rendered only in prose")),
+            "{issues:?}"
+        );
         let claims: Vec<Claim> = serde_json::from_value(v["claims"].clone()).unwrap();
-        assert_eq!(claims.len(), 1);
-        assert_eq!(claims[0].epistemic_status, "measured");
-        assert_eq!(claims[0].evidence_refs, vec![item.evidence_id]);
+        assert_eq!(claims[0].epistemic_status, "unverified");
     }
 
     #[test]
     fn verifier_flags_qualitative_live_state_claims() {
-        // Twentieth audit P1: "Production is running." is a LIVE-STATE
-        // claim — no digit is required for a consequential assertion to
-        // enter the evidence system. Both sentences fail verification
-        // because neither cites kernel-issued evidence.
         let v = verify(
             "Production is running. The order will be delivered on time.",
             &[],
@@ -1492,8 +2331,6 @@ mod tests {
 
     #[test]
     fn verifier_flags_qualitative_assertions_about_entities() {
-        // The audit's canonical examples: "the line is unstable" /
-        // "Tangier is understaffed" fail verification without a digit.
         let v = verify("The Tangier line is severely understaffed.", &[]);
         assert_eq!(v["verdict"], "needs_evidence");
         let claims: Vec<Claim> = serde_json::from_value(v["claims"].clone()).unwrap();
@@ -1505,7 +2342,7 @@ mod tests {
 
     #[test]
     fn verifier_flags_evidence_marker_not_in_evidence_id_set() {
-        let item = kernel_item("metric_tree", "real source line");
+        let item = typed_wo_item(12);
         let v = verify(
             "Line 12 currently stands at 42 units [evidence: nope.missing@nowhere].",
             &[item],
@@ -1513,7 +2350,6 @@ mod tests {
         assert_eq!(v["verdict"], "needs_evidence");
         let claims: Vec<Claim> = serde_json::from_value(v["claims"].clone()).unwrap();
         assert_eq!(claims[0].epistemic_status, "unverified");
-        assert!(claims[0].evidence_refs.is_empty());
         let issues: Vec<String> = serde_json::from_value(v["issues"].clone()).unwrap();
         assert!(issues
             .iter()
@@ -1522,119 +2358,223 @@ mod tests {
 
     #[test]
     fn verifier_does_not_match_marker_against_context_substrings() {
-        // Nineteenth audit P1: the OLD check accepted any marker whose text
-        // appeared as a SUBSTRING of a context line. The typed check
-        // requires the marker to BE the evidence_id of a prepared item — a
-        // source name that merely appears inside the payload text is NOT
-        // evidence.
-        let item = kernel_item("metric_tree", "metric.process_yield_proxy@Bizerte: 42");
+        // Nineteenth audit P1 regression: the OLD check accepted any
+        // marker whose text appeared as a SUBSTRING of a context line.
+        // The typed check requires the marker to BE the evidence_id of a
+        // prepared item — a source name that merely appears inside the
+        // payload text is NOT evidence.
+        let item = typed_wo_item(12);
         let v = verify(
-            "Line 12 currently stands at 42 units [evidence: metric.process_yield_proxy@Bizerte].",
-            &[item],
+            "The work order has completed 12 units [evidence: work_order].",
+            std::slice::from_ref(&item),
         );
         assert_eq!(v["verdict"], "needs_evidence");
         let claims: Vec<Claim> = serde_json::from_value(v["claims"].clone()).unwrap();
         assert_eq!(claims[0].epistemic_status, "unverified");
+        let issues: Vec<String> = serde_json::from_value(v["issues"].clone()).unwrap();
+        assert!(
+            issues
+                .iter()
+                .any(|i| i.contains("Unverified evidence reference") && i.contains("work_order")),
+            "{issues:?}"
+        );
     }
 
     #[test]
-    fn staffing_claim_cannot_cite_inventory_evidence() {
-        // Twenty-first audit item 7: membership in the issued set is not
-        // enough — the evidence must DESCRIBE the claimed subject.
-        let inv = kernel_item("inventory", "Product X available inventory is 417 units.");
+    fn fake_evidence_marker_in_unclassified_prose_fails() {
+        // Thirtieth audit item 23: EVERY [evidence: ...] marker is parsed
+        // on every sentence, whether or not the sentence classifies as a
+        // factual claim — a fabricated citation can never hide inside
+        // prose the lexical scanner ignores ("Merci beaucoup" is not a
+        // factual claim by any heuristic).
         let v = verify(
-            &format!(
-                "Tangier is severely understaffed [evidence: {}].",
-                inv.evidence_id
-            ),
-            std::slice::from_ref(&inv),
+            "Merci beaucoup pour votre aide [evidence: ev:made-up-marker]. Au revoir.",
+            &[],
         );
         assert_eq!(
             v["verdict"], "needs_evidence",
-            "a staffing claim must not be measured by inventory evidence"
+            "the fake marker must be caught even in unclassified prose"
         );
         let issues: Vec<String> = serde_json::from_value(v["issues"].clone()).unwrap();
         assert!(
             issues
                 .iter()
-                .any(|i| i.contains("does NOT describe this claim's subject")),
-            "the issue names the evidence/claim relationship violation"
+                .any(|i| i.contains("Unverified evidence reference") && i.contains("ev:made-up-marker")),
+            "{issues:?}"
         );
-        let claims: Vec<Claim> = serde_json::from_value(v["claims"].clone()).unwrap();
-        assert_eq!(claims[0].epistemic_status, "unverified");
     }
 
     #[test]
-    fn tangier_staffing_claim_cannot_cite_bizerte_staffing_evidence() {
-        // Twenty-second audit: family equality alone is not enough — the
-        // SITE must match too.
-        let mut ctx = test_ctx();
-        ctx.site_id = Some(uuid::Uuid::from_u128(1));
-        let bizerte = kernel_item_at(
-            "section:staffing",
-            "Bizerte SMT line staffing: 8 operators on shift A.",
-            Some(uuid::Uuid::from_u128(2)),
+    fn real_evidence_marker_in_unclassified_prose_passes() {
+        // A real marker inside a non-factual sentence is valid — the
+        // marker parsing is independent of the claim classification, and
+        // no unrepresented factual prose exists here.
+        let item = typed_wo_item(12);
+        let v = verify(
+            &format!("Merci beaucoup [evidence: {}].", item.evidence_id),
+            &[item],
         );
-        let v = verify_ctx(
-            &format!(
-                "Tangier is severely understaffed [evidence: {}].",
-                bizerte.evidence_id
-            ),
-            std::slice::from_ref(&bizerte),
+        assert_eq!(v["verdict"], "pass");
+    }
+
+    #[test]
+    fn derived_claim_wrong_math_fails() {
+        // The deterministic program recomputed 0.9722…; the claim asserts
+        // 0.99 → rejected. With the correct result the claim is measured.
+        let item = typed_metric_item(0.9722222222222222);
+        let recomputed = RecomputedDerivation {
+            derivation_id: "process_yield_proxy".to_string(),
+            version: 1,
+            value: serde_json::json!(0.9722222222222222),
+            unit: Some("ratio".to_string()),
+            recomputed_at: chrono::Utc::now(),
+        };
+        let mut recomputed_map = HashMap::new();
+        recomputed_map.insert(
+            derivation_key("process_yield_proxy", 1),
+            recomputed,
+        );
+        let ctx = ctx_at_site_1();
+        let bad = ClaimDraft {
+            statement: "First pass yield is 0.99".to_string(),
+            epistemic_kind: "measured".to_string(),
+            fact_address: None,
+            evidence_ids: vec![item.evidence_id.clone()],
+            assertion: None,
+            derived: Some(DerivedClaimDraft {
+                derivation_id: "process_yield_proxy".to_string(),
+                derivation_version: 1,
+                operand_evidence_ids: vec![item.evidence_id.clone()],
+                result: Some(serde_json::json!(0.99)),
+                unit: Some("ratio".to_string()),
+            }),
+        };
+        let v = verify_drafts(
+            "First pass yield is 0.99.",
+            std::slice::from_ref(&item),
             &ctx,
+            &[bad],
+            &recomputed_map,
+            &[],
         );
         assert_eq!(
             v["verdict"], "needs_evidence",
-            "a Tangier staffing claim cannot be measured by Bizerte evidence"
+            "wrong derived math must fail: {:?}",
+            v["issues"]
         );
         let issues: Vec<String> = serde_json::from_value(v["issues"].clone()).unwrap();
         assert!(
-            issues.iter().any(|i| i.contains("site scope differs")),
-            "the issue names the site mismatch: {:?}",
             issues
+                .iter()
+                .any(|i| i.contains("derived claim does not hold")),
+            "{issues:?}"
+        );
+
+        // The CORRECT derived claim is measured against the recomputation.
+        let good = ClaimDraft {
+            statement: "First pass yield is 0.9722".to_string(),
+            epistemic_kind: "measured".to_string(),
+            fact_address: None,
+            evidence_ids: vec![item.evidence_id.clone()],
+            assertion: None,
+            derived: Some(DerivedClaimDraft {
+                derivation_id: "process_yield_proxy".to_string(),
+                derivation_version: 1,
+                operand_evidence_ids: vec![item.evidence_id.clone()],
+                result: Some(serde_json::json!(0.9722222222222222)),
+                unit: Some("ratio".to_string()),
+            }),
+        };
+        let v2 = verify_drafts(
+            "First pass yield is 0.9722.",
+            std::slice::from_ref(&item),
+            &ctx,
+            &[good],
+            &recomputed_map,
+            &[],
+        );
+        assert_eq!(v2["verdict"], "pass", "{:?}", v2["issues"]);
+        let claims: Vec<Claim> = serde_json::from_value(v2["claims"].clone()).unwrap();
+        assert_eq!(claims[0].epistemic_status, "measured");
+        assert!(claims[0].derived.is_some());
+    }
+
+    #[test]
+    fn derived_claim_without_server_recomputation_fails_closed() {
+        let item = typed_metric_item(0.9722222222222222);
+        let ctx = ctx_at_site_1();
+        let draft = ClaimDraft {
+            statement: "First pass yield is 0.9722".to_string(),
+            epistemic_kind: "measured".to_string(),
+            fact_address: None,
+            evidence_ids: vec![item.evidence_id.clone()],
+            assertion: None,
+            derived: Some(DerivedClaimDraft {
+                derivation_id: "process_yield_proxy".to_string(),
+                derivation_version: 1,
+                operand_evidence_ids: vec![],
+                result: Some(serde_json::json!(0.9722222222222222)),
+                unit: Some("ratio".to_string()),
+            }),
+        };
+        // The recompute resolution failed server-side (no live program):
+        // the derived claim is rejected, never accepted against the
+        // prepared evidence value alone.
+        let recompute_issues = vec![
+            "derived claim 'process_yield_proxy'@v1 could not be recomputed — no live \\
+             deterministic derivation program is available for this request"
+                .to_string(),
+        ];
+        let v = verify_drafts(
+            "First pass yield is 0.9722.",
+            std::slice::from_ref(&item),
+            &ctx,
+            &[draft],
+            &HashMap::new(),
+            &recompute_issues,
+        );
+        assert_eq!(v["verdict"], "needs_evidence");
+        let issues: Vec<String> = serde_json::from_value(v["issues"].clone()).unwrap();
+        assert!(
+            issues
+                .iter()
+                .any(|i| i.contains("could not be recomputed")),
+            "{issues:?}"
         );
     }
 
     #[test]
-    fn context_scoped_claim_cannot_cite_other_site_evidence_without_prose() {
-        // Twenty-third audit: "the SMT line is understaffed" in a Tangier
-        // (uuid 1) conversation rejects Bizerte (uuid 2) evidence even
-        // though the sentence never says 'Tangier' — STRUCTURAL matching.
-        let mut ctx = test_ctx();
-        ctx.site_id = Some(uuid::Uuid::from_u128(1));
-        let bizerte = kernel_item_at(
-            "section:staffing",
-            "Bizerte SMT line staffing: 8 operators on shift A.",
-            Some(uuid::Uuid::from_u128(2)),
-        );
-        let v = verify_ctx(
-            &format!(
-                "The SMT line is understaffed [evidence: {}].",
-                bizerte.evidence_id
-            ),
-            std::slice::from_ref(&bizerte),
+    fn derived_claim_unknown_program_fails_closed() {
+        let ctx = ctx_at_site_1();
+        let draft = ClaimDraft {
+            statement: "The made-up index is 97.2".to_string(),
+            epistemic_kind: "measured".to_string(),
+            fact_address: None,
+            evidence_ids: vec![],
+            assertion: None,
+            derived: Some(DerivedClaimDraft {
+                derivation_id: "made_up_index".to_string(),
+                derivation_version: 1,
+                operand_evidence_ids: vec![],
+                result: Some(serde_json::json!(97.2)),
+                unit: Some("ratio".to_string()),
+            }),
+        };
+        let v = verify_drafts(
+            "The made-up index is 97.2.",
+            &[],
             &ctx,
+            &[draft],
+            &HashMap::new(),
+            &[],
         );
-        assert_eq!(
-            v["verdict"], "needs_evidence",
-            "a Tangier-scoped claim cannot be measured by Bizerte evidence"
-        );
-        let tangier = kernel_item_at(
-            "section:staffing",
-            "Tangier SMT line staffing: 5 operators on shift A.",
-            Some(uuid::Uuid::from_u128(1)),
-        );
-        let v2 = verify_ctx(
-            &format!(
-                "The SMT line is understaffed [evidence: {}].",
-                tangier.evidence_id
-            ),
-            std::slice::from_ref(&tangier),
-            &ctx,
-        );
-        assert_eq!(
-            v2["verdict"], "pass",
-            "same-scope evidence measures the claim"
+        assert_eq!(v["verdict"], "needs_evidence");
+        let issues: Vec<String> = serde_json::from_value(v["issues"].clone()).unwrap();
+        assert!(
+            issues
+                .iter()
+                .any(|i| i.contains("could not be recomputed")),
+            "a derivation id with no deterministic program is rejected: {issues:?}"
         );
     }
 
@@ -1664,7 +2604,8 @@ mod tests {
             ]
         );
         assert_eq!(
-            split_sentences("a. b; c\nd"),
+            split_sentences("a. b; c
+d"),
             vec![
                 "a".to_string(),
                 "b".to_string(),
@@ -1683,11 +2624,6 @@ mod tests {
 
     #[test]
     fn site_marked_context_line_survives_parsing_with_site_scope() {
-        // Twenty-fifth audit P0: the kernel emits site-marked lines as
-        // "section [live site:<uuid>]: content". The old parser split on
-        // " [live]: " and dropped every such line, so site-scoped
-        // evidence never reached the model. The line must survive and its
-        // parsed site must become the item's site scope.
         let site = uuid::Uuid::from_u128(42);
         let line = format!("current_work [live site:{site}]: wo=WO-7 product=P completed=10/50");
         let (section, content, source_site) =
@@ -1699,13 +2635,11 @@ mod tests {
             Some(site),
             "the parsed source site must become the evidence site scope"
         );
-        // The site-less form still parses with no scope.
         let (section, content, source_site) =
             parse_context_line("live_state [live]: condition=COND-1 status=open").unwrap();
         assert_eq!(section, "live_state");
         assert_eq!(content, "condition=COND-1 status=open");
         assert_eq!(source_site, None);
-        // A line without any tag is kept whole — never dropped.
         let (section, content, source_site) =
             parse_context_line("no additional context for this task").unwrap();
         assert_eq!(section, "");
@@ -1713,157 +2647,57 @@ mod tests {
         assert_eq!(source_site, None);
     }
 
-    fn verify_drafts(
-        content: &str,
-        kernel_items: &[sensei_agent_core::context::ContextItem],
-        ctx: &AgentContext,
-        drafts: &[ClaimDraft],
-    ) -> serde_json::Value {
-        let policy = sensei_agent_core::tools::PolicyEngine::new(
-            crate::services::agent::build_readonly_tools(),
-            sensei_agent_core::tools::ToolRisk::ReadOnly,
-        );
-        let tools = policy.effective_tools(ctx);
-        verify_chat_response(
-            &response_with(content),
-            ctx,
-            &policy,
-            &tools,
-            kernel_items,
-            drafts,
-        )
-    }
-
-    #[test]
-    fn structured_french_measured_draft_is_rejected_by_site_scope_without_english() {
-        // Twenty-seventh audit P1: a French "measured" draft citing a
-        // Bizerte-scoped evidence id inside a Tangier-scoped request is
-        // rejected by the STRUCTURAL site check. No English word appears
-        // in the claim — multilingual correctness is achieved structurally,
-        // not by prose heuristics. Twenty-eighth audit P0-2: the prose
-        // reply is scanned ALONGSIDE the draft ("Production is running."
-        // is flagged too) — structured claims never replace prose
-        // verification.
-        let mut ctx = test_ctx();
-        ctx.site_id = Some(uuid::Uuid::from_u128(1));
-        let bizerte = kernel_item_at(
-            "section:staffing",
-            "Bizerte SMT line staffing: 8 operators on shift A.",
-            Some(uuid::Uuid::from_u128(2)),
-        );
-        let draft = ClaimDraft {
-            statement: "La ligne de Tangier manque de personnel".to_string(),
-            epistemic_kind: "measured".to_string(),
-            fact_address: None,
-            evidence_ids: vec![bizerte.evidence_id.clone()],
-        };
-        let v = verify_drafts(
-            "Production is running.",
-            std::slice::from_ref(&bizerte),
-            &ctx,
-            &[draft],
-        );
-        assert_eq!(
-            v["verdict"], "needs_evidence",
-            "wrong-site evidence cannot measure the French claim"
-        );
-        let claims: Vec<Claim> = serde_json::from_value(v["claims"].clone()).unwrap();
-        assert_eq!(
-            claims.len(),
-            2,
-            "the prose reply is scanned IN ADDITION to the structured draft"
-        );
-        let french = claims
-            .iter()
-            .find(|c| c.statement == "La ligne de Tangier manque de personnel")
-            .expect("the French claim survives verbatim — no English rewrite");
-        assert_eq!(french.epistemic_status, "unverified");
-        assert!(
-            claims
-                .iter()
-                .any(|c| c.statement.contains("Production is running")),
-            "the reply's prose claim is still checked — drafts are supplementary"
-        );
-        let issues: Vec<String> = serde_json::from_value(v["issues"].clone()).unwrap();
-        assert!(
-            issues.iter().any(|i| i.contains("site scope differs")),
-            "the issue names the site mismatch: {:?}",
-            issues
-        );
-    }
-
     #[test]
     fn caller_assumed_draft_cannot_bypass_the_factual_check() {
-        // Twenty-eighth audit P0-2 item 2: the caller's declared epistemic
-        // kind ('assumed'/'recommended') is IGNORED — every caller draft is
-        // verified like a measured claim. An 'assumed' draft without
-        // evidence raises the unverified-fact issue; it is never recorded
-        // as a privileged non-factual claim.
+        // An unevidenced caller draft (whatever its declared kind) is
+        // never measured — it raises the unverified-fact issue.
         let ctx = test_ctx();
         let draft = ClaimDraft {
             statement: "La ligne de Tangier manque de personnel".to_string(),
             epistemic_kind: "assumed".to_string(),
             fact_address: None,
             evidence_ids: vec![],
+            assertion: None,
+            derived: None,
         };
-        let v = verify_drafts("", &[], &ctx, &[draft]);
-        assert_eq!(
-            v["verdict"], "needs_evidence",
-            "an unevidenced caller draft fails verification regardless of its declared kind"
-        );
+        let v = verify_drafts("", &[], &ctx, &[draft], &HashMap::new(), &[]);
+        assert_eq!(v["verdict"], "needs_evidence");
         let issues: Vec<String> = serde_json::from_value(v["issues"].clone()).unwrap();
         assert!(
             issues
                 .iter()
                 .any(|i| i.contains("Unverified factual claim")),
-            "the assumed draft raises the unverified-fact issue like any prose claim: {:?}",
-            issues
+            "{issues:?}"
         );
         let claims: Vec<Claim> = serde_json::from_value(v["claims"].clone()).unwrap();
         assert_eq!(claims.len(), 1);
-        assert_eq!(
-            claims[0].epistemic_status, "unverified",
-            "the draft is not recorded with the caller's declared kind"
-        );
-        assert_eq!(
-            claims[0].statement,
-            "La ligne de Tangier manque de personnel"
-        );
+        assert_eq!(claims[0].epistemic_status, "unverified");
+        assert_eq!(claims[0].statement, "La ligne de Tangier manque de personnel");
         assert_eq!(v["claims_checked"], 1);
     }
 
     #[test]
     fn caller_recommended_draft_cannot_suppress_prose_verification() {
-        // Twenty-eighth audit P0-2 test (a): the caller sends ONE harmless
-        // 'recommended' draft ('Check the issue.', no evidence) while the
-        // model reply asserts an unverified factual claim ('Tangier
-        // inventory has fallen to 12 units.'). The prose scanner MUST
-        // still run — the reply's claim is checked, fails, and the verdict
-        // is needs_evidence. The old skip-the-prose-when-drafts-exist
-        // bypass is closed.
         let ctx = test_ctx();
         let draft = ClaimDraft {
             statement: "Check the issue.".to_string(),
             epistemic_kind: "recommended".to_string(),
             fact_address: None,
             evidence_ids: vec![],
+            assertion: None,
+            derived: None,
         };
         let v = verify_drafts(
             "Tangier inventory has fallen to 12 units.",
             &[],
             &ctx,
             &[draft],
+            &HashMap::new(),
+            &[],
         );
-        assert_eq!(
-            v["verdict"], "needs_evidence",
-            "an unevidenced model claim cannot pass because a draft was supplied"
-        );
+        assert_eq!(v["verdict"], "needs_evidence");
         let claims: Vec<Claim> = serde_json::from_value(v["claims"].clone()).unwrap();
-        assert_eq!(
-            claims.len(),
-            2,
-            "the prose claim AND the caller draft are both checked"
-        );
+        assert_eq!(claims.len(), 2);
         let prose = claims
             .iter()
             .find(|c| c.statement == "Tangier inventory has fallen to 12 units")
@@ -1874,127 +2708,229 @@ mod tests {
         assert!(
             issues.iter().any(|i| i.contains("Unverified factual claim")
                 && i.contains("Tangier inventory has fallen to 12 units")),
-            "the unverified prose claim is reported: {:?}",
-            issues
-        );
-    }
-
-    #[test]
-    fn caller_draft_with_correct_same_site_evidence_passes_alongside_prose() {
-        // Twenty-eighth audit P0-2 test (b): structured claims are
-        // SUPPLEMENTARY — a caller draft citing CORRECT same-site evidence
-        // passes, and the prose reply is verified alongside it. The
-        // declared 'recommended' kind is ignored: with evidence the draft
-        // is recorded 'measured' like any verified claim.
-        let mut ctx = test_ctx();
-        ctx.site_id = Some(uuid::Uuid::from_u128(1));
-        let item = kernel_item_at(
-            "inventory",
-            "Tangier inventory available: 12 units.",
-            Some(uuid::Uuid::from_u128(1)),
-        );
-        let draft = ClaimDraft {
-            statement: "Tangier inventory has fallen to 12 units.".to_string(),
-            epistemic_kind: "recommended".to_string(),
-            fact_address: None,
-            evidence_ids: vec![item.evidence_id.clone()],
-        };
-        let v = verify_drafts(
-            &format!(
-                "Tangier inventory is at 12 units [evidence: {}].",
-                item.evidence_id
-            ),
-            std::slice::from_ref(&item),
-            &ctx,
-            &[draft],
-        );
-        assert_eq!(v["verdict"], "pass");
-        let claims: Vec<Claim> = serde_json::from_value(v["claims"].clone()).unwrap();
-        assert_eq!(
-            claims.len(),
-            2,
-            "the verified prose claim and the verified draft both pass"
-        );
-        assert!(
-            claims.iter().all(|c| c.epistemic_status == "measured"),
-            "evidence-backed prose and drafts are measured: {:?}",
-            claims
-        );
-        assert!(
-            claims.iter().all(|c| !c.evidence_refs.is_empty()),
-            "every measured claim carries its evidence refs"
+            "{issues:?}"
         );
     }
 
     #[test]
     fn french_prose_with_unevidenced_caller_draft_is_flagged() {
-        // Twenty-eighth audit P0-2 test (c): a French prose reply 'La
-        // ligne est instable.' with a caller draft carrying no evidence
-        // must yield needs_evidence — whether the multilingual prose
-        // scanner catches the sentence or the draft check catches the
-        // unevidenced claim, the unverified content never passes.
         let ctx = test_ctx();
         let draft = ClaimDraft {
             statement: "La ligne est instable.".to_string(),
             epistemic_kind: "measured".to_string(),
             fact_address: None,
             evidence_ids: vec![],
+            assertion: None,
+            derived: None,
         };
-        let v = verify_drafts("La ligne est instable.", &[], &ctx, &[draft]);
-        assert_eq!(
-            v["verdict"], "needs_evidence",
-            "French unevidenced content is flagged by the prose scanner or the draft check"
-        );
+        let v = verify_drafts("La ligne est instable.", &[], &ctx, &[draft], &HashMap::new(), &[]);
+        assert_eq!(v["verdict"], "needs_evidence");
         let issues: Vec<String> = serde_json::from_value(v["issues"].clone()).unwrap();
         assert!(
             issues
                 .iter()
                 .any(|i| i.contains("Unverified factual claim") && i.contains("instable")),
-            "an unverified-fact issue names the unevidenced statement: {:?}",
-            issues
+            "{issues:?}"
         );
     }
 
     #[test]
-    fn caller_draft_fact_address_resolves_claim_family_first() {
-        // Twenty-eighth audit P0-2 item 3: when a structured draft declares
-        // a fact_address and the cited evidence lacks a scope/family
-        // (crafted, site-less item), claim family resolution consults the
-        // draft's fact_address text FIRST, then the statement. The French
-        // statement carries no English family keyword — with the
-        // fact_address it measures against the cited production evidence;
-        // without it the claim has no resolvable family and fails.
-        let ctx = test_ctx();
-        let item = kernel_item("production", "Bizerte: 8 operateurs sur la ligne.");
-        let draft_with_address = ClaimDraft {
-            statement: "La ligne de Bizerte est instable".to_string(),
-            epistemic_kind: "measured".to_string(),
-            fact_address: Some("section:production".to_string()),
-            evidence_ids: vec![item.evidence_id.clone()],
-        };
-        let v = verify_drafts("", std::slice::from_ref(&item), &ctx, &[draft_with_address]);
+    fn structured_french_measured_draft_with_typed_assertion_is_rejected_by_wrong_site() {
+        // Twenty-seventh audit P1 in its deterministic form: a French
+        // measured draft carrying a TYPED assertion is rejected by the
+        // STRUCTURAL site check — no English word appears anywhere.
+        let mut bizerte = ContextFact::measured(
+            "live_state",
+            "work_center_team",
+            "SMT",
+            "operator_count",
+            8,
+            Some("operators"),
+            Some(uuid::Uuid::from_u128(2)),
+            Some(uuid::Uuid::from_u128(21)),
+            Some(chrono::Utc::now() - chrono::Duration::minutes(1)),
+            "Bizerte SMT line staffing: 8 operators on shift A.",
+        )
+        .to_context_item();
+        bizerte.evidence_id = bizerte.derive_evidence_id();
+        let mut ctx = ctx_at_site_1();
+        ctx.work_center_id = None;
+        let draft = typed_draft(
+            "La ligne SMT de Bizerte est sous-effectuée",
+            &bizerte,
+            "work_center_team",
+            "SMT",
+            "operator_count",
+            ClaimOperator::GreaterThanOrEqual,
+            serde_json::json!(8),
+            Some("operators"),
+            None,
+        );
+        let v = verify_drafts(
+            "La ligne SMT de Bizerte est sous-effectuée.",
+            std::slice::from_ref(&bizerte),
+            &ctx,
+            &[draft],
+            &HashMap::new(),
+            &[],
+        );
         assert_eq!(
-            v["verdict"], "pass",
-            "the fact_address family measures the multilingual claim against the cited evidence"
+            v["verdict"], "needs_evidence",
+            "wrong-site evidence cannot measure the French claim"
         );
         let claims: Vec<Claim> = serde_json::from_value(v["claims"].clone()).unwrap();
-        assert_eq!(claims[0].epistemic_status, "measured");
-        assert_eq!(claims[0].evidence_refs, vec![item.evidence_id.clone()]);
-        let draft_without_address = ClaimDraft {
-            statement: "La ligne de Bizerte est instable".to_string(),
-            epistemic_kind: "measured".to_string(),
-            fact_address: None,
-            evidence_ids: vec![item.evidence_id.clone()],
-        };
-        let v2 = verify_drafts(
+        assert_eq!(claims.len(), 1);
+        let french = &claims[0];
+        assert_eq!(
+            french.statement,
+            "La ligne SMT de Bizerte est sous-effectuée"
+        );
+        assert_eq!(french.epistemic_status, "unverified");
+        let issues: Vec<String> = serde_json::from_value(v["issues"].clone()).unwrap();
+        assert!(
+            issues.iter().any(|i| i.contains("wrong site scope")),
+            "{issues:?}"
+        );
+    }
+
+    #[test]
+    fn typed_draft_address_verifies_without_any_english_keyword() {
+        // The old subject-family resolution is gone: the typed assertion
+        // itself names the fact address, so a French statement verifies
+        // against the same-object evidence with zero lexical analysis.
+        let item = typed_wo_item(12);
+        let ctx = ctx_at_site_1();
+        let draft = typed_draft(
+            "La commande WO-123 a terminé 12 unités",
+            &item,
+            "work_order",
+            "WO-123",
+            "quantity_completed",
+            ClaimOperator::Equal,
+            serde_json::json!(12),
+            Some("units"),
+            None,
+        );
+        let v = verify_drafts(
             "",
             std::slice::from_ref(&item),
             &ctx,
-            &[draft_without_address],
+            &[draft],
+            &HashMap::new(),
+            &[],
         );
-        assert_eq!(
-            v2["verdict"], "needs_evidence",
-            "without the fact_address the French statement has no resolvable claim family"
+        assert_eq!(v["verdict"], "pass", "{:?}", v["issues"]);
+        let claims: Vec<Claim> = serde_json::from_value(v["claims"].clone()).unwrap();
+        assert_eq!(claims[0].epistemic_status, "measured");
+        assert_eq!(claims[0].evidence_refs, vec![item.evidence_id.clone()]);
+    }
+
+    // ── item 24: authorization release gate ──────────────────────────
+
+    #[test]
+    fn release_gate_without_authorization_state_is_vacuous() {
+        // In-memory deployments have no DB-backed authorization state:
+        // nothing can have moved, so the release gate is open (content
+        // verification still repairs unverified claims).
+        let gate = tokio_test_block_on(authorization_gate(None, None));
+        assert!(gate);
+        assert!(!authorization_gate_sync(None, Some(&AuthzSnapshot {
+            tenant: uuid::Uuid::new_v4(),
+            principal: uuid::Uuid::new_v4(),
+            roles: vec![],
+            policy_revision: 0,
+            relationship_revision: 0,
+            principal_revision: 0,
+            scope_site: None,
+            permission_digest: [0u8; 32],
+        })));
+    }
+
+    fn tokio_test_block_on<F: std::future::Future>(f: F) -> F::Output {
+        tokio::runtime::Runtime::new().unwrap().block_on(f)
+    }
+
+    fn authorization_gate_sync(
+        db_pool: Option<&PgPool>,
+        snapshot: Option<&AuthzSnapshot>,
+    ) -> bool {
+        tokio_test_block_on(authorization_gate(db_pool, snapshot))
+    }
+
+    /// PG-gated item 24 test: the release gate must observe a revision
+    /// bump between snapshot capture and release. Requires a live
+    /// PostgreSQL test database (DATABASE_URL_TEST); skipped otherwise —
+    /// same convention as the repo's other DB-contract tests (drop every
+    /// table, re-apply the FULL migration chain, then exercise the gate).
+    #[tokio::test]
+    async fn post_generation_revocation_fails_the_release_gate() {
+        let _serial = CHAT_DB_LOCK.lock().await;
+        let Ok(url) = std::env::var("DATABASE_URL_TEST") else {
+            eprintln!("SKIP: DATABASE_URL_TEST not set — release-gate revocation runs in CI");
+            return;
+        };
+        let Ok(pool) = sqlx::PgPool::connect(&url).await else {
+            return;
+        };
+        // Disposable test database: reset to the FULL migration chain.
+        sqlx::query(
+            r#"DO $$ DECLARE r RECORD; BEGIN
+                 FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname = 'public') LOOP
+                     EXECUTE format('DROP TABLE IF EXISTS %I CASCADE', r.tablename);
+                 END LOOP;
+             END $$"#,
+        )
+        .execute(&pool)
+        .await
+        .expect("drop all tables");
+        sensei_db::migrations::run_migrations(&pool)
+            .await
+            .expect("the ENTIRE migration chain must apply to an empty database");
+
+        let tenant_id = uuid::Uuid::new_v4();
+        // authorization_revisions.tenant_id REFERENCES tenants(id) — the
+        // snapshot's lazy seed fails the FK unless the tenant exists
+        // first (same tenant-seed convention as the repo's other
+        // DB-gated suites).
+        sqlx::query("INSERT INTO tenants (id, name, slug) VALUES ($1, $2, $3)")
+            .bind(tenant_id)
+            .bind("Chatbot Release Gate Tenant")
+            .bind(format!("chat-release-gate-{tenant_id}"))
+            .execute(&pool)
+            .await
+            .expect("tenant seed");
+        // T0: capture the request's authorization snapshot (lazily seeds
+        // the tenant's revision row at 1/1/1).
+        let snapshot = sensei_services::tps::authorization_revisions::current_snapshot(
+            &pool,
+            tenant_id,
+        )
+        .await
+        .expect("current snapshot");
+        let snap = AuthzSnapshot {
+            tenant: tenant_id,
+            principal: uuid::Uuid::new_v4(),
+            roles: vec!["operator".to_string()],
+            policy_revision: snapshot.policy_revision,
+            relationship_revision: snapshot.relationship_revision,
+            principal_revision: snapshot.principal_revision,
+            scope_site: None,
+            permission_digest: [0u8; 32],
+        };
+        // T0: unchanged → the release gate is open.
+        assert!(
+            authorization_gate(Some(&pool), Some(&snap)).await,
+            "an unchanged revision triple releases"
+        );
+        // T2: a revocation lands (principal revision bump) while the
+        // model is still executing.
+        sensei_services::tps::authorization_revisions::bump_principal(&pool, tenant_id)
+            .await
+            .expect("principal revision bump");
+        // T3/T4: the release gate must now REFUSE the release.
+        assert!(
+            !authorization_gate(Some(&pool), Some(&snap)).await,
+            "a revision change between snapshot and release must block the release"
         );
     }
 }

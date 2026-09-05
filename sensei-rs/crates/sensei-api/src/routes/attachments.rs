@@ -15,17 +15,33 @@
 //! * **Reference validation** — the referenced `(entity_type, entity_id)`
 //!   must exist **and** belong to the caller's tenant. Only entity types
 //!   backed by an entity store are accepted; unknown types fail closed.
-//! * **Parent authorization (twenty-ninth-audit Wave B item 11)** —
-//!   attachments INHERIT their parent's authorization: list/download
-//!   require `attachments:read` AND [`require_parent_read`] on the
-//!   parent, upload/delete require `attachments:manage` AND
-//!   [`require_parent_manage`] — the parent check runs BEFORE any listing,
-//!   presigning or blob deletion, so a known attachment UUID never
-//!   bypasses the parent's permission/site scope.
+//! * **Parent authorization (twenty-ninth-audit Wave B item 11;
+//!   thirtieth-audit P0 items 12-13)** — attachments INHERIT their
+//!   parent's authorization: list/download require `attachments:read` AND
+//!   [`require_parent_read`] on the parent, upload/delete require
+//!   `attachments:manage` AND [`require_parent_manage`] — the parent
+//!   check runs BEFORE any listing, presigning or blob deletion, so a
+//!   known attachment UUID never bypasses the parent's permission/scope.
+//!   The proofs enforce the caller's FULL scope: an explicit tenant-wide
+//!   grant still proves parent EXISTENCE, work-order parents match their
+//!   work-center carrier exactly (never the parent site), NCR parents
+//!   apply the record's server-stamped `scope_site_id` /
+//!   `scope_work_center_id` (corporate NULL records require tenant-wide),
+//!   and `work_center` parents resolve through the relational
+//!   `work_centers` row.
 //! * **Server-side content types** — the browser-provided MIME type is
 //!   ignored; the content type is derived from a small extension allowlist
 //!   (pdf, png, jpeg, txt, csv, xlsx, docx, md). Unknown extensions are
 //!   rejected.
+//! * **Deletion lifecycle (thirtieth-audit item 14)** — DELETE runs a
+//!   two-phase lifecycle (`active → deleting → object delete → metadata
+//!   remove`) instead of deleting the object first and then the metadata:
+//!   the metadata record is tombstoned FIRST, so a transient failure can
+//!   never leave an active row pointing at a missing object. If the object
+//!   removal fails the record stays tombstoned — invisible to downloads
+//!   and listings — and the NEXT delete attempt on the same id resumes and
+//!   completes the cleanup idempotently (an object that is already gone is
+//!   treated as success). See [`delete_attachment`] for the state machine.
 //!
 //! File content lives in the storage service; metadata (including the opaque
 //! key and digest) is kept in the attachment metadata store, so listing and
@@ -671,38 +687,119 @@ pub async fn download_attachment(
 
 /// Delete an attachment by ID.
 ///
-/// Removes the file from the storage backend and deletes the metadata
-/// entry. The caller must hold `attachments:manage` AND be able to
-/// MANAGE the attachment's parent entity (`require_parent_manage`) — a
-/// known attachment UUID never bypasses the parent's authorization.
+/// Thirtieth-audit item 14: deletion follows a two-phase lifecycle so a
+/// transient failure can never leave active metadata referencing a missing
+/// object (the pre-existing order — object delete first, then metadata
+/// delete — had exactly that failure window when the metadata delete
+/// failed after the object delete succeeded):
+///
+/// ```text
+/// active ──tombstone()──▶ deleting ──object delete──▶ metadata remove
+///                            │  ▲
+///                            │  │ (object delete failed: record stays
+///                            │  └─  tombstoned; a later DELETE on the same
+///                            │      id resumes here, idempotently — an
+///                            │      object that is already gone (NotFound)
+///                            │      counts as success)
+///                            └──▶ next delete attempt completes cleanup
+/// ```
+///
+/// While a record is `deleting` it is hidden from downloads and listings
+/// (the metadata repository filters it out), so a mid-deletion attachment
+/// is never observable in an inconsistent state. This is an explicit retry
+/// surface (resume-on-next-delete) rather than a background worker: blob
+/// cleanup is a single per-record storage call with no bus/outbox fan-out,
+/// and the repository lifecycle registry is process-local — a durable
+/// cross-restart sweep would need a lifecycle column plus a scheduled
+/// worker (out of scope, documented in `attachment_repository.rs`).
+///
+/// The caller must hold `attachments:manage` AND be able to MANAGE the
+/// attachment's parent entity (`require_parent_manage`) — a known
+/// attachment UUID never bypasses the parent's authorization. The parent
+/// check runs on the ACTIVE and the TOMBSTONED record alike (the tombstone
+/// keeps the parent coordinates), so resuming an interrupted deletion is
+/// authorized exactly like the original delete.
 pub async fn delete_attachment(
     user: AuthenticatedUser,
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<()>> {
     user.require_permission("attachments:manage")?;
-    // Read the metadata entry first (typed repository).
-    let attachment = state
+
+    // Resolve the record: the public read path (get) hides tombstoned
+    // records, so an attachment whose deletion was interrupted is found
+    // through the deletion-completion read instead. An id that is neither
+    // active nor tombstoned is a plain 404.
+    let active = state
         .attachment_repo
         .get(user.tenant_id, id)
         .await
         .map_err(|e| {
             tracing::error!(error = %e, "Failed to read attachment metadata");
             SenseiError::Internal("Failed to read attachment".to_string())
-        })?
-        .ok_or_else(|| SenseiError::NotFound(format!("Attachment {id} not found")))?;
+        })?;
+    let attachment = match active {
+        Some(attachment) => {
+            // Phase 1 (active → deleting): tombstone BEFORE any object
+            // removal. If this write fails the record is untouched and a
+            // retry of the whole delete remains safe.
+            state
+                .attachment_repo
+                .tombstone(&attachment)
+                .await
+                .map_err(|e| {
+                    tracing::error!(
+                        error = %e,
+                        attachment_id = %id,
+                        "Failed to tombstone attachment metadata before object deletion"
+                    );
+                    SenseiError::Internal("Failed to start attachment deletion".to_string())
+                })?;
+            Some(attachment)
+        }
+        None => state.attachment_repo.get_deleting(user.tenant_id, id).await,
+    };
+    let Some(attachment) = attachment else {
+        return Err(SenseiError::NotFound(format!("Attachment {id} not found")));
+    };
 
-    // Parent manage authorization BEFORE the blob is deleted: an
-    // attachment whose parent the caller may not manage survives.
+    // Parent manage authorization BEFORE the blob is deleted (runs for
+    // active and tombstoned records alike): an attachment whose parent the
+    // caller may not manage survives.
     require_parent_manage(&state, &user, &attachment.entity_type, attachment.entity_id).await?;
 
-    // Delete the file from the storage backend (storage_path is the opaque key).
-    state
+    // Phase 2 (object delete): remove the blob. NotFound means the object
+    // is already gone (an earlier attempt deleted it before failing on the
+    // metadata step) — idempotent completion treats it as success. Any
+    // other failure leaves the tombstone in place: the record is hidden
+    // from downloads/listings and a later DELETE resumes the cleanup.
+    match state
         .storage_service
         .delete(user.tenant_id, &attachment.storage_path)
-        .await?;
+        .await
+    {
+        Ok(()) => {}
+        Err(SenseiError::NotFound(_)) => {
+            tracing::warn!(
+                attachment_id = %id,
+                storage_path = %attachment.storage_path,
+                "Attachment object already absent during deletion — completing idempotently"
+            );
+        }
+        Err(e) => {
+            tracing::error!(
+                error = %e,
+                attachment_id = %id,
+                storage_path = %attachment.storage_path,
+                "Attachment object delete failed — record stays tombstoned for a later retry"
+            );
+            return Err(e);
+        }
+    }
 
-    // Remove the metadata entry (typed repository).
+    // Phase 3 (metadata remove): finalize the lifecycle. The repository
+    // delete clears both the active row and the tombstone and is
+    // idempotent (a row already removed elsewhere yields Ok(false)).
     state
         .attachment_repo
         .delete(user.tenant_id, id)

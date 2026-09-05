@@ -13,6 +13,7 @@ use axum::extract::{Query, State};
 use axum::Json;
 use chrono::{Timelike, Utc};
 use sensei_auth::middleware::AuthenticatedUser;
+use sensei_core::db::TenantTx;
 use sensei_core::error::{Result, SenseiError};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -93,6 +94,16 @@ pub async fn get_station_snapshot(
         .as_ref()
         .ok_or_else(|| SenseiError::Database("Station requires the database".to_string()))?;
 
+    // Wave C RLS (thirtieth-audit item 18): every table the snapshot
+    // reads (work_centers, work_orders, production_events,
+    // standard_work_documents, work_order_operations, products,
+    // ctq_characteristics) is tenant-owned fail-closed FORCE RLS since
+    // migration 175 — the whole snapshot runs on ONE TenantTx of the
+    // caller's tenant.
+    let mut db = TenantTx::begin(pool, user.tenant_id)
+        .await
+        .map_err(|e| SenseiError::Database(format!("Failed to begin station tx: {e}")))?;
+
     // Resolve the work center: explicit, else the caller's assignment.
     let work_center_id = match params.work_center_id {
         Some(wc) => Some(wc),
@@ -106,7 +117,7 @@ pub async fn get_station_snapshot(
             sqlx::query_scalar("SELECT name FROM work_centers WHERE id = $1 AND tenant_id = $2")
                 .bind(wc)
                 .bind(user.tenant_id)
-                .fetch_one(pool.as_ref())
+                .fetch_one(&mut **db.tx())
                 .await
                 .unwrap_or_else(|_| "UNKNOWN WORK CENTER".to_string())
         }
@@ -126,7 +137,7 @@ pub async fn get_station_snapshot(
             )
             .bind(user.tenant_id)
             .bind(wc)
-            .fetch_optional(pool.as_ref())
+            .fetch_optional(&mut **db.tx())
             .await
             .map_err(|e| SenseiError::Database(format!("Station job read failed: {e}")))?;
             row.map(|(id, num, name, qty, done)| CurrentJob {
@@ -162,7 +173,7 @@ pub async fn get_station_snapshot(
             .bind(user.tenant_id)
             .bind(job.work_order_id)
             .bind(interval_start)
-            .fetch_one(pool.as_ref())
+            .fetch_one(&mut **db.tx())
             .await
             .unwrap_or(0);
             // Pitch TARGET (fourteenth audit): ONLY the work order's
@@ -182,7 +193,7 @@ pub async fn get_station_snapshot(
             )
             .bind(job.work_order_id)
             .bind(user.tenant_id)
-            .fetch_one(pool.as_ref())
+            .fetch_one(&mut **db.tx())
             .await
             .ok();
             Some(PitchNow {
@@ -218,7 +229,7 @@ pub async fn get_station_snapshot(
             )
             .bind(job.work_order_id)
             .bind(user.tenant_id)
-            .fetch_optional(pool.as_ref())
+            .fetch_optional(&mut **db.tx())
             .await
             .map_err(|e| SenseiError::Database(format!("Step read failed: {e}")))?;
             row.map(|(operation, standard_time, ordinal, total, steps)| {
@@ -285,7 +296,7 @@ pub async fn get_station_snapshot(
             )
             .bind(job.work_order_id)
             .bind(user.tenant_id)
-            .fetch_optional(pool.as_ref())
+            .fetch_optional(&mut **db.tx())
             .await
             .map_err(|e| SenseiError::Database(format!("Step checks read failed: {e}")))?;
             match row {
@@ -318,7 +329,7 @@ pub async fn get_station_snapshot(
                         )
                         .bind(job.work_order_id)
                         .bind(user.tenant_id)
-                        .fetch_optional(pool.as_ref())
+                        .fetch_optional(&mut **db.tx())
                         .await
                         .ok()
                         .flatten();
@@ -328,7 +339,7 @@ pub async fn get_station_snapshot(
                             )
                             .bind(pid)
                             .bind(user.tenant_id)
-                            .fetch_optional(pool.as_ref())
+                            .fetch_optional(&mut **db.tx())
                             .await
                             .ok()
                             .flatten(),
@@ -343,7 +354,7 @@ pub async fn get_station_snapshot(
                                 )
                                 .bind(user.tenant_id)
                                 .bind(family_id)
-                                .fetch_all(pool.as_ref())
+                                .fetch_all(&mut **db.tx())
                                 .await
                                 .unwrap_or_default();
                                 if names.is_empty() {
@@ -416,6 +427,11 @@ pub async fn get_interval_board(
         .db_pool
         .as_ref()
         .ok_or_else(|| SenseiError::Database("Interval board requires the database".to_string()))?;
+    // Wave C RLS: the interval-board reads run on ONE TenantTx of the
+    // caller's tenant (see get_station_snapshot).
+    let mut db = TenantTx::begin(pool, user.tenant_id)
+        .await
+        .map_err(|e| SenseiError::Database(format!("Failed to begin interval tx: {e}")))?;
     let work_center_id = match params.work_center_id {
         Some(wc) => wc,
         None => crate::routes::agent::build_context(&user, &state)
@@ -446,7 +462,7 @@ pub async fn get_interval_board(
         .bind(work_center_id)
         .bind(start)
         .bind(end)
-        .fetch_one(pool.as_ref())
+        .fetch_one(&mut **db.tx())
         .await
         .unwrap_or(0);
         let plan: i64 = sqlx::query_scalar(
@@ -456,7 +472,7 @@ pub async fn get_interval_board(
              ORDER BY updated_at DESC LIMIT 1",
         )
         .bind(user.tenant_id)
-        .fetch_one(pool.as_ref())
+        .fetch_one(&mut **db.tx())
         .await
         .unwrap_or(60);
         let abnormalities: Vec<IntervalAbnormality> = sqlx::query_as(
@@ -471,7 +487,7 @@ pub async fn get_interval_board(
         .bind(work_center_id)
         .bind(start)
         .bind(end)
-        .fetch_all(pool.as_ref())
+        .fetch_all(&mut **db.tx())
         .await
         .unwrap_or_default()
         .into_iter()

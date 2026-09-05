@@ -13,4 +13,5 @@ pub mod auth;
 pub mod fixtures;
 pub mod setup;
 
+#[allow(unused_imports)]
 pub use setup::TestApp;

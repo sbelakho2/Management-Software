@@ -223,12 +223,86 @@ pub enum EpistemicStatus {
     ProposedAction,
 }
 
+/// Comparison semantics for a measured claim (thirtieth audit item 23):
+/// the claimed value must SATISFY the operator against the typed evidence
+/// value — language-independent, deterministic.
+///
+/// Tolerance policy: `Equal` is EXACT (no tolerance — a 12 vs 999 claim
+/// is rejected); `Approximate { tolerance }` carries an ABSOLUTE numeric
+/// tolerance on the evidence value's scale (`|claimed − evidence| ≤
+/// tolerance`). `Range { min, max }` is inclusive on both bounds.
+/// `LessThan`/`GreaterThan`/… are strict/partial numeric comparisons.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ClaimOperator {
+    Equal,
+    LessThan,
+    LessThanOrEqual,
+    GreaterThan,
+    GreaterThanOrEqual,
+    Range {
+        min: serde_json::Value,
+        max: serde_json::Value,
+    },
+    Approximate {
+        tolerance: f64,
+    },
+}
+
+/// The typed assertion of a measured claim (thirtieth audit item 23):
+/// the claim names the FACT ADDRESS it refers to, the comparison
+/// operator, the claimed value and its unit. A measured claim about
+/// live tenant data must carry one of these (or a
+/// [`DerivedAssertion`]) — an evidence id alone can never prove a
+/// value, whatever language the sentence is written in.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ClaimAssertion {
+    /// The exact object/attribute the claim is about. `valid_time` is the
+    /// RFC3339 validity/observation instant the claim asserts (the
+    /// deterministic time check compares it with the evidence's own
+    /// `observed_at`).
+    pub address: FactAddress,
+    pub operator: ClaimOperator,
+    /// The claimed value (numbers for numeric operators; strings for
+    /// `Equal` over qualitative facts).
+    pub value: serde_json::Value,
+    /// The unit the claimed value is expressed in — must be compatible
+    /// with the evidence's unit or the claim is rejected.
+    pub unit: Option<String>,
+}
+
+/// A claim that a value was DETERMINISTICALLY DERIVED (a ratio, metric,
+/// calculation): the server re-runs the derivation program identified by
+/// `derivation_id` at `derivation_version` (over the tenant/site scope)
+/// and the claimed `result` must agree with the recomputed value. The
+/// model never gets to say "97.2% was deterministically derived" without
+/// the deterministic program agreeing.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DerivedAssertion {
+    pub derivation_id: String,
+    pub derivation_version: u32,
+    /// Evidence ids of the operands the derivation is claimed to rest
+    /// on — every one must be a real kernel-issued evidence id.
+    #[serde(default)]
+    pub operand_evidence_ids: Vec<String>,
+    /// The claimed derived result (compared against the server's
+    /// recomputation).
+    pub result: serde_json::Value,
+    pub unit: Option<String>,
+}
+
 /// A structured claim emitted by the chat verifier (eighteenth audit
 /// P1-7): one per factual-sounding sentence. `epistemic_status` is
 /// "measured" when an `[evidence: <source>]` marker matches a prepared
 /// context source, "unverified" when the sentence asserts a fact without
 /// matching evidence, and may carry the other epistemic labels
 /// ("inferred" | "assumed" | "recommended") from future verifier passes.
+///
+/// Thirtieth audit item 23: a MEASURED claim additionally carries a typed
+/// [`ClaimAssertion`] (or a [`DerivedAssertion`]) — the deterministic
+/// address/operator/value/unit statement that the verifier actually
+/// checks. Claims that assert factual prose without a typed
+/// representation stay `unverified`.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Claim {
     pub statement: String,
@@ -238,6 +312,14 @@ pub struct Claim {
     pub evidence_refs: Vec<String>,
     pub confidence: Option<f64>,
     pub valid_at: Option<String>,
+    /// The typed assertion this measured claim was verified against
+    /// (thirtieth audit item 23). Optional in JSON — legacy consumers
+    /// keep parsing the envelope unchanged.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub assertion: Option<ClaimAssertion>,
+    /// The derived-claim assertion (server-recomputed), when present.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub derived: Option<DerivedAssertion>,
 }
 
 /// The DETERMINISTIC context plan (fifteenth audit 74): the task decides
@@ -614,6 +696,8 @@ mod tests {
             evidence_refs: vec!["metric.process_yield_proxy@Bizerte".to_string()],
             confidence: None,
             valid_at: None,
+            assertion: None,
+            derived: None,
         };
         let json = serde_json::to_string(&claim).unwrap();
         let back: Claim = serde_json::from_str(&json).unwrap();
@@ -623,5 +707,45 @@ mod tests {
         assert!(back.fact_addresses.is_empty());
         assert_eq!(back.confidence, None);
         assert_eq!(back.valid_at, None);
+        assert!(back.assertion.is_none());
+        assert!(back.derived.is_none());
+    }
+
+    #[test]
+    fn claim_operators_serialize_snake_case() {
+        assert_eq!(
+            serde_json::to_string(&ClaimOperator::Equal).unwrap(),
+            "\"equal\""
+        );
+        assert_eq!(
+            serde_json::to_string(&ClaimOperator::GreaterThanOrEqual).unwrap(),
+            "\"greater_than_or_equal\""
+        );
+        let range = serde_json::to_value(ClaimOperator::Range {
+            min: serde_json::json!(1),
+            max: serde_json::json!(10),
+        })
+        .unwrap();
+        assert_eq!(range["range"]["min"], 1);
+        let approx = serde_json::to_value(ClaimOperator::Approximate { tolerance: 0.5 }).unwrap();
+        assert_eq!(approx["approximate"]["tolerance"], 0.5);
+    }
+
+    #[test]
+    fn claim_assertion_round_trips() {
+        let assertion = ClaimAssertion {
+            address: FactAddress {
+                object_type: "work_order".to_string(),
+                object_id: "WO-123".to_string(),
+                attribute: "quantity_completed".to_string(),
+                valid_time: Some("2026-09-05T00:00:00Z".to_string()),
+            },
+            operator: ClaimOperator::Approximate { tolerance: 1.0 },
+            value: serde_json::json!(12),
+            unit: Some("units".to_string()),
+        };
+        let json = serde_json::to_string(&assertion).unwrap();
+        let back: ClaimAssertion = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, assertion);
     }
 }

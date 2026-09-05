@@ -8,20 +8,17 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use sensei_core::domain::RequestContext;
-
 // ---------------------------------------------------------------------------
 // Quality resource scope (twenty-ninth audit Wave B items 6-8)
 // ---------------------------------------------------------------------------
 
 /// The SERVER-STAMPED site / work-center anchor of a quality record
-/// (twenty-ninth audit Wave B item 2). The stamp is derived on the
-/// server at creation — from the work order the record was raised
-/// against (work_orders.work_center_id with work_centers.site_id
-/// resolved in the same transaction) or, without a work order, from the
-/// caller's validated operating focus — and is NEVER accepted from
-/// client input.
-///
+/// (twenty-ninth audit Wave B item 2; thirtieth-audit P0 item 8). The
+/// stamp is derived on the server at creation by the single
+/// [`derive_creation_scope`](super::scope::derive_creation_scope)
+/// helper — from a resolved parent anchor (a work order's real work
+/// center and site) or the caller's validated operating focus, and is
+/// NEVER accepted from client input.
 /// Both ids `None` is the honest encoding of a CORPORATE
 /// (tenant-level) quality record: no site dimension exists, so no site
 /// id is fabricated. That matches `ResourceScope::Tenant` semantics in
@@ -31,6 +28,11 @@ use sensei_core::domain::RequestContext;
 /// predicate). A scope_kind companion column is deliberately NOT added
 /// — the NULL pair is unambiguous here because the stamp is
 /// server-owned end to end.
+///
+/// Missing focus NEVER widens authority: `derive_creation_scope`
+/// rejects an `Operational` caller without an operating site instead of
+/// falling back to a corporate (NULL) stamp; only the explicit
+/// `TenantWide` grant may create a corporate record.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct QualityScopeStamp {
     pub site_id: Option<Uuid>,
@@ -42,18 +44,6 @@ impl QualityScopeStamp {
     /// `None`); it is visible to tenant-wide callers only.
     pub fn is_corporate(&self) -> bool {
         self.site_id.is_none() && self.work_center_id.is_none()
-    }
-}
-
-impl From<&RequestContext> for QualityScopeStamp {
-    /// Derive the stamp from the caller's VALIDATED operating focus: the
-    /// context builder proves the focus work center belongs to the focus
-    /// site, so the pair is internally consistent by construction.
-    fn from(ctx: &RequestContext) -> Self {
-        Self {
-            site_id: ctx.focus.site,
-            work_center_id: ctx.focus.work_center,
-        }
     }
 }
 

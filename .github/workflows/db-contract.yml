@@ -22,7 +22,7 @@ jobs:
     runs-on: ubuntu-latest
     services:
       postgres:
-        image: pgvector/pgvector:pg16
+        image: pgvector/pgvector:pg16@sha256:ccc6e83d6e35e931dc7c5def2022729d5a6c370318d099181995567ff1fb4d6b
         env:
           POSTGRES_USER: sensei
           POSTGRES_PASSWORD: sensei_test
@@ -51,6 +51,12 @@ jobs:
           toolchain: 1.96.0
           components: clippy, rustfmt
       - uses: Swatinem/rust-cache@v2
+      # Thirtieth-audit item 28: this workflow IS the DB capability contract's
+      # primary gate — assert that every environment (workflows, compose,
+      # Helm values) still pins the exact .github/.db-capability image before
+      # running the migration suites against the pinned image above.
+      - name: DB capability contract (all consumers pinned)
+        run: bash "$GITHUB_WORKSPACE/scripts/validate-db-contract.sh"
       # Twentieth audit P1 (CI): the workspace crate sensei-zt builds a
       # Zig library by default and REQUIRES the pinned Zig toolchain
       # (>= 0.15.0). The DB contract gate exercises Rust/Postgres
@@ -73,7 +79,7 @@ jobs:
   # suite on its own fresh database (the suite applies the full migration
   # chain, dropping/recreating per test), then creates a REAL `sensei_app`
   # application role by LITERALLY executing the canonical production grant
-  # script (docker/postgres-init/01-app-role.sh — the ONE source of the
+  # script (sensei-rs/scripts/db/01-app-role.sh — the ONE source of the
   # production app grants; this job no longer maintains its own grant
   # list, and the old GRANT EXECUTE ON ALL FUNCTIONS is gone), and finally
   # runs an app-role SERVICE-PATH smoke over its own psql connection:
@@ -125,7 +131,7 @@ jobs:
     runs-on: ubuntu-latest
     services:
       postgres:
-        image: pgvector/pgvector:pg16
+        image: pgvector/pgvector:pg16@sha256:ccc6e83d6e35e931dc7c5def2022729d5a6c370318d099181995567ff1fb4d6b
         env:
           POSTGRES_USER: sensei
           POSTGRES_PASSWORD: sensei_test
@@ -169,7 +175,7 @@ jobs:
           fi
           psql --version
       # Twenty-third audit P1 (grant unification): the audited app grants
-      # live in ONE canonical script — docker/postgres-init/01-app-role.sh
+      # live in ONE canonical script — sensei-rs/scripts/db/01-app-role.sh
       # — and this CI job executes THAT file instead of maintaining its own
       # grant list. The script grants table DML on the tenant tables plus
       # EXECUTE ONLY on federation_governance_edges() — it never runs
@@ -196,7 +202,7 @@ jobs:
           $$;
           SQL
           # Execute the PRODUCTION script verbatim (repo checkout root):
-          # docker/postgres-init/01-app-role.sh. It connects with
+          # sensei-rs/scripts/db/01-app-role.sh. It connects with
           # --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" against the
           # service on PGHOST/PGPORT and reads BOTH SENSEI_APP_PASSWORD and
           # SENSEI_MIGRATOR_PASSWORD (twenty-fifth audit P0: the script
@@ -208,7 +214,7 @@ jobs:
           POSTGRES_DB="$DATABASE_NAME" \
           SENSEI_APP_PASSWORD=x \
           SENSEI_MIGRATOR_PASSWORD=migrate \
-          bash "$GITHUB_WORKSPACE/docker/postgres-init/01-app-role.sh"
+          bash "$GITHUB_WORKSPACE/sensei-rs/scripts/db/01-app-role.sh"
       # Seed tenant fixtures AS the superuser (the app role may never
       # create rows outside its RLS context; the db-contract suite itself
       # seeds identically). products carries the migration-098 fail-closed
@@ -376,7 +382,7 @@ jobs:
       #       (production initdb does the same via ./postgres-init/
       #       01-init.sql BEFORE the role script runs — the migrator must
       #       never need CREATE EXTENSION privileges), then runs the
-      #       CANONICAL production script (docker/postgres-init/
+      #       CANONICAL production script (sensei-rs/scripts/db/
       #       01-app-role.sh — executed verbatim, as everywhere) ONCE
       #       against the fresh database: it defines ALL THREE roles —
       #       sensei_migrator holds BYPASSRLS NOCREATEDB + CREATE ON
@@ -461,7 +467,7 @@ jobs:
           POSTGRES_DB=clean_bootstrap \
           SENSEI_APP_PASSWORD=x \
           SENSEI_MIGRATOR_PASSWORD=migrate \
-          bash "$GITHUB_WORKSPACE/docker/postgres-init/01-app-role.sh"
+          bash "$GITHUB_WORKSPACE/sensei-rs/scripts/db/01-app-role.sh"
           # (b) Run the ENTIRE migration chain AS sensei_migrator through
           #     the production binary path (--migrate-only; exits 0 only
           #     when the chain applied cleanly). SENSEI_NO_ZIG comes from
@@ -490,7 +496,7 @@ jobs:
           POSTGRES_DB=clean_bootstrap \
           SENSEI_APP_PASSWORD=x \
           SENSEI_MIGRATOR_PASSWORD=migrate \
-          bash "$GITHUB_WORKSPACE/docker/postgres-init/01-app-role.sh"
+          bash "$GITHUB_WORKSPACE/sensei-rs/scripts/db/01-app-role.sh"
           # (d-1) Schema assertions AS sensei_migrator: migration ledger is
           #       populated and the audited probe table exists.
           export PGDATABASE=clean_bootstrap PGUSER=sensei_migrator PGPASSWORD=migrate

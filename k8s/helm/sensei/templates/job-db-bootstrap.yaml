@@ -1,0 +1,93 @@
+{{- if .Values.database.jobs.enabled }}
+# =============================================================================
+# db-bootstrap Job hook (thirtieth-audit item 26) — ADMIN identity only.
+#
+# Pre-migration role + pre-grant convergence: executes the canonical role
+# script (sensei-rs/scripts/db/01-app-role.sh, shipped in the application
+# image at /opt/sensei/db/01-app-role.sh) as the bootstrap superuser. It
+# creates/converges sensei_migrator, sensei_governance_definer and
+# sensei_app, revokes schema CREATE from the app role and pre-grants what
+# migration 165's ALTER FUNCTION ... OWNER TO sensei_governance_definer
+# needs (USAGE + CREATE ON SCHEMA public). DB access = DATABASE_URL_ADMIN
+# ONLY — the URL is decomposed in-container into PGHOST/PGPORT/PGUSER/
+# PGPASSWORD/PGDATABASE for the script's psql connection.
+#
+# Hook ordering (bootstrap -> migrate -> grants -> rollout): pre-install AND
+# pre-upgrade hook, weight -5. Helm executes hook Jobs in ascending weight
+# order and waits for each to complete successfully; on upgrade the hooks run
+# BEFORE the new Deployment manifests are applied, so a failed bootstrap
+# aborts the release and the previous deployment keeps serving traffic.
+# =============================================================================
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "sensei.fullname" . }}-db-bootstrap
+  labels:
+    {{- include "sensei.labels" . | nindent 4 }}
+    app.kubernetes.io/component: db-bootstrap
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "-5"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        {{- include "sensei.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: db-bootstrap
+    spec:
+      restartPolicy: OnFailure
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "sensei.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.securityContext | nindent 8 }}
+      containers:
+      - name: db-bootstrap
+        securityContext:
+          {{- toYaml .Values.podSecurityContext | nindent 12 }}
+        image: "{{ .Values.senseiApi.image.repository }}:{{ .Values.senseiApi.image.tag | default .Chart.AppVersion }}"
+        imagePullPolicy: {{ .Values.senseiApi.image.pullPolicy }}
+        # Decompose the ADMIN URL (host/port/user/password/database) and
+        # execute the canonical role script with the connection env the
+        # script expects. Role passwords are fed from the same secret keys
+        # the URLs embed — the ALTER ROLE convergence below is what makes
+        # DATABASE_URL_MIGRATOR/DATABASE_URL_APP valid for the later hooks.
+        command: ["/bin/bash", "-euc"]
+        args:
+        - |
+          URL="${DATABASE_URL_ADMIN:?DATABASE_URL_ADMIN is required}"
+          export PGHOST="$(printf '%s' "$URL" | sed -E 's#^postgres(ql)?://[^@/]*@([^:/]+).*#\2#')"
+          export PGPORT="$(printf '%s' "$URL" | sed -nE 's#^postgres(ql)?://[^@/]*@[^:/]+:([0-9]+)/.*#\1#p')"
+          export PGUSER="$(printf '%s' "$URL" | sed -E 's#^postgres(ql)?://([^:@/]+)(:[^@/]*)?@.*#\2#')"
+          export PGPASSWORD="$(printf '%s' "$URL" | sed -nE 's#^postgres(ql)?://[^:@/]+:([^@/]*)@.*#\2#p')"
+          export PGCLIENTENCODING=UTF8
+          [ -n "${PGPORT:-}" ] || PGPORT=5432
+          POSTGRES_USER="$PGUSER" \
+          POSTGRES_PASSWORD="$PGPASSWORD" \
+          POSTGRES_DB="$(printf '%s' "$URL" | sed -nE 's#^postgres(ql)?://[^/]*/([^?]*).*#\2#p')" \
+          SENSEI_APP_PASSWORD="${SENSEI_APP_PASSWORD:?}" \
+          SENSEI_MIGRATOR_PASSWORD="${SENSEI_MIGRATOR_PASSWORD:?}" \
+          /bin/bash /opt/sensei/db/01-app-role.sh
+        env:
+        # ADMIN identity only — the sole DB URL this Job may hold.
+        - name: DATABASE_URL_ADMIN
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "sensei.fullname" . }}-secret
+              key: DATABASE_URL_ADMIN
+        # Role passwords the canonical script converges (ALTER ROLE ...).
+        - name: SENSEI_APP_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "sensei.fullname" . }}-secret
+              key: SENSEI_APP_PASSWORD
+        - name: SENSEI_MIGRATOR_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "sensei.fullname" . }}-secret
+              key: SENSEI_MIGRATOR_PASSWORD
+{{- end }}

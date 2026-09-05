@@ -1,5 +1,5 @@
 //! Attachment parent-resource authorization (twenty-ninth audit Wave B
-//! item 11).
+//! item 11; thirtieth-audit P0 items 12-13).
 //!
 //! Attachments inherit their PARENT's authorization: an attachment on a
 //! work order, an NCR, an opportunity, an inventory item, an audit-log
@@ -16,9 +16,36 @@
 //! per-type permission pairs mirror the ordinary route surfaces (a
 //! missing permission for an attachment-surface user = the parent may not
 //! be touched through its own API either).
+//!
+//! # Scope semantics (thirtieth-audit P0 items 12-13)
+//!
+//! The proofs enforce the caller's FULL [`AuthorizedScope`] — site grants
+//! AND exact work-center grants, never a normalized site list:
+//!
+//! * an explicit `TenantWide` grant still proves EXISTENCE (no early
+//!   return — a nonexistent parent is 404 even for a tenant-wide caller);
+//! * a work-order parent is proven through its work-center carrier — a
+//!   work-center-granted caller matches ONLY their exact work center's
+//!   orders (`work_centers.id = ANY($exact_wc_ids)`, never the parent
+//!   site);
+//! * an NCR parent applies the RECORD's server-stamped
+//!   `scope_site_id` / `scope_work_center_id` — the record must lie
+//!   inside the caller's scope, and a corporate (both-NULL) record is
+//!   reachable only by an explicit tenant-wide grant;
+//! * `work_center` (entity-store) parents resolve their scope through the
+//!   real relational `work_centers` row (`work_centers.site_id`) instead
+//!   of tenant-existence-only checks.
+//!
+//! Out-of-scope and nonexistent parents are indistinguishable
+//! ([`SenseiError::NotFound`]), exactly like the scoped repository
+//! getters. Without a database pool (in-memory/dev deployments) the
+//! typed parents (work order / NCR) have no relational rows to entangle
+//! and their proof is dev-permissive (same convention as
+//! `routes/supply_chain.rs` `caller_scope`); entity-store-backed parents
+//! are still existence-checked through their stores.
 
 use sensei_auth::middleware::AuthenticatedUser;
-use sensei_core::domain::scope::AuthorizedScope;
+use sensei_core::domain::scope::{AuthorizedScope, WorkCenterScope};
 use sensei_core::error::{Result, SenseiError};
 use uuid::Uuid;
 
@@ -247,14 +274,21 @@ fn require_permission_for_parent(
 ///
 /// * entity-store parents (`Opportunity`, `InventoryItem`, `AuditLog`,
 ///   `KnowledgePack`, `Attachmentless`) — verified through the same
-///   typed store checker the upload route uses (tenant-scoped existence;
-///   the store rows carry no site column, so no site predicate applies);
+///   typed store checker the upload route uses (tenant-scoped existence,
+///   ALWAYS run — an explicit tenant-wide grant does not skip it);
+///   `work_center` parents are additionally scope-resolved through the
+///   real relational `work_centers` row in DB deployments (item 13(d));
 /// * `Ncr` — DB deployments verify the tenant-scoped `ncr_reports` row
-///   directly; dev deployments skip (no pool, no rows);
+///   AND the record's server-stamped `scope_site_id` /
+///   `scope_work_center_id` against the caller's full scope (corporate
+///   NULL records require an explicit tenant-wide grant); dev
+///   deployments skip (no pool, no rows);
 /// * `WorkOrder` — DB deployments verify the work order AND its work
-///   center's site against the caller's authorized scope in one
-///   statement (a foreign-site or site-less work order is
-///   indistinguishable from a nonexistent one); dev deployments skip.
+///   center's carrier against the caller's full scope in one statement
+///   (a foreign-site, foreign-work-center or site-less work order is
+///   indistinguishable from a nonexistent one); an explicit tenant-wide
+///   caller still gets the EXISTENCE check (no early return); dev
+///   deployments skip.
 async fn proof_parent_access(
     state: &AppState,
     user: &AuthenticatedUser,
@@ -288,7 +322,13 @@ async fn proof_parent_access(
             }
         }
         ParentResource::Attachmentless => {
-            if !crate::routes::attachments::entity_exists(
+            // `work_center` parents carry a real relational row whose
+            // site is the authoritative scope carrier in DB deployments —
+            // existence alone (the generic entity_store row) cannot
+            // establish it (item 13(d)).
+            if entity_type == "work_center" && state.db_pool.is_some() {
+                proof_work_center(state, user, entity_id).await?;
+            } else if !crate::routes::attachments::entity_exists(
                 state,
                 entity_type,
                 entity_id,
@@ -306,33 +346,118 @@ async fn proof_parent_access(
     Ok(())
 }
 
+/// The caller's FULL DB-resolved operational scope (items 12-13): site
+/// grants AND exact work-center grants travel unchanged — no proof ever
+/// normalizes a work-center grant into its parent site.
+async fn caller_scope(state: &AppState, user: &AuthenticatedUser) -> Result<AuthorizedScope> {
+    Ok(build_request_context(user, state).await?.scope)
+}
+
+/// Ordered bind sets for an `Operational` scope: its site grants and the
+/// ids of its exact work-center grants (sorted for deterministic binds).
+fn scope_union_binds(scope: &AuthorizedScope) -> (Vec<Uuid>, Vec<Uuid>) {
+    match scope {
+        AuthorizedScope::Operational {
+            sites,
+            work_centers,
+        } => {
+            let mut sites: Vec<Uuid> = sites.iter().copied().collect();
+            sites.sort_unstable();
+            let mut work_centers: Vec<Uuid> = work_centers
+                .iter()
+                .map(|wc: &WorkCenterScope| wc.work_center)
+                .collect();
+            work_centers.sort_unstable();
+            (sites, work_centers)
+        }
+        _ => (Vec::new(), Vec::new()),
+    }
+}
+
+/// The scope predicate fragment for the scope-carrier alias `alias`, plus
+/// whether the union binds are needed.
+///
+/// * `TenantWide` — the explicit all-access grant: NO scope predicate —
+///   but the statement's EXISTENCE check always runs (item 13(a) — no
+///   early return for a tenant-wide caller);
+/// * `NoOperationalScope` — an impossible predicate (fail closed);
+/// * `Operational` — site grants AND exact work-center grants: the
+///   carrier must lie in a granted site OR be one of the granted work
+///   centers (`id = ANY($exact_wc_ids)` — a pure work-center caller is
+///   matched by exact work-center id, never by the parent site).
+fn scope_predicate(scope: &AuthorizedScope, alias: &str) -> (String, bool) {
+    match scope {
+        AuthorizedScope::TenantWide => (String::new(), false),
+        AuthorizedScope::NoOperationalScope => (" AND 1 = 0".to_string(), false),
+        AuthorizedScope::Operational {
+            sites,
+            work_centers,
+        } if sites.is_empty() && work_centers.is_empty() => (" AND 1 = 0".to_string(), false),
+        AuthorizedScope::Operational { .. } => (
+            format!(
+                " AND ({alias}.site_id = ANY($3::uuid[]) \
+                       OR {alias}.id = ANY($4::uuid[]))"
+            ),
+            true,
+        ),
+    }
+}
+
 /// Work-order proof (DB deployments): the row must exist in the caller's
-/// tenant AND its work center's site must be inside the caller's
-/// authorized sites. Site-less/foreign/unattributable rows and
-/// `NoOperationalScope` callers match zero rows → NotFound. Dev
-/// deployments (no pool, no sites) skip the proof.
+/// tenant AND its work-center carrier must lie inside the caller's FULL
+/// scope. A caller holding only work-center grants matches exactly their
+/// granted work centers' orders (`carrier.id = ANY($4)` — never the
+/// parent site); an explicit tenant-wide caller still proves EXISTENCE
+/// (no early return); `NoOperationalScope` callers match zero rows →
+/// NotFound. Dev deployments (no pool, no rows) skip the proof.
 async fn proof_work_order(
     state: &AppState,
     user: &AuthenticatedUser,
     work_order_id: Uuid,
 ) -> Result<()> {
-    let Some(sites) = caller_authorized_sites(state, user).await? else {
+    let Some(pool) = state.db_pool.as_ref() else {
         return Ok(());
     };
-    let found: Option<Uuid> = sqlx::query_scalar(
+    let scope = caller_scope(state, user).await?;
+    let (join, predicate, needs_binds) = match &scope {
+        // An Operational scope needs the work-center CARRIER join (the
+        // work order's site lives on `work_centers`, migration 134).
+        AuthorizedScope::Operational {
+            sites,
+            work_centers,
+        } if !(sites.is_empty() && work_centers.is_empty()) => (
+            " JOIN work_centers carrier \
+               ON carrier.tenant_id = wo.tenant_id \
+              AND carrier.id = wo.work_center_id"
+                .to_string(),
+            scope_predicate(&scope, "carrier").0,
+            true,
+        ),
+        other => {
+            let (predicate, needs_binds) = scope_predicate(other, "");
+            (String::new(), predicate, needs_binds)
+        }
+    };
+    let sql = format!(
         "SELECT wo.id \
-         FROM work_orders wo \
-         JOIN work_centers wc \
-           ON wc.tenant_id = wo.tenant_id AND wc.id = wo.work_center_id \
-         WHERE wo.tenant_id = $1 AND wo.id = $2 \
-           AND wc.site_id = ANY($3)",
-    )
-    .bind(user.tenant_id)
-    .bind(work_order_id)
-    .bind(&sites)
-    .fetch_optional(state.db_pool.as_deref().expect("checked above"))
-    .await
-    .map_err(|e| SenseiError::Database(format!("work-order parent proof failed: {e}")))?;
+         FROM work_orders wo{join} \
+         WHERE wo.tenant_id = $1 AND wo.id = $2{predicate}"
+    );
+    let (sites, work_centers) = if needs_binds {
+        scope_union_binds(&scope)
+    } else {
+        (Vec::new(), Vec::new())
+    };
+    let mut query = sqlx::query_scalar::<_, Uuid>(&sql)
+        .bind(user.tenant_id)
+        .bind(work_order_id);
+    if needs_binds {
+        query = query.bind(&sites).bind(&work_centers);
+    }
+    let found = query
+        .fetch_optional(&**pool)
+        .await
+        .map_err(|e| SenseiError::Database(format!("work-order parent proof failed: {e}")))?;
     if found.is_none() {
         return Err(SenseiError::NotFound(format!(
             "Work order {work_order_id} not found"
@@ -341,43 +466,111 @@ async fn proof_work_order(
     Ok(())
 }
 
-/// NCR proof (DB deployments): tenant-scoped existence on the typed
-/// `ncr_reports` row. Dev deployments skip (no pool, no rows).
-async fn proof_ncr(state: &AppState, user: &AuthenticatedUser, ncr_id: Uuid) -> Result<()> {
-    let Some(pool) = state.db_pool.as_ref() else {
-        return Ok(());
+/// `work_center` parent proof (DB deployments, item 13(d)): the REAL
+/// relational `work_centers` row must exist in the caller's tenant and
+/// its site must lie inside the caller's scope — tenant-existence of the
+/// generic entity_store row alone is never proof. A caller holding only
+/// work-center grants matches exactly their granted work center; an
+/// explicit tenant-wide caller still proves existence; dev deployments
+/// keep the store-level existence check (handled by the caller).
+async fn proof_work_center(
+    state: &AppState,
+    user: &AuthenticatedUser,
+    work_center_id: Uuid,
+) -> Result<()> {
+    let pool = state
+        .db_pool
+        .as_deref()
+        .expect("work-center relational proof requires a database pool");
+    let scope = caller_scope(state, user).await?;
+    let (predicate, needs_binds) = scope_predicate(&scope, "carrier");
+    let sql = format!(
+        "SELECT carrier.id \
+         FROM work_centers carrier \
+         WHERE carrier.tenant_id = $1 AND carrier.id = $2{predicate}"
+    );
+    let (sites, work_centers) = if needs_binds {
+        scope_union_binds(&scope)
+    } else {
+        (Vec::new(), Vec::new())
     };
-    let found: Option<Uuid> =
-        sqlx::query_scalar("SELECT id FROM ncr_reports WHERE tenant_id = $1 AND id = $2")
-            .bind(user.tenant_id)
-            .bind(ncr_id)
-            .fetch_optional(&**pool)
-            .await
-            .map_err(|e| SenseiError::Database(format!("ncr parent proof failed: {e}")))?;
+    let mut query = sqlx::query_scalar::<_, Uuid>(&sql)
+        .bind(user.tenant_id)
+        .bind(work_center_id);
+    if needs_binds {
+        query = query.bind(&sites).bind(&work_centers);
+    }
+    let found = query
+        .fetch_optional(pool)
+        .await
+        .map_err(|e| SenseiError::Database(format!("work-center parent proof failed: {e}")))?;
     if found.is_none() {
-        return Err(SenseiError::NotFound(format!("NCR {ncr_id} not found")));
+        return Err(SenseiError::NotFound(format!(
+            "Work center {work_center_id} not found"
+        )));
     }
     Ok(())
 }
 
-/// The caller's authorized operational sites through the ONE shared
-/// [`RequestContext`] builder ([`build_request_context`] — the
-/// routes/andon.rs `caller_sites` pattern): `None` when no site
-/// restriction applies (in-memory/dev mode carries the explicit
-/// tenant-wide grant; DB `TenantWide` likewise unrestricted).
-async fn caller_authorized_sites(
-    state: &AppState,
-    user: &AuthenticatedUser,
-) -> Result<Option<Vec<Uuid>>> {
-    let rc = build_request_context(user, state).await?;
-    Ok(match &rc.scope {
-        // Explicit all-access grant: no site predicate.
-        AuthorizedScope::TenantWide => None,
-        // Fail closed: no entitlement → no rows.
-        AuthorizedScope::NoOperationalScope => Some(Vec::new()),
-        AuthorizedScope::Sites(sites) => Some(sites.clone()),
-        AuthorizedScope::WorkCenter(wc) => Some(vec![wc.site]),
-    })
+/// NCR proof (DB deployments, item 13(c)): the tenant-scoped
+/// `ncr_reports` row must exist AND the record's server-stamped scope
+/// must lie inside the caller's FULL scope:
+///
+/// * a corporate record (`scope_site_id` IS NULL — no site anchor) is
+///   reachable ONLY by an explicit tenant-wide grant;
+/// * a site-scoped caller matches records stamped in one of their sites;
+/// * a caller holding only work-center grants matches exactly the records
+///   stamped at their granted work centers (`scope_work_center_id =
+///   ANY($exact_wc_ids)`) — never the whole site's records, and never a
+///   site-level (work-center-less) record.
+///
+/// Dev deployments skip (no pool, no rows).
+async fn proof_ncr(state: &AppState, user: &AuthenticatedUser, ncr_id: Uuid) -> Result<()> {
+    let Some(pool) = state.db_pool.as_ref() else {
+        return Ok(());
+    };
+    let scope = caller_scope(state, user).await?;
+    // The record's server-stamped scope columns are the carrier: a
+    // stamped (site) record matches a site grant; a stamped
+    // (site, work-center) record also matches an exact work-center grant;
+    // a corporate record (both NULL) never matches a scope predicate —
+    // only the explicit tenant-wide grant reaches it.
+    let (predicate, needs_binds) = match &scope {
+        AuthorizedScope::Operational {
+            sites,
+            work_centers,
+        } if !(sites.is_empty() && work_centers.is_empty()) => (
+            " AND (ncr.scope_site_id = ANY($3::uuid[]) \
+                   OR ncr.scope_work_center_id = ANY($4::uuid[]))"
+                .to_string(),
+            true,
+        ),
+        other => scope_predicate(other, "ncr"),
+    };
+    let sql = format!(
+        "SELECT ncr.id \
+         FROM ncr_reports ncr \
+         WHERE ncr.tenant_id = $1 AND ncr.id = $2{predicate}"
+    );
+    let (sites, work_centers) = if needs_binds {
+        scope_union_binds(&scope)
+    } else {
+        (Vec::new(), Vec::new())
+    };
+    let mut query = sqlx::query_scalar::<_, Uuid>(&sql)
+        .bind(user.tenant_id)
+        .bind(ncr_id);
+    if needs_binds {
+        query = query.bind(&sites).bind(&work_centers);
+    }
+    let found = query
+        .fetch_optional(&**pool)
+        .await
+        .map_err(|e| SenseiError::Database(format!("ncr parent proof failed: {e}")))?;
+    if found.is_none() {
+        return Err(SenseiError::NotFound(format!("NCR {ncr_id} not found")));
+    }
+    Ok(())
 }
 
 #[cfg(test)]

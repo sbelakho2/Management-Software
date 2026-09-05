@@ -1330,7 +1330,7 @@ impl OperationsService for DatabaseOperationsService {
                      RETURNING id, tenant_id, andon_number, site_id, work_center_id, issue_type, severity, \
                                description, status, raised_by, acknowledged_by, resolved_by, \
                                resolution, response_time_seconds, resolution_time_seconds, \
-                               created_at, acknowledged_at, resolved_at, restart_authorized_by, restart_authorized_at, abnormal_condition_observed_at, contained_at, contained_by, contained_note, escalated, escalated_at",
+                               created_at, acknowledged_at, resolved_at, restart_authorized_by, restart_authorized_at, abnormal_condition_observed_at, contained_at, contained_by, contained_note, escalated, escalated_at, request_key",
                 )
                 .bind(id)
                 .bind(tenant_id)

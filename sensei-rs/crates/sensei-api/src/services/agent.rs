@@ -533,6 +533,19 @@ async fn run_tool(
             // calendar/demand reads at all.
             enforce_site_argument_scope(ctx, pool, site_id).await?;
 
+            // Thirtieth-audit item 18: production_calendar and
+            // sales_orders are fail-closed FORCE-RLS tables (migration 175
+            // normalized sales_orders' last compatibility policy onto the
+            // universal no-context = no-rows shape), so the whole
+            // calendar+demand evidence block reads inside ONE TenantTx of
+            // the caller's tenant.
+            let mut db = sensei_core::db::TenantTx::begin(
+                pool.ok_or_else(|| "Scope tool requires a database pool".to_string())?,
+                ctx.tenant_id,
+            )
+            .await
+            .map_err(|e| format!("scope tx: {e}"))?;
+
             // ── Authoritative calendar: shifts + production_calendar ──
             let calendar: Vec<(i64, i64, i64, bool, chrono::DateTime<chrono::Utc>)> =
                 sqlx::query_as(
@@ -544,7 +557,7 @@ async fn run_tool(
                 .bind(ctx.tenant_id)
                 .bind(site_id)
                 .bind(date)
-                .fetch_all(pool.ok_or_else(|| "Scope tool requires a database pool".to_string())?)
+                .fetch_all(&mut **db.tx())
                 .await
                 .map_err(|e| format!("Calendar read failed: {e}"))?;
             let scheduled: u64 = calendar.iter().map(|c| c.0 as u64).sum();
@@ -573,7 +586,7 @@ async fn run_tool(
             .bind(ctx.tenant_id)
             .bind(site_id)
             .bind(date)
-            .fetch_one(pool.ok_or_else(|| "Scope tool requires a database pool".to_string())?)
+            .fetch_one(&mut **db.tx())
             .await
             .map_err(|e| format!("Demand read failed: {e}"))?;
 
@@ -587,7 +600,7 @@ async fn run_tool(
             .bind(ctx.tenant_id)
             .bind(site_id)
             .bind(date)
-            .fetch_one(pool.ok_or_else(|| "Scope tool requires a database pool".to_string())?)
+            .fetch_one(&mut **db.tx())
             .await
             .map_err(|e| format!("Calendar touched-at read failed: {e}"))?;
             // The demand evidence query carries the SAME site filter as
@@ -603,7 +616,7 @@ async fn run_tool(
             .bind(ctx.tenant_id)
             .bind(site_id)
             .bind(date)
-            .fetch_one(pool.ok_or_else(|| "Scope tool requires a database pool".to_string())?)
+            .fetch_one(&mut **db.tx())
             .await
             .map_err(|e| format!("Demand touched-at read failed: {e}"))?;
             let observed_at = calendar_touched
@@ -612,6 +625,8 @@ async fn run_tool(
                 .max()
                 .unwrap_or_else(chrono::Utc::now);
 
+            // Read-only tenant transaction: dropping it rolls the context back.
+            drop(db);
             let available = sensei_services::tps::AvailableProductionTime {
                 scheduled_seconds: scheduled,
                 breaks_seconds: breaks,

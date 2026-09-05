@@ -25,6 +25,7 @@ pub mod rules;
 pub mod signals;
 pub mod site_manifest;
 pub mod skills;
+pub mod target_projectors;
 pub mod work_center_repository;
 
 use std::time::Duration;

@@ -9,8 +9,13 @@ jobs:
   e2e:
     runs-on: ubuntu-latest
     services:
+      # Thirtieth-audit item 27/28: the E2E gate must exercise the REAL
+      # schema dependency — migration 004 requires CREATE EXTENSION vector,
+      # which plain postgres:16 cannot satisfy. The image is the pinned DB
+      # capability image from .github/.db-capability (same literal as the
+      # db-contract workflow; scripts/validate-db-contract.sh enforces it).
       postgres:
-        image: postgres:16
+        image: pgvector/pgvector:pg16@sha256:ccc6e83d6e35e931dc7c5def2022729d5a6c370318d099181995567ff1fb4d6b
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
@@ -34,10 +39,16 @@ jobs:
           toolchain: 1.96.0
           targets: wasm32-unknown-unknown
 
-      - name: Install trunk
-        uses: jetli/trunk-action@v0.5.0
-        with:
-          version: latest
+      # Thirtieth-audit item 27: Trunk is pinned in .github/.tool-versions
+      # (`trunk <version>` — same manifest the Dockerfile frontend stage
+      # mirrors) and installed with `--version "$TRUNK_VERSION" --locked`,
+      # never "latest" via the jetli action.
+      - name: Install trunk (pinned from .github/.tool-versions)
+        run: |
+          set -euo pipefail
+          TRUNK_VERSION="$(awk '$1=="trunk"{print $2}' .github/.tool-versions)"
+          [ -n "$TRUNK_VERSION" ] || { echo "no trunk pin in .github/.tool-versions" >&2; exit 1; }
+          cargo install trunk --version "$TRUNK_VERSION" --locked
 
       - name: Install binaryen (wasm-opt)
         run: |

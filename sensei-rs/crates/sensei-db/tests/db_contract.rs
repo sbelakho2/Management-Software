@@ -2038,6 +2038,288 @@ async fn every_tenant_owned_table_has_fail_closed_rls() {
     );
 }
 
+/// Thirtieth-audit item 31 (Wave C): the schema-generated RLS contract —
+/// NO maintenance list. Migration 175 replaced every historical
+/// compatibility policy (the migration-070/079 "unset or zero-uuid
+/// context = visible" clauses on users, work_orders, production_orders,
+/// purchase_orders, sales_orders, customer_invoices, supplier_invoices)
+/// with ONE canonical fail-closed shape on EVERY public base table that
+/// has a tenant_id column:
+///
+///   USING      (tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid)
+///   WITH CHECK (tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid)
+///
+/// The test enumerates the tables from the live catalogs (a future
+/// CREATE TABLE ... (tenant_id UUID NOT NULL, ...) without the canonical
+/// policy fails this gate automatically), then proves the semantics AS
+/// THE PRODUCTION NON-OWNER ROLE (sensei_app pattern, NOBYPASSRLS):
+///   - without app.tenant_id: ZERO rows on EVERY enumerated table;
+///   - with app.tenant_id = tenant A: tenant A's rows are visible and
+///     tenant B's rows stay hidden;
+///   - an INSERT whose tenant_id mismatches the context is DENIED by the
+///     WITH CHECK clause.
+#[tokio::test]
+async fn every_tenant_owned_table_is_universally_fail_closed() {
+    let _serial = DB_LOCK.lock().await;
+    let Some(pool) = connect().await else { return };
+    sqlx::query(
+        r#"DO $$ DECLARE r RECORD; BEGIN
+             FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname = 'public') LOOP
+                 EXECUTE format('DROP TABLE IF EXISTS %I CASCADE', r.tablename);
+             END LOOP;
+         END $$"#,
+    )
+    .execute(&pool)
+    .await
+    .expect("drop all tables");
+    sensei_db::migrations::run_migrations(&pool)
+        .await
+        .expect("the ENTIRE migration chain must apply to an empty database");
+
+    // ── 1. Enumerate every public base table with tenant_id ───────────
+    // (information_schema + pg_class; base tables only — the same
+    // relkind convention migrations 098/175 use. No maintenance list.)
+    let tables: Vec<(String, bool, bool)> = sqlx::query_as(
+        "SELECT c.relname,
+                c.relrowsecurity,
+                c.relforcerowsecurity
+         FROM pg_class c
+         JOIN pg_namespace n ON n.oid = c.relnamespace
+         WHERE n.nspname = 'public'
+           AND c.relkind IN ('r', 'p')
+           AND EXISTS (
+               SELECT 1 FROM information_schema.columns col
+               WHERE col.table_schema = 'public'
+                 AND col.table_name = c.relname
+                 AND col.column_name = 'tenant_id'
+           )
+         ORDER BY c.relname",
+    )
+    .fetch_all(&pool)
+    .await
+    .expect("RLS audit query");
+
+    assert!(
+        tables.len() > 200,
+        "the audit must cover every tenant-owned table, got {}",
+        tables.len()
+    );
+
+    // ── 2. Structural assertions: ENABLE + FORCE + exactly ONE policy,
+    //    the canonical tenant_isolation with the fail-closed NULLIF
+    //    clause in BOTH USING and WITH CHECK (no compatibility clause,
+    //    no zero-uuid COALESCE, no implicit WITH CHECK).
+    let mut violations: Vec<String> = Vec::new();
+    for (table, enabled, forced) in &tables {
+        if !enabled || !forced {
+            violations.push(format!("{table}: enabled={enabled} forced={forced}"));
+            continue;
+        }
+        let policies: Vec<(String, Option<String>, Option<String>)> = sqlx::query_as(
+            "SELECT policyname, qual, with_check FROM pg_policies \
+             WHERE schemaname = 'public' AND tablename = $1 ORDER BY policyname",
+        )
+        .bind(table)
+        .fetch_all(&pool)
+        .await
+        .expect("policy list");
+        if policies.len() != 1 {
+            violations.push(format!(
+                "{table}: expected exactly ONE policy, found {} ({})",
+                policies.len(),
+                policies
+                    .iter()
+                    .map(|p| p.0.clone())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ));
+            continue;
+        }
+        let (name, qual, with_check) = &policies[0];
+        if name != "tenant_isolation" {
+            violations.push(format!("{table}: policy is named '{name}', not tenant_isolation"));
+            continue;
+        }
+        let canonical = |expr: &Option<String>| -> bool {
+            expr.as_deref().is_some_and(|e| {
+                e.contains("NULLIF(current_setting('app.tenant_id'::text, true), ''::text)")
+                    && e.contains("::uuid")
+                    && !e.contains("00000000-0000-0000-0000-000000000000")
+                    && !e.contains(" OR ")
+            })
+        };
+        if !canonical(qual) {
+            violations.push(format!("{table}: USING is not fail-closed canonical ({qual:?})"));
+        }
+        if !canonical(with_check) {
+            violations.push(format!(
+                "{table}: WITH CHECK is not fail-closed canonical ({with_check:?})"
+            ));
+        }
+    }
+    assert!(
+        violations.is_empty(),
+        "tenant-owned tables without the universal fail-closed policy:\n{}",
+        violations.join("\n")
+    );
+
+    // ── 3. The production non-owner role (sensei_app pattern) ─────────
+    let role = "sensei_app_gate";
+    sqlx::query(&format!("DROP OWNED BY {role} CASCADE"))
+        .execute(&pool)
+        .await
+        .ok();
+    sqlx::query(&format!("DROP ROLE IF EXISTS {role}"))
+        .execute(&pool)
+        .await
+        .expect("drop role");
+    sqlx::query(&format!("CREATE ROLE {role} LOGIN NOBYPASSRLS"))
+        .execute(&pool)
+        .await
+        .expect("create role");
+    sqlx::query(&format!("GRANT USAGE ON SCHEMA public TO {role}"))
+        .execute(&pool)
+        .await
+        .expect("grant schema");
+    sqlx::query(&format!(
+        "GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO {role}"
+    ))
+    .execute(&pool)
+    .await
+    .expect("grant tables");
+
+    // ── 4. Seeds: two tenants; probe rows across eras of the policy
+    //    history — users/work_orders (the migration-079 compatibility
+    //    tables migration 175 hardened), products (fail-closed since the
+    //    098 sweep), so the behavioral probes cover every shape 175
+    //    replaced.
+    let tenant_a = uuid::Uuid::new_v4();
+    let tenant_b = uuid::Uuid::new_v4();
+    sqlx::query("INSERT INTO tenants (id, name, slug) VALUES ($1, 'fc-a', 'fc-a'), ($2, 'fc-b', 'fc-b')")
+        .bind(tenant_a)
+        .bind(tenant_b)
+        .execute(&pool)
+        .await
+        .expect("tenants");
+    sqlx::query(
+        "INSERT INTO users (id, tenant_id, email, name, password_hash) \
+         VALUES ($1, $2, 'fc-a@x.local', 'A', 'x'), ($3, $4, 'fc-b@x.local', 'B', 'x')",
+    )
+    .bind(uuid::Uuid::new_v4())
+    .bind(tenant_a)
+    .bind(uuid::Uuid::new_v4())
+    .bind(tenant_b)
+    .execute(&pool)
+    .await
+    .expect("users");
+    sqlx::query(
+        "INSERT INTO work_orders (id, tenant_id, wo_number, product_id, product_name, quantity, status) \
+         VALUES ($1, $2, 'WO-FC-A', $5, 'P', 100, 'released'), ($3, $4, 'WO-FC-B', $6, 'P', 100, 'released')",
+    )
+    .bind(uuid::Uuid::new_v4())
+    .bind(tenant_a)
+    .bind(uuid::Uuid::new_v4())
+    .bind(tenant_b)
+    .bind(uuid::Uuid::new_v4())
+    .bind(uuid::Uuid::new_v4())
+    .execute(&pool)
+    .await
+    .expect("work orders");
+    sqlx::query(
+        "INSERT INTO products (id, tenant_id, product_number, name, unit_of_measure, is_active, product_type, created_at, updated_at) \
+         VALUES ($1, $2, 'FC-A', 'A', 'pcs', TRUE, 'finished_good', NOW(), NOW()), \
+                ($3, $4, 'FC-B', 'B', 'pcs', TRUE, 'finished_good', NOW(), NOW())",
+    )
+    .bind(uuid::Uuid::new_v4())
+    .bind(tenant_a)
+    .bind(uuid::Uuid::new_v4())
+    .bind(tenant_b)
+    .execute(&pool)
+    .await
+    .expect("products");
+
+    // ── 5. Fail-closed behavior WITHOUT app.tenant_id: ZERO rows on
+    //    EVERY enumerated table, as the NOBYPASSRLS app role. One
+    //    dedicated connection carries the role for the whole sweep
+    //    (session state must not leak across pooled connections).
+    let mut conn = pool.acquire().await.expect("acquire");
+    sqlx::query(&format!("SET ROLE {role}"))
+        .execute(&mut *conn)
+        .await
+        .expect("set role");
+    let mut zero_violations: Vec<String> = Vec::new();
+    for (table, _, _) in &tables {
+        let count: i64 = sqlx::query_scalar(&format!("SELECT COUNT(*) FROM {table}"))
+            .fetch_one(&mut *conn)
+            .await
+            .expect("role sweep count");
+        if count != 0 {
+            zero_violations.push(format!("{table}: {count} rows visible without app.tenant_id"));
+        }
+    }
+    assert!(
+        zero_violations.is_empty(),
+        "fail-closed sweep WITHOUT app.tenant_id leaked rows:\n{}",
+        zero_violations.join("\n")
+    );
+
+    // ── 6. WITH app.tenant_id = tenant A: A's rows visible, B's rows
+    //    hidden, on the probe tables.
+    sqlx::query("BEGIN")
+        .execute(&mut *conn)
+        .await
+        .expect("begin");
+    sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
+        .bind(tenant_a.to_string())
+        .execute(&mut *conn)
+        .await
+        .expect("set tenant");
+    let (users_a, wos_a): (i64, i64) = sqlx::query_as(
+        "SELECT (SELECT COUNT(*) FROM users WHERE tenant_id = $1), \
+                (SELECT COUNT(*) FROM work_orders WHERE tenant_id = $1)",
+    )
+    .bind(tenant_a)
+    .fetch_one(&mut *conn)
+    .await
+    .expect("tenant-a probe counts");
+    assert_eq!(users_a, 1, "tenant A must see its own user row");
+    assert_eq!(wos_a, 1, "tenant A must see its own work order");
+    let (users_b, wos_b, products_b): (i64, i64, i64) = sqlx::query_as(
+        "SELECT (SELECT COUNT(*) FROM users WHERE tenant_id = $1), \
+                (SELECT COUNT(*) FROM work_orders WHERE tenant_id = $1), \
+                (SELECT COUNT(*) FROM products WHERE tenant_id = $1)",
+    )
+    .bind(tenant_b)
+    .fetch_one(&mut *conn)
+    .await
+    .expect("tenant-b probe counts");
+    assert_eq!(
+        (users_b, wos_b, products_b),
+        (0, 0, 0),
+        "tenant B's rows must stay hidden under tenant-A context"
+    );
+    // Cross-tenant INSERT is denied by the WITH CHECK clause.
+    let denied = sqlx::query(
+        "INSERT INTO work_orders (id, tenant_id, wo_number, product_id, product_name, quantity, status) \
+         VALUES ($1, $2, 'WO-FC-X', $3, 'P', 100, 'released')",
+    )
+    .bind(uuid::Uuid::new_v4())
+    .bind(tenant_b)
+    .bind(uuid::Uuid::new_v4())
+    .execute(&mut *conn)
+    .await;
+    assert!(
+        denied.is_err(),
+        "a cross-tenant INSERT must violate the WITH CHECK clause"
+    );
+    sqlx::query("COMMIT")
+        .execute(&mut *conn)
+        .await
+        .expect("commit");
+    sqlx::query("RESET ROLE").execute(&mut *conn).await.ok();
+    drop(conn);
+}
+
 /// Semantic route-permission contract (item 27): the integration import
 /// guard must reject an ordinary "user" — not merely contain "some
 /// guard". The user role holds NO integration permission; only the
@@ -2052,15 +2334,16 @@ fn integration_import_rejects_humans_and_scopes_by_system() {
     ));
 
     let tenant = uuid::Uuid::new_v4();
+    let human_roles = vec!["user".to_string()];
     let human = sensei_auth::middleware::AuthenticatedUser {
         user_id: uuid::Uuid::new_v4(),
         tenant_id: tenant,
-        roles: vec!["user".to_string()],
+        roles: human_roles.clone(),
         sid: Some(uuid::Uuid::new_v4()),
-        // Empty request-local permission set: the legacy RBAC registry
-        // (reset to static defaults above) backs require_permission in
-        // direct constructions.
-        permissions: std::collections::HashSet::new(),
+        // Explicit permissions (thirtieth-audit P0-10): require_permission
+        // no longer falls back to the global registry, so direct
+        // constructions carry the static expansion of their roles.
+        permissions: sensei_auth::rbac::RbacService::new().expand_static(&human_roles),
     };
     // A plain "user" must NOT hold ANY integration permission.
     assert!(
@@ -2102,13 +2385,14 @@ fn integration_import_rejects_humans_and_scopes_by_system() {
 
     // The dedicated principal: ONLY the integration_bridge role, with
     // tightly scoped permissions.
+    let bridge_roles = vec!["integration_bridge".to_string()];
     let bridge_starz = sensei_auth::middleware::AuthenticatedUser {
         user_id: uuid::Uuid::new_v4(),
         tenant_id: tenant,
-        roles: vec!["integration_bridge".to_string()],
+        roles: bridge_roles.clone(),
         sid: Some(uuid::Uuid::new_v4()),
-        // Empty request-local permission set: legacy registry path.
-        permissions: std::collections::HashSet::new(),
+        // Explicit permissions: static expansion of the bridge role.
+        permissions: sensei_auth::rbac::RbacService::new().expand_static(&bridge_roles),
     };
     assert!(
         bridge_starz
@@ -7082,22 +7366,34 @@ async fn site_replication_log_durable_projection() {
     assert!(again.is_empty(), "durable once — no double projection");
 }
 
-/// Twenty-sixth audit P0.1 + twenty-seventh audit P0 (federation inbox):
-/// the ACK must not record an application that did not happen. `ack()`
-/// is the queue-side consume acknowledgement ONLY — it marks the source
-/// queue row 'acked' (delivered to the consumer) and NEVER writes the
-/// replication inbox (`replication_inbox`, migration 166). The durable
-/// target-side record is created by the honest split:
-/// `deliver_to_target_inbox` reserves the projection in the TARGET
-/// tenant's inbox (INSERT ... ON CONFLICT DO NOTHING with
-/// status 'received' — a second delivery returns `false`, never a
-/// second receipt — the unique index is the arbiter, never a
-/// check-then-insert window), and `apply_target_projection` — the apply
-/// gate over the inbox state machine (received / applying / applied /
-/// reconcile_required) — validates the reserved 'received' inbox row and
-/// then refuses EVERY application ("no target projector is registered")
-/// while the projector allowlist is empty, so no 'received' row ever
-/// transitions and an application that never happened is never recorded.
+/// Twenty-sixth audit P0.1 + twenty-seventh audit P0 (federation inbox),
+/// completed by the thirtieth audit item 25 (real projectors + target-
+/// generated receipts): the ACK must never record an application that
+/// did not happen. `ack()` is the queue-side consume acknowledgement
+/// ONLY — it marks the source queue row 'acked' (delivered to the
+/// consumer) and NEVER writes the replication inbox
+/// (`replication_inbox`, migration 166), never writes an application
+/// receipt (`replication_receipts`, migration 173) and never produces
+/// 'application_confirmed'. The durable target-side record is created
+/// by the honest split: `deliver_to_target_inbox` reserves the
+/// projection in the TARGET tenant's inbox (INSERT ... ON CONFLICT DO
+/// NOTHING with status 'received' — a second delivery returns `false`,
+/// never a second receipt — the unique index is the arbiter, never a
+/// check-then-insert window) and binds the delivery identity
+/// (`source_queue_id` + `payload_hash`); `apply_target_projection` is
+/// the apply executor over the inbox state machine (received /
+/// applying / applied / reconcile_required) — it runs a REGISTERED
+/// projector for the entity type (`work_order` is registered: the
+/// canonical-event mirror), transitions the reserved row to 'applied'
+/// only through that real projector, and binds the server-created
+/// application receipt; the SOURCE terminal state
+/// 'application_confirmed' is reached only when
+/// `confirm_application_receipts` observes that receipt with a matching
+/// payload hash. An entity type with NO registered projector stays
+/// refused: delivery reserves its inbox row, but the apply refuses
+/// loudly ('no target projector is registered for …'), the row never
+/// leaves 'received', no mirror lands, no receipt is bound and the acked
+/// source row is never confirmed.
 #[tokio::test]
 async fn replication_target_apply_idempotency_guard() {
     let _serial = DB_LOCK.lock().await;
@@ -7122,6 +7418,15 @@ async fn replication_target_apply_idempotency_guard() {
         .execute(&pool)
         .await
         .expect("tenant insert");
+    // The registered projector mirrors into the TARGET's canonical event
+    // store (operational_events.tenant_id has an FK to tenants), so the
+    // destination must be a real tenant row too.
+    let target_tenant = uuid::Uuid::new_v4();
+    sqlx::query("INSERT INTO tenants (id, name, slug) VALUES ($1, 't27target', 't27target')")
+        .bind(target_tenant)
+        .execute(&pool)
+        .await
+        .expect("target tenant insert");
 
     use sensei_services::tps::replication;
 
@@ -7129,10 +7434,8 @@ async fn replication_target_apply_idempotency_guard() {
     let entity_a = uuid::Uuid::new_v4();
     let source_event = uuid::Uuid::new_v4();
     // The destination edge is named by the fabricated membership — the
-    // peer tenant/site carry no tenants/sites rows (no FK on the queue's
-    // target columns and none on replication_inbox): the inbox receipt
-    // ownership + dedupe semantics are what is exercised.
-    let target_tenant = uuid::Uuid::new_v4();
+    // peer tenant/site rows are real tenants but no site_manifests rows
+    // are needed: the queue/inbox/receipt tables carry no FK to them.
     let target_site = uuid::Uuid::new_v4();
 
     let envelope = replication::ReplicationEnvelope {
@@ -7193,6 +7496,9 @@ async fn replication_target_apply_idempotency_guard() {
         uuid::Uuid::parse_str(entry.source_event_id.as_deref().expect("source event id"))
             .expect("the enqueued source event id is a UUID");
     let edge_target = entry.target_tenant_id.expect("target tenant");
+    let queue_id = entry.id;
+    let local_hash = replication::projection_payload_hash(&entry.projection)
+        .expect("the local payload hash computes");
 
     async fn inbox_count_for(pool: &sqlx::PgPool, tenant_id: uuid::Uuid) -> i64 {
         let mut tx = pool.begin().await.expect("inbox tx begin");
@@ -7208,6 +7514,23 @@ async fn replication_target_apply_idempotency_guard() {
                 .await
                 .expect("inbox count");
         tx.commit().await.expect("inbox tx commit");
+        n
+    }
+
+    async fn receipt_count_for(pool: &sqlx::PgPool, tenant_id: uuid::Uuid) -> i64 {
+        let mut tx = pool.begin().await.expect("receipt tx begin");
+        sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
+            .bind(tenant_id.to_string())
+            .execute(&mut *tx)
+            .await
+            .expect("set tenant context");
+        let n: i64 =
+            sqlx::query_scalar("SELECT count(*) FROM replication_receipts WHERE tenant_id = $1")
+                .bind(tenant_id)
+                .fetch_one(&mut *tx)
+                .await
+                .expect("receipt count");
+        tx.commit().await.expect("receipt tx commit");
         n
     }
 
@@ -7251,15 +7574,35 @@ async fn replication_target_apply_idempotency_guard() {
         row
     }
 
+    async fn mirror_count_for(
+        pool: &sqlx::PgPool,
+        tenant_id: uuid::Uuid,
+        event: uuid::Uuid,
+    ) -> i64 {
+        let mut tx = pool.begin().await.expect("mirror tx begin");
+        sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
+            .bind(tenant_id.to_string())
+            .execute(&mut *tx)
+            .await
+            .expect("set tenant context");
+        let n: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM operational_events \
+             WHERE tenant_id = $1 AND source_system = 'federation' AND source_id = $2",
+        )
+        .bind(tenant_id)
+        .bind(event.to_string())
+        .fetch_one(&mut *tx)
+        .await
+        .expect("mirror count");
+        tx.commit().await.expect("mirror tx commit");
+        n
+    }
+
     // ── 1. ack() alone: delivery to the consumer, NOT an application ──
-    // The twenty-fifth-audit wiring recorded a durable
-    // `replication_applied` row inside ack()'s own transaction — under
-    // the SOURCE queue tenant's slice, as if the projection had been
-    // applied. No projection-apply step exists (the old code comment said
-    // so itself), so that row was an application record FOR AN
-    // APPLICATION THAT NEVER HAPPENED. ack() now marks the queue row
-    // 'acked' and writes NOTHING else — zero replication_inbox rows
-    // exist in ANY tenant slice after the ack.
+    // ack() marks the queue row 'acked' and writes NOTHING else — zero
+    // replication_inbox rows and zero replication_receipts rows exist in
+    // ANY tenant slice after the ack, and the confirmation poll cannot
+    // confirm the row (no receipt to observe).
     replication::ack(
         &pool,
         source_tenant,
@@ -7282,6 +7625,27 @@ async fn replication_target_apply_idempotency_guard() {
         inbox_count_for(&pool, target_tenant).await,
         0,
         "ack() alone creates NO replication_inbox row under the target tenant"
+    );
+    assert_eq!(
+        receipt_count_for(&pool, target_tenant).await,
+        0,
+        "ack() alone creates NO application receipt"
+    );
+    let ack_only = replication::confirm_application_receipts(&pool, source_tenant, 100)
+        .await
+        .expect("confirmation poll must work");
+    assert_eq!(
+        ack_only.confirmed, 0,
+        "ACK alone never produces application_confirmed — no receipt exists"
+    );
+    assert_eq!(
+        ack_only.awaiting_receipt, 1,
+        "the acked row awaits its target-generated receipt"
+    );
+    assert_eq!(
+        queue_status(&pool, source_tenant, entry.id).await,
+        "acked",
+        "the ACK-only row stays acked — never application_confirmed"
     );
 
     // ── 2. apply_target_projection before any delivery: refused ──────
@@ -7310,10 +7674,11 @@ async fn replication_target_apply_idempotency_guard() {
     }
 
     // ── 3. deliver_to_target_inbox: the TARGET INBOX reservation ─────
-    // The honest successor of the ack-time write: ONE tenant transaction
-    // under the TARGET tenant's context reserves the inbox with the
-    // guarded insert — true = newly reserved, status 'received' (the
-    // migration-166 default). It is an INBOX RECEIPT, not a projection
+    // ONE tenant transaction under the TARGET tenant's context reserves
+    // the inbox with the guarded insert — true = newly reserved, status
+    // 'received' — and binds the DELIVERY IDENTITY: source_queue_id (the
+    // claimed queue row) and payload_hash (SHA-256 of the delivered
+    // projection payload). It is an INBOX RECEIPT, not a projection
     // application: no business mutation happens here, and the receipt is
     // owned by the TARGET tenant, never by the source queue tenant.
     let delivered = replication::deliver_to_target_inbox(&pool, source_tenant, entry)
@@ -7339,16 +7704,18 @@ async fn replication_target_apply_idempotency_guard() {
             .expect("set tenant context");
         type Receipt = (
             uuid::Uuid,         // source_tenant_id
+            uuid::Uuid,         // source_queue_id
             Option<uuid::Uuid>, // source_site_id
             uuid::Uuid,         // target_tenant_id
             Option<uuid::Uuid>, // target_site_id
             String,             // projection_type
             i64,                // projection_revision
             String,             // status
+            String,             // payload_hash
         );
         let receipt: Option<Receipt> = sqlx::query_as(
-            "SELECT source_tenant_id, source_site_id, target_tenant_id, target_site_id, \
-                    projection_type, projection_revision, status \
+            "SELECT source_tenant_id, source_queue_id, source_site_id, target_tenant_id, \
+                    target_site_id, projection_type, projection_revision, status, payload_hash \
              FROM replication_inbox WHERE tenant_id = $1 AND source_event_id = $2",
         )
         .bind(target_tenant)
@@ -7357,11 +7724,15 @@ async fn replication_target_apply_idempotency_guard() {
         .await
         .expect("receipt shape read");
         tx.commit().await.expect("shape tx commit");
-        let (src_tenant, src_site, tgt_tenant, tgt_site, ptype, prev, status) =
+        let (src_tenant, src_queue, src_site, tgt_tenant, tgt_site, ptype, prev, status, hash) =
             receipt.expect("the receipt exists under the target tenant");
         assert_eq!(
             src_tenant, source_tenant,
             "the receipt records the SOURCE tenant"
+        );
+        assert_eq!(
+            src_queue, queue_id,
+            "the receipt binds the SOURCE QUEUE row id"
         );
         assert_eq!(
             src_site,
@@ -7385,6 +7756,10 @@ async fn replication_target_apply_idempotency_guard() {
         assert_eq!(
             status, "received",
             "delivery reserves the inbox with status 'received' — nothing more"
+        );
+        assert_eq!(
+            hash, local_hash,
+            "delivery binds the payload hash of the delivered projection"
         );
     }
     let applied = replication::target_inbox_exists(
@@ -7449,18 +7824,21 @@ async fn replication_target_apply_idempotency_guard() {
 
     // ── 5. reserve_target_inbox (the raw-argument receipt form) ───────
     // The raw-argument form runs the SAME guarded 'received' insert
+    // (now with the delivery binding: source_queue_id + payload_hash)
     // under the target's context: a duplicate key is refused
     // (unique-constraint semantics unchanged)…
     let dup = replication::reserve_target_inbox(
         &pool,
         target_tenant,
         source_tenant,
+        queue_id,
         entry.site_id,
         event_uuid,
         &entry.projection_type,
         entry.projection_revision,
         edge_target,
         entry.target_site_id,
+        &local_hash,
     )
     .await
     .expect("the raw-argument receipt insert must not error");
@@ -7473,12 +7851,14 @@ async fn replication_target_apply_idempotency_guard() {
         &pool,
         source_tenant,
         source_tenant,
+        queue_id,
         entry.site_id,
         event_uuid,
         &entry.projection_type,
         entry.projection_revision,
         edge_target,
         entry.target_site_id,
+        &local_hash,
     )
     .await;
     assert!(
@@ -7491,13 +7871,14 @@ async fn replication_target_apply_idempotency_guard() {
     );
 
     // ── 6. apply_target_projection on the reserved 'received' row: ───
-    // the apply refuses. Validation (a) passes — the inbox row is
-    // reserved in 'received' — but (b) performs NO business mutation and
-    // NO state transition: with no target projector registered (the
-    // allowlist is EMPTY), every entity type is refused with the
-    // documented not-registered error. The apply path fails loudly and
-    // never silently claims success; no false application is ever
-    // recorded — the row stays 'received' with no apply_started_at.
+    // the REGISTERED work_order projector runs. Validation (a) passes
+    // (the inbox row is reserved in 'received' with a matching delivery
+    // hash), and the entity type 'work_order' is registered (the
+    // canonical-event mirror in target_projectors), so the apply
+    // performs the real business write and transitions
+    // received -> applying -> applied. The projector mirrors the
+    // projection into the TARGET's canonical event store and the apply
+    // binds the target-generated application receipt.
     {
         let mut tx = pool.begin().await.expect("apply tx begin");
         sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
@@ -7505,161 +7886,42 @@ async fn replication_target_apply_idempotency_guard() {
             .execute(&mut *tx)
             .await
             .expect("set target tenant context");
-        let err = replication::apply_target_projection(&mut tx, source_tenant, entry)
+        replication::apply_target_projection(&mut tx, source_tenant, entry)
             .await
-            .expect_err("apply without a registered projector must be refused");
+            .expect("the registered work_order projector must apply the projection");
         tx.commit().await.expect("apply tx commit");
-        assert!(
-            matches!(
-                err,
-                sensei_core::error::SenseiError::Validation(ref msg)
-                    if msg.as_str()
-                        == "no target projector is registered for work_order — application \
-                           is refused rather than falsely recorded"
-            ),
-            "the apply refuses with the explicit not-registered Validation error"
-        );
     }
     let (state, started_at) = inbox_state(&pool, target_tenant, event_uuid)
         .await
         .expect("the inbox row exists under the target");
     assert_eq!(
-        state, "received",
-        "a refused apply leaves the inbox row in 'received' — no transition, no \
-         false application record"
-    );
-    assert!(
-        started_at.is_none(),
-        "a refused apply never starts an application (apply_started_at stays NULL)"
-    );
-
-    // ── 7. The inbox STATE MACHINE around a registered projector ─────
-    // No projector is registered (the allowlist is EMPTY), so the
-    // received -> applying -> applied / reconcile_required transitions
-    // cannot fire through code. The rows below drive those transitions
-    // DIRECTLY — exactly the writes a registered projector's apply body
-    // would make — to pin the schema state machine and what
-    // apply_target_projection does with each state. Every write runs
-    // under the TARGET tenant's context.
-    // (7a) A FAILED application: received -> applying (apply_started_at)
-    //      -> reconcile_required (failed_at). apply_target_projection
-    //      refuses the row: reconciliation owns a failed application —
-    //      never a silent fresh retry.
-    {
-        let mut tx = pool.begin().await.expect("state tx begin");
-        sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
-            .bind(target_tenant.to_string())
-            .execute(&mut *tx)
-            .await
-            .expect("set tenant context");
-        sqlx::query(
-            "UPDATE replication_inbox \
-             SET status = 'applying', apply_started_at = NOW() \
-             WHERE tenant_id = $1 AND source_event_id = $2",
-        )
-        .bind(target_tenant)
-        .bind(event_uuid)
-        .execute(&mut *tx)
-        .await
-        .expect("received -> applying must be allowed");
-        sqlx::query(
-            "UPDATE replication_inbox \
-             SET status = 'reconcile_required', failed_at = NOW() \
-             WHERE tenant_id = $1 AND source_event_id = $2",
-        )
-        .bind(target_tenant)
-        .bind(event_uuid)
-        .execute(&mut *tx)
-        .await
-        .expect("applying -> reconcile_required must be allowed");
-        tx.commit().await.expect("state tx commit");
-    }
-    let (state, started_at) = inbox_state(&pool, target_tenant, event_uuid)
-        .await
-        .expect("the inbox row exists under the target");
-    assert_eq!(
-        state, "reconcile_required",
-        "the failed-application transition lands in reconcile_required"
+        state, "applied",
+        "the registered projector transitioned the row to 'applied' — the ONLY terminal \
+         'this projection really landed' state"
     );
     assert!(
         started_at.is_some(),
-        "the failed application records apply_started_at"
+        "the applied projection records apply_started_at"
     );
+    assert_eq!(
+        mirror_count_for(&pool, target_tenant, event_uuid).await,
+        1,
+        "the projector REALLY landed the business projection in the target's canonical \
+         event store"
+    );
+    assert_eq!(
+        receipt_count_for(&pool, target_tenant).await,
+        1,
+        "the apply bound exactly ONE target-generated receipt"
+    );
+
+    // ── 7. Idempotent re-apply: an 'applied' row converges ───────────
+    // At-least-once delivery may present the same projection again after
+    // a successful apply; the apply is a no-op success — the business
+    // projection is applied ONCE (one mirror row, one receipt, one inbox
+    // row).
     {
-        let mut tx = pool.begin().await.expect("reconcile apply tx begin");
-        sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
-            .bind(target_tenant.to_string())
-            .execute(&mut *tx)
-            .await
-            .expect("set target tenant context");
-        let err = replication::apply_target_projection(&mut tx, source_tenant, entry)
-            .await
-            .expect_err("a reconcile_required row cannot be silently re-applied");
-        tx.commit().await.expect("apply tx commit");
-        assert!(
-            matches!(
-                err,
-                sensei_core::error::SenseiError::Validation(ref msg)
-                    if msg.contains("reconcile_required")
-            ),
-            "apply on a failed row is refused until reconciliation happens"
-        );
-    }
-    // (7b) A SUCCESSFUL application after reconciliation: the row is
-    //      reset to 'received', a projector applies it (received ->
-    //      applying -> applied, applied_at set). apply_target_projection
-    //      on the 'applied' row converges with a no-op success — an
-    //      at-least-once redelivery after a real application must never
-    //      error and never record a second application.
-    {
-        let mut tx = pool.begin().await.expect("success state tx begin");
-        sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
-            .bind(target_tenant.to_string())
-            .execute(&mut *tx)
-            .await
-            .expect("set tenant context");
-        sqlx::query(
-            "UPDATE replication_inbox SET status = 'received' \
-             WHERE tenant_id = $1 AND source_event_id = $2",
-        )
-        .bind(target_tenant)
-        .bind(event_uuid)
-        .execute(&mut *tx)
-        .await
-        .expect("reconciliation reset must be allowed");
-        tx.commit().await.expect("state tx commit");
-    }
-    {
-        let mut tx = pool.begin().await.expect("projector tx begin");
-        sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
-            .bind(target_tenant.to_string())
-            .execute(&mut *tx)
-            .await
-            .expect("set tenant context");
-        sqlx::query(
-            "UPDATE replication_inbox \
-             SET status = 'applying', apply_started_at = NOW() \
-             WHERE tenant_id = $1 AND source_event_id = $2",
-        )
-        .bind(target_tenant)
-        .bind(event_uuid)
-        .execute(&mut *tx)
-        .await
-        .expect("received -> applying must be allowed");
-        sqlx::query(
-            "UPDATE replication_inbox \
-             SET status = 'applied', applied_at = NOW() \
-             WHERE tenant_id = $1 AND source_event_id = $2",
-        )
-        .bind(target_tenant)
-        .bind(event_uuid)
-        .execute(&mut *tx)
-        .await
-        .expect("applying -> applied must be allowed");
-        tx.commit().await.expect("projector tx commit");
-    }
-    {
-        let mut tx = pool.begin().await.expect("applied apply tx begin");
+        let mut tx = pool.begin().await.expect("reapply tx begin");
         sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
             .bind(target_tenant.to_string())
             .execute(&mut *tx)
@@ -7668,27 +7930,53 @@ async fn replication_target_apply_idempotency_guard() {
         replication::apply_target_projection(&mut tx, source_tenant, entry)
             .await
             .expect("apply on an already-applied row converges — never a second error");
-        tx.commit().await.expect("apply tx commit");
+        tx.commit().await.expect("reapply tx commit");
     }
-    let (state, started_at) = inbox_state(&pool, target_tenant, event_uuid)
-        .await
-        .expect("the inbox row exists under the target");
     assert_eq!(
-        state, "applied",
-        "the successful-application transition lands in 'applied' — the ONLY terminal \
-         'this projection really landed' state"
+        mirror_count_for(&pool, target_tenant, event_uuid).await,
+        1,
+        "duplicate apply applies the business projection ONCE"
     );
-    assert!(
-        started_at.is_some(),
-        "the applied projection records apply_started_at"
+    assert_eq!(
+        receipt_count_for(&pool, target_tenant).await,
+        1,
+        "duplicate apply creates exactly ONE receipt"
     );
     assert_eq!(
         inbox_count_for(&pool, target_tenant).await,
         1,
-        "the whole state-machine history still leaves EXACTLY ONE inbox row"
+        "the whole at-least-once history leaves EXACTLY ONE inbox row"
     );
-    // (7c) The status CHECK is a real constraint: a state outside
-    //      received/applying/applied/reconcile_required cannot exist.
+    // A redelivery of an already-applied projection is still refused by
+    // the unique arbiter — at-least-once delivery never double-records,
+    // even against a fully applied row.
+    let redelivered_applied = replication::deliver_to_target_inbox(&pool, source_tenant, entry)
+        .await
+        .expect("the redelivery must not error");
+    assert!(
+        !redelivered_applied,
+        "a duplicate delivery of an applied projection is refused — still one row"
+    );
+    let still_present = replication::target_inbox_exists(
+        &pool,
+        target_tenant,
+        source_tenant,
+        event_uuid,
+        &entry.projection_type,
+        entry.projection_revision,
+        edge_target,
+        entry.target_site_id,
+    )
+    .await
+    .expect("target-inbox-exists read must succeed");
+    assert!(
+        still_present,
+        "target_inbox_exists is presence-agnostic: the applied row still answers true"
+    );
+
+    // ── 8. The status CHECK and the reconcile guard stay real ────────
+    // (8a) A state outside received/applying/applied/reconcile_required
+    //      cannot exist.
     {
         let mut tx = pool.begin().await.expect("check tx begin");
         sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
@@ -7711,54 +7999,181 @@ async fn replication_target_apply_idempotency_guard() {
         );
         tx.rollback().await.expect("check tx rollback");
     }
-    // (7d) A redelivery of an already-applied projection is still
-    //      refused by the unique arbiter — at-least-once delivery never
-    //      double-records, even against a fully applied row.
-    let redelivered_applied = replication::deliver_to_target_inbox(&pool, source_tenant, entry)
+    // (8b) A reconcile_required row is refused by the apply — a fresh
+    //      apply is never a silent retry of a failed application.
+    {
+        let mut tx = pool.begin().await.expect("reconcile tx begin");
+        sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
+            .bind(target_tenant.to_string())
+            .execute(&mut *tx)
+            .await
+            .expect("set tenant context");
+        sqlx::query(
+            "UPDATE replication_inbox \
+             SET status = 'reconcile_required', failed_at = NOW() \
+             WHERE tenant_id = $1 AND source_event_id = $2",
+        )
+        .bind(target_tenant)
+        .bind(event_uuid)
+        .execute(&mut *tx)
         .await
-        .expect("the redelivery must not error");
-    assert!(
-        !redelivered_applied,
-        "a duplicate delivery of an applied projection is refused — still one row"
-    );
-    assert_eq!(
-        inbox_count_for(&pool, target_tenant).await,
-        1,
-        "EXACTLY ONE inbox row remains after delivery + apply history"
-    );
-    let still_present = replication::target_inbox_exists(
-        &pool,
-        target_tenant,
-        source_tenant,
-        event_uuid,
-        &entry.projection_type,
-        entry.projection_revision,
-        edge_target,
-        entry.target_site_id,
-    )
-    .await
-    .expect("target-inbox-exists read must succeed");
-    assert!(
-        still_present,
-        "target_inbox_exists is presence-agnostic: the applied row still answers true"
-    );
+        .expect("received -> reconcile_required must be allowed by the CHECK");
+        tx.commit().await.expect("reconcile tx commit");
+    }
+    {
+        let mut tx = pool.begin().await.expect("reconcile apply tx begin");
+        sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
+            .bind(target_tenant.to_string())
+            .execute(&mut *tx)
+            .await
+            .expect("set target tenant context");
+        let err = replication::apply_target_projection(&mut tx, source_tenant, entry)
+            .await
+            .expect_err("a reconcile_required row cannot be silently re-applied");
+        tx.commit().await.expect("apply tx commit");
+        assert!(
+            matches!(
+                err,
+                sensei_core::error::SenseiError::Validation(ref msg)
+                    if msg.contains("reconcile_required")
+            ),
+            "apply on a failed row is refused until reconciliation happens"
+        );
+    }
 
-    // ── 8. The whole history leaves EXACTLY ONE inbox row ─────────────
-    // delivery + redelivery + ack + refused applies + the directly
-    // driven projector transitions: one inbox row ('applied'), one
-    // consumed queue row — no false application ever recorded by code.
+    // ── 9. The source confirms on the target-generated receipt ───────
+    // The queue row was acked before delivery; the target applied the
+    // projection and bound the receipt (section 6). The confirmation
+    // poll observes that receipt (source_queue_id + payload_hash match)
+    // and moves the row to 'application_confirmed' — the final state of
+    // the receiving pipeline. (The inbox row is back in
+    // reconcile_required from section 8b, but the RECEIPT — the
+    // application fact recorded when the apply landed — is what the
+    // source observes.)
+    let confirmed = replication::confirm_application_receipts(&pool, source_tenant, 100)
+        .await
+        .expect("confirmation poll must work");
     assert_eq!(
-        inbox_count_for(&pool, target_tenant).await,
-        1,
-        "the whole at-least-once history leaves EXACTLY ONE inbox row"
+        confirmed.confirmed, 1,
+        "the target-generated receipt confirms the source row"
     );
-    assert_eq!(inbox_count_for(&pool, source_tenant).await, 0);
+    assert_eq!(confirmed.awaiting_receipt, 0);
+    assert_eq!(confirmed.receipt_payload_mismatch, 0);
     assert_eq!(
         queue_status(&pool, source_tenant, entry.id).await,
+        "application_confirmed",
+        "receipt observed -> application_confirmed"
+    );
+
+    // ── 10. An UNREGISTERED family stays refused after a real delivery ─
+    // The registered-projector gate is the successor of the empty
+    // allowlist: 'andon' and 'work_order' have registered canonical-event
+    // mirrors, but an entity type with NO registration is refused loudly
+    // even when its inbox row is properly reserved — nothing may claim an
+    // application no projector performs. The row stays 'received', no
+    // mirror lands, no receipt is bound, and the acked source row stays
+    // 'acked' forever (no receipt exists to confirm it).
+    let unreg_event = uuid::Uuid::new_v4();
+    let envelope_ur = replication::ReplicationEnvelope {
+        schema_version: 1,
+        source_event_id: Some(unreg_event.to_string()),
+        source_site: Some(site_id),
+        projection_type: "inventory.count.recorded".to_string(),
+        projection_revision: 1,
+        data_policy: "internal".to_string(),
+        payload: serde_json::json!({ "count": 42 }),
+    };
+    replication::enqueue_projection(
+        &pool,
+        source_tenant,
+        Some(site_id),
+        "inventory",
+        uuid::Uuid::new_v4(),
+        envelope_ur.payload.clone(),
+        envelope_ur.source_event_id.as_deref(),
+        &envelope_ur,
+        Some(&replication::Jurisdiction::MA),
+        &edge,
+    )
+    .await
+    .expect("enqueue of an unregistered entity type succeeds site-locally");
+    let claimed_ur = replication::claim_batch(&pool, source_tenant, 10)
+        .await
+        .expect("claim must work");
+    assert_eq!(claimed_ur.len(), 1, "the unregistered event is claimable");
+    let entry_ur = &claimed_ur[0];
+    assert_eq!(entry_ur.entity_type, "inventory");
+    replication::ack(
+        &pool,
+        source_tenant,
+        entry_ur.id,
+        entry_ur.claim_token.expect("lease token"),
+    )
+    .await
+    .expect("ack of the unregistered event must succeed");
+    replication::deliver_to_target_inbox(&pool, source_tenant, entry_ur)
+        .await
+        .expect("delivery reserves the inbox for the unregistered event too");
+    {
+        let mut tx = pool.begin().await.expect("unregistered apply tx begin");
+        sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
+            .bind(target_tenant.to_string())
+            .execute(&mut *tx)
+            .await
+            .expect("set target tenant context");
+        let err = replication::apply_target_projection(&mut tx, source_tenant, entry_ur)
+            .await
+            .expect_err("an unregistered entity type cannot be applied");
+        tx.commit().await.expect("unregistered apply tx commit");
+        assert!(
+            matches!(
+                err,
+                sensei_core::error::SenseiError::Validation(ref msg)
+                    if msg.contains("no target projector is registered for inventory")
+            ),
+            "apply of an unregistered family is refused loudly (registered gate)"
+        );
+    }
+    let (unreg_state, _) = inbox_state(&pool, target_tenant, unreg_event)
+        .await
+        .expect("the unregistered inbox row exists under the target");
+    assert_eq!(
+        unreg_state, "received",
+        "the unregistered row never leaves 'received' — no phantom apply"
+    );
+    assert_eq!(
+        mirror_count_for(&pool, target_tenant, unreg_event).await,
+        0,
+        "no projector ran — no mirror landed for the unregistered family"
+    );
+    assert_eq!(
+        receipt_count_for(&pool, target_tenant).await,
+        1,
+        "the unregistered family bound NO receipt — only the work_order receipt exists"
+    );
+    assert_eq!(
+        inbox_count_for(&pool, target_tenant).await,
+        2,
+        "two reservations: the applied work_order row and the refused inventory row"
+    );
+    let unreg_report = replication::confirm_application_receipts(&pool, source_tenant, 100)
+        .await
+        .expect("confirmation poll must work");
+    assert_eq!(
+        unreg_report.confirmed, 0,
+        "nothing new is confirmed — no receipt exists for the unregistered event"
+    );
+    assert_eq!(
+        unreg_report.awaiting_receipt, 1,
+        "the acked unregistered row still awaits a receipt it can never get"
+    );
+    assert_eq!(
+        queue_status(&pool, source_tenant, entry_ur.id).await,
         "acked",
-        "the queue row is consumed exactly once"
+        "the unregistered family's source row is never confirmed"
     );
 }
+
 
 /// AUTHORIZATION SNAPSHOTS (fifteenth audit 24/A5): every AI execution
 /// carries {policy_revision, relationship_revision, principal_revision}
@@ -10510,13 +10925,18 @@ async fn authz_snapshot_current_check() {
     );
 
     // Typed scope (item 84): a work-center scope always carries its site
-    // and never admits a foreign one.
+    // and never admits a foreign one. Thirtieth-audit P0 item 1: the
+    // union form — a site grant lives in `sites`, exact work-center
+    // grants in `work_centers`.
     let site = uuid::Uuid::new_v4();
     let _work_center = uuid::Uuid::new_v4();
     let other_site = uuid::Uuid::new_v4();
     // The DB-resolved constructor is the ONLY public path (item 6) —
     // AuthorizedScope::enforce_resource is the runtime gate.
-    let authz_scope = sensei_core::domain::scope::AuthorizedScope::Sites(vec![site]);
+    let authz_scope = sensei_core::domain::scope::AuthorizedScope::Operational {
+        sites: std::collections::HashSet::from([site]),
+        work_centers: std::collections::HashSet::new(),
+    };
     assert!(
         authz_scope.allows_site(site),
         "the scope allows its own site"
@@ -10538,7 +10958,10 @@ async fn authz_snapshot_current_check() {
             .is_err(),
         "a foreign site fails enforcement"
     );
-    let site_scope = sensei_core::domain::scope::AuthorizedScope::Sites(vec![site]);
+    let site_scope = sensei_core::domain::scope::AuthorizedScope::Operational {
+        sites: std::collections::HashSet::from([site]),
+        work_centers: std::collections::HashSet::new(),
+    };
     assert!(site_scope.allows_site(site), "SiteScope covers its site");
 }
 
@@ -18563,10 +18986,12 @@ async fn production_work_orders_are_sql_scoped_to_the_caller_scope() {
         .expect("tenant-wide list");
     assert_eq!(list.total, 2);
 
-    // ── Sites([site_a]): only site A's order is visible ──
-    let site_a_ctx = scoped_ctx(sensei_core::domain::scope::AuthorizedScope::Sites(vec![
-        site_a,
-    ]));
+    // ── Site grant for site A: only site A's order is visible ──
+    let site_a_scope = sensei_core::domain::scope::AuthorizedScope::Operational {
+        sites: std::collections::HashSet::from([site_a]),
+        work_centers: std::collections::HashSet::new(),
+    };
+    let site_a_ctx = scoped_ctx(site_a_scope);
     let got = service.get_work_order(&site_a_ctx, wo_a.id).await;
     assert!(got.is_ok(), "site-A caller reads site-A order");
     assert!(
@@ -18600,23 +19025,29 @@ async fn production_work_orders_are_sql_scoped_to_the_caller_scope() {
         "a site-A caller never widens to site B's WC"
     );
 
-    // ── Sites([site_b]): site A's order is NotFound ──
-    let site_b_ctx = scoped_ctx(sensei_core::domain::scope::AuthorizedScope::Sites(vec![
-        site_b,
-    ]));
+    // ── Site grant for site B: site A's order is NotFound ──
+    let site_b_scope = sensei_core::domain::scope::AuthorizedScope::Operational {
+        sites: std::collections::HashSet::from([site_b]),
+        work_centers: std::collections::HashSet::new(),
+    };
+    let site_b_ctx = scoped_ctx(site_b_scope);
     assert!(
         service.get_work_order(&site_b_ctx, wo_a.id).await.is_err(),
         "site-B caller cannot read site-A order"
     );
 
-    // ── WorkCenter { site_a, wc_a }: exactly that order, and scoped
-    //    edits (update / status) only ever touch it ──
-    let wc_ctx = scoped_ctx(sensei_core::domain::scope::AuthorizedScope::WorkCenter(
-        sensei_core::domain::scope::WorkCenterScope {
-            site: site_a,
-            work_center: wc_a,
-        },
-    ));
+    // ── EXACT work-center grant { site_a, wc_a }: exactly that order,
+    //    and scoped edits (update / status) only ever touch it ──
+    let wc_a_scope = sensei_core::domain::scope::AuthorizedScope::Operational {
+        sites: std::collections::HashSet::new(),
+        work_centers: std::collections::HashSet::from([
+            sensei_core::domain::scope::WorkCenterScope {
+                site: site_a,
+                work_center: wc_a,
+            },
+        ]),
+    };
+    let wc_ctx = scoped_ctx(wc_a_scope);
     assert!(service.get_work_order(&wc_ctx, wo_a.id).await.is_ok());
     assert!(
         service.get_work_order(&wc_ctx, wo_b.id).await.is_err(),
@@ -18638,12 +19069,16 @@ async fn production_work_orders_are_sql_scoped_to_the_caller_scope() {
         .expect("scoped edit succeeds");
     assert_eq!(edited.priority, "high");
     // A scoped status transition is rejected for a foreign order.
-    let foreign_wc_ctx = scoped_ctx(sensei_core::domain::scope::AuthorizedScope::WorkCenter(
-        sensei_core::domain::scope::WorkCenterScope {
-            site: site_b,
-            work_center: wc_b,
-        },
-    ));
+    let foreign_wc_scope = sensei_core::domain::scope::AuthorizedScope::Operational {
+        sites: std::collections::HashSet::new(),
+        work_centers: std::collections::HashSet::from([
+            sensei_core::domain::scope::WorkCenterScope {
+                site: site_b,
+                work_center: wc_b,
+            },
+        ]),
+    };
+    let foreign_wc_ctx = scoped_ctx(foreign_wc_scope);
     assert!(
         service
             .update_work_order_status(&foreign_wc_ctx, wo_a.id, "cancelled")
@@ -18651,6 +19086,100 @@ async fn production_work_orders_are_sql_scoped_to_the_caller_scope() {
             .is_err(),
         "a status update on another work center's order must match zero rows"
     );
+
+    // ── CREATE proves the DESTINATION work center is in scope
+    //    (thirtieth audit P0 item 3) ──
+    let created_a = service
+        .create_work_order(&site_a_ctx, make_wo(wc_a, "WO-CREATE-A"))
+        .await
+        .expect("site-A caller creates an order on site A's WC");
+    assert!(
+        service
+            .create_work_order(&site_a_ctx, make_wo(wc_b, "WO-CREATE-FOREIGN"))
+            .await
+            .is_err(),
+        "site-A caller cannot create an order on site B's WC (destination \
+         matches zero rows = NotFound)"
+    );
+    // An unanchored create is a TENANT-level claim: only the tenant-wide
+    // grant may write it; a scoped caller is rejected.
+    let mut unanchored = make_wo(wc_a, "WO-UNANCHORED");
+    unanchored.work_center_id = None;
+    assert!(
+        service
+            .create_work_order(&site_a_ctx, unanchored.clone())
+            .await
+            .is_err(),
+        "a site-scoped caller cannot create an unanchored work order"
+    );
+    let unanchored = service
+        .create_work_order(&tenant_wide, unanchored)
+        .await
+        .expect("the tenant-wide grant creates an unanchored work order");
+    assert_eq!(unanchored.work_center_id, None);
+
+    // ── The generic update can NEVER change the work-center assignment
+    //    (thirtieth audit P0 item 3) — reassignment is explicit ──
+    let mut move_attempt = wo_a.clone();
+    move_attempt.work_center_id = Some(wc_b);
+    let stayed = service
+        .update_work_order(&wc_ctx, wo_a.id, move_attempt)
+        .await
+        .expect("generic update succeeds on an in-scope order");
+    assert_eq!(
+        stayed.work_center_id,
+        Some(wc_a),
+        "the generic edit preserves the stored work-center assignment"
+    );
+
+    // ── REASSIGN is an explicit, DUAL-authorized command ──
+    // A site-A caller cannot move an order onto site B's WC (the
+    // destination predicate matches zero rows = NotFound)...
+    assert!(
+        service
+            .reassign_work_order(&site_a_ctx, wo_a.id, wc_b)
+            .await
+            .is_err(),
+        "site-A caller cannot reassign an order to site B's WC"
+    );
+    // ...while the tenant-wide grant can move orders across sites.
+    let moved = service
+        .reassign_work_order(&tenant_wide, wo_a.id, wc_b)
+        .await
+        .expect("tenant-wide caller reassigns across sites");
+    assert_eq!(moved.work_center_id, Some(wc_b));
+    // The moved order now lives on site B: site A can no longer reach it
+    // (source predicate) and site B can.
+    assert!(
+        service.get_work_order(&site_a_ctx, wo_a.id).await.is_err(),
+        "after the move the order left the site-A caller's scope"
+    );
+    assert!(
+        service.get_work_order(&site_b_ctx, wo_a.id).await.is_ok(),
+        "after the move the order is inside the site-B caller's scope"
+    );
+    // An exact-WC caller can only reassign onto ITS OWN work center: any
+    // other destination is zero rows (NotFound); its own is a no-op OK.
+    assert!(
+        service
+            .reassign_work_order(&wc_ctx, created_a.id, wc_b)
+            .await
+            .is_err(),
+        "exact-WC caller cannot reassign off its granted work center"
+    );
+    assert!(
+        service
+            .reassign_work_order(&wc_ctx, created_a.id, wc_a)
+            .await
+            .is_ok(),
+        "exact-WC caller reassigns within its exact work center"
+    );
+    // The tenant-wide grant can anchor a previously unanchored order.
+    let anchored = service
+        .reassign_work_order(&tenant_wide, unanchored.id, wc_a)
+        .await
+        .expect("tenant-wide caller anchors an unanchored order");
+    assert_eq!(anchored.work_center_id, Some(wc_a));
 
     // ── NoOperationalScope: impossible predicate — zero rows ──
     let none_ctx = scoped_ctx(sensei_core::domain::scope::AuthorizedScope::NoOperationalScope);
@@ -18666,4 +19195,1908 @@ async fn production_work_orders_are_sql_scoped_to_the_caller_scope() {
         .await
         .expect("no-scope list");
     assert_eq!(list.total, 0, "no entitlement = zero rows on list");
+}
+
+/// Thirtieth-audit P0 item 2: migration 172 makes a work-center-kind role
+/// slot's denormalized site a DB-enforced topology fact. The composite FK
+/// `(tenant_id, scope_work_center_id, scope_site_id) → work_centers
+/// (tenant_id, id, site_id)` is MATCH SIMPLE, so:
+///   * 'none' / 'tenant' / 'site' kind rows (scope_work_center_id NULL)
+///     are not checked at all — a site slot is not a work-center claim;
+///   * a 'work_center' kind row is validated: its scope_site_id must be
+///     the work center's REAL site — a fabricated site is rejected by
+///     the DATABASE.
+#[tokio::test]
+async fn role_slot_work_center_kind_requires_real_topology() {
+    let _serial = DB_LOCK.lock().await;
+    let Some(pool) = connect().await else { return };
+    sqlx::query(
+        r#"DO $$ DECLARE r RECORD; BEGIN
+             FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname = 'public') LOOP
+                 EXECUTE format('DROP TABLE IF EXISTS %I CASCADE', r.tablename);
+             END LOOP;
+         END $$"#,
+    )
+    .execute(&pool)
+    .await
+    .expect("drop all tables");
+    sensei_db::migrations::run_migrations(&pool)
+        .await
+        .expect("the ENTIRE migration chain must apply to an empty database");
+
+    let tenant_id = uuid::Uuid::new_v4();
+    let site_a = uuid::Uuid::new_v4();
+    let site_b = uuid::Uuid::new_v4();
+    let wc_a = uuid::Uuid::new_v4();
+    sqlx::query("INSERT INTO tenants (id, name, slug) VALUES ($1, 'slottopo', 'slottopo')")
+        .bind(tenant_id)
+        .execute(&pool)
+        .await
+        .expect("tenant insert");
+    sqlx::query(
+        "INSERT INTO sites (id, tenant_id, site_code, name) VALUES \
+         ($1, $2, 'SA', 'Site A'), ($3, $2, 'SB', 'Site B')",
+    )
+    .bind(site_a)
+    .bind(tenant_id)
+    .bind(site_b)
+    .execute(&pool)
+    .await
+    .expect("sites insert");
+    // wc_a REALLY lives on site A.
+    sqlx::query(
+        "INSERT INTO work_centers \
+         (id, tenant_id, work_center_number, name, is_active, capacity_per_shift, \
+          site_id, created_at, updated_at) \
+         VALUES ($1, $2, 'WC-TOPO', 'WC', TRUE, 8, $3, NOW(), NOW())",
+    )
+    .bind(wc_a)
+    .bind(tenant_id)
+    .bind(site_a)
+    .execute(&pool)
+    .await
+    .expect("work center insert");
+
+    // A work-center-kind slot naming the REAL site is accepted...
+    sqlx::query(
+        "INSERT INTO role_slots \
+         (id, tenant_id, role_name, slot_name, scope_kind, scope_site_id, scope_work_center_id) \
+         VALUES ($1, $2, 'planner', 'Planner_A', 'work_center', $3, $4)",
+    )
+    .bind(uuid::Uuid::new_v4())
+    .bind(tenant_id)
+    .bind(site_a)
+    .bind(wc_a)
+    .execute(&pool)
+    .await
+    .expect("consistent work-center-kind slot insert");
+    // ...while the SAME work center with a FABRICATED site (site B) is
+    // rejected by the FK — {tenant, wc_a, site_b} is not a work_centers row.
+    let fabricated = sqlx::query(
+        "INSERT INTO role_slots \
+         (id, tenant_id, role_name, slot_name, scope_kind, scope_site_id, scope_work_center_id) \
+         VALUES ($1, $2, 'planner', 'Planner_Fake', 'work_center', $3, $4)",
+    )
+    .bind(uuid::Uuid::new_v4())
+    .bind(tenant_id)
+    .bind(site_b)
+    .bind(wc_a)
+    .execute(&pool)
+    .await;
+    assert!(
+        fabricated.is_err(),
+        "a work-center-kind slot with a fabricated site must violate the topology FK"
+    );
+
+    // MATCH SIMPLE NULL handling: 'site' / 'tenant' / 'none' kind rows
+    // (scope_work_center_id NULL) are NOT work-center claims — all pass
+    // (the FK is skipped, the 169 shape check still holds).
+    for (kind, site, wc) in [
+        ("site", Some(site_a), None::<uuid::Uuid>),
+        ("tenant", None::<uuid::Uuid>, None::<uuid::Uuid>),
+        ("none", None::<uuid::Uuid>, None::<uuid::Uuid>),
+    ] {
+        sqlx::query(
+            "INSERT INTO role_slots \
+             (id, tenant_id, role_name, slot_name, scope_kind, scope_site_id, scope_work_center_id) \
+             VALUES ($1, $2, 'planner', $3, $4, $5, $6)",
+        )
+        .bind(uuid::Uuid::new_v4())
+        .bind(tenant_id)
+        .bind(format!("Slot_{kind}"))
+        .bind(kind)
+        .bind(site)
+        .bind(wc)
+        .execute(&pool)
+        .await
+        .unwrap_or_else(|e| panic!("{kind}-kind slot must pass: {e}"));
+    }
+
+    // The work_centers (tenant_id, id, site_id) UNIQUE target exists and
+    // is re-runnable (the guarded migration already applied; the
+    // constraint names are queryable).
+    let unique_exists: bool = sqlx::query_scalar(
+        "SELECT EXISTS (SELECT 1 FROM pg_constraint \
+         WHERE conname = 'work_centers_tenant_id_id_site_id_key' AND conrelid = \
+         'work_centers'::regclass)",
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("constraint probe");
+    assert!(
+        unique_exists,
+        "migration 172 adds the composite UNIQUE target"
+    );
+    let fk_exists: bool = sqlx::query_scalar(
+        "SELECT EXISTS (SELECT 1 FROM pg_constraint \
+         WHERE conname = 'role_slots_scope_work_center_topology_fk' AND conrelid = \
+         'role_slots'::regclass)",
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("constraint probe");
+    assert!(fk_exists, "migration 172 adds the role-slot topology FK");
+}
+
+/// Thirtieth-audit P0 item 4: production orders are scoped through their
+/// work-center carrier EXACTLY like work orders. Site A vs Site B: an
+/// A-only principal cannot get/list/complete B's order (NotFound / zero
+/// rows) and cannot create an order on B's WC; the tenant-wide grant
+/// sees and moves everything.
+#[tokio::test]
+async fn production_orders_are_sql_scoped_to_the_caller_scope() {
+    let _serial = DB_LOCK.lock().await;
+    let Some(pool) = connect().await else { return };
+    sqlx::query(
+        r#"DO $$ DECLARE r RECORD; BEGIN
+             FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname = 'public') LOOP
+                 EXECUTE format('DROP TABLE IF EXISTS %I CASCADE', r.tablename);
+             END LOOP;
+         END $$"#,
+    )
+    .execute(&pool)
+    .await
+    .expect("drop all tables");
+    sensei_db::migrations::run_migrations(&pool)
+        .await
+        .expect("the ENTIRE migration chain must apply to an empty database");
+
+    let tenant_id = uuid::Uuid::new_v4();
+    let site_a = uuid::Uuid::new_v4();
+    let site_b = uuid::Uuid::new_v4();
+    let wc_a = uuid::Uuid::new_v4();
+    let wc_b = uuid::Uuid::new_v4();
+    let product_id = uuid::Uuid::new_v4();
+    sqlx::query("INSERT INTO tenants (id, name, slug) VALUES ($1, 'poscope', 'poscope')")
+        .bind(tenant_id)
+        .execute(&pool)
+        .await
+        .expect("tenant insert");
+    sqlx::query(
+        "INSERT INTO sites (id, tenant_id, site_code, name) VALUES \
+         ($1, $2, 'SA', 'Site A'), ($3, $2, 'SB', 'Site B')",
+    )
+    .bind(site_a)
+    .bind(tenant_id)
+    .bind(site_b)
+    .execute(&pool)
+    .await
+    .expect("sites insert");
+    for (wc, site, num) in [(wc_a, site_a, "WC-PA"), (wc_b, site_b, "WC-PB")] {
+        sqlx::query(
+            "INSERT INTO work_centers \
+             (id, tenant_id, work_center_number, name, is_active, capacity_per_shift, \
+              site_id, created_at, updated_at) \
+             VALUES ($1, $2, $3, $3, TRUE, 8, $4, NOW(), NOW())",
+        )
+        .bind(wc)
+        .bind(tenant_id)
+        .bind(num)
+        .bind(site)
+        .execute(&pool)
+        .await
+        .expect("work center insert");
+    }
+    sqlx::query(
+        "INSERT INTO products (id, tenant_id, product_number, name, unit_of_measure) \
+         VALUES ($1, $2, 'P-POSCOPE', 'Scope Product', 'pcs')",
+    )
+    .bind(product_id)
+    .bind(tenant_id)
+    .execute(&pool)
+    .await
+    .expect("product insert");
+
+    use sensei_services::production::ProductionService;
+    let service = sensei_services::production::DatabaseProductionService::new(pool.clone());
+    let tenant_wide = tenant_ctx(tenant_id);
+    // The completion approver must be a REAL user (MES-grade provenance).
+    let approver_id = uuid::Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO users (id, tenant_id, email, name, password_hash) \
+         VALUES ($1, $2, 'poapprover@scope.local', 'Ap', 'x')",
+    )
+    .bind(approver_id)
+    .bind(tenant_id)
+    .execute(&pool)
+    .await
+    .expect("approver insert");
+    let make_po = |wc: uuid::Uuid, number: &str| sensei_services::production::ProductionOrder {
+        id: uuid::Uuid::new_v4(),
+        tenant_id,
+        order_number: number.to_string(),
+        product_id,
+        quantity_planned: 5,
+        quantity_produced: 0,
+        quantity_scrapped: 0,
+        status: "planned".to_string(),
+        work_center_id: Some(wc),
+        planned_start: chrono::Utc::now(),
+        planned_end: chrono::Utc::now() + chrono::Duration::hours(8),
+        actual_start: None,
+        actual_end: None,
+        short_close_qty: 0.0,
+        short_close_reason: None,
+        short_close_approved_by: None,
+        short_close_at: None,
+        created_at: chrono::Utc::now(),
+    };
+    let po_a = service
+        .create_production_order(&tenant_wide, make_po(wc_a, "PO-SCOPE-A"))
+        .await
+        .expect("create production order on site A");
+    let po_b = service
+        .create_production_order(&tenant_wide, make_po(wc_b, "PO-SCOPE-B"))
+        .await
+        .expect("create production order on site B");
+    // An unanchored production order is a tenant-level claim: the
+    // tenant-wide grant may write it...
+    let mut unanchored = make_po(wc_a, "PO-UNANCHORED");
+    unanchored.work_center_id = None;
+    let unanchored = service
+        .create_production_order(&tenant_wide, unanchored)
+        .await
+        .expect("tenant-wide create of an unanchored production order");
+    assert_eq!(unanchored.work_center_id, None);
+
+    // A context helper scoped exactly like the server-built one.
+    let scoped_ctx = |scope: sensei_core::domain::scope::AuthorizedScope| {
+        use sensei_core::domain::request_context::{OperationalFocus, RequestContext};
+        RequestContext {
+            tenant: tenant_id,
+            principal: uuid::Uuid::new_v4(),
+            scope,
+            focus: OperationalFocus {
+                site: None,
+                value_stream: None,
+                work_center: None,
+                shift: None,
+            },
+            locale: None,
+            timezone: None,
+            currency: None,
+            country_policy_revision: None,
+            trace_id: String::new(),
+        }
+    };
+    let site_a_scope = sensei_core::domain::scope::AuthorizedScope::Operational {
+        sites: std::collections::HashSet::from([site_a]),
+        work_centers: std::collections::HashSet::new(),
+    };
+    let site_a_ctx = scoped_ctx(site_a_scope);
+    let site_b_scope = sensei_core::domain::scope::AuthorizedScope::Operational {
+        sites: std::collections::HashSet::from([site_b]),
+        work_centers: std::collections::HashSet::new(),
+    };
+    let site_b_ctx = scoped_ctx(site_b_scope);
+
+    // ── Tenant-wide: every order (anchored and unanchored) is reachable ──
+    let list = service
+        .list_production_orders(&tenant_wide, None, None, None)
+        .await
+        .unwrap();
+    assert_eq!(list.total, 3);
+
+    // ── Site A caller: only site A's anchored order ──
+    let got = service.get_production_order(&site_a_ctx, po_a.id).await;
+    assert!(got.is_ok(), "site-A caller reads site-A order");
+    assert!(
+        service
+            .get_production_order(&site_a_ctx, po_b.id)
+            .await
+            .is_err(),
+        "site-A caller cannot read site-B order (NotFound)"
+    );
+    assert!(
+        service
+            .get_production_order(&site_a_ctx, unanchored.id)
+            .await
+            .is_err(),
+        "an unanchored production order is invisible to a site-scoped caller (fail closed)"
+    );
+    let list = service
+        .list_production_orders(&site_a_ctx, None, None, None)
+        .await
+        .expect("site-A list");
+    assert_eq!(list.total, 1);
+    assert_eq!(list.data[0].id, po_a.id);
+
+    // ── Site A caller cannot COMPLETE site B's order (scoped lock + scoped
+    //    mutation both match zero rows → NotFound) ──
+    let denied_complete = service
+        .complete_production_order(&site_a_ctx, po_b.id, 5, Some("foreign"), approver_id)
+        .await;
+    assert!(
+        denied_complete.is_err(),
+        "site-A caller cannot complete site-B order"
+    );
+    // Site A CAN complete its own order (5 short-close reconciles exactly).
+    let completed = service
+        .complete_production_order(
+            &site_a_ctx,
+            po_a.id,
+            5,
+            Some("Fixture tolerance"),
+            approver_id,
+        )
+        .await
+        .expect("site-A caller completes its own order");
+    assert_eq!(completed.status, "completed");
+
+    // ── CREATE: the destination must sit inside the caller's exact scope ──
+    let created_a = service
+        .create_production_order(&site_a_ctx, make_po(wc_a, "PO-CREATE-A"))
+        .await
+        .expect("site-A caller creates an order on site A's WC");
+    assert!(created_a.work_center_id == Some(wc_a));
+    assert!(
+        service
+            .create_production_order(&site_a_ctx, make_po(wc_b, "PO-CREATE-FOREIGN"))
+            .await
+            .is_err(),
+        "site-A caller cannot create an order on site B's WC (zero rows)"
+    );
+    // An unanchored create requires the tenant-wide grant — a site-scoped
+    // caller is rejected (even though the destination would be their WC).
+    let mut denied_unanchored = make_po(wc_a, "PO-UNANCHORED-DENIED");
+    denied_unanchored.work_center_id = None;
+    assert!(
+        service
+            .create_production_order(&site_a_ctx, denied_unanchored)
+            .await
+            .is_err(),
+        "an unanchored production order requires the tenant-wide grant"
+    );
+
+    // ── Site B sees only its own order; completed site-A order is gone ──
+    assert!(
+        service
+            .get_production_order(&site_b_ctx, po_a.id)
+            .await
+            .is_err(),
+        "site-B caller cannot read site-A order"
+    );
+    assert!(service
+        .get_production_order(&site_b_ctx, po_b.id)
+        .await
+        .is_ok());
+    let list = service
+        .list_production_orders(&site_b_ctx, None, None, None)
+        .await
+        .expect("site-B list");
+    assert_eq!(list.total, 1);
+    assert_eq!(list.data[0].id, po_b.id);
+
+    // ── NoOperationalScope: zero rows everywhere ──
+    let none_ctx = scoped_ctx(sensei_core::domain::scope::AuthorizedScope::NoOperationalScope);
+    assert!(service
+        .get_production_order(&none_ctx, po_a.id)
+        .await
+        .is_err());
+    let list = service
+        .list_production_orders(&none_ctx, None, None, None)
+        .await
+        .expect("no-scope list");
+    assert_eq!(list.total, 0, "no entitlement = zero rows on list");
+    assert!(
+        service
+            .complete_production_order(&none_ctx, po_b.id, 5, Some("none"), approver_id)
+            .await
+            .is_err(),
+        "no entitlement cannot complete"
+    );
+}
+
+/// Thirtieth-audit P0 item 1: `AuthorizedScope::resolve` reads ALL of
+/// scope_kind / scope_site_id / scope_work_center_id from the ACTIVE
+/// role slots (the old scope_site_id-only resolution made tenant slots
+/// vanish and widened work-center slots into their whole site):
+///
+///  (a) a tenant-kind slot ⇒ TenantWide;
+///  (b) work-center-kind slots for WC-A1 + WC-A2 (same site) ⇒
+///      Operational with work_centers {A1, A2} and sites {} — and a
+///      principal granted ONLY A1 is exact: allows_work_center(A1) is
+///      true, allows_work_center(A2) is false and allows_site(site) is
+///      false (never widened to the site);
+///  (c) a site-kind slot for site A + a work-center-kind slot for WC-B1
+///      ⇒ sites {A}, work_centers {B1} (the WC grant is never
+///      normalized into its site);
+///  (d) only 'none'-kind slots ⇒ NoOperationalScope (fail closed
+///      preserved).
+///
+/// Plus the route-level builder path: a full `RequestContext::build` for
+/// a WC-only principal keeps the scope EXACT — its site focus is only
+/// valid while operating at its exact granted work center.
+#[tokio::test]
+async fn authorized_scope_resolve_reads_kind_site_and_work_center() {
+    let _serial = DB_LOCK.lock().await;
+    let Some(pool) = connect().await else { return };
+    sqlx::query(
+        r#"DO $$ DECLARE r RECORD; BEGIN
+             FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname = 'public') LOOP
+                 EXECUTE format('DROP TABLE IF EXISTS %I CASCADE', r.tablename);
+             END LOOP;
+         END $$"#,
+    )
+    .execute(&pool)
+    .await
+    .expect("drop all tables");
+    sensei_db::migrations::run_migrations(&pool)
+        .await
+        .expect("the ENTIRE migration chain must apply to an empty database");
+
+    let tenant_id = uuid::Uuid::new_v4();
+    let site_a = uuid::Uuid::new_v4();
+    let site_b = uuid::Uuid::new_v4();
+    let wc_a1 = uuid::Uuid::new_v4();
+    let wc_a2 = uuid::Uuid::new_v4();
+    let wc_b1 = uuid::Uuid::new_v4();
+    sqlx::query("INSERT INTO tenants (id, name, slug) VALUES ($1, 'scope30', 'scope30')")
+        .bind(tenant_id)
+        .execute(&pool)
+        .await
+        .expect("tenant insert");
+    sqlx::query(
+        "INSERT INTO sites (id, tenant_id, site_code, name) VALUES \
+         ($1, $2, 'SA', 'Site A'), ($3, $2, 'SB', 'Site B')",
+    )
+    .bind(site_a)
+    .bind(tenant_id)
+    .bind(site_b)
+    .execute(&pool)
+    .await
+    .expect("sites insert");
+    for (wc, site, num) in [
+        (wc_a1, site_a, "WC-A1"),
+        (wc_a2, site_a, "WC-A2"),
+        (wc_b1, site_b, "WC-B1"),
+    ] {
+        sqlx::query(
+            "INSERT INTO work_centers \
+             (id, tenant_id, work_center_number, name, is_active, capacity_per_shift, \
+              site_id, created_at, updated_at) \
+             VALUES ($1, $2, $3, $3, TRUE, 8, $4, NOW(), NOW())",
+        )
+        .bind(wc)
+        .bind(tenant_id)
+        .bind(num)
+        .bind(site)
+        .execute(&pool)
+        .await
+        .expect("work center insert");
+    }
+
+    // (a) tenant-kind slot, (b) WC-only principals, (c) mixed principal,
+    // (d) none-kind principal, (e) the route-level WC principal.
+    let principal_tenant = uuid::Uuid::new_v4();
+    let principal_wc_dual = uuid::Uuid::new_v4();
+    let principal_wc_single = uuid::Uuid::new_v4();
+    let principal_mixed = uuid::Uuid::new_v4();
+    let principal_none = uuid::Uuid::new_v4();
+    let principal_build = uuid::Uuid::new_v4();
+    for (i, p) in [
+        principal_tenant,
+        principal_wc_dual,
+        principal_wc_single,
+        principal_mixed,
+        principal_none,
+        principal_build,
+    ]
+    .iter()
+    .enumerate()
+    {
+        sqlx::query(
+            "INSERT INTO users (id, tenant_id, email, name, password_hash) \
+             VALUES ($1, $2, $3, 'U', 'x')",
+        )
+        .bind(p)
+        .bind(tenant_id)
+        .bind(format!("scope30-{i}@local"))
+        .execute(&pool)
+        .await
+        .expect("user insert");
+    }
+
+    // Seed ONE active role slot for the principal inside a tenant-context
+    // transaction (role_slots / principal_assignments are FORCE-RLS).
+    async fn seed_slot(
+        pool: &sqlx::PgPool,
+        tenant_id: uuid::Uuid,
+        principal: uuid::Uuid,
+        role: &str,
+        kind: &str,
+        site: Option<uuid::Uuid>,
+        work_center: Option<uuid::Uuid>,
+    ) {
+        let mut tx = pool.begin().await.expect("begin slot seed tx");
+        sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
+            .bind(tenant_id.to_string())
+            .execute(&mut *tx)
+            .await
+            .expect("set tenant context");
+        let slot_id = uuid::Uuid::new_v4();
+        // role_slots has a UNIQUE (tenant_id, slot_name) constraint — the
+        // slot name carries a per-slot suffix so repeated roles can seed
+        // several slots (role_name is shared, slot_name is not).
+        let slot_name = format!(
+            "{role}_{}",
+            &slot_id
+                .as_simple()
+                .encode_lower(&mut uuid::Uuid::encode_buffer())[..8]
+        );
+        sqlx::query(
+            "INSERT INTO role_slots \
+             (id, tenant_id, role_name, slot_name, scope_kind, scope_site_id, scope_work_center_id) \
+             VALUES ($1, $2, $3, $4, $5, $6, $7)",
+        )
+        .bind(slot_id)
+        .bind(tenant_id)
+        .bind(role)
+        .bind(&slot_name)
+        .bind(kind)
+        .bind(site)
+        .bind(work_center)
+        .execute(&mut *tx)
+        .await
+        .expect("role slot insert");
+        sqlx::query(
+            "INSERT INTO principal_assignments (id, tenant_id, principal_id, slot_id, \
+             assigned_at, ended_at) \
+             VALUES ($1, $2, $3, $4, NOW(), NULL)",
+        )
+        .bind(uuid::Uuid::new_v4())
+        .bind(tenant_id)
+        .bind(principal)
+        .bind(slot_id)
+        .execute(&mut *tx)
+        .await
+        .expect("principal assignment insert");
+        tx.commit().await.expect("slot seed commit");
+    }
+
+    use sensei_core::domain::scope::{AuthorizedScope, WorkCenterScope};
+    async fn resolve_scope(
+        pool: &sqlx::PgPool,
+        tenant_id: uuid::Uuid,
+        principal: uuid::Uuid,
+    ) -> AuthorizedScope {
+        let mut tx = sensei_core::db::TenantTx::begin(pool, tenant_id)
+            .await
+            .expect("scope resolve tx");
+        let scope = AuthorizedScope::resolve(&mut tx, principal)
+            .await
+            .expect("scope resolve");
+        tx.rollback().await.expect("scope resolve rollback");
+        scope
+    }
+
+    // (a) tenant-kind slot ⇒ TenantWide (tenant-wide grants no longer
+    // vanish under the three-column resolution).
+    seed_slot(
+        &pool,
+        tenant_id,
+        principal_tenant,
+        "scope30_tenant",
+        "tenant",
+        None,
+        None,
+    )
+    .await;
+    assert_eq!(
+        resolve_scope(&pool, tenant_id, principal_tenant).await,
+        AuthorizedScope::TenantWide,
+        "(a) a tenant-kind slot resolves TenantWide"
+    );
+
+    // (b) WC-kind slots for WC-A1 + WC-A2 (same site): Operational with
+    // BOTH exact work centers and an EMPTY site set — the union of two
+    // WC grants never widens into their site.
+    seed_slot(
+        &pool,
+        tenant_id,
+        principal_wc_dual,
+        "scope30_wc_dual",
+        "work_center",
+        Some(site_a),
+        Some(wc_a1),
+    )
+    .await;
+    // The principal's SECOND grant is a SECOND slot: slot names are
+    // unique per tenant (role_slots_tenant_id_slot_name_key).
+    seed_slot(
+        &pool,
+        tenant_id,
+        principal_wc_dual,
+        "scope30_wc_dual_a2",
+        "work_center",
+        Some(site_a),
+        Some(wc_a2),
+    )
+    .await;
+    let dual = resolve_scope(&pool, tenant_id, principal_wc_dual).await;
+    match &dual {
+        AuthorizedScope::Operational {
+            sites,
+            work_centers,
+        } => {
+            assert!(
+                sites.is_empty(),
+                "(b) two WC grants carry an EMPTY site set, got {sites:?}"
+            );
+            assert_eq!(
+                work_centers.len(),
+                2,
+                "(b) both exact work centers resolve: {work_centers:?}"
+            );
+            assert!(work_centers.contains(&WorkCenterScope {
+                site: site_a,
+                work_center: wc_a1,
+            }));
+            assert!(work_centers.contains(&WorkCenterScope {
+                site: site_a,
+                work_center: wc_a2,
+            }));
+        }
+        other => panic!("(b) expected Operational, got {other:?}"),
+    }
+    assert!(dual.allows_work_center(site_a, wc_a1));
+    assert!(dual.allows_work_center(site_a, wc_a2));
+    assert!(
+        !dual.allows_work_center(site_a, wc_b1),
+        "a WC grant never admits a sibling site's work center"
+    );
+    assert!(
+        !dual.allows_site(site_a),
+        "(b) WC grants never widen into the whole site"
+    );
+
+    // A request scoped only to A1 cannot act on A2 — and has no site
+    // grant at all.
+    seed_slot(
+        &pool,
+        tenant_id,
+        principal_wc_single,
+        "scope30_wc_single",
+        "work_center",
+        Some(site_a),
+        Some(wc_a1),
+    )
+    .await;
+    let single = resolve_scope(&pool, tenant_id, principal_wc_single).await;
+    assert!(
+        single.allows_work_center(site_a, wc_a1),
+        "the exact A1 grant admits A1"
+    );
+    assert!(
+        !single.allows_work_center(site_a, wc_a2),
+        "a request scoped only to A1 cannot act on A2"
+    );
+    assert!(
+        !single.allows_site(site_a),
+        "a WC-only request has NO site grant"
+    );
+
+    // (c) site A + WC B1 mix: sites {A}, work_centers {B1} — the WC
+    // grant stays exact and the site grant covers its own site.
+    seed_slot(
+        &pool,
+        tenant_id,
+        principal_mixed,
+        "scope30_site_a",
+        "site",
+        Some(site_a),
+        None,
+    )
+    .await;
+    seed_slot(
+        &pool,
+        tenant_id,
+        principal_mixed,
+        "scope30_wc_b1",
+        "work_center",
+        Some(site_b),
+        Some(wc_b1),
+    )
+    .await;
+    let mixed = resolve_scope(&pool, tenant_id, principal_mixed).await;
+    match &mixed {
+        AuthorizedScope::Operational {
+            sites,
+            work_centers,
+        } => {
+            assert_eq!(sites.len(), 1, "site A grant resolves: {sites:?}");
+            assert!(sites.contains(&site_a));
+            assert_eq!(
+                work_centers.len(),
+                1,
+                "the WC-B1 grant stays exact: {work_centers:?}"
+            );
+            assert!(work_centers.contains(&WorkCenterScope {
+                site: site_b,
+                work_center: wc_b1,
+            }));
+        }
+        other => panic!("(c) expected Operational, got {other:?}"),
+    }
+    assert!(mixed.allows_site(site_a));
+    assert!(
+        !mixed.allows_site(site_b),
+        "(c) the WC-B1 grant never widens into site B"
+    );
+    assert!(
+        mixed.allows_work_center(site_a, wc_a1),
+        "the site grant covers the work centers of its site"
+    );
+    assert!(mixed.allows_work_center(site_b, wc_b1));
+    assert!(
+        !mixed.allows_work_center(site_b, uuid::Uuid::new_v4()),
+        "(c) the WC grant is exact"
+    );
+
+    // (d) only 'none'-kind slots ⇒ NoOperationalScope (fail closed
+    // preserved: no kind, no scope, no data).
+    seed_slot(
+        &pool,
+        tenant_id,
+        principal_none,
+        "scope30_none",
+        "none",
+        None,
+        None,
+    )
+    .await;
+    assert_eq!(
+        resolve_scope(&pool, tenant_id, principal_none).await,
+        AuthorizedScope::NoOperationalScope,
+        "(d) none-kind slots fail closed"
+    );
+
+    // (e) Route-level builder: a full RequestContext::build for a WC-only
+    // principal keeps the scope EXACT — the site focus is valid only at
+    // the exact granted work center.
+    seed_slot(
+        &pool,
+        tenant_id,
+        principal_build,
+        "scope30_build",
+        "work_center",
+        Some(site_a),
+        Some(wc_a1),
+    )
+    .await;
+    let build = |active_site: Option<uuid::Uuid>, active_wc: Option<uuid::Uuid>| {
+        let pool = pool.clone();
+        async move {
+            sensei_core::domain::request_context::RequestContext::build(
+                &pool,
+                tenant_id,
+                principal_build,
+                active_site,
+                None,
+                active_wc,
+                None,
+                String::new(),
+            )
+            .await
+        }
+    };
+    let rc = build(Some(site_a), Some(wc_a1))
+        .await
+        .expect("a WC-only principal may operate at its exact work center");
+    assert_eq!(
+        rc.scope,
+        AuthorizedScope::Operational {
+            sites: std::collections::HashSet::new(),
+            work_centers: std::collections::HashSet::from([WorkCenterScope {
+                site: site_a,
+                work_center: wc_a1,
+            }]),
+        },
+        "(e) the builder resolves the EXACT WC scope"
+    );
+    assert!(
+        rc.authorized_sites().is_empty(),
+        "(e) a WC-exact principal's site set is empty — the WC set carries the scope"
+    );
+    assert!(rc.has_entitlement(), "the exact WC grant is an entitlement");
+    assert!(
+        build(Some(site_a), None).await.is_err(),
+        "a WC-only principal cannot operate site-wide (no site focus without the WC)"
+    );
+    assert!(
+        build(Some(site_a), Some(wc_a2)).await.is_err(),
+        "a WC-only principal cannot operate at a sibling work center"
+    );
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Thirtieth-audit P0 items 6-8 — quality DB-contract gates: the runtime
+// DatabaseQualityService operates on the CANONICAL relational tables
+// (ncr_reports / capas / audits / audit_findings) with relational
+// server-stamped scope columns (migration 170 + 173), EXACT work-center
+// SQL semantics, and the single derive_creation_scope creation rule.
+// Every test runs against a freshly migrated database with the real
+// sensei_app wiring (DatabaseQualityService over the pool, contexts
+// built through RequestContext::build from real role-slot assignments).
+// ─────────────────────────────────────────────────────────────────────────
+
+/// Shared quality-gate bootstrap: drop everything, then apply the ENTIRE
+/// migration chain (001..173) to the empty database.
+async fn quality_gate_fresh_schema(pool: &sqlx::PgPool) {
+    sqlx::query(
+        r#"DO $$ DECLARE r RECORD; BEGIN
+             FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname = 'public') LOOP
+                 EXECUTE format('DROP TABLE IF EXISTS %I CASCADE', r.tablename);
+             END LOOP;
+         END $$"#,
+    )
+    .execute(pool)
+    .await
+    .expect("drop all tables");
+    sensei_db::migrations::run_migrations(pool)
+        .await
+        .expect("the ENTIRE migration chain must apply to an empty database");
+}
+
+/// Seed one ACTIVE role-slot assignment for a principal (role_slots /
+/// principal_assignments are FORCE-RLS: the seed transaction sets the
+/// tenant context first — the established db-contract pattern).
+async fn quality_gate_seed_slot(
+    pool: &sqlx::PgPool,
+    tenant_id: uuid::Uuid,
+    principal: uuid::Uuid,
+    role: &str,
+    slot_name: &str,
+    kind: &str,
+    site: Option<uuid::Uuid>,
+    work_center: Option<uuid::Uuid>,
+) {
+    let mut tx = pool.begin().await.expect("begin slot seed tx");
+    sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
+        .bind(tenant_id.to_string())
+        .execute(&mut *tx)
+        .await
+        .expect("set tenant context");
+    let slot_id = uuid::Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO role_slots \
+         (id, tenant_id, role_name, slot_name, scope_kind, scope_site_id, scope_work_center_id) \
+         VALUES ($1, $2, $3, $4, $5, $6, $7)",
+    )
+    .bind(slot_id)
+    .bind(tenant_id)
+    .bind(role)
+    .bind(slot_name)
+    .bind(kind)
+    .bind(site)
+    .bind(work_center)
+    .execute(&mut *tx)
+    .await
+    .expect("role slot insert");
+    sqlx::query(
+        "INSERT INTO principal_assignments (id, tenant_id, principal_id, slot_id, \
+         assigned_at, ended_at) \
+         VALUES ($1, $2, $3, $4, NOW(), NULL)",
+    )
+    .bind(uuid::Uuid::new_v4())
+    .bind(tenant_id)
+    .bind(principal)
+    .bind(slot_id)
+    .execute(&mut *tx)
+    .await
+    .expect("principal assignment insert");
+    tx.commit().await.expect("slot seed commit");
+}
+
+/// The echo-equality contract for DB round trips: the record returned by
+/// GET must equal the one POSTed/updated field for field, except the
+/// timestamps (Postgres stores microsecond precision).
+fn quality_gate_json_echo(value: &serde_json::Value) -> serde_json::Value {
+    let mut v = value.clone();
+    if let Some(obj) = v.as_object_mut() {
+        obj.remove("created_at");
+        obj.remove("updated_at");
+    }
+    v
+}
+
+async fn quality_gate_scope_of(
+    pool: &sqlx::PgPool,
+    table: &str,
+    id: uuid::Uuid,
+) -> (Option<uuid::Uuid>, Option<uuid::Uuid>) {
+    let sql = format!(
+        "SELECT scope_site_id, scope_work_center_id FROM {table} WHERE id = $1"
+    );
+    sqlx::query_as(&sql)
+        .bind(id)
+        .fetch_one(pool)
+        .await
+        .expect("scope columns read")
+}
+
+/// (a) FULL CRUD round trip — POST / GET / LIST / UPDATE / DELETE — for
+/// NCR, CAPA and audit THROUGH DatabaseQualityService against a freshly
+/// migrated database, using DB-built RequestContexts (real role-slot
+/// assignments), NOT fixture inserts into the target table. Fixture rows
+/// are never the path under test.
+#[tokio::test]
+async fn quality_service_crud_round_trips_on_canonical_tables() {
+    let _serial = DB_LOCK.lock().await;
+    let Some(pool) = connect().await else { return };
+    quality_gate_fresh_schema(&pool).await;
+
+    let tenant_id = uuid::Uuid::new_v4();
+    let site_a = uuid::Uuid::new_v4();
+    let wc_a1 = uuid::Uuid::new_v4();
+    let wc_a2 = uuid::Uuid::new_v4();
+    let qe_id = uuid::Uuid::new_v4();
+    sqlx::query("INSERT INTO tenants (id, name, slug) VALUES ($1, 'qgate', 'qgate')")
+        .bind(tenant_id)
+        .execute(&pool)
+        .await
+        .expect("tenant insert");
+    sqlx::query(
+        "INSERT INTO sites (id, tenant_id, site_code, name) VALUES \
+         ($1, $2, 'QA', 'Quality A')",
+    )
+    .bind(site_a)
+    .bind(tenant_id)
+    .execute(&pool)
+    .await
+    .expect("site insert");
+    for (wc, num) in [(wc_a1, "QG-WC-A1"), (wc_a2, "QG-WC-A2")] {
+        sqlx::query(
+            "INSERT INTO work_centers \
+             (id, tenant_id, work_center_number, name, is_active, capacity_per_shift, \
+              site_id, created_at, updated_at) \
+             VALUES ($1, $2, $3, $3, TRUE, 8, $4, NOW(), NOW())",
+        )
+        .bind(wc)
+        .bind(tenant_id)
+        .bind(num)
+        .bind(site_a)
+        .execute(&pool)
+        .await
+        .expect("work center insert");
+    }
+    let email = format!("qgate-{}@local", tenant_id.as_simple());
+    sqlx::query(
+        "INSERT INTO users (id, tenant_id, email, name, password_hash) \
+         VALUES ($1, $2, $3, 'QE', 'x')",
+    )
+    .bind(qe_id)
+    .bind(tenant_id)
+    .bind(&email)
+    .execute(&pool)
+    .await
+    .expect("user insert");
+    // The tenant-wide grant is a REAL active tenant-kind role slot: the
+    // context is built through RequestContext::build like the routes do.
+    quality_gate_seed_slot(
+        &pool,
+        tenant_id,
+        qe_id,
+        "quality_manager",
+        "qgate_tenant",
+        "tenant",
+        None,
+        None,
+    )
+    .await;
+
+    use sensei_services::quality::{
+        ActionStatus, AuditStatus, AuditType, CapaPriority, CapaStatusEx, CapaType,
+        CorrectiveAction, DatabaseQualityService, FindingSeverity, FindingStatus, NcSeverity,
+        NcType, QualityService, RootCauseAnalysis,
+    };
+    let svc = DatabaseQualityService::new(pool.clone());
+    let ctx = sensei_core::domain::request_context::RequestContext::build(
+        &pool,
+        tenant_id,
+        qe_id,
+        None,
+        None,
+        None,
+        None,
+        String::new(),
+    )
+    .await
+    .expect("tenant-wide request context");
+    use sensei_core::domain::scope::AuthorizedScope;
+    assert_eq!(ctx.scope, AuthorizedScope::tenant_wide());
+
+    // ── NCR: POST → GET → LIST → UPDATE → DELETE ─────────────────────
+    let posted_ncr = svc
+        .create_ncr(
+            &ctx,
+            "Gate NCR".to_string(),
+            "defect on line 3".to_string(),
+            NcType::Product,
+            NcSeverity::High,
+            Some(uuid::Uuid::new_v4()),
+            None,
+            Some("PPM-1".to_string()),
+            Some(qe_id),
+            Some("Quality".to_string()),
+            Some("Line 3".to_string()),
+            true,
+        )
+        .await
+        .expect("POST NCR through DatabaseQualityService");
+    let ncr_id = posted_ncr.id;
+    assert_eq!(posted_ncr.status, sensei_services::quality::NcrStatus::Open);
+    assert!(posted_ncr.nc_number.starts_with("NCR-"));
+
+    let got_ncr = svc.get_ncr(&ctx, ncr_id).await.expect("GET NCR");
+    assert_eq!(
+        quality_gate_json_echo(&serde_json::to_value(&got_ncr).unwrap()),
+        quality_gate_json_echo(&serde_json::to_value(&posted_ncr).unwrap()),
+        "GET must echo the POSTed NCR field for field"
+    );
+
+    let listed = svc
+        .list_ncrs(&ctx, None, None, None, None, None)
+        .await
+        .expect("LIST NCR");
+    assert_eq!(listed.total, 1);
+    assert_eq!(listed.data[0].id, ncr_id);
+
+    let updated_status = svc
+        .update_ncr_status(&ctx, ncr_id, NcSeverity::Critical)
+        .await
+        .expect("UPDATE NCR status");
+    assert_eq!(updated_status.severity, NcSeverity::Critical);
+    assert_eq!(
+        svc.get_ncr(&ctx, ncr_id).await.unwrap().severity,
+        NcSeverity::Critical,
+        "the severity UPDATE must persist"
+    );
+
+    // Whole-entity UPDATE (the route's PUT): echo + change a payload
+    // field; the server-owned scope must survive the echo.
+    let mut whole = svc.get_ncr(&ctx, ncr_id).await.unwrap();
+    whole.description = "reworded defect".to_string();
+    whole.department = Some("Inspection".to_string());
+    let updated = svc.update_ncr(&ctx, ncr_id, whole).await.expect("PUT NCR");
+    let refetched = svc.get_ncr(&ctx, ncr_id).await.unwrap();
+    assert_eq!(
+        quality_gate_json_echo(&serde_json::to_value(&refetched).unwrap()),
+        quality_gate_json_echo(&serde_json::to_value(&updated).unwrap()),
+        "the whole-entity UPDATE must persist every payload field"
+    );
+
+    // Corporate (tenant-wide, no focus) NCR rows carry NULL scope pairs.
+    let (scope_site, scope_wc) =
+        quality_gate_scope_of(&pool, "ncr_reports", ncr_id).await;
+    assert!(scope_site.is_none() && scope_wc.is_none(), "tenant-wide + no focus ⇒ corporate (NULL/NULL)");
+
+    svc.delete_ncr(&ctx, ncr_id).await.expect("DELETE NCR");
+    assert!(
+        svc.get_ncr(&ctx, ncr_id).await.is_err(),
+        "the deleted NCR is gone"
+    );
+    let listed_after = svc
+        .list_ncrs(&ctx, None, None, None, None, None)
+        .await
+        .unwrap();
+    assert_eq!(listed_after.total, 0);
+
+    // ── CAPA: POST → GET → LIST → UPDATE → DELETE ─────────────────────
+    let posted_capa = svc
+        .create_capa(
+            &ctx,
+            "Gate CAPA".to_string(),
+            "fix the fixture".to_string(),
+            vec![],
+            CapaType::Corrective,
+            CapaPriority::High,
+            None,
+            None,
+        )
+        .await
+        .expect("POST CAPA through DatabaseQualityService");
+    let capa_id = posted_capa.id;
+    assert!(posted_capa.capa_number.starts_with("CAPA-"));
+
+    let got_capa = svc.get_capa(&ctx, capa_id).await.expect("GET CAPA");
+    assert_eq!(
+        quality_gate_json_echo(&serde_json::to_value(&got_capa).unwrap()),
+        quality_gate_json_echo(&serde_json::to_value(&posted_capa).unwrap()),
+        "GET must echo the POSTed CAPA field for field"
+    );
+    let listed_capas = svc
+        .list_capas(&ctx, None, None, None, None)
+        .await
+        .expect("LIST CAPA");
+    assert_eq!(listed_capas.total, 1);
+
+    // Whole-entity UPDATE carrying the workflow sub-state (root cause
+    // analysis + corrective action) — the details JSONB on the canonical
+    // capas row must round-trip field for field.
+    let mut with_workflow = got_capa.clone();
+    with_workflow.root_cause_analyses.push(RootCauseAnalysis {
+        id: uuid::Uuid::new_v4(),
+        capa_id,
+        description: "Calibration drift".to_string(),
+        root_cause_type: "Machine".to_string(),
+        analysis_method: "Fishbone".to_string(),
+        contributors: vec!["line".to_string()],
+        evidence: vec!["ev:1".to_string()],
+        verified_by: None,
+        verified_at: None,
+        created_at: chrono::Utc::now(),
+    });
+    with_workflow.actions.push(CorrectiveAction {
+        id: uuid::Uuid::new_v4(),
+        capa_id,
+        description: "Recalibrate the gauge".to_string(),
+        action_type: "corrective".to_string(),
+        owner_id: None,
+        status: ActionStatus::Verified,
+        due_date: None,
+        completed_at: None,
+        verified_by: Some(qe_id),
+        verified_at: Some(chrono::Utc::now()),
+        verification_notes: Some("done".to_string()),
+        created_at: chrono::Utc::now(),
+        updated_at: chrono::Utc::now(),
+    });
+    let updated_capa = svc
+        .update_capa(&ctx, capa_id, with_workflow)
+        .await
+        .expect("PUT CAPA");
+    assert_eq!(updated_capa.root_cause_analyses.len(), 1);
+    assert_eq!(updated_capa.actions.len(), 1);
+    let refetched_capa = svc.get_capa(&ctx, capa_id).await.unwrap();
+    assert_eq!(
+        quality_gate_json_echo(&serde_json::to_value(&refetched_capa).unwrap()),
+        quality_gate_json_echo(&serde_json::to_value(&updated_capa).unwrap()),
+        "the CAPA workflow sub-state (RCA + corrective action) must round-trip through the details column"
+    );
+
+    // verify_capa records an effectiveness check; close_capa closes.
+    let verified = svc.verify_capa(&ctx, capa_id).await.expect("verify CAPA");
+    assert_eq!(verified.status, CapaStatusEx::Verification);
+    assert_eq!(verified.effectiveness_checks.len(), 1);
+    let closed = svc.close_capa(&ctx, capa_id).await.expect("close CAPA");
+    assert_eq!(closed.status, CapaStatusEx::Closed);
+    assert!(closed.closed_at.is_some());
+
+    let (scope_site, scope_wc) = quality_gate_scope_of(&pool, "capas", capa_id).await;
+    assert!(scope_site.is_none() && scope_wc.is_none(), "tenant-wide + no focus ⇒ corporate CAPA");
+
+    svc.delete_capa(&ctx, capa_id).await.expect("DELETE CAPA");
+    assert!(svc.get_capa(&ctx, capa_id).await.is_err());
+
+    // ── Audit: POST → GET → LIST → UPDATE → DELETE ────────────────────
+    use sensei_services::quality::AuditChecklistItem;
+    let audit = sensei_services::quality::Audit {
+        id: uuid::Uuid::nil(),
+        audit_number: "AUD-GATE-1".to_string(),
+        audit_type: AuditType::Internal,
+        status: AuditStatus::Planned,
+        title: "Gate audit".to_string(),
+        scope: "line 3".to_string(),
+        area: "assembly".to_string(),
+        auditor_id: Some(qe_id),
+        lead_auditor_id: Some(qe_id),
+        scheduled_date: Some(chrono::Utc::now()),
+        start_date: None,
+        completion_date: None,
+        checklist_items: vec![AuditChecklistItem {
+            id: uuid::Uuid::new_v4(),
+            audit_id: uuid::Uuid::nil(),
+            question: "Is the gauge calibrated?".to_string(),
+            expected_evidence: "calibration sticker".to_string(),
+            is_conforming: Some(true),
+            observations: None,
+        }],
+        created_at: chrono::Utc::now(),
+        updated_at: chrono::Utc::now(),
+    };
+    let posted_audit = svc
+        .create_audit(&ctx, audit)
+        .await
+        .expect("POST audit through DatabaseQualityService");
+    let audit_id = posted_audit.id;
+    assert_eq!(posted_audit.audit_number, "AUD-GATE-1");
+
+    let got_audit = svc.get_audit(&ctx, audit_id).await.expect("GET audit");
+    let expected_audit = posted_audit.clone();
+    assert_eq!(
+        quality_gate_json_echo(&serde_json::to_value(&got_audit).unwrap()),
+        quality_gate_json_echo(&serde_json::to_value(&expected_audit).unwrap()),
+        "GET must echo the POSTed audit field for field (checklist included)"
+    );
+    let listed_audits = svc
+        .list_audits(&ctx, None, None, None, None)
+        .await
+        .expect("LIST audits");
+    assert_eq!(listed_audits.total, 1);
+
+    // A real audit_findings row (the canonical child table) is reachable
+    // through list_audit_findings after the parent scope check.
+    sqlx::query(
+        "INSERT INTO audit_findings (id, tenant_id, audit_id, finding_number, severity, \
+         status, description, created_at, updated_at) \
+         VALUES ($1, $2, $3, 'FIND-GATE-1', 'major', 'open', 'stray solder', NOW(), NOW())",
+    )
+    .bind(uuid::Uuid::new_v4())
+    .bind(tenant_id)
+    .bind(audit_id)
+    .execute(&pool)
+    .await
+    .expect("audit finding fixture row");
+    let findings = svc
+        .list_audit_findings(&ctx, audit_id)
+        .await
+        .expect("LIST audit findings");
+    assert_eq!(findings.len(), 1);
+    assert_eq!(findings[0].severity, FindingSeverity::MajorNc);
+    assert_eq!(findings[0].status, FindingStatus::Open);
+
+    let mut audit_update = got_audit;
+    audit_update.status = AuditStatus::Completed;
+    audit_update.completion_date = Some(chrono::Utc::now());
+    audit_update.checklist_items[0].is_conforming = Some(false);
+    let updated_audit = svc
+        .update_audit(&ctx, audit_id, audit_update)
+        .await
+        .expect("PUT audit");
+    let refetched_audit = svc.get_audit(&ctx, audit_id).await.unwrap();
+    assert_eq!(
+        quality_gate_json_echo(&serde_json::to_value(&refetched_audit).unwrap()),
+        quality_gate_json_echo(&serde_json::to_value(&updated_audit).unwrap()),
+        "the whole-entity audit UPDATE must persist"
+    );
+    let (scope_site, scope_wc) = quality_gate_scope_of(&pool, "audits", audit_id).await;
+    assert!(scope_site.is_none() && scope_wc.is_none(), "tenant-wide + no focus ⇒ corporate audit");
+
+    svc.delete_audit(&ctx, audit_id).await.expect("DELETE audit");
+    assert!(svc.get_audit(&ctx, audit_id).await.is_err());
+}
+
+/// (b) EXACT work-center isolation: a WC-A1 principal must not list or
+/// read Site-A records belonging to WC-A2 (or site-level records), and
+/// must see exactly its own WC-stamped records.
+#[tokio::test]
+async fn quality_service_exact_work_center_isolation() {
+    let _serial = DB_LOCK.lock().await;
+    let Some(pool) = connect().await else { return };
+    quality_gate_fresh_schema(&pool).await;
+
+    let tenant_id = uuid::Uuid::new_v4();
+    let site_a = uuid::Uuid::new_v4();
+    let site_b = uuid::Uuid::new_v4();
+    let wc_a1 = uuid::Uuid::new_v4();
+    let wc_a2 = uuid::Uuid::new_v4();
+    let wc_b1 = uuid::Uuid::new_v4();
+    let tenant_user = uuid::Uuid::new_v4();
+    let wc_a1_user = uuid::Uuid::new_v4();
+    let wc_a2_user = uuid::Uuid::new_v4();
+    sqlx::query("INSERT INTO tenants (id, name, slug) VALUES ($1, 'qwc', 'qwc')")
+        .bind(tenant_id)
+        .execute(&pool)
+        .await
+        .expect("tenant insert");
+    sqlx::query(
+        "INSERT INTO sites (id, tenant_id, site_code, name) VALUES \
+         ($1, $2, 'WA', 'WC Site A'), ($3, $2, 'WB', 'WC Site B')",
+    )
+    .bind(site_a)
+    .bind(tenant_id)
+    .bind(site_b)
+    .execute(&pool)
+    .await
+    .expect("sites insert");
+    for (wc, site, num) in [
+        (wc_a1, site_a, "QWC-A1"),
+        (wc_a2, site_a, "QWC-A2"),
+        (wc_b1, site_b, "QWC-B1"),
+    ] {
+        sqlx::query(
+            "INSERT INTO work_centers \
+             (id, tenant_id, work_center_number, name, is_active, capacity_per_shift, \
+              site_id, created_at, updated_at) \
+             VALUES ($1, $2, $3, $3, TRUE, 8, $4, NOW(), NOW())",
+        )
+        .bind(wc)
+        .bind(tenant_id)
+        .bind(num)
+        .bind(site)
+        .execute(&pool)
+        .await
+        .expect("work center insert");
+    }
+    for (i, uid, role, slot) in [
+        (0, tenant_user, "quality_manager", "qwc_tenant"),
+        (1, wc_a1_user, "quality_engineer", "qwc_a1"),
+        (2, wc_a2_user, "quality_engineer", "qwc_a2"),
+    ] {
+        sqlx::query(
+            "INSERT INTO users (id, tenant_id, email, name, password_hash) \
+             VALUES ($1, $2, $3, 'U', 'x')",
+        )
+        .bind(uid)
+        .bind(tenant_id)
+        .bind(format!("qwc-{i}@local"))
+        .execute(&pool)
+        .await
+        .expect("user insert");
+        let (kind, site, wc) = match slot {
+            "qwc_tenant" => ("tenant", None, None),
+            "qwc_a1" => ("work_center", Some(site_a), Some(wc_a1)),
+            _ => ("work_center", Some(site_a), Some(wc_a2)),
+        };
+        quality_gate_seed_slot(&pool, tenant_id, uid, role, slot, kind, site, wc).await;
+    }
+
+    use sensei_core::domain::request_context::RequestContext;
+    use sensei_services::quality::{DatabaseQualityService, NcSeverity, NcType, QualityService};
+    let svc = DatabaseQualityService::new(pool.clone());
+    let tenant_ctx = RequestContext::build(&pool, tenant_id, tenant_user, None, None, None, None, String::new())
+        .await
+        .expect("tenant-wide context");
+    let a1_ctx = RequestContext::build(&pool, tenant_id, wc_a1_user, Some(site_a), None, Some(wc_a1), None, String::new())
+        .await
+        .expect("WC-A1 context");
+    let a2_ctx = RequestContext::build(&pool, tenant_id, wc_a2_user, Some(site_a), None, Some(wc_a2), None, String::new())
+        .await
+        .expect("WC-A2 context");
+
+    // A2-stamped NCR created by the tenant-wide caller FOCUSING A2: the
+    // focus stamps the exact work center of the record.
+    let a2_ncr = svc
+        .create_ncr(
+            &RequestContext {
+                focus: sensei_core::domain::request_context::OperationalFocus {
+                    site: Some(site_a),
+                    value_stream: None,
+                    work_center: Some(wc_a2),
+                    shift: None,
+                },
+                ..tenant_ctx.clone()
+            },
+            "A2 defect".to_string(),
+            "d".to_string(),
+            NcType::Process,
+            NcSeverity::Medium,
+            None, None, None, None, None, None, false,
+        )
+        .await
+        .expect("A2-stamped NCR create");
+    let (s, w) = quality_gate_scope_of(&pool, "ncr_reports", a2_ncr.id).await;
+    assert_eq!((s, w), (Some(site_a), Some(wc_a2)), "the A2-stamped row carries (A, A2)");
+
+    // A1-stamped NCR from the WC-A1 caller itself.
+    let a1_ncr = svc
+        .create_ncr(
+            &a1_ctx,
+            "A1 defect".to_string(),
+            "d".to_string(),
+            NcType::Process,
+            NcSeverity::Low,
+            None, None, None, None, None, None, false,
+        )
+        .await
+        .expect("A1-stamped NCR create");
+    let (s, w) = quality_gate_scope_of(&pool, "ncr_reports", a1_ncr.id).await;
+    assert_eq!((s, w), (Some(site_a), Some(wc_a1)), "the A1-stamped row carries (A, A1)");
+
+    // A site-level (site-only) NCR plus a corporate NCR: both must be
+    // invisible to the exact-WC callers.
+    let site_ncr = svc
+        .create_ncr(
+            &RequestContext {
+                focus: sensei_core::domain::request_context::OperationalFocus {
+                    site: Some(site_a),
+                    value_stream: None,
+                    work_center: None,
+                    shift: None,
+                },
+                ..tenant_ctx.clone()
+            },
+            "Site-level finding".to_string(),
+            "d".to_string(),
+            NcType::System,
+            NcSeverity::High,
+            None, None, None, None, None, None, false,
+        )
+        .await
+        .expect("site-level NCR create");
+    let corporate_ncr = svc
+        .create_ncr(
+            &tenant_ctx,
+            "Corporate finding".to_string(),
+            "d".to_string(),
+            NcType::System,
+            NcSeverity::High,
+            None, None, None, None, None, None, false,
+        )
+        .await
+        .expect("corporate NCR create");
+
+    // ── The WC-A1 principal sees EXACTLY its own WC-stamped record ──
+    let a1_list = svc.list_ncrs(&a1_ctx, None, None, None, None, None).await.unwrap();
+    assert_eq!(
+        a1_list.total, 1,
+        "a WC-A1 principal sees exactly its own work center's records"
+    );
+    assert_eq!(a1_list.data[0].id, a1_ncr.id);
+
+    // WC-A1 cannot read / update / delete ANY of: A2-stamped, site-level,
+    // corporate.
+    for foreign in [a2_ncr.id, site_ncr.id, corporate_ncr.id] {
+        assert!(
+            svc.get_ncr(&a1_ctx, foreign).await.is_err(),
+            "WC-A1 must NOT read {foreign}"
+        );
+        assert!(
+            svc.update_ncr_status(&a1_ctx, foreign, NcSeverity::Critical)
+                .await
+                .is_err(),
+            "WC-A1 must NOT update {foreign}"
+        );
+        assert!(
+            svc.delete_ncr(&a1_ctx, foreign).await.is_err(),
+            "WC-A1 must NOT delete {foreign}"
+        );
+    }
+    assert!(
+        svc.get_ncr(&a1_ctx, a1_ncr.id).await.is_ok(),
+        "WC-A1 reads its own record"
+    );
+
+    // ── The WC-A2 principal sees exactly its own WC-stamped record ──
+    let a2_list = svc.list_ncrs(&a2_ctx, None, None, None, None, None).await.unwrap();
+    assert_eq!(a2_list.total, 1);
+    assert_eq!(a2_list.data[0].id, a2_ncr.id);
+
+    // The same isolation holds for CAPAs and audits (scope columns on
+    // the canonical tables).
+    let a2_capa = svc
+        .create_capa(
+            &RequestContext {
+                focus: sensei_core::domain::request_context::OperationalFocus {
+                    site: Some(site_a),
+                    value_stream: None,
+                    work_center: Some(wc_a2),
+                    shift: None,
+                },
+                ..tenant_ctx.clone()
+            },
+            "A2 CAPA".to_string(),
+            "d".to_string(),
+            vec![],
+            sensei_services::quality::CapaType::Corrective,
+            sensei_services::quality::CapaPriority::High,
+            None,
+            None,
+        )
+        .await
+        .expect("A2-stamped CAPA");
+    let a1_capa_list = svc.list_capas(&a1_ctx, None, None, None, None).await.unwrap();
+    assert_eq!(a1_capa_list.total, 0, "WC-A1 sees no WC-A2 CAPA");
+    assert!(svc.get_capa(&a1_ctx, a2_capa.id).await.is_err());
+
+    let mut audit = sensei_services::quality::Audit {
+        id: uuid::Uuid::nil(),
+        audit_number: "AUD-GATE-X".to_string(),
+        audit_type: sensei_services::quality::AuditType::Layered,
+        status: sensei_services::quality::AuditStatus::Planned,
+        title: "A2 audit".to_string(),
+        scope: "a2".to_string(),
+        area: "a2".to_string(),
+        auditor_id: None,
+        lead_auditor_id: None,
+        scheduled_date: None,
+        start_date: None,
+        completion_date: None,
+        checklist_items: vec![],
+        created_at: chrono::Utc::now(),
+        updated_at: chrono::Utc::now(),
+    };
+    audit.id = uuid::Uuid::new_v4();
+    let a2_audit = svc
+        .create_audit(
+            &RequestContext {
+                focus: sensei_core::domain::request_context::OperationalFocus {
+                    site: Some(site_a),
+                    value_stream: None,
+                    work_center: Some(wc_a2),
+                    shift: None,
+                },
+                ..tenant_ctx.clone()
+            },
+            audit.clone(),
+        )
+        .await
+        .expect("A2-stamped audit");
+    let a1_audit_list = svc.list_audits(&a1_ctx, None, None, None, None).await.unwrap();
+    assert_eq!(a1_audit_list.total, 0, "WC-A1 sees no WC-A2 audit");
+    assert!(svc.get_audit(&a1_ctx, a2_audit.id).await.is_err());
+
+    // Site-B (foreign) exact-WC principal sees nothing at all.
+    let b1_user = uuid::Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO users (id, tenant_id, email, name, password_hash) \
+         VALUES ($1, $2, $3, 'U', 'x')",
+    )
+    .bind(b1_user)
+    .bind(tenant_id)
+    .bind("qwc-b1@local")
+    .execute(&pool)
+    .await
+    .expect("user insert");
+    quality_gate_seed_slot(
+        &pool, tenant_id, b1_user, "quality_engineer", "qwc_b1", "work_center",
+        Some(site_b), Some(wc_b1),
+    ).await;
+    let b1_ctx = RequestContext::build(&pool, tenant_id, b1_user, Some(site_b), None, Some(wc_b1), None, String::new())
+        .await
+        .expect("WC-B1 context");
+    let b1_list = svc.list_ncrs(&b1_ctx, None, None, None, None, None).await.unwrap();
+    assert_eq!(b1_list.total, 0, "a foreign-site WC principal sees nothing");
+}
+
+/// (c) Creation-scope rules on the canonical tables: Sites-only + no
+/// focus is rejected; corporate creation is tenant-wide-only; an exact
+/// WC focus stamps the exact WC; an NCR-from-WO derives the scope from
+/// the WO's real (site, work center) and validates it against the caller
+/// scope.
+#[tokio::test]
+async fn quality_service_creation_scope_rules() {
+    let _serial = DB_LOCK.lock().await;
+    let Some(pool) = connect().await else { return };
+    quality_gate_fresh_schema(&pool).await;
+
+    let tenant_id = uuid::Uuid::new_v4();
+    let site_a = uuid::Uuid::new_v4();
+    let site_b = uuid::Uuid::new_v4();
+    let wc_a1 = uuid::Uuid::new_v4();
+    let wc_a2 = uuid::Uuid::new_v4();
+    let wo_a1 = uuid::Uuid::new_v4();
+    let tenant_user = uuid::Uuid::new_v4();
+    let site_user = uuid::Uuid::new_v4();
+    let wc_user = uuid::Uuid::new_v4();
+    sqlx::query("INSERT INTO tenants (id, name, slug) VALUES ($1, 'qscope2', 'qscope2')")
+        .bind(tenant_id)
+        .execute(&pool)
+        .await
+        .expect("tenant insert");
+    sqlx::query(
+        "INSERT INTO sites (id, tenant_id, site_code, name) VALUES \
+         ($1, $2, 'SA', 'Site A'), ($3, $2, 'SB', 'Site B')",
+    )
+    .bind(site_a)
+    .bind(tenant_id)
+    .bind(site_b)
+    .execute(&pool)
+    .await
+    .expect("sites insert");
+    for (wc, site, num) in [
+        (wc_a1, site_a, "QCS-A1"),
+        (wc_a2, site_a, "QCS-A2"),
+    ] {
+        sqlx::query(
+            "INSERT INTO work_centers \
+             (id, tenant_id, work_center_number, name, is_active, capacity_per_shift, \
+              site_id, created_at, updated_at) \
+             VALUES ($1, $2, $3, $3, TRUE, 8, $4, NOW(), NOW())",
+        )
+        .bind(wc)
+        .bind(tenant_id)
+        .bind(num)
+        .bind(site)
+        .execute(&pool)
+        .await
+        .expect("work center insert");
+    }
+    for (i, uid, role, slot) in [
+        (0, tenant_user, "quality_manager", "qcs_tenant"),
+        (1, site_user, "quality_engineer", "qcs_site"),
+        (2, wc_user, "quality_engineer", "qcs_wc"),
+    ] {
+        sqlx::query(
+            "INSERT INTO users (id, tenant_id, email, name, password_hash) \
+             VALUES ($1, $2, $3, 'U', 'x')",
+        )
+        .bind(uid)
+        .bind(tenant_id)
+        .bind(format!("qcs-{i}@local"))
+        .execute(&pool)
+        .await
+        .expect("user insert");
+        let (kind, site, wc) = match slot {
+            "qcs_tenant" => ("tenant", None, None),
+            "qcs_site" => ("site", Some(site_a), None),
+            _ => ("work_center", Some(site_a), Some(wc_a1)),
+        };
+        quality_gate_seed_slot(&pool, tenant_id, uid, role, slot, kind, site, wc).await;
+    }
+
+    use sensei_core::domain::request_context::{OperationalFocus, RequestContext};
+    use sensei_core::domain::scope::ResourceScope;
+    use sensei_services::quality::{derive_creation_scope, CanonicalParent, DatabaseQualityService, NcSeverity, NcType, QualityService};
+    let svc = DatabaseQualityService::new(pool.clone());
+
+    let tenant_ctx = RequestContext::build(&pool, tenant_id, tenant_user, None, None, None, None, String::new())
+        .await
+        .expect("tenant-wide context");
+    // A site-A-scoped principal WITHOUT an operating focus.
+    let site_ctx_no_focus = RequestContext::build(&pool, tenant_id, site_user, None, None, None, None, String::new())
+        .await
+        .expect("site-A principal without focus builds");
+    use sensei_core::domain::scope::AuthorizedScope;
+    assert!(
+        matches!(
+            site_ctx_no_focus.scope,
+            AuthorizedScope::Operational { ref sites, .. } if sites.contains(&site_a)
+        ),
+        "the site principal resolves to a site-A scope"
+    );
+
+    // (1) Sites-only + NO focus ⇒ creation REJECTED (an operating site
+    // is required; a missing focus must never widen into a corporate
+    // record).
+    let err = svc
+        .create_ncr(
+            &site_ctx_no_focus,
+            "Should fail".to_string(),
+            "d".to_string(),
+            NcType::Product,
+            NcSeverity::Medium,
+            None, None, None, None, None, None, false,
+        )
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(err, sensei_core::error::SenseiError::Forbidden(_)),
+        "sites-only + no focus must be Forbidden, got {err:?}"
+    );
+    // The same rejection applies to the CAPA and audit constructors.
+    assert!(
+        svc.create_capa(&site_ctx_no_focus, "c".to_string(), "d".to_string(), vec![],
+            sensei_services::quality::CapaType::Corrective,
+            sensei_services::quality::CapaPriority::Medium, None, None)
+            .await
+            .is_err()
+    );
+    assert!(
+        svc.create_audit(
+            &site_ctx_no_focus,
+            sensei_services::quality::Audit {
+                id: uuid::Uuid::nil(),
+                audit_number: "AUD-GATE-X".to_string(),
+                audit_type: sensei_services::quality::AuditType::Internal,
+                status: sensei_services::quality::AuditStatus::Planned,
+                title: "a".to_string(),
+                scope: String::new(),
+                area: String::new(),
+                auditor_id: None,
+                lead_auditor_id: None,
+                scheduled_date: None,
+                start_date: None,
+                completion_date: None,
+                checklist_items: vec![],
+                created_at: chrono::Utc::now(),
+                updated_at: chrono::Utc::now(),
+            },
+        )
+        .await
+        .is_err(),
+        "a site-scoped caller without an operating site cannot create an audit"
+    );
+
+    // (2) A site-A-scoped caller WITH the site focus stamps Site(A).
+    let site_ctx = RequestContext::build(&pool, tenant_id, site_user, Some(site_a), None, None, None, String::new())
+        .await
+        .expect("site-A principal with site focus");
+    let site_ncr = svc
+        .create_ncr(&site_ctx, "Site record".to_string(), "d".to_string(),
+            NcType::Product, NcSeverity::Medium,
+            None, None, None, None, None, None, false)
+        .await
+        .expect("site-A creation succeeds with a focus");
+    let (s, w) = quality_gate_scope_of(&pool, "ncr_reports", site_ncr.id).await;
+    assert_eq!((s, w), (Some(site_a), None), "Sites(A) + focus A ⇒ Site(A)");
+
+    // (3) Corporate creation (NULL/NULL) is TENANT-WIDE-ONLY.
+    let corporate = svc
+        .create_ncr(&tenant_ctx, "Corporate".to_string(), "d".to_string(),
+            NcType::System, NcSeverity::High,
+            None, None, None, None, None, None, false)
+        .await
+        .expect("tenant-wide corporate create");
+    let (s, w) = quality_gate_scope_of(&pool, "ncr_reports", corporate.id).await;
+    assert!(
+        s.is_none() && w.is_none(),
+        "tenant-wide + no focus ⇒ corporate (NULL/NULL) row"
+    );
+
+    // (4) An EXACT WC-A1 grant with the (A, A1) focus stamps the exact
+    // work center — never the parent site.
+    let wc_ctx = RequestContext::build(&pool, tenant_id, wc_user, Some(site_a), None, Some(wc_a1), None, String::new())
+        .await
+        .expect("WC-A1 principal at its exact work center");
+    let wc_ncr = svc
+        .create_ncr(&wc_ctx, "WC record".to_string(), "d".to_string(),
+            NcType::Product, NcSeverity::Low,
+            None, None, None, None, None, None, false)
+        .await
+        .expect("WC-A1 creation succeeds");
+    let (s, w) = quality_gate_scope_of(&pool, "ncr_reports", wc_ncr.id).await;
+    assert_eq!((s, w), (Some(site_a), Some(wc_a1)), "exact WC focus ⇒ WorkCenter(A, A1)");
+    // A site-scoped caller (Site A grant) may NOT read the WC-A1 record
+    // out of a WC it cannot see? NO — a Site-A grant DOES cover WC-A1's
+    // records; but a WC-A1 grant never sees the site-A-level row created
+    // in (2).
+    let wc_list = svc.list_ncrs(&wc_ctx, None, None, None, None, None).await.unwrap();
+    assert_eq!(wc_list.total, 1, "the WC-A1 principal sees exactly its own record");
+    assert_eq!(wc_list.data[0].id, wc_ncr.id);
+    assert!(
+        svc.get_ncr(&wc_ctx, site_ncr.id).await.is_err(),
+        "a WC grant never widens into the site-level record"
+    );
+    assert!(
+        svc.get_ncr(&wc_ctx, corporate.id).await.is_err(),
+        "a WC grant never reaches a corporate record"
+    );
+
+    // (5) NCR-from-WO: the scope derives from the WO's REAL work center
+    // and site (resolved in the DB), then is validated against the
+    // caller scope. A WC-A1 caller may raise an NCR against ITS OWN WO;
+    // a sibling-WC caller may not; the tenant-wide grant always may.
+    sqlx::query(
+        "INSERT INTO work_orders (id, tenant_id, wo_number, product_id, quantity, \
+         work_center_id, created_at, updated_at) \
+         VALUES ($1, $2, 'WO-QCS', $1, 10, $3, NOW(), NOW())",
+    )
+    .bind(wo_a1)
+    .bind(tenant_id)
+    .bind(wc_a1)
+    .execute(&pool)
+    .await
+    .expect("work order insert");
+    // The DB-resolved parent anchor: the WO's carrier work center joined
+    // to work_centers.site_id (migration 134) — the real site, never a
+    // client-supplied one.
+    let (wo_site, wo_wc): (uuid::Uuid, uuid::Uuid) = sqlx::query_as(
+        "SELECT wc.site_id, wo.work_center_id FROM work_orders wo \
+         JOIN work_centers wc ON wc.id = wo.work_center_id \
+         WHERE wo.id = $1 AND wo.tenant_id = $2",
+    )
+    .bind(wo_a1)
+    .bind(tenant_id)
+    .fetch_one(&pool)
+    .await
+    .expect("work order → site resolution");
+    assert_eq!((wo_site, wo_wc), (site_a, wc_a1));
+    let parent = CanonicalParent::WorkOrder {
+        site_id: wo_site,
+        work_center_id: wo_wc,
+    };
+    assert_eq!(
+        derive_creation_scope(&wc_ctx, Some(parent)).expect("own-WO derivation"),
+        ResourceScope::WorkCenter {
+            site: site_a,
+            work_center: wc_a1
+        },
+        "an exact WC-A1 caller raising an NCR against its own WO derives WorkCenter(A, A1)"
+    );
+    assert_eq!(
+        derive_creation_scope(&tenant_ctx, Some(parent)).expect("tenant-wide derivation"),
+        ResourceScope::WorkCenter {
+            site: site_a,
+            work_center: wc_a1
+        },
+        "the tenant-wide grant derives the WO anchor and stays within scope"
+    );
+    assert_eq!(
+        derive_creation_scope(&site_ctx, Some(parent)).expect("site-A derivation"),
+        ResourceScope::WorkCenter {
+            site: site_a,
+            work_center: wc_a1
+        },
+        "a site-A grant covers an NCR raised against a WO of its site"
+    );
+    // A sibling-WC (A2) principal and a foreign-site caller are REJECTED:
+    // a parent anchor never widens authority.
+    let site_b_user = uuid::Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO users (id, tenant_id, email, name, password_hash) \
+         VALUES ($1, $2, $3, 'U', 'x')",
+    )
+    .bind(site_b_user)
+    .bind(tenant_id)
+    .bind("qcs-sb@local")
+    .execute(&pool)
+    .await
+    .expect("user insert");
+    quality_gate_seed_slot(
+        &pool, tenant_id, site_b_user, "quality_engineer", "qcs_site_b", "site",
+        Some(site_b), None,
+    ).await;
+    let site_b_ctx = RequestContext::build(&pool, tenant_id, site_b_user, Some(site_b), None, None, None, String::new())
+        .await
+        .expect("site-B principal");
+    let sibling_wc_ctx = RequestContext {
+        scope: AuthorizedScope::Operational {
+            sites: std::collections::HashSet::new(),
+            work_centers: std::collections::HashSet::from([sensei_core::domain::scope::WorkCenterScope {
+                site: site_a,
+                work_center: wc_a2,
+            }]),
+        },
+        focus: OperationalFocus {
+            site: Some(site_a),
+            value_stream: None,
+            work_center: Some(wc_a2),
+            shift: None,
+        },
+        ..tenant_ctx.clone()
+    };
+    assert!(
+        derive_creation_scope(&sibling_wc_ctx, Some(parent)).is_err(),
+        "a WC-A2 caller cannot raise an NCR against a WO at WC A1"
+    );
+    assert!(
+        derive_creation_scope(&site_b_ctx, Some(parent)).is_err(),
+        "a foreign-site caller cannot raise an NCR against a Site-A WO"
+    );
+    // And the exact-WC-A2 caller with its OWN focus (no parent) derives
+    // its exact work center — WC-exact creation is legitimate at the
+    // granted work center (the parent rejection above is about the A1
+    // WO, not about A2's own records).
+    assert_eq!(
+        derive_creation_scope(&sibling_wc_ctx, None).expect("A2 focus derivation"),
+        ResourceScope::WorkCenter {
+            site: site_a,
+            work_center: wc_a2
+        },
+        "an exact WC-A2 caller derives its own work center"
+    );
+    // Without ANY operating focus, even the exact-WC caller is rejected
+    // (missing focus never widens authority).
+    let wc_no_focus = RequestContext {
+        scope: AuthorizedScope::Operational {
+            sites: std::collections::HashSet::new(),
+            work_centers: std::collections::HashSet::from([sensei_core::domain::scope::WorkCenterScope {
+                site: site_a,
+                work_center: wc_a2,
+            }]),
+        },
+        focus: OperationalFocus {
+            site: None,
+            value_stream: None,
+            work_center: None,
+            shift: None,
+        },
+        ..tenant_ctx.clone()
+    };
+    assert!(
+        derive_creation_scope(&wc_no_focus, None).is_err(),
+        "an exact-WC caller without an operating focus cannot create records"
+    );
 }

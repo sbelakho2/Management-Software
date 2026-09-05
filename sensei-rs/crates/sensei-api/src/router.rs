@@ -1753,6 +1753,10 @@ pub fn build_router(state: AppState) -> Router {
             put(routes::work_orders::update_work_order_status),
         )
         .route(
+            "/api/v1/work-orders/{id}/reassign",
+            put(routes::work_orders::reassign_work_order),
+        )
+        .route(
             "/api/v1/work-orders/{id}/operations",
             get(routes::work_orders::list_work_order_operations),
         )
@@ -2211,6 +2215,10 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/v1/replication/pull", get(routes::replication::pull))
         .route("/api/v1/replication/ack", post(routes::replication::ack))
         .route("/api/v1/replication/fail", post(routes::replication::fail))
+        .route(
+            "/api/v1/replication/confirm-receipts",
+            post(routes::replication::confirm_receipts),
+        )
         // ── Country Policy Routes (fifteenth audit 84): locale, currency,
         //    units, calendar, holidays, residency, retention — policy
         //    objects, never `if country == ...` code forks. ────────────

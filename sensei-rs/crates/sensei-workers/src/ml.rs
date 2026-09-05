@@ -15,12 +15,14 @@
 use crate::error::{Result, WorkerError};
 use crate::task::{ClaimOutcome, IdempotencyGuard, TaskConsumer, TaskMetadata, TaskOutcome};
 use async_trait::async_trait;
+use sensei_core::db::TenantTx;
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::{error, info, warn};
+use uuid::Uuid;
 
 /// Payload for ML-related tasks.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -158,15 +160,31 @@ pub struct ModelDefinition {
 /// Registry of available models with their metadata.
 ///
 /// When a database pool is available the registry is persisted to the
-/// `model_registry` table (migration 031); otherwise it falls back to an
+/// `model_registry` table (migration 002/031 platform shape, reconciled by
+/// migration 176 for the worker row model); otherwise it falls back to an
 /// in-memory store seeded with the three default models.
+///
+/// # Tenant scoping (thirtieth-audit item 18, Wave C RLS)
+///
+/// `model_registry` is tenant-owned and fail-closed FORCE RLS since
+/// migration 175 — a raw-pool statement under the production `sensei_app`
+/// role has no `app.tenant_id` context (zero rows on reads, WITH CHECK
+/// denial on writes). Every DB statement therefore runs inside a
+/// [`TenantTx`] of the model's own tenant, and the in-memory map is keyed
+/// by `(tenant_id, model_name)`: each tenant trains on ITS OWN rows
+/// (`production_orders`, `sales_orders`, `equipment`, `pm_schedules` are
+/// tenant tables, RLS-admitted by the same TenantTx) and persists ITS OWN
+/// registry row. A tenant-less payload trains every active tenant; the
+/// tenant list is read from the RLS-free `tenants` table.
 pub struct ModelRegistry {
-    models: Arc<RwLock<HashMap<String, ModelDefinition>>>,
+    models: Arc<RwLock<HashMap<(Uuid, String), ModelDefinition>>>,
     /// Optional database pool used for persistence.
     pool: Option<Arc<PgPool>>,
 }
 
-/// Database row for the `model_registry` table (migration 031).
+/// Database row for the `model_registry` table (the platform/worker shape
+/// after migration 176: one row per (tenant_id, model_name), status as
+/// JSONB carrying the structured [`ModelStatus`]).
 #[derive(Debug, Clone, sqlx::FromRow)]
 struct ModelRegistryRow {
     model_name: String,
@@ -177,86 +195,120 @@ struct ModelRegistryRow {
 }
 
 impl ModelRegistry {
-    /// Create a new registry with default model definitions (in-memory only).
+    /// Create a new registry with default model definitions (in-memory
+    /// only). Without a database there is no tenant dimension, so the
+    /// defaults live under the nil tenant — the historical dev-mode
+    /// behavior ("models exist without a database").
     pub fn new() -> Self {
+        let mut models = HashMap::new();
+        for (name, def) in default_model_definitions() {
+            models.insert((Uuid::nil(), name), def);
+        }
         Self {
-            models: Arc::new(RwLock::new(default_model_definitions())),
+            models: Arc::new(RwLock::new(models)),
             pool: None,
         }
     }
 
     /// Create a registry backed by the `model_registry` table.
     ///
-    /// Loads persisted definitions, seeding the three default models when the
-    /// table is empty (first run).
+    /// Tenant state is loaded lazily per tenant on first use
+    /// ([`Self::load_tenant`]), seeding the three default models when the
+    /// tenant has no registry rows yet (first run).
     pub async fn with_pool(pool: Arc<PgPool>) -> Result<Self> {
-        let registry = Self {
-            models: Arc::new(RwLock::new(default_model_definitions())),
+        Ok(Self {
+            models: Arc::new(RwLock::new(HashMap::new())),
             pool: Some(pool),
-        };
-        registry.load_from_db().await?;
-        Ok(registry)
+        })
     }
 
-    /// Load all persisted model definitions from the database.
-    async fn load_from_db(&self) -> Result<()> {
+    /// Load (or re-load) one tenant's persisted model definitions into the
+    /// in-memory map, seeding the three default models on the tenant's
+    /// first run. Reads and seed writes run on one [`TenantTx`] of the
+    /// tenant (migration-175 fail-closed RLS).
+    pub async fn load_tenant(&self, tenant_id: Uuid) -> Result<()> {
         let Some(pool) = &self.pool else {
             return Ok(());
         };
+        let mut tx = TenantTx::begin(pool, tenant_id)
+            .await
+            .map_err(|e| WorkerError::Processing(format!("Failed to begin registry tx: {e}")))?;
 
         let rows: Vec<ModelRegistryRow> = sqlx::query_as(
             "SELECT model_name, version, status, parameters, baseline_histogram \
-             FROM model_registry",
+             FROM model_registry WHERE tenant_id = $1",
         )
-        .fetch_all(pool.as_ref())
+        .bind(tenant_id)
+        .fetch_all(&mut **tx.tx())
         .await
-        .map_err(|e| WorkerError::Processing(format!("Failed to load model registry: {e}")))?;
+        .map_err(|e| {
+            WorkerError::Processing(format!("Failed to load model registry: {e}"))
+        })?;
+        let had_rows = !rows.is_empty();
 
-        let mut models = self.models.write().await;
-        for row in rows {
-            let status: ModelStatus = serde_json::from_value(row.status).unwrap_or_else(|_| {
-                warn!(
-                    model = %row.model_name,
-                    "Corrupt status JSONB in model_registry — falling back to Healthy"
+        {
+            let mut models = self.models.write().await;
+            for row in rows {
+                let status: ModelStatus = serde_json::from_value(row.status).unwrap_or_else(|_| {
+                    warn!(
+                        model = %row.model_name,
+                        tenant_id = %tenant_id,
+                        "Corrupt status JSONB in model_registry — falling back to Healthy"
+                    );
+                    ModelStatus::Healthy
+                });
+                let parameters: Option<ModelParameters> =
+                    row.parameters.and_then(|v| serde_json::from_value(v).ok());
+                let baseline_histogram: Option<Vec<f64>> = row
+                    .baseline_histogram
+                    .and_then(|v| serde_json::from_value(v).ok());
+                models.insert(
+                    (tenant_id, row.model_name.clone()),
+                    ModelDefinition {
+                        name: row.model_name.clone(),
+                        status,
+                        version: row.version,
+                        parameters,
+                        baseline_histogram,
+                    },
                 );
-                ModelStatus::Healthy
-            });
-            let parameters: Option<ModelParameters> =
-                row.parameters.and_then(|v| serde_json::from_value(v).ok());
-            let baseline_histogram: Option<Vec<f64>> = row
-                .baseline_histogram
-                .and_then(|v| serde_json::from_value(v).ok());
-            models.insert(
-                row.model_name.clone(),
-                ModelDefinition {
-                    name: row.model_name.clone(),
-                    status,
-                    version: row.version,
-                    parameters,
-                    baseline_histogram,
-                },
-            );
+            }
         }
 
-        // Seed the default models on first run (empty table).
-        if models.is_empty() {
+        // Seed the default models on the tenant's first run: no registry
+        // rows for the tenant AND no prior in-memory state (a cache-only
+        // reload never overwrites persisted training state).
+        let known_before = {
+            let models = self.models.read().await;
+            models.keys().any(|(t, _)| *t == tenant_id)
+        };
+        if !known_before && !had_rows {
+            let mut seeded: Vec<(String, ModelDefinition)> = Vec::new();
             for (name, def) in default_model_definitions() {
-                models.insert(name, def);
+                self.persist(&mut tx, tenant_id, &name, &def).await?;
+                seeded.push((name, def));
             }
-            let seeds = models.clone();
-            drop(models);
-            for (name, def) in seeds {
-                self.persist(&name, &def).await?;
+            let mut models = self.models.write().await;
+            for (name, def) in seeded {
+                models.insert((tenant_id, name), def);
             }
         }
+        tx.commit()
+            .await
+            .map_err(|e| WorkerError::Processing(format!("Failed to commit registry load: {e}")))?;
         Ok(())
     }
 
     /// Persist a model definition to the database (no-op without a pool).
-    async fn persist(&self, name: &str, def: &ModelDefinition) -> Result<()> {
-        let Some(pool) = &self.pool else {
-            return Ok(());
-        };
+    /// The upsert runs inside a [`TenantTx`] of the model's tenant and
+    /// targets the migration-176 unique key (tenant_id, model_name).
+    async fn persist(
+        &self,
+        tx: &mut TenantTx<'_>,
+        tenant_id: Uuid,
+        name: &str,
+        def: &ModelDefinition,
+    ) -> Result<()> {
         let status = serde_json::to_value(&def.status).map_err(WorkerError::Serialization)?;
         let parameters = def
             .parameters
@@ -270,21 +322,36 @@ impl ModelRegistry {
             .map(serde_json::to_value)
             .transpose()
             .map_err(WorkerError::Serialization)?;
+        // Trained accuracy and the training sample count feed the platform
+        // columns when the last status carries them.
+        let (accuracy, dataset_size): (Option<f64>, Option<i64>) = match &def.status {
+            ModelStatus::Trained { accuracy, .. } => {
+                (Some(*accuracy), def.parameters.as_ref().map(|p| p.sample_count as i64))
+            }
+            _ => (None, def.parameters.as_ref().map(|p| p.sample_count as i64)),
+        };
 
         sqlx::query(
-            "INSERT INTO model_registry (model_name, version, status, parameters, baseline_histogram, trained_at, updated_at) \
-             VALUES ($1, $2, $3, $4, $5, NOW(), NOW()) \
-             ON CONFLICT (model_name) DO UPDATE SET \
+            "INSERT INTO model_registry \
+                (tenant_id, model_name, version, model_type, status, accuracy, dataset_size, \
+                 parameters, baseline_histogram, config, trained_at, updated_at) \
+             VALUES ($1, $2, $3, 'prediction', $4, $5, $6, $7, $8, $9, NOW(), NOW()) \
+             ON CONFLICT (tenant_id, model_name) DO UPDATE SET \
                version = EXCLUDED.version, status = EXCLUDED.status, \
+               accuracy = EXCLUDED.accuracy, dataset_size = EXCLUDED.dataset_size, \
                parameters = EXCLUDED.parameters, baseline_histogram = EXCLUDED.baseline_histogram, \
-               trained_at = NOW(), updated_at = NOW()",
+               config = EXCLUDED.config, trained_at = NOW(), updated_at = NOW()",
         )
+        .bind(tenant_id)
         .bind(name)
         .bind(&def.version)
         .bind(&status)
+        .bind(accuracy)
+        .bind(dataset_size)
         .bind(&parameters)
         .bind(&baseline)
-        .execute(pool.as_ref())
+        .bind(serde_json::Value::Object(Default::default()))
+        .execute(&mut **tx.tx())
         .await
         .map_err(|e| {
             WorkerError::Processing(format!("Failed to persist model '{name}': {e}"))
@@ -292,47 +359,91 @@ impl ModelRegistry {
         Ok(())
     }
 
-    /// Get all model names.
-    pub async fn model_names(&self) -> Vec<String> {
-        let models = self.models.read().await;
-        models.keys().cloned().collect()
-    }
-
-    /// Get a model's definition.
-    pub async fn get_model(&self, name: &str) -> Option<ModelDefinition> {
-        let models = self.models.read().await;
-        models.get(name).cloned()
-    }
-
-    /// Update a model's status.
-    pub async fn update_status(&self, name: &str, status: ModelStatus) {
-        let mut models = self.models.write().await;
-        if let Some(def) = models.get_mut(name) {
-            def.status = status.clone();
-            let snapshot = def.clone();
-            drop(models);
-            if let Err(e) = self.persist(name, &snapshot).await {
-                warn!(model = %name, error = %e, "Failed to persist model status");
+    /// Persist the in-memory definition under its own short tenant tx
+    /// (called from the stateless status/parameter updates).
+    async fn persist_standalone(&self, tenant_id: Uuid, name: &str, def: &ModelDefinition) {
+        let Some(pool) = &self.pool else {
+            return;
+        };
+        let mut tx = match TenantTx::begin(pool, tenant_id).await {
+            Ok(tx) => tx,
+            Err(e) => {
+                warn!(model = %name, tenant_id = %tenant_id, error = %e, "Failed to persist model (begin)");
+                return;
             }
+        };
+        if let Err(e) = self.persist(&mut tx, tenant_id, name, def).await {
+            warn!(model = %name, tenant_id = %tenant_id, error = %e, "Failed to persist model");
+            return;
+        }
+        if let Err(e) = tx.commit().await {
+            warn!(model = %name, tenant_id = %tenant_id, error = %e, "Failed to commit model persist");
         }
     }
 
-    /// Update a model's parameters and baseline histogram.
+    /// Get all model names of ONE tenant (the default three, possibly
+    /// extended by future registry rows).
+    pub async fn model_names(&self, tenant_id: Uuid) -> Vec<String> {
+        let models = self.models.read().await;
+        models
+            .keys()
+            .filter(|(t, _)| *t == tenant_id)
+            .map(|(_, n)| n.clone())
+            .collect()
+    }
+
+    /// Get a model's definition for ONE tenant.
+    pub async fn get_model(&self, tenant_id: Uuid, name: &str) -> Option<ModelDefinition> {
+        let models = self.models.read().await;
+        models.get(&(tenant_id, name.to_string())).cloned()
+    }
+
+    /// Update a model's status (in-memory + tenant-scoped DB persist).
+    pub async fn update_status(
+        &self,
+        tenant_id: Uuid,
+        name: &str,
+        status: ModelStatus,
+    ) {
+        let mut models = self.models.write().await;
+        if let Some(def) = models.get_mut(&(tenant_id, name.to_string())) {
+            def.status = status.clone();
+            let snapshot = def.clone();
+            drop(models);
+            self.persist_standalone(tenant_id, name, &snapshot).await;
+        } else {
+            drop(models);
+            warn!(
+                model = %name,
+                tenant_id = %tenant_id,
+                "Status update skipped — tenant state not loaded"
+            );
+        }
+    }
+
+    /// Update a model's parameters and baseline histogram (in-memory +
+    /// tenant-scoped DB persist).
     pub async fn update_parameters(
         &self,
+        tenant_id: Uuid,
         name: &str,
         parameters: ModelParameters,
         baseline: Vec<f64>,
     ) {
         let mut models = self.models.write().await;
-        if let Some(def) = models.get_mut(name) {
+        if let Some(def) = models.get_mut(&(tenant_id, name.to_string())) {
             def.parameters = Some(parameters);
             def.baseline_histogram = Some(baseline);
             let snapshot = def.clone();
             drop(models);
-            if let Err(e) = self.persist(name, &snapshot).await {
-                warn!(model = %name, error = %e, "Failed to persist model parameters");
-            }
+            self.persist_standalone(tenant_id, name, &snapshot).await;
+        } else {
+            drop(models);
+            warn!(
+                model = %name,
+                tenant_id = %tenant_id,
+                "Parameter update skipped — tenant state not loaded"
+            );
         }
     }
 }
@@ -454,13 +565,22 @@ impl MlWorker {
         }
     }
 
-    /// Load training data for a model from the database.
+    /// Load training data for a model of ONE tenant from the database.
     ///
     /// Queries the relevant domain table based on the model name. Returns
-    /// a vector of f64 values suitable for statistical analysis.
-    async fn load_training_data(&self, model_name: &str) -> Result<Vec<f64>> {
+    /// a vector of f64 values suitable for statistical analysis. Every
+    /// source table (`production_orders`, `so_line_items`, `sales_orders`,
+    /// `equipment`, `pm_schedules`) is tenant-owned and fail-closed FORCE
+    /// RLS since migration 175, so the reads run inside a [`TenantTx`] of
+    /// the training tenant — RLS admits exactly that tenant's rows.
+    async fn load_training_data(&self, tenant_id: Uuid, model_name: &str) -> Result<Vec<f64>> {
         match &self.pool {
             Some(pool) => {
+                let mut tx = TenantTx::begin(pool, tenant_id).await.map_err(|e| {
+                    WorkerError::Processing(format!(
+                        "Failed to begin training-data tx: {e}"
+                    ))
+                })?;
                 let data = match model_name {
                     "quality_defect_prediction" => {
                         // Scrap ratio per completed production order: a real
@@ -471,7 +591,7 @@ impl MlWorker {
                              WHERE status = 'completed' AND quantity_planned > 0 \
                              ORDER BY created_at DESC LIMIT 10000",
                         )
-                        .fetch_all(pool.as_ref())
+                        .fetch_all(&mut **tx.tx())
                         .await
                         .map_err(|e| {
                             WorkerError::Processing(format!(
@@ -482,7 +602,8 @@ impl MlWorker {
                     }
                     "demand_forecasting" => {
                         // Order quantities from the real so_line_items table
-                        // (sales_orders has no line_items JSONB column).
+                        // (sales_orders has no line_items JSONB column). RLS
+                        // admits both tables for THIS tenant only.
                         let rows = sqlx::query_scalar::<_, f64>(
                             "SELECT COALESCE(li.quantity, 0.0) \
                              FROM so_line_items li \
@@ -490,7 +611,7 @@ impl MlWorker {
                              WHERE so.tenant_id IS NOT NULL \
                              ORDER BY so.created_at DESC LIMIT 10000",
                         )
-                        .fetch_all(pool.as_ref())
+                        .fetch_all(&mut **tx.tx())
                         .await
                         .map_err(|e| {
                             WorkerError::Processing(format!(
@@ -513,7 +634,7 @@ impl MlWorker {
                              ) pm ON TRUE \
                              ORDER BY e.created_at DESC LIMIT 10000",
                         )
-                        .fetch_all(pool.as_ref())
+                        .fetch_all(&mut **tx.tx())
                         .await
                         .map_err(|e| {
                             WorkerError::Processing(format!(
@@ -530,10 +651,14 @@ impl MlWorker {
                         Vec::new()
                     }
                 };
+                tx.commit().await.map_err(|e| {
+                    WorkerError::Processing(format!("Failed to commit training-data tx: {e}"))
+                })?;
 
                 if data.is_empty() {
                     warn!(
                         model = %model_name,
+                        tenant_id = %tenant_id,
                         "No training data returned from database — using calibration data"
                     );
                 }
@@ -657,22 +782,29 @@ impl MlWorker {
         psi
     }
 
-    /// Run model training for a specific model.
+    /// Run model training for a specific model OF ONE TENANT.
     ///
     /// Loads training data (from DB or calibration), computes statistical
     /// parameters (mean, std_dev, control limits), and stores the results
-    /// in the model registry.
-    async fn train_model(&self, model_name: &str) -> Result<ModelStatus> {
+    /// in the model registry — every read and registry write is
+    /// tenant-scoped (see [`ModelRegistry`]).
+    async fn train_model(&self, tenant_id: Uuid, model_name: &str) -> Result<ModelStatus> {
         let start = std::time::Instant::now();
-        info!(model = %model_name, "Starting model training");
+        info!(model = %model_name, tenant_id = %tenant_id, "Starting model training");
+
+        // Per-tenant state must be present before status updates persist
+        // (first run seeds the registry rows inside a TenantTx).
+        if self.pool.is_some() {
+            self.registry.load_tenant(tenant_id).await?;
+        }
 
         self.registry
-            .update_status(model_name, ModelStatus::Training { progress: 0.0 })
+            .update_status(tenant_id, model_name, ModelStatus::Training { progress: 0.0 })
             .await;
 
         // Step 1: Load training data.
         self.registry
-            .update_status(model_name, ModelStatus::Training { progress: 0.2 })
+            .update_status(tenant_id, model_name, ModelStatus::Training { progress: 0.2 })
             .await;
 
         // Long-running training must renew the idempotency lease so a
@@ -680,7 +812,7 @@ impl MlWorker {
         if let Some(task_id) = self.current_task_id.read().await.clone() {
             let _ = self.idempotency.renew_lease(&task_id).await;
         }
-        let mut data = self.load_training_data(model_name).await?;
+        let mut data = self.load_training_data(tenant_id, model_name).await?;
 
         // Fall back to calibration data if no real data available.
         if data.is_empty() {
@@ -688,7 +820,7 @@ impl MlWorker {
         }
 
         self.registry
-            .update_status(model_name, ModelStatus::Training { progress: 0.5 })
+            .update_status(tenant_id, model_name, ModelStatus::Training { progress: 0.5 })
             .await;
 
         // Step 2: Compute statistical model parameters.
@@ -703,7 +835,7 @@ impl MlWorker {
         let parameters = ModelParameters::from_data(&data, spec_lsl, spec_usl);
 
         self.registry
-            .update_status(model_name, ModelStatus::Training { progress: 0.75 })
+            .update_status(tenant_id, model_name, ModelStatus::Training { progress: 0.75 })
             .await;
 
         // Step 3: Build baseline histogram for future drift detection.
@@ -711,7 +843,7 @@ impl MlWorker {
 
         // Step 4: Store parameters and baseline.
         self.registry
-            .update_parameters(model_name, parameters.clone(), baseline)
+            .update_parameters(tenant_id, model_name, parameters.clone(), baseline)
             .await;
 
         let duration = start.elapsed().as_secs_f64();
@@ -734,11 +866,12 @@ impl MlWorker {
         };
 
         self.registry
-            .update_status(model_name, status.clone())
+            .update_status(tenant_id, model_name, status.clone())
             .await;
 
         info!(
             model = %model_name,
+            tenant_id = %tenant_id,
             mean = %parameters.mean,
             std_dev = %parameters.std_dev,
             ucl = %parameters.ucl,
@@ -751,19 +884,24 @@ impl MlWorker {
         Ok(status)
     }
 
-    /// Check for model drift using the Population Stability Index.
+    /// Check ONE tenant's model for drift using the Population Stability
+    /// Index.
     ///
     /// Compares the current data distribution against the stored baseline.
     /// If PSI exceeds the threshold (0.25), drift is flagged.
-    async fn check_drift(&self, model_name: &str) -> Result<ModelStatus> {
-        info!(model = %model_name, "Checking for model drift");
+    async fn check_drift(&self, tenant_id: Uuid, model_name: &str) -> Result<ModelStatus> {
+        info!(model = %model_name, tenant_id = %tenant_id, "Checking for model drift");
 
-        let model = self.registry.get_model(model_name).await;
+        if self.pool.is_some() {
+            self.registry.load_tenant(tenant_id).await?;
+        }
+        let model = self.registry.get_model(tenant_id, model_name).await;
         let baseline = match model.and_then(|m| m.baseline_histogram) {
             Some(b) => b,
             None => {
                 warn!(
                     model = %model_name,
+                    tenant_id = %tenant_id,
                     "No baseline histogram — model has not been trained yet, skipping drift check"
                 );
                 return Ok(ModelStatus::Healthy);
@@ -771,7 +909,7 @@ impl MlWorker {
         };
 
         // Load current data.
-        let mut current_data = self.load_training_data(model_name).await?;
+        let mut current_data = self.load_training_data(tenant_id, model_name).await?;
         if current_data.is_empty() {
             current_data = Self::calibration_data(model_name);
         }
@@ -785,6 +923,7 @@ impl MlWorker {
         let status = if psi >= 0.25 {
             warn!(
                 model = %model_name,
+                tenant_id = %tenant_id,
                 psi = %psi,
                 "Significant drift detected (PSI >= 0.25) — retraining recommended"
             );
@@ -795,6 +934,7 @@ impl MlWorker {
         } else if psi >= 0.10 {
             info!(
                 model = %model_name,
+                tenant_id = %tenant_id,
                 psi = %psi,
                 "Moderate drift detected (PSI >= 0.10) — monitoring"
             );
@@ -803,6 +943,7 @@ impl MlWorker {
         } else {
             info!(
                 model = %model_name,
+                tenant_id = %tenant_id,
                 psi = %psi,
                 "No significant drift detected — model is healthy"
             );
@@ -810,32 +951,35 @@ impl MlWorker {
         };
 
         self.registry
-            .update_status(model_name, status.clone())
+            .update_status(tenant_id, model_name, status.clone())
             .await;
 
         Ok(status)
     }
 
-    /// Force retrain regardless of drift status.
-    async fn force_retrain(&self, model_name: &str) -> Result<ModelStatus> {
-        info!(model = %model_name, "Force retrain triggered");
-        self.train_model(model_name).await
+    /// Force retrain regardless of drift status (ONE tenant's model).
+    async fn force_retrain(&self, tenant_id: Uuid, model_name: &str) -> Result<ModelStatus> {
+        info!(model = %model_name, tenant_id = %tenant_id, "Force retrain triggered");
+        self.train_model(tenant_id, model_name).await
     }
 
-    /// Retrain all registered models.
-    async fn retrain_all(&self) -> Result<Vec<(String, ModelStatus)>> {
-        info!("Starting scheduled retrain of all models");
+    /// Retrain all registered models of ONE tenant.
+    async fn retrain_all(&self, tenant_id: Uuid) -> Result<Vec<(String, ModelStatus)>> {
+        info!(tenant_id = %tenant_id, "Starting scheduled retrain of all models");
 
-        let model_names = self.registry.model_names().await;
+        if self.pool.is_some() {
+            self.registry.load_tenant(tenant_id).await?;
+        }
+        let model_names = self.registry.model_names(tenant_id).await;
         let mut results = Vec::new();
 
         for name in &model_names {
-            match self.train_model(name).await {
+            match self.train_model(tenant_id, name).await {
                 Ok(status) => {
                     results.push((name.clone(), status));
                 }
                 Err(e) => {
-                    error!(model = %name, error = %e, "Retrain-all failed for model");
+                    error!(model = %name, tenant_id = %tenant_id, error = %e, "Retrain-all failed for model");
                     results.push((
                         name.clone(),
                         ModelStatus::Failed {
@@ -846,8 +990,29 @@ impl MlWorker {
             }
         }
 
-        info!(trained = results.len(), "Scheduled retrain-all completed");
+        info!(tenant_id = %tenant_id, trained = results.len(), "Scheduled retrain-all completed");
         Ok(results)
+    }
+
+    /// The tenants a tenant-less task must train/check: the payload's
+    /// explicit tenant when given, else every ACTIVE tenant from the
+    /// RLS-free `tenants` table (DB mode), else the in-memory dev
+    /// fallback (one pass under the nil tenant).
+    async fn target_tenants(&self, payload: &MlTaskPayload) -> Vec<Uuid> {
+        if let Some(raw) = &payload.tenant_id {
+            if let Ok(tenant) = Uuid::parse_str(raw) {
+                return vec![tenant];
+            }
+        }
+        match &self.pool {
+            Some(pool) => sqlx::query_scalar(
+                "SELECT id FROM tenants WHERE is_active = TRUE ORDER BY id",
+            )
+            .fetch_all(pool.as_ref())
+            .await
+            .unwrap_or_default(),
+            None => vec![Uuid::nil()],
+        }
     }
 }
 
@@ -884,66 +1049,99 @@ impl TaskConsumer for MlWorker {
             .as_deref()
             .unwrap_or("quality_defect_prediction");
 
-        match metadata.task_type {
-            crate::task::TaskType::RunModelTraining => {
-                let status = self.train_model(model_name).await?;
-                info!(
-                    task_id = %metadata.task_id,
-                    model = %model_name,
-                    status = ?status,
-                    "Model training task completed"
-                );
-                Ok(TaskOutcome::Completed)
-            }
-            crate::task::TaskType::CheckDriftAndRetrain => {
-                let drift_status = self.check_drift(model_name).await?;
-
-                if matches!(drift_status, ModelStatus::DriftDetected { .. }) {
-                    info!(
-                        task_id = %metadata.task_id,
-                        model = %model_name,
-                        "Drift detected — triggering retrain"
-                    );
-                    let trained = self.train_model(model_name).await?;
-                    info!(
-                        task_id = %metadata.task_id,
-                        model = %model_name,
-                        status = ?trained,
-                        "Retrain after drift completed"
-                    );
-                }
-
-                info!(
-                    task_id = %metadata.task_id,
-                    model = %model_name,
-                    "Drift check completed"
-                );
-                Ok(TaskOutcome::Completed)
-            }
-            crate::task::TaskType::ForceModelRetrain => {
-                let status = self.force_retrain(model_name).await?;
-                info!(
-                    task_id = %metadata.task_id,
-                    model = %model_name,
-                    status = ?status,
-                    "Force retrain completed"
-                );
-                Ok(TaskOutcome::Completed)
-            }
-            crate::task::TaskType::ScheduledRetrainAll => {
-                let results = self.retrain_all().await?;
-                info!(
-                    task_id = %metadata.task_id,
-                    model_count = results.len(),
-                    "Scheduled retrain-all completed"
-                );
-                Ok(TaskOutcome::Completed)
-            }
-            _ => Err(WorkerError::Processing(format!(
-                "Unsupported task type for MlWorker: {:?}",
-                metadata.task_type
-            ))),
+        // Wave C RLS (thirtieth-audit item 18): every training-data source
+        // and the model_registry are tenant-owned fail-closed FORCE RLS, so
+        // the task runs per tenant — the payload's explicit tenant_id when
+        // given, otherwise every active tenant (scheduler tasks carry no
+        // tenant and previously read a raw pool that now sees zero rows).
+        let tenants = self.target_tenants(&ml_payload).await;
+        if tenants.is_empty() {
+            warn!(
+                task_id = %metadata.task_id,
+                "No active tenants to run the ML task against"
+            );
+            return Ok(TaskOutcome::Completed);
         }
+
+        for tenant_id in &tenants {
+            let outcome = match metadata.task_type {
+                crate::task::TaskType::RunModelTraining => {
+                    let status = self.train_model(*tenant_id, model_name).await?;
+                    info!(
+                        task_id = %metadata.task_id,
+                        tenant_id = %tenant_id,
+                        model = %model_name,
+                        status = ?status,
+                        "Model training task completed"
+                    );
+                    Ok(TaskOutcome::Completed)
+                }
+                crate::task::TaskType::CheckDriftAndRetrain => {
+                    let drift_status = self.check_drift(*tenant_id, model_name).await?;
+
+                    if matches!(drift_status, ModelStatus::DriftDetected { .. }) {
+                        info!(
+                            task_id = %metadata.task_id,
+                            tenant_id = %tenant_id,
+                            model = %model_name,
+                            "Drift detected — triggering retrain"
+                        );
+                        let trained = self.train_model(*tenant_id, model_name).await?;
+                        info!(
+                            task_id = %metadata.task_id,
+                            tenant_id = %tenant_id,
+                            model = %model_name,
+                            status = ?trained,
+                            "Retrain after drift completed"
+                        );
+                    }
+
+                    info!(
+                        task_id = %metadata.task_id,
+                        tenant_id = %tenant_id,
+                        model = %model_name,
+                        "Drift check completed"
+                    );
+                    Ok(TaskOutcome::Completed)
+                }
+                crate::task::TaskType::ForceModelRetrain => {
+                    let status = self.force_retrain(*tenant_id, model_name).await?;
+                    info!(
+                        task_id = %metadata.task_id,
+                        tenant_id = %tenant_id,
+                        model = %model_name,
+                        status = ?status,
+                        "Force retrain completed"
+                    );
+                    Ok(TaskOutcome::Completed)
+                }
+                crate::task::TaskType::ScheduledRetrainAll => {
+                    let results = self.retrain_all(*tenant_id).await?;
+                    info!(
+                        task_id = %metadata.task_id,
+                        tenant_id = %tenant_id,
+                        model_count = results.len(),
+                        "Scheduled retrain-all completed"
+                    );
+                    Ok(TaskOutcome::Completed)
+                }
+                _ => Err(WorkerError::Processing(format!(
+                    "Unsupported task type for MlWorker: {:?}",
+                    metadata.task_type
+                ))),
+            };
+            outcome?;
+        }
+
+        self.idempotency
+            .mark_completed(&task_id_str)
+            .await
+            .map_err(|e| {
+                WorkerError::RetryLater(format!(
+                    "Failed to record idempotency completion for ml task: {e}"
+                ))
+            })?;
+        Ok(TaskOutcome::Completed)
     }
 }
 

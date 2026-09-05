@@ -414,7 +414,8 @@ pub async fn record_qualification(
             // Twentieth audit P1: the CURRENT state is read from the
             // SCOPED projection — a Trainer on Shift A never blocks
             // recording Independent on Shift B. The global
-            // skill_qualifications row is only the legacy fallback.
+            // skill_qualifications row is consulted only when the scope
+            // has NO projection row (the continuation anchor below).
             let scoped_current: Option<String> = sqlx::query_scalar(
                 "SELECT cp.level FROM competency_projection cp \
                  WHERE cp.tenant_id = $1 AND cp.principal_id = $2 AND cp.skill_id = $3 \
@@ -435,12 +436,66 @@ pub async fn record_qualification(
             })?;
             // Twentieth audit P1: the transition state is the SCOPED
             // projection ONLY — the global skill_qualifications row never
-            // controls scoped transitions (a Trainer on Shift A cannot
-            // block an Independent demonstration on Shift B; a fresh
-            // scope starts at Unexposed and must earn its own state).
+            // governs a scope that already has its own projection row,
+            // and it anchors an EMPTY scope only for ladder-continuation
+            // demonstrations (same level again, or one adjacent step up —
+            // the eighteenth/nineteenth-audit cross-scope contract
+            // below). A Trainer on Shift A can never block an Independent
+            // demonstration on Shift B: recording BELOW the global level
+            // on a fresh scope is that scope's own state machine starting
+            // at Unexposed (documented prior competence can justify the
+            // level there), never a demotion of the Shift-A scope.
             let current: SkillLevel = match scoped_current {
                 Some(level) => SkillLevel::from_stored(&level),
-                None => SkillLevel::Unexposed,
+                // A demonstration scope WITHOUT a projection row yet: for
+                // a principal who already holds a qualification, the
+                // GLOBAL skill_qualifications row (module doc: it keeps
+                // the single current level for backward compatibility)
+                // anchors the scope ONLY when the demonstration CONTINUES
+                // that ladder — a same-level re-demonstration on Shift B
+                // appends its own evidence + projection row (never
+                // discarded, nineteenth audit P1), and an adjacent
+                // promotion records on the new scope too (eighteenth
+                // audit P1-9: the qualification history preserves both
+                // shift anchors). Treating those as Unexposed would
+                // reject them as "impossible jumps" and reset a
+                // qualified principal to the bottom of the ladder on
+                // every new shift.
+                //
+                // A record BELOW the global level is NOT ladder
+                // continuation: the fresh scope starts at Unexposed and
+                // must earn its own state (twentieth audit P1), so the
+                // Shift-A Trainer neither blocks nor demotes the Shift-B
+                // demonstration — a RecognitionOfPriorCompetence document
+                // justifies Independent/Trainer there.
+                None => {
+                    let global_level: Option<String> = sqlx::query_scalar(
+                        "SELECT level FROM skill_qualifications \
+                         WHERE tenant_id = $1 AND principal_id = $2 AND skill_id = $3",
+                    )
+                    .bind(tenant_id)
+                    .bind(principal_id)
+                    .bind(skill_id)
+                    .fetch_optional(&mut **tx)
+                    .await
+                    .map_err(|e| {
+                        SenseiError::Database(format!(
+                            "Failed to read global qualification level: {e}"
+                        ))
+                    })?
+                    .flatten();
+                    match global_level {
+                        Some(global_str) => {
+                            let global = SkillLevel::from_stored(&global_str);
+                            if level == global || allowed_transition(global, level) {
+                                global
+                            } else {
+                                SkillLevel::Unexposed
+                            }
+                        }
+                        None => SkillLevel::Unexposed,
+                    }
+                }
             };
 
             // The demonstration SHIFT context (eighteenth audit P1-9): the
@@ -1499,6 +1554,196 @@ mod tests {
         assert_eq!(
             a.bus_factor, 1,
             "shift-A coverage must see the principal demonstrated on shift A"
+        );
+    }
+
+    /// Twentieth audit P1: scoped transitions are INDEPENDENT ladders. A
+    /// Trainer on Shift A never blocks an Independent demonstration on
+    /// Shift B — the fresh scope has no projection row and the record is
+    /// BELOW the global level, so the global Trainer must NOT anchor it
+    /// (that would read as a DemotionWithoutRevocation). The scope starts
+    /// at Unexposed and the documented RecognitionOfPriorCompetence
+    /// justifies the level there; evidence + projection rows are still
+    /// appended per scope.
+    #[tokio::test]
+    async fn fresh_scope_below_global_level_starts_its_own_ladder() {
+        let Some(pool) = connect().await else { return };
+        drop_all_tables(&pool).await;
+        sensei_db::migrations::run_migrations(&pool)
+            .await
+            .expect("the ENTIRE migration chain must apply to an empty database");
+
+        let tenant_id = Uuid::new_v4();
+        let principal_id = Uuid::new_v4();
+        let assessor_id = Uuid::new_v4();
+        let site_id = Uuid::new_v4();
+        let shift_a = Uuid::new_v4();
+        let shift_b = Uuid::new_v4();
+
+        with_tenant_tx(&pool, tenant_id, move |tx| {
+            Box::pin(async move {
+                sqlx::query(
+                    "INSERT INTO tenants (id, name, slug) VALUES ($1, 'p1-down', 'p1-down')",
+                )
+                .bind(tenant_id)
+                .execute(&mut **tx)
+                .await
+                .expect("tenant insert");
+                sqlx::query(
+                    "INSERT INTO users (id, tenant_id, email, name, password_hash) \
+                     VALUES ($1, $2, 'p4@x.local', 'P', 'x'), ($3, $2, 'a4@x.local', 'A', 'x')",
+                )
+                .bind(principal_id)
+                .bind(tenant_id)
+                .bind(assessor_id)
+                .execute(&mut **tx)
+                .await
+                .expect("users insert");
+                sqlx::query(
+                    "INSERT INTO sites (id, tenant_id, site_code, name) \
+                     VALUES ($1, $2, 'S', 'Site')",
+                )
+                .bind(site_id)
+                .bind(tenant_id)
+                .execute(&mut **tx)
+                .await
+                .expect("site insert");
+                sqlx::query(
+                    "INSERT INTO shifts (id, tenant_id, site_id, name, start_time, end_time) \
+                     VALUES ($1, $2, $3, 'A', '08:00', '16:00'), \
+                            ($4, $2, $3, 'B', '16:00', '00:00')",
+                )
+                .bind(shift_a)
+                .bind(tenant_id)
+                .bind(site_id)
+                .bind(shift_b)
+                .execute(&mut **tx)
+                .await
+                .expect("shifts insert");
+                Ok(())
+            })
+        })
+        .await
+        .expect("setup tx");
+
+        let skill_uuid = create_skill(&pool, tenant_id, "aoi4", "AOI 4", None, None, false)
+            .await
+            .expect("create skill");
+
+        // Shift A: TRAINER via documented prior competence. The global
+        // skill_qualifications row now holds Trainer.
+        record_qualification(
+            &pool,
+            tenant_id,
+            principal_id,
+            skill_uuid,
+            SkillLevel::Trainer,
+            evidence(assessor_id),
+            Some(serde_json::json!({
+                "justification": "10 years AOI training experience",
+                "assessor_id": assessor_id.to_string(),
+                "standard_revision": "AOI-OP-01/r1",
+                "observed_cycles": 3,
+            })),
+            Some(shift_a),
+        )
+        .await
+        .expect("trainer qualification on shift A");
+
+        // Shift B: INDEPENDENT — BELOW the global Trainer — with its own
+        // documented competence for THIS scope. The fresh scope must NOT
+        // inherit Trainer (a demotion read); it starts at Unexposed and
+        // the prior-competence document justifies the level.
+        record_qualification(
+            &pool,
+            tenant_id,
+            principal_id,
+            skill_uuid,
+            SkillLevel::Independent,
+            evidence(assessor_id),
+            Some(serde_json::json!({
+                "justification": "qualified on the shift-B program",
+                "assessor_id": assessor_id.to_string(),
+                "standard_revision": "AOI-OP-01/r1",
+                "observed_cycles": 3,
+            })),
+            Some(shift_b),
+        )
+        .await
+        .expect("independent on shift B is NOT a demotion in scope B");
+
+        // TWO evidence rows (one per shift), TWO projection rows (one per
+        // shift), and the qualification anchor retains the FIRST shift.
+        let (evidence_rows, projection_rows, shift_a_proj, shift_b_proj, anchor): (
+            i64,
+            i64,
+            i64,
+            i64,
+            Option<Uuid>,
+        ) = with_tenant_tx(&pool, tenant_id, move |tx| {
+            Box::pin(async move {
+                let evidence_rows: i64 = sqlx::query_scalar(
+                    "SELECT COUNT(*) FROM skill_qualification_evidence \
+                     WHERE tenant_id = $1 AND principal_id = $2 AND skill_id = $3",
+                )
+                .bind(tenant_id)
+                .bind(principal_id)
+                .bind(skill_uuid)
+                .fetch_one(&mut **tx)
+                .await
+                .map_err(|e| SenseiError::Database(format!("Evidence read failed: {e}")))?;
+                let (projection_rows, shift_a_proj, shift_b_proj): (i64, i64, i64) =
+                    sqlx::query_as(
+                        "SELECT COUNT(*), \
+                                COUNT(*) FILTER (WHERE shift_id = $1), \
+                                COUNT(*) FILTER (WHERE shift_id = $2) \
+                         FROM competency_projection \
+                         WHERE tenant_id = $3 AND principal_id = $4 AND skill_id = $5",
+                    )
+                    .bind(shift_a)
+                    .bind(shift_b)
+                    .bind(tenant_id)
+                    .bind(principal_id)
+                    .bind(skill_uuid)
+                    .fetch_one(&mut **tx)
+                    .await
+                    .map_err(|e| SenseiError::Database(format!("Projection read failed: {e}")))?;
+                let anchor: Option<Uuid> = sqlx::query_scalar(
+                    "SELECT shift_id FROM skill_qualifications \
+                     WHERE tenant_id = $1 AND principal_id = $2 AND skill_id = $3",
+                )
+                .bind(tenant_id)
+                .bind(principal_id)
+                .bind(skill_uuid)
+                .fetch_one(&mut **tx)
+                .await
+                .map_err(|e| SenseiError::Database(format!("Qualification read failed: {e}")))?;
+                Ok((
+                    evidence_rows,
+                    projection_rows,
+                    shift_a_proj,
+                    shift_b_proj,
+                    anchor,
+                ))
+            })
+        })
+        .await
+        .expect("read evidence + projection");
+
+        assert_eq!(
+            evidence_rows, 2,
+            "the scope-B demonstration must append its own evidence row"
+        );
+        assert_eq!(
+            projection_rows, 2,
+            "one competency_projection row PER demonstrated shift"
+        );
+        assert_eq!(shift_a_proj, 1, "the Shift A projection row exists");
+        assert_eq!(shift_b_proj, 1, "the Shift B projection row exists");
+        assert_eq!(
+            anchor,
+            Some(shift_a),
+            "skill_qualifications.shift_id must retain the FIRST-recorded anchor"
         );
     }
 }

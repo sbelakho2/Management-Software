@@ -49,13 +49,8 @@ jobs:
           toolchain: 1.96.0
           components: clippy, rustfmt
 
-      - name: Install Zig (version from .github/.tool-versions)
-        run: |
-          set -euo pipefail
-          ZIG_VERSION="$(awk '$1=="zig"{print $2}' .github/.tool-versions)"
-          wget -q "https://ziglang.org/download/${ZIG_VERSION}/zig-linux-x86_64-${ZIG_VERSION}.tar.xz"
-          tar xf "zig-linux-x86_64-${ZIG_VERSION}.tar.xz"
-          echo "$PWD/zig-linux-x86_64-${ZIG_VERSION}" >> "$GITHUB_PATH"
+      - name: Install Zig via scripts/install-zig.sh
+        run: bash scripts/install-zig.sh
 
       # Swatinem/rust-cache@v2.9.2
       - uses: Swatinem/rust-cache@63fed3e2fecf6f7b51dc6f043341b79ef82a9ae7
@@ -66,7 +61,9 @@ jobs:
         run: cargo fmt --all -- --check
       - name: Env contract (orchestration variables documented)
         run: bash scripts/validate-env-contract.sh
-        working-directory: sensei-rs
+        working-directory: ${{ github.workspace }}
+      - name: DB capability contract (every PostgreSQL consumer pins .github/.db-capability)
+        run: bash scripts/validate-db-contract.sh
 
       - name: Run clippy
         run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
@@ -79,7 +76,7 @@ jobs:
 
     services:
       postgres:
-        image: pgvector/pgvector:pg16
+        image: pgvector/pgvector:pg16@sha256:ccc6e83d6e35e931dc7c5def2022729d5a6c370318d099181995567ff1fb4d6b
         env:
           POSTGRES_USER: sensei
           POSTGRES_PASSWORD: sensei
@@ -101,13 +98,8 @@ jobs:
         with:
           toolchain: 1.96.0
 
-      - name: Install Zig (version from .github/.tool-versions)
-        run: |
-          set -euo pipefail
-          ZIG_VERSION="$(awk '$1=="zig"{print $2}' .github/.tool-versions)"
-          wget -q "https://ziglang.org/download/${ZIG_VERSION}/zig-linux-x86_64-${ZIG_VERSION}.tar.xz"
-          tar xf "zig-linux-x86_64-${ZIG_VERSION}.tar.xz"
-          echo "$PWD/zig-linux-x86_64-${ZIG_VERSION}" >> "$GITHUB_PATH"
+      - name: Install Zig via scripts/install-zig.sh
+        run: bash scripts/install-zig.sh
 
       # Swatinem/rust-cache@v2.9.2
       - uses: Swatinem/rust-cache@63fed3e2fecf6f7b51dc6f043341b79ef82a9ae7
@@ -141,13 +133,8 @@ jobs:
         with:
           toolchain: 1.96.0
 
-      - name: Install Zig (version from .github/.tool-versions)
-        run: |
-          set -euo pipefail
-          ZIG_VERSION="$(awk '$1=="zig"{print $2}' .github/.tool-versions)"
-          wget -q "https://ziglang.org/download/${ZIG_VERSION}/zig-linux-x86_64-${ZIG_VERSION}.tar.xz"
-          tar xf "zig-linux-x86_64-${ZIG_VERSION}.tar.xz"
-          echo "$PWD/zig-linux-x86_64-${ZIG_VERSION}" >> "$GITHUB_PATH"
+      - name: Install Zig via scripts/install-zig.sh
+        run: bash scripts/install-zig.sh
 
       # Swatinem/rust-cache@v2.9.2
       - uses: Swatinem/rust-cache@63fed3e2fecf6f7b51dc6f043341b79ef82a9ae7
@@ -169,7 +156,7 @@ jobs:
 
     services:
       postgres:
-        image: pgvector/pgvector:pg16
+        image: pgvector/pgvector:pg16@sha256:ccc6e83d6e35e931dc7c5def2022729d5a6c370318d099181995567ff1fb4d6b
         env:
           POSTGRES_USER: sensei
           POSTGRES_PASSWORD: sensei
@@ -191,13 +178,8 @@ jobs:
         with:
           toolchain: 1.96.0
 
-      - name: Install Zig (version from .github/.tool-versions)
-        run: |
-          set -euo pipefail
-          ZIG_VERSION="$(awk '$1=="zig"{print $2}' .github/.tool-versions)"
-          wget -q "https://ziglang.org/download/${ZIG_VERSION}/zig-linux-x86_64-${ZIG_VERSION}.tar.xz"
-          tar xf "zig-linux-x86_64-${ZIG_VERSION}.tar.xz"
-          echo "$PWD/zig-linux-x86_64-${ZIG_VERSION}" >> "$GITHUB_PATH"
+      - name: Install Zig via scripts/install-zig.sh
+        run: bash scripts/install-zig.sh
 
       # Swatinem/rust-cache@v2.9.2
       - uses: Swatinem/rust-cache@63fed3e2fecf6f7b51dc6f043341b79ef82a9ae7
@@ -258,7 +240,7 @@ jobs:
 
     services:
       postgres:
-        image: pgvector/pgvector:pg16
+        image: pgvector/pgvector:pg16@sha256:ccc6e83d6e35e931dc7c5def2022729d5a6c370318d099181995567ff1fb4d6b
         env:
           POSTGRES_USER: sensei
           POSTGRES_PASSWORD: sensei
@@ -280,13 +262,8 @@ jobs:
         with:
           toolchain: 1.96.0
 
-      - name: Install Zig (version from .github/.tool-versions)
-        run: |
-          set -euo pipefail
-          ZIG_VERSION="$(awk '$1=="zig"{print $2}' .github/.tool-versions)"
-          wget -q "https://ziglang.org/download/${ZIG_VERSION}/zig-linux-x86_64-${ZIG_VERSION}.tar.xz"
-          tar xf "zig-linux-x86_64-${ZIG_VERSION}.tar.xz"
-          echo "$PWD/zig-linux-x86_64-${ZIG_VERSION}" >> "$GITHUB_PATH"
+      - name: Install Zig via scripts/install-zig.sh
+        run: bash scripts/install-zig.sh
 
       # Swatinem/rust-cache@v2.9.2
       - uses: Swatinem/rust-cache@63fed3e2fecf6f7b51dc6f043341b79ef82a9ae7

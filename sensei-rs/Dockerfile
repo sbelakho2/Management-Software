@@ -27,11 +27,18 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Install the pinned Zig toolchain (required by sensei-zt's build script).
-ENV ZIG_VERSION=0.15.2
-RUN curl -fsSL -o /tmp/zig.tar.xz \
-      "https://ziglang.org/download/${ZIG_VERSION}/zig-linux-x86_64-${ZIG_VERSION}.tar.xz" \
+# Version + archive checksum mirror .github/.tool-versions and
+# scripts/install-zig.sh (thirtieth-audit item 27): this Docker build context
+# is sensei-rs/, so it cannot COPY either file — the pins are duplicated here
+# ON PURPOSE and must stay in sync with the manifest. The archive name is the
+# 0.15.x naming (zig-x86_64-linux-*, NOT the obsolete zig-linux-x86_64-*).
+ARG ZIG_VERSION=0.15.2
+ARG ZIG_SHA256=02aa270f183da276e5b5920b1dac44a63f1a49e55050ebde3aecc9eb82f93239
+RUN curl -fL --retry 3 -o /tmp/zig.tar.xz \
+      "https://ziglang.org/download/${ZIG_VERSION}/zig-x86_64-linux-${ZIG_VERSION}.tar.xz" \
+    && echo "${ZIG_SHA256}  /tmp/zig.tar.xz" | sha256sum -c - \
     && tar -xJf /tmp/zig.tar.xz -C /opt \
-    && mv "/opt/zig-linux-x86_64-${ZIG_VERSION}" /opt/zig \
+    && mv "/opt/zig-x86_64-linux-${ZIG_VERSION}" /opt/zig \
     && ln -s /opt/zig/zig /usr/local/bin/zig \
     && rm /tmp/zig.tar.xz \
     && zig version
@@ -79,8 +86,13 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
 # removed; the API serves this output from /app/static.
 FROM rust:1.96.0-slim-bookworm AS frontend-builder
 
+# Trunk version pin mirrors .github/.tool-versions (`trunk 0.21.14`) and
+# e2e-playwright.yml (thirtieth-audit item 27): the Docker context is
+# sensei-rs/, so the version is duplicated here ON PURPOSE.
+ARG TRUNK_VERSION=0.21.14
+
 RUN rustup target add wasm32-unknown-unknown \
-    && cargo install --locked trunk
+    && cargo install trunk --version "$TRUNK_VERSION" --locked
 
 WORKDIR /app
 COPY Cargo.toml Cargo.lock ./
@@ -104,14 +116,23 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
 FROM debian:bookworm-slim
 
 # CA certificates for TLS (reqwest, lettre) + curl for the healthcheck.
+# postgresql-client (psql): the Kubernetes db-bootstrap/db-grants Jobs run
+# the canonical role script from THIS image (thirtieth-audit item 26 — the
+# script is shipped in the image so the Jobs never mount repo files).
 RUN apt-get update && apt-get install -y \
     ca-certificates \
     curl \
+    postgresql-client \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy the release binaries from the builder stage.
 COPY --from=builder /app/target/release/sensei-api /usr/local/bin/sensei-api
 COPY --from=builder /app/target/release/sensei-workers /usr/local/bin/sensei-workers
+
+# The canonical DB role/grants script (ONE file consumed by Compose, CI, the
+# Docker image and the Kubernetes bootstrap/grant Jobs — see
+# sensei-rs/scripts/db/01-app-role.sh).
+COPY scripts/db/01-app-role.sh /opt/sensei/db/01-app-role.sh
 
 # Static frontend served by the API at /app/static (STATIC_DIR env).
 COPY --from=frontend-builder /frontend-dist /app/static

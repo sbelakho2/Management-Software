@@ -1,1 +1,6 @@
 zig/.zig-cache/
+
+# User-upload storage trees are runtime state, never tracked source
+# (thirtieth-audit item 30). Attachment tests inject per-test storage
+# roots, so nothing here should be recreated by test runs.
+**/data/uploads/

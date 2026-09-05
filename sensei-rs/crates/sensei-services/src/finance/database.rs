@@ -5,6 +5,7 @@
 
 use async_trait::async_trait;
 use chrono::Utc;
+use sensei_core::db::TenantTx;
 use sensei_core::error::{Result, SenseiError};
 use sensei_core::pagination::PaginatedResponse;
 use serde_json;
@@ -1299,13 +1300,24 @@ impl FinanceService for DatabaseFinanceService {
         use super::{ThreeWayLineResult, ThreeWayLineStatus, ThreeWayVerdict};
         use std::collections::HashMap;
 
+        // ONE tenant-scoped transaction (thirtieth-audit item 18): the PO,
+        // receipt, line and invoice reads all target fail-closed FORCE-RLS
+        // tables — migration 175 normalized the last compatibility
+        // policies (purchase_orders was fail-open on pooled sessions with
+        // an empty app.tenant_id) onto the universal no-context = no-rows
+        // policy, so every read below must run with SET LOCAL
+        // app.tenant_id = the caller's tenant.
+        let mut db = TenantTx::begin(&self.pool, tenant_id)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to begin 3-way match: {e}")))?;
+
         // 1. PO must exist.
         let po_exists: bool = sqlx::query_scalar(
             "SELECT EXISTS(SELECT 1 FROM purchase_orders WHERE id = $1 AND tenant_id = $2)",
         )
         .bind(po_id)
         .bind(tenant_id)
-        .fetch_one(&self.pool)
+        .fetch_one(&mut **db.tx())
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to look up PO: {e}")))?;
         if !po_exists {
@@ -1322,7 +1334,7 @@ impl FinanceService for DatabaseFinanceService {
         .bind(tenant_id)
         .bind(po_id)
         .bind(&receipt_ids)
-        .fetch_one(&self.pool)
+        .fetch_one(&mut **db.tx())
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to validate receipts: {e}")))?;
         if matched_receipts != receipt_ids.len() as i64 {
@@ -1344,7 +1356,7 @@ impl FinanceService for DatabaseFinanceService {
         )
         .bind(po_id)
         .bind(tenant_id)
-        .fetch_all(&self.pool)
+        .fetch_all(&mut **db.tx())
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to load PO lines: {e}")))?;
 
@@ -1357,8 +1369,25 @@ impl FinanceService for DatabaseFinanceService {
             *received_qty.entry(line.product_id).or_default() += line.quantity_received;
         }
 
-        // 4. Invoice lines grouped by product.
-        let invoice = self.get_invoice(tenant_id, invoice_id).await?;
+        // 4. Invoice lines grouped by product — read on the SAME
+        // transaction (the service-level get_invoice opens its own raw
+        // read, which the fail-closed policy would hide).
+        let row: Option<InvoiceRow> = sqlx::query_as(
+            r#"
+            SELECT id, tenant_id, invoice_number, customer_id, customer_name,
+                   status, line_items, subtotal, tax_percentage, tax_amount,
+                   total_amount, currency, due_date, paid_at, notes, created_by, created_at
+            FROM invoices WHERE id = $1 AND tenant_id = $2
+            "#,
+        )
+        .bind(invoice_id)
+        .bind(tenant_id)
+        .fetch_optional(&mut **db.tx())
+        .await
+        .map_err(|e| SenseiError::Database(format!("Failed to get invoice: {e}")))?;
+        let invoice = invoice_row_to_domain(row.ok_or_else(|| {
+            SenseiError::NotFound(format!("Invoice {invoice_id} not found"))
+        })?)?;
         let mut invoiced_qty: HashMap<Uuid, f64> = HashMap::new();
         let mut unmatched_lines = 0usize;
         for line in &invoice.line_items {
@@ -1418,6 +1447,9 @@ impl FinanceService for DatabaseFinanceService {
             ThreeWayVerdict::Matched
         };
 
+        db.commit()
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to commit 3-way match: {e}")))?;
         Ok(super::ThreeWayMatchResult {
             po_id,
             invoice_id,

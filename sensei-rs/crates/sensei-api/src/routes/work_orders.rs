@@ -34,17 +34,27 @@ pub struct ListWorkOrdersParams {
 }
 
 /// Request body for updating a work order (partial update).
+///
+/// `work_center_id` is deliberately ABSENT (thirtieth audit P0 item 3):
+/// the work-center assignment is immutable through the generic edit and
+/// changes only through the explicit reassign endpoint, which authorizes
+/// both the source order and the destination work center.
 #[derive(Debug, Deserialize)]
 pub struct UpdateWorkOrderRequest {
     pub product_id: Option<Uuid>,
     pub product_name: Option<String>,
     pub quantity: Option<i64>,
     pub priority: Option<String>,
-    pub work_center_id: Option<Uuid>,
     pub scheduled_start: Option<String>,
     pub scheduled_end: Option<String>,
     pub assigned_to: Option<Uuid>,
     pub notes: Option<String>,
+}
+
+/// Request body for the explicit dual-authorized work-order reassignment.
+#[derive(Debug, Deserialize)]
+pub struct ReassignWorkOrderRequest {
+    pub work_center_id: Uuid,
 }
 
 /// Request body for updating work order status.
@@ -239,9 +249,6 @@ pub async fn update_work_order(
     if let Some(priority) = req.priority {
         updated.priority = priority;
     }
-    if let Some(work_center_id) = req.work_center_id {
-        updated.work_center_id = Some(work_center_id);
-    }
     if let Some(assigned_to) = req.assigned_to {
         updated.assigned_to = vec![assigned_to];
     }
@@ -275,6 +282,28 @@ pub async fn update_work_order(
     let order = state
         .production_service
         .update_work_order(&ctx, id, updated)
+        .await?;
+    Ok(Json(order))
+}
+
+/// Reassign a work order to another work center.
+///
+/// Explicit dual-authorized command (thirtieth audit P0 item 3): the
+/// service proves the source order AND the destination work center are
+/// both inside the caller's authorized scope in one statement — an
+/// out-of-scope source or destination is NotFound, never a cross-site
+/// move.
+pub async fn reassign_work_order(
+    user: AuthenticatedUser,
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+    Json(req): Json<ReassignWorkOrderRequest>,
+) -> Result<Json<WorkOrder>> {
+    user.require_permission("production:work-order:update")?;
+    let ctx = build_request_context(&user, &state).await?;
+    let order = state
+        .production_service
+        .reassign_work_order(&ctx, id, req.work_center_id)
         .await?;
     Ok(Json(order))
 }
