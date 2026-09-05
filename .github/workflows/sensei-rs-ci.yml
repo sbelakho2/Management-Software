@@ -393,7 +393,7 @@ jobs:
           FIRST_COUNT=""
           for boot in 1 2; do
             echo "── migration boot $boot ──"
-            docker run --rm \
+            docker run --rm --network host \
               -e SENSEI_ENV=development \
               -e DATABASE_URL=postgres://sensei:sensei@localhost:5432/sensei \
               sensei-api:ci /usr/local/bin/sensei-api --migrate-only
