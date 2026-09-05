@@ -396,7 +396,7 @@ jobs:
             docker run --rm \
               -e SENSEI_ENV=development \
               -e DATABASE_URL=postgres://sensei:sensei@localhost:5432/sensei \
-              sensei-api:ci --migrate-only
+              sensei-api:ci /usr/local/bin/sensei-api --migrate-only
             COUNT=$(PGPASSWORD=sensei psql -h localhost -U sensei -d sensei -t -A -c \
               "SELECT count(*) FROM _sqlx_migrations WHERE success = TRUE;" 2>/dev/null || echo "")
             echo "applied migration rows after boot $boot: ${COUNT:-<unreadable>}"
