@@ -39,48 +39,6 @@ PIDS=()
 
 log() { echo "[smoke] $*"; }
 
-# ── Cross-replica generic-store consistency (the audit's core scenario) ──
-# Create a generic EntityStore-backed entity via A, read + update it via B
-# and verify the new value is observable (bounded by the 60s snapshot TTL).
-log "CROSS-REPLICA: generic-store write on A, read on B"
-GEN_ID=$(uuidgen | tr 'A-Z' 'a-z' || cat /proc/sys/kernel/random/uuid)
-CREATE_BODY=$(printf '{"id":"%s","tenant_id":"%s","title":"cross-replica","description":"created on A","status":"open"}' "$GEN_ID" "$ADMIN_TENANT")
-if curl -s -X PUT "$BASE_A/api/v1/kanban/boards/$GEN_ID" \
-    -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
-    -d "{\"id\":\"$GEN_ID\",\"tenant_id\":\"$ADMIN_TENANT\",\"name\":\"CrossReplica\",\"description\":\"x\",\"is_active\":true}" | grep -q '"id"'; then
-  log "  write via A OK"
-else
-  log "  (write via A skipped — endpoint shape differs; continuing)"
-fi
-
-# ── RBAC denials the audit requires ─────────────────────────────────────
-log "RBAC: unprivileged journal post must be forbidden"
-RJ=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE_A/api/v1/finance/journal-entries" \
-    -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
-    -d '{"description":"x","debit_account":"1000","credit_account":"2000","amount":1,"currency":"USD"}')
-log "  journal post status: $RJ (403/401 expected for a non-finance user)"
-
-# ── Idempotency: same key must produce exactly one business effect ──────
-log "IDEMPOTENCY: duplicate key on A and B executes once"
-IDEM_KEY="smoke-$(cat /proc/sys/kernel/random/uuid 2>/dev/null || date +%s)"
-T1=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE_A/api/v1/tasks" \
-    -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
-    -H "Idempotency-Key: $IDEM_KEY" \
-    -d "{\"title\":\"idem-1\",\"tenant_id\":\"$ADMIN_TENANT\",\"status\":\"open\",\"priority\":\"medium\",\"description\":\"\"}")
-T2=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE_A/api/v1/tasks" \
-    -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
-    -H "Idempotency-Key: $IDEM_KEY" \
-    -d "{\"title\":\"idem-1\",\"tenant_id\":\"$ADMIN_TENANT\",\"status\":\"open\",\"priority\":\"medium\",\"description\":\"\"}")
-log "  idempotency statuses: $T1 then $T2 (second must replay/conflict, never 200-new)"
-
-# ── Attachment download URL must resolve ────────────────────────────────
-log "ATTACHMENTS: download endpoint reachable"
-DL_CODE=$(curl -s -o /dev/null -w '%{http_code}' "$BASE_A/api/v1/attachments/00000000-0000-0000-0000-000000000000/download" \
-    -H "Authorization: Bearer $TOKEN")
-log "  download status: $DL_CODE (401/404 expected — endpoint must not 500)"
-
-log "smoke-integration extended checks completed"
-
 fail() { log "FAIL: $*"; cleanup; exit 1; }
 cleanup() {
   for pid in "${PIDS[@]:-}"; do
@@ -251,3 +209,54 @@ done
 [ "$FOUND" = "1" ] || fail "read-after-write via instance B did not observe account $ACCOUNT_ID"
 
 log "PASS: read-after-write consistency verified across two API instances"
+
+# ── Extended probe checks (post-auth: need BASE_A/BASE_B/TOKEN) ─────────
+# Tenant for tenant-keyed probe payloads: resolved from the access-token
+# claims; falls back to a fresh UUID when claims carry no tenant (the
+# probes below only log outcomes and never fail the run).
+ADMIN_TENANT=$(printf '%s' "$TOKEN" | python3 -c 'import sys,base64,json
+t=sys.stdin.read().strip().split(".")[1]
+t+="="*(-len(t)%4)
+try:
+    c=json.loads(base64.urlsafe_b64decode(t))
+    print(c.get("tenant_id") or c.get("tenant") or "")
+except Exception:
+    print("")')
+if [ -z "$ADMIN_TENANT" ]; then
+  ADMIN_TENANT=$(cat /proc/sys/kernel/random/uuid 2>/dev/null || uuidgen | tr 'A-Z' 'a-z')
+fi
+
+log "CROSS-REPLICA: generic-store write on A, read on B"
+GEN_ID=$(cat /proc/sys/kernel/random/uuid 2>/dev/null || uuidgen | tr 'A-Z' 'a-z')
+if curl -s -X PUT "$BASE_A/api/v1/kanban/boards/$GEN_ID" \
+    -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+    -d "{\"id\":\"$GEN_ID\",\"tenant_id\":\"$ADMIN_TENANT\",\"name\":\"CrossReplica\",\"description\":\"x\",\"is_active\":true}" | grep -q '"id"'; then
+  log "  write via A OK"
+else
+  log "  (write via A skipped — endpoint shape differs; continuing)"
+fi
+
+log "RBAC: unprivileged journal post must be forbidden"
+RJ=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE_A/api/v1/finance/journal-entries" \
+    -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+    -d '{"description":"x","debit_account":"1000","credit_account":"2000","amount":1,"currency":"USD"}')
+log "  journal post status: $RJ (403/401 expected for a non-finance user)"
+
+log "IDEMPOTENCY: duplicate key on A and B executes once"
+IDEM_KEY="smoke-$(cat /proc/sys/kernel/random/uuid 2>/dev/null || date +%s)"
+T1=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE_A/api/v1/tasks" \
+    -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+    -H "Idempotency-Key: $IDEM_KEY" \
+    -d "{\"title\":\"idem-1\",\"tenant_id\":\"$ADMIN_TENANT\",\"status\":\"open\",\"priority\":\"medium\",\"description\":\"\"}")
+T2=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE_A/api/v1/tasks" \
+    -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+    -H "Idempotency-Key: $IDEM_KEY" \
+    -d "{\"title\":\"idem-1\",\"tenant_id\":\"$ADMIN_TENANT\",\"status\":\"open\",\"priority\":\"medium\",\"description\":\"\"}")
+log "  idempotency statuses: $T1 then $T2 (second must replay/conflict, never 200-new)"
+
+log "ATTACHMENTS: download endpoint reachable"
+DL_CODE=$(curl -s -o /dev/null -w '%{http_code}' "$BASE_A/api/v1/attachments/00000000-0000-0000-0000-000000000000/download" \
+    -H "Authorization: Bearer $TOKEN")
+log "  download status: $DL_CODE (401/404 expected — endpoint must not 500)"
+
+log "smoke-integration extended checks completed"

@@ -1,0 +1,42 @@
+# cargo-audit accepted-risk register.
+#
+# Every entry below is an advisory WITHOUT a published patched version at the
+# time the lockfile was last resolved (cargo update -p <crate> reports "0
+# packages", i.e. no fixed release exists within the semver range the
+# ecosystem currently publishes). Entries are accepted ONLY under the
+# documented exposure bound and MUST be revisited when an upstream fix lands
+# or when the owning dependency (async-nats, sqlx, rust-s3, printpdf) is
+# upgraded. Do not add entries for fixable advisories — upgrade instead.
+[advisories]
+ignore = [
+    # rustls-webpki 0.102.8 (via async-nats 0.38, the NATS JetStream CLIENT):
+    # CRL/name-constraint parsing defects in the OUTBOUND TLS client
+    # validation of the operator-owned NATS broker only; no untrusted-CA
+    # path exists in the deployment. No patched 0.102.x release exists;
+    # async-nats 0.38 pins the rustls 0.23 / webpki 0.102 line.
+    "RUSTSEC-2026-0104",
+    "RUSTSEC-2026-0098",
+    "RUSTSEC-2026-0099",
+    "RUSTSEC-2026-0049",
+
+    # quick-xml 0.32.0 (via rust-s3 0.35 -> aws-creds): XML parsing for S3
+    # credential/metadata documents that are operator-owned (config files,
+    # IMDS) — never attacker-controlled XML. aws-creds has not released a
+    # patched 0.32.x-compatible version; the fixed lines need a breaking
+    # upgrade of the unmaintained rust-s3 0.35 stack.
+    "RUSTSEC-2026-0195",
+    "RUSTSEC-2026-0194",
+
+    # rsa 0.9.10 (via sqlx-mysql, MySQL caching_sha2_password auth):
+    # Marvin is a timing side-channel against RSA PRIVATE-key operations.
+    # sqlx-mysql only ever RSA-encrypts the client password with the
+    # server's PUBLIC key — no private-key material exists client-side, so
+    # the advisory does not apply. No patched 0.9.x release.
+    "RUSTSEC-2023-0071",
+
+    # lopdf 0.35.0 (via printpdf 0.8, PDF generation in sensei-services):
+    # stack overflow while PARSING deeply nested PDF objects. The service
+    # only GENERATES PDFs from internal templates and never parses
+    # untrusted PDF documents. printpdf/lopdf have no patched release.
+    "RUSTSEC-2026-0187",
+]
