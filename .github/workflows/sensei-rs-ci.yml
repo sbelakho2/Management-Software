@@ -357,7 +357,8 @@ jobs:
         run: |
           set -euo pipefail
           docker run -d --name sensei-boot-test \
-            -p 18080:8080 \
+            -p 18080:3000 \
+            -e API_PORT=3000 \
             -e SENSEI_ENV=development \
             -e DATABASE_URL=postgres://sensei:sensei@localhost:5432/sensei \
             -e NATS_URL=nats://localhost:4222 \
