@@ -242,13 +242,20 @@ jobs:
         run: docker compose config -q
         env:
           # docker compose config interpolates ${VAR} references; these are
-          # the orchestration variables docker-compose.yml declares. Values
-          # are local-stack fixtures only — never production credentials.
+          # the orchestration variables docker-compose.yml declares with
+          # ':?required'. Values are local-stack fixtures only — never
+          # production credentials.
           MINIO_ROOT_PASSWORD: minioadmin
           MINIO_ROOT_USER: minioadmin
+          POSTGRES_PASSWORD: sensei
+          POSTGRES_USER: sensei
+          NATS_TOKEN: ci-validate-only-nats-token
+          JWT_SECRET: ci-validate-only-jwt-secret-0123456789abcdef0123456789abcdef
           SENSEI_APP_PASSWORD: sensei
           SENSEI_MIGRATOR_PASSWORD: sensei
+          SENSEI_ADMIN_EMAIL: admin@starzforge.local
           SENSEI_ADMIN_PASSWORD: ci-validate-only
+          SENSEI_CEO_EMAIL: ceo@starz.com
           SENSEI_CEO_PASSWORD: ci-validate-only
       - name: Validate Caddyfiles
         run: |
