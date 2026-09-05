@@ -71,9 +71,13 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
 COPY zig/ zig/
 
 # Compile the API and worker release binaries (locked to the committed lock).
+# /app/target is a cache MOUNT: its contents never reach the image, so the
+# binaries are copied to /app/out (a real layer path) for the runtime stage.
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/app/target \
-    cargo build --release --locked -p sensei-api -p sensei-workers
+    cargo build --release --locked -p sensei-api -p sensei-workers \
+    && mkdir -p /app/out \
+    && cp /app/target/release/sensei-api /app/target/release/sensei-workers /app/out/
 
 # ── Stage 1b: Build the Leptos frontend with Trunk ──────────────────────────
 # Exactly ONE frontend builder: Trunk compiles the Leptos WASM app and emits
@@ -115,8 +119,8 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy the release binaries from the builder stage.
-COPY --from=builder /app/target/release/sensei-api /usr/local/bin/sensei-api
-COPY --from=builder /app/target/release/sensei-workers /usr/local/bin/sensei-workers
+COPY --from=builder /app/out/sensei-api /usr/local/bin/sensei-api
+COPY --from=builder /app/out/sensei-workers /usr/local/bin/sensei-workers
 
 # The canonical DB role/grants script (ONE file consumed by Compose, CI, the
 # Docker image and the Kubernetes bootstrap/grant Jobs — see
