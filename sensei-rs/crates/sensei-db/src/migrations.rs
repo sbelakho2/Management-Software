@@ -31,13 +31,26 @@ use tracing::{info, warn};
 /// Loaded lazily from the filesystem at first use; `Migrator::new` is
 /// async in sqlx 0.8, so the migrator is initialized once via
 /// [`OnceCell`] rather than a compile-time `embed_migrations!`.
+///
+/// The directory is overridable with `SENSEI_MIGRATIONS_DIR`: container
+/// images ship the migration files under `/opt/sensei/migrations` (the
+/// compile-time `CARGO_MANIFEST_DIR` path does not exist inside an image).
 static MIGRATOR: OnceCell<Migrator> = OnceCell::const_new();
+
+/// Resolve the migrations directory: env override first, then the crate
+/// manifest-relative `migrations/` directory (source checkouts).
+fn migrations_dir() -> std::path::PathBuf {
+    match std::env::var("SENSEI_MIGRATIONS_DIR") {
+        Ok(dir) if !dir.is_empty() => std::path::PathBuf::from(dir),
+        _ => Path::new(env!("CARGO_MANIFEST_DIR")).join("migrations"),
+    }
+}
 
 /// Initialize the migrator (must be called before running migrations).
 async fn get_migrator() -> Result<&'static Migrator> {
     MIGRATOR
         .get_or_try_init(|| async {
-            Migrator::new(Path::new(env!("CARGO_MANIFEST_DIR")).join("migrations"))
+            Migrator::new(migrations_dir())
                 .await
                 .map_err(|e| SenseiError::Internal(format!("Failed to load migrations: {e}")))
         })

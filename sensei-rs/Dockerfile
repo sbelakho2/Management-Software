@@ -130,6 +130,12 @@ COPY scripts/db/01-app-role.sh /opt/sensei/db/01-app-role.sh
 # Static frontend served by the API at /app/static (STATIC_DIR env).
 COPY --from=frontend-builder /frontend-dist /app/static
 
+# Migration SQL: the migrator loads files at runtime, so images must ship
+# them (SENSEI_MIGRATIONS_DIR points here; the compile-time crate path does
+# not exist inside an image).
+COPY crates/sensei-db/migrations /opt/sensei/migrations
+ENV SENSEI_MIGRATIONS_DIR=/opt/sensei/migrations
+
 # Create a non-root user for security.
 RUN groupadd -r sensei && useradd -r -g sensei -d /home/sensei -s /sbin/nologin sensei && \
     mkdir -p /home/sensei /app/static && chown -R sensei:sensei /home/sensei /app/static
