@@ -385,40 +385,29 @@ jobs:
       - name: Migrations run twice idempotently (fresh DB → second boot)
         run: |
           set -euo pipefail
-          # Boot 1: applies all migrations to the empty PG service database.
-          docker run -d --name sensei-migrate-1 \
-            -p 18081:3000 \
-            -e API_PORT=3000 \
-            -e SENSEI_ENV=development \
-            -e DB_AUTO_MIGRATE=true \
-            -e DATABASE_URL=postgres://sensei:sensei@localhost:5432/sensei \
-            -e NATS_URL=nats://localhost:4222 \
-            -e JWT_SECRET=boot-test-jwt-secret-0123456789abcdef0123456789abcdef \
-            -e SENSEI_CEO_PASSWORD='BootTestCEO!2026' \
-            sensei-api:ci
-          for i in $(seq 1 60); do
-            curl -sf -o /dev/null http://localhost:18081/health/ready && break
-            sleep 2
+          # The migration OWNER contract, exercised the way production runs
+          # it: `sensei-api --migrate-only` against the job's service
+          # PostgreSQL (host-reachable on localhost:5432). Readiness HTTP
+          # probes are the wrong gate here — the API container cannot reach
+          # host service ports through its own localhost.
+          FIRST_COUNT=""
+          for boot in 1 2; do
+            echo "── migration boot $boot ──"
+            docker run --rm \
+              -e SENSEI_ENV=development \
+              -e DATABASE_URL=postgres://sensei:sensei@localhost:5432/sensei \
+              sensei-api:ci --migrate-only
+            COUNT=$(PGPASSWORD=sensei psql -h localhost -U sensei -d sensei -t -A -c \
+              "SELECT count(*) FROM _sqlx_migrations WHERE success = TRUE;" 2>/dev/null || echo "")
+            echo "applied migration rows after boot $boot: ${COUNT:-<unreadable>}"
+            if [ "$boot" = "1" ]; then
+              [ -n "$COUNT" ] && [ "$COUNT" -gt 0 ] || { echo "boot 1 applied no migrations"; exit 1; }
+              FIRST_COUNT="$COUNT"
+            else
+              [ "$COUNT" = "$FIRST_COUNT" ] || { echo "boot 2 changed the migration set ($FIRST_COUNT -> $COUNT)"; exit 1; }
+            fi
           done
-          curl -sf http://localhost:18081/health/ready || { docker logs sensei-migrate-1; exit 1; }
-          docker rm -f sensei-migrate-1 >/dev/null
-          # Boot 2: migrations must be idempotent against the same database.
-          docker run -d --name sensei-migrate-2 \
-            -p 18082:3000 \
-            -e API_PORT=3000 \
-            -e SENSEI_ENV=development \
-            -e DB_AUTO_MIGRATE=true \
-            -e DATABASE_URL=postgres://sensei:sensei@localhost:5432/sensei \
-            -e NATS_URL=nats://localhost:4222 \
-            -e JWT_SECRET=boot-test-jwt-secret-0123456789abcdef0123456789abcdef \
-            -e SENSEI_CEO_PASSWORD='BootTestCEO!2026' \
-            sensei-api:ci
-          for i in $(seq 1 60); do
-            curl -sf -o /dev/null http://localhost:18082/health/ready && break
-            sleep 2
-          done
-          curl -sf http://localhost:18082/health/ready || { docker logs sensei-migrate-2; exit 1; }
-          echo "migrations idempotent across restarts"
+          echo "migrations idempotent across restarts ($FIRST_COUNT applied)"
 
       # ── Helm chart validation ───────────────────────────────────────────
       # azure/setup-helm@v5.0.1
