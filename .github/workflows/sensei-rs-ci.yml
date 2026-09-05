@@ -381,30 +381,6 @@ jobs:
           docker logs sensei-boot-test
           exit 1
 
-      # ── PostgreSQL (pgvector) for the migration idempotency gate ───────
-      # The double-boot migration check needs a REAL database: this job
-      # starts the pinned capability image (same literal as .db-capability)
-      # and the API boots opt-in with DB_AUTO_MIGRATE=true (the explicit
-      # legacy-bootstrap switch, never the production default).
-      - name: Start PostgreSQL (pgvector) for migration gate
-        run: |
-          set -euo pipefail
-          docker run -d --name ci-pg \
-            -e POSTGRES_USER=sensei \
-            -e POSTGRES_PASSWORD=sensei \
-            -e POSTGRES_DB=sensei \
-            -p 5432:5432 \
-            pgvector/pgvector:pg16@sha256:ccc6e83d6e35e931dc7c5def2022729d5a6c370318d099181995567ff1fb4d6b
-          for i in $(seq 1 60); do
-            if docker exec ci-pg pg_isready -U sensei -d sensei >/dev/null 2>&1; then
-              echo "PostgreSQL ready"
-              exit 0
-            fi
-            sleep 2
-          done
-          docker logs ci-pg || true
-          exit 1
-
       # ── Migration-from-previous-release: idempotent re-run ──────────────
       - name: Migrations run twice idempotently (fresh DB → second boot)
         run: |
