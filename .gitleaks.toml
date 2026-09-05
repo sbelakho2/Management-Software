@@ -1,0 +1,22 @@
+# gitleaks allowlist — reviewed findings only.
+#
+# Every entry is a FALSE POSITIVE or a non-secret test fixture constant,
+# documented below. Real secrets must never be added here.
+[extend]
+
+[allowlist]
+# ExternalSecret remote-key NAMES (e.g. "sensei/prod/db/migrator") are key
+# references, not credentials — the vault path of the secret, never its
+# value. The generic-key heuristic keys on the trailing ": key" shape.
+paths = [
+  '''k8s/helm/sensei/values.yaml''',
+  '''backend/tests/core/test_config.py''',
+]
+regexes = [
+  # Integration-stack JWT test constant (local dev/CI only; the value is
+  # derived from the documented dev default, never a production key).
+  '''ci-integration-jwt-secret-0123456789abcdef0123456789abcdef''',
+  # RFC 6455 sample Sec-WebSocket-Accept key ("the sample nonce" in
+  # base64) used by the websocket integration test.
+  '''dGhlIHNhbXBsZSBub25jZQ==''',
+]

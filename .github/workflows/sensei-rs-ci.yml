@@ -312,7 +312,7 @@ jobs:
           sudo mv gitleaks /usr/local/bin/
 
       - name: gitleaks secret scan
-        run: gitleaks detect --source . --no-banner --redact
+        run: gitleaks detect --source . --no-banner --redact --config .gitleaks.toml
 
       # ── Container build + SBOM + vulnerability scan ─────────────────────
       # docker/setup-buildx-action@v4.3.0

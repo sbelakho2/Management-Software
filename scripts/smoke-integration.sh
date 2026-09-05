@@ -39,13 +39,17 @@ PIDS=()
 
 log() { echo "[smoke] $*"; }
 
-fail() { log "FAIL: $*"; cleanup; exit 1; }
+fail() { log "FAIL: $*"; FAILED=1; cleanup; exit 1; }
 cleanup() {
   for pid in "${PIDS[@]:-}"; do
     kill "$pid" 2>/dev/null || true
   done
   wait 2>/dev/null || true
-  rm -rf "$TMPDIR_LOGS"
+  # Logs are intentionally KEPT on failure (the fail() path prints them
+  # before exiting); remove only on success.
+  if [ -z "${FAILED:-}" ]; then
+    rm -rf "$TMPDIR_LOGS"
+  fi
 }
 
 wait_for_url() {
@@ -87,7 +91,15 @@ wait_for_health() {
     fi
     sleep "$WAIT_SLEEP"
   done
-  fail "timeout waiting for $what health (live=$live ready=$ready); logs in $TMPDIR_LOGS"
+  if [ -f "$TMPDIR_LOGS/api-a.log" ]; then
+    log "--- api-a.log tail ---"
+    tail -60 "$TMPDIR_LOGS/api-a.log" 2>/dev/null | sed 's/^/    /' || true
+    if [ -f "$TMPDIR_LOGS/api-b.log" ]; then
+      log "--- api-b.log tail ---"
+      tail -40 "$TMPDIR_LOGS/api-b.log" 2>/dev/null | sed 's/^/    /' || true
+    fi
+  fi
+  fail "timeout waiting for $what health (live=$live ready=$ready); logs kept in $TMPDIR_LOGS"
 }
 
 start_api() {
