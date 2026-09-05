@@ -64,7 +64,9 @@ COPY crates/sensei-frontend/Cargo.toml crates/sensei-frontend/
 COPY crates/sensei-zt/Cargo.toml crates/sensei-zt/
 COPY crates/sensei-workers/Cargo.toml crates/sensei-workers/
 COPY xtask/Cargo.toml xtask/
+COPY xtask/src xtask/src/
 COPY src-tauri/Cargo.toml src-tauri/
+COPY src-tauri/src src-tauri/src/
 
 # Build dependencies only (this layer is cached).
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
@@ -105,7 +107,9 @@ COPY crates/sensei-services/Cargo.toml crates/sensei-services/
 COPY crates/sensei-zt/Cargo.toml crates/sensei-zt/
 COPY crates/sensei-workers/Cargo.toml crates/sensei-workers/
 COPY xtask/Cargo.toml xtask/
+COPY xtask/src xtask/src/
 COPY src-tauri/Cargo.toml src-tauri/
+COPY src-tauri/src src-tauri/src/
 COPY crates/ crates/
 
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
