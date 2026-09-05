@@ -2137,7 +2137,9 @@ async fn every_tenant_owned_table_is_universally_fail_closed() {
         }
         let (name, qual, with_check) = &policies[0];
         if name != "tenant_isolation" {
-            violations.push(format!("{table}: policy is named '{name}', not tenant_isolation"));
+            violations.push(format!(
+                "{table}: policy is named '{name}', not tenant_isolation"
+            ));
             continue;
         }
         let canonical = |expr: &Option<String>| -> bool {
@@ -2149,7 +2151,9 @@ async fn every_tenant_owned_table_is_universally_fail_closed() {
             })
         };
         if !canonical(qual) {
-            violations.push(format!("{table}: USING is not fail-closed canonical ({qual:?})"));
+            violations.push(format!(
+                "{table}: USING is not fail-closed canonical ({qual:?})"
+            ));
         }
         if !canonical(with_check) {
             violations.push(format!(
@@ -2195,12 +2199,14 @@ async fn every_tenant_owned_table_is_universally_fail_closed() {
     //    replaced.
     let tenant_a = uuid::Uuid::new_v4();
     let tenant_b = uuid::Uuid::new_v4();
-    sqlx::query("INSERT INTO tenants (id, name, slug) VALUES ($1, 'fc-a', 'fc-a'), ($2, 'fc-b', 'fc-b')")
-        .bind(tenant_a)
-        .bind(tenant_b)
-        .execute(&pool)
-        .await
-        .expect("tenants");
+    sqlx::query(
+        "INSERT INTO tenants (id, name, slug) VALUES ($1, 'fc-a', 'fc-a'), ($2, 'fc-b', 'fc-b')",
+    )
+    .bind(tenant_a)
+    .bind(tenant_b)
+    .execute(&pool)
+    .await
+    .expect("tenants");
     sqlx::query(
         "INSERT INTO users (id, tenant_id, email, name, password_hash) \
          VALUES ($1, $2, 'fc-a@x.local', 'A', 'x'), ($3, $4, 'fc-b@x.local', 'B', 'x')",
@@ -2254,7 +2260,9 @@ async fn every_tenant_owned_table_is_universally_fail_closed() {
             .await
             .expect("role sweep count");
         if count != 0 {
-            zero_violations.push(format!("{table}: {count} rows visible without app.tenant_id"));
+            zero_violations.push(format!(
+                "{table}: {count} rows visible without app.tenant_id"
+            ));
         }
     }
     assert!(
@@ -8173,7 +8181,6 @@ async fn replication_target_apply_idempotency_guard() {
         "the unregistered family's source row is never confirmed"
     );
 }
-
 
 /// AUTHORIZATION SNAPSHOTS (fifteenth audit 24/A5): every AI execution
 /// carries {policy_revision, relationship_revision, principal_revision}
@@ -20125,9 +20132,7 @@ async fn quality_gate_scope_of(
     table: &str,
     id: uuid::Uuid,
 ) -> (Option<uuid::Uuid>, Option<uuid::Uuid>) {
-    let sql = format!(
-        "SELECT scope_site_id, scope_work_center_id FROM {table} WHERE id = $1"
-    );
+    let sql = format!("SELECT scope_site_id, scope_work_center_id FROM {table} WHERE id = $1");
     sqlx::query_as(&sql)
         .bind(id)
         .fetch_one(pool)
@@ -20287,9 +20292,11 @@ async fn quality_service_crud_round_trips_on_canonical_tables() {
     );
 
     // Corporate (tenant-wide, no focus) NCR rows carry NULL scope pairs.
-    let (scope_site, scope_wc) =
-        quality_gate_scope_of(&pool, "ncr_reports", ncr_id).await;
-    assert!(scope_site.is_none() && scope_wc.is_none(), "tenant-wide + no focus ⇒ corporate (NULL/NULL)");
+    let (scope_site, scope_wc) = quality_gate_scope_of(&pool, "ncr_reports", ncr_id).await;
+    assert!(
+        scope_site.is_none() && scope_wc.is_none(),
+        "tenant-wide + no focus ⇒ corporate (NULL/NULL)"
+    );
 
     svc.delete_ncr(&ctx, ncr_id).await.expect("DELETE NCR");
     assert!(
@@ -20384,7 +20391,10 @@ async fn quality_service_crud_round_trips_on_canonical_tables() {
     assert!(closed.closed_at.is_some());
 
     let (scope_site, scope_wc) = quality_gate_scope_of(&pool, "capas", capa_id).await;
-    assert!(scope_site.is_none() && scope_wc.is_none(), "tenant-wide + no focus ⇒ corporate CAPA");
+    assert!(
+        scope_site.is_none() && scope_wc.is_none(),
+        "tenant-wide + no focus ⇒ corporate CAPA"
+    );
 
     svc.delete_capa(&ctx, capa_id).await.expect("DELETE CAPA");
     assert!(svc.get_capa(&ctx, capa_id).await.is_err());
@@ -20471,9 +20481,14 @@ async fn quality_service_crud_round_trips_on_canonical_tables() {
         "the whole-entity audit UPDATE must persist"
     );
     let (scope_site, scope_wc) = quality_gate_scope_of(&pool, "audits", audit_id).await;
-    assert!(scope_site.is_none() && scope_wc.is_none(), "tenant-wide + no focus ⇒ corporate audit");
+    assert!(
+        scope_site.is_none() && scope_wc.is_none(),
+        "tenant-wide + no focus ⇒ corporate audit"
+    );
 
-    svc.delete_audit(&ctx, audit_id).await.expect("DELETE audit");
+    svc.delete_audit(&ctx, audit_id)
+        .await
+        .expect("DELETE audit");
     assert!(svc.get_audit(&ctx, audit_id).await.is_err());
 }
 
@@ -20555,15 +20570,42 @@ async fn quality_service_exact_work_center_isolation() {
     use sensei_core::domain::request_context::RequestContext;
     use sensei_services::quality::{DatabaseQualityService, NcSeverity, NcType, QualityService};
     let svc = DatabaseQualityService::new(pool.clone());
-    let tenant_ctx = RequestContext::build(&pool, tenant_id, tenant_user, None, None, None, None, String::new())
-        .await
-        .expect("tenant-wide context");
-    let a1_ctx = RequestContext::build(&pool, tenant_id, wc_a1_user, Some(site_a), None, Some(wc_a1), None, String::new())
-        .await
-        .expect("WC-A1 context");
-    let a2_ctx = RequestContext::build(&pool, tenant_id, wc_a2_user, Some(site_a), None, Some(wc_a2), None, String::new())
-        .await
-        .expect("WC-A2 context");
+    let tenant_ctx = RequestContext::build(
+        &pool,
+        tenant_id,
+        tenant_user,
+        None,
+        None,
+        None,
+        None,
+        String::new(),
+    )
+    .await
+    .expect("tenant-wide context");
+    let a1_ctx = RequestContext::build(
+        &pool,
+        tenant_id,
+        wc_a1_user,
+        Some(site_a),
+        None,
+        Some(wc_a1),
+        None,
+        String::new(),
+    )
+    .await
+    .expect("WC-A1 context");
+    let a2_ctx = RequestContext::build(
+        &pool,
+        tenant_id,
+        wc_a2_user,
+        Some(site_a),
+        None,
+        Some(wc_a2),
+        None,
+        String::new(),
+    )
+    .await
+    .expect("WC-A2 context");
 
     // A2-stamped NCR created by the tenant-wide caller FOCUSING A2: the
     // focus stamps the exact work center of the record.
@@ -20582,12 +20624,22 @@ async fn quality_service_exact_work_center_isolation() {
             "d".to_string(),
             NcType::Process,
             NcSeverity::Medium,
-            None, None, None, None, None, None, false,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            false,
         )
         .await
         .expect("A2-stamped NCR create");
     let (s, w) = quality_gate_scope_of(&pool, "ncr_reports", a2_ncr.id).await;
-    assert_eq!((s, w), (Some(site_a), Some(wc_a2)), "the A2-stamped row carries (A, A2)");
+    assert_eq!(
+        (s, w),
+        (Some(site_a), Some(wc_a2)),
+        "the A2-stamped row carries (A, A2)"
+    );
 
     // A1-stamped NCR from the WC-A1 caller itself.
     let a1_ncr = svc
@@ -20597,12 +20649,22 @@ async fn quality_service_exact_work_center_isolation() {
             "d".to_string(),
             NcType::Process,
             NcSeverity::Low,
-            None, None, None, None, None, None, false,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            false,
         )
         .await
         .expect("A1-stamped NCR create");
     let (s, w) = quality_gate_scope_of(&pool, "ncr_reports", a1_ncr.id).await;
-    assert_eq!((s, w), (Some(site_a), Some(wc_a1)), "the A1-stamped row carries (A, A1)");
+    assert_eq!(
+        (s, w),
+        (Some(site_a), Some(wc_a1)),
+        "the A1-stamped row carries (A, A1)"
+    );
 
     // A site-level (site-only) NCR plus a corporate NCR: both must be
     // invisible to the exact-WC callers.
@@ -20621,7 +20683,13 @@ async fn quality_service_exact_work_center_isolation() {
             "d".to_string(),
             NcType::System,
             NcSeverity::High,
-            None, None, None, None, None, None, false,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            false,
         )
         .await
         .expect("site-level NCR create");
@@ -20632,13 +20700,22 @@ async fn quality_service_exact_work_center_isolation() {
             "d".to_string(),
             NcType::System,
             NcSeverity::High,
-            None, None, None, None, None, None, false,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            false,
         )
         .await
         .expect("corporate NCR create");
 
     // ── The WC-A1 principal sees EXACTLY its own WC-stamped record ──
-    let a1_list = svc.list_ncrs(&a1_ctx, None, None, None, None, None).await.unwrap();
+    let a1_list = svc
+        .list_ncrs(&a1_ctx, None, None, None, None, None)
+        .await
+        .unwrap();
     assert_eq!(
         a1_list.total, 1,
         "a WC-A1 principal sees exactly its own work center's records"
@@ -20669,7 +20746,10 @@ async fn quality_service_exact_work_center_isolation() {
     );
 
     // ── The WC-A2 principal sees exactly its own WC-stamped record ──
-    let a2_list = svc.list_ncrs(&a2_ctx, None, None, None, None, None).await.unwrap();
+    let a2_list = svc
+        .list_ncrs(&a2_ctx, None, None, None, None, None)
+        .await
+        .unwrap();
     assert_eq!(a2_list.total, 1);
     assert_eq!(a2_list.data[0].id, a2_ncr.id);
 
@@ -20696,7 +20776,10 @@ async fn quality_service_exact_work_center_isolation() {
         )
         .await
         .expect("A2-stamped CAPA");
-    let a1_capa_list = svc.list_capas(&a1_ctx, None, None, None, None).await.unwrap();
+    let a1_capa_list = svc
+        .list_capas(&a1_ctx, None, None, None, None)
+        .await
+        .unwrap();
     assert_eq!(a1_capa_list.total, 0, "WC-A1 sees no WC-A2 CAPA");
     assert!(svc.get_capa(&a1_ctx, a2_capa.id).await.is_err());
 
@@ -20733,7 +20816,10 @@ async fn quality_service_exact_work_center_isolation() {
         )
         .await
         .expect("A2-stamped audit");
-    let a1_audit_list = svc.list_audits(&a1_ctx, None, None, None, None).await.unwrap();
+    let a1_audit_list = svc
+        .list_audits(&a1_ctx, None, None, None, None)
+        .await
+        .unwrap();
     assert_eq!(a1_audit_list.total, 0, "WC-A1 sees no WC-A2 audit");
     assert!(svc.get_audit(&a1_ctx, a2_audit.id).await.is_err());
 
@@ -20750,13 +20836,32 @@ async fn quality_service_exact_work_center_isolation() {
     .await
     .expect("user insert");
     quality_gate_seed_slot(
-        &pool, tenant_id, b1_user, "quality_engineer", "qwc_b1", "work_center",
-        Some(site_b), Some(wc_b1),
-    ).await;
-    let b1_ctx = RequestContext::build(&pool, tenant_id, b1_user, Some(site_b), None, Some(wc_b1), None, String::new())
+        &pool,
+        tenant_id,
+        b1_user,
+        "quality_engineer",
+        "qwc_b1",
+        "work_center",
+        Some(site_b),
+        Some(wc_b1),
+    )
+    .await;
+    let b1_ctx = RequestContext::build(
+        &pool,
+        tenant_id,
+        b1_user,
+        Some(site_b),
+        None,
+        Some(wc_b1),
+        None,
+        String::new(),
+    )
+    .await
+    .expect("WC-B1 context");
+    let b1_list = svc
+        .list_ncrs(&b1_ctx, None, None, None, None, None)
         .await
-        .expect("WC-B1 context");
-    let b1_list = svc.list_ncrs(&b1_ctx, None, None, None, None, None).await.unwrap();
+        .unwrap();
     assert_eq!(b1_list.total, 0, "a foreign-site WC principal sees nothing");
 }
 
@@ -20795,10 +20900,7 @@ async fn quality_service_creation_scope_rules() {
     .execute(&pool)
     .await
     .expect("sites insert");
-    for (wc, site, num) in [
-        (wc_a1, site_a, "QCS-A1"),
-        (wc_a2, site_a, "QCS-A2"),
-    ] {
+    for (wc, site, num) in [(wc_a1, site_a, "QCS-A1"), (wc_a2, site_a, "QCS-A2")] {
         sqlx::query(
             "INSERT INTO work_centers \
              (id, tenant_id, work_center_number, name, is_active, capacity_per_shift, \
@@ -20838,16 +20940,37 @@ async fn quality_service_creation_scope_rules() {
 
     use sensei_core::domain::request_context::{OperationalFocus, RequestContext};
     use sensei_core::domain::scope::ResourceScope;
-    use sensei_services::quality::{derive_creation_scope, CanonicalParent, DatabaseQualityService, NcSeverity, NcType, QualityService};
+    use sensei_services::quality::{
+        derive_creation_scope, CanonicalParent, DatabaseQualityService, NcSeverity, NcType,
+        QualityService,
+    };
     let svc = DatabaseQualityService::new(pool.clone());
 
-    let tenant_ctx = RequestContext::build(&pool, tenant_id, tenant_user, None, None, None, None, String::new())
-        .await
-        .expect("tenant-wide context");
+    let tenant_ctx = RequestContext::build(
+        &pool,
+        tenant_id,
+        tenant_user,
+        None,
+        None,
+        None,
+        None,
+        String::new(),
+    )
+    .await
+    .expect("tenant-wide context");
     // A site-A-scoped principal WITHOUT an operating focus.
-    let site_ctx_no_focus = RequestContext::build(&pool, tenant_id, site_user, None, None, None, None, String::new())
-        .await
-        .expect("site-A principal without focus builds");
+    let site_ctx_no_focus = RequestContext::build(
+        &pool,
+        tenant_id,
+        site_user,
+        None,
+        None,
+        None,
+        None,
+        String::new(),
+    )
+    .await
+    .expect("site-A principal without focus builds");
     use sensei_core::domain::scope::AuthorizedScope;
     assert!(
         matches!(
@@ -20867,7 +20990,13 @@ async fn quality_service_creation_scope_rules() {
             "d".to_string(),
             NcType::Product,
             NcSeverity::Medium,
-            None, None, None, None, None, None, false,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            false,
         )
         .await
         .unwrap_err();
@@ -20876,13 +21005,19 @@ async fn quality_service_creation_scope_rules() {
         "sites-only + no focus must be Forbidden, got {err:?}"
     );
     // The same rejection applies to the CAPA and audit constructors.
-    assert!(
-        svc.create_capa(&site_ctx_no_focus, "c".to_string(), "d".to_string(), vec![],
+    assert!(svc
+        .create_capa(
+            &site_ctx_no_focus,
+            "c".to_string(),
+            "d".to_string(),
+            vec![],
             sensei_services::quality::CapaType::Corrective,
-            sensei_services::quality::CapaPriority::Medium, None, None)
-            .await
-            .is_err()
-    );
+            sensei_services::quality::CapaPriority::Medium,
+            None,
+            None
+        )
+        .await
+        .is_err());
     assert!(
         svc.create_audit(
             &site_ctx_no_focus,
@@ -20910,13 +21045,33 @@ async fn quality_service_creation_scope_rules() {
     );
 
     // (2) A site-A-scoped caller WITH the site focus stamps Site(A).
-    let site_ctx = RequestContext::build(&pool, tenant_id, site_user, Some(site_a), None, None, None, String::new())
-        .await
-        .expect("site-A principal with site focus");
+    let site_ctx = RequestContext::build(
+        &pool,
+        tenant_id,
+        site_user,
+        Some(site_a),
+        None,
+        None,
+        None,
+        String::new(),
+    )
+    .await
+    .expect("site-A principal with site focus");
     let site_ncr = svc
-        .create_ncr(&site_ctx, "Site record".to_string(), "d".to_string(),
-            NcType::Product, NcSeverity::Medium,
-            None, None, None, None, None, None, false)
+        .create_ncr(
+            &site_ctx,
+            "Site record".to_string(),
+            "d".to_string(),
+            NcType::Product,
+            NcSeverity::Medium,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            false,
+        )
         .await
         .expect("site-A creation succeeds with a focus");
     let (s, w) = quality_gate_scope_of(&pool, "ncr_reports", site_ncr.id).await;
@@ -20924,9 +21079,20 @@ async fn quality_service_creation_scope_rules() {
 
     // (3) Corporate creation (NULL/NULL) is TENANT-WIDE-ONLY.
     let corporate = svc
-        .create_ncr(&tenant_ctx, "Corporate".to_string(), "d".to_string(),
-            NcType::System, NcSeverity::High,
-            None, None, None, None, None, None, false)
+        .create_ncr(
+            &tenant_ctx,
+            "Corporate".to_string(),
+            "d".to_string(),
+            NcType::System,
+            NcSeverity::High,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            false,
+        )
         .await
         .expect("tenant-wide corporate create");
     let (s, w) = quality_gate_scope_of(&pool, "ncr_reports", corporate.id).await;
@@ -20937,23 +21103,53 @@ async fn quality_service_creation_scope_rules() {
 
     // (4) An EXACT WC-A1 grant with the (A, A1) focus stamps the exact
     // work center — never the parent site.
-    let wc_ctx = RequestContext::build(&pool, tenant_id, wc_user, Some(site_a), None, Some(wc_a1), None, String::new())
-        .await
-        .expect("WC-A1 principal at its exact work center");
+    let wc_ctx = RequestContext::build(
+        &pool,
+        tenant_id,
+        wc_user,
+        Some(site_a),
+        None,
+        Some(wc_a1),
+        None,
+        String::new(),
+    )
+    .await
+    .expect("WC-A1 principal at its exact work center");
     let wc_ncr = svc
-        .create_ncr(&wc_ctx, "WC record".to_string(), "d".to_string(),
-            NcType::Product, NcSeverity::Low,
-            None, None, None, None, None, None, false)
+        .create_ncr(
+            &wc_ctx,
+            "WC record".to_string(),
+            "d".to_string(),
+            NcType::Product,
+            NcSeverity::Low,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            false,
+        )
         .await
         .expect("WC-A1 creation succeeds");
     let (s, w) = quality_gate_scope_of(&pool, "ncr_reports", wc_ncr.id).await;
-    assert_eq!((s, w), (Some(site_a), Some(wc_a1)), "exact WC focus ⇒ WorkCenter(A, A1)");
+    assert_eq!(
+        (s, w),
+        (Some(site_a), Some(wc_a1)),
+        "exact WC focus ⇒ WorkCenter(A, A1)"
+    );
     // A site-scoped caller (Site A grant) may NOT read the WC-A1 record
     // out of a WC it cannot see? NO — a Site-A grant DOES cover WC-A1's
     // records; but a WC-A1 grant never sees the site-A-level row created
     // in (2).
-    let wc_list = svc.list_ncrs(&wc_ctx, None, None, None, None, None).await.unwrap();
-    assert_eq!(wc_list.total, 1, "the WC-A1 principal sees exactly its own record");
+    let wc_list = svc
+        .list_ncrs(&wc_ctx, None, None, None, None, None)
+        .await
+        .unwrap();
+    assert_eq!(
+        wc_list.total, 1,
+        "the WC-A1 principal sees exactly its own record"
+    );
     assert_eq!(wc_list.data[0].id, wc_ncr.id);
     assert!(
         svc.get_ncr(&wc_ctx, site_ncr.id).await.is_err(),
@@ -21035,19 +21231,37 @@ async fn quality_service_creation_scope_rules() {
     .await
     .expect("user insert");
     quality_gate_seed_slot(
-        &pool, tenant_id, site_b_user, "quality_engineer", "qcs_site_b", "site",
-        Some(site_b), None,
-    ).await;
-    let site_b_ctx = RequestContext::build(&pool, tenant_id, site_b_user, Some(site_b), None, None, None, String::new())
-        .await
-        .expect("site-B principal");
+        &pool,
+        tenant_id,
+        site_b_user,
+        "quality_engineer",
+        "qcs_site_b",
+        "site",
+        Some(site_b),
+        None,
+    )
+    .await;
+    let site_b_ctx = RequestContext::build(
+        &pool,
+        tenant_id,
+        site_b_user,
+        Some(site_b),
+        None,
+        None,
+        None,
+        String::new(),
+    )
+    .await
+    .expect("site-B principal");
     let sibling_wc_ctx = RequestContext {
         scope: AuthorizedScope::Operational {
             sites: std::collections::HashSet::new(),
-            work_centers: std::collections::HashSet::from([sensei_core::domain::scope::WorkCenterScope {
-                site: site_a,
-                work_center: wc_a2,
-            }]),
+            work_centers: std::collections::HashSet::from([
+                sensei_core::domain::scope::WorkCenterScope {
+                    site: site_a,
+                    work_center: wc_a2,
+                },
+            ]),
         },
         focus: OperationalFocus {
             site: Some(site_a),
@@ -21082,10 +21296,12 @@ async fn quality_service_creation_scope_rules() {
     let wc_no_focus = RequestContext {
         scope: AuthorizedScope::Operational {
             sites: std::collections::HashSet::new(),
-            work_centers: std::collections::HashSet::from([sensei_core::domain::scope::WorkCenterScope {
-                site: site_a,
-                work_center: wc_a2,
-            }]),
+            work_centers: std::collections::HashSet::from([
+                sensei_core::domain::scope::WorkCenterScope {
+                    site: site_a,
+                    work_center: wc_a2,
+                },
+            ]),
         },
         focus: OperationalFocus {
             site: None,

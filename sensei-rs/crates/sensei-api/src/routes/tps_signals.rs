@@ -139,9 +139,9 @@ pub async fn derive_signals(
     // inside ONE TenantTx of the caller's tenant.
     let mut db = sensei_core::db::TenantTx::begin(pool, user.tenant_id)
         .await
-        .map_err(|e| sensei_core::error::SenseiError::Database(
-            format!("Signal derivation tx failed: {e}")))?;
-
+        .map_err(|e| {
+            sensei_core::error::SenseiError::Database(format!("Signal derivation tx failed: {e}"))
+        })?;
 
     // Item 45 (thirteenth audit): thresholds are consumed at the MOST
     // SPECIFIC scope first — the product-family override, then the

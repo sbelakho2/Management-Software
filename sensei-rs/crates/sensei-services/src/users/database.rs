@@ -97,14 +97,15 @@ impl UsersService for DatabaseUsersService {
         // platform-unique login identity, so the lookup legitimately
         // crosses tenants through auth_user_by_email(text) — the ONLY
         // no-context users reader left for sensei_app.
-        let model = sqlx::query_as::<_, UserModel>(&format!(
-            "SELECT * FROM {AUTH_USER_BY_EMAIL}($1)"
-        ))
-        .bind(email)
-        .fetch_optional(&self.pool)
-        .await
-        .map_err(|e| SenseiError::Database(format!("Failed to find user by email: {e}")))?
-        .ok_or_else(|| SenseiError::NotFound(format!("User with email '{email}' not found")))?;
+        let model =
+            sqlx::query_as::<_, UserModel>(&format!("SELECT * FROM {AUTH_USER_BY_EMAIL}($1)"))
+                .bind(email)
+                .fetch_optional(&self.pool)
+                .await
+                .map_err(|e| SenseiError::Database(format!("Failed to find user by email: {e}")))?
+                .ok_or_else(|| {
+                    SenseiError::NotFound(format!("User with email '{email}' not found"))
+                })?;
 
         Ok(user_model_to_domain(model))
     }
@@ -115,14 +116,12 @@ impl UsersService for DatabaseUsersService {
         // primary key) — see routes/users.rs get_user/update_user and
         // routes/admin.rs, which reject rows whose tenant is not the
         // caller's.
-        let model = sqlx::query_as::<_, UserModel>(&format!(
-            "SELECT * FROM {AUTH_USER_BY_ID}($1)"
-        ))
-        .bind(id)
-        .fetch_optional(&self.pool)
-        .await
-        .map_err(|e| SenseiError::Database(format!("Failed to find user by id: {e}")))?
-        .ok_or_else(|| SenseiError::NotFound(format!("User with id '{id}' not found")))?;
+        let model = sqlx::query_as::<_, UserModel>(&format!("SELECT * FROM {AUTH_USER_BY_ID}($1)"))
+            .bind(id)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to find user by id: {e}")))?
+            .ok_or_else(|| SenseiError::NotFound(format!("User with id '{id}' not found")))?;
 
         Ok(user_model_to_domain(model))
     }
@@ -335,9 +334,8 @@ impl UsersService for DatabaseUsersService {
                 .map_err(|e| {
                     SenseiError::Database(format!("Failed to resolve user tenant: {e}"))
                 })?;
-        let tenant_id = row_tenant.ok_or_else(|| {
-            SenseiError::NotFound(format!("User with id '{id}' not found"))
-        })?;
+        let tenant_id = row_tenant
+            .ok_or_else(|| SenseiError::NotFound(format!("User with id '{id}' not found")))?;
         let mut db = TenantTx::begin(&self.pool, tenant_id)
             .await
             .map_err(|e| SenseiError::Database(format!("Failed to begin credential bump: {e}")))?;
@@ -633,14 +631,12 @@ impl UsersService for DatabaseUsersService {
         // SELECT on `users` is fail-closed FORCE RLS and returns nothing
         // without an app.tenant_id context, and these verification flows
         // run before any tenant context exists.
-        sqlx::query_scalar::<_, bool>(&format!(
-            "SELECT email_verified FROM {AUTH_USER_BY_ID}($1)"
-        ))
-        .bind(id)
-        .fetch_optional(&self.pool)
-        .await
-        .map_err(|e| SenseiError::Database(format!("Failed to read email_verified: {e}")))?
-        .ok_or_else(|| SenseiError::NotFound(format!("User with id '{id}' not found")))
+        sqlx::query_scalar::<_, bool>(&format!("SELECT email_verified FROM {AUTH_USER_BY_ID}($1)"))
+            .bind(id)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to read email_verified: {e}")))?
+            .ok_or_else(|| SenseiError::NotFound(format!("User with id '{id}' not found")))
     }
 
     async fn set_email_verified(&self, id: EntityId, verified: bool) -> Result<()> {
@@ -656,33 +652,27 @@ impl UsersService for DatabaseUsersService {
                 .map_err(|e| {
                     SenseiError::Database(format!("Failed to resolve user tenant: {e}"))
                 })?;
-        let tenant_id = row_tenant.ok_or_else(|| {
-            SenseiError::NotFound(format!("User with id '{id}' not found"))
+        let tenant_id = row_tenant
+            .ok_or_else(|| SenseiError::NotFound(format!("User with id '{id}' not found")))?;
+        let mut db = TenantTx::begin(&self.pool, tenant_id).await.map_err(|e| {
+            SenseiError::Database(format!("Failed to begin email-verified update: {e}"))
         })?;
-        let mut db = TenantTx::begin(&self.pool, tenant_id)
-            .await
-            .map_err(|e| {
-                SenseiError::Database(format!("Failed to begin email-verified update: {e}"))
-            })?;
-        let result = sqlx::query(
-            "UPDATE users SET email_verified = $2 WHERE id = $1 AND tenant_id = $3",
-        )
-        .bind(id)
-        .bind(verified)
-        .bind(tenant_id)
-        .execute(&mut **db.tx())
-        .await
-        .map_err(|e| SenseiError::Database(format!("Failed to set email_verified: {e}")))?;
+        let result =
+            sqlx::query("UPDATE users SET email_verified = $2 WHERE id = $1 AND tenant_id = $3")
+                .bind(id)
+                .bind(verified)
+                .bind(tenant_id)
+                .execute(&mut **db.tx())
+                .await
+                .map_err(|e| SenseiError::Database(format!("Failed to set email_verified: {e}")))?;
         if result.rows_affected() == 0 {
             return Err(SenseiError::NotFound(format!(
                 "User with id '{id}' not found"
             )));
         }
-        db.commit()
-            .await
-            .map_err(|e| {
-                SenseiError::Database(format!("Failed to commit email-verified update: {e}"))
-            })?;
+        db.commit().await.map_err(|e| {
+            SenseiError::Database(format!("Failed to commit email-verified update: {e}"))
+        })?;
         Ok(())
     }
 }

@@ -13,13 +13,10 @@ use axum::{
 };
 use futures::stream::Stream;
 use sensei_agent_core::context::{
-    AgentContext, Claim, ClaimAssertion, ClaimOperator, ContextItem, DerivedAssertion,
-    FactAddress,
+    AgentContext, Claim, ClaimAssertion, ClaimOperator, ContextItem, DerivedAssertion, FactAddress,
 };
 use sensei_agent_core::facts::RecomputedDerivation;
-use sensei_agent_core::verifier::{
-    parse_claim_time, verify_derived_claim, verify_measured_claim,
-};
+use sensei_agent_core::verifier::{parse_claim_time, verify_derived_claim, verify_measured_claim};
 use sensei_auth::authz_snapshot::AuthzSnapshot;
 use sensei_auth::middleware::AuthenticatedUser;
 use sensei_core::error::Result;
@@ -342,15 +339,14 @@ pub(crate) async fn prepare_inference(
     // the TYPED fields (never the prose).
     let kernel_items: Vec<ContextItem> = match &state.db_pool {
         Some(pool) => {
-            let facts =
-                sensei_services::tps::context_sections::build_context_facts(
-                    pool,
-                    user.tenant_id,
-                    ctx.site_id,
-                    ctx.work_center_id,
-                    &context_plan,
-                )
-                .await;
+            let facts = sensei_services::tps::context_sections::build_context_facts(
+                pool,
+                user.tenant_id,
+                ctx.site_id,
+                ctx.work_center_id,
+                &context_plan,
+            )
+            .await;
             facts
                 .into_iter()
                 .map(|fact| {
@@ -463,7 +459,8 @@ pub async fn chat(
     // have nothing that can have moved — the gate is vacuous there. The
     // check stays HERE, after preparation and immediately before the
     // model call.
-    let snapshot_ok = authorization_gate(state.db_pool.as_deref(), prepared.snapshot.as_ref()).await;
+    let snapshot_ok =
+        authorization_gate(state.db_pool.as_deref(), prepared.snapshot.as_ref()).await;
     if !snapshot_ok {
         return Err(sensei_core::error::SenseiError::Forbidden(
             "authorization state changed during the request — re-authorized and retry".to_string(),
@@ -784,9 +781,7 @@ fn verify_chat_response(
             None => None,
             Some(d) => {
                 let result = d.result.clone().ok_or_else(|| {
-                    format!(
-                        "derived claim '{statement}' is missing its claimed result value"
-                    )
+                    format!("derived claim '{statement}' is missing its claimed result value")
                 })?;
                 Some(DerivedAssertion {
                     derivation_id: d.derivation_id.clone(),
@@ -1166,7 +1161,9 @@ fn normalize_statement(s: &str) -> String {
         out = format!("{}{}", &out[..start], &after[end + 1..]);
     }
     let collapsed: String = out.split_whitespace().collect::<Vec<_>>().join(" ");
-    collapsed.trim_end_matches(['.', '!', '?', ';', ',', ':']).to_string()
+    collapsed
+        .trim_end_matches(['.', '!', '?', ';', ',', ':'])
+        .to_string()
 }
 
 /// Deterministic recomputation key of a derivation program result:
@@ -1211,10 +1208,12 @@ async fn resolve_recomputed_derivations(
             ));
             continue;
         };
-        let program = sensei_services::tps::metric_engine::registry().into_iter().find(
-            |c| c.id() == derived.derivation_id
-                || (derived.derivation_id == "fpy" && c.id() == "process_yield_proxy"),
-        );
+        let program = sensei_services::tps::metric_engine::registry()
+            .into_iter()
+            .find(|c| {
+                c.id() == derived.derivation_id
+                    || (derived.derivation_id == "fpy" && c.id() == "process_yield_proxy")
+            });
         let Some(program) = program else {
             issues.push(format!(
                 "derived claim '{}'@v{} cites a derivation id with no \
@@ -1235,8 +1234,7 @@ async fn resolve_recomputed_derivations(
         }
         match program.compute(pool, tenant_id, site_id).await {
             Ok(result) => {
-                let value = serde_json::to_value(&result.value)
-                    .unwrap_or(serde_json::Value::Null);
+                let value = serde_json::to_value(&result.value).unwrap_or(serde_json::Value::Null);
                 recomputed.insert(
                     key,
                     RecomputedDerivation {
@@ -1272,10 +1270,7 @@ async fn resolve_recomputed_derivations(
 /// gate is vacuously open (the content is still repaired by the
 /// verifier). A half-captured state never occurs in the request flow and
 /// fails closed.
-async fn authorization_gate(
-    db_pool: Option<&PgPool>,
-    snapshot: Option<&AuthzSnapshot>,
-) -> bool {
+async fn authorization_gate(db_pool: Option<&PgPool>, snapshot: Option<&AuthzSnapshot>) -> bool {
     match (db_pool, snapshot) {
         (Some(pool), Some(snap)) => snap.is_still_current(pool).await,
         (None, None) => true,
@@ -1501,7 +1496,8 @@ pub async fn chat_stream(
     // no authorization state) have nothing that can have moved — the gate
     // is vacuous there. ITEM 24: the gate is re-checked AGAIN inside the
     // task, after verification and immediately before release.
-    let snapshot_ok = authorization_gate(state.db_pool.as_deref(), prepared.snapshot.as_ref()).await;
+    let snapshot_ok =
+        authorization_gate(state.db_pool.as_deref(), prepared.snapshot.as_ref()).await;
     // ITEM 24: the snapshot travels into the task for the release
     // re-check (a revocation that lands during generation must block the
     // release of the buffered reply).
@@ -1638,12 +1634,7 @@ pub async fn chat_stream(
                 // already buffers the whole reply, so nothing unverified
                 // was streamed and nothing can be retracted — the stale
                 // release is simply refused.
-                if !authorization_gate(
-                    db_pool_for_release.as_deref(),
-                    snapshot.as_ref(),
-                )
-                .await
-                {
+                if !authorization_gate(db_pool_for_release.as_deref(), snapshot.as_ref()).await {
                     sse_manager
                         .publish(
                             &channel_clone,
@@ -1970,7 +1961,9 @@ mod tests {
             );
             let issues: Vec<String> = serde_json::from_value(v2["issues"].clone()).unwrap();
             assert!(
-                issues.iter().any(|i| i.contains("claimed value does not hold")),
+                issues
+                    .iter()
+                    .any(|i| i.contains("claimed value does not hold")),
                 "[{lang}] the value comparison must reject the claim: {issues:?}"
             );
         }
@@ -2086,9 +2079,7 @@ mod tests {
         );
         let issues: Vec<String> = serde_json::from_value(v["issues"].clone()).unwrap();
         assert!(
-            issues
-                .iter()
-                .any(|i| i.contains("wrong object type")),
+            issues.iter().any(|i| i.contains("wrong object type")),
             "{issues:?}"
         );
     }
@@ -2138,9 +2129,7 @@ mod tests {
         );
         let issues: Vec<String> = serde_json::from_value(v["issues"].clone()).unwrap();
         assert!(
-            issues
-                .iter()
-                .any(|i| i.contains("wrong site scope")),
+            issues.iter().any(|i| i.contains("wrong site scope")),
             "the issue names the structural site mismatch: {issues:?}"
         );
 
@@ -2177,7 +2166,10 @@ mod tests {
             &HashMap::new(),
             &[],
         );
-        assert_eq!(v2["verdict"], "pass", "same-scope evidence measures the claim");
+        assert_eq!(
+            v2["verdict"], "pass",
+            "same-scope evidence measures the claim"
+        );
     }
 
     #[test]
@@ -2206,7 +2198,9 @@ mod tests {
         assert_eq!(v["verdict"], "needs_evidence");
         let issues: Vec<String> = serde_json::from_value(v["issues"].clone()).unwrap();
         assert!(
-            issues.iter().any(|i| i.contains("unit mismatch") && i.contains("kg")),
+            issues
+                .iter()
+                .any(|i| i.contains("unit mismatch") && i.contains("kg")),
             "{issues:?}"
         );
     }
@@ -2241,7 +2235,9 @@ mod tests {
         assert_eq!(v["verdict"], "needs_evidence");
         let issues: Vec<String> = serde_json::from_value(v["issues"].clone()).unwrap();
         assert!(
-            issues.iter().any(|i| i.contains("wrong valid time") || i.contains("out-of-freshness")),
+            issues
+                .iter()
+                .any(|i| i.contains("wrong valid time") || i.contains("out-of-freshness")),
             "a claim time the evidence never observed must fail: {issues:?}"
         );
     }
@@ -2273,7 +2269,10 @@ mod tests {
         let claims: Vec<Claim> = serde_json::from_value(v["claims"].clone()).unwrap();
         assert_eq!(claims[0].epistemic_status, "unverified");
         assert!(
-            claims[0].evidence_refs.iter().any(|r| r == &item.evidence_id),
+            claims[0]
+                .evidence_refs
+                .iter()
+                .any(|r| r == &item.evidence_id),
             "the real evidence id stays recorded on the unverified claim"
         );
         let issues: Vec<String> = serde_json::from_value(v["issues"].clone()).unwrap();
@@ -2399,7 +2398,8 @@ mod tests {
         assert!(
             issues
                 .iter()
-                .any(|i| i.contains("Unverified evidence reference") && i.contains("ev:made-up-marker")),
+                .any(|i| i.contains("Unverified evidence reference")
+                    && i.contains("ev:made-up-marker")),
             "{issues:?}"
         );
     }
@@ -2430,10 +2430,7 @@ mod tests {
             recomputed_at: chrono::Utc::now(),
         };
         let mut recomputed_map = HashMap::new();
-        recomputed_map.insert(
-            derivation_key("process_yield_proxy", 1),
-            recomputed,
-        );
+        recomputed_map.insert(derivation_key("process_yield_proxy", 1), recomputed);
         let ctx = ctx_at_site_1();
         let bad = ClaimDraft {
             statement: "First pass yield is 0.99".to_string(),
@@ -2536,9 +2533,7 @@ mod tests {
         assert_eq!(v["verdict"], "needs_evidence");
         let issues: Vec<String> = serde_json::from_value(v["issues"].clone()).unwrap();
         assert!(
-            issues
-                .iter()
-                .any(|i| i.contains("could not be recomputed")),
+            issues.iter().any(|i| i.contains("could not be recomputed")),
             "{issues:?}"
         );
     }
@@ -2571,9 +2566,7 @@ mod tests {
         assert_eq!(v["verdict"], "needs_evidence");
         let issues: Vec<String> = serde_json::from_value(v["issues"].clone()).unwrap();
         assert!(
-            issues
-                .iter()
-                .any(|i| i.contains("could not be recomputed")),
+            issues.iter().any(|i| i.contains("could not be recomputed")),
             "a derivation id with no deterministic program is rejected: {issues:?}"
         );
     }
@@ -2604,8 +2597,10 @@ mod tests {
             ]
         );
         assert_eq!(
-            split_sentences("a. b; c
-d"),
+            split_sentences(
+                "a. b; c
+d"
+            ),
             vec![
                 "a".to_string(),
                 "b".to_string(),
@@ -2672,7 +2667,10 @@ d"),
         let claims: Vec<Claim> = serde_json::from_value(v["claims"].clone()).unwrap();
         assert_eq!(claims.len(), 1);
         assert_eq!(claims[0].epistemic_status, "unverified");
-        assert_eq!(claims[0].statement, "La ligne de Tangier manque de personnel");
+        assert_eq!(
+            claims[0].statement,
+            "La ligne de Tangier manque de personnel"
+        );
         assert_eq!(v["claims_checked"], 1);
     }
 
@@ -2723,7 +2721,14 @@ d"),
             assertion: None,
             derived: None,
         };
-        let v = verify_drafts("La ligne est instable.", &[], &ctx, &[draft], &HashMap::new(), &[]);
+        let v = verify_drafts(
+            "La ligne est instable.",
+            &[],
+            &ctx,
+            &[draft],
+            &HashMap::new(),
+            &[],
+        );
         assert_eq!(v["verdict"], "needs_evidence");
         let issues: Vec<String> = serde_json::from_value(v["issues"].clone()).unwrap();
         assert!(
@@ -2834,26 +2839,26 @@ d"),
         // verification still repairs unverified claims).
         let gate = tokio_test_block_on(authorization_gate(None, None));
         assert!(gate);
-        assert!(!authorization_gate_sync(None, Some(&AuthzSnapshot {
-            tenant: uuid::Uuid::new_v4(),
-            principal: uuid::Uuid::new_v4(),
-            roles: vec![],
-            policy_revision: 0,
-            relationship_revision: 0,
-            principal_revision: 0,
-            scope_site: None,
-            permission_digest: [0u8; 32],
-        })));
+        assert!(!authorization_gate_sync(
+            None,
+            Some(&AuthzSnapshot {
+                tenant: uuid::Uuid::new_v4(),
+                principal: uuid::Uuid::new_v4(),
+                roles: vec![],
+                policy_revision: 0,
+                relationship_revision: 0,
+                principal_revision: 0,
+                scope_site: None,
+                permission_digest: [0u8; 32],
+            })
+        ));
     }
 
     fn tokio_test_block_on<F: std::future::Future>(f: F) -> F::Output {
         tokio::runtime::Runtime::new().unwrap().block_on(f)
     }
 
-    fn authorization_gate_sync(
-        db_pool: Option<&PgPool>,
-        snapshot: Option<&AuthzSnapshot>,
-    ) -> bool {
+    fn authorization_gate_sync(db_pool: Option<&PgPool>, snapshot: Option<&AuthzSnapshot>) -> bool {
         tokio_test_block_on(authorization_gate(db_pool, snapshot))
     }
 
@@ -2901,12 +2906,10 @@ d"),
             .expect("tenant seed");
         // T0: capture the request's authorization snapshot (lazily seeds
         // the tenant's revision row at 1/1/1).
-        let snapshot = sensei_services::tps::authorization_revisions::current_snapshot(
-            &pool,
-            tenant_id,
-        )
-        .await
-        .expect("current snapshot");
+        let snapshot =
+            sensei_services::tps::authorization_revisions::current_snapshot(&pool, tenant_id)
+                .await
+                .expect("current snapshot");
         let snap = AuthzSnapshot {
             tenant: tenant_id,
             principal: uuid::Uuid::new_v4(),

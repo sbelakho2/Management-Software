@@ -167,8 +167,7 @@ fn manager_principal(world: &WorkCenterWorld) -> AuthenticatedUser {
 /// authoritative for per-request user lookups (see `andon_test.rs`).
 async fn gate_state(pool: &Arc<sqlx::PgPool>, world: &WorkCenterWorld) -> sensei_api::AppState {
     common::setup::pin_test_environment();
-    let config = AppConfig::from_env()
-        .expect("test configuration must load under pinned env");
+    let config = AppConfig::from_env().expect("test configuration must load under pinned env");
 
     let mut manager = User::new(
         world.tenant_id,
@@ -180,10 +179,14 @@ async fn gate_state(pool: &Arc<sqlx::PgPool>, world: &WorkCenterWorld) -> sensei
     manager.roles = vec!["user".to_string(), "production_manager".to_string()];
     manager.site_id = Some(world.site_a);
     let users_service: Arc<dyn UsersService> = Arc::new(InMemoryUsersService::new());
-    let seeded = users_service.create_user(manager).await.expect("seed manager");
+    let seeded = users_service
+        .create_user(manager)
+        .await
+        .expect("seed manager");
     assert_eq!(seeded.id, world.manager_id);
 
-    let mut state = sensei_api::AppState::new(config, users_service.clone()).with_db_pool(pool.clone());
+    let mut state =
+        sensei_api::AppState::new(config, users_service.clone()).with_db_pool(pool.clone());
     state.users_service = users_service;
     state
 }
@@ -212,12 +215,7 @@ async fn create_work_center(
 
 /// Seed a relational work center row directly (for rows the API create
 /// cannot express, e.g. capacity columns or foreign-site rows).
-async fn seed_work_center_row(
-    pool: &sqlx::PgPool,
-    tenant_id: Uuid,
-    site_id: Uuid,
-    number: &str,
-) {
+async fn seed_work_center_row(pool: &sqlx::PgPool, tenant_id: Uuid, site_id: Uuid, number: &str) {
     sqlx::query(
         "INSERT INTO work_centers \
              (id, tenant_id, site_id, work_center_number, name, work_center_type) \
@@ -248,7 +246,11 @@ async fn test_create_work_center() {
     assert_eq!(wc.name, "Assembly Line 1");
     assert_eq!(wc.work_center_type, "assembly");
     assert_eq!(wc.tenant_id, world.tenant_id);
-    assert_eq!(wc.site_id, Some(world.site_a), "the asserted site is echoed");
+    assert_eq!(
+        wc.site_id,
+        Some(world.site_a),
+        "the asserted site is echoed"
+    );
     // Per-tenant numbering: the first work center of this tenant is WC-00001.
     assert_eq!(wc.work_center_number, "WC-00001");
     // Assignment is not verification: the row is created
@@ -260,7 +262,10 @@ async fn test_create_work_center() {
     // old EntityStore payload columns (capacity/efficiency/…) are not part
     // of the create contract and never echo back.
     let json = serde_json::to_value(&wc).expect("work center serializes");
-    assert!(json.get("efficiency").is_none(), "efficiency is a relational column, not a create field");
+    assert!(
+        json.get("efficiency").is_none(),
+        "efficiency is a relational column, not a create field"
+    );
     assert!(
         json.get("capacity_per_shift").is_none(),
         "capacity_per_shift is a relational column, not a create field"
@@ -318,7 +323,11 @@ async fn test_work_center_numbering_is_per_tenant_sequential() {
     let mut unique = numbers.clone();
     unique.sort();
     unique.dedup();
-    assert_eq!(unique.len(), 3, "work center numbers must be unique per tenant");
+    assert_eq!(
+        unique.len(),
+        3,
+        "work center numbers must be unique per tenant"
+    );
     assert_eq!(unique, vec!["WC-00001", "WC-00002", "WC-00003"]);
 }
 
@@ -435,7 +444,11 @@ async fn test_update_work_center() {
     .expect("a manager can update their site's work center");
     let wc = resp.0;
     assert_eq!(wc.name, "Updated WC Name");
-    assert_eq!(wc.site_id, Some(world.site_a), "the site assignment is untouched");
+    assert_eq!(
+        wc.site_id,
+        Some(world.site_a),
+        "the site assignment is untouched"
+    );
 
     // A reassignment to site B is out of the caller's entitlement: 403 in
     // the ROUTE, before the repository runs.
@@ -482,15 +495,17 @@ async fn test_deactivate_work_center() {
 
     // The relational response shape does not carry is_active; verify the
     // server-side flip directly on the row.
-    let is_active: bool = sqlx::query_scalar(
-        "SELECT is_active FROM work_centers WHERE id = $1 AND tenant_id = $2",
-    )
-    .bind(created.id)
-    .bind(world.tenant_id)
-    .fetch_one(&*pool)
-    .await
-    .expect("deactivated row read");
-    assert!(!is_active, "deactivation must flip is_active in the relational table");
+    let is_active: bool =
+        sqlx::query_scalar("SELECT is_active FROM work_centers WHERE id = $1 AND tenant_id = $2")
+            .bind(created.id)
+            .bind(world.tenant_id)
+            .fetch_one(&*pool)
+            .await
+            .expect("deactivated row read");
+    assert!(
+        !is_active,
+        "deactivation must flip is_active in the relational table"
+    );
 }
 
 #[tokio::test]
@@ -553,12 +568,9 @@ async fn test_get_efficiency_report() {
     seed_work_center_row(&pool, world.tenant_id, world.site_a, "WC-00001").await;
     seed_work_center_row(&pool, world.tenant_id, world.site_b, "WC-00002").await;
 
-    let resp = sensei_api::routes::work_centers::get_efficiency_report(
-        user.clone(),
-        State(state),
-    )
-    .await
-    .expect("a site-scoped caller can read the efficiency report");
+    let resp = sensei_api::routes::work_centers::get_efficiency_report(user.clone(), State(state))
+        .await
+        .expect("a site-scoped caller can read the efficiency report");
     let report = resp.0;
     assert_eq!(
         report.len(),

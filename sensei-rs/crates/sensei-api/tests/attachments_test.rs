@@ -146,14 +146,13 @@ async fn new_app_with_uploads(mode: u8) -> (common::TestApp, IsolatedUploads) {
     let hash = sensei_auth::password::hash_password(&password).expect("hash admin password");
     let tenant_id = Uuid::new_v4();
 
-    let users_service: Arc<dyn sensei_services::users::UsersService> = Arc::new(
-        sensei_services::users::InMemoryUsersService::with_admin(
+    let users_service: Arc<dyn sensei_services::users::UsersService> =
+        Arc::new(sensei_services::users::InMemoryUsersService::with_admin(
             "admin@sensei.test",
             "Admin User",
             &hash,
             tenant_id,
-        ),
-    );
+        ));
     let config = sensei_core::config::AppConfig::from_env()
         .expect("test configuration must load under pinned env");
     let mut state = sensei_api::AppState::new(config, users_service);

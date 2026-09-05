@@ -174,14 +174,8 @@ impl RefreshTokenStore {
                 .await
                 .map_err(|e| TokenReuseDetected::Database(e.to_string()))?;
 
-                let Some((
-                    family_id,
-                    user_id,
-                    revoked_at,
-                    expires_at,
-                    stored_version,
-                    rotated_to,
-                )) = row
+                let Some((family_id, user_id, revoked_at, expires_at, stored_version, rotated_to)) =
+                    row
                 else {
                     return Err(TokenReuseDetected::Invalid);
                 };
@@ -189,13 +183,12 @@ impl RefreshTokenStore {
                 // The user's live authorization state (same transaction):
                 // active flag + CURRENT credential version.
                 type UserAuthRow = (bool, i64);
-                let user_row: Option<UserAuthRow> = sqlx::query_as(
-                    "SELECT is_active, credential_version FROM auth_user_by_id($1)",
-                )
-                .bind(user_id)
-                .fetch_optional(&mut *tx)
-                .await
-                .map_err(|e| TokenReuseDetected::Database(e.to_string()))?;
+                let user_row: Option<UserAuthRow> =
+                    sqlx::query_as("SELECT is_active, credential_version FROM auth_user_by_id($1)")
+                        .bind(user_id)
+                        .fetch_optional(&mut *tx)
+                        .await
+                        .map_err(|e| TokenReuseDetected::Database(e.to_string()))?;
                 let Some((is_active, user_version)) = user_row else {
                     // The user row is gone (deleted): every outstanding
                     // token of the user must die.

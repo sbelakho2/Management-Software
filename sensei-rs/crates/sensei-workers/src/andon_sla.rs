@@ -69,7 +69,11 @@ async fn watch_once(
 /// SLA, not yet escalated — read and escalated-marker written in ONE
 /// tenant-scoped transaction (migration-175 fail-closed RLS admits exactly
 /// this tenant's `andons` rows).
-async fn watch_tenant(pool: &sqlx::PgPool, bus: &Arc<dyn sensei_event_bus::EventBus>, tenant_id: uuid::Uuid) {
+async fn watch_tenant(
+    pool: &sqlx::PgPool,
+    bus: &Arc<dyn sensei_event_bus::EventBus>,
+    tenant_id: uuid::Uuid,
+) {
     let mut tx = match TenantTx::begin(pool, tenant_id).await {
         Ok(tx) => tx,
         Err(e) => {

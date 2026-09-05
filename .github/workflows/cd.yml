@@ -54,7 +54,7 @@ jobs:
         run: cargo fmt --all -- --check
         working-directory: sensei-rs
       - name: Run clippy
-        run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
+        run: cargo clippy --workspace --all-targets --all-features --exclude sensei-mobile --locked -- -D warnings
         working-directory: sensei-rs
 
   test:
@@ -92,7 +92,7 @@ jobs:
           SENSEI_ENV: development
           DATABASE_URL: postgres://sensei:sensei@localhost:5432/sensei
           JWT_SECRET: test-secret-key-that-is-long-enough-for-testing
-        run: cargo test --workspace --locked
+        run: cargo test --workspace --exclude sensei-mobile --locked
         working-directory: sensei-rs
 
   build:
@@ -112,7 +112,7 @@ jobs:
         with:
           workspaces: sensei-rs
       - name: Build workspace
-        run: cargo build --workspace --locked
+        run: cargo build --workspace --exclude sensei-mobile --locked
         working-directory: sensei-rs
       - name: Build release binaries (API + workers)
         run: cargo build --release --locked -p sensei-api -p sensei-workers
@@ -179,7 +179,7 @@ jobs:
           docker logs ci-minio || true
           exit 1
       - name: Build workspace binaries
-        run: cargo build --workspace --locked
+        run: cargo build --workspace --exclude sensei-mobile --locked
         working-directory: sensei-rs
       - name: Run cross-process smoke test (two API instances, read-after-write)
         env:

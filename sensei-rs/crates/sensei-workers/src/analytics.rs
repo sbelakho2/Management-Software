@@ -358,13 +358,12 @@ impl AnalyticsWorker {
         db: &mut TenantTx<'_>,
         date: &str,
     ) -> Result<QualityTotals> {
-        let ncrs_opened: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM ncr_reports WHERE DATE(created_at) = $1",
-        )
-        .bind(date)
-        .fetch_one(&mut **db.tx())
-        .await
-        .map_err(|e| self.query_failed("quality.ncrs_opened", e))?;
+        let ncrs_opened: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM ncr_reports WHERE DATE(created_at) = $1")
+                .bind(date)
+                .fetch_one(&mut **db.tx())
+                .await
+                .map_err(|e| self.query_failed("quality.ncrs_opened", e))?;
 
         let ncrs_closed: i64 = sqlx::query_scalar(
             "SELECT COUNT(*) FROM ncr_reports \
@@ -411,13 +410,12 @@ impl AnalyticsWorker {
         db: &mut TenantTx<'_>,
         date: &str,
     ) -> Result<FinanceTotals> {
-        let invoices_issued: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM invoices WHERE DATE(invoice_date) = $1",
-        )
-        .bind(date)
-        .fetch_one(&mut **db.tx())
-        .await
-        .map_err(|e| self.query_failed("finance.invoices_issued", e))?;
+        let invoices_issued: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM invoices WHERE DATE(invoice_date) = $1")
+                .bind(date)
+                .fetch_one(&mut **db.tx())
+                .await
+                .map_err(|e| self.query_failed("finance.invoices_issued", e))?;
 
         let total_revenue: f64 = sqlx::query_scalar(
             "SELECT COALESCE(SUM(total_amount), 0)::float8 FROM invoices \
@@ -454,11 +452,10 @@ impl AnalyticsWorker {
         db: &mut TenantTx<'_>,
         _date: &str,
     ) -> Result<InventoryTotals> {
-        let total_items: i64 =
-            sqlx::query_scalar("SELECT COUNT(*) FROM inventory_items")
-                .fetch_one(&mut **db.tx())
-                .await
-                .map_err(|e| self.query_failed("inventory.total_items", e))?;
+        let total_items: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM inventory_items")
+            .fetch_one(&mut **db.tx())
+            .await
+            .map_err(|e| self.query_failed("inventory.total_items", e))?;
 
         let low_stock_items: i64 = sqlx::query_scalar(
             "SELECT COUNT(*) FROM inventory_items ii \

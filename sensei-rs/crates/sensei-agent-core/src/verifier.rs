@@ -250,8 +250,7 @@ pub fn operator_satisfied(
             })
         }
         ClaimOperator::Range { min, max } => {
-            let (Some(a), Some(lo), Some(hi)) =
-                (numeric(actual), numeric(min), numeric(max))
+            let (Some(a), Some(lo), Some(hi)) = (numeric(actual), numeric(min), numeric(max))
             else {
                 return Err(err_inapplicable("numbers"));
             };
@@ -712,24 +711,13 @@ mod tests {
         // claimed value: "completed <= 10" holds iff actual <= 10.
         assert!(operator_satisfied(&ClaimOperator::LessThan, &json!(12), &json!(11)).unwrap());
         assert!(!operator_satisfied(&ClaimOperator::LessThan, &json!(10), &json!(11)).unwrap());
-        assert!(operator_satisfied(
-            &ClaimOperator::LessThanOrEqual,
-            &json!(12),
-            &json!(12)
-        )
-        .unwrap());
-        assert!(operator_satisfied(
-            &ClaimOperator::GreaterThan,
-            &json!(10),
-            &json!(12)
-        )
-        .unwrap());
-        assert!(operator_satisfied(
-            &ClaimOperator::GreaterThanOrEqual,
-            &json!(12),
-            &json!(12)
-        )
-        .unwrap());
+        assert!(
+            operator_satisfied(&ClaimOperator::LessThanOrEqual, &json!(12), &json!(12)).unwrap()
+        );
+        assert!(operator_satisfied(&ClaimOperator::GreaterThan, &json!(10), &json!(12)).unwrap());
+        assert!(
+            operator_satisfied(&ClaimOperator::GreaterThanOrEqual, &json!(12), &json!(12)).unwrap()
+        );
         // Approximate: ABSOLUTE tolerance around the claimed value.
         assert!(operator_satisfied(
             &ClaimOperator::Approximate { tolerance: 1.0 },

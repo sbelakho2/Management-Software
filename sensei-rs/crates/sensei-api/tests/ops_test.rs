@@ -325,8 +325,7 @@ async fn seed_world(pool: &sqlx::PgPool) -> OpsWorld {
 /// authoritative for per-request user lookups (see `andon_test.rs`).
 async fn gate_state(pool: &Arc<sqlx::PgPool>, world: &OpsWorld) -> sensei_api::AppState {
     common::setup::pin_test_environment();
-    let config = AppConfig::from_env()
-        .expect("test configuration must load under pinned env");
+    let config = AppConfig::from_env().expect("test configuration must load under pinned env");
 
     let mut operator = User::new(
         world.tenant_id,
@@ -338,10 +337,14 @@ async fn gate_state(pool: &Arc<sqlx::PgPool>, world: &OpsWorld) -> sensei_api::A
     operator.roles = vec!["user".to_string(), "production_manager".to_string()];
     operator.site_id = Some(world.site_a);
     let users_service: Arc<dyn UsersService> = Arc::new(InMemoryUsersService::new());
-    let seeded = users_service.create_user(operator).await.expect("seed operator");
+    let seeded = users_service
+        .create_user(operator)
+        .await
+        .expect("seed operator");
     assert_eq!(seeded.id, world.operator_id);
 
-    let mut state = sensei_api::AppState::new(config, users_service.clone()).with_db_pool(pool.clone());
+    let mut state =
+        sensei_api::AppState::new(config, users_service.clone()).with_db_pool(pool.clone());
     state.users_service = users_service;
     state
 }
@@ -414,7 +417,10 @@ async fn test_ops_acknowledge_and_resolve_andon() {
     .0;
     assert_eq!(resolved.status, "resolved");
     assert_eq!(resolved.resolved_by, Some(world.operator_id));
-    assert_eq!(resolved.resolution.as_deref(), Some("Restarted the machine"));
+    assert_eq!(
+        resolved.resolution.as_deref(),
+        Some("Restarted the machine")
+    );
     assert!(resolved.resolution_time_seconds.is_some());
 }
 

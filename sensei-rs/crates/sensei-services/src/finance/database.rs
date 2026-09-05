@@ -1385,9 +1385,10 @@ impl FinanceService for DatabaseFinanceService {
         .fetch_optional(&mut **db.tx())
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to get invoice: {e}")))?;
-        let invoice = invoice_row_to_domain(row.ok_or_else(|| {
-            SenseiError::NotFound(format!("Invoice {invoice_id} not found"))
-        })?)?;
+        let invoice =
+            invoice_row_to_domain(row.ok_or_else(|| {
+                SenseiError::NotFound(format!("Invoice {invoice_id} not found"))
+            })?)?;
         let mut invoiced_qty: HashMap<Uuid, f64> = HashMap::new();
         let mut unmatched_lines = 0usize;
         for line in &invoice.line_items {

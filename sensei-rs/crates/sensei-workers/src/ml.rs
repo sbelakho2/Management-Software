@@ -241,9 +241,7 @@ impl ModelRegistry {
         .bind(tenant_id)
         .fetch_all(&mut **tx.tx())
         .await
-        .map_err(|e| {
-            WorkerError::Processing(format!("Failed to load model registry: {e}"))
-        })?;
+        .map_err(|e| WorkerError::Processing(format!("Failed to load model registry: {e}")))?;
         let had_rows = !rows.is_empty();
 
         {
@@ -325,9 +323,10 @@ impl ModelRegistry {
         // Trained accuracy and the training sample count feed the platform
         // columns when the last status carries them.
         let (accuracy, dataset_size): (Option<f64>, Option<i64>) = match &def.status {
-            ModelStatus::Trained { accuracy, .. } => {
-                (Some(*accuracy), def.parameters.as_ref().map(|p| p.sample_count as i64))
-            }
+            ModelStatus::Trained { accuracy, .. } => (
+                Some(*accuracy),
+                def.parameters.as_ref().map(|p| p.sample_count as i64),
+            ),
             _ => (None, def.parameters.as_ref().map(|p| p.sample_count as i64)),
         };
 
@@ -353,9 +352,7 @@ impl ModelRegistry {
         .bind(serde_json::Value::Object(Default::default()))
         .execute(&mut **tx.tx())
         .await
-        .map_err(|e| {
-            WorkerError::Processing(format!("Failed to persist model '{name}': {e}"))
-        })?;
+        .map_err(|e| WorkerError::Processing(format!("Failed to persist model '{name}': {e}")))?;
         Ok(())
     }
 
@@ -399,12 +396,7 @@ impl ModelRegistry {
     }
 
     /// Update a model's status (in-memory + tenant-scoped DB persist).
-    pub async fn update_status(
-        &self,
-        tenant_id: Uuid,
-        name: &str,
-        status: ModelStatus,
-    ) {
+    pub async fn update_status(&self, tenant_id: Uuid, name: &str, status: ModelStatus) {
         let mut models = self.models.write().await;
         if let Some(def) = models.get_mut(&(tenant_id, name.to_string())) {
             def.status = status.clone();
@@ -577,9 +569,7 @@ impl MlWorker {
         match &self.pool {
             Some(pool) => {
                 let mut tx = TenantTx::begin(pool, tenant_id).await.map_err(|e| {
-                    WorkerError::Processing(format!(
-                        "Failed to begin training-data tx: {e}"
-                    ))
+                    WorkerError::Processing(format!("Failed to begin training-data tx: {e}"))
                 })?;
                 let data = match model_name {
                     "quality_defect_prediction" => {
@@ -799,12 +789,20 @@ impl MlWorker {
         }
 
         self.registry
-            .update_status(tenant_id, model_name, ModelStatus::Training { progress: 0.0 })
+            .update_status(
+                tenant_id,
+                model_name,
+                ModelStatus::Training { progress: 0.0 },
+            )
             .await;
 
         // Step 1: Load training data.
         self.registry
-            .update_status(tenant_id, model_name, ModelStatus::Training { progress: 0.2 })
+            .update_status(
+                tenant_id,
+                model_name,
+                ModelStatus::Training { progress: 0.2 },
+            )
             .await;
 
         // Long-running training must renew the idempotency lease so a
@@ -820,7 +818,11 @@ impl MlWorker {
         }
 
         self.registry
-            .update_status(tenant_id, model_name, ModelStatus::Training { progress: 0.5 })
+            .update_status(
+                tenant_id,
+                model_name,
+                ModelStatus::Training { progress: 0.5 },
+            )
             .await;
 
         // Step 2: Compute statistical model parameters.
@@ -835,7 +837,11 @@ impl MlWorker {
         let parameters = ModelParameters::from_data(&data, spec_lsl, spec_usl);
 
         self.registry
-            .update_status(tenant_id, model_name, ModelStatus::Training { progress: 0.75 })
+            .update_status(
+                tenant_id,
+                model_name,
+                ModelStatus::Training { progress: 0.75 },
+            )
             .await;
 
         // Step 3: Build baseline histogram for future drift detection.
@@ -1005,12 +1011,12 @@ impl MlWorker {
             }
         }
         match &self.pool {
-            Some(pool) => sqlx::query_scalar(
-                "SELECT id FROM tenants WHERE is_active = TRUE ORDER BY id",
-            )
-            .fetch_all(pool.as_ref())
-            .await
-            .unwrap_or_default(),
+            Some(pool) => {
+                sqlx::query_scalar("SELECT id FROM tenants WHERE is_active = TRUE ORDER BY id")
+                    .fetch_all(pool.as_ref())
+                    .await
+                    .unwrap_or_default()
+            }
             None => vec![Uuid::nil()],
         }
     }

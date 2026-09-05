@@ -63,9 +63,7 @@ pub async fn set_employee_assignment(
     let exists: bool = {
         let mut db = sensei_core::db::TenantTx::begin(pool, user.tenant_id)
             .await
-            .map_err(|e| {
-                SenseiError::Database(format!("Assignment lookup tx failed: {e}"))
-            })?;
+            .map_err(|e| SenseiError::Database(format!("Assignment lookup tx failed: {e}")))?;
         let found: bool = sqlx::query_scalar(
             "SELECT EXISTS(SELECT 1 FROM users WHERE id = $1 AND tenant_id = $2)",
         )

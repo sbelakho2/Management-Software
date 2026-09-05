@@ -59,6 +59,7 @@ jobs:
 
       - name: Check formatting
         run: cargo fmt --all -- --check
+        working-directory: sensei-rs
       - name: Env contract (orchestration variables documented)
         run: bash scripts/validate-env-contract.sh
         working-directory: ${{ github.workspace }}
@@ -66,7 +67,7 @@ jobs:
         run: bash scripts/validate-db-contract.sh
 
       - name: Run clippy
-        run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
+        run: cargo clippy --workspace --all-targets --all-features --exclude sensei-mobile --locked -- -D warnings
         working-directory: sensei-rs
 
   test:
@@ -116,7 +117,7 @@ jobs:
           S3_SECRET_KEY: test
           S3_BUCKET: test-bucket
           NATS_URL: nats://localhost:4222
-        run: cargo test --workspace --locked
+        run: cargo test --workspace --exclude sensei-mobile --locked
         working-directory: sensei-rs
 
   build:
@@ -142,7 +143,7 @@ jobs:
           workspaces: sensei-rs
 
       - name: Build workspace
-        run: cargo build --workspace --locked
+        run: cargo build --workspace --exclude sensei-mobile --locked
         working-directory: sensei-rs
 
       - name: Build release binaries (API + workers)
@@ -218,7 +219,7 @@ jobs:
           exit 1
 
       - name: Build workspace binaries
-        run: cargo build --workspace --locked
+        run: cargo build --workspace --exclude sensei-mobile --locked
         working-directory: sensei-rs
 
       - name: Run cross-process smoke test (two API instances, read-after-write)

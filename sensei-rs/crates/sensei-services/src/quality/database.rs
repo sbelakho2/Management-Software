@@ -1566,7 +1566,8 @@ impl QualityService for DatabaseQualityService {
         ];
         let status_db = status.and_then(|s| canonical_db_value(s, &status_candidates));
         let type_db = audit_type.and_then(|t| canonical_db_value(t, &type_candidates));
-        if (status.is_some() && status_db.is_none()) || (audit_type.is_some() && type_db.is_none()) {
+        if (status.is_some() && status_db.is_none()) || (audit_type.is_some() && type_db.is_none())
+        {
             return Ok(paginate(Vec::new(), 0, page, pp));
         }
 

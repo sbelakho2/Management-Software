@@ -1802,12 +1802,9 @@ impl ProductionService for DatabaseProductionService {
             }
             DbScopeFilter::TenantWide | DbScopeFilter::None => cq,
         };
-        let count: i64 = cq
-            .fetch_one(&mut **db.tx())
-            .await
-            .map_err(|e| {
-                SenseiError::Database(format!("Failed to count production orders: {e}"))
-            })?;
+        let count: i64 = cq.fetch_one(&mut **db.tx()).await.map_err(|e| {
+            SenseiError::Database(format!("Failed to count production orders: {e}"))
+        })?;
 
         let items = items.into_iter().map(po_row_to_domain).collect();
         db.commit()
@@ -2615,9 +2612,7 @@ impl ProductionService for DatabaseProductionService {
         // operation rows read on ONE TenantTx of the caller's tenant.
         let mut db = TenantTx::begin(&self.pool, tenant_id)
             .await
-            .map_err(|e| {
-                SenseiError::Database(format!("Failed to begin WO ops read tx: {e}"))
-            })?;
+            .map_err(|e| SenseiError::Database(format!("Failed to begin WO ops read tx: {e}")))?;
         let scope = DbScopeFilter::from_authorized(&ctx.scope);
         let (scope_clause, tenant_wide) = scope.where_clause_for("wc", 3);
 
@@ -2689,9 +2684,7 @@ impl ProductionService for DatabaseProductionService {
         .map_err(|e| SenseiError::Database(format!("Failed to list work order operations: {e}")))?;
         db.commit()
             .await
-            .map_err(|e| {
-                SenseiError::Database(format!("Failed to commit WO ops read tx: {e}"))
-            })?;
+            .map_err(|e| SenseiError::Database(format!("Failed to commit WO ops read tx: {e}")))?;
 
         Ok(rows
             .into_iter()

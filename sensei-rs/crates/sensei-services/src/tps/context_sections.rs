@@ -305,9 +305,8 @@ async fn current_work_facts(
                     SenseiError::Database(format!("context kernel: current work orders: {e}"))
                 })?;
             for (wo_number, product, completed, quantity, updated_at) in work_orders {
-                let display = format!(
-                    "wo={wo_number} product={product} completed={completed}/{quantity}"
-                );
+                let display =
+                    format!("wo={wo_number} product={product} completed={completed}/{quantity}");
                 facts.push(ContextFact::measured(
                     "current_work",
                     "work_order",
@@ -321,19 +320,24 @@ async fn current_work_facts(
                     display,
                 ));
             }
-            let andons: Vec<(String, String, String, String, chrono::DateTime<chrono::Utc>)> =
-                sqlx::query_as(
-                    "SELECT andon_number, issue_type, severity, status, created_at \
+            let andons: Vec<(
+                String,
+                String,
+                String,
+                String,
+                chrono::DateTime<chrono::Utc>,
+            )> = sqlx::query_as(
+                "SELECT andon_number, issue_type, severity, status, created_at \
                      FROM andons \
                      WHERE tenant_id = $1 AND work_center_id = $2 \
                        AND status IN ('active', 'acknowledged') \
                      ORDER BY created_at DESC LIMIT 3",
-                )
-                .bind(tenant_id)
-                .bind(work_center_id)
-                .fetch_all(&mut **tx)
-                .await
-                .map_err(|e| SenseiError::Database(format!("context kernel: open andons: {e}")))?;
+            )
+            .bind(tenant_id)
+            .bind(work_center_id)
+            .fetch_all(&mut **tx)
+            .await
+            .map_err(|e| SenseiError::Database(format!("context kernel: open andons: {e}")))?;
             for (andon_number, issue_type, severity, status, created_at) in andons {
                 let display =
                     format!("andon={andon_number} issue={issue_type} severity={severity}");
@@ -420,11 +424,9 @@ async fn live_state_facts(
                 ),
                 (None, None) => return Ok(Vec::new()),
             };
-            let mut query = sqlx::query_as::<
-                _,
-                (String, String, i64, chrono::DateTime<chrono::Utc>),
-            >(sql)
-            .bind(tenant_id);
+            let mut query =
+                sqlx::query_as::<_, (String, String, i64, chrono::DateTime<chrono::Utc>)>(sql)
+                    .bind(tenant_id);
             if bind_site {
                 query = query.bind(site_id.expect("guarded by match"));
             }
@@ -482,8 +484,7 @@ async fn metric_tree_facts(
                     .into_iter()
                     .find(|c| c.id() == result.metric_id)
                     .map(|c| c.version());
-                let value = serde_json::to_value(&result.value)
-                    .unwrap_or(serde_json::Value::Null);
+                let value = serde_json::to_value(&result.value).unwrap_or(serde_json::Value::Null);
                 let mut fact = ContextFact::measured(
                     "metric_tree",
                     "metric",
