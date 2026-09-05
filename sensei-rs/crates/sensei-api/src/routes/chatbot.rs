@@ -868,7 +868,7 @@ fn verify_chat_response(
         }
         // Represented by the structured channel → verified through the
         // draft loop below (the statement is the SAME claim).
-        if let Some(_) = represented.get(&normalize_statement(s)) {
+        if represented.contains_key(&normalize_statement(s)) {
             continue;
         }
         let matched: Vec<String> = markers
@@ -1150,10 +1150,7 @@ fn normalize_statement(s: &str) -> String {
     let mut out = s.trim().to_lowercase();
     // Strip "[evidence: ...]" markers — the structured statement does not
     // carry them while the prose rendering may.
-    loop {
-        let Some(start) = out.find("[evidence:") else {
-            break;
-        };
+    while let Some(start) = out.find("[evidence:") {
         let after = &out[start + "[evidence:".len()..];
         let Some(end) = after.find(']') else {
             break;
@@ -1234,7 +1231,7 @@ async fn resolve_recomputed_derivations(
         }
         match program.compute(pool, tenant_id, site_id).await {
             Ok(result) => {
-                let value = serde_json::to_value(&result.value).unwrap_or(serde_json::Value::Null);
+                let value = serde_json::to_value(result.value).unwrap_or(serde_json::Value::Null);
                 recomputed.insert(
                     key,
                     RecomputedDerivation {
@@ -1772,6 +1769,7 @@ mod tests {
 
     /// Build a typed claim draft (statement in ANY language + typed
     /// assertion). `evidence` is the cited kernel item.
+    #[allow(clippy::too_many_arguments)]
     fn typed_draft(
         statement: &str,
         evidence: &sensei_agent_core::context::ContextItem,

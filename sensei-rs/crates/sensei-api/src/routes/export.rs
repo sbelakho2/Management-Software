@@ -748,7 +748,7 @@ async fn fetch_scoped_canonical_inspections(
         }
         let offset = ((page - 1) * EXPORT_PAGE_SIZE) as i64;
         q = q.bind(EXPORT_PAGE_SIZE as i64).bind(offset);
-        let rows: Vec<(
+        type ScopedInspectionTuple = (
             Uuid,
             String,
             String,
@@ -758,7 +758,8 @@ async fn fetch_scoped_canonical_inspections(
             String,
             Option<Uuid>,
             DateTime<Utc>,
-        )> = q.fetch_all(&mut *tx).await.map_err(|e| {
+        );
+        let rows: Vec<ScopedInspectionTuple> = q.fetch_all(&mut *tx).await.map_err(|e| {
             sensei_core::error::SenseiError::Database(format!(
                 "export: scoped inspection fetch: {e}"
             ))

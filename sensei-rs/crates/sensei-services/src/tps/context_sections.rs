@@ -484,7 +484,7 @@ async fn metric_tree_facts(
                     .into_iter()
                     .find(|c| c.id() == result.metric_id)
                     .map(|c| c.version());
-                let value = serde_json::to_value(&result.value).unwrap_or(serde_json::Value::Null);
+                let value = serde_json::to_value(result.value).unwrap_or(serde_json::Value::Null);
                 let mut fact = ContextFact::measured(
                     "metric_tree",
                     "metric",

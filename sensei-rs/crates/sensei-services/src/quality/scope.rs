@@ -396,10 +396,10 @@ mod tests {
             "sites-only + no focus must be rejected, got {err:?}"
         );
         assert!(
-            !sites(tenant, &[site])
+            sites(tenant, &[site])
                 .scope
                 .enforce_resource(&ResourceScope::Tenant)
-                .is_ok(),
+                .is_err(),
             "sites-only must not reach a corporate record"
         );
     }

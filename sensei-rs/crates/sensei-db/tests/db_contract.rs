@@ -20068,6 +20068,7 @@ async fn quality_gate_fresh_schema(pool: &sqlx::PgPool) {
 /// Seed one ACTIVE role-slot assignment for a principal (role_slots /
 /// principal_assignments are FORCE-RLS: the seed transaction sets the
 /// tenant context first — the established db-contract pattern).
+#[allow(clippy::too_many_arguments)]
 async fn quality_gate_seed_slot(
     pool: &sqlx::PgPool,
     tenant_id: uuid::Uuid,
