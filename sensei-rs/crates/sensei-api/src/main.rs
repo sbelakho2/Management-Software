@@ -141,11 +141,14 @@ fn env_flag_enabled(var: &str) -> bool {
 
 /// The bootstrap tenant for seeded admin/CEO accounts.
 ///
-/// `Uuid::nil()` matches the legacy in-memory seeding behavior; in database
-/// mode a `tenants` row is ensured first because the `users.tenant_id`
-/// column references it.
+/// A fixed, deterministic id (NOT `Uuid::nil()`): the tenants service
+/// treats nil ids as "generate one" (`create_tenant` remaps nil to a fresh
+/// random uuid), so a nil bootstrap tenant would be created under a random
+/// id while the seeded `users.tenant_id` still referenced nil — violating
+/// `users_tenant_id_fkey` on first boot. Every replica resolves the same
+/// fixed id, keeping seeding idempotent under the advisory lock.
 fn bootstrap_tenant_id() -> TenantId {
-    TenantId::nil()
+    uuid::Uuid::from_u128(1)
 }
 
 /// Ensure the bootstrap tenant exists (the `users` table has an FK on
@@ -250,7 +253,7 @@ async fn seed_bootstrap_users(state: &AppState) {
             }
         };
         match sqlx::query(
-            "SELECT pg_advisory_xact_lock(737_012_345) \
+            "SELECT pg_advisory_xact_lock(737012345) \
              FROM (SELECT 1) t",
         )
         .execute(&mut *conn)
