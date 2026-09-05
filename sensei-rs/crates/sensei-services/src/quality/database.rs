@@ -1096,10 +1096,13 @@ impl QualityService for DatabaseQualityService {
         row.scope_site_id = stored.scope_site_id;
         row.scope_work_center_id = stored.scope_work_center_id;
         row.updated_at = Utc::now();
-        let mut echo = ncr;
-        echo.updated_at = row.updated_at;
         update_ncr_columns(&self.pool, ctx.tenant, id, &row).await?;
-        Ok(echo)
+        // Whole-entity echoes return the PERSISTED record so update and
+        // get always agree at storage resolution (PG microseconds).
+        let row = fetch_ncr_row(&self.pool, ctx, id)
+            .await?
+            .ok_or_else(|| not_found("NCR", id))?;
+        row.to_entity()
     }
 
     async fn delete_ncr(&self, ctx: &RequestContext, id: Uuid) -> Result<()> {
@@ -1460,10 +1463,13 @@ impl QualityService for DatabaseQualityService {
         row.scope_site_id = stored.scope_site_id;
         row.scope_work_center_id = stored.scope_work_center_id;
         row.updated_at = Utc::now();
-        let mut echo = capa;
-        echo.updated_at = row.updated_at;
         update_capa_columns(&self.pool, ctx.tenant, id, &row).await?;
-        Ok(echo)
+        // Whole-entity echoes return the PERSISTED record so update and
+        // get always agree at storage resolution (PG microseconds).
+        let row = fetch_capa_row(&self.pool, ctx, id)
+            .await?
+            .ok_or_else(|| not_found("CAPA", id))?;
+        row.to_entity()
     }
 
     async fn delete_capa(&self, ctx: &RequestContext, id: Uuid) -> Result<()> {
@@ -1711,10 +1717,13 @@ impl QualityService for DatabaseQualityService {
         row.scope_site_id = stored.scope_site_id;
         row.scope_work_center_id = stored.scope_work_center_id;
         row.updated_at = Utc::now();
-        let mut echo = audit;
-        echo.updated_at = row.updated_at;
         update_audit_columns(&self.pool, ctx.tenant, id, &row).await?;
-        Ok(echo)
+        // Whole-entity echoes return the PERSISTED record so update and
+        // get always agree at storage resolution (PG microseconds).
+        let row = fetch_audit_row(&self.pool, ctx, id)
+            .await?
+            .ok_or_else(|| not_found("Audit", id))?;
+        row.to_entity()
     }
 
     async fn delete_audit(&self, ctx: &RequestContext, id: Uuid) -> Result<()> {
