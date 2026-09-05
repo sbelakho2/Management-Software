@@ -22,6 +22,10 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
+    // The archive is linked into Rust executables, which are PIE on Linux:
+    // emit position-independent code so static linking never trips
+    // R_X86_64_32 relocations against non-PIC data.
+    lib_module.pic = true;
 
     // Pass `has_onnx` as a build option module
     lib_module.addOptions("build_options", options);

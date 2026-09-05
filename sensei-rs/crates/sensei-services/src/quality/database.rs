@@ -1048,7 +1048,12 @@ impl QualityService for DatabaseQualityService {
         tx.commit()
             .await
             .map_err(|e| SenseiError::Database(format!("create_ncr: commit: {e}")))?;
-        Ok(ncr)
+        // POST echoes the PERSISTED entity (storage resolution: PG keeps
+        // microseconds), so create and get always agree.
+        let row = fetch_ncr_row(&self.pool, ctx, id)
+            .await?
+            .ok_or_else(|| not_found("NCR", id))?;
+        row.to_entity()
     }
 
     async fn get_ncr(&self, ctx: &RequestContext, id: Uuid) -> Result<NonConformance> {
@@ -1406,7 +1411,12 @@ impl QualityService for DatabaseQualityService {
         tx.commit()
             .await
             .map_err(|e| SenseiError::Database(format!("create_capa: commit: {e}")))?;
-        Ok(capa)
+        // POST echoes the PERSISTED entity (storage resolution: PG keeps
+        // microseconds), so create and get always agree.
+        let row = fetch_capa_row(&self.pool, ctx, capa.id)
+            .await?
+            .ok_or_else(|| not_found("CAPA", capa.id))?;
+        row.to_entity()
     }
 
     async fn get_capa(&self, ctx: &RequestContext, id: Uuid) -> Result<CapaExtended> {
@@ -1676,7 +1686,12 @@ impl QualityService for DatabaseQualityService {
         tx.commit()
             .await
             .map_err(|e| SenseiError::Database(format!("create_audit: commit: {e}")))?;
-        Ok(audit)
+        // POST echoes the PERSISTED entity (storage resolution: PG keeps
+        // microseconds), so create and get always agree.
+        let row = fetch_audit_row(&self.pool, ctx, audit.id)
+            .await?
+            .ok_or_else(|| not_found("Audit", audit.id))?;
+        row.to_entity()
     }
 
     async fn get_audit(&self, ctx: &RequestContext, id: Uuid) -> Result<Audit> {
