@@ -52,30 +52,23 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/app/target \
     mkdir -p crates
 
+# Full workspace sources are copied BEFORE `cargo fetch`: cargo parses every
+# member manifest and target autodiscovery requires the real source trees
+# (manifest-only copies fail with "no targets specified in the manifest").
+# Download caching is preserved by the registry cache mount on the fetch RUN.
 COPY Cargo.toml Cargo.lock ./
 COPY rust-toolchain.toml ./
-COPY crates/sensei-core/Cargo.toml crates/sensei-core/
-COPY crates/sensei-db/Cargo.toml crates/sensei-db/
-COPY crates/sensei-event-bus/Cargo.toml crates/sensei-event-bus/
-COPY crates/sensei-auth/Cargo.toml crates/sensei-auth/
-COPY crates/sensei-api/Cargo.toml crates/sensei-api/
-COPY crates/sensei-services/Cargo.toml crates/sensei-services/
-COPY crates/sensei-frontend/Cargo.toml crates/sensei-frontend/
-COPY crates/sensei-zt/Cargo.toml crates/sensei-zt/
-COPY crates/sensei-workers/Cargo.toml crates/sensei-workers/
-COPY xtask/Cargo.toml xtask/
-COPY xtask/src xtask/src/
-COPY src-tauri/Cargo.toml src-tauri/
-COPY src-tauri/src src-tauri/src/
+COPY crates/ crates/
+COPY xtask/ xtask/
+COPY src-tauri/ src-tauri/
 
-# Build dependencies only (this layer is cached).
+# Fetch dependencies (layer cached via the registry mount).
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/app/target \
     cargo fetch --locked
 
 # ── Build the real binaries ────────────────────────────────────────────────
 COPY zig/ zig/
-COPY crates/ crates/
 
 # Compile the API and worker release binaries (locked to the committed lock).
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
@@ -97,20 +90,12 @@ RUN rustup target add wasm32-unknown-unknown \
     && cargo install trunk --version "$TRUNK_VERSION" --locked
 
 WORKDIR /app
+# Full workspace sources (see the builder stage note): trunk resolves the
+# whole workspace manifest graph, so target-less members must carry sources.
 COPY Cargo.toml Cargo.lock ./
-COPY crates/sensei-frontend/Cargo.toml crates/sensei-frontend/
-COPY crates/sensei-core/Cargo.toml crates/sensei-core/
-COPY crates/sensei-db/Cargo.toml crates/sensei-db/
-COPY crates/sensei-auth/Cargo.toml crates/sensei-auth/
-COPY crates/sensei-event-bus/Cargo.toml crates/sensei-event-bus/
-COPY crates/sensei-services/Cargo.toml crates/sensei-services/
-COPY crates/sensei-zt/Cargo.toml crates/sensei-zt/
-COPY crates/sensei-workers/Cargo.toml crates/sensei-workers/
-COPY xtask/Cargo.toml xtask/
-COPY xtask/src xtask/src/
-COPY src-tauri/Cargo.toml src-tauri/
-COPY src-tauri/src src-tauri/src/
 COPY crates/ crates/
+COPY xtask/ xtask/
+COPY src-tauri/ src-tauri/
 
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/app/target \
