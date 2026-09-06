@@ -203,7 +203,9 @@ impl ApiClient {
             .send()
             .await
             .map_err(|e| ApiError::http(e.to_string()))?;
-        resp.json().await.map_err(|e| ApiError::json(format!("json({path}): {e:?}")))
+        resp.json()
+            .await
+            .map_err(|e| ApiError::json(format!("json({path}): {e:?}")))
     }
 
     /// Perform a PUT request with a JSON body.
