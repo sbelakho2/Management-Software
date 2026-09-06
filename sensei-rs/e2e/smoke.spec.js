@@ -13,7 +13,7 @@ test('login renders the Starz Forge identity', async ({ page }) => {
   await expect(page.getByRole('heading', { name: /AUTHENTICATE/i })).toBeVisible();
 });
 
-test('unauthenticated access redirects to login', async ({ page }) => {
+test('operator route access redirects unauthenticated visitors to login', async ({ page }) => {
   await page.goto('/today');
   await expect(page).toHaveURL(/\/login/);
 });
