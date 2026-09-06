@@ -113,7 +113,10 @@ jobs:
 
       - name: Run E2E + axe
         run: |
-          cd sensei-rs/e2e
+          # Config lives at sensei-rs/playwright.config.js (baseURL etc.) —
+          # Playwright only discovers it from the working directory, so run
+          # from sensei-rs, not from e2e/.
+          cd sensei-rs
           E2E_ADMIN_EMAIL=admin@sensei.local \
           E2E_ADMIN_PASSWORD=Test@1234 \
           npx playwright test --reporter=line
