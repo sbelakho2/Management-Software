@@ -39,7 +39,11 @@ test('Station page help dialog is keyboard-operable with no critical violations'
 
 test('keyboard-only: login and navigation work without a mouse', async ({ page }) => {
   await page.goto('/login');
-  // Tab to the email field, type, tab to password, type, Enter to submit.
+  // Wait for the SPA to hydrate (the form must exist before keyboard
+  // navigation starts), then Tab to the email field, type, tab to
+  // password, type, Enter to submit — no mouse anywhere.
+  await page.getByLabel(/email/i).waitFor({ state: 'visible', timeout: 15_000 });
+  await page.waitForTimeout(1000);
   await page.keyboard.press('Tab');
   await page.keyboard.type(ADMIN_EMAIL);
   await page.keyboard.press('Tab');

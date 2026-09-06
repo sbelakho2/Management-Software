@@ -631,7 +631,12 @@ pub async fn refresh(
         user_id: claims.sub,
         roles,
     };
-    if wants_cookie(&headers) {
+    // Cookie-mode persistence also applies when the CALLER came in with a
+    // refresh cookie: rotation must write the NEW token into the cookie —
+    // otherwise the jar keeps the just-rotated value and every later
+    // restore fails with "Invalid or expired refresh token".
+    let cookie_mode = wants_cookie(&headers) || refresh_token_from_cookie(&headers).is_some();
+    if cookie_mode {
         let refresh_token = response.refresh_token.clone();
         let cookie_body = CookieLoginResponse {
             access_token: response.access_token.clone(),

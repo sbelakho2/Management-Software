@@ -29,6 +29,9 @@ jobs:
       JWT_SECRET: ci-e2e-secret
       SENSEI_ENV: test
       SENSEI_NO_ZIG: "1"
+      # The suite performs bursty realtime/snapshot polling; throttling is
+      # validated by unit tests, not here.
+      FEATURE_RATE_LIMITING: "false"
       RUST_BACKTRACE: 1
     steps:
       - uses: actions/checkout@v4

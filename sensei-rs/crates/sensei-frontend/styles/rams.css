@@ -20,7 +20,8 @@
   --rams-module:  #E6E6E6;
   --rams-panel:   #D9D9D9;
   --rams-line:    #CCCCCC;
-  --rams-muted:   #999999;
+  /* WCAG AA (>=4.5:1) on chassis/module/panel surfaces */
+  --rams-muted:   #5F5F5F;
 
   /* --------------------------------------------------------------------
      Functional Accents (Semantic only — never decorative)
@@ -131,7 +132,8 @@
     --rams-module:  #252525;
     --rams-panel:   #2D2D2D;
     --rams-line:    #404040;
-    --rams-muted:   #8F8F8F;
+    /* WCAG AA (>=4.5:1) on chassis/module/panel surfaces */
+    --rams-muted:   #979797;
 
     --rams-foreground:      #F2F2F2;
     --rams-foreground-muted: #ADADAD;

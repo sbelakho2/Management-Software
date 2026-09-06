@@ -116,9 +116,10 @@ test('station help: UI submit creates a server-derived Andon the team lead sees'
   expect(commandBody.raised_by).toBeUndefined();
 
   // The Team Lead interval board surfaces the abnormality (the Andon the
-  // operator raised must be visible to the lead).
+  // operator raised must be visible to the lead): the board renders the
+  // server-assigned andon number (AND-...) under "WHAT STOPPED FLOW?".
   await page.goto('/team-lead');
-  await expect(page.getByText(/ABNORMALITY|ANDON/i).first()).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByText(/AND-|WHAT STOPPED FLOW/i).first()).toBeVisible({ timeout: 15_000 });
 });
 
 test('unauthenticated access redirects to login', async ({ page }) => {
