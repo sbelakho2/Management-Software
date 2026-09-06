@@ -11,7 +11,7 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 sensei-contracts = { path = "../sensei-contracts" }
 sensei-core = { path = "../sensei-core" }
-leptos.workspace = true
+leptos = { workspace = true, features = ["csr"] }
 leptos_router.workspace = true
 leptos_meta.workspace = true
 wasm-bindgen.workspace = true
