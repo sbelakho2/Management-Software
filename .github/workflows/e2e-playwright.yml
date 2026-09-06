@@ -103,7 +103,7 @@ jobs:
           # + SPA fallback): the frontend's API calls are same-origin
           # relative paths, so a separate python static server could never
           # work (no SPA deep-link fallback, no /api proxy, CORS).
-          cargo run -p sensei-api --release &
+          API_PORT=8081 cargo run -p sensei-api --release &
           # Item 79: the API exposes /livez and /readyz (NOT /healthz).
           for i in $(seq 1 60); do
             if curl -sf http://127.0.0.1:8081/livez > /dev/null \
