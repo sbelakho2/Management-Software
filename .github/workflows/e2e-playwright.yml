@@ -103,7 +103,10 @@ jobs:
           # + SPA fallback): the frontend's API calls are same-origin
           # relative paths, so a separate python static server could never
           # work (no SPA deep-link fallback, no /api proxy, CORS).
-          API_PORT=8081 cargo run -p sensei-api --release &
+          API_PORT=8081 \
+          SENSEI_ADMIN_PASSWORD='Test@1234' \
+          SENSEI_CEO_PASSWORD='Test@1234' \
+          cargo run -p sensei-api --release &
           # Item 79: the API exposes /livez and /readyz (NOT /healthz).
           for i in $(seq 1 60); do
             if curl -sf http://127.0.0.1:8081/livez > /dev/null \
@@ -131,6 +134,6 @@ jobs:
           # from sensei-rs, not from e2e/.
           cd sensei-rs
           E2E_BASE_URL=http://localhost:8081 \
-          E2E_ADMIN_EMAIL=admin@sensei.local \
+          E2E_ADMIN_EMAIL=ceo@starz.com \
           E2E_ADMIN_PASSWORD=Test@1234 \
           npx playwright test --reporter=line

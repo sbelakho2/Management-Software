@@ -72,7 +72,7 @@ pub fn LoginPage() -> impl IntoView {
                         // loaded: surface a warning with a retry action.
                         set_profile_retry.set(true);
                     } else {
-                        nav("/dashboard", Default::default());
+                        nav("/today", Default::default());
                     }
                 }
                 Err(e) => {
@@ -102,7 +102,7 @@ pub fn LoginPage() -> impl IntoView {
         spawn_local(async move {
             match state.fetch_profile().await {
                 Ok(_) => {
-                    nav("/dashboard", Default::default());
+                    nav("/today", Default::default());
                 }
                 Err(e) => {
                     set_profile_retry.set(true);
@@ -118,7 +118,7 @@ pub fn LoginPage() -> impl IntoView {
     let nav_continue = navigate.clone();
     let on_continue = move |ev: leptos::ev::MouseEvent| {
         ev.prevent_default();
-        nav_continue("/dashboard", Default::default());
+        nav_continue("/today", Default::default());
     };
 
     view! {
