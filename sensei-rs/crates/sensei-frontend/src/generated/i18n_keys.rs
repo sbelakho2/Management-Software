@@ -1,5 +1,10 @@
 //! Auto-generated i18n key enum.
 //! Run `cargo build` in the sensei-frontend crate to regenerate.
+//!
+//! #![rustfmt::skip] — generated files are exempt from formatting checks
+//! (the emitter's layout and the pinned rustfmt disagree on match-arm
+//! wrapping; reformatting on regeneration is fine, CI never requires it).
+#![rustfmt::skip]
 
 use std::fmt;
 
