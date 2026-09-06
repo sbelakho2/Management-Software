@@ -319,15 +319,16 @@ jobs:
       - name: Lint Helm Chart
         run: helm lint k8s/helm/sensei
 
-      - name: Dry-run Helm Install
+      - name: Render Helm Chart (template, no cluster needed)
         run: |
-          helm install sensei-os k8s/helm/sensei \
+          # helm install --dry-run requires a reachable cluster; rendering
+          # the chart validates every template against the values the
+          # deploy will use (lint above covers schema).
+          helm template sensei-os k8s/helm/sensei \
             --namespace sensei-production \
-            --create-namespace \
             --set global.imageRegistry="ghcr.io/sbelakho2" \
             --set senseiApi.image.tag=${{ env.IMAGE_TAG }} \
-            --set senseiApi.image.repository=ghcr.io/sbelakho2/sensei-rs-api \
-            --dry-run --debug
+            --set senseiApi.image.repository=ghcr.io/sbelakho2/sensei-rs-api > /dev/null
 
       # azure/k8s-set-context@v5.0.1
       - name: Set up Kubeconfig
