@@ -71,7 +71,12 @@ jobs:
           # build BEFORE the post-pass below runs.
           trunk build --release
           for wasm in dist/*.wasm; do
-            wasm-opt --enable-bulk-memory --enable-threads --enable-sign-ext -O3 "$wasm" -o "$wasm"
+            # Feature-complete validator set: wasm-bindgen's current glue
+            # emits reference-types (externref) and may use sign-ext /
+            # bulk-memory / threads; missing flags make the validator
+            # reject used features ("all used features should be allowed").
+            wasm-opt --enable-bulk-memory --enable-threads --enable-sign-ext \
+              --enable-reference-types -O3 "$wasm" -o "$wasm"
           done
           cp -r dist ../../dist-frontend
 
