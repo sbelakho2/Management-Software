@@ -76,7 +76,8 @@ jobs:
             # bulk-memory / threads; missing flags make the validator
             # reject used features ("all used features should be allowed").
             wasm-opt --enable-bulk-memory --enable-threads --enable-sign-ext \
-              --enable-reference-types -O3 "$wasm" -o "$wasm"
+              --enable-reference-types --enable-nontrapping-float-to-int \
+              -O3 "$wasm" -o "$wasm"
           done
           cp -r dist ../../dist-frontend
 
