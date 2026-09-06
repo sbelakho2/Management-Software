@@ -360,3 +360,5 @@ gutenberg_catalog.json
 # ============================================
 /zig-cache/
 .zig-cache/
+sensei-rs/test-results/
+sensei-rs/node_modules/
