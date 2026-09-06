@@ -42,7 +42,7 @@ const AUTO_REFRESH_SKIP_PATHS: [&str; 3] = [
 #[derive(Debug, Clone, Serialize, serde::Deserialize)]
 pub struct AuthTokens {
     pub access_token: String,
-    pub refresh_token: String,
+    pub refresh_token: Option<String>,
     pub token_type: String,
     pub expires_in: u64,
 }
@@ -203,7 +203,7 @@ impl ApiClient {
             .send()
             .await
             .map_err(|e| ApiError::http(e.to_string()))?;
-        resp.json().await.map_err(|e| ApiError::json(e.to_string()))
+        resp.json().await.map_err(|e| ApiError::json(format!("json({path}): {e:?}")))
     }
 
     /// Perform a PUT request with a JSON body.
@@ -323,10 +323,7 @@ impl ApiClient {
                 .as_str()
                 .unwrap_or_default()
                 .to_string(),
-            refresh_token: body["refresh_token"]
-                .as_str()
-                .unwrap_or_default()
-                .to_string(),
+            refresh_token: body["refresh_token"].as_str().map(str::to_string),
             token_type: body["token_type"].as_str().unwrap_or("Bearer").to_string(),
             expires_in: body["expires_in"].as_u64().unwrap_or(900),
         };
@@ -334,8 +331,10 @@ impl ApiClient {
             return Err(ApiError::auth("No access token in refresh response"));
         }
         *self.token.write().unwrap() = Some(tokens.access_token.clone());
-        if !tokens.refresh_token.is_empty() {
-            *self.refresh_token.write().unwrap() = Some(tokens.refresh_token.clone());
+        if let Some(new_refresh) = tokens.refresh_token.clone() {
+            if !new_refresh.is_empty() {
+                *self.refresh_token.write().unwrap() = Some(new_refresh);
+            }
         }
         if let Some(cb) = self.hooks.on_tokens_refreshed.lock().unwrap().clone() {
             cb(tokens.clone());
@@ -379,7 +378,11 @@ impl ApiClient {
             expires_in: resp.expires_in,
         };
         *self.token.write().unwrap() = Some(tokens.access_token.clone());
-        *self.refresh_token.write().unwrap() = Some(tokens.refresh_token.clone());
+        // Header-mode refresh rotates the refresh token when the response
+        // carries one; cookie-mode keeps the existing (cookie-held) value.
+        if let Some(new_refresh) = tokens.refresh_token.clone() {
+            *self.refresh_token.write().unwrap() = Some(new_refresh);
+        }
         if let Some(cb) = self.hooks.on_tokens_refreshed.lock().unwrap().clone() {
             cb(tokens.clone());
         }

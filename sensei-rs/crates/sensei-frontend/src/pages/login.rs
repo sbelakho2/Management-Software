@@ -186,7 +186,7 @@ pub fn LoginPage() -> impl IntoView {
                         _required=true
                     />
                     <div class="rams-mt-4">
-                        <IndustrialButton variant=ButtonVariant::Primary disabled=submitting.get()>
+                        <IndustrialButton variant=ButtonVariant::Primary disabled=submitting.get() button_type="submit".to_string()>
                             {move || if submitting.get() { "AUTHENTICATING..." } else { "AUTHENTICATE" }}
                         </IndustrialButton>
                     </div>

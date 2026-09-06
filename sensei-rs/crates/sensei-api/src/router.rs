@@ -108,6 +108,28 @@ async fn spa_page(index: Option<Vec<u8>>) -> Response {
     }
 }
 
+/// Compression predicate: compress static assets, never JSON API bodies.
+///
+/// The WASM frontend's reqwest client cannot decode gzipped JSON
+/// (fetch-path error: "error decoding response body"), so every
+/// `application/json` response is served identity-encoded.
+#[derive(Clone)]
+struct CompressNonJson;
+
+impl tower_http::compression::predicate::Predicate for CompressNonJson {
+    fn should_compress<B>(&self, response: &axum::http::Response<B>) -> bool
+    where
+        B: http_body::Body,
+    {
+        response
+            .headers()
+            .get(axum::http::header::CONTENT_TYPE)
+            .and_then(|v| v.to_str().ok())
+            .map(|ct| !ct.starts_with("application/json"))
+            .unwrap_or(true)
+    }
+}
+
 /// Fallback handler for every unmatched request: serves a real file from
 /// the static directory when one exists, otherwise the SPA entry point
 /// (client-side routes must deep-link to `index.html`). Non-GET/HEAD
@@ -2613,7 +2635,13 @@ pub fn build_router(state: AppState) -> Router {
             let dir: std::path::PathBuf = static_dir.clone().into();
             static_spa_fallback(req, dir)
         })
-        .layer(CompressionLayer::new())
+        // Compress static assets ONLY: the WASM frontend's reqwest client
+        // cannot decode gzip API bodies (its fetch path errors with
+        // "error decoding response body" on every gzipped JSON response),
+        // so /api/* responses must stay identity-encoded. The compression
+        // predicate sees only the response, so JSON responses (all API
+        // bodies) are excluded by content type.
+        .layer(CompressionLayer::new().compress_when(CompressNonJson))
         // ── Request body limit (streams, so chunked bodies are covered) ──
         .layer(RequestBodyLimitLayer::new(
             request_guard_config.max_body_size,

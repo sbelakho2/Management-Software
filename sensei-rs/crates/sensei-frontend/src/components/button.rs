@@ -66,6 +66,10 @@ pub fn IndustrialButton(
     /// Optional click handler.
     #[prop(optional)]
     on_click: Option<Box<dyn Fn() + 'static>>,
+    /// Native button type (default `"button"`; pass `"submit"` inside a
+    /// form so the form's submit handler drives the flow).
+    #[prop(optional)]
+    button_type: String,
 ) -> impl IntoView {
     let variant_class = match variant {
         ButtonVariant::Default => "rams-btn--default",
@@ -86,7 +90,7 @@ pub fn IndustrialButton(
     let aria = aria_label.clone();
     view! {
         <button
-            type="button"
+            type=button_type
             class=format!("rams-btn {} {} {}", variant_class, size_class, class)
             disabled=disabled
             attr:aria-label=aria

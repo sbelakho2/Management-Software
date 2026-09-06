@@ -18,7 +18,11 @@ pub struct LoginRequest {
 #[derive(Debug, Deserialize)]
 pub struct LoginResponse {
     pub access_token: String,
-    pub refresh_token: String,
+    /// Rotating refresh token — ABSENT in HttpOnly cookie mode
+    /// (`X-Use-Cookie: true`), where the refresh credential lives in the
+    /// cookie and JavaScript never sees it.
+    #[serde(default)]
+    pub refresh_token: Option<String>,
     pub token_type: String,
     pub user_id: String,
     /// Tenant scope (item 63) — present on the backend login response.
@@ -34,7 +38,10 @@ pub struct LoginResponse {
 #[derive(Debug, Deserialize)]
 pub struct RefreshResponse {
     pub access_token: String,
-    pub refresh_token: String,
+    /// Absent in cookie-mode refreshes (the cookie rotates server-side);
+    /// present when the refresh token itself was rotated.
+    #[serde(default)]
+    pub refresh_token: Option<String>,
     pub token_type: String,
     #[serde(default)]
     pub user_id: String,

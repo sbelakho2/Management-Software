@@ -30,9 +30,15 @@ test('authenticated session lands on Today', async ({ page }) => {
 
 test('Today page shows explicit states, never silent zeros', async ({ page }) => {
   // With the API unreachable the page must render UNAVAILABLE — a failed
-  // request must never look like a healthy zero (item 4).
+  // request must never look like a healthy zero (item 4). The state lives
+  // behind the auth guard, so authenticate first (the intercept only
+  // touches the Today snapshot call).
   await page.route('**/api/v1/today', (route) => route.fulfill({ status: 500 }));
-  await page.goto('/today');
+  await page.goto('/login');
+  await page.getByLabel(/email/i).fill(ADMIN_EMAIL);
+  await page.getByLabel(/password/i).fill(ADMIN_PASSWORD);
+  await page.getByRole('button', { name: /sign in|login|authenticate/i }).click();
+  await expect(page).toHaveURL(/\/today/, { timeout: 20_000 });
   await expect(page.getByText(/STATUS UNKNOWN/i)).toBeVisible({ timeout: 15_000 });
 });
 
@@ -58,8 +64,10 @@ test('station page offers plain-language help categories (item 31)', async ({ pa
   await page.goto('/station');
   await expect(page.getByText(/I NEED HELP/i)).toBeVisible({ timeout: 15_000 });
   await page.getByText(/I NEED HELP/i).click();
+  // Categories render as buttons inside the help modal (sidebar links use
+  // the same words — scope by button role).
   for (const category of ['QUALITY', 'MATERIAL', 'SAFETY', 'I CANNOT KEEP PACE']) {
-    await expect(page.getByText(category, { exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: category, exact: true })).toBeVisible();
   }
 });
 
@@ -90,12 +98,12 @@ test('station help: UI submit creates a server-derived Andon the team lead sees'
   });
 
   await page.getByText(/I NEED HELP/i).click();
-  await page.getByText('MATERIAL', { exact: true }).click();
+  await page.getByRole('button', { name: 'MATERIAL', exact: true }).click();
   // The note field (plain-language description) must be filled and the
   // form submitted — the operator's flow, not a raw API call.
-  const noteField = page.getByPlaceholder(/note|describe/i).first();
+  const noteField = page.getByPlaceholder(/what happened/i).first();
   await noteField.fill('e2e: connector tray empty');
-  await page.getByRole('button', { name: /send|submit|request help/i }).click();
+  await page.getByRole('button', { name: /request help now/i }).click();
 
   await expect
     .poll(async () => commandBody !== null, { timeout: 15_000 })

@@ -57,11 +57,13 @@ pub fn RackSidebar(
     // TODAY/WORK/ABNORMALITIES, never Integration/Finance/HR.
     let is_admin = roles
         .iter()
-        .any(|r| r == "admin" || r == "platform_superadmin" || r == "ceo");
-    let is_operator = roles.iter().any(|r| r == "operator");
-    let is_manager = roles
+        .any(|r| r == "admin" || r == "platform_superadmin" || r == "platform_admin" || r == "ceo");
+    let _operator_flag = roles.iter().any(|r| r == "operator");
+    let _manager_flag = roles
         .iter()
         .any(|r| r == "manager" || r == "team_lead" || r == "supervisor");
+    let _ = &_operator_flag;
+    let _ = &_manager_flag;
     let can_see = move |item: &NavItem| -> bool {
         match item.roles {
             Some(required) => {
@@ -69,23 +71,14 @@ pub fn RackSidebar(
                 required.iter().any(|r| roles.iter().any(|u| u == r))
                     || (is_admin && required.contains(&"admin"))
             }
-            // Unrestricted items are visible to everyone — but an operator
-            // with NO admin/manager role sees only the operator set (the
-            // items themselves carry roles: None for universal ones).
-            None => {
-                if required_roles_empty() {
-                    true
-                } else {
-                    is_operator || is_manager
-                }
-            }
+            // Unrestricted items are visible to everyone. Privilege is
+            // expressed ONLY by the Some(required) items (departments,
+            // master data); universal surfaces (TODAY, WORK, LSW,
+            // ABNORMALITIES, ...) must never disappear for a
+            // platform_admin or any other functional role.
+            None => true,
         }
     };
-    fn required_roles_empty() -> bool {
-        false
-    }
-    let _ = &is_operator;
-    let _ = &is_manager;
     let nav_items = vec![
         NavItem {
             label: "TODAY",

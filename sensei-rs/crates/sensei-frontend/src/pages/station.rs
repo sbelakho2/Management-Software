@@ -283,6 +283,9 @@ fn StationView(
                             rows="2"
                             prop:value=help_note
                             placeholder="What happened? (optional)"
+                            on:input=move |ev| {
+                                help_note.set(leptos::prelude::event_target_value(&ev));
+                            }
                         ></textarea>
                         {move || help_error.get().map(|e| view! {
                             <div class="rams-alert rams-alert--danger" role="alert">{e}</div>

@@ -316,7 +316,9 @@ impl AppState {
     /// Store tokens in the shared client and the reactive signal.
     fn apply_tokens(&self, tokens: AuthTokens) {
         self.client.set_token(&tokens.access_token);
-        self.client.set_refresh_token(&tokens.refresh_token);
+        if let Some(refresh_token) = tokens.refresh_token.as_deref() {
+            self.client.set_refresh_token(refresh_token);
+        }
         self.tokens.set(Some(tokens));
     }
 
