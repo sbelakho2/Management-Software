@@ -531,6 +531,7 @@ impl AppState {
     /// or call [`AppState::with_event_bus`] to provide a custom implementation.
     pub fn new(config: AppConfig, users_service: Arc<dyn UsersService>) -> Self {
         let trusted_proxies = config.security.trusted_proxies.clone();
+        let rate_limiting_enabled = config.features.rate_limiting;
         let jwt_service = JwtService::new(
             &config.auth.jwt_secret,
             &config.auth.jwt_issuer,
@@ -736,8 +737,17 @@ impl AppState {
             token_blacklist: TokenBlacklist::new(None),
             password_reset_store: TokenStore::new(TokenKind::PasswordReset, None),
             email_verification_store: TokenStore::new(TokenKind::EmailVerification, None),
-            rate_limiter: RateLimiter::with_trusted_proxies(100, 60, trusted_proxies), // 100 requests per 60s; XFF only from trusted proxies
-
+            rate_limiter: {
+                // FEATURE_RATE_LIMITING=false disables throttling (CI/e2e
+                // stacks run bursty suites; production Helm keeps the
+                // default true).
+                let rl = RateLimiter::with_trusted_proxies(100, 60, trusted_proxies); // 100 requests per 60s; XFF only from trusted proxies
+                if rate_limiting_enabled {
+                    rl
+                } else {
+                    rl.disabled()
+                }
+            },
             audit_log: AuditLog::new(10_000), // Keep last 10 000 entries
             session_store: SessionStore::new(86_400), // 24 hour fingerprint TTL
             refresh_token_store,

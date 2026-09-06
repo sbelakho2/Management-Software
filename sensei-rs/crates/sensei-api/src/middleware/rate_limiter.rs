@@ -41,6 +41,10 @@ struct RateLimitState {
 /// allows at most `max_requests` requests in any `window_duration` span.
 #[derive(Clone)]
 pub struct RateLimiter {
+    /// Whether throttling is active (FEATURE_RATE_LIMITING). The limiter
+    /// stays wired for zero-branch behavior; when disabled the middleware
+    /// passes every request straight through.
+    enabled: bool,
     max_requests: u32,
     window_duration: Duration,
     /// Proxies allowed to set forwarding headers (empty = none trusted).
@@ -99,12 +103,20 @@ impl RateLimiter {
         });
 
         Self {
+            enabled: true,
             max_requests,
             window_duration: window,
             trusted_proxies: std::sync::Arc::new(trusted_proxies),
             buckets,
             pool,
         }
+    }
+
+    /// Disable throttling (FEATURE_RATE_LIMITING=false): every request
+    /// passes through untouched.
+    pub fn disabled(mut self) -> Self {
+        self.enabled = false;
+        self
     }
 
     /// Attach the shared PostgreSQL pool (multi-replica counting).
@@ -258,6 +270,11 @@ pub async fn rate_limit_middleware(mut req: Request, next: Next) -> Response {
             return next.run(req).await;
         }
     };
+    // FEATURE_RATE_LIMITING=false: no throttling (CI/e2e suites run
+    // bursty polling; production Helm keeps the default true).
+    if !rate_limiter.enabled {
+        return next.run(req).await;
+    }
 
     // Determine the client key (IP address).
     let client_ip = extract_client_ip(&req, &rate_limiter.trusted_proxies);

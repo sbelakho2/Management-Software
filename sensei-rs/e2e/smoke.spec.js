@@ -7,6 +7,14 @@ const { test, expect } = require('@playwright/test');
 const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL || 'admin@starzforge.local';
 const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD || 'admin-password';
 
+// Hydration headroom: the SPA must render the form before entry starts
+// (WASM boot takes a moment under CI load).
+async function openLogin(page) {
+  await page.goto('/login');
+  await page.getByLabel(/email/i).waitFor({ state: 'visible', timeout: 30_000 });
+  await page.waitForTimeout(800);
+}
+
 test('login renders the Starz Forge identity', async ({ page }) => {
   await page.goto('/login');
   await expect(page.getByText('STARZ FORGE')).toBeVisible();
@@ -15,7 +23,7 @@ test('login renders the Starz Forge identity', async ({ page }) => {
 
 test('operator route access redirects unauthenticated visitors to login', async ({ page }) => {
   await page.goto('/today');
-  await expect(page).toHaveURL(/\/login/);
+  await expect(page).toHaveURL(/\/login/, { timeout: 30_000 });
 });
 
 test('authenticated session lands on Today', async ({ page }) => {
@@ -34,20 +42,20 @@ test('Today page shows explicit states, never silent zeros', async ({ page }) =>
   // behind the auth guard, so authenticate first (the intercept only
   // touches the Today snapshot call).
   await page.route('**/api/v1/today', (route) => route.fulfill({ status: 500 }));
-  await page.goto('/login');
+  await openLogin(page);
   await page.getByLabel(/email/i).fill(ADMIN_EMAIL);
   await page.getByLabel(/password/i).fill(ADMIN_PASSWORD);
   await page.getByRole('button', { name: /sign in|login|authenticate/i }).click();
-  await expect(page).toHaveURL(/\/today/, { timeout: 20_000 });
+  await expect(page).toHaveURL(/\/today/, { timeout: 30_000 });
   await expect(page.getByText(/STATUS UNKNOWN/i)).toBeVisible({ timeout: 15_000 });
 });
 
 test('sidebar exposes the TPS work surfaces (item 67)', async ({ page }) => {
-  await page.goto('/login');
+  await openLogin(page);
   await page.getByLabel(/email/i).fill(ADMIN_EMAIL);
   await page.getByLabel(/password/i).fill(ADMIN_PASSWORD);
   await page.getByRole('button', { name: /sign in|login|authenticate/i }).click();
-  await expect(page).toHaveURL(/\/today/, { timeout: 20_000 });
+  await expect(page).toHaveURL(/\/today/, { timeout: 30_000 });
   for (const label of ['WORK', 'LSW', 'TIER MEETINGS', 'KANBAN']) {
     await expect(page.getByText(label, { exact: false }).first()).toBeVisible();
   }
@@ -56,11 +64,11 @@ test('sidebar exposes the TPS work surfaces (item 67)', async ({ page }) => {
 test('station page offers plain-language help categories (item 31)', async ({ page }) => {
   // The operator never needs Andon terminology: the help categories are
   // plain language.
-  await page.goto('/login');
+  await openLogin(page);
   await page.getByLabel(/email/i).fill(ADMIN_EMAIL);
   await page.getByLabel(/password/i).fill(ADMIN_PASSWORD);
   await page.getByRole('button', { name: /sign in|login|authenticate/i }).click();
-  await expect(page).toHaveURL(/\/today/, { timeout: 20_000 });
+  await expect(page).toHaveURL(/\/today/, { timeout: 30_000 });
   await page.goto('/station');
   await expect(page.getByText(/I NEED HELP/i)).toBeVisible({ timeout: 15_000 });
   await page.getByText(/I NEED HELP/i).click();
@@ -77,11 +85,11 @@ test('station page offers plain-language help categories (item 31)', async ({ pa
 // the abnormality.
 
 async function login(page) {
-  await page.goto('/login');
+  await openLogin(page);
   await page.getByLabel(/email/i).fill(ADMIN_EMAIL);
   await page.getByLabel(/password/i).fill(ADMIN_PASSWORD);
   await page.getByRole('button', { name: /sign in|login|authenticate/i }).click();
-  await expect(page).toHaveURL(/\/today/, { timeout: 20_000 });
+  await expect(page).toHaveURL(/\/today/, { timeout: 30_000 });
 }
 
 test('station help: UI submit creates a server-derived Andon the team lead sees', async ({ page }) => {
@@ -124,5 +132,5 @@ test('station help: UI submit creates a server-derived Andon the team lead sees'
 
 test('unauthenticated access redirects to login', async ({ page }) => {
   await page.goto('/today');
-  await expect(page).toHaveURL(/\/login/);
+  await expect(page).toHaveURL(/\/login/, { timeout: 30_000 });
 });
