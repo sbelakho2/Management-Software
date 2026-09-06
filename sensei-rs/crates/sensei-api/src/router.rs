@@ -45,7 +45,6 @@ use std::sync::Arc;
 use std::time::Duration;
 use tower_http::compression::CompressionLayer;
 use tower_http::limit::RequestBodyLimitLayer;
-use tower_http::services::ServeDir;
 use tower_http::timeout::TimeoutLayer;
 use tower_http::trace::TraceLayer;
 
@@ -96,12 +95,72 @@ async fn api_not_found() -> Response {
 
 /// Landing-page handler for `GET /`.
 ///
-/// Returns a minimal HTML page confirming the API is running and linking to
-/// the health-check endpoints.  When the Leptos WASM frontend has been built
-/// (via `scripts/build-frontend-wasm.sh`) and its output placed in the static
-/// directory, the browser will load the full SPA instead.
-async fn root_handler() -> Html<&'static str> {
-    Html(ROOT_HTML)
+/// Serves the WASM frontend's `index.html` when the Leptos/Trunk bundle is
+/// present in the static directory, and otherwise falls back to the minimal
+/// placeholder page linking to the health endpoints.
+async fn spa_page(index: Option<Vec<u8>>) -> Response {
+    match index {
+        Some(bytes) => Response::builder()
+            .header("content-type", "text/html")
+            .body(axum::body::Body::from(bytes))
+            .expect("static index response builds"),
+        None => Html(ROOT_HTML).into_response(),
+    }
+}
+
+/// Fallback handler for every unmatched request: serves a real file from
+/// the static directory when one exists, otherwise the SPA entry point
+/// (client-side routes must deep-link to `index.html`). Non-GET/HEAD
+/// methods never receive HTML.
+async fn static_spa_fallback(
+    req: axum::extract::Request,
+    static_dir: std::path::PathBuf,
+) -> Response {
+    use axum::http::Method;
+
+    if !matches!(*req.method(), Method::GET | Method::HEAD) {
+        return StatusCode::METHOD_NOT_ALLOWED.into_response();
+    }
+    let path = req.uri().path();
+    let index_path = static_dir.join("index.html");
+    let mut resolved = static_dir.join(path.trim_start_matches('/'));
+    // Containment guard: never escape the static directory (e.g. via
+    // "/../" in a crafted path); anything outside behaves as missing.
+    if !resolved.starts_with(&static_dir) {
+        resolved = static_dir.clone();
+    }
+    let (bytes, content_type) = match std::fs::read(&resolved) {
+        Ok(bytes) if resolved.is_file() => (bytes, content_type_for(path).to_string()),
+        _ => match std::fs::read(&index_path) {
+            Ok(bytes) if !bytes.is_empty() => (bytes, "text/html".to_string()),
+            _ => return StatusCode::NOT_FOUND.into_response(),
+        },
+    };
+    Response::builder()
+        .header("content-type", content_type)
+        .body(axum::body::Body::from(bytes))
+        .expect("static fallback response builds")
+}
+
+/// Minimal extension → content-type map for the trunk bundle's asset
+/// families (the full mime registry is unnecessary here).
+fn content_type_for(path: &str) -> &'static str {
+    let ext = path.rsplit('.').next().unwrap_or("");
+    match ext {
+        "wasm" => "application/wasm",
+        "js" | "mjs" => "text/javascript",
+        "css" => "text/css",
+        "html" => "text/html",
+        "svg" => "image/svg+xml",
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "ico" => "image/x-icon",
+        "woff" => "font/woff",
+        "woff2" => "font/woff2",
+        "json" => "application/json",
+        "txt" => "text/plain",
+        _ => "application/octet-stream",
+    }
 }
 
 /// Static HTML served at `/` when no WASM frontend is available.
@@ -2516,7 +2575,6 @@ pub fn build_router(state: AppState) -> Router {
     // TimeoutLayer::with_status_code) wraps ONLY this nested router so
     // long-lived WS/SSE connections are never killed by it.
     let timed_routes = Router::new()
-        .route("/", get(root_handler))
         .merge(public_routes)
         .merge(protected_streaming_routes)
         .merge(protected_routes)
@@ -2535,11 +2593,26 @@ pub fn build_router(state: AppState) -> Router {
     // file. The critical invariant for rate limiting is that
     // `inject_rate_limiter` is OUTER to `rate_limit_middleware` (added
     // after it) so the limiter always finds its instance.
+    let spa_index: Option<Vec<u8>> =
+        std::fs::read(std::path::Path::new(&static_dir).join("index.html"))
+            .ok()
+            .filter(|bytes| !bytes.is_empty());
+    let spa_index_root = spa_index.clone();
     Router::new()
         .merge(realtime_routes)
         .merge(timed_routes)
-        // ── Serve WASM frontend static files as fallback ────────────
-        .fallback_service(ServeDir::new(static_dir))
+        // SPA entry point: the bundle's index.html owns "/" when present.
+        .route("/", get(move || spa_page(spa_index_root)))
+        // ── Static + SPA fallback for every other GET ──────────────
+        // Real bundle assets (wasm/js/css/fonts) are served from the
+        // static directory; any other GET (client-side routes such as
+        // /login, /today, /station/...) deep-links to the SPA entry point
+        // instead of 404ing. Method guard: non-GET/HEAD never receives
+        // HTML (API 404s were already answered above).
+        .fallback(move |req: axum::extract::Request| {
+            let dir: std::path::PathBuf = static_dir.clone().into();
+            static_spa_fallback(req, dir)
+        })
         .layer(CompressionLayer::new())
         // ── Request body limit (streams, so chunked bodies are covered) ──
         .layer(RequestBodyLimitLayer::new(

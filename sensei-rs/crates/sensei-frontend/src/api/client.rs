@@ -20,6 +20,7 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex, RwLock};
 use std::task::{Context, Poll, Waker};
+#[cfg(not(target_arch = "wasm32"))]
 use std::time::Duration;
 
 /// Connection timeout for the shared HTTP client. Ignored by the browser

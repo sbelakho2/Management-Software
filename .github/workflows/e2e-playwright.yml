@@ -90,11 +90,14 @@ jobs:
           DATABASE_URL_TEST=$DATABASE_URL cargo test -p sensei-db --test db_contract every_tenant
           cargo run -p sensei-api --release --bin sensei-api -- --migrate-only
 
-      - name: Start API + frontend
+      - name: Start API + frontend (single origin)
         working-directory: sensei-rs
         run: |
+          # ONE process serves the bundle AND /api/v1 (the router's static
+          # + SPA fallback): the frontend's API calls are same-origin
+          # relative paths, so a separate python static server could never
+          # work (no SPA deep-link fallback, no /api proxy, CORS).
           cargo run -p sensei-api --release &
-          python3 -m http.server 8080 -d dist-frontend &
           # Item 79: the API exposes /livez and /readyz (NOT /healthz).
           for i in $(seq 1 60); do
             if curl -sf http://127.0.0.1:8081/livez > /dev/null \
@@ -103,7 +106,11 @@ jobs:
             fi
             sleep 2
           done
-          curl -sf http://127.0.0.1:8080/ > /dev/null || (echo "frontend not serving"; exit 1)
+          # The SPA entry point must answer client routes, not 404.
+          curl -sf http://127.0.0.1:8081/ | grep -q "Starz Forge" \
+            || { echo "frontend bundle not serving"; exit 1; }
+          curl -sf http://127.0.0.1:8081/login | grep -q "Starz Forge" \
+            || { echo "SPA deep-link fallback broken"; exit 1; }
 
       - name: Install Playwright
         run: |
@@ -117,6 +124,7 @@ jobs:
           # Playwright only discovers it from the working directory, so run
           # from sensei-rs, not from e2e/.
           cd sensei-rs
+          E2E_BASE_URL=http://localhost:8081 \
           E2E_ADMIN_EMAIL=admin@sensei.local \
           E2E_ADMIN_PASSWORD=Test@1234 \
           npx playwright test --reporter=line

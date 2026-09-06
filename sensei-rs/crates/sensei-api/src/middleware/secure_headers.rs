@@ -29,7 +29,14 @@ use crate::state::AppState;
 /// Default HSTS policy.
 const HSTS_HEADER: &str = "max-age=31536000; includeSubDomains";
 /// Default Content-Security-Policy, used when `config.security.csp` is unset.
-const DEFAULT_CSP_HEADER: &str = "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self' ws: wss:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'";
+///
+/// `script-src` carries `'unsafe-inline'` because the Trunk-built WASM
+/// bundle boots from an inline module script in `index.html` (no external
+/// entry file): without it the SPA never hydrates. `'wasm-unsafe-eval'`
+/// permits WebAssembly compilation; `connect-src 'self' ws: wss:` covers
+/// the realtime/SSE channels; styles are inlined by the design system, so
+/// `style-src 'unsafe-inline'` is required as well.
+const DEFAULT_CSP_HEADER: &str = "default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self' ws: wss:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'";
 
 /// Determine whether the request was made over HTTPS.
 ///

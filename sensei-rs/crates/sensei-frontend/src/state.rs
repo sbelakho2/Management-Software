@@ -96,9 +96,24 @@ pub struct AppState {
 impl AppState {
     /// Initialise app state with no persisted tokens (in-memory only).
     pub fn new() -> Self {
+        // SENSEI_API_BASE (compile-time) overrides; the default is the
+        // page's own origin — the API serves both the bundle and /api/v1
+        // from one host in every real topology (dev `trunk serve` sets
+        // SENSEI_API_BASE to the local API).
         let api_base = std::option_env!("SENSEI_API_BASE")
-            .unwrap_or("http://localhost:3000")
-            .to_string();
+            .map(str::to_string)
+            .unwrap_or_else(|| {
+                #[cfg(target_arch = "wasm32")]
+                {
+                    web_sys::window()
+                        .and_then(|w| w.location().origin().ok())
+                        .unwrap_or_else(|| "http://localhost:3000".to_string())
+                }
+                #[cfg(not(target_arch = "wasm32"))]
+                {
+                    "http://localhost:3000".to_string()
+                }
+            });
         let api_base_signal = RwSignal::new(api_base.clone());
 
         let auth_state = RwSignal::new(AuthState::Loading);

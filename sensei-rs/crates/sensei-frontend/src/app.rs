@@ -136,9 +136,6 @@ pub fn App() -> impl IntoView {
         <Meta name="viewport" content="width=device-width, initial-scale=1.0" />
         <Meta name="description" content="Starz Forge - Manufacturing Management System" />
 
-        <Stylesheet href="/pkg/sensei-frontend.css" />
-        <Stylesheet href="/styles/rams.css" />
-
         <Router>
             <Routes fallback=|| view! {
                 <div class="not-found">
