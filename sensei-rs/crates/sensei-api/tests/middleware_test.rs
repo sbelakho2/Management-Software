@@ -177,7 +177,7 @@ async fn session_mismatch_returns_401_and_removes_binding() {
     assert_eq!(
         app.state
             .session_store
-            .verify(&sid, "attacker-fingerprint")
+            .verify(&sid, "attacker-fingerprint", app.admin_tenant_id)
             .await
             .unwrap(),
         sensei_api::middleware::session::SessionResult::Unknown,
