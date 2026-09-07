@@ -457,8 +457,7 @@ const QUOTE_SELECT: &str = "SELECT q.id, q.tenant_id, q.quote_number, NULL::uuid
 /// display name.
 const RFQ_ITEM_SELECT: &str = "SELECT l.id, l.product_id, \
      COALESCE((SELECT p.name FROM products p WHERE p.id = l.product_id), l.part_number) AS product_name, \
-     l.quantity, l.unit_of_measure, l.target_price \
-     FROM rfq_line_items l";
+     l.quantity, l.unit_of_measure, l.target_price";
 
 // ---------------------------------------------------------------------------
 // Mapping helpers
@@ -616,7 +615,8 @@ async fn load_rfq_items(
     rfq_id: Uuid,
 ) -> Result<Vec<RFQItem>> {
     let rows = sqlx::query_as::<_, RfqItemRow>(&format!(
-        "{RFQ_ITEM_SELECT} WHERE l.tenant_id = $1 AND l.rfq_id = $2 \
+        "{RFQ_ITEM_SELECT} FROM rfq_line_items l \
+             WHERE l.tenant_id = $1 AND l.rfq_id = $2 \
              ORDER BY l.line_number, l.created_at, l.id"
     ))
     .bind(tenant_id)
@@ -639,8 +639,8 @@ async fn load_rfq_items_bulk(
         return Ok(out);
     }
     let rows = sqlx::query_as::<_, RfqItemRowWithRfq>(&format!(
-        "{RFQ_ITEM_SELECT}, l.rfq_id \
-             FROM rfq_line_items l WHERE l.tenant_id = $1 AND l.rfq_id = ANY($2) \
+        "{RFQ_ITEM_SELECT}, l.rfq_id FROM rfq_line_items l \
+             WHERE l.tenant_id = $1 AND l.rfq_id = ANY($2) \
              ORDER BY l.rfq_id, l.line_number, l.created_at, l.id"
     ))
     .bind(tenant_id)
