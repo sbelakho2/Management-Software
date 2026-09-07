@@ -114,6 +114,7 @@ jobs:
         working-directory: sensei-rs
         run: |
           set -euo pipefail
+          PGHOST=localhost PGPORT=5432 \
           POSTGRES_USER=postgres \
           POSTGRES_PASSWORD=postgres \
           POSTGRES_DB=sensei_test \
@@ -139,6 +140,7 @@ jobs:
         working-directory: sensei-rs
         run: |
           set -euo pipefail
+          PGHOST=localhost PGPORT=5432 \
           POSTGRES_USER=postgres \
           POSTGRES_PASSWORD=postgres \
           POSTGRES_DB=sensei_test \
