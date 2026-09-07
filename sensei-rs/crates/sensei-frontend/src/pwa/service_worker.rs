@@ -96,7 +96,7 @@ pub fn is_service_worker_supported() -> bool {
 /// Register the service worker at the given URL.
 ///
 /// Returns a [`ServiceWorkerRegistration`] on success.
-
+///
 /// Best-effort probe for a REAL service worker script at [`SERVICE_WORKER_URL`].
 ///
 /// Some deployments (dev servers, the API's SPA fallback) do not ship an

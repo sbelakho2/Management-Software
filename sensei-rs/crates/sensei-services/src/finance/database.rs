@@ -244,7 +244,7 @@ async fn write_business_audit(
 /// policies is established by [`TenantTx::begin`] (`SET LOCAL
 /// app.tenant_id`) — every finance read/write opens a TenantTx, so there
 /// is no standalone context helper here anymore.
-
+///
 /// Idempotency defense-in-depth inside the business transaction: if the key
 /// was already completed (e.g. by a parallel request that raced the
 /// middleware claim), refuse instead of duplicating the side effect.
