@@ -5,6 +5,7 @@
 
 use async_trait::async_trait;
 use chrono::Utc;
+use sensei_core::db::TenantTx;
 use sensei_core::domain::entities::Account;
 use sensei_core::error::{Result, SenseiError};
 use sensei_core::pagination::PaginatedResponse;
@@ -63,6 +64,12 @@ fn account_row_to_domain(r: AccountRow) -> Account {
 impl AccountsService for DatabaseAccountsService {
     async fn create_account(&self, tenant_id: TenantId, account: Account) -> Result<Account> {
         let now = Utc::now();
+        // `accounts` is fail-closed FORCE RLS (migration 175): every
+        // statement runs inside a TenantTx of the owning tenant — a
+        // raw-pool write admits zero rows under the production role.
+        let mut db = TenantTx::begin(&self.pool, tenant_id)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to begin create account: {e}")))?;
 
         let model = sqlx::query_as::<_, AccountRow>(
             r#"
@@ -92,14 +99,20 @@ impl AccountsService for DatabaseAccountsService {
         .bind(&account.notes)
         .bind(now)
         .bind(now)
-        .fetch_one(&self.pool)
+        .fetch_one(&mut **db.tx())
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to create account: {e}")))?;
+        db.commit()
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to commit create account: {e}")))?;
 
         Ok(account_row_to_domain(model))
     }
 
     async fn get_account(&self, tenant_id: TenantId, id: EntityId) -> Result<Account> {
+        let mut db = TenantTx::begin(&self.pool, tenant_id)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to begin get account: {e}")))?;
         let model = sqlx::query_as::<_, AccountRow>(
             r#"
             SELECT id, tenant_id, name, account_type, status, tier, industry, website,
@@ -111,10 +124,13 @@ impl AccountsService for DatabaseAccountsService {
         )
         .bind(id)
         .bind(tenant_id)
-        .fetch_optional(&self.pool)
+        .fetch_optional(&mut **db.tx())
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to get account: {e}")))?
         .ok_or_else(|| SenseiError::NotFound(format!("Account {id} not found")))?;
+        db.commit()
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to commit get account: {e}")))?;
 
         Ok(account_row_to_domain(model))
     }
@@ -140,6 +156,13 @@ impl AccountsService for DatabaseAccountsService {
             "inactive"
         };
 
+        // `accounts` is fail-closed FORCE RLS (migration 175): the count
+        // and the page run on ONE TenantTx of the tenant — a raw-pool
+        // read returns zero rows under the production sensei_app role.
+        let mut db = TenantTx::begin(&self.pool, tenant_id)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to begin list accounts: {e}")))?;
+
         // Count query
         let count_sql = match (use_type_filter, use_active_filter) {
             (true, true) => {
@@ -162,27 +185,27 @@ impl AccountsService for DatabaseAccountsService {
                     .bind(tenant_id)
                     .bind(type_val)
                     .bind(status_val)
-                    .fetch_one(&self.pool)
+                    .fetch_one(&mut **db.tx())
                     .await
             }
             (true, false) => {
                 sqlx::query_scalar(count_sql)
                     .bind(tenant_id)
                     .bind(type_val)
-                    .fetch_one(&self.pool)
+                    .fetch_one(&mut **db.tx())
                     .await
             }
             (false, true) => {
                 sqlx::query_scalar(count_sql)
                     .bind(tenant_id)
                     .bind(status_val)
-                    .fetch_one(&self.pool)
+                    .fetch_one(&mut **db.tx())
                     .await
             }
             (false, false) => {
                 sqlx::query_scalar(count_sql)
                     .bind(tenant_id)
-                    .fetch_one(&self.pool)
+                    .fetch_one(&mut **db.tx())
                     .await
             }
         }
@@ -247,7 +270,7 @@ impl AccountsService for DatabaseAccountsService {
                     .bind(status_val)
                     .bind(per_page as i64)
                     .bind(offset as i64)
-                    .fetch_all(&self.pool)
+                    .fetch_all(&mut **db.tx())
                     .await
             }
             (true, false) => {
@@ -256,7 +279,7 @@ impl AccountsService for DatabaseAccountsService {
                     .bind(type_val)
                     .bind(per_page as i64)
                     .bind(offset as i64)
-                    .fetch_all(&self.pool)
+                    .fetch_all(&mut **db.tx())
                     .await
             }
             (false, true) => {
@@ -265,7 +288,7 @@ impl AccountsService for DatabaseAccountsService {
                     .bind(status_val)
                     .bind(per_page as i64)
                     .bind(offset as i64)
-                    .fetch_all(&self.pool)
+                    .fetch_all(&mut **db.tx())
                     .await
             }
             (false, false) => {
@@ -273,11 +296,14 @@ impl AccountsService for DatabaseAccountsService {
                     .bind(tenant_id)
                     .bind(per_page as i64)
                     .bind(offset as i64)
-                    .fetch_all(&self.pool)
+                    .fetch_all(&mut **db.tx())
                     .await
             }
         }
         .map_err(|e| SenseiError::Database(format!("Failed to list accounts: {e}")))?;
+        db.commit()
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to commit list accounts: {e}")))?;
 
         let data = models.into_iter().map(account_row_to_domain).collect();
 
@@ -303,6 +329,9 @@ impl AccountsService for DatabaseAccountsService {
             "inactive"
         };
 
+        let mut db = TenantTx::begin(&self.pool, tenant_id)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to begin update account: {e}")))?;
         let model = sqlx::query_as::<_, AccountRow>(
             r#"
             UPDATE accounts
@@ -331,10 +360,13 @@ impl AccountsService for DatabaseAccountsService {
         .bind(&account.tax_id)
         .bind(&account.notes)
         .bind(now)
-        .fetch_optional(&self.pool)
+        .fetch_optional(&mut **db.tx())
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to update account: {e}")))?
         .ok_or_else(|| SenseiError::NotFound(format!("Account {id} not found")))?;
+        db.commit()
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to commit update account: {e}")))?;
 
         // Verify tenant ownership.
         if model.model.tenant_id != tenant_id {
@@ -349,6 +381,9 @@ impl AccountsService for DatabaseAccountsService {
     async fn delete_account(&self, tenant_id: TenantId, id: EntityId) -> Result<()> {
         let now = Utc::now();
 
+        let mut db = TenantTx::begin(&self.pool, tenant_id)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to begin delete account: {e}")))?;
         let result = sqlx::query(
             r#"
             UPDATE accounts
@@ -359,7 +394,7 @@ impl AccountsService for DatabaseAccountsService {
         .bind(id)
         .bind(tenant_id)
         .bind(now)
-        .execute(&self.pool)
+        .execute(&mut **db.tx())
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to delete account: {e}")))?;
 
@@ -370,7 +405,7 @@ impl AccountsService for DatabaseAccountsService {
             )
             .bind(id)
             .bind(tenant_id)
-            .fetch_one(&self.pool)
+            .fetch_one(&mut **db.tx())
             .await
             .map_err(|e| {
                 SenseiError::Database(format!("Failed to check account existence: {e}"))
@@ -380,6 +415,9 @@ impl AccountsService for DatabaseAccountsService {
                 return Err(SenseiError::NotFound(format!("Account {id} not found")));
             }
         }
+        db.commit()
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to commit delete account: {e}")))?;
 
         Ok(())
     }

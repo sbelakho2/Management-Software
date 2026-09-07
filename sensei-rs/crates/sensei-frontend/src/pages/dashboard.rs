@@ -5,7 +5,7 @@
 //! are now provided by RootLayout / RackSidebar.
 
 use crate::api::{
-    finance::FinanceApi, hr::HrApi, maintenance::MaintenanceApi, ops::OpsApi,
+    andon::AndonApi, finance::FinanceApi, hr::HrApi, maintenance::MaintenanceApi, ops::OpsApi,
     production::ProductionApi, quality::QualityApi, supply_chain::SupplyChainApi,
 };
 use crate::components::metric_display::MetricDisplay;
@@ -122,10 +122,12 @@ pub fn DashboardPage() -> impl IntoView {
                 Err(_) => m.unavailable("hr"),
             }
 
-            // Operations
-            match OpsApi::list_andons(&client).await {
-                Ok(andons) => {
-                    m.active_andons = andons
+            // Operations — Andon events come from the canonical envelope
+            // (thirty-first audit): rows live in `page.data`.
+            match AndonApi::list_andons(&client).await {
+                Ok(page) => {
+                    m.active_andons = page
+                        .data
                         .iter()
                         .filter(|a| a.status != "Resolved" && a.status != "resolved")
                         .count();

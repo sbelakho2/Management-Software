@@ -5,6 +5,7 @@
 
 use async_trait::async_trait;
 use chrono::Utc;
+use sensei_core::db::TenantTx;
 use sensei_core::domain::entities::Product;
 use sensei_core::error::{Result, SenseiError};
 use sensei_core::pagination::PaginatedResponse;
@@ -66,6 +67,11 @@ impl ProductsService for DatabaseProductsService {
     async fn create_product(&self, tenant_id: TenantId, product: Product) -> Result<Product> {
         let now = Utc::now();
 
+        // `products` is fail-closed FORCE RLS (migration 175): every
+        // statement runs inside a TenantTx of the owning tenant.
+        let mut db = TenantTx::begin(&self.pool, tenant_id)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to begin create product: {e}")))?;
         let model = sqlx::query_as::<_, ProductRow>(
             r#"
             INSERT INTO products (id, tenant_id, product_number, name, description, category,
@@ -96,14 +102,20 @@ impl ProductsService for DatabaseProductsService {
         .bind(&product.notes)
         .bind(now)
         .bind(now)
-        .fetch_one(&self.pool)
+        .fetch_one(&mut **db.tx())
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to create product: {e}")))?;
+        db.commit()
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to commit create product: {e}")))?;
 
         Ok(product_row_to_domain(model))
     }
 
     async fn get_product(&self, tenant_id: TenantId, id: EntityId) -> Result<Product> {
+        let mut db = TenantTx::begin(&self.pool, tenant_id)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to begin get product: {e}")))?;
         let model = sqlx::query_as::<_, ProductRow>(
             r#"
             SELECT id, tenant_id, product_number, name, description, category,
@@ -116,10 +128,13 @@ impl ProductsService for DatabaseProductsService {
         )
         .bind(id)
         .bind(tenant_id)
-        .fetch_optional(&self.pool)
+        .fetch_optional(&mut **db.tx())
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to get product: {e}")))?
         .ok_or_else(|| SenseiError::NotFound(format!("Product {id} not found")))?;
+        db.commit()
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to commit get product: {e}")))?;
 
         Ok(product_row_to_domain(model))
     }
@@ -140,6 +155,13 @@ impl ProductsService for DatabaseProductsService {
         let use_type_filter = product_type.is_some();
         let category_val = category.unwrap_or("");
         let type_val = product_type.unwrap_or("");
+
+        // `products` is fail-closed FORCE RLS (migration 175): the count
+        // and the page run on ONE TenantTx of the tenant — a raw-pool
+        // read returns zero rows under the production sensei_app role.
+        let mut db = TenantTx::begin(&self.pool, tenant_id)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to begin list products: {e}")))?;
 
         // Build count query
         let count_sql = match (use_category_filter, use_type_filter) {
@@ -163,27 +185,27 @@ impl ProductsService for DatabaseProductsService {
                     .bind(tenant_id)
                     .bind(category_val)
                     .bind(type_val)
-                    .fetch_one(&self.pool)
+                    .fetch_one(&mut **db.tx())
                     .await
             }
             (true, false) => {
                 sqlx::query_scalar(count_sql)
                     .bind(tenant_id)
                     .bind(category_val)
-                    .fetch_one(&self.pool)
+                    .fetch_one(&mut **db.tx())
                     .await
             }
             (false, true) => {
                 sqlx::query_scalar(count_sql)
                     .bind(tenant_id)
                     .bind(type_val)
-                    .fetch_one(&self.pool)
+                    .fetch_one(&mut **db.tx())
                     .await
             }
             (false, false) => {
                 sqlx::query_scalar(count_sql)
                     .bind(tenant_id)
-                    .fetch_one(&self.pool)
+                    .fetch_one(&mut **db.tx())
                     .await
             }
         }
@@ -252,7 +274,7 @@ impl ProductsService for DatabaseProductsService {
                     .bind(type_val)
                     .bind(per_page as i64)
                     .bind(offset as i64)
-                    .fetch_all(&self.pool)
+                    .fetch_all(&mut **db.tx())
                     .await
             }
             (true, false) => {
@@ -261,7 +283,7 @@ impl ProductsService for DatabaseProductsService {
                     .bind(category_val)
                     .bind(per_page as i64)
                     .bind(offset as i64)
-                    .fetch_all(&self.pool)
+                    .fetch_all(&mut **db.tx())
                     .await
             }
             (false, true) => {
@@ -270,7 +292,7 @@ impl ProductsService for DatabaseProductsService {
                     .bind(type_val)
                     .bind(per_page as i64)
                     .bind(offset as i64)
-                    .fetch_all(&self.pool)
+                    .fetch_all(&mut **db.tx())
                     .await
             }
             (false, false) => {
@@ -278,11 +300,14 @@ impl ProductsService for DatabaseProductsService {
                     .bind(tenant_id)
                     .bind(per_page as i64)
                     .bind(offset as i64)
-                    .fetch_all(&self.pool)
+                    .fetch_all(&mut **db.tx())
                     .await
             }
         }
         .map_err(|e| SenseiError::Database(format!("Failed to list products: {e}")))?;
+        db.commit()
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to commit list products: {e}")))?;
 
         let data = models.into_iter().map(product_row_to_domain).collect();
 
@@ -303,6 +328,9 @@ impl ProductsService for DatabaseProductsService {
     ) -> Result<Product> {
         let now = Utc::now();
 
+        let mut db = TenantTx::begin(&self.pool, tenant_id)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to begin update product: {e}")))?;
         let model = sqlx::query_as::<_, ProductRow>(
             r#"
             UPDATE products
@@ -333,10 +361,13 @@ impl ProductsService for DatabaseProductsService {
         .bind(product.max_stock_level)
         .bind(&product.notes)
         .bind(now)
-        .fetch_optional(&self.pool)
+        .fetch_optional(&mut **db.tx())
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to update product: {e}")))?
         .ok_or_else(|| SenseiError::NotFound(format!("Product {id} not found")))?;
+        db.commit()
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to commit update product: {e}")))?;
 
         // Verify tenant ownership.
         if model.model.tenant_id != tenant_id {
@@ -351,6 +382,9 @@ impl ProductsService for DatabaseProductsService {
     async fn delete_product(&self, tenant_id: TenantId, id: EntityId) -> Result<()> {
         let now = Utc::now();
 
+        let mut db = TenantTx::begin(&self.pool, tenant_id)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to begin delete product: {e}")))?;
         let result = sqlx::query(
             r#"
             UPDATE products
@@ -361,7 +395,7 @@ impl ProductsService for DatabaseProductsService {
         .bind(id)
         .bind(tenant_id)
         .bind(now)
-        .execute(&self.pool)
+        .execute(&mut **db.tx())
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to delete product: {e}")))?;
 
@@ -372,7 +406,7 @@ impl ProductsService for DatabaseProductsService {
             )
             .bind(id)
             .bind(tenant_id)
-            .fetch_one(&self.pool)
+            .fetch_one(&mut **db.tx())
             .await
             .map_err(|e| {
                 SenseiError::Database(format!("Failed to check product existence: {e}"))
@@ -382,6 +416,9 @@ impl ProductsService for DatabaseProductsService {
                 return Err(SenseiError::NotFound(format!("Product {id} not found")));
             }
         }
+        db.commit()
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to commit delete product: {e}")))?;
 
         Ok(())
     }

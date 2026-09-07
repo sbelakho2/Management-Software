@@ -299,7 +299,9 @@ impl Default for MaintenanceStore {
 /// Reactive store for the Operations / Continuous Improvement domain.
 #[derive(Debug, Clone)]
 pub struct OpsStore {
-    pub andons: DomainStore<crate::api::ops::AndonDto>,
+    /// Andon items are the shared canonical contract rows (thirty-first
+    /// audit) — the legacy title/location-style `AndonDto` is gone.
+    pub andons: DomainStore<sensei_contracts::andon::AndonResponse>,
     pub projects: DomainStore<crate::api::ops::ProjectDto>,
     pub a3s: DomainStore<crate::api::ops::A3Dto>,
     pub risks: DomainStore<crate::api::ops::RiskDto>,

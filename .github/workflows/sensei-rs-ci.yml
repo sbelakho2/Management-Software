@@ -65,6 +65,8 @@ jobs:
         working-directory: ${{ github.workspace }}
       - name: DB capability contract (every PostgreSQL consumer pins .github/.db-capability)
         run: bash scripts/validate-db-contract.sh
+      - name: TenantTx access gate (no raw-pool SQL on tenant-owned tables)
+        run: bash scripts/validate-tenant-db-access.sh
 
       - name: Run clippy
         run: cargo clippy --workspace --all-targets --all-features --exclude sensei-mobile --locked -- -D warnings

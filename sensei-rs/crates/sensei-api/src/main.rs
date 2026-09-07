@@ -11,6 +11,15 @@
 //!   of silently degrading to in-memory mode.
 //! * The CEO seed account requires an explicit non-default password.
 //!
+//! # Bootstrap contract (thirtieth-first audit item 15)
+//!
+//! All bootstrap/seeding logic lives in `sensei_api::bootstrap`
+//! (extracted module): it takes a cross-replica `pg_advisory_xact_lock`
+//! inside one open transaction around the whole seed section, and every
+//! required bootstrap failure (tenant ensure, admin/CEO creation, the
+//! lock/commit itself) PROPAGATES — `run_bootstrap_seeding` aborts
+//! startup with a clear message instead of logging-and-continuing.
+//!
 //! # Migration contract (twenty-fourth audit P0 — migration-owner split)
 //!
 //! The API process connects as the NON-OWNER `sensei_app` and does NOT run
@@ -33,9 +42,6 @@ use sensei_api::router::build_router;
 use sensei_api::routes::metrics::init_metrics;
 use sensei_api::state::{create_event_bus, AppState};
 use sensei_core::config::AppConfig;
-use sensei_core::domain::entities::{Tenant, User};
-use sensei_core::error::SenseiError;
-use sensei_core::types::{now, TenantId};
 use sensei_services::users::{InMemoryUsersService, UsersService};
 use sqlx::postgres::PgPoolOptions;
 use tracing::info;
@@ -139,219 +145,21 @@ fn env_flag_enabled(var: &str) -> bool {
     })
 }
 
-/// The bootstrap tenant for seeded admin/CEO accounts.
+/// Run the bootstrap seeding (sensei_api::bootstrap) and abort startup on
+/// ANY failure.
 ///
-/// A fixed, deterministic id (NOT `Uuid::nil()`): the tenants service
-/// treats nil ids as "generate one" (`create_tenant` remaps nil to a fresh
-/// random uuid), so a nil bootstrap tenant would be created under a random
-/// id while the seeded `users.tenant_id` still referenced nil — violating
-/// `users_tenant_id_fkey` on first boot. Every replica resolves the same
-/// fixed id, keeping seeding idempotent under the advisory lock.
-fn bootstrap_tenant_id() -> TenantId {
-    uuid::Uuid::from_u128(1)
-}
-
-/// Ensure the bootstrap tenant exists (the `users` table has an FK on
-/// `tenants(id)`), creating it when missing.
-async fn ensure_bootstrap_tenant(state: &AppState) {
-    let tenant_id = bootstrap_tenant_id();
-    match state.tenants_service.get_tenant(tenant_id).await {
-        Ok(_) => {}
-        Err(SenseiError::NotFound(_)) => {
-            let timestamp = now();
-            let tenant = Tenant {
-                id: tenant_id,
-                name: "Sensei".to_string(),
-                slug: "sensei".to_string(),
-                is_active: true,
-                features: Vec::new(),
-                created_at: timestamp,
-                updated_at: timestamp,
-            };
-            if let Err(e) = state.tenants_service.create_tenant(tenant).await {
-                tracing::error!(
-                    error = %e,
-                    "Failed to create bootstrap tenant; seeding admin/CEO users may fail"
-                );
-            }
-        }
-        Err(e) => {
-            tracing::error!(error = %e, "Failed to look up bootstrap tenant");
-        }
-    }
-}
-
-/// Seed a user through the users service if it does not exist yet.
-///
-/// Idempotent: `find_by_email` → create only when missing. In production a
-/// failure to seed a *required* account aborts startup.
-async fn seed_user(
-    state: &AppState,
-    email: &str,
-    password: &str,
-    name: &str,
-    roles: &[&str],
-    required_in_prod: bool,
-) -> Result<User, SenseiError> {
-    match state.users_service.find_by_email(email).await {
-        Ok(existing) => {
-            info!(email, "Seed account already exists");
-            Ok(existing)
-        }
-        Err(SenseiError::NotFound(_)) => {
-            let password_hash = sensei_auth::password::hash_password(password).map_err(|e| {
-                SenseiError::Internal(format!("Failed to hash seed password for {email}: {e}"))
-            })?;
-            let mut user = User::new(
-                bootstrap_tenant_id(),
-                email.to_string(),
-                name.to_string(),
-                password_hash,
-            );
-            user.roles = roles.iter().map(|r| r.to_string()).collect();
-
-            match state.users_service.create_user(user).await {
-                Ok(created) => {
-                    info!(email, roles = ?roles, "Seeded user");
-                    Ok(created)
-                }
-                Err(e) => {
-                    tracing::error!(email, error = %e, "Failed to seed user");
-                    if required_in_prod {
-                        return Err(e);
-                    }
-                    Err(e)
-                }
-            }
-        }
-        Err(e) => {
-            tracing::error!(email, error = %e, "Failed to look up seed user");
-            if required_in_prod {
-                return Err(e);
-            }
-            Err(e)
-        }
-    }
-}
-
-/// Seed the admin and CEO bootstrap accounts.
-///
-/// Runs *after* `with_db_pool`, so in database mode the accounts are seeded
-/// through the DB-backed users service.
-async fn seed_bootstrap_users(state: &AppState) {
-    // With multiple replicas every pod would run the seed. An advisory
-    // transaction lock makes bootstrap a one-time operation: the first
-    // holder seeds; the others observe the lock and skip (unique
-    // constraints protect double-inserts, but only one pod should run the
-    // bootstrap path at all).
-    if let Some(pool) = &state.db_pool {
-        let mut conn = match pool.acquire().await {
-            Ok(c) => c,
-            Err(e) => {
-                tracing::error!(error = %e, "Bootstrap could not acquire a DB connection");
-                return;
-            }
-        };
-        match sqlx::query(
-            "SELECT pg_advisory_xact_lock(737012345) \
-             FROM (SELECT 1) t",
-        )
-        .execute(&mut *conn)
-        .await
-        {
-            Ok(_) => {}
-            Err(e) => {
-                tracing::error!(error = %e, "Bootstrap advisory lock failed");
-                return;
-            }
-        }
-    }
-    ensure_bootstrap_tenant(state).await;
-
-    let admin_email = std::env::var("SENSEI_ADMIN_EMAIL")
-        .unwrap_or_else(|_| "admin@starzforge.local".to_string());
-    let admin_password = match std::env::var("SENSEI_ADMIN_PASSWORD") {
-        Ok(v) if !v.is_empty() => v,
-        _ => {
-            if state.config.environment.is_prod() {
-                tracing::error!(
-                    "SENSEI_ADMIN_PASSWORD must be set in production (admin seed account)"
-                );
-                std::process::exit(1);
-            }
-            let generated = format!("dev-{}", uuid::Uuid::new_v4());
-            println!("ADMIN DEV PASSWORD (first boot only): {generated}");
-            generated
-        }
-    };
-    let admin_name =
-        std::env::var("SENSEI_ADMIN_NAME").unwrap_or_else(|_| "Admin User".to_string());
-
-    if let Err(e) = seed_user(
-        state,
-        &admin_email,
-        &admin_password,
-        &admin_name,
-        &[
-            "user",
-            "tenant_admin",
-            "platform_admin",
-            "finance_manager",
-            "hr_manager",
-            "purchasing_manager",
-            "inventory_manager",
-            "sales_manager",
-            "quality_manager",
-            "production_manager",
-        ],
-        false,
-    )
-    .await
-    {
-        tracing::warn!(error = %e, "Admin seed failed (continuing)");
-    }
-
-    // ── CEO seed account ────────────────────────────────────────────
-    let ceo_email =
-        std::env::var("SENSEI_CEO_EMAIL").unwrap_or_else(|_| "ceo@starz.com".to_string());
-    let ceo_password = match std::env::var("SENSEI_CEO_PASSWORD") {
-        Ok(v) if !v.is_empty() => v,
-        _ => {
-            if state.config.environment.is_prod() {
-                tracing::error!("SENSEI_CEO_PASSWORD must be set in production (CEO seed account)");
-                std::process::exit(1);
-            }
-            let generated = format!("dev-{}", uuid::Uuid::new_v4());
-            println!("CEO DEV PASSWORD (first boot only): {generated}");
-            generated
-        }
-    };
-
-    if let Err(e) = seed_user(
-        state,
-        &ceo_email,
-        &ceo_password,
-        "CEO",
-        // The CEO is the break-glass operational identity: functional
-        // manager roles + platform administration. The legacy "ceo" role is
-        // NOT defined by the authorization model, so it is never seeded.
-        &[
-            "user",
-            "tenant_admin",
-            "platform_admin",
-            "finance_manager",
-            "hr_manager",
-            "purchasing_manager",
-            "inventory_manager",
-            "sales_manager",
-            "quality_manager",
-            "production_manager",
-        ],
-        true,
-    )
-    .await
-    {
-        tracing::error!(error = %e, "Failed to seed required CEO account");
+/// Required bootstrap failures — tenant ensure, admin/CEO account
+/// creation, the advisory-lock transaction itself — are NEVER
+/// logged-and-swallowed (thirtieth-first audit item 15): the process
+/// exits with a clear message so a replica that failed to bootstrap never
+/// starts serving.
+async fn run_bootstrap_seeding(state: &AppState) {
+    if let Err(e) = sensei_api::bootstrap::seed_bootstrap_users(state).await {
+        tracing::error!(
+            error = %e,
+            "FATAL: bootstrap seeding failed (bootstrap tenant ensure or \
+             required admin/CEO account creation) — aborting startup"
+        );
         std::process::exit(1);
     }
 }
@@ -511,7 +319,7 @@ async fn main() {
                     error = %e,
                     "Failed to connect to PostgreSQL — falling back to in-memory mode"
                 );
-                seed_bootstrap_users(&state).await;
+                run_bootstrap_seeding(&state).await;
                 build_and_serve(state, otel_provider, config).await;
                 return;
             }
@@ -535,7 +343,7 @@ async fn main() {
                     error = %e,
                     "Failed to run database migrations — falling back to in-memory mode"
                 );
-                seed_bootstrap_users(&state).await;
+                run_bootstrap_seeding(&state).await;
                 build_and_serve(state, otel_provider, config).await;
                 return;
             }
@@ -547,8 +355,11 @@ async fn main() {
         info!("Running in DATABASE mode — all services use PostgreSQL");
     }
 
-    // ── Seed admin & CEO bootstrap accounts (DB-backed in DB mode) ──
-    seed_bootstrap_users(&state).await;
+    // ── Seed bootstrap tenant + admin/CEO accounts ───────────────────
+    // DB-backed in DB mode (the module opens the advisory-lock
+    // transaction); in-memory when no pool is configured. Any required
+    // bootstrap failure aborts startup (never logged-and-swallowed).
+    run_bootstrap_seeding(&state).await;
 
     // ── Build router & serve ──────────────────────────────────────
     build_and_serve(state, otel_provider, config).await;

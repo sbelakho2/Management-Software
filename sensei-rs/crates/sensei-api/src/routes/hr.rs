@@ -2,6 +2,17 @@
 //!
 //! Provides endpoints for employee management, training records, leave
 //! requests, performance reviews, and timecard tracking.
+//!
+//! # Self-service identity (thirtieth-first-audit item 6)
+//!
+//! Self-service endpoints (`hr:leave:self`, `hr:timecard:self`) derive the
+//! caller's employee record server-side through
+//! [`HrService::employee_id_for_user`] — request DTOs carry NO identity
+//! fields (`employee_id`, `tenant_id`, `status`, ...), and a client-submitted
+//! employee id is never trusted. Manager/HR read access to another
+//! employee's records lives on separate endpoints under
+//! `/api/v1/hr/employees/{employee_id}/...` guarded by manage/read
+//! permissions (never `*:self`).
 
 use axum::{
     extract::{Path, Query, State},
@@ -36,10 +47,11 @@ pub struct ListTrainingRecordsParams {
     pub per_page: Option<usize>,
 }
 
-/// Query parameters for listing leave requests.
+/// Query parameters for listing the caller's OWN leave requests
+/// (self-service). No employee id: the caller's employee record is derived
+/// server-side from the authenticated user.
 #[derive(Debug, Deserialize)]
 pub struct ListLeaveRequestsParams {
-    pub employee_id: Option<Uuid>,
     pub status: Option<String>,
     pub page: Option<usize>,
     pub per_page: Option<usize>,
@@ -53,10 +65,11 @@ pub struct ListReviewsParams {
     pub per_page: Option<usize>,
 }
 
-/// Query parameters for listing timecards.
+/// Query parameters for listing the caller's OWN timecards (self-service).
+/// No employee id: the caller's employee record is derived server-side from
+/// the authenticated user.
 #[derive(Debug, Deserialize)]
 pub struct ListTimecardsParams {
-    pub employee_id: Uuid,
     pub date_from: Option<DateTime<Utc>>,
     pub date_to: Option<DateTime<Utc>>,
     pub page: Option<usize>,
@@ -69,16 +82,42 @@ pub struct UpdateEmployeeStatusRequest {
     pub status: String,
 }
 
-/// Request body for clocking in.
+/// Request body for submitting a leave request (self-service).
+///
+/// Narrow by design: no `employee_id`/`tenant_id`/`id`/`status`/
+/// `approved_by`/`total_days`/timestamps — the employee is derived
+/// server-side from the authenticated user.
 #[derive(Debug, Deserialize)]
-pub struct ClockInRequest {
-    pub employee_id: Uuid,
+pub struct SubmitSelfLeaveRequest {
+    pub leave_type: String,
+    pub start_date: DateTime<Utc>,
+    pub end_date: DateTime<Utc>,
+    pub reason: String,
 }
 
-/// Request body for clocking out.
+/// Request body for updating the caller's OWN pending leave request
+/// (self-service). Same narrow shape as [`SubmitSelfLeaveRequest`]; only
+/// the four editable fields are accepted.
+#[derive(Debug, Deserialize)]
+pub struct UpdateSelfLeaveRequest {
+    pub leave_type: String,
+    pub start_date: DateTime<Utc>,
+    pub end_date: DateTime<Utc>,
+    pub reason: String,
+}
+
+/// Request body for clocking in (self-service).
+///
+/// Empty: the employee is derived server-side from the authenticated user.
+#[derive(Debug, Deserialize)]
+pub struct ClockInRequest {}
+
+/// Request body for clocking out (self-service).
+///
+/// No `employee_id`: the employee is derived server-side from the
+/// authenticated user and enforced by the service.
 #[derive(Debug, Deserialize)]
 pub struct ClockOutRequest {
-    pub employee_id: Uuid,
     pub timecard_id: Uuid,
 }
 
@@ -205,18 +244,38 @@ pub async fn get_expired_certifications(
 
 // ── Leave Requests ─────────────────────────────────────────────────────────
 
-/// Submit a leave request.
+/// Submit a leave request for the authenticated user (self-service).
+///
+/// The employee identity is derived server-side from the authenticated
+/// user; the body carries no identity fields.
 pub async fn submit_leave_request(
     user: AuthenticatedUser,
     State(state): State<AppState>,
-    Json(req): Json<LeaveRequest>,
+    Json(req): Json<SubmitSelfLeaveRequest>,
 ) -> Result<Json<LeaveRequest>> {
     user.require_permission("hr:leave:self")?;
 
     let tenant_id = user.tenant_id;
+    let employee_id = state
+        .hr_service
+        .employee_id_for_user(tenant_id, user.user_id)
+        .await?;
+    let leave = LeaveRequest {
+        id: Uuid::new_v4(),
+        tenant_id,
+        employee_id,
+        leave_type: req.leave_type,
+        start_date: req.start_date,
+        end_date: req.end_date,
+        total_days: 0,
+        status: String::new(),
+        reason: req.reason,
+        approved_by: None,
+        created_at: Utc::now(),
+    };
     let leave = state
         .hr_service
-        .submit_leave_request(tenant_id, req)
+        .submit_leave_request(tenant_id, leave)
         .await?;
     Ok(Json(leave))
 }
@@ -254,10 +313,43 @@ pub async fn reject_leave(
     Ok(Json(leave))
 }
 
-/// List leave requests with optional filters.
+/// List the authenticated user's OWN leave requests ("my leave",
+/// self-service).
+///
+/// The employee identity is derived server-side from the authenticated
+/// user — there is no client-supplied employee filter.
 pub async fn list_leave_requests(
     user: AuthenticatedUser,
     State(state): State<AppState>,
+    Query(params): Query<ListLeaveRequestsParams>,
+) -> Result<Json<PaginatedResponse<LeaveRequest>>> {
+    user.require_permission("hr:leave:self")?;
+
+    let tenant_id = user.tenant_id;
+    let employee_id = state
+        .hr_service
+        .employee_id_for_user(tenant_id, user.user_id)
+        .await?;
+    let requests = state
+        .hr_service
+        .list_leave_requests(
+            tenant_id,
+            Some(employee_id),
+            params.status.as_deref(),
+            params.page,
+            params.per_page,
+        )
+        .await?;
+    Ok(Json(requests))
+}
+
+/// List ONE employee's leave requests (manager/HR read access — not a
+/// self-service route; the target employee is a path parameter and the
+/// guard is a manage/read permission, never `hr:leave:self`).
+pub async fn list_employee_leave_requests(
+    user: AuthenticatedUser,
+    State(state): State<AppState>,
+    Path(employee_id): Path<Uuid>,
     Query(params): Query<ListLeaveRequestsParams>,
 ) -> Result<Json<PaginatedResponse<LeaveRequest>>> {
     user.require_permission("hr:employee:read")?;
@@ -267,13 +359,77 @@ pub async fn list_leave_requests(
         .hr_service
         .list_leave_requests(
             tenant_id,
-            params.employee_id,
+            Some(employee_id),
             params.status.as_deref(),
             params.page,
             params.per_page,
         )
         .await?;
     Ok(Json(requests))
+}
+
+/// Update the authenticated user's OWN pending leave request
+/// (self-service).
+///
+/// The employee identity is derived server-side; the service enforces that
+/// the row belongs to that employee and is still `pending` (NotFound
+/// otherwise). The narrow body accepts only the four editable fields.
+pub async fn update_leave(
+    user: AuthenticatedUser,
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+    Json(req): Json<UpdateSelfLeaveRequest>,
+) -> Result<Json<LeaveRequest>> {
+    user.require_permission("hr:leave:self")?;
+
+    let tenant_id = user.tenant_id;
+    let employee_id = state
+        .hr_service
+        .employee_id_for_user(tenant_id, user.user_id)
+        .await?;
+    let leave = LeaveRequest {
+        id,
+        tenant_id,
+        employee_id,
+        leave_type: req.leave_type,
+        start_date: req.start_date,
+        end_date: req.end_date,
+        total_days: 0,
+        status: String::new(),
+        reason: req.reason,
+        approved_by: None,
+        created_at: Utc::now(),
+    };
+    let updated = state
+        .hr_service
+        .update_self_leave(tenant_id, employee_id, id, leave)
+        .await?;
+    Ok(Json(updated))
+}
+
+/// Delete the authenticated user's OWN pending leave request
+/// (self-service).
+///
+/// The employee identity is derived server-side; the service enforces that
+/// the row belongs to that employee and is still `pending` (NotFound
+/// otherwise).
+pub async fn delete_leave(
+    user: AuthenticatedUser,
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<()>> {
+    user.require_permission("hr:leave:self")?;
+
+    let tenant_id = user.tenant_id;
+    let employee_id = state
+        .hr_service
+        .employee_id_for_user(tenant_id, user.user_id)
+        .await?;
+    state
+        .hr_service
+        .delete_self_leave(tenant_id, employee_id, id)
+        .await?;
+    Ok(Json(()))
 }
 
 // ── Performance Reviews ────────────────────────────────────────────────────
@@ -322,23 +478,30 @@ pub async fn list_reviews(
 
 // ── Timecards ──────────────────────────────────────────────────────────────
 
-/// Clock in an employee.
+/// Clock in the authenticated user (self-service).
+///
+/// The employee identity is derived server-side from the authenticated
+/// user; the empty body carries no identity fields.
 pub async fn clock_in(
     user: AuthenticatedUser,
     State(state): State<AppState>,
-    Json(req): Json<ClockInRequest>,
+    _req: Json<ClockInRequest>,
 ) -> Result<Json<Timecard>> {
     user.require_permission("hr:timecard:self")?;
 
     let tenant_id = user.tenant_id;
-    let timecard = state
+    let employee_id = state
         .hr_service
-        .clock_in(tenant_id, req.employee_id)
+        .employee_id_for_user(tenant_id, user.user_id)
         .await?;
+    let timecard = state.hr_service.clock_in(tenant_id, employee_id).await?;
     Ok(Json(timecard))
 }
 
-/// Clock out an employee.
+/// Clock out the authenticated user on the given timecard (self-service).
+///
+/// The employee identity is derived server-side and enforced by the
+/// service (the timecard must belong to that employee and still be open).
 pub async fn clock_out(
     user: AuthenticatedUser,
     State(state): State<AppState>,
@@ -347,11 +510,72 @@ pub async fn clock_out(
     user.require_permission("hr:timecard:self")?;
 
     let tenant_id = user.tenant_id;
+    let employee_id = state
+        .hr_service
+        .employee_id_for_user(tenant_id, user.user_id)
+        .await?;
     let timecard = state
         .hr_service
-        .clock_out(tenant_id, req.employee_id, req.timecard_id)
+        .clock_out(tenant_id, employee_id, req.timecard_id)
         .await?;
     Ok(Json(timecard))
+}
+
+/// List the authenticated user's OWN timecards ("my timecards",
+/// self-service).
+///
+/// The employee identity is derived server-side from the authenticated
+/// user — there is no client-supplied employee filter.
+pub async fn list_timecards(
+    user: AuthenticatedUser,
+    State(state): State<AppState>,
+    Query(params): Query<ListTimecardsParams>,
+) -> Result<Json<PaginatedResponse<Timecard>>> {
+    user.require_permission("hr:timecard:self")?;
+
+    let tenant_id = user.tenant_id;
+    let employee_id = state
+        .hr_service
+        .employee_id_for_user(tenant_id, user.user_id)
+        .await?;
+    let timecards = state
+        .hr_service
+        .list_timecards(
+            tenant_id,
+            employee_id,
+            params.date_from,
+            params.date_to,
+            params.page,
+            params.per_page,
+        )
+        .await?;
+    Ok(Json(timecards))
+}
+
+/// List ONE employee's timecards (manager/HR read access — not a
+/// self-service route; the target employee is a path parameter and the
+/// guard is a manage permission, never `hr:timecard:self`).
+pub async fn list_employee_timecards(
+    user: AuthenticatedUser,
+    State(state): State<AppState>,
+    Path(employee_id): Path<Uuid>,
+    Query(params): Query<ListTimecardsParams>,
+) -> Result<Json<PaginatedResponse<Timecard>>> {
+    user.require_permission("hr:timecard:manage")?;
+
+    let tenant_id = user.tenant_id;
+    let timecards = state
+        .hr_service
+        .list_timecards(
+            tenant_id,
+            employee_id,
+            params.date_from,
+            params.date_to,
+            params.page,
+            params.per_page,
+        )
+        .await?;
+    Ok(Json(timecards))
 }
 
 // ── New: Update / Delete Handlers ──────────────────────────────────────────
@@ -410,33 +634,6 @@ pub async fn delete_training(
     Ok(Json(()))
 }
 
-/// Update a leave request.
-pub async fn update_leave(
-    user: AuthenticatedUser,
-    State(state): State<AppState>,
-    Path(id): Path<Uuid>,
-    Json(req): Json<LeaveRequest>,
-) -> Result<Json<LeaveRequest>> {
-    user.require_permission("hr:leave:self")?;
-
-    let tenant_id = user.tenant_id;
-    let leave = state.hr_service.update_leave(tenant_id, id, req).await?;
-    Ok(Json(leave))
-}
-
-/// Delete a leave request.
-pub async fn delete_leave(
-    user: AuthenticatedUser,
-    State(state): State<AppState>,
-    Path(id): Path<Uuid>,
-) -> Result<Json<()>> {
-    user.require_permission("hr:leave:self")?;
-
-    let tenant_id = user.tenant_id;
-    state.hr_service.delete_leave(tenant_id, id).await?;
-    Ok(Json(()))
-}
-
 /// Update a performance review.
 pub async fn update_review(
     user: AuthenticatedUser,
@@ -476,27 +673,4 @@ pub async fn update_timecard(
     let tenant_id = user.tenant_id;
     let timecard = state.hr_service.update_timecard(tenant_id, id, req).await?;
     Ok(Json(timecard))
-}
-
-/// List timecards with optional filters.
-pub async fn list_timecards(
-    user: AuthenticatedUser,
-    State(state): State<AppState>,
-    Query(params): Query<ListTimecardsParams>,
-) -> Result<Json<PaginatedResponse<Timecard>>> {
-    user.require_permission("hr:timecard:self")?;
-
-    let tenant_id = user.tenant_id;
-    let timecards = state
-        .hr_service
-        .list_timecards(
-            tenant_id,
-            params.employee_id,
-            params.date_from,
-            params.date_to,
-            params.page,
-            params.per_page,
-        )
-        .await?;
-    Ok(Json(timecards))
 }

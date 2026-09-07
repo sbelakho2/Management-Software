@@ -121,6 +121,16 @@ pub struct Timecard {
 /// reviews, and timecards.
 #[async_trait]
 pub trait HrService: Send + Sync {
+    // ── Self-service identity ───────────────────────────────────────────
+    /// Resolve the ACTIVE employee record bound to an authenticated user
+    /// (self-service identity, thirtieth-first-audit item 6).
+    ///
+    /// Returns the id of the employee whose `user_id` matches and whose
+    /// `status` is not `terminated`; `Forbidden` when no such employee
+    /// exists. Self-service handlers MUST derive identity through this
+    /// method and never trust a client-submitted employee id.
+    async fn employee_id_for_user(&self, tenant_id: Uuid, user_id: Uuid) -> Result<Uuid>;
+
     // ── Employees ───────────────────────────────────────────────────────
     /// Create a new employee.
     async fn create_employee(&self, tenant_id: Uuid, employee: Employee) -> Result<Employee>;
@@ -204,15 +214,23 @@ pub trait HrService: Send + Sync {
         page: Option<usize>,
         per_page: Option<usize>,
     ) -> Result<PaginatedResponse<LeaveRequest>>;
-    /// Update a leave request.
-    async fn update_leave(
+    /// Update the OWNER's pending leave request (self-service). The
+    /// employee_id is the caller's server-derived identity: the row must
+    /// belong to that employee AND still be `pending`, otherwise
+    /// NotFound — ownership is enforced inside the service (in SQL for
+    /// the database implementation), never by the caller. Only the four
+    /// editable fields change.
+    async fn update_self_leave(
         &self,
         tenant_id: Uuid,
+        employee_id: Uuid,
         id: Uuid,
         leave: LeaveRequest,
     ) -> Result<LeaveRequest>;
-    /// Delete a leave request.
-    async fn delete_leave(&self, tenant_id: Uuid, id: Uuid) -> Result<()>;
+    /// Delete the OWNER's pending leave request (self-service). The row
+    /// must belong to `employee_id` AND still be `pending`, otherwise
+    /// NotFound.
+    async fn delete_self_leave(&self, tenant_id: Uuid, employee_id: Uuid, id: Uuid) -> Result<()>;
 
     // ── Performance Reviews ─────────────────────────────────────────────
     /// Create a new performance review.
@@ -328,6 +346,21 @@ impl Default for InMemoryHrService {
 
 #[async_trait]
 impl HrService for InMemoryHrService {
+    // ── Self-service identity ───────────────────────────────────────────
+
+    async fn employee_id_for_user(&self, tenant_id: Uuid, user_id: Uuid) -> Result<Uuid> {
+        let store = self.employees.read().await;
+        store
+            .values()
+            .find(|e| e.tenant_id == tenant_id && e.user_id == user_id && e.status != "terminated")
+            .map(|e| e.id)
+            .ok_or_else(|| {
+                SenseiError::Forbidden(
+                    "authenticated user has no active employee record".to_string(),
+                )
+            })
+    }
+
     // ── Employees ───────────────────────────────────────────────────────
 
     async fn create_employee(&self, tenant_id: Uuid, mut employee: Employee) -> Result<Employee> {
@@ -819,32 +852,41 @@ impl HrService for InMemoryHrService {
         Ok(())
     }
 
-    async fn update_leave(
+    async fn update_self_leave(
         &self,
-        _tenant_id: Uuid,
+        tenant_id: Uuid,
+        employee_id: Uuid,
         id: Uuid,
         leave: LeaveRequest,
     ) -> Result<LeaveRequest> {
         let mut store = self.leave_requests.write().await;
         let existing = store
             .get_mut(&id)
+            .filter(|lr| {
+                lr.tenant_id == tenant_id && lr.employee_id == employee_id && lr.status == "pending"
+            })
             .ok_or_else(|| SenseiError::NotFound(format!("LeaveRequest {id} not found")))?;
         existing.leave_type = leave.leave_type;
         existing.start_date = leave.start_date;
         existing.end_date = leave.end_date;
-        existing.total_days = leave.total_days;
-        existing.status = leave.status;
         existing.reason = leave.reason;
-        existing.approved_by = leave.approved_by;
-        // Preserve: id, tenant_id, employee_id, created_at
+        // Preserve: id, tenant_id, employee_id, total_days, status,
+        // approved_by, created_at (SQL parity — only the four editable
+        // fields change; a pending row keeps its original totals).
         Ok(existing.clone())
     }
 
-    async fn delete_leave(&self, _tenant_id: Uuid, id: Uuid) -> Result<()> {
+    async fn delete_self_leave(&self, tenant_id: Uuid, employee_id: Uuid, id: Uuid) -> Result<()> {
         let mut store = self.leave_requests.write().await;
-        store
-            .remove(&id)
-            .ok_or_else(|| SenseiError::NotFound(format!("LeaveRequest {id} not found")))?;
+        let owned_pending = store.get(&id).is_some_and(|lr| {
+            lr.tenant_id == tenant_id && lr.employee_id == employee_id && lr.status == "pending"
+        });
+        if !owned_pending {
+            return Err(SenseiError::NotFound(format!(
+                "LeaveRequest {id} not found"
+            )));
+        }
+        store.remove(&id);
         Ok(())
     }
 

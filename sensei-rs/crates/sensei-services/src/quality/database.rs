@@ -997,12 +997,13 @@ impl QualityService for DatabaseQualityService {
         let mut tx = TenantTx::begin(&self.pool, ctx.tenant)
             .await
             .map_err(|e| SenseiError::Database(format!("create_ncr: begin tx: {e}")))?;
-        sqlx::query(
+        let persisted: NcrRow = sqlx::query_as(
             "INSERT INTO ncr_reports (id, tenant_id, ncr_number, title, description, nc_type, \
              severity, status, product_id, process_id, defect_code, reported_by, department, \
              location, is_recurrence, source, root_cause, root_cause_type, analysis_method, \
              disposition, closed_at, scope_site_id, scope_work_center_id, created_at, updated_at) \
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25)",
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25) \
+             RETURNING *",
         )
         .bind(row.id)
         .bind(ctx.tenant)
@@ -1029,7 +1030,7 @@ impl QualityService for DatabaseQualityService {
         .bind(row.scope_work_center_id)
         .bind(row.created_at)
         .bind(row.updated_at)
-        .execute(&mut **tx.tx())
+        .fetch_one(&mut **tx.tx())
         .await
         .map_err(|e| db_err("create_ncr", e))?;
         sensei_db::outbox::enqueue_outbox(
@@ -1049,11 +1050,9 @@ impl QualityService for DatabaseQualityService {
             .await
             .map_err(|e| SenseiError::Database(format!("create_ncr: commit: {e}")))?;
         // POST echoes the PERSISTED entity (storage resolution: PG keeps
-        // microseconds), so create and get always agree.
-        let row = fetch_ncr_row(&self.pool, ctx, id)
-            .await?
-            .ok_or_else(|| not_found("NCR", id))?;
-        row.to_entity()
+        // microseconds) — the row is captured INSIDE this transaction via
+        // RETURNING *, so create and get always agree.
+        persisted.to_entity()
     }
 
     async fn get_ncr(&self, ctx: &RequestContext, id: Uuid) -> Result<NonConformance> {
@@ -1076,8 +1075,16 @@ impl QualityService for DatabaseQualityService {
             .ok_or_else(|| not_found("NCR", id))?;
         row.severity = nc_severity_db(severity).to_string();
         row.updated_at = Utc::now();
-        update_ncr_columns(&self.pool, ctx.tenant, id, &row).await?;
-        row.to_entity()
+        let mut tx = TenantTx::begin(&self.pool, ctx.tenant)
+            .await
+            .map_err(|e| SenseiError::Database(format!("update_ncr_status: begin tx: {e}")))?;
+        let persisted = update_ncr_columns(&mut tx, ctx.tenant, id, &row)
+            .await?
+            .ok_or_else(|| not_found("NCR", id))?;
+        tx.commit()
+            .await
+            .map_err(|e| SenseiError::Database(format!("update_ncr_status: commit: {e}")))?;
+        persisted.to_entity()
     }
 
     async fn update_ncr(
@@ -1096,13 +1103,19 @@ impl QualityService for DatabaseQualityService {
         row.scope_site_id = stored.scope_site_id;
         row.scope_work_center_id = stored.scope_work_center_id;
         row.updated_at = Utc::now();
-        update_ncr_columns(&self.pool, ctx.tenant, id, &row).await?;
         // Whole-entity echoes return the PERSISTED record so update and
-        // get always agree at storage resolution (PG microseconds).
-        let row = fetch_ncr_row(&self.pool, ctx, id)
+        // get always agree at storage resolution (PG microseconds) — the
+        // row is captured INSIDE the write transaction via RETURNING.
+        let mut tx = TenantTx::begin(&self.pool, ctx.tenant)
+            .await
+            .map_err(|e| SenseiError::Database(format!("update_ncr: begin tx: {e}")))?;
+        let persisted = update_ncr_columns(&mut tx, ctx.tenant, id, &row)
             .await?
             .ok_or_else(|| not_found("NCR", id))?;
-        row.to_entity()
+        tx.commit()
+            .await
+            .map_err(|e| SenseiError::Database(format!("update_ncr: commit: {e}")))?;
+        persisted.to_entity()
     }
 
     async fn delete_ncr(&self, ctx: &RequestContext, id: Uuid) -> Result<()> {
@@ -1158,8 +1171,16 @@ impl QualityService for DatabaseQualityService {
         let mut updated = NcrRow::from_entity(&ncr);
         updated.scope_site_id = stamp_site;
         updated.scope_work_center_id = stamp_wc;
-        update_ncr_columns(&self.pool, ctx.tenant, id, &updated).await?;
-        Ok(ncr)
+        let mut tx = TenantTx::begin(&self.pool, ctx.tenant)
+            .await
+            .map_err(|e| SenseiError::Database(format!("investigate_ncr: begin tx: {e}")))?;
+        let persisted = update_ncr_columns(&mut tx, ctx.tenant, id, &updated)
+            .await?
+            .ok_or_else(|| not_found("NCR", id))?;
+        tx.commit()
+            .await
+            .map_err(|e| SenseiError::Database(format!("investigate_ncr: commit: {e}")))?;
+        persisted.to_entity()
     }
 
     async fn disposition_ncr(
@@ -1206,8 +1227,16 @@ impl QualityService for DatabaseQualityService {
         let mut updated = NcrRow::from_entity(&ncr);
         updated.scope_site_id = stamp_site;
         updated.scope_work_center_id = stamp_wc;
-        update_ncr_columns(&self.pool, ctx.tenant, id, &updated).await?;
-        Ok(ncr)
+        let mut tx = TenantTx::begin(&self.pool, ctx.tenant)
+            .await
+            .map_err(|e| SenseiError::Database(format!("disposition_ncr: begin tx: {e}")))?;
+        let persisted = update_ncr_columns(&mut tx, ctx.tenant, id, &updated)
+            .await?
+            .ok_or_else(|| not_found("NCR", id))?;
+        tx.commit()
+            .await
+            .map_err(|e| SenseiError::Database(format!("disposition_ncr: commit: {e}")))?;
+        persisted.to_entity()
     }
 
     async fn close_ncr(&self, ctx: &RequestContext, id: Uuid) -> Result<NonConformance> {
@@ -1244,8 +1273,16 @@ impl QualityService for DatabaseQualityService {
         let mut updated = NcrRow::from_entity(&ncr);
         updated.scope_site_id = stamp_site;
         updated.scope_work_center_id = stamp_wc;
-        update_ncr_columns(&self.pool, ctx.tenant, id, &updated).await?;
-        Ok(ncr)
+        let mut tx = TenantTx::begin(&self.pool, ctx.tenant)
+            .await
+            .map_err(|e| SenseiError::Database(format!("close_ncr: begin tx: {e}")))?;
+        let persisted = update_ncr_columns(&mut tx, ctx.tenant, id, &updated)
+            .await?
+            .ok_or_else(|| not_found("NCR", id))?;
+        tx.commit()
+            .await
+            .map_err(|e| SenseiError::Database(format!("close_ncr: commit: {e}")))?;
+        persisted.to_entity()
     }
 
     // ── CAPAs ─────────────────────────────────────────────────────────────
@@ -1372,11 +1409,12 @@ impl QualityService for DatabaseQualityService {
         let mut tx = TenantTx::begin(&self.pool, ctx.tenant)
             .await
             .map_err(|e| SenseiError::Database(format!("create_capa: begin tx: {e}")))?;
-        sqlx::query(
+        let persisted: CapaRow = sqlx::query_as(
             "INSERT INTO capas (id, tenant_id, capa_number, title, description, capa_type, \
              priority, status, nc_ids, owner_id, due_date, closed_at, details, \
              scope_site_id, scope_work_center_id, created_at, updated_at) \
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)",
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17) \
+             RETURNING *",
         )
         .bind(row.id)
         .bind(ctx.tenant)
@@ -1395,7 +1433,7 @@ impl QualityService for DatabaseQualityService {
         .bind(row.scope_work_center_id)
         .bind(row.created_at)
         .bind(row.updated_at)
-        .execute(&mut **tx.tx())
+        .fetch_one(&mut **tx.tx())
         .await
         .map_err(|e| db_err("create_capa", e))?;
         sensei_db::outbox::enqueue_outbox(
@@ -1415,11 +1453,9 @@ impl QualityService for DatabaseQualityService {
             .await
             .map_err(|e| SenseiError::Database(format!("create_capa: commit: {e}")))?;
         // POST echoes the PERSISTED entity (storage resolution: PG keeps
-        // microseconds), so create and get always agree.
-        let row = fetch_capa_row(&self.pool, ctx, capa.id)
-            .await?
-            .ok_or_else(|| not_found("CAPA", capa.id))?;
-        row.to_entity()
+        // microseconds) — the row is captured INSIDE this transaction via
+        // RETURNING *, so create and get always agree.
+        persisted.to_entity()
     }
 
     async fn get_capa(&self, ctx: &RequestContext, id: Uuid) -> Result<CapaExtended> {
@@ -1444,8 +1480,16 @@ impl QualityService for DatabaseQualityService {
             row.closed_at = Some(Utc::now());
         }
         row.updated_at = Utc::now();
-        update_capa_columns(&self.pool, ctx.tenant, id, &row).await?;
-        row.to_entity()
+        let mut tx = TenantTx::begin(&self.pool, ctx.tenant)
+            .await
+            .map_err(|e| SenseiError::Database(format!("update_capa_status: begin tx: {e}")))?;
+        let persisted = update_capa_columns(&mut tx, ctx.tenant, id, &row)
+            .await?
+            .ok_or_else(|| not_found("CAPA", id))?;
+        tx.commit()
+            .await
+            .map_err(|e| SenseiError::Database(format!("update_capa_status: commit: {e}")))?;
+        persisted.to_entity()
     }
 
     async fn update_capa(
@@ -1463,13 +1507,19 @@ impl QualityService for DatabaseQualityService {
         row.scope_site_id = stored.scope_site_id;
         row.scope_work_center_id = stored.scope_work_center_id;
         row.updated_at = Utc::now();
-        update_capa_columns(&self.pool, ctx.tenant, id, &row).await?;
         // Whole-entity echoes return the PERSISTED record so update and
-        // get always agree at storage resolution (PG microseconds).
-        let row = fetch_capa_row(&self.pool, ctx, id)
+        // get always agree at storage resolution (PG microseconds) — the
+        // row is captured INSIDE the write transaction via RETURNING.
+        let mut tx = TenantTx::begin(&self.pool, ctx.tenant)
+            .await
+            .map_err(|e| SenseiError::Database(format!("update_capa: begin tx: {e}")))?;
+        let persisted = update_capa_columns(&mut tx, ctx.tenant, id, &row)
             .await?
             .ok_or_else(|| not_found("CAPA", id))?;
-        row.to_entity()
+        tx.commit()
+            .await
+            .map_err(|e| SenseiError::Database(format!("update_capa: commit: {e}")))?;
+        persisted.to_entity()
     }
 
     async fn delete_capa(&self, ctx: &RequestContext, id: Uuid) -> Result<()> {
@@ -1539,8 +1589,16 @@ impl QualityService for DatabaseQualityService {
         let mut updated = CapaRow::from_entity(&capa);
         updated.scope_site_id = stamp_site;
         updated.scope_work_center_id = stamp_wc;
-        update_capa_columns(&self.pool, ctx.tenant, id, &updated).await?;
-        Ok(capa)
+        let mut tx = TenantTx::begin(&self.pool, ctx.tenant)
+            .await
+            .map_err(|e| SenseiError::Database(format!("verify_capa: begin tx: {e}")))?;
+        let persisted = update_capa_columns(&mut tx, ctx.tenant, id, &updated)
+            .await?
+            .ok_or_else(|| not_found("CAPA", id))?;
+        tx.commit()
+            .await
+            .map_err(|e| SenseiError::Database(format!("verify_capa: commit: {e}")))?;
+        persisted.to_entity()
     }
 
     async fn close_capa(&self, ctx: &RequestContext, id: Uuid) -> Result<CapaExtended> {
@@ -1661,12 +1719,13 @@ impl QualityService for DatabaseQualityService {
         let mut tx = TenantTx::begin(&self.pool, ctx.tenant)
             .await
             .map_err(|e| SenseiError::Database(format!("create_audit: begin tx: {e}")))?;
-        sqlx::query(
+        let persisted: AuditRow = sqlx::query_as(
             "INSERT INTO audits (id, tenant_id, audit_number, audit_type, status, title, \
              scope, area, auditor_id, lead_auditor_id, scheduled_date, start_date, \
              completion_date, details, scope_site_id, scope_work_center_id, created_at, \
              updated_at) \
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)",
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18) \
+             RETURNING *",
         )
         .bind(row.id)
         .bind(ctx.tenant)
@@ -1686,18 +1745,16 @@ impl QualityService for DatabaseQualityService {
         .bind(row.scope_work_center_id)
         .bind(row.created_at)
         .bind(row.updated_at)
-        .execute(&mut **tx.tx())
+        .fetch_one(&mut **tx.tx())
         .await
         .map_err(|e| db_err("create_audit", e))?;
         tx.commit()
             .await
             .map_err(|e| SenseiError::Database(format!("create_audit: commit: {e}")))?;
         // POST echoes the PERSISTED entity (storage resolution: PG keeps
-        // microseconds), so create and get always agree.
-        let row = fetch_audit_row(&self.pool, ctx, audit.id)
-            .await?
-            .ok_or_else(|| not_found("Audit", audit.id))?;
-        row.to_entity()
+        // microseconds) — the row is captured INSIDE this transaction via
+        // RETURNING *, so create and get always agree.
+        persisted.to_entity()
     }
 
     async fn get_audit(&self, ctx: &RequestContext, id: Uuid) -> Result<Audit> {
@@ -1717,13 +1774,19 @@ impl QualityService for DatabaseQualityService {
         row.scope_site_id = stored.scope_site_id;
         row.scope_work_center_id = stored.scope_work_center_id;
         row.updated_at = Utc::now();
-        update_audit_columns(&self.pool, ctx.tenant, id, &row).await?;
         // Whole-entity echoes return the PERSISTED record so update and
-        // get always agree at storage resolution (PG microseconds).
-        let row = fetch_audit_row(&self.pool, ctx, id)
+        // get always agree at storage resolution (PG microseconds) — the
+        // row is captured INSIDE the write transaction via RETURNING.
+        let mut tx = TenantTx::begin(&self.pool, ctx.tenant)
+            .await
+            .map_err(|e| SenseiError::Database(format!("update_audit: begin tx: {e}")))?;
+        let persisted = update_audit_columns(&mut tx, ctx.tenant, id, &row)
             .await?
             .ok_or_else(|| not_found("Audit", id))?;
-        row.to_entity()
+        tx.commit()
+            .await
+            .map_err(|e| SenseiError::Database(format!("update_audit: commit: {e}")))?;
+        persisted.to_entity()
     }
 
     async fn delete_audit(&self, ctx: &RequestContext, id: Uuid) -> Result<()> {
@@ -1755,6 +1818,9 @@ impl QualityService for DatabaseQualityService {
         // The parent audit is scope-checked first (item 3): findings of
         // an out-of-scope audit are indistinguishable from a missing one.
         let _ = self.get_audit(ctx, audit_id).await?;
+        let mut db = TenantTx::begin(&self.pool, ctx.tenant)
+            .await
+            .map_err(|e| SenseiError::Database(format!("list_findings: begin tx: {e}")))?;
         let rows: Vec<FindingRow> = sqlx::query_as(
             "SELECT f.id, f.audit_id, f.finding_number, f.severity, f.status, f.description, \
              f.clause, f.area, f.implementation_notes, f.verified_by, f.verification_notes, \
@@ -1764,9 +1830,12 @@ impl QualityService for DatabaseQualityService {
         )
         .bind(audit_id)
         .bind(ctx.tenant)
-        .fetch_all(&self.pool)
+        .fetch_all(&mut **db.tx())
         .await
         .map_err(|e| db_err("list_findings", e))?;
+        db.commit()
+            .await
+            .map_err(|e| SenseiError::Database(format!("list_findings: commit: {e}")))?;
         let items: Result<Vec<AuditFinding>> = rows.iter().map(|r| r.to_entity()).collect();
         items
     }
@@ -2218,9 +2287,18 @@ const NCR_UPDATE_SET: &str = "ncr_number=$2, title=$3, description=$4, nc_type=$
      root_cause=$16, root_cause_type=$17, analysis_method=$18, disposition=$19, \
      closed_at=$20, scope_site_id=$21, scope_work_center_id=$22, updated_at=$23";
 
-async fn update_ncr_columns(pool: &PgPool, tenant_id: Uuid, id: Uuid, row: &NcrRow) -> Result<()> {
-    sqlx::query(&format!(
-        "UPDATE ncr_reports SET {NCR_UPDATE_SET} WHERE id=$1 AND tenant_id=$24"
+/// Whole-row UPDATE inside the caller's TenantTx (the caller already
+/// proved scope on the read side of the read-then-write path). The
+/// PERSISTED row is captured via `RETURNING *` — `Ok(None)` when the row
+/// vanished between the read and the write.
+async fn update_ncr_columns(
+    tx: &mut TenantTx<'_>,
+    tenant_id: Uuid,
+    id: Uuid,
+    row: &NcrRow,
+) -> Result<Option<NcrRow>> {
+    let persisted = sqlx::query_as::<_, NcrRow>(&format!(
+        "UPDATE ncr_reports SET {NCR_UPDATE_SET} WHERE id=$1 AND tenant_id=$24 RETURNING *"
     ))
     .bind(id)
     .bind(&row.ncr_number)
@@ -2246,10 +2324,10 @@ async fn update_ncr_columns(pool: &PgPool, tenant_id: Uuid, id: Uuid, row: &NcrR
     .bind(row.scope_work_center_id)
     .bind(row.updated_at)
     .bind(tenant_id)
-    .execute(pool)
+    .fetch_optional(&mut **tx.tx())
     .await
     .map_err(|e| db_err("update_ncr", e))?;
-    Ok(())
+    Ok(persisted)
 }
 
 const CAPA_UPDATE_SET: &str = "capa_number=$2, title=$3, description=$4, capa_type=$5, \
@@ -2257,13 +2335,13 @@ const CAPA_UPDATE_SET: &str = "capa_number=$2, title=$3, description=$4, capa_ty
      details=$12, scope_site_id=$13, scope_work_center_id=$14, updated_at=$15";
 
 async fn update_capa_columns(
-    pool: &PgPool,
+    tx: &mut TenantTx<'_>,
     tenant_id: Uuid,
     id: Uuid,
     row: &CapaRow,
-) -> Result<()> {
-    sqlx::query(&format!(
-        "UPDATE capas SET {CAPA_UPDATE_SET} WHERE id=$1 AND tenant_id=$16"
+) -> Result<Option<CapaRow>> {
+    let persisted = sqlx::query_as::<_, CapaRow>(&format!(
+        "UPDATE capas SET {CAPA_UPDATE_SET} WHERE id=$1 AND tenant_id=$16 RETURNING *"
     ))
     .bind(id)
     .bind(&row.capa_number)
@@ -2281,10 +2359,10 @@ async fn update_capa_columns(
     .bind(row.scope_work_center_id)
     .bind(row.updated_at)
     .bind(tenant_id)
-    .execute(pool)
+    .fetch_optional(&mut **tx.tx())
     .await
     .map_err(|e| db_err("update_capa", e))?;
-    Ok(())
+    Ok(persisted)
 }
 
 const AUDIT_UPDATE_SET: &str = "audit_number=$2, audit_type=$3, status=$4, title=$5, \
@@ -2293,13 +2371,13 @@ const AUDIT_UPDATE_SET: &str = "audit_number=$2, audit_type=$3, status=$4, title
      scope_work_center_id=$15, updated_at=$16";
 
 async fn update_audit_columns(
-    pool: &PgPool,
+    tx: &mut TenantTx<'_>,
     tenant_id: Uuid,
     id: Uuid,
     row: &AuditRow,
-) -> Result<()> {
-    sqlx::query(&format!(
-        "UPDATE audits SET {AUDIT_UPDATE_SET} WHERE id=$1 AND tenant_id=$17"
+) -> Result<Option<AuditRow>> {
+    let persisted = sqlx::query_as::<_, AuditRow>(&format!(
+        "UPDATE audits SET {AUDIT_UPDATE_SET} WHERE id=$1 AND tenant_id=$17 RETURNING *"
     ))
     .bind(id)
     .bind(&row.audit_number)
@@ -2318,8 +2396,8 @@ async fn update_audit_columns(
     .bind(row.scope_work_center_id)
     .bind(row.updated_at)
     .bind(tenant_id)
-    .execute(pool)
+    .fetch_optional(&mut **tx.tx())
     .await
     .map_err(|e| db_err("update_audit", e))?;
-    Ok(())
+    Ok(persisted)
 }

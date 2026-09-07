@@ -121,14 +121,26 @@ pub fn init_pwa() -> PwaState {
         .periodic_sync_supported
         .set(periodic_sync_supported);
 
-    // Register the service worker if supported
+    // Register the service worker only when the origin really serves the
+    // worker script (service_worker_script_available): an API/SPA server
+    // without an sw.js artifact would answer the registration with
+    // index.html ("unsupported MIME type" console error on every page
+    // load) and the worker could never activate anyway.
     if sw_supported {
-        pwa_state
-            .sw_registration_state
-            .set(SwRegistrationState::Registering);
         wasm_bindgen_futures::spawn_local({
             let pwa = pwa_state.clone();
             async move {
+                if !service_worker::service_worker_script_available().await {
+                    pwa.sw_registration_state
+                        .set(SwRegistrationState::Unregistered);
+                    log::warn!(
+                        "[PWA] no service worker script at {} — skipping registration",
+                        service_worker::SERVICE_WORKER_URL
+                    );
+                    return;
+                }
+                pwa.sw_registration_state
+                    .set(SwRegistrationState::Registering);
                 match service_worker::register_service_worker().await {
                     Ok(_registration) => {
                         pwa.sw_registration_state

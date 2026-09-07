@@ -31,12 +31,6 @@ pub fn WorkRequestListPage() -> impl IntoView {
 
     let columns = vec![
         TableColumn {
-            label: "REQUEST #",
-            key: "request_number",
-            sortable: true,
-            width: None,
-        },
-        TableColumn {
             label: "TITLE",
             key: "title",
             sortable: true,
@@ -55,8 +49,8 @@ pub fn WorkRequestListPage() -> impl IntoView {
             width: Some("90px"),
         },
         TableColumn {
-            label: "ASSET",
-            key: "asset_id",
+            label: "EQUIPMENT",
+            key: "equipment_id",
             sortable: true,
             width: None,
         },
@@ -80,11 +74,10 @@ pub fn WorkRequestListPage() -> impl IntoView {
                 Ok(list) => {
                     let rows: Vec<_> = list.clone().into_iter().map(|wr| {
                         view! {
-                            <td>{wr.request_number}</td>
                             <td>{wr.title}</td>
                             <td><span class=format!("rams-badge priority-{}", wr.priority.to_lowercase())>{wr.priority.clone()}</span></td>
                             <td><span class=format!("rams-badge status-{}", wr.status.to_lowercase())>{wr.status.clone()}</span></td>
-                            <td>{wr.asset_id.unwrap_or_else(|| "—".into())}</td>
+                            <td>{wr.equipment_id}</td>
                             <td>{wr.assigned_to.unwrap_or_else(|| "—".into())}</td>
                             <td>{wr.created_at[..10].to_string()}</td>
                         }

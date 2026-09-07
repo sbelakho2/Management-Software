@@ -13,16 +13,12 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NcrDto {
     pub id: String,
-    pub tenant_id: String,
+    pub nc_number: String,
     pub title: String,
     pub description: String,
     pub severity: String,
     pub status: String,
-    pub source: String,
-    pub created_by: String,
-    pub assigned_to: Option<String>,
     pub created_at: String,
-    pub updated_at: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

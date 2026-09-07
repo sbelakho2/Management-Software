@@ -13,16 +13,16 @@ use serde::{Deserialize, Serialize};
 pub struct WorkOrderDto {
     pub id: String,
     pub tenant_id: String,
-    pub work_order_number: String,
+    pub wo_number: String,
     pub product_id: String,
+    pub product_name: String,
     pub quantity: f64,
-    pub quantity_completed: Option<f64>,
+    pub quantity_completed: f64,
     pub status: String,
     pub priority: String,
-    pub due_date: Option<String>,
-    pub assigned_to: Option<String>,
+    pub assigned_to: Vec<String>,
+    pub notes: String,
     pub created_at: String,
-    pub updated_at: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

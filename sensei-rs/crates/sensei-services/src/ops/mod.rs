@@ -23,6 +23,7 @@ use sensei_core::domain::events::{
     A3ClosedEvent, A3CreatedEvent, AndonAcknowledgedEvent, AndonCreatedEvent, AndonResolvedEvent,
     DomainEvent, ProjectCreatedEvent, RiskCreatedEvent, RiskMitigatedEvent,
 };
+use sensei_core::domain::scope::AuthorizedScope;
 use sensei_core::error::{Result, SenseiError};
 use sensei_core::pagination::PaginatedResponse;
 use sensei_event_bus::bus::EventBus;
@@ -86,7 +87,11 @@ pub struct Andon {
     pub escalated_at: Option<DateTime<Utc>>,
     /// Client command key (seventeenth audit item 11): set when the andon
     /// was raised with an Idempotency-Key — retries replay the original.
+    /// INTERNAL-ONLY (thirtieth-first audit): never serialized — the
+    /// routes clear it (`wire_andon`) and the field is skipped whenever
+    /// it is `None`, so no request_key ever appears on the wire.
     #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub request_key: Option<String>,
 }
 
@@ -206,14 +211,18 @@ pub trait OperationsService: Send + Sync {
         andon: Andon,
         request_key: Option<String>,
     ) -> Result<Andon>;
-    /// Acknowledge an Andon signal. `authorized_sites` is the caller's
-    /// entitlement scope — the UPDATE embeds `site_id = ANY($n)` in the
-    /// SAME transaction (eighteenth audit P0-2): a Site-A employee can
-    /// never acknowledge a Site-B Andon, whatever UUID they know.
+    /// Acknowledge an Andon signal. `scope` is the caller's FULL
+    /// authorization vector (thirtieth-first audit): the UPDATE embeds
+    /// the tripartite scope predicate —
+    /// `(tenant_wide OR site_id = ANY(sites) OR work_center_id =
+    /// ANY(work_centers))` — in the SAME transaction. A Site-A employee
+    /// can never acknowledge a Site-B Andon, whatever UUID they know,
+    /// and an exact work-center grant covers exactly that work center,
+    /// never its whole site.
     async fn acknowledge_andon(
         &self,
         tenant_id: Uuid,
-        authorized_sites: &[Uuid],
+        scope: &AuthorizedScope,
         id: Uuid,
         acknowledged_by: Uuid,
     ) -> Result<Andon>;
@@ -223,7 +232,7 @@ pub trait OperationsService: Send + Sync {
     async fn escalate_andon(
         &self,
         tenant_id: Uuid,
-        authorized_sites: &[Uuid],
+        scope: &AuthorizedScope,
         id: Uuid,
         escalated_by: Uuid,
     ) -> Result<Andon>;
@@ -232,7 +241,7 @@ pub trait OperationsService: Send + Sync {
     async fn resolve_andon(
         &self,
         tenant_id: Uuid,
-        authorized_sites: &[Uuid],
+        scope: &AuthorizedScope,
         id: Uuid,
         resolved_by: Uuid,
         resolution: &str,
@@ -240,14 +249,15 @@ pub trait OperationsService: Send + Sync {
     /// Get an Andon signal by ID.
     async fn get_andon(&self, tenant_id: Uuid, id: Uuid) -> Result<Andon>;
 
-    /// Scoped get (twenty-first audit P0): the lookup carries the
-    /// caller's authorized sites in the SAME query — a foreign-site UUID
-    /// and a nonexistent UUID are indistinguishable (both NotFound), and
-    /// an empty entitlement set matches nothing.
+    /// Scoped get (twenty-first audit P0; thirtieth-first audit): the
+    /// lookup carries the caller's FULL authorization vector — sites AND
+    /// exact work centers — in the SAME query, so a foreign-site UUID and
+    /// a nonexistent UUID are indistinguishable (both NotFound), and a
+    /// `NoOperationalScope` caller matches nothing.
     async fn get_andon_scoped(
         &self,
         tenant_id: Uuid,
-        authorized_sites: &[Uuid],
+        scope: &AuthorizedScope,
         id: Uuid,
     ) -> Result<Andon>;
     /// Authorize the restart of a line after a critical-safety Andon (hard
@@ -256,7 +266,7 @@ pub trait OperationsService: Send + Sync {
     async fn authorize_restart(
         &self,
         tenant_id: Uuid,
-        authorized_sites: &[Uuid],
+        scope: &AuthorizedScope,
         id: Uuid,
         authorized_by: Uuid,
     ) -> Result<Andon>;
@@ -270,14 +280,18 @@ pub trait OperationsService: Send + Sync {
         per_page: Option<usize>,
     ) -> Result<PaginatedResponse<Andon>>;
 
-    /// Scope-intersected listing (seventeenth audit item 4): `scope_site`
-    /// is the caller's authorized site — when set, ONLY that site's
-    /// andons are returned. The unscoped variant must never be exposed
-    /// for ordinary callers.
-    async fn list_andons_scoped(
+    /// Scope-vector listing (thirtieth-first audit): ONE paginated query
+    /// whose scope arm is the tripartite predicate
+    /// `tenant_wide OR site_id = ANY(sites) OR work_center_id =
+    /// ANY(work_centers)` — a site grant covers the site's andons, an
+    /// exact work-center grant covers exactly its work center (never the
+    /// sibling work centers of the site), `TenantWide` passes everywhere
+    /// and `NoOperationalScope` matches nothing (fail closed). The
+    /// unscoped variant must never be exposed for ordinary callers.
+    async fn list_andons_authorized(
         &self,
         tenant_id: Uuid,
-        scope_site: Option<Uuid>,
+        scope: &AuthorizedScope,
         status: Option<&str>,
         work_center_id: Option<Uuid>,
         page: Option<usize>,
@@ -344,7 +358,7 @@ pub trait OperationsService: Send + Sync {
     async fn update_andon(
         &self,
         tenant_id: Uuid,
-        authorized_sites: &[Uuid],
+        scope: &AuthorizedScope,
         id: Uuid,
         andon: Andon,
     ) -> Result<Andon>;
@@ -353,7 +367,7 @@ pub trait OperationsService: Send + Sync {
     async fn void_andon(
         &self,
         tenant_id: Uuid,
-        authorized_sites: &[Uuid],
+        scope: &AuthorizedScope,
         id: Uuid,
         actor_id: Uuid,
         reason: &str,
@@ -463,6 +477,35 @@ impl Default for InMemoryOperationsService {
     }
 }
 
+/// Scope-vector admission for an Andon anchored at `(site, work_center)`
+/// (thirtieth-first audit): `TenantWide` passes everywhere,
+/// `NoOperationalScope` matches nothing (fail closed), a site grant
+/// covers the whole site, and an exact work-center grant covers exactly
+/// its (site, work_center) pair — never a sibling work center and never
+/// the whole site. A site-less Andon matches no `Operational` scope.
+fn andon_in_scope(scope: &AuthorizedScope, site: Option<Uuid>, work_center: Uuid) -> bool {
+    match scope {
+        AuthorizedScope::NoOperationalScope => false,
+        AuthorizedScope::TenantWide => true,
+        AuthorizedScope::Operational {
+            sites,
+            work_centers,
+        } => match site {
+            Some(site) => {
+                sites.contains(&site)
+                    || work_centers
+                        .iter()
+                        .any(|wc| wc.site == site && wc.work_center == work_center)
+            }
+            None => false,
+        },
+    }
+}
+
+fn no_operational_scope_err() -> SenseiError {
+    SenseiError::Forbidden("no operational scope — no Andon is authorized".to_string())
+}
+
 #[async_trait]
 impl OperationsService for InMemoryOperationsService {
     // ── Andon ───────────────────────────────────────────────────────────
@@ -529,25 +572,20 @@ impl OperationsService for InMemoryOperationsService {
     async fn acknowledge_andon(
         &self,
         tenant_id: Uuid,
-        authorized_sites: &[Uuid],
+        scope: &AuthorizedScope,
         id: Uuid,
         acknowledged_by: Uuid,
     ) -> Result<Andon> {
-        if authorized_sites.is_empty() {
-            return Err(SenseiError::Forbidden(
-                "no operational scope — no Andon is authorized".to_string(),
-            ));
+        if matches!(scope, AuthorizedScope::NoOperationalScope) {
+            return Err(no_operational_scope_err());
         }
         let mut store = self.andons.write().await;
         let andon = store
             .get_mut(&id)
             .ok_or_else(|| SenseiError::NotFound(format!("Andon {id} not found")))?;
-        if andon
-            .site_id
-            .is_some_and(|site| !authorized_sites.contains(&site))
-        {
+        if !andon_in_scope(scope, andon.site_id, andon.work_center_id) {
             return Err(SenseiError::Forbidden(
-                "Andon is outside the caller's authorized site scope".to_string(),
+                "Andon is outside the caller's authorized scope".to_string(),
             ));
         }
 
@@ -577,19 +615,22 @@ impl OperationsService for InMemoryOperationsService {
     async fn escalate_andon(
         &self,
         tenant_id: Uuid,
-        authorized_sites: &[Uuid],
+        scope: &AuthorizedScope,
         id: Uuid,
         escalated_by: Uuid,
     ) -> Result<Andon> {
-        if authorized_sites.is_empty() {
-            return Err(SenseiError::Forbidden(
-                "no operational scope — no Andon is authorized".to_string(),
-            ));
+        if matches!(scope, AuthorizedScope::NoOperationalScope) {
+            return Err(no_operational_scope_err());
         }
         let mut store = self.andons.write().await;
         let andon = store
             .get_mut(&id)
             .ok_or_else(|| SenseiError::NotFound(format!("Andon {id} not found")))?;
+        if !andon_in_scope(scope, andon.site_id, andon.work_center_id) {
+            return Err(SenseiError::Forbidden(
+                "Andon is outside the caller's authorized scope".to_string(),
+            ));
+        }
         if andon.status == "resolved" || andon.status == "voided" {
             return Err(SenseiError::Validation(format!(
                 "Cannot escalate a closed Andon (status: {})",
@@ -614,21 +655,23 @@ impl OperationsService for InMemoryOperationsService {
     async fn resolve_andon(
         &self,
         tenant_id: Uuid,
-        authorized_sites: &[Uuid],
+        scope: &AuthorizedScope,
         id: Uuid,
         resolved_by: Uuid,
         resolution: &str,
     ) -> Result<Andon> {
-        if authorized_sites.is_empty() {
-            return Err(SenseiError::Forbidden(
-                "no operational scope — no Andon is authorized".to_string(),
-            ));
+        if matches!(scope, AuthorizedScope::NoOperationalScope) {
+            return Err(no_operational_scope_err());
         }
         let mut store = self.andons.write().await;
         let andon = store
             .get_mut(&id)
             .ok_or_else(|| SenseiError::NotFound(format!("Andon {id} not found")))?;
-
+        if !andon_in_scope(scope, andon.site_id, andon.work_center_id) {
+            return Err(SenseiError::Forbidden(
+                "Andon is outside the caller's authorized scope".to_string(),
+            ));
+        }
         if andon.status == "resolved" || andon.status == "closed" {
             return Err(SenseiError::Validation(format!(
                 "Cannot resolve an Andon with status: {}",
@@ -669,20 +712,17 @@ impl OperationsService for InMemoryOperationsService {
     async fn get_andon_scoped(
         &self,
         tenant_id: Uuid,
-        authorized_sites: &[Uuid],
+        scope: &AuthorizedScope,
         id: Uuid,
     ) -> Result<Andon> {
-        if authorized_sites.is_empty() {
-            return Err(SenseiError::Forbidden(
-                "no operational scope — no Andon is authorized".to_string(),
-            ));
+        if matches!(scope, AuthorizedScope::NoOperationalScope) {
+            return Err(no_operational_scope_err());
         }
         let store = self.andons.read().await;
         match store.get(&id) {
             Some(a)
                 if a.tenant_id == tenant_id
-                    && a.site_id
-                        .is_none_or(|site| authorized_sites.contains(&site)) =>
+                    && andon_in_scope(scope, a.site_id, a.work_center_id) =>
             {
                 Ok(a.clone())
             }
@@ -719,10 +759,10 @@ impl OperationsService for InMemoryOperationsService {
         Ok(PaginatedResponse::new(items, page, per_page))
     }
 
-    async fn list_andons_scoped(
+    async fn list_andons_authorized(
         &self,
         tenant_id: Uuid,
-        scope_site: Option<Uuid>,
+        scope: &AuthorizedScope,
         status: Option<&str>,
         work_center_id: Option<Uuid>,
         page: Option<usize>,
@@ -733,7 +773,7 @@ impl OperationsService for InMemoryOperationsService {
             .values()
             .filter(|a| {
                 a.tenant_id == tenant_id
-                    && scope_site.is_none_or(|site| a.site_id == Some(site))
+                    && andon_in_scope(scope, a.site_id, a.work_center_id)
                     && status.is_none_or(|s| a.status == s)
                     && work_center_id.is_none_or(|wc| a.work_center_id == wc)
             })
@@ -1044,19 +1084,22 @@ impl OperationsService for InMemoryOperationsService {
     async fn update_andon(
         &self,
         _tenant_id: Uuid,
-        authorized_sites: &[Uuid],
+        scope: &AuthorizedScope,
         id: Uuid,
         andon: Andon,
     ) -> Result<Andon> {
-        if authorized_sites.is_empty() {
-            return Err(SenseiError::Forbidden(
-                "no operational scope — no Andon is authorized".to_string(),
-            ));
+        if matches!(scope, AuthorizedScope::NoOperationalScope) {
+            return Err(no_operational_scope_err());
         }
         let mut store = self.andons.write().await;
         let existing = store
             .get_mut(&id)
             .ok_or_else(|| SenseiError::NotFound(format!("Andon {id} not found")))?;
+        if !andon_in_scope(scope, existing.site_id, existing.work_center_id) {
+            return Err(SenseiError::Forbidden(
+                "Andon is outside the caller's authorized scope".to_string(),
+            ));
+        }
         existing.issue_type = andon.issue_type;
         existing.severity = andon.severity;
         existing.description = andon.description;
@@ -1071,25 +1114,20 @@ impl OperationsService for InMemoryOperationsService {
     async fn authorize_restart(
         &self,
         _tenant_id: Uuid,
-        authorized_sites: &[Uuid],
+        scope: &AuthorizedScope,
         id: Uuid,
         authorized_by: Uuid,
     ) -> Result<Andon> {
-        if authorized_sites.is_empty() {
-            return Err(SenseiError::Forbidden(
-                "no operational scope — no Andon is authorized".to_string(),
-            ));
+        if matches!(scope, AuthorizedScope::NoOperationalScope) {
+            return Err(no_operational_scope_err());
         }
         let mut store = self.andons.write().await;
         let andon = store
             .get_mut(&id)
             .ok_or_else(|| SenseiError::NotFound(format!("Andon {id} not found")))?;
-        if andon
-            .site_id
-            .is_some_and(|site| !authorized_sites.contains(&site))
-        {
+        if !andon_in_scope(scope, andon.site_id, andon.work_center_id) {
             return Err(SenseiError::Forbidden(
-                "Andon is outside the caller's authorized site scope".to_string(),
+                "Andon is outside the caller's authorized scope".to_string(),
             ));
         }
         andon.restart_authorized_by = Some(authorized_by);
@@ -1100,20 +1138,23 @@ impl OperationsService for InMemoryOperationsService {
     async fn void_andon(
         &self,
         _tenant_id: Uuid,
-        authorized_sites: &[Uuid],
+        scope: &AuthorizedScope,
         id: Uuid,
         actor_id: Uuid,
         reason: &str,
     ) -> Result<Andon> {
-        if authorized_sites.is_empty() {
-            return Err(SenseiError::Forbidden(
-                "no operational scope — no Andon is authorized".to_string(),
-            ));
+        if matches!(scope, AuthorizedScope::NoOperationalScope) {
+            return Err(no_operational_scope_err());
         }
         let mut store = self.andons.write().await;
         let andon = store
             .get_mut(&id)
             .ok_or_else(|| SenseiError::NotFound(format!("Andon {id} not found")))?;
+        if !andon_in_scope(scope, andon.site_id, andon.work_center_id) {
+            return Err(SenseiError::Forbidden(
+                "Andon is outside the caller's authorized scope".to_string(),
+            ));
+        }
         andon.status = "voided".to_string();
         andon.resolved_by = Some(actor_id);
         andon.resolution = Some(format!("VOIDED: {reason}"));
@@ -1284,9 +1325,12 @@ mod tests {
         assert!(raised.andon_number.starts_with("AND-"));
         assert_eq!(raised.status, "active");
 
-        let sites = vec![site];
+        let scope = AuthorizedScope::Operational {
+            sites: std::collections::HashSet::from([site]),
+            work_centers: std::collections::HashSet::new(),
+        };
         let ack = service
-            .acknowledge_andon(tenant_id, &sites, raised.id, user_id)
+            .acknowledge_andon(tenant_id, &scope, raised.id, user_id)
             .await
             .unwrap();
         assert_eq!(ack.status, "acknowledged");
@@ -1295,7 +1339,7 @@ mod tests {
         let resolved = service
             .resolve_andon(
                 tenant_id,
-                &sites,
+                &scope,
                 raised.id,
                 user_id,
                 "Rebooted controller, temperature normalised",
@@ -1528,5 +1572,138 @@ mod tests {
             .unwrap();
         assert_eq!(wc1_andons.data.len(), 1);
         assert_eq!(wc1_andons.data[0].work_center_id, wc1);
+    }
+
+    #[tokio::test]
+    async fn test_list_andons_authorized_scope_vector() {
+        use sensei_core::domain::scope::WorkCenterScope;
+
+        let service = InMemoryOperationsService::default();
+        let tenant_id = Uuid::new_v4();
+        let site = Uuid::new_v4();
+        let wc_a = Uuid::new_v4();
+        let wc_b = Uuid::new_v4();
+        let user_id = Uuid::new_v4();
+
+        let mk = |wc: Uuid| Andon {
+            id: Uuid::nil(),
+            tenant_id,
+            site_id: Some(site),
+            andon_number: String::new(),
+            work_center_id: wc,
+            issue_type: "quality".to_string(),
+            severity: "high".to_string(),
+            description: format!("issue at {wc}"),
+            status: String::new(),
+            raised_by: user_id,
+            acknowledged_by: None,
+            resolved_by: None,
+            resolution: None,
+            response_time_seconds: None,
+            resolution_time_seconds: None,
+            created_at: Utc::now(),
+            acknowledged_at: None,
+            resolved_at: None,
+            restart_authorized_by: None,
+            restart_authorized_at: None,
+            abnormal_condition_observed_at: None,
+            contained_at: None,
+            contained_by: None,
+            contained_note: None,
+            escalated: false,
+            escalated_at: None,
+            request_key: None,
+        };
+        let on_a = service.raise_andon(tenant_id, mk(wc_a)).await.unwrap().id;
+        let on_b = service.raise_andon(tenant_id, mk(wc_b)).await.unwrap().id;
+
+        // TenantWide passes everywhere.
+        let all = service
+            .list_andons_authorized(
+                tenant_id,
+                &AuthorizedScope::tenant_wide(),
+                None,
+                None,
+                None,
+                None,
+            )
+            .await
+            .unwrap();
+        assert_eq!(all.data.len(), 2, "TenantWide sees every andon");
+
+        // NoOperationalScope matches nothing (fail closed).
+        let none = service
+            .list_andons_authorized(
+                tenant_id,
+                &AuthorizedScope::NoOperationalScope,
+                None,
+                None,
+                None,
+                None,
+            )
+            .await
+            .unwrap();
+        assert_eq!(none.data.len(), 0, "NoOperationalScope sees nothing");
+
+        // A site grant covers the whole site (both work centers).
+        let site_scope = AuthorizedScope::Operational {
+            sites: std::collections::HashSet::from([site]),
+            work_centers: std::collections::HashSet::new(),
+        };
+        let site_view = service
+            .list_andons_authorized(tenant_id, &site_scope, None, None, None, None)
+            .await
+            .unwrap();
+        assert_eq!(
+            site_view.data.len(),
+            2,
+            "a site grant covers every work center of the site"
+        );
+
+        // An exact work-center grant covers exactly its work center —
+        // never the sibling work center, never the whole site.
+        let wc_scope = AuthorizedScope::Operational {
+            sites: std::collections::HashSet::new(),
+            work_centers: std::collections::HashSet::from([WorkCenterScope {
+                site,
+                work_center: wc_a,
+            }]),
+        };
+        let wc_view = service
+            .list_andons_authorized(tenant_id, &wc_scope, None, None, None, None)
+            .await
+            .unwrap();
+        assert_eq!(
+            wc_view.data.len(),
+            1,
+            "an exact-WC grant sees exactly its work center's andons"
+        );
+        assert_eq!(wc_view.data[0].work_center_id, wc_a);
+        assert!(
+            wc_view.data.iter().all(|a| a.work_center_id == wc_a),
+            "the exact-WC caller must never see a sibling work center's andon"
+        );
+
+        // Commands on the exact work center succeed; a sibling work
+        // center's andon is outside the scope.
+        service
+            .acknowledge_andon(tenant_id, &wc_scope, on_a, user_id)
+            .await
+            .expect("the exact-WC caller can acknowledge their own andon");
+        let cross = service
+            .acknowledge_andon(tenant_id, &wc_scope, on_b, user_id)
+            .await;
+        assert!(
+            cross.is_err(),
+            "an exact-WC caller must never command a sibling work center's andon"
+        );
+        let wc_list = service
+            .list_andons_authorized(tenant_id, &wc_scope, None, None, None, None)
+            .await
+            .unwrap();
+        assert_eq!(
+            wc_list.data[0].status, "acknowledged",
+            "the in-scope andon transitioned"
+        );
     }
 }

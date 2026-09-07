@@ -110,7 +110,14 @@ impl DatabaseChatbotService {
             }
         }
 
-        // Check if the conversation exists in the database.
+        // Check if the conversation exists in the database. chat_conversations
+        // is fail-closed FORCE RLS (migration 175) — the existence check and
+        // the conditional INSERT run on ONE TenantTx of the tenant (a
+        // raw-pool COUNT returns zero under sensei_app, which would wrongly
+        // re-insert an existing conversation).
+        let mut db = TenantTx::begin(&self.pool, tenant_id).await.map_err(|e| {
+            SenseiError::Database(format!("Failed to begin ensure conversation: {e}"))
+        })?;
         let exists = sqlx::query_scalar::<_, i64>(
             "SELECT COUNT(*) FROM chat_conversations WHERE id = $1::uuid AND tenant_id = $2",
         )
@@ -118,7 +125,7 @@ impl DatabaseChatbotService {
             SenseiError::Validation(format!("Invalid conversation ID: {conversation_id}"))
         })?)
         .bind(tenant_id)
-        .fetch_one(&self.pool)
+        .fetch_one(&mut **db.tx())
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to check conversation: {e}")))?;
 
@@ -142,10 +149,13 @@ impl DatabaseChatbotService {
             .bind(serde_json::Value::Object(serde_json::Map::new()))
             .bind(now)
             .bind(now)
-            .execute(&self.pool)
+            .execute(&mut **db.tx())
             .await
             .map_err(|e| SenseiError::Database(format!("Failed to create conversation: {e}")))?;
         }
+        db.commit().await.map_err(|e| {
+            SenseiError::Database(format!("Failed to commit ensure conversation: {e}"))
+        })?;
 
         // Update cache (scoped to this tenant+user).
         {
@@ -156,13 +166,24 @@ impl DatabaseChatbotService {
         Ok(())
     }
 
-    /// Insert a message into the database.
-    async fn insert_message(&self, conversation_id: &str, role: &str, content: &str) -> Result<()> {
+    /// Insert a message into the database. `tenant_id` scopes the write:
+    /// the conversation-timestamp touch on `chat_conversations` is
+    /// fail-closed FORCE RLS and runs inside a TenantTx of the tenant.
+    async fn insert_message(
+        &self,
+        tenant_id: EntityId,
+        conversation_id: &str,
+        role: &str,
+        content: &str,
+    ) -> Result<()> {
         let conv_uuid = Uuid::parse_str(conversation_id).map_err(|_| {
             SenseiError::Validation(format!("Invalid conversation ID: {conversation_id}"))
         })?;
         let now = Utc::now();
 
+        let mut db = TenantTx::begin(&self.pool, tenant_id)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to begin insert message: {e}")))?;
         sqlx::query(
             r#"
             INSERT INTO chat_messages (id, conversation_id, role, content, metadata, created_at)
@@ -175,7 +196,7 @@ impl DatabaseChatbotService {
         .bind(content)
         .bind(serde_json::Value::Object(serde_json::Map::new()))
         .bind(now)
-        .execute(&self.pool)
+        .execute(&mut **db.tx())
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to insert message: {e}")))?;
 
@@ -183,11 +204,14 @@ impl DatabaseChatbotService {
         sqlx::query("UPDATE chat_conversations SET updated_at = $1 WHERE id = $2")
             .bind(now)
             .bind(conv_uuid)
-            .execute(&self.pool)
+            .execute(&mut **db.tx())
             .await
             .map_err(|e| {
                 SenseiError::Database(format!("Failed to update conversation timestamp: {e}"))
             })?;
+        db.commit()
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to commit insert message: {e}")))?;
 
         Ok(())
     }
@@ -196,11 +220,21 @@ impl DatabaseChatbotService {
     ///
     /// Returns up to 20 most recent messages for the given conversation,
     /// ordered chronologically.
-    async fn load_conversation_history(&self, conversation_id: &str) -> Result<Vec<ChatMessage>> {
+    async fn load_conversation_history(
+        &self,
+        tenant_id: EntityId,
+        conversation_id: &str,
+    ) -> Result<Vec<ChatMessage>> {
         let conv_uuid = Uuid::parse_str(conversation_id).map_err(|_| {
             SenseiError::Validation(format!("Invalid conversation ID: {conversation_id}"))
         })?;
 
+        // The history read runs inside a TenantTx of the tenant so the
+        // derived chat_messages snapshot is consistent with the FORCE-RLS
+        // conversation row that owns it.
+        let mut db = TenantTx::begin(&self.pool, tenant_id)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to begin history read: {e}")))?;
         let models = sqlx::query_as::<_, ChatMessageModel>(
             r#"
             SELECT id, conversation_id, role, content, metadata, created_at
@@ -211,9 +245,12 @@ impl DatabaseChatbotService {
             "#,
         )
         .bind(conv_uuid)
-        .fetch_all(&self.pool)
+        .fetch_all(&mut **db.tx())
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to fetch conversation history: {e}")))?;
+        db.commit()
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to commit history read: {e}")))?;
 
         // Reverse to get chronological order (oldest first)
         let mut messages: Vec<ChatMessage> = models
@@ -240,7 +277,10 @@ impl DatabaseChatbotService {
         conversation_id: &str,
     ) -> (String, bool) {
         // Load conversation history for context
-        let history = self.load_conversation_history(conversation_id).await.ok();
+        let history = self
+            .load_conversation_history(tenant_id, conversation_id)
+            .await
+            .ok();
         let has_history = history.as_ref().is_some_and(|h| !h.is_empty());
 
         // If an AI service is available, attempt to enrich the response
@@ -653,7 +693,8 @@ impl ChatbotService for DatabaseChatbotService {
             .await?;
 
         // Save the user message.
-        self.insert_message(&conv_id, "user", message).await?;
+        self.insert_message(tenant_id, &conv_id, "user", message)
+            .await?;
 
         // Generate a context-aware response using conversation history
         // and optional AI service.
@@ -679,7 +720,7 @@ impl ChatbotService for DatabaseChatbotService {
         };
 
         // Save the assistant message.
-        self.insert_message(&conv_id, "assistant", &response_text)
+        self.insert_message(tenant_id, &conv_id, "assistant", &response_text)
             .await?;
 
         Ok(ChatResponse {
@@ -735,13 +776,20 @@ impl ChatbotService for DatabaseChatbotService {
             SenseiError::Validation(format!("Invalid conversation ID: {conversation_id}"))
         })?;
 
+        // chat_conversations is fail-closed FORCE RLS (migration 175): the
+        // ownership check and the message read run on ONE TenantTx of the
+        // tenant — a raw-pool COUNT returns zero under sensei_app and would
+        // wrongly report every conversation as NotFound.
+        let mut db = TenantTx::begin(&self.pool, tenant_id)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to begin history read: {e}")))?;
         // Verify the conversation exists and belongs to this tenant.
         let conv_exists = sqlx::query_scalar::<_, i64>(
             "SELECT COUNT(*) FROM chat_conversations WHERE id = $1 AND tenant_id = $2",
         )
         .bind(conv_uuid)
         .bind(tenant_id)
-        .fetch_one(&self.pool)
+        .fetch_one(&mut **db.tx())
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to check conversation: {e}")))?;
 
@@ -760,9 +808,12 @@ impl ChatbotService for DatabaseChatbotService {
             "#,
         )
         .bind(conv_uuid)
-        .fetch_all(&self.pool)
+        .fetch_all(&mut **db.tx())
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to fetch messages: {e}")))?;
+        db.commit()
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to commit history read: {e}")))?;
 
         Ok(models
             .into_iter()

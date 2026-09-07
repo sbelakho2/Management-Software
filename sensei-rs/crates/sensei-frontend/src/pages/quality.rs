@@ -42,6 +42,12 @@ pub fn NcrListPage() -> impl IntoView {
 
     let columns = vec![
         TableColumn {
+            label: "NCR #",
+            key: "nc_number",
+            sortable: true,
+            width: None,
+        },
+        TableColumn {
             label: "TITLE",
             key: "title",
             sortable: true,
@@ -51,25 +57,13 @@ pub fn NcrListPage() -> impl IntoView {
             label: "SEVERITY",
             key: "severity",
             sortable: true,
-            width: Some("80px"),
+            width: Some("90px"),
         },
         TableColumn {
             label: "STATUS",
             key: "status",
             sortable: true,
             width: Some("90px"),
-        },
-        TableColumn {
-            label: "SOURCE",
-            key: "source",
-            sortable: true,
-            width: None,
-        },
-        TableColumn {
-            label: "ASSIGNED TO",
-            key: "assigned_to",
-            sortable: true,
-            width: None,
         },
         TableColumn {
             label: "CREATED",
@@ -86,11 +80,10 @@ pub fn NcrListPage() -> impl IntoView {
                 Ok(list) => {
                     let rows: Vec<_> = list.clone().into_iter().map(|ncr| {
                         view! {
+                            <td>{ncr.nc_number}</td>
                             <td>{ncr.title}</td>
                             <td><span class=format!("rams-badge severity-{}", ncr.severity.to_lowercase())>{ncr.severity.clone()}</span></td>
                             <td><span class=format!("rams-badge status-{}", ncr.status.to_lowercase())>{ncr.status.clone()}</span></td>
-                            <td>{ncr.source}</td>
-                            <td>{ncr.assigned_to.unwrap_or_else(|| "—".into())}</td>
                             <td>{ncr.created_at[..10].to_string()}</td>
                         }
                     }).collect();

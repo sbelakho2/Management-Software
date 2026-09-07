@@ -6745,6 +6745,7 @@ name = "sensei-contracts"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "rust_decimal",
  "serde",
  "serde_json",
  "uuid",
@@ -6871,6 +6872,7 @@ dependencies = [
  "rust_xlsxwriter",
  "sensei-agent-core",
  "sensei-auth",
+ "sensei-contracts",
  "sensei-core",
  "sensei-db",
  "sensei-event-bus",

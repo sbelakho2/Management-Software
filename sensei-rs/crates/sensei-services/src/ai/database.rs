@@ -12,6 +12,7 @@
 
 use async_trait::async_trait;
 use chrono::Utc;
+use sensei_core::db::TenantTx;
 use sensei_core::domain::events::AnomalyDetectedEvent;
 use sensei_core::error::{Result, SenseiError};
 use sensei_core::types::{new_correlation_id, EventId};
@@ -124,6 +125,12 @@ impl AiService for DatabaseAiService {
         entity_type: &str,
         entity_id: Uuid,
     ) -> Result<Vec<AnomalyPrediction>> {
+        // anomaly_detections is fail-closed FORCE RLS (migration 175): the
+        // read runs inside a TenantTx of the tenant — a raw-pool read
+        // returns zero rows under the production sensei_app role.
+        let mut db = TenantTx::begin(&self.pool, tenant_id)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to begin detect anomalies: {e}")))?;
         let models = sqlx::query_as::<_, AnomalyDetectionModel>(
             r#"
             SELECT id, tenant_id, entity_type, entity_id, anomaly_type,
@@ -137,9 +144,12 @@ impl AiService for DatabaseAiService {
         .bind(tenant_id)
         .bind(entity_type)
         .bind(entity_id)
-        .fetch_all(&self.pool)
+        .fetch_all(&mut **db.tx())
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to query anomaly detections: {e}")))?;
+        db.commit().await.map_err(|e| {
+            SenseiError::Database(format!("Failed to commit detect anomalies: {e}"))
+        })?;
 
         Ok(models
             .into_iter()
@@ -156,7 +166,12 @@ impl AiService for DatabaseAiService {
         // The contract says "predict THIS batch": run the submitted batch
         // parameters through the latest stored model's reference profile
         // and persist a NEW prediction row. Never silently return the last
-        // stored prediction for a different batch.
+        // stored prediction for a different batch. predictions is
+        // fail-closed FORCE RLS, so the reference read and the INSERT run
+        // on ONE TenantTx of the tenant.
+        let mut db = TenantTx::begin(&self.pool, tenant_id)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to begin quality predict: {e}")))?;
         let model = sqlx::query_as::<_, PredictionModel>(
             r#"
             SELECT id, tenant_id, model_id, prediction_type, entity_type,
@@ -170,11 +185,12 @@ impl AiService for DatabaseAiService {
         )
         .bind(tenant_id)
         .bind(product_id)
-        .fetch_optional(&self.pool)
+        .fetch_optional(&mut **db.tx())
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to query quality model: {e}")))?;
 
         let Some(model) = model else {
+            db.rollback().await.ok();
             return Err(SenseiError::NotFound(format!(
                 "No quality model found for product {product_id}"
             )));
@@ -251,9 +267,12 @@ impl AiService for DatabaseAiService {
         .bind(model.confidence)
         .bind(&features)
         .bind(now)
-        .execute(&self.pool)
+        .execute(&mut **db.tx())
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to store quality prediction: {e}")))?;
+        db.commit()
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to commit quality predict: {e}")))?;
 
         Ok(QualityPrediction {
             product_id,
@@ -268,6 +287,11 @@ impl AiService for DatabaseAiService {
         tenant_id: Uuid,
         equipment_id: Uuid,
     ) -> Result<PredictiveMaintenanceResult> {
+        // predictions is fail-closed FORCE RLS (migration 175): the read
+        // runs inside a TenantTx of the tenant.
+        let mut db = TenantTx::begin(&self.pool, tenant_id).await.map_err(|e| {
+            SenseiError::Database(format!("Failed to begin maintenance predict: {e}"))
+        })?;
         let model = sqlx::query_as::<_, PredictionModel>(
             r#"
             SELECT id, tenant_id, model_id, prediction_type, entity_type,
@@ -281,10 +305,13 @@ impl AiService for DatabaseAiService {
         )
         .bind(tenant_id)
         .bind(equipment_id)
-        .fetch_optional(&self.pool)
+        .fetch_optional(&mut **db.tx())
         .await
         .map_err(|e| {
             SenseiError::Database(format!("Failed to query maintenance prediction: {e}"))
+        })?;
+        db.commit().await.map_err(|e| {
+            SenseiError::Database(format!("Failed to commit maintenance predict: {e}"))
         })?;
 
         match model {
@@ -299,6 +326,11 @@ impl AiService for DatabaseAiService {
         let now = Utc::now();
         let model_id = Uuid::new_v4();
 
+        // model_registry is fail-closed FORCE RLS (migration 175): the
+        // INSERT runs inside a TenantTx of the tenant.
+        let mut db = TenantTx::begin(&self.pool, tenant_id)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to begin model training: {e}")))?;
         sqlx::query(
             r#"
             INSERT INTO model_registry
@@ -328,9 +360,12 @@ impl AiService for DatabaseAiService {
         .bind(None::<chrono::DateTime<chrono::Utc>>) // deployed_at
         .bind(now)
         .bind(now)
-        .execute(&self.pool)
+        .execute(&mut **db.tx())
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to register model: {e}")))?;
+        db.commit()
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to commit model training: {e}")))?;
 
         Ok(model_id)
     }
@@ -343,6 +378,12 @@ impl AiService for DatabaseAiService {
         let now = Utc::now();
         let id = Uuid::new_v4();
 
+        // anomaly_detections is fail-closed FORCE RLS (migration 175): the
+        // INSERT runs inside a TenantTx of the tenant — a raw-pool write
+        // admits zero rows under the production sensei_app role.
+        let mut db = TenantTx::begin(&self.pool, tenant_id)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to begin anomaly insert: {e}")))?;
         sqlx::query(
             r#"
             INSERT INTO anomaly_detections
@@ -367,9 +408,12 @@ impl AiService for DatabaseAiService {
         .bind(None::<chrono::DateTime<chrono::Utc>>) // reviewed_at
         .bind(prediction.detected_at)
         .bind(now)
-        .execute(&self.pool)
+        .execute(&mut **db.tx())
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to insert anomaly detection: {e}")))?;
+        db.commit()
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to commit anomaly insert: {e}")))?;
 
         // Publish to event bus if one is configured.
         if let Some(ref bus) = self.event_bus {

@@ -38,7 +38,7 @@ pub fn InvoiceListPage() -> impl IntoView {
         },
         TableColumn {
             label: "CUSTOMER",
-            key: "customer_id",
+            key: "customer_name",
             sortable: true,
             width: None,
         },
@@ -50,13 +50,13 @@ pub fn InvoiceListPage() -> impl IntoView {
         },
         TableColumn {
             label: "TAX",
-            key: "tax",
+            key: "tax_amount",
             sortable: true,
             width: None,
         },
         TableColumn {
             label: "TOTAL",
-            key: "total",
+            key: "total_amount",
             sortable: true,
             width: None,
         },
@@ -87,10 +87,10 @@ pub fn InvoiceListPage() -> impl IntoView {
                     let rows: Vec<_> = list.clone().into_iter().map(|inv| {
                         view! {
                             <td>{inv.invoice_number}</td>
-                            <td>{inv.customer_id}</td>
+                            <td>{inv.customer_name}</td>
                             <td>{format!("{:.2}", inv.subtotal)}</td>
-                            <td>{format!("{:.2}", inv.tax)}</td>
-                            <td><strong>{format!("{:.2}", inv.total)}</strong></td>
+                            <td>{format!("{:.2}", inv.tax_amount)}</td>
+                            <td><strong>{format!("{:.2}", inv.total_amount)}</strong></td>
                             <td>{inv.currency}</td>
                             <td><span class=format!("rams-badge status-{}", inv.status.to_lowercase())>{inv.status.clone()}</span></td>
                             <td>{inv.due_date.as_ref().map(|d| d[..10].to_string()).unwrap_or_else(|| "—".into())}</td>

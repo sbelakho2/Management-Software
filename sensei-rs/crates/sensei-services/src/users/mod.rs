@@ -14,6 +14,13 @@ use tokio::sync::RwLock;
 mod database;
 pub use database::DatabaseUsersService;
 
+/// The migration-175 pre-tenant SECURITY DEFINER lookup surface
+/// (thirtieth-first audit item 8): every raw-pool users query lives here
+/// — the narrow documented exception to the TenantTx rule. Ordinary
+/// tenant-scoped operations live in `database` and run inside a
+/// `sensei_core::db::TenantTx`.
+mod pretenant_lookup;
+
 // ---------------------------------------------------------------------------
 // Trait
 // ---------------------------------------------------------------------------

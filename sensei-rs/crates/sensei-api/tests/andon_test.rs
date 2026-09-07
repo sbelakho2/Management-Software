@@ -270,6 +270,21 @@ async fn test_raise_andon() {
     assert_eq!(andon.status, "active");
     assert_eq!(andon.raised_by, world.operator_id);
     assert!(!andon.andon_number.is_empty());
+
+    // Wire shape (thirtieth-first audit): the serialized Andon matches
+    // the canonical AndonResponse contract — `site_id` is ALWAYS present
+    // (never null: migration 178 hardens it NOT NULL) and `request_key`
+    // (internal idempotency storage) NEVER appears on the wire.
+    let wire = serde_json::to_value(&andon).expect("andon serializes");
+    assert!(
+        wire.get("request_key").is_none(),
+        "request_key is internal-only and must never serialize"
+    );
+    assert_eq!(
+        wire["site_id"],
+        serde_json::json!(world.site_a.to_string()),
+        "site_id is always present on the wire"
+    );
 }
 
 #[tokio::test]
@@ -357,15 +372,13 @@ async fn test_acknowledge_andon() {
 
     let raised = raise_andon(&state, &user, "Safety issue").await;
 
-    // The actor is taken from the token — the client-supplied field is
-    // ignored (legacy clients may still send it).
+    // The canonical acknowledge takes NO body (thirtieth-first audit):
+    // the actor is always the authenticated token's user.
     let resp = sensei_api::routes::andon::acknowledge_andon(
         user.clone(),
         State(state),
         Path(raised.id),
-        Json(sensei_api::routes::andon::AcknowledgeAndonRequest {
-            acknowledged_by: Some(Uuid::new_v4()),
-        }),
+        axum::body::Body::empty(),
     )
     .await
     .expect("an entitled operator can acknowledge their site's andon");

@@ -99,8 +99,31 @@ async fn test_update_work_request_status() {
     let json: Value = app.json_body(&mut resp).await;
     let wr_id = json["id"].as_str().unwrap().to_string();
 
-    // Update status
-    let status_body = serde_json::json!({ "status": "InProgress" });
+    // The lifecycle is strictly forward (submitted -> approved ->
+    // in_progress -> completed): an out-of-order jump straight to a later
+    // state is rejected as not-found-in-state (404).
+    let jump = serde_json::json!({ "status": "in_progress" });
+    let req_jump = app.put_authenticated(
+        &format!("/api/v1/maintenance/work-requests/{}/status", wr_id),
+        &token,
+        jump,
+    );
+    let resp_jump = app.send_request(req_jump).await;
+    assert_eq!(resp_jump.status(), StatusCode::NOT_FOUND);
+
+    // Walk the machine one step at a time.
+    let status_body = serde_json::json!({ "status": "approved" });
+    let req_status = app.put_authenticated(
+        &format!("/api/v1/maintenance/work-requests/{}/status", wr_id),
+        &token,
+        status_body,
+    );
+    let mut resp_status = app.send_request(req_status).await;
+    assert_eq!(resp_status.status(), StatusCode::OK);
+    let json: Value = app.json_body(&mut resp_status).await;
+    assert_eq!(json["status"], "approved");
+
+    let status_body = serde_json::json!({ "status": "in_progress" });
     let req_status = app.put_authenticated(
         &format!("/api/v1/maintenance/work-requests/{}/status", wr_id),
         &token,
@@ -108,6 +131,16 @@ async fn test_update_work_request_status() {
     );
     let resp_status = app.send_request(req_status).await;
     assert_eq!(resp_status.status(), StatusCode::OK);
+
+    // Unknown statuses stay a 4xx validation error.
+    let garbage = serde_json::json!({ "status": "banana" });
+    let req_garbage = app.put_authenticated(
+        &format!("/api/v1/maintenance/work-requests/{}/status", wr_id),
+        &token,
+        garbage,
+    );
+    let resp_garbage = app.send_request(req_garbage).await;
+    assert!(resp_garbage.status().is_client_error());
 }
 
 // ── PM Schedules ──────────────────────────────────────────────────────────────

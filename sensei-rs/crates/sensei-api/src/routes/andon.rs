@@ -27,14 +27,6 @@ pub struct ListAndonsParams {
     pub per_page: Option<usize>,
 }
 
-/// Request body for acknowledging an Andon.
-#[derive(Debug, Deserialize)]
-pub struct AcknowledgeAndonRequest {
-    /// Ignored: the actor is always the authenticated user. Kept as
-    /// `Option` so legacy clients sending it do not break.
-    pub acknowledged_by: Option<Uuid>,
-}
-
 /// Request body for resolving an Andon.
 #[derive(Debug, Deserialize)]
 pub struct ResolveAndonRequest {
@@ -44,76 +36,44 @@ pub struct ResolveAndonRequest {
     pub resolution: String,
 }
 
+/// Site entitlement compatibility helper (thirtieth-first audit): the
+/// Andon handlers themselves no longer use the site-vector form — they
+/// act on `ctx.scope` (`RequestContext`) — but routes that only consume
+/// the legacy site-entitlement vector (e.g. `routes::work_centers`) still
+/// import the `crate::routes::andon::caller_sites` path. The definition
+/// now lives with the ops helpers; this re-export keeps that import path
+/// compiling until those callers migrate to `&ctx.scope` themselves.
+pub(crate) use crate::routes::ops::caller_sites;
+
 // ── Handlers ───────────────────────────────────────────────────────────────
 
 /// List all Andon events with optional status and work center filters.
+///
+/// Thirtieth-first audit: ONE scope-vector query — the listing is
+/// intersected with the caller's FULL [`AuthorizedScope`] (sites + exact
+/// work centers) inside the repository (`list_andons_authorized`), so a
+/// site-scoped caller sees only their site's andons, an exact-work-center
+/// caller sees exactly their work center's andons (never a sibling work
+/// center), a `TenantWide` caller sees all and a `NoOperationalScope`
+/// caller sees none.
 pub async fn list_andons(
     user: AuthenticatedUser,
     State(state): State<AppState>,
     Query(params): Query<ListAndonsParams>,
 ) -> Result<Json<PaginatedResponse<Andon>>> {
     user.require_permission("tps:andon:raise")?;
-    let tenant_id = user.tenant_id;
-    // Twentieth audit P1: the tenant-wide list is INTERSECTED with the
-    // FULL RequestContext entitlement. list_andons_scoped takes ONE site
-    // filter — for multi-site entitlement we call it per entitled site
-    // and merge (page semantics preserved on the merged set).
-    let sites = caller_sites(&user, &state).await?;
-    if sites.is_empty() {
-        // Twenty-first audit P0: an empty entitlement set lists NOTHING.
-        let page = params.page.unwrap_or(1).max(1);
-        let per_page = params.per_page.unwrap_or(20).clamp(1, 100);
-        return Ok(Json(sensei_core::pagination::PaginatedResponse {
-            data: Vec::new(),
-            total: 0,
-            total_pages: 0,
-            page,
-            per_page,
-        }));
-    }
-    let andons = if sites.len() <= 1 {
-        state
-            .ops_service
-            .list_andons_scoped(
-                tenant_id,
-                sites.first().copied(),
-                params.status.as_deref(),
-                params.work_center_id,
-                params.page,
-                params.per_page,
-            )
-            .await?
-    } else {
-        let mut merged = Vec::new();
-        for site in &sites {
-            let page = state
-                .ops_service
-                .list_andons_scoped(
-                    tenant_id,
-                    Some(*site),
-                    params.status.as_deref(),
-                    params.work_center_id,
-                    None,
-                    Some(1000),
-                )
-                .await?;
-            merged.extend(page.data);
-        }
-        merged.sort_by_key(|a| std::cmp::Reverse(a.created_at));
-        let page = params.page.unwrap_or(1).max(1);
-        let per_page = params.per_page.unwrap_or(20).clamp(1, 100);
-        let total = merged.len();
-        let start = ((page - 1) * per_page).min(total);
-        let items: Vec<sensei_services::ops::Andon> =
-            merged.into_iter().skip(start).take(per_page).collect();
-        sensei_core::pagination::PaginatedResponse {
-            data: items,
-            total,
-            total_pages: (total as f64 / per_page.max(1) as f64).ceil() as usize,
-            page,
-            per_page,
-        }
-    };
+    let ctx = crate::authorization::build_request_context(&user, &state).await?;
+    let andons = state
+        .ops_service
+        .list_andons_authorized(
+            ctx.tenant,
+            &ctx.scope,
+            params.status.as_deref(),
+            params.work_center_id,
+            params.page,
+            params.per_page,
+        )
+        .await?;
     Ok(Json(andons))
 }
 
@@ -136,6 +96,19 @@ pub struct RaiseAndonRequest {
     pub observed_at: Option<chrono::DateTime<chrono::Utc>>,
 }
 
+/// The Andon as it leaves the canonical API boundary (thirty-first audit
+/// item 11): `request_key` is INTERNAL-ONLY. The service stores the
+/// client's idempotency key on the row for replay protection, but the
+/// shared wire contract (`sensei_contracts::andon::AndonResponse`)
+/// exposes NO request_key — the serializer clears it before the response
+/// is produced. `site_id` is always part of the domain serialization
+/// (the DB backfills + hardens it NOT NULL, migration 178), so the wire
+/// shape matches `AndonResponse` field-for-field.
+fn wire_andon(mut andon: Andon) -> Andon {
+    andon.request_key = None;
+    andon
+}
+
 /// Raise (create) a new Andon event.
 pub async fn raise_andon(
     user: AuthenticatedUser,
@@ -144,7 +117,13 @@ pub async fn raise_andon(
     Json(req): Json<RaiseAndonRequest>,
 ) -> Result<Json<Andon>> {
     user.require_permission("tps:andon:raise")?;
-    let tenant_id = user.tenant_id;
+    // Thirtieth-first audit: ONE validated RequestContext per request —
+    // the caller's scope AND operating focus are server-derived and
+    // validated together. The raise NEVER takes a client site/work
+    // center: the Andon is anchored at the validated `ctx.focus` of a
+    // principal whose active assignments prove the claim.
+    let ctx = crate::authorization::build_request_context(&user, &state).await?;
+    let tenant_id = ctx.tenant;
     // Seventeenth audit item 11: the client generates ONE command key per
     // raise (Idempotency-Key); a retry after a dropped connection replays
     // the ORIGINAL andon instead of creating a duplicate.
@@ -162,27 +141,25 @@ pub async fn raise_andon(
             ));
         }
     }
-    // Thirteenth audit P0: the work center is SERVER-RESOLVED from the
-    // caller's operational assignment — never accepted as a forged id.
-    // The site is captured from the same context (fifteenth audit A1):
-    // the Andon is explicitly scoped, never implicitly company-wide.
-    let ctx = crate::routes::agent::build_context(&user, &state).await;
-    let work_center_id = ctx.work_center_id.ok_or_else(|| {
+    // The work center is SERVER-RESOLVED from the caller's operating
+    // context — never accepted as a forged id (thirteenth audit P0) —
+    // and the site is the context's operating site (fifteenth audit A1;
+    // hardened NOT NULL by migration 178): the Andon is explicitly
+    // scoped, never implicitly company-wide.
+    let site_id = ctx.focus.site.ok_or_else(|| {
         sensei_core::error::SenseiError::Forbidden(
-            "No work-center assignment — raising help requires an active operational \
-             assignment"
-                .to_string(),
+            "raising an Andon requires an active site".to_string(),
         )
     })?;
-    let site_id = Some(ctx.site_id.ok_or_else(|| {
+    let work_center_id = ctx.focus.work_center.ok_or_else(|| {
         sensei_core::error::SenseiError::Forbidden(
-            "No site assignment — raising help requires an active site assignment".to_string(),
+            "raising an Andon requires an active work center".to_string(),
         )
-    })?);
+    })?;
     let andon = Andon {
         id: Uuid::new_v4(),
         tenant_id,
-        site_id,
+        site_id: Some(site_id),
         andon_number: String::new(),
         work_center_id,
         issue_type: req.issue_type,
@@ -287,7 +264,7 @@ pub async fn raise_andon(
             tracing::error!(error = %e, andon_id = %andon.id, "Graph projection failed");
         }
     }
-    Ok(Json(andon))
+    Ok(Json(wire_andon(andon)))
 }
 
 /// Get a specific Andon event by ID.
@@ -297,57 +274,69 @@ pub async fn get_andon(
     Path(id): Path<Uuid>,
 ) -> Result<Json<Andon>> {
     user.require_permission("tps:andon:raise")?;
-    let tenant_id = user.tenant_id;
-    // Twenty-first audit P0: zero entitlement is NO OPERATIONAL SCOPE —
-    // an empty site set denies EVERYTHING and must never degrade to
-    // tenant-wide. The scope is enforced INSIDE the repository lookup so
-    // a foreign-site UUID and a nonexistent UUID are indistinguishable
-    // (both NotFound).
-    let sites = caller_sites(&user, &state).await?;
-    if sites.is_empty() {
-        return Err(sensei_core::error::SenseiError::Forbidden(
-            "no operational scope — no Andon is authorized".to_string(),
-        ));
-    }
+    // Thirtieth-first audit: the FULL authorization vector (sites + exact
+    // work centers) is enforced INSIDE the repository lookup — a
+    // foreign-scope UUID and a nonexistent UUID are indistinguishable
+    // (both NotFound), and a NoOperationalScope caller gets Forbidden.
+    let ctx = crate::authorization::build_request_context(&user, &state).await?;
     let andon = state
         .ops_service
-        .get_andon_scoped(tenant_id, &sites, id)
+        .get_andon_scoped(ctx.tenant, &ctx.scope, id)
         .await?;
-    Ok(Json(andon))
+    Ok(Json(wire_andon(andon)))
 }
 
 /// Acknowledge an Andon event (assign a responder).
 ///
-/// The actor is taken from the authenticated token; client-supplied actor
-/// ids are never trusted.
-/// Server-derived entitlement sites for Andon commands (eighteenth audit
-/// P0-2): the caller's scope comes from their ACTIVE role-slot
-/// assignments + agent context — never from client input. A caller with
-/// no entitlement gets an EMPTY set, which the repository command turns
-/// into zero matched rows.
-pub(crate) async fn caller_sites(user: &AuthenticatedUser, state: &AppState) -> Result<Vec<Uuid>> {
-    // The canonical builder: DB-backed mode resolves the authorized
-    // scope; in-memory (dev/test) mode carries the explicit tenant-wide
-    // grant so pure in-memory suites exercise the same context surface.
-    Ok(crate::authorization::build_request_context(user, state)
-        .await?
-        .authorized_sites())
-}
-
+/// The actor is taken from the authenticated token — the handler takes NO
+/// body (thirtieth-first audit: the canonical acknowledge is
+/// `POST /api/v1/andon/{id}/acknowledge` with no JSON payload; the actor
+/// is always `user.user_id`). A request that DOES carry a body is
+/// rejected with 415 so legacy clients that posted an
+/// acknowledged_by-style payload fail loudly instead of silently
+/// believing their payload mattered. Server-derived scope for Andon
+/// commands (eighteenth audit P0-2; thirtieth-first audit): the caller's
+/// FULL authorization vector comes from their ACTIVE role-slot
+/// assignments — never from client input.
 pub async fn acknowledge_andon(
     user: AuthenticatedUser,
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
-    _req: Json<AcknowledgeAndonRequest>,
+    body: axum::body::Body,
 ) -> Result<Json<Andon>> {
     user.require_permission("tps:andon:ack")?;
-    let tenant_id = user.tenant_id;
-    let sites = caller_sites(&user, &state).await?;
+    reject_acknowledge_body(body).await?;
+    let ctx = crate::authorization::build_request_context(&user, &state).await?;
     let andon = state
         .ops_service
-        .acknowledge_andon(tenant_id, &sites, id, user.user_id)
+        .acknowledge_andon(ctx.tenant, &ctx.scope, id, user.user_id)
         .await?;
-    Ok(Json(andon))
+    Ok(Json(wire_andon(andon)))
+}
+
+/// The canonical acknowledge is BODY-LESS (thirtieth-first audit): the
+/// actor is the authenticated token's user. Any payload — detected by
+/// peeking the request body's FIRST data frame (content-length and
+/// transfer-encoding headers are stripped or absent by the time a
+/// handler sees them, so a header check cannot be trusted) — is rejected
+/// outright (415 Unsupported Media Type) instead of being silently
+/// dropped.
+async fn reject_acknowledge_body(body: axum::body::Body) -> Result<()> {
+    let bytes = axum::body::to_bytes(body, 64 * 1024).await.map_err(|e| {
+        sensei_core::error::SenseiError::HttpError {
+            status: 400,
+            message: format!("acknowledge: cannot read the request body: {e}"),
+        }
+    })?;
+    if !bytes.is_empty() {
+        return Err(sensei_core::error::SenseiError::HttpError {
+            status: 415,
+            message:
+                "acknowledge takes no body — the actor is the authenticated user (thirtieth-first audit)"
+                    .to_string(),
+        });
+    }
+    Ok(())
 }
 
 /// Resolve an Andon event with a resolution description.
@@ -361,13 +350,12 @@ pub async fn resolve_andon(
     Json(req): Json<ResolveAndonRequest>,
 ) -> Result<Json<Andon>> {
     user.require_permission("tps:andon:resolve")?;
-    let tenant_id = user.tenant_id;
-    let sites = caller_sites(&user, &state).await?;
+    let ctx = crate::authorization::build_request_context(&user, &state).await?;
     let andon = state
         .ops_service
-        .resolve_andon(tenant_id, &sites, id, user.user_id, &req.resolution)
+        .resolve_andon(ctx.tenant, &ctx.scope, id, user.user_id, &req.resolution)
         .await?;
-    Ok(Json(andon))
+    Ok(Json(wire_andon(andon)))
 }
 
 /// Escalate an Andon to the next tier (item 41: the SAME command path as
@@ -378,13 +366,12 @@ pub async fn escalate_andon(
     Path(id): Path<Uuid>,
 ) -> Result<Json<Andon>> {
     user.require_permission("tps:andon:resolve")?;
-    let tenant_id = user.tenant_id;
-    let sites = caller_sites(&user, &state).await?;
+    let ctx = crate::authorization::build_request_context(&user, &state).await?;
     let andon = state
         .ops_service
-        .escalate_andon(tenant_id, &sites, id, user.user_id)
+        .escalate_andon(ctx.tenant, &ctx.scope, id, user.user_id)
         .await?;
-    Ok(Json(andon))
+    Ok(Json(wire_andon(andon)))
 }
 
 /// Update an existing Andon event.
@@ -405,14 +392,13 @@ pub async fn update_andon(
     Json(req): Json<UpdateAndonCommand>,
 ) -> Result<Json<Andon>> {
     user.require_permission("tps:andon:contain")?;
-    let tenant_id = user.tenant_id;
-    let sites = caller_sites(&user, &state).await?;
+    let ctx = crate::authorization::build_request_context(&user, &state).await?;
     let narrow = Andon {
         issue_type: req.issue_type.unwrap_or_default(),
         severity: req.severity,
         description: req.description,
         id: Uuid::nil(),
-        tenant_id,
+        tenant_id: ctx.tenant,
         site_id: None,
         andon_number: String::new(),
         work_center_id: Uuid::nil(),
@@ -438,9 +424,9 @@ pub async fn update_andon(
     };
     let andon = state
         .ops_service
-        .update_andon(tenant_id, &sites, id, narrow)
+        .update_andon(ctx.tenant, &ctx.scope, id, narrow)
         .await?;
-    Ok(Json(andon))
+    Ok(Json(wire_andon(andon)))
 }
 
 /// Delete an Andon event.
@@ -452,13 +438,12 @@ pub async fn authorize_restart(
     Path(id): Path<Uuid>,
 ) -> Result<Json<Andon>> {
     user.require_permission("tps:andon:restart")?;
-    let tenant_id = user.tenant_id;
-    let sites = caller_sites(&user, &state).await?;
+    let ctx = crate::authorization::build_request_context(&user, &state).await?;
     let andon = state
         .ops_service
-        .authorize_restart(tenant_id, &sites, id, user.user_id)
+        .authorize_restart(ctx.tenant, &ctx.scope, id, user.user_id)
         .await?;
-    Ok(Json(andon))
+    Ok(Json(wire_andon(andon)))
 }
 
 /// Void an Andon (append-only operational history: production Andon
@@ -471,13 +456,12 @@ pub async fn void_andon(
     Json(req): Json<VoidAndonRequest>,
 ) -> Result<Json<Andon>> {
     user.require_permission("tps:andon:contain")?;
-    let tenant_id = user.tenant_id;
-    let sites = caller_sites(&user, &state).await?;
+    let ctx = crate::authorization::build_request_context(&user, &state).await?;
     let andon = state
         .ops_service
-        .void_andon(tenant_id, &sites, id, user.user_id, &req.reason)
+        .void_andon(ctx.tenant, &ctx.scope, id, user.user_id, &req.reason)
         .await?;
-    Ok(Json(andon))
+    Ok(Json(wire_andon(andon)))
 }
 
 /// Reason for voiding an Andon.
@@ -527,29 +511,18 @@ pub async fn list_events(
         serde_json::Value,
         i64,
     );
-    // Twentieth audit P1: the event log is scope-intersected by the
-    // FULL RequestContext ENTITLEMENT (all sites the principal may
-    // access), not a single legacy active site — a multi-site manager
-    // sees the events of every site they are entitled to, and a caller
-    // with no entitlement sees nothing at all.
-    let authorized_sites: Vec<Uuid> = if let Some(pool) = state.db_pool.as_ref() {
-        let ctx = crate::routes::agent::build_context(&user, &state).await;
-        sensei_core::domain::request_context::RequestContext::build(
-            pool,
-            user.tenant_id,
-            user.user_id,
-            ctx.site_id,
-            ctx.value_stream_id,
-            ctx.work_center_id,
-            ctx.shift_id,
-            String::new(),
-        )
+    // Twentieth audit P1; thirtieth-first audit: the event log is
+    // scope-intersected by the FULL RequestContext ENTITLEMENT (all sites
+    // the principal may access), not a single legacy active site — a
+    // multi-site manager sees the events of every site they are entitled
+    // to, and a caller with no entitlement sees nothing at all. The
+    // context is built with the SAME helper as every other handler in
+    // this module (no legacy `agent::build_context` tuple plumbing): a
+    // context that cannot be built fails closed to an empty entitlement.
+    let authorized_sites: Vec<Uuid> = crate::authorization::build_request_context(&user, &state)
         .await
-        .map(|rc| rc.authorized_sites())
-        .unwrap_or_default()
-    } else {
-        Vec::new()
-    };
+        .map(|ctx| ctx.authorized_sites())
+        .unwrap_or_default();
     let rows: Vec<EventRow> = sqlx::query_as(
         "SELECT id, tenant_id, event_type, occurred_at, recorded_at, scope_site_id, actor_id, \
                 objects, source_system, source_id, sensitivity, payload, sequence \

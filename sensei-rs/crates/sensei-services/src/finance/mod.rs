@@ -31,54 +31,18 @@ use uuid::Uuid;
 // DTOs
 // ---------------------------------------------------------------------------
 
-/// An invoice representing a receivables or payables document.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Invoice {
-    pub id: Uuid,
-    pub tenant_id: Uuid,
-    pub invoice_number: String,
-    pub customer_id: Uuid,
-    pub customer_name: String,
-    pub status: String, // draft, sent, overdue, paid, cancelled, written_off
-    pub line_items: Vec<InvoiceLineItem>,
-    pub subtotal: rust_decimal::Decimal,
-    pub tax_percentage: rust_decimal::Decimal,
-    pub tax_amount: rust_decimal::Decimal,
-    pub total_amount: rust_decimal::Decimal,
-    pub currency: String,
-    pub due_date: DateTime<Utc>,
-    pub paid_at: Option<DateTime<Utc>>,
-    pub notes: String,
-    pub created_by: Uuid,
-    pub created_at: DateTime<Utc>,
-}
+// The invoice/payment view models and the narrow create/record command
+// types are the CANONICAL Finance HTTP contract in sensei-contracts
+// (thirty-first audit): the API response shape, the DB rows' serde
+// surface and the frontend all (de)serialize ONE definition. These
+// re-exports keep every backend caller on the same types without a
+// second local copy.
 
-/// A single line item within an invoice.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct InvoiceLineItem {
-    pub description: String,
-    pub quantity: i64,
-    pub unit_price: rust_decimal::Decimal,
-    pub total: rust_decimal::Decimal,
-    /// Product this line refers to, when known (used by AP 3-way matching).
-    #[serde(default)]
-    pub product_id: Option<Uuid>,
-}
-
-/// A payment applied to an invoice.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Payment {
-    pub id: Uuid,
-    pub tenant_id: Uuid,
-    pub payment_number: String,
-    pub invoice_id: Uuid,
-    pub amount: rust_decimal::Decimal,
-    pub currency: String,
-    pub payment_method: String, // cash, card, bank_transfer, check
-    pub reference: String,
-    pub received_at: DateTime<Utc>,
-    pub created_by: Uuid,
-}
+/// The canonical finance command/view-model surface (contracts).
+pub use sensei_contracts::finance::{
+    CreateInvoiceLineItem, CreateInvoiceRequest, Invoice, InvoiceLineItem, Payment,
+    RecordPaymentRequest,
+};
 
 /// A budget allocation for a department and fiscal year.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -173,13 +137,19 @@ pub struct ThreeWayMatchResult {
 #[async_trait]
 pub trait FinanceService: Send + Sync {
     // ── Invoices ────────────────────────────────────────────────────────
-    /// Create a new invoice. When `idempotency_key` is present, the
-    /// business mutation, the idempotency completion AND the business audit
-    /// row commit in ONE transaction.
+    /// Create a new invoice from the NARROW HTTP contract (thirty-first
+    /// audit): the client sends only the commercial facts — the service
+    /// derives identity, numbering, status and every financial total
+    /// server-side (`total = quantity × unit_price` per line, tax and
+    /// grand total in exact Decimal arithmetic). `created_by` is the
+    /// authenticated actor — never client input. When `idempotency_key`
+    /// is present, the business mutation, the idempotency completion AND
+    /// the business audit row commit in ONE transaction.
     async fn create_invoice(
         &self,
         tenant_id: Uuid,
-        invoice: Invoice,
+        request: CreateInvoiceRequest,
+        created_by: Uuid,
         idempotency_key: Option<&str>,
     ) -> Result<Invoice>;
     /// Get an invoice by ID.
@@ -201,11 +171,16 @@ pub trait FinanceService: Send + Sync {
     ) -> Result<Invoice>;
 
     // ── Payments ────────────────────────────────────────────────────────
-    /// Record a payment against an invoice.
+    /// Record a payment from the NARROW HTTP contract (thirty-first
+    /// audit): the client sends invoice_id/amount/currency/method/
+    /// reference only — payment id, number, tenant, received time and
+    /// actor are all server-generated. `created_by` is the authenticated
+    /// actor, never client input.
     async fn record_payment(
         &self,
         tenant_id: Uuid,
-        payment: Payment,
+        request: RecordPaymentRequest,
+        created_by: Uuid,
         idempotency_key: Option<&str>,
     ) -> Result<Payment>;
     /// List payments with optional invoice filter and pagination.
@@ -537,7 +512,8 @@ impl FinanceService for InMemoryFinanceService {
     async fn create_invoice(
         &self,
         tenant_id: Uuid,
-        mut invoice: Invoice,
+        request: CreateInvoiceRequest,
+        created_by: Uuid,
         _idempotency_key: Option<&str>,
     ) -> Result<Invoice> {
         let mut counter = self.inv_counter.write().await;
@@ -545,28 +521,46 @@ impl FinanceService for InMemoryFinanceService {
         let inv_number = Self::generate_invoice_number(*counter);
         drop(counter);
 
-        // Compute financial totals from line items
-        let subtotal: rust_decimal::Decimal = invoice
+        // Thirty-first audit: the client never sends totals — every line
+        // total, subtotal, tax and grand total is DERIVED server-side in
+        // exact Decimal arithmetic (total = quantity × unit_price).
+        let line_items: Vec<InvoiceLineItem> = request
             .line_items
+            .into_iter()
+            .map(|li| InvoiceLineItem {
+                description: li.description,
+                quantity: li.quantity,
+                unit_price: li.unit_price,
+                total: rust_decimal::Decimal::from(li.quantity) * li.unit_price,
+                product_id: li.product_id,
+            })
+            .collect();
+        let subtotal: rust_decimal::Decimal = line_items
             .iter()
             .map(|li| rust_decimal::Decimal::from(li.quantity) * li.unit_price)
             .sum();
-        let tax_amount = subtotal * invoice.tax_percentage / rust_decimal::Decimal::from(100u32);
+        let tax_amount = subtotal * request.tax_percentage / rust_decimal::Decimal::from(100u32);
         let total_amount = subtotal + tax_amount;
 
-        invoice.id = Uuid::new_v4();
-        invoice.tenant_id = tenant_id;
-        invoice.invoice_number = inv_number;
-        invoice.subtotal = subtotal;
-        invoice.tax_amount = tax_amount;
-        invoice.total_amount = total_amount;
-        invoice.status = "draft".to_string();
-        invoice.created_at = Utc::now();
-
-        // Update each line item's total
-        for li in &mut invoice.line_items {
-            li.total = rust_decimal::Decimal::from(li.quantity) * li.unit_price;
-        }
+        let invoice = Invoice {
+            id: Uuid::new_v4(),
+            tenant_id,
+            invoice_number: inv_number,
+            customer_id: request.customer_id,
+            customer_name: request.customer_name,
+            status: "draft".to_string(),
+            line_items,
+            subtotal,
+            tax_percentage: request.tax_percentage,
+            tax_amount,
+            total_amount,
+            currency: request.currency,
+            due_date: request.due_date,
+            paid_at: None,
+            notes: request.notes,
+            created_by,
+            created_at: Utc::now(),
+        };
 
         let id = invoice.id;
         self.invoices.write().await.insert(id, invoice.clone());
@@ -668,7 +662,8 @@ impl FinanceService for InMemoryFinanceService {
     async fn record_payment(
         &self,
         tenant_id: Uuid,
-        mut payment: Payment,
+        request: RecordPaymentRequest,
+        created_by: Uuid,
         _idempotency_key: Option<&str>,
     ) -> Result<Payment> {
         let mut counter = self.pay_counter.write().await;
@@ -676,14 +671,20 @@ impl FinanceService for InMemoryFinanceService {
         let pay_number = Self::generate_payment_number(*counter);
         drop(counter);
 
-        // Preserve a caller-supplied id (callers reference it when marking
-        // the invoice paid); only generate one when the caller left it nil.
-        if payment.id.is_nil() {
-            payment.id = Uuid::new_v4();
-        }
-        payment.tenant_id = tenant_id;
-        payment.payment_number = pay_number;
-        payment.received_at = Utc::now();
+        // Thirty-first audit: id/number/tenant/received_at/actor are all
+        // server-generated — the request carries none of them.
+        let payment = Payment {
+            id: Uuid::new_v4(),
+            tenant_id,
+            payment_number: pay_number,
+            invoice_id: request.invoice_id,
+            amount: request.amount,
+            currency: request.currency,
+            payment_method: request.payment_method,
+            reference: request.reference,
+            received_at: Utc::now(),
+            created_by,
+        };
 
         let id = payment.id;
         self.payments.write().await.insert(id, payment.clone());
@@ -693,7 +694,7 @@ impl FinanceService for InMemoryFinanceService {
             payment.payment_method.clone(),
             payment.amount,
             payment.currency.clone(),
-            payment.created_by,
+            created_by,
         ))
         .await;
         Ok(payment)
@@ -1208,59 +1209,71 @@ mod tests {
     }
     use super::*;
 
+    /// Build the NARROW create-invoice command (thirty-first audit): the
+    /// test can never smuggle totals/identity into the request — exactly
+    /// like the HTTP contract.
+    fn create_req(
+        customer_id: Uuid,
+        tax_percentage: rust_decimal::Decimal,
+        line_items: Vec<CreateInvoiceLineItem>,
+    ) -> CreateInvoiceRequest {
+        CreateInvoiceRequest {
+            customer_id,
+            customer_name: "Acme Corp".to_string(),
+            line_items,
+            tax_percentage,
+            currency: "USD".to_string(),
+            due_date: Utc::now() + chrono::Duration::days(30),
+            notes: String::new(),
+        }
+    }
+
+    fn line(description: &str, quantity: i64, unit_price: f64) -> CreateInvoiceLineItem {
+        CreateInvoiceLineItem {
+            description: description.to_string(),
+            quantity,
+            unit_price: dec(unit_price),
+            product_id: None,
+        }
+    }
+
+    fn payment_req(invoice_id: Uuid, amount: f64, reference: &str) -> RecordPaymentRequest {
+        RecordPaymentRequest {
+            invoice_id,
+            amount: dec(amount),
+            currency: "USD".to_string(),
+            payment_method: "bank_transfer".to_string(),
+            reference: reference.to_string(),
+        }
+    }
+
     #[tokio::test]
     async fn test_create_and_get_invoice() {
         let service = InMemoryFinanceService::default();
         let tenant_id = Uuid::new_v4();
         let customer_id = Uuid::new_v4();
+        let actor = Uuid::new_v4();
 
-        let invoice = Invoice {
-            id: Uuid::nil(),
-            tenant_id,
-            invoice_number: String::new(),
+        let request = create_req(
             customer_id,
-            customer_name: "Acme Corp".to_string(),
-            status: String::new(),
-            line_items: vec![
-                InvoiceLineItem {
-                    description: "Widget A".to_string(),
-                    quantity: 10,
-                    unit_price: dec(25.0),
-                    total: dec(0.0),
-                    product_id: None,
-                },
-                InvoiceLineItem {
-                    description: "Widget B".to_string(),
-                    quantity: 5,
-                    unit_price: dec(50.0),
-                    total: dec(0.0),
-                    product_id: None,
-                },
-            ],
-            subtotal: dec(0.0),
-            tax_percentage: dec(10.0),
-            tax_amount: dec(0.0),
-            total_amount: dec(0.0),
-            currency: "USD".to_string(),
-            due_date: Utc::now() + chrono::Duration::days(30),
-            paid_at: None,
-            notes: String::new(),
-            created_by: Uuid::new_v4(),
-            created_at: Utc::now(),
-        };
+            dec(10.0),
+            vec![line("Widget A", 10, 25.0), line("Widget B", 5, 50.0)],
+        );
 
         let created = service
-            .create_invoice(tenant_id, invoice, None)
+            .create_invoice(tenant_id, request, actor, None)
             .await
             .expect("should create invoice");
         assert!(created.invoice_number.starts_with("INV-"));
         assert_eq!(created.status, "draft");
+        assert_eq!(created.created_by, actor);
         // 10*25 + 5*50 = 250 + 250 = 500 subtotal
         assert_eq!(created.subtotal, dec(500.0));
         // 10% tax = 50.0
         assert_eq!(created.tax_amount, dec(50.0));
         // total = 550.0
         assert_eq!(created.total_amount, dec(550.0));
+        assert_eq!(created.line_items[0].total, dec(250.0));
 
         let fetched = service
             .get_invoice(tenant_id, created.id)
@@ -1273,80 +1286,42 @@ mod tests {
     async fn test_mark_invoice_paid() {
         let service = InMemoryFinanceService::default();
         let tenant_id = Uuid::new_v4();
+        let actor = Uuid::new_v4();
 
-        let invoice = Invoice {
-            id: Uuid::nil(),
-            tenant_id,
-            invoice_number: String::new(),
-            customer_id: Uuid::new_v4(),
-            customer_name: "Test".to_string(),
-            status: String::new(),
-            // Totals are derived from line items by create_invoice.
-            line_items: vec![InvoiceLineItem {
-                description: "Widgets".to_string(),
-                quantity: 2,
-                unit_price: dec(50.0),
-                total: dec(100.0),
-                product_id: None,
-            }],
-            subtotal: dec(100.0),
-            tax_percentage: dec(0.0),
-            tax_amount: dec(0.0),
-            total_amount: dec(100.0),
-            currency: "USD".to_string(),
-            due_date: Utc::now() + chrono::Duration::days(30),
-            paid_at: None,
-            notes: String::new(),
-            created_by: Uuid::new_v4(),
-            created_at: Utc::now(),
-        };
-
+        let request = create_req(Uuid::new_v4(), dec(0.0), vec![line("Widgets", 2, 50.0)]);
         let created = service
-            .create_invoice(tenant_id, invoice, None)
+            .create_invoice(tenant_id, request, actor, None)
             .await
             .unwrap();
 
         // Insufficient payment must be rejected.
-        let payment_id = Uuid::new_v4();
-        let small = Payment {
-            id: payment_id,
-            tenant_id,
-            payment_number: String::new(),
-            invoice_id: created.id,
-            amount: dec(50.0),
-            currency: "USD".to_string(),
-            payment_method: "bank_transfer".to_string(),
-            reference: "PARTIAL".to_string(),
-            received_at: Utc::now(),
-            created_by: Uuid::new_v4(),
-        };
-        service
-            .record_payment(tenant_id, small, None)
+        let small = service
+            .record_payment(
+                tenant_id,
+                payment_req(created.id, 50.0, "PARTIAL"),
+                actor,
+                None,
+            )
             .await
             .unwrap();
         let err = service
-            .mark_invoice_paid(tenant_id, created.id, payment_id)
+            .mark_invoice_paid(tenant_id, created.id, small.id)
             .await
             .unwrap_err();
         assert!(matches!(err, SenseiError::Validation(_)));
 
         // Covering the balance lets the invoice be marked paid.
-        let full = Payment {
-            id: Uuid::new_v4(),
-            tenant_id,
-            payment_number: String::new(),
-            invoice_id: created.id,
-            amount: dec(50.0),
-            currency: "USD".to_string(),
-            payment_method: "bank_transfer".to_string(),
-            reference: "BALANCE".to_string(),
-            received_at: Utc::now(),
-            created_by: Uuid::new_v4(),
-        };
-        let full_id = full.id;
-        service.record_payment(tenant_id, full, None).await.unwrap();
+        let full = service
+            .record_payment(
+                tenant_id,
+                payment_req(created.id, 50.0, "BALANCE"),
+                actor,
+                None,
+            )
+            .await
+            .unwrap();
         let paid = service
-            .mark_invoice_paid(tenant_id, created.id, full_id)
+            .mark_invoice_paid(tenant_id, created.id, full.id)
             .await
             .unwrap();
         assert_eq!(paid.status, "paid");
@@ -1357,48 +1332,24 @@ mod tests {
     async fn test_mark_invoice_paid_rejects_unrelated_payment() {
         let service = InMemoryFinanceService::default();
         let tenant_id = Uuid::new_v4();
-        let invoice = Invoice {
-            id: Uuid::nil(),
-            tenant_id,
-            invoice_number: String::new(),
-            customer_id: Uuid::new_v4(),
-            customer_name: "Test".to_string(),
-            status: String::new(),
-            line_items: vec![],
-            subtotal: dec(0.0),
-            tax_percentage: dec(0.0),
-            tax_amount: dec(0.0),
-            total_amount: dec(0.0),
-            currency: "USD".to_string(),
-            due_date: Utc::now() + chrono::Duration::days(30),
-            paid_at: None,
-            notes: String::new(),
-            created_by: Uuid::new_v4(),
-            created_at: Utc::now(),
-        };
+        let actor = Uuid::new_v4();
+
+        let request = create_req(Uuid::new_v4(), dec(0.0), vec![]);
         let created = service
-            .create_invoice(tenant_id, invoice, None)
+            .create_invoice(tenant_id, request, actor, None)
             .await
             .unwrap();
-        let other = Payment {
-            id: Uuid::new_v4(),
-            tenant_id,
-            payment_number: String::new(),
-            invoice_id: Uuid::new_v4(),
-            amount: dec(100.0),
-            currency: "USD".to_string(),
-            payment_method: "cash".to_string(),
-            reference: "WRONG-INVOICE".to_string(),
-            received_at: Utc::now(),
-            created_by: Uuid::new_v4(),
-        };
-        let other_id = other.id;
-        service
-            .record_payment(tenant_id, other, None)
+        let other = service
+            .record_payment(
+                tenant_id,
+                payment_req(Uuid::new_v4(), 100.0, "WRONG-INVOICE"),
+                actor,
+                None,
+            )
             .await
             .unwrap();
         let err = service
-            .mark_invoice_paid(tenant_id, created.id, other_id)
+            .mark_invoice_paid(tenant_id, created.id, other.id)
             .await
             .unwrap_err();
         assert!(matches!(err, SenseiError::Validation(_)));
@@ -1408,26 +1359,21 @@ mod tests {
     async fn test_payment_lifecycle() {
         let service = InMemoryFinanceService::default();
         let tenant_id = Uuid::new_v4();
-
-        let payment = Payment {
-            id: Uuid::nil(),
-            tenant_id,
-            payment_number: String::new(),
-            invoice_id: Uuid::new_v4(),
-            amount: dec(550.0),
-            currency: "USD".to_string(),
-            payment_method: "bank_transfer".to_string(),
-            reference: "TRX-001".to_string(),
-            received_at: Utc::now(),
-            created_by: Uuid::new_v4(),
-        };
+        let actor = Uuid::new_v4();
 
         let created = service
-            .record_payment(tenant_id, payment, None)
+            .record_payment(
+                tenant_id,
+                payment_req(Uuid::new_v4(), 550.0, "TRX-001"),
+                actor,
+                None,
+            )
             .await
             .expect("should record payment");
         assert!(created.payment_number.starts_with("PAY-"));
         assert_eq!(created.amount, dec(550.0));
+        assert_eq!(created.created_by, actor);
+        assert!(!created.id.is_nil(), "payment id is server-generated");
     }
 
     #[tokio::test]

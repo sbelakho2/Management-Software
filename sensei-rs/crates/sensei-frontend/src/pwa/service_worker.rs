@@ -96,6 +96,41 @@ pub fn is_service_worker_supported() -> bool {
 /// Register the service worker at the given URL.
 ///
 /// Returns a [`ServiceWorkerRegistration`] on success.
+
+/// Best-effort probe for a REAL service worker script at [`SERVICE_WORKER_URL`].
+///
+/// Some deployments (dev servers, the API's SPA fallback) do not ship an
+/// `sw.js` artifact: the fallback answers every missing path with the
+/// index page (`text/html`), and registering THAT as a worker fails with a
+/// console error ("unsupported MIME type") on every page load. Only
+/// register when the origin really serves a JavaScript worker — the
+/// registration is otherwise skipped (PWA offline machinery degrades
+/// gracefully; the failure state is never entered for a missing script).
+pub async fn service_worker_script_available() -> bool {
+    let Some(window) = web_sys::window() else {
+        return false;
+    };
+    let promise = window.fetch_with_str(SERVICE_WORKER_URL);
+    let Ok(resp) = JsFuture::from(promise).await else {
+        return false;
+    };
+    let Ok(resp) = resp.dyn_into::<web_sys::Response>() else {
+        return false;
+    };
+    if !resp.ok() {
+        return false;
+    }
+    resp.headers()
+        .get("content-type")
+        .ok()
+        .flatten()
+        .map(|ct| {
+            let ct = ct.to_ascii_lowercase();
+            ct.contains("javascript") || ct.contains("ecmascript")
+        })
+        .unwrap_or(false)
+}
+
 pub async fn register_service_worker() -> Result<ServiceWorkerRegistration> {
     let window = web_sys::window().ok_or(ServiceWorkerError::NotSupported)?;
     let navigator = window.navigator();

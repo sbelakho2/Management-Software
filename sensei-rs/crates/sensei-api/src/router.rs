@@ -45,6 +45,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use tower_http::compression::CompressionLayer;
 use tower_http::limit::RequestBodyLimitLayer;
+use tower_http::services::{ServeDir, ServeFile};
 use tower_http::timeout::TimeoutLayer;
 use tower_http::trace::TraceLayer;
 
@@ -130,59 +131,21 @@ impl tower_http::compression::predicate::Predicate for CompressNonJson {
     }
 }
 
-/// Fallback handler for every unmatched request: serves a real file from
-/// the static directory when one exists, otherwise the SPA entry point
-/// (client-side routes must deep-link to `index.html`). Non-GET/HEAD
-/// methods never receive HTML.
-async fn static_spa_fallback(
-    req: axum::extract::Request,
-    static_dir: std::path::PathBuf,
-) -> Response {
-    use axum::http::Method;
-
-    if !matches!(*req.method(), Method::GET | Method::HEAD) {
-        return StatusCode::METHOD_NOT_ALLOWED.into_response();
+/// Status fixer for the tower-http SPA frontend (thirtieth-first audit,
+/// item 10): tower-http 0.6's `ServeDir::not_found_service` wraps its
+/// fallback in `SetStatus(NOT_FOUND)` — the response of the fallback
+/// service is returned with the status FORCED to 404. Client-side SPA
+/// deep links (e.g. GET /login, /today, /station/...) must arrive with
+/// the status the entry file was served with (200), so the 404 produced
+/// on the not-found path is explicitly fixed back to 200 OK. Every other
+/// status passes through untouched: ServeDir answers non-GET/HEAD
+/// requests with 405 (the fallback is not invoked), and IO failures
+/// stay 500.
+fn fix_spa_not_found<B>(mut response: axum::http::Response<B>) -> axum::http::Response<B> {
+    if response.status() == StatusCode::NOT_FOUND {
+        *response.status_mut() = StatusCode::OK;
     }
-    let path = req.uri().path();
-    let index_path = static_dir.join("index.html");
-    let mut resolved = static_dir.join(path.trim_start_matches('/'));
-    // Containment guard: never escape the static directory (e.g. via
-    // "/../" in a crafted path); anything outside behaves as missing.
-    if !resolved.starts_with(&static_dir) {
-        resolved = static_dir.clone();
-    }
-    let (bytes, content_type) = match std::fs::read(&resolved) {
-        Ok(bytes) if resolved.is_file() => (bytes, content_type_for(path).to_string()),
-        _ => match std::fs::read(&index_path) {
-            Ok(bytes) if !bytes.is_empty() => (bytes, "text/html".to_string()),
-            _ => return StatusCode::NOT_FOUND.into_response(),
-        },
-    };
-    Response::builder()
-        .header("content-type", content_type)
-        .body(axum::body::Body::from(bytes))
-        .expect("static fallback response builds")
-}
-
-/// Minimal extension → content-type map for the trunk bundle's asset
-/// families (the full mime registry is unnecessary here).
-fn content_type_for(path: &str) -> &'static str {
-    let ext = path.rsplit('.').next().unwrap_or("");
-    match ext {
-        "wasm" => "application/wasm",
-        "js" | "mjs" => "text/javascript",
-        "css" => "text/css",
-        "html" => "text/html",
-        "svg" => "image/svg+xml",
-        "png" => "image/png",
-        "jpg" | "jpeg" => "image/jpeg",
-        "ico" => "image/x-icon",
-        "woff" => "font/woff",
-        "woff2" => "font/woff2",
-        "json" => "application/json",
-        "txt" => "text/plain",
-        _ => "application/octet-stream",
-    }
+    response
 }
 
 /// Static HTML served at `/` when no WASM frontend is available.
@@ -1170,6 +1133,14 @@ pub fn build_router(state: AppState) -> Router {
             put(routes::hr::update_employee_status),
         )
         .route(
+            "/api/v1/hr/employees/{id}/leave",
+            get(routes::hr::list_employee_leave_requests),
+        )
+        .route(
+            "/api/v1/hr/employees/{id}/timecards",
+            get(routes::hr::list_employee_timecards),
+        )
+        .route(
             "/api/v1/hr/training",
             get(routes::hr::list_training_records).post(routes::hr::record_training),
         )
@@ -1369,25 +1340,29 @@ pub fn build_router(state: AppState) -> Router {
             post(routes::supply_chain::receive_stock),
         )
         // ── Operations Routes ─────────────────────────────────────
+        // The legacy `/api/v1/ops/andons*` Andon surface is a DIRECT
+        // alias to the canonical scope-vector Andon handlers
+        // (`routes::andon`, thirtieth-first audit) — the ops router no
+        // longer carries any Andon handlers of its own.
         .route(
             "/api/v1/ops/andons",
-            get(routes::ops::list_andons).post(routes::ops::raise_andon),
+            get(routes::andon::list_andons).post(routes::andon::raise_andon),
         )
         .route(
             "/api/v1/ops/andons/{id}",
-            get(routes::ops::get_andon).put(routes::ops::update_andon),
+            get(routes::andon::get_andon).put(routes::andon::update_andon),
         )
         .route(
             "/api/v1/ops/andons/{id}/void",
-            post(routes::ops::void_andon),
+            post(routes::andon::void_andon),
         )
         .route(
             "/api/v1/ops/andons/{id}/acknowledge",
-            post(routes::ops::acknowledge_andon),
+            post(routes::andon::acknowledge_andon),
         )
         .route(
             "/api/v1/ops/andons/{id}/resolve",
-            post(routes::ops::resolve_andon),
+            post(routes::andon::resolve_andon),
         )
         .route(
             "/api/v1/ops/projects",
@@ -2615,26 +2590,43 @@ pub fn build_router(state: AppState) -> Router {
     // file. The critical invariant for rate limiting is that
     // `inject_rate_limiter` is OUTER to `rate_limit_middleware` (added
     // after it) so the limiter always finds its instance.
-    let spa_index: Option<Vec<u8>> =
-        std::fs::read(std::path::Path::new(&static_dir).join("index.html"))
-            .ok()
-            .filter(|bytes| !bytes.is_empty());
+    let spa_index_path = std::path::PathBuf::from(&static_dir).join("index.html");
+    let spa_index: Option<Vec<u8>> = std::fs::read(&spa_index_path)
+        .ok()
+        .filter(|bytes| !bytes.is_empty());
     let spa_index_root = spa_index.clone();
+    // ── Static + SPA frontend (thirtieth-first audit, item 10) ─────
+    // tower-http services replace the hand-rolled fs::read fallback:
+    // ServeDir serves real bundle assets (wasm/js/css/fonts) with the
+    // correct content types, and its fallback serves index.html for
+    // every other GET — client-side routes such as /login, /today,
+    // /station/... deep-link to the SPA entry point. tower-http 0.6's
+    // not_found_service forces the fallback status to 404, so
+    // `fix_spa_not_found` restores the 200 the entry file is served
+    // with (see its docs); ServeDir itself percent-decodes and rejects
+    // any path component escaping the static directory (ParentDir/.. and
+    // encoded variants are refused), and answers non-GET/HEAD with 405.
+    let frontend = tower::ServiceExt::<axum::http::Request<axum::body::Body>>::map_response(
+        ServeDir::new(&static_dir).not_found_service(ServeFile::new(&spa_index_path)),
+        fix_spa_not_found,
+    );
+
     Router::new()
         .merge(realtime_routes)
         .merge(timed_routes)
-        // SPA entry point: the bundle's index.html owns "/" when present.
+        // SPA entry point: the bundle's index.html owns "/" when present;
+        // otherwise the ROOT_HTML placeholder page is served (unchanged
+        // behavior).
         .route("/", get(move || spa_page(spa_index_root)))
-        // ── Static + SPA fallback for every other GET ──────────────
-        // Real bundle assets (wasm/js/css/fonts) are served from the
-        // static directory; any other GET (client-side routes such as
-        // /login, /today, /station/...) deep-links to the SPA entry point
-        // instead of 404ing. Method guard: non-GET/HEAD never receives
-        // HTML (API 404s were already answered above).
-        .fallback(move |req: axum::extract::Request| {
-            let dir: std::path::PathBuf = static_dir.clone().into();
-            static_spa_fallback(req, dir)
-        })
+        // ── Static + SPA fallback for every other request ──────────
+        // INVARIANT: `timed_routes` registered `/api/{*rest} ->
+        // api_not_found` BEFORE this fallback service (see the merge
+        // above). Router matching always consults routes before the
+        // fallback, so an unknown /api/* path is answered with the
+        // structured JSON 404 and NEVER receives index.html; the
+        // fallback only sees non-API paths (static assets + SPA deep
+        // links).
+        .fallback_service(frontend)
         // Compress static assets ONLY: the WASM frontend's reqwest client
         // cannot decode gzip API bodies (its fetch path errors with
         // "error decoding response body" on every gzipped JSON response),

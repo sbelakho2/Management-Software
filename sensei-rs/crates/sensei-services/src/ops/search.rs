@@ -644,6 +644,13 @@ impl SearchService for DatabaseSearchService {
         searchable_text: &str,
         tenant_id: EntityId,
     ) -> Result<()> {
+        // Thirtieth-first audit items 7-9: the search_index write runs
+        // through a TenantTx whose SET LOCAL app.tenant_id admits exactly
+        // this tenant — a raw-pool statement admits zero rows for the
+        // FORCE-RLS production role.
+        let mut db = TenantTx::begin(&self.pool, tenant_id)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to begin index tx: {e}")))?;
         sqlx::query(
             r#"
             INSERT INTO search_index (entity_type, entity_id, title, searchable_text, tenant_id)
@@ -659,9 +666,12 @@ impl SearchService for DatabaseSearchService {
         .bind(title)
         .bind(searchable_text)
         .bind(tenant_id)
-        .execute(&self.pool)
+        .execute(&mut **db.tx())
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to index entity: {e}")))?;
+        db.commit()
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to commit index tx: {e}")))?;
 
         Ok(())
     }
@@ -672,16 +682,23 @@ impl SearchService for DatabaseSearchService {
         entity_id: Uuid,
         tenant_id: EntityId,
     ) -> Result<()> {
-        // Only the tenant that owns the entry may remove it.
+        // Only the tenant that owns the entry may remove it — inside the
+        // tenant-scoped transaction (thirtieth-first audit items 7-9).
+        let mut db = TenantTx::begin(&self.pool, tenant_id)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to begin unindex tx: {e}")))?;
         sqlx::query(
             "DELETE FROM search_index WHERE entity_type = $1 AND entity_id = $2 AND tenant_id = $3",
         )
         .bind(entity_type)
         .bind(entity_id)
         .bind(tenant_id)
-        .execute(&self.pool)
+        .execute(&mut **db.tx())
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to remove from index: {e}")))?;
+        db.commit()
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to commit unindex tx: {e}")))?;
 
         Ok(())
     }

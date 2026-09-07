@@ -9,6 +9,7 @@ use axum::Json;
 use sensei_agent_core::context::AgentContext;
 use sensei_agent_core::tools::{PolicyEngine, ToolRisk, ToolSpec};
 use sensei_auth::middleware::AuthenticatedUser;
+use sensei_core::db::TenantTx;
 use sensei_core::error::SenseiError;
 use uuid::Uuid;
 
@@ -149,20 +150,44 @@ pub async fn build_context_with_locale(
         let mut candidate_wc = None;
         let mut candidate_shift = None;
         if hint_site.is_some() {
-            let assignment: Option<(Option<Uuid>, Option<Uuid>, Option<Uuid>)> = sqlx::query_as(
-                "SELECT value_stream_id, work_center_id, shift_id \
-                         FROM employee_assignments \
-                         WHERE tenant_id = $1 AND user_id = $2 AND is_active = TRUE \
-                           AND site_id = $3 \
-                         ORDER BY updated_at DESC LIMIT 1",
-            )
-            .bind(user.tenant_id)
-            .bind(user.user_id)
-            .bind(hint_site)
-            .fetch_optional(pool.as_ref())
-            .await
-            .ok()
-            .flatten();
+            // employee_assignments is fail-closed FORCE RLS (migration
+            // 175): this read must run inside a TenantTx of the caller's
+            // tenant — a no-context pooled read admits ZERO rows for the
+            // least-privilege sensei_app role and silently left every
+            // principal without a work-center context (the superuser e2e
+            // connection masked this; the team-lead/station flows 400'd
+            // with "No work center assigned").
+            let assignment: Option<(Option<Uuid>, Option<Uuid>, Option<Uuid>)> =
+                match TenantTx::begin(pool, user.tenant_id).await {
+                    Ok(mut db) => {
+                        let found = sqlx::query_as(
+                            "SELECT value_stream_id, work_center_id, shift_id \
+                                 FROM employee_assignments \
+                                 WHERE tenant_id = $1 AND user_id = $2 AND is_active = TRUE \
+                                   AND site_id = $3 \
+                                 ORDER BY updated_at DESC LIMIT 1",
+                        )
+                        .bind(user.tenant_id)
+                        .bind(user.user_id)
+                        .bind(hint_site)
+                        .fetch_optional(&mut **db.tx())
+                        .await;
+                        match found {
+                            Ok(row) => {
+                                let _ = db.commit().await;
+                                row
+                            }
+                            Err(e) => {
+                                tracing::warn!(error = %e, "assignment resolution failed");
+                                None
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        tracing::warn!(error = %e, "assignment resolution failed to open a tenant tx");
+                        None
+                    }
+                };
             if let Some((vs, wc, sh)) = assignment {
                 candidate_vs = vs;
                 candidate_wc = wc;

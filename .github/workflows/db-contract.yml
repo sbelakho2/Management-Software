@@ -45,12 +45,15 @@ jobs:
     env:
       SENSEI_NO_ZIG: "1"
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      # actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      # dtolnay/rust-toolchain@v1
+      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
         with:
           toolchain: 1.96.0
           components: clippy, rustfmt
-      - uses: Swatinem/rust-cache@v2
+      # Swatinem/rust-cache@v2.9.2
+      - uses: Swatinem/rust-cache@63fed3e2fecf6f7b51dc6f043341b79ef82a9ae7
       # Thirtieth-audit item 28: this workflow IS the DB capability contract's
       # primary gate — assert that every environment (workflows, compose,
       # Helm values) still pins the exact .github/.db-capability image before
@@ -67,6 +70,21 @@ jobs:
       - name: Fresh-database migration + DB contract gate
         run: |
           cargo test -p sensei-db --test db_contract -- \
+            --test-threads=1
+        env:
+          DATABASE_URL_TEST: postgres://sensei:sensei_test@localhost:5433/${{ env.DATABASE_NAME }}
+      # Thirtieth-first audit items 7-9: the TenantTx conversion gate. The
+      # tenanttx_contract suite migrates the scratch database as the
+      # superuser, provisions the REAL sensei_app role (canonical surface:
+      # schema USAGE, table DML, EXECUTE on the migration-175 pre-tenant
+      # identity functions), then runs one full CRUD path per converted
+      # service module (accounts, products, contacts, supply_chain, ai,
+      # notifications, users) through TenantTx AS that role — FORCE RLS is
+      # enforced, so rows resolving through the services prove the
+      # conversion (a raw-pool statement admits zero rows).
+      - name: TenantTx sensei_app-role CRUD gate (converted services)
+        run: |
+          cargo test -p sensei-db --test tenanttx_contract -- \
             --test-threads=1
         env:
           DATABASE_URL_TEST: postgres://sensei:sensei_test@localhost:5433/${{ env.DATABASE_NAME }}
@@ -155,12 +173,15 @@ jobs:
     env:
       SENSEI_NO_ZIG: "1"
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      # actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      # dtolnay/rust-toolchain@v1
+      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
         with:
           toolchain: 1.96.0
           components: clippy, rustfmt
-      - uses: Swatinem/rust-cache@v2
+      # Swatinem/rust-cache@v2.9.2
+      - uses: Swatinem/rust-cache@63fed3e2fecf6f7b51dc6f043341b79ef82a9ae7
       - name: Fresh-database migration + DB contract suite
         run: |
           cargo test -p sensei-db --test db_contract -- \

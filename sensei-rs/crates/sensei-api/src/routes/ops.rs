@@ -1,7 +1,12 @@
 //! Operations / Continuous Improvement route handlers.
 //!
-//! Provides endpoints for Andon events, improvement projects, A3 reports,
+//! Provides endpoints for improvement projects, A3 reports,
 //! and risk management.
+//!
+//! The Andon surface was REMOVED in the thirtieth-first audit: the
+//! canonical Andon routes live in `routes::andon` (scope-vector
+//! authorized), and the legacy `/api/v1/ops/andons*` paths are direct
+//! aliases to those handlers in the router.
 
 use axum::{
     extract::{Path, Query, State},
@@ -10,23 +15,13 @@ use axum::{
 use sensei_auth::middleware::AuthenticatedUser;
 use sensei_core::error::Result;
 use sensei_core::pagination::PaginatedResponse;
-use sensei_services::ops::{Andon, Project, Risk, A3};
+use sensei_services::ops::{Project, Risk, A3};
 use serde::Deserialize;
 use uuid::Uuid;
 
-use crate::routes::andon::caller_sites;
 use crate::state::AppState;
 
 // ── Query / Request DTOs ───────────────────────────────────────────────────
-
-/// Query parameters for listing Andon events.
-#[derive(Debug, Deserialize)]
-pub struct ListAndonsParams {
-    pub status: Option<String>,
-    pub work_center_id: Option<Uuid>,
-    pub page: Option<usize>,
-    pub per_page: Option<usize>,
-}
 
 /// Query parameters for listing projects.
 #[derive(Debug, Deserialize)]
@@ -60,142 +55,18 @@ pub struct CompleteProjectRequest {
     pub savings_realized: f64,
 }
 
-/// Request body for resolving an Andon (resolution notes only — the actor
-/// is always taken from the authenticated token).
-#[derive(Debug, Deserialize)]
-pub struct ResolveAndonRequest {
-    pub resolution: String,
-}
-
-// ── Andon ──────────────────────────────────────────────────────────────────
-
-/// List all Andon events with optional filters.
-pub async fn list_andons(
-    user: AuthenticatedUser,
-    State(state): State<AppState>,
-    Query(params): Query<ListAndonsParams>,
-) -> Result<Json<PaginatedResponse<Andon>>> {
-    user.require_permission("tps:andon:raise")?;
-    let tenant_id = user.tenant_id;
-    let andons = state
-        .ops_service
-        .list_andons(
-            tenant_id,
-            params.status.as_deref(),
-            params.work_center_id,
-            params.page,
-            params.per_page,
-        )
-        .await?;
-    Ok(Json(andons))
-}
-
-/// Raise a new Andon event.
-pub async fn raise_andon(
-    user: AuthenticatedUser,
-    State(state): State<AppState>,
-    Json(req): Json<Andon>,
-) -> Result<Json<Andon>> {
-    user.require_permission("tps:andon:raise")?;
-    // Compatibility adapter (item 41): the legacy full-object route and
-    // the safe command route MUST call the same command with the same
-    // invariants — server-owned identity fields are ALWAYS re-derived,
-    // never trusted from the client.
-    let andon = Andon {
-        id: Uuid::new_v4(),
-        tenant_id: user.tenant_id,
-        site_id: None,
-        andon_number: String::new(),
-        work_center_id: req.work_center_id,
-        issue_type: req.issue_type,
-        severity: req.severity,
-        description: req.description,
-        status: "active".to_string(),
-        raised_by: user.user_id,
-        acknowledged_by: None,
-        resolved_by: None,
-        resolution: None,
-        response_time_seconds: None,
-        resolution_time_seconds: None,
-        created_at: chrono::Utc::now(),
-        acknowledged_at: None,
-        resolved_at: None,
-        restart_authorized_by: None,
-        restart_authorized_at: None,
-        abnormal_condition_observed_at: None,
-        contained_at: None,
-        contained_by: None,
-        contained_note: None,
-        escalated: false,
-        escalated_at: None,
-        request_key: None,
-    };
-    state
-        .ops_service
-        .raise_andon(user.tenant_id, andon)
-        .await
-        .map(Json)
-}
-
-/// Get a specific Andon event by ID.
-pub async fn get_andon(
-    user: AuthenticatedUser,
-    State(state): State<AppState>,
-    Path(id): Path<Uuid>,
-) -> Result<Json<Andon>> {
-    user.require_permission("tps:andon:raise")?;
-    let tenant_id = user.tenant_id;
-    let andon = state.ops_service.get_andon(tenant_id, id).await?;
-    Ok(Json(andon))
-}
-
-/// Acknowledge an Andon event.
-///
-/// The acknowledging user is derived from the authenticated token — the
-/// client cannot spoof who acknowledged the signal.
-pub async fn acknowledge_andon(
-    user: AuthenticatedUser,
-    State(state): State<AppState>,
-    Path(id): Path<Uuid>,
-) -> Result<Json<Andon>> {
-    user.require_permission("tps:andon:ack")?;
-    let tenant_id = user.tenant_id;
-    let sites = caller_sites(&user, &state).await?;
-    let andon = state
-        .ops_service
-        .acknowledge_andon(tenant_id, &sites, id, user.user_id)
-        .await?;
-    Ok(Json(andon))
-}
-
-/// Explicit update command (eighteenth audit P0-2): narrow, client-safe
-/// mutation fields — never a whole Andon object.
-#[derive(Debug, serde::Deserialize)]
-pub struct UpdateAndonCommand {
-    #[serde(default)]
-    pub issue_type: Option<String>,
-    pub severity: String,
-    pub description: String,
-}
-
-/// Resolve an Andon event.
-///
-/// The resolving user is derived from the authenticated token — the client
-/// cannot spoof who resolved the signal.
-pub async fn resolve_andon(
-    user: AuthenticatedUser,
-    State(state): State<AppState>,
-    Path(id): Path<Uuid>,
-    Json(req): Json<ResolveAndonRequest>,
-) -> Result<Json<Andon>> {
-    user.require_permission("tps:andon:resolve")?;
-    let tenant_id = user.tenant_id;
-    let sites = caller_sites(&user, &state).await?;
-    let andon = state
-        .ops_service
-        .resolve_andon(tenant_id, &sites, id, user.user_id, &req.resolution)
-        .await?;
-    Ok(Json(andon))
+/// Site entitlement helper (thirtieth-first audit): the canonical Andon
+/// handlers now act on the FULL RequestContext scope vector
+/// (`ctx.scope`) instead of the legacy site-vector form. This helper
+/// (moved out of `routes::andon`, which re-exports it for the remaining
+/// legacy importers such as `routes::work_centers`) computes the
+/// DB-resolved SITE entitlement for callers that still consume the
+/// vector form. Fail-closed: a context that cannot be built yields an
+/// error, never a tenant-wide fallback.
+pub(crate) async fn caller_sites(user: &AuthenticatedUser, state: &AppState) -> Result<Vec<Uuid>> {
+    Ok(crate::authorization::build_request_context(user, state)
+        .await?
+        .authorized_sites())
 }
 
 // ── Projects ───────────────────────────────────────────────────────────────
@@ -366,72 +237,7 @@ pub async fn get_risk(
     Ok(Json(risk))
 }
 
-// ── New: Update / Delete Handlers ──────────────────────────────────────────
-
-/// Update an Andon signal.
-pub async fn update_andon(
-    user: AuthenticatedUser,
-    State(state): State<AppState>,
-    Path(id): Path<Uuid>,
-    Json(req): Json<UpdateAndonCommand>,
-) -> Result<Json<Andon>> {
-    user.require_permission("tps:andon:manage")?;
-    let tenant_id = user.tenant_id;
-    let sites = caller_sites(&user, &state).await?;
-    // Eighteenth audit P0-2: the client NEVER sends a whole Andon — the
-    // command carries only the mutable fields the repository accepts.
-    let narrow = sensei_services::ops::Andon {
-        issue_type: req.issue_type.unwrap_or_default(),
-        severity: req.severity,
-        description: req.description,
-        id: Uuid::nil(),
-        tenant_id,
-        site_id: None,
-        andon_number: String::new(),
-        work_center_id: Uuid::nil(),
-        status: String::new(),
-        abnormal_condition_observed_at: None,
-        raised_by: Uuid::nil(),
-        acknowledged_by: None,
-        resolved_by: None,
-        resolution: None,
-        response_time_seconds: None,
-        resolution_time_seconds: None,
-        created_at: chrono::Utc::now(),
-        acknowledged_at: None,
-        resolved_at: None,
-        restart_authorized_by: None,
-        restart_authorized_at: None,
-        contained_at: None,
-        contained_by: None,
-        contained_note: None,
-        escalated: false,
-        escalated_at: None,
-        request_key: None,
-    };
-    let andon = state
-        .ops_service
-        .update_andon(tenant_id, &sites, id, narrow)
-        .await?;
-    Ok(Json(andon))
-}
-
-/// Void an Andon (append-only history; never physically deleted).
-pub async fn void_andon(
-    user: AuthenticatedUser,
-    State(state): State<AppState>,
-    Path(id): Path<Uuid>,
-    Json(req): Json<crate::routes::andon::VoidAndonRequest>,
-) -> Result<Json<Andon>> {
-    user.require_permission("tps:andon:contain")?;
-    let tenant_id = user.tenant_id;
-    let sites = caller_sites(&user, &state).await?;
-    let andon = state
-        .ops_service
-        .void_andon(tenant_id, &sites, id, user.user_id, &req.reason)
-        .await?;
-    Ok(Json(andon))
-}
+// ── Update / Delete Handlers ───────────────────────────────────────────────
 
 /// Update a project.
 pub async fn update_project(

@@ -2,9 +2,24 @@
 //!
 //! Provides RFQ, quote, sales order, purchase order, inventory, and stock
 //! movement management backed by PostgreSQL tables. Implements [`SupplyChainService`].
+//!
+//! # Tenant-scoped access (thirtieth audit items 18 + thirtieth-first 7)
+//!
+//! Every tenant-owned table this service touches (`rfqs`, `quotes`,
+//! `sales_orders`, `purchase_orders`, `inventory_items`, `stock_moves`,
+//! `goods_receipts`, `site_manifests`) is fail-closed FORCE RLS since
+//! migration 175: a statement without `app.tenant_id` admits zero rows
+//! under the production `sensei_app` role. All SQL therefore runs inside
+//! a tenant-scoped transaction — `TenantTx` (via
+//! [`TenantTx::begin`](sensei_core::db::TenantTx)) or the equivalent
+//! `crate::tps::replication::with_tenant_tx` closure helper — where the
+//! `SET LOCAL app.tenant_id` context is established at transaction
+//! construction. Multi-statement effects (ledger + balance + state) and
+//! page+count reads always share ONE transaction.
 
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
+use sensei_core::db::TenantTx;
 use sensei_core::error::{Result, SenseiError};
 use sensei_core::pagination::PaginatedResponse;
 use serde_json;
@@ -16,20 +31,6 @@ use super::{
     SalesOrder, SalesOrderItem, StockMove, SupplyChainService, RFQ,
 };
 use crate::tps::replication::with_tenant_tx;
-
-/// PostgreSQL-backed implementation of [`SupplyChainService`].
-/// Transaction-scoped tenant context for RLS (SET LOCAL app.tenant_id).
-async fn set_tenant_context(
-    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
-    tenant_id: Uuid,
-) -> std::result::Result<(), SenseiError> {
-    sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
-        .bind(tenant_id.to_string())
-        .execute(&mut **tx)
-        .await
-        .map_err(|e| SenseiError::Database(format!("Failed to set tenant context: {e}")))?;
-    Ok(())
-}
 
 /// Apply a signed quantity delta to the inventory row of ONE site at
 /// `location`, creating the row when it does not exist (receipts create
@@ -533,6 +534,9 @@ impl SupplyChainService for DatabaseSupplyChainService {
         let items_json =
             serde_json::to_value(&rfq.items).unwrap_or(serde_json::Value::Array(vec![]));
 
+        let mut db = TenantTx::begin(&self.pool, tenant_id)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to begin create RFQ: {e}")))?;
         let row = sqlx::query_as::<_, RfqRow>(
             r#"INSERT INTO rfqs (id, tenant_id, rfq_number, supplier_id, supplier_name, status, items, notes, created_by, created_at)
                VALUES ($1,$2,$3,$4,$5,'draft',$6,$7,$8,$9)
@@ -540,17 +544,26 @@ impl SupplyChainService for DatabaseSupplyChainService {
         )
         .bind(id).bind(tenant_id).bind(&rfq_number).bind(rfq.supplier_id).bind(&rfq.supplier_name)
         .bind(&items_json).bind(&rfq.notes).bind(rfq.created_by).bind(now)
-        .fetch_one(&self.pool).await.map_err(|e| SenseiError::Database(format!("Failed to create RFQ: {e}")))?;
+        .fetch_one(&mut **db.tx()).await.map_err(|e| SenseiError::Database(format!("Failed to create RFQ: {e}")))?;
+        db.commit()
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to commit create RFQ: {e}")))?;
 
         Ok(rfq_row_to_domain(row))
     }
 
     async fn get_rfq(&self, tenant_id: Uuid, id: Uuid) -> Result<RFQ> {
+        let mut db = TenantTx::begin(&self.pool, tenant_id)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to begin get RFQ: {e}")))?;
         let row = sqlx::query_as::<_, RfqRow>(
             "SELECT id, tenant_id, rfq_number, supplier_id, supplier_name, status, items, notes, created_by, created_at FROM rfqs WHERE id=$1 AND tenant_id=$2",
-        ).bind(id).bind(tenant_id).fetch_optional(&self.pool).await
+        ).bind(id).bind(tenant_id).fetch_optional(&mut **db.tx()).await
             .map_err(|e| SenseiError::Database(format!("Failed to get RFQ: {e}")))?
             .ok_or_else(|| SenseiError::NotFound(format!("RFQ {id} not found")))?;
+        db.commit()
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to commit get RFQ: {e}")))?;
         Ok(rfq_row_to_domain(row))
     }
 
@@ -564,19 +577,28 @@ impl SupplyChainService for DatabaseSupplyChainService {
         let page = page.unwrap_or(1).max(1);
         let per_page = per_page.unwrap_or(20).clamp(1, 100);
         let offset = (page - 1) * per_page;
+        // rfqs is fail-closed FORCE RLS (migration 175): the page and its
+        // count read on ONE TenantTx of the tenant (a raw-pool read
+        // returns zero rows under sensei_app).
+        let mut db = TenantTx::begin(&self.pool, tenant_id)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to begin list RFQs: {e}")))?;
         let items: Vec<RfqRow> = sqlx::query_as(
             r#"SELECT id, tenant_id, rfq_number, supplier_id, supplier_name, status, items, notes, created_by, created_at FROM rfqs
                WHERE tenant_id=$1 AND ($2::text IS NULL OR status=$2) ORDER BY created_at DESC LIMIT $3 OFFSET $4"#,
-        ).bind(tenant_id).bind(status).bind(per_page as i64).bind(offset as i64).fetch_all(&self.pool).await
+        ).bind(tenant_id).bind(status).bind(per_page as i64).bind(offset as i64).fetch_all(&mut **db.tx()).await
             .map_err(|e| SenseiError::Database(format!("Failed to list RFQs: {e}")))?;
         let count: i64 = sqlx::query_scalar(
             "SELECT COUNT(*) FROM rfqs WHERE tenant_id=$1 AND ($2::text IS NULL OR status=$2)",
         )
         .bind(tenant_id)
         .bind(status)
-        .fetch_one(&self.pool)
+        .fetch_one(&mut **db.tx())
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to count RFQs: {e}")))?;
+        db.commit()
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to commit list RFQs: {e}")))?;
         Ok(paginate(
             items.into_iter().map(rfq_row_to_domain).collect(),
             count,
@@ -586,12 +608,18 @@ impl SupplyChainService for DatabaseSupplyChainService {
     }
 
     async fn update_rfq_status(&self, tenant_id: Uuid, id: Uuid, status: &str) -> Result<RFQ> {
+        let mut db = TenantTx::begin(&self.pool, tenant_id).await.map_err(|e| {
+            SenseiError::Database(format!("Failed to begin RFQ status update: {e}"))
+        })?;
         let row = sqlx::query_as::<_, RfqRow>(
             r#"UPDATE rfqs SET status=$1 WHERE id=$2 AND tenant_id=$3
                RETURNING id, tenant_id, rfq_number, supplier_id, supplier_name, status, items, notes, created_by, created_at"#,
-        ).bind(status).bind(id).bind(tenant_id).fetch_optional(&self.pool).await
+        ).bind(status).bind(id).bind(tenant_id).fetch_optional(&mut **db.tx()).await
             .map_err(|e| SenseiError::Database(format!("Failed to update RFQ status: {e}")))?
             .ok_or_else(|| SenseiError::NotFound(format!("RFQ {id} not found")))?;
+        db.commit().await.map_err(|e| {
+            SenseiError::Database(format!("Failed to commit RFQ status update: {e}"))
+        })?;
         Ok(rfq_row_to_domain(row))
     }
 
@@ -605,6 +633,9 @@ impl SupplyChainService for DatabaseSupplyChainService {
             serde_json::to_value(&quote.line_items).unwrap_or(serde_json::Value::Array(vec![]));
         let total: rust_decimal::Decimal = quote.line_items.iter().map(|li| li.net_price).sum();
 
+        let mut db = TenantTx::begin(&self.pool, tenant_id)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to begin create quote: {e}")))?;
         let row = sqlx::query_as::<_, QuoteRow>(
             r#"INSERT INTO quotes (id, tenant_id, quote_number, rfq_id, customer_id, customer_name, status, line_items, total_amount, currency, valid_until, created_by, created_at)
                VALUES ($1,$2,$3,$4,$5,$6,'draft',$7,$8,$9,$10,$11,$12)
@@ -612,16 +643,25 @@ impl SupplyChainService for DatabaseSupplyChainService {
         ).bind(id).bind(tenant_id).bind(&quote_number).bind(quote.rfq_id).bind(quote.customer_id)
             .bind(&quote.customer_name).bind(&li_json).bind(total).bind(&quote.currency)
             .bind(quote.valid_until).bind(quote.created_by).bind(now)
-            .fetch_one(&self.pool).await.map_err(|e| SenseiError::Database(format!("Failed to create quote: {e}")))?;
+            .fetch_one(&mut **db.tx()).await.map_err(|e| SenseiError::Database(format!("Failed to create quote: {e}")))?;
+        db.commit()
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to commit create quote: {e}")))?;
         Ok(quote_row_to_domain(row))
     }
 
     async fn get_quote(&self, tenant_id: Uuid, id: Uuid) -> Result<Quote> {
+        let mut db = TenantTx::begin(&self.pool, tenant_id)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to begin get quote: {e}")))?;
         let row = sqlx::query_as::<_, QuoteRow>(
             "SELECT id, tenant_id, quote_number, rfq_id, customer_id, customer_name, status, line_items, total_amount, currency, valid_until, created_by, created_at FROM quotes WHERE id=$1 AND tenant_id=$2",
-        ).bind(id).bind(tenant_id).fetch_optional(&self.pool).await
+        ).bind(id).bind(tenant_id).fetch_optional(&mut **db.tx()).await
             .map_err(|e| SenseiError::Database(format!("Failed to get quote: {e}")))?
             .ok_or_else(|| SenseiError::NotFound(format!("Quote {id} not found")))?;
+        db.commit()
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to commit get quote: {e}")))?;
         Ok(quote_row_to_domain(row))
     }
 
@@ -635,19 +675,27 @@ impl SupplyChainService for DatabaseSupplyChainService {
         let page = page.unwrap_or(1).max(1);
         let per_page = per_page.unwrap_or(20).clamp(1, 100);
         let offset = (page - 1) * per_page;
+        // quotes is fail-closed FORCE RLS (migration 175): the page and
+        // its count read on ONE TenantTx of the tenant.
+        let mut db = TenantTx::begin(&self.pool, tenant_id)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to begin list quotes: {e}")))?;
         let items: Vec<QuoteRow> = sqlx::query_as(
             r#"SELECT id, tenant_id, quote_number, rfq_id, customer_id, customer_name, status, line_items, total_amount, currency, valid_until, created_by, created_at FROM quotes
                WHERE tenant_id=$1 AND ($2::text IS NULL OR status=$2) ORDER BY created_at DESC LIMIT $3 OFFSET $4"#,
-        ).bind(tenant_id).bind(status).bind(per_page as i64).bind(offset as i64).fetch_all(&self.pool).await
+        ).bind(tenant_id).bind(status).bind(per_page as i64).bind(offset as i64).fetch_all(&mut **db.tx()).await
             .map_err(|e| SenseiError::Database(format!("Failed to list quotes: {e}")))?;
         let count: i64 = sqlx::query_scalar(
             "SELECT COUNT(*) FROM quotes WHERE tenant_id=$1 AND ($2::text IS NULL OR status=$2)",
         )
         .bind(tenant_id)
         .bind(status)
-        .fetch_one(&self.pool)
+        .fetch_one(&mut **db.tx())
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to count quotes: {e}")))?;
+        db.commit()
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to commit list quotes: {e}")))?;
         Ok(paginate(
             items.into_iter().map(quote_row_to_domain).collect(),
             count,
@@ -657,12 +705,18 @@ impl SupplyChainService for DatabaseSupplyChainService {
     }
 
     async fn approve_quote(&self, tenant_id: Uuid, id: Uuid) -> Result<Quote> {
+        let mut db = TenantTx::begin(&self.pool, tenant_id)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to begin approve quote: {e}")))?;
         let row = sqlx::query_as::<_, QuoteRow>(
             r#"UPDATE quotes SET status='approved' WHERE id=$1 AND tenant_id=$2
                RETURNING id, tenant_id, quote_number, rfq_id, customer_id, customer_name, status, line_items, total_amount, currency, valid_until, created_by, created_at"#,
-        ).bind(id).bind(tenant_id).fetch_optional(&self.pool).await
+        ).bind(id).bind(tenant_id).fetch_optional(&mut **db.tx()).await
             .map_err(|e| SenseiError::Database(format!("Failed to approve quote: {e}")))?
             .ok_or_else(|| SenseiError::NotFound(format!("Quote {id} not found")))?;
+        db.commit()
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to commit approve quote: {e}")))?;
         Ok(quote_row_to_domain(row))
     }
 
@@ -927,11 +981,20 @@ impl SupplyChainService for DatabaseSupplyChainService {
     }
 
     async fn get_sales_order(&self, tenant_id: Uuid, id: Uuid) -> Result<SalesOrder> {
+        // sales_orders is fail-closed FORCE RLS (migration 175): the read
+        // runs inside a TenantTx of the tenant (raw-pool reads return zero
+        // rows under the production sensei_app role).
+        let mut db = TenantTx::begin(&self.pool, tenant_id)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to begin get sales order: {e}")))?;
         let row = sqlx::query_as::<_, SalesOrderRow>(
             "SELECT id, tenant_id, order_number, customer_id, customer_name, status, line_items, total_amount, currency, delivery_date, shipping_address, created_by, created_at, fulfilling_site_id FROM sales_orders WHERE id=$1 AND tenant_id=$2",
-        ).bind(id).bind(tenant_id).fetch_optional(&self.pool).await
+        ).bind(id).bind(tenant_id).fetch_optional(&mut **db.tx()).await
             .map_err(|e| SenseiError::Database(format!("Failed to get sales order: {e}")))?
             .ok_or_else(|| SenseiError::NotFound(format!("Sales order {id} not found")))?;
+        db.commit()
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to commit get sales order: {e}")))?;
         Ok(so_row_to_domain(row))
     }
 
@@ -1063,9 +1126,11 @@ impl SupplyChainService for DatabaseSupplyChainService {
         // filled with a site inside `authorized_sites`, and an order
         // already anchored OUTSIDE the caller's scope is
         // indistinguishable from a nonexistent order.
-        let mut tx = self
-            .pool
-            .begin()
+        // sales_orders is fail-closed FORCE RLS (migration 175): the
+        // guard read and the anchor write run inside ONE TenantTx of the
+        // tenant (a raw-pool transaction admits zero rows under
+        // sensei_app).
+        let mut db = TenantTx::begin(&self.pool, tenant_id)
             .await
             .map_err(|e| SenseiError::Database(format!("Failed to begin transaction: {e}")))?;
         // Read the row's site INSIDE the tx under FOR UPDATE; the read is
@@ -1079,7 +1144,7 @@ impl SupplyChainService for DatabaseSupplyChainService {
         .bind(order_id)
         .bind(tenant_id)
         .bind(&sites)
-        .fetch_optional(&mut *tx)
+        .fetch_optional(&mut **db.tx())
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to read order site anchor: {e}")))?;
         match existing {
@@ -1096,9 +1161,9 @@ impl SupplyChainService for DatabaseSupplyChainService {
                 // Same-site no-op: return the locked row.
                 let row = sqlx::query_as::<_, SalesOrderRow>(
                     "SELECT id, tenant_id, order_number, customer_id, customer_name, status, line_items, total_amount, currency, delivery_date, shipping_address, created_by, created_at, fulfilling_site_id FROM sales_orders WHERE id=$1 AND tenant_id=$2",
-                ).bind(order_id).bind(tenant_id).fetch_one(&mut *tx).await
+                ).bind(order_id).bind(tenant_id).fetch_one(&mut **db.tx()).await
                     .map_err(|e| SenseiError::Database(format!("Failed to reload sales order: {e}")))?;
-                tx.commit()
+                db.commit()
                     .await
                     .map_err(|e| SenseiError::Database(format!("Failed to commit tx: {e}")))?;
                 Ok(so_row_to_domain(row))
@@ -1113,10 +1178,10 @@ impl SupplyChainService for DatabaseSupplyChainService {
                          AND $3::uuid = ANY($4)
                        RETURNING id, tenant_id, order_number, customer_id, customer_name, status, line_items, total_amount, currency, delivery_date, shipping_address, created_by, created_at, fulfilling_site_id"#,
                 ).bind(order_id).bind(tenant_id).bind(site_id).bind(&sites)
-                    .fetch_optional(&mut *tx).await
+                    .fetch_optional(&mut **db.tx()).await
                     .map_err(|e| SenseiError::Database(format!("Failed to assign fulfilling site: {e}")))?
                     .ok_or_else(|| SenseiError::NotFound(format!("Sales order {order_id} not found")))?;
-                tx.commit()
+                db.commit()
                     .await
                     .map_err(|e| SenseiError::Database(format!("Failed to commit tx: {e}")))?;
                 Ok(so_row_to_domain(row))
@@ -1178,11 +1243,17 @@ impl SupplyChainService for DatabaseSupplyChainService {
     }
 
     async fn get_purchase_order(&self, tenant_id: Uuid, id: Uuid) -> Result<PurchaseOrder> {
+        let mut db = TenantTx::begin(&self.pool, tenant_id)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to begin get PO: {e}")))?;
         let row = sqlx::query_as::<_, PurchaseOrderRow>(
             "SELECT id, tenant_id, po_number, supplier_id, supplier_name, status, line_items, total_amount, currency, expected_delivery, created_by, created_at, receiving_site_id FROM purchase_orders WHERE id=$1 AND tenant_id=$2",
-        ).bind(id).bind(tenant_id).fetch_optional(&self.pool).await
+        ).bind(id).bind(tenant_id).fetch_optional(&mut **db.tx()).await
             .map_err(|e| SenseiError::Database(format!("Failed to get PO: {e}")))?
             .ok_or_else(|| SenseiError::NotFound(format!("Purchase order {id} not found")))?;
+        db.commit()
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to commit get PO: {e}")))?;
         Ok(po_row_to_domain(row))
     }
 
@@ -1399,6 +1470,12 @@ impl SupplyChainService for DatabaseSupplyChainService {
     // ── Inventory ───────────────────────────────────────────────────────
 
     async fn get_inventory(&self, tenant_id: Uuid, product_id: Uuid) -> Result<Vec<InventoryItem>> {
+        // inventory_items is fail-closed FORCE RLS (migration 175): the
+        // multi-table derived read (products subselects) runs inside a
+        // TenantTx of the tenant so the FORCE RLS context is present.
+        let mut db = TenantTx::begin(&self.pool, tenant_id)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to begin get inventory: {e}")))?;
         let rows = sqlx::query_as::<_, InventoryRow>(
             "SELECT id, tenant_id, product_id, \
                     (SELECT name FROM products WHERE products.id = inventory_items.product_id) \
@@ -1408,8 +1485,11 @@ impl SupplyChainService for DatabaseSupplyChainService {
                     quantity_on_hand::bigint, quantity_reserved::bigint, quantity_available::bigint, \
                     location, lot_number, updated_at \
              FROM inventory_items WHERE product_id=$1 AND tenant_id=$2",
-        ).bind(product_id).bind(tenant_id).fetch_all(&self.pool).await
+        ).bind(product_id).bind(tenant_id).fetch_all(&mut **db.tx()).await
             .map_err(|e| SenseiError::Database(format!("Failed to get inventory: {e}")))?;
+        db.commit()
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to commit get inventory: {e}")))?;
         Ok(rows.into_iter().map(inv_row_to_domain).collect())
     }
 
@@ -1423,6 +1503,11 @@ impl SupplyChainService for DatabaseSupplyChainService {
         let page = page.unwrap_or(1).max(1);
         let per_page = per_page.unwrap_or(20).clamp(1, 100);
         let offset = (page - 1) * per_page;
+        // inventory_items is fail-closed FORCE RLS (migration 175): page
+        // and count read on ONE TenantTx of the tenant.
+        let mut db = TenantTx::begin(&self.pool, tenant_id)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to begin list inventory: {e}")))?;
         let items: Vec<InventoryRow> = sqlx::query_as(
             r#"SELECT id, tenant_id, product_id,
                       (SELECT name FROM products WHERE products.id = inventory_items.product_id)
@@ -1433,10 +1518,13 @@ impl SupplyChainService for DatabaseSupplyChainService {
                       location, lot_number, updated_at
                FROM inventory_items
                WHERE tenant_id=$1 AND ($2::text IS NULL OR location=$2) ORDER BY product_name LIMIT $3 OFFSET $4"#,
-        ).bind(tenant_id).bind(location).bind(per_page as i64).bind(offset as i64).fetch_all(&self.pool).await
+        ).bind(tenant_id).bind(location).bind(per_page as i64).bind(offset as i64).fetch_all(&mut **db.tx()).await
             .map_err(|e| SenseiError::Database(format!("Failed to list inventory: {e}")))?;
         let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM inventory_items WHERE tenant_id=$1 AND ($2::text IS NULL OR location=$2)")
-            .bind(tenant_id).bind(location).fetch_one(&self.pool).await.map_err(|e| SenseiError::Database(format!("Failed to count inventory: {e}")))?;
+            .bind(tenant_id).bind(location).fetch_one(&mut **db.tx()).await.map_err(|e| SenseiError::Database(format!("Failed to count inventory: {e}")))?;
+        db.commit()
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to commit list inventory: {e}")))?;
         Ok(paginate(
             items.into_iter().map(inv_row_to_domain).collect(),
             count,
@@ -1465,11 +1553,12 @@ impl SupplyChainService for DatabaseSupplyChainService {
         // The site is derived from the rows at (tenant, product, location)
         // — when more than one site owns a row there (same location name at
         // two sites), the adjustment cannot be attributed and is REFUSED
-        // instead of mutating tenant-globally.
-        let mut tx =
-            self.pool.begin().await.map_err(|e| {
-                SenseiError::Database(format!("Failed to begin adjustment tx: {e}"))
-            })?;
+        // instead of mutating tenant-globally. inventory_items and
+        // stock_moves are fail-closed FORCE RLS (migration 175): the whole
+        // adjustment runs inside ONE TenantTx of the tenant.
+        let mut db = TenantTx::begin(&self.pool, tenant_id)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to begin adjustment tx: {e}")))?;
 
         let sites: Vec<Uuid> = sqlx::query_scalar(
             "SELECT DISTINCT site_id FROM inventory_items \
@@ -1478,7 +1567,7 @@ impl SupplyChainService for DatabaseSupplyChainService {
         .bind(tenant_id)
         .bind(product_id)
         .bind(location)
-        .fetch_all(&mut *tx)
+        .fetch_all(&mut **db.tx())
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to resolve adjustment site: {e}")))?;
         let site_id = match sites.as_slice() {
@@ -1518,7 +1607,7 @@ impl SupplyChainService for DatabaseSupplyChainService {
                          quantity_on_hand::bigint, quantity_reserved::bigint, quantity_available::bigint,
                          location, lot_number, updated_at"#,
         ).bind(quantity_change).bind(product_id).bind(tenant_id).bind(site_id).bind(location)
-            .fetch_optional(&mut *tx).await
+            .fetch_optional(&mut **db.tx()).await
             .map_err(|e| SenseiError::Database(format!("Failed to adjust inventory: {e}")))?
             .ok_or_else(|| {
                 if quantity_change < 0 {
@@ -1550,11 +1639,11 @@ impl SupplyChainService for DatabaseSupplyChainService {
         .bind(quantity_change.abs())
         .bind(location)
         .bind(location)
-        .execute(&mut *tx)
+        .execute(&mut **db.tx())
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to record adjustment ledger: {e}")))?;
 
-        tx.commit()
+        db.commit()
             .await
             .map_err(|e| SenseiError::Database(format!("Failed to commit adjustment tx: {e}")))?;
         Ok(inv_row_to_domain(row))
@@ -1595,12 +1684,14 @@ impl SupplyChainService for DatabaseSupplyChainService {
             ));
         }
 
-        let mut tx = self
-            .pool
-            .begin()
+        // stock_moves, inventory_items and site_manifests are fail-closed
+        // FORCE RLS (migration 175): site resolution, the move INSERT and
+        // its inventory effects run inside ONE TenantTx of the tenant —
+        // SET LOCAL app.tenant_id is established at construction (the
+        // deleted local set_tenant_context helper duplicated this).
+        let mut db = TenantTx::begin(&self.pool, tenant_id)
             .await
             .map_err(|e| SenseiError::Database(format!("Failed to begin transaction: {e}")))?;
-        set_tenant_context(&mut tx, tenant_id).await?;
 
         let product_id = stock_move.product_id;
         let from_location = stock_move.from_location.as_deref().map(str::to_string);
@@ -1617,12 +1708,12 @@ impl SupplyChainService for DatabaseSupplyChainService {
             "receipt" | "delivery" | "issue" | "adjustment" => {
                 let location = match stock_move.move_type.as_str() {
                     "receipt" => match to_location.as_str() {
-                        "" => fallback_product_location(&mut tx, tenant_id, product_id).await?,
+                        "" => fallback_product_location(db.tx(), tenant_id, product_id).await?,
                         l => l.to_string(),
                     },
                     "delivery" | "issue" => match from_location.as_ref() {
                         Some(l) if !l.is_empty() => l.clone(),
-                        _ => fallback_product_location(&mut tx, tenant_id, product_id).await?,
+                        _ => fallback_product_location(db.tx(), tenant_id, product_id).await?,
                     },
                     // adjustment
                     _ => match from_location.as_ref() {
@@ -1630,7 +1721,7 @@ impl SupplyChainService for DatabaseSupplyChainService {
                         _ => to_location.clone(),
                     },
                 };
-                let site = resolve_single_site(&mut tx, tenant_id, product_id, &location, None)
+                let site = resolve_single_site(db.tx(), tenant_id, product_id, &location, None)
                     .await?
                     .ok_or_else(|| {
                         SenseiError::Validation(format!(
@@ -1643,7 +1734,7 @@ impl SupplyChainService for DatabaseSupplyChainService {
             }
             "transfer" => {
                 let from = from_location.clone().unwrap_or_default();
-                let source_site = resolve_single_site(&mut tx, tenant_id, product_id, &from, None)
+                let source_site = resolve_single_site(db.tx(), tenant_id, product_id, &from, None)
                     .await?
                     .ok_or_else(|| {
                         SenseiError::Validation(format!(
@@ -1653,11 +1744,11 @@ impl SupplyChainService for DatabaseSupplyChainService {
                         ))
                     })?;
                 let to = match to_location.as_str() {
-                    "" => fallback_product_location(&mut tx, tenant_id, product_id).await?,
+                    "" => fallback_product_location(db.tx(), tenant_id, product_id).await?,
                     l => l.to_string(),
                 };
                 let dest_site =
-                    resolve_single_site(&mut tx, tenant_id, product_id, &to, None).await?;
+                    resolve_single_site(db.tx(), tenant_id, product_id, &to, None).await?;
                 if let Some(dest_site) = dest_site {
                     if dest_site != source_site {
                         return Err(SenseiError::Validation(format!(
@@ -1696,7 +1787,7 @@ impl SupplyChainService for DatabaseSupplyChainService {
             .bind(stock_move.quantity).bind(stored_move_type).bind(&stock_move.from_location)
             .bind(&stock_move.to_location).bind(&stock_move.reference_type).bind(stock_move.reference_id)
             .bind(stock_move.created_by).bind(now).bind(now)
-            .fetch_one(&mut *tx).await.map_err(|e| SenseiError::Database(format!("Failed to create stock move: {e}")))?;
+            .fetch_one(&mut **db.tx()).await.map_err(|e| SenseiError::Database(format!("Failed to create stock move: {e}")))?;
 
         // Apply the inventory effect inside the same transaction, honouring
         // the move semantics: receipts credit the destination, issues/debits
@@ -1705,7 +1796,7 @@ impl SupplyChainService for DatabaseSupplyChainService {
         match stock_move.move_type.as_str() {
             "receipt" => {
                 apply_inventory_delta(
-                    &mut tx,
+                    db.tx(),
                     tenant_id,
                     site_id,
                     product_id,
@@ -1716,7 +1807,7 @@ impl SupplyChainService for DatabaseSupplyChainService {
             }
             "delivery" | "issue" => {
                 apply_inventory_delta(
-                    &mut tx,
+                    db.tx(),
                     tenant_id,
                     site_id,
                     product_id,
@@ -1739,7 +1830,7 @@ impl SupplyChainService for DatabaseSupplyChainService {
                 };
                 // Source is validated present; debit it strictly.
                 apply_inventory_delta(
-                    &mut tx,
+                    db.tx(),
                     tenant_id,
                     site_id,
                     product_id,
@@ -1748,7 +1839,7 @@ impl SupplyChainService for DatabaseSupplyChainService {
                 )
                 .await?;
                 apply_inventory_delta(
-                    &mut tx,
+                    db.tx(),
                     tenant_id,
                     site_id,
                     product_id,
@@ -1759,7 +1850,7 @@ impl SupplyChainService for DatabaseSupplyChainService {
             }
             "adjustment" => {
                 apply_inventory_delta(
-                    &mut tx,
+                    db.tx(),
                     tenant_id,
                     site_id,
                     product_id,
@@ -1777,7 +1868,7 @@ impl SupplyChainService for DatabaseSupplyChainService {
             }
         }
 
-        tx.commit()
+        db.commit()
             .await
             .map_err(|e| SenseiError::Database(format!("Failed to commit stock move: {e}")))?;
 
@@ -1876,26 +1967,38 @@ impl SupplyChainService for DatabaseSupplyChainService {
     async fn update_rfq(&self, tenant_id: Uuid, id: Uuid, rfq: RFQ) -> Result<RFQ> {
         let items_json =
             serde_json::to_value(&rfq.items).unwrap_or(serde_json::Value::Array(vec![]));
+        let mut db = TenantTx::begin(&self.pool, tenant_id)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to begin update RFQ: {e}")))?;
         let row = sqlx::query_as::<_, RfqRow>(
             r#"UPDATE rfqs SET supplier_id=$1, supplier_name=$2, items=$3, notes=$4 WHERE id=$5 AND tenant_id=$6
                RETURNING id, tenant_id, rfq_number, supplier_id, supplier_name, status, items, notes, created_by, created_at"#,
         ).bind(rfq.supplier_id).bind(&rfq.supplier_name).bind(&items_json).bind(&rfq.notes).bind(id).bind(tenant_id)
-            .fetch_optional(&self.pool).await.map_err(|e| SenseiError::Database(format!("Failed to update RFQ: {e}")))?
+            .fetch_optional(&mut **db.tx()).await.map_err(|e| SenseiError::Database(format!("Failed to update RFQ: {e}")))?
             .ok_or_else(|| SenseiError::NotFound(format!("RFQ {id} not found")))?;
+        db.commit()
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to commit update RFQ: {e}")))?;
         Ok(rfq_row_to_domain(row))
     }
 
     async fn delete_rfq(&self, tenant_id: Uuid, id: Uuid) -> Result<()> {
         // RFQs are business history: they are CANCELLED, never erased.
+        let mut db = TenantTx::begin(&self.pool, tenant_id)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to begin cancel RFQ: {e}")))?;
         let r = sqlx::query("UPDATE rfqs SET status='cancelled' WHERE id=$1 AND tenant_id=$2")
             .bind(id)
             .bind(tenant_id)
-            .execute(&self.pool)
+            .execute(&mut **db.tx())
             .await
             .map_err(|e| SenseiError::Database(format!("Failed to cancel RFQ: {e}")))?;
         if r.rows_affected() == 0 {
             return Err(SenseiError::NotFound(format!("RFQ {id} not found")));
         }
+        db.commit()
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to commit cancel RFQ: {e}")))?;
         Ok(())
     }
 
@@ -1912,35 +2015,53 @@ impl SupplyChainService for DatabaseSupplyChainService {
         let li_json =
             serde_json::to_value(&quote.line_items).unwrap_or(serde_json::Value::Array(vec![]));
         let total: rust_decimal::Decimal = quote.line_items.iter().map(|li| li.net_price).sum();
+        let mut db = TenantTx::begin(&self.pool, tenant_id)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to begin update quote: {e}")))?;
         let row = sqlx::query_as::<_, QuoteRow>(
             r#"UPDATE quotes SET customer_id=$1, customer_name=$2, line_items=$3, total_amount=$4, currency=$5, valid_until=$6 WHERE id=$7 AND tenant_id=$8
                RETURNING id, tenant_id, quote_number, rfq_id, customer_id, customer_name, status, line_items, total_amount, currency, valid_until, created_by, created_at"#,
         ).bind(quote.customer_id).bind(&quote.customer_name).bind(&li_json).bind(total).bind(&quote.currency).bind(quote.valid_until).bind(id).bind(tenant_id)
-            .fetch_optional(&self.pool).await.map_err(|e| SenseiError::Database(format!("Failed to update quote: {e}")))?
+            .fetch_optional(&mut **db.tx()).await.map_err(|e| SenseiError::Database(format!("Failed to update quote: {e}")))?
             .ok_or_else(|| SenseiError::NotFound(format!("Quote {id} not found")))?;
+        db.commit()
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to commit update quote: {e}")))?;
         Ok(quote_row_to_domain(row))
     }
 
     async fn delete_quote(&self, tenant_id: Uuid, id: Uuid) -> Result<()> {
         // Quotes are business history: they are CANCELLED, never erased.
+        let mut db = TenantTx::begin(&self.pool, tenant_id)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to begin cancel quote: {e}")))?;
         let r = sqlx::query("UPDATE quotes SET status='cancelled' WHERE id=$1 AND tenant_id=$2")
             .bind(id)
             .bind(tenant_id)
-            .execute(&self.pool)
+            .execute(&mut **db.tx())
             .await
             .map_err(|e| SenseiError::Database(format!("Failed to cancel quote: {e}")))?;
         if r.rows_affected() == 0 {
             return Err(SenseiError::NotFound(format!("Quote {id} not found")));
         }
+        db.commit()
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to commit cancel quote: {e}")))?;
         Ok(())
     }
 
     async fn submit_quote(&self, tenant_id: Uuid, id: Uuid) -> Result<Quote> {
+        let mut db = TenantTx::begin(&self.pool, tenant_id)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to begin submit quote: {e}")))?;
         let row = sqlx::query_as::<_, QuoteRow>(
             r#"UPDATE quotes SET status='submitted' WHERE id=$1 AND tenant_id=$2
                RETURNING id, tenant_id, quote_number, rfq_id, customer_id, customer_name, status, line_items, total_amount, currency, valid_until, created_by, created_at"#,
-        ).bind(id).bind(tenant_id).fetch_optional(&self.pool).await.map_err(|e| SenseiError::Database(format!("Failed to submit quote: {e}")))?
+        ).bind(id).bind(tenant_id).fetch_optional(&mut **db.tx()).await.map_err(|e| SenseiError::Database(format!("Failed to submit quote: {e}")))?
             .ok_or_else(|| SenseiError::NotFound(format!("Quote {id} not found")))?;
+        db.commit()
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to commit submit quote: {e}")))?;
         Ok(quote_row_to_domain(row))
     }
 
@@ -1948,11 +2069,17 @@ impl SupplyChainService for DatabaseSupplyChainService {
         self.approve_quote(tenant_id, id).await
     }
     async fn reject_quote(&self, tenant_id: Uuid, id: Uuid) -> Result<Quote> {
+        let mut db = TenantTx::begin(&self.pool, tenant_id)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to begin reject quote: {e}")))?;
         let row = sqlx::query_as::<_, QuoteRow>(
             r#"UPDATE quotes SET status='rejected' WHERE id=$1 AND tenant_id=$2
                RETURNING id, tenant_id, quote_number, rfq_id, customer_id, customer_name, status, line_items, total_amount, currency, valid_until, created_by, created_at"#,
-        ).bind(id).bind(tenant_id).fetch_optional(&self.pool).await.map_err(|e| SenseiError::Database(format!("Failed to reject quote: {e}")))?
+        ).bind(id).bind(tenant_id).fetch_optional(&mut **db.tx()).await.map_err(|e| SenseiError::Database(format!("Failed to reject quote: {e}")))?
             .ok_or_else(|| SenseiError::NotFound(format!("Quote {id} not found")))?;
+        db.commit()
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to commit reject quote: {e}")))?;
         Ok(quote_row_to_domain(row))
     }
 
@@ -2304,9 +2431,11 @@ impl SupplyChainService for DatabaseSupplyChainService {
         // filled with a site inside `authorized_sites`, and a PO already
         // anchored OUTSIDE the caller's scope is indistinguishable from a
         // nonexistent PO.
-        let mut tx = self
-            .pool
-            .begin()
+        // purchase_orders is fail-closed FORCE RLS (migration 175): the
+        // guard read and the anchor write run inside ONE TenantTx of the
+        // tenant (a raw-pool transaction admits zero rows under
+        // sensei_app).
+        let mut db = TenantTx::begin(&self.pool, tenant_id)
             .await
             .map_err(|e| SenseiError::Database(format!("Failed to begin transaction: {e}")))?;
         // Read the row's site INSIDE the tx under FOR UPDATE; the read is
@@ -2320,7 +2449,7 @@ impl SupplyChainService for DatabaseSupplyChainService {
         .bind(po_id)
         .bind(tenant_id)
         .bind(&sites)
-        .fetch_optional(&mut *tx)
+        .fetch_optional(&mut **db.tx())
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to read PO receiving site: {e}")))?;
         match existing {
@@ -2337,9 +2466,9 @@ impl SupplyChainService for DatabaseSupplyChainService {
                 // Same-site no-op: return the locked row.
                 let row = sqlx::query_as::<_, PurchaseOrderRow>(
                     "SELECT id, tenant_id, po_number, supplier_id, supplier_name, status, line_items, total_amount, currency, expected_delivery, created_by, created_at, receiving_site_id FROM purchase_orders WHERE id=$1 AND tenant_id=$2",
-                ).bind(po_id).bind(tenant_id).fetch_one(&mut *tx).await
+                ).bind(po_id).bind(tenant_id).fetch_one(&mut **db.tx()).await
                     .map_err(|e| SenseiError::Database(format!("Failed to reload PO: {e}")))?;
-                tx.commit()
+                db.commit()
                     .await
                     .map_err(|e| SenseiError::Database(format!("Failed to commit tx: {e}")))?;
                 Ok(po_row_to_domain(row))
@@ -2354,10 +2483,10 @@ impl SupplyChainService for DatabaseSupplyChainService {
                          AND $3::uuid = ANY($4)
                        RETURNING id, tenant_id, po_number, supplier_id, supplier_name, status, line_items, total_amount, currency, expected_delivery, created_by, created_at, receiving_site_id"#,
                 ).bind(po_id).bind(tenant_id).bind(site_id).bind(&sites)
-                    .fetch_optional(&mut *tx).await
+                    .fetch_optional(&mut **db.tx()).await
                     .map_err(|e| SenseiError::Database(format!("Failed to assign receiving site: {e}")))?
                     .ok_or_else(|| SenseiError::NotFound(format!("Purchase order {po_id} not found")))?;
-                tx.commit()
+                db.commit()
                     .await
                     .map_err(|e| SenseiError::Database(format!("Failed to commit tx: {e}")))?;
                 Ok(po_row_to_domain(row))
@@ -2379,6 +2508,9 @@ impl SupplyChainService for DatabaseSupplyChainService {
         // an inventory update. The update is therefore a scope-checked
         // touch: it proves the row exists (NotFound otherwise) and
         // returns the truthful projection.
+        let mut db = TenantTx::begin(&self.pool, tenant_id)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to begin update inventory: {e}")))?;
         let row = sqlx::query_as::<_, InventoryRow>(
             r#"UPDATE inventory_items SET updated_at = NOW()
                WHERE id=$1 AND tenant_id=$2
@@ -2390,16 +2522,22 @@ impl SupplyChainService for DatabaseSupplyChainService {
                          quantity_on_hand::bigint, quantity_reserved::bigint, quantity_available::bigint,
                          location, lot_number, updated_at"#,
         ).bind(id).bind(tenant_id)
-            .fetch_optional(&self.pool).await.map_err(|e| SenseiError::Database(format!("Failed to update inventory: {e}")))?
+            .fetch_optional(&mut **db.tx()).await.map_err(|e| SenseiError::Database(format!("Failed to update inventory: {e}")))?
             .ok_or_else(|| SenseiError::NotFound(format!("Inventory item {id} not found")))?;
+        db.commit().await.map_err(|e| {
+            SenseiError::Database(format!("Failed to commit update inventory: {e}"))
+        })?;
         Ok(inv_row_to_domain(row))
     }
 
     async fn delete_inventory(&self, tenant_id: Uuid, id: Uuid) -> Result<()> {
+        let mut db = TenantTx::begin(&self.pool, tenant_id)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to begin delete inventory: {e}")))?;
         let r = sqlx::query("DELETE FROM inventory_items WHERE id=$1 AND tenant_id=$2")
             .bind(id)
             .bind(tenant_id)
-            .execute(&self.pool)
+            .execute(&mut **db.tx())
             .await
             .map_err(|e| SenseiError::Database(format!("Failed to delete inventory: {e}")))?;
         if r.rows_affected() == 0 {
@@ -2407,6 +2545,9 @@ impl SupplyChainService for DatabaseSupplyChainService {
                 "Inventory item {id} not found"
             )));
         }
+        db.commit().await.map_err(|e| {
+            SenseiError::Database(format!("Failed to commit delete inventory: {e}"))
+        })?;
         Ok(())
     }
 
@@ -2793,6 +2934,11 @@ impl SupplyChainService for DatabaseSupplyChainService {
             return Ok(Vec::new());
         }
         let sites = authorized_sites.to_vec();
+        // inventory_items is fail-closed FORCE RLS (migration 175): the
+        // derived multi-table read runs inside a TenantTx of the tenant.
+        let mut db = TenantTx::begin(&self.pool, tenant_id).await.map_err(|e| {
+            SenseiError::Database(format!("Failed to begin scoped inventory read: {e}"))
+        })?;
         let rows = sqlx::query_as::<_, InventoryRow>(
             "SELECT id, tenant_id, product_id, \
                     (SELECT name FROM products WHERE products.id = inventory_items.product_id) \
@@ -2803,8 +2949,11 @@ impl SupplyChainService for DatabaseSupplyChainService {
                     location, lot_number, updated_at \
              FROM inventory_items \
              WHERE product_id=$1 AND tenant_id=$2 AND site_id = ANY($3)",
-        ).bind(product_id).bind(tenant_id).bind(&sites).fetch_all(&self.pool).await
+        ).bind(product_id).bind(tenant_id).bind(&sites).fetch_all(&mut **db.tx()).await
             .map_err(|e| SenseiError::Database(format!("Failed to get scoped inventory: {e}")))?;
+        db.commit().await.map_err(|e| {
+            SenseiError::Database(format!("Failed to commit scoped inventory read: {e}"))
+        })?;
         Ok(rows.into_iter().map(inv_row_to_domain).collect())
     }
 
@@ -2823,6 +2972,11 @@ impl SupplyChainService for DatabaseSupplyChainService {
         }
         let offset = (page - 1) * per_page;
         let sites = authorized_sites.to_vec();
+        // inventory_items is fail-closed FORCE RLS (migration 175): page
+        // and count read on ONE TenantTx of the tenant.
+        let mut db = TenantTx::begin(&self.pool, tenant_id).await.map_err(|e| {
+            SenseiError::Database(format!("Failed to begin scoped inventory list: {e}"))
+        })?;
         let items: Vec<InventoryRow> = sqlx::query_as(
             r#"SELECT id, tenant_id, product_id,
                       (SELECT name FROM products WHERE products.id = inventory_items.product_id)
@@ -2834,13 +2988,16 @@ impl SupplyChainService for DatabaseSupplyChainService {
                FROM inventory_items
                WHERE tenant_id=$1 AND site_id = ANY($2)
                  AND ($3::text IS NULL OR location=$3) ORDER BY product_name LIMIT $4 OFFSET $5"#,
-        ).bind(tenant_id).bind(&sites).bind(location).bind(per_page as i64).bind(offset as i64).fetch_all(&self.pool).await
+        ).bind(tenant_id).bind(&sites).bind(location).bind(per_page as i64).bind(offset as i64).fetch_all(&mut **db.tx()).await
             .map_err(|e| SenseiError::Database(format!("Failed to list scoped inventory: {e}")))?;
         let count: i64 = sqlx::query_scalar(
             "SELECT COUNT(*) FROM inventory_items WHERE tenant_id=$1 AND site_id = ANY($2) AND ($3::text IS NULL OR location=$3)",
         )
-        .bind(tenant_id).bind(&sites).bind(location).fetch_one(&self.pool).await
+        .bind(tenant_id).bind(&sites).bind(location).fetch_one(&mut **db.tx()).await
             .map_err(|e| SenseiError::Database(format!("Failed to count scoped inventory: {e}")))?;
+        db.commit().await.map_err(|e| {
+            SenseiError::Database(format!("Failed to commit scoped inventory list: {e}"))
+        })?;
         Ok(paginate(
             items.into_iter().map(inv_row_to_domain).collect(),
             count,
@@ -2871,10 +3028,12 @@ impl SupplyChainService for DatabaseSupplyChainService {
             )));
         }
         let sites = authorized_sites.to_vec();
-        let mut tx =
-            self.pool.begin().await.map_err(|e| {
-                SenseiError::Database(format!("Failed to begin adjustment tx: {e}"))
-            })?;
+        // inventory_items + stock_moves are fail-closed FORCE RLS
+        // (migration 175): the site resolution, the balance UPDATE and the
+        // ledger INSERT run inside ONE TenantTx of the tenant.
+        let mut db = TenantTx::begin(&self.pool, tenant_id)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to begin adjustment tx: {e}")))?;
 
         // Twenty-fourth audit P0: an adjustment targets EXACTLY ONE row.
         // Resolve the single site among the entitled rows at (tenant,
@@ -2891,7 +3050,7 @@ impl SupplyChainService for DatabaseSupplyChainService {
         .bind(tenant_id)
         .bind(location)
         .bind(&sites)
-        .fetch_all(&mut *tx)
+        .fetch_all(&mut **db.tx())
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to resolve adjustment site: {e}")))?;
         let site_id = match entitled_sites.as_slice() {
@@ -2925,7 +3084,7 @@ impl SupplyChainService for DatabaseSupplyChainService {
                          quantity_on_hand::bigint, quantity_reserved::bigint, quantity_available::bigint,
                          location, lot_number, updated_at"#,
         ).bind(quantity_change).bind(product_id).bind(tenant_id).bind(location).bind(site_id)
-            .fetch_optional(&mut *tx).await
+            .fetch_optional(&mut **db.tx()).await
             .map_err(|e| SenseiError::Database(format!("Failed to adjust scoped inventory: {e}")))?;
         let row = match maybe_row {
             Some(row) => row,
@@ -2957,11 +3116,11 @@ impl SupplyChainService for DatabaseSupplyChainService {
         .bind(quantity_change.abs())
         .bind(location)
         .bind(location)
-        .execute(&mut *tx)
+        .execute(&mut **db.tx())
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to record adjustment ledger: {e}")))?;
 
-        tx.commit()
+        db.commit()
             .await
             .map_err(|e| SenseiError::Database(format!("Failed to commit adjustment tx: {e}")))?;
         Ok(inv_row_to_domain(row))
@@ -3005,12 +3164,14 @@ impl SupplyChainService for DatabaseSupplyChainService {
             )));
         }
         let sites = authorized_sites.to_vec();
-        let mut tx = self
-            .pool
-            .begin()
+        // stock_moves + inventory_items are fail-closed FORCE RLS
+        // (migration 175): site resolution, the move INSERT and its
+        // inventory effects run inside ONE TenantTx of the tenant — SET
+        // LOCAL app.tenant_id is established at construction (the deleted
+        // local set_tenant_context helper duplicated this).
+        let mut db = TenantTx::begin(&self.pool, tenant_id)
             .await
             .map_err(|e| SenseiError::Database(format!("Failed to begin transaction: {e}")))?;
-        set_tenant_context(&mut tx, tenant_id).await?;
 
         let now = Utc::now();
         let id = Uuid::new_v4();
@@ -3032,7 +3193,7 @@ impl SupplyChainService for DatabaseSupplyChainService {
         let (location, dest_location, site_id) = match stock_move.move_type.as_str() {
             "receipt" => {
                 let (location, site_id) = match to_location.as_str() {
-                    "" => entitled_anchor_row(&mut tx, tenant_id, product_id, &sites)
+                    "" => entitled_anchor_row(db.tx(), tenant_id, product_id, &sites)
                         .await?
                         .ok_or_else(|| {
                             SenseiError::NotFound(format!(
@@ -3042,7 +3203,7 @@ impl SupplyChainService for DatabaseSupplyChainService {
                         })?,
                     l => {
                         let site =
-                            resolve_single_site(&mut tx, tenant_id, product_id, l, Some(&sites))
+                            resolve_single_site(db.tx(), tenant_id, product_id, l, Some(&sites))
                                 .await?
                                 .ok_or_else(|| {
                                     SenseiError::NotFound(format!(
@@ -3059,7 +3220,7 @@ impl SupplyChainService for DatabaseSupplyChainService {
                 let (location, site_id) = match from_location.as_ref() {
                     Some(l) if !l.is_empty() => {
                         let site =
-                            resolve_single_site(&mut tx, tenant_id, product_id, l, Some(&sites))
+                            resolve_single_site(db.tx(), tenant_id, product_id, l, Some(&sites))
                                 .await?
                                 .ok_or_else(|| {
                                     SenseiError::NotFound(format!(
@@ -3069,7 +3230,7 @@ impl SupplyChainService for DatabaseSupplyChainService {
                                 })?;
                         (l.clone(), site)
                     }
-                    _ => entitled_anchor_row(&mut tx, tenant_id, product_id, &sites)
+                    _ => entitled_anchor_row(db.tx(), tenant_id, product_id, &sites)
                         .await?
                         .ok_or_else(|| {
                             SenseiError::NotFound(format!(
@@ -3085,7 +3246,7 @@ impl SupplyChainService for DatabaseSupplyChainService {
                 // the move's site.
                 let from = from_location.clone().unwrap_or_default();
                 let source_site =
-                    resolve_single_site(&mut tx, tenant_id, product_id, &from, Some(&sites))
+                    resolve_single_site(db.tx(), tenant_id, product_id, &from, Some(&sites))
                         .await?
                         .ok_or_else(|| {
                             SenseiError::NotFound(format!(
@@ -3095,7 +3256,7 @@ impl SupplyChainService for DatabaseSupplyChainService {
                         })?;
                 let to = to_location.clone();
                 let dest_site =
-                    resolve_single_site(&mut tx, tenant_id, product_id, &to, Some(&sites))
+                    resolve_single_site(db.tx(), tenant_id, product_id, &to, Some(&sites))
                         .await?
                         .ok_or_else(|| {
                             SenseiError::NotFound(format!(
@@ -3118,7 +3279,7 @@ impl SupplyChainService for DatabaseSupplyChainService {
                     _ => to_location,
                 };
                 let site_id =
-                    resolve_single_site(&mut tx, tenant_id, product_id, &location, Some(&sites))
+                    resolve_single_site(db.tx(), tenant_id, product_id, &location, Some(&sites))
                         .await?
                         .ok_or_else(|| {
                             SenseiError::NotFound(format!(
@@ -3154,14 +3315,14 @@ impl SupplyChainService for DatabaseSupplyChainService {
             .bind(stock_move.quantity).bind(stored_move_type).bind(&stock_move.from_location)
             .bind(&stock_move.to_location).bind(&stock_move.reference_type).bind(stock_move.reference_id)
             .bind(stock_move.created_by).bind(now).bind(now)
-            .fetch_one(&mut *tx).await.map_err(|e| SenseiError::Database(format!("Failed to create scoped stock move: {e}")))?;
+            .fetch_one(&mut **db.tx()).await.map_err(|e| SenseiError::Database(format!("Failed to create scoped stock move: {e}")))?;
 
         // Apply the inventory effect inside the same transaction, honouring
         // the move semantics — ALWAYS on the resolved site's row.
         match stock_move.move_type.as_str() {
             "receipt" => {
                 apply_inventory_delta(
-                    &mut tx,
+                    db.tx(),
                     tenant_id,
                     site_id,
                     product_id,
@@ -3172,7 +3333,7 @@ impl SupplyChainService for DatabaseSupplyChainService {
             }
             "delivery" | "issue" => {
                 apply_inventory_delta(
-                    &mut tx,
+                    db.tx(),
                     tenant_id,
                     site_id,
                     product_id,
@@ -3191,7 +3352,7 @@ impl SupplyChainService for DatabaseSupplyChainService {
                 .map_err(|v| SenseiError::Validation(v.message().to_string()))?;
                 let to = dest_location.unwrap_or_default();
                 apply_inventory_delta(
-                    &mut tx,
+                    db.tx(),
                     tenant_id,
                     site_id,
                     product_id,
@@ -3200,7 +3361,7 @@ impl SupplyChainService for DatabaseSupplyChainService {
                 )
                 .await?;
                 apply_inventory_delta(
-                    &mut tx,
+                    db.tx(),
                     tenant_id,
                     site_id,
                     product_id,
@@ -3211,7 +3372,7 @@ impl SupplyChainService for DatabaseSupplyChainService {
             }
             "adjustment" => {
                 apply_inventory_delta(
-                    &mut tx,
+                    db.tx(),
                     tenant_id,
                     site_id,
                     product_id,
@@ -3227,7 +3388,7 @@ impl SupplyChainService for DatabaseSupplyChainService {
             }
         }
 
-        tx.commit()
+        db.commit()
             .await
             .map_err(|e| SenseiError::Database(format!("Failed to commit stock move: {e}")))?;
 
@@ -3247,6 +3408,9 @@ impl SupplyChainService for DatabaseSupplyChainService {
             )));
         }
         let sites = authorized_sites.to_vec();
+        let mut db = TenantTx::begin(&self.pool, tenant_id).await.map_err(|e| {
+            SenseiError::Database(format!("Failed to begin scoped inventory touch: {e}"))
+        })?;
         let row = sqlx::query_as::<_, InventoryRow>(
             r#"UPDATE inventory_items SET updated_at = NOW()
                WHERE id=$1 AND tenant_id=$2 AND site_id = ANY($3)
@@ -3258,8 +3422,11 @@ impl SupplyChainService for DatabaseSupplyChainService {
                          quantity_on_hand::bigint, quantity_reserved::bigint, quantity_available::bigint,
                          location, lot_number, updated_at"#,
         ).bind(id).bind(tenant_id).bind(&sites)
-            .fetch_optional(&self.pool).await.map_err(|e| SenseiError::Database(format!("Failed to update scoped inventory: {e}")))?
+            .fetch_optional(&mut **db.tx()).await.map_err(|e| SenseiError::Database(format!("Failed to update scoped inventory: {e}")))?
             .ok_or_else(|| SenseiError::NotFound(format!("Inventory item {id} not found")))?;
+        db.commit().await.map_err(|e| {
+            SenseiError::Database(format!("Failed to commit scoped inventory touch: {e}"))
+        })?;
         Ok(inv_row_to_domain(row))
     }
 
@@ -3275,13 +3442,16 @@ impl SupplyChainService for DatabaseSupplyChainService {
             )));
         }
         let sites = authorized_sites.to_vec();
+        let mut db = TenantTx::begin(&self.pool, tenant_id).await.map_err(|e| {
+            SenseiError::Database(format!("Failed to begin scoped inventory delete: {e}"))
+        })?;
         let r = sqlx::query(
             "DELETE FROM inventory_items WHERE id=$1 AND tenant_id=$2 AND site_id = ANY($3)",
         )
         .bind(id)
         .bind(tenant_id)
         .bind(&sites)
-        .execute(&self.pool)
+        .execute(&mut **db.tx())
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to delete scoped inventory: {e}")))?;
         if r.rows_affected() == 0 {
@@ -3289,6 +3459,9 @@ impl SupplyChainService for DatabaseSupplyChainService {
                 "Inventory item {id} not found"
             )));
         }
+        db.commit().await.map_err(|e| {
+            SenseiError::Database(format!("Failed to commit scoped inventory delete: {e}"))
+        })?;
         Ok(())
     }
 }

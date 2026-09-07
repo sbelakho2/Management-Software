@@ -104,21 +104,25 @@ pub async fn list_invoices(
 }
 
 /// Create a new invoice.
+///
+/// Thirty-first audit: the API accepts the NARROW
+/// [`CreateInvoiceRequest`] — never a whole `Invoice` domain object.
+/// `#[serde(deny_unknown_fields)]` makes any client attempt to smuggle
+/// subtotal/tax/total/status/invoice_number/tenant/actor fields a loud
+/// rejection; the service derives every one of those server-side. The
+/// actor always comes from the token — never from client JSON.
 pub async fn create_invoice(
     user: AuthenticatedUser,
     idem_key: crate::middleware::idempotency::OptionalIdempotencyKey,
     State(state): State<AppState>,
-    Json(req): Json<Invoice>,
+    Json(req): Json<sensei_contracts::finance::CreateInvoiceRequest>,
 ) -> Result<Json<Invoice>> {
     user.require_permission("finance:invoice:create")?;
 
     let tenant_id = user.tenant_id;
-    // The actor always comes from the token — never from client JSON.
-    let mut invoice = req;
-    invoice.created_by = user.user_id;
     let invoice = state
         .finance_service
-        .create_invoice(tenant_id, invoice, idem_key.0.as_deref())
+        .create_invoice(tenant_id, req, user.user_id, idem_key.0.as_deref())
         .await?;
     Ok(Json(invoice))
 }
@@ -129,7 +133,6 @@ pub async fn get_invoice(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<Invoice>> {
-    user.require_permission("finance:invoice:read")?;
     user.require_permission("finance:invoice:read")?;
 
     let tenant_id = user.tenant_id;
@@ -187,20 +190,22 @@ pub async fn delete_invoice(
 // ── Payments ───────────────────────────────────────────────────────────────
 
 /// Record a payment.
+///
+/// Thirty-first audit: the API accepts the NARROW
+/// [`RecordPaymentRequest`] — never a whole `Payment` domain object.
+/// Payment id/number/tenant/received time/actor are all server-generated.
 pub async fn record_payment(
     user: AuthenticatedUser,
     idem_key: crate::middleware::idempotency::OptionalIdempotencyKey,
     State(state): State<AppState>,
-    Json(req): Json<Payment>,
+    Json(req): Json<sensei_contracts::finance::RecordPaymentRequest>,
 ) -> Result<Json<Payment>> {
     user.require_permission("finance:payment:record")?;
 
     let tenant_id = user.tenant_id;
-    let mut payment = req;
-    payment.created_by = user.user_id;
     let payment = state
         .finance_service
-        .record_payment(tenant_id, payment, idem_key.0.as_deref())
+        .record_payment(tenant_id, req, user.user_id, idem_key.0.as_deref())
         .await?;
     Ok(Json(payment))
 }

@@ -36,15 +36,20 @@ pub fn StationPage() -> impl IntoView {
                 let app_state = app_state.clone();
                 async move {
                     let client = app_state.api_client();
-                    // Item 40: the SAFE command path — the operator's
-                    // plain-language category + note; the server derives
-                    // actor/tenant/status/work center.
-                    let req = crate::api::andon::RaiseAndonCommandRequest {
+                    // Item 40 + thirty-first audit: the SAFE command path —
+                    // the operator's plain-language category + note. The
+                    // request carries NO work_center_id/site_id (the
+                    // legacy RaiseAndonData is gone): the server resolves
+                    // actor/tenant/status/work center/site from the
+                    // caller's active assignment and denies when there is
+                    // none.
+                    let req = sensei_contracts::RaiseAndonRequest {
                         issue_type: normalize_help_category(&help_category.get_untracked()),
                         severity: "medium".to_string(),
                         description: help_note.get_untracked(),
+                        observed_at: None,
                     };
-                    let _ = crate::api::ops::OpsApi::raise_andon_command(&client, &req).await;
+                    let _ = crate::api::andon::AndonApi::raise_andon(&client, &req).await;
                     help_open.set(false);
                     help_note.set(String::new());
                     refresh.update(|v| *v += 1);

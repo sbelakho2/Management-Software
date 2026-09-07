@@ -7,6 +7,7 @@
 
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
+use sensei_core::db::TenantTx;
 use sensei_core::error::{Result, SenseiError};
 use sensei_core::types::EntityId;
 use serde::Serialize;
@@ -322,6 +323,12 @@ impl DatabaseNotificationService {
 #[async_trait]
 impl NotificationService for DatabaseNotificationService {
     async fn notify(&self, notification: NewNotification) -> Result<Notification> {
+        // `notifications` is fail-closed FORCE RLS (migration 175): the
+        // INSERT runs inside a TenantTx of the owning tenant — a raw-pool
+        // write admits zero rows under the production sensei_app role.
+        let mut db = TenantTx::begin(&self.pool, notification.tenant_id)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to begin notify: {e}")))?;
         let row = sqlx::query_as::<_, (Uuid, Uuid, Uuid, String, String, String, Option<String>, Option<Uuid>, bool, DateTime<Utc>)>(
             r#"INSERT INTO notifications (tenant_id, user_id, title, body, notification_type, entity_type, entity_id, is_read, created_at)
                VALUES ($1, $2, $3, $4, $5, $6, $7, false, NOW())
@@ -334,9 +341,12 @@ impl NotificationService for DatabaseNotificationService {
         .bind(&notification.notification_type)
         .bind(&notification.reference_type)
         .bind(notification.reference_id)
-        .fetch_one(&self.pool)
+        .fetch_one(&mut **db.tx())
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to create notification: {e}")))?;
+        db.commit()
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to commit notify: {e}")))?;
 
         Ok(Notification {
             id: row.0,
@@ -359,6 +369,9 @@ impl NotificationService for DatabaseNotificationService {
         limit: i64,
         offset: i64,
     ) -> Result<Vec<Notification>> {
+        let mut db = TenantTx::begin(&self.pool, tenant_id).await.map_err(|e| {
+            SenseiError::Database(format!("Failed to begin list notifications: {e}"))
+        })?;
         let rows = sqlx::query_as::<_, (Uuid, Uuid, Uuid, String, String, String, Option<String>, Option<Uuid>, bool, DateTime<Utc>)>(
             r#"SELECT id, tenant_id, user_id, title, body, notification_type, entity_type, entity_id, is_read, created_at
                FROM notifications
@@ -370,9 +383,12 @@ impl NotificationService for DatabaseNotificationService {
         .bind(user_id)
         .bind(limit)
         .bind(offset)
-        .fetch_all(&self.pool)
+        .fetch_all(&mut **db.tx())
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to list notifications: {e}")))?;
+        db.commit().await.map_err(|e| {
+            SenseiError::Database(format!("Failed to commit list notifications: {e}"))
+        })?;
 
         Ok(rows
             .into_iter()
@@ -392,15 +408,21 @@ impl NotificationService for DatabaseNotificationService {
     }
 
     async fn unread_count(&self, tenant_id: EntityId, user_id: EntityId) -> Result<i64> {
+        let mut db = TenantTx::begin(&self.pool, tenant_id)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to begin unread count: {e}")))?;
         let (count,): (i64,) = sqlx::query_as(
             r#"SELECT COUNT(*) FROM notifications
                WHERE tenant_id = $1 AND user_id = $2 AND is_read = false"#,
         )
         .bind(tenant_id)
         .bind(user_id)
-        .fetch_one(&self.pool)
+        .fetch_one(&mut **db.tx())
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to count unread notifications: {e}")))?;
+        db.commit()
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to commit unread count: {e}")))?;
 
         Ok(count)
     }
@@ -411,6 +433,9 @@ impl NotificationService for DatabaseNotificationService {
         user_id: EntityId,
         notification_id: EntityId,
     ) -> Result<()> {
+        let mut db = TenantTx::begin(&self.pool, tenant_id)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to begin mark read: {e}")))?;
         let result = sqlx::query(
             r#"UPDATE notifications
                SET is_read = true
@@ -419,9 +444,12 @@ impl NotificationService for DatabaseNotificationService {
         .bind(notification_id)
         .bind(tenant_id)
         .bind(user_id)
-        .execute(&self.pool)
+        .execute(&mut **db.tx())
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to mark notification as read: {e}")))?;
+        db.commit()
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to commit mark read: {e}")))?;
 
         if result.rows_affected() == 0 {
             return Err(SenseiError::NotFound(format!(
@@ -433,6 +461,9 @@ impl NotificationService for DatabaseNotificationService {
     }
 
     async fn mark_all_read(&self, tenant_id: EntityId, user_id: EntityId) -> Result<()> {
+        let mut db = TenantTx::begin(&self.pool, tenant_id)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to begin mark all read: {e}")))?;
         sqlx::query(
             r#"UPDATE notifications
                SET is_read = true
@@ -440,11 +471,14 @@ impl NotificationService for DatabaseNotificationService {
         )
         .bind(tenant_id)
         .bind(user_id)
-        .execute(&self.pool)
+        .execute(&mut **db.tx())
         .await
         .map_err(|e| {
             SenseiError::Database(format!("Failed to mark all notifications as read: {e}"))
         })?;
+        db.commit()
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to commit mark all read: {e}")))?;
 
         Ok(())
     }
@@ -454,6 +488,12 @@ impl NotificationService for DatabaseNotificationService {
         tenant_id: EntityId,
         user_id: EntityId,
     ) -> Result<NotificationPreferences> {
+        // user_notification_preferences is fail-closed FORCE RLS (migration
+        // 175): the read and the default-insert run on ONE TenantTx of the
+        // tenant.
+        let mut db = TenantTx::begin(&self.pool, tenant_id)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to begin get preferences: {e}")))?;
         // Try to fetch existing preferences
         let result = sqlx::query_as::<_, (Uuid, Uuid, Uuid, bool, bool, bool, String, Option<String>, Option<String>)>(
             r#"SELECT id, tenant_id, user_id, email_notifications, push_notifications,
@@ -463,11 +503,14 @@ impl NotificationService for DatabaseNotificationService {
         )
         .bind(tenant_id)
         .bind(user_id)
-        .fetch_optional(&self.pool)
+        .fetch_optional(&mut **db.tx())
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to get notification preferences: {e}")))?;
 
         if let Some(row) = result {
+            db.commit().await.map_err(|e| {
+                SenseiError::Database(format!("Failed to commit get preferences: {e}"))
+            })?;
             return Ok(NotificationPreferences {
                 id: row.0,
                 tenant_id: row.1,
@@ -491,9 +534,12 @@ impl NotificationService for DatabaseNotificationService {
         )
         .bind(tenant_id)
         .bind(user_id)
-        .fetch_one(&self.pool)
+        .fetch_one(&mut **db.tx())
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to create default notification preferences: {e}")))?;
+        db.commit()
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to commit get preferences: {e}")))?;
 
         Ok(NotificationPreferences {
             id: row.0,
@@ -509,6 +555,11 @@ impl NotificationService for DatabaseNotificationService {
     }
 
     async fn update_preferences(&self, prefs: &NotificationPreferences) -> Result<()> {
+        let mut db = TenantTx::begin(&self.pool, prefs.tenant_id)
+            .await
+            .map_err(|e| {
+                SenseiError::Database(format!("Failed to begin update preferences: {e}"))
+            })?;
         let result = sqlx::query(
             r#"INSERT INTO user_notification_preferences (id, tenant_id, user_id, email_notifications, push_notifications,
                       in_app_notifications, digest_frequency, quiet_hours_start, quiet_hours_end, updated_at)
@@ -532,9 +583,12 @@ impl NotificationService for DatabaseNotificationService {
         .bind(&prefs.digest_frequency)
         .bind(&prefs.quiet_hours_start)
         .bind(&prefs.quiet_hours_end)
-        .execute(&self.pool)
+        .execute(&mut **db.tx())
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to update notification preferences: {e}")))?;
+        db.commit().await.map_err(|e| {
+            SenseiError::Database(format!("Failed to commit update preferences: {e}"))
+        })?;
 
         // `result.rows_affected()` might be 0 on conflict-do-update
         // (it returns the number of rows modified, not matched), but this

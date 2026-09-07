@@ -31,6 +31,7 @@ use std::time::{Duration, Instant};
 use tracing::{debug, warn};
 
 use crate::state::AppState;
+use sensei_core::db::TenantTx;
 
 /// A stored session fingerprint for a user.
 #[derive(Debug, Clone)]
@@ -145,6 +146,15 @@ impl SessionStore {
                     (Ok(s), Ok(u)) => (s, u),
                     _ => return Err("Invalid sid/user id".to_string()),
                 };
+            // The sessions table carries the migration-175 universal
+            // fail-closed FORCE RLS policy: a no-context pooled INSERT is
+            // denied for the least-privilege sensei_app role (the
+            // superuser e2e connection masked this). The binding row is
+            // tenant-owned, so the write runs inside a TenantTx of the
+            // authenticating user's tenant.
+            let mut db = TenantTx::begin(pool, tenant_id)
+                .await
+                .map_err(|e| format!("Failed to persist session binding: {e}"))?;
             sqlx::query(
                 "INSERT INTO sessions (id, user_id, tenant_id, fingerprint_hash, created_at, last_seen_at) \
                  VALUES ($1, $2, $3, $4, NOW(), NOW()) \
@@ -154,9 +164,12 @@ impl SessionStore {
             .bind(user_uuid)
             .bind(tenant_id)
             .bind(&fingerprint)
-            .execute(pool)
+            .execute(&mut **db.tx())
             .await
             .map_err(|e| format!("Failed to persist session binding: {e}"))?;
+            db.commit()
+                .await
+                .map_err(|e| format!("Failed to persist session binding: {e}"))?;
         }
         self.store.insert(
             sid.to_string(),
@@ -171,22 +184,34 @@ impl SessionStore {
 
     /// Verify the fingerprint for a session. FAILS CLOSED: a database error
     /// is returned as `Err` and the caller must deny the request.
+    ///
+    /// `tenant_id` is the authenticated caller's tenant (from the access
+    /// token claims): the sessions table is FORCE RLS (migration 175), so
+    /// the read runs inside a TenantTx of that tenant — a binding row can
+    /// only ever match under the tenant that created it.
     pub async fn verify(
         &self,
         sid: &str,
         fingerprint: &str,
+        tenant_id: uuid::Uuid,
     ) -> Result<SessionResult, SessionStoreError> {
         if let Some(pool) = &self.pool {
             let sid_uuid = match uuid::Uuid::parse_str(sid) {
                 Ok(s) => s,
                 Err(_) => return Ok(SessionResult::Unknown),
             };
+            let mut db = TenantTx::begin(pool, tenant_id)
+                .await
+                .map_err(|e| SessionStoreError(format!("Session store unavailable: {e}")))?;
             let stored: Option<(String, Option<chrono::DateTime<chrono::Utc>>)> =
                 sqlx::query_as("SELECT fingerprint_hash, revoked_at FROM sessions WHERE id = $1")
                     .bind(sid_uuid)
-                    .fetch_optional(pool)
+                    .fetch_optional(&mut **db.tx())
                     .await
                     .map_err(|e| SessionStoreError(e.to_string()))?;
+            db.commit()
+                .await
+                .map_err(|e| SessionStoreError(e.to_string()))?;
             return Ok(match stored {
                 // A revoked session can never match.
                 Some((_, Some(_))) => SessionResult::Mismatch,
@@ -214,12 +239,20 @@ impl SessionStore {
 
     /// Revoke exactly one session (logout this device). FAILS LOUDLY: a
     /// shared-state write failure is returned as `Err`.
-    pub async fn revoke_session(&self, sid: &str) -> Result<(), String> {
+    pub async fn revoke_session(&self, sid: &str, tenant_id: uuid::Uuid) -> Result<(), String> {
         if let Some(pool) = &self.pool {
             let sid_uuid = uuid::Uuid::parse_str(sid).map_err(|e| format!("Invalid sid: {e}"))?;
+            // FORCE RLS (migration 175): the UPDATE needs the binding's
+            // tenant context or it silently affects zero rows.
+            let mut db = TenantTx::begin(pool, tenant_id)
+                .await
+                .map_err(|e| format!("Failed to revoke session: {e}"))?;
             sqlx::query("UPDATE sessions SET revoked_at = NOW() WHERE id = $1")
                 .bind(sid_uuid)
-                .execute(pool)
+                .execute(&mut **db.tx())
+                .await
+                .map_err(|e| format!("Failed to revoke session: {e}"))?;
+            db.commit()
                 .await
                 .map_err(|e| format!("Failed to revoke session: {e}"))?;
         }
@@ -229,13 +262,26 @@ impl SessionStore {
 
     /// Revoke every session of a user (logout all devices / password change).
     /// FAILS LOUDLY: a shared-state write failure is returned as `Err`.
-    pub async fn revoke_all_for_user(&self, user_id: &str) -> Result<(), String> {
+    ///
+    /// `tenant_id` is the caller's tenant (or the target user's tenant for
+    /// password reset): FORCE RLS scopes the UPDATE to that tenant.
+    pub async fn revoke_all_for_user(
+        &self,
+        user_id: &str,
+        tenant_id: uuid::Uuid,
+    ) -> Result<(), String> {
         if let Some(pool) = &self.pool {
             let user_id_uuid =
                 uuid::Uuid::parse_str(user_id).map_err(|e| format!("Invalid user id: {e}"))?;
+            let mut db = TenantTx::begin(pool, tenant_id)
+                .await
+                .map_err(|e| format!("Failed to revoke user sessions: {e}"))?;
             sqlx::query("UPDATE sessions SET revoked_at = NOW() WHERE user_id = $1")
                 .bind(user_id_uuid)
-                .execute(pool)
+                .execute(&mut **db.tx())
+                .await
+                .map_err(|e| format!("Failed to revoke user sessions: {e}"))?;
+            db.commit()
                 .await
                 .map_err(|e| format!("Failed to revoke user sessions: {e}"))?;
         }
@@ -393,7 +439,10 @@ pub async fn session_binding_middleware(
         .map(|s| s.to_string())
         .unwrap_or_default();
 
-    match session_store.verify(&sid, &fingerprint).await {
+    match session_store
+        .verify(&sid, &fingerprint, user.tenant_id)
+        .await
+    {
         // FAIL CLOSED: the session store is security-critical. If it cannot
         // answer, the request is denied (503) — never assumed valid.
         Err(e) => {
@@ -437,7 +486,7 @@ pub async fn session_binding_middleware(
         }
         Ok(SessionResult::Mismatch) => {
             // Revoke the stale binding so the next login re-binds cleanly.
-            if let Err(e) = session_store.revoke_session(&sid).await {
+            if let Err(e) = session_store.revoke_session(&sid, user.tenant_id).await {
                 warn!(error = %e, "Failed to revoke stale session binding");
             }
             warn!(
@@ -501,7 +550,7 @@ mod tests {
 
         // First verify is Unknown (no binding yet).
         assert_eq!(
-            store.verify(user_id, fp).await.unwrap(),
+            store.verify(user_id, fp, tenant).await.unwrap(),
             SessionResult::Unknown
         );
 
@@ -511,7 +560,7 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(
-            store.verify(user_id, fp).await.unwrap(),
+            store.verify(user_id, fp, tenant).await.unwrap(),
             SessionResult::Matches
         );
     }
@@ -520,27 +569,29 @@ mod tests {
     async fn test_session_store_mismatch() {
         let store = SessionStore::new(3600);
         let user_id = "user-abc-123";
+        let tenant = uuid::Uuid::new_v4();
 
         store
-            .register(
-                user_id,
-                "user-u",
-                uuid::Uuid::new_v4(),
-                "first-fingerprint".to_string(),
-            )
+            .register(user_id, "user-u", tenant, "first-fingerprint".to_string())
             .await
             .unwrap();
 
         // Verify with different fingerprint should fail.
         assert_eq!(
-            store.verify(user_id, "second-fingerprint").await.unwrap(),
+            store
+                .verify(user_id, "second-fingerprint", tenant)
+                .await
+                .unwrap(),
             SessionResult::Mismatch
         );
 
         // The stored binding is untouched by verify; the middleware removes
         // it explicitly on mismatch.
         assert_eq!(
-            store.verify(user_id, "first-fingerprint").await.unwrap(),
+            store
+                .verify(user_id, "first-fingerprint", tenant)
+                .await
+                .unwrap(),
             SessionResult::Matches
         );
     }
@@ -550,20 +601,21 @@ mod tests {
         let store = SessionStore::new(3600);
         let user_id = "user-to-remove";
         let fp = "some-fingerprint";
+        let tenant = uuid::Uuid::new_v4();
 
         store
-            .register(user_id, "user-u", uuid::Uuid::new_v4(), fp.to_string())
+            .register(user_id, "user-u", tenant, fp.to_string())
             .await
             .unwrap();
         assert_eq!(
-            store.verify(user_id, fp).await.unwrap(),
+            store.verify(user_id, fp, tenant).await.unwrap(),
             SessionResult::Matches
         );
-        store.revoke_session(user_id).await.unwrap();
+        store.revoke_session(user_id, tenant).await.unwrap();
 
         // After removal, verify reports Unknown (no binding stored).
         assert_eq!(
-            store.verify(user_id, fp).await.unwrap(),
+            store.verify(user_id, fp, tenant).await.unwrap(),
             SessionResult::Unknown
         );
     }
@@ -571,33 +623,34 @@ mod tests {
     #[tokio::test]
     async fn test_session_store_multiple_users() {
         let store = SessionStore::new(3600);
+        let tenant = uuid::Uuid::new_v4();
 
         store
-            .register("user-a", "user-x", uuid::Uuid::new_v4(), "fp-a".to_string())
+            .register("user-a", "user-x", tenant, "fp-a".to_string())
             .await
             .unwrap();
         store
-            .register("user-b", "user-x", uuid::Uuid::new_v4(), "fp-b".to_string())
+            .register("user-b", "user-x", tenant, "fp-b".to_string())
             .await
             .unwrap();
 
         // Mismatch should still fail for each independently.
         assert_eq!(
-            store.verify("user-a", "fp-b").await.unwrap(),
+            store.verify("user-a", "fp-b", tenant).await.unwrap(),
             SessionResult::Mismatch
         );
         assert_eq!(
-            store.verify("user-b", "fp-a").await.unwrap(),
+            store.verify("user-b", "fp-a", tenant).await.unwrap(),
             SessionResult::Mismatch
         );
 
         // Correct match still works.
         assert_eq!(
-            store.verify("user-a", "fp-a").await.unwrap(),
+            store.verify("user-a", "fp-a", tenant).await.unwrap(),
             SessionResult::Matches
         );
         assert_eq!(
-            store.verify("user-b", "fp-b").await.unwrap(),
+            store.verify("user-b", "fp-b", tenant).await.unwrap(),
             SessionResult::Matches
         );
     }
@@ -666,15 +719,16 @@ mod tests {
     async fn test_session_store_ttl_updates_on_verify() {
         let store = SessionStore::new(3600);
         let user_id = "ttl-test";
+        let tenant = uuid::Uuid::new_v4();
         store
-            .register(user_id, "user-u", uuid::Uuid::new_v4(), "fp".to_string())
+            .register(user_id, "user-u", tenant, "fp".to_string())
             .await
             .unwrap();
 
         // After verify, last_seen should be updated. We can't check the
         // internal time, but the entry must still exist afterwards.
         assert_eq!(
-            store.verify(user_id, "fp").await.unwrap(),
+            store.verify(user_id, "fp", tenant).await.unwrap(),
             SessionResult::Matches
         );
     }

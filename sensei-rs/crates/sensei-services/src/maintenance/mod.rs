@@ -247,6 +247,40 @@ pub trait MaintenanceService: Send + Sync {
 }
 
 // ---------------------------------------------------------------------------
+// State machine (shared by the in-memory and PostgreSQL implementations)
+// ---------------------------------------------------------------------------
+
+/// Canonical work-request statuses. The lifecycle is strictly forward —
+/// `submitted -> approved -> in_progress -> completed` — with
+/// `submitted`/`approved -> cancelled`; `submitted` is the entry state and
+/// is never a transition target.
+pub(super) const WORK_REQUEST_STATUSES: [&str; 5] = [
+    "submitted",
+    "approved",
+    "in_progress",
+    "completed",
+    "cancelled",
+];
+
+/// The status a request MUST currently hold for `target` to be a legal
+/// transition (its predecessor). Returns `None` for targets that are not
+/// forward transitions ('submitted' is the entry state, and 'cancelled' is
+/// special-cased because it accepts TWO predecessors).
+pub(super) fn work_request_predecessor(target: &str) -> Option<&'static str> {
+    match target {
+        "approved" => Some("submitted"),
+        "in_progress" => Some("approved"),
+        "completed" => Some("in_progress"),
+        _ => None,
+    }
+}
+
+/// Whether a work request in `current` state may be cancelled.
+pub(super) fn work_request_cancellable(current: &str) -> bool {
+    matches!(current, "submitted" | "approved")
+}
+
+// ---------------------------------------------------------------------------
 // In-Memory Implementation
 // ---------------------------------------------------------------------------
 
@@ -373,10 +407,42 @@ impl MaintenanceService for InMemoryMaintenanceService {
         id: Uuid,
         status: &str,
     ) -> Result<MaintenanceWorkRequest> {
+        // Mirrors the PostgreSQL implementation's atomic CAS semantics
+        // (item 16): the target transition is validated up front and the
+        // required predecessor state is checked under the same write lock
+        // that applies it — there is no check/write window. A request that
+        // is not in the required predecessor state is indistinguishable
+        // from a missing one (NotFound), exactly like the UPDATE's zero
+        // rows.
+        if !WORK_REQUEST_STATUSES.contains(&status) {
+            return Err(SenseiError::Validation(format!(
+                "Unknown work request status '{status}'"
+            )));
+        }
+        let cancelling = status == "cancelled";
+        if !cancelling && work_request_predecessor(status).is_none() {
+            return Err(SenseiError::Conflict(format!(
+                "Work request {id} cannot transition to status '{status}'"
+            )));
+        }
         let mut requests = self.work_requests.write().await;
         let wr = requests
             .get_mut(&id)
             .ok_or_else(|| SenseiError::NotFound(format!("Work request {id} not found")))?;
+        if cancelling {
+            if !work_request_cancellable(&wr.status) {
+                return Err(SenseiError::NotFound(format!(
+                    "Work request {id} not found in an open state ('submitted' or 'approved')"
+                )));
+            }
+        } else {
+            let predecessor = work_request_predecessor(status).expect("validated target");
+            if wr.status != predecessor {
+                return Err(SenseiError::NotFound(format!(
+                    "Work request {id} not found in {predecessor} state"
+                )));
+            }
+        }
 
         wr.status = status.to_string();
         if status == "completed" {
@@ -392,10 +458,22 @@ impl MaintenanceService for InMemoryMaintenanceService {
         id: Uuid,
         assigned_to: Uuid,
     ) -> Result<MaintenanceWorkRequest> {
+        // Mirrors the PostgreSQL implementation (item 16): assignment is
+        // the submitted -> approved transition; open requests may also be
+        // reassigned without a state change (the assignable guard mirrors
+        // the DB predicate IN ('submitted','approved','in_progress')).
+        // Closed (completed/cancelled) requests are immutable history ->
+        // Conflict; a missing request -> NotFound.
         let mut requests = self.work_requests.write().await;
         let wr = requests
             .get_mut(&id)
             .ok_or_else(|| SenseiError::NotFound(format!("Work request {id} not found")))?;
+        if matches!(wr.status.as_str(), "completed" | "cancelled") {
+            return Err(SenseiError::Conflict(format!(
+                "Work request {id} is {} and can no longer be assigned",
+                wr.status
+            )));
+        }
 
         wr.assigned_to = Some(assigned_to);
         if wr.status == "submitted" {
@@ -710,7 +788,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_work_request_status_update() {
+    async fn test_work_request_status_update_walks_the_state_machine() {
         let service = InMemoryMaintenanceService::new(None);
         let tenant_id = Uuid::new_v4();
 
@@ -729,12 +807,133 @@ mod tests {
         };
 
         let created = service.create_work_request(tenant_id, req).await.unwrap();
+
+        // Out-of-order transitions are rejected with the zero-rows
+        // NotFound semantics of the atomic DB UPDATE.
+        let jumped = service
+            .update_work_request_status(tenant_id, created.id, "completed")
+            .await;
+        assert!(matches!(jumped, Err(SenseiError::NotFound(_))));
+        let jumped = service
+            .update_work_request_status(tenant_id, created.id, "in_progress")
+            .await;
+        assert!(matches!(jumped, Err(SenseiError::NotFound(_))));
+
+        // Forward walk: submitted -> approved -> in_progress -> completed.
+        let approved = service
+            .update_work_request_status(tenant_id, created.id, "approved")
+            .await
+            .unwrap();
+        assert_eq!(approved.status, "approved");
+        let started = service
+            .update_work_request_status(tenant_id, created.id, "in_progress")
+            .await
+            .unwrap();
+        assert_eq!(started.status, "in_progress");
         let updated = service
             .update_work_request_status(tenant_id, created.id, "completed")
             .await
             .unwrap();
         assert_eq!(updated.status, "completed");
         assert!(updated.completed_at.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_work_request_cancellation_only_from_open_states() {
+        let service = InMemoryMaintenanceService::new(None);
+        let tenant_id = Uuid::new_v4();
+        let base = MaintenanceWorkRequest {
+            id: Uuid::nil(),
+            tenant_id,
+            equipment_id: Uuid::new_v4(),
+            title: "Test".to_string(),
+            description: "Test".to_string(),
+            priority: "medium".to_string(),
+            status: "submitted".to_string(),
+            requested_by: Uuid::new_v4(),
+            assigned_to: None,
+            created_at: Utc::now(),
+            completed_at: None,
+        };
+
+        // submitted -> cancelled is legal.
+        let created = service
+            .create_work_request(tenant_id, base.clone())
+            .await
+            .unwrap();
+        let cancelled = service
+            .update_work_request_status(tenant_id, created.id, "cancelled")
+            .await
+            .unwrap();
+        assert_eq!(cancelled.status, "cancelled");
+
+        // approved -> cancelled is legal.
+        let created = service
+            .create_work_request(tenant_id, base.clone())
+            .await
+            .unwrap();
+        service
+            .update_work_request_status(tenant_id, created.id, "approved")
+            .await
+            .unwrap();
+        let cancelled = service
+            .update_work_request_status(tenant_id, created.id, "cancelled")
+            .await
+            .unwrap();
+        assert_eq!(cancelled.status, "cancelled");
+
+        // in_progress -> cancelled is NOT legal (zero-rows NotFound), and a
+        // cancelled request cannot be moved again.
+        let created = service.create_work_request(tenant_id, base).await.unwrap();
+        service
+            .update_work_request_status(tenant_id, created.id, "approved")
+            .await
+            .unwrap();
+        service
+            .update_work_request_status(tenant_id, created.id, "in_progress")
+            .await
+            .unwrap();
+        let blocked = service
+            .update_work_request_status(tenant_id, created.id, "cancelled")
+            .await;
+        assert!(matches!(blocked, Err(SenseiError::NotFound(_))));
+    }
+
+    #[tokio::test]
+    async fn test_work_request_status_rejects_unknown_or_backwards_targets() {
+        let service = InMemoryMaintenanceService::new(None);
+        let tenant_id = Uuid::new_v4();
+
+        let req = MaintenanceWorkRequest {
+            id: Uuid::nil(),
+            tenant_id,
+            equipment_id: Uuid::new_v4(),
+            title: "Test".to_string(),
+            description: "Test".to_string(),
+            priority: "low".to_string(),
+            status: "submitted".to_string(),
+            requested_by: Uuid::new_v4(),
+            assigned_to: None,
+            created_at: Utc::now(),
+            completed_at: None,
+        };
+        let created = service.create_work_request(tenant_id, req).await.unwrap();
+
+        // 'submitted' is the entry state, never a transition target.
+        let backwards = service
+            .update_work_request_status(tenant_id, created.id, "submitted")
+            .await;
+        assert!(matches!(backwards, Err(SenseiError::Conflict(_))));
+        // Garbage statuses stay a validation error.
+        let unknown = service
+            .update_work_request_status(tenant_id, created.id, "banana")
+            .await;
+        assert!(matches!(unknown, Err(SenseiError::Validation(_))));
+        // Missing requests are NotFound regardless of the target.
+        let missing = service
+            .update_work_request_status(tenant_id, Uuid::new_v4(), "completed")
+            .await;
+        assert!(matches!(missing, Err(SenseiError::NotFound(_))));
     }
 
     #[tokio::test]
@@ -764,6 +963,25 @@ mod tests {
             .unwrap();
         assert_eq!(assigned.assigned_to, Some(assignee));
         assert_eq!(assigned.status, "approved");
+
+        // Closed requests are immutable history: assigning a completed
+        // request is a Conflict, assigning a missing one is NotFound.
+        service
+            .update_work_request_status(tenant_id, created.id, "in_progress")
+            .await
+            .unwrap();
+        service
+            .update_work_request_status(tenant_id, created.id, "completed")
+            .await
+            .unwrap();
+        let closed = service
+            .assign_work_request(tenant_id, created.id, assignee)
+            .await;
+        assert!(matches!(closed, Err(SenseiError::Conflict(_))));
+        let missing = service
+            .assign_work_request(tenant_id, Uuid::new_v4(), assignee)
+            .await;
+        assert!(matches!(missing, Err(SenseiError::NotFound(_))));
     }
 
     #[tokio::test]

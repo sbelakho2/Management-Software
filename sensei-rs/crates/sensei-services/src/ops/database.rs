@@ -5,6 +5,7 @@
 
 use async_trait::async_trait;
 use chrono::Utc;
+use sensei_core::domain::scope::AuthorizedScope;
 use sensei_core::error::{Result, SenseiError};
 use sensei_core::pagination::PaginatedResponse;
 use serde_json;
@@ -12,6 +13,60 @@ use sqlx::PgPool;
 use uuid::Uuid;
 
 use super::{Andon, OperationsService, Project, Risk, A3};
+
+/// The SQL scope arms of one [`AuthorizedScope`] (thirtieth-first audit):
+/// every scoped Andon statement embeds the tripartite predicate
+/// `(tenant_wide OR site_id = ANY(sites) OR work_center_id =
+/// ANY(work_centers))` with the binds in that order:
+///
+/// - [`AuthorizedScope::NoOperationalScope`] — all-empty, `tenant_wide =
+///   false`: the predicate is false for every row (fail closed);
+/// - [`AuthorizedScope::TenantWide`] — `tenant_wide = true`: passes
+///   everywhere (the site/work-center arms stay empty);
+/// - [`AuthorizedScope::Operational`] — `sites` copied verbatim and
+///   `work_centers` = the GRANTED work-center ids (each grant's `(site,
+///   wc)` is DB-resolved, so `work_center_id = ANY(...)` never widens
+///   into a site: the Andon's composite FK proves its row's work center
+///   belongs to its row's site).
+struct AndonScopeSql {
+    tenant_wide: bool,
+    sites: Vec<Uuid>,
+    work_centers: Vec<Uuid>,
+}
+
+fn andon_scope_sql(scope: &AuthorizedScope) -> AndonScopeSql {
+    match scope {
+        AuthorizedScope::NoOperationalScope => AndonScopeSql {
+            tenant_wide: false,
+            sites: Vec::new(),
+            work_centers: Vec::new(),
+        },
+        AuthorizedScope::TenantWide => AndonScopeSql {
+            tenant_wide: true,
+            sites: Vec::new(),
+            work_centers: Vec::new(),
+        },
+        AuthorizedScope::Operational {
+            sites,
+            work_centers,
+        } => {
+            let mut sites: Vec<Uuid> = sites.iter().copied().collect();
+            sites.sort_unstable();
+            let mut work_centers: Vec<Uuid> =
+                work_centers.iter().map(|wc| wc.work_center).collect();
+            work_centers.sort_unstable();
+            AndonScopeSql {
+                tenant_wide: false,
+                sites,
+                work_centers,
+            }
+        }
+    }
+}
+
+fn no_operational_scope_err() -> SenseiError {
+    SenseiError::Forbidden("no operational scope — no Andon is authorized".to_string())
+}
 
 /// PostgreSQL-backed implementation of [`OperationsService`].
 /// Transaction-scoped tenant context for RLS (SET LOCAL app.tenant_id).
@@ -521,16 +576,14 @@ impl OperationsService for DatabaseOperationsService {
     async fn acknowledge_andon(
         &self,
         tenant_id: Uuid,
-        authorized_sites: &[Uuid],
+        scope: &AuthorizedScope,
         id: Uuid,
         acknowledged_by: Uuid,
     ) -> Result<Andon> {
-        if authorized_sites.is_empty() {
-            return Err(SenseiError::Forbidden(
-                "no operational scope — no Andon is authorized".to_string(),
-            ));
+        if matches!(scope, AuthorizedScope::NoOperationalScope) {
+            return Err(no_operational_scope_err());
         }
-        let sites = authorized_sites.to_vec();
+        let scope_sql = andon_scope_sql(scope);
         let now = Utc::now();
         let row = with_tenant_tx(&self.pool, tenant_id, |tx| {
             Box::pin(async move {
@@ -538,10 +591,11 @@ impl OperationsService for DatabaseOperationsService {
                     r#"UPDATE andons SET status='acknowledged', acknowledged_by=$1, acknowledged_at=$2,
                         response_time_seconds=EXTRACT(EPOCH FROM ($2 - created_at))::bigint
                        WHERE id=$3 AND tenant_id=$4 AND status='active'
-                         AND site_id = ANY($5)
+                         AND ( $5::boolean OR site_id = ANY($6::uuid[]) OR work_center_id = ANY($7::uuid[]) )
                        RETURNING id, tenant_id, andon_number, site_id, work_center_id, issue_type, severity, description, status, raised_by, acknowledged_by, resolved_by, resolution, response_time_seconds, resolution_time_seconds, created_at, acknowledged_at, resolved_at, restart_authorized_by, restart_authorized_at, abnormal_condition_observed_at, contained_at, contained_by, contained_note, escalated, escalated_at, request_key"#,
                 )
-                .bind(acknowledged_by).bind(now).bind(id).bind(tenant_id).bind(&sites)
+                .bind(acknowledged_by).bind(now).bind(id).bind(tenant_id)
+                .bind(scope_sql.tenant_wide).bind(&scope_sql.sites).bind(&scope_sql.work_centers)
                 .fetch_optional(&mut **tx)
                 .await.map_err(|e| SenseiError::Database(format!("Failed to acknowledge andon: {e}")))?
                 .ok_or_else(|| SenseiError::NotFound(format!("Andon {id} not found or not active")))?;
@@ -569,16 +623,14 @@ impl OperationsService for DatabaseOperationsService {
     async fn escalate_andon(
         &self,
         tenant_id: Uuid,
-        authorized_sites: &[Uuid],
+        scope: &AuthorizedScope,
         id: Uuid,
         escalated_by: Uuid,
     ) -> Result<Andon> {
-        if authorized_sites.is_empty() {
-            return Err(SenseiError::Forbidden(
-                "no operational scope — no Andon is authorized".to_string(),
-            ));
+        if matches!(scope, AuthorizedScope::NoOperationalScope) {
+            return Err(no_operational_scope_err());
         }
-        let sites = authorized_sites.to_vec();
+        let scope_sql = andon_scope_sql(scope);
         // Item 41: escalation is a REAL state transition through the same
         // command path — active Andons are acknowledged AND flagged for
         // tier review; already-acknowledged ones are flagged in place.
@@ -592,10 +644,11 @@ impl OperationsService for DatabaseOperationsService {
                            acknowledged_at=COALESCE(acknowledged_at, $1),
                            response_time_seconds=COALESCE(response_time_seconds, EXTRACT(EPOCH FROM ($1 - created_at))::bigint)
                        WHERE id=$3 AND tenant_id=$4 AND status NOT IN ('resolved','voided')
-                         AND site_id = ANY($5)
-                       RETURNING id, tenant_id, andon_number, site_id, work_center_id, issue_type, severity, description, status, raised_by, acknowledged_by, resolved_by, resolution, response_time_seconds, resolution_time_seconds, created_at, acknowledged_at, resolved_at, restart_authorized_by, restart_authorized_at, abnormal_condition_observed_at, contained_at, contained_by, contained_note, escalated, escalated_at, request_key, escalated, escalated_at"#,
+                         AND ( $5::boolean OR site_id = ANY($6::uuid[]) OR work_center_id = ANY($7::uuid[]) )
+                       RETURNING id, tenant_id, andon_number, site_id, work_center_id, issue_type, severity, description, status, raised_by, acknowledged_by, resolved_by, resolution, response_time_seconds, resolution_time_seconds, created_at, acknowledged_at, resolved_at, restart_authorized_by, restart_authorized_at, abnormal_condition_observed_at, contained_at, contained_by, contained_note, escalated, escalated_at, request_key"#,
                 )
-                .bind(now).bind(escalated_by).bind(id).bind(tenant_id).bind(&sites)
+                .bind(now).bind(escalated_by).bind(id).bind(tenant_id)
+                .bind(scope_sql.tenant_wide).bind(&scope_sql.sites).bind(&scope_sql.work_centers)
                 .fetch_optional(&mut **tx)
                 .await.map_err(|e| SenseiError::Database(format!("Failed to escalate andon: {e}")))?
                 .ok_or_else(|| SenseiError::NotFound(format!("Andon {id} not found or already closed")))?;
@@ -620,23 +673,21 @@ impl OperationsService for DatabaseOperationsService {
     async fn resolve_andon(
         &self,
         tenant_id: Uuid,
-        authorized_sites: &[Uuid],
+        scope: &AuthorizedScope,
         id: Uuid,
         resolved_by: Uuid,
         resolution: &str,
     ) -> Result<Andon> {
-        if authorized_sites.is_empty() {
-            return Err(SenseiError::Forbidden(
-                "no operational scope — no Andon is authorized".to_string(),
-            ));
+        if matches!(scope, AuthorizedScope::NoOperationalScope) {
+            return Err(no_operational_scope_err());
         }
+        let scope_sql = andon_scope_sql(scope);
         // HARD RULE, enforced ATOMICALLY in SQL: a critical-safety Andon
         // can only be resolved when a restart authorization exists — the
         // condition is part of the UPDATE's WHERE, so there is no
         // read/check/write race between replicas.
         let now = Utc::now();
         let resolution_owned = resolution.to_string();
-        let sites = authorized_sites.to_vec();
         let resolution_for_event = resolution_owned.clone();
         let row = with_tenant_tx(&self.pool, tenant_id, |tx| {
             Box::pin(async move {
@@ -646,10 +697,11 @@ impl OperationsService for DatabaseOperationsService {
                         response_time_seconds=COALESCE(response_time_seconds, EXTRACT(EPOCH FROM ($3 - created_at))::bigint)
                        WHERE id=$4 AND tenant_id=$5 AND status NOT IN ('resolved','closed')
                          AND (severity != 'critical' OR issue_type != 'safety' OR restart_authorized_by IS NOT NULL)
-                         AND site_id = ANY($6)
+                         AND ( $6::boolean OR site_id = ANY($7::uuid[]) OR work_center_id = ANY($8::uuid[]) )
                        RETURNING id, tenant_id, andon_number, site_id, work_center_id, issue_type, severity, description, status, raised_by, acknowledged_by, resolved_by, resolution, response_time_seconds, resolution_time_seconds, created_at, acknowledged_at, resolved_at, restart_authorized_by, restart_authorized_at, abnormal_condition_observed_at, contained_at, contained_by, contained_note, escalated, escalated_at, request_key"#,
                 )
-                .bind(resolved_by).bind(&resolution_owned).bind(now).bind(id).bind(tenant_id).bind(&sites)
+                .bind(resolved_by).bind(&resolution_owned).bind(now).bind(id).bind(tenant_id)
+                .bind(scope_sql.tenant_wide).bind(&scope_sql.sites).bind(&scope_sql.work_centers)
                 .fetch_optional(&mut **tx)
                 .await.map_err(|e| SenseiError::Database(format!("Failed to resolve andon: {e}")))?;
 
@@ -657,11 +709,14 @@ impl OperationsService for DatabaseOperationsService {
                     // Distinguish: not found / already resolved / safety rule.
                     let state: Option<(String, String, Option<Uuid>, String)> = sqlx::query_as(
                         "SELECT severity, issue_type, restart_authorized_by, status FROM andons \
-                         WHERE id = $1 AND tenant_id = $2 AND site_id = ANY($3)",
+                         WHERE id = $1 AND tenant_id = $2 \
+                           AND ( $3::boolean OR site_id = ANY($4::uuid[]) OR work_center_id = ANY($5::uuid[]) )",
                     )
                     .bind(id)
                     .bind(tenant_id)
-                    .bind(&sites)
+                    .bind(scope_sql.tenant_wide)
+                    .bind(&scope_sql.sites)
+                    .bind(&scope_sql.work_centers)
                     .fetch_optional(&mut **tx)
                     .await
                     .map_err(|e| SenseiError::Database(format!("Failed to read andon state: {e}")))?;
@@ -712,21 +767,20 @@ impl OperationsService for DatabaseOperationsService {
     async fn authorize_restart(
         &self,
         tenant_id: Uuid,
-        authorized_sites: &[Uuid],
+        scope: &AuthorizedScope,
         id: Uuid,
         authorized_by: Uuid,
     ) -> Result<Andon> {
-        if authorized_sites.is_empty() {
-            return Err(SenseiError::Forbidden(
-                "no operational scope — no Andon is authorized".to_string(),
-            ));
+        if matches!(scope, AuthorizedScope::NoOperationalScope) {
+            return Err(no_operational_scope_err());
         }
-        let sites = authorized_sites.to_vec();
+        let scope_sql = andon_scope_sql(scope);
         let row = with_tenant_tx(&self.pool, tenant_id, |tx| {
             Box::pin(async move {
                 let row = sqlx::query_as::<_, AndonRow>(
                     "UPDATE andons SET restart_authorized_by = $3, restart_authorized_at = NOW() \
-                     WHERE id = $1 AND tenant_id = $2 AND site_id = ANY($4) \
+                     WHERE id = $1 AND tenant_id = $2 \
+                       AND ( $4::boolean OR site_id = ANY($5::uuid[]) OR work_center_id = ANY($6::uuid[]) ) \
                      RETURNING id, tenant_id, andon_number, site_id, work_center_id, issue_type, severity, \
                                description, status, raised_by, acknowledged_by, resolved_by, resolution, \
                                response_time_seconds, resolution_time_seconds, created_at, \
@@ -735,7 +789,9 @@ impl OperationsService for DatabaseOperationsService {
                 .bind(id)
                 .bind(tenant_id)
                 .bind(authorized_by)
-                .bind(&sites)
+                .bind(scope_sql.tenant_wide)
+                .bind(&scope_sql.sites)
+                .bind(&scope_sql.work_centers)
                 .fetch_optional(&mut **tx)
                 .await
                 .map_err(|e| SenseiError::Database(format!("Failed to authorize restart: {e}")))?
@@ -775,27 +831,30 @@ impl OperationsService for DatabaseOperationsService {
         Ok(andon_row_to_domain(row))
     }
 
-    /// Twenty-first audit P0: scoped lookup — foreign-site and
-    /// nonexistent UUIDs are indistinguishable (both NotFound); an empty
-    /// entitlement set matches nothing.
+    /// Twenty-first audit P0; thirtieth-first audit: scoped lookup with
+    /// the caller's FULL authorization vector (sites + exact work
+    /// centers) — foreign-site and nonexistent UUIDs are indistinguishable
+    /// (both NotFound), and a `NoOperationalScope` caller matches nothing.
     async fn get_andon_scoped(
         &self,
         tenant_id: Uuid,
-        authorized_sites: &[Uuid],
+        scope: &AuthorizedScope,
         id: Uuid,
     ) -> Result<Andon> {
-        if authorized_sites.is_empty() {
-            return Err(SenseiError::Forbidden(
-                "no operational scope — no Andon is authorized".to_string(),
-            ));
+        if matches!(scope, AuthorizedScope::NoOperationalScope) {
+            return Err(no_operational_scope_err());
         }
-        let sites = authorized_sites.to_vec();
+        let scope_sql = andon_scope_sql(scope);
         let row = with_tenant_tx(&self.pool, tenant_id, move |tx| {
             Box::pin(async move {
                 sqlx::query_as::<_, AndonRow>(
-                    "SELECT id, tenant_id, andon_number, site_id, work_center_id, issue_type, severity, description, status, raised_by, acknowledged_by, resolved_by, resolution, response_time_seconds, resolution_time_seconds, created_at, acknowledged_at, resolved_at, restart_authorized_by, restart_authorized_at, abnormal_condition_observed_at, contained_at, contained_by, contained_note, escalated, escalated_at, request_key FROM andons WHERE id = $1 AND tenant_id = $2 AND site_id = ANY($3)",
+                    "SELECT id, tenant_id, andon_number, site_id, work_center_id, issue_type, severity, description, status, raised_by, acknowledged_by, resolved_by, resolution, response_time_seconds, resolution_time_seconds, created_at, acknowledged_at, resolved_at, restart_authorized_by, restart_authorized_at, abnormal_condition_observed_at, contained_at, contained_by, contained_note, escalated, escalated_at, request_key FROM andons WHERE id = $1 AND tenant_id = $2 \
+                       AND ( $3::boolean OR site_id = ANY($4::uuid[]) OR work_center_id = ANY($5::uuid[]) )",
                 )
-                .bind(id).bind(tenant_id).bind(&sites)
+                .bind(id).bind(tenant_id)
+                .bind(scope_sql.tenant_wide)
+                .bind(&scope_sql.sites)
+                .bind(&scope_sql.work_centers)
                 .fetch_optional(&mut **tx)
                 .await.map_err(|e| SenseiError::Database(format!("Failed to get andon: {e}")))?
                 .ok_or_else(|| SenseiError::NotFound(format!("Andon {id} not found")))
@@ -846,13 +905,18 @@ impl OperationsService for DatabaseOperationsService {
         ))
     }
 
-    /// Scope-intersected listing (seventeenth audit item 4): when
-    /// `scope_site` is set the query is narrowed with `AND site_id = $2`,
-    /// so a site-scoped caller can never enumerate another site's andons.
-    async fn list_andons_scoped(
+    /// Scope-vector listing (thirtieth-first audit): ONE paginated query
+    /// whose scope arm is the tripartite predicate
+    /// `tenant_wide OR site_id = ANY(sites) OR work_center_id =
+    /// ANY(work_centers)` — a site grant covers the site's andons, an
+    /// exact work-center grant covers exactly its work center (never the
+    /// sibling work centers of the site), `TenantWide` passes everywhere
+    /// and `NoOperationalScope` matches nothing. Items and count share
+    /// ONE tenant transaction (single-query semantics, no loops).
+    async fn list_andons_authorized(
         &self,
         tenant_id: Uuid,
-        scope_site: Option<Uuid>,
+        scope: &AuthorizedScope,
         status: Option<&str>,
         work_center_id: Option<Uuid>,
         page: Option<usize>,
@@ -862,26 +926,42 @@ impl OperationsService for DatabaseOperationsService {
         let per_page = per_page.unwrap_or(20).clamp(1, 100);
         let offset = (page - 1) * per_page;
         let status_owned = status.map(|s| s.to_string());
+        let scope_sql = andon_scope_sql(scope);
 
-        let (items, count) = with_tenant_tx(&self.pool, tenant_id, |tx| {
+        let (items, count) = with_tenant_tx(&self.pool, tenant_id, move |tx| {
             Box::pin(async move {
                 let items: Vec<AndonRow> = sqlx::query_as(
                     r#"SELECT id, tenant_id, andon_number, site_id, work_center_id, issue_type, severity, description, status, raised_by, acknowledged_by, resolved_by, resolution, response_time_seconds, resolution_time_seconds, created_at, acknowledged_at, resolved_at, restart_authorized_by, restart_authorized_at, abnormal_condition_observed_at, contained_at, contained_by, contained_note, escalated, escalated_at, request_key
                        FROM andons WHERE tenant_id=$1
-                         AND ($2::uuid IS NULL OR site_id=$2)
-                         AND ($3::text IS NULL OR status=$3)
-                         AND ($4::uuid IS NULL OR work_center_id=$4)
-                       ORDER BY created_at DESC LIMIT $5 OFFSET $6"#,
+                         AND ( $2::boolean OR site_id = ANY($3::uuid[]) OR work_center_id = ANY($4::uuid[]) )
+                         AND ($5::text IS NULL OR status=$5)
+                         AND ($6::uuid IS NULL OR work_center_id=$6)
+                       ORDER BY created_at DESC LIMIT $7 OFFSET $8"#,
                 )
-                .bind(tenant_id).bind(scope_site).bind(&status_owned).bind(work_center_id).bind(per_page as i64).bind(offset as i64)
+                .bind(tenant_id)
+                .bind(scope_sql.tenant_wide)
+                .bind(&scope_sql.sites)
+                .bind(&scope_sql.work_centers)
+                .bind(&status_owned)
+                .bind(work_center_id)
+                .bind(per_page as i64).bind(offset as i64)
                 .fetch_all(&mut **tx)
-                .await.map_err(|e| SenseiError::Database(format!("Failed to list scoped andons: {e}")))?;
+                .await.map_err(|e| SenseiError::Database(format!("Failed to list authorized andons: {e}")))?;
 
                 let count: i64 = sqlx::query_scalar(
-                    "SELECT COUNT(*) FROM andons WHERE tenant_id=$1                         AND ($2::uuid IS NULL OR site_id=$2)                         AND ($3::text IS NULL OR status=$3)                         AND ($4::uuid IS NULL OR work_center_id=$4)",
+                    "SELECT COUNT(*) FROM andons WHERE tenant_id=$1 \
+                       AND ( $2::boolean OR site_id = ANY($3::uuid[]) OR work_center_id = ANY($4::uuid[]) ) \
+                       AND ($5::text IS NULL OR status=$5) \
+                       AND ($6::uuid IS NULL OR work_center_id=$6)",
                 )
-                .bind(tenant_id).bind(scope_site).bind(&status_owned).bind(work_center_id).fetch_one(&mut **tx).await
-                .map_err(|e| SenseiError::Database(format!("Failed to count scoped andons: {e}")))?;
+                .bind(tenant_id)
+                .bind(scope_sql.tenant_wide)
+                .bind(&scope_sql.sites)
+                .bind(&scope_sql.work_centers)
+                .bind(&status_owned)
+                .bind(work_center_id)
+                .fetch_one(&mut **tx).await
+                .map_err(|e| SenseiError::Database(format!("Failed to count authorized andons: {e}")))?;
                 Ok((items, count))
             })
         }).await?;
@@ -907,29 +987,39 @@ impl OperationsService for DatabaseOperationsService {
         let team_json =
             serde_json::to_value(&project.team_members).unwrap_or(serde_json::Value::Array(vec![]));
 
-        let row = sqlx::query_as::<_, ProjectRow>(
-            r#"INSERT INTO projects (id, tenant_id, project_code, name, description, category, status, priority, owner_id, team_members, planned_start, planned_end, actual_start, actual_end, budget, savings_realized, created_at)
-               VALUES ($1,$2,$3,$4,$5,$6,'not_started',$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
-               RETURNING id, tenant_id, project_code, name, description, category, status, priority, owner_id, team_members, planned_start, planned_end, actual_start, actual_end, budget, savings_realized, created_at"#,
-        )
-        .bind(id).bind(tenant_id).bind(&project_code).bind(&project.name).bind(&project.description)
-        .bind(&project.category).bind(&project.priority).bind(project.owner_id).bind(&team_json)
-        .bind(project.planned_start).bind(project.planned_end).bind(project.actual_start).bind(project.actual_end)
-        .bind(project.budget).bind(project.savings_realized).bind(now)
-        .fetch_one(&self.pool)
-        .await.map_err(|e| SenseiError::Database(format!("Failed to create project: {e}")))?;
+        let row = with_tenant_tx(&self.pool, tenant_id, move |tx| {
+            Box::pin(async move {
+                sqlx::query_as::<_, ProjectRow>(
+                    r#"INSERT INTO projects (id, tenant_id, project_code, name, description, category, status, priority, owner_id, team_members, planned_start, planned_end, actual_start, actual_end, budget, savings_realized, created_at)
+                       VALUES ($1,$2,$3,$4,$5,$6,'not_started',$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+                       RETURNING id, tenant_id, project_code, name, description, category, status, priority, owner_id, team_members, planned_start, planned_end, actual_start, actual_end, budget, savings_realized, created_at"#,
+                )
+                .bind(id).bind(tenant_id).bind(&project_code).bind(&project.name).bind(&project.description)
+                .bind(&project.category).bind(&project.priority).bind(project.owner_id).bind(&team_json)
+                .bind(project.planned_start).bind(project.planned_end).bind(project.actual_start).bind(project.actual_end)
+                .bind(project.budget).bind(project.savings_realized).bind(now)
+                .fetch_one(&mut **tx)
+                .await
+                .map_err(|e| SenseiError::Database(format!("Failed to create project: {e}")))
+            })
+        })
+        .await?;
 
         Ok(project_row_to_domain(row))
     }
 
     async fn get_project(&self, tenant_id: Uuid, id: Uuid) -> Result<Project> {
-        let row = sqlx::query_as::<_, ProjectRow>(
-            "SELECT id, tenant_id, project_code, name, description, category, status, priority, owner_id, team_members, planned_start, planned_end, actual_start, actual_end, budget, savings_realized, created_at FROM projects WHERE id = $1 AND tenant_id = $2",
-        )
-        .bind(id).bind(tenant_id)
-        .fetch_optional(&self.pool)
-        .await.map_err(|e| SenseiError::Database(format!("Failed to get project: {e}")))?
-        .ok_or_else(|| SenseiError::NotFound(format!("Project {id} not found")))?;
+        let row = with_tenant_tx(&self.pool, tenant_id, |tx| {
+            Box::pin(async move {
+                sqlx::query_as::<_, ProjectRow>(
+                    "SELECT id, tenant_id, project_code, name, description, category, status, priority, owner_id, team_members, planned_start, planned_end, actual_start, actual_end, budget, savings_realized, created_at FROM projects WHERE id = $1 AND tenant_id = $2",
+                )
+                .bind(id).bind(tenant_id)
+                .fetch_optional(&mut **tx)
+                .await.map_err(|e| SenseiError::Database(format!("Failed to get project: {e}")))?
+                .ok_or_else(|| SenseiError::NotFound(format!("Project {id} not found")))
+            })
+        }).await?;
 
         Ok(project_row_to_domain(row))
     }
@@ -945,21 +1035,28 @@ impl OperationsService for DatabaseOperationsService {
         let page = page.unwrap_or(1).max(1);
         let per_page = per_page.unwrap_or(20).clamp(1, 100);
         let offset = (page - 1) * per_page;
+        let status_owned = status.map(|s| s.to_string());
+        let category_owned = category.map(|s| s.to_string());
 
-        let items: Vec<ProjectRow> = sqlx::query_as(
-            r#"SELECT id, tenant_id, project_code, name, description, category, status, priority, owner_id, team_members, planned_start, planned_end, actual_start, actual_end, budget, savings_realized, created_at
-               FROM projects WHERE tenant_id=$1 AND ($2::text IS NULL OR status=$2) AND ($3::text IS NULL OR category=$3)
-               ORDER BY created_at DESC LIMIT $4 OFFSET $5"#,
-        )
-        .bind(tenant_id).bind(status).bind(category).bind(per_page as i64).bind(offset as i64)
-        .fetch_all(&self.pool)
-        .await.map_err(|e| SenseiError::Database(format!("Failed to list projects: {e}")))?;
+        let (items, count) = with_tenant_tx(&self.pool, tenant_id, move |tx| {
+            Box::pin(async move {
+                let items: Vec<ProjectRow> = sqlx::query_as(
+                    r#"SELECT id, tenant_id, project_code, name, description, category, status, priority, owner_id, team_members, planned_start, planned_end, actual_start, actual_end, budget, savings_realized, created_at
+                       FROM projects WHERE tenant_id=$1 AND ($2::text IS NULL OR status=$2) AND ($3::text IS NULL OR category=$3)
+                       ORDER BY created_at DESC LIMIT $4 OFFSET $5"#,
+                )
+                .bind(tenant_id).bind(&status_owned).bind(&category_owned).bind(per_page as i64).bind(offset as i64)
+                .fetch_all(&mut **tx)
+                .await.map_err(|e| SenseiError::Database(format!("Failed to list projects: {e}")))?;
 
-        let count: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM projects WHERE tenant_id=$1 AND ($2::text IS NULL OR status=$2) AND ($3::text IS NULL OR category=$3)",
-        )
-        .bind(tenant_id).bind(status).bind(category).fetch_one(&self.pool).await
-        .map_err(|e| SenseiError::Database(format!("Failed to count projects: {e}")))?;
+                let count: i64 = sqlx::query_scalar(
+                    "SELECT COUNT(*) FROM projects WHERE tenant_id=$1 AND ($2::text IS NULL OR status=$2) AND ($3::text IS NULL OR category=$3)",
+                )
+                .bind(tenant_id).bind(&status_owned).bind(&category_owned).fetch_one(&mut **tx).await
+                .map_err(|e| SenseiError::Database(format!("Failed to count projects: {e}")))?;
+                Ok((items, count))
+            })
+        }).await?;
 
         Ok(paginate(
             items.into_iter().map(project_row_to_domain).collect(),
@@ -976,15 +1073,19 @@ impl OperationsService for DatabaseOperationsService {
         savings_realized: f64,
     ) -> Result<Project> {
         let now = Utc::now();
-        let row = sqlx::query_as::<_, ProjectRow>(
-            r#"UPDATE projects SET status='completed', actual_end=$1, savings_realized=$2
-               WHERE id=$3 AND tenant_id=$4
-               RETURNING id, tenant_id, project_code, name, description, category, status, priority, owner_id, team_members, planned_start, planned_end, actual_start, actual_end, budget, savings_realized, created_at"#,
-        )
-        .bind(now).bind(savings_realized).bind(id).bind(tenant_id)
-        .fetch_optional(&self.pool)
-        .await.map_err(|e| SenseiError::Database(format!("Failed to complete project: {e}")))?
-        .ok_or_else(|| SenseiError::NotFound(format!("Project {id} not found")))?;
+        let row = with_tenant_tx(&self.pool, tenant_id, |tx| {
+            Box::pin(async move {
+                sqlx::query_as::<_, ProjectRow>(
+                    r#"UPDATE projects SET status='completed', actual_end=$1, savings_realized=$2
+                       WHERE id=$3 AND tenant_id=$4
+                       RETURNING id, tenant_id, project_code, name, description, category, status, priority, owner_id, team_members, planned_start, planned_end, actual_start, actual_end, budget, savings_realized, created_at"#,
+                )
+                .bind(now).bind(savings_realized).bind(id).bind(tenant_id)
+                .fetch_optional(&mut **tx)
+                .await.map_err(|e| SenseiError::Database(format!("Failed to complete project: {e}")))?
+                .ok_or_else(|| SenseiError::NotFound(format!("Project {id} not found")))
+            })
+        }).await?;
 
         Ok(project_row_to_domain(row))
     }
@@ -1053,13 +1154,17 @@ impl OperationsService for DatabaseOperationsService {
     }
 
     async fn get_a3(&self, tenant_id: Uuid, id: Uuid) -> Result<A3> {
-        let row = sqlx::query_as::<_, A3Row>(
-            "SELECT id, tenant_id, a3_number, title, background, current_state, goal, root_cause_analysis, countermeasures, check_plan, follow_up, a3_type, severity, status, owner_id, created_at, closed_at, version, observed_conditions, metric_baselines, evidence_refs, cause_hypotheses, experiments, verifications, standardizations, learnings FROM a3_reports WHERE id = $1 AND tenant_id = $2",
-        )
-        .bind(id).bind(tenant_id)
-        .fetch_optional(&self.pool)
-        .await.map_err(|e| SenseiError::Database(format!("Failed to get A3: {e}")))?
-        .ok_or_else(|| SenseiError::NotFound(format!("A3 {id} not found")))?;
+        let row = with_tenant_tx(&self.pool, tenant_id, |tx| {
+            Box::pin(async move {
+                sqlx::query_as::<_, A3Row>(
+                    "SELECT id, tenant_id, a3_number, title, background, current_state, goal, root_cause_analysis, countermeasures, check_plan, follow_up, a3_type, severity, status, owner_id, created_at, closed_at, version, observed_conditions, metric_baselines, evidence_refs, cause_hypotheses, experiments, verifications, standardizations, learnings FROM a3_reports WHERE id = $1 AND tenant_id = $2",
+                )
+                .bind(id).bind(tenant_id)
+                .fetch_optional(&mut **tx)
+                .await.map_err(|e| SenseiError::Database(format!("Failed to get A3: {e}")))?
+                .ok_or_else(|| SenseiError::NotFound(format!("A3 {id} not found")))
+            })
+        }).await?;
 
         Ok(a3_row_to_domain(row))
     }
@@ -1074,21 +1179,27 @@ impl OperationsService for DatabaseOperationsService {
         let page = page.unwrap_or(1).max(1);
         let per_page = per_page.unwrap_or(20).clamp(1, 100);
         let offset = (page - 1) * per_page;
+        let status_owned = status.map(|s| s.to_string());
 
-        let items: Vec<A3Row> = sqlx::query_as(
-            r#"SELECT id, tenant_id, a3_number, title, background, current_state, goal, root_cause_analysis, countermeasures, check_plan, follow_up, a3_type, severity, status, owner_id, created_at, closed_at, version, observed_conditions, metric_baselines, evidence_refs, cause_hypotheses, experiments, verifications, standardizations, learnings
-               FROM a3_reports WHERE tenant_id=$1 AND ($2::text IS NULL OR status=$2)
-               ORDER BY created_at DESC LIMIT $3 OFFSET $4"#,
-        )
-        .bind(tenant_id).bind(status).bind(per_page as i64).bind(offset as i64)
-        .fetch_all(&self.pool)
-        .await.map_err(|e| SenseiError::Database(format!("Failed to list A3s: {e}")))?;
+        let (items, count) = with_tenant_tx(&self.pool, tenant_id, move |tx| {
+            Box::pin(async move {
+                let items: Vec<A3Row> = sqlx::query_as(
+                    r#"SELECT id, tenant_id, a3_number, title, background, current_state, goal, root_cause_analysis, countermeasures, check_plan, follow_up, a3_type, severity, status, owner_id, created_at, closed_at, version, observed_conditions, metric_baselines, evidence_refs, cause_hypotheses, experiments, verifications, standardizations, learnings
+                       FROM a3_reports WHERE tenant_id=$1 AND ($2::text IS NULL OR status=$2)
+                       ORDER BY created_at DESC LIMIT $3 OFFSET $4"#,
+                )
+                .bind(tenant_id).bind(&status_owned).bind(per_page as i64).bind(offset as i64)
+                .fetch_all(&mut **tx)
+                .await.map_err(|e| SenseiError::Database(format!("Failed to list A3s: {e}")))?;
 
-        let count: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM a3_reports WHERE tenant_id=$1 AND ($2::text IS NULL OR status=$2)",
-        )
-        .bind(tenant_id).bind(status).fetch_one(&self.pool).await
-        .map_err(|e| SenseiError::Database(format!("Failed to count A3s: {e}")))?;
+                let count: i64 = sqlx::query_scalar(
+                    "SELECT COUNT(*) FROM a3_reports WHERE tenant_id=$1 AND ($2::text IS NULL OR status=$2)",
+                )
+                .bind(tenant_id).bind(&status_owned).fetch_one(&mut **tx).await
+                .map_err(|e| SenseiError::Database(format!("Failed to count A3s: {e}")))?;
+                Ok((items, count))
+            })
+        }).await?;
 
         Ok(paginate(
             items.into_iter().map(a3_row_to_domain).collect(),
@@ -1102,78 +1213,75 @@ impl OperationsService for DatabaseOperationsService {
         // An A3 cannot close because somebody clicked Close: the
         // countermeasures (root_cause_analysis/countermeasures) and the
         // verification plan (check_plan/follow_up) must be recorded first.
-        let existing = sqlx::query_as::<_, A3Row>(
-            r#"SELECT id, tenant_id, a3_number, title, background, current_state, goal, root_cause_analysis, countermeasures, check_plan, follow_up, a3_type, severity, status, owner_id, created_at, closed_at, version, observed_conditions, metric_baselines, evidence_refs, cause_hypotheses, experiments, verifications, standardizations, learnings
-               FROM a3_reports WHERE id=$1 AND tenant_id=$2"#,
-        )
-        .bind(id)
-        .bind(tenant_id)
-        .fetch_optional(&self.pool)
-        .await
-        .map_err(|e| SenseiError::Database(format!("Failed to get A3: {e}")))?
-        .ok_or_else(|| SenseiError::NotFound(format!("A3 {id} not found")))?;
-        if existing.countermeasures.trim().is_empty() {
-            return Err(SenseiError::Validation(
-                "A3 cannot be closed: no countermeasures recorded".to_string(),
-            ));
-        }
-        if existing.check_plan.trim().is_empty() || existing.follow_up.trim().is_empty() {
-            return Err(SenseiError::Validation(
-                "A3 cannot be closed: the verification plan (check_plan/follow_up) is empty —                  record the target metrics and verification window first"
-                    .to_string(),
-            ));
-        }
-        // Closing is evidence-driven: at least one VERIFICATION record
-        // (metric observed after the countermeasure) must be populated.
-        let verifications = existing
-            .verifications
-            .as_array()
-            .map(|a| a.len())
-            .unwrap_or(0);
-        if verifications == 0 {
-            return Err(SenseiError::Validation(
-                "A3 cannot be closed: no verification evidence recorded (verifications is empty)"
-                    .to_string(),
-            ));
-        }
-
+        // The state read, the evidence checks and the close + outbox row
+        // share ONE tenant-scoped transaction (thirtieth-first audit
+        // items 7-9: no raw-pool tenant SQL).
         let now = Utc::now();
-        let mut tx = self
-            .pool
-            .begin()
-            .await
-            .map_err(|e| SenseiError::Database(format!("Failed to begin close tx: {e}")))?;
-        set_tenant_context(&mut tx, tenant_id).await?;
+        let row = with_tenant_tx(&self.pool, tenant_id, |tx| {
+            Box::pin(async move {
+                let existing = sqlx::query_as::<_, A3Row>(
+                    r#"SELECT id, tenant_id, a3_number, title, background, current_state, goal, root_cause_analysis, countermeasures, check_plan, follow_up, a3_type, severity, status, owner_id, created_at, closed_at, version, observed_conditions, metric_baselines, evidence_refs, cause_hypotheses, experiments, verifications, standardizations, learnings
+                       FROM a3_reports WHERE id=$1 AND tenant_id=$2"#,
+                )
+                .bind(id)
+                .bind(tenant_id)
+                .fetch_optional(&mut **tx)
+                .await
+                .map_err(|e| SenseiError::Database(format!("Failed to get A3: {e}")))?
+                .ok_or_else(|| SenseiError::NotFound(format!("A3 {id} not found")))?;
+                if existing.countermeasures.trim().is_empty() {
+                    return Err(SenseiError::Validation(
+                        "A3 cannot be closed: no countermeasures recorded".to_string(),
+                    ));
+                }
+                if existing.check_plan.trim().is_empty() || existing.follow_up.trim().is_empty() {
+                    return Err(SenseiError::Validation(
+                        "A3 cannot be closed: the verification plan (check_plan/follow_up) is empty —                  record the target metrics and verification window first"
+                            .to_string(),
+                    ));
+                }
+                // Closing is evidence-driven: at least one VERIFICATION record
+                // (metric observed after the countermeasure) must be populated.
+                let verifications = existing
+                    .verifications
+                    .as_array()
+                    .map(|a| a.len())
+                    .unwrap_or(0);
+                if verifications == 0 {
+                    return Err(SenseiError::Validation(
+                        "A3 cannot be closed: no verification evidence recorded (verifications is empty)"
+                            .to_string(),
+                    ));
+                }
 
-        let row = sqlx::query_as::<_, A3Row>(
-            r#"UPDATE a3_reports SET status='closed', closed_at=$1, version = version + 1 WHERE id=$2 AND tenant_id=$3
-               RETURNING id, tenant_id, a3_number, title, background, current_state, goal, root_cause_analysis, countermeasures, check_plan, follow_up, a3_type, severity, status, owner_id, created_at, closed_at, version, observed_conditions, metric_baselines, evidence_refs, cause_hypotheses, experiments, verifications, standardizations, learnings"#,
-        )
-        .bind(now).bind(id).bind(tenant_id)
-        .fetch_optional(&mut *tx)
-        .await.map_err(|e| SenseiError::Database(format!("Failed to close A3: {e}")))?
-        .ok_or_else(|| SenseiError::NotFound(format!("A3 {id} not found")))?;
+                let row = sqlx::query_as::<_, A3Row>(
+                    r#"UPDATE a3_reports SET status='closed', closed_at=$1, version = version + 1 WHERE id=$2 AND tenant_id=$3
+                       RETURNING id, tenant_id, a3_number, title, background, current_state, goal, root_cause_analysis, countermeasures, check_plan, follow_up, a3_type, severity, status, owner_id, created_at, closed_at, version, observed_conditions, metric_baselines, evidence_refs, cause_hypotheses, experiments, verifications, standardizations, learnings"#,
+                )
+                .bind(now).bind(id).bind(tenant_id)
+                .fetch_optional(&mut **tx)
+                .await.map_err(|e| SenseiError::Database(format!("Failed to close A3: {e}")))?
+                .ok_or_else(|| SenseiError::NotFound(format!("A3 {id} not found")))?;
 
-        // Outbox row in the SAME transaction: the close event is never
-        // lost to a post-commit publish failure.
-        sqlx::query(
-            "INSERT INTO outbox_events \
-                (event_id, tenant_id, aggregate_type, aggregate_id, event_type, payload) \
-             VALUES ($1, $2, 'a3', $3, 'sensei.a3.closed', $4)",
-        )
-        .bind(Uuid::new_v4())
-        .bind(tenant_id)
-        .bind(id)
-        .bind(serde_json::json!({ "a3_number": row.a3_number }))
-        .execute(&mut *tx)
-        .await
-        .map_err(|e| {
-            SenseiError::Database(format!("Failed to write A3 close outbox event: {e}"))
-        })?;
-
-        tx.commit()
-            .await
-            .map_err(|e| SenseiError::Database(format!("Failed to commit close tx: {e}")))?;
+                // Outbox row in the SAME transaction: the close event is never
+                // lost to a post-commit publish failure.
+                sqlx::query(
+                    "INSERT INTO outbox_events \
+                        (event_id, tenant_id, aggregate_type, aggregate_id, event_type, payload) \
+                     VALUES ($1, $2, 'a3', $3, 'sensei.a3.closed', $4)",
+                )
+                .bind(Uuid::new_v4())
+                .bind(tenant_id)
+                .bind(id)
+                .bind(serde_json::json!({ "a3_number": row.a3_number }))
+                .execute(&mut **tx)
+                .await
+                .map_err(|e| {
+                    SenseiError::Database(format!("Failed to write A3 close outbox event: {e}"))
+                })?;
+                Ok(row)
+            })
+        }).await?;
 
         Ok(a3_row_to_domain(row))
     }
@@ -1190,28 +1298,38 @@ impl OperationsService for DatabaseOperationsService {
         );
         let risk_score = likelihood_score(&risk.likelihood) * impact_score(&risk.impact);
 
-        let row = sqlx::query_as::<_, RiskRow>(
-            r#"INSERT INTO risks (id, tenant_id, risk_number, title, description, category, likelihood, impact, risk_score, mitigation, contingency, status, owner_id, created_at, mitigated_at)
-               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'identified',$12,$13,NULL)
-               RETURNING id, tenant_id, risk_number, title, description, category, likelihood, impact, risk_score, mitigation, contingency, status, owner_id, created_at, mitigated_at"#,
-        )
-        .bind(id).bind(tenant_id).bind(&risk_number).bind(&risk.title).bind(&risk.description)
-        .bind(&risk.category).bind(&risk.likelihood).bind(&risk.impact).bind(risk_score)
-        .bind(&risk.mitigation).bind(&risk.contingency).bind(risk.owner_id).bind(now)
-        .fetch_one(&self.pool)
-        .await.map_err(|e| SenseiError::Database(format!("Failed to create risk: {e}")))?;
+        let row = with_tenant_tx(&self.pool, tenant_id, move |tx| {
+            Box::pin(async move {
+                sqlx::query_as::<_, RiskRow>(
+                    r#"INSERT INTO risks (id, tenant_id, risk_number, title, description, category, likelihood, impact, risk_score, mitigation, contingency, status, owner_id, created_at, mitigated_at)
+                       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'identified',$12,$13,NULL)
+                       RETURNING id, tenant_id, risk_number, title, description, category, likelihood, impact, risk_score, mitigation, contingency, status, owner_id, created_at, mitigated_at"#,
+                )
+                .bind(id).bind(tenant_id).bind(&risk_number).bind(&risk.title).bind(&risk.description)
+                .bind(&risk.category).bind(&risk.likelihood).bind(&risk.impact).bind(risk_score)
+                .bind(&risk.mitigation).bind(&risk.contingency).bind(risk.owner_id).bind(now)
+                .fetch_one(&mut **tx)
+                .await
+                .map_err(|e| SenseiError::Database(format!("Failed to create risk: {e}")))
+            })
+        })
+        .await?;
 
         Ok(risk_row_to_domain(row))
     }
 
     async fn get_risk(&self, tenant_id: Uuid, id: Uuid) -> Result<Risk> {
-        let row = sqlx::query_as::<_, RiskRow>(
-            "SELECT id, tenant_id, risk_number, title, description, category, likelihood, impact, risk_score, mitigation, contingency, status, owner_id, created_at, mitigated_at FROM risks WHERE id = $1 AND tenant_id = $2",
-        )
-        .bind(id).bind(tenant_id)
-        .fetch_optional(&self.pool)
-        .await.map_err(|e| SenseiError::Database(format!("Failed to get risk: {e}")))?
-        .ok_or_else(|| SenseiError::NotFound(format!("Risk {id} not found")))?;
+        let row = with_tenant_tx(&self.pool, tenant_id, |tx| {
+            Box::pin(async move {
+                sqlx::query_as::<_, RiskRow>(
+                    "SELECT id, tenant_id, risk_number, title, description, category, likelihood, impact, risk_score, mitigation, contingency, status, owner_id, created_at, mitigated_at FROM risks WHERE id = $1 AND tenant_id = $2",
+                )
+                .bind(id).bind(tenant_id)
+                .fetch_optional(&mut **tx)
+                .await.map_err(|e| SenseiError::Database(format!("Failed to get risk: {e}")))?
+                .ok_or_else(|| SenseiError::NotFound(format!("Risk {id} not found")))
+            })
+        }).await?;
 
         Ok(risk_row_to_domain(row))
     }
@@ -1227,21 +1345,28 @@ impl OperationsService for DatabaseOperationsService {
         let page = page.unwrap_or(1).max(1);
         let per_page = per_page.unwrap_or(20).clamp(1, 100);
         let offset = (page - 1) * per_page;
+        let status_owned = status.map(|s| s.to_string());
+        let category_owned = category.map(|s| s.to_string());
 
-        let items: Vec<RiskRow> = sqlx::query_as(
-            r#"SELECT id, tenant_id, risk_number, title, description, category, likelihood, impact, risk_score, mitigation, contingency, status, owner_id, created_at, mitigated_at
-               FROM risks WHERE tenant_id=$1 AND ($2::text IS NULL OR status=$2) AND ($3::text IS NULL OR category=$3)
-               ORDER BY risk_score DESC LIMIT $4 OFFSET $5"#,
-        )
-        .bind(tenant_id).bind(status).bind(category).bind(per_page as i64).bind(offset as i64)
-        .fetch_all(&self.pool)
-        .await.map_err(|e| SenseiError::Database(format!("Failed to list risks: {e}")))?;
+        let (items, count) = with_tenant_tx(&self.pool, tenant_id, move |tx| {
+            Box::pin(async move {
+                let items: Vec<RiskRow> = sqlx::query_as(
+                    r#"SELECT id, tenant_id, risk_number, title, description, category, likelihood, impact, risk_score, mitigation, contingency, status, owner_id, created_at, mitigated_at
+                       FROM risks WHERE tenant_id=$1 AND ($2::text IS NULL OR status=$2) AND ($3::text IS NULL OR category=$3)
+                       ORDER BY risk_score DESC LIMIT $4 OFFSET $5"#,
+                )
+                .bind(tenant_id).bind(&status_owned).bind(&category_owned).bind(per_page as i64).bind(offset as i64)
+                .fetch_all(&mut **tx)
+                .await.map_err(|e| SenseiError::Database(format!("Failed to list risks: {e}")))?;
 
-        let count: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM risks WHERE tenant_id=$1 AND ($2::text IS NULL OR status=$2) AND ($3::text IS NULL OR category=$3)",
-        )
-        .bind(tenant_id).bind(status).bind(category).fetch_one(&self.pool).await
-        .map_err(|e| SenseiError::Database(format!("Failed to count risks: {e}")))?;
+                let count: i64 = sqlx::query_scalar(
+                    "SELECT COUNT(*) FROM risks WHERE tenant_id=$1 AND ($2::text IS NULL OR status=$2) AND ($3::text IS NULL OR category=$3)",
+                )
+                .bind(tenant_id).bind(&status_owned).bind(&category_owned).fetch_one(&mut **tx).await
+                .map_err(|e| SenseiError::Database(format!("Failed to count risks: {e}")))?;
+                Ok((items, count))
+            })
+        }).await?;
 
         Ok(paginate(
             items.into_iter().map(risk_row_to_domain).collect(),
@@ -1253,14 +1378,18 @@ impl OperationsService for DatabaseOperationsService {
 
     async fn mitigate_risk(&self, tenant_id: Uuid, id: Uuid) -> Result<Risk> {
         let now = Utc::now();
-        let row = sqlx::query_as::<_, RiskRow>(
-            r#"UPDATE risks SET status='mitigated', mitigated_at=$1 WHERE id=$2 AND tenant_id=$3
-               RETURNING id, tenant_id, risk_number, title, description, category, likelihood, impact, risk_score, mitigation, contingency, status, owner_id, created_at, mitigated_at"#,
-        )
-        .bind(now).bind(id).bind(tenant_id)
-        .fetch_optional(&self.pool)
-        .await.map_err(|e| SenseiError::Database(format!("Failed to mitigate risk: {e}")))?
-        .ok_or_else(|| SenseiError::NotFound(format!("Risk {id} not found")))?;
+        let row = with_tenant_tx(&self.pool, tenant_id, |tx| {
+            Box::pin(async move {
+                sqlx::query_as::<_, RiskRow>(
+                    r#"UPDATE risks SET status='mitigated', mitigated_at=$1 WHERE id=$2 AND tenant_id=$3
+                       RETURNING id, tenant_id, risk_number, title, description, category, likelihood, impact, risk_score, mitigation, contingency, status, owner_id, created_at, mitigated_at"#,
+                )
+                .bind(now).bind(id).bind(tenant_id)
+                .fetch_optional(&mut **tx)
+                .await.map_err(|e| SenseiError::Database(format!("Failed to mitigate risk: {e}")))?
+                .ok_or_else(|| SenseiError::NotFound(format!("Risk {id} not found")))
+            })
+        }).await?;
 
         Ok(risk_row_to_domain(row))
     }
@@ -1270,30 +1399,30 @@ impl OperationsService for DatabaseOperationsService {
     async fn update_andon(
         &self,
         tenant_id: Uuid,
-        authorized_sites: &[Uuid],
+        scope: &AuthorizedScope,
         id: Uuid,
         andon: Andon,
     ) -> Result<Andon> {
         // Eighteenth audit P0-2: the client never sends a whole Andon —
         // this repository command only accepts explicit, narrow fields
-        // (severity/description), and the site guard lives INSIDE the
+        // (severity/description), and the scope guard lives INSIDE the
         // mutation transaction.
-        if authorized_sites.is_empty() {
-            return Err(SenseiError::Forbidden(
-                "no operational scope — no Andon is authorized".to_string(),
-            ));
+        if matches!(scope, AuthorizedScope::NoOperationalScope) {
+            return Err(no_operational_scope_err());
         }
-        let sites = authorized_sites.to_vec();
+        let scope_sql = andon_scope_sql(scope);
         let row = with_tenant_tx(&self.pool, tenant_id, |tx| {
             Box::pin(async move {
                 sqlx::query_as::<_, AndonRow>(
                     r#"UPDATE andons SET issue_type=$1, severity=$2, description=$3
                        WHERE id=$4 AND tenant_id=$5
-                         AND site_id = ANY($6)
+                         AND ( $6::boolean OR site_id = ANY($7::uuid[]) OR work_center_id = ANY($8::uuid[]) )
                        RETURNING id, tenant_id, andon_number, site_id, work_center_id, issue_type, severity, description, status, raised_by, acknowledged_by, resolved_by, resolution, response_time_seconds, resolution_time_seconds, created_at, acknowledged_at, resolved_at, restart_authorized_by, restart_authorized_at, abnormal_condition_observed_at, contained_at, contained_by, contained_note, escalated, escalated_at, request_key"#,
                 )
                 .bind(&andon.issue_type).bind(&andon.severity).bind(&andon.description).bind(id).bind(tenant_id)
-                .bind(&sites)
+                .bind(scope_sql.tenant_wide)
+                .bind(&scope_sql.sites)
+                .bind(&scope_sql.work_centers)
                 .fetch_optional(&mut **tx)
                 .await.map_err(|e| SenseiError::Database(format!("Failed to update andon: {e}")))?
                 .ok_or_else(|| SenseiError::NotFound(format!("Andon {id} not found")))
@@ -1306,17 +1435,15 @@ impl OperationsService for DatabaseOperationsService {
     async fn void_andon(
         &self,
         tenant_id: Uuid,
-        authorized_sites: &[Uuid],
+        scope: &AuthorizedScope,
         id: Uuid,
         actor_id: Uuid,
         reason: &str,
     ) -> Result<Andon> {
-        if authorized_sites.is_empty() {
-            return Err(SenseiError::Forbidden(
-                "no operational scope — no Andon is authorized".to_string(),
-            ));
+        if matches!(scope, AuthorizedScope::NoOperationalScope) {
+            return Err(no_operational_scope_err());
         }
-        let sites = authorized_sites.to_vec();
+        let scope_sql = andon_scope_sql(scope);
         // The critical-safety rule applies to voiding too: a safety Andon
         // cannot avoid the resolve guard by going down the void path.
         let reason_owned = format!("VOIDED: {reason}");
@@ -1325,7 +1452,8 @@ impl OperationsService for DatabaseOperationsService {
             Box::pin(async move {
                 let row = sqlx::query_as::<_, AndonRow>(
                     "UPDATE andons SET status = 'voided', resolved_by = $3, resolution = $4 \
-                     WHERE id = $1 AND tenant_id = $2 AND site_id = ANY($5) \
+                     WHERE id = $1 AND tenant_id = $2 \
+                       AND ( $5::boolean OR site_id = ANY($6::uuid[]) OR work_center_id = ANY($7::uuid[]) ) \
                        AND (severity != 'critical' OR issue_type != 'safety' OR restart_authorized_by IS NOT NULL) \
                      RETURNING id, tenant_id, andon_number, site_id, work_center_id, issue_type, severity, \
                                description, status, raised_by, acknowledged_by, resolved_by, \
@@ -1336,7 +1464,9 @@ impl OperationsService for DatabaseOperationsService {
                 .bind(tenant_id)
                 .bind(actor_id)
                 .bind(&reason_owned)
-                .bind(&sites)
+                .bind(scope_sql.tenant_wide)
+                .bind(&scope_sql.sites)
+                .bind(&scope_sql.work_centers)
                 .fetch_optional(&mut **tx)
                 .await
                 .map_err(|e| SenseiError::Database(format!("Failed to void andon: {e}")))?;
@@ -1344,11 +1474,14 @@ impl OperationsService for DatabaseOperationsService {
                 let Some(row) = row else {
                     let state: Option<(String, String, Option<Uuid>)> = sqlx::query_as(
                         "SELECT severity, issue_type, restart_authorized_by FROM andons \
-                         WHERE id = $1 AND tenant_id = $2 AND site_id = ANY($3)",
+                         WHERE id = $1 AND tenant_id = $2 \
+                           AND ( $3::boolean OR site_id = ANY($4::uuid[]) OR work_center_id = ANY($5::uuid[]) )",
                     )
                     .bind(id)
                     .bind(tenant_id)
-                    .bind(&sites)
+                    .bind(scope_sql.tenant_wide)
+                    .bind(&scope_sql.sites)
+                    .bind(&scope_sql.work_centers)
                     .fetch_optional(&mut **tx)
                     .await
                     .map_err(|e| SenseiError::Database(format!("Failed to read andon state: {e}")))?;
@@ -1391,28 +1524,37 @@ impl OperationsService for DatabaseOperationsService {
     async fn update_project(&self, tenant_id: Uuid, id: Uuid, project: Project) -> Result<Project> {
         let team_json =
             serde_json::to_value(&project.team_members).unwrap_or(serde_json::Value::Array(vec![]));
-        let row = sqlx::query_as::<_, ProjectRow>(
-            r#"UPDATE projects SET name=$1, description=$2, category=$3, priority=$4, owner_id=$5, team_members=$6, planned_start=$7, planned_end=$8, budget=$9
-               WHERE id=$10 AND tenant_id=$11
-               RETURNING id, tenant_id, project_code, name, description, category, status, priority, owner_id, team_members, planned_start, planned_end, actual_start, actual_end, budget, savings_realized, created_at"#,
-        )
-        .bind(&project.name).bind(&project.description).bind(&project.category).bind(&project.priority)
-        .bind(project.owner_id).bind(&team_json).bind(project.planned_start).bind(project.planned_end).bind(project.budget)
-        .bind(id).bind(tenant_id)
-        .fetch_optional(&self.pool)
-        .await.map_err(|e| SenseiError::Database(format!("Failed to update project: {e}")))?
-        .ok_or_else(|| SenseiError::NotFound(format!("Project {id} not found")))?;
+        let row = with_tenant_tx(&self.pool, tenant_id, move |tx| {
+            Box::pin(async move {
+                sqlx::query_as::<_, ProjectRow>(
+                    r#"UPDATE projects SET name=$1, description=$2, category=$3, priority=$4, owner_id=$5, team_members=$6, planned_start=$7, planned_end=$8, budget=$9
+                       WHERE id=$10 AND tenant_id=$11
+                       RETURNING id, tenant_id, project_code, name, description, category, status, priority, owner_id, team_members, planned_start, planned_end, actual_start, actual_end, budget, savings_realized, created_at"#,
+                )
+                .bind(&project.name).bind(&project.description).bind(&project.category).bind(&project.priority)
+                .bind(project.owner_id).bind(&team_json).bind(project.planned_start).bind(project.planned_end).bind(project.budget)
+                .bind(id).bind(tenant_id)
+                .fetch_optional(&mut **tx)
+                .await.map_err(|e| SenseiError::Database(format!("Failed to update project: {e}")))?
+                .ok_or_else(|| SenseiError::NotFound(format!("Project {id} not found")))
+            })
+        }).await?;
 
         Ok(project_row_to_domain(row))
     }
 
     async fn delete_project(&self, tenant_id: Uuid, id: Uuid) -> Result<()> {
-        let result = sqlx::query("DELETE FROM projects WHERE id = $1 AND tenant_id = $2")
-            .bind(id)
-            .bind(tenant_id)
-            .execute(&self.pool)
-            .await
-            .map_err(|e| SenseiError::Database(format!("Failed to delete project: {e}")))?;
+        let result = with_tenant_tx(&self.pool, tenant_id, |tx| {
+            Box::pin(async move {
+                sqlx::query("DELETE FROM projects WHERE id = $1 AND tenant_id = $2")
+                    .bind(id)
+                    .bind(tenant_id)
+                    .execute(&mut **tx)
+                    .await
+                    .map_err(|e| SenseiError::Database(format!("Failed to delete project: {e}")))
+            })
+        })
+        .await?;
         if result.rows_affected() == 0 {
             return Err(SenseiError::NotFound(format!("Project {id} not found")));
         }
@@ -1427,33 +1569,37 @@ impl OperationsService for DatabaseOperationsService {
         // version increments in the same statement. Two replicas that both
         // read version 0 cannot both succeed — the loser gets 0 rows -> 409.
         let expected = a3.version;
-        let row = sqlx::query_as::<_, A3Row>(
-            r#"UPDATE a3_reports SET title=$1, background=$2, current_state=$3, goal=$4, root_cause_analysis=$5, countermeasures=$6, check_plan=$7, follow_up=$8, a3_type=$9, severity=$10,
-                                   observed_conditions=$13, metric_baselines=$14, evidence_refs=$15, cause_hypotheses=$16, experiments=$17, verifications=$18, standardizations=$19, learnings=$20,
-                                   version = version + 1
-               WHERE id=$11 AND tenant_id=$12 AND version=$21
-               RETURNING id, tenant_id, a3_number, title, background, current_state, goal, root_cause_analysis, countermeasures, check_plan, follow_up, a3_type, severity, status, owner_id, created_at, closed_at, version, observed_conditions, metric_baselines, evidence_refs, cause_hypotheses, experiments, verifications, standardizations, learnings"#,
-        )
-        .bind(&a3.title).bind(&a3.background).bind(&a3.current_state).bind(&a3.goal)
-        .bind(&a3.root_cause_analysis).bind(&a3.countermeasures).bind(&a3.check_plan).bind(&a3.follow_up)
-        .bind(&a3.a3_type).bind(&a3.severity)
-        .bind(id).bind(tenant_id)
-        .bind(serde_json::to_value(&a3.observed_conditions).unwrap_or(serde_json::Value::Array(vec![])))
-        .bind(serde_json::to_value(&a3.metric_baselines).unwrap_or(serde_json::Value::Array(vec![])))
-        .bind(serde_json::to_value(&a3.evidence_refs).unwrap_or(serde_json::Value::Array(vec![])))
-        .bind(serde_json::to_value(&a3.cause_hypotheses).unwrap_or(serde_json::Value::Array(vec![])))
-        .bind(serde_json::to_value(&a3.experiments).unwrap_or(serde_json::Value::Array(vec![])))
-        .bind(serde_json::to_value(&a3.verifications).unwrap_or(serde_json::Value::Array(vec![])))
-        .bind(serde_json::to_value(&a3.standardizations).unwrap_or(serde_json::Value::Array(vec![])))
-        .bind(serde_json::to_value(&a3.learnings).unwrap_or(serde_json::Value::Array(vec![])))
-        .bind(expected as i64)
-        .fetch_optional(&self.pool)
-        .await.map_err(|e| SenseiError::Database(format!("Failed to update A3: {e}")))?
-        .ok_or_else(|| {
-            SenseiError::Conflict(format!(
-                "VERSION_CONFLICT: A3 {id} was modified concurrently (expected version {expected})"
-            ))
-        })?;
+        let row = with_tenant_tx(&self.pool, tenant_id, move |tx| {
+            Box::pin(async move {
+                sqlx::query_as::<_, A3Row>(
+                    r#"UPDATE a3_reports SET title=$1, background=$2, current_state=$3, goal=$4, root_cause_analysis=$5, countermeasures=$6, check_plan=$7, follow_up=$8, a3_type=$9, severity=$10,
+                                           observed_conditions=$13, metric_baselines=$14, evidence_refs=$15, cause_hypotheses=$16, experiments=$17, verifications=$18, standardizations=$19, learnings=$20,
+                                           version = version + 1
+                       WHERE id=$11 AND tenant_id=$12 AND version=$21
+                       RETURNING id, tenant_id, a3_number, title, background, current_state, goal, root_cause_analysis, countermeasures, check_plan, follow_up, a3_type, severity, status, owner_id, created_at, closed_at, version, observed_conditions, metric_baselines, evidence_refs, cause_hypotheses, experiments, verifications, standardizations, learnings"#,
+                )
+                .bind(&a3.title).bind(&a3.background).bind(&a3.current_state).bind(&a3.goal)
+                .bind(&a3.root_cause_analysis).bind(&a3.countermeasures).bind(&a3.check_plan).bind(&a3.follow_up)
+                .bind(&a3.a3_type).bind(&a3.severity)
+                .bind(id).bind(tenant_id)
+                .bind(serde_json::to_value(&a3.observed_conditions).unwrap_or(serde_json::Value::Array(vec![])))
+                .bind(serde_json::to_value(&a3.metric_baselines).unwrap_or(serde_json::Value::Array(vec![])))
+                .bind(serde_json::to_value(&a3.evidence_refs).unwrap_or(serde_json::Value::Array(vec![])))
+                .bind(serde_json::to_value(&a3.cause_hypotheses).unwrap_or(serde_json::Value::Array(vec![])))
+                .bind(serde_json::to_value(&a3.experiments).unwrap_or(serde_json::Value::Array(vec![])))
+                .bind(serde_json::to_value(&a3.verifications).unwrap_or(serde_json::Value::Array(vec![])))
+                .bind(serde_json::to_value(&a3.standardizations).unwrap_or(serde_json::Value::Array(vec![])))
+                .bind(serde_json::to_value(&a3.learnings).unwrap_or(serde_json::Value::Array(vec![])))
+                .bind(expected as i64)
+                .fetch_optional(&mut **tx)
+                .await.map_err(|e| SenseiError::Database(format!("Failed to update A3: {e}")))?
+                .ok_or_else(|| {
+                    SenseiError::Conflict(format!(
+                        "VERSION_CONFLICT: A3 {id} was modified concurrently (expected version {expected})"
+                    ))
+                })
+            })
+        }).await?;
 
         Ok(a3_row_to_domain(row))
     }
@@ -1461,15 +1607,20 @@ impl OperationsService for DatabaseOperationsService {
     async fn delete_a3(&self, tenant_id: Uuid, id: Uuid) -> Result<()> {
         // A3 learning history is never physically erased: abandoned draft
         // cases are voided and retained.
-        let result = sqlx::query(
-            "UPDATE a3_reports SET status = 'voided' WHERE id = $1 AND tenant_id = $2 \
-             AND status = 'draft'",
-        )
-        .bind(id)
-        .bind(tenant_id)
-        .execute(&self.pool)
-        .await
-        .map_err(|e| SenseiError::Database(format!("Failed to void A3: {e}")))?;
+        let result = with_tenant_tx(&self.pool, tenant_id, |tx| {
+            Box::pin(async move {
+                sqlx::query(
+                    "UPDATE a3_reports SET status = 'voided' WHERE id = $1 AND tenant_id = $2 \
+                     AND status = 'draft'",
+                )
+                .bind(id)
+                .bind(tenant_id)
+                .execute(&mut **tx)
+                .await
+                .map_err(|e| SenseiError::Database(format!("Failed to void A3: {e}")))
+            })
+        })
+        .await?;
         if result.rows_affected() == 0 {
             return Err(SenseiError::Validation(
                 "Only draft A3 cases can be voided; published/closed history is retained"
@@ -1483,28 +1634,37 @@ impl OperationsService for DatabaseOperationsService {
 
     async fn update_risk(&self, tenant_id: Uuid, id: Uuid, risk: Risk) -> Result<Risk> {
         let risk_score = likelihood_score(&risk.likelihood) * impact_score(&risk.impact);
-        let row = sqlx::query_as::<_, RiskRow>(
-            r#"UPDATE risks SET title=$1, description=$2, category=$3, likelihood=$4, impact=$5, risk_score=$6, mitigation=$7, contingency=$8, owner_id=$9
-               WHERE id=$10 AND tenant_id=$11
-               RETURNING id, tenant_id, risk_number, title, description, category, likelihood, impact, risk_score, mitigation, contingency, status, owner_id, created_at, mitigated_at"#,
-        )
-        .bind(&risk.title).bind(&risk.description).bind(&risk.category).bind(&risk.likelihood)
-        .bind(&risk.impact).bind(risk_score).bind(&risk.mitigation).bind(&risk.contingency).bind(risk.owner_id)
-        .bind(id).bind(tenant_id)
-        .fetch_optional(&self.pool)
-        .await.map_err(|e| SenseiError::Database(format!("Failed to update risk: {e}")))?
-        .ok_or_else(|| SenseiError::NotFound(format!("Risk {id} not found")))?;
+        let row = with_tenant_tx(&self.pool, tenant_id, move |tx| {
+            Box::pin(async move {
+                sqlx::query_as::<_, RiskRow>(
+                    r#"UPDATE risks SET title=$1, description=$2, category=$3, likelihood=$4, impact=$5, risk_score=$6, mitigation=$7, contingency=$8, owner_id=$9
+                       WHERE id=$10 AND tenant_id=$11
+                       RETURNING id, tenant_id, risk_number, title, description, category, likelihood, impact, risk_score, mitigation, contingency, status, owner_id, created_at, mitigated_at"#,
+                )
+                .bind(&risk.title).bind(&risk.description).bind(&risk.category).bind(&risk.likelihood)
+                .bind(&risk.impact).bind(risk_score).bind(&risk.mitigation).bind(&risk.contingency).bind(risk.owner_id)
+                .bind(id).bind(tenant_id)
+                .fetch_optional(&mut **tx)
+                .await.map_err(|e| SenseiError::Database(format!("Failed to update risk: {e}")))?
+                .ok_or_else(|| SenseiError::NotFound(format!("Risk {id} not found")))
+            })
+        }).await?;
 
         Ok(risk_row_to_domain(row))
     }
 
     async fn delete_risk(&self, tenant_id: Uuid, id: Uuid) -> Result<()> {
-        let result = sqlx::query("DELETE FROM risks WHERE id = $1 AND tenant_id = $2")
-            .bind(id)
-            .bind(tenant_id)
-            .execute(&self.pool)
-            .await
-            .map_err(|e| SenseiError::Database(format!("Failed to delete risk: {e}")))?;
+        let result = with_tenant_tx(&self.pool, tenant_id, |tx| {
+            Box::pin(async move {
+                sqlx::query("DELETE FROM risks WHERE id = $1 AND tenant_id = $2")
+                    .bind(id)
+                    .bind(tenant_id)
+                    .execute(&mut **tx)
+                    .await
+                    .map_err(|e| SenseiError::Database(format!("Failed to delete risk: {e}")))
+            })
+        })
+        .await?;
         if result.rows_affected() == 0 {
             return Err(SenseiError::NotFound(format!("Risk {id} not found")));
         }

@@ -28,6 +28,7 @@ use uuid::Uuid;
 
 use crate::middleware::request_id::RequestId;
 use crate::state::AppState;
+use sensei_core::db::TenantTx;
 
 /// A single audit log entry.
 #[derive(Debug, Clone, Serialize)]
@@ -114,33 +115,83 @@ impl AuditLog {
                     "path": entry.path,
                     "duration_ms": entry.duration_ms,
                 });
+                // audit_logs.resource_type is NOT NULL; plain HTTP request
+                // audit entries carry no resource, so the sink stamps the
+                // canonical generic value instead of inserting NULL.
+                let resource_type = entry
+                    .resource_type
+                    .clone()
+                    .unwrap_or_else(|| "http_request".to_string());
 
+                let entries = Arc::clone(&self.entries);
+                let max_entries = self.max_entries;
                 tokio::spawn(async move {
-                    let outcome = sqlx::query(
-                        "INSERT INTO audit_logs \
-                         (occurred_at, tenant_id, actor_id, session_id, request_id, action, \
-                          resource_type, resource_id, result, source_ip, details) \
-                         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)",
-                    )
-                    .bind(timestamp)
-                    .bind(tenant_id)
-                    .bind(actor_id)
-                    .bind(entry.session_id)
-                    .bind(entry.request_id)
-                    .bind(action)
-                    .bind(entry.resource_type)
-                    .bind(entry.resource_id)
-                    .bind(result)
-                    .bind(entry.source_ip)
-                    .bind(details)
-                    .execute(&*pool)
-                    .await;
-
-                    if let Err(e) = outcome {
-                        tracing::error!(
-                            error = %e,
-                            "Failed to persist audit log entry (audit trail may be incomplete)"
-                        );
+                    // audit_logs is fail-closed FORCE RLS (migration 175):
+                    // a no-context pooled INSERT is denied for the
+                    // least-privilege sensei_app role (the superuser e2e
+                    // connection masked this — every audited request lost
+                    // its entry). Authenticated entries carry the actor's
+                    // tenant, so the INSERT runs inside a TenantTx of it.
+                    // ANONYMOUS entries (login attempts, health probes)
+                    // have no tenant context by definition — FORCE RLS
+                    // admits no no-context write, so they fall back to the
+                    // in-memory ring (same semantics as the no-pool mode)
+                    // instead of being dropped. A migration-level SECURITY
+                    // DEFINER audit sink would let anonymous entries
+                    // persist; the tenant-scoped trail — the
+                    // security-critical part — is never lost.
+                    match tenant_id {
+                        Some(tenant) => {
+                            let mut db = match TenantTx::begin(&pool, tenant).await {
+                                Ok(db) => db,
+                                Err(e) => {
+                                    tracing::error!(
+                                        error = %e,
+                                        "Failed to persist audit log entry (audit trail may be incomplete)"
+                                    );
+                                    return;
+                                }
+                            };
+                            if let Err(e) = sqlx::query(
+                                "INSERT INTO audit_logs \
+                                 (occurred_at, tenant_id, actor_id, session_id, request_id, action, \
+                                  resource_type, resource_id, result, source_ip, details) \
+                                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)",
+                            )
+                            .bind(timestamp)
+                            .bind(tenant_id)
+                            .bind(actor_id)
+                            .bind(entry.session_id)
+                            .bind(entry.request_id)
+                            .bind(action)
+                            .bind(resource_type)
+                            .bind(entry.resource_id)
+                            .bind(result)
+                            .bind(entry.source_ip)
+                            .bind(details)
+                            .execute(&mut **db.tx())
+                            .await
+                            {
+                                tracing::error!(
+                                    error = %e,
+                                    "Failed to persist audit log entry (audit trail may be incomplete)"
+                                );
+                                return;
+                            }
+                            if let Err(e) = db.commit().await {
+                                tracing::error!(
+                                    error = %e,
+                                    "Failed to persist audit log entry (audit trail may be incomplete)"
+                                );
+                            }
+                        }
+                        None => {
+                            let mut guard = entries.write().await;
+                            if guard.len() >= max_entries {
+                                guard.remove(0);
+                            }
+                            guard.push(entry);
+                        }
                     }
                 });
             }

@@ -36,7 +36,7 @@ const HSTS_HEADER: &str = "max-age=31536000; includeSubDomains";
 /// permits WebAssembly compilation; `connect-src 'self' ws: wss:` covers
 /// the realtime/SSE channels; styles are inlined by the design system, so
 /// `style-src 'unsafe-inline'` is required as well.
-const DEFAULT_CSP_HEADER: &str = "default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self' ws: wss:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'";
+const DEFAULT_CSP_HEADER: &str = "default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data: https://fonts.gstatic.com; connect-src 'self' ws: wss:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'";
 
 /// Determine whether the request was made over HTTPS.
 ///

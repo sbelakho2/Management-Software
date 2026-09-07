@@ -331,6 +331,13 @@ jobs:
             --set senseiApi.image.repository=ghcr.io/sbelakho2/sensei-rs-api > /dev/null
 
       # azure/k8s-set-context@v5.0.1
+      # KUBE_CONFIG (thirtieth-first-audit item 18): this must be a
+      # PRODUCTION-ENVIRONMENT secret (Settings > Environments >
+      # production > Secrets), never a repo-global one: the file holds the
+      # deployment cluster service account's credentials, scoped to the
+      # sensei-os workload in sensei-production (helm upgrade/rollout) with
+      # least privilege — no cluster-admin. Environment scoping also means
+      # the secret only ever materializes inside this approved deploy job.
       - name: Set up Kubeconfig
         uses: azure/k8s-set-context@8698eba2499e9012f0d5085f8798077cce4bc526
         with:
@@ -351,3 +358,62 @@ jobs:
         run: |
           kubectl rollout status deployment/sensei-os-sensei-api -n sensei-production --timeout=5m
           kubectl rollout status deployment/sensei-os-worker -n sensei-production --timeout=5m
+
+      # ── Post-rollout deployment gate (thirtieth-first-audit item 18) ──
+      # helm --wait and the rollout checks above prove the WORKLOADS
+      # rolled out; these steps prove the DEPLOYMENT serves traffic: the
+      # public liveness/readiness endpoints, then one authenticated read
+      # as a dedicated smoke account. A successful rollout alone never
+      # marks the deployment successful (deployment gate integrity).
+      - name: Production readiness smoke
+        env:
+          PRODUCTION_URL: ${{ vars.PRODUCTION_URL }}
+        run: |
+          set -euo pipefail
+          # The smoke is REQUIRED once production exists — fail loudly when
+          # PRODUCTION_URL is not configured instead of skipping.
+          if [ -z "${PRODUCTION_URL:-}" ]; then
+            echo "::error::PRODUCTION_URL (repository/environment variable) is unset — the production readiness smoke cannot run without it."
+            exit 1
+          fi
+          curl --fail --show-error --silent "${PRODUCTION_URL}/livez"
+          curl --fail --show-error --silent "${PRODUCTION_URL}/readyz"
+
+      # Authenticated smoke: POST {PRODUCTION_URL}/api/v1/auth/login with a
+      # JSON {email,password} body (the login shape sensei-api serves —
+      # sensei-rs/crates/sensei-api/src/routes/auth.rs) → capture the
+      # access_token → one genuinely safe read, GET /api/v1/auth/me, which
+      # returns ONLY the calling account's own profile (verified against
+      # the sensei-api router: protected route, no tenant data, no extra
+      # permission beyond a valid login). The identity is a dedicated,
+      # least-privilege, non-admin smoke account — never a human's or an
+      # admin credential. SMOKE_ACCOUNT_EMAIL is a repository/environment
+      # VARIABLE, SMOKE_ACCOUNT_PASSWORD a SECRET; both default to the
+      # empty string when unset so the step FAILS CLOSED below.
+      - name: Production authenticated smoke (dedicated smoke account)
+        env:
+          PRODUCTION_URL: ${{ vars.PRODUCTION_URL }}
+          SMOKE_ACCOUNT_EMAIL: ${{ vars.SMOKE_ACCOUNT_EMAIL }}
+          SMOKE_ACCOUNT_PASSWORD: ${{ secrets.SMOKE_ACCOUNT_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -z "${PRODUCTION_URL:-}" ]; then
+            echo "::error::PRODUCTION_URL is unset — the authenticated production smoke cannot run without it."
+            exit 1
+          fi
+          if [ -z "${SMOKE_ACCOUNT_EMAIL:-}" ] || [ -z "${SMOKE_ACCOUNT_PASSWORD:-}" ]; then
+            echo "::error::SMOKE_ACCOUNT_EMAIL (variable) and SMOKE_ACCOUNT_PASSWORD (secret) must be configured for the dedicated production smoke account."
+            exit 1
+          fi
+          LOGIN_BODY="$(jq -nc --arg email "${SMOKE_ACCOUNT_EMAIL}" --arg password "${SMOKE_ACCOUNT_PASSWORD}" '{email: $email, password: $password}')"
+          LOGIN_RESPONSE="$(curl --fail --show-error --silent \
+            -X POST "${PRODUCTION_URL}/api/v1/auth/login" \
+            -H 'Content-Type: application/json' \
+            --data-binary "${LOGIN_BODY}")"
+          ACCESS_TOKEN="$(printf '%s' "${LOGIN_RESPONSE}" | jq -er '.access_token')"
+          [ -n "${ACCESS_TOKEN}" ] || { echo "::error::login succeeded but the response carried no access_token"; exit 1; }
+          HTTP_CODE="$(curl --show-error --silent -o /dev/null -w '%{http_code}' \
+            -H "Authorization: Bearer ${ACCESS_TOKEN}" \
+            "${PRODUCTION_URL}/api/v1/auth/me")"
+          [ "${HTTP_CODE}" = "200" ] || { echo "::error::authenticated read GET /api/v1/auth/me returned HTTP ${HTTP_CODE}, expected 200"; exit 1; }
+          echo "authenticated production smoke OK — GET /api/v1/auth/me as ${SMOKE_ACCOUNT_EMAIL} returned 200"

@@ -20,13 +20,18 @@ pub fn OpsPage() -> impl IntoView {
     }
 }
 
-/// List Andon events.
+/// List Andon events — the CANONICAL board (thirty-first audit): rows come
+/// from the `/api/v1/andon` pagination envelope (`page.data`) using the
+/// shared `AndonResponse` contract. The legacy title/location-style DTO
+/// never existed on the wire, so the board renders the REAL fields:
+/// andon_number, issue_type, severity, status, work center, raised by,
+/// response/resolution seconds and created date.
 #[component]
 pub fn AndonListPage() -> impl IntoView {
     let app_state = use_context::<AppState>().expect("AppState not provided");
     let data = ArcLocalResource::new(move || {
         let client = app_state.api_client();
-        async move { OpsApi::list_andons(&client).await }
+        async move { crate::api::andon::AndonApi::list_andons(&client).await }
     });
     // Item 63: the LAST pushed Andon is surfaced at the top of the board —
     // a new Andon arrives without any refresh.
@@ -40,8 +45,8 @@ pub fn AndonListPage() -> impl IntoView {
             width: None,
         },
         TableColumn {
-            label: "TITLE",
-            key: "title",
+            label: "ISSUE TYPE",
+            key: "issue_type",
             sortable: true,
             width: None,
         },
@@ -58,8 +63,8 @@ pub fn AndonListPage() -> impl IntoView {
             width: Some("90px"),
         },
         TableColumn {
-            label: "LOCATION",
-            key: "location",
+            label: "WORK CENTER",
+            key: "work_center_id",
             sortable: true,
             width: None,
         },
@@ -119,18 +124,27 @@ pub fn AndonListPage() -> impl IntoView {
                 }
             })}
             {move || data.map(|w| match &**w {
-                Ok(list) => {
-                    let rows: Vec<_> = list.clone().into_iter().map(|a| {
+                Ok(page) => {
+                    let rows: Vec<_> = page.data.clone().into_iter().map(|a| {
+                        let created = a.created_at.format("%Y-%m-%d").to_string();
+                        let work_center = a.work_center_id.to_string();
+                        let raised_by = a.raised_by.to_string();
+                        let issue = a.issue_type.clone();
+                        let issue_class = format!("rams-badge issue-{}", issue.to_lowercase());
+                        let severity = a.severity.clone();
+                        let severity_class = format!("rams-badge severity-{}", severity.to_lowercase());
+                        let status = a.status.clone();
+                        let status_class = format!("rams-badge status-{}", status.to_lowercase());
                         view! {
                             <td>{a.andon_number}</td>
-                            <td>{a.title}</td>
-                            <td><span class=format!("rams-badge severity-{}", a.severity.to_lowercase())>{a.severity.clone()}</span></td>
-                            <td><span class=format!("rams-badge status-{}", a.status.to_lowercase())>{a.status.clone()}</span></td>
-                            <td>{a.location.unwrap_or_else(|| "—".into())}</td>
-                            <td>{a.raised_by}</td>
+                            <td><span class=issue_class>{issue}</span></td>
+                            <td><span class=severity_class>{severity}</span></td>
+                            <td><span class=status_class>{status}</span></td>
+                            <td>{work_center}</td>
+                            <td>{raised_by}</td>
                             <td>{a.response_time_seconds.map(|s| s.to_string()).unwrap_or_else(|| "—".into())}</td>
                             <td>{a.resolution_time_seconds.map(|s| s.to_string()).unwrap_or_else(|| "—".into())}</td>
-                            <td>{a.created_at[..10].to_string()}</td>
+                            <td>{created}</td>
                         }
                     }).collect();
                     view! { <DataTable columns=columns.clone() rows=rows /> }.into_any()

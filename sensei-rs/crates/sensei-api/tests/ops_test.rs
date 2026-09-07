@@ -1,21 +1,23 @@
 //! End-to-end tests for Operations (Ops) endpoints.
 //!
-//! Covers: Andon, Projects, A3s, Risks CRUD under /api/v1/ops/.
+//! Covers: Andon aliases, Projects, A3s, Risks CRUD under /api/v1/ops/.
 //!
 //! # DB-gated lifecycle test
 //!
-//! `test_ops_acknowledge_and_resolve_andon` exercises the Ops Andon
-//! LIFECYCLE endpoints (`/ops/andons/{id}/acknowledge` + `/resolve`),
-//! whose commands are site-scoped: the repository UPDATEs embed
-//! `site_id = ANY(authorized_sites)` and deny an empty entitlement
-//! (fail-closed, twenty-first audit). The in-memory test harness has no
-//! site rows or role-slot scope authority, so the test connects to the
-//! CI-provided database (`DATABASE_URL_TEST`), seeds an operator with an
-//! ACTIVE site entitlement + assignment, and drives the real handlers
+//! `test_ops_acknowledge_and_resolve_andon` exercises the Andon
+//! LIFECYCLE through the canonical scope-vector handlers that the legacy
+//! `/ops/andons/{id}/acknowledge` + `/resolve` URLs alias (thirtieth-first
+//! audit: the ops router no longer carries Andon handlers — the legacy
+//! paths map DIRECTLY to `routes::andon`), whose commands are
+//! scope-vector enforced: the repository UPDATEs embed the tripartite
+//! scope predicate `(tenant_wide OR site_id = ANY(sites) OR
+//! work_center_id = ANY(work_centers))` and deny a `NoOperationalScope`
+//! caller (fail-closed, twenty-first audit). The in-memory test harness
+//! has no site rows or role-slot scope authority, so the test connects to
+//! the CI-provided database (`DATABASE_URL_TEST`), seeds an operator with
+//! an ACTIVE site entitlement + assignment, and drives the real handlers
 //! (DB-backed state). The Andon is raised through the canonical
-//! `/api/v1/andon` path (the server-scoped raise — the legacy unscoped
-//! full-object ops raise produces site-less rows that site-scoped
-//! lifecycle commands intentionally cannot manage in ANY mode). Without
+//! `/api/v1/andon` path (the server-scoped raise). Without
 //! the environment variable the test skips cleanly, mirroring
 //! `attachments_test.rs` / `today_test.rs`.
 
@@ -39,37 +41,37 @@ mod common;
 async fn test_ops_list_andons() {
     let app = common::TestApp::new().await;
     let token = app.login_as_admin().await;
+    // Legacy alias: GET /api/v1/ops/andons IS the canonical
+    // scope-vector list (routes::andon::list_andons). The in-memory
+    // harness carries the explicit tenant-wide grant, so the listing
+    // succeeds and is empty.
     let req = app.get_authenticated("/api/v1/ops/andons", &token);
     let resp = app.send_request(req).await;
     assert_eq!(resp.status(), StatusCode::OK);
 }
 
 #[tokio::test]
-async fn test_ops_raise_andon() {
+async fn test_ops_raise_andon_alias_requires_server_resolved_focus() {
     let app = common::TestApp::new().await;
     let token = app.login_as_admin().await;
+    // Legacy alias: POST /api/v1/ops/andons IS the canonical
+    // server-scoped raise (routes::andon::raise_andon). The full-object
+    // legacy shape is gone — the handler derives site + work center from
+    // the caller's validated RequestContext focus, never from the body.
+    // The in-memory harness has no operational assignment, so the raise
+    // is FORBIDDEN (fail closed), exactly like the canonical endpoint.
     let body = serde_json::json!({
-        "id": uuid::Uuid::new_v4().to_string(),
-        "tenant_id": uuid::Uuid::new_v4().to_string(),
-        "andon_number": "ANDON-001",
-        "work_center_id": uuid::Uuid::new_v4().to_string(),
         "issue_type": "quality",
         "severity": "high",
-        "description": "Test andon via ops",
-        "status": "active",
-        "raised_by": uuid::Uuid::new_v4().to_string(),
-        "acknowledged_by": null,
-        "resolved_by": null,
-        "resolution": null,
-        "response_time_seconds": null,
-        "resolution_time_seconds": null,
-        "created_at": "2025-01-01T00:00:00Z",
-        "acknowledged_at": null,
-        "resolved_at": null,
+        "description": "Test andon via ops alias",
     });
     let req = app.post_authenticated("/api/v1/ops/andons", &token, body);
     let resp = app.send_request(req).await;
-    assert_eq!(resp.status(), StatusCode::OK);
+    assert_eq!(
+        resp.status(),
+        StatusCode::FORBIDDEN,
+        "raising an Andon requires an active site + work center (server-resolved)"
+    );
 }
 
 #[tokio::test]
@@ -368,9 +370,9 @@ async fn test_ops_acknowledge_and_resolve_andon() {
         sid: None,
     };
 
-    // Raise through the canonical server-scoped Andon path (the legacy
-    // unscoped full-object ops raise produces site-less rows that the
-    // site-scoped lifecycle commands cannot manage in any mode).
+    // Raise through the canonical server-scoped Andon path — the legacy
+    // /ops/andons POST IS this handler (thirtieth-first audit), so the
+    // lifecycle below covers the alias semantics end to end.
     let raised = sensei_api::routes::andon::raise_andon(
         user.clone(),
         State(state.clone()),
@@ -387,33 +389,34 @@ async fn test_ops_acknowledge_and_resolve_andon() {
     .0;
     let andon_id = raised.id;
 
-    // Acknowledge via the OPS endpoint: the actor comes from the token,
-    // not the body.
-    let acknowledged = sensei_api::routes::ops::acknowledge_andon(
+    // Acknowledge through the canonical scope-vector handler (the legacy
+    // OPS URL aliases it): no body — the actor comes from the token.
+    let acknowledged = sensei_api::routes::andon::acknowledge_andon(
         user.clone(),
         State(state.clone()),
         Path(andon_id),
+        axum::body::Body::empty(),
     )
     .await
-    .expect("an entitled operator can acknowledge through the ops endpoint")
+    .expect("an entitled operator can acknowledge through the ops alias")
     .0;
     assert_eq!(acknowledged.status, "acknowledged");
     assert_eq!(acknowledged.acknowledged_by, Some(world.operator_id));
     assert!(acknowledged.acknowledged_at.is_some());
     assert!(acknowledged.response_time_seconds.is_some());
 
-    // Resolve via the OPS endpoint with resolution notes; the actor is
-    // still token-derived.
-    let resolved = sensei_api::routes::ops::resolve_andon(
+    // Resolve with resolution notes; the actor is still token-derived.
+    let resolved = sensei_api::routes::andon::resolve_andon(
         user.clone(),
         State(state),
         Path(andon_id),
-        Json(sensei_api::routes::ops::ResolveAndonRequest {
+        Json(sensei_api::routes::andon::ResolveAndonRequest {
+            resolved_by: None,
             resolution: "Restarted the machine".to_string(),
         }),
     )
     .await
-    .expect("an entitled operator can resolve through the ops endpoint")
+    .expect("an entitled operator can resolve through the ops alias")
     .0;
     assert_eq!(resolved.status, "resolved");
     assert_eq!(resolved.resolved_by, Some(world.operator_id));
@@ -422,6 +425,63 @@ async fn test_ops_acknowledge_and_resolve_andon() {
         Some("Restarted the machine")
     );
     assert!(resolved.resolution_time_seconds.is_some());
+}
+
+#[tokio::test]
+async fn test_ops_acknowledge_alias_bodyless_route_reaches_handler() {
+    let app = common::TestApp::new().await;
+    let token = app.login_as_admin().await;
+    let andon_id = uuid::Uuid::new_v4();
+    // The canonical acknowledge is BODY-LESS (thirtieth-first audit).
+    // Both the canonical URL and the legacy ops alias are the SAME
+    // handler: a body-less POST is accepted and runs (an unknown andon id
+    // is 404 NotFound — NOT a 415 body rejection).
+    for path in [
+        format!("/api/v1/ops/andons/{andon_id}/acknowledge"),
+        format!("/api/v1/andon/{andon_id}/acknowledge"),
+    ] {
+        let req = axum::http::Request::builder()
+            .uri(path)
+            .method("POST")
+            .header("Authorization", format!("Bearer {}", token))
+            .body(axum::body::Body::empty())
+            .expect("body-less acknowledge request builds");
+        let resp = app.send_request(req).await;
+        assert_eq!(
+            resp.status(),
+            StatusCode::NOT_FOUND,
+            "a body-less acknowledge reaches the canonical handler on both URLs (unknown andon -> NotFound)"
+        );
+    }
+}
+
+#[tokio::test]
+async fn test_ops_acknowledge_alias_rejects_legacy_payload() {
+    let app = common::TestApp::new().await;
+    let token = app.login_as_admin().await;
+    let andon_id = uuid::Uuid::new_v4();
+    // Legacy clients posted an acknowledged_by-style payload to the
+    // acknowledge URL. The thirtieth-first audit made the canonical
+    // acknowledge body-less (the actor is the token's user), so a request
+    // carrying a body is rejected with 415 — on the canonical URL AND on
+    // the legacy ops alias, which map to the same handler — instead of
+    // silently dropping the payload.
+    for path in [
+        format!("/api/v1/ops/andons/{andon_id}/acknowledge"),
+        format!("/api/v1/andon/{andon_id}/acknowledge"),
+    ] {
+        let req = app.post_authenticated(
+            &path,
+            &token,
+            serde_json::json!({ "resolved_by": uuid::Uuid::new_v4() }),
+        );
+        let resp = app.send_request(req).await;
+        assert_eq!(
+            resp.status(),
+            StatusCode::UNSUPPORTED_MEDIA_TYPE,
+            "an acknowledge with a body must be rejected on {path}"
+        );
+    }
 }
 
 #[tokio::test]

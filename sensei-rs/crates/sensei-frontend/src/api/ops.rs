@@ -1,35 +1,13 @@
 //! Operations / Continuous Improvement API endpoints.
 //!
-//! Andon, Projects, A3 Reports, Risks.
+//! Projects, A3 Reports, Risks. Andon has moved OUT of this module
+//! (thirty-first audit): the canonical Andon surface lives in
+//! [`crate::api::andon`] over `/api/v1/andon` with the shared
+//! sensei-contracts types — the legacy `/api/v1/ops/andons` full-object
+//! surface and its title/location-style DTOs are gone.
 
 use crate::api::client::{ApiClient, ApiError};
 use serde::{Deserialize, Serialize};
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AndonDto {
-    pub id: String,
-    pub tenant_id: String,
-    pub andon_number: String,
-    pub title: String,
-    pub description: Option<String>,
-    pub severity: String,
-    pub status: String,
-    pub location: Option<String>,
-    pub raised_by: String,
-    pub acknowledged_by: Option<String>,
-    pub response_time_seconds: Option<i64>,
-    pub resolution_time_seconds: Option<i64>,
-    pub created_at: String,
-    pub updated_at: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RaiseAndonRequest {
-    pub title: String,
-    pub description: Option<String>,
-    pub severity: String,
-    pub location: Option<String>,
-}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProjectDto {
@@ -106,33 +84,6 @@ pub struct CreateRiskRequest {
 pub struct OpsApi;
 
 impl OpsApi {
-    // ---- Andon ----
-    pub async fn list_andons(client: &ApiClient) -> Result<Vec<AndonDto>, ApiError> {
-        client.get("/api/v1/ops/andons").await
-    }
-
-    pub async fn get_andon(client: &ApiClient, id: &str) -> Result<AndonDto, ApiError> {
-        client.get(&format!("/api/v1/ops/andons/{}", id)).await
-    }
-
-    pub async fn raise_andon(
-        client: &ApiClient,
-        req: &RaiseAndonRequest,
-    ) -> Result<AndonDto, ApiError> {
-        client.post("/api/v1/ops/andons", req).await
-    }
-
-    /// The SAFE Andon raise command (item 40): the request carries only
-    /// the operator's plain-language inputs; the server derives
-    /// actor/tenant/status. The legacy /api/v1/ops/andons full-object
-    /// route must NOT be used by clients.
-    pub async fn raise_andon_command(
-        client: &ApiClient,
-        req: &crate::api::andon::RaiseAndonCommandRequest,
-    ) -> Result<AndonDto, ApiError> {
-        client.post("/api/v1/andon", req).await
-    }
-
     // ---- Projects ----
     pub async fn list_projects(client: &ApiClient) -> Result<Vec<ProjectDto>, ApiError> {
         client.get("/api/v1/ops/projects").await

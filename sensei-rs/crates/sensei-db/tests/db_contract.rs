@@ -218,9 +218,13 @@ async fn full_migration_chain_applies_and_core_contracts_work() {
 
     // ── Andon restart contract (P0-7) ─────────────────────────────────
     let andon_id = uuid::Uuid::new_v4();
-    // FK prerequisites: a real user in tenant A (work_center_id is NOT a
-    // foreign key in the andons table — it references topology only).
+    // FK prerequisites: a real user in tenant A, plus a real site and
+    // work center — migration 178's composite FK requires the Andon's
+    // (tenant_id, site_id, work_center_id) to be an existing
+    // work_centers row (and site_id is NOT NULL).
     let raised_by = uuid::Uuid::new_v4();
+    let andon_site = uuid::Uuid::new_v4();
+    let andon_wc = uuid::Uuid::new_v4();
     sqlx::query(
         "INSERT INTO users (id, tenant_id, email, name, password_hash)  VALUES ($1, $2, 'andon@contract.local', 'Andon', 'x')",
     )
@@ -230,11 +234,30 @@ async fn full_migration_chain_applies_and_core_contracts_work() {
     .await
     .expect("andon user insert");
     sqlx::query(
-        "INSERT INTO andons (id, tenant_id, andon_number, work_center_id, issue_type,  severity, description, status, raised_by)  VALUES ($1, $2, 'AND-1', $3, 'safety', 'critical', 'line stop', 'active', $4)",
+        "INSERT INTO sites (id, tenant_id, site_code, name) VALUES ($1, $2, 'AND', 'Andon')",
+    )
+    .bind(andon_site)
+    .bind(tenant_id)
+    .execute(&pool)
+    .await
+    .expect("andon site insert");
+    sqlx::query(
+        "INSERT INTO work_centers (id, tenant_id, site_id, name, work_center_number) \
+         VALUES ($1, $2, $3, 'Andon WC', 'WC-ANDON')",
+    )
+    .bind(andon_wc)
+    .bind(tenant_id)
+    .bind(andon_site)
+    .execute(&pool)
+    .await
+    .expect("andon work center insert");
+    sqlx::query(
+        "INSERT INTO andons (id, tenant_id, andon_number, site_id, work_center_id, issue_type,  severity, description, status, raised_by)  VALUES ($1, $2, 'AND-1', $3, $4, 'safety', 'critical', 'line stop', 'active', $5)",
     )
     .bind(andon_id)
     .bind(tenant_id)
-    .bind(uuid::Uuid::new_v4())
+    .bind(andon_site)
+    .bind(andon_wc)
     .bind(raised_by)
     .execute(&pool)
     .await
@@ -603,6 +626,23 @@ async fn andon_service_rls_and_safety_rule_work_on_migrated_schema() {
     let service = sensei_services::ops::DatabaseOperationsService::new(pool.clone());
 
     let site_a_rls = uuid::Uuid::new_v4();
+    let wc_a_rls = uuid::Uuid::new_v4();
+    sqlx::query("INSERT INTO sites (id, tenant_id, site_code, name) VALUES ($1, $2, 'RLS', 'RLS')")
+        .bind(site_a_rls)
+        .bind(tenant_id)
+        .execute(&pool)
+        .await
+        .expect("site insert");
+    sqlx::query(
+        "INSERT INTO work_centers (id, tenant_id, site_id, name, work_center_number) \
+         VALUES ($1, $2, $3, 'RLS WC', 'WC-RLS')",
+    )
+    .bind(wc_a_rls)
+    .bind(tenant_id)
+    .bind(site_a_rls)
+    .execute(&pool)
+    .await
+    .expect("work center insert");
     let raised = service
         .raise_andon(
             tenant_id,
@@ -611,7 +651,7 @@ async fn andon_service_rls_and_safety_rule_work_on_migrated_schema() {
                 tenant_id,
                 site_id: Some(site_a_rls),
                 andon_number: String::new(),
-                work_center_id: uuid::Uuid::new_v4(),
+                work_center_id: wc_a_rls,
                 issue_type: "safety".to_string(),
                 severity: "critical".to_string(),
                 description: "Line stop".to_string(),
@@ -639,11 +679,17 @@ async fn andon_service_rls_and_safety_rule_work_on_migrated_schema() {
         .await
         .expect("raise_andon must work with the fail-closed RLS policy");
     assert_eq!(raised.status, "active");
-    let sites = vec![site_a_rls];
+    // Thirtieth-first audit: the scope is the FULL authorization vector —
+    // here a site grant covering site_a_rls.
+    use sensei_core::domain::scope::AuthorizedScope;
+    let scope = AuthorizedScope::Operational {
+        sites: std::collections::HashSet::from([site_a_rls]),
+        work_centers: std::collections::HashSet::new(),
+    };
 
     // The safety rule: resolving WITHOUT restart authorization fails.
     let blocked = service
-        .resolve_andon(tenant_id, &sites, raised.id, raised_by, "trying to resolve")
+        .resolve_andon(tenant_id, &scope, raised.id, raised_by, "trying to resolve")
         .await;
     assert!(
         blocked.is_err(),
@@ -652,13 +698,13 @@ async fn andon_service_rls_and_safety_rule_work_on_migrated_schema() {
 
     // Authorize restart, then resolve succeeds.
     service
-        .authorize_restart(tenant_id, &sites, raised.id, raised_by)
+        .authorize_restart(tenant_id, &scope, raised.id, raised_by)
         .await
         .expect("authorize_restart must work");
     let resolved = service
         .resolve_andon(
             tenant_id,
-            &sites,
+            &scope,
             raised.id,
             raised_by,
             "restarted after authorization",
@@ -1178,16 +1224,39 @@ async fn learning_metrics_compute_from_migrated_schema() {
     .expect("user insert");
 
     // Two resolved andons (latencies + MTBF) + one A3 with verification.
+    // Migration 178: every andon needs a (tenant, site, work_center) that
+    // exists in work_centers (site_id NOT NULL + composite FK).
+    let learn_site = uuid::Uuid::new_v4();
+    let learn_wc = uuid::Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO sites (id, tenant_id, site_code, name) VALUES ($1, $2, 'LEARN', 'Learn')",
+    )
+    .bind(learn_site)
+    .bind(tenant_id)
+    .execute(&pool)
+    .await
+    .expect("site insert");
+    sqlx::query(
+        "INSERT INTO work_centers (id, tenant_id, site_id, name, work_center_number) \
+         VALUES ($1, $2, $3, 'Learn WC', 'WC-LEARN')",
+    )
+    .bind(learn_wc)
+    .bind(tenant_id)
+    .bind(learn_site)
+    .execute(&pool)
+    .await
+    .expect("work center insert");
     let now = chrono::Utc::now();
     for (i, resp, resolv) in [(1i64, 30i64, 300i64), (2, 60, 900)] {
         sqlx::query(
-            "INSERT INTO andons (id, tenant_id, andon_number, work_center_id, issue_type, severity, status, raised_by, acknowledged_by, resolved_by, response_time_seconds, resolution_time_seconds, created_at, acknowledged_at, resolved_at) \
-             VALUES ($1,$2,$3,$4,'safety','medium','resolved',$5,$5,$5,$6,$7,$8,$8,$8)",
+            "INSERT INTO andons (id, tenant_id, andon_number, site_id, work_center_id, issue_type, severity, status, raised_by, acknowledged_by, resolved_by, response_time_seconds, resolution_time_seconds, created_at, acknowledged_at, resolved_at) \
+             VALUES ($1,$2,$3,$4,$5,'safety','medium','resolved',$6,$6,$6,$7,$8,$9,$9,$9)",
         )
         .bind(uuid::Uuid::new_v4())
         .bind(tenant_id)
         .bind(format!("A-{i}"))
-        .bind(uuid::Uuid::new_v4())
+        .bind(learn_site)
+        .bind(learn_wc)
         .bind(user_id)
         .bind(resp)
         .bind(resolv)
@@ -2945,12 +3014,22 @@ async fn tps_full_learning_loop() {
     .execute(&pool)
     .await
     .expect("bom insert");
+    let site_loop = uuid::Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO sites (id, tenant_id, site_code, name) VALUES ($1, $2, 'LOOP', 'Loop')",
+    )
+    .bind(site_loop)
+    .bind(tenant_id)
+    .execute(&pool)
+    .await
+    .expect("site insert");
     let wc_id = uuid::Uuid::new_v4();
     sqlx::query(
-        "INSERT INTO work_centers (id, tenant_id, name, work_center_number, is_active, capacity_per_shift, created_at, updated_at)  VALUES ($1, $2, 'SMT', 'SMT-1', TRUE, 8, NOW(), NOW())",
+        "INSERT INTO work_centers (id, tenant_id, site_id, name, work_center_number, is_active, capacity_per_shift, created_at, updated_at)  VALUES ($1, $2, $3, 'SMT', 'SMT-1', TRUE, 8, NOW(), NOW())",
     )
     .bind(wc_id)
     .bind(tenant_id)
+    .bind(site_loop)
     .execute(&pool)
     .await
     .expect("work center insert");
@@ -3098,7 +3177,7 @@ async fn tps_full_learning_loop() {
             sensei_services::ops::Andon {
                 id: uuid::Uuid::new_v4(),
                 tenant_id,
-                site_id: None,
+                site_id: Some(site_loop),
                 andon_number: String::new(),
                 work_center_id: wc_id,
                 issue_type: "material".to_string(),
@@ -3753,18 +3832,38 @@ async fn operational_event_envelope_records_bitemporal() {
     .execute(&pool)
     .await
     .expect("event user insert");
+    // Migration 178: the Andon's (tenant, site, work_center) must exist
+    // as a work_centers row (site_id NOT NULL + composite FK).
+    let ev_site = uuid::Uuid::new_v4();
+    sqlx::query("INSERT INTO sites (id, tenant_id, site_code, name) VALUES ($1, $2, 'EV', 'Ev')")
+        .bind(ev_site)
+        .bind(tenant_id)
+        .execute(&pool)
+        .await
+        .expect("event site insert");
+    sqlx::query(
+        "INSERT INTO work_centers (id, tenant_id, site_id, name, work_center_number) \
+         VALUES ($1, $2, $3, 'Ev WC', 'WC-EV')",
+    )
+    .bind(work_center_id)
+    .bind(tenant_id)
+    .bind(ev_site)
+    .execute(&pool)
+    .await
+    .expect("event work center insert");
 
     // The Andon was raised TWO MINUTES ago (KNOWN occurred_at — the log
     // entry is written later, so recorded_at must trail occurred_at).
     let (occurred_at,): (chrono::DateTime<chrono::Utc>,) = sqlx::query_as(
-        "INSERT INTO andons (id, tenant_id, andon_number, work_center_id, issue_type, \
+        "INSERT INTO andons (id, tenant_id, andon_number, site_id, work_center_id, issue_type, \
                 severity, description, status, raised_by, created_at) \
-         VALUES ($1, $2, 'AND-EV', $3, 'quality', 'high', 'defect', 'active', $4, \
+         VALUES ($1, $2, 'AND-EV', $3, $4, 'quality', 'high', 'defect', 'active', $5, \
                  NOW() - INTERVAL '2 minutes') \
          RETURNING created_at",
     )
     .bind(andon_id)
     .bind(tenant_id)
+    .bind(ev_site)
     .bind(work_center_id)
     .bind(actor_id)
     .fetch_one(&pool)
@@ -3986,6 +4085,7 @@ async fn role_slot_departure_handover() {
     let task_id = uuid::Uuid::new_v4();
     let condition_id = uuid::Uuid::new_v4();
     let work_center_id = uuid::Uuid::new_v4();
+    let dep_site = uuid::Uuid::new_v4();
     {
         let mut tx = pool.begin().await.expect("begin setup tx");
         sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
@@ -4013,12 +4113,31 @@ async fn role_slot_departure_handover() {
         .await
         .expect("assignment insert");
         sqlx::query(
-            "INSERT INTO andons (id, tenant_id, andon_number, work_center_id, issue_type, \
+            "INSERT INTO sites (id, tenant_id, site_code, name) VALUES ($1, $2, 'DEP', 'Dep')",
+        )
+        .bind(dep_site)
+        .bind(tenant_id)
+        .execute(&mut *tx)
+        .await
+        .expect("site insert");
+        sqlx::query(
+            "INSERT INTO work_centers (id, tenant_id, site_id, name, work_center_number) \
+             VALUES ($1, $2, $3, 'Dep WC', 'WC-DEP')",
+        )
+        .bind(work_center_id)
+        .bind(tenant_id)
+        .bind(dep_site)
+        .execute(&mut *tx)
+        .await
+        .expect("work center insert");
+        sqlx::query(
+            "INSERT INTO andons (id, tenant_id, andon_number, site_id, work_center_id, issue_type, \
              severity, description, status, raised_by) \
-             VALUES ($1, $2, 'AND-DEP', $3, 'quality', 'high', 'open defect', 'active', $4)",
+             VALUES ($1, $2, 'AND-DEP', $3, $4, 'quality', 'high', 'open defect', 'active', $5)",
         )
         .bind(andon_id)
         .bind(tenant_id)
+        .bind(dep_site)
         .bind(work_center_id)
         .bind(departing)
         .execute(&mut *tx)
@@ -5398,11 +5517,19 @@ async fn role_analytics_are_scoped_and_structured() {
     .execute(&pool)
     .await
     .expect("user insert");
+    let ra_site = uuid::Uuid::new_v4();
+    sqlx::query("INSERT INTO sites (id, tenant_id, site_code, name) VALUES ($1, $2, 'RA', 'RA')")
+        .bind(ra_site)
+        .bind(tenant_id)
+        .execute(&pool)
+        .await
+        .expect("site insert");
     sqlx::query(
-        "INSERT INTO work_centers (id, tenant_id, name, work_center_number, is_active, capacity_per_shift, created_at, updated_at)  VALUES ($1, $2, 'WC', 'WC-RA', TRUE, 8, NOW(), NOW())",
+        "INSERT INTO work_centers (id, tenant_id, site_id, name, work_center_number, is_active, capacity_per_shift, created_at, updated_at)  VALUES ($1, $2, $3, 'WC', 'WC-RA', TRUE, 8, NOW(), NOW())",
     )
     .bind(wc_id)
     .bind(tenant_id)
+    .bind(ra_site)
     .execute(&pool)
     .await
     .expect("work center insert");
@@ -5410,12 +5537,13 @@ async fn role_analytics_are_scoped_and_structured() {
     // One ACTIVE andon at the work center (abnormal + now) ...
     let andon_number = "AND-RA-1";
     sqlx::query(
-        "INSERT INTO andons (id, tenant_id, andon_number, work_center_id, issue_type, severity, description, status, raised_by) \
-         VALUES ($1, $2, $3, $4, 'material', 'medium', 'queue empty', 'active', $5)",
+        "INSERT INTO andons (id, tenant_id, andon_number, site_id, work_center_id, issue_type, severity, description, status, raised_by) \
+         VALUES ($1, $2, $3, $4, $5, 'material', 'medium', 'queue empty', 'active', $6)",
     )
     .bind(uuid::Uuid::new_v4())
     .bind(tenant_id)
     .bind(andon_number)
+    .bind(ra_site)
     .bind(wc_id)
     .bind(user_id)
     .execute(&pool)
@@ -8904,10 +9032,11 @@ async fn andon_and_event_commit_atomically() {
     .await
     .expect("site insert");
     sqlx::query(
-        "INSERT INTO work_centers (id, tenant_id, name, work_center_number, is_active, capacity_per_shift, created_at, updated_at)  VALUES ($1, $2, 'WC', 'WC-AT', TRUE, 8, NOW(), NOW())",
+        "INSERT INTO work_centers (id, tenant_id, site_id, name, work_center_number, is_active, capacity_per_shift, created_at, updated_at)  VALUES ($1, $2, $3, 'WC', 'WC-AT', TRUE, 8, NOW(), NOW())",
     )
     .bind(wc_id)
     .bind(tenant_id)
+    .bind(site_id)
     .execute(&pool)
     .await
     .expect("work center insert");
@@ -9478,12 +9607,20 @@ async fn context_kernel_before_generation() {
     .execute(&pool)
     .await
     .expect("user insert");
+    let ctx_site = uuid::Uuid::new_v4();
+    sqlx::query("INSERT INTO sites (id, tenant_id, site_code, name) VALUES ($1, $2, 'CTX', 'Ctx')")
+        .bind(ctx_site)
+        .bind(tenant_id)
+        .execute(&pool)
+        .await
+        .expect("site insert");
     sqlx::query(
-        "INSERT INTO work_centers (id, tenant_id, work_center_number, name) \
-         VALUES ($1, $2, 'WC-1', 'WC')",
+        "INSERT INTO work_centers (id, tenant_id, site_id, work_center_number, name) \
+         VALUES ($1, $2, $3, 'WC-1', 'WC')",
     )
     .bind(wc_id)
     .bind(tenant_id)
+    .bind(ctx_site)
     .execute(&pool)
     .await
     .expect("work center insert");
@@ -9509,12 +9646,13 @@ async fn context_kernel_before_generation() {
     .await
     .expect("work order insert");
     sqlx::query(
-        "INSERT INTO andons (id, tenant_id, andon_number, work_center_id, issue_type, \
+        "INSERT INTO andons (id, tenant_id, andon_number, site_id, work_center_id, issue_type, \
           severity, status, raised_by) \
-         VALUES ($1, $2, 'AND-CTX', $3, 'safety', 'critical', 'active', $4)",
+         VALUES ($1, $2, 'AND-CTX', $3, $4, 'safety', 'critical', 'active', $5)",
     )
     .bind(uuid::Uuid::new_v4())
     .bind(tenant_id)
+    .bind(ctx_site)
     .bind(wc_id)
     .bind(user_id)
     .execute(&pool)
@@ -9569,8 +9707,10 @@ async fn context_kernel_before_generation() {
         "live_state must include the open condition: {lines:?}"
     );
     assert!(
-        lines.iter().all(|l| l.contains("[live]")),
-        "every line must carry the [live] authority tag: {lines:?}"
+        lines.iter().all(|l| l.contains("[live")),
+        "every line must carry the live authority tag ([live] or the site-anchored \
+         [live site:...] form — the work center now resolves its real site under \
+         migration 178): {lines:?}"
     );
 
     // ExecutiveAnalysis plan: required = [.., metric_tree] — the metric
@@ -11494,10 +11634,11 @@ async fn event_stream_idempotency_and_object_projection() {
     .await
     .expect("site insert");
     sqlx::query(
-        "INSERT INTO work_centers (id, tenant_id, name, work_center_number, is_active, capacity_per_shift, created_at, updated_at)  VALUES ($1, $2, 'ES-WC', 'WC-ES', TRUE, 8, NOW(), NOW())",
+        "INSERT INTO work_centers (id, tenant_id, site_id, name, work_center_number, is_active, capacity_per_shift, created_at, updated_at)  VALUES ($1, $2, $3, 'ES-WC', 'WC-ES', TRUE, 8, NOW(), NOW())",
     )
     .bind(wc_id)
     .bind(tenant_id)
+    .bind(site_id)
     .execute(&pool)
     .await
     .expect("work center insert");
@@ -12670,7 +12811,13 @@ async fn seventeenth_audit_full_path_invariants() {
         .raise_andon_idempotent(tenant_id, andon_base.clone(), Some("cmd-key-1".to_string()))
         .await
         .expect("first raise");
-    let sites = vec![site_a];
+    // Thirtieth-first audit: commands carry the FULL authorization
+    // vector — here a site grant over site_a.
+    use sensei_core::domain::scope::AuthorizedScope;
+    let scope_a = AuthorizedScope::Operational {
+        sites: std::collections::HashSet::from([site_a]),
+        work_centers: std::collections::HashSet::new(),
+    };
     let replay = ops_service
         .raise_andon_idempotent(tenant_id, andon_base.clone(), Some("cmd-key-1".to_string()))
         .await
@@ -12690,8 +12837,8 @@ async fn seventeenth_audit_full_path_invariants() {
         "a DIFFERENT command key creates a different andon"
     );
 
-    // ── 3. Scoped list (item 4): a site-scoped caller sees only THEIR
-    //       site's andons.
+    // ── 3. Scope-vector list (item 4; thirtieth-first audit): a
+    //       site-scoped caller sees only THEIR site's andons.
     let wc_b_andon = sensei_services::ops::Andon {
         site_id: Some(site_b),
         work_center_id: wc_b,
@@ -12702,7 +12849,7 @@ async fn seventeenth_audit_full_path_invariants() {
         .await
         .expect("site b andon");
     let scoped = ops_service
-        .list_andons_scoped(tenant_id, Some(site_a), None, None, Some(1), Some(100))
+        .list_andons_authorized(tenant_id, &scope_a, None, None, Some(1), Some(100))
         .await
         .expect("scoped list");
     assert!(
@@ -12722,11 +12869,11 @@ async fn seventeenth_audit_full_path_invariants() {
     //       appends andon.resolved with the deterministic idempotency
     //       key — the process-mining path is reconstructible.
     ops_service
-        .authorize_restart(tenant_id, &sites, first.id, user_id)
+        .authorize_restart(tenant_id, &scope_a, first.id, user_id)
         .await
         .expect("restart authorization");
     ops_service
-        .resolve_andon(tenant_id, &sites, first.id, user_id, "fixed")
+        .resolve_andon(tenant_id, &scope_a, first.id, user_id, "fixed")
         .await
         .expect("resolve");
     let (raised, resolved, ack_keys): (i64, i64, i64) = sqlx::query_as(
@@ -13127,15 +13274,40 @@ async fn andon_mutations_cannot_cross_sites() {
     .await
     .expect("user");
 
+    use sensei_core::domain::scope::{AuthorizedScope, WorkCenterScope};
     use sensei_services::ops::OperationsService;
     let service = sensei_services::ops::DatabaseOperationsService::new(pool.clone());
 
-    let make = |site: uuid::Uuid| sensei_services::ops::Andon {
+    // Migration 178: every raised Andon's (tenant, site, work_center)
+    // must be an existing work_centers row — seed one work center per
+    // site, plus a sibling work center on site A for the exact-WC tests.
+    let wc_a = uuid::Uuid::new_v4();
+    let wc_a2 = uuid::Uuid::new_v4();
+    let wc_b = uuid::Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO work_centers (id, tenant_id, site_id, name, work_center_number) VALUES \
+         ($1, $2, $3, 'WC A', 'WC-A'), ($4, $5, $6, 'WC A2', 'WC-A2'), \
+         ($7, $8, $9, 'WC B', 'WC-B')",
+    )
+    .bind(wc_a)
+    .bind(tenant_id)
+    .bind(site_a)
+    .bind(wc_a2)
+    .bind(tenant_id)
+    .bind(site_a)
+    .bind(wc_b)
+    .bind(tenant_id)
+    .bind(site_b)
+    .execute(&pool)
+    .await
+    .expect("work centers");
+
+    let make = |site: uuid::Uuid, work_center: uuid::Uuid| sensei_services::ops::Andon {
         id: uuid::Uuid::new_v4(),
         tenant_id,
         site_id: Some(site),
         andon_number: String::new(),
-        work_center_id: uuid::Uuid::new_v4(),
+        work_center_id: work_center,
         issue_type: "quality".to_string(),
         severity: "medium".to_string(),
         description: "cross-site guard".to_string(),
@@ -13160,44 +13332,209 @@ async fn andon_mutations_cannot_cross_sites() {
         request_key: None,
     };
     let on_a = service
-        .raise_andon(tenant_id, make(site_a))
+        .raise_andon(tenant_id, make(site_a, wc_a))
         .await
         .expect("raise A");
+    let on_a_sibling = service
+        .raise_andon(tenant_id, make(site_a, wc_a2))
+        .await
+        .expect("raise A sibling WC");
     let on_b = service
-        .raise_andon(tenant_id, make(site_b))
+        .raise_andon(tenant_id, make(site_b, wc_b))
         .await
         .expect("raise B");
 
+    // Scopes under test: site grants, exact-WC grants, tenant-wide and
+    // the fail-closed no-operational-scope.
+    let scope_a = AuthorizedScope::Operational {
+        sites: std::collections::HashSet::from([site_a]),
+        work_centers: std::collections::HashSet::new(),
+    };
+    let scope_b = AuthorizedScope::Operational {
+        sites: std::collections::HashSet::from([site_b]),
+        work_centers: std::collections::HashSet::new(),
+    };
+    let scope_wc_a = AuthorizedScope::Operational {
+        sites: std::collections::HashSet::new(),
+        work_centers: std::collections::HashSet::from([WorkCenterScope {
+            site: site_a,
+            work_center: wc_a,
+        }]),
+    };
+    let scope_tenant_wide = AuthorizedScope::tenant_wide();
+    let scope_none = AuthorizedScope::NoOperationalScope;
+
+    // ── Site grants: cover the whole site, never another site. ──
     service
-        .acknowledge_andon(tenant_id, &[site_a], on_a.id, user)
+        .acknowledge_andon(tenant_id, &scope_a, on_a.id, user)
         .await
         .expect("A caller acknowledges A andon");
 
     let cross = service
-        .acknowledge_andon(tenant_id, &[site_a], on_b.id, user)
+        .acknowledge_andon(tenant_id, &scope_a, on_b.id, user)
         .await;
     assert!(
         cross.is_err(),
         "a Site-A caller must never acknowledge a Site-B andon"
     );
     let cross_void = service
-        .void_andon(tenant_id, &[site_a], on_b.id, user, "nope")
+        .void_andon(tenant_id, &scope_a, on_b.id, user, "nope")
         .await;
     assert!(
         cross_void.is_err(),
         "a Site-A caller must never void a Site-B andon"
     );
-
-    let no_scope = service
-        .acknowledge_andon(tenant_id, &[], on_a.id, user)
+    let cross_get = service.get_andon_scoped(tenant_id, &scope_a, on_b.id).await;
+    assert!(
+        cross_get.is_err(),
+        "a Site-A caller must never read a Site-B andon (indistinguishable from 404)"
+    );
+    let cross_esc = service
+        .escalate_andon(tenant_id, &scope_a, on_b.id, user)
         .await;
     assert!(
-        no_scope.is_err(),
+        cross_esc.is_err(),
+        "a Site-A caller must never escalate a Site-B andon"
+    );
+    // A site grant DOES cover every work center of the site (sibling WC).
+    service
+        .acknowledge_andon(tenant_id, &scope_a, on_a_sibling.id, user)
+        .await
+        .expect("a site grant covers the sibling work center of the site");
+
+    // ── NoOperationalScope: no entitlement -> no scope -> no data. ──
+    let no_scope_ack = service
+        .acknowledge_andon(tenant_id, &scope_none, on_a.id, user)
+        .await;
+    assert!(
+        no_scope_ack.is_err(),
         "no entitlement -> no scope -> no data (fail-closed)"
     );
+    let no_scope_get = service
+        .get_andon_scoped(tenant_id, &scope_none, on_a.id)
+        .await;
+    assert!(no_scope_get.is_err(), "NoOperationalScope reads are denied");
 
+    // ── Exact-WC grants: exactly their work center, never a sibling. ──
+    let wc_only = service
+        .list_andons_authorized(tenant_id, &scope_wc_a, None, None, None, None)
+        .await
+        .expect("exact-WC list");
+    assert!(
+        wc_only
+            .data
+            .iter()
+            .all(|a| a.work_center_id == wc_a && a.site_id == Some(site_a)),
+        "an exact-WC caller sees ONLY their work center's andons, got {:?}",
+        wc_only
+            .data
+            .iter()
+            .map(|a| a.work_center_id)
+            .collect::<Vec<_>>()
+    );
+    assert!(
+        wc_only.data.iter().any(|a| a.id == on_a.id),
+        "the exact-WC caller sees their own andon"
+    );
+    assert!(
+        wc_only.data.iter().all(|a| a.id != on_a_sibling.id),
+        "an exact-WC caller never sees a sibling work center's andon"
+    );
+    // And a pure-WC caller has no site entitlement: sibling-WC command denied.
+    let sibling_cmd = service
+        .acknowledge_andon(tenant_id, &scope_wc_a, on_a_sibling.id, user)
+        .await;
+    assert!(
+        sibling_cmd.is_err(),
+        "an exact-WC grant never widens into the site (sibling command denied)"
+    );
+
+    // ── Scope-vector listing: site / tenant-wide / none. ──
+    let a_list = service
+        .list_andons_authorized(tenant_id, &scope_a, None, None, None, None)
+        .await
+        .expect("site-A list");
+    assert!(
+        a_list.data.iter().all(|a| a.site_id == Some(site_a)),
+        "the site-A caller sees ONLY site-A andons"
+    );
+    assert!(
+        a_list.data.iter().any(|a| a.id == on_a_sibling.id),
+        "the site-A caller sees every work center of the site"
+    );
+    let b_list = service
+        .list_andons_authorized(tenant_id, &scope_b, None, None, None, None)
+        .await
+        .expect("site-B list");
+    assert_eq!(
+        b_list.data.len(),
+        1,
+        "the site-B caller sees exactly their own site's andons"
+    );
+    assert_eq!(b_list.data[0].id, on_b.id);
+    let tw_list = service
+        .list_andons_authorized(tenant_id, &scope_tenant_wide, None, None, None, None)
+        .await
+        .expect("tenant-wide list");
+    assert_eq!(tw_list.data.len(), 3, "TenantWide sees all three andons");
+    let none_list = service
+        .list_andons_authorized(tenant_id, &scope_none, None, None, None, None)
+        .await
+        .expect("no-scope list");
+    assert_eq!(
+        none_list.data.len(),
+        0,
+        "NoOperationalScope lists nothing (fail closed)"
+    );
+    assert_eq!(none_list.total, 0);
+
+    // ── Pagination over ONE query: page boundaries and totals hold
+    //    across scopes. ──
+    let page_one = service
+        .list_andons_authorized(tenant_id, &scope_tenant_wide, None, None, Some(1), Some(2))
+        .await
+        .expect("page one");
+    let page_two = service
+        .list_andons_authorized(tenant_id, &scope_tenant_wide, None, None, Some(2), Some(2))
+        .await
+        .expect("page two");
+    assert_eq!(page_one.total, 3, "the count reflects the WHOLE scope");
+    assert_eq!(page_one.data.len(), 2);
+    assert_eq!(page_two.data.len(), 1);
+    assert_eq!(page_one.total_pages, 2);
+    let page_one_a = service
+        .list_andons_authorized(tenant_id, &scope_a, None, None, Some(1), Some(1))
+        .await
+        .expect("site-A page one");
+    assert_eq!(page_one_a.total, 2, "site-A total counts only site-A rows");
+
+    // ── Migration 178: the composite FK rejects an inconsistent
+    //    (tenant, site, work_center) claim — a row whose work center
+    //    belongs to another site can never be written. ──
+    let forged = make(site_a, wc_b);
+    let fk_blocked = service
+        .raise_andon(tenant_id, forged)
+        .await
+        .expect_err("an Andon whose (site, wc) pair does not exist must be rejected");
+    assert!(
+        format!("{fk_blocked}").contains("fk_andons_operational_scope")
+            || format!("{fk_blocked}").contains("operational_scope"),
+        "the composite operational-scope FK must reject the inconsistent claim, got {fk_blocked}"
+    );
+    let orphan = make(uuid::Uuid::new_v4(), wc_a);
+    assert!(
+        service.raise_andon(tenant_id, orphan).await.is_err(),
+        "a site-less-fabricated Andon must be rejected by the composite FK"
+    );
+
+    // State assertions: only the in-scope transitions applied.
     let state_a = service.get_andon(tenant_id, on_a.id).await.expect("read A");
     assert_eq!(state_a.status, "acknowledged");
+    let state_a2 = service
+        .get_andon(tenant_id, on_a_sibling.id)
+        .await
+        .expect("read A2");
+    assert_eq!(state_a2.status, "acknowledged");
     let state_b = service.get_andon(tenant_id, on_b.id).await.expect("read B");
     assert_eq!(state_b.status, "active", "the B andon was never touched");
 }
@@ -13640,9 +13977,11 @@ async fn nineteenth_audit_adversarial_gate() {
 
     // 6) Escalation obeys the site scope (extension of the cross-site gate).
     {
+        use sensei_core::domain::scope::AuthorizedScope;
         use sensei_services::ops::OperationsService;
         let service = sensei_services::ops::DatabaseOperationsService::new(pool.clone());
         let site_b = uuid::Uuid::new_v4();
+        let wc_b_esc = uuid::Uuid::new_v4();
         sqlx::query(
             "INSERT INTO sites (id, tenant_id, site_code, name) VALUES ($1, $2, 'AB', 'B')",
         )
@@ -13651,12 +13990,22 @@ async fn nineteenth_audit_adversarial_gate() {
         .execute(&pool)
         .await
         .expect("site b");
+        sqlx::query(
+            "INSERT INTO work_centers (id, tenant_id, site_id, name, work_center_number) \
+             VALUES ($1, $2, $3, 'WC B', 'WC-B')",
+        )
+        .bind(wc_b_esc)
+        .bind(tenant_id)
+        .bind(site_b)
+        .execute(&pool)
+        .await
+        .expect("wc b");
         let andon = sensei_services::ops::Andon {
             id: uuid::Uuid::new_v4(),
             tenant_id,
             site_id: Some(site_b),
             andon_number: String::new(),
-            work_center_id: uuid::Uuid::new_v4(),
+            work_center_id: wc_b_esc,
             issue_type: "quality".to_string(),
             severity: "medium".to_string(),
             description: "scope".to_string(),
@@ -13681,15 +14030,23 @@ async fn nineteenth_audit_adversarial_gate() {
             request_key: None,
         };
         let raised = service.raise_andon(tenant_id, andon).await.expect("raise");
+        let scope_a_esc = AuthorizedScope::Operational {
+            sites: std::collections::HashSet::from([site_id]),
+            work_centers: std::collections::HashSet::new(),
+        };
+        let scope_b_esc = AuthorizedScope::Operational {
+            sites: std::collections::HashSet::from([site_b]),
+            work_centers: std::collections::HashSet::new(),
+        };
         let cross_esc = service
-            .escalate_andon(tenant_id, &[site_id], raised.id, user)
+            .escalate_andon(tenant_id, &scope_a_esc, raised.id, user)
             .await;
         assert!(
             cross_esc.is_err(),
             "a Site-A caller must never escalate a Site-B andon"
         );
         let ok_esc = service
-            .escalate_andon(tenant_id, &[site_b], raised.id, user)
+            .escalate_andon(tenant_id, &scope_b_esc, raised.id, user)
             .await
             .expect("in-scope escalation works");
         assert!(ok_esc.escalated);
@@ -15440,14 +15797,26 @@ async fn twenty_first_audit_producer_consumer_paths() {
     );
 
     // 3) Andon reads with ZERO entitlement are denied entirely.
+    use sensei_core::domain::scope::AuthorizedScope;
     use sensei_services::ops::OperationsService;
     let ops = sensei_services::ops::DatabaseOperationsService::new(pool.clone());
+    let wc_t21 = uuid::Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO work_centers (id, tenant_id, site_id, name, work_center_number) \
+         VALUES ($1, $2, $3, 'T21 WC', 'WC-T21')",
+    )
+    .bind(wc_t21)
+    .bind(tenant_id)
+    .bind(site_a)
+    .execute(&pool)
+    .await
+    .expect("wc");
     let andon = sensei_services::ops::Andon {
         id: uuid::Uuid::new_v4(),
         tenant_id,
         site_id: Some(site_a),
         andon_number: String::new(),
-        work_center_id: uuid::Uuid::new_v4(),
+        work_center_id: wc_t21,
         issue_type: "quality".to_string(),
         severity: "medium".to_string(),
         description: "x".to_string(),
@@ -15472,13 +15841,20 @@ async fn twenty_first_audit_producer_consumer_paths() {
         request_key: None,
     };
     let raised = ops.raise_andon(tenant_id, andon).await.expect("raise");
-    let zero_entitlement = ops.get_andon_scoped(tenant_id, &[], raised.id).await;
+    let no_scope_ctx = AuthorizedScope::NoOperationalScope;
+    let zero_entitlement = ops
+        .get_andon_scoped(tenant_id, &no_scope_ctx, raised.id)
+        .await;
     assert!(
         zero_entitlement.is_err(),
         "zero entitlement reads are denied — NoOperationalScope != TenantWide"
     );
+    let scope_a_t21 = AuthorizedScope::Operational {
+        sites: std::collections::HashSet::from([site_a]),
+        work_centers: std::collections::HashSet::new(),
+    };
     let scoped = ops
-        .get_andon_scoped(tenant_id, &[site_a], raised.id)
+        .get_andon_scoped(tenant_id, &scope_a_t21, raised.id)
         .await
         .expect("entitled read works");
     assert_eq!(scoped.id, raised.id);
@@ -18113,9 +18489,6 @@ async fn hot_queries_use_index_scans() {
     // once ANALYZE has real statistics, so the gate seeds a multi-tenant
     // table of 55k rows and then ANALYZEs before EXPLAINing.
     let hot_tenant = uuid::Uuid::new_v4();
-    let site_a = uuid::Uuid::new_v4();
-    let site_b = uuid::Uuid::new_v4();
-    let site_c = uuid::Uuid::new_v4();
     let instance = uuid::Uuid::new_v4();
     sqlx::query("INSERT INTO tenants (id, name, slug) VALUES ($1, 'plan-hot', 'plan-hot')")
         .bind(hot_tenant)
@@ -18129,37 +18502,97 @@ async fn hot_queries_use_index_scans() {
     .execute(&pool)
     .await
     .expect("noise tenant insert");
-    sqlx::query(
-        "INSERT INTO sites (id, tenant_id, name, site_code) \
-         VALUES ($1, $4, 'Plan A', 'PLAN-A'), ($2, $4, 'Plan B', 'PLAN-B'), \
-                ($3, $4, 'Plan C', 'PLAN-C')",
-    )
-    .bind(site_a)
-    .bind(site_b)
-    .bind(site_c)
-    .bind(hot_tenant)
-    .execute(&pool)
-    .await
-    .expect("hot site insert");
 
-    // 1. andons: the scoped-list hot table.
-    sqlx::query(
-        "INSERT INTO andons \
-             (tenant_id, andon_number, work_center_id, issue_type, severity, description, \
-              status, site_id, created_at) \
-         SELECT t.id, t.slug || '-' || g, gen_random_uuid(), 'quality', 'low', NULL, \
-                CASE WHEN g % 4 = 0 THEN 'active' ELSE 'resolved' END, \
-                (ARRAY[$2::uuid, $3::uuid, $4::uuid, $4::uuid])[1 + (g % 4)], \
-                NOW() - make_interval(mins => g) \
-         FROM tenants t CROSS JOIN generate_series(1, 5000) g",
-    )
-    .bind(hot_tenant)
-    .bind(site_a)
-    .bind(site_b)
-    .bind(site_c)
-    .execute(&pool)
-    .await
-    .expect("bulk andon seed (55k rows)");
+    // 1. andons: the scoped-list hot table. Migration 178 makes every
+    //    Andon's (tenant, site, work_center) a composite-FK reference
+    //    into work_centers, so the seed derives DETERMINISTIC site +
+    //    work-center ids per tenant (uuid v5 over a tenant-bound label)
+    //    and inserts 3 sites + 4 work centers per tenant before the bulk
+    //    andon insert. The EXPLAIN statements below use the same derived
+    //    ids for the hot tenant, keeping the selectivity statistics
+    //    representative (55k rows total).
+    fn seed_ids(tenant: &uuid::Uuid, label: &str) -> uuid::Uuid {
+        uuid::Uuid::new_v5(
+            &uuid::Uuid::NAMESPACE_OID,
+            format!("plan:{tenant}:{label}").as_bytes(),
+        )
+    }
+    let tenants: Vec<uuid::Uuid> = sqlx::query_scalar("SELECT id FROM tenants ORDER BY id")
+        .fetch_all(&pool)
+        .await
+        .expect("tenant ids");
+    let mut site_ids = std::collections::HashMap::new();
+    let mut wc_ids = std::collections::HashMap::new();
+    for tenant in &tenants {
+        let s_a = seed_ids(tenant, "site-a");
+        let s_b = seed_ids(tenant, "site-b");
+        let s_c = seed_ids(tenant, "site-c");
+        let w_1 = seed_ids(tenant, "wc-1");
+        let w_2 = seed_ids(tenant, "wc-2");
+        let w_3 = seed_ids(tenant, "wc-3");
+        let w_4 = seed_ids(tenant, "wc-4");
+        sqlx::query(
+            "INSERT INTO sites (id, tenant_id, site_code, name) VALUES \
+             ($1, $2, 'A', 'A'), ($3, $4, 'B', 'B'), ($5, $6, 'C', 'C')",
+        )
+        .bind(s_a)
+        .bind(tenant)
+        .bind(s_b)
+        .bind(tenant)
+        .bind(s_c)
+        .bind(tenant)
+        .execute(&pool)
+        .await
+        .expect("per-tenant site seed");
+        sqlx::query(
+            "INSERT INTO work_centers (id, tenant_id, site_id, work_center_number, name) VALUES \
+             ($1, $2, $3, 'WC-1', 'WC 1'), ($4, $5, $6, 'WC-2', 'WC 2'), \
+             ($7, $8, $9, 'WC-3', 'WC 3'), ($10, $11, $12, 'WC-4', 'WC 4')",
+        )
+        .bind(w_1)
+        .bind(tenant)
+        .bind(s_a)
+        .bind(w_2)
+        .bind(tenant)
+        .bind(s_b)
+        .bind(w_3)
+        .bind(tenant)
+        .bind(s_c)
+        .bind(w_4)
+        .bind(tenant)
+        .bind(s_c)
+        .execute(&pool)
+        .await
+        .expect("per-tenant work center seed");
+        sqlx::query(
+            "INSERT INTO andons \
+                 (tenant_id, andon_number, site_id, work_center_id, issue_type, severity, \
+                  description, status, created_at) \
+             SELECT $1, $2 || '-' || g, \
+                    (ARRAY[$3::uuid, $4::uuid, $5::uuid, $5::uuid])[1 + (g % 4)], \
+                    (ARRAY[$6::uuid, $7::uuid, $8::uuid, $9::uuid])[1 + (g % 4)], \
+                    'quality', 'low', NULL, \
+                    CASE WHEN g % 4 = 0 THEN 'active' ELSE 'resolved' END, \
+                    NOW() - make_interval(mins => g) \
+             FROM generate_series(1, 5000) g",
+        )
+        .bind(tenant)
+        .bind(tenant.as_simple().to_string())
+        .bind(s_a)
+        .bind(s_b)
+        .bind(s_c)
+        .bind(w_1)
+        .bind(w_2)
+        .bind(w_3)
+        .bind(w_4)
+        .execute(&pool)
+        .await
+        .expect("bulk andon seed (55k rows)");
+        site_ids.insert(*tenant, (s_a, s_b, s_c));
+        wc_ids.insert(*tenant, (w_1, w_2, w_3, w_4));
+    }
+    let (hot_a, hot_b, _hot_c) = site_ids[&hot_tenant];
+    let (_hw1, _hw2, _hw3, _hw4) = wc_ids[&hot_tenant];
 
     // 2. site_replication_log: the corporate claim-pass hot table.
     sqlx::query(
@@ -18182,7 +18615,7 @@ async fn hot_queries_use_index_scans() {
     )
     .bind(instance)
     .bind(hot_tenant)
-    .bind(site_a)
+    .bind(hot_a)
     .execute(&pool)
     .await
     .expect("hot integration instance insert");
@@ -18253,7 +18686,7 @@ async fn hot_queries_use_index_scans() {
                     escalated, escalated_at, request_key \
              FROM andons \
              WHERE tenant_id = '{hot_tenant}'::uuid \
-               AND site_id = ANY (ARRAY['{site_a}'::uuid, '{site_b}'::uuid]) \
+               AND site_id = ANY (ARRAY['{hot_a}'::uuid, '{hot_b}'::uuid]) \
              ORDER BY created_at DESC \
              LIMIT 20 OFFSET 0"
         ),
@@ -21315,5 +21748,698 @@ async fn quality_service_creation_scope_rules() {
     assert!(
         derive_creation_scope(&wc_no_focus, None).is_err(),
         "an exact-WC caller without an operating focus cannot create records"
+    );
+}
+
+/// Maintenance DB contract (thirtieth-first-audit items 16 + 7): the REAL
+/// `DatabaseMaintenanceService` executes its work-request / PM-schedule /
+/// equipment surfaces against the migrated schema through TenantTx — every
+/// statement runs under the SET LOCAL app.tenant_id context and the work
+/// request INSERT commits its outbox row in the SAME transaction. The
+/// maintenance tables carry the 002-era legacy shape (the chain never
+/// migrated them to the service shape — `request_number` NOT NULL and a
+/// CHECK over `open`/`assigned` statuses), so, exactly like the HR
+/// fixture below, this gate re-provisions ONLY `maintenance_work_requests`
+/// to the shape the service targets (renaming the legacy table aside)
+/// before exercising the service. Work-request status changes are ATOMIC
+/// CAS: the required predecessor is a predicate of the UPDATE, an
+/// out-of-order transition (e.g. submitted -> completed) is rejected with
+/// the zero rows surfaced as NotFound, and a concurrent-style double
+/// transition yields EXACTLY one success.
+#[tokio::test]
+async fn maintenance_service_tenant_tx_and_atomic_transitions_on_migrated_schema() {
+    let _serial = DB_LOCK.lock().await;
+    let Some(pool) = connect().await else { return };
+    sqlx::query(
+        r#"DO $$ DECLARE r RECORD; BEGIN
+             FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname = 'public') LOOP
+                 EXECUTE format('DROP TABLE IF EXISTS %I CASCADE', r.tablename);
+             END LOOP;
+         END $$"#,
+    )
+    .execute(&pool)
+    .await
+    .expect("drop all tables");
+    sensei_db::migrations::run_migrations(&pool)
+        .await
+        .expect("the ENTIRE migration chain must apply to an empty database");
+
+    use sensei_core::error::SenseiError;
+    use sensei_services::maintenance::{
+        DatabaseMaintenanceService, EquipmentRecord, MaintenanceService, MaintenanceWorkRequest,
+        PMSchedule,
+    };
+    let service = DatabaseMaintenanceService::new(pool.clone());
+    let tenant_id = uuid::Uuid::new_v4();
+    let user_id = uuid::Uuid::new_v4();
+    sqlx::query("INSERT INTO tenants (id, name, slug) VALUES ($1, 'maint', 'maint')")
+        .bind(tenant_id)
+        .execute(&pool)
+        .await
+        .expect("tenant insert");
+    sqlx::query(
+        "INSERT INTO users (id, tenant_id, email, name, password_hash) \
+         VALUES ($1, $2, 'maint@svc.local', 'M', 'x')",
+    )
+    .bind(user_id)
+    .bind(tenant_id)
+    .execute(&pool)
+    .await
+    .expect("user insert");
+
+    // ── Re-provision the service-shape work-request table ───────────────
+    // (the chain's 002-era table requires request_number and only admits
+    // open/assigned/in_progress/completed/cancelled — the service machine
+    // is submitted/approved/in_progress/completed/cancelled and has no
+    // request_number column). pm_schedules, equipment and
+    // maintenance_occurrences match the service already and are used as
+    // migrated.
+    sqlx::query("ALTER TABLE maintenance_work_requests RENAME TO maintenance_work_requests_legacy")
+        .execute(&pool)
+        .await
+        .expect("rename legacy work request table");
+    sqlx::query(
+        r#"CREATE TABLE maintenance_work_requests (
+               id uuid PRIMARY KEY,
+               tenant_id uuid NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+               equipment_id uuid NOT NULL REFERENCES equipment(id) ON DELETE CASCADE,
+               title text NOT NULL,
+               description text NOT NULL DEFAULT '',
+               priority text NOT NULL DEFAULT 'medium',
+               status text NOT NULL DEFAULT 'submitted',
+               requested_by uuid NOT NULL REFERENCES users(id),
+               assigned_to uuid REFERENCES users(id) ON DELETE SET NULL,
+               created_at timestamptz NOT NULL DEFAULT now(),
+               completed_at timestamptz
+           )"#,
+    )
+    .execute(&pool)
+    .await
+    .expect("create service-shape work request table");
+
+    // ── Equipment + PM schedule surface (real service, migrated schema) ─
+    let eq = EquipmentRecord {
+        id: uuid::Uuid::new_v4(),
+        tenant_id,
+        equipment_code: String::new(),
+        name: "CNC Mill #9".to_string(),
+        equipment_type: "machine".to_string(),
+        location: "Bay 2".to_string(),
+        status: "operational".to_string(),
+        install_date: chrono::Utc::now(),
+        last_maintenance: None,
+        maintenance_completed_at: None,
+        oee_percentage: 88.0,
+    };
+    let eq = service
+        .register_equipment(tenant_id, eq)
+        .await
+        .expect("register_equipment must run under TenantTx on the migrated schema");
+    assert!(eq.equipment_code.starts_with("EQ-"), "code generated");
+    let fetched = service
+        .get_equipment(tenant_id, eq.id)
+        .await
+        .expect("equipment must round-trip");
+    assert_eq!(fetched.name, "CNC Mill #9");
+
+    let pm = PMSchedule {
+        id: uuid::Uuid::new_v4(),
+        tenant_id,
+        equipment_id: eq.id,
+        task_name: "Lubrication".to_string(),
+        frequency_days: 30,
+        last_performed: None,
+        next_due: chrono::Utc::now(),
+        assigned_to: vec![],
+        is_active: true,
+    };
+    let pm = service
+        .create_pm_schedule(tenant_id, pm)
+        .await
+        .expect("create_pm_schedule must run under TenantTx");
+    let listed = service
+        .list_pm_schedules(tenant_id, Some(eq.id), None, None)
+        .await
+        .expect("list_pm_schedules (items + count in one tenant tx)");
+    assert_eq!(listed.total, 1);
+    let completed_pm = service
+        .complete_pm_task(tenant_id, pm.id)
+        .await
+        .expect("complete_pm_task must run under TenantTx");
+    assert!(
+        completed_pm.last_performed.is_some(),
+        "completion rolls forward"
+    );
+    let occurrences: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM maintenance_occurrences WHERE tenant_id = $1 AND schedule_id = $2",
+    )
+    .bind(tenant_id)
+    .bind(pm.id)
+    .fetch_one(&pool)
+    .await
+    .expect("occurrence count");
+    assert_eq!(
+        occurrences, 1,
+        "completion must record its evidence ledger row"
+    );
+
+    // ── Work-request create (INSERT + outbox in one TenantTx) ───────────
+    let wr = |status: &str| MaintenanceWorkRequest {
+        id: uuid::Uuid::new_v4(),
+        tenant_id,
+        equipment_id: eq.id,
+        title: "Request".to_string(),
+        description: String::new(),
+        priority: "medium".to_string(),
+        status: status.to_string(),
+        requested_by: user_id,
+        assigned_to: None,
+        created_at: chrono::Utc::now(),
+        completed_at: None,
+    };
+    let created = service
+        .create_work_request(tenant_id, wr("submitted"))
+        .await
+        .expect("create_work_request must run under TenantTx");
+    assert_eq!(created.status, "submitted");
+    let outbox: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM outbox_events WHERE tenant_id = $1 AND aggregate_id = $2",
+    )
+    .bind(tenant_id)
+    .bind(created.id)
+    .fetch_one(&pool)
+    .await
+    .expect("outbox count");
+    assert_eq!(
+        outbox, 1,
+        "the created event must commit in the same transaction"
+    );
+    let listed = service
+        .list_work_requests(tenant_id, Some("submitted"), None, None, None)
+        .await
+        .expect("list_work_requests (items + count in one tenant tx)");
+    assert_eq!(listed.total, 1);
+
+    // Out-of-order transition: submitted -> completed skips the required
+    // 'in_progress' predecessor. The UPDATE matches zero rows and the
+    // service reports NotFound — and the row is untouched.
+    let out_of_order = service
+        .update_work_request_status(tenant_id, created.id, "completed")
+        .await;
+    assert!(
+        matches!(out_of_order, Err(SenseiError::NotFound(_))),
+        "an out-of-order transition must be rejected with zero-rows NotFound: {out_of_order:?}"
+    );
+    let untouched = service
+        .get_work_request(tenant_id, created.id)
+        .await
+        .expect("request still readable");
+    assert_eq!(
+        untouched.status, "submitted",
+        "the rejected transition must not mutate state"
+    );
+
+    // The machine walks strictly forward: submitted -> approved ->
+    // in_progress -> completed (completed_at stamped on completion).
+    let approved = service
+        .update_work_request_status(tenant_id, created.id, "approved")
+        .await
+        .expect("approved must apply from submitted");
+    assert_eq!(approved.status, "approved");
+    let skip = service
+        .update_work_request_status(tenant_id, created.id, "completed")
+        .await;
+    assert!(
+        matches!(skip, Err(SenseiError::NotFound(_))),
+        "approved -> completed must be rejected (requires in_progress)"
+    );
+    service
+        .update_work_request_status(tenant_id, created.id, "in_progress")
+        .await
+        .expect("in_progress must apply from approved");
+    let completed = service
+        .update_work_request_status(tenant_id, created.id, "completed")
+        .await
+        .expect("completed must apply from in_progress");
+    assert_eq!(completed.status, "completed");
+    assert!(
+        completed.completed_at.is_some(),
+        "completing stamps completed_at"
+    );
+
+    // Cancellation admits submitted/approved only: submitted -> cancelled
+    // succeeds, an in_progress request cannot be cancelled (zero rows ->
+    // NotFound) and a completed request cannot be moved at all.
+    let cancellable = service
+        .create_work_request(tenant_id, wr("submitted"))
+        .await
+        .unwrap();
+    let cancelled = service
+        .update_work_request_status(tenant_id, cancellable.id, "cancelled")
+        .await
+        .expect("submitted -> cancelled must apply");
+    assert_eq!(cancelled.status, "cancelled");
+    let started = service
+        .create_work_request(tenant_id, wr("submitted"))
+        .await
+        .unwrap();
+    service
+        .update_work_request_status(tenant_id, started.id, "approved")
+        .await
+        .expect("approve for start");
+    service
+        .update_work_request_status(tenant_id, started.id, "in_progress")
+        .await
+        .expect("start");
+    let cancel_started = service
+        .update_work_request_status(tenant_id, started.id, "cancelled")
+        .await;
+    assert!(
+        matches!(cancel_started, Err(SenseiError::NotFound(_))),
+        "in_progress requests are not cancellable: {cancel_started:?}"
+    );
+    let reopen = service
+        .update_work_request_status(tenant_id, cancelled.id, "in_progress")
+        .await;
+    assert!(
+        matches!(reopen, Err(SenseiError::NotFound(_))),
+        "terminal requests never move again"
+    );
+
+    // ── Assignment: the submitted -> approved transition, atomic ────────
+    let assignable = service
+        .create_work_request(tenant_id, wr("submitted"))
+        .await
+        .unwrap();
+    let assigned = service
+        .assign_work_request(tenant_id, assignable.id, user_id)
+        .await
+        .expect("assignment must approve a submitted request");
+    assert_eq!(assigned.assigned_to, Some(user_id));
+    assert_eq!(assigned.status, "approved");
+    service
+        .update_work_request_status(tenant_id, assignable.id, "in_progress")
+        .await
+        .expect("start assigned work");
+    service
+        .update_work_request_status(tenant_id, assignable.id, "completed")
+        .await
+        .expect("finish assigned work");
+    let assign_closed = service
+        .assign_work_request(tenant_id, assignable.id, user_id)
+        .await;
+    assert!(
+        matches!(assign_closed, Err(SenseiError::Conflict(_))),
+        "closed requests are immutable history: {assign_closed:?}"
+    );
+    let assign_missing = service
+        .assign_work_request(tenant_id, uuid::Uuid::new_v4(), user_id)
+        .await;
+    assert!(matches!(assign_missing, Err(SenseiError::NotFound(_))));
+
+    // ── Concurrent-style double transition (in_progress -> completed) ───
+    // Both callers demand the same predecessor in the UPDATE predicate, so
+    // the second UPDATE misses after the first commits — EXACTLY one
+    // success, no lost state change.
+    let racer = service
+        .create_work_request(tenant_id, wr("submitted"))
+        .await
+        .unwrap();
+    service
+        .update_work_request_status(tenant_id, racer.id, "approved")
+        .await
+        .expect("approve racer");
+    service
+        .update_work_request_status(tenant_id, racer.id, "in_progress")
+        .await
+        .expect("start racer");
+    let (a, b) = tokio::join!(
+        service.update_work_request_status(tenant_id, racer.id, "completed"),
+        service.update_work_request_status(tenant_id, racer.id, "completed")
+    );
+    let winners = [a.is_ok(), b.is_ok()].into_iter().filter(|w| *w).count();
+    assert_eq!(
+        winners, 1,
+        "exactly one racing transition may win: {a:?} / {b:?}"
+    );
+    let loser = if a.is_ok() { b } else { a };
+    assert!(
+        matches!(loser, Err(SenseiError::NotFound(_))),
+        "the losing racer must observe zero rows as NotFound: {loser:?}"
+    );
+    let final_state = service
+        .get_work_request(tenant_id, racer.id)
+        .await
+        .expect("winner state readable");
+    assert_eq!(final_state.status, "completed");
+
+    // ── Equipment status transitions (real service) ─────────────────────
+    let under = service
+        .update_equipment_status(tenant_id, eq.id, "under_maintenance")
+        .await
+        .expect("under_maintenance must apply");
+    assert!(
+        under.last_maintenance.is_some(),
+        "maintenance start stamped"
+    );
+    let operational = service
+        .update_equipment_status(tenant_id, eq.id, "operational")
+        .await
+        .expect("return to operational must apply");
+    assert!(
+        operational.maintenance_completed_at.is_some(),
+        "return-to-operational stamps completion"
+    );
+}
+
+/// Thirtieth-first-audit item 6: HR self-service identity is scoped at the
+/// SQL level. A pending leave request is updatable/deletable ONLY by its
+/// OWNER employee (never by a foreign employee id and never once it leaves
+/// `pending`), clock-out requires the OWNING employee id AND an open
+/// timecard (`clock_out IS NULL`), and the employee-for-user resolver only
+/// admits active, non-terminated records of the caller's own tenant.
+///
+/// The REAL [`DatabaseHrService`] runs against the HR table shapes it
+/// targets. The current migration chain still carries the 002-era legacy HR
+/// shapes (`employee_number`/`first_name` employees, event-log timecards,
+/// DATE/legacy-CHECK leave_requests), so this test re-provisions ONLY the
+/// three service-shape tables (renaming the legacy ones aside) before
+/// exercising the service — the db-contract gate drops and re-migrates at
+/// the start of every test, so nothing leaks into the rest of the suite.
+#[tokio::test]
+async fn hr_self_service_identity_is_ownership_scoped() {
+    use sensei_core::error::SenseiError;
+    use sensei_services::hr::{DatabaseHrService, HrService, LeaveRequest, Timecard};
+
+    let _serial = DB_LOCK.lock().await;
+    let Some(pool) = connect().await else { return };
+    sqlx::query(
+        r#"DO $$ DECLARE r RECORD; BEGIN
+             FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname = 'public') LOOP
+                 EXECUTE format('DROP TABLE IF EXISTS %I CASCADE', r.tablename);
+             END LOOP;
+         END $$"#,
+    )
+    .execute(&pool)
+    .await
+    .expect("drop all tables");
+    sensei_db::migrations::run_migrations(&pool)
+        .await
+        .expect("the ENTIRE migration chain must apply to an empty database");
+
+    // ── Re-provision the service-shape HR tables (legacy shapes renamed) ─
+    for legacy in ["employees", "leave_requests", "timecards"] {
+        sqlx::query(&format!("ALTER TABLE {legacy} RENAME TO {legacy}_legacy"))
+            .execute(&pool)
+            .await
+            .expect("rename legacy hr table");
+    }
+    for ddl in [
+        r#"CREATE TABLE employees (
+               id uuid PRIMARY KEY,
+               tenant_id uuid NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+               employee_code text NOT NULL,
+               user_id uuid REFERENCES users(id) ON DELETE SET NULL,
+               full_name text NOT NULL,
+               email text NOT NULL,
+               department text NOT NULL,
+               job_title text NOT NULL,
+               employment_type text NOT NULL,
+               status text NOT NULL,
+               hire_date timestamptz NOT NULL,
+               termination_date timestamptz,
+               supervisor_id uuid REFERENCES employees(id) ON DELETE SET NULL,
+               created_at timestamptz NOT NULL
+           )"#,
+        r#"CREATE TABLE leave_requests (
+               id uuid PRIMARY KEY,
+               tenant_id uuid NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+               employee_id uuid NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+               leave_type text NOT NULL,
+               start_date timestamptz NOT NULL,
+               end_date timestamptz NOT NULL,
+               total_days integer NOT NULL,
+               status text NOT NULL,
+               reason text NOT NULL,
+               approved_by uuid REFERENCES users(id) ON DELETE SET NULL,
+               created_at timestamptz NOT NULL
+           )"#,
+        r#"CREATE TABLE timecards (
+               id uuid PRIMARY KEY,
+               tenant_id uuid NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+               employee_id uuid NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+               date timestamptz NOT NULL,
+               clock_in timestamptz,
+               clock_out timestamptz,
+               total_hours double precision NOT NULL,
+               overtime_hours double precision NOT NULL,
+               status text NOT NULL,
+               approved_by uuid REFERENCES users(id) ON DELETE SET NULL
+           )"#,
+    ] {
+        sqlx::query(ddl)
+            .execute(&pool)
+            .await
+            .expect("create hr table");
+    }
+
+    // ── Fixtures ─────────────────────────────────────────────────────────
+    let tenant_a = uuid::Uuid::new_v4();
+    let tenant_b = uuid::Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO tenants (id, name, slug) VALUES ($1, 'hr-a', 'hr-a'), ($2, 'hr-b', 'hr-b')",
+    )
+    .bind(tenant_a)
+    .bind(tenant_b)
+    .execute(&pool)
+    .await
+    .expect("tenants");
+    async fn insert_user(pool: &sqlx::PgPool, id: uuid::Uuid, tenant: uuid::Uuid, email: &str) {
+        sqlx::query("INSERT INTO users (id, tenant_id, email, name, password_hash) VALUES ($1, $2, $3, 'u', 'x')")
+            .bind(id)
+            .bind(tenant)
+            .bind(email)
+            .execute(pool)
+            .await
+            .expect("user insert");
+    }
+    let u1 = uuid::Uuid::new_v4();
+    let u2 = uuid::Uuid::new_v4();
+    let u3 = uuid::Uuid::new_v4();
+    insert_user(&pool, u1, tenant_a, "hr-u1@contract.local").await;
+    insert_user(&pool, u2, tenant_a, "hr-u2@contract.local").await;
+    insert_user(&pool, u3, tenant_a, "hr-u3@contract.local").await;
+    insert_user(
+        &pool,
+        uuid::Uuid::new_v4(),
+        tenant_b,
+        "hr-ub@contract.local",
+    )
+    .await;
+
+    async fn insert_employee(
+        pool: &sqlx::PgPool,
+        id: uuid::Uuid,
+        tenant: uuid::Uuid,
+        user: uuid::Uuid,
+        status: &str,
+    ) {
+        sqlx::query(
+            "INSERT INTO employees (id, tenant_id, employee_code, user_id, full_name, email, department, job_title, employment_type, status, hire_date, created_at) \
+             VALUES ($1, $2, $3, $4, 'Name', $5, 'Eng', 'Eng', 'full_time', $6, NOW(), NOW())",
+        )
+        .bind(id)
+        .bind(tenant)
+        .bind(format!("HR-{id}"))
+        .bind(user)
+        .bind(format!("hr-{id}@contract.local"))
+        .bind(status)
+        .execute(pool)
+        .await
+        .expect("employee insert");
+    }
+    let e1 = uuid::Uuid::new_v4(); // active, user u1 — tenant A owner
+    let e2 = uuid::Uuid::new_v4(); // active, user u2 — tenant A OTHER employee
+    let e3 = uuid::Uuid::new_v4(); // terminated, user u3 — tenant A
+    insert_employee(&pool, e1, tenant_a, u1, "active").await;
+    insert_employee(&pool, e2, tenant_a, u2, "active").await;
+    insert_employee(&pool, e3, tenant_a, u3, "terminated").await;
+
+    let lr_pending = uuid::Uuid::new_v4(); // e1's own pending request
+    let lr_approved = uuid::Uuid::new_v4(); // e1's own APPROVED request
+    let lr_foreign = uuid::Uuid::new_v4(); // e2's pending request (not e1's)
+    async fn insert_leave(
+        pool: &sqlx::PgPool,
+        id: uuid::Uuid,
+        tenant: uuid::Uuid,
+        emp: uuid::Uuid,
+        status: &str,
+    ) {
+        sqlx::query(
+            "INSERT INTO leave_requests (id, tenant_id, employee_id, leave_type, start_date, end_date, total_days, status, reason, approved_by, created_at) \
+             VALUES ($1, $2, $3, 'vacation', NOW(), NOW() + INTERVAL '2 days', 2, $4, 'reason', NULL, NOW())",
+        )
+        .bind(id)
+        .bind(tenant)
+        .bind(emp)
+        .bind(status)
+        .execute(pool)
+        .await
+        .expect("leave insert");
+    }
+    insert_leave(&pool, lr_pending, tenant_a, e1, "pending").await;
+    insert_leave(&pool, lr_approved, tenant_a, e1, "approved").await;
+    insert_leave(&pool, lr_foreign, tenant_a, e2, "pending").await;
+
+    let tc_open = uuid::Uuid::new_v4(); // e1's open timecard
+    let tc_closed = uuid::Uuid::new_v4(); // e1's ALREADY-closed timecard
+    let tc_foreign = uuid::Uuid::new_v4(); // e2's open timecard
+    async fn insert_timecard(
+        pool: &sqlx::PgPool,
+        id: uuid::Uuid,
+        tenant: uuid::Uuid,
+        emp: uuid::Uuid,
+        clock_out: Option<chrono::DateTime<chrono::Utc>>,
+    ) {
+        sqlx::query(
+            "INSERT INTO timecards (id, tenant_id, employee_id, date, clock_in, clock_out, total_hours, overtime_hours, status, approved_by) \
+             VALUES ($1, $2, $3, NOW(), NOW() - INTERVAL '2 hours', $4, 0, 0, 'pending', NULL)",
+        )
+        .bind(id)
+        .bind(tenant)
+        .bind(emp)
+        .bind(clock_out)
+        .execute(pool)
+        .await
+        .expect("timecard insert");
+    }
+    insert_timecard(&pool, tc_open, tenant_a, e1, None).await;
+    insert_timecard(
+        &pool,
+        tc_closed,
+        tenant_a,
+        e1,
+        Some(chrono::Utc::now() - chrono::Duration::minutes(30)),
+    )
+    .await;
+    insert_timecard(&pool, tc_foreign, tenant_a, e2, None).await;
+
+    // ── The REAL service ────────────────────────────────────────────────
+    let service = DatabaseHrService::new(pool.clone());
+    let make_leave = |leave_type: &str, reason: &str| LeaveRequest {
+        id: uuid::Uuid::new_v4(),
+        tenant_id: tenant_a,
+        employee_id: e1,
+        leave_type: leave_type.to_string(),
+        start_date: chrono::Utc::now(),
+        end_date: chrono::Utc::now() + chrono::Duration::days(3),
+        total_days: 0,
+        status: String::new(),
+        reason: reason.to_string(),
+        approved_by: None,
+        created_at: chrono::Utc::now(),
+    };
+
+    // 1. employee_id_for_user: only active records of the caller's own
+    //    tenant resolve; terminated and cross-tenant users are Forbidden.
+    assert_eq!(
+        service
+            .employee_id_for_user(tenant_a, u1)
+            .await
+            .expect("u1 resolves"),
+        e1,
+        "the active employee of the user's own tenant resolves"
+    );
+    for (tenant, user) in [
+        (tenant_a, u3),                   // employee exists but is TERMINATED
+        (tenant_b, u1),                   // user lives in tenant A, queried as tenant B
+        (tenant_a, uuid::Uuid::new_v4()), // no employee at all
+    ] {
+        let err = service.employee_id_for_user(tenant, user).await;
+        assert!(
+            matches!(err, Err(SenseiError::Forbidden(_))),
+            "no active employee must be Forbidden: {err:?}"
+        );
+    }
+
+    // 2. update_self_leave: a FOREIGN employee cannot touch e1's pending
+    //    row, the owner cannot touch an approved row, and the owner CAN
+    //    edit their own pending row (4 editable fields).
+    let wrong_owner = service
+        .update_self_leave(tenant_a, e2, lr_pending, make_leave("sick", "nope"))
+        .await;
+    assert!(
+        matches!(wrong_owner, Err(SenseiError::NotFound(_))),
+        "the WRONG employee must observe zero rows as NotFound: {wrong_owner:?}"
+    );
+    let approved_immutable = service
+        .update_self_leave(tenant_a, e1, lr_approved, make_leave("sick", "nope"))
+        .await;
+    assert!(
+        matches!(approved_immutable, Err(SenseiError::NotFound(_))),
+        "an approved request is no longer the owner's editable pending row: {approved_immutable:?}"
+    );
+    let foreign_row = service
+        .update_self_leave(tenant_a, e1, lr_foreign, make_leave("sick", "nope"))
+        .await;
+    assert!(
+        matches!(foreign_row, Err(SenseiError::NotFound(_))),
+        "e1 cannot update another employee's row either: {foreign_row:?}"
+    );
+    let updated = service
+        .update_self_leave(
+            tenant_a,
+            e1,
+            lr_pending,
+            make_leave("sick", "family matter"),
+        )
+        .await
+        .expect("the owner updates their own pending row");
+    assert_eq!(updated.leave_type, "sick");
+    assert_eq!(updated.reason, "family matter");
+    assert_eq!(updated.status, "pending", "update keeps the row pending");
+    assert_eq!(updated.employee_id, e1, "identity is never rewritten");
+
+    // 3. delete_self_leave: same ownership + pending predicate.
+    for (owner, id) in [(e2, lr_pending), (e1, lr_approved), (e1, lr_foreign)] {
+        let err = service.delete_self_leave(tenant_a, owner, id).await;
+        assert!(
+            matches!(err, Err(SenseiError::NotFound(_))),
+            "delete of a row the owner may not touch must 404: {err:?}"
+        );
+    }
+    service
+        .delete_self_leave(tenant_a, e1, lr_pending)
+        .await
+        .expect("the owner deletes their own pending request");
+    let gone = service.delete_self_leave(tenant_a, e1, lr_pending).await;
+    assert!(
+        matches!(gone, Err(SenseiError::NotFound(_))),
+        "a deleted row stays deleted: {gone:?}"
+    );
+
+    // 4. clock_out: requires the OWNING employee id AND an open timecard
+    //    (clock_out IS NULL) — both are enforced in the same UPDATE.
+    let wrong_emp = service.clock_out(tenant_a, e2, tc_open).await;
+    assert!(
+        matches!(wrong_emp, Err(SenseiError::NotFound(_))),
+        "clocking out ANOTHER employee's timecard must 404: {wrong_emp:?}"
+    );
+    let already_closed = service.clock_out(tenant_a, e1, tc_closed).await;
+    assert!(
+        matches!(already_closed, Err(SenseiError::NotFound(_))),
+        "clocking out a closed timecard must 404: {already_closed:?}"
+    );
+    let open = service.clock_out(tenant_a, e1, tc_open).await;
+    let timecard: Timecard = open.expect("the owner clocks out their own open timecard");
+    assert!(timecard.clock_out.is_some(), "clock_out is stamped");
+    assert!(
+        timecard.total_hours > 0.0,
+        "total_hours derives from the clock-in span"
+    );
+    let double = service.clock_out(tenant_a, e1, tc_open).await;
+    assert!(
+        matches!(double, Err(SenseiError::NotFound(_))),
+        "a second clock-out on the same timecard must 404: {double:?}"
     );
 }

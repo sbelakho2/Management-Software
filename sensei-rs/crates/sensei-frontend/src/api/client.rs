@@ -182,6 +182,13 @@ impl ApiClient {
         self.execute(reqwest::Method::POST, path, Some(body)).await
     }
 
+    /// Perform a POST request with NO body (thirtieth-first audit: the
+    /// canonical Andon acknowledge is body-less — the actor is the
+    /// authenticated token's user, and a payload is rejected with 415).
+    pub(crate) async fn post_empty<T: DeserializeOwned>(&self, path: &str) -> Result<T, ApiError> {
+        self.execute(reqwest::Method::POST, path, None).await
+    }
+
     /// Perform a POST request with extra headers (e.g. the HttpOnly
     /// cookie-mode opt-in on login).
     pub async fn post_with_headers<T: DeserializeOwned, B: Serialize>(

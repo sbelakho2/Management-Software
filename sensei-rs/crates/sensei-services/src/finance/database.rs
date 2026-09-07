@@ -12,7 +12,10 @@ use serde_json;
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use super::{Budget, CostRollup, FinanceService, Invoice, InvoiceLineItem, JournalEntry, Payment};
+use super::{
+    Budget, CostRollup, CreateInvoiceLineItem, CreateInvoiceRequest, FinanceService, Invoice,
+    InvoiceLineItem, JournalEntry, Payment, RecordPaymentRequest,
+};
 // ---------------------------------------------------------------------------
 // Row structs
 // ---------------------------------------------------------------------------
@@ -237,21 +240,10 @@ async fn write_business_audit(
     Ok(())
 }
 
-/// Set the transaction-scoped tenant context consumed by Row Level
-/// Security policies (`SET LOCAL app.tenant_id`). RLS is a second barrier:
-/// with the context set, only the tenant's own rows are visible inside
-/// this transaction even if a query forgets `WHERE tenant_id = ...`.
-async fn set_tenant_context(
-    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
-    tenant_id: Uuid,
-) -> std::result::Result<(), SenseiError> {
-    sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
-        .bind(tenant_id.to_string())
-        .execute(&mut **tx)
-        .await
-        .map_err(|e| SenseiError::Database(format!("Failed to set tenant context: {e}")))?;
-    Ok(())
-}
+/// The transaction-scoped tenant context consumed by Row Level Security
+/// policies is established by [`TenantTx::begin`] (`SET LOCAL
+/// app.tenant_id`) — every finance read/write opens a TenantTx, so there
+/// is no standalone context helper here anymore.
 
 /// Idempotency defense-in-depth inside the business transaction: if the key
 /// was already completed (e.g. by a parallel request that raced the
@@ -317,7 +309,8 @@ impl FinanceService for DatabaseFinanceService {
     async fn create_invoice(
         &self,
         tenant_id: Uuid,
-        invoice: Invoice,
+        request: CreateInvoiceRequest,
+        created_by: Uuid,
         idempotency_key: Option<&str>,
     ) -> Result<Invoice> {
         let now = Utc::now();
@@ -328,22 +321,41 @@ impl FinanceService for DatabaseFinanceService {
             &id.as_simple().encode_lower(&mut Uuid::encode_buffer())[..8]
         );
 
-        let subtotal: rust_decimal::Decimal = invoice
+        // Thirty-first audit: the client never sends totals — every line
+        // total, subtotal, tax and grand total is DERIVED server-side in
+        // exact Decimal arithmetic (total = quantity × unit_price).
+        let line_items: Vec<InvoiceLineItem> = request
             .line_items
+            .into_iter()
+            .map(|li| {
+                let CreateInvoiceLineItem {
+                    description,
+                    quantity,
+                    unit_price,
+                    product_id,
+                } = li;
+                InvoiceLineItem {
+                    description,
+                    quantity,
+                    unit_price,
+                    total: rust_decimal::Decimal::from(quantity) * unit_price,
+                    product_id,
+                }
+            })
+            .collect();
+        let subtotal: rust_decimal::Decimal = line_items
             .iter()
             .map(|li| rust_decimal::Decimal::from(li.quantity) * li.unit_price)
             .sum();
-        let tax_amount = subtotal * invoice.tax_percentage / rust_decimal::Decimal::from(100u32);
+        let tax_amount = subtotal * request.tax_percentage / rust_decimal::Decimal::from(100u32);
         let total_amount = subtotal + tax_amount;
         let line_items_json =
-            serde_json::to_value(&invoice.line_items).unwrap_or(serde_json::Value::Array(vec![]));
+            serde_json::to_value(&line_items).unwrap_or(serde_json::Value::Array(vec![]));
 
-        let mut tx = self
-            .pool
-            .begin()
+        let mut db = TenantTx::begin(&self.pool, tenant_id)
             .await
             .map_err(|e| SenseiError::Database(format!("Failed to begin invoice tx: {e}")))?;
-        reject_if_idempotency_completed(&mut tx, idempotency_key).await?;
+        reject_if_idempotency_completed(db.tx(), idempotency_key).await?;
 
         let row = sqlx::query_as::<_, InvoiceRow>(
             r#"
@@ -360,34 +372,34 @@ impl FinanceService for DatabaseFinanceService {
         .bind(id)
         .bind(tenant_id)
         .bind(&invoice_number)
-        .bind(invoice.customer_id)
-        .bind(&invoice.customer_name)
+        .bind(request.customer_id)
+        .bind(&request.customer_name)
         .bind(&line_items_json)
         .bind(subtotal)
-        .bind(invoice.tax_percentage)
+        .bind(request.tax_percentage)
         .bind(tax_amount)
         .bind(total_amount)
-        .bind(&invoice.currency)
-        .bind(invoice.due_date)
-        .bind(&invoice.notes)
-        .bind(invoice.created_by)
+        .bind(&request.currency)
+        .bind(request.due_date)
+        .bind(&request.notes)
+        .bind(created_by)
         .bind(now)
-        .fetch_one(&mut *tx)
+        .fetch_one(&mut **db.tx())
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to create invoice: {e}")))?;
 
         write_business_audit(
-            &mut tx,
+            db.tx(),
             tenant_id,
-            invoice.created_by,
+            created_by,
             "invoice.created",
             "invoice",
             id,
             serde_json::json!({ "invoice_number": invoice_number }),
         )
         .await?;
-        complete_if_idempotent(&mut tx, idempotency_key).await?;
-        tx.commit()
+        complete_if_idempotent(db.tx(), idempotency_key).await?;
+        db.commit()
             .await
             .map_err(|e| SenseiError::Database(format!("Failed to commit invoice tx: {e}")))?;
 
@@ -395,6 +407,9 @@ impl FinanceService for DatabaseFinanceService {
     }
 
     async fn get_invoice(&self, tenant_id: Uuid, id: Uuid) -> Result<Invoice> {
+        let mut db = TenantTx::begin(&self.pool, tenant_id)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to begin invoice read: {e}")))?;
         let row = sqlx::query_as::<_, InvoiceRow>(
             r#"
             SELECT id, tenant_id, invoice_number, customer_id, customer_name,
@@ -405,12 +420,15 @@ impl FinanceService for DatabaseFinanceService {
         )
         .bind(id)
         .bind(tenant_id)
-        .fetch_optional(&self.pool)
+        .fetch_optional(&mut **db.tx())
         .await
-        .map_err(|e| SenseiError::Database(format!("Failed to get invoice: {e}")))?
-        .ok_or_else(|| SenseiError::NotFound(format!("Invoice {id} not found")))?;
-
-        invoice_row_to_domain(row)
+        .map_err(|e| SenseiError::Database(format!("Failed to get invoice: {e}")))?;
+        db.commit()
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to close invoice read: {e}")))?;
+        invoice_row_to_domain(
+            row.ok_or_else(|| SenseiError::NotFound(format!("Invoice {id} not found")))?,
+        )
     }
 
     async fn list_invoices(
@@ -423,6 +441,12 @@ impl FinanceService for DatabaseFinanceService {
         let page = page.unwrap_or(1).max(1);
         let per_page = per_page.unwrap_or(20).clamp(1, 100);
         let offset = (page - 1) * per_page;
+
+        // Thirtieth-first audit: tenant reads run inside a tenant-scoped
+        // transaction — FORCE-RLS tables admit no-context pooled reads.
+        let mut db = TenantTx::begin(&self.pool, tenant_id)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to begin invoice list: {e}")))?;
 
         let items: Vec<InvoiceRow> = sqlx::query_as(
             r#"
@@ -437,16 +461,21 @@ impl FinanceService for DatabaseFinanceService {
         .bind(status)
         .bind(per_page as i64)
         .bind(offset as i64)
-        .fetch_all(&self.pool)
+        .fetch_all(&mut **db.tx())
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to list invoices: {e}")))?;
 
         let count: i64 = sqlx::query_scalar(
             "SELECT COUNT(*) FROM invoices WHERE tenant_id = $1 AND ($2::text IS NULL OR status = $2)",
         )
-        .bind(tenant_id).bind(status)
-        .fetch_one(&self.pool).await
+        .bind(tenant_id)
+        .bind(status)
+        .fetch_one(&mut **db.tx())
+        .await
         .map_err(|e| SenseiError::Database(format!("Failed to count invoices: {e}")))?;
+        db.commit()
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to close invoice list: {e}")))?;
 
         let items = items
             .into_iter()
@@ -469,12 +498,21 @@ impl FinanceService for DatabaseFinanceService {
     ) -> Result<Invoice> {
         let now = Utc::now();
 
+        // ONE tenant-scoped transaction: payment validation, cumulative
+        // sum and status flip share a consistent snapshot.
+        let mut db = TenantTx::begin(&self.pool, tenant_id)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to begin mark-paid tx: {e}")))?;
+
         // The payment must exist and belong to this invoice.
         let payment_ok: bool = sqlx::query_scalar(
             "SELECT EXISTS(SELECT 1 FROM payments WHERE id = $1 AND invoice_id = $2 AND tenant_id = $3)",
         )
-        .bind(payment_id).bind(id).bind(tenant_id)
-        .fetch_one(&self.pool).await
+        .bind(payment_id)
+        .bind(id)
+        .bind(tenant_id)
+        .fetch_one(&mut **db.tx())
+        .await
         .map_err(|e| SenseiError::Database(format!("Failed to validate payment: {e}")))?;
         if !payment_ok {
             return Err(SenseiError::Validation(format!(
@@ -482,8 +520,7 @@ impl FinanceService for DatabaseFinanceService {
             )));
         }
 
-        // Cumulative payments must cover the invoice total (small epsilon).
-        let row: InvoiceRow = sqlx::query_as::<_, InvoiceRow>(
+        let row: Option<InvoiceRow> = sqlx::query_as::<_, InvoiceRow>(
             r#"
             SELECT id, tenant_id, invoice_number, customer_id, customer_name,
                    status, line_items, subtotal, tax_percentage, tax_amount,
@@ -493,10 +530,13 @@ impl FinanceService for DatabaseFinanceService {
         )
         .bind(id)
         .bind(tenant_id)
-        .fetch_optional(&self.pool)
+        .fetch_optional(&mut **db.tx())
         .await
-        .map_err(|e| SenseiError::Database(format!("Failed to get invoice: {e}")))?
-        .ok_or_else(|| SenseiError::NotFound(format!("Invoice {id} not found")))?;
+        .map_err(|e| SenseiError::Database(format!("Failed to get invoice: {e}")))?;
+
+        let Some(row) = row else {
+            return Err(SenseiError::NotFound(format!("Invoice {id} not found")));
+        };
 
         if row.status == "paid" {
             return Err(SenseiError::Validation(
@@ -514,8 +554,10 @@ impl FinanceService for DatabaseFinanceService {
         let cumulative: rust_decimal::Decimal = sqlx::query_scalar(
             "SELECT COALESCE(SUM(amount), 0.0)::numeric FROM payments WHERE invoice_id = $1 AND tenant_id = $2",
         )
-        .bind(id).bind(tenant_id)
-        .fetch_one(&self.pool).await
+        .bind(id)
+        .bind(tenant_id)
+        .fetch_one(&mut **db.tx())
+        .await
         .map_err(|e| SenseiError::Database(format!("Failed to sum payments: {e}")))?;
 
         if cumulative + rust_decimal::Decimal::new(1, 2) < row.total_amount {
@@ -537,12 +579,15 @@ impl FinanceService for DatabaseFinanceService {
         .bind(now)
         .bind(id)
         .bind(tenant_id)
-        .fetch_optional(&self.pool)
+        .fetch_optional(&mut **db.tx())
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to mark invoice paid: {e}")))?
         .ok_or_else(|| {
             SenseiError::NotFound(format!("Invoice {id} not found or cannot be marked paid"))
         })?;
+        db.commit()
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to commit mark-paid: {e}")))?;
 
         invoice_row_to_domain(row)
     }
@@ -552,29 +597,24 @@ impl FinanceService for DatabaseFinanceService {
     async fn record_payment(
         &self,
         tenant_id: Uuid,
-        payment: Payment,
+        request: RecordPaymentRequest,
+        created_by: Uuid,
         idempotency_key: Option<&str>,
     ) -> Result<Payment> {
         let now = Utc::now();
-        // Preserve a caller-supplied id (callers reference it when marking
-        // the invoice paid); only generate one when the caller left it nil.
-        let id = if payment.id.is_nil() {
-            Uuid::new_v4()
-        } else {
-            payment.id
-        };
+        // Thirty-first audit: the payment id is ALWAYS server-generated —
+        // the narrow request cannot carry one.
+        let id = Uuid::new_v4();
         let payment_number = format!(
             "PAY-{}-{}",
             now.format("%Y%m%d"),
             &id.as_simple().encode_lower(&mut Uuid::encode_buffer())[..8]
         );
 
-        let mut tx = self
-            .pool
-            .begin()
+        let mut db = TenantTx::begin(&self.pool, tenant_id)
             .await
             .map_err(|e| SenseiError::Database(format!("Failed to begin payment tx: {e}")))?;
-        reject_if_idempotency_completed(&mut tx, idempotency_key).await?;
+        reject_if_idempotency_completed(db.tx(), idempotency_key).await?;
 
         let row = sqlx::query_as::<_, PaymentRow>(
             r#"
@@ -583,25 +623,35 @@ impl FinanceService for DatabaseFinanceService {
             RETURNING id, tenant_id, payment_number, invoice_id, amount, currency, payment_method, reference, received_at, created_by
             "#,
         )
-        .bind(id).bind(tenant_id).bind(&payment_number)
-        .bind(payment.invoice_id).bind(payment.amount).bind(&payment.currency)
-        .bind(&payment.payment_method).bind(&payment.reference).bind(now).bind(payment.created_by)
-        .fetch_one(&mut *tx)
+        .bind(id)
+        .bind(tenant_id)
+        .bind(&payment_number)
+        .bind(request.invoice_id)
+        .bind(request.amount)
+        .bind(&request.currency)
+        .bind(&request.payment_method)
+        .bind(&request.reference)
+        .bind(now)
+        .bind(created_by)
+        .fetch_one(&mut **db.tx())
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to record payment: {e}")))?;
 
         write_business_audit(
-            &mut tx,
+            db.tx(),
             tenant_id,
-            payment.created_by,
+            created_by,
             "payment.recorded",
             "payment",
             id,
-            serde_json::json!({ "payment_number": payment_number, "invoice_id": payment.invoice_id }),
+            serde_json::json!({
+                "payment_number": payment_number,
+                "invoice_id": request.invoice_id
+            }),
         )
         .await?;
-        complete_if_idempotent(&mut tx, idempotency_key).await?;
-        tx.commit()
+        complete_if_idempotent(db.tx(), idempotency_key).await?;
+        db.commit()
             .await
             .map_err(|e| SenseiError::Database(format!("Failed to commit payment tx: {e}")))?;
 
@@ -619,6 +669,10 @@ impl FinanceService for DatabaseFinanceService {
         let per_page = per_page.unwrap_or(20).clamp(1, 100);
         let offset = (page - 1) * per_page;
 
+        let mut db = TenantTx::begin(&self.pool, tenant_id)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to begin payment list: {e}")))?;
+
         let items: Vec<PaymentRow> = sqlx::query_as(
             r#"
             SELECT id, tenant_id, payment_number, invoice_id, amount, currency, payment_method, reference, received_at, created_by
@@ -626,17 +680,25 @@ impl FinanceService for DatabaseFinanceService {
             ORDER BY received_at DESC LIMIT $3 OFFSET $4
             "#,
         )
-        .bind(tenant_id).bind(invoice_id).bind(per_page as i64).bind(offset as i64)
-        .fetch_all(&self.pool)
+        .bind(tenant_id)
+        .bind(invoice_id)
+        .bind(per_page as i64)
+        .bind(offset as i64)
+        .fetch_all(&mut **db.tx())
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to list payments: {e}")))?;
 
         let count: i64 = sqlx::query_scalar(
             "SELECT COUNT(*) FROM payments WHERE tenant_id = $1 AND ($2::uuid IS NULL OR invoice_id = $2)",
         )
-        .bind(tenant_id).bind(invoice_id)
-        .fetch_one(&self.pool).await
+        .bind(tenant_id)
+        .bind(invoice_id)
+        .fetch_one(&mut **db.tx())
+        .await
         .map_err(|e| SenseiError::Database(format!("Failed to count payments: {e}")))?;
+        db.commit()
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to close payment list: {e}")))?;
 
         let items = items.into_iter().map(payment_row_to_domain).collect();
         Ok(PaginatedResponse {
@@ -652,6 +714,9 @@ impl FinanceService for DatabaseFinanceService {
 
     async fn create_budget(&self, tenant_id: Uuid, budget: Budget) -> Result<Budget> {
         let id = Uuid::new_v4();
+        let mut db = TenantTx::begin(&self.pool, tenant_id)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to begin budget tx: {e}")))?;
         let row = sqlx::query_as::<_, BudgetRow>(
             r#"
             INSERT INTO budgets (id, tenant_id, fiscal_year, department, category, allocated_amount, spent_amount, remaining_amount)
@@ -659,26 +724,41 @@ impl FinanceService for DatabaseFinanceService {
             RETURNING id, tenant_id, fiscal_year, department, category, allocated_amount, spent_amount, remaining_amount
             "#,
         )
-        .bind(id).bind(tenant_id).bind(budget.fiscal_year).bind(&budget.department)
-        .bind(&budget.category).bind(budget.allocated_amount)
-        .fetch_one(&self.pool)
+        .bind(id)
+        .bind(tenant_id)
+        .bind(budget.fiscal_year)
+        .bind(&budget.department)
+        .bind(&budget.category)
+        .bind(budget.allocated_amount)
+        .fetch_one(&mut **db.tx())
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to create budget: {e}")))?;
+        db.commit()
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to commit budget: {e}")))?;
 
         Ok(budget_row_to_domain(row))
     }
 
     async fn get_budget(&self, tenant_id: Uuid, id: Uuid) -> Result<Budget> {
+        let mut db = TenantTx::begin(&self.pool, tenant_id)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to begin budget read: {e}")))?;
         let row = sqlx::query_as::<_, BudgetRow>(
             "SELECT id, tenant_id, fiscal_year, department, category, allocated_amount, spent_amount, remaining_amount FROM budgets WHERE id = $1 AND tenant_id = $2",
         )
-        .bind(id).bind(tenant_id)
-        .fetch_optional(&self.pool)
+        .bind(id)
+        .bind(tenant_id)
+        .fetch_optional(&mut **db.tx())
         .await
-        .map_err(|e| SenseiError::Database(format!("Failed to get budget: {e}")))?
-        .ok_or_else(|| SenseiError::NotFound(format!("Budget {id} not found")))?;
+        .map_err(|e| SenseiError::Database(format!("Failed to get budget: {e}")))?;
+        db.commit()
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to close budget read: {e}")))?;
 
-        Ok(budget_row_to_domain(row))
+        Ok(budget_row_to_domain(row.ok_or_else(|| {
+            SenseiError::NotFound(format!("Budget {id} not found"))
+        })?))
     }
 
     async fn list_budgets(
@@ -693,6 +773,10 @@ impl FinanceService for DatabaseFinanceService {
         let per_page = per_page.unwrap_or(20).clamp(1, 100);
         let offset = (page - 1) * per_page;
 
+        let mut db = TenantTx::begin(&self.pool, tenant_id)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to begin budget list: {e}")))?;
+
         let items: Vec<BudgetRow> = sqlx::query_as(
             r#"
             SELECT id, tenant_id, fiscal_year, department, category, allocated_amount, spent_amount, remaining_amount
@@ -700,17 +784,27 @@ impl FinanceService for DatabaseFinanceService {
             ORDER BY fiscal_year DESC, department LIMIT $4 OFFSET $5
             "#,
         )
-        .bind(tenant_id).bind(fiscal_year).bind(department).bind(per_page as i64).bind(offset as i64)
-        .fetch_all(&self.pool)
+        .bind(tenant_id)
+        .bind(fiscal_year)
+        .bind(department)
+        .bind(per_page as i64)
+        .bind(offset as i64)
+        .fetch_all(&mut **db.tx())
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to list budgets: {e}")))?;
 
         let count: i64 = sqlx::query_scalar(
             "SELECT COUNT(*) FROM budgets WHERE tenant_id = $1 AND ($2::int IS NULL OR fiscal_year = $2) AND ($3::text IS NULL OR department = $3)",
         )
-        .bind(tenant_id).bind(fiscal_year).bind(department)
-        .fetch_one(&self.pool).await
+        .bind(tenant_id)
+        .bind(fiscal_year)
+        .bind(department)
+        .fetch_one(&mut **db.tx())
+        .await
         .map_err(|e| SenseiError::Database(format!("Failed to count budgets: {e}")))?;
+        db.commit()
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to close budget list: {e}")))?;
 
         let items = items.into_iter().map(budget_row_to_domain).collect();
         Ok(PaginatedResponse {
@@ -728,6 +822,9 @@ impl FinanceService for DatabaseFinanceService {
         id: Uuid,
         amount: rust_decimal::Decimal,
     ) -> Result<Budget> {
+        let mut db = TenantTx::begin(&self.pool, tenant_id)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to begin allocation: {e}")))?;
         let row = sqlx::query_as::<_, BudgetRow>(
             r#"
             UPDATE budgets SET allocated_amount = allocated_amount + $1, remaining_amount = remaining_amount + $1
@@ -735,13 +832,18 @@ impl FinanceService for DatabaseFinanceService {
             RETURNING id, tenant_id, fiscal_year, department, category, allocated_amount, spent_amount, remaining_amount
             "#,
         )
-        .bind(amount).bind(id).bind(tenant_id)
-        .fetch_optional(&self.pool)
+        .bind(amount)
+        .bind(id)
+        .bind(tenant_id)
+        .fetch_optional(&mut **db.tx())
         .await
-        .map_err(|e| SenseiError::Database(format!("Failed to allocate budget: {e}")))?
-        .ok_or_else(|| SenseiError::NotFound(format!("Budget {id} not found")))?;
-
-        Ok(budget_row_to_domain(row))
+        .map_err(|e| SenseiError::Database(format!("Failed to allocate budget: {e}")))?;
+        db.commit()
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to commit allocation: {e}")))?;
+        Ok(budget_row_to_domain(row.ok_or_else(|| {
+            SenseiError::NotFound(format!("Budget {id} not found"))
+        })?))
     }
 
     // ── Journal Entries ─────────────────────────────────────────────────
@@ -760,12 +862,10 @@ impl FinanceService for DatabaseFinanceService {
             &id.as_simple().encode_lower(&mut Uuid::encode_buffer())[..8]
         );
 
-        let mut tx = self
-            .pool
-            .begin()
+        let mut db = TenantTx::begin(&self.pool, tenant_id)
             .await
             .map_err(|e| SenseiError::Database(format!("Failed to begin journal tx: {e}")))?;
-        reject_if_idempotency_completed(&mut tx, idempotency_key).await?;
+        reject_if_idempotency_completed(db.tx(), idempotency_key).await?;
 
         let row = sqlx::query_as::<_, JournalEntryRow>(
             r#"
@@ -774,15 +874,22 @@ impl FinanceService for DatabaseFinanceService {
             RETURNING id, tenant_id, entry_number, description, debit_account, credit_account, amount, currency, entry_date, posted_by
             "#,
         )
-        .bind(id).bind(tenant_id).bind(&entry_number).bind(&entry.description)
-        .bind(&entry.debit_account).bind(&entry.credit_account).bind(entry.amount)
-        .bind(&entry.currency).bind(entry.entry_date).bind(entry.posted_by)
-        .fetch_one(&mut *tx)
+        .bind(id)
+        .bind(tenant_id)
+        .bind(&entry_number)
+        .bind(&entry.description)
+        .bind(&entry.debit_account)
+        .bind(&entry.credit_account)
+        .bind(entry.amount)
+        .bind(&entry.currency)
+        .bind(entry.entry_date)
+        .bind(entry.posted_by)
+        .fetch_one(&mut **db.tx())
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to post journal entry: {e}")))?;
 
         write_business_audit(
-            &mut tx,
+            db.tx(),
             tenant_id,
             entry.posted_by,
             "journal.posted",
@@ -791,8 +898,8 @@ impl FinanceService for DatabaseFinanceService {
             serde_json::json!({ "entry_number": entry_number }),
         )
         .await?;
-        complete_if_idempotent(&mut tx, idempotency_key).await?;
-        tx.commit()
+        complete_if_idempotent(db.tx(), idempotency_key).await?;
+        db.commit()
             .await
             .map_err(|e| SenseiError::Database(format!("Failed to commit journal tx: {e}")))?;
 
@@ -800,6 +907,9 @@ impl FinanceService for DatabaseFinanceService {
     }
 
     async fn get_journal_entry(&self, tenant_id: Uuid, id: Uuid) -> Result<JournalEntry> {
+        let mut db = TenantTx::begin(&self.pool, tenant_id)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to begin journal read: {e}")))?;
         let row = sqlx::query_as::<_, JournalEntryRow>(
             "SELECT id, tenant_id, entry_number, description, debit_account, credit_account, \
                     amount, currency, entry_date, posted_by \
@@ -807,11 +917,15 @@ impl FinanceService for DatabaseFinanceService {
         )
         .bind(id)
         .bind(tenant_id)
-        .fetch_optional(&self.pool)
+        .fetch_optional(&mut **db.tx())
         .await
-        .map_err(|e| SenseiError::Database(format!("Failed to get journal entry: {e}")))?
-        .ok_or_else(|| SenseiError::NotFound(format!("Journal entry {id} not found")))?;
-        Ok(journal_row_to_domain(row))
+        .map_err(|e| SenseiError::Database(format!("Failed to get journal entry: {e}")))?;
+        db.commit()
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to close journal read: {e}")))?;
+        Ok(journal_row_to_domain(row.ok_or_else(|| {
+            SenseiError::NotFound(format!("Journal entry {id} not found"))
+        })?))
     }
 
     async fn list_journal_entries(
@@ -825,6 +939,10 @@ impl FinanceService for DatabaseFinanceService {
         let per_page = per_page.unwrap_or(20).clamp(1, 100);
         let offset = (page - 1) * per_page;
 
+        let mut db = TenantTx::begin(&self.pool, tenant_id)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to begin journal list: {e}")))?;
+
         let items: Vec<JournalEntryRow> = sqlx::query_as(
             r#"
             SELECT id, tenant_id, entry_number, description, debit_account, credit_account, amount, currency, entry_date, posted_by
@@ -832,17 +950,25 @@ impl FinanceService for DatabaseFinanceService {
             ORDER BY entry_date DESC LIMIT $3 OFFSET $4
             "#,
         )
-        .bind(tenant_id).bind(account).bind(per_page as i64).bind(offset as i64)
-        .fetch_all(&self.pool)
+        .bind(tenant_id)
+        .bind(account)
+        .bind(per_page as i64)
+        .bind(offset as i64)
+        .fetch_all(&mut **db.tx())
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to list journal entries: {e}")))?;
 
         let count: i64 = sqlx::query_scalar(
             "SELECT COUNT(*) FROM journal_entries WHERE tenant_id = $1 AND ($2::text IS NULL OR debit_account = $2 OR credit_account = $2)",
         )
-        .bind(tenant_id).bind(account)
-        .fetch_one(&self.pool).await
+        .bind(tenant_id)
+        .bind(account)
+        .fetch_one(&mut **db.tx())
+        .await
         .map_err(|e| SenseiError::Database(format!("Failed to count journal entries: {e}")))?;
+        db.commit()
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to close journal list: {e}")))?;
 
         let items = items.into_iter().map(journal_row_to_domain).collect();
         Ok(PaginatedResponse {
@@ -857,14 +983,16 @@ impl FinanceService for DatabaseFinanceService {
     // ── Invoice Mutations ──────────────────────────────────────────────
 
     async fn update_invoice(&self, tenant_id: Uuid, id: Uuid, invoice: Invoice) -> Result<Invoice> {
+        let mut db = TenantTx::begin(&self.pool, tenant_id)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to begin invoice update: {e}")))?;
         let status: Option<String> =
             sqlx::query_scalar("SELECT status FROM invoices WHERE id = $1 AND tenant_id = $2")
                 .bind(id)
                 .bind(tenant_id)
-                .fetch_optional(&self.pool)
+                .fetch_optional(&mut **db.tx())
                 .await
-                .map_err(|e| SenseiError::Database(format!("Failed to read invoice: {e}")))?
-                .ok_or_else(|| SenseiError::NotFound(format!("Invoice {id} not found")))?;
+                .map_err(|e| SenseiError::Database(format!("Failed to read invoice: {e}")))?;
         if status.as_deref() == Some("paid") || status.as_deref() == Some("cancelled") {
             return Err(SenseiError::Conflict(
                 "Paid or cancelled invoices are immutable — void the payment instead".to_string(),
@@ -904,23 +1032,28 @@ impl FinanceService for DatabaseFinanceService {
         .bind(&invoice.notes)
         .bind(id)
         .bind(tenant_id)
-        .fetch_optional(&self.pool)
+        .fetch_optional(&mut **db.tx())
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to update invoice: {e}")))?
         .ok_or_else(|| SenseiError::NotFound(format!("Invoice {id} not found")))?;
+        db.commit()
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to commit invoice update: {e}")))?;
 
         invoice_row_to_domain(row)
     }
 
     async fn delete_invoice(&self, tenant_id: Uuid, id: Uuid) -> Result<()> {
+        let mut db = TenantTx::begin(&self.pool, tenant_id)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to begin invoice delete: {e}")))?;
         let status: Option<String> =
             sqlx::query_scalar("SELECT status FROM invoices WHERE id = $1 AND tenant_id = $2")
                 .bind(id)
                 .bind(tenant_id)
-                .fetch_optional(&self.pool)
+                .fetch_optional(&mut **db.tx())
                 .await
-                .map_err(|e| SenseiError::Database(format!("Failed to read invoice: {e}")))?
-                .ok_or_else(|| SenseiError::NotFound(format!("Invoice {id} not found")))?;
+                .map_err(|e| SenseiError::Database(format!("Failed to read invoice: {e}")))?;
         if status.as_deref() == Some("paid") || status.as_deref() == Some("cancelled") {
             return Err(SenseiError::Conflict(
                 "Paid or cancelled invoices are immutable".to_string(),
@@ -929,29 +1062,34 @@ impl FinanceService for DatabaseFinanceService {
         let result = sqlx::query("DELETE FROM invoices WHERE id = $1 AND tenant_id = $2")
             .bind(id)
             .bind(tenant_id)
-            .execute(&self.pool)
+            .execute(&mut **db.tx())
             .await
             .map_err(|e| SenseiError::Database(format!("Failed to delete invoice: {e}")))?;
 
         if result.rows_affected() == 0 {
             return Err(SenseiError::NotFound(format!("Invoice {id} not found")));
         }
+        db.commit()
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to commit invoice delete: {e}")))?;
         Ok(())
     }
 
     // ── Payment Mutations ──────────────────────────────────────────────
 
     async fn update_payment(&self, tenant_id: Uuid, id: Uuid, payment: Payment) -> Result<Payment> {
+        let mut db = TenantTx::begin(&self.pool, tenant_id)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to begin payment update: {e}")))?;
         let invoice_status: Option<String> = sqlx::query_scalar(
             "SELECT i.status FROM payments p JOIN invoices i ON i.id = p.invoice_id \
              WHERE p.id = $1 AND p.tenant_id = $2",
         )
         .bind(id)
         .bind(tenant_id)
-        .fetch_optional(&self.pool)
+        .fetch_optional(&mut **db.tx())
         .await
-        .map_err(|e| SenseiError::Database(format!("Failed to read payment: {e}")))?
-        .ok_or_else(|| SenseiError::NotFound(format!("Payment {id} not found")))?;
+        .map_err(|e| SenseiError::Database(format!("Failed to read payment: {e}")))?;
         if invoice_status.as_deref() == Some("paid") {
             return Err(SenseiError::Conflict(
                 "Completed payments are immutable — reverse them instead of editing".to_string(),
@@ -964,27 +1102,36 @@ impl FinanceService for DatabaseFinanceService {
             RETURNING id, tenant_id, payment_number, invoice_id, amount, currency, payment_method, reference, received_at, created_by
             "#,
         )
-        .bind(payment.amount).bind(&payment.currency).bind(&payment.payment_method).bind(&payment.reference)
-        .bind(id).bind(tenant_id)
-        .fetch_optional(&self.pool)
+        .bind(payment.amount)
+        .bind(&payment.currency)
+        .bind(&payment.payment_method)
+        .bind(&payment.reference)
+        .bind(id)
+        .bind(tenant_id)
+        .fetch_optional(&mut **db.tx())
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to update payment: {e}")))?
         .ok_or_else(|| SenseiError::NotFound(format!("Payment {id} not found")))?;
+        db.commit()
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to commit payment update: {e}")))?;
 
         Ok(payment_row_to_domain(row))
     }
 
     async fn delete_payment(&self, tenant_id: Uuid, id: Uuid) -> Result<()> {
+        let mut db = TenantTx::begin(&self.pool, tenant_id)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to begin payment delete: {e}")))?;
         let invoice_status: Option<String> = sqlx::query_scalar(
             "SELECT i.status FROM payments p JOIN invoices i ON i.id = p.invoice_id \
              WHERE p.id = $1 AND p.tenant_id = $2",
         )
         .bind(id)
         .bind(tenant_id)
-        .fetch_optional(&self.pool)
+        .fetch_optional(&mut **db.tx())
         .await
-        .map_err(|e| SenseiError::Database(format!("Failed to read payment: {e}")))?
-        .ok_or_else(|| SenseiError::NotFound(format!("Payment {id} not found")))?;
+        .map_err(|e| SenseiError::Database(format!("Failed to read payment: {e}")))?;
         if invoice_status.as_deref() == Some("paid") {
             return Err(SenseiError::Conflict(
                 "Completed payments are immutable — reverse them instead of deleting".to_string(),
@@ -993,19 +1140,25 @@ impl FinanceService for DatabaseFinanceService {
         let result = sqlx::query("DELETE FROM payments WHERE id = $1 AND tenant_id = $2")
             .bind(id)
             .bind(tenant_id)
-            .execute(&self.pool)
+            .execute(&mut **db.tx())
             .await
             .map_err(|e| SenseiError::Database(format!("Failed to delete payment: {e}")))?;
 
         if result.rows_affected() == 0 {
             return Err(SenseiError::NotFound(format!("Payment {id} not found")));
         }
+        db.commit()
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to commit payment delete: {e}")))?;
         Ok(())
     }
 
     // ── Budget Mutations ───────────────────────────────────────────────
 
     async fn update_budget(&self, tenant_id: Uuid, id: Uuid, budget: Budget) -> Result<Budget> {
+        let mut db = TenantTx::begin(&self.pool, tenant_id)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to begin budget update: {e}")))?;
         let row = sqlx::query_as::<_, BudgetRow>(
             r#"
             UPDATE budgets SET fiscal_year=$1, department=$2, category=$3, allocated_amount=$4, remaining_amount=$4 - spent_amount
@@ -1013,27 +1166,40 @@ impl FinanceService for DatabaseFinanceService {
             RETURNING id, tenant_id, fiscal_year, department, category, allocated_amount, spent_amount, remaining_amount
             "#,
         )
-        .bind(budget.fiscal_year).bind(&budget.department).bind(&budget.category).bind(budget.allocated_amount)
-        .bind(id).bind(tenant_id)
-        .fetch_optional(&self.pool)
+        .bind(budget.fiscal_year)
+        .bind(&budget.department)
+        .bind(&budget.category)
+        .bind(budget.allocated_amount)
+        .bind(id)
+        .bind(tenant_id)
+        .fetch_optional(&mut **db.tx())
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to update budget: {e}")))?
         .ok_or_else(|| SenseiError::NotFound(format!("Budget {id} not found")))?;
+        db.commit()
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to commit budget update: {e}")))?;
 
         Ok(budget_row_to_domain(row))
     }
 
     async fn delete_budget(&self, tenant_id: Uuid, id: Uuid) -> Result<()> {
+        let mut db = TenantTx::begin(&self.pool, tenant_id)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to begin budget delete: {e}")))?;
         let result = sqlx::query("DELETE FROM budgets WHERE id = $1 AND tenant_id = $2")
             .bind(id)
             .bind(tenant_id)
-            .execute(&self.pool)
+            .execute(&mut **db.tx())
             .await
             .map_err(|e| SenseiError::Database(format!("Failed to delete budget: {e}")))?;
 
         if result.rows_affected() == 0 {
             return Err(SenseiError::NotFound(format!("Budget {id} not found")));
         }
+        db.commit()
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to commit budget delete: {e}")))?;
         Ok(())
     }
 
@@ -1045,15 +1211,17 @@ impl FinanceService for DatabaseFinanceService {
         id: Uuid,
         entry: JournalEntry,
     ) -> Result<JournalEntry> {
+        let mut db = TenantTx::begin(&self.pool, tenant_id)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to begin journal update: {e}")))?;
         let status: Option<String> = sqlx::query_scalar(
             "SELECT status FROM journal_entries WHERE id = $1 AND tenant_id = $2",
         )
         .bind(id)
         .bind(tenant_id)
-        .fetch_optional(&self.pool)
+        .fetch_optional(&mut **db.tx())
         .await
-        .map_err(|e| SenseiError::Database(format!("Failed to read journal entry: {e}")))?
-        .ok_or_else(|| SenseiError::NotFound(format!("Journal entry {id} not found")))?;
+        .map_err(|e| SenseiError::Database(format!("Failed to read journal entry: {e}")))?;
         if status.as_deref() == Some("posted") || status.as_deref() == Some("reversed") {
             return Err(SenseiError::Conflict(
                 "Posted accounting entries are immutable — reverse them instead of editing"
@@ -1067,27 +1235,37 @@ impl FinanceService for DatabaseFinanceService {
             RETURNING id, tenant_id, entry_number, description, debit_account, credit_account, amount, currency, entry_date, posted_by
             "#,
         )
-        .bind(&entry.description).bind(&entry.debit_account).bind(&entry.credit_account)
-        .bind(entry.amount).bind(&entry.currency).bind(entry.entry_date)
-        .bind(id).bind(tenant_id)
-        .fetch_optional(&self.pool)
+        .bind(&entry.description)
+        .bind(&entry.debit_account)
+        .bind(&entry.credit_account)
+        .bind(entry.amount)
+        .bind(&entry.currency)
+        .bind(entry.entry_date)
+        .bind(id)
+        .bind(tenant_id)
+        .fetch_optional(&mut **db.tx())
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to update journal entry: {e}")))?
         .ok_or_else(|| SenseiError::NotFound(format!("Journal entry {id} not found")))?;
+        db.commit()
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to commit journal update: {e}")))?;
 
         Ok(journal_row_to_domain(row))
     }
 
     async fn delete_journal_entry(&self, tenant_id: Uuid, id: Uuid) -> Result<()> {
+        let mut db = TenantTx::begin(&self.pool, tenant_id)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to begin journal delete: {e}")))?;
         let status: Option<String> = sqlx::query_scalar(
             "SELECT status FROM journal_entries WHERE id = $1 AND tenant_id = $2",
         )
         .bind(id)
         .bind(tenant_id)
-        .fetch_optional(&self.pool)
+        .fetch_optional(&mut **db.tx())
         .await
-        .map_err(|e| SenseiError::Database(format!("Failed to read journal entry: {e}")))?
-        .ok_or_else(|| SenseiError::NotFound(format!("Journal entry {id} not found")))?;
+        .map_err(|e| SenseiError::Database(format!("Failed to read journal entry: {e}")))?;
         if status.as_deref() == Some("posted") || status.as_deref() == Some("reversed") {
             return Err(SenseiError::Conflict(
                 "Posted accounting entries are immutable — reverse them instead of deleting"
@@ -1097,7 +1275,7 @@ impl FinanceService for DatabaseFinanceService {
         let result = sqlx::query("DELETE FROM journal_entries WHERE id = $1 AND tenant_id = $2")
             .bind(id)
             .bind(tenant_id)
-            .execute(&self.pool)
+            .execute(&mut **db.tx())
             .await
             .map_err(|e| SenseiError::Database(format!("Failed to delete journal entry: {e}")))?;
 
@@ -1106,6 +1284,9 @@ impl FinanceService for DatabaseFinanceService {
                 "Journal entry {id} not found"
             )));
         }
+        db.commit()
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to commit journal delete: {e}")))?;
         Ok(())
     }
 
@@ -1116,12 +1297,12 @@ impl FinanceService for DatabaseFinanceService {
         reversed_by: Uuid,
         idempotency_key: Option<&str>,
     ) -> Result<JournalEntry> {
-        let mut tx = self
-            .pool
-            .begin()
+        // ONE tenant-scoped transaction: lock, reversal insert, status
+        // flip, audit and idempotency completion are atomic and
+        // FORCE-RLS-admitted.
+        let mut db = TenantTx::begin(&self.pool, tenant_id)
             .await
             .map_err(|e| SenseiError::Database(format!("Failed to begin reversal: {e}")))?;
-        set_tenant_context(&mut tx, tenant_id).await?;
 
         let original: Option<JournalEntryRow> = sqlx::query_as(
             "SELECT id, tenant_id, entry_number, description, debit_account, credit_account, \
@@ -1130,7 +1311,7 @@ impl FinanceService for DatabaseFinanceService {
         )
         .bind(id)
         .bind(tenant_id)
-        .fetch_optional(&self.pool)
+        .fetch_optional(&mut **db.tx())
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to read journal entry: {e}")))?;
 
@@ -1166,7 +1347,7 @@ impl FinanceService for DatabaseFinanceService {
         .bind(Utc::now())
         .bind(reversed_by)
         .bind(id)
-        .fetch_one(&self.pool)
+        .fetch_one(&mut **db.tx())
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to create reversal: {e}")))?;
 
@@ -1175,12 +1356,12 @@ impl FinanceService for DatabaseFinanceService {
         )
         .bind(id)
         .bind(tenant_id)
-        .execute(&self.pool)
+        .execute(&mut **db.tx())
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to mark entry reversed: {e}")))?;
 
         write_business_audit(
-            &mut tx,
+            db.tx(),
             tenant_id,
             reversed_by,
             "journal.reversed",
@@ -1189,8 +1370,8 @@ impl FinanceService for DatabaseFinanceService {
             serde_json::json!({ "reversal_id": reversal_id }),
         )
         .await?;
-        complete_if_idempotent(&mut tx, idempotency_key).await?;
-        tx.commit()
+        complete_if_idempotent(db.tx(), idempotency_key).await?;
+        db.commit()
             .await
             .map_err(|e| SenseiError::Database(format!("Failed to commit reversal: {e}")))?;
         Ok(journal_row_to_domain(reversal))
@@ -1201,6 +1382,12 @@ impl FinanceService for DatabaseFinanceService {
     async fn run_cost_rollup(&self, tenant_id: Uuid, product_id: Uuid) -> Result<CostRollup> {
         let now = Utc::now();
         let id = Uuid::new_v4();
+
+        // ONE tenant-scoped transaction: the BOM/routing/product reads and
+        // the rollup insert all run FORCE-RLS-admitted.
+        let mut db = TenantTx::begin(&self.pool, tenant_id)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to begin cost rollup: {e}")))?;
 
         // Material cost: Σ(bom_items.quantity × component standard_cost) as
         // an exact Decimal (the source columns are floating-point, so the
@@ -1214,7 +1401,7 @@ impl FinanceService for DatabaseFinanceService {
         )
         .bind(product_id)
         .bind(tenant_id)
-        .fetch_one(&self.pool)
+        .fetch_one(&mut **db.tx())
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to compute material cost: {e}")))?;
 
@@ -1229,7 +1416,7 @@ impl FinanceService for DatabaseFinanceService {
         )
         .bind(product_id)
         .bind(tenant_id)
-        .fetch_one(&self.pool)
+        .fetch_one(&mut **db.tx())
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to compute labor cost: {e}")))?;
 
@@ -1250,7 +1437,7 @@ impl FinanceService for DatabaseFinanceService {
             sqlx::query_scalar(r#"SELECT name FROM products WHERE id = $1 AND tenant_id = $2"#)
                 .bind(product_id)
                 .bind(tenant_id)
-                .fetch_optional(&self.pool)
+                .fetch_optional(&mut **db.tx())
                 .await
                 .map_err(|e| SenseiError::Database(format!("Failed to get product name: {e}")))?
                 .unwrap_or_else(|| "Unknown Product".to_string());
@@ -1262,16 +1449,29 @@ impl FinanceService for DatabaseFinanceService {
             RETURNING id, tenant_id, product_id, product_name, material_cost, labor_cost, overhead_cost, total_cost, rollup_date
             "#,
         )
-        .bind(id).bind(tenant_id).bind(product_id).bind(&product_name)
-        .bind(material_cost).bind(labor_cost).bind(overhead_cost).bind(total_cost).bind(now)
-        .fetch_one(&self.pool)
+        .bind(id)
+        .bind(tenant_id)
+        .bind(product_id)
+        .bind(&product_name)
+        .bind(material_cost)
+        .bind(labor_cost)
+        .bind(overhead_cost)
+        .bind(total_cost)
+        .bind(now)
+        .fetch_one(&mut **db.tx())
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to create cost rollup: {e}")))?;
+        db.commit()
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to commit cost rollup: {e}")))?;
 
         Ok(cost_rollup_row_to_domain(row))
     }
 
     async fn get_cost_rollup(&self, tenant_id: Uuid, product_id: Uuid) -> Result<CostRollup> {
+        let mut db = TenantTx::begin(&self.pool, tenant_id)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to begin rollup read: {e}")))?;
         let row = sqlx::query_as::<_, CostRollupRow>(
             r#"
             SELECT id, tenant_id, product_id, product_name, material_cost, labor_cost, overhead_cost, total_cost, rollup_date
@@ -1279,13 +1479,18 @@ impl FinanceService for DatabaseFinanceService {
             ORDER BY rollup_date DESC LIMIT 1
             "#,
         )
-        .bind(product_id).bind(tenant_id)
-        .fetch_optional(&self.pool)
+        .bind(product_id)
+        .bind(tenant_id)
+        .fetch_optional(&mut **db.tx())
         .await
-        .map_err(|e| SenseiError::Database(format!("Failed to get cost rollup: {e}")))?
-        .ok_or_else(|| SenseiError::NotFound(format!("Cost rollup for product {product_id} not found")))?;
+        .map_err(|e| SenseiError::Database(format!("Failed to get cost rollup: {e}")))?;
+        db.commit()
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to close rollup read: {e}")))?;
 
-        Ok(cost_rollup_row_to_domain(row))
+        Ok(cost_rollup_row_to_domain(row.ok_or_else(|| {
+            SenseiError::NotFound(format!("Cost rollup for product {product_id} not found"))
+        })?))
     }
 
     // ── AP 3-Way Matching ───────────────────────────────────────────────

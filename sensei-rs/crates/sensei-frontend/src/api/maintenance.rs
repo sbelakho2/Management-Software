@@ -9,16 +9,15 @@ use serde::{Deserialize, Serialize};
 pub struct WorkRequestDto {
     pub id: String,
     pub tenant_id: String,
-    pub request_number: String,
+    pub equipment_id: String,
     pub title: String,
-    pub description: Option<String>,
+    pub description: String,
     pub priority: String,
     pub status: String,
-    pub asset_id: Option<String>,
-    pub assigned_to: Option<String>,
     pub requested_by: String,
+    pub assigned_to: Option<String>,
     pub created_at: String,
-    pub updated_at: String,
+    pub completed_at: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

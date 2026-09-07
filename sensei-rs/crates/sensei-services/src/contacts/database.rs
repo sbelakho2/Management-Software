@@ -5,6 +5,7 @@
 
 use async_trait::async_trait;
 use chrono::Utc;
+use sensei_core::db::TenantTx;
 use sensei_core::domain::entities::Contact;
 use sensei_core::error::{Result, SenseiError};
 use sensei_core::pagination::PaginatedResponse;
@@ -63,6 +64,11 @@ impl ContactsService for DatabaseContactsService {
     async fn create_contact(&self, tenant_id: TenantId, contact: Contact) -> Result<Contact> {
         let now = Utc::now();
 
+        // `contacts` is fail-closed FORCE RLS (migration 175): every
+        // statement runs inside a TenantTx of the owning tenant.
+        let mut db = TenantTx::begin(&self.pool, tenant_id)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to begin create contact: {e}")))?;
         let model = sqlx::query_as::<_, ContactRow>(
             r#"
             INSERT INTO contacts (id, tenant_id, first_name, last_name, email, phone,
@@ -88,14 +94,20 @@ impl ContactsService for DatabaseContactsService {
         .bind(contact.is_active)
         .bind(now)
         .bind(now)
-        .fetch_one(&self.pool)
+        .fetch_one(&mut **db.tx())
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to create contact: {e}")))?;
+        db.commit()
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to commit create contact: {e}")))?;
 
         Ok(contact_row_to_domain(model))
     }
 
     async fn get_contact(&self, tenant_id: TenantId, id: EntityId) -> Result<Contact> {
+        let mut db = TenantTx::begin(&self.pool, tenant_id)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to begin get contact: {e}")))?;
         let model = sqlx::query_as::<_, ContactRow>(
             r#"
             SELECT id, tenant_id, first_name, last_name, email, phone, mobile,
@@ -107,10 +119,13 @@ impl ContactsService for DatabaseContactsService {
         )
         .bind(id)
         .bind(tenant_id)
-        .fetch_optional(&self.pool)
+        .fetch_optional(&mut **db.tx())
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to get contact: {e}")))?
         .ok_or_else(|| SenseiError::NotFound(format!("Contact {id} not found")))?;
+        db.commit()
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to commit get contact: {e}")))?;
 
         Ok(contact_row_to_domain(model))
     }
@@ -129,6 +144,13 @@ impl ContactsService for DatabaseContactsService {
         let use_account_filter = account_id.is_some();
         let account_val = account_id.unwrap_or_default();
 
+        // `contacts` is fail-closed FORCE RLS (migration 175): the count
+        // and the page run on ONE TenantTx of the tenant — a raw-pool
+        // read returns zero rows under the production sensei_app role.
+        let mut db = TenantTx::begin(&self.pool, tenant_id)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to begin list contacts: {e}")))?;
+
         // Count query
         let count_sql = if use_account_filter {
             "SELECT COUNT(*) FROM contacts WHERE tenant_id = $1 AND account_id = $2"
@@ -140,12 +162,12 @@ impl ContactsService for DatabaseContactsService {
             sqlx::query_scalar(count_sql)
                 .bind(tenant_id)
                 .bind(account_val)
-                .fetch_one(&self.pool)
+                .fetch_one(&mut **db.tx())
                 .await
         } else {
             sqlx::query_scalar(count_sql)
                 .bind(tenant_id)
-                .fetch_one(&self.pool)
+                .fetch_one(&mut **db.tx())
                 .await
         }
         .map_err(|e| SenseiError::Database(format!("Failed to count contacts: {e}")))?;
@@ -182,17 +204,20 @@ impl ContactsService for DatabaseContactsService {
                 .bind(account_val)
                 .bind(per_page as i64)
                 .bind(offset as i64)
-                .fetch_all(&self.pool)
+                .fetch_all(&mut **db.tx())
                 .await
         } else {
             sqlx::query_as(data_sql)
                 .bind(tenant_id)
                 .bind(per_page as i64)
                 .bind(offset as i64)
-                .fetch_all(&self.pool)
+                .fetch_all(&mut **db.tx())
                 .await
         }
         .map_err(|e| SenseiError::Database(format!("Failed to list contacts: {e}")))?;
+        db.commit()
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to commit list contacts: {e}")))?;
 
         let data = models.into_iter().map(contact_row_to_domain).collect();
 
@@ -213,6 +238,9 @@ impl ContactsService for DatabaseContactsService {
     ) -> Result<Contact> {
         let now = Utc::now();
 
+        let mut db = TenantTx::begin(&self.pool, tenant_id)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to begin update contact: {e}")))?;
         let model = sqlx::query_as::<_, ContactRow>(
             r#"
             UPDATE contacts
@@ -238,10 +266,13 @@ impl ContactsService for DatabaseContactsService {
         .bind(&contact.notes)
         .bind(contact.is_active)
         .bind(now)
-        .fetch_optional(&self.pool)
+        .fetch_optional(&mut **db.tx())
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to update contact: {e}")))?
         .ok_or_else(|| SenseiError::NotFound(format!("Contact {id} not found")))?;
+        db.commit()
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to commit update contact: {e}")))?;
 
         // Verify tenant ownership.
         if model.model.tenant_id != tenant_id {
@@ -256,6 +287,9 @@ impl ContactsService for DatabaseContactsService {
     async fn delete_contact(&self, tenant_id: TenantId, id: EntityId) -> Result<()> {
         let now = Utc::now();
 
+        let mut db = TenantTx::begin(&self.pool, tenant_id)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to begin delete contact: {e}")))?;
         let result = sqlx::query(
             r#"
             UPDATE contacts
@@ -266,7 +300,7 @@ impl ContactsService for DatabaseContactsService {
         .bind(id)
         .bind(tenant_id)
         .bind(now)
-        .execute(&self.pool)
+        .execute(&mut **db.tx())
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to delete contact: {e}")))?;
 
@@ -277,7 +311,7 @@ impl ContactsService for DatabaseContactsService {
             )
             .bind(id)
             .bind(tenant_id)
-            .fetch_one(&self.pool)
+            .fetch_one(&mut **db.tx())
             .await
             .map_err(|e| {
                 SenseiError::Database(format!("Failed to check contact existence: {e}"))
@@ -287,6 +321,9 @@ impl ContactsService for DatabaseContactsService {
                 return Err(SenseiError::NotFound(format!("Contact {id} not found")));
             }
         }
+        db.commit()
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to commit delete contact: {e}")))?;
 
         Ok(())
     }

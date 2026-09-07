@@ -47,3 +47,18 @@ pub struct LearningMetric {
     pub gap: Option<f64>,
     pub guidance: String,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Unknown is an actual type: an unmeasured value is never zero.
+    #[test]
+    fn measurement_state_never_fakes_precision() {
+        let m = MeasurementState::unavailable("rework is not tracked");
+        assert_eq!(m.value(), None, "unavailable has no numeric value");
+        let n = MeasurementState::measured(42.0);
+        assert_eq!(n.value(), Some(42.0));
+        assert!(!matches!(m, MeasurementState::Measured { .. }));
+    }
+}

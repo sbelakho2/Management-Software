@@ -763,7 +763,11 @@ pub async fn logout(
 
     // Revoke the current session binding (this device).
     if let Some(sid) = user.sid {
-        if let Err(e) = state.session_store.revoke_session(&sid.to_string()).await {
+        if let Err(e) = state
+            .session_store
+            .revoke_session(&sid.to_string(), user.tenant_id)
+            .await
+        {
             tracing::error!(error = %e, "Failed to revoke server-side session");
             return Err(SenseiError::Internal(
                 "Unable to complete logout — session revocation could not be persisted. Please retry.".to_string(),
@@ -778,7 +782,7 @@ pub async fn logout(
     {
         if let Err(e) = state
             .session_store
-            .revoke_all_for_user(&user.user_id.to_string())
+            .revoke_all_for_user(&user.user_id.to_string(), user.tenant_id)
             .await
         {
             tracing::error!(error = %e, "Failed to revoke all user sessions");
@@ -899,7 +903,7 @@ pub async fn change_password(
     // not keep any session alive.
     state
         .session_store
-        .revoke_all_for_user(&user.user_id.to_string())
+        .revoke_all_for_user(&user.user_id.to_string(), user.tenant_id)
         .await
         .map_err(|e| {
             tracing::error!(error = %e, "Failed to revoke all user sessions");
@@ -1025,7 +1029,7 @@ pub async fn confirm_password_reset(
     // Revoke every session binding (all devices).
     state
         .session_store
-        .revoke_all_for_user(&stored.user_id.to_string())
+        .revoke_all_for_user(&stored.user_id.to_string(), caller_tenant)
         .await
         .map_err(|e| {
             tracing::error!(error = %e, "Failed to revoke all user sessions");
@@ -1270,6 +1274,7 @@ mod tests {
                     None,
                     &state.config.security.trusted_proxies,
                 ),
+                claims.tenant_id,
             )
             .await
             .unwrap();

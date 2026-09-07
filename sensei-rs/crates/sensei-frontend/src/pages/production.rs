@@ -33,13 +33,13 @@ pub fn WorkOrderListPage() -> impl IntoView {
     let columns = vec![
         TableColumn {
             label: "WO #",
-            key: "work_order_number",
+            key: "wo_number",
             sortable: true,
             width: None,
         },
         TableColumn {
             label: "PRODUCT",
-            key: "product_id",
+            key: "product_name",
             sortable: true,
             width: None,
         },
@@ -68,14 +68,8 @@ pub fn WorkOrderListPage() -> impl IntoView {
             width: None,
         },
         TableColumn {
-            label: "DUE DATE",
-            key: "due_date",
-            sortable: true,
-            width: None,
-        },
-        TableColumn {
-            label: "ASSIGNED TO",
-            key: "assigned_to",
+            label: "CREATED",
+            key: "created_at",
             sortable: true,
             width: None,
         },
@@ -87,14 +81,13 @@ pub fn WorkOrderListPage() -> impl IntoView {
                 Ok(list) => {
                     let rows: Vec<_> = list.clone().into_iter().map(|wo| {
                         view! {
-                            <td>{wo.work_order_number}</td>
-                            <td>{wo.product_id}</td>
+                            <td>{wo.wo_number}</td>
+                            <td>{wo.product_name}</td>
                             <td>{wo.quantity}</td>
-                            <td>{wo.quantity_completed.map(|q| q.to_string()).unwrap_or_else(|| "0".into())}</td>
+                            <td>{wo.quantity_completed}</td>
                             <td><span class=format!("rams-badge status-{}", wo.status.to_lowercase())>{wo.status.clone()}</span></td>
                             <td><span class=format!("rams-badge priority-{}", wo.priority.to_lowercase())>{wo.priority.clone()}</span></td>
-                            <td>{wo.due_date.as_ref().map(|d| d[..10].to_string()).unwrap_or_else(|| "—".into())}</td>
-                            <td>{wo.assigned_to.unwrap_or_else(|| "—".into())}</td>
+                            <td>{wo.created_at[..10].to_string()}</td>
                         }
                     }).collect();
                     view! { <DataTable columns=columns.clone() rows=rows /> }.into_any()

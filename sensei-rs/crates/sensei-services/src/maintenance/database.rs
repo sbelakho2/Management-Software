@@ -2,16 +2,28 @@
 //!
 //! Provides work request, PM schedule, and equipment management
 //! backed by PostgreSQL tables. Implements [`MaintenanceService`].
+//!
+//! Every tenant-table statement runs inside a [`TenantTx`] (thirtieth-audit
+//! item 7): the maintenance tables carry the universal fail-closed FORCE
+//! RLS policy (migration 175), so the SET LOCAL app.tenant_id context is a
+//! construction-time property of the handle, not a per-statement
+//! afterthought. State transitions are ATOMIC CAS (item 16): the expected
+//! predecessor status is carried in the UPDATE predicate — there is no
+//! read/check/write window, and a miss reports zero rows.
 
 use async_trait::async_trait;
 use chrono::Utc;
+use sensei_core::db::TenantTx;
 use sensei_core::error::{Result, SenseiError};
 use sensei_core::pagination::PaginatedResponse;
 use sensei_core::types::TenantId;
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use super::{EquipmentRecord, MaintenanceService, MaintenanceWorkRequest, PMSchedule};
+use super::{
+    work_request_predecessor, EquipmentRecord, MaintenanceService, MaintenanceWorkRequest,
+    PMSchedule, WORK_REQUEST_STATUSES,
+};
 
 /// PostgreSQL-backed implementation of [`MaintenanceService`].
 pub struct DatabaseMaintenanceService {
@@ -28,6 +40,9 @@ impl DatabaseMaintenanceService {
 // ---------------------------------------------------------------------------
 // Row structs
 // ---------------------------------------------------------------------------
+
+const WR_COLUMNS: &str = "id, tenant_id, equipment_id, title, description, priority, status, \
+     requested_by, assigned_to, created_at, completed_at";
 
 #[derive(Debug, Clone, sqlx::FromRow)]
 struct WorkRequestRow {
@@ -157,23 +172,25 @@ impl MaintenanceService for DatabaseMaintenanceService {
             &request.priority
         };
 
-        let mut wr_tx =
-            self.pool.begin().await.map_err(|e| {
-                SenseiError::Database(format!("Failed to begin work request tx: {e}"))
-            })?;
-        let row = sqlx::query_as::<_, WorkRequestRow>(
+        // INSERT + outbox row in ONE tenant-scoped transaction: a committed
+        // work request can never lose its created event (the outbox relay
+        // observes the row only after this commit).
+        let mut db = TenantTx::begin(&self.pool, tenant_id).await.map_err(|e| {
+            SenseiError::Database(format!("Failed to begin create work request: {e}"))
+        })?;
+        let row = sqlx::query_as::<_, WorkRequestRow>(&format!(
             r#"INSERT INTO maintenance_work_requests (id, tenant_id, equipment_id, title, description, priority, status, requested_by, assigned_to, created_at, completed_at)
                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,NULL)
-               RETURNING id, tenant_id, equipment_id, title, description, priority, status, requested_by, assigned_to, created_at, completed_at"#,
-        )
+               RETURNING {WR_COLUMNS}"#
+        ))
         .bind(id).bind(tenant_id).bind(request.equipment_id).bind(&request.title)
         .bind(&request.description).bind(priority).bind(status)
         .bind(request.requested_by).bind(request.assigned_to).bind(now)
-        .fetch_one(&mut *wr_tx)
+        .fetch_one(&mut **db.tx())
         .await.map_err(|e| SenseiError::Database(format!("Failed to create work request: {e}")))?;
 
         sensei_db::outbox::enqueue_outbox(
-            &mut wr_tx,
+            db.tx(),
             tenant_id,
             "maintenance_work_request",
             id,
@@ -185,8 +202,7 @@ impl MaintenanceService for DatabaseMaintenanceService {
             }),
         )
         .await?;
-        wr_tx
-            .commit()
+        db.commit()
             .await
             .map_err(|e| SenseiError::Database(format!("Failed to commit work request: {e}")))?;
 
@@ -198,15 +214,23 @@ impl MaintenanceService for DatabaseMaintenanceService {
         tenant_id: TenantId,
         id: Uuid,
     ) -> Result<MaintenanceWorkRequest> {
-        let row = sqlx::query_as::<_, WorkRequestRow>(
-            "SELECT id, tenant_id, equipment_id, title, description, priority, status, requested_by, assigned_to, created_at, completed_at FROM maintenance_work_requests WHERE id = $1 AND tenant_id = $2",
-        )
-        .bind(id).bind(tenant_id)
-        .fetch_optional(&self.pool)
-        .await.map_err(|e| SenseiError::Database(format!("Failed to get work request: {e}")))?
-        .ok_or_else(|| SenseiError::NotFound(format!("Work request {id} not found")))?;
+        let mut db = TenantTx::begin(&self.pool, tenant_id)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to begin get work request: {e}")))?;
+        let row = sqlx::query_as::<_, WorkRequestRow>(&format!(
+            "SELECT {WR_COLUMNS} FROM maintenance_work_requests WHERE id = $1 AND tenant_id = $2"
+        ))
+        .bind(id)
+        .bind(tenant_id)
+        .fetch_optional(&mut **db.tx())
+        .await
+        .map_err(|e| SenseiError::Database(format!("Failed to get work request: {e}")))?;
+        db.commit().await.map_err(|e| {
+            SenseiError::Database(format!("Failed to commit work request read: {e}"))
+        })?;
 
-        Ok(wr_row_to_domain(row))
+        row.map(wr_row_to_domain)
+            .ok_or_else(|| SenseiError::NotFound(format!("Work request {id} not found")))
     }
 
     async fn list_work_requests(
@@ -221,20 +245,29 @@ impl MaintenanceService for DatabaseMaintenanceService {
         let per_page = per_page.unwrap_or(20).clamp(1, 100);
         let offset = (page - 1) * per_page;
 
-        let items: Vec<WorkRequestRow> = sqlx::query_as(
-            r#"SELECT id, tenant_id, equipment_id, title, description, priority, status, requested_by, assigned_to, created_at, completed_at
+        // Items + count in ONE tenant-scoped transaction: both statements
+        // observe the same snapshot (fail-closed RLS context included).
+        let mut db = TenantTx::begin(&self.pool, tenant_id).await.map_err(|e| {
+            SenseiError::Database(format!("Failed to begin list work requests: {e}"))
+        })?;
+        let items: Vec<WorkRequestRow> = sqlx::query_as(&format!(
+            r#"SELECT {WR_COLUMNS}
                FROM maintenance_work_requests WHERE tenant_id=$1 AND ($2::text IS NULL OR status=$2) AND ($3::text IS NULL OR priority=$3)
-               ORDER BY created_at DESC LIMIT $4 OFFSET $5"#,
-        )
+               ORDER BY created_at DESC LIMIT $4 OFFSET $5"#
+        ))
         .bind(tenant_id).bind(status).bind(priority).bind(per_page as i64).bind(offset as i64)
-        .fetch_all(&self.pool)
+        .fetch_all(&mut **db.tx())
         .await.map_err(|e| SenseiError::Database(format!("Failed to list work requests: {e}")))?;
 
         let count: i64 = sqlx::query_scalar(
             "SELECT COUNT(*) FROM maintenance_work_requests WHERE tenant_id=$1 AND ($2::text IS NULL OR status=$2) AND ($3::text IS NULL OR priority=$3)",
         )
-        .bind(tenant_id).bind(status).bind(priority).fetch_one(&self.pool).await
+        .bind(tenant_id).bind(status).bind(priority)
+        .fetch_one(&mut **db.tx()).await
         .map_err(|e| SenseiError::Database(format!("Failed to count work requests: {e}")))?;
+        db.commit().await.map_err(|e| {
+            SenseiError::Database(format!("Failed to commit work request list: {e}"))
+        })?;
 
         Ok(paginate(
             items.into_iter().map(wr_row_to_domain).collect(),
@@ -250,52 +283,68 @@ impl MaintenanceService for DatabaseMaintenanceService {
         id: Uuid,
         status: &str,
     ) -> Result<MaintenanceWorkRequest> {
-        let now = Utc::now();
-        // Validated lifecycle: submitted -> approved -> in_progress ->
-        // completed; submitted/approved -> cancelled.
-        let legal_set = [
-            "submitted",
-            "approved",
-            "in_progress",
-            "completed",
-            "cancelled",
-        ];
-        if !legal_set.contains(&status) {
+        // Canonical lifecycle (item 16): submitted -> approved ->
+        // in_progress -> completed; submitted/approved -> cancelled. The
+        // requested target is translated to its required PREDECESSOR, and
+        // that predecessor is carried in the UPDATE's WHERE — the state
+        // check and the write are ONE statement, so two racing transitions
+        // can never both observe the same predecessor.
+        if !WORK_REQUEST_STATUSES.contains(&status) {
             return Err(SenseiError::Validation(format!(
                 "Unknown work request status '{status}'"
             )));
         }
-        let current: Option<String> = sqlx::query_scalar(
-            "SELECT status FROM maintenance_work_requests WHERE id = $1 AND tenant_id = $2",
-        )
-        .bind(id)
-        .bind(tenant_id)
-        .fetch_optional(&self.pool)
-        .await
-        .map_err(|e| SenseiError::Database(format!("Failed to read work request status: {e}")))?
-        .ok_or_else(|| SenseiError::NotFound(format!("Work request {id} not found")))?;
-        let legal = matches!(
-            (current.as_deref(), status),
-            (Some("submitted"), "approved" | "cancelled")
-                | (Some("approved"), "in_progress" | "cancelled")
-                | (Some("in_progress"), "completed")
-        );
-        if !legal {
+        // 'submitted' is the entry state, never a target: the machine moves
+        // strictly forward (except cancellation, handled separately).
+        let cancelling = status == "cancelled";
+        if !cancelling && work_request_predecessor(status).is_none() {
             return Err(SenseiError::Conflict(format!(
-                "Illegal work request transition '{}' -> '{}'",
-                current.as_deref().unwrap_or("?"),
-                status
+                "Work request {id} cannot transition to status '{status}'"
             )));
         }
-        let row = sqlx::query_as::<_, WorkRequestRow>(
-            r#"UPDATE maintenance_work_requests SET status=$1, completed_at=CASE WHEN $1='completed' THEN $3 ELSE completed_at END
-               WHERE id=$2 AND tenant_id=$4
-               RETURNING id, tenant_id, equipment_id, title, description, priority, status, requested_by, assigned_to, created_at, completed_at"#,
-        )
-        .bind(status).bind(id).bind(now).bind(tenant_id)
-        .fetch_optional(&self.pool)
-        .await.map_err(|e| SenseiError::Database(format!("Failed to update work request status: {e}")))?
-        .ok_or_else(|| SenseiError::NotFound(format!("Work request {id} not found")))?;
+
+        let mut db = TenantTx::begin(&self.pool, tenant_id).await.map_err(|e| {
+            SenseiError::Database(format!("Failed to begin update work request status: {e}"))
+        })?;
+        let row = if cancelling {
+            sqlx::query_as::<_, WorkRequestRow>(&format!(
+                r#"UPDATE maintenance_work_requests SET status='cancelled'
+                   WHERE id=$1 AND tenant_id=$2 AND status IN ('submitted','approved')
+                   RETURNING {WR_COLUMNS}"#
+            ))
+            .bind(id)
+            .bind(tenant_id)
+            .fetch_optional(&mut **db.tx())
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to cancel work request: {e}")))?
+        } else {
+            // work_request_predecessor is Some here (validated above).
+            let predecessor = work_request_predecessor(status).expect("validated target");
+            sqlx::query_as::<_, WorkRequestRow>(&format!(
+                r#"UPDATE maintenance_work_requests SET status=$1, completed_at=CASE WHEN $1='completed' THEN NOW() ELSE completed_at END
+                   WHERE id=$2 AND tenant_id=$3 AND status=$4
+                   RETURNING {WR_COLUMNS}"#
+            ))
+            .bind(status).bind(id).bind(tenant_id).bind(predecessor)
+            .fetch_optional(&mut **db.tx())
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to update work request status: {e}")))?
+        };
+        let Some(row) = row else {
+            // Zero rows: the row does not exist in the required predecessor
+            // state (missing id and stale-state id are indistinguishable).
+            let required = if cancelling {
+                "an open state ('submitted' or 'approved')"
+            } else {
+                work_request_predecessor(status).expect("validated target")
+            };
+            return Err(SenseiError::NotFound(format!(
+                "Work request {id} not found in {required}"
+            )));
+        };
+        db.commit()
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to commit status update: {e}")))?;
 
         Ok(wr_row_to_domain(row))
     }
@@ -306,15 +355,58 @@ impl MaintenanceService for DatabaseMaintenanceService {
         id: Uuid,
         assigned_to: Uuid,
     ) -> Result<MaintenanceWorkRequest> {
-        let row = sqlx::query_as::<_, WorkRequestRow>(
-            r#"UPDATE maintenance_work_requests SET assigned_to=$1, status=CASE WHEN status='submitted' THEN 'approved' ELSE status END
-               WHERE id=$2 AND tenant_id=$3
-               RETURNING id, tenant_id, equipment_id, title, description, priority, status, requested_by, assigned_to, created_at, completed_at"#,
-        )
-        .bind(assigned_to).bind(id).bind(tenant_id)
-        .fetch_optional(&self.pool)
-        .await.map_err(|e| SenseiError::Database(format!("Failed to assign work request: {e}")))?
-        .ok_or_else(|| SenseiError::NotFound(format!("Work request {id} not found")))?;
+        // Assignment is the submitted -> approved transition, and an open
+        // request (submitted/approved/in_progress) may be (re)assigned with
+        // its status preserved. The assignable-state guard rides in the
+        // UPDATE's WHERE: no read-then-write window (item 16). Terminal
+        // requests (completed/cancelled) are immutable history and are
+        // rejected below.
+        let mut db = TenantTx::begin(&self.pool, tenant_id).await.map_err(|e| {
+            SenseiError::Database(format!("Failed to begin assign work request: {e}"))
+        })?;
+        let row = sqlx::query_as::<_, WorkRequestRow>(&format!(
+            r#"UPDATE maintenance_work_requests SET assigned_to=$1,
+                 status=CASE WHEN status='submitted' THEN 'approved' ELSE status END
+               WHERE id=$2 AND tenant_id=$3 AND status IN ('submitted','approved','in_progress')
+               RETURNING {WR_COLUMNS}"#
+        ))
+        .bind(assigned_to)
+        .bind(id)
+        .bind(tenant_id)
+        .fetch_optional(&mut **db.tx())
+        .await
+        .map_err(|e| SenseiError::Database(format!("Failed to assign work request: {e}")))?;
+
+        let row = match row {
+            Some(row) => row,
+            None => {
+                // Zero rows: distinguish a missing request (NotFound) from
+                // an assignment attempt on a CLOSED request (Conflict) —
+                // the diagnostic read happens only after the atomic UPDATE
+                // missed, so there is no check/write race.
+                let current: Option<String> = sqlx::query_scalar(
+                    "SELECT status FROM maintenance_work_requests WHERE id = $1 AND tenant_id = $2",
+                )
+                .bind(id)
+                .bind(tenant_id)
+                .fetch_optional(&mut **db.tx())
+                .await
+                .map_err(|e| {
+                    SenseiError::Database(format!("Failed to read work request state: {e}"))
+                })?;
+                return match current {
+                    None => Err(SenseiError::NotFound(format!(
+                        "Work request {id} not found"
+                    ))),
+                    Some(state) => Err(SenseiError::Conflict(format!(
+                        "Work request {id} is {state} and can no longer be assigned"
+                    ))),
+                };
+            }
+        };
+        db.commit().await.map_err(|e| {
+            SenseiError::Database(format!("Failed to commit work request assign: {e}"))
+        })?;
 
         Ok(wr_row_to_domain(row))
     }
@@ -331,6 +423,9 @@ impl MaintenanceService for DatabaseMaintenanceService {
         let base = schedule.last_performed.unwrap_or_else(Utc::now);
         let next_due = base + chrono::Duration::days(schedule.frequency_days as i64);
 
+        let mut db = TenantTx::begin(&self.pool, tenant_id).await.map_err(|e| {
+            SenseiError::Database(format!("Failed to begin create PM schedule: {e}"))
+        })?;
         let row = sqlx::query_as::<_, PmScheduleRow>(
             r#"INSERT INTO pm_schedules (id, tenant_id, equipment_id, schedule_number, title, description,
                                          frequency_type, frequency_value, frequency_unit,
@@ -343,24 +438,33 @@ impl MaintenanceService for DatabaseMaintenanceService {
         .bind(format!("PM-{}-{}", Utc::now().format("%Y%m%d"), &id.as_simple().encode_lower(&mut Uuid::encode_buffer())[..8]))
         .bind(&schedule.task_name)
         .bind(schedule.frequency_days).bind(schedule.last_performed).bind(next_due).bind(assigned_to)
-        .fetch_one(&self.pool)
+        .fetch_one(&mut **db.tx())
         .await.map_err(|e| SenseiError::Database(format!("Failed to create PM schedule: {e}")))?;
+        db.commit()
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to commit PM schedule: {e}")))?;
 
         Ok(pm_row_to_domain(row))
     }
 
     async fn get_pm_schedule(&self, tenant_id: TenantId, id: Uuid) -> Result<PMSchedule> {
+        let mut db = TenantTx::begin(&self.pool, tenant_id)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to begin get PM schedule: {e}")))?;
         let row = sqlx::query_as::<_, PmScheduleRow>(
             "SELECT id, tenant_id, equipment_id, title AS \"task_name\", frequency_value AS \"frequency_days\", \
                     last_performed_at AS \"last_performed\", next_due_at AS \"next_due\", assigned_to, is_active \
              FROM pm_schedules WHERE id = $1 AND tenant_id = $2",
         )
         .bind(id).bind(tenant_id)
-        .fetch_optional(&self.pool)
-        .await.map_err(|e| SenseiError::Database(format!("Failed to get PM schedule: {e}")))?
-        .ok_or_else(|| SenseiError::NotFound(format!("PM schedule {id} not found")))?;
+        .fetch_optional(&mut **db.tx())
+        .await.map_err(|e| SenseiError::Database(format!("Failed to get PM schedule: {e}")))?;
+        db.commit().await.map_err(|e| {
+            SenseiError::Database(format!("Failed to commit PM schedule read: {e}"))
+        })?;
 
-        Ok(pm_row_to_domain(row))
+        row.map(pm_row_to_domain)
+            .ok_or_else(|| SenseiError::NotFound(format!("PM schedule {id} not found")))
     }
 
     async fn list_pm_schedules(
@@ -374,6 +478,9 @@ impl MaintenanceService for DatabaseMaintenanceService {
         let per_page = per_page.unwrap_or(20).clamp(1, 100);
         let offset = (page - 1) * per_page;
 
+        let mut db = TenantTx::begin(&self.pool, tenant_id).await.map_err(|e| {
+            SenseiError::Database(format!("Failed to begin list PM schedules: {e}"))
+        })?;
         let items: Vec<PmScheduleRow> = sqlx::query_as(
             r#"SELECT id, tenant_id, equipment_id, title AS "task_name", frequency_value AS "frequency_days",
                       last_performed_at AS "last_performed", next_due_at AS "next_due", assigned_to, is_active
@@ -381,14 +488,17 @@ impl MaintenanceService for DatabaseMaintenanceService {
                ORDER BY next_due_at ASC LIMIT $3 OFFSET $4"#,
         )
         .bind(tenant_id).bind(equipment_id).bind(per_page as i64).bind(offset as i64)
-        .fetch_all(&self.pool)
+        .fetch_all(&mut **db.tx())
         .await.map_err(|e| SenseiError::Database(format!("Failed to list PM schedules: {e}")))?;
 
         let count: i64 = sqlx::query_scalar(
             "SELECT COUNT(*) FROM pm_schedules WHERE tenant_id=$1 AND ($2::uuid IS NULL OR equipment_id=$2)",
         )
-        .bind(tenant_id).bind(equipment_id).fetch_one(&self.pool).await
+        .bind(tenant_id).bind(equipment_id).fetch_one(&mut **db.tx()).await
         .map_err(|e| SenseiError::Database(format!("Failed to count PM schedules: {e}")))?;
+        db.commit().await.map_err(|e| {
+            SenseiError::Database(format!("Failed to commit PM schedule list: {e}"))
+        })?;
 
         Ok(paginate(
             items.into_iter().map(pm_row_to_domain).collect(),
@@ -401,13 +511,20 @@ impl MaintenanceService for DatabaseMaintenanceService {
     async fn complete_pm_task(&self, tenant_id: TenantId, schedule_id: Uuid) -> Result<PMSchedule> {
         let now = Utc::now();
 
+        // Read + roll-forward + occurrence ledger in ONE tenant-scoped
+        // transaction: the completion and its evidence are inseparable (a
+        // PM completion that lost its maintenance_occurrences row would be
+        // unverifiable work).
+        let mut db = TenantTx::begin(&self.pool, tenant_id)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to begin complete PM task: {e}")))?;
         let existing = sqlx::query_as::<_, PmScheduleRow>(
             "SELECT id, tenant_id, equipment_id, title AS \"task_name\", frequency_value AS \"frequency_days\", \
                     last_performed_at AS \"last_performed\", next_due_at AS \"next_due\", assigned_to, is_active \
              FROM pm_schedules WHERE id = $1 AND tenant_id = $2",
         )
         .bind(schedule_id).bind(tenant_id)
-        .fetch_optional(&self.pool)
+        .fetch_optional(&mut **db.tx())
         .await.map_err(|e| SenseiError::Database(format!("Failed to get PM schedule: {e}")))?
         .ok_or_else(|| SenseiError::NotFound(format!("PM schedule {schedule_id} not found")))?;
 
@@ -419,7 +536,7 @@ impl MaintenanceService for DatabaseMaintenanceService {
                          last_performed_at AS "last_performed", next_due_at AS "next_due", assigned_to, is_active"#,
         )
         .bind(now).bind(next_due).bind(schedule_id).bind(tenant_id)
-        .fetch_one(&self.pool)
+        .fetch_one(&mut **db.tx())
         .await.map_err(|e| SenseiError::Database(format!("Failed to complete PM task: {e}")))?;
 
         // Maintenance evidence: every completion records an occurrence
@@ -437,21 +554,30 @@ impl MaintenanceService for DatabaseMaintenanceService {
         .bind(existing.equipment_id)
         .bind(existing.assigned_to)
         .bind(now)
-        .execute(&self.pool)
+        .execute(&mut **db.tx())
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to record PM occurrence: {e}")))?;
+        db.commit()
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to commit PM completion: {e}")))?;
 
         Ok(pm_row_to_domain(row))
     }
 
     async fn get_overdue_pm_tasks(&self, tenant_id: TenantId) -> Result<Vec<PMSchedule>> {
+        let mut db = TenantTx::begin(&self.pool, tenant_id).await.map_err(|e| {
+            SenseiError::Database(format!("Failed to begin list overdue PM tasks: {e}"))
+        })?;
         let rows = sqlx::query_as::<_, PmScheduleRow>(
             "SELECT id, tenant_id, equipment_id, title AS \"task_name\", frequency_value AS \"frequency_days\", \
                     last_performed_at AS \"last_performed\", next_due_at AS \"next_due\", assigned_to, is_active \
              FROM pm_schedules WHERE tenant_id = $1 AND is_active = TRUE AND next_due_at < NOW()",
         )
-        .bind(tenant_id).fetch_all(&self.pool)
+        .bind(tenant_id).fetch_all(&mut **db.tx())
         .await.map_err(|e| SenseiError::Database(format!("Failed to get overdue PM tasks: {e}")))?;
+        db.commit()
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to commit overdue PM read: {e}")))?;
 
         Ok(rows.into_iter().map(pm_row_to_domain).collect())
     }
@@ -470,6 +596,9 @@ impl MaintenanceService for DatabaseMaintenanceService {
             &id.as_simple().encode_lower(&mut Uuid::encode_buffer())[..8]
         );
 
+        let mut db = TenantTx::begin(&self.pool, tenant_id).await.map_err(|e| {
+            SenseiError::Database(format!("Failed to begin register equipment: {e}"))
+        })?;
         let row = sqlx::query_as::<_, EquipmentRow>(
             r#"INSERT INTO equipment (id, tenant_id, equipment_number, name, equipment_type, location, status,
                                       install_date, last_maintenance, maintenance_completed_at, oee_percentage)
@@ -481,24 +610,33 @@ impl MaintenanceService for DatabaseMaintenanceService {
         .bind(&equipment.equipment_type).bind(&equipment.location).bind(&equipment.status)
         .bind(equipment.install_date).bind(equipment.last_maintenance).bind(equipment.maintenance_completed_at)
         .bind(equipment.oee_percentage)
-        .fetch_one(&self.pool)
+        .fetch_one(&mut **db.tx())
         .await.map_err(|e| SenseiError::Database(format!("Failed to register equipment: {e}")))?;
+        db.commit()
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to commit equipment: {e}")))?;
 
         Ok(eq_row_to_domain(row))
     }
 
     async fn get_equipment(&self, tenant_id: TenantId, id: Uuid) -> Result<EquipmentRecord> {
+        let mut db = TenantTx::begin(&self.pool, tenant_id)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to begin get equipment: {e}")))?;
         let row = sqlx::query_as::<_, EquipmentRow>(
             "SELECT id, tenant_id, equipment_number AS \"equipment_code\", name, equipment_type, location, status, \
                     install_date, last_maintenance, maintenance_completed_at, oee_percentage \
              FROM equipment WHERE id = $1 AND tenant_id = $2",
         )
         .bind(id).bind(tenant_id)
-        .fetch_optional(&self.pool)
-        .await.map_err(|e| SenseiError::Database(format!("Failed to get equipment: {e}")))?
-        .ok_or_else(|| SenseiError::NotFound(format!("Equipment {id} not found")))?;
+        .fetch_optional(&mut **db.tx())
+        .await.map_err(|e| SenseiError::Database(format!("Failed to get equipment: {e}")))?;
+        db.commit()
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to commit equipment read: {e}")))?;
 
-        Ok(eq_row_to_domain(row))
+        row.map(eq_row_to_domain)
+            .ok_or_else(|| SenseiError::NotFound(format!("Equipment {id} not found")))
     }
 
     async fn list_equipment(
@@ -513,6 +651,9 @@ impl MaintenanceService for DatabaseMaintenanceService {
         let per_page = per_page.unwrap_or(20).clamp(1, 100);
         let offset = (page - 1) * per_page;
 
+        let mut db = TenantTx::begin(&self.pool, tenant_id)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to begin list equipment: {e}")))?;
         let items: Vec<EquipmentRow> = sqlx::query_as(
             r#"SELECT id, tenant_id, equipment_number AS "equipment_code", name, equipment_type, location, status,
                       install_date, last_maintenance, maintenance_completed_at, oee_percentage
@@ -520,14 +661,18 @@ impl MaintenanceService for DatabaseMaintenanceService {
                ORDER BY name LIMIT $4 OFFSET $5"#,
         )
         .bind(tenant_id).bind(equipment_type).bind(status).bind(per_page as i64).bind(offset as i64)
-        .fetch_all(&self.pool)
+        .fetch_all(&mut **db.tx())
         .await.map_err(|e| SenseiError::Database(format!("Failed to list equipment: {e}")))?;
 
         let count: i64 = sqlx::query_scalar(
             "SELECT COUNT(*) FROM equipment WHERE tenant_id=$1 AND ($2::text IS NULL OR equipment_type=$2) AND ($3::text IS NULL OR status=$3)",
         )
-        .bind(tenant_id).bind(equipment_type).bind(status).fetch_one(&self.pool).await
+        .bind(tenant_id).bind(equipment_type).bind(status)
+        .fetch_one(&mut **db.tx()).await
         .map_err(|e| SenseiError::Database(format!("Failed to count equipment: {e}")))?;
+        db.commit()
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to commit equipment list: {e}")))?;
 
         Ok(paginate(
             items.into_iter().map(eq_row_to_domain).collect(),
@@ -544,6 +689,9 @@ impl MaintenanceService for DatabaseMaintenanceService {
         status: &str,
     ) -> Result<EquipmentRecord> {
         let now = Utc::now();
+        let mut db = TenantTx::begin(&self.pool, tenant_id).await.map_err(|e| {
+            SenseiError::Database(format!("Failed to begin update equipment status: {e}"))
+        })?;
         let row = sqlx::query_as::<_, EquipmentRow>(
             r#"UPDATE equipment SET status=$1,
                   last_maintenance = CASE WHEN $1='under_maintenance' THEN $3 ELSE last_maintenance END,
@@ -553,9 +701,12 @@ impl MaintenanceService for DatabaseMaintenanceService {
                          install_date, last_maintenance, maintenance_completed_at, oee_percentage"#,
         )
         .bind(status).bind(id).bind(now).bind(tenant_id)
-        .fetch_optional(&self.pool)
+        .fetch_optional(&mut **db.tx())
         .await.map_err(|e| SenseiError::Database(format!("Failed to update equipment status: {e}")))?
         .ok_or_else(|| SenseiError::NotFound(format!("Equipment {id} not found")))?;
+        db.commit().await.map_err(|e| {
+            SenseiError::Database(format!("Failed to commit equipment status: {e}"))
+        })?;
 
         Ok(eq_row_to_domain(row))
     }
@@ -566,16 +717,22 @@ impl MaintenanceService for DatabaseMaintenanceService {
         id: Uuid,
         request: MaintenanceWorkRequest,
     ) -> Result<MaintenanceWorkRequest> {
-        let row = sqlx::query_as::<_, WorkRequestRow>(
+        let mut db = TenantTx::begin(&self.pool, tenant_id).await.map_err(|e| {
+            SenseiError::Database(format!("Failed to begin update work request: {e}"))
+        })?;
+        let row = sqlx::query_as::<_, WorkRequestRow>(&format!(
             r#"UPDATE maintenance_work_requests SET title=$1, description=$2, priority=$3, equipment_id=$4
                WHERE id=$5 AND tenant_id=$6
-               RETURNING id, tenant_id, equipment_id, title, description, priority, status, requested_by, assigned_to, created_at, completed_at"#,
-        )
+               RETURNING {WR_COLUMNS}"#
+        ))
         .bind(&request.title).bind(&request.description).bind(&request.priority).bind(request.equipment_id)
         .bind(id).bind(tenant_id)
-        .fetch_optional(&self.pool)
+        .fetch_optional(&mut **db.tx())
         .await.map_err(|e| SenseiError::Database(format!("Failed to update work request: {e}")))?
         .ok_or_else(|| SenseiError::NotFound(format!("Work request {id} not found")))?;
+        db.commit().await.map_err(|e| {
+            SenseiError::Database(format!("Failed to commit work request update: {e}"))
+        })?;
 
         Ok(wr_row_to_domain(row))
     }
@@ -584,15 +741,21 @@ impl MaintenanceService for DatabaseMaintenanceService {
         // Maintenance requests are business history: they are CANCELLED,
         // never physically erased (the audit: completed maintenance and
         // request history must remain auditable).
+        let mut db = TenantTx::begin(&self.pool, tenant_id).await.map_err(|e| {
+            SenseiError::Database(format!("Failed to begin cancel work request: {e}"))
+        })?;
         let result = sqlx::query(
             "UPDATE maintenance_work_requests SET status = 'cancelled' \
              WHERE id = $1 AND tenant_id = $2 AND status NOT IN ('completed', 'cancelled')",
         )
         .bind(id)
         .bind(tenant_id)
-        .execute(&self.pool)
+        .execute(&mut **db.tx())
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to cancel work request: {e}")))?;
+        db.commit().await.map_err(|e| {
+            SenseiError::Database(format!("Failed to commit work request cancel: {e}"))
+        })?;
         if result.rows_affected() == 0 {
             return Err(SenseiError::Validation(
                 "Only open maintenance requests can be cancelled; completed history is retained"
@@ -609,6 +772,9 @@ impl MaintenanceService for DatabaseMaintenanceService {
         schedule: PMSchedule,
     ) -> Result<PMSchedule> {
         let assigned_to = schedule.assigned_to.first().copied();
+        let mut db = TenantTx::begin(&self.pool, tenant_id).await.map_err(|e| {
+            SenseiError::Database(format!("Failed to begin update PM schedule: {e}"))
+        })?;
         let row = sqlx::query_as::<_, PmScheduleRow>(
             r#"UPDATE pm_schedules SET title=$1, frequency_value=$2, assigned_to=$3, is_active=$4
                WHERE id=$5 AND tenant_id=$6
@@ -617,20 +783,29 @@ impl MaintenanceService for DatabaseMaintenanceService {
         )
         .bind(&schedule.task_name).bind(schedule.frequency_days).bind(assigned_to).bind(schedule.is_active)
         .bind(id).bind(tenant_id)
-        .fetch_optional(&self.pool)
+        .fetch_optional(&mut **db.tx())
         .await.map_err(|e| SenseiError::Database(format!("Failed to update PM schedule: {e}")))?
         .ok_or_else(|| SenseiError::NotFound(format!("PM schedule {id} not found")))?;
+        db.commit().await.map_err(|e| {
+            SenseiError::Database(format!("Failed to commit PM schedule update: {e}"))
+        })?;
 
         Ok(pm_row_to_domain(row))
     }
 
     async fn delete_pm_schedule(&self, tenant_id: TenantId, id: Uuid) -> Result<()> {
+        let mut db = TenantTx::begin(&self.pool, tenant_id).await.map_err(|e| {
+            SenseiError::Database(format!("Failed to begin delete PM schedule: {e}"))
+        })?;
         let result = sqlx::query("DELETE FROM pm_schedules WHERE id = $1 AND tenant_id = $2")
             .bind(id)
             .bind(tenant_id)
-            .execute(&self.pool)
+            .execute(&mut **db.tx())
             .await
             .map_err(|e| SenseiError::Database(format!("Failed to delete PM schedule: {e}")))?;
+        db.commit().await.map_err(|e| {
+            SenseiError::Database(format!("Failed to commit PM schedule delete: {e}"))
+        })?;
         if result.rows_affected() == 0 {
             return Err(SenseiError::NotFound(format!("PM schedule {id} not found")));
         }
@@ -643,6 +818,9 @@ impl MaintenanceService for DatabaseMaintenanceService {
         id: Uuid,
         equipment: EquipmentRecord,
     ) -> Result<EquipmentRecord> {
+        let mut db = TenantTx::begin(&self.pool, tenant_id)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to begin update equipment: {e}")))?;
         let row = sqlx::query_as::<_, EquipmentRow>(
             r#"UPDATE equipment SET name=$1, equipment_type=$2, location=$3, oee_percentage=$4
                WHERE id=$5 AND tenant_id=$6
@@ -651,20 +829,29 @@ impl MaintenanceService for DatabaseMaintenanceService {
         )
         .bind(&equipment.name).bind(&equipment.equipment_type).bind(&equipment.location).bind(equipment.oee_percentage)
         .bind(id).bind(tenant_id)
-        .fetch_optional(&self.pool)
+        .fetch_optional(&mut **db.tx())
         .await.map_err(|e| SenseiError::Database(format!("Failed to update equipment: {e}")))?
         .ok_or_else(|| SenseiError::NotFound(format!("Equipment {id} not found")))?;
+        db.commit().await.map_err(|e| {
+            SenseiError::Database(format!("Failed to commit equipment update: {e}"))
+        })?;
 
         Ok(eq_row_to_domain(row))
     }
 
     async fn delete_equipment(&self, tenant_id: TenantId, id: Uuid) -> Result<()> {
+        let mut db = TenantTx::begin(&self.pool, tenant_id)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to begin delete equipment: {e}")))?;
         let result = sqlx::query("DELETE FROM equipment WHERE id = $1 AND tenant_id = $2")
             .bind(id)
             .bind(tenant_id)
-            .execute(&self.pool)
+            .execute(&mut **db.tx())
             .await
             .map_err(|e| SenseiError::Database(format!("Failed to delete equipment: {e}")))?;
+        db.commit().await.map_err(|e| {
+            SenseiError::Database(format!("Failed to commit equipment delete: {e}"))
+        })?;
         if result.rows_affected() == 0 {
             return Err(SenseiError::NotFound(format!("Equipment {id} not found")));
         }

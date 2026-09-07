@@ -8,6 +8,7 @@ use sensei_auth::oauth2::OAuth2Client;
 use sensei_auth::rbac::RbacService;
 use sensei_auth::refresh_tokens::RefreshTokenStore;
 use sensei_core::config::AppConfig;
+use sensei_core::db::TenantTx;
 use sensei_core::types::{EntityId, TenantId, Timestamp};
 use sensei_event_bus::EventBus;
 use sensei_services::accounts::{
@@ -149,6 +150,14 @@ impl RealtimeTicketStore {
         match &self.pool {
             Some(pool) => {
                 let ticket = Uuid::new_v4();
+                // realtime_tickets is fail-closed FORCE RLS (migration
+                // 175): the minting INSERT must run inside a TenantTx of
+                // the ticket's tenant — a no-context pooled INSERT is
+                // denied for the least-privilege sensei_app role (the
+                // superuser e2e connection masked this; item 17).
+                let mut db = TenantTx::begin(pool, tenant_id)
+                    .await
+                    .map_err(|e| format!("Failed to create realtime ticket: {e}"))?;
                 sqlx::query(
                     "INSERT INTO realtime_tickets (ticket, user_id, tenant_id, scope, expires_at) \
                      VALUES ($1, $2, $3, $4, $5)",
@@ -158,9 +167,12 @@ impl RealtimeTicketStore {
                 .bind(tenant_id)
                 .bind(scope)
                 .bind(expires_at)
-                .execute(&**pool)
+                .execute(&mut **db.tx())
                 .await
                 .map_err(|e| format!("Failed to create realtime ticket: {e}"))?;
+                db.commit()
+                    .await
+                    .map_err(|e| format!("Failed to create realtime ticket: {e}"))?;
                 Ok(RealtimeTicket {
                     ticket,
                     user_id,

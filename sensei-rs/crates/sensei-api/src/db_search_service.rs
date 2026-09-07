@@ -120,9 +120,11 @@ impl DatabaseSearchService {
         Self { pool }
     }
 
-    /// Search users by name/email (typed table).
+    /// Search users by name/email (typed table). Runs on the single
+    /// per-request [`TenantTx`] opened by the search entry points.
     async fn search_users(
         &self,
+        db: &mut TenantTx<'_>,
         tenant_id: EntityId,
         query: &str,
         limit: i64,
@@ -132,9 +134,6 @@ impl DatabaseSearchService {
         // caller's tenant — under sensei_app a raw read would return
         // nothing (and pre-175 it leaked every tenant's users through the
         // compatibility clause on pooled sessions).
-        let mut db = TenantTx::begin(&self.pool, tenant_id)
-            .await
-            .map_err(|e| SenseiError::Database(format!("User search tx failed: {e}")))?;
         let rows = sqlx::query_as::<_, (Uuid, String, Option<String>, f32)>(
             "SELECT id, name, email, \
                 GREATEST(similarity(name, $2), similarity(COALESCE(email, ''), $2)) AS relevance \
@@ -150,7 +149,6 @@ impl DatabaseSearchService {
         .fetch_all(&mut **db.tx())
         .await
         .map_err(|e| SenseiError::Database(format!("User search failed: {e}")))?;
-        drop(db);
 
         Ok(rows
             .into_iter()
@@ -163,9 +161,11 @@ impl DatabaseSearchService {
             .collect())
     }
 
-    /// Search accounts by name/email (typed table).
+    /// Search accounts by name/email (typed table). Runs on the single
+    /// per-request [`TenantTx`] opened by the search entry points.
     async fn search_accounts(
         &self,
+        db: &mut TenantTx<'_>,
         tenant_id: EntityId,
         query: &str,
         limit: i64,
@@ -182,7 +182,7 @@ impl DatabaseSearchService {
         .bind(tenant_id)
         .bind(query)
         .bind(limit)
-        .fetch_all(&self.pool)
+        .fetch_all(&mut **db.tx())
         .await
         .map_err(|e| SenseiError::Database(format!("Account search failed: {e}")))?;
 
@@ -197,9 +197,11 @@ impl DatabaseSearchService {
             .collect())
     }
 
-    /// Search contacts by display name / email (typed table).
+    /// Search contacts by display name / email (typed table). Runs on the
+    /// single per-request [`TenantTx`] opened by the search entry points.
     async fn search_contacts(
         &self,
+        db: &mut TenantTx<'_>,
         tenant_id: EntityId,
         query: &str,
         limit: i64,
@@ -219,7 +221,7 @@ impl DatabaseSearchService {
         .bind(tenant_id)
         .bind(query)
         .bind(limit)
-        .fetch_all(&self.pool)
+        .fetch_all(&mut **db.tx())
         .await
         .map_err(|e| SenseiError::Database(format!("Contact search failed: {e}")))?;
 
@@ -234,9 +236,12 @@ impl DatabaseSearchService {
             .collect())
     }
 
-    /// Search products by name/sku/product_number (typed table).
+    /// Search products by name/sku/product_number (typed table). Runs on
+    /// the single per-request [`TenantTx`] opened by the search entry
+    /// points.
     async fn search_products(
         &self,
+        db: &mut TenantTx<'_>,
         tenant_id: EntityId,
         query: &str,
         limit: i64,
@@ -255,7 +260,7 @@ impl DatabaseSearchService {
         .bind(tenant_id)
         .bind(query)
         .bind(limit)
-        .fetch_all(&self.pool)
+        .fetch_all(&mut **db.tx())
         .await
         .map_err(|e| SenseiError::Database(format!("Product search failed: {e}")))?;
 
@@ -275,12 +280,14 @@ impl DatabaseSearchService {
     /// variant — used by the legacy trait path).
     async fn search_entity_store(
         &self,
+        db: &mut TenantTx<'_>,
         tenant_id: EntityId,
         query: &str,
         store_types: &[String],
         limit: i64,
     ) -> Result<Vec<SearchResult>> {
         self.search_entity_store_rows(
+            db,
             tenant_id,
             query,
             store_types,
@@ -301,6 +308,7 @@ impl DatabaseSearchService {
     /// ranking — search never runs the whole table and filters after.
     async fn search_entity_store_rows(
         &self,
+        db: &mut TenantTx<'_>,
         tenant_id: EntityId,
         query: &str,
         store_types: &[String],
@@ -397,7 +405,7 @@ impl DatabaseSearchService {
         }
         let rows = query_builder
             .bind(limit)
-            .fetch_all(&self.pool)
+            .fetch_all(&mut **db.tx())
             .await
             .map_err(|e| SenseiError::Database(format!("Entity store search failed: {e}")))?;
 
@@ -442,21 +450,34 @@ impl DatabaseSearchService {
             return Ok(Vec::new());
         }
 
+        // One TenantTx per search request (migration 175 FORCE RLS): every
+        // typed-table and entity_store statement below runs in the tenant
+        // context of the caller — under sensei_app a raw-pool read would
+        // silently return zero rows.
+        let mut db = TenantTx::begin(&self.pool, tenant_id)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Search tx failed: {e}")))?;
         let mut results: Vec<SearchResult> = Vec::new();
 
         // ── Typed tables (permission-admissible only) ─────────────────
         for &result_type in projection.entity_types() {
             match result_type {
-                "user" => results.extend(self.search_users(tenant_id, query, SEARCH_LIMIT).await?),
-                "account" => {
-                    results.extend(self.search_accounts(tenant_id, query, SEARCH_LIMIT).await?)
-                }
-                "contact" => {
-                    results.extend(self.search_contacts(tenant_id, query, SEARCH_LIMIT).await?)
-                }
-                "product" => {
-                    results.extend(self.search_products(tenant_id, query, SEARCH_LIMIT).await?)
-                }
+                "user" => results.extend(
+                    self.search_users(&mut db, tenant_id, query, SEARCH_LIMIT)
+                        .await?,
+                ),
+                "account" => results.extend(
+                    self.search_accounts(&mut db, tenant_id, query, SEARCH_LIMIT)
+                        .await?,
+                ),
+                "contact" => results.extend(
+                    self.search_contacts(&mut db, tenant_id, query, SEARCH_LIMIT)
+                        .await?,
+                ),
+                "product" => results.extend(
+                    self.search_products(&mut db, tenant_id, query, SEARCH_LIMIT)
+                        .await?,
+                ),
                 _ => {}
             }
         }
@@ -486,6 +507,7 @@ impl DatabaseSearchService {
         if !tenant_store_types.is_empty() {
             results.extend(
                 self.search_entity_store_rows(
+                    &mut db,
                     tenant_id,
                     query,
                     &tenant_store_types,
@@ -526,6 +548,7 @@ impl DatabaseSearchService {
             if let Some(restriction) = restriction {
                 results.extend(
                     self.search_entity_store_rows(
+                        &mut db,
                         tenant_id,
                         query,
                         &operational_store_types,
@@ -536,6 +559,10 @@ impl DatabaseSearchService {
                 );
             }
         }
+
+        db.commit()
+            .await
+            .map_err(|e| SenseiError::Database(format!("Search tx commit failed: {e}")))?;
 
         // ── Sort by relevance descending, limit to 50 ─────────────────
         results.sort_by(|a, b| {
@@ -586,6 +613,11 @@ impl SearchService for DatabaseSearchService {
             return Ok(Vec::new());
         }
 
+        // One TenantTx per search request (migration 175 FORCE RLS) —
+        // every statement below runs in the caller's tenant context.
+        let mut db = TenantTx::begin(&self.pool, tenant_id)
+            .await
+            .map_err(|e| SenseiError::Database(format!("Search tx failed: {e}")))?;
         let mut results: Vec<SearchResult> = Vec::new();
 
         // ── Typed tables ──────────────────────────────────────────────
@@ -593,26 +625,42 @@ impl SearchService for DatabaseSearchService {
             entity_type.is_none_or(|et| matches!(et, "user" | "account" | "contact" | "product"));
         if search_typed {
             if entity_type.is_none_or(|et| et == "user") {
-                results.extend(self.search_users(tenant_id, query, SEARCH_LIMIT).await?);
+                results.extend(
+                    self.search_users(&mut db, tenant_id, query, SEARCH_LIMIT)
+                        .await?,
+                );
             }
             if entity_type.is_none_or(|et| et == "account") {
-                results.extend(self.search_accounts(tenant_id, query, SEARCH_LIMIT).await?);
+                results.extend(
+                    self.search_accounts(&mut db, tenant_id, query, SEARCH_LIMIT)
+                        .await?,
+                );
             }
             if entity_type.is_none_or(|et| et == "contact") {
-                results.extend(self.search_contacts(tenant_id, query, SEARCH_LIMIT).await?);
+                results.extend(
+                    self.search_contacts(&mut db, tenant_id, query, SEARCH_LIMIT)
+                        .await?,
+                );
             }
             if entity_type.is_none_or(|et| et == "product") {
-                results.extend(self.search_products(tenant_id, query, SEARCH_LIMIT).await?);
+                results.extend(
+                    self.search_products(&mut db, tenant_id, query, SEARCH_LIMIT)
+                        .await?,
+                );
             }
         }
 
         // ── Generic entity_store types ────────────────────────────────
         if let Some(store_types) = Self::store_types_for(entity_type) {
             results.extend(
-                self.search_entity_store(tenant_id, query, &store_types, SEARCH_LIMIT)
+                self.search_entity_store(&mut db, tenant_id, query, &store_types, SEARCH_LIMIT)
                     .await?,
             );
         }
+
+        db.commit()
+            .await
+            .map_err(|e| SenseiError::Database(format!("Search tx commit failed: {e}")))?;
 
         // ── Sort by relevance descending, limit to 50 ─────────────────
         results.sort_by(|a, b| {
