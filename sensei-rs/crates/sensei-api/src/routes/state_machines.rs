@@ -710,7 +710,12 @@ async fn execute_on_transition_hook(
                     user_id: target_user,
                     title,
                     body,
-                    notification_type: "info".to_string(),
+                    // Item-17 drift 4: notifications.notification_type CHECK
+                    // admits alert/reminder/approval_request/mention/system —
+                    // an informational transition notice is a 'system'
+                    // notification (the 'info' value was never in the DB
+                    // vocabulary).
+                    notification_type: "system".to_string(),
                     reference_type: Some("state_machine_instance".to_string()),
                     reference_id: Some(instance.id),
                 })

@@ -22119,13 +22119,15 @@ async fn maintenance_service_tenant_tx_and_atomic_transitions_on_migrated_schema
 /// timecard (`clock_out IS NULL`), and the employee-for-user resolver only
 /// admits active, non-terminated records of the caller's own tenant.
 ///
-/// The REAL [`DatabaseHrService`] runs against the HR table shapes it
-/// targets. The current migration chain still carries the 002-era legacy HR
-/// shapes (`employee_number`/`first_name` employees, event-log timecards,
-/// DATE/legacy-CHECK leave_requests), so this test re-provisions ONLY the
-/// three service-shape tables (renaming the legacy ones aside) before
-/// exercising the service — the db-contract gate drops and re-migrates at
-/// the start of every test, so nothing leaks into the rest of the suite.
+/// The REAL [`DatabaseHrService`] runs against the REAL `employees` table
+/// (migration 179 closed the item-17 drift: the service targets
+/// employee_number/first_name/last_name/manager_id). The current migration
+/// chain still carries the 002-era legacy leave/timecard shapes (event-log
+/// timecards, DATE/legacy-CHECK leave_requests), so this test re-provisions
+/// ONLY those two service-shape tables (renaming the legacy ones aside)
+/// before exercising the service — the db-contract gate drops and
+/// re-migrates at the start of every test, so nothing leaks into the rest
+/// of the suite.
 #[tokio::test]
 async fn hr_self_service_identity_is_ownership_scoped() {
     use sensei_core::error::SenseiError;
@@ -22147,30 +22149,16 @@ async fn hr_self_service_identity_is_ownership_scoped() {
         .await
         .expect("the ENTIRE migration chain must apply to an empty database");
 
-    // ── Re-provision the service-shape HR tables (legacy shapes renamed) ─
-    for legacy in ["employees", "leave_requests", "timecards"] {
+    // ── Re-provision the service-shape leave/timecard tables (the REAL
+    //    employees table stays — migration 179 converged the service to
+    //    it; only the legacy leave/timecard shapes are renamed) ──
+    for legacy in ["leave_requests", "timecards"] {
         sqlx::query(&format!("ALTER TABLE {legacy} RENAME TO {legacy}_legacy"))
             .execute(&pool)
             .await
             .expect("rename legacy hr table");
     }
     for ddl in [
-        r#"CREATE TABLE employees (
-               id uuid PRIMARY KEY,
-               tenant_id uuid NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
-               employee_code text NOT NULL,
-               user_id uuid REFERENCES users(id) ON DELETE SET NULL,
-               full_name text NOT NULL,
-               email text NOT NULL,
-               department text NOT NULL,
-               job_title text NOT NULL,
-               employment_type text NOT NULL,
-               status text NOT NULL,
-               hire_date timestamptz NOT NULL,
-               termination_date timestamptz,
-               supervisor_id uuid REFERENCES employees(id) ON DELETE SET NULL,
-               created_at timestamptz NOT NULL
-           )"#,
         r#"CREATE TABLE leave_requests (
                id uuid PRIMARY KEY,
                tenant_id uuid NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
@@ -22245,8 +22233,8 @@ async fn hr_self_service_identity_is_ownership_scoped() {
         status: &str,
     ) {
         sqlx::query(
-            "INSERT INTO employees (id, tenant_id, employee_code, user_id, full_name, email, department, job_title, employment_type, status, hire_date, created_at) \
-             VALUES ($1, $2, $3, $4, 'Name', $5, 'Eng', 'Eng', 'full_time', $6, NOW(), NOW())",
+            "INSERT INTO employees (id, tenant_id, employee_number, user_id, first_name, last_name, email, department, job_title, employment_type, status, hire_date, created_at) \
+             VALUES ($1, $2, $3, $4, 'Name', 'One', $5, 'Eng', 'Eng', 'full_time', $6, NOW(), NOW())",
         )
         .bind(id)
         .bind(tenant)

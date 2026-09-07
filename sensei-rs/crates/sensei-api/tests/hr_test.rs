@@ -41,9 +41,10 @@ async fn create_employee_for_user(app: &TestApp, token: &str, user_id: Uuid) -> 
     let body = serde_json::json!({
         "id": Uuid::new_v4().to_string(),
         "tenant_id": Uuid::new_v4().to_string(),
-        "employee_code": "",
+        "employee_number": "",
         "user_id": user_id.to_string(),
-        "full_name": "Self Service User",
+        "first_name": "Self",
+        "last_name": "Service User",
         "email": format!("self-{}@sensei.test", user_id.as_simple()),
         "department": "Engineering",
         "job_title": "Engineer",
@@ -51,7 +52,7 @@ async fn create_employee_for_user(app: &TestApp, token: &str, user_id: Uuid) -> 
         "status": "active",
         "hire_date": now,
         "termination_date": null,
-        "supervisor_id": null,
+        "manager_id": null,
         "created_at": now,
     });
     let req = app.post_authenticated("/api/v1/hr/employees", token, body);
@@ -104,9 +105,10 @@ async fn test_create_and_get_employee() {
     let body = serde_json::json!({
         "id": Uuid::new_v4().to_string(),
         "tenant_id": Uuid::new_v4().to_string(),
-        "employee_code": "",
+        "employee_number": "",
         "user_id": user_id.to_string(),
-        "full_name": "John Doe",
+        "first_name": "John",
+        "last_name": "Doe",
         "email": "john.doe@sensei.test",
         "department": "Engineering",
         "job_title": "Software Engineer",
@@ -114,7 +116,7 @@ async fn test_create_and_get_employee() {
         "status": "active",
         "hire_date": now,
         "termination_date": null,
-        "supervisor_id": null,
+        "manager_id": null,
         "created_at": now,
     });
     let req = app.post_authenticated("/api/v1/hr/employees", &token, body);
@@ -123,14 +125,16 @@ async fn test_create_and_get_employee() {
     let json: Value = app.json_body(&mut resp).await;
     let emp_id = json["id"].as_str().unwrap_or("").to_string();
     assert!(!emp_id.is_empty());
-    assert_eq!(json["full_name"], "John Doe");
+    assert_eq!(json["first_name"], "John");
+    assert_eq!(json["last_name"], "Doe");
 
     // Get the employee
     let req_get = app.get_authenticated(&format!("/api/v1/hr/employees/{}", emp_id), &token);
     let mut resp_get = app.send_request(req_get).await;
     assert_eq!(resp_get.status(), StatusCode::OK);
     let json_get: Value = app.json_body(&mut resp_get).await;
-    assert_eq!(json_get["full_name"], "John Doe");
+    assert_eq!(json_get["first_name"], "John");
+    assert_eq!(json_get["last_name"], "Doe");
 }
 
 #[tokio::test]
@@ -167,9 +171,10 @@ async fn test_update_employee_status() {
     let body = serde_json::json!({
         "id": Uuid::new_v4().to_string(),
         "tenant_id": Uuid::new_v4().to_string(),
-        "employee_code": "",
+        "employee_number": "",
         "user_id": user_id.to_string(),
-        "full_name": "Jane Smith",
+        "first_name": "Jane",
+        "last_name": "Smith",
         "email": "jane.smith@sensei.test",
         "department": "Engineering",
         "job_title": "Senior Engineer",
@@ -177,7 +182,7 @@ async fn test_update_employee_status() {
         "status": "active",
         "hire_date": now,
         "termination_date": null,
-        "supervisor_id": null,
+        "manager_id": null,
         "created_at": now,
     });
     let req = app.post_authenticated("/api/v1/hr/employees", &token, body);

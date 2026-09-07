@@ -32,7 +32,7 @@ pub fn EmployeeListPage() -> impl IntoView {
     let columns = vec![
         TableColumn {
             label: "CODE",
-            key: "employee_code",
+            key: "employee_number",
             sortable: true,
             width: None,
         },
@@ -56,7 +56,7 @@ pub fn EmployeeListPage() -> impl IntoView {
         },
         TableColumn {
             label: "POSITION",
-            key: "position",
+            key: "job_title",
             sortable: true,
             width: None,
         },
@@ -80,13 +80,13 @@ pub fn EmployeeListPage() -> impl IntoView {
                 Ok(list) => {
                     let rows: Vec<_> = list.clone().into_iter().map(|e| {
                         view! {
-                            <td>{e.employee_code}</td>
-                            <td>{e.name}</td>
+                            <td>{e.employee_number}</td>
+                            <td>{e.first_name.clone() + " " + &e.last_name}</td>
                             <td>{e.email}</td>
                             <td>{e.department}</td>
-                            <td>{e.position}</td>
+                            <td>{e.job_title}</td>
                             <td><span class=format!("rams-badge status-{}", e.status.to_lowercase())>{e.status.clone()}</span></td>
-                            <td>{e.hire_date.as_ref().map(|d| d[..10].to_string()).unwrap_or_else(|| "—".into())}</td>
+                            <td>{e.hire_date.as_ref().map(|d| d[..d.len().min(10)].to_string()).unwrap_or_else(|| "—".into())}</td>
                         }
                     }).collect();
                     view! { <DataTable columns=columns.clone() rows=rows /> }.into_any()

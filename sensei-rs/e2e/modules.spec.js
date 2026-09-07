@@ -28,15 +28,12 @@
 //           principal is tenant-wide (role-slot tenant grant): the list
 //           API answers 200 with zero rows by DESIGN and the page must
 //           render the explicit "NO RECORDS" empty state.
-// The two fixme modules (HR, Supply Chain) are blocked by an upstream
-// schema-drift defect in sensei-services (see the item 17 report):
-//   - HR list reads employees.employee_code/full_name, but the migration
-//     chain defines employees.employee_number/first_name/last_name;
-//   - Supply Chain list reads rfqs.supplier_name, but the chain defines
-//     rfqs.supplier_id -> suppliers.name.
-// Both fail identically under the superuser connection (schema drift,
-// not RLS), outside this item's ownership (sensei-services/migrations);
-// the tests flip from fixme to active once those columns converge.
+// HR and Supply Chain joined the active suite with migration 179 +
+// the sensei-services alignment (item 17 completion): the HR list now
+// reads the real employees.employee_number/first_name/last_name shape
+// and the RFQ list reads the real rfqs.supplier_id -> suppliers.name
+// join + rfq_line_items child rows, so both list APIs answer 200 under
+// every DB role and the seeded fixture rows render.
 
 const { test, expect } = require('@playwright/test');
 
@@ -91,7 +88,6 @@ const MODULES = [
     listPath: '/api/v1/hr/employees',
     mode: 'rows',
     marker: 'E2E-EMP-0001',
-    fixme: 'blocked by sensei-services hr list reading employees.employee_code/full_name while the migration chain defines employee_number/first_name/last_name (500 on the list API for ANY DB role)',
   },
   {
     key: 'maintenance',
@@ -110,7 +106,6 @@ const MODULES = [
     listPath: '/api/v1/supply-chain/rfqs',
     mode: 'rows',
     marker: 'E2E-RFQ-0001',
-    fixme: 'blocked by sensei-services rfq list reading rfqs.supplier_name while the migration chain defines rfqs.supplier_id -> suppliers.name (500 on the list API for ANY DB role)',
   },
   {
     key: 'inventory',
@@ -207,24 +202,6 @@ function listApiStatus(apiResponses, listPath) {
 }
 
 for (const mod of MODULES) {
-  if (mod.fixme) {
-    test.fixme(
-      `module ${mod.name}: ${mod.route} loads its real list (200, heading, no errors) — ${mod.fixme}`,
-      async ({ page }) => {
-        // Smoke path only: the module page itself renders (heading), but
-        // the list contract cannot hold until the upstream drift above is
-        // fixed. Flipping this test from fixme to active re-arms the full
-        // contract (200 + rows + zero console/page errors).
-        await login(page);
-        await page.goto(mod.route);
-        await expect(page.getByRole('heading', { name: mod.heading, exact: true })).toBeVisible({
-          timeout: 30_000,
-        });
-      }
-    );
-    continue;
-  }
-
   test(`module ${mod.name}: ${mod.route} loads its real list (200, heading, no errors)`, async ({
     page,
   }) => {

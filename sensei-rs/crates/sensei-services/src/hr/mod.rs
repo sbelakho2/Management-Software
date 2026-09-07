@@ -33,21 +33,28 @@ use uuid::Uuid;
 // ---------------------------------------------------------------------------
 
 /// An employee record.
+///
+/// Field names mirror the REAL `employees` table (migration 002-era
+/// canonical shape — thirtieth-first-audit item 17 drift 1): the record
+/// is identified by [`Employee::employee_number`] and the name is split
+/// into [`Employee::first_name`] + [`Employee::last_name`]. The line
+/// manager is `manager_id` (the table's self-referencing FK column).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Employee {
     pub id: Uuid,
     pub tenant_id: Uuid,
-    pub employee_code: String,
+    pub employee_number: String,
     pub user_id: Uuid,
-    pub full_name: String,
+    pub first_name: String,
+    pub last_name: String,
     pub email: String,
     pub department: String,
     pub job_title: String,
-    pub employment_type: String, // full_time, part_time, contract, intern
-    pub status: String,          // active, on_leave, terminated
+    pub employment_type: String, // full_time, part_time, contractor, intern, temporary
+    pub status: String,          // active, on_leave, terminated, suspended
     pub hire_date: DateTime<Utc>,
     pub termination_date: Option<DateTime<Utc>>,
-    pub supervisor_id: Option<Uuid>,
+    pub manager_id: Option<Uuid>,
     pub created_at: DateTime<Utc>,
 }
 
@@ -333,7 +340,7 @@ impl InMemoryHrService {
         }
     }
 
-    fn generate_employee_code(counter: u64) -> String {
+    fn generate_employee_number(counter: u64) -> String {
         format!("EMP-{}-{:04}", Utc::now().format("%Y%m%d"), counter)
     }
 }
@@ -366,12 +373,12 @@ impl HrService for InMemoryHrService {
     async fn create_employee(&self, tenant_id: Uuid, mut employee: Employee) -> Result<Employee> {
         let mut counter = self.emp_counter.write().await;
         *counter += 1;
-        let emp_code = Self::generate_employee_code(*counter);
+        let emp_number = Self::generate_employee_number(*counter);
         drop(counter);
 
         employee.id = Uuid::new_v4();
         employee.tenant_id = tenant_id;
-        employee.employee_code = emp_code;
+        employee.employee_number = emp_number;
         employee.status = "active".to_string();
         employee.created_at = Utc::now();
 
@@ -805,14 +812,15 @@ impl HrService for InMemoryHrService {
         let existing = store
             .get_mut(&id)
             .ok_or_else(|| SenseiError::NotFound(format!("Employee {id} not found")))?;
-        existing.full_name = employee.full_name;
+        existing.first_name = employee.first_name;
+        existing.last_name = employee.last_name;
         existing.email = employee.email;
         existing.department = employee.department;
         existing.job_title = employee.job_title;
         existing.employment_type = employee.employment_type;
         existing.status = employee.status;
-        existing.supervisor_id = employee.supervisor_id;
-        // Preserve: id, tenant_id, employee_code, hire_date, created_at, termination_date
+        existing.manager_id = employee.manager_id;
+        // Preserve: id, tenant_id, employee_number, hire_date, created_at, termination_date
         Ok(existing.clone())
     }
 
@@ -953,9 +961,10 @@ mod tests {
         let emp = Employee {
             id: Uuid::nil(),
             tenant_id,
-            employee_code: String::new(),
+            employee_number: String::new(),
             user_id,
-            full_name: "Jane Doe".to_string(),
+            first_name: "Jane".to_string(),
+            last_name: "Doe".to_string(),
             email: "jane.doe@example.com".to_string(),
             department: "Engineering".to_string(),
             job_title: "Senior Engineer".to_string(),
@@ -963,7 +972,7 @@ mod tests {
             status: String::new(),
             hire_date: Utc::now(),
             termination_date: None,
-            supervisor_id: None,
+            manager_id: None,
             created_at: Utc::now(),
         };
 
@@ -971,7 +980,7 @@ mod tests {
             .create_employee(tenant_id, emp)
             .await
             .expect("should create employee");
-        assert!(created.employee_code.starts_with("EMP-"));
+        assert!(created.employee_number.starts_with("EMP-"));
         assert_eq!(created.status, "active");
 
         let fetched = service
@@ -979,7 +988,8 @@ mod tests {
             .await
             .expect("should fetch employee");
         assert_eq!(fetched.id, created.id);
-        assert_eq!(fetched.full_name, "Jane Doe");
+        assert_eq!(fetched.first_name, "Jane");
+        assert_eq!(fetched.last_name, "Doe");
     }
 
     #[tokio::test]
@@ -990,9 +1000,10 @@ mod tests {
         let emp = Employee {
             id: Uuid::nil(),
             tenant_id,
-            employee_code: String::new(),
+            employee_number: String::new(),
             user_id: Uuid::new_v4(),
-            full_name: "Test".to_string(),
+            first_name: "Test".to_string(),
+            last_name: "User".to_string(),
             email: "test@example.com".to_string(),
             department: "Sales".to_string(),
             job_title: "Sales Rep".to_string(),
@@ -1000,7 +1011,7 @@ mod tests {
             status: String::new(),
             hire_date: Utc::now(),
             termination_date: None,
-            supervisor_id: None,
+            manager_id: None,
             created_at: Utc::now(),
         };
 

@@ -323,51 +323,74 @@ impl AiService for DatabaseAiService {
     }
 
     async fn queue_model_training(&self, tenant_id: Uuid, model_type: &str) -> Result<Uuid> {
+        // Migration 176 reconciled model_registry to the worker shape: one
+        // row per (tenant_id, model_name), status as JSONB carrying the
+        // structured ModelStatus, version default '0.0.0', and model_type
+        // constrained to the platform vocabulary. The service INSERT must
+        // conform (item 17 drift 3): free-form model types are refused
+        // with the vocabulary, and the honest queued state is the worker's
+        // own Training state at 0% progress.
+        const MODEL_TYPE_VOCAB: [&str; 4] = [
+            "anomaly_detection",
+            "prediction",
+            "classification",
+            "recommendation",
+        ];
+        if !MODEL_TYPE_VOCAB.contains(&model_type) {
+            return Err(SenseiError::Validation(format!(
+                "unsupported model type '{model_type}': model_registry.model_type \
+                 admits one of {}",
+                MODEL_TYPE_VOCAB.join(", ")
+            )));
+        }
+
         let now = Utc::now();
         let model_id = Uuid::new_v4();
+        let model_name = format!("{model_type}_model");
+        // ModelStatus::Training { progress: 0.0 } — the worker's own
+        // "training job accepted" state (the worker advances progress
+        // from 0 on its channel).
+        let status = serde_json::json!({ "Training": { "progress": 0.0 } });
 
         // model_registry is fail-closed FORCE RLS (migration 175): the
-        // INSERT runs inside a TenantTx of the tenant.
+        // upsert runs inside a TenantTx of the tenant.
         let mut db = TenantTx::begin(&self.pool, tenant_id)
             .await
             .map_err(|e| SenseiError::Database(format!("Failed to begin model training: {e}")))?;
-        sqlx::query(
+        // The row identity is the registry model (UNIQUE(tenant_id,
+        // model_name) since migration 176): a repeated queue re-arms the
+        // SAME model row (Training again) instead of duplicating rows, and
+        // the RETURNING id is the registry row's id in both cases.
+        let row_id: Uuid = sqlx::query_scalar(
             r#"
             INSERT INTO model_registry
                 (id, tenant_id, model_name, version, model_type, status,
                  accuracy, precision, recall, f1_score, dataset_size,
                  artifact_path, config, created_by, deployed_at, created_at, updated_at)
-            VALUES ($1, $2, $3, $4, $5, $6,
-                    $7, $8, $9, $10, $11,
-                    $12, $13, $14, $15, $16, $17)
+            VALUES ($1, $2, $3, '0.0.0', $4, $5,
+                    NULL, NULL, NULL, NULL, NULL,
+                    NULL, '{}'::jsonb, NULL, NULL, $6, $6)
+            ON CONFLICT (tenant_id, model_name) DO UPDATE SET
+                version = '0.0.0',
+                status = EXCLUDED.status,
+                updated_at = NOW()
+            RETURNING id
             "#,
         )
         .bind(model_id)
         .bind(tenant_id)
-        .bind(format!("{}_model", model_type))
-        .bind("1.0.0")
+        .bind(&model_name)
         .bind(model_type)
-        // Honest lifecycle state: the job is QUEUED, not "retrained".
-        .bind("training")
-        .bind(0.0_f64) // accuracy
-        .bind(None::<f64>) // precision
-        .bind(None::<f64>) // recall
-        .bind(None::<f64>) // f1_score
-        .bind(None::<i64>) // dataset_size
-        .bind(None::<String>) // artifact_path
-        .bind(serde_json::Value::Null) // config
-        .bind(None::<Uuid>) // created_by
-        .bind(None::<chrono::DateTime<chrono::Utc>>) // deployed_at
+        .bind(&status)
         .bind(now)
-        .bind(now)
-        .execute(&mut **db.tx())
+        .fetch_one(&mut **db.tx())
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to register model: {e}")))?;
         db.commit()
             .await
             .map_err(|e| SenseiError::Database(format!("Failed to commit model training: {e}")))?;
 
-        Ok(model_id)
+        Ok(row_id)
     }
 
     async fn publish_anomaly_event(

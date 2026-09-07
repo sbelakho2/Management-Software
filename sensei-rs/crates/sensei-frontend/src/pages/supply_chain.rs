@@ -38,7 +38,7 @@ pub fn RfqListPage() -> impl IntoView {
         },
         TableColumn {
             label: "SUPPLIER",
-            key: "supplier_id",
+            key: "supplier_name",
             sortable: true,
             width: None,
         },
@@ -69,10 +69,10 @@ pub fn RfqListPage() -> impl IntoView {
                     let rows: Vec<_> = list.clone().into_iter().map(|rfq| {
                         view! {
                             <td>{rfq.rfq_number}</td>
-                            <td>{rfq.supplier_id}</td>
+                            <td>{rfq.supplier_name}</td>
                             <td>{rfq.items.len()}</td>
                             <td><span class=format!("rams-badge status-{}", rfq.status.to_lowercase())>{rfq.status.clone()}</span></td>
-                            <td>{rfq.created_at[..10].to_string()}</td>
+                            <td>{rfq.created_at[..rfq.created_at.len().min(10)].to_string()}</td>
                         }
                     }).collect();
                     view! { <DataTable columns=columns.clone() rows=rows /> }.into_any()

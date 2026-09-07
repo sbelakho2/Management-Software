@@ -9,13 +9,19 @@ use serde::{Deserialize, Serialize};
 pub struct EmployeeDto {
     pub id: String,
     pub tenant_id: String,
-    pub employee_code: String,
-    pub name: String,
+    pub employee_number: String,
+    pub user_id: String,
+    pub first_name: String,
+    pub last_name: String,
     pub email: String,
     pub department: String,
-    pub position: String,
+    pub job_title: String,
+    pub employment_type: String,
     pub status: String,
     pub hire_date: Option<String>,
+    pub termination_date: Option<String>,
+    pub manager_id: Option<String>,
+    pub created_at: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

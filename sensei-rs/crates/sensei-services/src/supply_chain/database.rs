@@ -3,9 +3,23 @@
 //! Provides RFQ, quote, sales order, purchase order, inventory, and stock
 //! movement management backed by PostgreSQL tables. Implements [`SupplyChainService`].
 //!
+//! # RFQ / quote shape (thirtieth-first-audit item 17 drift 2)
+//!
+//! RFQs read/write the REAL normalized tables: `rfqs` header rows
+//! (`supplier_id` -> `suppliers.name` via join — the chain never created
+//! `rfqs.supplier_name`) with line items as `rfq_line_items` child rows
+//! (migration 098 canonical shape; 179 added the missing `product_id` and
+//! freed the legacy `line_number` NOT NULL). Customer sales quotes read/
+//! write `sales_quotes` (migration 098's canonical customer-quotation
+//! table: customer_id/customer_name + JSONB line_items + NUMERIC
+//! total_amount + the draft/submitted/approved/rejected/converted/
+//! expired lifecycle; 179 adds the 'cancelled' terminal the module's
+//! delete_quote contract uses). The supplier-quote `quotes` table is a
+//! different domain and is never touched here.
+//!
 //! # Tenant-scoped access (thirtieth audit items 18 + thirtieth-first 7)
 //!
-//! Every tenant-owned table this service touches (`rfqs`, `quotes`,
+//! Every tenant-owned table this service touches (`rfqs`, `sales_quotes`,
 //! `sales_orders`, `purchase_orders`, `inventory_items`, `stock_moves`,
 //! `goods_receipts`, `site_manifests`) is fail-closed FORCE RLS since
 //! migration 175: a statement without `app.tenant_id` admits zero rows
@@ -277,6 +291,10 @@ async fn resolve_single_site(
 // Row structs
 // ---------------------------------------------------------------------------
 
+/// RFQ row read from the REAL `rfqs` table joined to `suppliers` for the
+/// denormalized supplier name (item-17 drift 2: the migration chain never
+/// created rfqs.supplier_name; the canonical name lives on the supplier).
+/// `created_by` is nullable on the real table.
 #[derive(Debug, Clone, sqlx::FromRow)]
 struct RfqRow {
     id: Uuid,
@@ -285,12 +303,39 @@ struct RfqRow {
     supplier_id: Uuid,
     supplier_name: String,
     status: String,
-    items: serde_json::Value,
-    notes: String,
-    created_by: Uuid,
+    notes: Option<String>,
+    created_by: Option<Uuid>,
     created_at: chrono::DateTime<Utc>,
 }
 
+/// One `rfq_line_items` child row (migration 098 canonical shape): the
+/// product identity resolves through the products join when present, else
+/// the part reference text stands in as the display name.
+#[derive(Debug, Clone, sqlx::FromRow)]
+struct RfqItemRow {
+    id: Uuid,
+    product_id: Option<Uuid>,
+    product_name: Option<String>,
+    quantity: f64,
+    unit_of_measure: String,
+    target_price: Option<f64>,
+}
+
+/// [`RfqItemRow`] prefixed with its owning rfq (bulk page loads).
+#[derive(Debug, Clone, sqlx::FromRow)]
+struct RfqItemRowWithRfq {
+    rfq_id: Uuid,
+    #[sqlx(flatten)]
+    item: RfqItemRow,
+}
+
+/// Quote row read from `sales_quotes` — migration 098's canonical customer
+/// quotation table (customer_id/customer_name + JSONB line_items + NUMERIC
+/// total + 'converted' lifecycle). `quotes` in the chain is the SUPPLIER
+/// quote table and never carried customer semantics; `sales_quotes` does
+/// and matches the module's quote lifecycle 1:1. The service-side
+/// `rfq_id` link is not part of the sales-quote model, so the row always
+/// surfaces None.
 #[derive(Debug, Clone, sqlx::FromRow)]
 struct QuoteRow {
     id: Uuid,
@@ -303,8 +348,8 @@ struct QuoteRow {
     line_items: serde_json::Value,
     total_amount: rust_decimal::Decimal,
     currency: String,
-    valid_until: chrono::DateTime<Utc>,
-    created_by: Uuid,
+    valid_until: Option<chrono::DateTime<Utc>>,
+    created_by: Option<Uuid>,
     created_at: chrono::DateTime<Utc>,
 }
 
@@ -387,11 +432,52 @@ struct StockMoveRow {
 }
 
 // ---------------------------------------------------------------------------
+// Canonical SELECT fragments (real schema — item 17 drift 2)
+// ---------------------------------------------------------------------------
+
+/// `rfqs` joined to `suppliers`: supplier_name is a real suppliers column
+/// (the migration chain never added rfqs.supplier_name). Filters come in
+/// the WHERE clause of each statement; every fragment is tenant-scoped at
+/// the call site.
+const RFQ_SELECT: &str = "SELECT r.id, r.tenant_id, r.rfq_number, r.supplier_id, \
+     s.name AS supplier_name, r.status, r.notes, r.created_by, r.created_at \
+     FROM rfqs r JOIN suppliers s ON s.id = r.supplier_id";
+
+/// `sales_quotes` is the canonical customer quotation row (migration 098).
+/// sales_quotes carries no rfq link, so the wire's optional rfq_id is
+/// always NULL here.
+const QUOTE_SELECT: &str = "SELECT q.id, q.tenant_id, q.quote_number, NULL::uuid AS rfq_id, \
+     q.customer_id, q.customer_name, q.status, q.line_items, q.total_amount, \
+     q.currency, q.valid_until, q.created_by, q.created_at \
+     FROM sales_quotes q";
+
+/// Line items live in the normalized `rfq_line_items` child table, never
+/// in a JSONB column on rfqs. product_name resolves through products when
+/// the line names a product; otherwise the part reference text is the
+/// display name.
+const RFQ_ITEM_SELECT: &str = "SELECT l.id, l.product_id, \
+     COALESCE((SELECT p.name FROM products p WHERE p.id = l.product_id), l.part_number) AS product_name, \
+     l.quantity, l.unit_of_measure, l.target_price \
+     FROM rfq_line_items l";
+
+// ---------------------------------------------------------------------------
 // Mapping helpers
 // ---------------------------------------------------------------------------
 
-fn rfq_row_to_domain(r: RfqRow) -> RFQ {
-    let items: Vec<RFQItem> = serde_json::from_value(r.items).unwrap_or_default();
+fn rfq_item_row_to_domain(r: RfqItemRow) -> RFQItem {
+    RFQItem {
+        line_item_id: Some(r.id),
+        product_id: r.product_id.unwrap_or_default(),
+        product_name: r.product_name.unwrap_or_default(),
+        quantity: r.quantity.round() as i64,
+        unit_of_measure: r.unit_of_measure,
+        target_price: r
+            .target_price
+            .and_then(rust_decimal::Decimal::from_f64_retain),
+    }
+}
+
+fn rfq_row_to_domain(r: RfqRow, items: Vec<RFQItem>) -> RFQ {
     RFQ {
         id: r.id,
         tenant_id: r.tenant_id,
@@ -400,8 +486,10 @@ fn rfq_row_to_domain(r: RfqRow) -> RFQ {
         supplier_name: r.supplier_name,
         status: r.status,
         items,
-        notes: r.notes,
-        created_by: r.created_by,
+        notes: r.notes.unwrap_or_default(),
+        // NULL created_by (rows written by non-user channels) surfaces as
+        // the nil actor rather than fabricating one.
+        created_by: r.created_by.unwrap_or_default(),
         created_at: r.created_at,
     }
 }
@@ -419,8 +507,10 @@ fn quote_row_to_domain(r: QuoteRow) -> Quote {
         line_items,
         total_amount: r.total_amount,
         currency: r.currency,
-        valid_until: r.valid_until,
-        created_by: r.created_by,
+        // sales_quotes.valid_until is nullable; an unset validity window
+        // defaults to the creation moment (the wire type is non-optional).
+        valid_until: r.valid_until.unwrap_or(r.created_at),
+        created_by: r.created_by.unwrap_or_default(),
         created_at: r.created_at,
     }
 }
@@ -517,6 +607,163 @@ fn paginate<T>(items: Vec<T>, count: i64, page: usize, per_page: usize) -> Pagin
     }
 }
 
+/// Load the normalized `rfq_line_items` rows of ONE rfq (ordered by the
+/// 004-era line_number when present, else creation/id order) inside the
+/// caller's tenant-scoped transaction.
+async fn load_rfq_items(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    tenant_id: Uuid,
+    rfq_id: Uuid,
+) -> Result<Vec<RFQItem>> {
+    let rows = sqlx::query_as::<_, RfqItemRow>(&format!(
+        "{RFQ_ITEM_SELECT} WHERE l.tenant_id = $1 AND l.rfq_id = $2 \
+             ORDER BY l.line_number, l.created_at, l.id"
+    ))
+    .bind(tenant_id)
+    .bind(rfq_id)
+    .fetch_all(&mut **tx)
+    .await
+    .map_err(|e| SenseiError::Database(format!("Failed to load RFQ items: {e}")))?;
+    Ok(rows.into_iter().map(rfq_item_row_to_domain).collect())
+}
+
+/// Load the items of MANY rfqs in ONE statement (rfq_id -> items), so a
+/// page list never pays N+1 item queries.
+async fn load_rfq_items_bulk(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    tenant_id: Uuid,
+    rfq_ids: &[Uuid],
+) -> Result<std::collections::HashMap<Uuid, Vec<RFQItem>>> {
+    let mut out: std::collections::HashMap<Uuid, Vec<RFQItem>> = std::collections::HashMap::new();
+    if rfq_ids.is_empty() {
+        return Ok(out);
+    }
+    let rows = sqlx::query_as::<_, RfqItemRowWithRfq>(&format!(
+        "{RFQ_ITEM_SELECT}, l.rfq_id \
+             FROM rfq_line_items l WHERE l.tenant_id = $1 AND l.rfq_id = ANY($2) \
+             ORDER BY l.rfq_id, l.line_number, l.created_at, l.id"
+    ))
+    .bind(tenant_id)
+    .bind(rfq_ids)
+    .fetch_all(&mut **tx)
+    .await
+    .map_err(|e| SenseiError::Database(format!("Failed to load RFQ items: {e}")))?;
+    for row in rows {
+        out.entry(row.rfq_id)
+            .or_default()
+            .push(rfq_item_row_to_domain(row.item));
+    }
+    Ok(out)
+}
+
+/// Persist the module RFQ's line items as normalized `rfq_line_items`
+/// child rows. part_number is the linked product's product_number when the
+/// product exists, else the client-supplied product_name is the part
+/// reference. The 004-era line_number is written for ordering; the column
+/// is nullable since 179 (the 098 canonical writers do not number rows).
+async fn replace_rfq_items(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    tenant_id: Uuid,
+    rfq_id: Uuid,
+    items: &[RFQItem],
+) -> Result<()> {
+    sqlx::query("DELETE FROM rfq_line_items WHERE tenant_id = $1 AND rfq_id = $2")
+        .bind(tenant_id)
+        .bind(rfq_id)
+        .execute(&mut **tx)
+        .await
+        .map_err(|e| SenseiError::Database(format!("Failed to clear RFQ items: {e}")))?;
+    for (index, item) in items.iter().enumerate() {
+        let product_id = if item.product_id.is_nil() {
+            None
+        } else {
+            Some(item.product_id)
+        };
+        sqlx::query(
+            "INSERT INTO rfq_line_items \
+                (id, tenant_id, rfq_id, line_number, product_id, part_number, \
+                 quantity, unit_of_measure, target_price) \
+             VALUES ($1, $2, $3, $4, $5, \
+                     COALESCE((SELECT product_number FROM products p WHERE p.id = $5), $6), \
+                     $7, $8, $9)",
+        )
+        .bind(Uuid::new_v4())
+        .bind(tenant_id)
+        .bind(rfq_id)
+        .bind((index + 1) as i32)
+        .bind(product_id)
+        .bind(&item.product_name)
+        .bind(item.quantity)
+        .bind(&item.unit_of_measure)
+        .bind(item.target_price)
+        .execute(&mut **tx)
+        .await
+        .map_err(|e| SenseiError::Database(format!("Failed to insert RFQ line item: {e}")))?;
+    }
+    Ok(())
+}
+
+/// Resolve the RFQ of `id` (with its items) inside the caller's
+/// tenant-scoped transaction; NotFound when the row does not exist.
+async fn load_rfq_with_items(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    tenant_id: Uuid,
+    id: Uuid,
+    for_update: bool,
+) -> Result<RFQ> {
+    let sql = if for_update {
+        format!("{RFQ_SELECT} WHERE r.id = $1 AND r.tenant_id = $2 FOR UPDATE")
+    } else {
+        format!("{RFQ_SELECT} WHERE r.id = $1 AND r.tenant_id = $2")
+    };
+    let row = sqlx::query_as::<_, RfqRow>(&sql)
+        .bind(id)
+        .bind(tenant_id)
+        .fetch_optional(&mut **tx)
+        .await
+        .map_err(|e| SenseiError::Database(format!("Failed to load RFQ: {e}")))?
+        .ok_or_else(|| SenseiError::NotFound(format!("RFQ {id} not found")))?;
+    let items = load_rfq_items(tx, tenant_id, id).await?;
+    Ok(rfq_row_to_domain(row, items))
+}
+
+/// Apply a status transition on a `sales_quotes` row and return the
+/// updated quote. The sales_quotes.status CHECK owns the vocabulary
+/// (draft/submitted/approved/rejected/converted/expired/cancelled since
+/// migration 179).
+async fn transition_quote_status(
+    pool: &PgPool,
+    tenant_id: Uuid,
+    id: Uuid,
+    status: &str,
+) -> Result<Quote> {
+    let mut db = TenantTx::begin(pool, tenant_id)
+        .await
+        .map_err(|e| SenseiError::Database(format!("Failed to begin quote status update: {e}")))?;
+    sqlx::query(
+        "UPDATE sales_quotes SET status = $1, updated_at = NOW() WHERE id = $2 AND tenant_id = $3",
+    )
+    .bind(status)
+    .bind(id)
+    .bind(tenant_id)
+    .execute(&mut **db.tx())
+    .await
+    .map_err(|e| SenseiError::Database(format!("Failed to update quote status: {e}")))?;
+    let row = sqlx::query_as::<_, QuoteRow>(&format!(
+        "{QUOTE_SELECT} WHERE q.id = $1 AND q.tenant_id = $2"
+    ))
+    .bind(id)
+    .bind(tenant_id)
+    .fetch_optional(&mut **db.tx())
+    .await
+    .map_err(|e| SenseiError::Database(format!("Failed to reload quote: {e}")))?
+    .ok_or_else(|| SenseiError::NotFound(format!("Quote {id} not found")))?;
+    db.commit()
+        .await
+        .map_err(|e| SenseiError::Database(format!("Failed to commit quote status update: {e}")))?;
+    Ok(quote_row_to_domain(row))
+}
+
 fn gen_id() -> (Uuid, String) {
     let id = Uuid::new_v4();
     let suffix = id.as_simple().encode_lower(&mut Uuid::encode_buffer())[..8].to_string();
@@ -531,40 +778,50 @@ impl SupplyChainService for DatabaseSupplyChainService {
         let now = Utc::now();
         let (id, suffix) = gen_id();
         let rfq_number = format!("RFQ-{}-{}", now.format("%Y%m%d"), suffix);
-        let items_json =
-            serde_json::to_value(&rfq.items).unwrap_or(serde_json::Value::Array(vec![]));
 
         let mut db = TenantTx::begin(&self.pool, tenant_id)
             .await
             .map_err(|e| SenseiError::Database(format!("Failed to begin create RFQ: {e}")))?;
-        let row = sqlx::query_as::<_, RfqRow>(
-            r#"INSERT INTO rfqs (id, tenant_id, rfq_number, supplier_id, supplier_name, status, items, notes, created_by, created_at)
-               VALUES ($1,$2,$3,$4,$5,'draft',$6,$7,$8,$9)
-               RETURNING id, tenant_id, rfq_number, supplier_id, supplier_name, status, items, notes, created_by, created_at"#,
+        // The REAL rfqs table stores the supplier reference + header facts
+        // (no supplier_name/items columns); the line items land in the
+        // normalized rfq_line_items child table.
+        sqlx::query(
+            "INSERT INTO rfqs (id, tenant_id, rfq_number, supplier_id, status, issue_date, notes, created_by, created_at, updated_at) \
+             VALUES ($1, $2, $3, $4, 'draft', $5, $6, $7, $8, $8)",
         )
-        .bind(id).bind(tenant_id).bind(&rfq_number).bind(rfq.supplier_id).bind(&rfq.supplier_name)
-        .bind(&items_json).bind(&rfq.notes).bind(rfq.created_by).bind(now)
-        .fetch_one(&mut **db.tx()).await.map_err(|e| SenseiError::Database(format!("Failed to create RFQ: {e}")))?;
+        .bind(id)
+        .bind(tenant_id)
+        .bind(&rfq_number)
+        .bind(rfq.supplier_id)
+        .bind(now)
+        .bind(if rfq.notes.is_empty() {
+            None
+        } else {
+            Some(rfq.notes.as_str())
+        })
+        .bind(rfq.created_by)
+        .bind(now)
+        .execute(&mut **db.tx())
+        .await
+        .map_err(|e| SenseiError::Database(format!("Failed to create RFQ: {e}")))?;
+        replace_rfq_items(db.tx(), tenant_id, id, &rfq.items).await?;
+        let created = load_rfq_with_items(db.tx(), tenant_id, id, false).await?;
         db.commit()
             .await
             .map_err(|e| SenseiError::Database(format!("Failed to commit create RFQ: {e}")))?;
 
-        Ok(rfq_row_to_domain(row))
+        Ok(created)
     }
 
     async fn get_rfq(&self, tenant_id: Uuid, id: Uuid) -> Result<RFQ> {
         let mut db = TenantTx::begin(&self.pool, tenant_id)
             .await
             .map_err(|e| SenseiError::Database(format!("Failed to begin get RFQ: {e}")))?;
-        let row = sqlx::query_as::<_, RfqRow>(
-            "SELECT id, tenant_id, rfq_number, supplier_id, supplier_name, status, items, notes, created_by, created_at FROM rfqs WHERE id=$1 AND tenant_id=$2",
-        ).bind(id).bind(tenant_id).fetch_optional(&mut **db.tx()).await
-            .map_err(|e| SenseiError::Database(format!("Failed to get RFQ: {e}")))?
-            .ok_or_else(|| SenseiError::NotFound(format!("RFQ {id} not found")))?;
+        let rfq = load_rfq_with_items(db.tx(), tenant_id, id, false).await?;
         db.commit()
             .await
             .map_err(|e| SenseiError::Database(format!("Failed to commit get RFQ: {e}")))?;
-        Ok(rfq_row_to_domain(row))
+        Ok(rfq)
     }
 
     async fn list_rfqs(
@@ -583,11 +840,17 @@ impl SupplyChainService for DatabaseSupplyChainService {
         let mut db = TenantTx::begin(&self.pool, tenant_id)
             .await
             .map_err(|e| SenseiError::Database(format!("Failed to begin list RFQs: {e}")))?;
-        let items: Vec<RfqRow> = sqlx::query_as(
-            r#"SELECT id, tenant_id, rfq_number, supplier_id, supplier_name, status, items, notes, created_by, created_at FROM rfqs
-               WHERE tenant_id=$1 AND ($2::text IS NULL OR status=$2) ORDER BY created_at DESC LIMIT $3 OFFSET $4"#,
-        ).bind(tenant_id).bind(status).bind(per_page as i64).bind(offset as i64).fetch_all(&mut **db.tx()).await
-            .map_err(|e| SenseiError::Database(format!("Failed to list RFQs: {e}")))?;
+        let rows: Vec<RfqRow> = sqlx::query_as(&format!(
+            "{RFQ_SELECT} WHERE r.tenant_id = $1 AND ($2::text IS NULL OR r.status = $2) \
+             ORDER BY r.created_at DESC LIMIT $3 OFFSET $4"
+        ))
+        .bind(tenant_id)
+        .bind(status)
+        .bind(per_page as i64)
+        .bind(offset as i64)
+        .fetch_all(&mut **db.tx())
+        .await
+        .map_err(|e| SenseiError::Database(format!("Failed to list RFQs: {e}")))?;
         let count: i64 = sqlx::query_scalar(
             "SELECT COUNT(*) FROM rfqs WHERE tenant_id=$1 AND ($2::text IS NULL OR status=$2)",
         )
@@ -596,11 +859,18 @@ impl SupplyChainService for DatabaseSupplyChainService {
         .fetch_one(&mut **db.tx())
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to count RFQs: {e}")))?;
+        let ids: Vec<Uuid> = rows.iter().map(|r| r.id).collect();
+        let items = load_rfq_items_bulk(db.tx(), tenant_id, &ids).await?;
         db.commit()
             .await
             .map_err(|e| SenseiError::Database(format!("Failed to commit list RFQs: {e}")))?;
         Ok(paginate(
-            items.into_iter().map(rfq_row_to_domain).collect(),
+            rows.into_iter()
+                .map(|r| {
+                    let rfq_items = items.get(&r.id).cloned().unwrap_or_default();
+                    rfq_row_to_domain(r, rfq_items)
+                })
+                .collect(),
             count,
             page,
             per_page,
@@ -611,16 +881,23 @@ impl SupplyChainService for DatabaseSupplyChainService {
         let mut db = TenantTx::begin(&self.pool, tenant_id).await.map_err(|e| {
             SenseiError::Database(format!("Failed to begin RFQ status update: {e}"))
         })?;
-        let row = sqlx::query_as::<_, RfqRow>(
-            r#"UPDATE rfqs SET status=$1 WHERE id=$2 AND tenant_id=$3
-               RETURNING id, tenant_id, rfq_number, supplier_id, supplier_name, status, items, notes, created_by, created_at"#,
-        ).bind(status).bind(id).bind(tenant_id).fetch_optional(&mut **db.tx()).await
-            .map_err(|e| SenseiError::Database(format!("Failed to update RFQ status: {e}")))?
-            .ok_or_else(|| SenseiError::NotFound(format!("RFQ {id} not found")))?;
+        // The real rfqs.status CHECK owns the vocabulary
+        // (draft/sent/quoted/expired/cancelled/awarded); an out-of-
+        // vocabulary transition is rejected by the constraint itself.
+        sqlx::query(
+            "UPDATE rfqs SET status = $1, updated_at = NOW() WHERE id = $2 AND tenant_id = $3",
+        )
+        .bind(status)
+        .bind(id)
+        .bind(tenant_id)
+        .execute(&mut **db.tx())
+        .await
+        .map_err(|e| SenseiError::Database(format!("Failed to update RFQ status: {e}")))?;
+        let rfq = load_rfq_with_items(db.tx(), tenant_id, id, false).await?;
         db.commit().await.map_err(|e| {
             SenseiError::Database(format!("Failed to commit RFQ status update: {e}"))
         })?;
-        Ok(rfq_row_to_domain(row))
+        Ok(rfq)
     }
 
     // ── Quotes ──────────────────────────────────────────────────────────
@@ -636,14 +913,26 @@ impl SupplyChainService for DatabaseSupplyChainService {
         let mut db = TenantTx::begin(&self.pool, tenant_id)
             .await
             .map_err(|e| SenseiError::Database(format!("Failed to begin create quote: {e}")))?;
-        let row = sqlx::query_as::<_, QuoteRow>(
-            r#"INSERT INTO quotes (id, tenant_id, quote_number, rfq_id, customer_id, customer_name, status, line_items, total_amount, currency, valid_until, created_by, created_at)
-               VALUES ($1,$2,$3,$4,$5,$6,'draft',$7,$8,$9,$10,$11,$12)
-               RETURNING id, tenant_id, quote_number, rfq_id, customer_id, customer_name, status, line_items, total_amount, currency, valid_until, created_by, created_at"#,
-        ).bind(id).bind(tenant_id).bind(&quote_number).bind(quote.rfq_id).bind(quote.customer_id)
+        // Customer sales quotes live in sales_quotes (migration 098's
+        // canonical customer-quotation table); the supplier `quotes`
+        // table never carried customer semantics.
+        sqlx::query(
+            "INSERT INTO sales_quotes (id, tenant_id, quote_number, customer_id, customer_name, status, line_items, total_amount, currency, valid_until, created_by, created_at, updated_at) \
+             VALUES ($1,$2,$3,$4,$5,'draft',$6,$7,$8,$9,$10,$11,$11)",
+        )
+        .bind(id).bind(tenant_id).bind(&quote_number).bind(quote.customer_id)
             .bind(&quote.customer_name).bind(&li_json).bind(total).bind(&quote.currency)
             .bind(quote.valid_until).bind(quote.created_by).bind(now)
-            .fetch_one(&mut **db.tx()).await.map_err(|e| SenseiError::Database(format!("Failed to create quote: {e}")))?;
+            .execute(&mut **db.tx()).await
+            .map_err(|e| SenseiError::Database(format!("Failed to create quote: {e}")))?;
+        let row = sqlx::query_as::<_, QuoteRow>(&format!(
+            "{QUOTE_SELECT} WHERE q.id = $1 AND q.tenant_id = $2"
+        ))
+        .bind(id)
+        .bind(tenant_id)
+        .fetch_one(&mut **db.tx())
+        .await
+        .map_err(|e| SenseiError::Database(format!("Failed to reload created quote: {e}")))?;
         db.commit()
             .await
             .map_err(|e| SenseiError::Database(format!("Failed to commit create quote: {e}")))?;
@@ -654,11 +943,15 @@ impl SupplyChainService for DatabaseSupplyChainService {
         let mut db = TenantTx::begin(&self.pool, tenant_id)
             .await
             .map_err(|e| SenseiError::Database(format!("Failed to begin get quote: {e}")))?;
-        let row = sqlx::query_as::<_, QuoteRow>(
-            "SELECT id, tenant_id, quote_number, rfq_id, customer_id, customer_name, status, line_items, total_amount, currency, valid_until, created_by, created_at FROM quotes WHERE id=$1 AND tenant_id=$2",
-        ).bind(id).bind(tenant_id).fetch_optional(&mut **db.tx()).await
-            .map_err(|e| SenseiError::Database(format!("Failed to get quote: {e}")))?
-            .ok_or_else(|| SenseiError::NotFound(format!("Quote {id} not found")))?;
+        let row = sqlx::query_as::<_, QuoteRow>(&format!(
+            "{QUOTE_SELECT} WHERE q.id = $1 AND q.tenant_id = $2"
+        ))
+        .bind(id)
+        .bind(tenant_id)
+        .fetch_optional(&mut **db.tx())
+        .await
+        .map_err(|e| SenseiError::Database(format!("Failed to get quote: {e}")))?
+        .ok_or_else(|| SenseiError::NotFound(format!("Quote {id} not found")))?;
         db.commit()
             .await
             .map_err(|e| SenseiError::Database(format!("Failed to commit get quote: {e}")))?;
@@ -675,18 +968,24 @@ impl SupplyChainService for DatabaseSupplyChainService {
         let page = page.unwrap_or(1).max(1);
         let per_page = per_page.unwrap_or(20).clamp(1, 100);
         let offset = (page - 1) * per_page;
-        // quotes is fail-closed FORCE RLS (migration 175): the page and
-        // its count read on ONE TenantTx of the tenant.
+        // sales_quotes is fail-closed FORCE RLS (migration 175): the page
+        // and its count read on ONE TenantTx of the tenant.
         let mut db = TenantTx::begin(&self.pool, tenant_id)
             .await
             .map_err(|e| SenseiError::Database(format!("Failed to begin list quotes: {e}")))?;
-        let items: Vec<QuoteRow> = sqlx::query_as(
-            r#"SELECT id, tenant_id, quote_number, rfq_id, customer_id, customer_name, status, line_items, total_amount, currency, valid_until, created_by, created_at FROM quotes
-               WHERE tenant_id=$1 AND ($2::text IS NULL OR status=$2) ORDER BY created_at DESC LIMIT $3 OFFSET $4"#,
-        ).bind(tenant_id).bind(status).bind(per_page as i64).bind(offset as i64).fetch_all(&mut **db.tx()).await
-            .map_err(|e| SenseiError::Database(format!("Failed to list quotes: {e}")))?;
+        let rows: Vec<QuoteRow> = sqlx::query_as(&format!(
+            "{QUOTE_SELECT} WHERE q.tenant_id = $1 AND ($2::text IS NULL OR q.status = $2) \
+             ORDER BY q.created_at DESC LIMIT $3 OFFSET $4"
+        ))
+        .bind(tenant_id)
+        .bind(status)
+        .bind(per_page as i64)
+        .bind(offset as i64)
+        .fetch_all(&mut **db.tx())
+        .await
+        .map_err(|e| SenseiError::Database(format!("Failed to list quotes: {e}")))?;
         let count: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM quotes WHERE tenant_id=$1 AND ($2::text IS NULL OR status=$2)",
+            "SELECT COUNT(*) FROM sales_quotes WHERE tenant_id=$1 AND ($2::text IS NULL OR status=$2)",
         )
         .bind(tenant_id)
         .bind(status)
@@ -697,7 +996,7 @@ impl SupplyChainService for DatabaseSupplyChainService {
             .await
             .map_err(|e| SenseiError::Database(format!("Failed to commit list quotes: {e}")))?;
         Ok(paginate(
-            items.into_iter().map(quote_row_to_domain).collect(),
+            rows.into_iter().map(quote_row_to_domain).collect(),
             count,
             page,
             per_page,
@@ -705,19 +1004,7 @@ impl SupplyChainService for DatabaseSupplyChainService {
     }
 
     async fn approve_quote(&self, tenant_id: Uuid, id: Uuid) -> Result<Quote> {
-        let mut db = TenantTx::begin(&self.pool, tenant_id)
-            .await
-            .map_err(|e| SenseiError::Database(format!("Failed to begin approve quote: {e}")))?;
-        let row = sqlx::query_as::<_, QuoteRow>(
-            r#"UPDATE quotes SET status='approved' WHERE id=$1 AND tenant_id=$2
-               RETURNING id, tenant_id, quote_number, rfq_id, customer_id, customer_name, status, line_items, total_amount, currency, valid_until, created_by, created_at"#,
-        ).bind(id).bind(tenant_id).fetch_optional(&mut **db.tx()).await
-            .map_err(|e| SenseiError::Database(format!("Failed to approve quote: {e}")))?
-            .ok_or_else(|| SenseiError::NotFound(format!("Quote {id} not found")))?;
-        db.commit()
-            .await
-            .map_err(|e| SenseiError::Database(format!("Failed to commit approve quote: {e}")))?;
-        Ok(quote_row_to_domain(row))
+        transition_quote_status(&self.pool, tenant_id, id, "approved").await
     }
 
     async fn convert_quote_to_order(
@@ -726,17 +1013,17 @@ impl SupplyChainService for DatabaseSupplyChainService {
         quote_id: Uuid,
         actor_id: Uuid,
     ) -> Result<SalesOrder> {
-        // Wave C RLS (thirtieth-audit item 18): quotes and sales_orders
-        // are tenant-owned fail-closed FORCE RLS since migration 175 — the
-        // quote read, the sales-order INSERT and the quote status flip run
-        // as ONE tenant-scoped transaction (the conversion is atomic too:
-        // no order without its quote marked converted).
+        // Wave C RLS (thirtieth-audit item 18): sales_quotes and
+        // sales_orders are tenant-owned fail-closed FORCE RLS since
+        // migration 175 — the quote read, the sales-order INSERT and the
+        // quote status flip run as ONE tenant-scoped transaction (the
+        // conversion is atomic too: no order without its quote marked
+        // converted).
         with_tenant_tx(&self.pool, tenant_id, move |tx| {
             Box::pin(async move {
-                let quote_row = sqlx::query_as::<_, QuoteRow>(
-                    r#"SELECT id, tenant_id, quote_number, rfq_id, customer_id, customer_name, status, line_items, total_amount, currency, valid_until, created_by, created_at
-                       FROM quotes WHERE id=$1 AND tenant_id=$2 FOR UPDATE"#,
-                )
+                let quote_row = sqlx::query_as::<_, QuoteRow>(&format!(
+                    "{QUOTE_SELECT} WHERE q.id = $1 AND q.tenant_id = $2 FOR UPDATE"
+                ))
                 .bind(quote_id)
                 .bind(tenant_id)
                 .fetch_optional(&mut **tx)
@@ -786,7 +1073,7 @@ impl SupplyChainService for DatabaseSupplyChainService {
                     SenseiError::Database(format!("Failed to convert quote to order: {e}"))
                 })?;
 
-                sqlx::query("UPDATE quotes SET status='converted' WHERE id=$1 AND tenant_id=$2")
+                sqlx::query("UPDATE sales_quotes SET status='converted', updated_at=NOW() WHERE id=$1 AND tenant_id=$2")
                     .bind(quote_id)
                     .bind(tenant_id)
                     .execute(&mut **tx)
@@ -1965,21 +2252,42 @@ impl SupplyChainService for DatabaseSupplyChainService {
     // ── RFQ Mutations ──────────────────────────────────────────────────
 
     async fn update_rfq(&self, tenant_id: Uuid, id: Uuid, rfq: RFQ) -> Result<RFQ> {
-        let items_json =
-            serde_json::to_value(&rfq.items).unwrap_or(serde_json::Value::Array(vec![]));
         let mut db = TenantTx::begin(&self.pool, tenant_id)
             .await
             .map_err(|e| SenseiError::Database(format!("Failed to begin update RFQ: {e}")))?;
-        let row = sqlx::query_as::<_, RfqRow>(
-            r#"UPDATE rfqs SET supplier_id=$1, supplier_name=$2, items=$3, notes=$4 WHERE id=$5 AND tenant_id=$6
-               RETURNING id, tenant_id, rfq_number, supplier_id, supplier_name, status, items, notes, created_by, created_at"#,
-        ).bind(rfq.supplier_id).bind(&rfq.supplier_name).bind(&items_json).bind(&rfq.notes).bind(id).bind(tenant_id)
-            .fetch_optional(&mut **db.tx()).await.map_err(|e| SenseiError::Database(format!("Failed to update RFQ: {e}")))?
-            .ok_or_else(|| SenseiError::NotFound(format!("RFQ {id} not found")))?;
+        sqlx::query(
+            "UPDATE rfqs SET supplier_id=$1, notes=$2, updated_at=NOW() WHERE id=$3 AND tenant_id=$4",
+        )
+        .bind(rfq.supplier_id)
+        .bind(if rfq.notes.is_empty() {
+            None
+        } else {
+            Some(rfq.notes.as_str())
+        })
+        .bind(id)
+        .bind(tenant_id)
+        .execute(&mut **db.tx())
+        .await
+        .map_err(|e| SenseiError::Database(format!("Failed to update RFQ: {e}")))?;
+        // The rfq must exist (the UPDATE alone cannot distinguish "updated
+        // zero rows because not found" from other effects).
+        if !sqlx::query_scalar::<_, bool>(
+            "SELECT EXISTS(SELECT 1 FROM rfqs WHERE id=$1 AND tenant_id=$2)",
+        )
+        .bind(id)
+        .bind(tenant_id)
+        .fetch_one(&mut **db.tx())
+        .await
+        .map_err(|e| SenseiError::Database(format!("Failed to check RFQ: {e}")))?
+        {
+            return Err(SenseiError::NotFound(format!("RFQ {id} not found")));
+        }
+        replace_rfq_items(db.tx(), tenant_id, id, &rfq.items).await?;
+        let updated = load_rfq_with_items(db.tx(), tenant_id, id, false).await?;
         db.commit()
             .await
             .map_err(|e| SenseiError::Database(format!("Failed to commit update RFQ: {e}")))?;
-        Ok(rfq_row_to_domain(row))
+        Ok(updated)
     }
 
     async fn delete_rfq(&self, tenant_id: Uuid, id: Uuid) -> Result<()> {
@@ -1987,14 +2295,24 @@ impl SupplyChainService for DatabaseSupplyChainService {
         let mut db = TenantTx::begin(&self.pool, tenant_id)
             .await
             .map_err(|e| SenseiError::Database(format!("Failed to begin cancel RFQ: {e}")))?;
-        let r = sqlx::query("UPDATE rfqs SET status='cancelled' WHERE id=$1 AND tenant_id=$2")
+        let r = sqlx::query("UPDATE rfqs SET status='cancelled', updated_at=NOW() WHERE id=$1 AND tenant_id=$2 AND status <> 'cancelled'")
             .bind(id)
             .bind(tenant_id)
             .execute(&mut **db.tx())
             .await
             .map_err(|e| SenseiError::Database(format!("Failed to cancel RFQ: {e}")))?;
         if r.rows_affected() == 0 {
-            return Err(SenseiError::NotFound(format!("RFQ {id} not found")));
+            let exists: bool = sqlx::query_scalar(
+                "SELECT EXISTS(SELECT 1 FROM rfqs WHERE id=$1 AND tenant_id=$2)",
+            )
+            .bind(id)
+            .bind(tenant_id)
+            .fetch_one(&mut **db.tx())
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to check RFQ: {e}")))?;
+            if !exists {
+                return Err(SenseiError::NotFound(format!("RFQ {id} not found")));
+            }
         }
         db.commit()
             .await
@@ -2018,12 +2336,29 @@ impl SupplyChainService for DatabaseSupplyChainService {
         let mut db = TenantTx::begin(&self.pool, tenant_id)
             .await
             .map_err(|e| SenseiError::Database(format!("Failed to begin update quote: {e}")))?;
-        let row = sqlx::query_as::<_, QuoteRow>(
-            r#"UPDATE quotes SET customer_id=$1, customer_name=$2, line_items=$3, total_amount=$4, currency=$5, valid_until=$6 WHERE id=$7 AND tenant_id=$8
-               RETURNING id, tenant_id, quote_number, rfq_id, customer_id, customer_name, status, line_items, total_amount, currency, valid_until, created_by, created_at"#,
-        ).bind(quote.customer_id).bind(&quote.customer_name).bind(&li_json).bind(total).bind(&quote.currency).bind(quote.valid_until).bind(id).bind(tenant_id)
-            .fetch_optional(&mut **db.tx()).await.map_err(|e| SenseiError::Database(format!("Failed to update quote: {e}")))?
-            .ok_or_else(|| SenseiError::NotFound(format!("Quote {id} not found")))?;
+        sqlx::query(
+            "UPDATE sales_quotes SET customer_id=$1, customer_name=$2, line_items=$3, total_amount=$4, currency=$5, valid_until=$6, updated_at=NOW() WHERE id=$7 AND tenant_id=$8",
+        )
+        .bind(quote.customer_id)
+        .bind(&quote.customer_name)
+        .bind(&li_json)
+        .bind(total)
+        .bind(&quote.currency)
+        .bind(quote.valid_until)
+        .bind(id)
+        .bind(tenant_id)
+        .execute(&mut **db.tx())
+        .await
+        .map_err(|e| SenseiError::Database(format!("Failed to update quote: {e}")))?;
+        let row = sqlx::query_as::<_, QuoteRow>(&format!(
+            "{QUOTE_SELECT} WHERE q.id = $1 AND q.tenant_id = $2"
+        ))
+        .bind(id)
+        .bind(tenant_id)
+        .fetch_optional(&mut **db.tx())
+        .await
+        .map_err(|e| SenseiError::Database(format!("Failed to reload quote: {e}")))?
+        .ok_or_else(|| SenseiError::NotFound(format!("Quote {id} not found")))?;
         db.commit()
             .await
             .map_err(|e| SenseiError::Database(format!("Failed to commit update quote: {e}")))?;
@@ -2032,17 +2367,28 @@ impl SupplyChainService for DatabaseSupplyChainService {
 
     async fn delete_quote(&self, tenant_id: Uuid, id: Uuid) -> Result<()> {
         // Quotes are business history: they are CANCELLED, never erased.
+        // sales_quotes.status admits 'cancelled' since migration 179.
         let mut db = TenantTx::begin(&self.pool, tenant_id)
             .await
             .map_err(|e| SenseiError::Database(format!("Failed to begin cancel quote: {e}")))?;
-        let r = sqlx::query("UPDATE quotes SET status='cancelled' WHERE id=$1 AND tenant_id=$2")
+        let r = sqlx::query("UPDATE sales_quotes SET status='cancelled', updated_at=NOW() WHERE id=$1 AND tenant_id=$2 AND status <> 'cancelled'")
             .bind(id)
             .bind(tenant_id)
             .execute(&mut **db.tx())
             .await
             .map_err(|e| SenseiError::Database(format!("Failed to cancel quote: {e}")))?;
         if r.rows_affected() == 0 {
-            return Err(SenseiError::NotFound(format!("Quote {id} not found")));
+            let exists: bool = sqlx::query_scalar(
+                "SELECT EXISTS(SELECT 1 FROM sales_quotes WHERE id=$1 AND tenant_id=$2)",
+            )
+            .bind(id)
+            .bind(tenant_id)
+            .fetch_one(&mut **db.tx())
+            .await
+            .map_err(|e| SenseiError::Database(format!("Failed to check quote: {e}")))?;
+            if !exists {
+                return Err(SenseiError::NotFound(format!("Quote {id} not found")));
+            }
         }
         db.commit()
             .await
@@ -2051,36 +2397,14 @@ impl SupplyChainService for DatabaseSupplyChainService {
     }
 
     async fn submit_quote(&self, tenant_id: Uuid, id: Uuid) -> Result<Quote> {
-        let mut db = TenantTx::begin(&self.pool, tenant_id)
-            .await
-            .map_err(|e| SenseiError::Database(format!("Failed to begin submit quote: {e}")))?;
-        let row = sqlx::query_as::<_, QuoteRow>(
-            r#"UPDATE quotes SET status='submitted' WHERE id=$1 AND tenant_id=$2
-               RETURNING id, tenant_id, quote_number, rfq_id, customer_id, customer_name, status, line_items, total_amount, currency, valid_until, created_by, created_at"#,
-        ).bind(id).bind(tenant_id).fetch_optional(&mut **db.tx()).await.map_err(|e| SenseiError::Database(format!("Failed to submit quote: {e}")))?
-            .ok_or_else(|| SenseiError::NotFound(format!("Quote {id} not found")))?;
-        db.commit()
-            .await
-            .map_err(|e| SenseiError::Database(format!("Failed to commit submit quote: {e}")))?;
-        Ok(quote_row_to_domain(row))
+        transition_quote_status(&self.pool, tenant_id, id, "submitted").await
     }
 
     async fn accept_quote(&self, tenant_id: Uuid, id: Uuid) -> Result<Quote> {
         self.approve_quote(tenant_id, id).await
     }
     async fn reject_quote(&self, tenant_id: Uuid, id: Uuid) -> Result<Quote> {
-        let mut db = TenantTx::begin(&self.pool, tenant_id)
-            .await
-            .map_err(|e| SenseiError::Database(format!("Failed to begin reject quote: {e}")))?;
-        let row = sqlx::query_as::<_, QuoteRow>(
-            r#"UPDATE quotes SET status='rejected' WHERE id=$1 AND tenant_id=$2
-               RETURNING id, tenant_id, quote_number, rfq_id, customer_id, customer_name, status, line_items, total_amount, currency, valid_until, created_by, created_at"#,
-        ).bind(id).bind(tenant_id).fetch_optional(&mut **db.tx()).await.map_err(|e| SenseiError::Database(format!("Failed to reject quote: {e}")))?
-            .ok_or_else(|| SenseiError::NotFound(format!("Quote {id} not found")))?;
-        db.commit()
-            .await
-            .map_err(|e| SenseiError::Database(format!("Failed to commit reject quote: {e}")))?;
-        Ok(quote_row_to_domain(row))
+        transition_quote_status(&self.pool, tenant_id, id, "rejected").await
     }
 
     // ── Sales Order Mutations ───────────────────────────────────────────

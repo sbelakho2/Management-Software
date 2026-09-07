@@ -14,6 +14,13 @@
 //! `sensei_app` role. Reads run inside one tenant-scoped transaction per
 //! method (list items + count share a single tx); writes are one
 //! transaction + commit.
+//!
+//! # Employee shape (thirtieth-first-audit item 17 drift 1)
+//!
+//! The employee SQL targets the REAL `employees` table shape the
+//! migration chain creates (employee_number, first_name + last_name,
+//! manager_id self-FK) — never the drifted employee_code/full_name/
+//! supervisor_id names.
 use async_trait::async_trait;
 use chrono::Utc;
 use sensei_core::db::TenantTx;
@@ -44,17 +51,18 @@ impl DatabaseHrService {
 struct EmployeeRow {
     id: Uuid,
     tenant_id: Uuid,
-    employee_code: String,
-    user_id: Uuid,
-    full_name: String,
+    employee_number: String,
+    user_id: Option<Uuid>,
+    first_name: String,
+    last_name: String,
     email: String,
-    department: String,
-    job_title: String,
+    department: Option<String>,
+    job_title: Option<String>,
     employment_type: String,
     status: String,
     hire_date: chrono::DateTime<Utc>,
     termination_date: Option<chrono::DateTime<Utc>>,
-    supervisor_id: Option<Uuid>,
+    manager_id: Option<Uuid>,
     created_at: chrono::DateTime<Utc>,
 }
 
@@ -124,17 +132,21 @@ fn emp_row_to_domain(r: EmployeeRow) -> Employee {
     Employee {
         id: r.id,
         tenant_id: r.tenant_id,
-        employee_code: r.employee_code,
-        user_id: r.user_id,
-        full_name: r.full_name,
+        employee_number: r.employee_number,
+        // employees.user_id is nullable (a record may exist before its
+        // account is bound); the resolver/self flows always operate on a
+        // real binding, so an unbound row surfaces as the nil actor.
+        user_id: r.user_id.unwrap_or_default(),
+        first_name: r.first_name,
+        last_name: r.last_name,
         email: r.email,
-        department: r.department,
-        job_title: r.job_title,
+        department: r.department.unwrap_or_default(),
+        job_title: r.job_title.unwrap_or_default(),
         employment_type: r.employment_type,
         status: r.status,
         hire_date: r.hire_date,
         termination_date: r.termination_date,
-        supervisor_id: r.supervisor_id,
+        manager_id: r.manager_id,
         created_at: r.created_at,
     }
 }
@@ -254,7 +266,7 @@ impl HrService for DatabaseHrService {
     async fn create_employee(&self, tenant_id: Uuid, employee: Employee) -> Result<Employee> {
         let now = Utc::now();
         let id = Uuid::new_v4();
-        let employee_code = format!(
+        let employee_number = format!(
             "EMP-{}-{}",
             now.format("%Y%m%d"),
             &id.as_simple().encode_lower(&mut Uuid::encode_buffer())[..8]
@@ -263,15 +275,15 @@ impl HrService for DatabaseHrService {
         let mut db = begin_tx(&self.pool, tenant_id, "create_employee").await?;
         let row = sqlx::query_as::<_, EmployeeRow>(
             r#"
-            INSERT INTO employees (id, tenant_id, employee_code, user_id, full_name, email, department, job_title, employment_type, status, hire_date, termination_date, supervisor_id, created_at)
-            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'active',$10,NULL,$11,$12)
-            RETURNING id, tenant_id, employee_code, user_id, full_name, email, department, job_title, employment_type, status, hire_date, termination_date, supervisor_id, created_at
+            INSERT INTO employees (id, tenant_id, employee_number, user_id, first_name, last_name, email, department, job_title, employment_type, status, hire_date, termination_date, manager_id, created_at)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'active',$11,NULL,$12,$13)
+            RETURNING id, tenant_id, employee_number, user_id, first_name, last_name, email, department, job_title, employment_type, status, hire_date, termination_date, manager_id, created_at
             "#,
         )
-        .bind(id).bind(tenant_id).bind(&employee_code).bind(employee.user_id)
-        .bind(&employee.full_name).bind(&employee.email).bind(&employee.department)
+        .bind(id).bind(tenant_id).bind(&employee_number).bind(employee.user_id)
+        .bind(&employee.first_name).bind(&employee.last_name).bind(&employee.email).bind(&employee.department)
         .bind(&employee.job_title).bind(&employee.employment_type).bind(employee.hire_date)
-        .bind(employee.supervisor_id).bind(now)
+        .bind(employee.manager_id).bind(now)
         .fetch_one(&mut **db.tx())
         .await
         .map_err(|e| SenseiError::Database(format!("Failed to create employee: {e}")))?;
@@ -282,7 +294,7 @@ impl HrService for DatabaseHrService {
             "employee",
             id,
             "sensei.hr.employee.onboarded",
-            serde_json::json!({ "employee_code": employee_code, "department": employee.department }),
+            serde_json::json!({ "employee_number": employee_number, "department": employee.department }),
         )
         .await?;
         commit_tx(db, "create_employee").await?;
@@ -293,7 +305,7 @@ impl HrService for DatabaseHrService {
     async fn get_employee(&self, tenant_id: Uuid, id: Uuid) -> Result<Employee> {
         let mut db = begin_tx(&self.pool, tenant_id, "get_employee").await?;
         let row = sqlx::query_as::<_, EmployeeRow>(
-            "SELECT id, tenant_id, employee_code, user_id, full_name, email, department, job_title, employment_type, status, hire_date, termination_date, supervisor_id, created_at FROM employees WHERE id = $1 AND tenant_id = $2",
+            "SELECT id, tenant_id, employee_number, user_id, first_name, last_name, email, department, job_title, employment_type, status, hire_date, termination_date, manager_id, created_at FROM employees WHERE id = $1 AND tenant_id = $2",
         )
         .bind(id).bind(tenant_id)
         .fetch_optional(&mut **db.tx())
@@ -320,7 +332,7 @@ impl HrService for DatabaseHrService {
         // Items and count share ONE tenant-scoped transaction.
         let mut db = begin_tx(&self.pool, tenant_id, "list_employees").await?;
         let items: Vec<EmployeeRow> = sqlx::query_as(
-            r#"SELECT id, tenant_id, employee_code, user_id, full_name, email, department, job_title, employment_type, status, hire_date, termination_date, supervisor_id, created_at
+            r#"SELECT id, tenant_id, employee_number, user_id, first_name, last_name, email, department, job_title, employment_type, status, hire_date, termination_date, manager_id, created_at
                FROM employees WHERE tenant_id = $1 AND ($2::text IS NULL OR department = $2) AND ($3::text IS NULL OR status = $3)
                ORDER BY created_at DESC LIMIT $4 OFFSET $5"#,
         )
@@ -354,9 +366,9 @@ impl HrService for DatabaseHrService {
         let now = Utc::now();
         let mut db = begin_tx(&self.pool, tenant_id, "update_employee_status").await?;
         let row = sqlx::query_as::<_, EmployeeRow>(
-            r#"UPDATE employees SET status = $1, termination_date = CASE WHEN $1 = 'terminated' THEN $3 ELSE termination_date END
+            r#"UPDATE employees SET status = $1, termination_date = CASE WHEN $1 = 'terminated' THEN $3 ELSE termination_date END, updated_at = NOW()
                WHERE id = $2 AND tenant_id = $4
-               RETURNING id, tenant_id, employee_code, user_id, full_name, email, department, job_title, employment_type, status, hire_date, termination_date, supervisor_id, created_at"#,
+               RETURNING id, tenant_id, employee_number, user_id, first_name, last_name, email, department, job_title, employment_type, status, hire_date, termination_date, manager_id, created_at"#,
         )
         .bind(status).bind(id).bind(now).bind(tenant_id)
         .fetch_optional(&mut **db.tx())
@@ -376,12 +388,12 @@ impl HrService for DatabaseHrService {
     ) -> Result<Employee> {
         let mut db = begin_tx(&self.pool, tenant_id, "update_employee").await?;
         let row = sqlx::query_as::<_, EmployeeRow>(
-            r#"UPDATE employees SET full_name=$1, email=$2, department=$3, job_title=$4, employment_type=$5, supervisor_id=$6
-               WHERE id=$7 AND tenant_id=$8
-               RETURNING id, tenant_id, employee_code, user_id, full_name, email, department, job_title, employment_type, status, hire_date, termination_date, supervisor_id, created_at"#,
+            r#"UPDATE employees SET first_name=$1, last_name=$2, email=$3, department=$4, job_title=$5, employment_type=$6, manager_id=$7, updated_at=NOW()
+               WHERE id=$8 AND tenant_id=$9
+               RETURNING id, tenant_id, employee_number, user_id, first_name, last_name, email, department, job_title, employment_type, status, hire_date, termination_date, manager_id, created_at"#,
         )
-        .bind(&employee.full_name).bind(&employee.email).bind(&employee.department)
-        .bind(&employee.job_title).bind(&employee.employment_type).bind(employee.supervisor_id)
+        .bind(&employee.first_name).bind(&employee.last_name).bind(&employee.email).bind(&employee.department)
+        .bind(&employee.job_title).bind(&employee.employment_type).bind(employee.manager_id)
         .bind(id).bind(tenant_id)
         .fetch_optional(&mut **db.tx())
         .await

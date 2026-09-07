@@ -194,7 +194,13 @@ async fn handle_event(
                     user_id: user.id,
                     title: trigger.name.clone(),
                     body: body.clone(),
-                    notification_type: "notification_trigger".to_string(),
+                    // Item-17 drift 4: the notifications.notification_type
+                    // vocabulary admits alert/reminder/approval_request/
+                    // mention/system — an event-rule notification is an
+                    // 'alert' (it fires when a monitored event matches a
+                    // trigger; the trigger's own name/type never lived in
+                    // the DB vocabulary).
+                    notification_type: "alert".to_string(),
                     reference_type: Some(event_type.clone()),
                     reference_id: None,
                     is_read: false,

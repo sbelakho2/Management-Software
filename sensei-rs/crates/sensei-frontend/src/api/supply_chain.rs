@@ -11,18 +11,22 @@ pub struct RfqDto {
     pub tenant_id: String,
     pub rfq_number: String,
     pub supplier_id: String,
+    pub supplier_name: String,
     pub status: String,
     pub items: Vec<RfqItemDto>,
+    pub notes: String,
+    pub created_by: String,
     pub created_at: String,
-    pub updated_at: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RfqItemDto {
-    pub id: String,
+    pub line_item_id: Option<String>,
     pub product_id: String,
+    pub product_name: String,
     pub quantity: f64,
-    pub unit: String,
+    pub unit_of_measure: String,
+    pub target_price: Option<f64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

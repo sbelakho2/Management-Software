@@ -401,7 +401,7 @@ async fn count_trigger_notifications(app: &common::TestApp) -> usize {
         .filter(|n| {
             n.tenant_id == app.admin_tenant_id
                 && n.user_id == app.admin_user_id
-                && n.notification_type == "notification_trigger"
+                && n.notification_type == "alert"
         })
         .count()
 }

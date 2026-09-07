@@ -264,6 +264,28 @@ jobs:
           'material','medium','E2E fixture andon',u.id,NOW()
           FROM users u WHERE u.tenant_id='00000000-0000-0000-0000-000000000001' AND u.email='ceo@starz.com'
           ON CONFLICT (id) DO NOTHING;
+
+          -- HR module fixture (item 17 completion): ONE employee row whose
+          -- employee_number carries the module marker. The HR list reads
+          -- the REAL employees columns (employee_number/first_name/
+          -- last_name/manager_id) — the row renders through the app-role
+          -- read path only when that convergence holds.
+          INSERT INTO employees (id, tenant_id, employee_number, user_id, first_name, last_name, email, department, job_title, employment_type, status, hire_date, created_at)
+          SELECT '81000000-0000-4000-8000-000000000001','00000000-0000-0000-0000-000000000001','E2E-EMP-0001',u.id,'E2E','Employee','e2e.emp@starzforge.local','Engineering','Process Engineer','full_time','active',NOW(),NOW()
+          FROM users u WHERE u.tenant_id='00000000-0000-0000-0000-000000000001' AND u.email='ceo@starz.com'
+          ON CONFLICT (id) DO NOTHING;
+
+          -- Supply Chain module fixture (item 17 completion): the real rfqs
+          -- shape is normalized — supplier_id -> suppliers.name join, and
+          -- line items live in rfq_line_items (a fixture with no line rows
+          -- renders the ITEMS count 0 through the same app-role path).
+          INSERT INTO suppliers (id, tenant_id, supplier_number, name, status, created_at, updated_at)
+          VALUES ('82000000-0000-4000-8000-000000000001','00000000-0000-0000-0000-000000000001','E2E-SUP-0001','E2E Fixture Supplier','active',NOW(),NOW())
+          ON CONFLICT (id) DO NOTHING;
+          INSERT INTO rfqs (id, tenant_id, rfq_number, supplier_id, status, issue_date, notes, created_by, created_at, updated_at)
+          SELECT '83000000-0000-4000-8000-000000000001','00000000-0000-0000-0000-000000000001','E2E-RFQ-0001','82000000-0000-4000-8000-000000000001','draft',NOW(),'E2E fixture RFQ',u.id,NOW(),NOW()
+          FROM users u WHERE u.tenant_id='00000000-0000-0000-0000-000000000001' AND u.email='ceo@starz.com'
+          ON CONFLICT (id) DO NOTHING;
           SQL
 
       - name: Install Playwright
